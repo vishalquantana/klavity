@@ -33,6 +33,7 @@ window.fetch = async (...args) => {
 let shadowRoot: ShadowRoot | null = null
 let screenshots: string[] = []
 let currentReportType: ReportType = 'bug'
+let pendingRegionCapture = false
 
 function getHost(): ShadowRoot {
   if (!shadowRoot) {
@@ -279,6 +280,7 @@ function startRegion() {
 
     // Capture full page, then crop to selected rect
     const onCapture = async (ev: Event) => {
+      pendingRegionCapture = false
       const dataUrl = (ev as CustomEvent).detail as string
       const cropped = await cropDataUrl(dataUrl, rect, window.scrollX, window.scrollY)
       if (host) host.style.display = ''
@@ -286,6 +288,7 @@ function startRegion() {
       document.removeEventListener('keydown', escHandler, { capture: true })
     }
     document.addEventListener('klav-capture-result', onCapture, { once: true })
+    pendingRegionCapture = true
     chrome.runtime.sendMessage({ kind: 'CAPTURE_TAB' } satisfies BackgroundMessage)
   })
 }
@@ -422,8 +425,8 @@ chrome.runtime.onMessage.addListener((msg: ContentMessage) => {
   if (msg.kind === 'CAPTURE_TAB_RESULT') {
     // Fire custom event for region capture listener
     document.dispatchEvent(new CustomEvent('klav-capture-result', { detail: msg.dataUrl }))
-    // Also add to strip if modal is open
-    if (shadowRoot?.querySelector('.klav-overlay')) {
+    // Only add to strip directly if NOT a region capture (region capture handles its own crop+add)
+    if (!pendingRegionCapture && shadowRoot?.querySelector('.klav-overlay')) {
       addScreenshot(msg.dataUrl)
     }
     return
