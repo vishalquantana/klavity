@@ -282,13 +282,19 @@ function startRegion() {
     const onCapture = async (ev: Event) => {
       pendingRegionCapture = false
       const dataUrl = (ev as CustomEvent).detail as string
-      const cropped = await cropDataUrl(dataUrl, rect, window.scrollX, window.scrollY)
+      const dpr = window.devicePixelRatio || 1
+      const cropped = await cropDataUrl(
+        dataUrl,
+        { x: rect.x * dpr, y: rect.y * dpr, w: rect.w * dpr, h: rect.h * dpr },
+        window.scrollX * dpr,
+        window.scrollY * dpr,
+      )
       if (host) host.style.display = ''
       addScreenshot(cropped)
       document.removeEventListener('keydown', escHandler, { capture: true })
     }
-    document.addEventListener('klav-capture-result', onCapture, { once: true })
     pendingRegionCapture = true
+    document.addEventListener('klav-capture-result', onCapture, { once: true })
     chrome.runtime.sendMessage({ kind: 'CAPTURE_TAB' } satisfies BackgroundMessage)
   })
 }
