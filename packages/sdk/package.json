@@ -1,6 +1,8 @@
 {
   "name": "@klav/snap",
   "version": "0.1.0",
+  "author": "Quantana <hello@quantana.com.au> (https://quantana.com.au)",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "type": "module",
   "main": "dist/klav-snap.umd.js",
   "module": "dist/klav-snap.es.js",

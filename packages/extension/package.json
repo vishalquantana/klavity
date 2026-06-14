@@ -2,6 +2,8 @@
   "name": "@klav/extension",
   "version": "0.1.0",
   "private": true,
+  "author": "Quantana <hello@quantana.com.au> (https://quantana.com.au)",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "type": "module",
   "scripts": {
     "build": "vite build",

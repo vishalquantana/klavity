@@ -2,6 +2,8 @@
   "name": "@klav/core",
   "version": "0.1.0",
   "private": true,
+  "author": "Quantana <hello@quantana.com.au> (https://quantana.com.au)",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
@@ -14,7 +16,8 @@
     "./integrations/linear": "./src/integrations/linear.ts",
     "./integrations/github": "./src/integrations/github.ts",
     "./integrations/plane": "./src/integrations/plane.ts",
-    "./integrations/backend": "./src/integrations/backend.ts"
+    "./integrations/backend": "./src/integrations/backend.ts",
+    "./modal": "./src/modal.ts"
   },
   "scripts": {
     "test": "vitest run --passWithNoTests",
