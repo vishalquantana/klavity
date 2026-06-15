@@ -1,0 +1,305 @@
+import type { ReportType } from './types'
+import { Annotator } from './annotator'
+
+export interface ModalCallbacks {
+  onCaptureFull: () => Promise<string>
+  onRegionCapture?: (rect: { x: number; y: number; w: number; h: number }) => Promise<string>
+  onSubmit: (payload: {
+    type: ReportType
+    description: string
+    screenshots: string[]
+  }) => Promise<{ issueKey: string; issueUrl: string }>
+}
+
+export interface ModalController {
+  shadowRoot: ShadowRoot
+  addScreenshot: (dataUrl: string) => void
+  close: () => void
+}
+
+export function buildModal(
+  initialType: ReportType,
+  callbacks: ModalCallbacks,
+): ModalController {
+  // Create shadow host
+  const host = document.createElement('div')
+  host.style.cssText = 'position:fixed;inset:0;z-index:2147483647;pointer-events:none;'
+  const shadowRoot = host.attachShadow({ mode: 'open' })
+  document.body.appendChild(host)
+
+  let screenshots: string[] = []
+  let currentType = initialType
+
+  const style = document.createElement('style')
+  style.textContent = `
+    .kl-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;pointer-events:all;}
+    .kl-modal{background:#1e1e2e;color:#cdd6f4;border-radius:12px;padding:24px;width:100%;max-width:480px;box-shadow:0 20px 60px rgba(0,0,0,.5);font-family:system-ui,sans-serif;}
+    .kl-toggle{display:flex;gap:8px;margin-bottom:16px;}
+    .kl-toggle button{flex:1;padding:8px;border-radius:6px;border:none;cursor:pointer;font-size:14px;font-weight:600;}
+    .kl-toggle .bug.active{background:#f38ba8;color:#1e1e2e;}
+    .kl-toggle .feat.active{background:#fab387;color:#1e1e2e;}
+    .kl-toggle button:not(.active){background:#313244;color:#cdd6f4;}
+    .kl-page{font-size:12px;color:#a6adc8;margin-bottom:12px;}
+    .kl-strip{display:flex;gap:8px;overflow-x:auto;margin-bottom:12px;min-height:64px;}
+    .kl-thumb{position:relative;flex-shrink:0;}
+    .kl-thumb img{height:60px;border-radius:4px;border:1px solid #45475a;}
+    .kl-rm{position:absolute;top:-4px;right:-4px;background:#f38ba8;color:#1e1e2e;border:none;border-radius:50%;width:16px;height:16px;font-size:10px;cursor:pointer;}
+    .kl-mk{position:absolute;bottom:-4px;right:-4px;background:#89b4fa;color:#1e1e2e;border:none;border-radius:50%;width:16px;height:16px;font-size:10px;cursor:pointer;}
+    .kl-actions{display:flex;gap:8px;margin-bottom:12px;}
+    .kl-actions button{flex:1;padding:8px;background:#313244;color:#cdd6f4;border:none;border-radius:6px;cursor:pointer;font-size:12px;}
+    .kl-counter{font-size:11px;color:#a6adc8;margin-bottom:8px;}
+    textarea.kl-desc{width:100%;min-height:100px;resize:vertical;background:#181825;color:#cdd6f4;border:1px solid #45475a;border-radius:6px;padding:10px;font-size:14px;margin-bottom:16px;box-sizing:border-box;}
+    .kl-submit{width:100%;padding:12px;background:#89b4fa;color:#1e1e2e;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;}
+    .kl-submit:disabled{opacity:.5;cursor:not-allowed;}
+    .kl-error{color:#f38ba8;font-size:13px;margin-bottom:8px;display:none;}
+  `
+  shadowRoot.appendChild(style)
+
+  const overlay = document.createElement('div')
+  overlay.className = 'kl-overlay'
+
+  const modal = document.createElement('div')
+  modal.className = 'kl-modal'
+  modal.innerHTML = `
+    <div class="kl-toggle">
+      <button class="bug ${initialType === 'bug' ? 'active' : ''}">🐛 Bug</button>
+      <button class="feat ${initialType === 'feature' ? 'active' : ''}">💡 Feature</button>
+    </div>
+    <div class="kl-page">📍 ${typeof window !== 'undefined' ? window.location.pathname : ''}</div>
+    <div class="kl-strip" id="kl-strip"></div>
+    <div class="kl-actions">
+      <button id="kl-full">📷 Full Page</button>
+      <button id="kl-upload">🖼 Upload</button>
+    </div>
+    <input type="file" id="kl-file" accept="image/*,.heic,.heif" multiple style="display:none">
+    <div class="kl-counter" id="kl-counter">0/5 images</div>
+    <div class="kl-error" id="kl-err"></div>
+    <textarea class="kl-desc" id="kl-desc" placeholder="Describe the bug..."></textarea>
+    <button class="kl-submit" id="kl-submit" disabled>Submit</button>
+  `
+
+  overlay.appendChild(modal)
+  shadowRoot.appendChild(overlay)
+
+  const controller: ModalController = {
+    shadowRoot,
+    addScreenshot,
+    close,
+  }
+
+  function updateStrip() {
+    const strip = shadowRoot.getElementById('kl-strip')!
+    const counter = shadowRoot.getElementById('kl-counter')!
+    strip.innerHTML = ''
+    screenshots.forEach((dataUrl, i) => {
+      const wrap = document.createElement('div')
+      wrap.className = 'kl-thumb'
+      const img = document.createElement('img')
+      img.src = dataUrl
+      const rm = document.createElement('button')
+      rm.className = 'kl-rm'
+      rm.textContent = '×'
+      rm.addEventListener('click', () => { screenshots.splice(i, 1); updateStrip() })
+      const mk = document.createElement('button')
+      mk.className = 'kl-mk'
+      mk.textContent = '✏'
+      mk.addEventListener('click', () => openAnnotator(i))
+      wrap.append(img, rm, mk)
+      strip.appendChild(wrap)
+    })
+    counter.textContent = `${screenshots.length}/5 images`
+  }
+
+  function addScreenshot(dataUrl: string) {
+    if (screenshots.length >= 5) return
+    screenshots.push(dataUrl)
+    updateStrip()
+  }
+
+  function close() {
+    document.removeEventListener('keydown', escHandler, { capture: true })
+    host.remove()
+  }
+
+  function escHandler(e: KeyboardEvent) {
+    if (e.key === 'Escape') { e.stopPropagation(); close() }
+  }
+  document.addEventListener('keydown', escHandler, { capture: true })
+
+  // Toggle
+  const bugBtn = modal.querySelector('.bug') as HTMLButtonElement
+  const featBtn = modal.querySelector('.feat') as HTMLButtonElement
+  bugBtn.addEventListener('click', () => {
+    currentType = 'bug'
+    bugBtn.classList.add('active')
+    featBtn.classList.remove('active')
+  })
+  featBtn.addEventListener('click', () => {
+    currentType = 'feature'
+    featBtn.classList.add('active')
+    bugBtn.classList.remove('active')
+  })
+
+  // Submit
+  const desc = modal.querySelector('#kl-desc') as HTMLTextAreaElement
+  const submitBtn = modal.querySelector('#kl-submit') as HTMLButtonElement
+  desc.addEventListener('input', () => { submitBtn.disabled = desc.value.trim() === '' })
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close() })
+
+  submitBtn.addEventListener('click', async () => {
+    const description = desc.value.trim()
+    submitBtn.disabled = true
+    submitBtn.textContent = 'Filing...'
+    const errEl = shadowRoot.getElementById('kl-err')!
+    errEl.style.display = 'none'
+    try {
+      const result = await callbacks.onSubmit({ type: currentType, description, screenshots: [...screenshots] })
+      shadowRoot.innerHTML = `
+        <style>.s{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:all;}</style>
+        <div class="s"><div style="background:#1e1e2e;color:#a6e3a1;border-radius:12px;padding:32px;font-family:system-ui;font-size:16px;text-align:center;">✓ Filed as <strong>${result.issueKey}</strong></div></div>
+      `
+      setTimeout(close, 1500)
+    } catch (err) {
+      errEl.textContent = (err as Error).message
+      errEl.style.display = 'block'
+      submitBtn.disabled = false
+      submitBtn.textContent = 'Submit'
+    }
+  })
+
+  // Capture buttons
+  modal.querySelector('#kl-full')!.addEventListener('click', async () => {
+    try { addScreenshot(await callbacks.onCaptureFull()) } catch { /* ignore */ }
+  })
+  modal.querySelector('#kl-upload')!.addEventListener('click', () => {
+    (modal.querySelector('#kl-file') as HTMLInputElement).click()
+  })
+  modal.querySelector('#kl-file')!.addEventListener('change', async (e) => {
+    const files = (e.target as HTMLInputElement).files
+    if (!files) return
+    for (const file of Array.from(files)) {
+      if (screenshots.length >= 5) break
+      addScreenshot(await fileToDataUrl(file))
+    }
+  })
+
+  // Annotator
+  function openAnnotator(index: number) {
+    const dataUrl = screenshots[index]
+    const img = new Image()
+    img.onload = () => {
+      const canvas = document.createElement('canvas')
+      canvas.width = img.naturalWidth
+      canvas.height = img.naturalHeight
+      const annotator = new Annotator(canvas, dataUrl)
+      annotator.redraw()
+
+      const editor = document.createElement('div')
+      editor.style.cssText = 'position:fixed;inset:0;background:#000;z-index:2147483647;display:flex;flex-direction:column;pointer-events:all;'
+      const toolbar = document.createElement('div')
+      toolbar.style.cssText = 'display:flex;gap:8px;padding:8px;background:#1e1e2e;flex-wrap:wrap;'
+      toolbar.innerHTML = `
+        <button data-tool="pen" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">✏️ Pen</button>
+        <button data-tool="rect" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">⬜ Rect</button>
+        <button data-tool="arrow" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">↗ Arrow</button>
+        <button data-tool="text" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">T Text</button>
+        <button data-color="#ef4444" style="background:#ef4444;width:24px;height:24px;border:none;border-radius:50%;cursor:pointer;"></button>
+        <button data-color="#f97316" style="background:#f97316;width:24px;height:24px;border:none;border-radius:50%;cursor:pointer;"></button>
+        <button data-color="#3b82f6" style="background:#3b82f6;width:24px;height:24px;border:none;border-radius:50%;cursor:pointer;"></button>
+        <button data-color="#111827" style="background:#111827;width:24px;height:24px;border:none;border-radius:50%;cursor:pointer;border:1px solid #555;"></button>
+        <button id="kl-undo" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;margin-left:auto;">↩ Undo</button>
+        <button id="kl-clear-ann" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">🗑 Clear</button>
+        <button id="kl-save-ann" style="padding:6px 10px;background:#89b4fa;color:#1e1e2e;border:none;border-radius:4px;cursor:pointer;font-weight:700;">✓ Save</button>
+        <button id="kl-cancel-ann" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">✕</button>
+      `
+      canvas.style.cssText = 'flex:1;max-width:100%;max-height:calc(100vh - 60px);object-fit:contain;cursor:crosshair;display:block;margin:auto;'
+      editor.append(toolbar, canvas)
+      shadowRoot.appendChild(editor)
+
+      let activeTool = 'rect'
+      let activeColor = '#ef4444'
+      let drawing = false
+      let penPoints: Array<{ x: number; y: number }> = []
+      let startX = 0
+      let startY = 0
+
+      toolbar.querySelectorAll('[data-tool]').forEach(b => b.addEventListener('click', () => { activeTool = (b as HTMLElement).dataset.tool! }))
+      toolbar.querySelectorAll('[data-color]').forEach(b => b.addEventListener('click', () => { activeColor = (b as HTMLElement).dataset.color! }))
+      toolbar.querySelector('#kl-undo')!.addEventListener('click', () => annotator.undo())
+      toolbar.querySelector('#kl-clear-ann')!.addEventListener('click', () => annotator.clearAll())
+      toolbar.querySelector('#kl-save-ann')!.addEventListener('click', async () => {
+        screenshots[index] = await annotator.save()
+        editor.remove()
+        updateStrip()
+      })
+      toolbar.querySelector('#kl-cancel-ann')!.addEventListener('click', () => editor.remove())
+
+      function toImg(e: PointerEvent) {
+        const r = canvas.getBoundingClientRect()
+        return { x: ((e.clientX - r.left) / r.width) * canvas.width, y: ((e.clientY - r.top) / r.height) * canvas.height }
+      }
+
+      canvas.addEventListener('pointerdown', (e) => {
+        drawing = true
+        const pt = toImg(e);
+        ({ x: startX, y: startY } = pt)
+        if (activeTool === 'pen') penPoints = [pt]
+        if (activeTool === 'text') {
+          drawing = false
+          const input = document.createElement('input')
+          input.style.cssText = `position:fixed;left:${e.clientX}px;top:${e.clientY}px;background:transparent;border:1px dashed ${activeColor};color:${activeColor};font-size:16px;outline:none;z-index:9999999;min-width:80px;`
+          document.body.appendChild(input)
+          input.focus()
+          input.addEventListener('blur', () => {
+            if (input.value.trim()) annotator.addShape({ type: 'text', color: activeColor, x: startX, y: startY, text: input.value.trim() })
+            input.remove()
+          }, { once: true })
+          input.addEventListener('keydown', (ke) => { if (ke.key === 'Enter') input.blur() })
+        }
+      })
+
+      canvas.addEventListener('pointermove', (e) => {
+        if (!drawing) return
+        if (activeTool === 'pen') penPoints.push(toImg(e))
+      })
+
+      canvas.addEventListener('pointerup', (e) => {
+        if (!drawing) return
+        drawing = false
+        const pt = toImg(e)
+        if (activeTool === 'pen' && penPoints.length > 1) {
+          annotator.addShape({ type: 'pen', color: activeColor, points: penPoints })
+        } else if (activeTool === 'rect') {
+          annotator.addShape({ type: 'rect', color: activeColor, x: Math.min(startX, pt.x), y: Math.min(startY, pt.y), w: Math.abs(pt.x - startX), h: Math.abs(pt.y - startY) })
+        } else if (activeTool === 'arrow') {
+          annotator.addShape({ type: 'arrow', color: activeColor, x1: startX, y1: startY, x2: pt.x, y2: pt.y })
+        }
+      })
+
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { e.stopPropagation(); editor.remove() }
+      }, { capture: true, once: true })
+    }
+    img.src = dataUrl
+  }
+
+  return controller
+}
+
+async function fileToDataUrl(file: File): Promise<string> {
+  if (file.type === 'image/heic' || file.name.endsWith('.heic') || file.name.endsWith('.heif')) {
+    const heic2any = (await import('heic2any')).default
+    const blob = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 }) as Blob
+    return blobToDataUrl(blob)
+  }
+  return blobToDataUrl(file)
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = reject
+    reader.readAsDataURL(blob)
+  })
+}
