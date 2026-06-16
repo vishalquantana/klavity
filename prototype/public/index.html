@@ -137,6 +137,13 @@
   .ds-insights { font-size: 9px; color:var(--paper-faint); margin-top:4px; }
   .reviewbtn { width: 100%; margin-top: 6px; font-size: 11px; padding: 6px; border-radius: 6px; background:var(--indigo);color:white;border:none;cursor:pointer; }
 
+  /* lane1 tab bar */
+  .l1-tabs{display:flex;gap:0;border-bottom:1px solid var(--line);margin:8px 0 14px;}
+  .l1-tab{font-size:12px;font-weight:600;padding:8px 14px;border:none;border-bottom:2px solid transparent;cursor:pointer;color:var(--paper-faint);background:none;border-radius:0;transition:color .15s,border-color .15s;}
+  .l1-tab.on{color:var(--indigo);border-bottom-color:var(--indigo);}
+  .l1-pane{display:none;}
+  .l1-pane.on{display:block;}
+
   .status { font-size: 11px; color: var(--paper-faint); margin-top: 8px; min-height: 16px; }
   .err { color: var(--rose); }
   .hint { font-size: 11px; color: var(--paper-faint); margin-top: 8px; line-height: 1.5; }
@@ -273,28 +280,37 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       <div class="lhead"><span class="ln">1</span><h2>Add a Sim</h2><span class="pill" id="p1"></span></div>
       <div class="readycard" id="simsReady" style="display:none">
         <span style="font-size:18px">✅</span>
-        <div><div class="big"><span id="simsReadyN">0</span> Sims ready</div><div class="sm">They’re lined up as reviewers in step 2 →</div></div>
+        <div><div class="big"><span id="simsReadyN">0</span> Sims ready</div><div class="sm">Edit them here or pick one to review in step 2 →</div></div>
       </div>
-      <div class="lsub">Extract real Sims from an interview transcript — or start from a preset / one-line description.</div>
-      <div class="label">Paste an interview transcript</div>
-      <textarea id="transcript"></textarea>
-      <div class="row">
-        <button class="primary" id="extractBtn">Extract Sims</button>
-        <button class="ghost" id="uploadBtn">📄 Upload transcript</button>
-        <button class="ghost" id="clearBtn">Clear</button>
+      <div class="l1-tabs">
+        <button class="l1-tab on" id="tab-import" onclick="switchL1Tab(‘import’)">Import</button>
+        <button class="l1-tab" id="tab-sims" onclick="switchL1Tab(‘sims’)">Your Sims<span id="l1SimBadge" style="display:none"> (<span id="l1SimN">0</span>)</span></button>
       </div>
-      <input type="file" id="transcriptFile" accept=".txt,.md,.markdown,.vtt,.srt,.text,text/*" style="display:none" />
-      <div class="status" id="extractStatus"></div>
-      <div class="orsep">— or, no transcript yet? —</div>
-      <div class="label">Start from a preset</div>
-      <div class="presets" id="presets"></div>
-      <div class="label" style="margin-top:14px">…or describe your user</div>
-      <div class="briefrow">
-        <input id="brief" placeholder="e.g. a busy CFO who scans for overdue items" />
-        <button class="ghost mic" id="micBtn" title="Dictate with your voice">🎙</button>
-        <button class="primary" id="briefBtn">Create</button>
+      <div class="l1-pane on" id="pane-import">
+        <div class="lsub">Extract real Sims from an interview transcript — or start from a preset / one-line description.</div>
+        <div class="label">Paste an interview transcript</div>
+        <textarea id="transcript"></textarea>
+        <div class="row">
+          <button class="primary" id="extractBtn">Extract Sims</button>
+          <button class="ghost" id="uploadBtn">📄 Upload transcript</button>
+          <button class="ghost" id="clearBtn">Clear</button>
+        </div>
+        <input type="file" id="transcriptFile" accept=".txt,.md,.markdown,.vtt,.srt,.text,text/*" style="display:none" />
+        <div class="status" id="extractStatus"></div>
+        <div class="orsep">— or, no transcript yet? —</div>
+        <div class="label">Start from a preset</div>
+        <div class="presets" id="presets"></div>
+        <div class="label" style="margin-top:14px">…or describe your user</div>
+        <div class="briefrow">
+          <input id="brief" placeholder="e.g. a busy CFO who scans for overdue items" />
+          <button class="ghost mic" id="micBtn" title="Dictate with your voice">🎙</button>
+          <button class="primary" id="briefBtn">Create</button>
+        </div>
+        <div class="status" id="briefStatus"></div>
       </div>
-      <div class="status" id="briefStatus"></div>
+      <div class="l1-pane" id="pane-sims">
+        <div id="dock"><div class="hint">No Sims yet — use Import to add one.</div></div>
+      </div>
     </div>
 
     <!-- ===== STEP 2 — Have a Sim review the page ===== -->
@@ -346,7 +362,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         </div>
         <div class="hint">The Sim screenshots whatever is in this box, sends it to Claude vision, and reacts in-character. Swap in a screenshot of <em>your own</em> product to see it react to that.</div>
         <div class="label reviewers-label">Your reviewers — pick one to send</div>
-        <div id="dock"><div class="hint">No Sims yet — add one in step 1.</div></div>
+        <div id="reviewPicker"><div class="hint">No Sims yet — add one in step 1.</div></div>
         <div class="status" id="reactStatus"></div>
     </div>
 
@@ -430,6 +446,7 @@ $("extractBtn").onclick = async () => {
   if (cached) {
     sims = cached.personas; renderDock(); devSaveSims()
     setStatus("extractStatus", `⚡ [cache] ${sims.length} Sim${sims.length === 1 ? "" : "s"} (${devCacheCount()} entries cached)`)
+    switchL1Tab('sims')
     $("extractBtn").disabled = false; renderDevBar(); return
   }
   setStatus("extractStatus", "🧠 Extracting personas with " + "Claude… (10-30s)")
@@ -440,6 +457,7 @@ $("extractBtn").onclick = async () => {
     devCacheSet(cacheKey, { personas: data.personas }); renderDevBar()
     sims = data.personas; renderDock(); devSaveSims()
     setStatus("extractStatus", `✅ Extracted ${sims.length} Sim${sims.length === 1 ? "" : "s"}.` + usageStr(data.usage))
+    switchL1Tab('sims')
   } catch (e) {
     setStatus("extractStatus", "Error: " + e.message, true)
   } finally { $("extractBtn").disabled = false }
@@ -476,9 +494,26 @@ function editForm(s, i) {
     </div>`
 }
 
+function switchL1Tab(tab) {
+  document.querySelectorAll('.l1-tab').forEach(t => t.classList.remove('on'))
+  document.querySelectorAll('.l1-pane').forEach(p => p.classList.remove('on'))
+  $(`tab-${tab}`).classList.add('on')
+  $(`pane-${tab}`).classList.add('on')
+}
+
+function renderReviewPicker() {
+  const el = $('reviewPicker')
+  if (!el) return
+  if (!sims.length) { el.innerHTML = '<div class="hint">No Sims yet — add one in step 1.</div>'; return }
+  el.innerHTML = sims.map((s, i) => `
+    <button class="reviewbtn" data-i="${i}">Have ${esc(s.name.split(" ")[0])} review this page →</button>
+  `).join('')
+  el.querySelectorAll('.reviewbtn').forEach(b => b.onclick = () => review(Number(b.dataset.i)))
+}
+
 function renderDock(newIndex = -1) {
   const dock = $("dock")
-  if (!sims.length) { dock.innerHTML = '<div class="hint">No Sims yet.</div>'; editingIndex = -1; return }
+  if (!sims.length) { dock.innerHTML = '<div class="hint">No Sims yet — use Import to add one.</div>'; editingIndex = -1; renderReviewPicker(); return }
   dock.innerHTML = ""
   sims.forEach((s, i) => {
     const el = document.createElement("div")
@@ -502,6 +537,7 @@ function renderDock(newIndex = -1) {
     dock.appendChild(el)
   })
   wireDock()
+  renderReviewPicker()
   updateFlow()
 }
 
@@ -556,6 +592,8 @@ async function review(i) {
   const sim = sims[i]
   const btn = $("dock").querySelector(`.reviewbtn[data-i="${i}"]`)
   if (btn) { btn.disabled = true; btn.textContent = `Reviewing…` }
+  const pickBtn = $("reviewPicker") && $("reviewPicker").querySelector(`.reviewbtn[data-i="${i}"]`)
+  if (pickBtn) { pickBtn.disabled = true; pickBtn.textContent = `Reviewing…` }
   clearOverlays()
   updateFlow()
   setStatus("reactStatus", `📸 ${sim.name.split(" ")[0]} is screenshotting the page…`)
@@ -566,6 +604,7 @@ async function review(i) {
     setStatus("reactStatus", "Screenshot failed: " + e.message, true)
     reviewing.delete(i)
     if (btn && btn.isConnected) { btn.disabled = false; btn.textContent = `Have ${sim.name.split(" ")[0]} review this page →` }
+    if (pickBtn && pickBtn.isConnected) { pickBtn.disabled = false; pickBtn.textContent = `Have ${sim.name.split(" ")[0]} review this page →` }
     return
   }
   const imageB64 = dataUrl.split(",")[1]
@@ -591,6 +630,7 @@ async function review(i) {
   } finally {
     reviewing.delete(i)
     if (btn && btn.isConnected) { btn.disabled = false; btn.textContent = `Have ${sim.name.split(" ")[0]} review this page →` }
+    if (pickBtn && pickBtn.isConnected) { pickBtn.disabled = false; pickBtn.textContent = `Have ${sim.name.split(" ")[0]} review this page →` }
   }
 }
 
@@ -759,7 +799,7 @@ function renderPresets(){
 function addPreset(k){
   const p=PRESETS[k]; if(!p) return
   if(sims.some(s=>s.name===p.name)){ setStatus("briefStatus", `${p.name} is already in your Sims.`); return }
-  sims.push(JSON.parse(JSON.stringify(p))); renderDock(sims.length - 1)
+  sims.push(JSON.parse(JSON.stringify(p))); renderDock(sims.length - 1); switchL1Tab('sims')
   setStatus("briefStatus", `Added ${p.name} — click ✎ to rename or set a photo, then have them review this page.`)
 }
 async function createFromBrief(){
@@ -769,7 +809,7 @@ async function createFromBrief(){
   const briefKey = "brief_" + devHash(brief)
   const cachedBrief = devCacheGet(briefKey)
   if (cachedBrief) {
-    sims.push(cachedBrief.persona); renderDock(sims.length - 1); devSaveSims(); $("brief").value=""
+    sims.push(cachedBrief.persona); renderDock(sims.length - 1); devSaveSims(); $("brief").value=""; switchL1Tab('sims')
     setStatus("briefStatus", `⚡ [cache] ${cachedBrief.persona.name} (${devCacheCount()} entries cached)`)
     $("briefBtn").disabled=false; renderDevBar(); return
   }
@@ -778,7 +818,7 @@ async function createFromBrief(){
     const r=await fetch("/api/persona/brief",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({brief})})
     const d=await r.json(); if(d.error) throw new Error(d.error)
     devCacheSet(briefKey, { persona: d.persona }); renderDevBar()
-    sims.push(d.persona); renderDock(sims.length - 1); devSaveSims(); $("brief").value=""
+    sims.push(d.persona); renderDock(sims.length - 1); devSaveSims(); $("brief").value=""; switchL1Tab('sims')
     setStatus("briefStatus", `Created ${d.persona.name} — click ✎ to rename or set a photo, then have them review this page.`)
   }catch(e){ setStatus("briefStatus","Error: "+e.message,true) } finally { $("briefBtn").disabled=false }
 }
@@ -829,6 +869,8 @@ function updateFlow(){
 
   const ready=$("simsReady")
   if(ready){ ready.style.display = hasSims ? "flex" : "none"; const n=$("simsReadyN"); if(n) n.textContent=sims.length }
+  const badge=$("l1SimBadge"), simN=$("l1SimN")
+  if(badge){ badge.style.display = hasSims ? "inline" : "none"; if(simN) simN.textContent=sims.length }
 
   document.querySelectorAll(".pulse").forEach(e=>e.classList.remove("pulse"))
   if(active===1 && !hasSims && $("extractBtn")) $("extractBtn").classList.add("pulse")
@@ -881,7 +923,7 @@ function devLoadSims() {
     const v = localStorage.getItem(DEV_SIMS_KEY)
     if (!v) return false
     const saved = JSON.parse(v)
-    if (Array.isArray(saved) && saved.length) { sims = saved; renderDock(); updateFlow(); return true }
+    if (Array.isArray(saved) && saved.length) { sims = saved; renderDock(); updateFlow(); switchL1Tab('sims'); return true }
   } catch(e) {}
   return false
 }
