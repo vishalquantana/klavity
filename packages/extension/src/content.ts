@@ -262,6 +262,14 @@ function captureFullPage() {
       if (host) host.style.display = ''
     })
   }, 50))
+  // Fail-safe: if no capture result comes back, re-show the modal so it can never
+  // get stuck hidden ("flash and disappear").
+  setTimeout(() => {
+    if (pendingFullCapture) {
+      pendingFullCapture = false
+      if (host) host.style.display = ''
+    }
+  }, 1800)
 }
 
 async function handleFileSelect(e: Event) {

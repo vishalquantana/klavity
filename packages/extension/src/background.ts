@@ -125,11 +125,14 @@ chrome.runtime.onMessage.addListener((msg: BackgroundMessage, sender, sendRespon
   if (msg.kind === 'CAPTURE_TAB') {
     const winId = sender.tab?.windowId ?? chrome.windows.WINDOW_ID_CURRENT
     chrome.tabs.captureVisibleTab(winId, { format: 'png' }, (dataUrl) => {
+      const tabId = sender.tab?.id
       if (chrome.runtime.lastError || !dataUrl) {
         console.warn('[Klavity] capture failed:', chrome.runtime.lastError?.message)
+        // Still notify the content script (empty dataUrl) so it re-shows the modal
+        // instead of leaving it hidden — otherwise the modal "flashes and disappears".
+        if (tabId) void safeSend(tabId, { kind: 'CAPTURE_TAB_RESULT', dataUrl: '' })
         return
       }
-      const tabId = sender.tab?.id
       if (tabId) void safeSend(tabId, { kind: 'CAPTURE_TAB_RESULT', dataUrl })
     })
     return true
