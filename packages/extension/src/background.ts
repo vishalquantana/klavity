@@ -1,4 +1,4 @@
-import type { BackgroundMessage, ContentMessage, KlavitySettings } from '@klavity/core'
+import type { BackgroundMessage, ContentMessage, KlavitySettings, ReportType } from '@klavity/core'
 import { DEFAULT_SETTINGS } from '@klavity/core'
 import { dispatchSubmit } from '@klavity/core/submit'
 import { submitReport as jiraSubmit } from '@klavity/core/integrations/jira'
@@ -32,6 +32,27 @@ chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({ id: 'klavity-history', title: '📋 View submissions', contexts: ['all'] })
 })
 
+// Open the report modal in a tab. If the content script isn't there yet (the tab
+// was open before the extension loaded/updated — an MV3 gotcha), inject it and retry.
+function openModal(tabId: number, reportType: ReportType) {
+  const msg = { kind: 'OPEN_MODAL', reportType } satisfies ContentMessage
+  chrome.tabs.sendMessage(tabId, msg, () => {
+    if (!chrome.runtime.lastError) return
+    const cs = chrome.runtime.getManifest().content_scripts?.[0]
+    const js = cs?.js ?? []
+    const css = cs?.css ?? []
+    ;(async () => {
+      try {
+        if (css.length) await chrome.scripting.insertCSS({ target: { tabId }, files: css })
+        if (js.length) await chrome.scripting.executeScript({ target: { tabId }, files: js })
+        chrome.tabs.sendMessage(tabId, msg)
+      } catch (e) {
+        console.error('[Klavity] could not inject content script (unsupported page?):', e)
+      }
+    })()
+  })
+}
+
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (!tab?.id) return
 
@@ -42,8 +63,8 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     return
   }
 
-  const reportType = info.menuItemId === 'klavity-bug' ? 'bug' : 'feature'
-  chrome.tabs.sendMessage(tab.id, { kind: 'OPEN_MODAL', reportType } satisfies ContentMessage)
+  const reportType: ReportType = info.menuItemId === 'klavity-bug' ? 'bug' : 'feature'
+  openModal(tab.id, reportType)
 })
 
 chrome.runtime.onMessage.addListener((msg: BackgroundMessage, sender, sendResponse) => {

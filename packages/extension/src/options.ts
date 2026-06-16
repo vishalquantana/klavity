@@ -1,15 +1,19 @@
-import { DEFAULT_SETTINGS, parsePlaneUrl, parseJiraUrl, parseGithubUrl } from '@klavity/core'
+import { DEFAULT_SETTINGS, detectTrackerUrl } from '@klavity/core'
 import type { KlavitySettings, IntegrationType } from '@klavity/core'
 
 const $ = (id: string) => document.getElementById(id) as HTMLInputElement | HTMLSelectElement
 const setVal = (id: string, v: string) => { ($(id) as HTMLInputElement).value = v }
-const flash = (okId: string) => document.getElementById(okId)?.classList.add('show')
 
 function showSection(integration: IntegrationType) {
   ;['jira', 'linear', 'github', 'plane'].forEach(id => {
     const el = document.getElementById(`${id}-section`)!
     el.style.display = id === integration ? '' : 'none'
   })
+}
+
+function setCloud(on: boolean) {
+  ;($('cloudToggle') as HTMLInputElement).checked = on
+  document.getElementById('cloud-fields')!.style.display = on ? '' : 'none'
 }
 
 async function load() {
@@ -30,6 +34,7 @@ async function load() {
   ;($('plane-workspace') as HTMLInputElement).value = s.plane.workspace
   ;($('plane-projectId') as HTMLInputElement).value = s.plane.projectId
   ;($('backendUrl') as HTMLInputElement).value = s.backendUrl
+  setCloud(!!s.backendUrl)
   ;($('autoFileErrors') as HTMLInputElement).checked = s.autoFileErrors
 
   showSection(s.integration)
@@ -39,33 +44,34 @@ $('integration').addEventListener('change', (e) => {
   showSection((e.target as HTMLSelectElement).value as IntegrationType)
 })
 
-// ── paste-a-URL → auto-fill the granular fields ──
-$('plane-url').addEventListener('input', (e) => {
-  const parts = parsePlaneUrl((e.target as HTMLInputElement).value)
-  if (!parts) return
-  setVal('plane-host', parts.host)
-  setVal('plane-workspace', parts.workspace)
-  setVal('plane-projectId', parts.projectId)
-  flash('plane-url-ok')
+$('cloudToggle').addEventListener('change', (e) => {
+  setCloud((e.target as HTMLInputElement).checked)
 })
-$('jira-url').addEventListener('input', (e) => {
-  const parts = parseJiraUrl((e.target as HTMLInputElement).value)
-  if (!parts) return
-  setVal('jira-baseUrl', parts.baseUrl)
-  if (parts.projectKey) setVal('jira-projectKey', parts.projectKey)
-  flash('jira-url-ok')
-})
-$('github-url').addEventListener('input', (e) => {
-  const parts = parseGithubUrl((e.target as HTMLInputElement).value)
-  if (!parts) return
-  setVal('github-repo', parts.repo)
-  flash('github-url-ok')
+
+// ── paste any tracker URL → detect the tracker, switch to it, and fill its fields ──
+$('smart-url').addEventListener('input', (e) => {
+  const d = detectTrackerUrl((e.target as HTMLInputElement).value)
+  const ok = document.getElementById('smart-url-ok')!
+  if (!d) { ok.classList.remove('show'); return }
+
+  ;($('integration') as HTMLSelectElement).value = d.integration
+  showSection(d.integration)
+  if (d.plane) { setVal('plane-host', d.plane.host); setVal('plane-workspace', d.plane.workspace); setVal('plane-projectId', d.plane.projectId) }
+  if (d.jira) { setVal('jira-baseUrl', d.jira.baseUrl); if (d.jira.projectKey) setVal('jira-projectKey', d.jira.projectKey) }
+  if (d.github) { setVal('github-repo', d.github.repo) }
+
+  const label: Record<string, string> = { plane: 'Plane', jira: 'Jira', github: 'GitHub', linear: 'Linear' }
+  ok.textContent = d.integration === 'linear'
+    ? '✓ Detected Linear — add your API key + team ID below'
+    : `✓ Detected ${label[d.integration]} — fields filled, just add your token`
+  ok.classList.add('show')
 })
 
 $('save').addEventListener('click', async () => {
+  const cloudOn = ($('cloudToggle') as HTMLInputElement).checked
   const settings: KlavitySettings = {
     integration: ($('integration') as HTMLSelectElement).value as IntegrationType,
-    backendUrl: ($('backendUrl') as HTMLInputElement).value.trim(),
+    backendUrl: cloudOn ? ($('backendUrl') as HTMLInputElement).value.trim() : '',
     autoFileErrors: ($('autoFileErrors') as HTMLInputElement).checked,
     jira: {
       baseUrl: ($('jira-baseUrl') as HTMLInputElement).value.trim(),

@@ -81,3 +81,58 @@ export function parseGithubUrl(input: string): GithubUrlParts | null {
     return null
   }
 }
+
+export type DetectedIntegration = 'jira' | 'github' | 'plane' | 'linear'
+export interface DetectResult {
+  integration: DetectedIntegration
+  plane?: PlaneUrlParts
+  jira?: JiraUrlParts
+  github?: GithubUrlParts
+}
+
+const isUuid = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s || '')
+
+/**
+ * Detect which tracker a pasted URL belongs to (by host, then by path shape for
+ * self-hosted), and parse its fields. Lets the UI auto-switch the active
+ * integration so you can paste any project URL into one box.
+ */
+export function detectTrackerUrl(input: string): DetectResult | null {
+  let u: URL
+  try { u = new URL(input.trim()) } catch { return null }
+  const host = u.hostname.toLowerCase()
+  const segs = segments(u)
+
+  if (host === 'github.com' || host.endsWith('.github.com')) {
+    const github = parseGithubUrl(input)
+    return github ? { integration: 'github', github } : null
+  }
+  if (host.endsWith('atlassian.net')) {
+    const jira = parseJiraUrl(input)
+    return jira ? { integration: 'jira', jira } : null
+  }
+  if (host === 'linear.app' || host.endsWith('.linear.app')) {
+    return { integration: 'linear' } // teamId isn't in the URL — fields stay manual
+  }
+  if (host.endsWith('plane.so')) {
+    const plane = parsePlaneUrl(input)
+    return plane ? { integration: 'plane', plane } : null
+  }
+
+  // self-hosted: infer from the path shape
+  const p = segs.indexOf('projects')
+  if (p >= 1 && segs[p + 1]) {
+    // Plane uses a UUID project id (and usually a "plane" hostname); Jira uses a short KEY
+    if (isUuid(segs[p + 1]) || host.includes('plane')) {
+      const plane = parsePlaneUrl(input)
+      if (plane) return { integration: 'plane', plane }
+    }
+    const jira = parseJiraUrl(input)
+    if (jira) return { integration: 'jira', jira }
+  }
+  if (segs.includes('browse')) {
+    const jira = parseJiraUrl(input)
+    if (jira) return { integration: 'jira', jira }
+  }
+  return null
+}

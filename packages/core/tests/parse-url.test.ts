@@ -1,6 +1,6 @@
 // packages/core/tests/parse-url.test.ts
 import { describe, it, expect } from 'vitest'
-import { parsePlaneUrl, parseJiraUrl, parseGithubUrl } from '../src/parse-url'
+import { parsePlaneUrl, parseJiraUrl, parseGithubUrl, detectTrackerUrl } from '../src/parse-url'
 
 describe('parsePlaneUrl', () => {
   it('splits a self-hosted Plane project URL (the real one)', () => {
@@ -47,5 +47,28 @@ describe('parseGithubUrl', () => {
   it('returns null when there is no owner/repo', () => {
     expect(parseGithubUrl('https://github.com/acme')).toBeNull()
     expect(parseGithubUrl('nope')).toBeNull()
+  })
+})
+
+describe('detectTrackerUrl', () => {
+  it('detects self-hosted Plane from the real URL (the Jira/Plane mixup fix)', () => {
+    const d = detectTrackerUrl('https://plane.quantana.top/qbuilder/projects/b6f1d657-5bec-466c-aefe-738311001d8f/issues/')
+    expect(d?.integration).toBe('plane')
+    expect(d?.plane).toEqual({ host: 'https://plane.quantana.top', workspace: 'qbuilder', projectId: 'b6f1d657-5bec-466c-aefe-738311001d8f' })
+  })
+  it('detects Plane Cloud, Jira, and GitHub by host', () => {
+    expect(detectTrackerUrl('https://app.plane.so/acme/projects/x/issues/')?.integration).toBe('plane')
+    expect(detectTrackerUrl('https://acme.atlassian.net/browse/PROJ-1')?.integration).toBe('jira')
+    expect(detectTrackerUrl('https://github.com/acme/webapp/issues')?.integration).toBe('github')
+    expect(detectTrackerUrl('https://linear.app/acme/team/ENG')?.integration).toBe('linear')
+  })
+  it('falls back to Jira for a short project key on an unknown host', () => {
+    const d = detectTrackerUrl('https://jira.acme.internal/jira/software/projects/PROJ/boards/1')
+    expect(d?.integration).toBe('jira')
+    expect(d?.jira?.projectKey).toBe('PROJ')
+  })
+  it('returns null for garbage', () => {
+    expect(detectTrackerUrl('not a url')).toBeNull()
+    expect(detectTrackerUrl('https://example.com/about')).toBeNull()
   })
 })

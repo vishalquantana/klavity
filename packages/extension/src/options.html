@@ -12,16 +12,32 @@
     .section h2{font-size:14px;color:#89b4fa;margin:0 0 12px;}
     button#save{margin-top:24px;width:100%;padding:12px;background:#89b4fa;color:#1e1e2e;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;}
     #status{margin-top:12px;text-align:center;color:#a6e3a1;font-size:13px;}
-    .cloud-section{background:#1e2a3a;border:1px solid rgba(137,180,250,.27);border-radius:8px;padding:16px;margin-top:20px;}
+    .cloud-section{background:#1e2a3a;border:1px solid rgba(137,180,250,.27);border-radius:8px;padding:16px;margin-top:24px;}
     small{font-size:11px;color:#a6adc8;}
     .urlpaste{border:1px dashed #89b4fa;background:#1a2230;}
     .urlpaste::placeholder{color:#6c7086;}
-    .parsed{display:none;font-size:11px;color:#a6e3a1;margin-top:4px;}
+    .parsed{display:none;font-size:12px;color:#a6e3a1;margin-top:6px;}
     .parsed.show{display:block;}
+    /* toggle switch */
+    .switchrow{display:flex;align-items:center;gap:14px;}
+    .switchrow .meta{flex:1;}
+    .switchrow .meta strong{font-size:14px;color:#cdd6f4;}
+    .switch{position:relative;display:inline-block;width:42px;height:24px;flex-shrink:0;}
+    .switch input{opacity:0;width:0;height:0;}
+    .slider{position:absolute;inset:0;background:#45475a;border-radius:24px;transition:.2s;cursor:pointer;}
+    .slider::before{content:"";position:absolute;height:18px;width:18px;left:3px;top:3px;background:#cdd6f4;border-radius:50%;transition:.2s;}
+    .switch input:checked + .slider{background:#89b4fa;}
+    .switch input:checked + .slider::before{transform:translateX(18px);}
+    #cloud-fields{margin-top:14px;}
   </style>
 </head>
 <body>
   <h1>⚡ Klavity Snap Settings</h1>
+
+  <label>📋 Paste any tracker URL — auto-detects the tracker &amp; fills everything</label>
+  <input id="smart-url" class="urlpaste" type="url" placeholder="GitHub / Jira / Plane project or issue URL">
+  <span class="parsed" id="smart-url-ok"></span>
+
   <label>Active Integration</label>
   <select id="integration">
     <option value="jira">Jira</option>
@@ -32,9 +48,6 @@
 
   <div class="section" id="jira-section">
     <h2>Jira</h2>
-    <label>📋 Paste any project / board / issue URL — auto-fills below</label>
-    <input id="jira-url" class="urlpaste" type="url" placeholder="https://yourorg.atlassian.net/jira/software/projects/PROJ/…">
-    <span class="parsed" id="jira-url-ok">✓ split into Base URL + Project Key</span>
     <label>Base URL</label><input id="jira-baseUrl" type="url" placeholder="https://yourorg.atlassian.net">
     <label>Email</label><input id="jira-email" type="email">
     <label>API Token</label><input id="jira-token" type="password">
@@ -49,9 +62,6 @@
 
   <div class="section" id="github-section" style="display:none">
     <h2>GitHub Issues</h2>
-    <label>📋 Paste the repo URL — auto-fills below</label>
-    <input id="github-url" class="urlpaste" type="url" placeholder="https://github.com/acme/webapp">
-    <span class="parsed" id="github-url-ok">✓ split into owner/repo</span>
     <label>Personal Access Token</label><input id="github-token" type="password">
     <label>Repository (owner/repo)</label><input id="github-repo" placeholder="acme/webapp">
     <small>Note: screenshots embedded in issue body. GitHub has no direct attachment API.</small>
@@ -59,9 +69,6 @@
 
   <div class="section" id="plane-section" style="display:none">
     <h2>Plane</h2>
-    <label>📋 Paste the project URL — auto-fills host, workspace &amp; project ID</label>
-    <input id="plane-url" class="urlpaste" type="url" placeholder="https://plane.quantana.top/workspace/projects/<id>/issues/">
-    <span class="parsed" id="plane-url-ok">✓ split into Host + Workspace + Project ID</span>
     <label>API Token</label><input id="plane-token" type="password">
     <label>Host <small>(self-hosted Plane, or leave as api.plane.so for cloud)</small></label>
     <input id="plane-host" type="url" placeholder="https://api.plane.so">
@@ -70,10 +77,17 @@
   </div>
 
   <div class="cloud-section">
-    <h2 style="color:#89b4fa;font-size:14px;margin:0 0 8px;">☁️ Cloud Switch</h2>
-    <small>Leave empty for direct mode. Set to your self-hosted Klavity backend or https://app.klav.io</small>
-    <label style="margin-top:12px;">Backend URL</label>
-    <input id="backendUrl" type="url" placeholder="https://app.klav.io  (or leave empty)">
+    <div class="switchrow">
+      <div class="meta">
+        <strong>☁️ Klavity Cloud</strong><br>
+        <small>Off = file directly to the tracker above. On = route reports through a Klavity backend.</small>
+      </div>
+      <label class="switch"><input type="checkbox" id="cloudToggle"><span class="slider"></span></label>
+    </div>
+    <div id="cloud-fields" style="display:none">
+      <label>Backend URL</label>
+      <input id="backendUrl" type="url" placeholder="https://app.klav.io">
+    </div>
   </div>
 
   <label style="margin-top:20px;display:flex;align-items:center;gap:8px;">
