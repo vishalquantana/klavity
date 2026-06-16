@@ -50,7 +50,8 @@
   .panel { background: var(--ink-2); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
   .panel h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--paper-faint); margin-bottom: 10px; }
 
-  textarea { width: 100%; min-height: 150px; background: var(--ink); color: var(--paper); border: 1px solid var(--line-2); border-radius: 8px; padding: 10px; font-size: 12px; line-height: 1.5; resize: vertical; font-family: ui-monospace, monospace; }
+  textarea { width: 100%; min-height: 150px; background: var(--ink); color: var(--paper); border: 1px solid var(--line-2); border-radius: 8px; padding: 10px; font-size: 12px; line-height: 1.5; resize: vertical; font-family: ui-monospace, monospace; transition: border-color .15s, box-shadow .15s; }
+  textarea.drag-over { border-color: var(--indigo); box-shadow: 0 0 0 3px rgba(99,102,241,.25); }
   .row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
   button { font-size: 13px; font-weight: 600; padding: 9px 16px; border-radius: 8px; border: none; cursor: pointer; transition: opacity .15s, transform .1s; }
   button:hover { opacity: .9; } button:active { transform: translateY(1px); } button:disabled { opacity: .4; cursor: not-allowed; }
@@ -375,6 +376,25 @@ $("transcriptFile").onchange = async (e) => {
   }
   e.target.value = "" // allow re-selecting the same file
 }
+
+// ── drag-and-drop transcript onto the textarea ──
+const ta = $("transcript")
+ta.addEventListener("dragenter", (e) => { e.preventDefault(); ta.classList.add("drag-over") })
+ta.addEventListener("dragover",  (e) => { e.preventDefault() })
+ta.addEventListener("dragleave", (e) => { if (!ta.contains(e.relatedTarget)) ta.classList.remove("drag-over") })
+ta.addEventListener("drop", async (e) => {
+  e.preventDefault()
+  ta.classList.remove("drag-over")
+  const file = e.dataTransfer.files[0]
+  if (!file) return
+  try {
+    const text = await file.text()
+    ta.value = text
+    setStatus("extractStatus", `📄 Loaded "${file.name}" (${text.length.toLocaleString()} chars). Click Extract Sims.`)
+  } catch (err) {
+    setStatus("extractStatus", "Couldn't read that file: " + err.message, true)
+  }
+})
 
 $("extractBtn").onclick = async () => {
   const transcript = $("transcript").value.trim()
