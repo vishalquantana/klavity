@@ -46,7 +46,7 @@ async function chat(messages: any[], maxTokens: number) {
   const res = await fetch(ENDPOINT, {
     method: "POST",
     headers: { Authorization: `Bearer ${KEY}`, "content-type": "application/json", "HTTP-Referer": BASE, "X-Title": "Klavity" },
-    body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, messages }),
+    body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, messages, response_format: { type: "json_object" } }),
   })
   if (!res.ok) throw new Error(`OpenRouter ${res.status}: ${(await res.text()).slice(0, 300)}`)
   const data: any = await res.json()
@@ -55,7 +55,20 @@ async function chat(messages: any[], maxTokens: number) {
   return { content, usage: { input_tokens: u.prompt_tokens, output_tokens: u.completion_tokens } }
 }
 function parseJSON(s: string) {
-  try { return JSON.parse(s) } catch { const m = s.match(/\{[\s\S]*\}/); if (m) return JSON.parse(m[0]); throw new Error("Model did not return valid JSON") }
+  // Strip thinking-model traces (<think>…</think>) and markdown code fences
+  // before extraction — greedy regex breaks when thinking traces contain {…}.
+  const tag = "think"
+  const open = new RegExp("<" + tag + "[^>]*>[\\s\\S]*?<\\/" + tag + ">", "gi")
+  const cleaned = s
+    .replace(open, "")
+    .replace(/^```(?:json)?\s*/m, "")
+    .replace(/\s*```\s*$/m, "")
+    .trim()
+  try { return JSON.parse(cleaned) } catch {
+    const m = cleaned.match(/\{[\s\S]*\}/)
+    if (m) return JSON.parse(m[0])
+    throw new Error("Model did not return valid JSON")
+  }
 }
 async function extractPersonas(transcript: string) {
   const { content, usage } = await chat([{ role: "system", content: EXTRACT_SYS }, { role: "user", content: "TRANSCRIPT:\n\n" + transcript }], 4000)
