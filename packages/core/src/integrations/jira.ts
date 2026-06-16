@@ -26,8 +26,8 @@ export async function submitReport(config: IntegrationConfig): Promise<SubmitRes
   const auth = btoa(`${email}:${token}`)
 
   const issuetype = type === 'bug' ? 'Bug' : 'Story'
-  const labels = type === 'bug' ? ['klav', 'klav-bug'] : ['klav', 'klav-feature']
-  const summary = `[Klav] ${description.slice(0, 180)}`
+  const labels = type === 'bug' ? ['klavity', 'klavity-bug'] : ['klavity', 'klavity-feature']
+  const summary = `[Klavity] ${description.slice(0, 180)}`
 
   const res = await fetch(`${baseUrl}/rest/api/3/issue`, {
     method: 'POST',
@@ -59,7 +59,7 @@ export async function submitReport(config: IntegrationConfig): Promise<SubmitRes
   for (const dataUrl of config.screenshots) {
     const blob = await (await fetch(dataUrl)).blob()
     const form = new FormData()
-    form.append('file', blob, `klav-screenshot-${Date.now()}.png`)
+    form.append('file', blob, `klavity-screenshot-${Date.now()}.png`)
     await fetch(`${baseUrl}/rest/api/3/issue/${issueKey}/attachments`, {
       method: 'POST',
       headers: { Authorization: `Basic ${auth}`, 'X-Atlassian-Token': 'no-check' },

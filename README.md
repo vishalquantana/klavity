@@ -1,8 +1,8 @@
-# Klav Snap ⚡
+# Klavity Snap ⚡
 
 > Right-click to file annotated bug reports to Jira, Linear, GitHub Issues, or Plane — from any website.
 
-Named after Ekalavya: the self-taught master. Klav Snap is the "eyes" of the Klav suite — the foundation that Klav Agent (AI personas) and Klav OS (autonomous testing) will build on.
+Named after Ekalavya: the self-taught master. Klavity Snap is the "eyes" of the Klavity suite — the foundation that Klavity Sims (AI personas) and Klavity OS (autonomous testing) will build on.
 
 ---
 
@@ -26,7 +26,7 @@ To try it yourself:
 - **Upload + paste** — drag files, paste from clipboard, HEIC/HEIF auto-converted
 - **Context capture** — page URL, browser, screen size, last 50 console errors, last 50 network failures
 - **4 integrations** — Jira, Linear, GitHub Issues, Plane
-- **Cloud switch** — set a backend URL to route all submissions through Klav Cloud or your self-hosted instance
+- **Cloud switch** — set a backend URL to route all submissions through Klavity Cloud or your self-hosted instance
 
 ---
 
@@ -39,17 +39,17 @@ To try it yourself:
 **Developer / self-hosted:**
 1. `pnpm install && pnpm -r build`
 2. Open `chrome://extensions` → Enable Developer mode → Load unpacked → select `packages/extension/dist`
-3. Click the ⚡ Klav icon in your toolbar → Settings → configure your integration
+3. Click the ⚡ Klavity icon in your toolbar → Settings → configure your integration
 
-### Embeddable SDK (`@klav/snap`)
+### Embeddable SDK (`@klavity/snap`)
 
-For SaaS products that want Klav Snap built into their own app:
+For SaaS products that want Klavity Snap built into their own app:
 
 **Script tag:**
 ```html
-<script src="https://cdn.klav.io/snap/klav-snap.umd.js"></script>
+<script src="https://cdn.klav.io/snap/klavity-snap.umd.js"></script>
 <script>
-  KlavSnap.init({
+  KlavitySnap.init({
     integration: 'jira',
     jira: {
       baseUrl: 'https://yourorg.atlassian.net',
@@ -63,11 +63,11 @@ For SaaS products that want Klav Snap built into their own app:
 
 **npm:**
 ```bash
-npm install @klav/snap
+npm install @klavity/snap
 ```
 ```js
-import KlavSnap from '@klav/snap'
-KlavSnap.init({
+import KlavitySnap from '@klavity/snap'
+KlavitySnap.init({
   integration: 'linear',
   linear: { apiKey: 'lin_api_...', teamId: 'team_...' }
 })
@@ -77,7 +77,7 @@ KlavSnap.init({
 
 ## Configuration
 
-Open the extension settings (click the ⚡ icon → Settings) or pass config to `KlavSnap.init()`.
+Open the extension settings (click the ⚡ icon → Settings) or pass config to `KlavitySnap.init()`.
 
 | Setting | Description |
 |---|---|
@@ -90,7 +90,7 @@ Open the extension settings (click the ⚡ icon → Settings) or pass config to 
 | GitHub: PAT | Personal access token with `repo` scope |
 | GitHub: Repository | `owner/repo` format |
 | Plane: API Token | From Plane account settings |
-| Backend URL | Leave empty for direct mode. Set to self-hosted URL or `https://app.klav.io` for Klav Cloud. |
+| Backend URL | Leave empty for direct mode. Set to self-hosted URL or `https://app.klav.io` for Klavity Cloud. |
 | Auto-file JS errors | Auto-file silent tickets for unhandled JS errors (opt-in) |
 
 ---
@@ -99,12 +99,12 @@ Open the extension settings (click the ⚡ icon → Settings) or pass config to 
 
 ```
 klav-snap/
-├── packages/core/       # @klav/core — shared types, integrations, annotator, crop, modal
+├── packages/core/       # @klavity/core — shared types, integrations, annotator, crop, modal
 ├── packages/extension/  # Chrome MV3 extension — background, content script, options, popup
-└── packages/sdk/        # @klav/snap — embeddable script-tag / npm SDK
+└── packages/sdk/        # @klavity/snap — embeddable script-tag / npm SDK
 ```
 
-The **cloud switch** is a single `backendUrl` setting. Empty = direct mode (extension calls Jira/Linear/etc APIs directly). Non-empty = all submissions route through the Klav backend, which also powers Klav Agent and Klav OS.
+The **cloud switch** is a single `backendUrl` setting. Empty = direct mode (extension calls Jira/Linear/etc APIs directly). Non-empty = all submissions route through the Klavity backend, which also powers Klavity Sims and Klavity OS.
 
 ---
 
@@ -112,9 +112,9 @@ The **cloud switch** is a single `backendUrl` setting. Empty = direct mode (exte
 
 | Tier | Product | Status |
 |---|---|---|
-| 1 | **Klav Snap** — right-click bug reporter | ✅ This repo |
-| 2 | **Klav Agent** — AI persona panel (virtual QA engineers) | 🔜 |
-| 3 | **Klav OS** — autonomous UAT agent | 🔜 |
+| 1 | **Klavity Snap** — right-click bug reporter | ✅ This repo |
+| 2 | **Klavity Sims** — AI persona panel (virtual QA engineers) | 🔜 |
+| 3 | **Klavity OS** — autonomous UAT agent | 🔜 |
 
 ---
 

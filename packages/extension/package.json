@@ -1,5 +1,5 @@
 {
-  "name": "@klav/extension",
+  "name": "@klavity/extension",
   "version": "0.1.0",
   "private": true,
   "author": "Quantana <hello@quantana.com.au> (https://quantana.com.au)",
@@ -11,7 +11,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@klav/core": "workspace:*",
+    "@klavity/core": "workspace:*",
     "heic2any": "^0.0.4"
   },
   "devDependencies": {

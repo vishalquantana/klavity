@@ -29,7 +29,7 @@ export async function submitReport(config: IntegrationConfig): Promise<SubmitRes
       variables: {
         input: {
           teamId,
-          title: `[Klav] ${description.slice(0, 180)}`,
+          title: `[Klavity] ${description.slice(0, 180)}`,
           description: body,
           labelNames: type === 'bug' ? ['Bug'] : [],
         },

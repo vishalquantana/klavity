@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Klav Snap",
+  "name": "Klavity Snap",
   "version": "0.1.0",
   "description": "Right-click to file annotated bug reports to Jira, Linear, GitHub, or Plane.",
   "permissions": ["activeTab", "contextMenus", "storage", "scripting", "tabs"],

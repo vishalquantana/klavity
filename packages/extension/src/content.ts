@@ -1,6 +1,6 @@
-import type { ContentMessage, BackgroundMessage, ReportType, SubmitReportPayload, ConsoleError, NetworkFailure } from '@klav/core'
-import { Annotator } from '@klav/core/annotator'
-import { cropDataUrl } from '@klav/core/crop'
+import type { ContentMessage, BackgroundMessage, ReportType, SubmitReportPayload, ConsoleError, NetworkFailure } from '@klavity/core'
+import { Annotator } from '@klavity/core/annotator'
+import { cropDataUrl } from '@klavity/core/crop'
 
 // ── Error + network capture ring buffer ──────────────────────────────────────
 const consoleErrors: ConsoleError[] = []
@@ -71,7 +71,7 @@ let pendingRegionCapture = false
 function getHost(): ShadowRoot {
   if (!shadowRoot) {
     const host = document.createElement('div')
-    host.id = 'klav-host'
+    host.id = 'klavity-host'
     document.body.appendChild(host)
     shadowRoot = host.attachShadow({ mode: 'open' })
   }
@@ -98,52 +98,52 @@ function openModal(type: ReportType) {
 
   const style = document.createElement('style')
   style.textContent = `
-    .klav-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;pointer-events:all;}
-    .klav-modal{background:#1e1e2e;color:#cdd6f4;border-radius:12px;padding:24px;width:100%;max-width:480px;box-shadow:0 20px 60px rgba(0,0,0,.5);font-family:system-ui,sans-serif;}
-    .klav-toggle{display:flex;gap:8px;margin-bottom:16px;}
-    .klav-toggle button{flex:1;padding:8px;border-radius:6px;border:none;cursor:pointer;font-size:14px;font-weight:600;}
-    .klav-toggle .bug.active{background:#f38ba8;color:#1e1e2e;}
-    .klav-toggle .feat.active{background:#fab387;color:#1e1e2e;}
-    .klav-toggle button:not(.active){background:#313244;color:#cdd6f4;}
-    .klav-page{font-size:12px;color:#a6adc8;margin-bottom:12px;}
-    .klav-strip{display:flex;gap:8px;overflow-x:auto;margin-bottom:12px;min-height:64px;}
-    .klav-thumb{position:relative;flex-shrink:0;}
-    .klav-thumb img{height:60px;border-radius:4px;border:1px solid #45475a;}
-    .klav-thumb .klav-rm{position:absolute;top:-4px;right:-4px;background:#f38ba8;color:#1e1e2e;border:none;border-radius:50%;width:16px;height:16px;font-size:10px;cursor:pointer;}
-    .klav-thumb .klav-markup{position:absolute;bottom:-4px;right:-4px;background:#89b4fa;color:#1e1e2e;border:none;border-radius:50%;width:16px;height:16px;font-size:10px;cursor:pointer;}
-    .klav-actions{display:flex;gap:8px;margin-bottom:12px;}
-    .klav-actions button{flex:1;padding:8px;background:#313244;color:#cdd6f4;border:none;border-radius:6px;cursor:pointer;font-size:12px;}
-    .klav-counter{font-size:11px;color:#a6adc8;margin-bottom:8px;}
-    textarea.klav-desc{width:100%;min-height:100px;resize:vertical;background:#181825;color:#cdd6f4;border:1px solid #45475a;border-radius:6px;padding:10px;font-size:14px;margin-bottom:16px;box-sizing:border-box;}
-    .klav-submit{width:100%;padding:12px;background:#89b4fa;color:#1e1e2e;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;}
-    .klav-submit:disabled{opacity:.5;cursor:not-allowed;}
-    .klav-error{color:#f38ba8;font-size:13px;margin-bottom:8px;display:none;}
+    .klavity-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;pointer-events:all;}
+    .klavity-modal{background:#1e1e2e;color:#cdd6f4;border-radius:12px;padding:24px;width:100%;max-width:480px;box-shadow:0 20px 60px rgba(0,0,0,.5);font-family:system-ui,sans-serif;}
+    .klavity-toggle{display:flex;gap:8px;margin-bottom:16px;}
+    .klavity-toggle button{flex:1;padding:8px;border-radius:6px;border:none;cursor:pointer;font-size:14px;font-weight:600;}
+    .klavity-toggle .bug.active{background:#f38ba8;color:#1e1e2e;}
+    .klavity-toggle .feat.active{background:#fab387;color:#1e1e2e;}
+    .klavity-toggle button:not(.active){background:#313244;color:#cdd6f4;}
+    .klavity-page{font-size:12px;color:#a6adc8;margin-bottom:12px;}
+    .klavity-strip{display:flex;gap:8px;overflow-x:auto;margin-bottom:12px;min-height:64px;}
+    .klavity-thumb{position:relative;flex-shrink:0;}
+    .klavity-thumb img{height:60px;border-radius:4px;border:1px solid #45475a;}
+    .klavity-thumb .klavity-rm{position:absolute;top:-4px;right:-4px;background:#f38ba8;color:#1e1e2e;border:none;border-radius:50%;width:16px;height:16px;font-size:10px;cursor:pointer;}
+    .klavity-thumb .klavity-markup{position:absolute;bottom:-4px;right:-4px;background:#89b4fa;color:#1e1e2e;border:none;border-radius:50%;width:16px;height:16px;font-size:10px;cursor:pointer;}
+    .klavity-actions{display:flex;gap:8px;margin-bottom:12px;}
+    .klavity-actions button{flex:1;padding:8px;background:#313244;color:#cdd6f4;border:none;border-radius:6px;cursor:pointer;font-size:12px;}
+    .klavity-counter{font-size:11px;color:#a6adc8;margin-bottom:8px;}
+    textarea.klavity-desc{width:100%;min-height:100px;resize:vertical;background:#181825;color:#cdd6f4;border:1px solid #45475a;border-radius:6px;padding:10px;font-size:14px;margin-bottom:16px;box-sizing:border-box;}
+    .klavity-submit{width:100%;padding:12px;background:#89b4fa;color:#1e1e2e;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;}
+    .klavity-submit:disabled{opacity:.5;cursor:not-allowed;}
+    .klavity-error{color:#f38ba8;font-size:13px;margin-bottom:8px;display:none;}
   `
   root.appendChild(style)
 
   const overlay = document.createElement('div')
-  overlay.className = 'klav-overlay'
+  overlay.className = 'klavity-overlay'
   overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal() })
 
   const modal = document.createElement('div')
-  modal.className = 'klav-modal'
+  modal.className = 'klavity-modal'
   modal.innerHTML = `
-    <div class="klav-toggle">
+    <div class="klavity-toggle">
       <button class="bug ${type === 'bug' ? 'active' : ''}">🐛 Bug</button>
       <button class="feat ${type === 'feature' ? 'active' : ''}">💡 Feature</button>
     </div>
-    <div class="klav-page">📍 ${window.location.pathname}</div>
-    <div class="klav-strip" id="klav-strip"></div>
-    <div class="klav-actions">
-      <button id="klav-full">📷 Full Page</button>
-      <button id="klav-region">✂️ Region</button>
-      <button id="klav-upload">🖼 Upload</button>
+    <div class="klavity-page">📍 ${window.location.pathname}</div>
+    <div class="klavity-strip" id="klavity-strip"></div>
+    <div class="klavity-actions">
+      <button id="klavity-full">📷 Full Page</button>
+      <button id="klavity-region">✂️ Region</button>
+      <button id="klavity-upload">🖼 Upload</button>
     </div>
-    <input type="file" id="klav-file" accept="image/*,.heic,.heif" multiple style="display:none">
-    <div class="klav-counter" id="klav-counter">0/5 images · paste with ⌘+V</div>
-    <div class="klav-error" id="klav-err"></div>
-    <textarea class="klav-desc" id="klav-desc" placeholder="Describe the bug..."></textarea>
-    <button class="klav-submit" id="klav-submit" disabled>Submit</button>
+    <input type="file" id="klavity-file" accept="image/*,.heic,.heif" multiple style="display:none">
+    <div class="klavity-counter" id="klavity-counter">0/5 images · paste with ⌘+V</div>
+    <div class="klavity-error" id="klavity-err"></div>
+    <textarea class="klavity-desc" id="klavity-desc" placeholder="Describe the bug..."></textarea>
+    <button class="klavity-submit" id="klavity-submit" disabled>Submit</button>
   `
 
   overlay.appendChild(modal)
@@ -154,15 +154,15 @@ function openModal(type: ReportType) {
   bugBtn.addEventListener('click', () => { currentReportType = 'bug'; bugBtn.classList.add('active'); featBtn.classList.remove('active') })
   featBtn.addEventListener('click', () => { currentReportType = 'feature'; featBtn.classList.add('active'); bugBtn.classList.remove('active') })
 
-  const desc = modal.querySelector('#klav-desc') as HTMLTextAreaElement
-  const submit = modal.querySelector('#klav-submit') as HTMLButtonElement
+  const desc = modal.querySelector('#klavity-desc') as HTMLTextAreaElement
+  const submit = modal.querySelector('#klavity-submit') as HTMLButtonElement
   desc.addEventListener('input', () => { submit.disabled = desc.value.trim() === '' })
 
   submit.addEventListener('click', () => handleSubmit(desc.value.trim()))
-  modal.querySelector('#klav-full')!.addEventListener('click', () => captureFullPage())
-  modal.querySelector('#klav-region')!.addEventListener('click', () => startRegion())
-  modal.querySelector('#klav-upload')!.addEventListener('click', () => (modal.querySelector('#klav-file') as HTMLInputElement).click())
-  modal.querySelector('#klav-file')!.addEventListener('change', (e) => handleFileSelect(e as Event))
+  modal.querySelector('#klavity-full')!.addEventListener('click', () => captureFullPage())
+  modal.querySelector('#klavity-region')!.addEventListener('click', () => startRegion())
+  modal.querySelector('#klavity-upload')!.addEventListener('click', () => (modal.querySelector('#klavity-file') as HTMLInputElement).click())
+  modal.querySelector('#klavity-file')!.addEventListener('change', (e) => handleFileSelect(e as Event))
 
   document.addEventListener('paste', handlePaste)
   document.addEventListener('keydown', handleEscape, { capture: true })
@@ -183,20 +183,20 @@ function handleEscape(e: KeyboardEvent) {
 
 function updateStrip() {
   const root = shadowRoot!
-  const strip = root.getElementById('klav-strip')!
-  const counter = root.getElementById('klav-counter')!
+  const strip = root.getElementById('klavity-strip')!
+  const counter = root.getElementById('klavity-counter')!
   strip.innerHTML = ''
   screenshots.forEach((dataUrl, i) => {
     const wrap = document.createElement('div')
-    wrap.className = 'klav-thumb'
+    wrap.className = 'klavity-thumb'
     const img = document.createElement('img')
     img.src = dataUrl
     const rm = document.createElement('button')
-    rm.className = 'klav-rm'
+    rm.className = 'klavity-rm'
     rm.textContent = '×'
     rm.addEventListener('click', () => { screenshots.splice(i, 1); updateStrip() })
     const markup = document.createElement('button')
-    markup.className = 'klav-markup'
+    markup.className = 'klavity-markup'
     markup.textContent = '✏'
     markup.addEventListener('click', () => openAnnotator(i))
     wrap.append(img, rm, markup)
@@ -327,7 +327,7 @@ function startRegion() {
       document.removeEventListener('keydown', escHandler, { capture: true })
     }
     pendingRegionCapture = true
-    document.addEventListener('klav-capture-result', onCapture, { once: true })
+    document.addEventListener('klavity-capture-result', onCapture, { once: true })
     chrome.runtime.sendMessage({ kind: 'CAPTURE_TAB' } satisfies BackgroundMessage)
   })
 }
@@ -358,10 +358,10 @@ function openAnnotator(index: number) {
       <button data-color="#f97316" style="background:#f97316;width:24px;height:24px;border:none;border-radius:50%;cursor:pointer;"></button>
       <button data-color="#3b82f6" style="background:#3b82f6;width:24px;height:24px;border:none;border-radius:50%;cursor:pointer;"></button>
       <button data-color="#111827" style="background:#111827;width:24px;height:24px;border:none;border-radius:50%;cursor:pointer;border:1px solid #555;"></button>
-      <button id="klav-undo" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;margin-left:auto;">↩ Undo</button>
-      <button id="klav-clear" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">🗑 Clear</button>
-      <button id="klav-save" style="padding:6px 10px;background:#89b4fa;color:#1e1e2e;border:none;border-radius:4px;cursor:pointer;font-weight:700;">✓ Save</button>
-      <button id="klav-ann-cancel" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">✕</button>
+      <button id="klavity-undo" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;margin-left:auto;">↩ Undo</button>
+      <button id="klavity-clear" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">🗑 Clear</button>
+      <button id="klavity-save" style="padding:6px 10px;background:#89b4fa;color:#1e1e2e;border:none;border-radius:4px;cursor:pointer;font-weight:700;">✓ Save</button>
+      <button id="klavity-ann-cancel" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">✕</button>
     `
 
     canvas.style.cssText = 'flex:1;max-width:100%;max-height:100%;object-fit:contain;cursor:crosshair;display:block;margin:auto;'
@@ -380,14 +380,14 @@ function openAnnotator(index: number) {
     toolbar.querySelectorAll('[data-color]').forEach(btn => {
       btn.addEventListener('click', () => { activeColor = (btn as HTMLElement).dataset.color! })
     })
-    toolbar.querySelector('#klav-undo')!.addEventListener('click', () => annotator.undo())
-    toolbar.querySelector('#klav-clear')!.addEventListener('click', () => annotator.clearAll())
-    toolbar.querySelector('#klav-save')!.addEventListener('click', async () => {
+    toolbar.querySelector('#klavity-undo')!.addEventListener('click', () => annotator.undo())
+    toolbar.querySelector('#klavity-clear')!.addEventListener('click', () => annotator.clearAll())
+    toolbar.querySelector('#klavity-save')!.addEventListener('click', async () => {
       screenshots[index] = await annotator.save()
       editor.remove()
       updateStrip()
     })
-    toolbar.querySelector('#klav-ann-cancel')!.addEventListener('click', () => editor.remove())
+    toolbar.querySelector('#klavity-ann-cancel')!.addEventListener('click', () => editor.remove())
 
     function toImgCoords(e: PointerEvent): { x: number; y: number } {
       const rect = canvas.getBoundingClientRect()
@@ -443,8 +443,8 @@ function openAnnotator(index: number) {
 
 async function handleSubmit(description: string) {
   const root = shadowRoot!
-  const submit = root.getElementById('klav-submit') as HTMLButtonElement
-  const errEl = root.getElementById('klav-err') as HTMLElement
+  const submit = root.getElementById('klavity-submit') as HTMLButtonElement
+  const errEl = root.getElementById('klavity-err') as HTMLElement
   submit.disabled = true
   submit.textContent = 'Filing...'
   errEl.style.display = 'none'
@@ -463,9 +463,9 @@ async function handleSubmit(description: string) {
 chrome.runtime.onMessage.addListener((msg: ContentMessage) => {
   if (msg.kind === 'CAPTURE_TAB_RESULT') {
     // Fire custom event for region capture listener
-    document.dispatchEvent(new CustomEvent('klav-capture-result', { detail: msg.dataUrl }))
+    document.dispatchEvent(new CustomEvent('klavity-capture-result', { detail: msg.dataUrl }))
     // Only add to strip directly if NOT a region capture (region capture handles its own crop+add)
-    if (!pendingRegionCapture && shadowRoot?.querySelector('.klav-overlay')) {
+    if (!pendingRegionCapture && shadowRoot?.querySelector('.klavity-overlay')) {
       addScreenshot(msg.dataUrl)
     }
     return
@@ -475,8 +475,8 @@ chrome.runtime.onMessage.addListener((msg: ContentMessage) => {
     const root = shadowRoot
     if (root) {
       root.innerHTML = `
-        <style>.klav-success{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:all;}</style>
-        <div class="klav-success">
+        <style>.klavity-success{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:all;}</style>
+        <div class="klavity-success">
           <div style="background:#1e1e2e;color:#a6e3a1;border-radius:12px;padding:32px;font-family:system-ui;font-size:16px;text-align:center;">
             ✓ Filed as <strong>${msg.issueKey}</strong>
           </div>
@@ -488,11 +488,11 @@ chrome.runtime.onMessage.addListener((msg: ContentMessage) => {
   }
 
   if (msg.kind === 'SUBMIT_ERROR') {
-    const errEl = shadowRoot?.getElementById('klav-err')
+    const errEl = shadowRoot?.getElementById('klavity-err')
     if (errEl) {
       errEl.textContent = msg.message
       errEl.style.display = 'block'
-      const submit = shadowRoot?.getElementById('klav-submit') as HTMLButtonElement | null
+      const submit = shadowRoot?.getElementById('klavity-submit') as HTMLButtonElement | null
       if (submit) { submit.disabled = false; submit.textContent = 'Submit' }
     }
     return

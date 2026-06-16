@@ -1,5 +1,5 @@
-import { DEFAULT_SETTINGS } from '@klav/core'
-import type { KlavSettings, IntegrationType } from '@klav/core'
+import { DEFAULT_SETTINGS } from '@klavity/core'
+import type { KlavitySettings, IntegrationType } from '@klavity/core'
 
 const $ = (id: string) => document.getElementById(id) as HTMLInputElement | HTMLSelectElement
 
@@ -12,7 +12,7 @@ function showSection(integration: IntegrationType) {
 
 async function load() {
   const result = await chrome.storage.sync.get('klavSettings')
-  const s: KlavSettings = { ...DEFAULT_SETTINGS, ...(result.klavSettings ?? {}) }
+  const s: KlavitySettings = { ...DEFAULT_SETTINGS, ...(result.klavSettings ?? {}) }
 
   ;($('integration') as HTMLSelectElement).value = s.integration
   ;($('jira-baseUrl') as HTMLInputElement).value = s.jira.baseUrl
@@ -37,7 +37,7 @@ $('integration').addEventListener('change', (e) => {
 })
 
 $('save').addEventListener('click', async () => {
-  const settings: KlavSettings = {
+  const settings: KlavitySettings = {
     integration: ($('integration') as HTMLSelectElement).value as IntegrationType,
     backendUrl: ($('backendUrl') as HTMLInputElement).value.trim(),
     autoFileErrors: ($('autoFileErrors') as HTMLInputElement).checked,

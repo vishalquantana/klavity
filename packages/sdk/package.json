@@ -1,15 +1,15 @@
 {
-  "name": "@klav/snap",
+  "name": "@klavity/snap",
   "version": "0.1.0",
   "author": "Quantana <hello@quantana.com.au> (https://quantana.com.au)",
   "license": "FSL-1.1-ALv2",
   "type": "module",
-  "main": "dist/klav-snap.umd.js",
-  "module": "dist/klav-snap.es.js",
+  "main": "dist/klavity-snap.umd.js",
+  "module": "dist/klavity-snap.es.js",
   "exports": {
     ".": {
-      "import": "./dist/klav-snap.es.js",
-      "require": "./dist/klav-snap.umd.js"
+      "import": "./dist/klavity-snap.es.js",
+      "require": "./dist/klavity-snap.umd.js"
     }
   },
   "scripts": {
@@ -17,7 +17,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@klav/core": "workspace:*",
+    "@klavity/core": "workspace:*",
     "heic2any": "^0.0.4",
     "html-to-image": "^1.11.13"
   },

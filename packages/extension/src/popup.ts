@@ -1,5 +1,5 @@
-import { DEFAULT_SETTINGS } from '@klav/core'
-import type { KlavSettings } from '@klav/core'
+import { DEFAULT_SETTINGS } from '@klavity/core'
+import type { KlavitySettings } from '@klavity/core'
 
 document.getElementById('open-options')!.addEventListener('click', () => {
   chrome.runtime.openOptionsPage()
@@ -7,7 +7,7 @@ document.getElementById('open-options')!.addEventListener('click', () => {
 
 async function init() {
   const result = await chrome.storage.sync.get('klavSettings')
-  const s: KlavSettings = { ...DEFAULT_SETTINGS, ...(result.klavSettings ?? {}) }
+  const s: KlavitySettings = { ...DEFAULT_SETTINGS, ...(result.klavSettings ?? {}) }
 
   const line = document.getElementById('status-line')!
   const link = document.getElementById('tracker-link') as HTMLAnchorElement

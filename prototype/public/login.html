@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Sign in · Klav</title>
+<title>Sign in · Klavity</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" /><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..800;1,9..144,400..600&family=Hanken+Grotesk:wght@300..800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
 <style>
@@ -34,7 +34,7 @@ input.code{font-family:var(--mono);font-size:24px;letter-spacing:.32em;text-alig
 /* ── Sim greeter ── */
 .login-sim{position:fixed;bottom:84px;left:46px;z-index:3;display:flex;flex-direction:column;align-items:center;animation:simbob 3s ease-in-out infinite}
 @keyframes simbob{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
-.login-sim .ls-bubble{position:absolute;bottom:64px;left:50%;transform:translateX(-50%);width:206px;background:var(--ink-2);border:1px solid var(--line);border-radius:13px;padding:10px 13px;font-family:var(--display);font-style:italic;font-size:13.5px;line-height:1.45;color:var(--paper);box-shadow:0 14px 36px rgba(0,0,0,.55);transition:opacity .4s}
+.login-sim .ls-bubble{position:absolute;bottom:64px;left:50%;transform:translateX(-28px);width:206px;background:var(--ink-2);border:1px solid var(--line);border-radius:13px;padding:10px 13px;font-family:var(--display);font-style:italic;font-size:13.5px;line-height:1.45;color:var(--paper);box-shadow:0 14px 36px rgba(0,0,0,.55);transition:opacity .4s}
 .login-sim .ls-bubble::after{content:"";position:absolute;bottom:-7px;left:28px;border:6px solid transparent;border-top-color:var(--ink-2);border-bottom:none}
 .login-sim .ls-tag{font-family:var(--mono);font-style:normal;font-size:9px;letter-spacing:.07em;color:var(--indigo);margin-bottom:5px}
 .ls-head{width:46px;height:46px;border-radius:50%;display:grid;place-items:center;font-family:var(--mono);font-weight:700;font-size:13px;color:#fff;background:linear-gradient(135deg,#6366f1,#8b5cf6);box-shadow:0 6px 18px rgba(0,0,0,.4);position:relative;z-index:2;transition:background .4s}
@@ -54,14 +54,14 @@ input.code{font-family:var(--mono);font-size:24px;letter-spacing:.32em;text-alig
 .q-item{display:flex;align-items:baseline;gap:11px;white-space:nowrap;font-family:var(--display);font-style:italic;font-size:16px;color:var(--paper-dim)}
 .q-item .q-who{font-family:var(--mono);font-style:normal;font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--paper-faint)}
 @keyframes qscroll{to{transform:translateX(-50%)}}
-@media(max-width:760px){.login-sim{display:none}}
+@media(max-width:920px){.login-sim{display:none}}
 @media (prefers-reduced-motion: reduce){.login-sim,.q-track,.ls-arm,.ls-eye::after{animation:none}}
 </style>
 </head>
 <body>
 <div class="card">
-  <a class="back" href="/">← Klav home</a>
-  <div class="brand"><span class="spark">⚡</span>Klav</div>
+  <a class="back" href="/">← Klavity home</a>
+  <div class="brand"><span class="spark">⚡</span>Klavity</div>
 
   <div id="step-email">
     <h1>Sign in</h1>

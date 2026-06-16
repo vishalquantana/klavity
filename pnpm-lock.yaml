@@ -26,7 +26,7 @@ importers:
 
   packages/extension:
     dependencies:
-      '@klav/core':
+      '@klavity/core':
         specifier: workspace:*
         version: link:../core
       heic2any:
@@ -51,7 +51,7 @@ importers:
 
   packages/sdk:
     dependencies:
-      '@klav/core':
+      '@klavity/core':
         specifier: workspace:*
         version: link:../core
       heic2any:

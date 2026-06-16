@@ -1,5 +1,5 @@
 {
-  "name": "@klav/core",
+  "name": "@klavity/core",
   "version": "0.1.0",
   "private": true,
   "author": "Quantana <hello@quantana.com.au> (https://quantana.com.au)",
@@ -9,6 +9,7 @@
   "types": "src/index.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./sim": "./src/sim.ts",
     "./submit": "./src/submit.ts",
     "./annotator": "./src/annotator.ts",
     "./crop": "./src/crop.ts",

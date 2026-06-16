@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Klavity Sims — Onboarding mockup (Option B)</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: #0a0a0f; color: #cdd6f4; padding: 20px; }
+  .wrap { max-width: 1320px; margin: 0 auto; }
+
+  /* ---- header ---- */
+  .head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .logo { width: 34px; height: 34px; border-radius: 9px; background: linear-gradient(135deg,#6366f1,#8b5cf6); display:flex;align-items:center;justify-content:center;font-size:18px; }
+  h1 { font-size: 19px; font-weight: 800; }
+  .sub { font-size: 12px; color: #6c7086; }
+  .dash { margin-left:auto; font-size:13px; color:#89b4fa; text-decoration:none; }
+
+  /* ---- mockup state toggle (not part of product) ---- */
+  .demobar { display:flex; align-items:center; gap:10px; font-size:11px; color:#6c7086; background:#0d0d15; border:1px dashed #313244; border-radius:10px; padding:8px 12px; margin-bottom:14px; }
+  .demobar b{color:#cdd6f4}
+  .seg { display:inline-flex; border:1px solid #313244; border-radius:8px; overflow:hidden; }
+  .seg button { background:#11111a; color:#9399b2; border:none; padding:6px 12px; font-size:11px; font-weight:600; cursor:pointer; }
+  .seg button.on { background:#6366f1; color:#fff; }
+
+  /* ---- the ONE progress rail (single number line) ---- */
+  .rail { display:flex; align-items:stretch; gap:0; background:#11111a; border:1px solid #1e1e2e; border-radius:14px; padding:6px; margin-bottom:16px; }
+  .rstep { flex:1; display:flex; align-items:center; gap:11px; padding:11px 14px; border-radius:10px; position:relative; }
+  .rstep .n { width:26px; height:26px; border-radius:50%; background:#1e1e2e; color:#9399b2; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:800; flex-shrink:0; }
+  .rstep .rt { font-size:13px; font-weight:700; color:#9399b2; }
+  .rstep .rd { font-size:10.5px; color:#6c7086; margin-top:1px; }
+  .rstep.active { background:rgba(99,102,241,.12); box-shadow: inset 0 0 0 1px #6366f1; }
+  .rstep.active .n { background:#6366f1; color:#fff; }
+  .rstep.active .rt { color:#cdd6f4; }
+  .rstep.done .n { background:#a6e3a1; color:#0d0d15; }
+  .rstep.done .rt { color:#a6e3a1; }
+  .rstep.locked { opacity:.45; }
+  .rarrow { display:flex; align-items:center; color:#45475a; font-size:16px; padding:0 2px; }
+
+  /* ---- 3 flow-ordered lanes ---- */
+  .lanes { display:grid; grid-template-columns: 340px 1fr 320px; gap:16px; align-items:start; }
+  .lane { background:#11111a; border:1px solid #1e1e2e; border-radius:14px; padding:16px; position:relative; transition: opacity .2s; }
+  .lane.active { box-shadow: 0 0 0 1px #6366f1, 0 0 28px rgba(99,102,241,.10); border-color:#6366f1; }
+  .lane.locked { opacity:.5; }
+  .lane.locked .lockmsg { display:flex; }
+  .lockmsg { display:none; position:absolute; inset:0; align-items:center; justify-content:center; flex-direction:column; gap:6px; background:rgba(10,10,15,.55); border-radius:14px; font-size:12px; color:#9399b2; z-index:5; backdrop-filter:saturate(.6) brightness(.9); }
+  .lockmsg .lk { font-size:22px; }
+
+  .lhead { display:flex; align-items:center; gap:9px; margin-bottom:13px; }
+  .lhead .ln { width:22px; height:22px; border-radius:50%; background:#1e1e2e; color:#9399b2; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; }
+  .lane.active .lhead .ln { background:#6366f1; color:#fff; }
+  .lane.done  .lhead .ln { background:#a6e3a1; color:#0d0d15; }
+  .lhead h2 { font-size:13px; font-weight:800; color:#cdd6f4; }
+  .lhead .pill { margin-left:auto; font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; padding:3px 8px; border-radius:6px; }
+  .pill.now { background:rgba(99,102,241,.18); color:#a5b4fc; }
+  .pill.ok  { background:rgba(166,227,161,.15); color:#a6e3a1; }
+
+  .lsub { font-size:11px; color:#6c7086; margin-bottom:12px; line-height:1.5; }
+
+  button { font-size:13px; font-weight:600; padding:9px 16px; border-radius:8px; border:none; cursor:pointer; transition:opacity .15s, transform .1s; }
+  button:hover{opacity:.9} button:active{transform:translateY(1px)}
+  .primary{background:#6366f1;color:#fff}
+  .ghost{background:#1e1e2e;color:#cdd6f4;border:1px solid #313244}
+
+  /* step 1 — easy path first */
+  .label { font-size:10px; text-transform:uppercase; letter-spacing:.07em; color:#6c7086; margin:2px 0 8px; font-weight:700; }
+  .primtx { width:100%; min-height:120px; background:#0a0a0f; color:#cdd6f4; border:1px solid #313244; border-radius:8px; padding:10px; font-size:11px; line-height:1.5; font-family:ui-monospace,monospace; resize:vertical; }
+  .orsep { text-align:center; font-size:10.5px; color:#585b70; margin:16px 0 12px; }
+  .presets { display:flex; flex-wrap:wrap; gap:7px; margin-bottom:14px; }
+  .chip { display:inline-flex; align-items:center; gap:7px; background:#0d0d15; border:1px solid #313244; border-radius:20px; padding:6px 12px 6px 6px; font-size:12px; cursor:pointer; }
+  .chip:hover{border-color:#6366f1}
+  .chip .av { width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:9px; font-weight:700; color:#fff; }
+  .briefrow { display:flex; gap:7px; }
+  .briefrow input { flex:1; background:#0a0a0f; color:#cdd6f4; border:1px solid #313244; border-radius:8px; padding:9px 11px; font-size:12px; }
+  .briefrow input::placeholder{color:#585b70}
+  .mic { padding:9px 11px; }
+  .adv { margin-top:14px; border-top:1px solid #1e1e2e; padding-top:12px; }
+  .adv summary { font-size:11.5px; color:#9399b2; cursor:pointer; list-style:none; display:flex; align-items:center; gap:6px; }
+  .adv summary::-webkit-details-marker{display:none}
+  .adv summary .caret{transition:transform .2s}
+  .adv[open] summary .caret{transform:rotate(90deg)}
+  .adv textarea { width:100%; min-height:120px; margin-top:10px; background:#0a0a0f; color:#cdd6f4; border:1px solid #313244; border-radius:8px; padding:10px; font-size:11px; line-height:1.5; font-family:ui-monospace,monospace; resize:vertical; }
+  .donecard { display:flex; align-items:center; gap:9px; background:rgba(166,227,161,.08); border:1px solid rgba(166,227,161,.25); border-radius:10px; padding:11px 12px; }
+  .donecard .big{font-size:13px;font-weight:800;color:#a6e3a1}
+  .donecard .sm{font-size:10.5px;color:#7f849c;margin-top:1px}
+
+  /* step 2 — the page + reviewers + run */
+  .pagebar { display:flex; align-items:center; gap:8px; font-size:11px; color:#9399b2; margin-bottom:10px; }
+  .pagebar .src { background:#0d0d15; border:1px solid #313244; border-radius:7px; padding:5px 10px; display:flex; align-items:center; gap:6px; }
+  .pagebar .src b{color:#cdd6f4}
+  .pagebar .swap { margin-left:auto; color:#89b4fa; cursor:pointer; }
+  #stage { width:100%; height:380px; background:#f5f5f7; border-radius:12px; overflow:hidden; position:relative; }
+
+  .reviewers { margin-top:14px; }
+  .rv { display:flex; align-items:center; gap:11px; background:#0d0d15; border:1px solid #1e1e2e; border-radius:11px; padding:10px 12px; margin-bottom:8px; }
+  .rv .av { width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; color:#fff; flex-shrink:0; }
+  .rv .nm { font-size:12.5px; font-weight:700; }
+  .rv .rl { font-size:9.5px; color:#6c7086; }
+  .rvins { font-size:10px; color:#a6adc8; line-height:1.55; margin-top:5px; }
+  .rvins .tg { font-weight:800; font-size:8.5px; text-transform:uppercase; letter-spacing:.04em; margin-right:4px; }
+  .tg.pain{color:#f38ba8}.tg.want{color:#89b4fa}.tg.love{color:#a6e3a1}
+  .rv .runbtn { margin-left:auto; align-self:center; background:#6366f1; color:#fff; font-size:11.5px; padding:8px 13px; border-radius:8px; white-space:nowrap; }
+  .rv.busy .runbtn { background:#1e1e2e; color:#9399b2; border:1px solid #313244; }
+  .livestat { font-size:11px; color:#a5b4fc; margin-top:6px; display:flex; align-items:center; gap:7px; }
+  .livestat .dotpulse{width:7px;height:7px;border-radius:50%;background:#6366f1;animation:pulse 1s infinite}
+  @keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}
+
+  /* step 3 — drafts */
+  .draft { background:#0d0d15; border:1px solid #1e1e2e; border-radius:10px; padding:11px; margin-bottom:9px; }
+  .draft.saved{border-color:rgba(166,227,161,.4)}
+  .draft .dh{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+  .draft .dav{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff}
+  .draft .dnm{font-size:11.5px;font-weight:700;color:#cdd6f4}
+  .draft .dob{font-size:11px;color:#a6adc8;line-height:1.45}
+  .draft .savedtag{font-size:9.5px;color:#a6e3a1;margin-top:7px;font-weight:700}
+  .savebar{width:100%;margin-top:6px;font-size:12px;padding:10px;border-radius:8px;background:#6366f1;color:#fff;border:none;cursor:pointer}
+  .emptyq{font-size:11px;color:#6c7086;line-height:1.5;padding:10px 4px;}
+
+  /* shared demo dashboard styles (from real prototype) */
+  .dnav{background:#fff;border-bottom:1px solid #e5e5ea;padding:0 14px;height:38px;display:flex;align-items:center}
+  .dlogo{width:18px;height:18px;border-radius:5px;background:#6366f1;margin-right:8px}
+  .dbrand{font-size:12px;font-weight:700;color:#1d1d1f;margin-right:20px}
+  .dni{padding:0 11px;height:38px;display:flex;align-items:center;font-size:11px;color:#6e6e73;border-bottom:2px solid transparent}
+  .dni.on{color:#6366f1;border-bottom-color:#6366f1;font-weight:600}
+  .dbody{padding:14px;color:#1d1d1f}
+  .dtitle{font-size:15px;font-weight:700}
+  .dsub{font-size:10px;color:#6e6e73;margin-bottom:12px}
+  .kpis{display:flex;gap:9px;margin-bottom:12px}
+  .kpi{flex:1;background:#fff;border:1px solid #e5e5ea;border-radius:9px;padding:9px 11px}
+  .kl{font-size:8px;color:#6e6e73;text-transform:uppercase;letter-spacing:.05em}
+  .kv{font-size:18px;font-weight:700;color:#1d1d1f}
+  .kd{font-size:8px;margin-top:2px}.up{color:#34c759}.dn{color:#ff3b30}
+  .cols{display:flex;gap:9px}
+  .card{background:#fff;border:1px solid #e5e5ea;border-radius:9px;padding:11px}.c2{flex:2}.c1{flex:1}
+  .ct{font-size:11px;font-weight:700;color:#1d1d1f;margin-bottom:7px;display:flex;justify-content:space-between;align-items:center}
+  .badge{font-size:8px;background:#fff0f0;color:#ff3b30;border-radius:8px;padding:2px 7px;font-weight:600}
+  .ap{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #f5f5f7;font-size:10px}.ap:last-child{border-bottom:none}
+  .dotc{width:6px;height:6px;border-radius:50%;flex-shrink:0}.r{background:#ff3b30}.y{background:#ff9500}.g{background:#34c759}
+  .apn{flex:1;color:#1d1d1f;font-weight:500}.apa{color:#6e6e73;font-size:9px}
+  .apd{font-size:8px;font-weight:600}.od{color:#ff3b30}.so{color:#ff9500}.ok{color:#34c759}
+  .apb{font-size:8px;padding:3px 7px;border-radius:4px;border:1px solid #6366f1;color:#6366f1;background:transparent;font-weight:600}
+  .act{display:flex;gap:6px;padding:4px 0;border-bottom:1px solid #f5f5f7;font-size:9px;color:#6e6e73}.act:last-child{border-bottom:none}.act strong{color:#1d1d1f}
+
+  @media(max-width:1100px){ .lanes{grid-template-columns:1fr} .rail{flex-direction:column} .rarrow{transform:rotate(90deg)} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="head">
+    <div class="logo">🛰️</div>
+    <div>
+      <h1>Klavity · Sims Studio</h1>
+      <div class="sub">Add a Sim, watch it review your page, then save what it finds.</div>
+    </div>
+    <a class="dash" href="#">← Dashboard</a>
+  </div>
+
+  <!-- mockup-only control: flip between the two states -->
+  <div class="demobar">
+    <span>👁 <b>Mockup view</b> (not part of product) —</span>
+    <div class="seg">
+      <button id="vFirst" class="on" onclick="setState('first')">First run (gated)</button>
+      <button id="vProg" onclick="setState('prog')">Returning (unlocked)</button>
+    </div>
+    <span id="stateNote">First time only: step 1 is open, steps 2 &amp; 3 are gated until you finish the one before — teaches the order.</span>
+  </div>
+
+  <!-- THE single number line -->
+  <div class="rail" id="rail">
+    <div class="rstep" id="r1"><span class="n">1</span><div><div class="rt">Add a Sim</div><div class="rd">A simulated user who reviews like a real one</div></div></div>
+    <div class="rarrow">→</div>
+    <div class="rstep" id="r2"><span class="n">2</span><div><div class="rt">Have it review the page</div><div class="rd">It looks at your screen and reacts in-character</div></div></div>
+    <div class="rarrow">→</div>
+    <div class="rstep" id="r3"><span class="n">3</span><div><div class="rt">Save the feedback</div><div class="rd">Keep the useful drafts, file them as bugs</div></div></div>
+  </div>
+
+  <div class="lanes">
+
+    <!-- ========== STEP 1 ========== -->
+    <div class="lane" id="lane1">
+      <div class="lhead"><span class="ln">1</span><h2>Add a Sim</h2><span class="pill" id="p1"></span></div>
+
+      <div id="s1empty">
+        <div class="lsub">Extract real Sims from an interview transcript — or start from a preset / one-line description.</div>
+        <div class="label">Paste an interview transcript</div>
+        <textarea class="primtx" placeholder="Paste a call or interview transcript and we’ll extract several Sims from it…"></textarea>
+        <div class="row" style="margin-top:9px"><button class="primary">Extract Sims</button><button class="ghost">Clear</button></div>
+
+        <div class="orsep">— or, no transcript yet? —</div>
+
+        <div class="label">Start from a preset</div>
+        <div class="presets">
+          <div class="chip"><span class="av" style="background:#6366f1">MM</span>Minimalist</div>
+          <div class="chip"><span class="av" style="background:#10b981">DH</span>Data Hawk</div>
+          <div class="chip"><span class="av" style="background:#ec4899">CD</span>Colourful</div>
+          <div class="chip"><span class="av" style="background:#f59e0b">SK</span>Skeptic</div>
+          <div class="chip"><span class="av" style="background:#8b5cf6">EX</span>Time-pressed Exec</div>
+          <div class="chip"><span class="av" style="background:#06b6d4">NN</span>Newcomer</div>
+        </div>
+        <div class="label">…or describe your user</div>
+        <div class="briefrow">
+          <input placeholder="e.g. a busy CFO who scans for overdue items" />
+          <button class="ghost mic" title="Dictate">🎙</button>
+          <button class="primary">Create</button>
+        </div>
+      </div>
+
+      <div id="s1done" style="display:none">
+        <div class="donecard">
+          <span style="font-size:18px">✅</span>
+          <div><div class="big">5 Sims ready</div><div class="sm">They’re lined up as reviewers in step 2 →</div></div>
+        </div>
+        <details class="adv" style="margin-top:12px"><summary><span class="caret">▸</span> Add more Sims (presets, describe, or transcript)</summary>
+          <div class="presets" style="margin-top:10px">
+            <div class="chip"><span class="av" style="background:#6366f1">MM</span>Minimalist</div>
+            <div class="chip"><span class="av" style="background:#10b981">DH</span>Data Hawk</div>
+            <div class="chip"><span class="av" style="background:#f59e0b">SK</span>Skeptic</div>
+          </div>
+        </details>
+      </div>
+    </div>
+
+    <!-- ========== STEP 2 ========== -->
+    <div class="lane" id="lane2">
+      <div class="lockmsg"><span class="lk">🔒</span><div>Add a Sim first (step 1)</div></div>
+      <div class="lhead"><span class="ln">2</span><h2>Have a Sim review the page</h2><span class="pill" id="p2"></span></div>
+      <div class="lsub">This is the page your Sims look at. Pick a reviewer below and hit review — they’ll react to exactly what’s on screen.</div>
+
+      <div class="pagebar">
+        <span class="src">Reviewing: <b>Demo dashboard</b> ▾</span>
+        <span class="swap">⤴ Replace with a screenshot of your product</span>
+      </div>
+
+      <div id="stage">
+        <div class="dnav"><div class="dlogo"></div><span class="dbrand">Acme Finance</span>
+          <div class="dni on">Overview</div><div class="dni">Reports</div><div class="dni">Approvals</div></div>
+        <div class="dbody">
+          <div class="dtitle">Q2 Revenue Overview</div>
+          <div class="dsub">Apr – Jun 2026 · updated 2h ago</div>
+          <div class="kpis">
+            <div class="kpi"><div class="kl">Revenue</div><div class="kv">$2.4M</div><div class="kd up">↑ 12%</div></div>
+            <div class="kpi"><div class="kl">Pending Approvals</div><div class="kv">14</div><div class="kd dn">3 overdue</div></div>
+            <div class="kpi"><div class="kl">Approval Rate</div><div class="kv">87%</div><div class="kd up">↑ 5%</div></div>
+            <div class="kpi"><div class="kl">Month-end Close</div><div class="kv">4 days</div><div class="kd dn">⚠ 3 at risk</div></div>
+          </div>
+          <div class="cols">
+            <div class="card c2">
+              <div class="ct">Pending Approvals <span class="badge">3 overdue</span></div>
+              <div class="ap"><div class="dotc r"></div><div class="apn">Q2 Marketing Budget Reallocation</div><div class="apa">$84k</div><div class="apd od">2d overdue</div><button class="apb">Approve</button></div>
+              <div class="ap"><div class="dotc r"></div><div class="apn">Infrastructure Vendor Contract</div><div class="apa">$210k</div><div class="apd od">1d overdue</div><button class="apb">Approve</button></div>
+              <div class="ap"><div class="dotc y"></div><div class="apn">Sales Team Bonus Pool</div><div class="apa">$120k</div><div class="apd so">Due today</div><button class="apb">Approve</button></div>
+              <div class="ap"><div class="dotc g"></div><div class="apn">Annual Audit Fees</div><div class="apa">$32k</div><div class="apd ok">5 days</div><button class="apb">Approve</button></div>
+            </div>
+            <div class="card c1">
+              <div class="ct">Recent Activity</div>
+              <div class="act"><span>✅</span><div><strong>James</strong> approved Q1 Audit</div></div>
+              <div class="act"><span>💬</span><div><strong>Sarah</strong> commented on vendor</div></div>
+              <div class="act"><span>📎</span><div><strong>Anika</strong> uploaded projections</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="reviewers">
+        <div class="label">Your reviewers — pick one to send</div>
+        <div class="rv busy">
+          <span class="av" style="background:#6366f1">RE</span>
+          <div><div class="nm">Ramesh Emandi</div><div class="rl">Product Manager</div>
+            <div class="rvins">
+              <div><span class="tg pain">pain</span>AI onboarding flow needs refinement.</div>
+              <div><span class="tg want">want</span>One clear primary action / next step.</div>
+              <div><span class="tg love">love</span>Open-router flexibility to swap models.</div>
+            </div></div>
+          <button class="runbtn">Reviewing…</button>
+        </div>
+        <div class="livestat"><span class="dotpulse"></span> Ramesh is reviewing… (Claude vision, ~15s)</div>
+        <div class="rv">
+          <span class="av" style="background:#f59e0b">VP</span>
+          <div><div class="nm">Vamshi Panjala</div><div class="rl">Product Lead</div>
+            <div class="rvins">
+              <div><span class="tg pain">pain</span>High bug count in the AI bot before launch.</div>
+              <div><span class="tg want">want</span>All workflows ready for UAT.</div>
+            </div></div>
+          <button class="runbtn">Review this page →</button>
+        </div>
+        <div class="rv">
+          <span class="av" style="background:#10b981">VK</span>
+          <div><div class="nm">Vishal Kumar</div><div class="rl">Technical Advisor</div>
+            <div class="rvins">
+              <div><span class="tg pain">pain</span>Internal teams are biased on UX.</div>
+              <div><span class="tg want">want</span>Ship to real users early for feedback.</div>
+              <div><span class="tg love">love</span>Swappable AI models for cost control.</div>
+            </div></div>
+          <button class="runbtn">Review this page →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== STEP 3 ========== -->
+    <div class="lane" id="lane3">
+      <div class="lockmsg"><span class="lk">🔒</span><div>Run a review first (step 2)</div></div>
+      <div class="lhead"><span class="ln">3</span><h2>Save the feedback</h2><span class="pill" id="p3"></span></div>
+      <div class="lsub">Reviews land here as drafts. Keep the useful ones — they get filed to your tracker as bugs.</div>
+
+      <div id="s3empty" class="emptyq" style="display:none">
+        Nothing yet. Once a Sim finishes reviewing, its feedback shows up here for you to keep or discard.
+      </div>
+
+      <div id="s3full">
+        <div class="draft saved">
+          <div class="dh"><span class="dav" style="background:#6366f1">RE</span><span class="dnm">Ramesh Emandi</span></div>
+          <div class="dob">3 overdue approvals and 3 at-risk close items are exactly what I need surfaced — but I had to hunt for them. Make “overdue” the default sort.</div>
+          <div class="savedtag">✓ Saved to Klavity</div>
+        </div>
+        <div class="draft saved">
+          <div class="dh"><span class="dav" style="background:#6366f1">RE</span><span class="dnm">Ramesh Emandi</span></div>
+          <div class="dob">Love that Approve sits right on each row — no navigating away. Add a bulk “approve selected” for month-end.</div>
+          <div class="savedtag">✓ Saved to Klavity</div>
+        </div>
+        <button class="savebar">Save selected to Klavity →</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+function setState(s){
+  const first = s==='first'
+  document.getElementById('vFirst').classList.toggle('on', first)
+  document.getElementById('vProg').classList.toggle('on', !first)
+  document.getElementById('stateNote').textContent = first
+    ? 'First time only: step 1 is open, steps 2 & 3 are gated until you finish the one before — teaches the order.'
+    : 'After the first completed review the locks are gone for good — every step stays open; the highlight just follows your focus.'
+
+  // rail
+  const r1=document.getElementById('r1'), r2=document.getElementById('r2'), r3=document.getElementById('r3')
+  const l1=document.getElementById('lane1'), l2=document.getElementById('lane2'), l3=document.getElementById('lane3')
+  const p1=document.getElementById('p1'), p2=document.getElementById('p2'), p3=document.getElementById('p3')
+  ;[r1,r2,r3].forEach(r=>r.className='rstep')
+  ;[l1,l2,l3].forEach(l=>l.className='lane')
+  ;[p1,p2,p3].forEach(p=>p.className='pill')
+
+  if(first){
+    r1.classList.add('active'); r2.classList.add('locked'); r3.classList.add('locked')
+    l1.classList.add('active'); l2.classList.add('locked'); l3.classList.add('locked')
+    p1.classList.add('pill','now'); p1.textContent='Start here'
+    document.getElementById('s1empty').style.display=''
+    document.getElementById('s1done').style.display='none'
+    document.getElementById('s3empty').style.display=''
+    document.getElementById('s3full').style.display='none'
+  } else {
+    r1.classList.add('done'); r2.classList.add('active')
+    l1.classList.add('done'); l2.classList.add('active')
+    p1.classList.add('pill','ok'); p1.textContent='Done'
+    p2.classList.add('pill','now'); p2.textContent='You’re here'
+    document.getElementById('s1empty').style.display='none'
+    document.getElementById('s1done').style.display=''
+    document.getElementById('s3empty').style.display='none'
+    document.getElementById('s3full').style.display=''
+  }
+}
+setState('first')
+</script>
+</body>
+</html>

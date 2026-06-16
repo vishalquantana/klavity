@@ -1,4 +1,4 @@
-// Klav app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
+// Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
 import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureWorkspace, membershipsFor, membersOf, roleIn, addMember } from "./lib/db"
 import { sendOtp } from "./lib/mail"
 import { token, otp, emailAllowed, cookie, clearCookie, parseCookies } from "./lib/auth"
@@ -41,7 +41,7 @@ const REACT_SYS =
 async function chat(messages: any[], maxTokens: number) {
   const res = await fetch(ENDPOINT, {
     method: "POST",
-    headers: { Authorization: `Bearer ${KEY}`, "content-type": "application/json", "HTTP-Referer": BASE, "X-Title": "Klav" },
+    headers: { Authorization: `Bearer ${KEY}`, "content-type": "application/json", "HTTP-Referer": BASE, "X-Title": "Klavity" },
     body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, messages }),
   })
   if (!res.ok) throw new Error(`OpenRouter ${res.status}: ${(await res.text()).slice(0, 300)}`)
@@ -92,6 +92,11 @@ Bun.serve({
     if (req.method === "GET" && path === "/") return file(SITE + "/index.html")
     if (req.method === "GET" && path === "/home") return redirect("/")
     if (req.method === "GET" && path === "/login") return file(PUB + "/login.html")
+    if (req.method === "GET" && path === "/sim-emotions") return file(PUB + "/sim-emotions.html")
+    if (req.method === "GET" && path === "/sim-identity") return file(PUB + "/sim-identity.html")
+    if (req.method === "GET" && path === "/sim-options") return file(PUB + "/sim-options.html")
+    if (req.method === "GET" && path === "/sim-component") return file(PUB + "/sim-component.html")
+    if (req.method === "GET" && path === "/klavity-sim.js") return file(PUB + "/klavity-sim.js")
 
     // ── auth: request OTP ──
     if (req.method === "POST" && path === "/api/auth/request") {
@@ -197,5 +202,5 @@ Bun.serve({
   },
 })
 
-console.log(`\n⚡ Klav app → ${BASE}`)
+console.log(`\n⚡ Klavity app → ${BASE}`)
 console.log(`   model: ${MODEL} · auth: ${db ? "Turso OTP" : "DISABLED (no Turso)"} · dev-otp: ${DEV_SHOW_OTP}\n`)

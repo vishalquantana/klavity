@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Klavity Sims · Emotion System (mockups)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..800;1,9..144,400..600&family=Hanken+Grotesk:wght@300..800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --ink:#0c0a08; --ink-2:#15110d; --ink-3:#1f1912; --ink-4:#2a2218;
+  --paper:#f3ece1; --paper-dim:#b3a896; --paper-faint:#7d7264;
+  --indigo:#8b8bf5; --indigo-deep:#6366f1;
+  --rose:#e8849a; --amber:#e8a24a; --green:#9fd6a0; --red:#ef6b6b; --grey:#8a8276;
+  --line:rgba(243,236,225,.10); --line-2:rgba(243,236,225,.18);
+  --display:'Fraunces',serif; --body:'Hanken Grotesk',system-ui,sans-serif; --mono:'JetBrains Mono',monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--body);
+  min-height:100vh; line-height:1.5; -webkit-font-smoothing:antialiased;
+  background-image:
+    radial-gradient(70% 50% at 80% -5%, rgba(139,139,245,.16), transparent 60%),
+    radial-gradient(50% 40% at 8% 0%, rgba(232,132,154,.08), transparent 55%);
+}
+/* fine grain overlay */
+body::before{
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0; opacity:.4;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E");
+  mix-blend-mode:overlay;
+}
+.shell{position:relative; z-index:1; max-width:1180px; margin:0 auto; padding:54px 28px 90px}
+
+/* ── header ── */
+.eyebrow{font-family:var(--mono); font-size:10.5px; letter-spacing:.34em; text-transform:uppercase; color:var(--indigo); display:flex; align-items:center; gap:11px}
+.eyebrow .spark{width:24px;height:24px;border-radius:7px;display:grid;place-items:center;font-size:13px;background:linear-gradient(135deg,var(--indigo-deep),#a78bfa);color:#fff}
+h1{font-family:var(--display); font-weight:430; font-size:clamp(34px,6vw,62px); letter-spacing:-.025em; line-height:1.02; margin:20px 0 0}
+h1 em{font-style:italic; color:var(--indigo)}
+.lede{max-width:62ch; margin-top:18px; font-size:16.5px; color:var(--paper-dim)}
+.lede b{color:var(--paper); font-weight:600}
+
+/* ── controls ── */
+.controls{display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:30px}
+.ctl{font-family:var(--mono); font-size:11px; letter-spacing:.04em; color:var(--paper-dim);
+  background:var(--ink-2); border:1px solid var(--line); border-radius:30px; padding:9px 16px; cursor:pointer;
+  transition:border-color .2s, color .2s, transform .12s}
+.ctl:hover{border-color:var(--line-2); color:var(--paper)}
+.ctl:active{transform:translateY(1px)}
+.ctl.on{color:var(--ink); background:var(--paper); border-color:var(--paper)}
+.hintline{font-size:13px;color:var(--paper-faint);margin-left:4px}
+
+/* ── emotion legend ── */
+.legend{margin-top:30px; display:grid; grid-template-columns:repeat(auto-fill,minmax(168px,1fr)); gap:11px}
+.lg{display:flex; gap:11px; align-items:center; background:linear-gradient(180deg,var(--ink-2),rgba(21,17,13,.4));
+  border:1px solid var(--line); border-left:3px solid var(--accent); border-radius:12px; padding:11px 13px}
+.lg .dot{width:13px;height:13px;border-radius:50%;background:var(--accent);box-shadow:0 0 14px -1px var(--accent);flex-shrink:0}
+.lg .lg-t{font-weight:700;font-size:13px}
+.lg .lg-s{font-family:var(--mono);font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:var(--paper-faint)}
+
+/* ── variation sections ── */
+.section{margin-top:64px}
+.sec-head{display:flex; align-items:baseline; gap:16px; flex-wrap:wrap; border-bottom:1px solid var(--line); padding-bottom:16px}
+.sec-num{font-family:var(--mono); font-size:12px; color:var(--indigo); letter-spacing:.1em}
+.sec-title{font-family:var(--display); font-size:27px; font-weight:430; letter-spacing:-.02em}
+.sec-desc{font-size:14px; color:var(--paper-dim); flex:1; min-width:240px; max-width:54ch}
+.sec-tag{font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--paper-faint);
+  border:1px solid var(--line);border-radius:20px;padding:4px 11px}
+
+.grid{margin-top:30px; display:grid; grid-template-columns:repeat(auto-fill,minmax(168px,1fr)); gap:14px}
+.cell{position:relative; display:flex; flex-direction:column; align-items:center; gap:18px;
+  background:radial-gradient(120% 80% at 50% 0%, rgba(255,255,255,.025), transparent 70%), var(--ink-2);
+  border:1px solid var(--line); border-radius:16px; padding:30px 14px 16px; min-height:178px;
+  justify-content:flex-end; overflow:hidden; transition:border-color .25s, transform .25s, background .25s; cursor:pointer}
+.cell::after{content:""; position:absolute; inset:0; border-radius:16px; pointer-events:none;
+  box-shadow:inset 0 0 38px -16px var(--accent); opacity:0; transition:opacity .3s}
+.cell:hover{transform:translateY(-4px); border-color:color-mix(in srgb,var(--accent) 55%, var(--line))}
+.cell:hover::after{opacity:.9}
+.cap{text-align:center}
+.cap .ce{font-weight:700; font-size:13.5px}
+.cap .cf{font-family:var(--mono); font-size:8.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--paper-faint); margin-top:3px}
+
+/* ───────────────────────── the Sim (circle with legs) ───────────────────────── */
+.sim{position:relative; width:64px; display:flex; flex-direction:column; align-items:center;
+  animation:bob 3.1s ease-in-out infinite; animation-delay:var(--d,0s)}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+.cell:hover .sim{animation-duration:1.5s}
+
+.head{width:56px;height:56px;border-radius:50%;position:relative;z-index:2;
+  background:radial-gradient(120% 120% at 30% 22%, color-mix(in srgb,var(--accent) 70%, #ffffff 10%), var(--accent) 62%, color-mix(in srgb,var(--accent) 55%, #000 35%));
+  box-shadow:0 8px 22px -6px rgba(0,0,0,.7), inset 0 2px 4px rgba(255,255,255,.25), inset 0 -6px 12px rgba(0,0,0,.28);
+  display:grid;place-items:center}
+.legs{display:flex;gap:7px;margin-top:4px}
+.leg{width:7px;height:17px;border-radius:4px;background:color-mix(in srgb,var(--accent) 60%, #000 30%);transform-origin:top center}
+.sim .leg:nth-child(1){animation:lwa 1.6s ease-in-out infinite;animation-delay:var(--d,0s)}
+.sim .leg:nth-child(2){animation:lwb 1.6s ease-in-out infinite;animation-delay:var(--d,0s)}
+@keyframes lwa{0%,100%{transform:rotate(-6deg)}50%{transform:rotate(7deg)}}
+@keyframes lwb{0%,100%{transform:rotate(6deg)}50%{transform:rotate(-7deg)}}
+
+/* default face: two simple eyes (used where the variation doesn't morph the face) */
+.face{width:34px;height:20px}
+.face .eye{fill:rgba(12,10,8,.82)}
+.face .mo{stroke:rgba(12,10,8,.7);stroke-width:1.6;stroke-linecap:round;fill:none}
+
+/* ── floating mark (above the head) ── */
+.mark{position:absolute;top:-12px;right:-10px;width:26px;height:26px;color:var(--accent);z-index:4;
+  filter:drop-shadow(0 2px 5px rgba(0,0,0,.55));transform-origin:center}
+.mark svg{width:100%;height:100%;display:block}
+.mark .txt{font-family:var(--mono);font-weight:700;font-size:21px;line-height:26px;text-align:center;color:var(--accent)}
+/* per-mark idle motion */
+.m-vein{animation:veinPulse 1.1s ease-in-out infinite}
+@keyframes veinPulse{0%,100%{transform:scale(1) rotate(0)}45%{transform:scale(1.22) rotate(-6deg)}}
+.m-sweat{animation:sweatDrip 1.9s ease-in-out infinite}
+@keyframes sweatDrip{0%,55%{transform:translateY(0);opacity:1}80%{transform:translateY(7px);opacity:.2}81%,100%{transform:translateY(0);opacity:1}}
+.m-spark{animation:twinkle 1.5s ease-in-out infinite}
+@keyframes twinkle{0%,100%{transform:scale(1) rotate(0);opacity:1}50%{transform:scale(1.18) rotate(18deg);opacity:.7}}
+.m-bulb{animation:bulbGlow 1.7s ease-in-out infinite}
+@keyframes bulbGlow{0%,100%{filter:drop-shadow(0 0 0 transparent) drop-shadow(0 2px 5px rgba(0,0,0,.55))}50%{filter:drop-shadow(0 0 9px var(--accent)) drop-shadow(0 2px 5px rgba(0,0,0,.55))}}
+.m-bang{animation:bangShake 1.2s ease-in-out infinite}
+@keyframes bangShake{0%,100%{transform:translateX(0) rotate(0)}25%{transform:translateX(-2px) rotate(-7deg)}75%{transform:translateX(2px) rotate(7deg)}}
+.m-dots{animation:dotFade 2s linear infinite}
+@keyframes dotFade{0%,100%{opacity:.45}50%{opacity:1}}
+.m-q{animation:qTilt 2.2s ease-in-out infinite}
+@keyframes qTilt{0%,100%{transform:rotate(-8deg)}50%{transform:rotate(10deg)}}
+
+/* ── V2: mark inset on the forehead ── */
+.sim.var-forehead .mark{position:absolute;top:8px;right:auto;left:50%;transform:translateX(-50%);
+  width:20px;height:20px;color:rgba(12,10,8,.78);filter:none;z-index:5}
+.sim.var-forehead .mark .txt{font-size:15px;line-height:20px;color:rgba(12,10,8,.78)}
+.sim.var-forehead .face{transform:translateY(7px)}
+
+/* ── V4: aura + type chip ── */
+.sim.var-aura .head{box-shadow:0 8px 22px -6px rgba(0,0,0,.7), inset 0 2px 4px rgba(255,255,255,.25), inset 0 -6px 12px rgba(0,0,0,.28), 0 0 0 4px color-mix(in srgb,var(--accent) 22%, transparent), 0 0 26px 2px color-mix(in srgb,var(--accent) 40%, transparent)}
+.sim.var-aura::before{content:"";position:absolute;top:-7px;left:50%;transform:translateX(-50%);width:74px;height:74px;border-radius:50%;
+  border:1.5px dashed color-mix(in srgb,var(--accent) 50%, transparent);animation:spin 9s linear infinite;opacity:.6}
+@keyframes spin{to{transform:translateX(-50%) rotate(360deg)}}
+.chip{position:absolute;bottom:-9px;left:50%;transform:translateX(-50%);white-space:nowrap;z-index:6;
+  font-family:var(--mono);font-size:8px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--ink);background:var(--accent);border-radius:20px;padding:3px 9px;box-shadow:0 4px 12px -3px var(--accent)}
+
+.foot{margin-top:74px;border-top:1px solid var(--line);padding-top:22px;color:var(--paper-faint);font-size:13px;max-width:70ch}
+.foot code{font-family:var(--mono);font-size:11.5px;color:var(--indigo);background:var(--ink-2);border:1px solid var(--line);border-radius:5px;padding:1px 6px}
+
+@media (prefers-reduced-motion: reduce){*{animation:none !important}}
+.reduced .sim, .reduced .mark, .reduced .leg, .reduced .sim::before{animation:none !important}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <div class="eyebrow"><span class="spark">⚡</span> Klavity Sims · Emotion System</div>
+  <h1>Six feelings,<br>worn on the <em>forehead</em>.</h1>
+  <p class="lede">Every Klavity Sim reacts to your product. These mockups explore how a Sim — a <b>circle with legs</b> — telegraphs <b>what kind of feedback</b> it just had, manga-style: a little mark pops over its head. Same six emotions, four ways to render them. <b>Hover</b> a Sim to wind it up; <b>click</b> it to make it pop.</p>
+
+  <div class="controls">
+    <button class="ctl" id="labelsBtn">Hide labels</button>
+    <button class="ctl" id="motionBtn">Pause motion</button>
+    <span class="hintline">Pick the treatment you like — I'll wire it into the real Sims.</span>
+  </div>
+
+  <div class="legend" id="legend"></div>
+
+  <div id="variations"></div>
+
+  <div class="foot">
+    Drawn in pure CSS + inline SVG (no emoji), themed per emotion via a single <code>--accent</code> variable, so each treatment drops straight onto the existing <code>.sim-char</code> / <code>.ls-head</code> components. Tell me which variation (or mix — e.g. <em>forehead mark + aura</em>) and I'll make it the live reaction across the app, login greeter, and SDK widget.
+  </div>
+
+</div>
+
+<script>
+/* ── feedback emotions: the product's reaction types ── */
+const EMOTIONS = [
+  { key:'frustrated', label:'Frustrated', type:'Bug · broken',        accent:'var(--rose)',   face:'angry',     mark:'vein'  },
+  { key:'confused',   label:'Confused',   type:'Friction · unclear',  accent:'var(--amber)',  face:'confused',  mark:'q'     },
+  { key:'delighted',  label:'Delighted',  type:'Loves it',            accent:'var(--green)',  face:'happy',     mark:'spark' },
+  { key:'inspired',   label:'Inspired',   type:'Idea · feature ask',  accent:'var(--indigo)', face:'wow',       mark:'bulb'  },
+  { key:'alarmed',    label:'Alarmed',    type:'Critical · blocker',  accent:'var(--red)',    face:'shock',     mark:'bang'  },
+  { key:'unimpressed',label:'Unimpressed',type:'Neutral · meh',       accent:'var(--grey)',   face:'flat',      mark:'dots'  },
+];
+
+const VARIATIONS = [
+  { id:'float',    name:'Floating mark',  tag:'classic anime',  cls:'',
+    desc:'The pure manga read — a symbol pops in the air just off the head while the face stays calm. Instantly legible at a glance, even on a tiny walking Sim.' },
+  { id:'forehead', name:'On the forehead',tag:'literal · your idea', cls:'var-forehead',
+    desc:'The mark is stamped right onto the Sim’s forehead, monochrome and inset. Reads as part of the character rather than an overlay — calmer, more “tattooed” feel.' },
+  { id:'face',     name:'Full expression',tag:'most alive',     cls:'var-face',
+    desc:'The face itself morphs — eyes and mouth change per emotion — and a small mark floats above. The most characterful and personable, best when the Sim is large.' },
+  { id:'aura',     name:'Aura + type chip',tag:'product-ready', cls:'var-aura',
+    desc:'A coloured glow + orbit ring radiate the mood, and a chip spells out the feedback type. Built for dashboards and lists where the label needs to be unmistakable.' },
+];
+
+/* ── inline SVG marks (currentColor) ── */
+function mark(name){
+  switch(name){
+    case 'vein':  // manga anger pop — four corner chevrons
+      return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M11 3 L8 6 M11 3 L14 6 M21 11 L18 8 M21 11 L18 14 M13 21 L16 18 M13 21 L10 18 M3 13 L6 16 M3 13 L6 10"/>
+        <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg>`;
+    case 'spark': // sparkle — a 4-point star + a small one
+      return `<svg viewBox="0 0 24 24" fill="currentColor">
+        <path d="M13 2c.6 4.2 2.8 6.4 7 7-4.2.6-6.4 2.8-7 7-.6-4.2-2.8-6.4-7-7 4.2-.6 6.4-2.8 7-7Z"/>
+        <path d="M5.5 13c.3 1.9 1.3 2.9 3.2 3.2-1.9.3-2.9 1.3-3.2 3.2-.3-1.9-1.3-2.9-3.2-3.2 1.9-.3 2.9-1.3 3.2-3.2Z" opacity=".85"/></svg>`;
+    case 'bulb': // lightbulb idea
+      return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 17.5h6M9.5 20.5h5"/>
+        <path d="M12 3a6 6 0 0 0-3.6 10.8c.7.5 1.1 1.3 1.1 2.2h5c0-.9.4-1.7 1.1-2.2A6 6 0 0 0 12 3Z"/>
+        <path d="M10 9.5c.4-1 1-1.5 2-1.5" opacity=".7"/></svg>`;
+    case 'bang': // exclamation
+      return `<div class="txt">!</div>`;
+    case 'q':    // question
+      return `<div class="txt">?</div>`;
+    case 'dots': // ellipsis
+      return `<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2.3"/><circle cx="12" cy="12" r="2.3"/><circle cx="19" cy="12" r="2.3"/></svg>`;
+  }
+  return '';
+}
+const markAnim = { vein:'m-vein', spark:'m-spark', bulb:'m-bulb', bang:'m-bang', q:'m-q', dots:'m-dots' };
+
+/* ── faces (default + morphing expressions for the "Full expression" variation) ── */
+function face(kind){
+  // returns an inline SVG (viewBox 34x20): eyes + optional mouth
+  const E = (x,r=2.4,t='') => `<circle class="eye" cx="${x}" cy="9" r="${r}" ${t}/>`;
+  switch(kind){
+    case 'angry':
+      return `<svg class="face" viewBox="0 0 34 20"><path class="mo" d="M9 6 L14 9"/><path class="mo" d="M25 6 L20 9"/>${E(11,2.2)}${E(23,2.2)}<path class="mo" d="M13 16 Q17 13 21 16"/></svg>`;
+    case 'happy':
+      return `<svg class="face" viewBox="0 0 34 20"><path class="mo" d="M8 10 Q11 6 14 10"/><path class="mo" d="M20 10 Q23 6 26 10"/><path class="mo" d="M12 14 Q17 19 22 14"/></svg>`;
+    case 'confused':
+      return `<svg class="face" viewBox="0 0 34 20">${E(11,2.4)}<path class="mo" d="M20 9 L26 9"/><path class="mo" d="M14 16 q3 -2 5 0 t5 0"/></svg>`;
+    case 'wow':
+      return `<svg class="face" viewBox="0 0 34 20"><circle class="eye" cx="11" cy="9" r="3"/><circle class="eye" cx="23" cy="9" r="3"/><circle cx="10" cy="8" r=".9" fill="rgba(255,255,255,.9)"/><circle cx="22" cy="8" r=".9" fill="rgba(255,255,255,.9)"/><circle class="eye" cx="17" cy="16" r="1.7"/></svg>`;
+    case 'shock':
+      return `<svg class="face" viewBox="0 0 34 20"><circle class="eye" cx="11" cy="9" r="3.2"/><circle class="eye" cx="23" cy="9" r="3.2"/><circle class="eye" cx="17" cy="16" r="2.2"/></svg>`;
+    case 'flat':
+      return `<svg class="face" viewBox="0 0 34 20"><path class="mo" d="M8 9 L14 9"/><path class="mo" d="M20 9 L26 9"/><path class="mo" d="M13 15 L21 15"/></svg>`;
+    default: // plain dots
+      return `<svg class="face" viewBox="0 0 34 20">${E(11)}${E(23)}</svg>`;
+  }
+}
+
+/* build one Sim for a given emotion + variation */
+function buildSim(emo, vari, i){
+  const useFace = vari.id === 'face' ? emo.face : (vari.id === 'forehead' ? 'default' : 'default');
+  const markHtml = vari.id === 'face'
+    ? `<div class="mark ${markAnim[emo.mark]}">${mark(emo.mark)}</div>`
+    : `<div class="mark ${markAnim[emo.mark]}">${mark(emo.mark)}</div>`;
+  return `
+    <div class="cell" data-key="${emo.key}" style="--accent:${emo.accent}">
+      <div class="sim ${vari.cls}" style="--d:${(i*0.18).toFixed(2)}s" data-mark="${emo.mark}">
+        ${markHtml}
+        <div class="head">${face(useFace)}</div>
+        <div class="legs"><span class="leg"></span><span class="leg"></span></div>
+        ${vari.id==='aura' ? `<div class="chip">${emo.type.split('·')[0].trim()}</div>` : ''}
+      </div>
+      <div class="cap">
+        <div class="ce">${emo.label}</div>
+        <div class="cf">${emo.type}</div>
+      </div>
+    </div>`;
+}
+
+/* render legend */
+document.getElementById('legend').innerHTML = EMOTIONS.map(e => `
+  <div class="lg" style="--accent:${e.accent}">
+    <span class="dot"></span>
+    <div><div class="lg-t">${e.label}</div><div class="lg-s">${e.type}</div></div>
+  </div>`).join('');
+
+/* render variations */
+document.getElementById('variations').innerHTML = VARIATIONS.map((v, vi) => `
+  <section class="section">
+    <div class="sec-head">
+      <span class="sec-num">0${vi+1}</span>
+      <span class="sec-title">${v.name}</span>
+      <span class="sec-desc">${v.desc}</span>
+      <span class="sec-tag">${v.tag}</span>
+    </div>
+    <div class="grid">
+      ${EMOTIONS.map((e,i)=>buildSim(e,v,i)).join('')}
+    </div>
+  </section>`).join('');
+
+/* ── interactions ── */
+// click a sim → pop / jump
+document.addEventListener('click', (ev) => {
+  const cell = ev.target.closest('.cell'); if(!cell) return;
+  const sim = cell.querySelector('.sim');
+  sim.animate([
+    {transform:'translateY(0) scale(1)'},
+    {transform:'translateY(-16px) scale(1.12)'},
+    {transform:'translateY(0) scale(1)'},
+  ], {duration:520, easing:'cubic-bezier(.34,1.56,.64,1)'});
+  const mk = cell.querySelector('.mark');
+  if(mk) mk.animate([
+    {transform:'scale(.4) rotate(-30deg)', opacity:0},
+    {transform:'scale(1.5) rotate(8deg)', opacity:1},
+    {transform:'scale(1) rotate(0)', opacity:1},
+  ], {duration:520, easing:'cubic-bezier(.34,1.56,.64,1)'});
+});
+
+// labels toggle
+const labelsBtn = document.getElementById('labelsBtn');
+labelsBtn.onclick = () => {
+  document.body.classList.toggle('no-caps');
+  const off = document.body.classList.contains('no-caps');
+  document.querySelectorAll('.cap').forEach(c => c.style.display = off ? 'none' : '');
+  labelsBtn.textContent = off ? 'Show labels' : 'Hide labels';
+  labelsBtn.classList.toggle('on', off);
+};
+
+// motion toggle
+const motionBtn = document.getElementById('motionBtn');
+motionBtn.onclick = () => {
+  const paused = document.body.classList.toggle('reduced');
+  motionBtn.textContent = paused ? 'Resume motion' : 'Pause motion';
+  motionBtn.classList.toggle('on', paused);
+};
+</script>
+</body>
+</html>

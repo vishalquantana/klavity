@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Klavity Sims · Component</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..800;1,9..144,400..600&family=Hanken+Grotesk:wght@300..800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet" />
+<style>
+:root{--ink:#0c0a08;--ink-2:#15110d;--ink-3:#1f1912;--paper:#f3ece1;--paper-dim:#b3a896;--paper-faint:#7d7264;
+  --indigo:#8b8bf5;--indigo-deep:#6366f1;--line:rgba(243,236,225,.10);--line-2:rgba(243,236,225,.18);
+  --display:'Fraunces',serif;--body:'Hanken Grotesk',system-ui,sans-serif;--mono:'JetBrains Mono',monospace}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--ink);color:var(--paper);font-family:var(--body);min-height:100vh;line-height:1.5;-webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(70% 50% at 80% -5%,rgba(139,139,245,.16),transparent 60%),radial-gradient(50% 40% at 8% 0%,rgba(232,132,154,.08),transparent 55%)}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.4;mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E")}
+.shell{position:relative;z-index:1;max-width:1100px;margin:0 auto;padding:54px 28px 90px}
+.eyebrow{font-family:var(--mono);font-size:10.5px;letter-spacing:.34em;text-transform:uppercase;color:var(--indigo);display:flex;align-items:center;gap:11px}
+.eyebrow .spark{width:24px;height:24px;border-radius:7px;display:grid;place-items:center;font-size:13px;background:linear-gradient(135deg,var(--indigo-deep),#a78bfa);color:#fff}
+h1{font-family:var(--display);font-weight:430;font-size:clamp(34px,6vw,58px);letter-spacing:-.025em;line-height:1.03;margin:20px 0 0}
+h1 em{font-style:italic;color:var(--indigo)}
+.lede{max-width:64ch;margin-top:18px;font-size:16.5px;color:var(--paper-dim)}
+.lede b{color:var(--paper);font-weight:600}
+.lede code{font-family:var(--mono);font-size:13px;color:var(--indigo)}
+
+.section{margin-top:56px}
+.sec-title{font-family:var(--display);font-size:25px;font-weight:430;letter-spacing:-.02em;border-bottom:1px solid var(--line);padding-bottom:14px}
+.sec-sub{font-size:13.5px;color:var(--paper-faint);margin-top:8px}
+
+/* playground */
+.play{margin-top:26px;display:grid;grid-template-columns:1fr 1.1fr;gap:20px}
+@media(max-width:780px){.play{grid-template-columns:1fr}}
+.stage{position:relative;background:radial-gradient(120% 90% at 50% 0%,rgba(255,255,255,.03),transparent 70%),var(--ink-2);
+  border:1px solid var(--line);border-radius:18px;min-height:300px;display:grid;place-items:center;overflow:hidden}
+.stage .floor{position:absolute;bottom:54px;left:50%;width:120px;height:18px;transform:translateX(-50%);border-radius:50%;
+  background:radial-gradient(closest-side,rgba(0,0,0,.55),transparent);filter:blur(2px)}
+.panel{background:var(--ink-2);border:1px solid var(--line);border-radius:18px;padding:20px}
+.field{margin-bottom:16px}
+.field>label{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:8px}
+.in{width:100%;background:var(--ink);border:1px solid var(--line);border-radius:10px;padding:10px 12px;color:var(--paper);font-family:var(--body);font-size:14px;outline:none}
+.in:focus{border-color:var(--indigo)}
+select.in{cursor:pointer}
+.swatches{display:flex;gap:8px;flex-wrap:wrap}
+.sw{width:26px;height:26px;border-radius:50%;border:2px solid transparent;cursor:pointer;background:var(--c);transition:.15s}
+.sw.on{border-color:var(--paper);transform:scale(1.12)}
+.rowf{display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+.chk{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--paper-dim);cursor:pointer}
+.chk input{width:15px;height:15px;accent-color:var(--indigo);cursor:pointer}
+input[type=range]{width:100%;accent-color:var(--indigo)}
+.code{margin-top:18px;background:#0a0806;border:1px solid var(--line);border-radius:12px;padding:14px 16px;
+  font-family:var(--mono);font-size:12px;line-height:1.7;color:var(--paper-dim);overflow-x:auto;white-space:pre}
+.code .k{color:var(--indigo)} .code .s{color:#9fd6a0} .code .p{color:#e8a24a}
+
+/* cast + sizes */
+.cast{margin-top:26px;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px}
+.card{background:var(--ink-2);border:1px solid var(--line);border-radius:16px;padding:30px 12px 14px;display:flex;flex-direction:column;align-items:center;gap:16px;min-height:172px;justify-content:flex-end}
+.card .nm{font-weight:700;font-size:13px;text-align:center}
+.card .rl{font-family:var(--mono);font-size:8px;letter-spacing:.06em;text-transform:uppercase;color:var(--paper-faint);margin-top:2px}
+.sizes{margin-top:26px;display:flex;align-items:flex-end;gap:34px;flex-wrap:wrap;background:var(--ink-2);border:1px solid var(--line);border-radius:16px;padding:30px 24px 22px}
+.sizes .sz{display:flex;flex-direction:column;align-items:center;gap:14px}
+.sizes .sz span{font-family:var(--mono);font-size:10px;color:var(--paper-faint)}
+
+/* dock context */
+.dock{margin-top:26px;max-width:380px;background:var(--ink-2);border:1px solid var(--line);border-radius:16px;padding:8px}
+.drow{display:flex;align-items:center;gap:12px;padding:10px 10px;border-radius:11px}
+.drow+.drow{border-top:1px solid var(--line)}
+.drow .dn{font-weight:700;font-size:13px} .drow .dq{font-size:12px;color:var(--paper-dim);font-style:italic;font-family:var(--display)}
+
+.foot{margin-top:64px;border-top:1px solid var(--line);padding-top:22px;color:var(--paper-faint);font-size:13px;max-width:74ch}
+.foot code{font-family:var(--mono);font-size:11.5px;color:var(--indigo);background:var(--ink-2);border:1px solid var(--line);border-radius:5px;padding:1px 6px}
+.foot b{color:var(--paper-dim)}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <div class="eyebrow"><span class="spark">⚡</span> Klavity Sims · Component</div>
+  <h1>One Sim renderer,<br>everywhere.</h1>
+  <p class="lede">The mockups, made real: a single dependency-free component in <code>@klavity/core/sim</code> — <b>photo with automatic monogram fallback</b>, thin persona ring, and the floating emotion mark. Everything on this page is drawn by the actual shipped component via <code>createSim()</code>. Nothing here touches the live app yet.</p>
+
+  <!-- LIVE PLAYGROUND -->
+  <div class="section">
+    <div class="sec-title">Live playground</div>
+    <div class="sec-sub">Tweak the props — the Sim and the code update together. Turn the photo off (or break it) to watch the monogram fallback.</div>
+    <div class="play">
+      <div class="stage"><div class="floor"></div><div id="stage"></div></div>
+      <div class="panel">
+        <div class="field"><label>Name</label><input class="in" id="f-name" value="Sarah Chen"></div>
+        <div class="field"><label>Persona colour</label><div class="swatches" id="f-color"></div></div>
+        <div class="field"><label>Emotion</label><select class="in" id="f-emotion"></select></div>
+        <div class="field"><label>Size — <span id="f-size-v">88</span>px</label><input type="range" id="f-size" min="36" max="120" value="88"></div>
+        <div class="field rowf">
+          <label class="chk"><input type="checkbox" id="f-photo" checked> Profile photo</label>
+          <label class="chk"><input type="checkbox" id="f-break"> Break the photo URL</label>
+          <label class="chk"><input type="checkbox" id="f-eyes" checked> Character eyes</label>
+        </div>
+        <div class="code" id="code"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CAST -->
+  <div class="section">
+    <div class="sec-title">The cast</div>
+    <div class="sec-sub">Six personas, each with a photo (→ monogram fallback) and its current reaction.</div>
+    <div class="cast" id="cast"></div>
+  </div>
+
+  <!-- SIZES -->
+  <div class="section">
+    <div class="sec-title">Any size, one component</div>
+    <div class="sec-sub">Everything scales from a single <code style="font-family:var(--mono);color:var(--indigo)">size</code> prop — list avatars to hero greeters.</div>
+    <div class="sizes" id="sizes"></div>
+  </div>
+
+  <!-- DOCK -->
+  <div class="section">
+    <div class="sec-title">In a roster</div>
+    <div class="sec-sub">The same component at <code style="font-family:var(--mono);color:var(--indigo)">size:34, legs:false</code> as a compact dock avatar.</div>
+    <div class="dock" id="dock"></div>
+  </div>
+
+  <div class="foot">
+    Source of truth: <code>packages/core/src/sim.ts</code> → import <code>{ createSim, injectSimStyles, emotionFromSentiment }</code> from <code>@klavity/core/sim</code>. The reaction pipeline already emits <b>frustrated / confused / satisfied / delighted / neutral</b> — pass it straight through <code>emotionFromSentiment()</code>. Next: wire this into the app stage (<code>.sim-char</code>), the login greeter, and the SDK widget. This page consumes the real bundle at <code>/klavity-sim.js</code>.
+  </div>
+
+</div>
+
+<script src="klavity-sim.js"></script>
+<script>
+const { createSim, injectSimStyles, EMOTIONS } = window.KlavitySim;
+injectSimStyles(document);
+
+const COLORS = ['#6f6cf2','#e8a24a','#34c7a6','#ec6fae','#5b8def','#ef6b6b'];
+const PERSONAS = [
+  { name:'Sarah Chen',  role:'CFO',          color:'#6f6cf2', img:47, emotion:'frustrated' },
+  { name:'James Moore',  role:'Finance Lead', color:'#e8a24a', img:68, emotion:'inspired'   },
+  { name:'Anika Kumar',  role:'Operations',   color:'#34c7a6', img:44, emotion:'delighted'  },
+  { name:'Priya Rao',    role:'Designer',     color:'#ec6fae', img:49, emotion:'confused'   },
+  { name:'Marcus Webb',  role:'Analyst',      color:'#5b8def', img:59, emotion:'satisfied'  },
+  { name:'Diego Santos', role:'Support Lead', color:'#ef6b6b', img:33, emotion:'alarmed'    },
+];
+const photo = (img) => `https://i.pravatar.cc/160?img=${img}`;
+
+/* ── playground ── */
+const state = { name:'Sarah Chen', color:'#6f6cf2', emotion:'frustrated', size:88, photo:true, broken:false, eyes:true };
+const stage = document.getElementById('stage');
+
+// emotion select
+const emoSel = document.getElementById('f-emotion');
+emoSel.innerHTML = ['none', ...Object.keys(EMOTIONS)].map(k =>
+  `<option value="${k}"${k==='frustrated'?' selected':''}>${k}</option>`).join('');
+// colour swatches
+document.getElementById('f-color').innerHTML = COLORS.map((c,i)=>
+  `<span class="sw${i===0?' on':''}" data-c="${c}" style="--c:${c}"></span>`).join('');
+
+function currentProps(){
+  const photoUrl = state.photo ? (state.broken ? 'https://invalid.example/none.jpg' : photo(47)) : undefined;
+  return { name:state.name, color:state.color, emotion:state.emotion, size:state.size, eyes:state.eyes, photoUrl };
+}
+function snippet(p){
+  const lines = [
+    `<span class="k">import</span> { createSim } <span class="k">from</span> <span class="s">'@klavity/core/sim'</span>`,
+    ``,
+    `stage.appendChild(<span class="p">createSim</span>({`,
+    `  name: <span class="s">'${p.name}'</span>,`,
+    `  color: <span class="s">'${p.color}'</span>,`,
+    p.photoUrl ? `  photoUrl: <span class="s">'${p.photoUrl.replace(/'/g,"")}'</span>,` : `  <span style="color:#7d7264">// no photoUrl → monogram</span>`,
+    p.emotion !== 'none' ? `  emotion: <span class="s">'${p.emotion}'</span>,` : null,
+    p.eyes ? null : `  eyes: <span class="p">false</span>,`,
+    `  size: <span class="p">${p.size}</span>,`,
+    `}))`,
+  ].filter(l => l !== null);
+  return lines.join('\n');
+}
+function renderStage(){
+  const p = currentProps();
+  stage.innerHTML = '';
+  stage.appendChild(createSim(p));
+  document.getElementById('code').innerHTML = snippet(p);
+}
+
+document.getElementById('f-name').addEventListener('input', e => { state.name = e.target.value || 'New Sim'; renderStage(); });
+document.getElementById('f-color').addEventListener('click', e => {
+  const sw = e.target.closest('.sw'); if(!sw) return;
+  state.color = sw.dataset.c;
+  document.querySelectorAll('.sw').forEach(s => s.classList.toggle('on', s===sw));
+  renderStage();
+});
+emoSel.addEventListener('change', e => { state.emotion = e.target.value; renderStage(); });
+const sizeV = document.getElementById('f-size-v');
+document.getElementById('f-size').addEventListener('input', e => { state.size = +e.target.value; sizeV.textContent = e.target.value; renderStage(); });
+document.getElementById('f-photo').addEventListener('change', e => { state.photo = e.target.checked; renderStage(); });
+document.getElementById('f-break').addEventListener('change', e => { state.broken = e.target.checked; renderStage(); });
+document.getElementById('f-eyes').addEventListener('change', e => { state.eyes = e.target.checked; renderStage(); });
+renderStage();
+
+/* ── cast ── */
+const cast = document.getElementById('cast');
+PERSONAS.forEach(p => {
+  const card = document.createElement('div'); card.className = 'card';
+  card.appendChild(createSim({ name:p.name, color:p.color, photoUrl:photo(p.img), emotion:p.emotion, size:64 }));
+  const meta = document.createElement('div');
+  meta.innerHTML = `<div class="nm">${p.name}</div><div class="rl">${p.role} · ${p.emotion}</div>`;
+  card.appendChild(meta);
+  cast.appendChild(card);
+});
+
+/* ── sizes ── */
+const sizes = document.getElementById('sizes');
+[28,40,58,88,112].forEach(sz => {
+  const wrap = document.createElement('div'); wrap.className = 'sz';
+  wrap.appendChild(createSim({ name:'Anika Kumar', color:'#34c7a6', photoUrl:photo(44), emotion:'delighted', size:sz }));
+  const lbl = document.createElement('span'); lbl.textContent = sz + 'px';
+  wrap.appendChild(lbl);
+  sizes.appendChild(wrap);
+});
+
+/* ── dock ── */
+const dock = document.getElementById('dock');
+const quotes = ['“I need an export before I sign off.”','“Bulk-approve, please.”','“Revenue front and centre.”','“Why is this two clicks deep?”','“Numbers reconcile — nice.”','“Checkout 500s on mobile.”'];
+PERSONAS.forEach((p,i) => {
+  const row = document.createElement('div'); row.className = 'drow';
+  row.appendChild(createSim({ name:p.name, color:p.color, photoUrl:photo(p.img), emotion:p.emotion, size:34, legs:false }));
+  const meta = document.createElement('div');
+  meta.innerHTML = `<div class="dn">${p.name}</div><div class="dq">${quotes[i]}</div>`;
+  row.appendChild(meta);
+  dock.appendChild(row);
+});
+</script>
+</body>
+</html>

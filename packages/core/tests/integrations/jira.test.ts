@@ -37,7 +37,7 @@ describe('jira.submitReport', () => {
     const [url, opts] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
     expect(url).toContain('/rest/api/3/issue')
     expect(JSON.parse(opts.body).fields.issuetype.name).toBe('Bug')
-    expect(JSON.parse(opts.body).fields.labels).toContain('klav-bug')
+    expect(JSON.parse(opts.body).fields.labels).toContain('klavity-bug')
     expect(result.issueKey).toBe('ACME-42')
     expect(result.issueUrl).toBe('https://acme.atlassian.net/browse/ACME-42')
   })
@@ -51,7 +51,7 @@ describe('jira.submitReport', () => {
     await submitReport({ ...config, type: 'feature' })
     const body = JSON.parse((global.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body)
     expect(body.fields.issuetype.name).toBe('Story')
-    expect(body.fields.labels).toContain('klav-feature')
+    expect(body.fields.labels).toContain('klavity-feature')
   })
 
   it('throws a user-friendly error on API failure', async () => {

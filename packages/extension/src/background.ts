@@ -1,18 +1,18 @@
-import type { BackgroundMessage, ContentMessage, KlavSettings } from '@klav/core'
-import { DEFAULT_SETTINGS } from '@klav/core'
-import { dispatchSubmit } from '@klav/core/submit'
-import { submitReport as jiraSubmit } from '@klav/core/integrations/jira'
-import { submitReport as linearSubmit } from '@klav/core/integrations/linear'
-import { submitReport as githubSubmit } from '@klav/core/integrations/github'
-import { submitReport as planeSubmit } from '@klav/core/integrations/plane'
-import { submitReport as backendSubmit } from '@klav/core/integrations/backend'
+import type { BackgroundMessage, ContentMessage, KlavitySettings } from '@klavity/core'
+import { DEFAULT_SETTINGS } from '@klavity/core'
+import { dispatchSubmit } from '@klavity/core/submit'
+import { submitReport as jiraSubmit } from '@klavity/core/integrations/jira'
+import { submitReport as linearSubmit } from '@klavity/core/integrations/linear'
+import { submitReport as githubSubmit } from '@klavity/core/integrations/github'
+import { submitReport as planeSubmit } from '@klavity/core/integrations/plane'
+import { submitReport as backendSubmit } from '@klavity/core/integrations/backend'
 
-async function getSettings(): Promise<KlavSettings> {
+async function getSettings(): Promise<KlavitySettings> {
   const result = await chrome.storage.sync.get('klavSettings')
   return { ...DEFAULT_SETTINGS, ...(result.klavSettings ?? {}) }
 }
 
-function getTrackerUrl(settings: KlavSettings): string {
+function getTrackerUrl(settings: KlavitySettings): string {
   switch (settings.integration) {
     case 'jira': return settings.jira.baseUrl ? `${settings.jira.baseUrl}/browse` : ''
     case 'linear': return 'https://linear.app'
@@ -22,22 +22,22 @@ function getTrackerUrl(settings: KlavSettings): string {
 }
 
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.contextMenus.create({ id: 'klav-bug', title: '🐛 Report a Bug', contexts: ['all'] })
-  chrome.contextMenus.create({ id: 'klav-feature', title: '💡 Request a Feature', contexts: ['all'] })
-  chrome.contextMenus.create({ id: 'klav-history', title: '📋 View submissions', contexts: ['all'] })
+  chrome.contextMenus.create({ id: 'klavity-bug', title: '🐛 Report a Bug', contexts: ['all'] })
+  chrome.contextMenus.create({ id: 'klavity-feature', title: '💡 Request a Feature', contexts: ['all'] })
+  chrome.contextMenus.create({ id: 'klavity-history', title: '📋 View submissions', contexts: ['all'] })
 })
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (!tab?.id) return
 
-  if (info.menuItemId === 'klav-history') {
+  if (info.menuItemId === 'klavity-history') {
     const settings = await getSettings()
     const url = getTrackerUrl(settings)
     if (url) chrome.tabs.create({ url })
     return
   }
 
-  const reportType = info.menuItemId === 'klav-bug' ? 'bug' : 'feature'
+  const reportType = info.menuItemId === 'klavity-bug' ? 'bug' : 'feature'
   chrome.tabs.sendMessage(tab.id, { kind: 'OPEN_MODAL', reportType } satisfies ContentMessage)
 })
 

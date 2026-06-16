@@ -15,7 +15,7 @@ export async function submitReport(config: IntegrationConfig): Promise<SubmitRes
 
   const res = await fetch(`${settings.backendUrl}/api/feedback`, { method: 'POST', body: form })
 
-  if (!res.ok) throw new Error(`Klav backend error ${res.status}: ${await res.text()}`)
+  if (!res.ok) throw new Error(`Klavity backend error ${res.status}: ${await res.text()}`)
 
   const data = await res.json() as { id: string; jira_key?: string; issue_url?: string }
   return {

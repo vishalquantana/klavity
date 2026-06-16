@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Klavity Sims · Identity options</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..800;1,9..144,400..600&family=Hanken+Grotesk:wght@300..800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --ink:#0c0a08; --ink-2:#15110d; --ink-3:#1f1912;
+  --paper:#f3ece1; --paper-dim:#b3a896; --paper-faint:#7d7264;
+  --indigo:#8b8bf5; --indigo-deep:#6366f1;
+  --rose:#e8849a; --amber:#e8a24a; --green:#9fd6a0; --red:#ef6b6b; --grey:#8a8276;
+  --line:rgba(243,236,225,.10); --line-2:rgba(243,236,225,.18);
+  --display:'Fraunces',serif; --body:'Hanken Grotesk',system-ui,sans-serif; --mono:'JetBrains Mono',monospace;
+  --persona:#6f6cf2; --accent:var(--rose);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{background:var(--ink); color:var(--paper); font-family:var(--body); min-height:100vh; line-height:1.5; -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(70% 50% at 80% -5%, rgba(139,139,245,.16), transparent 60%), radial-gradient(50% 40% at 8% 0%, rgba(232,132,154,.08), transparent 55%);
+  transition:background .5s;}
+body::before{content:""; position:fixed; inset:0; pointer-events:none; z-index:0; opacity:.4;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E"); mix-blend-mode:overlay;}
+.shell{position:relative; z-index:1; max-width:1180px; margin:0 auto; padding:54px 28px 90px}
+
+.eyebrow{font-family:var(--mono); font-size:10.5px; letter-spacing:.34em; text-transform:uppercase; color:var(--indigo); display:flex; align-items:center; gap:11px}
+.eyebrow .spark{width:24px;height:24px;border-radius:7px;display:grid;place-items:center;font-size:13px;background:linear-gradient(135deg,var(--indigo-deep),#a78bfa);color:#fff}
+h1{font-family:var(--display); font-weight:430; font-size:clamp(34px,6vw,60px); letter-spacing:-.025em; line-height:1.02; margin:20px 0 0}
+h1 em{font-style:italic; color:var(--indigo)}
+.lede{max-width:64ch; margin-top:18px; font-size:16.5px; color:var(--paper-dim)}
+.lede b{color:var(--paper); font-weight:600}
+
+/* persona switcher + toggles */
+.bar{position:sticky; top:0; z-index:20; margin-top:28px; padding:14px 0; background:linear-gradient(180deg,var(--ink) 70%,transparent);
+  display:flex; flex-wrap:wrap; gap:9px; align-items:center}
+.who{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);margin-right:4px}
+.pchip{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;color:var(--paper-dim);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:30px;padding:6px 14px 6px 7px;cursor:pointer;transition:.18s}
+.pchip:hover{border-color:var(--line-2);color:var(--paper)}
+.pchip .pd{width:18px;height:18px;border-radius:50%;background:var(--c);flex-shrink:0;box-shadow:inset 0 -2px 4px rgba(0,0,0,.3)}
+.pchip.on{color:var(--ink);background:var(--paper);border-color:var(--paper)}
+.spacer{flex:1}
+.ctl{font-family:var(--mono); font-size:11px; color:var(--paper-dim); background:var(--ink-2); border:1px solid var(--line); border-radius:30px; padding:8px 14px; cursor:pointer; transition:.18s}
+.ctl:hover{border-color:var(--line-2);color:var(--paper)} .ctl.on{color:var(--ink);background:var(--paper);border-color:var(--paper)}
+
+.section{margin-top:46px}
+.sec-head{display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; border-bottom:1px solid var(--line); padding-bottom:14px}
+.sec-num{font-family:var(--mono); font-size:12px; color:var(--indigo); letter-spacing:.1em}
+.sec-title{font-family:var(--display); font-size:25px; font-weight:430; letter-spacing:-.02em}
+.sec-desc{font-size:13.5px; color:var(--paper-dim); flex:1; min-width:240px; max-width:56ch}
+
+.grid{margin-top:26px; display:grid; grid-template-columns:repeat(auto-fill,minmax(166px,1fr)); gap:14px}
+.cell{position:relative; display:flex; flex-direction:column; align-items:center; gap:18px;
+  background:radial-gradient(120% 80% at 50% 0%, rgba(255,255,255,.025), transparent 70%), var(--ink-2);
+  border:1px solid var(--line); border-radius:16px; padding:32px 12px 15px; min-height:180px; justify-content:flex-end; overflow:hidden;
+  transition:border-color .25s, transform .25s; cursor:pointer}
+.cell:hover{transform:translateY(-4px); border-color:color-mix(in srgb,var(--persona) 50%, var(--line))}
+.cap{text-align:center}
+.cap .ce{font-weight:700; font-size:13px}
+.cap .cf{font-family:var(--mono); font-size:8px; letter-spacing:.05em; text-transform:uppercase; color:var(--paper-faint); margin-top:3px; line-height:1.35}
+
+/* ── Sim base ── */
+.sim{position:relative; width:64px; display:flex; flex-direction:column; align-items:center; animation:bob 3.1s ease-in-out infinite; animation-delay:var(--d,0s)}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+.cell:hover .sim{animation-duration:1.5s}
+.head{width:58px;height:58px;border-radius:50%;position:relative;z-index:2; display:grid;place-items:center; box-shadow:0 8px 22px -6px rgba(0,0,0,.7)}
+.head .ini{font-family:var(--mono);font-weight:700;font-size:18px;color:#fff;letter-spacing:.02em;text-shadow:0 1px 2px rgba(0,0,0,.35)}
+.legs{display:flex;gap:7px;margin-top:4px}
+.leg{width:7px;height:17px;border-radius:4px;background:color-mix(in srgb,var(--persona) 60%, #000 30%);transform-origin:top center}
+.sim .leg:nth-child(1){animation:lwa 1.6s ease-in-out infinite;animation-delay:var(--d,0s)}
+.sim .leg:nth-child(2){animation:lwb 1.6s ease-in-out infinite;animation-delay:var(--d,0s)}
+@keyframes lwa{0%,100%{transform:rotate(-6deg)}50%{transform:rotate(7deg)}}
+@keyframes lwb{0%,100%{transform:rotate(6deg)}50%{transform:rotate(-7deg)}}
+.eyes{position:absolute;bottom:9px;left:50%;transform:translateX(-50%);display:none;gap:6px;z-index:3}
+.eye{width:5px;height:5px;border-radius:50%;background:rgba(12,10,8,.8)}
+
+/* ── floating emotion mark ── */
+.mark{position:absolute;top:-12px;right:-12px;width:26px;height:26px;color:var(--accent);z-index:5;filter:drop-shadow(0 2px 5px rgba(0,0,0,.55));transform-origin:center}
+.mark svg{width:100%;height:100%;display:block}
+.mark .txt{font-family:var(--mono);font-weight:700;font-size:21px;line-height:26px;text-align:center;color:var(--accent)}
+.m-vein{animation:veinPulse 1.1s ease-in-out infinite}@keyframes veinPulse{0%,100%{transform:scale(1) rotate(0)}45%{transform:scale(1.22) rotate(-6deg)}}
+.m-spark{animation:twinkle 1.5s ease-in-out infinite}@keyframes twinkle{0%,100%{transform:scale(1) rotate(0);opacity:1}50%{transform:scale(1.18) rotate(18deg);opacity:.7}}
+.m-bulb{animation:bulbGlow 1.7s ease-in-out infinite}@keyframes bulbGlow{0%,100%{filter:drop-shadow(0 0 0 transparent) drop-shadow(0 2px 5px rgba(0,0,0,.55))}50%{filter:drop-shadow(0 0 9px var(--accent)) drop-shadow(0 2px 5px rgba(0,0,0,.55))}}
+.m-bang{animation:bangShake 1.2s ease-in-out infinite}@keyframes bangShake{0%,100%{transform:translateX(0) rotate(0)}25%{transform:translateX(-2px) rotate(-7deg)}75%{transform:translateX(2px) rotate(7deg)}}
+.m-q{animation:qTilt 2.2s ease-in-out infinite}@keyframes qTilt{0%,100%{transform:rotate(-8deg)}50%{transform:rotate(10deg)}}
+.m-dots{animation:dotFade 2s linear infinite}@keyframes dotFade{0%,100%{opacity:.45}50%{opacity:1}}
+
+/* ════════ identity option treatments ════════ */
+/* 1 flat */
+.o-flat{background:var(--persona)}
+/* 2 gradient */
+.o-grad{background:radial-gradient(120% 120% at 30% 22%, color-mix(in srgb,var(--persona) 72%, #fff 14%), var(--persona) 58%, color-mix(in srgb,var(--persona) 55%, #000 38%)); box-shadow:0 8px 22px -6px rgba(0,0,0,.7), inset 0 2px 4px rgba(255,255,255,.25), inset 0 -6px 12px rgba(0,0,0,.28)}
+/* 3 outline / ghost */
+.o-ghost{background:var(--ink-3); box-shadow:inset 0 0 0 2.5px var(--persona)} .o-ghost .ini{color:var(--persona);text-shadow:none}
+/* 4 editorial (serif initials) */
+.o-serif{background:radial-gradient(120% 120% at 30% 22%, color-mix(in srgb,var(--persona) 70%, #fff 12%), var(--persona) 60%)} .o-serif .ini{font-family:var(--display);font-style:italic;font-weight:500;font-size:24px}
+/* 5 pastel */
+.o-soft{background:color-mix(in srgb,var(--persona) 26%, var(--ink-3)); box-shadow:0 8px 22px -6px rgba(0,0,0,.6), inset 0 0 0 1px color-mix(in srgb,var(--persona) 35%, transparent)} .o-soft .ini{color:color-mix(in srgb,var(--persona) 60%, #fff 55%);text-shadow:none}
+/* photos */
+.head.photo{overflow:visible}
+.head.photo img{width:100%;height:100%;border-radius:50%;object-fit:cover;display:block}
+.head.photo .ini{position:absolute;inset:0;display:none;place-items:center;border-radius:50%;background:radial-gradient(120% 120% at 30% 22%, color-mix(in srgb,var(--persona) 72%, #fff 12%), var(--persona) 60%)}
+/* 6 photo thin ring */
+.o-photo{box-shadow:0 8px 22px -6px rgba(0,0,0,.7), 0 0 0 2px var(--persona)}
+/* 7 photo ring + glow */
+.o-glow{box-shadow:0 8px 22px -6px rgba(0,0,0,.7), 0 0 0 3px var(--persona), 0 0 22px 1px color-mix(in srgb,var(--persona) 60%, transparent)}
+/* 8 photo duotone */
+.o-duo{box-shadow:0 8px 22px -6px rgba(0,0,0,.7), 0 0 0 2px var(--persona)}
+.o-duo img{filter:grayscale(1) contrast(1.06) brightness(1.02)}
+.o-duo::after{content:"";position:absolute;inset:0;border-radius:50%;background:var(--persona);mix-blend-mode:color;opacity:.6;pointer-events:none}
+/* 9 photo minimal (no ring) */
+.o-min{box-shadow:0 10px 20px -8px rgba(0,0,0,.8)}
+/* 11 photo + initials badge */
+.o-badge{box-shadow:0 8px 22px -6px rgba(0,0,0,.7), 0 0 0 2px var(--persona)}
+.o-badge .pill{position:absolute;bottom:-3px;right:-3px;font-family:var(--mono);font-weight:700;font-size:9px;color:#fff;background:var(--persona);border:2px solid var(--ink-2);border-radius:9px;padding:1px 5px;z-index:6}
+/* 12 nameplate */
+.nameplate{position:absolute;top:64px;left:50%;transform:translateX(-50%);white-space:nowrap;z-index:6;
+  font-family:var(--mono);font-size:8.5px;font-weight:600;letter-spacing:.05em;color:var(--paper-dim);
+  background:var(--ink-3);border:1px solid var(--line-2);border-radius:20px;padding:3px 9px}
+
+/* eyes toggle (monogram options only) */
+body.eyes-on .head:not(.photo) .eyes{display:flex}
+body.eyes-on .o-grad .ini, body.eyes-on .o-flat .ini, body.eyes-on .o-ghost .ini, body.eyes-on .o-soft .ini{transform:translateY(-6px);font-size:15px}
+body.eyes-on .o-serif .ini{transform:translateY(-6px);font-size:20px}
+
+.foot{margin-top:64px;border-top:1px solid var(--line);padding-top:22px;color:var(--paper-faint);font-size:13px;max-width:74ch}
+.foot code{font-family:var(--mono);font-size:11.5px;color:var(--indigo);background:var(--ink-2);border:1px solid var(--line);border-radius:5px;padding:1px 6px}
+.foot b{color:var(--paper-dim)}
+.reduced .sim,.reduced .mark,.reduced .leg{animation:none !important}
+@media (prefers-reduced-motion: reduce){*{animation:none !important}}
+</style>
+</head>
+<body class="eyes-on">
+<div class="shell">
+
+  <div class="eyebrow"><span class="spark">⚡</span> Klavity Sims · Identity options</div>
+  <h1>Twelve ways to<br>wear an <em>identity</em>.</h1>
+  <p class="lede">Same Sim, same floating emotion mark — twelve different ways to show <b>who it is</b>. Switch the persona below and the whole gallery re-skins, so you can judge each treatment in any colour (and see the photo styles on a real face).</p>
+
+  <div class="bar">
+    <span class="who">Persona</span>
+    <span id="pchips"></span>
+    <span class="spacer"></span>
+    <button class="ctl on" id="eyesBtn">eyes: on</button>
+    <button class="ctl" id="motionBtn">pause</button>
+  </div>
+
+  <div id="sections"></div>
+
+  <div class="foot">
+    Photos are <code>i.pravatar.cc</code> placeholders for the mock; any failed photo <b>falls back to the monogram</b> (see option 10). Persona colour = identity, mark colour = emotion. My pick: <b>02 Gradient</b> for letters-only, <b>08 Duotone</b> or <b>06 thin-ring</b> for photos, and ship them as <b>photo → monogram fallback</b>. Tell me the number(s) and I'll wire it into the live Sims.
+  </div>
+
+</div>
+
+<script>
+const P = [
+  { name:'Sarah Chen',  role:'CFO',          ini:'SC', c:'#6f6cf2', img:47, emo:'frustrated' },
+  { name:'James Moore',  role:'Finance Lead', ini:'JM', c:'#e8a24a', img:68, emo:'inspired'   },
+  { name:'Anika Kumar',  role:'Operations',   ini:'AK', c:'#34c7a6', img:44, emo:'delighted'  },
+  { name:'Priya Rao',    role:'Designer',     ini:'PR', c:'#ec6fae', img:49, emo:'confused'   },
+  { name:'Marcus Webb',  role:'Analyst',      ini:'MW', c:'#5b8def', img:59, emo:'unimpressed'},
+  { name:'Diego Santos', role:'Support Lead', ini:'DS', c:'#ef6b6b', img:33, emo:'alarmed'    },
+];
+const EMO = { frustrated:{accent:'var(--rose)',mark:'vein'}, confused:{accent:'var(--amber)',mark:'q'},
+  delighted:{accent:'var(--green)',mark:'spark'}, inspired:{accent:'var(--indigo)',mark:'bulb'},
+  alarmed:{accent:'var(--red)',mark:'bang'}, unimpressed:{accent:'var(--grey)',mark:'dots'} };
+const markAnim={vein:'m-vein',spark:'m-spark',bulb:'m-bulb',bang:'m-bang',q:'m-q',dots:'m-dots'};
+function mark(n){switch(n){
+  case 'vein':return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M11 3 L8 6 M11 3 L14 6 M21 11 L18 8 M21 11 L18 14 M13 21 L16 18 M13 21 L10 18 M3 13 L6 16 M3 13 L6 10"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg>`;
+  case 'spark':return `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 2c.6 4.2 2.8 6.4 7 7-4.2.6-6.4 2.8-7 7-.6-4.2-2.8-6.4-7-7 4.2-.6 6.4-2.8 7-7Z"/><path d="M5.5 13c.3 1.9 1.3 2.9 3.2 3.2-1.9.3-2.9 1.3-3.2 3.2-.3-1.9-1.3-2.9-3.2-3.2 1.9-.3 2.9-1.3 3.2-3.2Z" opacity=".85"/></svg>`;
+  case 'bulb':return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17.5h6M9.5 20.5h5"/><path d="M12 3a6 6 0 0 0-3.6 10.8c.7.5 1.1 1.3 1.1 2.2h5c0-.9.4-1.7 1.1-2.2A6 6 0 0 0 12 3Z"/><path d="M10 9.5c.4-1 1-1.5 2-1.5" opacity=".7"/></svg>`;
+  case 'bang':return `<div class="txt">!</div>`; case 'q':return `<div class="txt">?</div>`;
+  case 'dots':return `<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2.3"/><circle cx="12" cy="12" r="2.3"/><circle cx="19" cy="12" r="2.3"/></svg>`;
+}return '';}
+const photoURL=(p)=>`https://i.pravatar.cc/140?img=${p.img}`;
+
+const eyes = `<span class="eyes"><span class="eye"></span><span class="eye"></span></span>`;
+const monoHead = (cls,p) => `<div class="head ${cls}"><span class="ini">${p.ini}</span>${eyes}</div>`;
+const photoHead = (cls,p,extra='',src=null) =>
+  `<div class="head photo ${cls}"><img src="${src===null?photoURL(p):src}" alt="${p.name}" onerror="this.style.display='none';this.nextElementSibling.style.display='grid'"><span class="ini">${p.ini}</span>${extra}</div>`;
+
+const OPTIONS = [
+  { g:'Initials', n:'01 · Flat fill',     d:'Solid persona colour. Crispest, most “app icon”.',            head:p=>monoHead('o-flat',p) },
+  { g:'Initials', n:'02 · Gradient',      d:'Soft dimensional sphere. The friendly default.',              head:p=>monoHead('o-grad',p) },
+  { g:'Initials', n:'03 · Outline',       d:'Dark head, coloured ring + letters. Quiet, recedes.',         head:p=>monoHead('o-ghost',p) },
+  { g:'Initials', n:'04 · Editorial',     d:'Initials set in Fraunces italic. Premium, magazine-y.',       head:p=>monoHead('o-serif',p) },
+  { g:'Initials', n:'05 · Pastel',        d:'Tinted wash, muted letters. Calm, low-contrast.',             head:p=>monoHead('o-soft',p) },
+  { g:'Photo', n:'06 · Photo · thin ring',d:'Headshot, 2px persona ring. Clean and credible.',             head:p=>photoHead('o-photo',p) },
+  { g:'Photo', n:'07 · Photo · glow',     d:'Thicker ring + coloured halo. Pops, more “alive”.',           head:p=>photoHead('o-glow',p) },
+  { g:'Photo', n:'08 · Photo · duotone',  d:'Photo tinted to persona colour. On-brand, less stocky.',      head:p=>photoHead('o-duo',p) },
+  { g:'Photo', n:'09 · Photo · minimal',  d:'No ring, just a soft shadow. Most understated.',              head:p=>photoHead('o-min',p) },
+  { g:'Photo', n:'10 · Photo → fallback', d:'Broken photo → auto monogram. The safety net.',               head:p=>photoHead('o-photo',p,'','https://invalid.example/none.jpg') },
+  { g:'Hybrid', n:'11 · Photo + initials',d:'Headshot with a small initials chip. Belt + braces.',         head:p=>photoHead('o-badge',p,`<span class="pill">${p.ini}</span>`) },
+  { g:'Hybrid', n:'12 · Monogram + plate',d:'Monogram with a floating name tag under it.',                 head:p=>`${monoHead('o-grad',p)}` , plate:true },
+];
+
+const GROUPS = [
+  { num:'01', g:'Initials', title:'Initials / monogram', desc:'Letters only — never breaks, no assets, colour starts to identify the regulars.' },
+  { num:'02', g:'Photo',    title:'Profile photos',      desc:'Real faces — most credible and scannable; needs an avatar per Sim (with a fallback).' },
+  { num:'03', g:'Hybrid',   title:'Hybrids',             desc:'Combine both, or add a name tag, when you want maximum recognisability.' },
+];
+
+function cell(o, p, i){
+  const e = EMO[p.emo];
+  const markEl = `<div class="mark ${markAnim[e.mark]}" style="color:${e.accent}">${mark(e.mark)}</div>`;
+  const plate = o.plate ? `<div class="nameplate">${p.name}</div>` : '';
+  return `<div class="cell">
+    <div class="sim" style="--d:${(i*0.13).toFixed(2)}s">${markEl}${o.head(p)}<div class="legs"><span class="leg"></span><span class="leg"></span></div>${plate}</div>
+    <div class="cap"><div class="ce">${o.n}</div><div class="cf">${o.d}</div></div>
+  </div>`;
+}
+
+let idx = 0;
+function render(){
+  const p = P[idx];
+  document.documentElement.style.setProperty('--persona', p.c);
+  document.documentElement.style.setProperty('--accent', EMO[p.emo].accent);
+  document.getElementById('sections').innerHTML = GROUPS.map(grp => `
+    <section class="section">
+      <div class="sec-head"><span class="sec-num">${grp.num}</span><span class="sec-title">${grp.title}</span><span class="sec-desc">${grp.desc}</span></div>
+      <div class="grid">${OPTIONS.filter(o=>o.g===grp.g).map((o,i)=>cell(o,p,i)).join('')}</div>
+    </section>`).join('');
+  document.querySelectorAll('.pchip').forEach((c,k)=>c.classList.toggle('on', k===idx));
+}
+
+document.getElementById('pchips').innerHTML = P.map((p,k)=>
+  `<button class="pchip${k===0?' on':''}" data-k="${k}" style="--c:${p.c}"><span class="pd"></span>${p.name.split(' ')[0]}</button>`).join('');
+document.getElementById('pchips').addEventListener('click', e=>{ const b=e.target.closest('.pchip'); if(!b) return; idx=+b.dataset.k; render(); });
+
+document.addEventListener('click', (ev)=>{ const cell=ev.target.closest('.cell'); if(!cell) return; const sim=cell.querySelector('.sim');
+  sim.animate([{transform:'translateY(0) scale(1)'},{transform:'translateY(-16px) scale(1.12)'},{transform:'translateY(0) scale(1)'}],{duration:520,easing:'cubic-bezier(.34,1.56,.64,1)'}); });
+
+const eyesBtn=document.getElementById('eyesBtn');
+eyesBtn.onclick=()=>{const on=document.body.classList.toggle('eyes-on'); eyesBtn.textContent='eyes: '+(on?'on':'off'); eyesBtn.classList.toggle('on',on);};
+const motionBtn=document.getElementById('motionBtn');
+motionBtn.onclick=()=>{const pa=document.body.classList.toggle('reduced'); motionBtn.textContent=pa?'resume':'pause'; motionBtn.classList.toggle('on',pa);};
+
+render();
+</script>
+</body>
+</html>

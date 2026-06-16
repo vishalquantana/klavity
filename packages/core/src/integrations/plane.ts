@@ -10,7 +10,7 @@ export async function submitReport(config: IntegrationConfig): Promise<SubmitRes
       method: 'POST',
       headers: { 'X-API-Key': token, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        name: `[Klav] ${description.slice(0, 180)}`,
+        name: `[Klavity] ${description.slice(0, 180)}`,
         description_html: `<p>${description}</p><p><strong>Page:</strong> ${context.pageUrl}</p>`,
       }),
     },

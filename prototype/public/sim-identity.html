@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Klavity Sims · Identity (initials vs photos)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..800;1,9..144,400..600&family=Hanken+Grotesk:wght@300..800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --ink:#0c0a08; --ink-2:#15110d; --ink-3:#1f1912;
+  --paper:#f3ece1; --paper-dim:#b3a896; --paper-faint:#7d7264;
+  --indigo:#8b8bf5; --indigo-deep:#6366f1;
+  --rose:#e8849a; --amber:#e8a24a; --green:#9fd6a0; --red:#ef6b6b; --grey:#8a8276;
+  --line:rgba(243,236,225,.10); --line-2:rgba(243,236,225,.18);
+  --display:'Fraunces',serif; --body:'Hanken Grotesk',system-ui,sans-serif; --mono:'JetBrains Mono',monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{background:var(--ink); color:var(--paper); font-family:var(--body); min-height:100vh; line-height:1.5; -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(70% 50% at 80% -5%, rgba(139,139,245,.16), transparent 60%), radial-gradient(50% 40% at 8% 0%, rgba(232,132,154,.08), transparent 55%);}
+body::before{content:""; position:fixed; inset:0; pointer-events:none; z-index:0; opacity:.4;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E"); mix-blend-mode:overlay;}
+.shell{position:relative; z-index:1; max-width:1180px; margin:0 auto; padding:54px 28px 90px}
+
+.eyebrow{font-family:var(--mono); font-size:10.5px; letter-spacing:.34em; text-transform:uppercase; color:var(--indigo); display:flex; align-items:center; gap:11px}
+.eyebrow .spark{width:24px;height:24px;border-radius:7px;display:grid;place-items:center;font-size:13px;background:linear-gradient(135deg,var(--indigo-deep),#a78bfa);color:#fff}
+h1{font-family:var(--display); font-weight:430; font-size:clamp(34px,6vw,60px); letter-spacing:-.025em; line-height:1.02; margin:20px 0 0}
+h1 em{font-style:italic; color:var(--indigo)}
+.lede{max-width:64ch; margin-top:18px; font-size:16.5px; color:var(--paper-dim)}
+.lede b{color:var(--paper); font-weight:600}
+
+.controls{display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:30px}
+.ctl{font-family:var(--mono); font-size:11px; letter-spacing:.04em; color:var(--paper-dim); background:var(--ink-2); border:1px solid var(--line); border-radius:30px; padding:9px 16px; cursor:pointer; transition:border-color .2s, color .2s, transform .12s}
+.ctl:hover{border-color:var(--line-2); color:var(--paper)} .ctl:active{transform:translateY(1px)}
+.ctl.on{color:var(--ink); background:var(--paper); border-color:var(--paper)}
+.hintline{font-size:13px;color:var(--paper-faint);margin-left:4px}
+
+.section{margin-top:60px}
+.sec-head{display:flex; align-items:baseline; gap:16px; flex-wrap:wrap; border-bottom:1px solid var(--line); padding-bottom:16px}
+.sec-num{font-family:var(--mono); font-size:12px; color:var(--indigo); letter-spacing:.1em}
+.sec-title{font-family:var(--display); font-size:27px; font-weight:430; letter-spacing:-.02em}
+.sec-desc{font-size:14px; color:var(--paper-dim); flex:1; min-width:240px; max-width:56ch}
+.sec-tag{font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--paper-faint); border:1px solid var(--line);border-radius:20px;padding:4px 11px}
+
+.grid{margin-top:30px; display:grid; grid-template-columns:repeat(auto-fill,minmax(172px,1fr)); gap:14px}
+.cell{position:relative; display:flex; flex-direction:column; align-items:center; gap:18px;
+  background:radial-gradient(120% 80% at 50% 0%, rgba(255,255,255,.025), transparent 70%), var(--ink-2);
+  border:1px solid var(--line); border-radius:16px; padding:32px 14px 16px; min-height:192px; justify-content:flex-end; overflow:hidden;
+  transition:border-color .25s, transform .25s; cursor:pointer}
+.cell:hover{transform:translateY(-4px); border-color:color-mix(in srgb,var(--persona) 50%, var(--line))}
+.cap{text-align:center}
+.cap .ce{font-weight:700; font-size:13.5px}
+.cap .cf{font-family:var(--mono); font-size:8.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--paper-faint); margin-top:3px}
+
+/* ── the Sim (circle with legs) ── */
+.sim{position:relative; width:64px; display:flex; flex-direction:column; align-items:center; animation:bob 3.1s ease-in-out infinite; animation-delay:var(--d,0s)}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+.cell:hover .sim{animation-duration:1.5s}
+.head{width:58px;height:58px;border-radius:50%;position:relative;z-index:2; display:grid;place-items:center; overflow:visible;
+  box-shadow:0 8px 22px -6px rgba(0,0,0,.7);}
+/* monogram head */
+.head.mono{background:radial-gradient(120% 120% at 30% 22%, color-mix(in srgb,var(--persona) 72%, #fff 12%), var(--persona) 60%, color-mix(in srgb,var(--persona) 55%, #000 35%));
+  box-shadow:0 8px 22px -6px rgba(0,0,0,.7), inset 0 2px 4px rgba(255,255,255,.25), inset 0 -6px 12px rgba(0,0,0,.28);}
+.head .ini{font-family:var(--mono);font-weight:700;font-size:18px;color:#fff;letter-spacing:.02em;text-shadow:0 1px 2px rgba(0,0,0,.35)}
+/* photo head */
+.head.photo{background:var(--ink-3); box-shadow:0 8px 22px -6px rgba(0,0,0,.7), 0 0 0 2.5px var(--persona), 0 0 0 5px color-mix(in srgb,var(--persona) 22%, transparent);}
+.head.photo img{width:100%;height:100%;border-radius:50%;object-fit:cover;display:block}
+.head.photo .ini{position:absolute;inset:0;display:none;place-items:center;border-radius:50%;
+  background:radial-gradient(120% 120% at 30% 22%, color-mix(in srgb,var(--persona) 72%, #fff 12%), var(--persona) 60%);}
+/* character eyes (optional, monogram only) */
+.eyes{position:absolute;bottom:9px;left:50%;transform:translateX(-50%);display:none;gap:6px;z-index:3}
+body.eyes-on .head.mono .eyes{display:flex}
+body.eyes-on .head.mono .ini{transform:translateY(-6px);font-size:15px}
+.eye{width:5px;height:5px;border-radius:50%;background:rgba(12,10,8,.8)}
+
+.legs{display:flex;gap:7px;margin-top:4px}
+.leg{width:7px;height:17px;border-radius:4px;background:color-mix(in srgb,var(--persona) 60%, #000 30%);transform-origin:top center}
+.sim .leg:nth-child(1){animation:lwa 1.6s ease-in-out infinite;animation-delay:var(--d,0s)}
+.sim .leg:nth-child(2){animation:lwb 1.6s ease-in-out infinite;animation-delay:var(--d,0s)}
+@keyframes lwa{0%,100%{transform:rotate(-6deg)}50%{transform:rotate(7deg)}}
+@keyframes lwb{0%,100%{transform:rotate(6deg)}50%{transform:rotate(-7deg)}}
+
+/* ── floating emotion mark (chosen treatment) ── */
+.mark{position:absolute;top:-12px;right:-12px;width:26px;height:26px;color:var(--accent);z-index:4;filter:drop-shadow(0 2px 5px rgba(0,0,0,.55));transform-origin:center}
+.mark svg{width:100%;height:100%;display:block}
+.mark .txt{font-family:var(--mono);font-weight:700;font-size:21px;line-height:26px;text-align:center;color:var(--accent)}
+.m-vein{animation:veinPulse 1.1s ease-in-out infinite}@keyframes veinPulse{0%,100%{transform:scale(1) rotate(0)}45%{transform:scale(1.22) rotate(-6deg)}}
+.m-spark{animation:twinkle 1.5s ease-in-out infinite}@keyframes twinkle{0%,100%{transform:scale(1) rotate(0);opacity:1}50%{transform:scale(1.18) rotate(18deg);opacity:.7}}
+.m-bulb{animation:bulbGlow 1.7s ease-in-out infinite}@keyframes bulbGlow{0%,100%{filter:drop-shadow(0 0 0 transparent) drop-shadow(0 2px 5px rgba(0,0,0,.55))}50%{filter:drop-shadow(0 0 9px var(--accent)) drop-shadow(0 2px 5px rgba(0,0,0,.55))}}
+.m-bang{animation:bangShake 1.2s ease-in-out infinite}@keyframes bangShake{0%,100%{transform:translateX(0) rotate(0)}25%{transform:translateX(-2px) rotate(-7deg)}75%{transform:translateX(2px) rotate(7deg)}}
+.m-q{animation:qTilt 2.2s ease-in-out infinite}@keyframes qTilt{0%,100%{transform:rotate(-8deg)}50%{transform:rotate(10deg)}}
+.m-dots{animation:dotFade 2s linear infinite}@keyframes dotFade{0%,100%{opacity:.45}50%{opacity:1}}
+
+/* ── section 03: in-product roster panel ── */
+.panel{margin-top:30px;display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media(max-width:720px){.panel{grid-template-columns:1fr}}
+.pcard{background:var(--ink-2);border:1px solid var(--line);border-radius:16px;padding:18px}
+.pcard h3{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:14px}
+.row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:none}
+.av{width:38px;height:38px;border-radius:50%;flex-shrink:0;position:relative;display:grid;place-items:center}
+.av.mono{font-family:var(--mono);font-weight:700;font-size:12px;color:#fff;background:radial-gradient(120% 120% at 30% 22%, color-mix(in srgb,var(--persona) 72%, #fff 12%), var(--persona) 60%);box-shadow:inset 0 -3px 7px rgba(0,0,0,.25)}
+.av.photo{box-shadow:0 0 0 2px var(--persona)}
+.av.photo img{width:100%;height:100%;border-radius:50%;object-fit:cover}
+.av .badge{position:absolute;top:-5px;right:-5px;width:17px;height:17px;border-radius:50%;display:grid;place-items:center;background:var(--ink-2);box-shadow:0 0 0 2px var(--ink-2);color:var(--accent)}
+.av .badge svg{width:12px;height:12px} .av .badge .txt{font-family:var(--mono);font-weight:700;font-size:11px;color:var(--accent);line-height:1}
+.rmeta{min-width:0;flex:1}
+.rn{font-weight:700;font-size:13px} .rr{font-family:var(--mono);font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:var(--paper-faint)}
+.rq{font-size:12px;color:var(--paper-dim);font-style:italic;font-family:var(--display);margin-top:2px}
+
+.foot{margin-top:70px;border-top:1px solid var(--line);padding-top:22px;color:var(--paper-faint);font-size:13px;max-width:74ch}
+.foot code{font-family:var(--mono);font-size:11.5px;color:var(--indigo);background:var(--ink-2);border:1px solid var(--line);border-radius:5px;padding:1px 6px}
+.foot b{color:var(--paper-dim)}
+
+.reduced .sim,.reduced .mark,.reduced .leg{animation:none !important}
+@media (prefers-reduced-motion: reduce){*{animation:none !important}}
+</style>
+</head>
+<body class="eyes-on">
+<div class="shell">
+
+  <div class="eyebrow"><span class="spark">⚡</span> Klavity Sims · Identity</div>
+  <h1>Give every Sim<br>a <em>face</em> and a name.</h1>
+  <p class="lede">Each Sim is a real person from your interviews — so it needs identity, not just a colour. Two ways to wear it: a <b>monogram</b> (their initials) or their <b>profile photo</b>. The <b>floating emotion mark</b> you picked rides on top, in the emotion's colour — so <b>who</b> (persona colour) and <b>what they felt</b> (mark colour) never blur together.</p>
+
+  <div class="controls">
+    <button class="ctl on" id="eyesBtn">Character eyes: on</button>
+    <button class="ctl" id="motionBtn">Pause motion</button>
+    <span class="hintline">Click any Sim to make it pop.</span>
+  </div>
+
+  <div id="sections"></div>
+
+  <div class="foot">
+    Photos here are placeholder portraits from <code>i.pravatar.cc</code> purely for the mock — in the product they'd be the customer's real avatar (or an uploaded one), and any photo that fails to load <b>falls back to the monogram automatically</b> (try it offline). Persona colour = identity; mark colour = emotion. Tell me which to ship — <b>monogram</b>, <b>photo</b>, or <b>photo-with-monogram-fallback</b> (my recommendation) — and whether to keep the character eyes.
+  </div>
+
+</div>
+
+<script>
+/* personas pulled from the product's existing cast */
+const P = [
+  { name:'Sarah Chen',  role:'CFO',          ini:'SC', persona:'#6f6cf2', img:47, emo:'frustrated', quote:'“I need an export before I sign off.”' },
+  { name:'James Moore',  role:'Finance Lead', ini:'JM', persona:'#e8a24a', img:68, emo:'inspired',   quote:'“Give me bulk-approve — fewer clicks.”' },
+  { name:'Anika Kumar',  role:'Operations',   ini:'AK', persona:'#34c7a6', img:44, emo:'delighted',  quote:'“Revenue front and centre — love it.”' },
+  { name:'Priya Rao',    role:'Designer',     ini:'PR', persona:'#ec6fae', img:49, emo:'confused',   quote:'“Why is this two clicks deep?”' },
+  { name:'Marcus Webb',  role:'Analyst',      ini:'MW', persona:'#5b8def', img:59, emo:'unimpressed',quote:'“I can’t drill into this number.”' },
+  { name:'Diego Santos', role:'Support Lead', ini:'DS', persona:'#ef6b6b', img:33, emo:'alarmed',    quote:'“Checkout 500s on mobile — blocker.”' },
+];
+
+const EMO = {
+  frustrated: { accent:'var(--rose)',   mark:'vein'  },
+  confused:   { accent:'var(--amber)',  mark:'q'     },
+  delighted:  { accent:'var(--green)',  mark:'spark' },
+  inspired:   { accent:'var(--indigo)', mark:'bulb'  },
+  alarmed:    { accent:'var(--red)',    mark:'bang'  },
+  unimpressed:{ accent:'var(--grey)',   mark:'dots'  },
+};
+const markAnim = { vein:'m-vein', spark:'m-spark', bulb:'m-bulb', bang:'m-bang', q:'m-q', dots:'m-dots' };
+
+function mark(name){
+  switch(name){
+    case 'vein': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M11 3 L8 6 M11 3 L14 6 M21 11 L18 8 M21 11 L18 14 M13 21 L16 18 M13 21 L10 18 M3 13 L6 16 M3 13 L6 10"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg>`;
+    case 'spark': return `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 2c.6 4.2 2.8 6.4 7 7-4.2.6-6.4 2.8-7 7-.6-4.2-2.8-6.4-7-7 4.2-.6 6.4-2.8 7-7Z"/><path d="M5.5 13c.3 1.9 1.3 2.9 3.2 3.2-1.9.3-2.9 1.3-3.2 3.2-.3-1.9-1.3-2.9-3.2-3.2 1.9-.3 2.9-1.3 3.2-3.2Z" opacity=".85"/></svg>`;
+    case 'bulb': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17.5h6M9.5 20.5h5"/><path d="M12 3a6 6 0 0 0-3.6 10.8c.7.5 1.1 1.3 1.1 2.2h5c0-.9.4-1.7 1.1-2.2A6 6 0 0 0 12 3Z"/><path d="M10 9.5c.4-1 1-1.5 2-1.5" opacity=".7"/></svg>`;
+    case 'bang': return `<div class="txt">!</div>`;
+    case 'q':    return `<div class="txt">?</div>`;
+    case 'dots': return `<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2.3"/><circle cx="12" cy="12" r="2.3"/><circle cx="19" cy="12" r="2.3"/></svg>`;
+  }
+  return '';
+}
+const photoURL = (p) => `https://i.pravatar.cc/140?img=${p.img}`;
+
+function headHTML(p, mode){
+  const e = EMO[p.emo];
+  const markEl = `<div class="mark ${markAnim[e.mark]}" style="color:${e.accent}">${mark(e.mark)}</div>`;
+  if(mode === 'photo'){
+    return `${markEl}
+      <div class="head photo">
+        <img src="${photoURL(p)}" alt="${p.name}" onerror="this.style.display='none';this.nextElementSibling.style.display='grid'">
+        <span class="ini">${p.ini}</span>
+      </div>`;
+  }
+  return `${markEl}
+    <div class="head mono">
+      <span class="ini">${p.ini}</span>
+      <span class="eyes"><span class="eye"></span><span class="eye"></span></span>
+    </div>`;
+}
+
+function buildSim(p, mode, i){
+  return `<div class="cell" style="--persona:${p.persona};--accent:${EMO[p.emo].accent}">
+      <div class="sim" style="--d:${(i*0.16).toFixed(2)}s">
+        ${headHTML(p, mode)}
+        <div class="legs"><span class="leg"></span><span class="leg"></span></div>
+      </div>
+      <div class="cap"><div class="ce">${p.name}</div><div class="cf">${p.role}</div></div>
+    </div>`;
+}
+
+function rosterRow(p, mode){
+  const e = EMO[p.emo];
+  const badge = `<span class="badge ${markAnim[e.mark]}">${mark(e.mark)}</span>`;
+  const av = mode === 'photo'
+    ? `<div class="av photo"><img src="${photoURL(p)}" alt="" onerror="this.parentElement.classList.remove('photo');this.parentElement.classList.add('mono');this.outerHTML='${p.ini}'+this.nextElementSibling.outerHTML">${badge}</div>`
+    : `<div class="av mono">${p.ini}${badge}</div>`;
+  return `<div class="row" style="--persona:${p.persona};--accent:${e.accent}">
+      ${av}
+      <div class="rmeta"><div class="rn">${p.name}</div><div class="rr">${p.role}</div><div class="rq">${p.quote}</div></div>
+    </div>`;
+}
+
+const SECTIONS = [
+  { num:'01', title:'Initials (monogram)', tag:'friendly · always works', mode:'mono',
+    desc:'A clean monogram in the persona’s colour. Reads as a character/mascot, never breaks, zero assets to manage — and the colour alone starts to identify the regulars. Toggle the character eyes to dial the “alive” factor.' },
+  { num:'02', title:'Profile photos', tag:'credible · human', mode:'photo',
+    desc:'The customer’s real face, ringed in their persona colour. Far more credible — “a real person said this” — and instantly scannable in a roster. Needs an avatar per Sim; falls back to the monogram if a photo is missing.' },
+];
+
+document.getElementById('sections').innerHTML = SECTIONS.map(s => `
+  <section class="section">
+    <div class="sec-head"><span class="sec-num">${s.num}</span><span class="sec-title">${s.title}</span><span class="sec-desc">${s.desc}</span><span class="sec-tag">${s.tag}</span></div>
+    <div class="grid">${P.map((p,i)=>buildSim(p,s.mode,i)).join('')}</div>
+  </section>`).join('')
+  + `<section class="section">
+      <div class="sec-head"><span class="sec-num">03</span><span class="sec-title">In a roster</span><span class="sec-desc">How identity reads in the real product — the dock / draft list where Sims report findings. Same cast, monogram vs photo, each with its emotion badge.</span><span class="sec-tag">in-product</span></div>
+      <div class="panel">
+        <div class="pcard"><h3>Monogram roster</h3>${P.map(p=>rosterRow(p,'mono')).join('')}</div>
+        <div class="pcard"><h3>Photo roster</h3>${P.map(p=>rosterRow(p,'photo')).join('')}</div>
+      </div>
+    </section>`;
+
+/* interactions */
+document.addEventListener('click', (ev) => {
+  const cell = ev.target.closest('.cell'); if(!cell) return;
+  const sim = cell.querySelector('.sim');
+  sim.animate([{transform:'translateY(0) scale(1)'},{transform:'translateY(-16px) scale(1.12)'},{transform:'translateY(0) scale(1)'}],{duration:520,easing:'cubic-bezier(.34,1.56,.64,1)'});
+});
+const eyesBtn = document.getElementById('eyesBtn');
+eyesBtn.onclick = () => { const on = document.body.classList.toggle('eyes-on'); eyesBtn.textContent = 'Character eyes: ' + (on?'on':'off'); eyesBtn.classList.toggle('on', !on); };
+const motionBtn = document.getElementById('motionBtn');
+motionBtn.onclick = () => { const p = document.body.classList.toggle('reduced'); motionBtn.textContent = p?'Resume motion':'Pause motion'; motionBtn.classList.toggle('on', p); };
+</script>
+</body>
+</html>

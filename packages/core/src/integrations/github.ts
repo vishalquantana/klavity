@@ -3,7 +3,7 @@ import type { IntegrationConfig, SubmitResult } from '../types'
 export async function submitReport(config: IntegrationConfig): Promise<SubmitResult> {
   const { settings, type, description, context, screenshots } = config
   const { token, repo } = settings.github
-  const labels = type === 'bug' ? ['klav', 'klav-bug'] : ['klav', 'klav-feature']
+  const labels = type === 'bug' ? ['klavity', 'klavity-bug'] : ['klavity', 'klavity-feature']
 
   const screenshotsMd = screenshots.length
     ? `\n\n<details><summary>Screenshots (${screenshots.length})</summary>\n\n${screenshots.map((s, i) => `![screenshot-${i + 1}](${s})`).join('\n')}\n\n</details>`
@@ -26,7 +26,7 @@ export async function submitReport(config: IntegrationConfig): Promise<SubmitRes
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      title: `[Klav] ${description.slice(0, 180)}`,
+      title: `[Klavity] ${description.slice(0, 180)}`,
       body,
       labels,
     }),

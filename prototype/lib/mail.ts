@@ -8,11 +8,11 @@ export async function sendOtp(to: string, code: string) {
     headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" },
     body: JSON.stringify({
       personalizations: [{ to: [{ email: to }] }],
-      from: { email: from, name: "Klav" },
-      subject: `Your Klav code: ${code}`,
+      from: { email: from, name: "Klavity" },
+      subject: `Your Klavity code: ${code}`,
       content: [
-        { type: "text/plain", value: `Your Klav sign-in code is ${code}\n\nIt expires in 10 minutes. If you didn't request it, ignore this email.` },
-        { type: "text/html", value: `<div style="font-family:system-ui,sans-serif;color:#1d1d1f"><p>Your Klav sign-in code:</p><p style="font-size:34px;font-weight:800;letter-spacing:.22em;font-family:ui-monospace,monospace">${code}</p><p style="color:#888;font-size:13px">Expires in 10 minutes.</p></div>` },
+        { type: "text/plain", value: `Your Klavity sign-in code is ${code}\n\nIt expires in 10 minutes. If you didn't request it, ignore this email.` },
+        { type: "text/html", value: `<div style="font-family:system-ui,sans-serif;color:#1d1d1f"><p>Your Klavity sign-in code:</p><p style="font-size:34px;font-weight:800;letter-spacing:.22em;font-family:ui-monospace,monospace">${code}</p><p style="color:#888;font-size:13px">Expires in 10 minutes.</p></div>` },
       ],
     }),
   })

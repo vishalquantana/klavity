@@ -1,4 +1,4 @@
-import type { KlavSettings, SubmitReportPayload, SubmitResult, IntegrationConfig } from './types'
+import type { KlavitySettings, SubmitReportPayload, SubmitResult, IntegrationConfig } from './types'
 
 type Handler = (config: IntegrationConfig) => Promise<SubmitResult>
 
@@ -12,7 +12,7 @@ interface Handlers {
 
 export async function dispatchSubmit(
   payload: SubmitReportPayload,
-  settings: KlavSettings,
+  settings: KlavitySettings,
   handlers: Handlers,
 ): Promise<SubmitResult> {
   const config: IntegrationConfig = {

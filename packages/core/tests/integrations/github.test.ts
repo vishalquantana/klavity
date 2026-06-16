@@ -31,7 +31,7 @@ describe('github.submitReport', () => {
 
     const [url, opts] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
     expect(url).toBe('https://api.github.com/repos/acme/webapp/issues')
-    expect(JSON.parse(opts.body).labels).toContain('klav-bug')
+    expect(JSON.parse(opts.body).labels).toContain('klavity-bug')
     expect(result.issueKey).toBe('#42')
     expect(result.issueUrl).toBe('https://github.com/acme/webapp/issues/42')
   })

@@ -1,7 +1,7 @@
 export type IntegrationType = 'jira' | 'linear' | 'github' | 'plane'
 export type ReportType = 'bug' | 'feature'
 
-export interface KlavSettings {
+export interface KlavitySettings {
   integration: IntegrationType
   backendUrl: string
   autoFileErrors: boolean
@@ -11,7 +11,7 @@ export interface KlavSettings {
   plane: { token: string; workspace: string; projectId: string }
 }
 
-export const DEFAULT_SETTINGS: KlavSettings = {
+export const DEFAULT_SETTINGS: KlavitySettings = {
   integration: 'jira',
   backendUrl: '',
   autoFileErrors: false,
@@ -60,7 +60,7 @@ export interface IntegrationConfig {
   description: string
   context: ReportContext
   screenshots: string[]
-  settings: KlavSettings
+  settings: KlavitySettings
 }
 
 // Extension message protocol

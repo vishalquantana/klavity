@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Klav Sims — Live Prototype</title>
+<title>Klavity Sims — Live Prototype</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: system-ui, -apple-system, sans-serif; background: #0a0a0f; color: #cdd6f4; padding: 20px; }
@@ -12,7 +12,8 @@
   .logo { width: 34px; height: 34px; border-radius: 9px; background: linear-gradient(135deg,#6366f1,#8b5cf6); display:flex;align-items:center;justify-content:center;font-size:18px; }
   h1 { font-size: 19px; font-weight: 800; }
   .sub { font-size: 12px; color: #6c7086; }
-  .grid { display: grid; grid-template-columns: 1fr 320px; gap: 16px; align-items: start; }
+  .grid { display: grid; grid-template-columns: 340px 1fr 320px; gap: 16px; align-items: start; }
+  @media(max-width:1100px){ .grid{grid-template-columns:1fr} #rail{flex-direction:column} #rail .rarrow{transform:rotate(90deg)} }
   .panel { background: #11111a; border: 1px solid #1e1e2e; border-radius: 14px; padding: 16px; }
   .panel h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #6c7086; margin-bottom: 10px; }
 
@@ -25,7 +26,7 @@
 
   /* Stage */
   #stageWrap { position: relative; }
-  #stage { width: 740px; max-width: 100%; height: 460px; background: #f5f5f7; border-radius: 12px; overflow: hidden; position: relative; }
+  #stage { width: 100%; max-width: 100%; height: 420px; background: #f5f5f7; border-radius: 12px; overflow: hidden; position: relative; }
   #stage img { width: 100%; height: 100%; object-fit: contain; background:#fff; }
 
   /* Demo dashboard inside stage */
@@ -114,19 +115,47 @@
   .draft .savedtag{font-size:9px;color:#a6e3a1;margin-top:4px}
   .savebar{width:100%;margin-top:10px;font-size:12px;padding:9px;border-radius:8px;background:#6366f1;color:#fff;border:none;cursor:pointer}
 
-  /* getting-started guide */
-  #guide{background:linear-gradient(135deg,rgba(99,102,241,.13),rgba(139,92,246,.05));border:1px solid rgba(139,139,245,.3);border-radius:14px;padding:13px 15px;margin-bottom:16px;display:flex;align-items:center;gap:13px;flex-wrap:wrap}
-  #guide .g-title{font-size:13px;font-weight:700;color:#cdd6f4}
-  #guide .g-steps{display:flex;gap:8px;flex-wrap:wrap;flex:1}
-  #guide .g-step{display:flex;align-items:center;gap:7px;font-size:12px;color:#7f849c;background:#0d0d15;border:1px solid #1e1e2e;border-radius:20px;padding:5px 12px;transition:.2s}
-  #guide .g-step .n{width:17px;height:17px;border-radius:50%;background:#1e1e2e;color:#6c7086;display:grid;place-items:center;font-size:10px;font-weight:700}
-  #guide .g-step b{color:inherit}
-  #guide .g-step.on{color:#cdd6f4;border-color:#6366f1}
-  #guide .g-step.on .n{background:#6366f1;color:#fff}
-  #guide .g-step.done{color:#a6e3a1;border-color:rgba(166,227,161,.3)}
-  #guide .g-step.done .n{background:#a6e3a1;color:#0d0d15}
-  #guide .g-x{background:none;border:none;color:#6c7086;cursor:pointer;font-size:16px;padding:2px 5px;line-height:1}
-  #guide .g-x:hover{color:#cdd6f4}
+  /* ── the ONE progress rail (single number line) ── */
+  #rail{display:flex;align-items:stretch;gap:0;background:#11111a;border:1px solid #1e1e2e;border-radius:14px;padding:6px;margin-bottom:16px}
+  #rail .rstep{flex:1;display:flex;align-items:center;gap:11px;padding:11px 14px;border-radius:10px}
+  #rail .rstep .n{width:26px;height:26px;border-radius:50%;background:#1e1e2e;color:#9399b2;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;flex-shrink:0}
+  #rail .rstep .rt{font-size:13px;font-weight:700;color:#9399b2}
+  #rail .rstep .rd{font-size:10.5px;color:#6c7086;margin-top:1px}
+  #rail .rstep.active{background:rgba(99,102,241,.12);box-shadow:inset 0 0 0 1px #6366f1}
+  #rail .rstep.active .n{background:#6366f1;color:#fff}
+  #rail .rstep.active .rt{color:#cdd6f4}
+  #rail .rstep.done .n{background:#a6e3a1;color:#0d0d15}
+  #rail .rstep.done .rt{color:#a6e3a1}
+  #rail .rstep.locked{opacity:.45}
+  #rail .rarrow{display:flex;align-items:center;color:#45475a;font-size:16px;padding:0 2px}
+
+  /* ── lane (step) chrome ── */
+  .lane{position:relative;transition:opacity .2s}
+  .lane.active{box-shadow:0 0 0 1px #6366f1,0 0 28px rgba(99,102,241,.10);border-color:#6366f1}
+  .lane.locked{opacity:.5}
+  .lane.locked .lockmsg{display:flex}
+  .lockmsg{display:none;position:absolute;inset:0;align-items:center;justify-content:center;flex-direction:column;gap:6px;background:rgba(10,10,15,.55);border-radius:14px;font-size:12px;color:#9399b2;z-index:5;backdrop-filter:saturate(.6) brightness(.9)}
+  .lockmsg .lk{font-size:22px}
+  .lhead{display:flex;align-items:center;gap:9px;margin-bottom:13px}
+  .lhead .ln{width:22px;height:22px;border-radius:50%;background:#1e1e2e;color:#9399b2;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;flex-shrink:0}
+  .lane.active .lhead .ln{background:#6366f1;color:#fff}
+  .lane.done .lhead .ln{background:#a6e3a1;color:#0d0d15}
+  .lhead h2{font-size:13px;font-weight:800;color:#cdd6f4;text-transform:none;letter-spacing:0;margin:0}
+  .lhead .pill{margin-left:auto;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:3px 8px;border-radius:6px}
+  .pill.now{background:rgba(99,102,241,.18);color:#a5b4fc}
+  .pill.ok{background:rgba(166,227,161,.15);color:#a6e3a1}
+  .lsub{font-size:11px;color:#6c7086;margin-bottom:12px;line-height:1.5}
+  .label{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#6c7086;margin:2px 0 8px;font-weight:700}
+  .readycard{display:flex;align-items:center;gap:9px;background:rgba(166,227,161,.08);border:1px solid rgba(166,227,161,.25);border-radius:10px;padding:11px 12px;margin-bottom:14px}
+  .readycard .big{font-size:13px;font-weight:800;color:#a6e3a1}
+  .readycard .sm{font-size:10.5px;color:#7f849c;margin-top:1px}
+
+  /* reviewer cards (Your Sims, relocated into step 2) */
+  .reviewers-label{margin-top:14px}
+  .rvins{font-size:10px;color:#a6adc8;line-height:1.55;margin-top:4px}
+  .rvins .tg{font-weight:800;font-size:8.5px;text-transform:uppercase;letter-spacing:.04em;margin-right:4px}
+  .tg.pain{color:#f38ba8}.tg.want{color:#89b4fa}.tg.love{color:#a6e3a1}
+
   .pulse{animation:gpulse 1.5s ease-in-out infinite}
   @keyframes gpulse{0%,100%{box-shadow:0 0 0 0 rgba(99,102,241,.55)}50%{box-shadow:0 0 0 6px rgba(99,102,241,0)}}
 
@@ -148,46 +177,55 @@
   <div class="head">
     <div class="logo">🧬</div>
     <div>
-      <h1>Klav · Sims Studio</h1>
+      <h1>Klavity · Sims Studio</h1>
       <div class="sub">Add a Sim, then watch one review this page and file what it finds.</div>
     </div>
     <a href="/dashboard" style="margin-left:auto;font-size:13px;color:#89b4fa;text-decoration:none">← Dashboard</a>
   </div>
 
-  <div id="guide">
-    <span class="g-title">👋 New here? Three steps:</span>
-    <div class="g-steps">
-      <div class="g-step" data-step="1"><span class="n">1</span> Add a Sim — <b>extract the sample</b>, pick a <b>preset</b>, or describe a user</div>
-      <div class="g-step" data-step="2"><span class="n">2</span> Click <b>"Have a Sim review this page"</b></div>
-      <div class="g-step" data-step="3"><span class="n">3</span> Save feedback from the <b>Draft queue</b></div>
-    </div>
-    <button class="g-x" id="guideX" title="Dismiss">✕</button>
+  <!-- THE single number line (the only step numbers on the page) -->
+  <div id="rail">
+    <div class="rstep" id="r1"><span class="n">1</span><div><div class="rt">Add a Sim</div><div class="rd">A simulated user who reviews like a real one</div></div></div>
+    <div class="rarrow">→</div>
+    <div class="rstep" id="r2"><span class="n">2</span><div><div class="rt">Have it review the page</div><div class="rd">It looks at your screen and reacts in-character</div></div></div>
+    <div class="rarrow">→</div>
+    <div class="rstep" id="r3"><span class="n">3</span><div><div class="rt">Save the feedback</div><div class="rd">Keep the useful drafts, file them as bugs</div></div></div>
   </div>
 
   <div class="grid">
-    <!-- LEFT -->
-    <div style="display:flex;flex-direction:column;gap:16px;">
-      <div class="panel">
-        <h2>① Transcript → Sims</h2>
-        <textarea id="transcript"></textarea>
-        <div class="row">
-          <button class="primary" id="extractBtn">Extract Sims</button>
-          <button class="ghost" id="clearBtn">Clear</button>
-        </div>
-        <div class="status" id="extractStatus"></div>
-        <div class="orsep">— or, no transcript yet? start with a preset Sim —</div>
-        <div class="presets" id="presets"></div>
-        <div class="briefrow">
-          <input id="brief" placeholder="…or describe your user in a sentence" />
-          <button class="ghost mic" id="micBtn" title="Dictate with your voice">🎙</button>
-          <button class="primary" id="briefBtn">Create</button>
-        </div>
-        <div class="status" id="briefStatus"></div>
+    <!-- ===== STEP 1 — Add a Sim ===== -->
+    <div class="panel lane" id="lane1">
+      <div class="lhead"><span class="ln">1</span><h2>Add a Sim</h2><span class="pill" id="p1"></span></div>
+      <div class="readycard" id="simsReady" style="display:none">
+        <span style="font-size:18px">✅</span>
+        <div><div class="big"><span id="simsReadyN">0</span> Sims ready</div><div class="sm">They’re lined up as reviewers in step 2 →</div></div>
       </div>
+      <div class="lsub">Extract real Sims from an interview transcript — or start from a preset / one-line description.</div>
+      <div class="label">Paste an interview transcript</div>
+      <textarea id="transcript"></textarea>
+      <div class="row">
+        <button class="primary" id="extractBtn">Extract Sims</button>
+        <button class="ghost" id="clearBtn">Clear</button>
+      </div>
+      <div class="status" id="extractStatus"></div>
+      <div class="orsep">— or, no transcript yet? —</div>
+      <div class="label">Start from a preset</div>
+      <div class="presets" id="presets"></div>
+      <div class="label" style="margin-top:14px">…or describe your user</div>
+      <div class="briefrow">
+        <input id="brief" placeholder="e.g. a busy CFO who scans for overdue items" />
+        <button class="ghost mic" id="micBtn" title="Dictate with your voice">🎙</button>
+        <button class="primary" id="briefBtn">Create</button>
+      </div>
+      <div class="status" id="briefStatus"></div>
+    </div>
 
-      <div class="panel">
-        <h2>② The page your Sims review</h2>
-        <div id="stageWrap">
+    <!-- ===== STEP 2 — Have a Sim review the page ===== -->
+    <div class="panel lane" id="lane2">
+      <div class="lockmsg"><span class="lk">🔒</span><div>Add a Sim first (step 1)</div></div>
+      <div class="lhead"><span class="ln">2</span><h2>Have a Sim review the page</h2><span class="pill" id="p2"></span></div>
+      <div class="lsub">This is the page your Sims look at. Pick a reviewer below and hit review — they react to exactly what’s on screen.</div>
+      <div id="stageWrap">
           <div id="stage">
             <!-- demo dashboard -->
             <div id="demo">
@@ -230,23 +268,21 @@
           <button class="ghost" id="resetStage">Use demo dashboard</button>
         </div>
         <div class="hint">The Sim screenshots whatever is in this box, sends it to Claude vision, and reacts in-character. Swap in a screenshot of <em>your own</em> product to see it react to that.</div>
-      </div>
+        <div class="label reviewers-label">Your reviewers — pick one to send</div>
+        <div id="dock"><div class="hint">No Sims yet — add one in step 1.</div></div>
+        <div class="status" id="reactStatus"></div>
     </div>
 
-    <!-- RIGHT -->
-    <div style="display:flex;flex-direction:column;gap:16px;">
-      <div class="panel">
-        <h2>Your Sims</h2>
-        <div id="dock"><div class="hint">No Sims yet — extract them from the transcript on the left.</div></div>
-        <div class="status" id="reactStatus"></div>
-      </div>
-      <div class="panel">
-        <h2>Draft queue · <span id="draftCount">0</span></h2>
-        <div class="hint" id="draftEmpty">Sim feedback collects here as drafts. Review them, then pick which to save to Klav and file as bugs.</div>
-        <div id="drafts"></div>
-        <button class="savebar" id="saveDrafts" style="display:none">Save selected to Klav →</button>
-        <div class="status" id="draftStatus"></div>
-      </div>
+    <!-- ===== STEP 3 — Save the feedback ===== -->
+    <div class="panel lane" id="lane3">
+      <div class="lockmsg"><span class="lk">🔒</span><div>Run a review first (step 2)</div></div>
+      <div class="lhead"><span class="ln">3</span><h2>Save the feedback</h2><span class="pill" id="p3"></span></div>
+      <div class="lsub">Reviews land here as drafts. Keep the useful ones — they get filed to your tracker as bugs.</div>
+      <div class="label">Draft queue · <span id="draftCount">0</span></div>
+      <div class="hint" id="draftEmpty">Sim feedback collects here as drafts. Review them, then pick which to save to Klavity and file as bugs.</div>
+      <div id="drafts"></div>
+      <button class="savebar" id="saveDrafts" style="display:none">Save selected to Klavity →</button>
+      <div class="status" id="draftStatus"></div>
     </div>
   </div>
 </div>
@@ -310,7 +346,7 @@ function renderDock() {
     dock.appendChild(el)
   })
   dock.querySelectorAll(".reviewbtn").forEach(b => b.onclick = () => review(Number(b.dataset.i)))
-  if (sims.length) guide(2)
+  updateFlow()
 }
 
 function badge(kind){const c=kind==="pain"?"#f38ba8":kind==="want"?"#89b4fa":"#a6e3a1";return `<span style="color:${c};font-weight:700">${kind}</span>`}
@@ -318,7 +354,7 @@ function badge(kind){const c=kind==="pain"?"#f38ba8":kind==="want"?"#89b4fa":"#a
 async function review(i) {
   const sim = sims[i]
   clearOverlays()
-  guide(3)
+  updateFlow()
   setStatus("reactStatus", `📸 ${sim.name.split(" ")[0]} is screenshotting the page…`)
   let dataUrl
   try {
@@ -404,7 +440,7 @@ function showBubble(char, sim, rx) {
 }
 function hideBubble(char){ const b=char.querySelector("[data-bubble]"); if(b) b.classList.remove("show") }
 
-// ── draft queue: Sim reactions collect here; the user picks which to save to Klav ──
+// ── draft queue: Sim reactions collect here; the user picks which to save to Klavity ──
 let drafts = []
 let draftSeq = 0
 function addDraft(sim, rx){
@@ -417,7 +453,7 @@ function renderDrafts(){
   empty.style.display = drafts.length ? "none" : "block"
   const pending = drafts.filter(d => !d.saved)
   save.style.display = pending.length ? "block" : "none"
-  save.textContent = `Save ${pending.filter(d => d.selected).length} selected to Klav →`
+  save.textContent = `Save ${pending.filter(d => d.selected).length} selected to Klavity →`
   wrap.innerHTML = ""
   drafts.forEach(d => {
     const el = document.createElement("div")
@@ -430,7 +466,7 @@ function renderDrafts(){
       (d.saved ? "" : `<button class="drm" data-rm="${d.id}">×</button>`) + `</div>` +
       `<div class="dob">${esc(d.rx.observation)}</div>` +
       (bug ? `<div class="dbug">🐛 ${esc(bug.title)} (${esc(bug.severity)})</div>` : "") +
-      (d.saved ? `<div class="savedtag">✅ Saved to Klav${d.key ? ` · filed ${d.key}` : ""}</div>` : "") +
+      (d.saved ? `<div class="savedtag">✅ Saved to Klavity${d.key ? ` · filed ${d.key}` : ""}</div>` : "") +
       `</div>`
     wrap.appendChild(el)
   })
@@ -438,12 +474,13 @@ function renderDrafts(){
     const d = drafts.find(x => x.id == c.dataset.id); if (d) { d.selected = c.checked; renderDrafts() }
   })
   wrap.querySelectorAll("[data-rm]").forEach(b => b.onclick = () => { drafts = drafts.filter(x => x.id != b.dataset.rm); renderDrafts() })
+  updateFlow()
 }
 function saveDrafts(){
   let n = 0
   drafts.forEach(d => { if (!d.saved && d.selected) { d.saved = true; n++; if (d.rx.suggestedBug) d.key = "KS-" + (100 + Math.floor((performance.now() + d.id * 7) % 800)) } })
   renderDrafts()
-  setStatus("draftStatus", n ? `Saved ${n} to Klav — bugs filed to your tracker.` : "Nothing selected.")
+  setStatus("draftStatus", n ? `Saved ${n} to Klavity — bugs filed to your tracker.` : "Nothing selected.")
   if (n) finishGuide()
 }
 
@@ -531,23 +568,49 @@ function setupVoice(){
   }
 }
 
-// ── getting-started guide ──
-function guide(step){
-  const g=$("guide"); if(!g || g.style.display==="none") return
-  g.querySelectorAll(".g-step").forEach(el=>{ const s=Number(el.dataset.step); el.classList.toggle("done", s<step); el.classList.toggle("on", s===step) })
+// ── flow rail + first-run gating ──
+// One number line drives the whole page. Steps 2 & 3 are locked on a brand-new
+// account to teach the order; after the first completed review→save loop the
+// locks are off for good (persisted), and the highlight just follows focus.
+let guideDone = false
+try { guideDone = !!localStorage.getItem("klav_guide_done") } catch(e){}
+
+function updateFlow(){
+  const hasSims = sims.length > 0
+  const hasDrafts = drafts.length > 0
+  const done1 = hasSims
+  const done2 = hasDrafts
+  const active = !done1 ? 1 : (!done2 ? 2 : 3)
+  const lock2 = !guideDone && !hasSims
+  const lock3 = !guideDone && !hasDrafts
+
+  const set = (n, done, lock) => {
+    const r=$("r"+n), l=$("lane"+n), p=$("p"+n)
+    if(!r||!l||!p) return
+    r.className = "rstep"; l.classList.remove("active","locked","done"); p.className="pill"; p.textContent=""
+    if(done){ r.classList.add("done"); l.classList.add("done"); p.classList.add("pill","ok"); p.textContent="Done" }
+    else if(n===active){ r.classList.add("active"); l.classList.add("active"); p.classList.add("pill","now"); p.textContent = n===1 ? "Start here" : "You’re here" }
+    if(lock){ r.classList.add("locked"); l.classList.add("locked") }
+  }
+  set(1, done1, false)
+  set(2, done2, lock2)
+  set(3, false, lock3)
+
+  const ready=$("simsReady")
+  if(ready){ ready.style.display = hasSims ? "flex" : "none"; const n=$("simsReadyN"); if(n) n.textContent=sims.length }
+
   document.querySelectorAll(".pulse").forEach(e=>e.classList.remove("pulse"))
-  if(step===1 && $("extractBtn")) $("extractBtn").classList.add("pulse")
-  if(step===2) document.querySelectorAll(".reviewbtn").forEach(b=>b.classList.add("pulse"))
+  if(active===1 && !hasSims && $("extractBtn")) $("extractBtn").classList.add("pulse")
+  if(active===2) document.querySelectorAll(".reviewbtn").forEach(b=>b.classList.add("pulse"))
 }
-function finishGuide(){ const g=$("guide"); if(!g) return; guide(4); document.querySelectorAll(".pulse").forEach(e=>e.classList.remove("pulse")); try{localStorage.setItem("klav_guide_done","1")}catch(e){}; setTimeout(()=>{ g.style.display="none" },2600) }
-const gx=$("guideX"); if(gx) gx.onclick=()=>{ $("guide").style.display="none"; document.querySelectorAll(".pulse").forEach(e=>e.classList.remove("pulse")); try{localStorage.setItem("klav_guide_done","1")}catch(e){} }
+function finishGuide(){ guideDone=true; try{localStorage.setItem("klav_guide_done","1")}catch(e){}; document.querySelectorAll(".pulse").forEach(e=>e.classList.remove("pulse")); updateFlow() }
 
 $("briefBtn").onclick = createFromBrief
 $("brief").addEventListener("keydown",(e)=>{ if(e.key==="Enter") createFromBrief() })
 renderPresets(); setupVoice()
 $("saveDrafts").onclick = saveDrafts
 renderDrafts()
-try{ if(localStorage.getItem("klav_guide_done")) $("guide").style.display="none"; else guide(1) }catch(e){ guide(1) }
+updateFlow()
 </script>
 </body>
 </html>

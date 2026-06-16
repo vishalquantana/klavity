@@ -1,17 +1,17 @@
 import { toPng } from 'html-to-image'
-import type { KlavSettings, ReportType, SubmitReportPayload, IntegrationConfig, ConsoleError, NetworkFailure } from '@klav/core'
-import { DEFAULT_SETTINGS } from '@klav/core'
-import { dispatchSubmit } from '@klav/core/submit'
-import { buildModal } from '@klav/core/modal'
-import { submitReport as jiraSubmit } from '@klav/core/integrations/jira'
-import { submitReport as linearSubmit } from '@klav/core/integrations/linear'
-import { submitReport as githubSubmit } from '@klav/core/integrations/github'
-import { submitReport as planeSubmit } from '@klav/core/integrations/plane'
-import { submitReport as backendSubmit } from '@klav/core/integrations/backend'
+import type { KlavitySettings, ReportType, SubmitReportPayload, IntegrationConfig, ConsoleError, NetworkFailure } from '@klavity/core'
+import { DEFAULT_SETTINGS } from '@klavity/core'
+import { dispatchSubmit } from '@klavity/core/submit'
+import { buildModal } from '@klavity/core/modal'
+import { submitReport as jiraSubmit } from '@klavity/core/integrations/jira'
+import { submitReport as linearSubmit } from '@klavity/core/integrations/linear'
+import { submitReport as githubSubmit } from '@klavity/core/integrations/github'
+import { submitReport as planeSubmit } from '@klavity/core/integrations/plane'
+import { submitReport as backendSubmit } from '@klavity/core/integrations/backend'
 
-export type SdkConfig = Partial<KlavSettings>
+export type SdkConfig = Partial<KlavitySettings>
 
-let _settings: KlavSettings = DEFAULT_SETTINGS
+let _settings: KlavitySettings = DEFAULT_SETTINGS
 const _consoleErrors: ConsoleError[] = []
 const _networkFailures: NetworkFailure[] = []
 const MAX_RING = 50
@@ -22,7 +22,7 @@ async function capturePageDataUrl(): Promise<string> {
     pixelRatio: 1,
     skipFonts: true,
     filter: (node) => {
-      if ((node as HTMLElement).id === 'klav-sdk-host') return false
+      if ((node as HTMLElement).id === 'klavity-sdk-host') return false
       if (node.nodeName === 'IMG') {
         const src = (node as HTMLImageElement).src ?? ''
         if (src && !src.startsWith(window.location.origin) && !src.startsWith('data:')) return false
@@ -138,7 +138,7 @@ export function init(config: SdkConfig = {}) {
 
 // Expose on window for script-tag usage
 if (typeof window !== 'undefined') {
-  (window as unknown as Record<string, unknown>).KlavSnap = { init, openModal }
+  (window as unknown as Record<string, unknown>).KlavitySnap = { init, openModal }
 }
 
 export default { init, openModal }

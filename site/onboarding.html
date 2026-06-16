@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Klav — Get started</title>
+<title>Klavity — Get started</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" /><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..700&family=Hanken+Grotesk:wght@300..800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
 <style>
@@ -92,7 +92,7 @@ input.in:focus{border-color:var(--indigo)}
 <body>
 <div class="shell">
   <aside class="rail">
-    <a class="brand" href="index.html"><span class="spark">⚡</span>Klav</a>
+    <a class="brand" href="index.html"><span class="spark">⚡</span>Klavity</a>
     <ul class="steps" id="rail">
       <li class="rstep" data-s="0"><span class="ix">1</span><div><div class="rl">Create workspace</div></div></li>
       <li class="rstep" data-s="1"><span class="ix">2</span><div><div class="rl">Meet your first Sim</div></div></li>
@@ -119,7 +119,7 @@ input.in:focus{border-color:var(--indigo)}
     <div class="panel step hide" data-s="1">
       <div class="kicker">Step 2 of 5 · the fun part</div>
       <h1>Meet your <em>first Sim.</em></h1>
-      <p class="sub">Drop in a recorded call and Klav turns each speaker into a Sim — grounded in the exact words they said.</p>
+      <p class="sub">Drop in a recorded call and Klavity turns each speaker into a Sim — grounded in the exact words they said.</p>
       <div id="upl">
         <div class="tiles">
           <div class="tile" onclick="extract()"><div class="ti">📝</div><h3>Upload a transcript</h3><p>.txt or .vtt from Zoom, Meet, or Loom.</p></div>
@@ -135,9 +135,9 @@ input.in:focus{border-color:var(--indigo)}
     <div class="panel step hide" data-s="2">
       <div class="kicker">Step 3 of 5 · the magic moment</div>
       <h1>Let Sarah <em>review your screen.</em></h1>
-      <p class="sub">Install Klav, open your product, click the ⚡ icon, and pick “Have Sarah review this page.” She'll walk to what she cares about and react.</p>
+      <p class="sub">Install Klavity, open your product, click the ⚡ icon, and pick “Have Sarah review this page.” She'll walk to what she cares about and react.</p>
       <div class="tiles">
-        <div class="tile"><div class="ti">🧩</div><h3>Add to Chrome</h3><p>The Klav extension — Snap bug reporting + the Sim dock, in one.</p></div>
+        <div class="tile"><div class="ti">🧩</div><h3>Add to Chrome</h3><p>The Klavity extension — Snap bug reporting + the Sim dock, in one.</p></div>
         <div class="tile alt"><div class="ti">&lt;/&gt;</div><h3>Embed the widget</h3><p>One script tag for any web app — no extension needed.</p></div>
       </div>
       <div class="snippet"><span class="t">&lt;script</span> src=<span class="t">"https://cdn.klav.io/sims.js"</span> data-key=<span class="t">"pk_acme_…"</span><span class="t">&gt;&lt;/script&gt;</span></div>
@@ -151,7 +151,7 @@ input.in:focus{border-color:var(--indigo)}
     <div class="panel step hide" data-s="3">
       <div class="kicker">Step 4 of 5</div>
       <h1>Turn reactions into <em>tickets.</em></h1>
-      <p class="sub">Connect a tracker so a Sim's finding files in one click — screenshot, page, and the customer's quote attached. Or use the built-in Klav tracker for now.</p>
+      <p class="sub">Connect a tracker so a Sim's finding files in one click — screenshot, page, and the customer's quote attached. Or use the built-in Klavity tracker for now.</p>
       <div class="trackers">
         <span class="tk" onclick="this.classList.toggle('on')">Jira</span>
         <span class="tk" onclick="this.classList.toggle('on')">Linear</span>
@@ -160,7 +160,7 @@ input.in:focus{border-color:var(--indigo)}
       </div>
       <div class="row">
         <button class="btn btn-indigo" onclick="go(4)">Connect &amp; continue →</button>
-        <a class="skip" onclick="go(4)">Skip — use the Klav tracker</a>
+        <a class="skip" onclick="go(4)">Skip — use the Klavity tracker</a>
       </div>
     </div>
 
@@ -171,7 +171,7 @@ input.in:focus{border-color:var(--indigo)}
       <p class="sub">Invite teammates and push Sarah to them for this project. They'll get the same customers watching as they build — no setup on their side.</p>
       <div class="invite-row"><input class="in" placeholder="teammate@acme.com" /><button class="btn btn-ghost" onclick="this.previousElementSibling.value='';document.getElementById('invited').textContent='✓ Invited · Sarah pushed'">Invite</button></div>
       <div class="pill" id="invited"></div>
-      <div class="row"><button class="btn btn-indigo" onclick="finish()">Enter Klav →</button><a class="skip" onclick="finish()">I'll invite people later</a></div>
+      <div class="row"><button class="btn btn-indigo" onclick="finish()">Enter Klavity →</button><a class="skip" onclick="finish()">I'll invite people later</a></div>
       <div id="done" class="hide" style="margin-top:30px;padding:22px;background:var(--ink-2);border:1px solid rgba(159,214,160,.3);border-radius:16px">
         <div style="font-family:var(--display);font-size:22px;font-weight:600;margin-bottom:6px">You're set. 🎉</div>
         <p style="color:var(--paper-dim);font-size:14.5px">Sarah is live in your workspace. Open your product and let her loose — every reaction is one click from a ticket.</p>

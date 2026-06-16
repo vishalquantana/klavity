@@ -1,4 +1,4 @@
-# Klav Snap — Manual Smoke Test Checklist
+# Klavity Snap — Manual Smoke Test Checklist
 
 Load `packages/extension/dist` as an unpacked extension in Chrome (chrome://extensions → Developer mode → Load unpacked).
 
