@@ -3,9 +3,13 @@ import type { IntegrationConfig, SubmitResult } from '../types'
 export async function submitReport(config: IntegrationConfig): Promise<SubmitResult> {
   const { settings, description, context } = config
   const { token, workspace, projectId } = settings.plane
+  // host = API base. Cloud serves its API on api.plane.so; self-hosted serves it on its own origin.
+  const apiBase = (settings.plane.host || 'https://api.plane.so').replace(/\/+$/, '')
+  // Web UI link: cloud lives on app.plane.so, self-hosted shares the API origin.
+  const webBase = apiBase === 'https://api.plane.so' ? 'https://app.plane.so' : apiBase
 
   const res = await fetch(
-    `https://api.plane.so/api/v1/workspaces/${workspace}/projects/${projectId}/issues/`,
+    `${apiBase}/api/v1/workspaces/${workspace}/projects/${projectId}/issues/`,
     {
       method: 'POST',
       headers: { 'X-API-Key': token, 'Content-Type': 'application/json' },
@@ -21,6 +25,6 @@ export async function submitReport(config: IntegrationConfig): Promise<SubmitRes
   const data = await res.json() as { sequence_id: number }
   return {
     issueKey: String(data.sequence_id),
-    issueUrl: `https://app.plane.so/${workspace}/projects/${projectId}/issues/`,
+    issueUrl: `${webBase}/${workspace}/projects/${projectId}/issues/`,
   }
 }

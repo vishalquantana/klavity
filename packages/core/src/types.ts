@@ -8,7 +8,7 @@ export interface KlavitySettings {
   jira: { baseUrl: string; email: string; token: string; projectKey: string }
   linear: { apiKey: string; teamId: string }
   github: { token: string; repo: string } // "owner/repo"
-  plane: { token: string; workspace: string; projectId: string }
+  plane: { token: string; host: string; workspace: string; projectId: string } // host: API base — https://api.plane.so or a self-hosted origin
 }
 
 export const DEFAULT_SETTINGS: KlavitySettings = {
@@ -18,7 +18,7 @@ export const DEFAULT_SETTINGS: KlavitySettings = {
   jira: { baseUrl: '', email: '', token: '', projectKey: '' },
   linear: { apiKey: '', teamId: '' },
   github: { token: '', repo: '' },
-  plane: { token: '', workspace: '', projectId: '' },
+  plane: { token: '', host: 'https://api.plane.so', workspace: '', projectId: '' },
 }
 
 export interface ConsoleError {

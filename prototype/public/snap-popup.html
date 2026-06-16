@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Klavity Snap · redesigned popup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..800;1,9..144,400..600&family=Hanken+Grotesk:wght@300..800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet" />
+<style>
+:root{--ink:#0c0a08;--ink-2:#15110d;--ink-3:#1f1912;--ink-4:#2a2218;--paper:#f3ece1;--paper-dim:#b3a896;--paper-faint:#7d7264;
+  --indigo:#8b8bf5;--indigo-deep:#6366f1;--rose:#e8849a;--amber:#e8a24a;--green:#9fd6a0;--line:rgba(243,236,225,.10);--line-2:rgba(243,236,225,.18);
+  --display:'Fraunces',serif;--body:'Hanken Grotesk',system-ui,sans-serif;--mono:'JetBrains Mono',monospace}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--ink);color:var(--paper);font-family:var(--body);min-height:100vh;line-height:1.5;-webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(70% 50% at 80% -5%,rgba(139,139,245,.16),transparent 60%),radial-gradient(50% 40% at 8% 0%,rgba(232,132,154,.08),transparent 55%)}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.4;mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E")}
+.shell{position:relative;z-index:1;max-width:1080px;margin:0 auto;padding:54px 28px 90px}
+.eyebrow{font-family:var(--mono);font-size:10.5px;letter-spacing:.34em;text-transform:uppercase;color:var(--indigo);display:flex;align-items:center;gap:11px}
+.eyebrow .spark{width:24px;height:24px;border-radius:7px;display:grid;place-items:center;font-size:13px;background:linear-gradient(135deg,var(--indigo-deep),#a78bfa);color:#fff}
+h1{font-family:var(--display);font-weight:430;font-size:clamp(32px,5.5vw,54px);letter-spacing:-.025em;line-height:1.04;margin:20px 0 0}
+h1 em{font-style:italic;color:var(--indigo)}
+.lede{max-width:62ch;margin-top:16px;font-size:16px;color:var(--paper-dim)}
+.lede b{color:var(--paper);font-weight:600}
+
+.stagewrap{margin-top:46px;display:flex;gap:48px;flex-wrap:wrap;align-items:flex-start;justify-content:center}
+.frame{display:flex;flex-direction:column;align-items:center;gap:16px}
+.flabel{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint)}
+.flabel b{color:var(--indigo)}
+
+/* ── the popup (real extension width) ── */
+.popup{width:344px;background:linear-gradient(180deg,var(--ink-2),#100c09);border:1px solid var(--line-2);border-radius:18px;
+  box-shadow:0 30px 70px -20px rgba(0,0,0,.8),0 0 0 1px rgba(0,0,0,.4);overflow:hidden;position:relative}
+.pp-top{display:flex;align-items:center;gap:9px;padding:14px 16px;border-bottom:1px solid var(--line)}
+.pp-mark{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;font-size:14px;background:linear-gradient(135deg,var(--indigo-deep),#a78bfa);color:#fff;box-shadow:0 4px 12px -2px var(--indigo)}
+.pp-name{font-family:var(--display);font-weight:600;font-size:16px;letter-spacing:-.01em}
+.pp-sub{font-family:var(--mono);font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--paper-faint)}
+.acct{margin-left:auto;display:flex;align-items:center;gap:7px;background:var(--ink);border:1px solid var(--line);border-radius:20px;padding:3px 9px 3px 4px}
+.acct .av{width:20px;height:20px;border-radius:50%;background:linear-gradient(135deg,#6f6cf2,#8b5cf6);display:grid;place-items:center;font-family:var(--mono);font-weight:700;font-size:8px;color:#fff}
+.acct .em{font-size:10px;color:var(--paper-dim);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pp-body{padding:18px 16px}
+
+/* signed-out */
+.greet{display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px;padding:8px 4px 4px}
+.greet h2{font-family:var(--display);font-weight:450;font-size:21px;letter-spacing:-.02em;line-height:1.15}
+.greet p{font-size:12.5px;color:var(--paper-dim);line-height:1.5}
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;border:none;border-radius:11px;cursor:pointer;
+  font-family:var(--body);font-weight:700;font-size:14px;padding:12px;transition:transform .12s,filter .2s}
+.btn:active{transform:translateY(1px)}
+.btn-primary{color:#160c1f;background:linear-gradient(135deg,#a9a9ff,var(--indigo));box-shadow:0 12px 26px -8px rgba(139,139,245,.6)}
+.btn-primary:hover{filter:brightness(1.06)}
+.btn-ghost{background:var(--ink);color:var(--paper-dim);border:1px solid var(--line)}
+.btn-ghost:hover{border-color:var(--line-2);color:var(--paper)}
+.linkrow{margin-top:12px;font-size:11.5px;color:var(--paper-faint);text-align:center}
+.linkrow a{color:var(--paper-dim);text-decoration:none;border-bottom:1px dotted var(--paper-faint)}
+.divider{display:flex;align-items:center;gap:10px;margin:16px 0;color:var(--paper-faint);font-size:10px;font-family:var(--mono);letter-spacing:.1em}
+.divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--line)}
+
+/* signed-in */
+.dest{display:flex;align-items:center;gap:9px;background:linear-gradient(135deg,rgba(139,139,245,.14),rgba(139,139,245,.04));
+  border:1px solid rgba(139,139,245,.28);border-radius:11px;padding:9px 11px;font-size:11.5px;color:var(--paper-dim);margin-bottom:14px}
+.dest b{color:var(--paper)}
+.dest .live{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 9px var(--green);flex-shrink:0}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.act{display:flex;flex-direction:column;align-items:center;gap:7px;padding:15px 8px;border-radius:13px;cursor:pointer;
+  background:var(--ink);border:1px solid var(--line);transition:.18s}
+.act:hover{transform:translateY(-2px)}
+.act.bug:hover{border-color:var(--rose);box-shadow:0 8px 22px -10px var(--rose)}
+.act.feat:hover{border-color:var(--amber);box-shadow:0 8px 22px -10px var(--amber)}
+.act .ic{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;font-size:17px}
+.act.bug .ic{background:rgba(232,132,154,.16)}.act.feat .ic{background:rgba(232,162,74,.16)}
+.act .t{font-weight:700;font-size:13px}.act .s{font-size:9.5px;color:var(--paper-faint);font-family:var(--mono);letter-spacing:.03em}
+.hintline{text-align:center;font-size:10.5px;color:var(--paper-faint);margin:11px 0 4px}
+
+.recent{margin-top:14px}
+.recent-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.recent-h .l{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint)}
+.recent-h a{font-size:10px;color:var(--indigo);text-decoration:none}
+.tick{display:flex;align-items:center;gap:10px;padding:8px 4px;border-top:1px solid var(--line)}
+.tick .sim-slot{flex-shrink:0}
+.tick .tk-meta{min-width:0;flex:1}
+.tick .tk-t{font-size:12px;font-weight:600;color:var(--paper);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tick .tk-s{font-size:9.5px;color:var(--paper-faint);font-family:var(--mono);letter-spacing:.02em}
+.chip{font-family:var(--mono);font-size:8px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;border-radius:20px;padding:3px 8px;white-space:nowrap}
+.chip.open{color:var(--amber);background:rgba(232,162,74,.14);border:1px solid rgba(232,162,74,.3)}
+.chip.prog{color:var(--indigo);background:rgba(139,139,245,.14);border:1px solid rgba(139,139,245,.3)}
+.chip.done{color:var(--green);background:rgba(159,214,160,.14);border:1px solid rgba(159,214,160,.3)}
+.pp-foot{display:flex;align-items:center;gap:6px;padding:11px 16px;border-top:1px solid var(--line);font-size:10.5px;color:var(--paper-faint)}
+.pp-foot a{color:var(--paper-dim);text-decoration:none}.pp-foot a:hover{color:var(--paper)}
+.pp-foot .sep{opacity:.5}
+.mirror{margin-left:auto;display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:8.5px;color:var(--paper-faint)}
+.mirror .d{width:6px;height:6px;border-radius:2px;background:var(--green)}
+
+/* annotations */
+.notes{max-width:300px}
+.notes h3{font-family:var(--display);font-size:18px;font-weight:430;margin-bottom:12px}
+.note{display:flex;gap:10px;font-size:13px;color:var(--paper-dim);margin-bottom:11px;line-height:1.45}
+.note .n{flex-shrink:0;width:20px;height:20px;border-radius:6px;display:grid;place-items:center;font-family:var(--mono);font-size:10px;font-weight:700;color:var(--indigo);background:rgba(139,139,245,.12);border:1px solid rgba(139,139,245,.25)}
+.note b{color:var(--paper)}
+
+.foot{margin-top:64px;border-top:1px solid var(--line);padding-top:22px;color:var(--paper-faint);font-size:13px;max-width:74ch}
+.foot code{font-family:var(--mono);font-size:11.5px;color:var(--indigo);background:var(--ink-2);border:1px solid var(--line);border-radius:5px;padding:1px 6px}
+.foot b{color:var(--paper-dim)}
+@media(max-width:560px){.popup{width:100%;max-width:344px}}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <div class="eyebrow"><span class="spark">⚡</span> Klavity Snap · Redesigned popup</div>
+  <h1>From dev-tool grey<br>to <em>Klavity</em>.</h1>
+  <p class="lede">The current popup is off-brand and asks you to paste API tokens before it does anything. Redesigned: the Klavity look, a Sim to greet you, and <b>one tap to sign in with your Klavity account</b> — after which every bug, screenshot, and console trace flows straight into <b>your workspace</b>. Your own tracker (Jira/Linear/…) becomes an optional mirror, not a requirement.</p>
+
+  <div class="stagewrap">
+
+    <!-- SIGNED OUT -->
+    <div class="frame">
+      <div class="flabel">State · <b>signed out</b> (first run)</div>
+      <div class="popup">
+        <div class="pp-top">
+          <div class="pp-mark">⚡</div>
+          <div><div class="pp-name">Klavity Snap</div><div class="pp-sub">bug reporter</div></div>
+        </div>
+        <div class="pp-body">
+          <div class="greet">
+            <div id="greet-sim"></div>
+            <h2>File bugs without<br>the busywork.</h2>
+            <p>Sign in and every report lands in your Klavity workspace — screenshot, console errors &amp; the page, attached.</p>
+          </div>
+          <div style="margin-top:16px">
+            <button class="btn btn-primary">⚡ Sign in with Klavity</button>
+            <div class="linkrow" style="margin-top:9px">or <a href="#">sign in with an email code</a></div>
+          </div>
+          <div class="divider">OR</div>
+          <button class="btn btn-ghost">Connect your own tracker</button>
+          <div class="linkrow">Jira · Linear · GitHub · Plane — direct mode</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="notes">
+      <h3>What changed</h3>
+      <div class="note"><span class="n">1</span><div><b>On-brand.</b> Fraunces + Hanken, ink/paper/indigo, grain — matches the site instead of generic Catppuccin grey.</div></div>
+      <div class="note"><span class="n">2</span><div><b>A Sim greets you.</b> The mascot (real component) gives the tool a face and a pulse.</div></div>
+      <div class="note"><span class="n">3</span><div><b>Account-first.</b> “Sign in with Klavity” is the hero — no token-pasting to get started.</div></div>
+      <div class="note"><span class="n">4</span><div><b>Tracker is optional.</b> Bring-your-own Jira/Linear is demoted to a secondary path.</div></div>
+    </div>
+  </div>
+
+  <div class="stagewrap" style="margin-top:64px">
+
+    <!-- SIGNED IN -->
+    <div class="frame">
+      <div class="flabel">State · <b>signed in</b> · cloud is the default</div>
+      <div class="popup">
+        <div class="pp-top">
+          <div class="pp-mark">⚡</div>
+          <div><div class="pp-name">Klavity Snap</div><div class="pp-sub">acme workspace</div></div>
+          <div class="acct"><span class="av">SC</span><span class="em">sarah@acme.com</span></div>
+        </div>
+        <div class="pp-body">
+          <div class="dest"><span class="live"></span><div>Filing to <b>Acme</b> on Klavity Cloud — tickets appear in your dashboard instantly.</div></div>
+          <div class="actions">
+            <div class="act bug"><div class="ic">🐛</div><div class="t">Report a Bug</div><div class="s">⌘⇧K</div></div>
+            <div class="act feat"><div class="ic">💡</div><div class="t">Request a Feature</div><div class="s">right-click</div></div>
+          </div>
+          <div class="hintline">…or right-click any element on the page</div>
+
+          <div class="recent">
+            <div class="recent-h"><span class="l">Recent — your workspace</span><a href="#">Open dashboard ↗</a></div>
+            <div class="tick"><span class="sim-slot" data-sim="rose"></span><div class="tk-meta"><div class="tk-t">Checkout 500s on mobile Safari</div><div class="tk-s">#KL-218 · /checkout · 2h ago</div></div><span class="chip prog">In&nbsp;progress</span></div>
+            <div class="tick"><span class="sim-slot" data-sim="amber"></span><div class="tk-meta"><div class="tk-t">Date picker clips on small screens</div><div class="tk-s">#KL-217 · /book · 5h ago</div></div><span class="chip open">Triaged</span></div>
+            <div class="tick"><span class="sim-slot" data-sim="green"></span><div class="tk-meta"><div class="tk-t">Bulk-approve shipped — love it</div><div class="tk-s">#KL-210 · /invoices · 1d ago</div></div><span class="chip done">Done</span></div>
+          </div>
+        </div>
+        <div class="pp-foot">
+          <a href="#">Dashboard</a><span class="sep">·</span><a href="#">Settings</a>
+          <span class="mirror"><span class="d"></span> also mirroring → Jira</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="notes">
+      <h3>The cloud flow</h3>
+      <div class="note"><span class="n">5</span><div><b>Tickets flow to your account.</b> The destination banner makes it explicit — filing to <b>Acme on Klavity Cloud</b>.</div></div>
+      <div class="note"><span class="n">6</span><div><b>Recent tickets, in the popup.</b> See what you (and your Sims) filed, with live status — no context-switch.</div></div>
+      <div class="note"><span class="n">7</span><div><b>Big, obvious actions.</b> Bug / Feature front-and-centre, with the shortcut + right-click hint.</div></div>
+      <div class="note"><span class="n">8</span><div><b>Optional mirror.</b> Quietly push a copy to Jira/Linear too, shown in the footer.</div></div>
+    </div>
+  </div>
+
+  <div class="foot">
+    This is a static mock. It already maps onto the real model: cloud submits go through <code>core/integrations/backend.ts</code> → <code>POST {backendUrl}/api/feedback</code>. To make it live we add a <b>Klavity account token</b> (sign-in → token in <code>chrome.storage.session</code>, refresh in <code>local</code>), default <code>backendUrl</code> to Klavity Cloud, and the backend associates feedback with the account + returns it for the “Recent” list. The greeter Sim uses the real <code>@klavity/core/sim</code> component (<code>/klavity-sim.js</code>).
+  </div>
+
+</div>
+
+<script src="klavity-sim.js"></script>
+<script>
+  const { createSim, injectSimStyles } = window.KlavitySim;
+  injectSimStyles(document);
+  // greeter mascot
+  document.getElementById('greet-sim').appendChild(
+    createSim({ name: 'Klavity', initials: '⚡', color: '#8b8bf5', emotion: 'delighted', size: 70 })
+  );
+  // tiny reporter sims next to each recent ticket
+  const colorMap = { rose:'#e8849a', amber:'#e8a24a', green:'#9fd6a0' };
+  const emoMap   = { rose:'frustrated', amber:'confused', green:'satisfied' };
+  const names    = { rose:'Sarah Chen', amber:'Priya Rao', green:'Anika Kumar' };
+  document.querySelectorAll('.sim-slot').forEach(slot => {
+    const k = slot.dataset.sim;
+    slot.appendChild(createSim({ name: names[k], color: colorMap[k], emotion: emoMap[k], size: 30, legs: false }));
+  });
+</script>
+</body>
+</html>

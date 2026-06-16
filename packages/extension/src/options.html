@@ -14,6 +14,10 @@
     #status{margin-top:12px;text-align:center;color:#a6e3a1;font-size:13px;}
     .cloud-section{background:#1e2a3a;border:1px solid rgba(137,180,250,.27);border-radius:8px;padding:16px;margin-top:20px;}
     small{font-size:11px;color:#a6adc8;}
+    .urlpaste{border:1px dashed #89b4fa;background:#1a2230;}
+    .urlpaste::placeholder{color:#6c7086;}
+    .parsed{display:none;font-size:11px;color:#a6e3a1;margin-top:4px;}
+    .parsed.show{display:block;}
   </style>
 </head>
 <body>
@@ -28,6 +32,9 @@
 
   <div class="section" id="jira-section">
     <h2>Jira</h2>
+    <label>📋 Paste any project / board / issue URL — auto-fills below</label>
+    <input id="jira-url" class="urlpaste" type="url" placeholder="https://yourorg.atlassian.net/jira/software/projects/PROJ/…">
+    <span class="parsed" id="jira-url-ok">✓ split into Base URL + Project Key</span>
     <label>Base URL</label><input id="jira-baseUrl" type="url" placeholder="https://yourorg.atlassian.net">
     <label>Email</label><input id="jira-email" type="email">
     <label>API Token</label><input id="jira-token" type="password">
@@ -42,6 +49,9 @@
 
   <div class="section" id="github-section" style="display:none">
     <h2>GitHub Issues</h2>
+    <label>📋 Paste the repo URL — auto-fills below</label>
+    <input id="github-url" class="urlpaste" type="url" placeholder="https://github.com/acme/webapp">
+    <span class="parsed" id="github-url-ok">✓ split into owner/repo</span>
     <label>Personal Access Token</label><input id="github-token" type="password">
     <label>Repository (owner/repo)</label><input id="github-repo" placeholder="acme/webapp">
     <small>Note: screenshots embedded in issue body. GitHub has no direct attachment API.</small>
@@ -49,7 +59,12 @@
 
   <div class="section" id="plane-section" style="display:none">
     <h2>Plane</h2>
+    <label>📋 Paste the project URL — auto-fills host, workspace &amp; project ID</label>
+    <input id="plane-url" class="urlpaste" type="url" placeholder="https://plane.quantana.top/workspace/projects/<id>/issues/">
+    <span class="parsed" id="plane-url-ok">✓ split into Host + Workspace + Project ID</span>
     <label>API Token</label><input id="plane-token" type="password">
+    <label>Host <small>(self-hosted Plane, or leave as api.plane.so for cloud)</small></label>
+    <input id="plane-host" type="url" placeholder="https://api.plane.so">
     <label>Workspace Slug</label><input id="plane-workspace" placeholder="acme">
     <label>Project ID</label><input id="plane-projectId" placeholder="proj_abc123">
   </div>
