@@ -127,12 +127,7 @@ input.in:focus{border-color:var(--indigo)}
         </div>
       </div>
       <div id="loadingBox" class="hide" style="margin-top:8px"><span class="loading" id="loadtxt">Reading the call</span></div>
-      <div class="sim-reveal" id="reveal">
-        <div class="sr-top"><div class="sr-av">SC</div><div><div class="sr-name">Sarah Chen</div><div class="sr-role">CFO · Acme</div></div><span class="sr-tag">CLIENT</span></div>
-        <div class="ins"><span class="kind pain">pain</span><span class="it">Can't spot overdue approvals at a glance<span class="q">“I cannot find overdue items”</span></span></div>
-        <div class="ins"><span class="kind want">want</span><span class="it">Export to Excel before sign-off<span class="q">“I need Excel before I sign off”</span></span></div>
-        <div class="ins"><span class="kind love">love</span><span class="it">Revenue shown front and centre<span class="q">“I check it every morning”</span></span></div>
-      </div>
+      <div class="sim-reveal" id="reveal"></div>
       <div class="row" id="s1next" style="display:none"><button class="btn btn-indigo" onclick="go(2)">Now put Sarah on your product →</button></div>
     </div>
 
@@ -147,7 +142,7 @@ input.in:focus{border-color:var(--indigo)}
       </div>
       <div class="snippet"><span class="t">&lt;script</span> src=<span class="t">"https://cdn.klav.io/sims.js"</span> data-key=<span class="t">"pk_acme_…"</span><span class="t">&gt;&lt;/script&gt;</span></div>
       <div class="row">
-        <button class="btn btn-indigo" onclick="go(3)">Review the sample product →</button>
+        <button class="btn btn-indigo" onclick="window.open('/','_blank');go(3)">Review the sample product (live) →</button>
         <a class="skip" onclick="go(3)">I'll review my own app later</a>
       </div>
     </div>
@@ -186,6 +181,30 @@ input.in:focus{border-color:var(--indigo)}
 </div>
 
 <script>
+// Sample call — extracted LIVE via the prototype backend (/api/extract) when served from the server.
+const SAMPLE = `Interviewer: Sarah, you're the CFO at Acme. When you open the finance dashboard in the morning, what's the first thing you do?
+Sarah Chen: The very first number I look at is revenue. That has to be front and centre - don't make me hunt for it. After that I go straight to approvals. The problem is the approval list isn't sorted by urgency. I've got fourteen items and three are overdue, but I have to manually scan to find which ones. Sort it by what's overdue, always.
+Sarah Chen: Also there's no export button. I cannot sign off on anything until my EA has it in an Excel spreadsheet for the board packet.
+Interviewer: James, you're the finance lead. What's your workflow?
+James Moore: My biggest gripe is I have to approve each item one at a time. With month-end close four days away I need a bulk-approve - checkboxes and an "approve selected" button. Clicking fourteen times is painful.
+Interviewer: Anika, operations - what works well?
+Anika Kumar: I love that the revenue figure is right there at the top. I check it every single morning before standup. The layout is clean. I just wish the "at risk" items were a bit more obvious.`
+
+const CANNED = { name:"Sarah Chen", role:"CFO · Acme", type:"client", initials:"SC", accent:"linear-gradient(135deg,#6366f1,#8b5cf6)",
+  insights:[{kind:"pain",text:"Can't spot overdue approvals at a glance",quote:"I cannot find overdue items"},
+            {kind:"want",text:"Export to Excel before sign-off",quote:"I need Excel before I sign off"},
+            {kind:"love",text:"Revenue shown front and centre",quote:"I check it every morning"}] }
+
+const esc = (s) => String(s||"").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))
+function renderPersona(p, extra){
+  const ins = (p.insights||[]).slice(0,3).map(x =>
+    `<div class="ins"><span class="kind ${x.kind}">${esc(x.kind)}</span><span class="it">${esc(x.text)}<span class="q">“${esc(x.quote)}”</span></span></div>`).join("")
+  return `<div class="sr-top"><div class="sr-av" style="background:${p.accent||"linear-gradient(135deg,#6366f1,#8b5cf6)"}">${esc(p.initials||p.name.slice(0,2).toUpperCase())}</div>`+
+    `<div><div class="sr-name">${esc(p.name)}</div><div class="sr-role">${esc(p.role)}</div></div>`+
+    `<span class="sr-tag">${esc((p.type||"client").toUpperCase())}</span></div>${ins}`+
+    (extra ? `<div style="font-family:var(--mono);font-size:11px;color:var(--paper-faint);padding-top:10px;border-top:1px solid var(--line)">${esc(extra)}</div>` : "")
+}
+
 let cur = 0
 function paint(){
   document.querySelectorAll('.step').forEach(el=>el.classList.toggle('hide', Number(el.dataset.s)!==cur))
@@ -197,15 +216,25 @@ function paint(){
   })
 }
 function go(n){ cur=n; paint(); window.scrollTo(0,0) }
-function extract(){
+
+async function extract(){
   document.getElementById('upl').classList.add('hide')
-  document.getElementById('loadingBox').classList.remove('hide')
-  const phrases=['Reading the call','Finding the speakers','Pulling out what Sarah cares about','Anchoring each insight to a quote']
-  let i=0; const lt=document.getElementById('loadtxt')
-  const iv=setInterval(()=>{ i++; if(i<phrases.length){lt.textContent=phrases[i]} else {
-    clearInterval(iv); document.getElementById('loadingBox').classList.add('hide')
-    document.getElementById('reveal').classList.add('show'); document.getElementById('s1next').style.display='flex'
-  }}, 750)
+  const lb=document.getElementById('loadingBox'); lb.classList.remove('hide')
+  const lt=document.getElementById('loadtxt'); const rv=document.getElementById('reveal')
+  const phrases=['Reading the call','Finding the speakers','Pulling out what they care about','Anchoring each insight to a quote']
+  let i=0; const iv=setInterval(()=>{ i=(i+1)%phrases.length; lt.textContent=phrases[i] }, 1100)
+  try{
+    const r=await fetch('/api/extract',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({transcript:SAMPLE})})
+    const data=await r.json(); if(data.error) throw new Error(data.error)
+    clearInterval(iv); lb.classList.add('hide')
+    const ps=data.personas||[]; const first=ps[0]||CANNED
+    const extra = ps.length>1 ? `+ ${ps.length-1} more Sim${ps.length-1>1?'s':''} found in this call` : ""
+    rv.innerHTML=renderPersona(first, extra)
+  }catch(e){
+    clearInterval(iv); lb.classList.add('hide')
+    rv.innerHTML=renderPersona(CANNED, "offline preview — open via http://localhost:4317/onboarding for live extraction")
+  }
+  rv.classList.add('show'); document.getElementById('s1next').style.display='flex'
 }
 function finish(){ document.getElementById('done').classList.remove('hide') }
 paint()

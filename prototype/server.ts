@@ -117,6 +117,12 @@ Bun.serve({
     if (req.method === "GET" && url.pathname === "/") {
       return new Response(Bun.file(import.meta.dir + "/public/index.html"))
     }
+    if (req.method === "GET" && url.pathname === "/onboarding") {
+      return new Response(Bun.file(import.meta.dir + "/../site/onboarding.html"))
+    }
+    if (req.method === "GET" && url.pathname === "/home") {
+      return new Response(Bun.file(import.meta.dir + "/../site/index.html"))
+    }
 
     if (req.method === "POST" && url.pathname === "/api/extract") {
       try {
