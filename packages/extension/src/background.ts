@@ -17,7 +17,12 @@ function getTrackerUrl(settings: KlavitySettings): string {
     case 'jira': return settings.jira.baseUrl ? `${settings.jira.baseUrl}/browse` : ''
     case 'linear': return 'https://linear.app'
     case 'github': return settings.github.repo ? `https://github.com/${settings.github.repo}/issues` : ''
-    case 'plane': return settings.plane.workspace ? `https://app.plane.so/${settings.plane.workspace}` : ''
+    case 'plane': {
+      if (!settings.plane.workspace) return ''
+      const h = (settings.plane.host || 'https://api.plane.so').replace(/\/+$/, '')
+      const web = h === 'https://api.plane.so' ? 'https://app.plane.so' : h // self-hosted shares its origin
+      return `${web}/${settings.plane.workspace}`
+    }
   }
 }
 
