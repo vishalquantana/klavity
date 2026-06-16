@@ -71,6 +71,7 @@ $('smart-url').addEventListener('input', (e) => {
     ? '✓ Detected Linear — add your API key + team ID below'
     : `✓ Detected ${label[d.integration]} — fields filled, just add your token`
   ok.classList.add('show')
+  markDirty() // detected integration + filled fields are an unsaved change → triggers auto-save
 })
 
 function readSettings(): KlavitySettings {
@@ -115,8 +116,12 @@ async function withButton(id: string, busyLabel: string, fn: () => Promise<void>
   try { await fn() } finally { btn.disabled = false; btn.textContent = label }
 }
 
-// Lightweight authenticated check — confirms host/token/project are valid without filing.
+// Lightweight authenticated check. Validates the RESPONSE SHAPE, not just the
+// status — a self-hosted app often returns its SPA HTML with a 200 for unknown
+// API paths, which would otherwise look like a false "connected".
 async function testConnection(s: KlavitySettings): Promise<{ ok: boolean; msg: string }> {
+  const asJson = async (r: Response): Promise<any> => { try { return await r.json() } catch { return null } }
+  const looksLikePlane = (host: string) => /plane/i.test(host)
   try {
     if (s.backendUrl) {
       const r = await fetch(`${s.backendUrl.replace(/\/+$/, '')}/api/me`)
@@ -126,22 +131,30 @@ async function testConnection(s: KlavitySettings): Promise<{ ok: boolean; msg: s
       case 'plane': {
         const base = (s.plane.host || 'https://api.plane.so').replace(/\/+$/, '')
         const r = await fetch(`${base}/api/v1/workspaces/${s.plane.workspace}/projects/${s.plane.projectId}/`, { headers: { 'X-API-Key': s.plane.token } })
-        if (r.ok) { const d = await r.json().catch(() => ({} as any)); return { ok: true, msg: `Connected to Plane project "${d.name ?? s.plane.projectId}"` } }
-        return { ok: false, msg: `Plane ${r.status}: ${(await r.text()).slice(0, 180)}` }
+        const d = await asJson(r)
+        if (r.ok && d && d.id) return { ok: true, msg: `Connected to Plane project "${d.name ?? s.plane.projectId}"` }
+        if (r.ok) return { ok: false, msg: `Reached ${base} but it didn't return the Plane API (got HTML?) — check the Host / Workspace / Project ID.` }
+        return { ok: false, msg: `Plane ${r.status}: ${(typeof d === 'object' ? JSON.stringify(d) : '').slice(0, 180) || 'request rejected (token / project?)'}` }
       }
       case 'jira': {
         const base = s.jira.baseUrl.replace(/\/+$/, '')
         const r = await fetch(`${base}/rest/api/3/myself`, { headers: { Authorization: `Basic ${btoa(`${s.jira.email}:${s.jira.token}`)}`, Accept: 'application/json' } })
-        return { ok: r.ok, msg: r.ok ? `Authenticated to Jira at ${base}` : `Jira responded ${r.status}` }
+        const d = await asJson(r)
+        if (r.ok && d && d.accountId) return { ok: true, msg: `Authenticated to Jira as ${d.displayName ?? d.emailAddress ?? 'user'}` }
+        if (r.ok) return { ok: false, msg: looksLikePlane(base) ? `That Base URL is a Plane server, not Jira — switch Active Integration to Plane and re-paste the URL.` : `Reached ${base} but it didn't respond like the Jira API — wrong Base URL?` }
+        return { ok: false, msg: `Jira ${r.status} (check email / API token / Base URL).` }
       }
       case 'github': {
         const r = await fetch(`https://api.github.com/repos/${s.github.repo}`, { headers: { Authorization: `Bearer ${s.github.token}`, Accept: 'application/vnd.github+json' } })
-        return { ok: r.ok, msg: r.ok ? `Connected to GitHub repo ${s.github.repo}` : `GitHub responded ${r.status}` }
+        const d = await asJson(r)
+        if (r.ok && d && d.full_name) return { ok: true, msg: `Connected to GitHub repo ${d.full_name}` }
+        return { ok: false, msg: `GitHub ${r.status} (check the token scope / repo).` }
       }
       case 'linear': {
         const r = await fetch('https://api.linear.app/graphql', { method: 'POST', headers: { Authorization: s.linear.apiKey, 'Content-Type': 'application/json' }, body: JSON.stringify({ query: '{ viewer { id name } }' }) })
-        const d = await r.json().catch(() => ({} as any))
-        return d?.data?.viewer ? { ok: true, msg: `Authenticated to Linear as ${d.data.viewer.name}` } : { ok: false, msg: `Linear responded ${r.status}` }
+        const d = await asJson(r)
+        if (d?.data?.viewer?.id) return { ok: true, msg: `Authenticated to Linear as ${d.data.viewer.name}` }
+        return { ok: false, msg: `Linear ${r.status} (check the API key).` }
       }
     }
     return { ok: false, msg: 'Pick an integration first.' }
@@ -184,11 +197,37 @@ $('testTicket').addEventListener('click', () => withButton('testTicket', 'Filing
   }
 }))
 
-$('save').addEventListener('click', async () => {
-  await chrome.storage.sync.set({ klavSettings: readSettings() })
-  const status = document.getElementById('status')!
-  status.textContent = '✓ Saved'
-  setTimeout(() => { status.textContent = '' }, 2000)
-})
+// ── persistent save state: Unsaved → Saving → Saved ──
+type SaveState = 'dirty' | 'saving' | 'saved'
+function setSaveState(st: SaveState) {
+  const row = document.getElementById('saveState')!
+  const text = document.getElementById('saveStateText')!
+  const btn = $('save') as HTMLButtonElement
+  row.className = 'savestate ' + st
+  btn.classList.toggle('dirty', st === 'dirty')
+  btn.classList.toggle('clean', st === 'saved')
+  if (st === 'dirty') { text.textContent = 'Unsaved changes'; btn.textContent = 'Save Settings' }
+  else if (st === 'saving') { text.textContent = 'Saving…' }
+  else { text.textContent = 'All changes saved'; btn.textContent = '✓ Saved' }
+}
 
-load()
+async function persist() {
+  setSaveState('saving')
+  await chrome.storage.sync.set({ klavSettings: readSettings() })
+  setSaveState('saved')
+}
+
+// Auto-save so nothing is ever lost (e.g. reloading the extension before clicking Save).
+// Switching the integration keeps every tracker's fields — each lives in storage.
+let saveTimer: ReturnType<typeof setTimeout> | undefined
+function markDirty() {
+  setSaveState('dirty')
+  clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => { void persist() }, 600)
+}
+document.addEventListener('input', markDirty)
+document.addEventListener('change', markDirty)
+
+$('save').addEventListener('click', () => { clearTimeout(saveTimer); void persist() })
+
+load().then(() => setSaveState('saved'))
