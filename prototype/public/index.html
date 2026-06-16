@@ -53,8 +53,8 @@
   textarea { width: 100%; min-height: 150px; background: var(--ink); color: var(--paper); border: 1px solid var(--line-2); border-radius: 8px; padding: 10px; font-size: 12px; line-height: 1.5; resize: vertical; font-family: ui-monospace, monospace; transition: border-color .15s, box-shadow .15s; }
   textarea.drag-over { border-color: var(--indigo); box-shadow: 0 0 0 3px rgba(99,102,241,.25); }
   .row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-  button { font-size: 13px; font-weight: 600; padding: 9px 16px; border-radius: 8px; border: none; cursor: pointer; transition: opacity .15s, transform .1s; }
-  button:hover { opacity: .9; } button:active { transform: translateY(1px); } button:disabled { opacity: .4; cursor: not-allowed; }
+  button, label.ghost { font-size: 13px; font-weight: 600; padding: 9px 16px; border-radius: 8px; border: none; cursor: pointer; transition: opacity .15s, transform .1s; }
+  button:hover, label.ghost:hover { opacity: .9; } button:active, label.ghost:active { transform: translateY(1px); } button:disabled { opacity: .4; cursor: not-allowed; }
   .primary { background: var(--indigo); color: white; }
   .ghost { background: var(--ink-4); color: var(--paper); border: 1px solid var(--line-2); }
 
@@ -195,8 +195,8 @@
 
   /* reviewer cards (Your Sims, relocated into step 2) */
   .reviewers-label{margin-top:14px}
-  .rvins{font-size:10px;color:var(--paper-dim);line-height:1.55;margin-top:4px}
-  .rvins .tg{font-weight:800;font-size:8.5px;text-transform:uppercase;letter-spacing:.04em;margin-right:4px}
+  .rvins{font-size:12px;color:var(--paper-dim);line-height:1.6;margin-top:4px}
+  .rvins .tg{font-weight:800;font-size:10px;text-transform:uppercase;letter-spacing:.04em;margin-right:4px}
   .tg.pain{color:var(--rose)}.tg.want{color:var(--blue)}.tg.love{color:var(--green)}
 
   .pulse{animation:gpulse 1.5s ease-in-out infinite}
@@ -517,15 +517,25 @@ function onAvatar(i, e) {
 
 function badge(kind){const c=kind==="pain"?"#f38ba8":kind==="want"?"#89b4fa":"#a6e3a1";return `<span style="color:${c};font-weight:700">${kind}</span>`}
 
+const reviewing = new Set()
 async function review(i) {
+  if (reviewing.has(i)) return
+  reviewing.add(i)
   const sim = sims[i]
+  const btn = $("dock").querySelector(`.reviewbtn[data-i="${i}"]`)
+  if (btn) { btn.disabled = true; btn.textContent = `Reviewing…` }
   clearOverlays()
   updateFlow()
   setStatus("reactStatus", `📸 ${sim.name.split(" ")[0]} is screenshotting the page…`)
   let dataUrl
   try {
     dataUrl = await toPng($("stage"), { pixelRatio: 1, cacheBust: true })
-  } catch (e) { setStatus("reactStatus", "Screenshot failed: " + e.message, true); return }
+  } catch (e) {
+    setStatus("reactStatus", "Screenshot failed: " + e.message, true)
+    reviewing.delete(i)
+    if (btn && btn.isConnected) { btn.disabled = false; btn.textContent = `Have ${sim.name.split(" ")[0]} review this page →` }
+    return
+  }
   const imageB64 = dataUrl.split(",")[1]
   setStatus("reactStatus", `👀 ${sim.name.split(" ")[0]} is reviewing… (Claude vision, 10-30s)`)
   try {
@@ -536,6 +546,10 @@ async function review(i) {
     setStatus("reactStatus", `✅ ${sim.name.split(" ")[0]} gave ${data.reactions.length} reaction(s).` + usageStr(data.usage))
     playReactions(sim, data.reactions)
   } catch (e) { setStatus("reactStatus", "Error: " + e.message, true) }
+  finally {
+    reviewing.delete(i)
+    if (btn && btn.isConnected) { btn.disabled = false; btn.textContent = `Have ${sim.name.split(" ")[0]} review this page →` }
+  }
 }
 
 async function playReactions(sim, reactions) {
