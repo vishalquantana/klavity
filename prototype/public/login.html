@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<script>(function(){try{var t=localStorage.getItem('klav-theme');if(t==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();</script>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="icon" href="/favicon.ico" sizes="any">
 <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -8,8 +9,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" /><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..800;1,9..144,400..600&family=Hanken+Grotesk:wght@300..800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
 <style>
-:root{--ink:#0c0a08;--ink-2:#15110d;--paper:#f3ece1;--paper-dim:#b3a896;--paper-faint:#a89e91;--indigo:#8b8bf5;--indigo-deep:#6366f1;--rose:#e8849a;--green:#9fd6a0;--line:rgba(243,236,225,.11);
+:root{--ink:#f5f3ee;--ink-2:#ffffff;--ink-3:#efeae0;--paper:#19140f;--paper-dim:#574f45;--paper-faint:#8a8076;--indigo:#6366f1;--indigo-deep:#4f46e5;--amber:#d98324;--rose:#db2777;--green:#0f9d6b;--line:rgba(25,20,15,.12);
 --display:'Fraunces',serif;--body:'Hanken Grotesk',system-ui,sans-serif;--mono:'JetBrains Mono',monospace}
+[data-theme="dark"]{--ink:#0c0a08;--ink-2:#15110d;--ink-3:#1e1813;--paper:#f3ece1;--paper-dim:#b3a896;--paper-faint:#776c5d;--indigo:#8b8bf5;--indigo-deep:#6366f1;--amber:#e8a24a;--rose:#e8849a;--green:#9fd6a0;--line:rgba(243,236,225,.11)}
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--ink);color:var(--paper);font-family:var(--body);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
 body::after{content:"";position:fixed;inset:0;pointer-events:none;background:radial-gradient(90% 60% at 50% 0%,rgba(139,139,245,.12),transparent 60%)}
@@ -51,7 +53,7 @@ input.code{font-family:var(--mono);font-size:24px;letter-spacing:.32em;text-alig
 .ls-arm .ls-fin{position:absolute;left:-6px;top:-8px;font-size:15px}
 
 /* ── customer quote marquee ── */
-.q-marquee{position:fixed;bottom:0;left:0;right:0;z-index:2;border-top:1px solid var(--line);background:rgba(12,10,8,.85);backdrop-filter:blur(10px);padding:13px 0;overflow:hidden;-webkit-mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent)}
+.q-marquee{position:fixed;bottom:0;left:0;right:0;z-index:2;border-top:1px solid var(--line);background:var(--ink-2);backdrop-filter:blur(10px);padding:13px 0;overflow:hidden;-webkit-mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent)}
 .q-track{display:flex;gap:48px;width:max-content;animation:qscroll 42s linear infinite}
 .q-item{display:flex;align-items:baseline;gap:11px;white-space:nowrap;font-family:var(--display);font-style:italic;font-size:16px;color:var(--paper-dim)}
 .q-item .q-who{font-family:var(--mono);font-style:normal;font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--paper-faint)}
@@ -60,14 +62,15 @@ input.code{font-family:var(--mono);font-size:24px;letter-spacing:.32em;text-alig
 @media (prefers-reduced-motion: reduce){.login-sim,.q-track,.ls-arm,.ls-eye::after{animation:none}}
 
 /* ── a11y: visible focus + reduced-motion (a11y audit fix) ── */
-a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{outline:2px solid #8b8bf5;outline-offset:2px;border-radius:5px}
+a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--indigo);outline-offset:2px;border-radius:5px}
+.theme-toggle{position:fixed;right:16px;bottom:16px;z-index:90;width:40px;height:40px;border-radius:50%;border:1px solid var(--line);background:var(--ink-2);color:var(--paper);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(0,0,0,.12)}
 @media (prefers-reduced-motion: reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}}
 </style>
 </head>
 <body>
 <div class="card">
   <a class="back" href="/">← Klavity home</a>
-  <div class="brand"><span class="spark">⚡</span>Klavity</div>
+  <div class="brand"><img src="/favicon.svg" width="30" height="30" alt="Klavity" style="border-radius:9px;display:block" />Klavity</div>
 
   <div id="step-email">
     <h1>Sign in</h1>
@@ -107,6 +110,10 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   <span class="q-item">“I'd never trust a number I can't drill into.” <span class="q-who">— Marcus, Analyst</span></span>
   <span class="q-item">“Sort it by what's overdue. Always.” <span class="q-who">— Sarah, CFO</span></span>
 </div></div>
+
+<button class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode">🌙</button>
+
+<script>(function(){var b=document.getElementById('themeToggle');if(!b)return;var R=document.documentElement;function dark(){return R.getAttribute('data-theme')==='dark'}function paint(){b.textContent=dark()?'☀️':'🌙'}paint();b.addEventListener('click',function(){var n=dark()?'light':'dark';if(n==='dark')R.setAttribute('data-theme','dark');else R.removeAttribute('data-theme');try{localStorage.setItem('klav-theme',n)}catch(e){}paint()})})();</script>
 
 <script>
 const $ = (id) => document.getElementById(id)

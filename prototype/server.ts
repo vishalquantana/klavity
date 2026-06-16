@@ -121,7 +121,7 @@ Bun.serve({
     if (req.method === "GET" && path === "/favicon.ico") return file(PUB + "/favicon.ico")
 
     // ── public marketing + login ──
-    if (req.method === "GET" && path === "/") return file(SITE + "/index.html")
+    if (req.method === "GET" && path === "/") return file(import.meta.dir + "/../local.html")
     if (req.method === "GET" && path === "/local") return file(import.meta.dir + "/../local.html")
     if (req.method === "GET" && path === "/home") return redirect("/")
     if (req.method === "GET" && path === "/login") return file(PUB + "/login.html")

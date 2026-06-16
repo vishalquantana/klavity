@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<script>(function(){try{var t=localStorage.getItem('klav-theme');if(t==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();</script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Klavity — your customers, in the room while you build</title>
@@ -10,15 +11,24 @@
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..700&family=Hanken+Grotesk:wght@300..800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
 <style>
 :root{
-  /* ── DESIGNER PALETTE (from screenshot) - Grayscale Edition ── */
-  --ink:#ffffff;                                                /* pure white background */
-  --ink-2:rgba(255,255,255,0.45);                               /* glassmorphism base */
-  --ink-3:rgba(255,255,255,0.85);                               /* hover card/subtle focus */
-  --paper:#09090b; --paper-dim:#3f3f46; --paper-faint:#71717a;  /* text shades */
-  --indigo:#09090b; --indigo-deep:#09090b;                      /* primary brand colors (grayscale) */
-  --amber:#3f3f46; --rose:#71717a; --green:#18181b;             /* grayscale accents */
-  --line:rgba(255,255,255,0.7); --line-2:rgba(0,0,0,0.06);      /* glass borders */
+  /* ── LIGHT (default) ── */
+  --ink:#f5f3ee;        /* app background */
+  --ink-2:#ffffff;      /* cards / panels */
+  --ink-3:#efeae0;      /* subtle insets */
+  --paper:#19140f;      /* primary text */
+  --paper-dim:#574f45;  /* secondary text */
+  --paper-faint:#8a8076;/* muted text */
+  --line:rgba(25,20,15,.12); --line-2:rgba(25,20,15,.08);
+  --indigo:#6366f1; --indigo-deep:#4f46e5;
+  --amber:#d98324; --rose:#db2777; --green:#0f9d6b;
   --display:'Fraunces',serif; --body:'Hanken Grotesk',system-ui,sans-serif; --mono:'JetBrains Mono',monospace;
+}
+[data-theme="dark"]{
+  --ink:#0c0a08; --ink-2:#15110d; --ink-3:#1e1813;
+  --paper:#f3ece1; --paper-dim:#b3a896; --paper-faint:#776c5d;
+  --line:rgba(243,236,225,.11); --line-2:rgba(243,236,225,.08);
+  --indigo:#8b8bf5; --indigo-deep:#6366f1;
+  --amber:#e8a24a; --rose:#e8849a; --green:#9fd6a0;
 }
 *{margin:0;padding:0;box-sizing:border-box}
 html{scroll-behavior:smooth}
@@ -280,54 +290,59 @@ footer{border-top:1px solid var(--line-2); padding:40px 0; color:var(--paper-fai
 @keyframes tgpulse{0%,100%{box-shadow:0 12px 30px rgba(0,0,0,.45)}50%{box-shadow:0 12px 30px rgba(0,0,0,.45),0 0 0 7px rgba(139,139,245,.13)}}
 @media (prefers-reduced-motion: reduce){.rv,.klavity-hl,.io{transition:none}.io{opacity:1;transform:none}}
 
-/* ════════ DESIGNER PALETTE re-skin — overrides ════════ */
-.topbar{position:fixed;top:0;left:0;right:0;height:4px;z-index:100;background:#09090b}
+/* ════════ surface / accent re-skin (theme-aware) ════════ */
+.topbar{position:fixed;top:0;left:0;right:0;height:4px;z-index:100;background:var(--indigo)}
 body::before{opacity:.08;mix-blend-mode:overlay}
 body::after{background:
-  linear-gradient(to right, rgba(9,9,11,.05) 1px, transparent 1px) 0 0/44px 44px,
-  linear-gradient(to bottom, rgba(9,9,11,.05) 1px, transparent 1px) 0 0/44px 44px
-  !important}
-nav{background:rgba(241,243,246,0.75)!important; backdrop-filter:blur(24px); -webkit-backdrop-filter:blur(24px); border-bottom:1px solid rgba(255,255,255,0.6)!important}
-.brand .spark{background:#000!important; color:#fff!important; box-shadow:0 4px 10px rgba(0,0,0,0.15)!important; border-radius:8px}
-.nav-links a::after{background:#09090b}
+  linear-gradient(to right, var(--line-2) 1px, transparent 1px) 0 0/44px 44px,
+  linear-gradient(to bottom, var(--line-2) 1px, transparent 1px) 0 0/44px 44px
+  }
+nav{background:color-mix(in srgb, var(--ink) 78%, transparent); backdrop-filter:blur(24px); -webkit-backdrop-filter:blur(24px); border-bottom:1px solid var(--line-2)}
+.brand .spark{background:#161310!important; color:#fff!important; box-shadow:0 4px 10px rgba(0,0,0,0.15); border-radius:8px}
+.nav-links a::after{background:var(--indigo)}
 h1{font-family:var(--display); font-weight:450; font-size:clamp(44px,6vw,76px); line-height:1.02; letter-spacing:-.025em; text-transform:none}
-h1 em{font-style:italic!important; color:#71717a!important; font-variation-settings:'WONK' 1, 'SOFT' 30!important; display:inline-block}
-h1 .ind{color:#09090b!important}
-.eyebrow{background:rgba(255,255,255,0.65); border-color:rgba(255,255,255,0.8); border-radius:30px}
-.eyebrow .tag{color:#3f3f46!important; font-weight:700}
-.eyebrow .dot{background:#71717a!important; box-shadow:0 0 0 4px rgba(113, 113, 122, 0.15)!important}
-.btn-indigo{color:#fff!important; background:#000!important; border-radius:30px!important; box-shadow:0 6px 16px rgba(0,0,0,0.15)!important; border:none!important}
-.btn-indigo:hover{background:#27272a!important}
-.btn-ghost{color:var(--paper); background:rgba(255,255,255,0.65)!important; border-color:rgba(255,255,255,0.85)!important; border-radius:30px!important}
-.btn-ghost:hover{border-color:rgba(0,0,0,0.08)!important; background:rgba(255,255,255,0.85)!important}
-.btn-solid{color:#fff; background:#000}
+h1 em{font-style:italic; color:var(--amber); font-variation-settings:'WONK' 1, 'SOFT' 30; display:inline-block}
+h1 .ind{color:var(--paper)}
+.eyebrow{background:var(--ink-2); border-color:var(--line); border-radius:30px}
+.eyebrow .tag{color:var(--paper-dim); font-weight:700}
+.eyebrow .dot{background:var(--green); box-shadow:0 0 0 4px color-mix(in srgb, var(--green) 18%, transparent)}
+.btn-indigo{color:#fff; background:var(--indigo-deep); border-radius:30px; box-shadow:0 6px 16px rgba(79,70,229,0.22); border:none}
+.btn-indigo:hover{background:var(--indigo)}
+.btn-ghost{color:var(--paper); background:var(--ink-2); border-color:var(--line); border-radius:30px}
+.btn-ghost:hover{border-color:var(--paper-faint); background:var(--ink-3)}
+.btn-solid{color:var(--ink-2); background:var(--paper)}
 .prod-card{background:#eceef2!important; border:1px solid rgba(0,0,0,0.07)!important; box-shadow:0 26px 60px rgba(0,0,0,0.10)!important; border-radius:20px!important}
 .pc-bar{background:#ffffff!important; border-bottom:1px solid rgba(0,0,0,0.05)!important}
 .pc-kpi{background:#ffffff!important; border:1px solid rgba(0,0,0,0.05)!important; border-radius:12px!important; box-shadow:0 1px 2px rgba(0,0,0,0.03)!important}
-.pc-target{outline:2px solid #ff4eb8!important; box-shadow:0 0 0 4px rgba(255, 78, 184, 0.15)!important}
-.snap-card{background:rgba(255,255,255,0.55)!important; border:1px solid rgba(17,17,19,0.07)!important; box-shadow:0 18px 46px rgba(17,17,19,0.10)!important; border-radius:20px!important}
-.step, .persona, .phase{background:rgba(255,255,255,0.55)!important; backdrop-filter:blur(16px)!important; -webkit-backdrop-filter:blur(16px)!important; border:1px solid rgba(17,17,19,0.07)!important; box-shadow:0 14px 40px rgba(17,17,19,0.08)!important; position:relative; overflow:hidden; border-radius:20px!important}
-.step:hover, .persona:hover, .phase:hover{border-color:rgba(255,255,255,0.95)!important; background:rgba(255,255,255,0.65)!important; box-shadow:0 20px 40px rgba(0,0,0,0.04)!important}
-.step::after, .persona::after, .phase::after{content:""; position:absolute; top:0; right:0; width:40px; height:40px; background-image:repeating-linear-gradient(45deg, rgba(0,0,0,0.04), rgba(0,0,0,0.04) 4px, transparent 4px, transparent 8px); clip-path:polygon(100% 0, 0 0, 100% 100%); opacity:0.8}
-.sim .speech{background:rgba(255,255,255,0.92)!important; backdrop-filter:blur(12px)!important; -webkit-backdrop-filter:blur(12px)!important; border:1px solid rgba(17,17,19,0.08)!important; border-radius:16px!important; box-shadow:0 16px 44px rgba(17,17,19,0.14)!important}
-.sim .speech .sp-tag{color:#ff4eb8!important; font-weight:700}
-.rv .rv-bubble{background:rgba(255,255,255,0.94)!important; backdrop-filter:blur(14px)!important; -webkit-backdrop-filter:blur(14px)!important; border:1px solid rgba(17,17,19,0.09)!important; border-radius:16px!important; box-shadow:0 22px 54px rgba(17,17,19,0.17), 0 0 0 1px rgba(17,17,19,0.03)!important}
-.rv .rv-tag{color:#ff4eb8!important; font-weight:700}
+.pc-target{outline:2px solid var(--rose)!important; box-shadow:0 0 0 4px color-mix(in srgb, var(--rose) 15%, transparent)!important}
+.snap-card{background:var(--ink-2); border:1px solid var(--line); box-shadow:0 18px 46px rgba(17,17,19,0.10); border-radius:20px}
+.step, .persona, .phase{background:var(--ink-2); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); border:1px solid var(--line); box-shadow:0 14px 40px rgba(17,17,19,0.08); position:relative; overflow:hidden; border-radius:20px}
+.step:hover, .persona:hover, .phase:hover{border-color:var(--paper-faint); background:var(--ink-3); box-shadow:0 20px 40px rgba(0,0,0,0.06)}
+.step::after, .persona::after, .phase::after{content:""; position:absolute; top:0; right:0; width:40px; height:40px; background-image:repeating-linear-gradient(45deg, var(--line-2), var(--line-2) 4px, transparent 4px, transparent 8px); clip-path:polygon(100% 0, 0 0, 100% 100%); opacity:0.8}
+.sim .speech{background:var(--ink-2); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); border:1px solid var(--line); border-radius:16px; box-shadow:0 16px 44px rgba(17,17,19,0.14)}
+.sim .speech .sp-tag{color:var(--indigo); font-weight:700}
+.sim .speech::after{border-top-color:var(--ink-2)}
+.rv .rv-bubble{background:var(--ink-2); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); border:1px solid var(--line); border-radius:16px; box-shadow:0 22px 54px rgba(17,17,19,0.17), 0 0 0 1px var(--line-2)}
+.rv .rv-bubble::after{border-top-color:var(--ink-2)}
+.rv.b-below .rv-bubble::after{border-bottom-color:var(--ink-2)}
+.rv.b-right .rv-bubble::after{border-right-color:var(--ink-2)}
+.rv.b-left .rv-bubble::after{border-left-color:var(--ink-2)}
+.rv .rv-tag{color:var(--indigo); font-weight:700}
 .trust{background:#18181b!important; border:none!important; color:#fff!important; border-radius:24px!important; padding:60px!important; box-shadow:0 12px 36px rgba(0,0,0,0.06)!important}
 .trust h2{color:#fff!important}
 .trust h2 em{color:#fff!important; font-style:italic!important}
 .trust p{color:rgba(255,255,255,0.9)!important}
 .trust .tag{color:rgba(255,255,255,0.8)!important}
-.chip.pain{background:rgba(0,0,0,0.05)!important; color:#52525b!important}
-.chip.want{background:rgba(0,0,0,0.05)!important; color:#52525b!important}
-.chip.love{background:rgba(0,0,0,0.05)!important; color:#52525b!important}
-.stage::before{content:""; position:absolute; top:50%; left:-20px; width:1px; height:120px; background:linear-gradient(to bottom, #71717a, transparent); z-index:1}
-.stage::after{content:""; position:absolute; top:50%; left:-24px; width:9px; height:9px; border-radius:50%; background:#71717a; box-shadow:0 0 0 4px rgba(113, 113, 122, 0.15); z-index:1}
-#klavity-toggle{background:#000!important; color:#fff!important; border-radius:30px!important; border:1px solid rgba(255,255,255,0.15)!important; box-shadow:0 10px 24px rgba(0,0,0,0.15)!important}
-#klavity-toggle:hover{border-color:#ff4eb8!important}
-#klavity-toggle .live{background:#ff4eb8!important}
-/* gray italic accents (lean into grayscale) */
-.sec-head h2 em, .final h2 em{color:#71717a!important; font-style:italic}
+.chip.pain{background:rgba(219,39,119,0.10); color:var(--rose)}
+.chip.want{background:rgba(99,102,241,0.12); color:var(--indigo)}
+.chip.love{background:rgba(15,157,107,0.12); color:var(--green)}
+.stage::before{content:""; position:absolute; top:50%; left:-20px; width:1px; height:120px; background:linear-gradient(to bottom, var(--paper-faint), transparent); z-index:1}
+.stage::after{content:""; position:absolute; top:50%; left:-24px; width:9px; height:9px; border-radius:50%; background:var(--paper-faint); box-shadow:0 0 0 4px color-mix(in srgb, var(--paper-faint) 18%, transparent); z-index:1}
+#klavity-toggle{background:var(--paper)!important; color:var(--ink-2)!important; border-radius:30px!important; border:1px solid var(--line)!important; box-shadow:0 10px 24px rgba(0,0,0,0.15)!important}
+#klavity-toggle:hover{border-color:var(--indigo)!important}
+#klavity-toggle .live{background:var(--green)!important}
+/* italic accents */
+.sec-head h2 em, .final h2 em{color:var(--indigo); font-style:italic}
 /* Sim persona cards tinted to match each Sim's colour (and to stand out on white) */
 #sims .sims-row .persona:nth-child(1){background:rgba(99,102,241,0.10)!important; border-color:rgba(99,102,241,0.42)!important; box-shadow:0 16px 40px rgba(99,102,241,0.16)!important}
 #sims .sims-row .persona:nth-child(2){background:rgba(232,140,74,0.11)!important; border-color:rgba(232,140,74,0.44)!important; box-shadow:0 16px 40px rgba(232,140,74,0.16)!important}
@@ -336,7 +351,9 @@ h1 .ind{color:#09090b!important}
 /* ── a11y: visible focus + reduced-motion (a11y audit fix) ── */
 a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{outline:2px solid #2563eb;outline-offset:2px;border-radius:5px}
 @media (prefers-reduced-motion: reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}}
-.p-role{color:#3f3f46!important}
+.p-role{color:var(--paper-dim)!important}
+/* ── theme toggle ── */
+.theme-toggle{position:fixed;right:16px;bottom:72px;z-index:90;width:40px;height:40px;border-radius:50%;border:1px solid var(--line);background:var(--ink-2);color:var(--paper);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(0,0,0,.12)}
 </style>
 </head>
 <body>
@@ -559,6 +576,8 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   </div>
 </section>
 
+<button class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode">🌙</button>
+
 <footer>
   <div class="wrap foot">
     <a class="brand" href="#" style="font-size:18px"><span class="spark" style="width:24px;height:24px;font-size:13px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M7 2C7 7 17 7 17 12 17 17 7 17 7 22"/><path d="M17 2C17 7 7 7 7 12 7 17 17 17 17 22"/><path d="M9 5.2h6M9 18.8h6" stroke-width="1.5"/></svg></span>Klavity</a>
@@ -567,6 +586,8 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     <span class="sp">Built by <a href="https://quantana.com.au" target="_blank" rel="noopener">Quantana</a> · FSL-1.1 · © 2026</span>
   </div>
 </footer>
+
+<script>(function(){var b=document.getElementById('themeToggle');if(!b)return;var R=document.documentElement;function dark(){return R.getAttribute('data-theme')==='dark'}function paint(){b.textContent=dark()?'☀️':'🌙'}paint();b.addEventListener('click',function(){var n=dark()?'light':'dark';if(n==='dark')R.setAttribute('data-theme','dark');else R.removeAttribute('data-theme');try{localStorage.setItem('klav-theme',n)}catch(e){}paint()})})();</script>
 
 <script>
 // duplicate the marquee track for a seamless loop

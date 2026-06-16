@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<script>(function(){try{var t=localStorage.getItem('klav-theme');if(t==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();</script>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="icon" href="/favicon.ico" sizes="any">
 <meta charset="UTF-8" />
@@ -9,9 +10,11 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" /><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..700&family=Hanken+Grotesk:wght@300..800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
 <style>
-:root{--ink:#0c0a08;--ink-2:#15110d;--ink-3:#1e1813;--paper:#f3ece1;--paper-dim:#b3a896;--paper-faint:#a89e91;
---indigo:#8b8bf5;--indigo-deep:#6366f1;--amber:#e8a24a;--rose:#e8849a;--green:#9fd6a0;--line:rgba(243,236,225,.11);
+:root{--ink:#f5f3ee;--ink-2:#ffffff;--ink-3:#efeae0;--paper:#19140f;--paper-dim:#574f45;--paper-faint:#8a8076;
+--indigo:#6366f1;--indigo-deep:#4f46e5;--amber:#d98324;--rose:#db2777;--green:#0f9d6b;--line:rgba(25,20,15,.12);
 --display:'Fraunces',serif;--body:'Hanken Grotesk',system-ui,sans-serif;--mono:'JetBrains Mono',monospace}
+[data-theme="dark"]{--ink:#0c0a08;--ink-2:#15110d;--ink-3:#1e1813;--paper:#f3ece1;--paper-dim:#b3a896;--paper-faint:#776c5d;
+--indigo:#8b8bf5;--indigo-deep:#6366f1;--amber:#e8a24a;--rose:#e8849a;--green:#9fd6a0;--line:rgba(243,236,225,.11)}
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--ink);color:var(--paper);font-family:var(--body);min-height:100vh;-webkit-font-smoothing:antialiased}
 body::after{content:"";position:fixed;inset:0;pointer-events:none;background:radial-gradient(110% 70% at 50% -10%,rgba(139,139,245,.10),transparent 60%)}
@@ -82,13 +85,15 @@ input.in:focus{border-color:var(--indigo)}
 .trackers{display:flex;gap:10px;flex-wrap:wrap}
 .tk{font-family:var(--mono);font-size:13px;padding:11px 16px;border:1px solid var(--line);border-radius:11px;cursor:pointer;transition:.2s}
 .tk:hover,.tk.on{border-color:var(--indigo);color:var(--indigo);background:rgba(139,139,245,.06)}
-.snippet{margin-top:14px;background:#0a0806;border:1px solid var(--line);border-radius:12px;padding:14px;font-family:var(--mono);font-size:12px;color:var(--paper-dim);line-height:1.6;overflow-x:auto}
+.snippet{margin-top:14px;background:var(--ink-3);border:1px solid var(--line);border-radius:12px;padding:14px;font-family:var(--mono);font-size:12px;color:var(--paper-dim);line-height:1.6;overflow-x:auto}
 .snippet .t{color:var(--indigo)}
 .invite-row{display:flex;gap:9px;margin-bottom:10px}
 .invite-row input{flex:1}
 .pill{font-family:var(--mono);font-size:11px;color:var(--green)}
 .hide{display:none}
 @media(max-width:820px){.shell{grid-template-columns:1fr}.rail{display:none}.tiles{grid-template-columns:1fr}}
+
+.theme-toggle{position:fixed;right:16px;bottom:16px;z-index:90;width:40px;height:40px;border-radius:50%;border:1px solid var(--line);background:var(--ink-2);color:var(--paper);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(0,0,0,.12)}
 
 /* ── a11y: visible focus + reduced-motion (a11y audit fix) ── */
 a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{outline:2px solid #8b8bf5;outline-offset:2px;border-radius:5px}
@@ -98,7 +103,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 <body>
 <div class="shell">
   <aside class="rail">
-    <a class="brand" href="index.html"><span class="spark">⚡</span>Klavity</a>
+    <a class="brand" href="index.html"><img src="/favicon.svg" width="30" height="30" alt="Klavity" style="border-radius:9px;display:block" />Klavity</a>
     <ul class="steps" id="rail">
       <li class="rstep" data-s="0"><span class="ix">1</span><div><div class="rl">Create workspace</div></div></li>
       <li class="rstep" data-s="1"><span class="ix">2</span><div><div class="rl">Meet your first Sim</div></div></li>
@@ -186,6 +191,8 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   </main>
 </div>
 
+<button class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode">🌙</button>
+<script>(function(){var b=document.getElementById('themeToggle');if(!b)return;var R=document.documentElement;function dark(){return R.getAttribute('data-theme')==='dark'}function paint(){b.textContent=dark()?'☀️':'🌙'}paint();b.addEventListener('click',function(){var n=dark()?'light':'dark';if(n==='dark')R.setAttribute('data-theme','dark');else R.removeAttribute('data-theme');try{localStorage.setItem('klav-theme',n)}catch(e){}paint()})})();</script>
 <script>
 // Sample call — extracted LIVE via the prototype backend (/api/extract) when served from the server.
 const SAMPLE = `Interviewer: Sarah, you're the CFO at Acme. When you open the finance dashboard in the morning, what's the first thing you do?
