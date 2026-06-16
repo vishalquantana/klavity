@@ -161,6 +161,18 @@ Bun.serve({
         await addMember(active.workspaceId, inv, role === "admin" ? "admin" : "user")
         return json({ ok: true, members: await membersOf(active.workspaceId) })
       }
+      // brief → one persona (no transcript needed)
+      if (req.method === "POST" && path === "/api/persona/brief") {
+        try {
+          const { brief } = await req.json()
+          if (!brief || String(brief).trim().length < 4) return json({ error: "Describe your user in a sentence." }, 400)
+          const sys = "Create ONE believable user persona (a \"Sim\") from the user's brief. Invent a plausible first+last name and a role. " +
+            "Respond with ONLY a JSON object, no prose: {\"persona\":{\"name\":string,\"role\":string,\"type\":\"client\"|\"internal\",\"initials\":string(2 uppercase letters),\"accent\":string(hex colour like #6366f1),\"summary\":string,\"insights\":[{\"kind\":\"pain\"|\"want\"|\"love\",\"text\":string,\"quote\":string}]}} with exactly 3 insights; each quote is a short first-person line this persona might actually say."
+          const { content, usage } = await chat([{ role: "system", content: sys }, { role: "user", content: "Brief: " + brief }], 1200)
+          const data = parseJSON(content)
+          return json({ persona: data.persona, usage })
+        } catch (e: any) { return json({ error: e?.message || "create failed" }, 500) }
+      }
       // gated AI
       if (req.method === "POST" && path === "/api/extract") {
         try {

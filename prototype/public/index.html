@@ -113,6 +113,34 @@
   .draft .drm{margin-left:auto;color:#6c7086;cursor:pointer;font-size:15px;background:none;border:none;line-height:1;padding:0 2px}
   .draft .savedtag{font-size:9px;color:#a6e3a1;margin-top:4px}
   .savebar{width:100%;margin-top:10px;font-size:12px;padding:9px;border-radius:8px;background:#6366f1;color:#fff;border:none;cursor:pointer}
+
+  /* getting-started guide */
+  #guide{background:linear-gradient(135deg,rgba(99,102,241,.13),rgba(139,92,246,.05));border:1px solid rgba(139,139,245,.3);border-radius:14px;padding:13px 15px;margin-bottom:16px;display:flex;align-items:center;gap:13px;flex-wrap:wrap}
+  #guide .g-title{font-size:13px;font-weight:700;color:#cdd6f4}
+  #guide .g-steps{display:flex;gap:8px;flex-wrap:wrap;flex:1}
+  #guide .g-step{display:flex;align-items:center;gap:7px;font-size:12px;color:#7f849c;background:#0d0d15;border:1px solid #1e1e2e;border-radius:20px;padding:5px 12px;transition:.2s}
+  #guide .g-step .n{width:17px;height:17px;border-radius:50%;background:#1e1e2e;color:#6c7086;display:grid;place-items:center;font-size:10px;font-weight:700}
+  #guide .g-step b{color:inherit}
+  #guide .g-step.on{color:#cdd6f4;border-color:#6366f1}
+  #guide .g-step.on .n{background:#6366f1;color:#fff}
+  #guide .g-step.done{color:#a6e3a1;border-color:rgba(166,227,161,.3)}
+  #guide .g-step.done .n{background:#a6e3a1;color:#0d0d15}
+  #guide .g-x{background:none;border:none;color:#6c7086;cursor:pointer;font-size:16px;padding:2px 5px;line-height:1}
+  #guide .g-x:hover{color:#cdd6f4}
+  .pulse{animation:gpulse 1.5s ease-in-out infinite}
+  @keyframes gpulse{0%,100%{box-shadow:0 0 0 0 rgba(99,102,241,.55)}50%{box-shadow:0 0 0 6px rgba(99,102,241,0)}}
+
+  /* no-transcript on-ramp: presets + brief */
+  .orsep{text-align:center;font-size:11px;color:#585b70;margin:15px 0 10px;letter-spacing:.02em}
+  .presets{display:flex;flex-wrap:wrap;gap:7px}
+  .preset{display:flex;align-items:center;gap:7px;font-size:11.5px;color:#cdd6f4;background:#0d0d15;border:1px solid #1e1e2e;border-radius:20px;padding:5px 12px 5px 6px;cursor:pointer;transition:transform .15s,border-color .15s}
+  .preset:hover{border-color:#6366f1;transform:translateY(-1px)}
+  .preset .pdot{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:8px;font-weight:700;color:#fff;flex-shrink:0}
+  .briefrow{display:flex;gap:7px;margin-top:11px}
+  .briefrow input{flex:1;background:#0a0a0f;color:#cdd6f4;border:1px solid #313244;border-radius:8px;padding:9px 11px;font-size:12.5px;outline:none}
+  .briefrow input:focus{border-color:#6366f1}
+  .briefrow .mic{padding:9px 11px}
+  .briefrow .mic.rec{background:#f38ba8;color:#1e1e2e;border-color:transparent;animation:gpulse 1.2s infinite}
 </style>
 </head>
 <body>
@@ -120,9 +148,20 @@
   <div class="head">
     <div class="logo">🧬</div>
     <div>
-      <h1>Klav Sims — Live Prototype</h1>
-      <div class="sub">Paste a transcript → extract Sims → a Sim screenshots this page and reacts for real (Claude vision)</div>
+      <h1>Klav · Sims Studio</h1>
+      <div class="sub">Add a Sim, then watch one review this page and file what it finds.</div>
     </div>
+    <a href="/dashboard" style="margin-left:auto;font-size:13px;color:#89b4fa;text-decoration:none">← Dashboard</a>
+  </div>
+
+  <div id="guide">
+    <span class="g-title">👋 New here? Three steps:</span>
+    <div class="g-steps">
+      <div class="g-step" data-step="1"><span class="n">1</span> Add a Sim — <b>extract the sample</b>, pick a <b>preset</b>, or describe a user</div>
+      <div class="g-step" data-step="2"><span class="n">2</span> Click <b>"Have a Sim review this page"</b></div>
+      <div class="g-step" data-step="3"><span class="n">3</span> Save feedback from the <b>Draft queue</b></div>
+    </div>
+    <button class="g-x" id="guideX" title="Dismiss">✕</button>
   </div>
 
   <div class="grid">
@@ -136,6 +175,14 @@
           <button class="ghost" id="clearBtn">Clear</button>
         </div>
         <div class="status" id="extractStatus"></div>
+        <div class="orsep">— or, no transcript yet? start with a preset Sim —</div>
+        <div class="presets" id="presets"></div>
+        <div class="briefrow">
+          <input id="brief" placeholder="…or describe your user in a sentence" />
+          <button class="ghost mic" id="micBtn" title="Dictate with your voice">🎙</button>
+          <button class="primary" id="briefBtn">Create</button>
+        </div>
+        <div class="status" id="briefStatus"></div>
       </div>
 
       <div class="panel">
@@ -263,6 +310,7 @@ function renderDock() {
     dock.appendChild(el)
   })
   dock.querySelectorAll(".reviewbtn").forEach(b => b.onclick = () => review(Number(b.dataset.i)))
+  if (sims.length) guide(2)
 }
 
 function badge(kind){const c=kind==="pain"?"#f38ba8":kind==="want"?"#89b4fa":"#a6e3a1";return `<span style="color:${c};font-weight:700">${kind}</span>`}
@@ -270,6 +318,7 @@ function badge(kind){const c=kind==="pain"?"#f38ba8":kind==="want"?"#89b4fa":"#a
 async function review(i) {
   const sim = sims[i]
   clearOverlays()
+  guide(3)
   setStatus("reactStatus", `📸 ${sim.name.split(" ")[0]} is screenshotting the page…`)
   let dataUrl
   try {
@@ -395,6 +444,7 @@ function saveDrafts(){
   drafts.forEach(d => { if (!d.saved && d.selected) { d.saved = true; n++; if (d.rx.suggestedBug) d.key = "KS-" + (100 + Math.floor((performance.now() + d.id * 7) % 800)) } })
   renderDrafts()
   setStatus("draftStatus", n ? `Saved ${n} to Klav — bugs filed to your tracker.` : "Nothing selected.")
+  if (n) finishGuide()
 }
 
 function clearOverlays(){ document.querySelectorAll(".hilite,.sim-char").forEach(e=>e.remove()) }
@@ -414,8 +464,90 @@ function esc(s){ return String(s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&l
 function shade(hex){ return hex || "#4f46e5" }
 function sleep(ms){ return new Promise(r=>setTimeout(r,ms)) }
 
+// ── no-transcript on-ramp: preset Sims ──
+const PRESETS = {
+  minimalist:{ name:"Maya the Minimalist", role:"Design-minded user", type:"client", initials:"MM", accent:"#8b8bf5", summary:"Wants calm, focused screens with whitespace and one clear action.", insights:[
+    {kind:"pain",text:"Cluttered screens overwhelm me",quote:"there's too much going on here"},
+    {kind:"want",text:"One clear primary action",quote:"just tell me the next step"},
+    {kind:"love",text:"Generous whitespace",quote:"this feels calm"}] },
+  dataheavy:{ name:"Devin the Data Hawk", role:"Power user / analyst", type:"client", initials:"DH", accent:"#10b981", summary:"Wants maximum density: tables, filters, shortcuts, drill-downs.", insights:[
+    {kind:"pain",text:"Data hidden behind clicks slows me down",quote:"why is this two clicks deep?"},
+    {kind:"want",text:"Dense tables and filters",quote:"show me everything at once"},
+    {kind:"love",text:"Drill-downs and exports",quote:"let me dig into the numbers"}] },
+  colourful:{ name:"Cleo the Delight-seeker", role:"Consumer user", type:"client", initials:"CD", accent:"#ec4899", summary:"Wants personality, warmth, and playful micro-interactions.", insights:[
+    {kind:"pain",text:"Bland corporate UI feels cold",quote:"this is a bit lifeless"},
+    {kind:"want",text:"Colour, motion, personality",quote:"give it some character"},
+    {kind:"love",text:"Delightful little animations",quote:"oh, that's fun"}] },
+  skeptic:{ name:"Sam the Skeptic", role:"Cautious buyer", type:"client", initials:"SK", accent:"#e8a24a", summary:"Won't act without proof — needs trust signals and no surprises.", insights:[
+    {kind:"pain",text:"I don't trust numbers I can't verify",quote:"where did this come from?"},
+    {kind:"want",text:"Proof, sources, confirmation",quote:"show me it's safe"},
+    {kind:"love",text:"Transparency and undo",quote:"good, I can change my mind"}] },
+  exec:{ name:"Erin the Exec", role:"Time-pressured leader", type:"client", initials:"EX", accent:"#6366f1", summary:"Has five seconds — wants the headline answer up top, no hunting.", insights:[
+    {kind:"pain",text:"I have to hunt for the key number",quote:"I have four minutes before my next call"},
+    {kind:"want",text:"The answer front and centre",quote:"just show me the bottom line"},
+    {kind:"love",text:"At-a-glance summaries",quote:"perfect, that's all I needed"}] },
+  novice:{ name:"Nina the Newcomer", role:"First-time user", type:"client", initials:"NN", accent:"#06b6d4", summary:"New to the product — gets lost easily and needs gentle guidance.", insights:[
+    {kind:"pain",text:"I don't know what to do first",quote:"where do I even start?"},
+    {kind:"want",text:"Clear guidance and labels",quote:"tell me what this does"},
+    {kind:"love",text:"Helpful empty states",quote:"oh, that explains it"}] },
+}
+const PRESET_ORDER = [["minimalist","Minimalist"],["dataheavy","Data Hawk"],["colourful","Colourful"],["skeptic","Skeptic"],["exec","Time-pressed Exec"],["novice","Newcomer"]]
+function renderPresets(){
+  const wrap=$("presets"); if(!wrap) return
+  wrap.innerHTML=PRESET_ORDER.map(([k,label])=>{ const p=PRESETS[k]; return `<div class="preset" data-k="${k}"><span class="pdot" style="background:${p.accent}">${p.initials}</span>${label}</div>` }).join("")
+  wrap.querySelectorAll(".preset").forEach(el=>el.onclick=()=>addPreset(el.dataset.k))
+}
+function addPreset(k){
+  const p=PRESETS[k]; if(!p) return
+  if(sims.some(s=>s.name===p.name)){ setStatus("briefStatus", `${p.name} is already in your Sims.`); return }
+  sims.push(JSON.parse(JSON.stringify(p))); renderDock()
+  setStatus("briefStatus", `Added ${p.name}. Now click "Have ${p.name.split(" ")[0]} review this page".`)
+}
+async function createFromBrief(){
+  const brief=$("brief").value.trim()
+  if(brief.length<4){ setStatus("briefStatus","Describe your user in a few words.",true); return }
+  $("briefBtn").disabled=true; setStatus("briefStatus","🧠 Creating a Sim from your brief…")
+  try{
+    const r=await fetch("/api/persona/brief",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({brief})})
+    const d=await r.json(); if(d.error) throw new Error(d.error)
+    sims.push(d.persona); renderDock(); $("brief").value=""
+    setStatus("briefStatus", `Created ${d.persona.name}. Now have them review this page.`)
+  }catch(e){ setStatus("briefStatus","Error: "+e.message,true) } finally { $("briefBtn").disabled=false }
+}
+// voice dictation (Web Speech API; Chrome)
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+let rec=null
+function setupVoice(){
+  const mic=$("micBtn"); if(!mic) return
+  if(!SR){ mic.style.display="none"; return }
+  mic.onclick=()=>{
+    if(rec){ rec.stop(); return }
+    rec=new SR(); rec.lang="en-US"; rec.interimResults=true
+    mic.classList.add("rec")
+    rec.onresult=(ev)=>{ $("brief").value=[...ev.results].map(r=>r[0].transcript).join("") }
+    rec.onend=()=>{ mic.classList.remove("rec"); rec=null }
+    rec.onerror=()=>{ mic.classList.remove("rec"); rec=null }
+    rec.start()
+  }
+}
+
+// ── getting-started guide ──
+function guide(step){
+  const g=$("guide"); if(!g || g.style.display==="none") return
+  g.querySelectorAll(".g-step").forEach(el=>{ const s=Number(el.dataset.step); el.classList.toggle("done", s<step); el.classList.toggle("on", s===step) })
+  document.querySelectorAll(".pulse").forEach(e=>e.classList.remove("pulse"))
+  if(step===1 && $("extractBtn")) $("extractBtn").classList.add("pulse")
+  if(step===2) document.querySelectorAll(".reviewbtn").forEach(b=>b.classList.add("pulse"))
+}
+function finishGuide(){ const g=$("guide"); if(!g) return; guide(4); document.querySelectorAll(".pulse").forEach(e=>e.classList.remove("pulse")); try{localStorage.setItem("klav_guide_done","1")}catch(e){}; setTimeout(()=>{ g.style.display="none" },2600) }
+const gx=$("guideX"); if(gx) gx.onclick=()=>{ $("guide").style.display="none"; document.querySelectorAll(".pulse").forEach(e=>e.classList.remove("pulse")); try{localStorage.setItem("klav_guide_done","1")}catch(e){} }
+
+$("briefBtn").onclick = createFromBrief
+$("brief").addEventListener("keydown",(e)=>{ if(e.key==="Enter") createFromBrief() })
+renderPresets(); setupVoice()
 $("saveDrafts").onclick = saveDrafts
 renderDrafts()
+try{ if(localStorage.getItem("klav_guide_done")) $("guide").style.display="none"; else guide(1) }catch(e){ guide(1) }
 </script>
 </body>
 </html>
