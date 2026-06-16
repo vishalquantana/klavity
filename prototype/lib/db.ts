@@ -13,6 +13,14 @@ export async function initDb() {
     `CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, email TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)`,
     `CREATE TABLE IF NOT EXISTS workspaces (id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at INTEGER NOT NULL)`,
     `CREATE TABLE IF NOT EXISTS memberships (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, email TEXT NOT NULL, role TEXT NOT NULL, created_at INTEGER NOT NULL, UNIQUE(workspace_id, email))`,
+    `CREATE TABLE IF NOT EXISTS integrations (
+       scope TEXT NOT NULL,            -- 'workspace' | 'user'
+       owner_id TEXT NOT NULL,         -- workspace_id or email
+       integration TEXT NOT NULL,      -- 'plane' | 'jira' | ...
+       config_json TEXT NOT NULL,      -- non-secret fields + encrypted token
+       updated_at INTEGER NOT NULL,
+       PRIMARY KEY (scope, owner_id)
+     )`,
   ]
   for (const s of stmts) await db.execute(s)
   console.log("✓ Turso connected, schema ready")
@@ -74,4 +82,22 @@ export async function roleIn(workspaceId: string, email: string): Promise<string
 export async function addMember(workspaceId: string, email: string, role: string) {
   await upsertUser(email)
   await db!.execute({ sql: "INSERT INTO memberships (id,workspace_id,email,role,created_at) VALUES (?,?,?,?,?) ON CONFLICT(workspace_id,email) DO NOTHING", args: [crypto.randomUUID(), workspaceId, email, role, Date.now()] })
+}
+
+// ── integrations (tracker connections) ──
+export type StoredIntegration = { integration: string; config: any; updatedAt: number }
+export async function getIntegration(scope: 'workspace' | 'user', ownerId: string): Promise<StoredIntegration | null> {
+  const r = await db!.execute({ sql: "SELECT integration, config_json, updated_at FROM integrations WHERE scope=? AND owner_id=?", args: [scope, ownerId] })
+  if (!r.rows.length) return null
+  const x = r.rows[0] as any
+  return { integration: String(x.integration), config: JSON.parse(String(x.config_json)), updatedAt: Number(x.updated_at) }
+}
+export async function setIntegration(scope: 'workspace' | 'user', ownerId: string, integration: string, config: any) {
+  await db!.execute({
+    sql: "INSERT INTO integrations (scope,owner_id,integration,config_json,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(scope,owner_id) DO UPDATE SET integration=excluded.integration, config_json=excluded.config_json, updated_at=excluded.updated_at",
+    args: [scope, ownerId, integration, JSON.stringify(config), Date.now()],
+  })
+}
+export async function deleteIntegration(scope: 'workspace' | 'user', ownerId: string) {
+  await db!.execute({ sql: "DELETE FROM integrations WHERE scope=? AND owner_id=?", args: [scope, ownerId] })
 }
