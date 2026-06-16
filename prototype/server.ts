@@ -42,11 +42,14 @@ const REACT_SYS =
   '"emoji":string,"targetDescription":string,"box":{"x":number,"y":number,"w":number,"h":number}|null,' +
   '"suggestedBug":{"title":string,"body":string,"severity":"high"|"medium"|"low"}|null}]}'
 
-async function chat(messages: any[], maxTokens: number) {
+// jsonMode forces structured output — safe for text calls, but Gemini's vision path
+// via OpenRouter often returns empty content under json_object, so leave it OFF for
+// image calls and rely on the prompt + parseJSON's extraction instead.
+async function chat(messages: any[], maxTokens: number, jsonMode = false) {
   const res = await fetch(ENDPOINT, {
     method: "POST",
     headers: { Authorization: `Bearer ${KEY}`, "content-type": "application/json", "HTTP-Referer": BASE, "X-Title": "Klavity" },
-    body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, messages, response_format: { type: "json_object" } }),
+    body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, messages, ...(jsonMode ? { response_format: { type: "json_object" } } : {}) }),
   })
   if (!res.ok) throw new Error(`OpenRouter ${res.status}: ${(await res.text()).slice(0, 300)}`)
   const data: any = await res.json()
@@ -67,11 +70,12 @@ function parseJSON(s: string) {
   try { return JSON.parse(cleaned) } catch {
     const m = cleaned.match(/\{[\s\S]*\}/)
     if (m) return JSON.parse(m[0])
+    console.error("parseJSON: no JSON object in model output:", JSON.stringify(s.slice(0, 500)))
     throw new Error("Model did not return valid JSON")
   }
 }
 async function extractPersonas(transcript: string) {
-  const { content, usage } = await chat([{ role: "system", content: EXTRACT_SYS }, { role: "user", content: "TRANSCRIPT:\n\n" + transcript }], 4000)
+  const { content, usage } = await chat([{ role: "system", content: EXTRACT_SYS }, { role: "user", content: "TRANSCRIPT:\n\n" + transcript }], 4000, true)
   return { data: parseJSON(content), usage }
 }
 async function reactToPage(persona: any, imageB64: string, mediaType: string, pageUrl: string) {
@@ -300,7 +304,7 @@ Bun.serve({
           if (!brief || String(brief).trim().length < 4) return json({ error: "Describe your user in a sentence." }, 400)
           const sys = "Create ONE believable user persona (a \"Sim\") from the user's brief. Invent a plausible first+last name and a role. " +
             "Respond with ONLY a JSON object, no prose: {\"persona\":{\"name\":string,\"role\":string,\"type\":\"client\"|\"internal\",\"initials\":string(2 uppercase letters),\"accent\":string(hex colour like #6366f1),\"summary\":string,\"insights\":[{\"kind\":\"pain\"|\"want\"|\"love\",\"text\":string,\"quote\":string}]}} with exactly 3 insights; each quote is a short first-person line this persona might actually say."
-          const { content, usage } = await chat([{ role: "system", content: sys }, { role: "user", content: "Brief: " + brief }], 1200)
+          const { content, usage } = await chat([{ role: "system", content: sys }, { role: "user", content: "Brief: " + brief }], 1200, true)
           const data = parseJSON(content)
           return json({ persona: data.persona, usage })
         } catch (e: any) { return json({ error: e?.message || "create failed" }, 500) }
