@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Klav — your customers, in the room while you build</title>
+<meta name="description" content="Klav turns real customer interviews into living personas that review your product in their own words — and files the bugs they find straight to Jira, Linear, GitHub, or Plane." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..700&family=Hanken+Grotesk:wght@300..800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --ink:#0c0a08; --ink-2:#15110d; --ink-3:#1e1813;
+  --paper:#f3ece1; --paper-dim:#b3a896; --paper-faint:#776c5d;
+  --indigo:#8b8bf5; --indigo-deep:#6366f1;
+  --amber:#e8a24a; --rose:#e8849a; --green:#9fd6a0;
+  --line:rgba(243,236,225,.11); --line-2:rgba(243,236,225,.06);
+  --display:'Fraunces',serif; --body:'Hanken Grotesk',system-ui,sans-serif; --mono:'JetBrains Mono',monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--body);
+  font-size:17px; line-height:1.6; -webkit-font-smoothing:antialiased;
+  overflow-x:hidden;
+}
+/* warm grain + vignette atmosphere */
+body::before{
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:1; opacity:.04;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+body::after{
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:1;
+  background:radial-gradient(120% 80% at 50% -10%, rgba(139,139,245,.10), transparent 60%),
+             radial-gradient(80% 60% at 100% 110%, rgba(232,162,74,.06), transparent 60%);
+}
+.wrap{max-width:1160px; margin:0 auto; padding:0 28px; position:relative; z-index:2}
+a{color:inherit; text-decoration:none}
+.mono{font-family:var(--mono); font-weight:500}
+.tag{
+  font-family:var(--mono); font-size:11px; letter-spacing:.18em; text-transform:uppercase;
+  color:var(--paper-faint);
+}
+
+/* ── nav ── */
+nav{position:sticky; top:0; z-index:50; backdrop-filter:blur(14px);
+  background:linear-gradient(var(--ink), rgba(12,10,8,.72)); border-bottom:1px solid var(--line-2)}
+.nav-in{display:flex; align-items:center; gap:28px; height:70px}
+.brand{display:flex; align-items:center; gap:11px; font-family:var(--display); font-weight:600; font-size:22px; letter-spacing:-.02em}
+.brand .spark{width:30px; height:30px; border-radius:9px; display:grid; place-items:center; font-size:16px;
+  background:linear-gradient(135deg,var(--indigo-deep),#a78bfa); box-shadow:0 6px 20px rgba(99,102,241,.4)}
+.nav-links{display:flex; gap:26px; margin-left:18px}
+.nav-links a{font-size:14.5px; color:var(--paper-dim); transition:color .2s}
+.nav-links a:hover{color:var(--paper)}
+.nav-cta{margin-left:auto; display:flex; gap:12px; align-items:center}
+.btn{font-family:var(--body); font-weight:600; font-size:14.5px; padding:10px 18px; border-radius:11px; cursor:pointer; border:1px solid transparent; transition:transform .12s, background .2s, border-color .2s; display:inline-flex; align-items:center; gap:8px}
+.btn:active{transform:translateY(1px)}
+.btn-ghost{color:var(--paper); border-color:var(--line); background:transparent}
+.btn-ghost:hover{border-color:rgba(243,236,225,.3)}
+.btn-solid{color:#100d0a; background:var(--paper)}
+.btn-solid:hover{background:#fff}
+.btn-indigo{color:#0c0a08; background:linear-gradient(135deg,#a9a9ff,var(--indigo)); box-shadow:0 8px 24px rgba(139,139,245,.3)}
+
+/* ── hero ── */
+.hero{padding:70px 0 40px; position:relative}
+.hero-grid{display:grid; grid-template-columns:1.05fr .95fr; gap:50px; align-items:center}
+.eyebrow{display:inline-flex; align-items:center; gap:9px; padding:6px 13px; border:1px solid var(--line); border-radius:30px; margin-bottom:26px}
+.eyebrow .dot{width:7px; height:7px; border-radius:50%; background:var(--green); box-shadow:0 0 0 0 rgba(159,214,160,.6); animation:pulse 2s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(159,214,160,.5)}70%{box-shadow:0 0 0 7px rgba(159,214,160,0)}100%{box-shadow:0 0 0 0 rgba(159,214,160,0)}}
+h1{font-family:var(--display); font-weight:450; font-size:clamp(44px,6vw,76px); line-height:1.02; letter-spacing:-.025em; font-optical-sizing:auto}
+h1 em{font-style:italic; color:var(--amber); font-variation-settings:'WONK' 1, 'SOFT' 30}
+h1 .ind{color:var(--indigo)}
+.lede{font-size:19.5px; color:var(--paper-dim); max-width:30ch; margin:26px 0 32px; line-height:1.55}
+.hero-cta{display:flex; gap:14px; flex-wrap:wrap; align-items:center}
+.hero-note{margin-top:18px; font-size:13.5px; color:var(--paper-faint); display:flex; align-items:center; gap:8px}
+
+.reveal{opacity:0; transform:translateY(16px); animation:rise .8s cubic-bezier(.2,.7,.2,1) forwards}
+@keyframes rise{to{opacity:1; transform:translateY(0)}}
+.d1{animation-delay:.05s}.d2{animation-delay:.15s}.d3{animation-delay:.27s}.d4{animation-delay:.4s}.d5{animation-delay:.52s}
+
+/* hero stage: a product card with sims observing it */
+.stage{position:relative; aspect-ratio:1/.92}
+.prod-card{position:absolute; inset:6% 8% 14% 6%; background:#faf7f1; border-radius:16px; box-shadow:0 40px 80px rgba(0,0,0,.55), 0 0 0 1px rgba(0,0,0,.4); overflow:hidden; color:#1d1a16; transform:rotate(-1.4deg)}
+.pc-bar{height:38px; background:#fff; border-bottom:1px solid #ece6db; display:flex; align-items:center; gap:7px; padding:0 13px}
+.pc-dot{width:9px; height:9px; border-radius:50%}
+.pc-body{padding:15px}
+.pc-h{font-family:var(--display); font-weight:600; font-size:15px}
+.pc-sub{font-size:10.5px; color:#9a8f7d; margin-bottom:11px; font-family:var(--mono)}
+.pc-kpis{display:flex; gap:7px; margin-bottom:11px}
+.pc-kpi{flex:1; background:#fff; border:1px solid #ece6db; border-radius:9px; padding:8px}
+.pc-kl{font-size:7.5px; color:#9a8f7d; letter-spacing:.05em; text-transform:uppercase}
+.pc-kv{font-size:17px; font-weight:700; font-family:var(--display)}
+.pc-row{display:flex; align-items:center; gap:7px; font-size:10px; padding:5px 0; border-top:1px solid #f1ece2}
+.pc-dotc{width:6px; height:6px; border-radius:50%}
+.pc-row .nm{flex:1; font-weight:600}
+/* highlighted element the sim points at */
+.pc-target{outline:2px solid var(--indigo-deep); outline-offset:2px; border-radius:6px; animation:halo 2.6s ease-in-out infinite}
+@keyframes halo{0%,100%{box-shadow:0 0 0 3px rgba(99,102,241,.18)}50%{box-shadow:0 0 0 7px rgba(99,102,241,.05)}}
+
+/* a walking sim that points */
+.sim{position:absolute; z-index:5; display:flex; flex-direction:column; align-items:center; width:52px}
+.sim .speech{position:absolute; bottom:62px; width:178px; background:var(--ink-2); border:1px solid var(--line); border-radius:13px; padding:10px 12px; box-shadow:0 16px 40px rgba(0,0,0,.5); font-size:12px; line-height:1.4}
+.sim .speech .sp-tag{font-family:var(--mono); font-size:9px; letter-spacing:.08em; color:var(--indigo); margin-bottom:4px}
+.sim .speech::after{content:""; position:absolute; bottom:-7px; left:24px; border:6px solid transparent; border-top-color:var(--ink-2); border-bottom:none}
+.sim .head{width:42px; height:42px; border-radius:50%; display:grid; place-items:center; font-family:var(--mono); font-weight:700; font-size:12px; color:#fff; box-shadow:0 6px 18px rgba(0,0,0,.4); position:relative; z-index:2}
+.sim .legs{display:flex; gap:5px; margin-top:2px}
+.sim .leg{width:6px; height:15px; border-radius:3px}
+.sim.walk .leg:nth-child(1){animation:legA .34s ease-in-out infinite alternate}
+.sim.walk .leg:nth-child(2){animation:legB .34s ease-in-out infinite alternate}
+@keyframes legA{from{transform:rotate(-24deg)}to{transform:rotate(24deg)}}
+@keyframes legB{from{transform:rotate(24deg)}to{transform:rotate(-24deg)}}
+.sim .arm{position:absolute; top:11px; right:32px; width:30px; height:6px; border-radius:3px; transform-origin:right center; transform:rotate(-38deg)}
+.sim .arm .fin{position:absolute; left:-5px; top:-6px; font-size:14px}
+
+#sarah{left:6%; bottom:6%; animation:walkSarah 9s ease-in-out infinite}
+@keyframes walkSarah{
+  0%{left:-12%; opacity:0} 8%{left:6%; opacity:1}
+  14%,40%{left:34%} 48%,92%{left:34%} 100%{left:34%}
+}
+.float{animation:bob 3.2s ease-in-out infinite}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+
+/* ── marquee of customer quotes ── */
+.marquee{margin:54px 0 10px; border-top:1px solid var(--line-2); border-bottom:1px solid var(--line-2); padding:20px 0; overflow:hidden; -webkit-mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent)}
+.mq-track{display:flex; gap:54px; width:max-content; animation:scroll 38s linear infinite}
+.mq-q{display:flex; align-items:baseline; gap:12px; white-space:nowrap; font-family:var(--display); font-style:italic; font-size:19px; color:var(--paper-dim)}
+.mq-q .who{font-family:var(--mono); font-style:normal; font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--paper-faint)}
+@keyframes scroll{to{transform:translateX(-50%)}}
+
+/* ── section scaffold ── */
+section{padding:90px 0; position:relative}
+.sec-head{max-width:680px; margin-bottom:50px}
+.sec-head h2{font-family:var(--display); font-weight:450; font-size:clamp(32px,4vw,46px); line-height:1.07; letter-spacing:-.02em; margin:14px 0 16px}
+.sec-head h2 em{font-style:italic; color:var(--indigo)}
+.sec-head p{font-size:18px; color:var(--paper-dim)}
+
+/* loop steps */
+.loop{display:grid; grid-template-columns:repeat(3,1fr); gap:20px}
+.step{background:var(--ink-2); border:1px solid var(--line); border-radius:18px; padding:26px; position:relative; overflow:hidden; transition:transform .2s, border-color .2s}
+.step:hover{transform:translateY(-4px); border-color:rgba(139,139,245,.4)}
+.step .num{font-family:var(--mono); font-size:12px; color:var(--indigo); letter-spacing:.1em}
+.step h3{font-family:var(--display); font-weight:550; font-size:22px; margin:14px 0 9px; letter-spacing:-.01em}
+.step p{font-size:15px; color:var(--paper-dim); line-height:1.55}
+.step .ic{position:absolute; top:22px; right:22px; font-size:22px; opacity:.85}
+.step .seam{height:1px; background:linear-gradient(90deg,var(--indigo),transparent); margin:18px 0 0; opacity:.4}
+
+/* sims showcase */
+.sims-row{display:grid; grid-template-columns:repeat(3,1fr); gap:18px}
+.persona{background:var(--ink-2); border:1px solid var(--line); border-radius:18px; padding:22px; transition:transform .2s, box-shadow .2s}
+.persona:hover{transform:translateY(-5px) rotate(-.6deg); box-shadow:0 24px 50px rgba(0,0,0,.45)}
+.p-top{display:flex; align-items:center; gap:12px; margin-bottom:16px}
+.p-av{width:46px; height:46px; border-radius:50%; display:grid; place-items:center; font-family:var(--mono); font-weight:700; color:#fff; font-size:14px}
+.p-name{font-family:var(--display); font-weight:600; font-size:18px}
+.p-role{font-family:var(--mono); font-size:10px; letter-spacing:.06em; color:var(--paper-faint); text-transform:uppercase}
+.p-quote{font-family:var(--display); font-style:italic; font-size:17px; line-height:1.45; color:var(--paper); margin-bottom:14px}
+.p-quote .qm{color:var(--indigo); font-size:22px}
+.chips{display:flex; flex-wrap:wrap; gap:6px}
+.chip{font-family:var(--mono); font-size:10px; padding:3px 9px; border-radius:6px; letter-spacing:.04em}
+.chip.pain{background:rgba(232,132,154,.13); color:var(--rose)} .chip.want{background:rgba(139,139,245,.14); color:var(--indigo)} .chip.love{background:rgba(159,214,160,.13); color:var(--green)}
+
+/* split feature (Snap) */
+.split{display:grid; grid-template-columns:1fr 1fr; gap:48px; align-items:center}
+.feature-list{list-style:none; margin-top:22px; display:flex; flex-direction:column; gap:14px}
+.feature-list li{display:flex; gap:13px; font-size:15.5px; color:var(--paper-dim)}
+.feature-list .ck{color:var(--green); font-family:var(--mono); flex-shrink:0}
+.snap-card{background:var(--ink-2); border:1px solid var(--line); border-radius:18px; padding:8px; box-shadow:0 30px 60px rgba(0,0,0,.4)}
+.snap-menu{background:#faf7f1; color:#1d1a16; border-radius:12px; overflow:hidden}
+.sm-item{padding:11px 15px; font-size:13.5px; display:flex; align-items:center; gap:10px; border-bottom:1px solid #efe9de; cursor:default}
+.sm-item:last-child{border-bottom:none}
+.sm-item:hover{background:#f1ebe0}
+.sm-item .k{margin-left:auto; font-family:var(--mono); font-size:10px; color:#9a8f7d}
+.integrations{display:flex; gap:9px; margin-top:16px; flex-wrap:wrap}
+.intg{font-family:var(--mono); font-size:11px; padding:6px 12px; border:1px solid var(--line); border-radius:8px; color:var(--paper-dim)}
+
+/* phases */
+.phases{display:grid; grid-template-columns:repeat(3,1fr); gap:18px}
+.phase{border:1px solid var(--line); border-radius:18px; padding:24px; position:relative}
+.phase.live{background:linear-gradient(180deg,rgba(159,214,160,.06),transparent); border-color:rgba(159,214,160,.3)}
+.phase.build{background:linear-gradient(180deg,rgba(139,139,245,.07),transparent); border-color:rgba(139,139,245,.35)}
+.ph-stat{font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; padding:3px 9px; border-radius:20px; display:inline-block; margin-bottom:14px}
+.ph-stat.s-live{background:rgba(159,214,160,.15); color:var(--green)} .ph-stat.s-build{background:rgba(139,139,245,.15); color:var(--indigo)} .ph-stat.s-soon{background:var(--ink-3); color:var(--paper-faint)}
+.phase h3{font-family:var(--display); font-weight:600; font-size:24px; letter-spacing:-.01em}
+.phase .pl{font-family:var(--mono); font-size:11px; color:var(--paper-faint); margin:2px 0 12px}
+.phase p{font-size:14.5px; color:var(--paper-dim); line-height:1.55}
+
+/* trust */
+.trust{background:var(--ink-2); border:1px solid var(--line); border-radius:24px; padding:54px; text-align:center; position:relative; overflow:hidden}
+.trust::before{content:"“"; position:absolute; top:-30px; left:30px; font-family:var(--display); font-size:200px; color:var(--line); pointer-events:none}
+.trust h2{font-family:var(--display); font-weight:450; font-size:clamp(26px,3.4vw,38px); line-height:1.2; max-width:24ch; margin:0 auto 18px; letter-spacing:-.01em}
+.trust h2 em{font-style:italic; color:var(--amber)}
+.trust p{color:var(--paper-dim); max-width:60ch; margin:0 auto}
+
+/* final cta */
+.final{text-align:center; padding:110px 0}
+.final h2{font-family:var(--display); font-weight:450; font-size:clamp(38px,5.5vw,68px); line-height:1.04; letter-spacing:-.025em; margin-bottom:20px}
+.final h2 em{font-style:italic; color:var(--indigo)}
+.final .hero-cta{justify-content:center; margin-top:30px}
+
+footer{border-top:1px solid var(--line-2); padding:40px 0; color:var(--paper-faint)}
+.foot{display:flex; align-items:center; gap:20px; flex-wrap:wrap; font-size:13.5px}
+.foot a{color:var(--paper-dim)} .foot a:hover{color:var(--paper)}
+.foot .sp{margin-left:auto}
+
+@media(max-width:880px){
+  .hero-grid,.split{grid-template-columns:1fr; gap:36px}
+  .stage{aspect-ratio:1/.7; order:-1}
+  .loop,.sims-row,.phases{grid-template-columns:1fr}
+  .nav-links{display:none}
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap nav-in">
+    <a class="brand" href="#"><span class="spark">⚡</span>Klav</a>
+    <div class="nav-links">
+      <a href="#how">How it works</a>
+      <a href="#sims">Sims</a>
+      <a href="#snap">Snap</a>
+      <a href="#phases">Roadmap</a>
+      <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+    </div>
+    <div class="nav-cta">
+      <a class="btn btn-ghost" href="#snap">Add to Chrome</a>
+      <a class="btn btn-indigo" href="#cta">Get early access</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap hero-grid">
+    <div>
+      <span class="eyebrow reveal d1"><span class="dot"></span><span class="tag">Now in private beta</span></span>
+      <h1 class="reveal d2">Your customers are <em>in the room</em> while you <span class="ind">build.</span></h1>
+      <p class="lede reveal d3">Klav turns real interview transcripts into living personas — <strong>Sims</strong> — that review your product in their own words, point at what's broken, and file the bug for you.</p>
+      <div class="hero-cta reveal d4">
+        <a class="btn btn-indigo" href="#cta">Get early access</a>
+        <a class="btn btn-ghost" href="#how">See how it works →</a>
+      </div>
+      <div class="hero-note reveal d5"><span class="mono" style="color:var(--green)">●</span> Free forever: the right-click bug reporter. Open source.</div>
+    </div>
+
+    <div class="stage reveal d3">
+      <!-- product the sims review -->
+      <div class="prod-card float">
+        <div class="pc-bar">
+          <span class="pc-dot" style="background:#ff6058"></span><span class="pc-dot" style="background:#ffbd2e"></span><span class="pc-dot" style="background:#28c840"></span>
+          <span style="margin-left:8px; font-family:var(--mono); font-size:10px; color:#9a8f7d">acme-finance/overview</span>
+        </div>
+        <div class="pc-body">
+          <div class="pc-h">Q2 Revenue Overview</div>
+          <div class="pc-sub">apr–jun 2026 · updated 2h ago</div>
+          <div class="pc-kpis">
+            <div class="pc-kpi"><div class="pc-kl">Revenue</div><div class="pc-kv">$2.4M</div></div>
+            <div class="pc-kpi pc-target"><div class="pc-kl">Pending</div><div class="pc-kv">14</div></div>
+            <div class="pc-kpi"><div class="pc-kl">Rate</div><div class="pc-kv">87%</div></div>
+          </div>
+          <div class="pc-row"><span class="pc-dotc" style="background:#ff3b30"></span><span class="nm">Marketing Budget</span><span style="color:#ff3b30">2d overdue</span></div>
+          <div class="pc-row"><span class="pc-dotc" style="background:#ff3b30"></span><span class="nm">Vendor Contract</span><span style="color:#ff3b30">1d overdue</span></div>
+          <div class="pc-row"><span class="pc-dotc" style="background:#ff9500"></span><span class="nm">Bonus Pool</span><span style="color:#ff9500">today</span></div>
+        </div>
+      </div>
+      <!-- a sim that walks in and points -->
+      <div class="sim walk" id="sarah">
+        <div class="speech"><div class="sp-tag">SARAH CHEN · CFO</div>“These aren't sorted by urgency — I can't see what's overdue at a glance.”</div>
+        <div style="position:relative; display:flex; flex-direction:column; align-items:center">
+          <div class="arm" style="background:#5a5ad6"><span class="fin">👆</span></div>
+          <div class="head" style="background:linear-gradient(135deg,#6366f1,#8b5cf6)">SC</div>
+          <div class="legs"><span class="leg" style="background:#5a5ad6"></span><span class="leg" style="background:#5a5ad6"></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- quote marquee -->
+  <div class="wrap"><div class="marquee">
+    <div class="mq-track" id="mq">
+      <span class="mq-q">“I need an export before I sign off.” <span class="who">— Sarah, CFO</span></span>
+      <span class="mq-q">“Give me bulk-approve, I'm not clicking 14 times.” <span class="who">— James, Finance Lead</span></span>
+      <span class="mq-q">“Revenue front and centre — I check it every morning.” <span class="who">— Anika, Ops</span></span>
+      <span class="mq-q">“Why is this two clicks deep?” <span class="who">— Priya, Designer</span></span>
+      <span class="mq-q">“I'd never trust a number I can't drill into.” <span class="who">— Marcus, Analyst</span></span>
+    </div>
+  </div></div>
+</header>
+
+<!-- HOW IT WORKS -->
+<section id="how">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="tag">The loop</span>
+      <h2>From a recorded call to a <em>filed bug</em> — without leaving your product.</h2>
+      <p>You already talk to customers. Klav makes those conversations show up exactly where you work.</p>
+    </div>
+    <div class="loop">
+      <div class="step">
+        <span class="ic">📝</span><span class="num">01 / EXTRACT</span>
+        <h3>Drop in a transcript</h3>
+        <p>Upload an interview or call. Klav extracts each speaker into a Sim — their role, what they love, want, and hate — every insight anchored to a verbatim quote they actually said.</p>
+        <div class="seam"></div>
+      </div>
+      <div class="step">
+        <span class="ic">🧬</span><span class="num">02 / REVIEW</span>
+        <h3>A Sim reviews your screen</h3>
+        <p>While you browse your own app, the right Sim walks to the element it cares about, points at it, and reacts in the real customer's voice — grounded, specific, in character.</p>
+        <div class="seam"></div>
+      </div>
+      <div class="step">
+        <span class="ic">🐛</span><span class="num">03 / FILE</span>
+        <h3>One click → a real ticket</h3>
+        <p>Turn any reaction into a Jira, Linear, GitHub, or Plane issue — with the screenshot, the page, and the customer's quote attached. Same tracker as your manual bug reports.</p>
+        <div class="seam"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- MEET YOUR SIMS -->
+<section id="sims">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="tag">Meet your Sims</span>
+      <h2>Not personas on a slide. <em>The people from your calls.</em></h2>
+      <p>Each Sim is built from real transcripts and gets sharper every time you add another. Push them to your team so everyone ships with the same customers watching.</p>
+    </div>
+    <div class="sims-row">
+      <div class="persona">
+        <div class="p-top"><div class="p-av" style="background:linear-gradient(135deg,#6366f1,#8b5cf6)">SC</div><div><div class="p-name">Sarah Chen</div><div class="p-role">CFO · Acme</div></div></div>
+        <div class="p-quote"><span class="qm">“</span>I have four minutes before my next call and I'm hunting for the overdue ones.<span class="qm">”</span></div>
+        <div class="chips"><span class="chip pain">urgency-blind</span><span class="chip want">excel export</span><span class="chip love">revenue first</span></div>
+      </div>
+      <div class="persona">
+        <div class="p-top"><div class="p-av" style="background:linear-gradient(135deg,#e8a24a,#ef4444)">JM</div><div><div class="p-name">James Moore</div><div class="p-role">Finance Lead · Acme</div></div></div>
+        <div class="p-quote"><span class="qm">“</span>I have to approve each item one at a time. Clicking fourteen times is painful.<span class="qm">”</span></div>
+        <div class="chips"><span class="chip pain">no bulk action</span><span class="chip want">checkboxes</span></div>
+      </div>
+      <div class="persona">
+        <div class="p-top"><div class="p-av" style="background:linear-gradient(135deg,#10b981,#06b6d4)">AK</div><div><div class="p-name">Anika Kumar</div><div class="p-role">Operations · Acme</div></div></div>
+        <div class="p-quote"><span class="qm">“</span>The revenue figure is right there. I check it every single morning before standup.<span class="qm">”</span></div>
+        <div class="chips"><span class="chip love">clean layout</span><span class="chip want">clearer 'at risk'</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SNAP (free wedge) -->
+<section id="snap">
+  <div class="wrap split">
+    <div>
+      <span class="tag">Klav Snap · free &amp; open source</span>
+      <div class="sec-head" style="margin-bottom:0">
+        <h2 style="margin-top:14px">Start with the <em>right-click bug reporter.</em></h2>
+        <p>The free foundation the whole suite is built on. Right-click any page, annotate the auto-captured screenshot, and file straight to your tracker — with the console errors and network failures already attached.</p>
+      </div>
+      <ul class="feature-list">
+        <li><span class="ck">✓</span> Right-click → Report a Bug / Request a Feature, on any website</li>
+        <li><span class="ck">✓</span> Auto full-page screenshot, region capture, and canvas annotation</li>
+        <li><span class="ck">✓</span> Last 50 console errors + network failures captured automatically</li>
+        <li><span class="ck">✓</span> Files to Jira, Linear, GitHub Issues, or Plane — or your own backend</li>
+      </ul>
+      <div class="integrations">
+        <span class="intg">Jira</span><span class="intg">Linear</span><span class="intg">GitHub</span><span class="intg">Plane</span><span class="intg">Self-hosted</span>
+      </div>
+    </div>
+    <div class="snap-card">
+      <div class="snap-menu">
+        <div class="sm-item">🔎 &nbsp;Inspect</div>
+        <div class="sm-item" style="background:#ece4f7; color:#4338ca; font-weight:600">⚡ &nbsp;Klav — Report a Bug <span class="k">⌘⇧K</span></div>
+        <div class="sm-item">💡 &nbsp;Klav — Request a Feature</div>
+        <div class="sm-item">🧬 &nbsp;Klav — Ask a Sim</div>
+        <div class="sm-item">📋 &nbsp;View submissions</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PHASES -->
+<section id="phases">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="tag">The arc</span>
+      <h2>Snap today. <em>Sims now.</em> An autonomous tester next.</h2>
+      <p>Named after Ekalavya, the self-taught master — Klav learns your product and your customers, then acts on its own.</p>
+    </div>
+    <div class="phases">
+      <div class="phase live">
+        <span class="ph-stat s-live">● Shipped</span>
+        <h3>Klav Snap</h3><div class="pl">the eyes</div>
+        <p>Right-click bug reporting from any page, into any tracker. Free and open source — the wedge the rest is built on.</p>
+      </div>
+      <div class="phase build">
+        <span class="ph-stat s-build">◐ Building</span>
+        <h3>Klav Sims</h3><div class="pl">the voices</div>
+        <p>Synthetic users from real transcripts that review your product in-context and file what they find. Private beta now.</p>
+      </div>
+      <div class="phase">
+        <span class="ph-stat s-soon">○ Next</span>
+        <h3>Klav OS</h3><div class="pl">the autopilot</div>
+        <p>An autonomous UAT agent that explores your staging build, predicts regressions, and fixes the test suite before you ship.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- TRUST -->
+<section>
+  <div class="wrap">
+    <div class="trust">
+      <span class="tag" style="position:relative; z-index:2">The obvious objection</span>
+      <h2 style="position:relative; z-index:2">“Aren't these just <em>made-up opinions?</em>”</h2>
+      <p style="position:relative; z-index:2">No. Every Sim reaction is anchored to a <strong>verbatim quote a real person said</strong> in a real call — Klav verifies the quote exists in the source transcript before it ever surfaces. The Sim reads your actual screen and will even disagree with its own notes when the screen has changed. Grounded, not generated.</p>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section id="cta" class="final">
+  <div class="wrap">
+    <span class="tag">Private beta</span>
+    <h2>Ship like your best customer is <em>looking over your shoulder.</em></h2>
+    <p class="lede" style="margin:18px auto 0; max-width:40ch; text-align:center">Because, finally, they are.</p>
+    <div class="hero-cta">
+      <a class="btn btn-indigo" href="mailto:hello@quantana.com.au?subject=Klav%20Sims%20early%20access">Request early access</a>
+      <a class="btn btn-ghost" href="#snap">Add Klav Snap free</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot">
+    <a class="brand" href="#" style="font-size:18px"><span class="spark" style="width:24px;height:24px;font-size:13px">⚡</span>Klav</a>
+    <a href="#how">How it works</a><a href="#snap">Snap</a><a href="#cta">Early access</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a>
+    <span class="sp">Built by <a href="https://quantana.com.au" target="_blank" rel="noopener">Quantana</a> · FSL-1.1 · © 2026</span>
+  </div>
+</footer>
+
+<script>
+// duplicate the marquee track for a seamless loop
+const mq = document.getElementById('mq');
+if (mq) mq.innerHTML += mq.innerHTML;
+</script>
+</body>
+</html>
