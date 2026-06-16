@@ -180,6 +180,7 @@ function openModal(type: ReportType) {
 
   overlay.appendChild(modal)
   root.appendChild(overlay)
+  ;(root.host as HTMLElement).style.display = ''
 
   const bugBtn = modal.querySelector('.bug') as HTMLButtonElement
   const featBtn = modal.querySelector('.feat') as HTMLButtonElement
@@ -256,7 +257,10 @@ function captureFullPage() {
   pendingFullCapture = true
   // Wait one frame + 50ms so Chrome finishes repainting before capturing
   requestAnimationFrame(() => setTimeout(() => {
-    chrome.runtime.sendMessage({ kind: 'CAPTURE_TAB' } satisfies BackgroundMessage).catch(() => {})
+    chrome.runtime.sendMessage({ kind: 'CAPTURE_TAB' } satisfies BackgroundMessage).catch(() => {
+      pendingFullCapture = false
+      if (host) host.style.display = ''
+    })
   }, 50))
 }
 
@@ -560,58 +564,72 @@ function closeCtxMenu() {
   ctxMenuEl = null
 }
 
+// Brief toast guiding the user — the native menu needs a real right-click.
+function showNativeHint(x: number, y: number) {
+  const t = document.createElement('div')
+  t.textContent = '↗ Right-click again to open the browser menu'
+  t.style.cssText = `position:fixed;z-index:2147483647;left:${x}px;top:${y + 6}px;background:#1a1a1a;color:#fff;font:500 12.5px system-ui,-apple-system,sans-serif;padding:8px 13px;border-radius:9px;box-shadow:0 8px 24px rgba(0,0,0,.32);pointer-events:none;opacity:0;transition:opacity .2s;max-width:260px;`
+  document.body.appendChild(t)
+  requestAnimationFrame(() => { t.style.opacity = '1' })
+  setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 250) }, 2400)
+}
+
 function showCtxMenu(x: number, y: number) {
   closeCtxMenu()
 
   const menu = document.createElement('div')
   ctxMenuEl = menu
-  menu.style.cssText = 'position:fixed;z-index:2147483647;background:#fff;border-radius:14px;box-shadow:0 4px 24px rgba(0,0,0,.18),0 1px 4px rgba(0,0,0,.08);min-width:224px;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;border:1px solid rgba(0,0,0,.06);padding:4px 0;'
+  menu.style.cssText = 'position:fixed;z-index:2147483647;background:#fff;border-radius:13px;box-shadow:0 12px 40px rgba(0,0,0,.18),0 2px 8px rgba(0,0,0,.10);min-width:236px;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;border:1px solid rgba(0,0,0,.08);padding:6px;'
   menu.style.left = `${x}px`
   menu.style.top = `${y}px`
 
-  const entries: Array<{ icon: string; iconColor: string; label: string; action: () => void }> = [
-    { icon: ICONS.bug, iconColor: '#E94F37', label: 'Report a Bug', action: () => openModal('bug') },
-    { icon: ICONS.bulb, iconColor: '#F4A93C', label: 'Request a Feature', action: () => openModal('feature') },
-    { icon: ICONS.clipboard, iconColor: '#8A837A', label: 'View submissions', action: () => { chrome.runtime.sendMessage({ kind: 'OPEN_TRACKER_URL' } satisfies BackgroundMessage).catch(() => {}) } },
-  ]
-
-  entries.forEach((entry, i) => {
-    if (i > 0) {
-      const sep = document.createElement('div')
-      sep.style.cssText = 'height:1px;background:#f0f0f0;margin:0 12px;'
-      menu.appendChild(sep)
-    }
+  // One consistent row builder: a fixed-width icon box so every label lines up,
+  // uniform padding/gap/size, rounded hover. `muted` styles the footer affordance.
+  const makeRow = (icon: string, iconColor: string, label: string, opts: { muted?: boolean; hint?: string } = {}) => {
     const btn = document.createElement('button')
-    btn.style.cssText = 'display:flex;align-items:center;gap:12px;width:100%;padding:12px 16px;background:transparent;border:none;cursor:pointer;font-size:15px;font-weight:500;color:#1a1a1a;text-align:left;'
-    const iconSpan = document.createElement('span')
-    iconSpan.style.cssText = `display:inline-flex;flex-shrink:0;color:${entry.iconColor};`
-    iconSpan.innerHTML = entry.icon
-    const labelSpan = document.createElement('span')
-    labelSpan.textContent = entry.label
-    btn.append(iconSpan, labelSpan)
-    btn.addEventListener('mouseenter', () => { btn.style.background = '#f5f5f5' })
+    const muted = !!opts.muted
+    btn.style.cssText = `display:flex;align-items:center;gap:11px;width:100%;padding:9px 12px;background:transparent;border:none;border-radius:8px;cursor:pointer;text-align:left;color:${muted ? '#8a8a90' : '#1f1f1f'};font-size:${muted ? '12.5px' : '14.5px'};font-weight:${muted ? '400' : '500'};line-height:1;`
+    const ic = document.createElement('span')
+    ic.style.cssText = `display:grid;place-items:center;width:18px;height:18px;flex-shrink:0;color:${iconColor};`
+    ic.innerHTML = icon
+    const lab = document.createElement('span')
+    lab.textContent = label
+    lab.style.cssText = 'flex:1;'
+    btn.append(ic, lab)
+    if (opts.hint) {
+      const h = document.createElement('span')
+      h.textContent = opts.hint
+      h.style.cssText = 'font-family:ui-monospace,monospace;font-size:11px;color:#a3a3ab;flex-shrink:0;'
+      btn.append(h)
+    }
+    btn.addEventListener('mouseenter', () => { btn.style.background = muted ? '#f4f4f6' : '#f2f2f4' })
     btn.addEventListener('mouseleave', () => { btn.style.background = 'transparent' })
-    btn.addEventListener('click', () => { closeCtxMenu(); entry.action() })
+    return btn
+  }
+
+  const actions: Array<{ icon: string; color: string; label: string; run: () => void }> = [
+    { icon: ICONS.bug, color: '#E94F37', label: 'Report a Bug', run: () => openModal('bug') },
+    { icon: ICONS.bulb, color: '#F4A93C', label: 'Request a Feature', run: () => openModal('feature') },
+    { icon: ICONS.clipboard, color: '#8A837A', label: 'View submissions', run: () => { chrome.runtime.sendMessage({ kind: 'OPEN_TRACKER_URL' } satisfies BackgroundMessage).catch(() => {}) } },
+  ]
+  actions.forEach((a) => {
+    const btn = makeRow(a.icon, a.color, a.label)
+    btn.addEventListener('click', () => { closeCtxMenu(); a.run() })
     menu.appendChild(btn)
   })
 
-  // ── "Show browser menu" at bottom ──────────────────────────────────────────
+  // single divider, then the browser-menu affordance as an aligned footer row
   const divider = document.createElement('div')
-  divider.style.cssText = 'height:1px;background:#f0f0f0;margin:4px 0;'
+  divider.style.cssText = 'height:1px;background:#ececec;margin:6px 8px;'
   menu.appendChild(divider)
 
-  const nativeBtn = document.createElement('button')
-  nativeBtn.style.cssText = 'display:flex;align-items:center;gap:10px;width:100%;padding:10px 16px;background:transparent;border:none;cursor:pointer;font-size:13px;color:#6b7280;text-align:left;'
-  nativeBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18M9 21V9"/></svg><span>Show browser menu</span>`
-  nativeBtn.addEventListener('mouseenter', () => { nativeBtn.style.background = '#f5f5f5' })
-  nativeBtn.addEventListener('mouseleave', () => { nativeBtn.style.background = 'transparent' })
+  const winIcon = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18M9 21V9"/></svg>`
+  // Scripts can't open Chrome's native menu directly — arm the next right-click to pass through.
+  const nativeBtn = makeRow(winIcon, '#9aa0a6', 'Show browser menu', { muted: true, hint: '⇧ right-click' })
   nativeBtn.addEventListener('click', () => {
     closeCtxMenu()
     nativeMenuPending = true
-    // Dispatch a synthetic contextmenu at the same position — our handler will pass it through
-    document.elementFromPoint(x, y)?.dispatchEvent(
-      new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 2 })
-    )
+    showNativeHint(x, y)
   })
   menu.appendChild(nativeBtn)
 
