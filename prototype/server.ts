@@ -2,6 +2,8 @@
 import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureWorkspace, membershipsFor, membersOf, roleIn, addMember } from "./lib/db"
 import { sendOtp } from "./lib/mail"
 import { token, otp, emailAllowed, cookie, clearCookie, parseCookies } from "./lib/auth"
+import { uploadScreenshot } from "./lib/s3"
+import { buildIssueHtml } from "./lib/feedback"
 
 const KEY = process.env.OPENROUTER_API_KEY
 const MODEL = process.env.KLAV_MODEL || "google/gemini-2.5-flash"
@@ -135,6 +137,47 @@ Bun.serve({
       const sid = parseCookies(req.headers.get("cookie"))["klav_session"]
       if (sid && db) await deleteSession(sid).catch(() => {})
       return json({ ok: true }, 200, { "Set-Cookie": clearCookie("klav_session", SECURE) })
+    }
+
+    // ── feedback intake (extension backend mode) ──
+    if (req.method === "POST" && path === "/api/feedback") {
+      try {
+        const form = await req.formData()
+        const description = String(form.get("description") || "").trim()
+        const pageUrl = String(form.get("page_url") || "")
+        const planeToken = String(form.get("plane_token") || "")
+        const planeWorkspace = String(form.get("plane_workspace") || "")
+        const planeProject = String(form.get("plane_project_id") || "")
+        const planeHost = String(form.get("plane_host") || "https://api.plane.so").replace(/\/+$/, "")
+        if (!description) return json({ error: "Description is required." }, 400)
+        if (!planeToken || !planeWorkspace || !planeProject) return json({ error: "Missing Plane connection details." }, 400)
+
+        // Upload screenshots (cap 5, 8MB each) to object storage.
+        const files = form.getAll("screenshots").filter((f): f is File => f instanceof File).slice(0, 5)
+        const imageUrls: string[] = []
+        for (const f of files) {
+          if (f.size > 8 * 1024 * 1024) return json({ error: `Screenshot ${f.name} exceeds 8MB.` }, 400)
+          imageUrls.push(await uploadScreenshot(await f.arrayBuffer(), f.type || "image/png"))
+        }
+
+        const description_html = buildIssueHtml(description, pageUrl, imageUrls)
+        const res = await fetch(`${planeHost}/api/v1/workspaces/${planeWorkspace}/projects/${planeProject}/issues/`, {
+          method: "POST",
+          headers: { "X-API-Key": planeToken, "Content-Type": "application/json" },
+          body: JSON.stringify({ name: `[Klavity] ${description.slice(0, 180)}`, description_html }),
+        })
+        if (!res.ok) return json({ error: `Plane API error ${res.status}: ${(await res.text()).slice(0, 300)}` }, 502)
+
+        const data: any = await res.json()
+        const webBase = planeHost === "https://api.plane.so" ? "https://app.plane.so" : planeHost
+        return json({
+          id: String(data.id ?? data.sequence_id ?? ""),
+          jira_key: String(data.sequence_id ?? ""),
+          issue_url: `${webBase}/${planeWorkspace}/projects/${planeProject}/issues/`,
+        })
+      } catch (e: any) {
+        return json({ error: e?.message || "feedback failed" }, 500)
+      }
     }
 
     // ── everything below requires a session ──
