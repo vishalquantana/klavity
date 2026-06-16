@@ -270,7 +270,7 @@ footer{border-top:1px solid var(--line-2); padding:40px 0; color:var(--paper-fai
 .rv.aim-down .rv-arm{top:auto;bottom:10px;transform:rotate(40deg)}
 .rv .rv-tag{font-family:var(--mono);font-size:9px;letter-spacing:.07em;margin-bottom:5px;display:flex;align-items:center;gap:6px;color:var(--indigo)}
 .rv .rv-emoji{margin-left:auto;font-size:14px}
-.klavity-hl{position:fixed;border:2px solid var(--indigo);border-radius:9px;box-shadow:0 0 0 4px rgba(139,139,245,.12);pointer-events:none;z-index:60;opacity:0;transition:opacity .3s,left .3s,top .3s,width .3s,height .3s}
+.klavity-hl{position:fixed;border:3px solid var(--indigo);border-radius:9px;box-shadow:0 0 0 4px rgba(139,139,245,.12);pointer-events:none;z-index:60;opacity:0;transition:opacity .3s,left .3s,top .3s,width .3s,height .3s,border-color .3s}
 .klavity-hl.on{opacity:1}
 #klavity-toggle{position:fixed;right:18px;bottom:18px;z-index:64;font-family:var(--body);font-weight:600;font-size:13px;padding:11px 16px;border-radius:30px;border:1px solid var(--line);background:rgba(21,17,13,.92);backdrop-filter:blur(12px);color:var(--paper);cursor:pointer;display:flex;align-items:center;gap:8px;box-shadow:0 12px 30px rgba(0,0,0,.45);transition:border-color .2s,transform .12s}
 #klavity-toggle:hover{border-color:var(--indigo)}
@@ -670,6 +670,8 @@ function showNote(n) {
   const el = document.querySelector(n.sel);
   if (!el || !inView(el)) return false;
   activeEl = el; buildRv(n.who); const p = REVIEWERS[n.who];
+  // Match the selection outline to the reviewing Sim's colour.
+  hl.style.borderColor = p.leg; hl.style.boxShadow = '0 0 0 4px ' + p.leg + '26';
   rv.classList.add('walk'); rv.classList.remove('point', 'say');
   rv.style.opacity = '1';
   place(el);
