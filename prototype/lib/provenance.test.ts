@@ -481,3 +481,42 @@ test("rebuildInsightsJson does NOT wipe insights_json when there are zero active
   const r = await dbMod.db!.execute({ sql: "SELECT insights_json FROM personas WHERE id=?", args: [SID] })
   expect(JSON.parse(String((r.rows[0] as any).insights_json)).length).toBe(1) // NOT wiped
 })
+
+// ── Task 4: regression-gated recurrence assertions ────────────────────────────
+// These guard the two critical cases for the react path:
+//   1. create+contradict+reopen → regression summary (regressed=true)
+//   2. create+reinforce+reinforce (never resolved) → NO disappointment (regressed=false)
+
+test("recurrenceFromEvents: create+contradict+reopen → regressed=true (full lineage)", () => {
+  // This simulates the exact scenario described in the task: label issue raised, resolved, resurfaces.
+  const events: TraitEventRow[] = [
+    makeEvent({ op: "create", sourceDate: 1000 }),      // raised
+    makeEvent({ op: "contradict", sourceDate: 2000 }),  // resolved
+    makeEvent({ op: "reopen", sourceDate: 3000 }),      // resurfaces → regression
+  ]
+  const r = recurrenceFromEvents(events)
+  expect(r.regressed).toBe(true)
+  expect(r.priorResolvedAt).toBe(2000)
+  expect(r.lastRaised).toBe(3000)
+  expect(r.firstRaised).toBe(1000)
+  expect(r.timesRaised).toBe(2) // create + reopen are both raise ops
+})
+
+test("recurrenceFromEvents: create+reinforce+reinforce (never resolved) → regressed=false, NO disappointment voice", () => {
+  // A trait reinforced many times but never contradicted/superseded must NOT carry disappointment.
+  // This is the key regression gate: timesRaised >= 2 alone is NOT sufficient.
+  const events: TraitEventRow[] = [
+    makeEvent({ op: "create", sourceDate: 1000 }),
+    makeEvent({ op: "reinforce", sourceDate: 2000 }),
+    makeEvent({ op: "reinforce", sourceDate: 3000 }),
+  ]
+  const r = recurrenceFromEvents(events)
+  expect(r.regressed).toBe(false)        // never resolved → no regression
+  expect(r.timesRaised).toBe(3)          // raised 3 times
+  expect(r.priorResolvedAt).toBeNull()   // never resolved
+  // The react path attaches recurrenceMemory ONLY when regressed=true.
+  // With regressed=false, the insight should NOT have a recurrenceMemory block.
+  // (simulated here by checking the gate condition directly)
+  const wouldAttachMemory = r.regressed
+  expect(wouldAttachMemory).toBe(false)
+})
