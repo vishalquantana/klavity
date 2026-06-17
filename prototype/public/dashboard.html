@@ -719,7 +719,7 @@ $("inviteBtn") && ($("inviteBtn").onclick = async () => {
   const email = $("inviteEmail").value.trim()
   if (!email.includes("@")) { $("inviteMsg").textContent = "Enter a valid email."; $("inviteMsg").style.color="var(--rose)"; return }
   $("inviteBtn").disabled = true
-  const r = await fetch("/api/team/invite", { method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({ email }) })
+  const r = await fetch(projPath("/invite"), { method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({ email }) })
   const d = await r.json()
   $("inviteBtn").disabled = false
   if (d.error) { $("inviteMsg").style.color="var(--rose)"; $("inviteMsg").textContent = d.error; return }
