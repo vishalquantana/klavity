@@ -13,9 +13,12 @@ section for the bump rules.
 ## [Unreleased]
 
 ### Fixed
-- **Sims Studio: Import/Your Sims tabs were unclickable** — the tab `onclick`
-  handlers used curly “smart quotes” (`switchL1Tab(‘import’)`) which threw, so
-  nothing switched. Replaced with straight quotes.
+- **Sims Studio: Import/Your Sims tabs were unclickable** — the tabs used inline
+  `onclick="switchL1Tab(…)"`, but the studio script is a `<script type="module">`,
+  so the function is module-scoped and invisible to global inline handlers (it
+  threw `switchL1Tab is not defined`). Wired the tabs with event listeners inside
+  the module instead (a curly-smart-quote typo in the same handlers was also
+  fixed).
 - **"Critical feedback only" now also hides positive *review* feedback** — the
   toggle previously only filtered dock insights; positive review reactions
   (`satisfied`/`delighted`) still showed and saved. Now they're filtered from

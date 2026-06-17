@@ -332,8 +332,8 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         <div><div class="big"><span id="simsReadyN">0</span> Sims ready</div><div class="sm">Edit them here or pick one to review in step 2 →</div></div>
       </div>
       <div class="l1-tabs">
-        <button class="l1-tab on" id="tab-import" onclick="switchL1Tab('import')">Import</button>
-        <button class="l1-tab" id="tab-sims" onclick="switchL1Tab('sims')">Your Sims<span id="l1SimBadge" style="display:none"> (<span id="l1SimN">0</span>)</span></button>
+        <button class="l1-tab on" id="tab-import">Import</button>
+        <button class="l1-tab" id="tab-sims">Your Sims<span id="l1SimBadge" style="display:none"> (<span id="l1SimN">0</span>)</span></button>
       </div>
       <div class="l1-pane on" id="pane-import">
         <div class="lsub">Extract real Sims from an interview transcript — or start from a preset / one-line description.</div>
@@ -1205,6 +1205,9 @@ function finishGuide(){ guideDone=true; try{localStorage.setItem("klav_guide_don
 $("briefBtn").onclick = createFromBrief
 $("brief").addEventListener("keydown",(e)=>{ if(e.key==="Enter") createFromBrief() })
 renderPresets(); renderHats(); setupVoice()
+// Wire the L1 tabs here (module-scoped fn — inline onclick can't see it in a <script type="module">).
+$("tab-import").onclick = () => switchL1Tab("import")
+$("tab-sims").onclick = () => switchL1Tab("sims")
 // ── hand-off from onboarding: honor ?starter=hats and #add-transcript ──
 ;(function onboardingHandoff(){
   try{
