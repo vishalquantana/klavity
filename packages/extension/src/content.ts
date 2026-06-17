@@ -6,6 +6,7 @@ if (location.hostname === 'klavity.quantana.top' || location.hostname === 'local
 import type { ContentMessage, BackgroundMessage, ReportType, SubmitReportPayload, ConsoleError, NetworkFailure, KlavConfig, KlavMonitoredProject } from '@klavity/core'
 import { Annotator } from '@klavity/core/annotator'
 import { cropDataUrl } from '@klavity/core/crop'
+import { klavContentSig, shouldCapture, DEBOUNCE_MS, ROUTE_COOLDOWN_MS, MAX_REVIEWS_PER_ROUTE } from './feedback-trigger'
 
 // ── Error + network capture ring buffer ──────────────────────────────────────
 const consoleErrors: ConsoleError[] = []
@@ -845,10 +846,28 @@ document.addEventListener('contextmenu', handleContextMenu)
 // ════════════════════════════════════════════════════════════════════════════
 
 let klavConfig: KlavConfig | null = null
-let klavReviewedRoutes = new Set<string>()   // debounce: one review per (path) per page-load
-let klavActivating = false
+let klavReviewedRoutes = new Set<string>()   // legacy compat: keeps existing usage for consent/revoke
 let klavLastUrl = location.href
 let klavIndicatorEl: HTMLElement | null = null
+
+// ── Per-route dedup / flood state ────────────────────────────────────────────
+let klavLastSentSig: string | null = null      // sig of last confirmed-sent review
+let klavCooldownUntil = 0                       // timestamp, set after confirmed review
+let klavRouteCount = 0                          // reviews sent this route load
+// Pending-latest slot: replaces the boolean drop-lock.
+// null = no capture in flight. true = flight in progress but no new change yet.
+// string = a newer sig arrived while flight was in progress; run once more on completion.
+let klavPendingLatest: null | true | string = null
+
+// ── Observer handles (disconnect on route change) ─────────────────────────────
+let klavMutObs: MutationObserver | null = null
+let klavIntObs: IntersectionObserver | null = null
+let klavDebounceTimer: ReturnType<typeof setTimeout> | null = null
+// Throttle: earliest next time the mutation callback may schedule the debounce.
+let klavMutThrottleUntil = 0
+// Boot-guard: suppress the first IntersectionObserver fire when it matches the
+// initial viewport (boot's maybeActivate already covers that review).
+let klavBootGuard = true
 
 // Mirror of the server's patternMatchesUrl (db.ts) — prefix/glob ONLY, no regex.
 function klavNormUrl(u: string): string {
@@ -902,11 +921,28 @@ function klavSend<T = any>(msg: BackgroundMessage): Promise<T> {
   })
 }
 
-// A cheap DOM signature so server-side dedupe is per content-state, not just per path.
+// Structural fingerprint of the visible content region — tag/count based, NO raw text.
+function klavRegionSig(): string {
+  const selectors = ['main', '[role="main"]', 'article', '[role="feed"]', '[data-message-id]', '.message']
+  const container = document.querySelector(selectors.join(','))
+  if (!container) return 'no-region'
+  const children = Array.from(container.children).slice(0, 20)
+  return children.map((el) => el.tagName.toLowerCase() + ':' + el.children.length).join(',') || 'empty'
+}
+
+// Content signature — uses the pure klavContentSig helper (structural only, consent-safe).
 function klavDomSig(): string {
-  const t = (document.title || '').slice(0, 80)
-  const n = document.querySelectorAll('main, [role="main"], h1, h2, button, a').length
-  return `${t}~${n}`
+  return klavContentSig({
+    host: location.host,
+    title: document.title || '',
+    counts: {
+      headings: document.querySelectorAll('h1,h2,h3,h4,h5,h6').length,
+      buttons: document.querySelectorAll('button,[role="button"]').length,
+      links: document.querySelectorAll('a[href]').length,
+      fields: document.querySelectorAll('input,select,textarea').length,
+    },
+    region: klavRegionSig(),
+  })
 }
 
 // ── Dedicated shadow-DOM host for Sim comment bubbles + the pause indicator ──
@@ -1057,20 +1093,41 @@ function klavNotice(text: string) {
   setTimeout(() => { n.classList.remove('in'); setTimeout(() => n.remove(), 300) }, 6000)
 }
 
-// ── The activation entry point. Debounced to one review per route. ──
+// ── The activation entry point (pending-latest slot, shouldCapture gating). ──
 async function maybeActivate(_reason: string) {
-  if (klavActivating) return
+  // If a capture is already in flight, store the latest sig for a follow-up run.
+  if (klavPendingLatest !== null) {
+    // Record a newer sig for the follow-up run; 'true' means in-flight, no new sig yet.
+    const latestSig = klavDomSig()
+    if (klavPendingLatest === true) klavPendingLatest = latestSig
+    else klavPendingLatest = latestSig  // always overwrite with newest
+    return
+  }
+
   if (!klavConfig?.token) return
+  if (document.visibilityState !== 'visible') return
+
   const url = location.href
   const project = klavMatchProject(url)
-  // Off-allowlist → tear down any indicator and stop (we NEVER capture off-allowlist).
+  // Off-allowlist: tear down indicator and stop.
   if (!project) { klavIndicatorEl?.remove(); klavIndicatorEl = null; return }
 
-  const routeKey = klavNormUrl(url)
   const paused = await klavIsUserPaused(project.id)
   klavRenderIndicator(project.id, paused)
   if (paused) return
-  if (klavReviewedRoutes.has(routeKey)) return  // debounce: already reviewed this route
+
+  // Pre-gate using shouldCapture (pure function — no async side-effects).
+  const preSig = klavDomSig()
+  const preDecision = shouldCapture({
+    nowSig: preSig,
+    lastSentSig: klavLastSentSig,
+    now: Date.now(),
+    cooldownUntil: klavCooldownUntil,
+    paused,
+    routeCount: klavRouteCount,
+    cap: MAX_REVIEWS_PER_ROUTE,
+  })
+  if (!preDecision.capture) return
 
   // Gate c (client mirror): first capture needs consent. Server re-checks authoritatively.
   if (!(await klavHasConsent(project.id))) {
@@ -1078,33 +1135,126 @@ async function maybeActivate(_reason: string) {
     if (!granted) return
   }
 
-  klavActivating = true
-  klavReviewedRoutes.add(routeKey)
+  // Mark flight in progress.
+  klavPendingLatest = true
+  const routeKey = klavNormUrl(url)
   try {
     const dataUrl = await klavCapture()
     if (!dataUrl) return
+
+    // Compute sig AFTER captureVisibleTab returns — same DOM moment as the pixels.
+    const postSig = klavDomSig()
+
+    // If the DOM changed during the capture, reschedule and don't post a mismatched sig.
+    if (postSig !== preSig) {
+      // Treat as a new pending change; exit and let the follow-up slot handle it.
+      klavPendingLatest = postSig
+      return
+    }
+
+    // Post-capture gate: re-verify (cooldown/sig may have changed while we awaited).
+    const postDecision = shouldCapture({
+      nowSig: postSig,
+      lastSentSig: klavLastSentSig,
+      now: Date.now(),
+      cooldownUntil: klavCooldownUntil,
+      paused,
+      routeCount: klavRouteCount,
+      cap: MAX_REVIEWS_PER_ROUTE,
+    })
+    if (!postDecision.capture) return
+
     const resp = await klavSend<{ ok: boolean; status: number; body: any }>({
-      kind: 'KLAV_REVIEW', projectId: project.id, url, domSig: klavDomSig(), screenshotDataUrl: dataUrl,
+      kind: 'KLAV_REVIEW', projectId: project.id, url, domSig: postSig, screenshotDataUrl: dataUrl,
     })
     const body = resp?.body || {}
     if (resp?.ok && Array.isArray(body.reviews)) {
+      // Confirmed review: now arm cooldown, record sig, increment count.
+      klavLastSentSig = postSig
+      klavCooldownUntil = Date.now() + ROUTE_COOLDOWN_MS
+      klavRouteCount++
+      klavReviewedRoutes.add(routeKey)
       for (const rv of body.reviews) {
         for (const r of (rv.reactions || [])) {
           klavRenderBubble({ simName: rv.simName, initials: rv.initials, accent: rv.accent, observation: r.observation, severity: r?.suggestedBug?.severity, citation: r.citation })
         }
       }
+    } else if (body.reason === 'alreadyReviewed') {
+      // Server says already reviewed — count it so we don't keep hammering.
+      klavLastSentSig = postSig
+      klavCooldownUntil = Date.now() + ROUTE_COOLDOWN_MS
+      klavRouteCount++
+      klavReviewedRoutes.add(routeKey)
     } else if (body.reason === 'needsConsent') {
       // server says no consent on record — clear local cache so we re-prompt next route.
-      await klavSetConsent(project.id, 'revoked'); klavReviewedRoutes.delete(routeKey)
+      await klavSetConsent(project.id, 'revoked')
+      klavReviewedRoutes.delete(routeKey)
     } else if (body.reason === 'budgetExhausted') {
-      klavNotice('Sims hit today’s review budget — paused until tomorrow.')
+      klavNotice("Sims hit today's review budget — paused until tomorrow.")
       klavRenderIndicator(project.id, true)
     } else if (body.reason === 'paused' || body.reason === 'userPaused') {
       klavRenderIndicator(project.id, true)
     }
-    // 'offAllowlist' / 'alreadyReviewed' → silent (no spam).
+    // 'offAllowlist' / other → silent (no spam).
   } finally {
-    klavActivating = false
+    const pendingNext = klavPendingLatest
+    // Clear the slot BEFORE any follow-up to avoid re-entrant loops.
+    klavPendingLatest = null
+    // If a newer sig arrived while we were in flight, run once more.
+    if (typeof pendingNext === 'string') {
+      void maybeActivate('pending-latest')
+    }
+  }
+}
+
+// ── Shared trailing-edge debounce used by all three change sources ────────────
+function klavScheduleCapture() {
+  if (klavDebounceTimer !== null) clearTimeout(klavDebounceTimer)
+  klavDebounceTimer = setTimeout(() => {
+    klavDebounceTimer = null
+    void maybeActivate('detector')
+  }, DEBOUNCE_MS)
+}
+
+// ── Tear down both observers (call before re-arming on route change or pause). ─
+function klavDisarmObservers() {
+  if (klavMutObs) { klavMutObs.disconnect(); klavMutObs = null }
+  if (klavIntObs) { klavIntObs.disconnect(); klavIntObs = null }
+  if (klavDebounceTimer !== null) { clearTimeout(klavDebounceTimer); klavDebounceTimer = null }
+}
+
+// ── Arm MutationObserver + IntersectionObserver on the content region. ────────
+function klavArmObservers() {
+  klavDisarmObservers()
+
+  // --- MutationObserver: watch main content subtree for dynamic updates. ---
+  const target = document.querySelector('main,[role="main"],article,body') ?? document.body
+  klavMutObs = new MutationObserver((_mutations) => {
+    const now = Date.now()
+    // Throttle: at most one schedule per DEBOUNCE_MS window inside the callback.
+    if (now < klavMutThrottleUntil) return
+    klavMutThrottleUntil = now + DEBOUNCE_MS
+    klavScheduleCapture()
+  })
+  klavMutObs.observe(target, { childList: true, subtree: true, characterData: false, attributes: false })
+
+  // --- IntersectionObserver: scroll-reveal of content blocks. ---
+  const ioSelectors = [
+    'main', '[role="main"]', 'article',
+    '[role="feed"] > *', '[data-message-id]', '.message',
+  ]
+  const observeTargets = Array.from(
+    document.querySelectorAll<Element>(ioSelectors.join(','))
+  )
+  if (observeTargets.length > 0) {
+    klavIntObs = new IntersectionObserver((entries) => {
+      const anyVisible = entries.some((e) => e.isIntersecting)
+      if (!anyVisible) return
+      // Suppress the very first fire (boot's maybeActivate already handles it).
+      if (klavBootGuard) { klavBootGuard = false; return }
+      klavScheduleCapture()
+    }, { threshold: 0.5 })
+    for (const el of observeTargets) klavIntObs.observe(el)
   }
 }
 
@@ -1115,6 +1265,20 @@ function klavOnRouteChange() {
   if (location.href === klavLastUrl) return
   klavLastUrl = location.href
   klavClearBubbles()
+
+  // Reset per-route state.
+  klavLastSentSig = null
+  klavCooldownUntil = 0
+  klavRouteCount = 0
+  klavPendingLatest = null
+  klavBootGuard = false  // boot guard is per-page-load only; new routes fire freely
+  klavMutThrottleUntil = 0
+
+  // Tear down observers, re-arm on the new route's DOM (after a tick so the SPA
+  // has finished rendering enough of the new route to find the content region).
+  klavDisarmObservers()
+  setTimeout(klavArmObservers, 200)
+
   void maybeActivate('spa-nav')
 }
 ;(function klavPatchHistory() {
@@ -1132,6 +1296,11 @@ async function klavBootstrap() {
   if (location.protocol !== 'http:' && location.protocol !== 'https:') return
   const resp = await klavSend<{ ok: boolean; config: KlavConfig | null }>({ kind: 'KLAV_GET_CONFIG' })
   klavConfig = resp?.config ?? null
+  // Boot review first — observers armed after so the first IO fire is suppressed.
   await maybeActivate('boot')
+  // Clear boot guard so subsequent IO fires on this page-load are processed.
+  klavBootGuard = false
+  // Arm the change-detector observers for post-boot dynamic content + scroll-reveal.
+  klavArmObservers()
 }
 void klavBootstrap()
