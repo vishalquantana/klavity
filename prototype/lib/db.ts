@@ -766,7 +766,7 @@ export async function opsByProject(): Promise<{ projectId: string | null; projec
   const r = await db!.execute(
     `SELECT a.project_id AS pid, p.name AS name, COALESCE(SUM(a.cost_usd),0) AS cost, COUNT(*) AS calls
      FROM ai_calls a LEFT JOIN projects p ON p.id = a.project_id
-     GROUP BY a.project_id ORDER BY cost DESC`)
+     GROUP BY a.project_id, p.name ORDER BY cost DESC`)
   return r.rows.map((x: any) => ({
     projectId: x.pid != null ? String(x.pid) : null,
     projectName: x.name != null ? String(x.name) : null,
@@ -792,6 +792,7 @@ function rowToAiCall(x: any): AiCallRow {
     ok: Number(x.ok) === 1,
   }
 }
+
 export async function opsRecentCalls(limit = 50, offset = 0): Promise<AiCallRow[]> {
   const r = await db!.execute({ sql: `SELECT * FROM ai_calls ORDER BY created_at DESC LIMIT ? OFFSET ?`, args: [limit, offset] })
   return r.rows.map(rowToAiCall)
