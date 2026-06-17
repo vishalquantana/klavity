@@ -32,8 +32,10 @@ async function getActiveWeights(): Promise<Record<string, number>> {
   if (Date.now() - weightsCacheAt > 30_000) await refreshWeightsCache()
   return weightsCache
 }
-if (Object.keys(await getModelWeights()).length === 0) await setModelWeights(DEFAULT_WEIGHTS)
-await refreshWeightsCache()
+if (db) {
+  if (Object.keys(await getModelWeights()).length === 0) await setModelWeights(DEFAULT_WEIGHTS)
+  await refreshWeightsCache()
+}
 
 // ── AI (OpenRouter) ──
 const EXTRACT_SYS =
