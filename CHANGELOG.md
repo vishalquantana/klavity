@@ -20,6 +20,21 @@ section for the bump rules.
   a live A/B comparison. Weights persist in `schema_meta` (no redeploy) and seed a
   qwen3-heavy default (qwen3-vl 50 / gemini-2.5-flash 40 / gemini-3.1-flash-lite 10)
   on first boot. New `POST /opsadmin/model-mix` route, 404-gated like the dashboard.
+## [0.11.2] — 2026-06-18
+
+### Fixed
+- **Invites now go to the project you're viewing, not your first project.** The
+  dashboard invite used the legacy `/api/team/invite` alias, which resolves to the
+  account's first project; it now posts to the project-scoped
+  `POST /api/projects/:id/invite`. (Found in a project-scoping audit.)
+- **Studio sim-evolution/provenance** (`/api/sims/:id/evolution`) now carries
+  `?project=`, so the provenance panel works for Sims in non-default projects.
+
+### Audit note
+- Extension multi-project handling verified correct: it resolves the project from
+  the visited URL (`klavMatchProject`) and passes `projectId`/`?project=` on
+  `/api/sim/review`, `/api/consent`, and `/api/personas`; the popup has a project
+  picker. No extension changes needed.
 
 ## [0.11.1] — 2026-06-18
 

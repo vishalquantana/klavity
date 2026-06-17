@@ -775,7 +775,7 @@ async function toggleEvolution(i, btn){
   if (box.dataset.loaded === "1") return // cached after first fetch
   box.innerHTML = `<div class="evo-empty">Loading evolution…</div>`
   try {
-    const r = await fetch(`/api/sims/${encodeURIComponent(id)}/evolution`)
+    const r = await fetch(pq(`/api/sims/${encodeURIComponent(id)}/evolution`))
     const data = await r.json().catch(() => ({}))
     if (!r.ok) throw new Error(data.error || "load failed")
     box.innerHTML = renderEvolution(data.events || [])
