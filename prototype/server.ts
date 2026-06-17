@@ -1,5 +1,5 @@
 // Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureWorkspace, membershipsFor, membersOf, roleIn, addMember, getIntegration, setIntegration, listPersonas, upsertPersona, deletePersona, insertScreenshot, insertFeedback, insertActivity } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureWorkspace, membershipsFor, membersOf, roleIn, addMember, getIntegration, setIntegration, listPersonas, upsertPersona, deletePersona, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker } from "./lib/db"
 import { sendOtp } from "./lib/mail"
 import { token, otp, emailAllowed, cookie, clearCookie, parseCookies } from "./lib/auth"
 import { uploadScreenshotMeta, type UploadedScreenshot } from "./lib/s3"
@@ -200,7 +200,9 @@ Bun.serve({
           planeProject = String(form.get("plane_project_id") || "")
           planeHost = String(form.get("plane_host") || "https://api.plane.so").replace(/\/+$/, "")
         }
-        if (!planeToken || !planeWorkspace || !planeProject) return json({ error: "No Plane connection. Configure one in Klavity or the extension." }, 400)
+        // A tracker connection is OPTIONAL. Klavity owns the feedback; Plane is a downstream sink.
+        // Missing creds → we still persist below and return 200-saved (no 400).
+        const planeConnected = !!(planeToken && planeWorkspace && planeProject)
 
         // Upload screenshots (cap 5, 8MB each) to object storage.
         const files = form.getAll("screenshots").filter((f): f is File => f instanceof File).slice(0, 5)
@@ -215,21 +217,9 @@ Bun.serve({
           uploaded.push({ ...meta, bytes: buf.byteLength })
         }
 
-        const description_html = buildIssueHtml(description, pageUrl, imageUrls)
-        const res = await fetch(`${planeHost}/api/v1/workspaces/${planeWorkspace}/projects/${planeProject}/issues/`, {
-          method: "POST",
-          headers: { "X-API-Key": planeToken, "Content-Type": "application/json" },
-          body: JSON.stringify({ name: `[Klavity] ${description.slice(0, 180)}`, description_html }),
-        })
-        if (!res.ok) return json({ error: `Plane API error ${res.status}: ${(await res.text()).slice(0, 300)}` }, 502)
-
-        const data: any = await res.json()
-        const webBase = planeHost === "https://api.plane.so" ? "https://app.plane.so" : planeHost
-        const issueId = String(data.id ?? "")
-        const seq = data.sequence_id != null ? String(data.sequence_id) : ""
-        const issueUrl = `${webBase}/${planeWorkspace}/projects/${planeProject}/issues/${issueId ? issueId + "/" : ""}`
-
-        // ── persist to our durable ledger (P0) — best-effort, never fails the user's submission ──
+        // ── persist to our durable ledger (P0) FIRST, always — best-effort, never fails the submission.
+        // Runs whether or not a tracker is connected, so the dashboard always gets a row.
+        let feedbackId: string | null = null
         if (db) {
           try {
             // Actor: Bearer (extension) or cookie session (studio). Workspace → 'proj_'+wid project id.
@@ -259,10 +249,10 @@ Bun.serve({
               const sbRaw = String(form.get("suggested_bug") || "")
               if (sbRaw) { try { suggestedBug = JSON.parse(sbRaw) } catch { /* keep null */ } }
 
-              const feedbackId = await insertFeedback({
+              feedbackId = await insertFeedback({
                 projectId, simId, actorEmail: actor, urlHost, urlPath,
                 observation, sentiment, severity, screenshotId, suggestedBug,
-                planeIssueKey: seq || issueId || null, planeIssueUrl: issueUrl,
+                planeIssueKey: null, planeIssueUrl: null, // backfilled below if/when filed
               })
               await insertActivity({
                 projectId, type: "feedback_filed", actorEmail: actor, simId,
@@ -272,6 +262,33 @@ Bun.serve({
           } catch (persistErr: any) {
             console.error("feedback persistence (non-fatal):", persistErr?.message || persistErr)
           }
+        }
+
+        // ── tracker filing is downstream and only attempted when a connection exists ──
+        if (!planeConnected) {
+          // No tracker: the item is saved to Klavity. Keep the response extension-safe:
+          // backend.ts maps issueKey = jira_key ?? id, issueUrl = issue_url ?? backendUrl.
+          return json({ id: feedbackId ?? "", saved: true })
+        }
+
+        const description_html = buildIssueHtml(description, pageUrl, imageUrls)
+        const res = await fetch(`${planeHost}/api/v1/workspaces/${planeWorkspace}/projects/${planeProject}/issues/`, {
+          method: "POST",
+          headers: { "X-API-Key": planeToken, "Content-Type": "application/json" },
+          body: JSON.stringify({ name: `[Klavity] ${description.slice(0, 180)}`, description_html }),
+        })
+        if (!res.ok) return json({ error: `Plane API error ${res.status}: ${(await res.text()).slice(0, 300)}` }, 502)
+
+        const data: any = await res.json()
+        const webBase = planeHost === "https://api.plane.so" ? "https://app.plane.so" : planeHost
+        const issueId = String(data.id ?? "")
+        const seq = data.sequence_id != null ? String(data.sequence_id) : ""
+        const issueUrl = `${webBase}/${planeWorkspace}/projects/${planeProject}/issues/${issueId ? issueId + "/" : ""}`
+
+        // Backfill the tracker issue onto the persisted row (best-effort, never fails the request).
+        if (db && feedbackId) {
+          try { await updateFeedbackTracker(feedbackId, seq || issueId || null, issueUrl) }
+          catch (e: any) { console.error("feedback tracker backfill (non-fatal):", e?.message || e) }
         }
 
         return json({

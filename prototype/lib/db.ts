@@ -215,7 +215,7 @@ export async function insertScreenshot(s: ScreenshotInsert): Promise<string> {
   await db!.execute({
     sql: `INSERT INTO screenshots (id,project_id,s3_key,bucket,content_type,acl,bytes,owner_email,expires_at,created_at)
           VALUES (?,?,?,?,?,?,?,?,?,?)`,
-    args: [id, s.projectId ?? null, s.s3Key, s.bucket, s.contentType, s.acl ?? "public-read",
+    args: [id, s.projectId ?? null, s.s3Key, s.bucket, s.contentType, s.acl ?? "private",
            s.bytes ?? null, s.ownerEmail ?? null, s.expiresAt ?? null, Date.now()],
   })
   return id
@@ -244,6 +244,14 @@ export async function insertFeedback(f: FeedbackInsert): Promise<string> {
            f.planeIssueKey ?? null, f.planeIssueUrl ?? null, Date.now()],
   })
   return id
+}
+
+// Record the downstream tracker issue on a feedback row after it is filed (tracker is optional/best-effort).
+export async function updateFeedbackTracker(id: string, planeIssueKey: string | null, planeIssueUrl: string | null) {
+  await db!.execute({
+    sql: "UPDATE feedback SET plane_issue_key=?, plane_issue_url=? WHERE id=?",
+    args: [planeIssueKey, planeIssueUrl, id],
+  })
 }
 
 export type ActivityInsert = {
