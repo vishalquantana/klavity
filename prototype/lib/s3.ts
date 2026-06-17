@@ -22,10 +22,19 @@ function getClient(): S3Client {
   return client
 }
 
-// Upload one screenshot and return its public path-style URL.
-export async function uploadScreenshot(bytes: ArrayBuffer | Uint8Array, contentType: string): Promise<string> {
+export type UploadedScreenshot = { url: string; key: string; bucket: string; contentType: string; acl: string }
+
+// Upload one screenshot and return its public path-style URL plus storage metadata
+// (key/bucket so callers can record a durable `screenshots` ledger row).
+export async function uploadScreenshotMeta(bytes: ArrayBuffer | Uint8Array, contentType: string): Promise<UploadedScreenshot> {
   const ext = contentType.includes('jpeg') || contentType.includes('jpg') ? 'jpg' : 'png'
   const key = s3Key(FOLDER, Date.now(), crypto.randomUUID(), ext)
-  await getClient().write(key, bytes, { acl: 'public-read', type: contentType })
-  return `${ENDPOINT.replace(/\/+$/, '')}/${BUCKET}/${key}`
+  const acl = 'public-read'
+  await getClient().write(key, bytes, { acl, type: contentType })
+  return { url: `${ENDPOINT.replace(/\/+$/, '')}/${BUCKET}/${key}`, key, bucket: BUCKET, contentType, acl }
+}
+
+// Upload one screenshot and return its public path-style URL.
+export async function uploadScreenshot(bytes: ArrayBuffer | Uint8Array, contentType: string): Promise<string> {
+  return (await uploadScreenshotMeta(bytes, contentType)).url
 }

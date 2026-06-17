@@ -36,6 +36,58 @@ export async function initDb() {
        updated_at INTEGER NOT NULL
      )`,
     `CREATE INDEX IF NOT EXISTS persona_ws_idx ON personas (workspace_id, created_at)`,
+
+    // ── Sims-dashboard P0 (additive): durable ledger for screenshots + feedback + activity feed ──
+    // Rows carry a denormalized project_id string ('proj_'+workspaceId); no FK, projects table lands in P2.
+    `CREATE TABLE IF NOT EXISTS screenshots (
+       id TEXT PRIMARY KEY,
+       project_id TEXT,
+       s3_key TEXT NOT NULL,
+       bucket TEXT NOT NULL,
+       content_type TEXT NOT NULL,
+       acl TEXT NOT NULL DEFAULT 'private',
+       bytes INTEGER,
+       owner_email TEXT,
+       expires_at INTEGER,
+       created_at INTEGER NOT NULL
+     )`,
+    `CREATE TABLE IF NOT EXISTS feedback (
+       id TEXT PRIMARY KEY,
+       project_id TEXT NOT NULL,
+       sim_id TEXT,
+       actor_email TEXT,
+       url_host TEXT,
+       url_path TEXT,
+       observation TEXT,
+       sentiment TEXT,
+       severity TEXT,
+       screenshot_id TEXT,
+       suggested_bug_json TEXT,
+       cited_trait_ids_json TEXT,
+       source_quote TEXT,
+       source_transcript_id TEXT,
+       source_date INTEGER,
+       plane_issue_key TEXT,
+       plane_issue_url TEXT,
+       created_at INTEGER NOT NULL
+     )`,
+    `CREATE INDEX IF NOT EXISTS fb_proj_idx ON feedback (project_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS fb_sim_idx ON feedback (sim_id, created_at)`,
+    `CREATE TABLE IF NOT EXISTS activity_events (
+       id TEXT PRIMARY KEY,
+       project_id TEXT NOT NULL,
+       type TEXT NOT NULL,
+       actor_email TEXT,
+       sim_id TEXT,
+       url_host TEXT,
+       url_path TEXT,
+       feedback_id TEXT,
+       screenshot_id TEXT,
+       meta_json TEXT,
+       created_at INTEGER NOT NULL
+     )`,
+    `CREATE INDEX IF NOT EXISTS evt_proj_idx ON activity_events (project_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS evt_actor_idx ON activity_events (project_id, actor_email, created_at)`,
   ]
   for (const s of stmts) await db.execute(s)
   console.log("✓ Turso connected, schema ready")
@@ -150,4 +202,62 @@ export async function upsertPersona(id: string, workspaceId: string, data: Omit<
 }
 export async function deletePersona(id: string, workspaceId: string) {
   await db!.execute({ sql: "DELETE FROM personas WHERE id=? AND workspace_id=?", args: [id, workspaceId] })
+}
+
+// ── screenshots / feedback / activity (Sims-dashboard ledger, P0) ──
+// project_id is the denormalized 'proj_'+workspaceId string (no FK; projects table lands in P2).
+export type ScreenshotInsert = {
+  projectId?: string | null; s3Key: string; bucket: string; contentType: string
+  acl?: string; bytes?: number | null; ownerEmail?: string | null; expiresAt?: number | null
+}
+export async function insertScreenshot(s: ScreenshotInsert): Promise<string> {
+  const id = "shot_" + crypto.randomUUID()
+  await db!.execute({
+    sql: `INSERT INTO screenshots (id,project_id,s3_key,bucket,content_type,acl,bytes,owner_email,expires_at,created_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    args: [id, s.projectId ?? null, s.s3Key, s.bucket, s.contentType, s.acl ?? "public-read",
+           s.bytes ?? null, s.ownerEmail ?? null, s.expiresAt ?? null, Date.now()],
+  })
+  return id
+}
+
+export type FeedbackInsert = {
+  projectId: string; simId?: string | null; actorEmail?: string | null
+  urlHost?: string | null; urlPath?: string | null
+  observation?: string | null; sentiment?: string | null; severity?: string | null
+  screenshotId?: string | null; suggestedBug?: any; citedTraitIds?: any
+  sourceQuote?: string | null; sourceTranscriptId?: string | null; sourceDate?: number | null
+  planeIssueKey?: string | null; planeIssueUrl?: string | null
+}
+export async function insertFeedback(f: FeedbackInsert): Promise<string> {
+  const id = "fb_" + crypto.randomUUID()
+  await db!.execute({
+    sql: `INSERT INTO feedback (id,project_id,sim_id,actor_email,url_host,url_path,observation,sentiment,severity,
+          screenshot_id,suggested_bug_json,cited_trait_ids_json,source_quote,source_transcript_id,source_date,
+          plane_issue_key,plane_issue_url,created_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    args: [id, f.projectId, f.simId ?? null, f.actorEmail ?? null, f.urlHost ?? null, f.urlPath ?? null,
+           f.observation ?? null, f.sentiment ?? null, f.severity ?? null, f.screenshotId ?? null,
+           f.suggestedBug != null ? JSON.stringify(f.suggestedBug) : null,
+           f.citedTraitIds != null ? JSON.stringify(f.citedTraitIds) : null,
+           f.sourceQuote ?? null, f.sourceTranscriptId ?? null, f.sourceDate ?? null,
+           f.planeIssueKey ?? null, f.planeIssueUrl ?? null, Date.now()],
+  })
+  return id
+}
+
+export type ActivityInsert = {
+  projectId: string; type: string; actorEmail?: string | null; simId?: string | null
+  urlHost?: string | null; urlPath?: string | null
+  feedbackId?: string | null; screenshotId?: string | null; meta?: any
+}
+export async function insertActivity(a: ActivityInsert): Promise<string> {
+  const id = "evt_" + crypto.randomUUID()
+  await db!.execute({
+    sql: `INSERT INTO activity_events (id,project_id,type,actor_email,sim_id,url_host,url_path,feedback_id,screenshot_id,meta_json,created_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    args: [id, a.projectId, a.type, a.actorEmail ?? null, a.simId ?? null, a.urlHost ?? null, a.urlPath ?? null,
+           a.feedbackId ?? null, a.screenshotId ?? null, a.meta != null ? JSON.stringify(a.meta) : null, Date.now()],
+  })
+  return id
 }
