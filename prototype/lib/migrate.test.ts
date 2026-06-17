@@ -106,3 +106,87 @@ test("v2 migration: seed → migrate → assert → re-run idempotent", async ()
     try { unlinkSync(file + "-shm") } catch {}
   }
 })
+
+// Helper: cleanup a local libsql file + its sidecars.
+function rmDb(file: string) {
+  try { unlinkSync(file) } catch {}
+  try { unlinkSync(file + "-wal") } catch {}
+  try { unlinkSync(file + "-shm") } catch {}
+}
+
+// FRESH INSTALL: applySchema must create the canonical project-scoped personas directly, so
+// migrateV2 produces no junk personas_v1 and a second boot is a clean no-op.
+test("fresh install: applySchema creates project-scoped personas, no junk personas_v1", async () => {
+  const file = join(tmpdir(), `klav-fresh-${Date.now()}-${Math.random().toString(36).slice(2)}.db`)
+  const c = createClient({ url: "file:" + file })
+  try {
+    // No v1 seed — empty DB, exactly like a brand-new deployment.
+    await applySchema(c)
+    await migrateV2(c)
+
+    // personas exists with the §2.2 project-scoped shape (project_id present, no workspace_id).
+    const cols = (await c.execute("PRAGMA table_info(personas)")).rows.map((x: any) => String(x.name))
+    expect(cols).toContain("project_id")
+    expect(cols).toContain("source_transcript_id")
+    expect(cols).not.toContain("workspace_id")
+
+    // No junk personas_v1 table was created.
+    expect(await tableExistsT(c, "personas_v1")).toBe(false)
+
+    // migrated_v2 flag set.
+    const flag = (await c.execute("SELECT value FROM schema_meta WHERE key='migrated_v2'")).rows[0] as any
+    expect(flag).toBeTruthy()
+
+    // Second run is a clean no-op: no error, still no personas_v1, personas still project-scoped.
+    await applySchema(c)
+    await migrateV2(c)
+    expect(await tableExistsT(c, "personas_v1")).toBe(false)
+    const cols2 = (await c.execute("PRAGMA table_info(personas)")).rows.map((x: any) => String(x.name))
+    expect(cols2).toContain("project_id")
+    expect(cols2).not.toContain("workspace_id")
+  } finally {
+    c.close()
+    rmDb(file)
+  }
+})
+
+// INTEGRATIONS COLLISION: a workspace integration AND a pre-existing project row with the same
+// owner_id='proj_'+wid must NOT cause a PK throw; the existing project config is preserved.
+test("integrations collision: re-scope is collision-safe and non-lossy", async () => {
+  const file = join(tmpdir(), `klav-integ-${Date.now()}-${Math.random().toString(36).slice(2)}.db`)
+  const c = createClient({ url: "file:" + file })
+  try {
+    await seedV1(c) // workspace ws-1 + a scope='workspace' integration (owner_id='ws-1')
+    // Simulate a half-migrated/retried state: the project-scoped row already exists for proj_ws-1.
+    await applySchema(c)
+    const existingCfg = JSON.stringify({ workspace: "acme", projectId: "p1", token_enc: "EXISTING:keep" })
+    await c.execute({
+      sql: "INSERT INTO integrations (scope,owner_id,integration,config_json,updated_at) VALUES (?,?,?,?,?)",
+      args: ["project", "proj_ws-1", "plane", existingCfg, 9999],
+    })
+
+    // Must not throw on the PK (scope,owner_id) collision.
+    await migrateV2(c)
+
+    // Exactly one project row for proj_ws-1, and it kept the PRE-EXISTING config (INSERT OR IGNORE).
+    const projRows = (await c.execute("SELECT * FROM integrations WHERE scope='project' AND owner_id='proj_ws-1'")).rows as any[]
+    expect(projRows.length).toBe(1)
+    expect(String(projRows[0].config_json)).toContain("EXISTING:keep")
+    // Workspace row consumed; no lingering scope='workspace' rows.
+    expect(await n(c, "SELECT COUNT(*) AS n FROM integrations WHERE scope='workspace'")).toBe(0)
+
+    // Re-run: still no throw, still exactly one project row, no duplicates.
+    await applySchema(c)
+    await migrateV2(c)
+    expect(await n(c, "SELECT COUNT(*) AS n FROM integrations WHERE scope='project' AND owner_id='proj_ws-1'")).toBe(1)
+    expect(await n(c, "SELECT COUNT(*) AS n FROM integrations WHERE scope='workspace'")).toBe(0)
+  } finally {
+    c.close()
+    rmDb(file)
+  }
+})
+
+async function tableExistsT(c: Client, name: string): Promise<boolean> {
+  const r = await c.execute({ sql: "SELECT name FROM sqlite_master WHERE type='table' AND name=?", args: [name] })
+  return r.rows.length > 0
+}

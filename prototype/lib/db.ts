@@ -29,9 +29,15 @@ export async function applySchema(c: Client) {
        updated_at INTEGER NOT NULL,
        PRIMARY KEY (scope, owner_id)
      )`,
+    // CANONICAL personas shape (§2.2, project-scoped). This is the single source of truth.
+    // On a FRESH install this creates the project-scoped table directly (no workspace_id), so
+    // migrateV2's rename guard (columnExists personas.workspace_id) is FALSE → no junk personas_v1.
+    // On an EXISTING prod DB the live workspace_id-shaped `personas` already exists, so this
+    // CREATE … IF NOT EXISTS no-ops and migrateV2 renames it to personas_v1, then re-creates this shape.
     `CREATE TABLE IF NOT EXISTS personas (
        id TEXT PRIMARY KEY,             -- sim_<uuid>
-       workspace_id TEXT NOT NULL,
+       project_id TEXT NOT NULL,
+       source_transcript_id TEXT,
        name TEXT NOT NULL,
        role TEXT,
        type TEXT NOT NULL DEFAULT 'client',
@@ -43,7 +49,9 @@ export async function applySchema(c: Client) {
        created_at INTEGER NOT NULL,
        updated_at INTEGER NOT NULL
      )`,
-    `CREATE INDEX IF NOT EXISTS persona_ws_idx ON personas (workspace_id, created_at)`,
+    // NOTE: persona_proj_idx is created in migrateV2 (after any v1→personas_v1 rename), not here:
+    // on an EXISTING prod DB this CREATE TABLE no-ops over the live workspace_id-shaped `personas`,
+    // so a project_id index here would fail until migrateV2 swaps in the canonical table.
 
     // ── Sims-dashboard P0 (additive): durable ledger for screenshots + feedback + activity feed ──
     // Rows carry a denormalized project_id string ('proj_'+workspaceId); no FK, projects table lands in P2.
@@ -143,13 +151,18 @@ async function metaSet(c: Client, key: string, value: string) {
 export async function migrateV2(c: Client) {
   if (await metaGet(c, "migrated_v2")) return // already migrated — fast no-op on every boot
 
-  // 1. Rename old project-less personas → personas_v1 (only if not already done), then create the
-  //    new project-scoped personas table. This is the only structural change and is idempotent.
+  // 1. Migrate EXISTING v1 personas only. applySchema owns the canonical project-scoped `personas`
+  //    shape; here we only handle a live workspace_id-shaped table from an existing prod DB.
+  //    FRESH install: applySchema already created the project-scoped `personas` (no workspace_id),
+  //    so the guard below is FALSE → no rename, no junk personas_v1.
+  //    EXISTING prod: the live `personas` has workspace_id → rename it to personas_v1, then the
+  //    redundant-but-safe CREATE … IF NOT EXISTS re-creates the canonical project-scoped table.
   const hasV1 = await tableExists(c, "personas_v1")
   const hasPersonas = await tableExists(c, "personas")
   if (!hasV1 && hasPersonas && (await columnExists(c, "personas", "workspace_id"))) {
     await c.execute("ALTER TABLE personas RENAME TO personas_v1")
   }
+  // Redundant on a fresh install (applySchema already made it); required after the rename above.
   await c.execute(`CREATE TABLE IF NOT EXISTS personas (
        id TEXT PRIMARY KEY, project_id TEXT NOT NULL, source_transcript_id TEXT,
        name TEXT NOT NULL, role TEXT, type TEXT NOT NULL DEFAULT 'client',
@@ -220,8 +233,16 @@ export async function migrateV2(c: Client) {
   }
 
   // 5. re-scope workspace integrations → project (owner_id reuses id: 'proj_'||workspace_id).
-  //    Guarded WHERE scope='workspace' makes the UPDATE a no-op on re-run.
-  await c.execute("UPDATE integrations SET scope='project', owner_id='proj_'||owner_id WHERE scope='workspace'")
+  //    Collision-safe + idempotent + non-lossy: copy each workspace row to a project row via
+  //    INSERT OR IGNORE (a pre-existing 'proj_'+wid project row is PRESERVED — no PK throw on a
+  //    half-migrated/retried state), then drop the now-redundant workspace rows. A second run finds
+  //    no scope='workspace' rows → both statements are no-ops: zero duplicates, zero errors, no loss.
+  await c.execute(
+    `INSERT OR IGNORE INTO integrations (scope, owner_id, integration, config_json, updated_at)
+     SELECT 'project', 'proj_'||owner_id, integration, config_json, updated_at
+     FROM integrations WHERE scope='workspace'`,
+  )
+  await c.execute("DELETE FROM integrations WHERE scope='workspace'")
 
   // 6. flag LAST — only after every step above succeeded.
   await metaSet(c, "migrated_v2", String(Date.now()))
