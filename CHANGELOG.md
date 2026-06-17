@@ -12,6 +12,14 @@ section for the bump rules.
 
 ## [Unreleased]
 
+### Added
+- **Six Thinking Hats starter Sims:** a secondary "not sure where to start?"
+  on-ramp in the Sims Studio. Below the persona presets, users can load de
+  Bono's six hats as ready-made review lenses — Blue (process), White (facts),
+  Red (feelings), Yellow (benefits), Black (risks), Green (ideas) — individually
+  or all six at once as a balanced review team. No transcript needed; works on
+  any page. (`prototype/public/index.html`)
+
 ## [0.7.1] - 2026-06-17
 
 ### Fixed

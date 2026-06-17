@@ -349,6 +349,8 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         <div class="orsep">— or, no transcript yet? —</div>
         <div class="label">Start from a preset</div>
         <div class="presets" id="presets"></div>
+        <div class="label" style="margin-top:14px">Not sure where to start? <span style="color:var(--paper-dim);font-weight:400">Load the Six Thinking Hats — a balanced review team</span></div>
+        <div class="presets" id="hats"></div>
         <div class="label" style="margin-top:14px">…or describe your user</div>
         <div class="briefrow">
           <input id="brief" placeholder="e.g. a busy CFO who scans for overdue items" />
@@ -1072,6 +1074,54 @@ function addPreset(k){
   sims.push(JSON.parse(JSON.stringify(p))); renderDock(sims.length - 1); switchL1Tab('sims')
   setStatus("briefStatus", `Added ${p.name} — click ✎ to rename or set a photo, then have them review this page.`)
 }
+// ── secondary on-ramp: the Six Thinking Hats (de Bono) — a balanced review team ──
+const HATS = {
+  blue:{ name:"Blue Hat", role:"Process & big-picture lens", type:"internal", initials:"BL", accent:"#3b82f6", summary:"Manages the thinking itself — steps back to check the overall flow, structure, and what the next step should be.", insights:[
+    {kind:"pain",text:"No clear structure or obvious next step",quote:"what am I supposed to do after this?"},
+    {kind:"want",text:"The big picture and a clear path through",quote:"let's step back — what's the overall flow here?"},
+    {kind:"love",text:"A well-organised journey with an obvious next move",quote:"good, this guides me from start to finish"}] },
+  white:{ name:"White Hat", role:"Information & facts lens", type:"internal", initials:"WH", accent:"#ffffff", dark:true, summary:"Neutral and factual — asks only what information is present, what's missing, and whether claims are backed by data.", insights:[
+    {kind:"pain",text:"Claims with no data or source behind them",quote:"where's the number that proves this?"},
+    {kind:"want",text:"Just the facts — what's known and what's missing",quote:"what information do we actually have here?"},
+    {kind:"love",text:"Clear, complete, well-sourced information",quote:"good — every figure is labelled and sourced"}] },
+  red:{ name:"Red Hat", role:"Emotion & intuition lens", type:"internal", initials:"RH", accent:"#ef4444", summary:"Reacts on instinct — says how the page makes them feel in the moment, no justification needed.", insights:[
+    {kind:"pain",text:"Something here just feels off or cold",quote:"I can't say why, but this makes me uneasy"},
+    {kind:"want",text:"To voice the immediate gut reaction",quote:"my very first feeling is…"},
+    {kind:"love",text:"When it instantly feels right and warm",quote:"oh, I like this — it just feels good"}] },
+  yellow:{ name:"Yellow Hat", role:"Benefits & optimism lens", type:"internal", initials:"YH", accent:"#facc15", dark:true, summary:"Looks for the upside — the value, benefits, and best case of what's on the page, and why it could work.", insights:[
+    {kind:"pain",text:"Real value here is buried or undersold",quote:"this is great, but nobody would notice"},
+    {kind:"want",text:"To surface the benefits and the best case",quote:"here's why this is actually valuable"},
+    {kind:"love",text:"When the payoff is obvious and hopeful",quote:"this clearly helps — I can see the win"}] },
+  black:{ name:"Black Hat", role:"Risk & critical-judgement lens", type:"internal", initials:"BK", accent:"#1f2937", summary:"Cautious and critical — points out the risks, weaknesses, edge cases, and what could go wrong.", insights:[
+    {kind:"pain",text:"Unhandled edge cases and hidden risks",quote:"what happens when this fails?"},
+    {kind:"want",text:"To stress-test and find the weak points",quote:"this will break the moment someone…"},
+    {kind:"love",text:"Guardrails and graceful failure",quote:"good — it handles the bad case"}] },
+  green:{ name:"Green Hat", role:"Creativity & alternatives lens", type:"internal", initials:"GH", accent:"#22c55e", summary:"Creative and generative — proposes new ideas, alternatives, and 'what if we tried…' possibilities.", insights:[
+    {kind:"pain",text:"The obvious, conventional approach",quote:"we've seen this a hundred times"},
+    {kind:"want",text:"Fresh alternatives and possibilities",quote:"what if we tried it completely differently?"},
+    {kind:"love",text:"A bold, original idea",quote:"ooh — nobody else is doing that"}] },
+}
+const HAT_ORDER = [["blue","Blue · Process"],["white","White · Facts"],["red","Red · Feelings"],["yellow","Yellow · Benefits"],["black","Black · Risks"],["green","Green · Ideas"]]
+function hatDot(p){ return p.dark ? `background:${p.accent};color:#19140f;border:1px solid rgba(0,0,0,.18)` : `background:${p.accent};color:#fff` }
+function renderHats(){
+  const wrap=$("hats"); if(!wrap) return
+  const chips=HAT_ORDER.map(([k,label])=>{ const p=HATS[k]; return `<div class="preset" data-h="${k}" title="${p.summary}"><span class="pdot" style="${hatDot(p)}">${p.initials}</span>${label}</div>` }).join("")
+  wrap.innerHTML=chips+`<div class="preset" data-all="1" title="Add all six hats as a balanced review team"><span class="pdot" style="background:linear-gradient(135deg,#3b82f6,#22c55e);color:#fff">✦</span>Add all six</div>`
+  wrap.querySelectorAll("[data-h]").forEach(el=>el.onclick=()=>addHat(el.dataset.h))
+  const all=wrap.querySelector("[data-all]"); if(all) all.onclick=addAllHats
+}
+function addHat(k){
+  const p=HATS[k]; if(!p) return
+  if(sims.some(s=>s.name===p.name)){ setStatus("briefStatus", `${p.name} is already in your Sims.`); switchL1Tab('sims'); return }
+  sims.push(JSON.parse(JSON.stringify(p))); renderDock(sims.length - 1); switchL1Tab('sims')
+  setStatus("briefStatus", `Added the ${p.name} — your ${p.role.toLowerCase()}. Have it review this page.`)
+}
+function addAllHats(){
+  let added=0
+  HAT_ORDER.forEach(([k])=>{ const p=HATS[k]; if(!sims.some(s=>s.name===p.name)){ sims.push(JSON.parse(JSON.stringify(p))); added++ } })
+  renderDock(sims.length - 1); switchL1Tab('sims')
+  setStatus("briefStatus", added ? `Added ${added} thinking hat${added>1?'s':''} — your balanced review team is ready. Pick one and have it review this page.` : `All six hats are already in your Sims.`)
+}
 async function createFromBrief(){
   const brief=$("brief").value.trim()
   if(brief.length<4){ setStatus("briefStatus","Describe your user in a few words.",true); return }
@@ -1150,7 +1200,7 @@ function finishGuide(){ guideDone=true; try{localStorage.setItem("klav_guide_don
 
 $("briefBtn").onclick = createFromBrief
 $("brief").addEventListener("keydown",(e)=>{ if(e.key==="Enter") createFromBrief() })
-renderPresets(); setupVoice()
+renderPresets(); renderHats(); setupVoice()
 $("saveDrafts").onclick = saveDrafts
 renderDrafts()
 updateFlow()
