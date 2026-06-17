@@ -1,9 +1,10 @@
 // Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, upsertPersona, deletePersona, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, projectById, membersOfProject, addProjectMember } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, upsertPersona, deletePersona, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, projectById, membersOfProject, addProjectMember, insertTranscript, listTraits, insertTrait, updateTrait, insertTraitEvent, hasReconcileRun, markReconcileRun, rebuildInsightsJson } from "./lib/db"
+import { applyReconcileOps, type ReconcileOp, type Trait } from "./lib/provenance"
 import { sendOtp } from "./lib/mail"
 import { token, otp, emailAllowed, cookie, clearCookie, parseCookies } from "./lib/auth"
 import { uploadScreenshotMeta, type UploadedScreenshot } from "./lib/s3"
-import { buildIssueHtml } from "./lib/feedback"
+import { buildIssueHtml, escapeHtml } from "./lib/feedback"
 import { encryptSecret, decryptSecret } from "./lib/crypto"
 import { planeConfigFromForm, redactPlane, type PlaneStored } from "./lib/connection"
 
@@ -37,10 +38,35 @@ const REACT_SYS =
   "Give 1-3 reactions, most important first. The box is a normalised 0..1 bounding box locating the element in the image " +
   "(x,y = top-left; w,h = size; all 0..1), or null if you can't localise it. suggestedBug is filled only when it's a real " +
   "problem worth filing to an issue tracker, else null. Stay in character and be specific to what you actually see.\n\n" +
+  "The persona's insights each carry a stable \"traitId\". For every reaction, set citedTraitIds to the list of traitIds " +
+  "of the persona's documented traits that actually drove that reaction (the pains/wants/loves it stems from). " +
+  "Use [] if no documented trait applies. Only ever cite traitIds present in the persona you are given.\n\n" +
   "Respond with ONLY a JSON object, no prose, in exactly this shape:\n" +
   '{"reactions":[{"observation":string(<=240 chars, first person),"sentiment":"frustrated"|"confused"|"satisfied"|"delighted"|"neutral",' +
   '"emoji":string,"targetDescription":string,"box":{"x":number,"y":number,"w":number,"h":number}|null,' +
+  '"citedTraitIds":string[],' +
   '"suggestedBug":{"title":string,"body":string,"severity":"high"|"medium"|"low"}|null}]}'
+
+// RECONCILE: given a Sim's CURRENT traits (each with a stable traitId) + a new transcript, emit the
+// minimal structured op list that evolves the Sim. One LLM call per matched Sim per transcript (§5
+// cost guard — gated by reconcile_runs, never the whole library).
+const RECONCILE_SYS =
+  "You maintain a durable, provenance-tracked profile of ONE user persona (\"Sim\") as new interview/call " +
+  "transcripts arrive. You are given the Sim's CURRENT traits (each a typed pain|want|love with a stable " +
+  "traitId) and ONE new transcript. Emit the MINIMAL list of operations that evolves this Sim to reflect the " +
+  "new transcript — do NOT restate unchanged traits, and do NOT invent traits the transcript does not support. " +
+  "Every op MUST be anchored to a short verbatim quote from the transcript.\n\n" +
+  "Operations:\n" +
+  "- add: a genuinely NEW pain/want/love not already covered (omit traitId).\n" +
+  "- reinforce: the transcript restates/confirms an existing trait (set traitId; text may echo the existing text).\n" +
+  "- refine: the transcript sharpens/expands an existing trait's wording (set traitId; text = the improved text).\n" +
+  "- contradict: the transcript shows the Sim no longer holds an existing trait (set traitId).\n" +
+  "- supersede: an existing trait is REPLACED by a changed preference (set traitId; text = the replacement).\n\n" +
+  "Be conservative: only emit an op when the transcript clearly supports it. quote is verbatim from the transcript; " +
+  "speaker is who said it; reason is a short why.\n\n" +
+  "Respond with ONLY a JSON object, no prose, in exactly this shape:\n" +
+  '{"ops":[{"op":"add"|"reinforce"|"refine"|"contradict"|"supersede","kind":"pain"|"want"|"love",' +
+  '"text":string,"quote":string,"speaker":string,"traitId":string|null,"reason":string}]}'
 
 // jsonMode forces structured output — safe for text calls, but Gemini's vision path
 // via OpenRouter often returns empty content under json_object, so leave it OFF for
@@ -87,6 +113,90 @@ async function reactToPage(persona: any, imageB64: string, mediaType: string, pa
     ] },
   ], 2500)
   return { data: parseJSON(content), usage }
+}
+
+// ── P3a reconcile: one LLM call that evolves ONE Sim against ONE transcript (§5 cost guard). ──
+// currentTraits is the Sim's ACTIVE sim_traits; returns the structured op list (LLM-free apply is
+// done by applyReconcileOps in the route). The route MUST gate this on hasReconcileRun() so we never
+// re-reconcile a (sim,transcript) pair nor touch the whole library.
+async function reconcileSim(currentTraits: Trait[], transcript: string) {
+  const traitsForLLM = currentTraits.map((t) => ({ traitId: t.id, kind: t.kind, text: t.text, strength: t.strength }))
+  const { content, usage } = await chat([
+    { role: "system", content: RECONCILE_SYS },
+    { role: "user", content:
+        "CURRENT TRAITS (JSON):\n" + JSON.stringify(traitsForLLM, null, 2) +
+        "\n\nNEW TRANSCRIPT:\n\n" + transcript },
+  ], 3000)
+  const data = parseJSON(content)
+  const rawOps: any[] = Array.isArray(data?.ops) ? data.ops : []
+  const valid = new Set(["add", "reinforce", "refine", "contradict", "supersede"])
+  const kinds = new Set(["pain", "want", "love"])
+  // Sanitize: drop malformed ops, normalize traitId (null → undefined so applyReconcileOps treats add correctly).
+  const ops: ReconcileOp[] = rawOps
+    .filter((o) => o && valid.has(o.op) && kinds.has(o.kind) && typeof o.text === "string" && o.text.trim() && typeof o.quote === "string" && o.quote.trim())
+    .map((o) => ({
+      op: o.op, kind: o.kind, text: String(o.text), quote: String(o.quote),
+      speaker: o.speaker != null ? String(o.speaker) : null,
+      traitId: o.op === "add" || o.traitId == null ? undefined : String(o.traitId),
+      reason: o.reason != null ? String(o.reason) : undefined,
+    }))
+  return { ops, usage }
+}
+
+// Conservative persona→Sim matching (§3/§4: "Sim-matching corrupting provenance → conservative match").
+// Exact (case/space-insensitive) name match → confident auto-apply. A name-token overlap with a DIFFERENT
+// role, or an ambiguous (>1 candidate) match → return for admin confirmation rather than silently merging.
+function normName(s: string): string { return String(s || "").trim().toLowerCase().replace(/\s+/g, " ") }
+function matchPersonaToSim(extracted: { name: string; role?: string }, sims: { id: string; name: string; role: string }[]): { simId: string } | { needsConfirm: { name: string; candidates: { simId: string; name: string; role: string }[] } } | null {
+  const en = normName(extracted.name)
+  if (!en) return null
+  const exact = sims.filter((s) => normName(s.name) === en)
+  if (exact.length === 1) return { simId: exact[0].id } // confident
+  if (exact.length > 1) {
+    // same name on multiple Sims → ambiguous, never silently merge.
+    return { needsConfirm: { name: extracted.name, candidates: exact.map((s) => ({ simId: s.id, name: s.name, role: s.role })) } }
+  }
+  // fuzzy: any Sim sharing a first/last name token → confirm, don't auto-apply.
+  const tokens = en.split(" ").filter((t) => t.length >= 3)
+  const fuzzy = sims.filter((s) => { const sn = normName(s.name).split(" "); return tokens.some((t) => sn.includes(t)) })
+  if (fuzzy.length) return { needsConfirm: { name: extracted.name, candidates: fuzzy.map((s) => ({ simId: s.id, name: s.name, role: s.role })) } }
+  return null // no match → a brand-new persona (not auto-created in P3a step 2; surfaced as needsConfirm-free non-match)
+}
+
+// Resolve LLM-returned citedTraitIds → persisted citation fields ({quote, speaker, sourceDate, transcriptId}).
+// Defensive: ignores ids that don't belong to the Sim (no crash); returns empty citation when nothing matches.
+async function resolveCitations(simId: string | null, citedTraitIds: any): Promise<{
+  citedTraitIds: string[]; sourceQuote: string | null; speaker: string | null; sourceTranscriptId: string | null; sourceDate: number | null
+}> {
+  const empty = { citedTraitIds: [] as string[], sourceQuote: null, speaker: null, sourceTranscriptId: null, sourceDate: null }
+  if (!simId || !Array.isArray(citedTraitIds) || !citedTraitIds.length) return empty
+  const want = new Set(citedTraitIds.map((x) => String(x)))
+  const traits = await listTraits(simId) // all statuses — a cited trait may have since been superseded
+  const matched = traits.filter((t) => want.has(t.id))
+  if (!matched.length) return empty
+  const primary = matched[0]
+  // source_date comes from the trait's originating transcript (drives "(Sarah, 2026-06-12)" citations).
+  let sourceDate: number | null = null
+  if (primary.srcTranscriptId) {
+    const tr = await db!.execute({ sql: "SELECT source_date FROM transcripts WHERE id=?", args: [primary.srcTranscriptId] })
+    if (tr.rows.length) sourceDate = Number((tr.rows[0] as any).source_date)
+  }
+  return {
+    citedTraitIds: matched.map((t) => t.id),
+    sourceQuote: primary.srcQuote || null,
+    speaker: primary.srcSpeaker || null,
+    sourceTranscriptId: primary.srcTranscriptId || null,
+    sourceDate,
+  }
+}
+
+// One-line human citation for the Plane issue body: "Cited from Sarah's profile: “…” (Sarah, 2026-06-12)".
+function citationLine(c: { sourceQuote: string | null; speaker?: string | null; sourceDate: number | null }): string | null {
+  if (!c.sourceQuote) return null
+  const date = c.sourceDate ? new Date(c.sourceDate).toISOString().slice(0, 10) : null
+  const who = c.speaker || null
+  const attr = who && date ? ` (${who}, ${date})` : who ? ` (${who})` : date ? ` (${date})` : ""
+  return `Cited from Sim profile: “${c.sourceQuote}”${attr}`
 }
 
 // ── http helpers ──
@@ -236,6 +346,7 @@ Bun.serve({
         // ── persist to our durable ledger (P0) FIRST, always — best-effort, never fails the submission.
         // Runs whether or not a tracker is connected, so the dashboard always gets a row.
         let feedbackId: string | null = null
+        let citation: { citedTraitIds: string[]; sourceQuote: string | null; speaker: string | null; sourceTranscriptId: string | null; sourceDate: number | null } | null = null
         if (db) {
           try {
             // Actor: Bearer (extension) or cookie session (studio). Resolve to a real project
@@ -266,9 +377,19 @@ Bun.serve({
               const sbRaw = String(form.get("suggested_bug") || "")
               if (sbRaw) { try { suggestedBug = JSON.parse(sbRaw) } catch { /* keep null */ } }
 
+              // R8 citations: the studio/extension forwards the reaction's citedTraitIds (JSON array or
+              // CSV). Resolve → {quote, speaker, sourceDate, transcriptId} from sim_traits; gracefully
+              // empty when the Sim has no matching trait (no crash, citation fields stay null).
+              let citedRaw: any = null
+              const ctRaw = String(form.get("cited_trait_ids") || "")
+              if (ctRaw) { try { citedRaw = JSON.parse(ctRaw) } catch { citedRaw = ctRaw.split(",").map((s) => s.trim()).filter(Boolean) } }
+              citation = await resolveCitations(simId, citedRaw)
+
               feedbackId = await insertFeedback({
                 projectId, simId, actorEmail: actor, urlHost, urlPath,
                 observation, sentiment, severity, screenshotId, suggestedBug,
+                citedTraitIds: citation.citedTraitIds.length ? citation.citedTraitIds : null,
+                sourceQuote: citation.sourceQuote, sourceTranscriptId: citation.sourceTranscriptId, sourceDate: citation.sourceDate,
                 planeIssueKey: null, planeIssueUrl: null, // backfilled below if/when filed
               })
               await insertActivity({
@@ -288,7 +409,10 @@ Bun.serve({
           return json({ id: feedbackId ?? "", saved: true })
         }
 
-        const description_html = buildIssueHtml(description, pageUrl, imageUrls)
+        // R8: append the Sim citation line to the issue body when this feedback cites a trait.
+        const citeLine = citation ? citationLine({ sourceQuote: citation.sourceQuote, speaker: citation.speaker, sourceDate: citation.sourceDate }) : null
+        const description_html = buildIssueHtml(description, pageUrl, imageUrls) +
+          (citeLine ? `<p><em>${escapeHtml(citeLine)}</em></p>` : "")
         const res = await fetch(`${planeHost}/api/v1/workspaces/${planeWorkspace}/projects/${planeProject}/issues/`, {
           method: "POST",
           headers: { "X-API-Key": planeToken, "Content-Type": "application/json" },
@@ -372,6 +496,72 @@ Bun.serve({
         }
       }
       return json({ error: "Not found" }, 404)
+    }
+
+    // ── transcripts → reconcile (P3a) — project-scoped via resolveProject; cookie OR Bearer; admin or member ──
+    if (req.method === "POST" && path === "/api/transcripts") {
+      const meT = (await sessionEmail(req)) || (await bearerEmail(req))
+      if (!meT) return json({ error: "Sign in to continue." }, 401)
+      const projT = await resolveProject(meT, url.searchParams.get("project"))
+      if (!projT) return json({ error: "No project." }, 400)
+      const projectId = projT.id
+      try {
+        const body = await req.json().catch(() => ({}))
+        const text = String(body.transcript || body.raw_text || "").trim()
+        if (text.length < 20) return json({ error: "Transcript too short" }, 400)
+        const title = body.title ? String(body.title) : null
+        const sourceDate = Number(body.sourceDate || body.source_date) || Date.now()
+
+        // 1) persist the transcript (provenance anchor for every trait it produces).
+        const transcriptId = await insertTranscript({
+          projectId, title, rawText: text, sourceDate,
+          speakers: Array.isArray(body.speakers) ? body.speakers.map(String) : null, addedBy: meT,
+        })
+
+        // 2) AI CALL #1: extract personas from the transcript (existing helper).
+        const { data: extractData, usage: extractUsage } = await extractPersonas(text)
+        const extracted: any[] = Array.isArray(extractData?.personas) ? extractData.personas : []
+
+        // 3) conservative match → existing project Sims. Confident → auto-apply; fuzzy/ambiguous → needsConfirm.
+        const sims = (await listPersonas(projectId)).map((p) => ({ id: p.id, name: p.name, role: p.role }))
+        const matched: { simId: string }[] = []
+        const needsConfirm: { name: string; candidates: { simId: string; name: string; role: string }[] }[] = []
+        for (const p of extracted) {
+          const m = matchPersonaToSim({ name: String(p?.name || ""), role: p?.role ? String(p.role) : undefined }, sims)
+          if (m && "simId" in m) matched.push({ simId: m.simId })
+          else if (m && "needsConfirm" in m) needsConfirm.push(m.needsConfirm)
+        }
+        // de-dup matched Sims (two extracted personas could both map to one Sim — reconcile it once).
+        const matchedSimIds = [...new Set(matched.map((m) => m.simId))]
+
+        // 4) AI CALL #2 (per matched Sim, gated): reconcileSim → applyReconcileOps → persist + audit + cache.
+        let opsApplied = 0
+        const reconcileUsages: any[] = []
+        for (const simId of matchedSimIds) {
+          if (await hasReconcileRun(simId, transcriptId)) continue // COST GUARD: never re-reconcile a (sim,transcript) pair
+          const current = await listTraits(simId, { activeOnly: true })
+          const { ops, usage } = await reconcileSim(current, text)
+          reconcileUsages.push(usage)
+          const res = applyReconcileOps(current, ops, { simId, projectId, transcriptId, sourceDate })
+          for (const w of res.traitWrites) {
+            if (w.mode === "insert") await insertTrait(w.trait)
+            else await updateTrait(w.trait)
+          }
+          for (const e of res.traitEvents) await insertTraitEvent(e)
+          await markReconcileRun(simId, transcriptId)
+          await rebuildInsightsJson(simId)
+          opsApplied += res.traitWrites.length
+          await insertActivity({ projectId, type: "sim_reconciled", actorEmail: meT, simId, meta: { transcriptId, ops: res.traitWrites.length } })
+        }
+
+        return json({
+          transcriptId,
+          matched: matchedSimIds,
+          opsApplied,
+          needsConfirm,
+          usage: { extract: extractUsage, reconcile: reconcileUsages },
+        }, 201)
+      } catch (e: any) { return json({ error: e?.message || "transcript failed" }, 500) }
     }
 
     // ── everything below requires a session ──
@@ -648,7 +838,17 @@ Bun.serve({
           const { persona, imageB64, mediaType, pageUrl } = await req.json()
           if (!persona || !imageB64) return json({ error: "persona and imageB64 required" }, 400)
           const { data, usage } = await reactToPage(persona, imageB64, mediaType || "image/png", pageUrl || "")
-          return json({ reactions: data.reactions || [], usage })
+          const reactions = data.reactions || []
+          // Resolve each reaction's citedTraitIds → {quote, speaker, sourceDate, transcriptId} so the
+          // studio review→feedback path can carry citations forward. simId is the persona's stable id.
+          const simId = persona?.id ? String(persona.id) : null
+          for (const r of reactions) {
+            const cited = await resolveCitations(simId, r?.citedTraitIds)
+            r.citation = cited.citedTraitIds.length
+              ? { citedTraitIds: cited.citedTraitIds, sourceQuote: cited.sourceQuote, speaker: cited.speaker, sourceTranscriptId: cited.sourceTranscriptId, sourceDate: cited.sourceDate }
+              : null
+          }
+          return json({ reactions, usage })
         } catch (e: any) { return json({ error: e?.message || "react failed" }, 500) }
       }
       return json({ error: "Not found" }, 404)
