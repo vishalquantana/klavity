@@ -49,9 +49,9 @@
   .logo { width: 34px; height: 34px; border-radius: 9px; overflow: hidden; flex-shrink: 0; }
   h1 { font-size: 19px; font-weight: 800; }
   .sub { font-size: 12px; color: var(--paper-faint); }
-  .grid { display: grid; grid-template-columns: 340px 1fr 320px; gap: 16px; align-items: start; }
+  .grid { display: grid; grid-template-columns: 340px 1fr 320px; gap: 22px; align-items: start; }
   @media(max-width:1100px){ .grid{grid-template-columns:1fr} #rail{flex-direction:column} #rail .rarrow{transform:rotate(90deg)} }
-  .panel { background: var(--ink-2); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+  .panel { background: var(--ink-2); border: 1px solid var(--line); border-radius: 18px; padding: 22px; box-shadow: 0 10px 30px rgba(25,20,15,.05); }
   .panel h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--paper-faint); margin-bottom: 10px; }
 
   textarea { width: 100%; min-height: 150px; background: var(--ink); color: var(--paper); border: 1px solid var(--line-2); border-radius: 8px; padding: 10px; font-size: 12px; line-height: 1.5; resize: vertical; font-family: ui-monospace, monospace; transition: border-color .15s, box-shadow .15s; }
@@ -128,14 +128,14 @@
   .rbubble::before { content:''; position:absolute; top:-7px; left:var(--tail-x,40px); transform:translateX(-50%); border:7px solid transparent; border-bottom-color:var(--line-2); border-top:none; }
 
   /* dock */
-  .dock-sim { display: flex; align-items: center; gap: 10px; padding: 9px; border-radius: 10px; border: 1px solid var(--line); margin-bottom: 8px; cursor: default; background:var(--ink-3); }
-  .ds-av { width: 34px; height: 34px; border-radius: 50%; display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:white;flex-shrink:0; }
-  .ds-name { font-size: 12px; font-weight: 700; }
-  .ds-role { font-size: 9px; color: var(--paper-faint); }
+  .dock-sim { display: flex; align-items: stretch; gap: 10px; padding: 16px; border-radius: 16px; border: 1px solid var(--line); margin-bottom: 12px; cursor: default; background:var(--ink-2); box-shadow: 0 6px 20px rgba(25,20,15,.05); }
+  .ds-av { width: 40px; height: 40px; border-radius: 50%; display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:white;flex-shrink:0; }
+  .ds-name { font-size: 14px; font-weight: 700; }
+  .ds-role { font-size: 11px; color: var(--paper-faint); }
   .ds-av img { width:100%; height:100%; object-fit:cover; border-radius:inherit; display:block; }
   .ds-edit { margin-left:4px; background:none; border:none; color:var(--paper-faint); cursor:pointer; font-size:13px; padding:2px 6px; border-radius:6px; flex-shrink:0; }
   .ds-edit:hover { color:var(--paper); background:var(--ink-4); }
-  .ds-savebtn{font-size:10px;font-weight:700;padding:5px 10px;border-radius:6px;background:var(--indigo);color:#fff;border:none;cursor:pointer;margin-top:6px;width:100%}
+  .ds-savebtn{font-size:11.5px;font-weight:700;padding:9px 10px;border-radius:9px;background:var(--indigo);color:#fff;border:none;cursor:pointer;margin-top:8px;width:100%}
   .ds-savebtn:disabled{opacity:.45;cursor:not-allowed}
   .ds-savedtag{font-size:9px;font-weight:700;color:var(--green);margin-top:5px;display:flex;align-items:center;gap:5px}
   .ds-delbtn{font-size:10px;padding:3px 8px;border-radius:6px;background:none;border:1px solid var(--line-2);color:var(--paper-faint);cursor:pointer}
@@ -146,9 +146,9 @@
   .dsm { font-size:12px; padding:7px 12px; }
   @keyframes dockIn { from { opacity:0; transform:translateY(10px) scale(.98); } to { opacity:1; transform:none; } }
   .dock-sim.in { animation: dockIn .35s ease; }
-  .ds-type { font-size: 8px; font-weight: 700; border-radius: 4px; padding: 1px 6px; margin-left: auto; }
+  .ds-type { font-size: 10px; font-weight: 700; border-radius: 4px; padding: 2px 7px; margin-left: auto; }
   .t-client{background:rgba(99,102,241,.15);color:var(--blue)}.t-internal{background:var(--ink-4);color:var(--paper-dim)}
-  .ds-insights { font-size: 9px; color:var(--paper-faint); margin-top:4px; }
+  .ds-insights { font-size: 11.5px; line-height: 1.5; color:var(--paper-dim); margin-top:8px; }
   .ds-insrow { display:flex; gap:6px; margin-bottom:6px; align-items:flex-start; }
   .ds-insrow .ds-inskind { flex:0 0 78px; margin-bottom:0; padding:6px; }
   .ds-insrow .ds-instext { flex:1; margin-bottom:0; }
@@ -156,11 +156,11 @@
   .ins-filter { display:flex; align-items:center; gap:7px; font-size:11px; font-weight:600; color:var(--paper-dim); margin-bottom:10px; cursor:pointer; user-select:none; }
   .ins-filter input { accent-color:var(--indigo); width:14px; height:14px; cursor:pointer; }
   .ins-filter span { font-weight:500; color:var(--paper-faint); }
-  .reviewbtn { width: 100%; margin-top: 6px; font-size: 11px; padding: 6px; border-radius: 6px; background:var(--indigo);color:white;border:none;cursor:pointer; }
+  .reviewbtn { width: 100%; margin-top: 12px; font-size: 12.5px; padding: 9px; border-radius: 9px; background:var(--indigo);color:white;border:none;cursor:pointer; }
 
   /* lane1 tab bar */
   .l1-tabs{display:flex;gap:0;border-bottom:1px solid var(--line);margin:8px 0 14px;}
-  .l1-tab{font-size:12px;font-weight:600;padding:8px 14px;border:none;border-bottom:2px solid transparent;cursor:pointer;color:var(--paper-faint);background:none;border-radius:0;transition:color .15s,border-color .15s;}
+  .l1-tab{font-size:13px;font-weight:600;padding:9px 16px;border:none;border-bottom:2px solid transparent;cursor:pointer;color:var(--paper-faint);background:none;border-radius:0;transition:color .15s,border-color .15s;}
   .l1-tab.on{color:var(--indigo);border-bottom-color:var(--indigo);}
   .l1-pane{display:none;}
   .l1-pane.on{display:block;}
@@ -175,7 +175,7 @@
   .sim-char.below .bubble{bottom:auto;top:58px}
   .sim-char.below .bubble::after{top:-7px;bottom:auto;border:6px solid transparent;border-bottom-color:var(--line-2);border-top:none}
   /* draft queue */
-  .draft{background:var(--ink-3);border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:8px;display:flex;gap:9px;align-items:flex-start}
+  .draft{background:var(--ink-2);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:10px;display:flex;gap:9px;align-items:flex-start;box-shadow:0 4px 16px rgba(25,20,15,.05)}
   .draft.saved{border-color:var(--green)}
   .draft input{margin-top:3px;accent-color:var(--indigo);cursor:pointer;width:14px;height:14px;flex-shrink:0}
   .draft .dav{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;flex-shrink:0}
@@ -241,7 +241,7 @@
   .lhead .pill{margin-left:auto;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:3px 8px;border-radius:6px}
   .pill.now{background:rgba(99,102,241,.18);color:var(--indigo-deep)}
   .pill.ok{background:rgba(15,157,107,.15);color:var(--green)}
-  .lsub{font-size:11px;color:var(--paper-faint);margin-bottom:12px;line-height:1.5}
+  .lsub{font-size:12.5px;color:var(--paper-faint);margin-bottom:14px;line-height:1.55}
   .label{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--paper-faint);margin:2px 0 8px;font-weight:700}
   .readycard{display:flex;align-items:center;gap:9px;background:rgba(15,157,107,.08);border:1px solid rgba(15,157,107,.25);border-radius:10px;padding:11px 12px;margin-bottom:14px}
   .readycard .big{font-size:13px;font-weight:800;color:var(--green)}
@@ -272,7 +272,7 @@
   .theme-toggle{position:fixed;right:16px;bottom:16px;z-index:90;width:40px;height:40px;border-radius:50%;border:1px solid var(--line);background:var(--ink-2);color:var(--paper);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(0,0,0,.12)}
 
 /* ── dev mode bar ── */
-  #devbar { position: sticky; top: 0; z-index: 200; display: flex; align-items: center; gap: 10px; padding: 0 14px; height: 34px; font-size: 11.5px; font-weight: 600; background: #92400e; color: #fef3c7; border-bottom: 1px solid #78350f; }
+  #devbar { position: sticky; top: 0; z-index: 200; display: flex; align-items: center; gap: 10px; margin: -20px -20px 18px; padding: 0 18px; height: 38px; font-size: 12.5px; font-weight: 600; background: #92400e; color: #fef3c7; border-bottom: 1px solid #78350f; }
   #devbar .dbtag { background: #fef3c7; color: #92400e; border-radius: 4px; padding: 1px 6px; font-size: 10px; font-weight: 800; letter-spacing: .04em; }
   #devbar .dbsep { opacity: .4; margin: 0 2px; }
   #devbar .dbtoggle { position: relative; width: 30px; height: 16px; cursor: pointer; flex-shrink: 0; }
@@ -332,8 +332,8 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         <div><div class="big"><span id="simsReadyN">0</span> Sims ready</div><div class="sm">Edit them here or pick one to review in step 2 →</div></div>
       </div>
       <div class="l1-tabs">
-        <button class="l1-tab on" id="tab-import" onclick="switchL1Tab(‘import’)">Import</button>
-        <button class="l1-tab" id="tab-sims" onclick="switchL1Tab(‘sims’)">Your Sims<span id="l1SimBadge" style="display:none"> (<span id="l1SimN">0</span>)</span></button>
+        <button class="l1-tab on" id="tab-import" onclick="switchL1Tab('import')">Import</button>
+        <button class="l1-tab" id="tab-sims" onclick="switchL1Tab('sims')">Your Sims<span id="l1SimBadge" style="display:none"> (<span id="l1SimN">0</span>)</span></button>
       </div>
       <div class="l1-pane on" id="pane-import">
         <div class="lsub">Extract real Sims from an interview transcript — or start from a preset / one-line description.</div>
@@ -845,6 +845,10 @@ async function review(i) {
 }
 
 async function playReactions(sim, reactions) {
+  // "Critical feedback only" also hides positive review reactions (satisfied/delighted),
+  // not just positive dock insights — so it never shows or saves a positive draft.
+  if (onlyCriticalInsights) reactions = reactions.filter(rx => rx.sentiment !== "satisfied" && rx.sentiment !== "delighted")
+  if (!reactions.length) { setStatus("reactStatus", `🙂 ${sim.name.split(" ")[0]} had only positive reactions — hidden by "Critical feedback only". Untick it to see them.`); return }
   const stage = $("stage")
   const W = stage.clientWidth, H = stage.clientHeight
   const stageWrap = $("stageWrap")

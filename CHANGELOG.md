@@ -12,6 +12,23 @@ section for the bump rules.
 
 ## [Unreleased]
 
+### Fixed
+- **Sims Studio: Import/Your Sims tabs were unclickable** — the tab `onclick`
+  handlers used curly “smart quotes” (`switchL1Tab(‘import’)`) which threw, so
+  nothing switched. Replaced with straight quotes.
+- **"Critical feedback only" now also hides positive *review* feedback** — the
+  toggle previously only filtered dock insights; positive review reactions
+  (`satisfied`/`delighted`) still showed and saved. Now they're filtered from
+  `playReactions` too (bubble + draft), with a friendly note when a Sim had only
+  positive reactions.
+
+### Changed
+- **Sims Studio visual refresh — "soft lightness":** white airy persona/draft
+  cards (was beige `--ink-3`) with soft shadows + larger radius, roomier panel
+  padding + grid spacing, and bumped-up font sizes (dock text was 8–11px), to
+  match the onboarding's lighter feel. The dev-mode bar is now full-bleed
+  (no top/side gap). (`prototype/public/index.html`)
+
 ### Added
 - **Animated intro reel (mock)** at `/intro-reel` — a ~25s auto-looping CSS/JS
   storyboard of the product story (call → Sim → live comment → filed ticket),
