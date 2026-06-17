@@ -11,6 +11,12 @@
     "https://api.plane.so/*",
     "<all_urls>"
   ],
+  "externally_connectable": {
+    "matches": [
+      "https://klavity.quantana.top/*",
+      "http://localhost:*"
+    ]
+  },
   "background": {
     "service_worker": "src/background.ts",
     "type": "module"
