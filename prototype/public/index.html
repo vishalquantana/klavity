@@ -1201,6 +1201,21 @@ function finishGuide(){ guideDone=true; try{localStorage.setItem("klav_guide_don
 $("briefBtn").onclick = createFromBrief
 $("brief").addEventListener("keydown",(e)=>{ if(e.key==="Enter") createFromBrief() })
 renderPresets(); renderHats(); setupVoice()
+// ── hand-off from onboarding: honor ?starter=hats and #add-transcript ──
+;(function onboardingHandoff(){
+  try{
+    const params = new URLSearchParams(location.search)
+    if(params.get('starter')==='hats'){
+      switchL1Tab('import')
+      const h=$("hats")
+      if(h){ h.scrollIntoView({behavior:'smooth',block:'center'}); h.style.transition='box-shadow .3s'; h.style.boxShadow='0 0 0 3px var(--indigo)'; setTimeout(()=>{h.style.boxShadow=''},1800) }
+      setStatus("briefStatus","Your Six Thinking Hats team — add one or all six, then have them review this page.")
+    } else if(location.hash==='#add-transcript'){
+      switchL1Tab('import')
+      const t=$("transcript"); if(t){ t.scrollIntoView({behavior:'smooth',block:'center'}); t.focus() }
+    }
+  }catch(e){}
+})()
 $("saveDrafts").onclick = saveDrafts
 renderDrafts()
 updateFlow()

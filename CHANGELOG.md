@@ -12,13 +12,26 @@ section for the bump rules.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-06-17
+
 ### Added
+- **Onboarding redesign — unified welcome → setup → Studio hand-off:** the
+  signup flow is rebuilt around a "how it works" welcome explainer (the premise
+  cold prospects were missing), then does only the setup the Studio can't —
+  create your **project** (inline magic-link OTP sign-in), point your Sims at a
+  **monitored URL**, and pick a starting point (a customer-call transcript or
+  the Six Thinking Hats) — before handing straight into the Sim Studio's own
+  guided first-run. Replaces the old 5-step "workspace" walkthrough.
+  `/onboarding` now serves logged-out signups (logged-in members still route to
+  the dashboard, preserving the earlier routing fix); the Studio honors the
+  `?starter=hats` / `#add-transcript` hand-off. New `POST /api/projects/:id/rename`.
+  (`site/onboarding.html`, `prototype/server.ts`, `prototype/lib/db.ts`,
+  `prototype/public/index.html`)
 - **Six Thinking Hats starter Sims:** a secondary "not sure where to start?"
-  on-ramp in the Sims Studio. Below the persona presets, users can load de
-  Bono's six hats as ready-made review lenses — Blue (process), White (facts),
-  Red (feelings), Yellow (benefits), Black (risks), Green (ideas) — individually
-  or all six at once as a balanced review team. No transcript needed; works on
-  any page. (`prototype/public/index.html`)
+  on-ramp in the Sims Studio — load de Bono's six hats (process, facts,
+  feelings, benefits, risks, ideas) individually or all six as a balanced
+  review team. No transcript needed; works on any page.
+  (`prototype/public/index.html`)
 
 ## [0.7.1] - 2026-06-17
 

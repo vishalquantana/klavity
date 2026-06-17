@@ -320,7 +320,7 @@ async function applyProjectName(){
   try {
     const { ok, data } = await jsonFetch('/api/projects', { headers:{'accept':'application/json'} })
     if (!ok || !data.projects || !data.projects.length) return
-    projectId = data.projects[0].id
+    projectId = (data.projects.filter(p => p.role === 'admin').pop() || data.projects[0]).id
     if (name) {
       await jsonFetch('/api/projects/' + encodeURIComponent(projectId) + '/rename', {
         method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ name })
@@ -391,8 +391,9 @@ async function bootstrap(){
       $('email').value = me.data.email
       const pr = await jsonFetch('/api/projects', { headers:{'accept':'application/json'} })
       if (pr.ok && pr.data.projects && pr.data.projects.length){
-        projectId = pr.data.projects[0].id
-        if (!$('projectName').value.trim()) $('projectName').value = pr.data.projects[0].name || ''
+        const own = pr.data.projects.filter(p => p.role === 'admin').pop() || pr.data.projects[0]
+        projectId = own.id
+        if (!$('projectName').value.trim()) $('projectName').value = own.name || ''
       }
     }
   } catch(e){}
