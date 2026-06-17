@@ -37,6 +37,41 @@ function getTrackerUrl(settings: KlavitySettings): string {
   }
 }
 
+// ── captureVisibleTab rate-limit guard ───────────────────────────────────────
+// Chrome enforces ~2 captures/s and returns lastError when a capture is already
+// in flight. Track the last capture timestamp; if a new request arrives too soon,
+// wait out the remainder of MIN_CAPTURE_INTERVAL_MS before calling the API.
+// This keeps the content script's debounce as the primary rate-limiting layer
+// while preventing hard errors from a burst of rapid captures.
+const MIN_CAPTURE_INTERVAL_MS = 600
+let lastCaptureAt = 0
+
+async function captureWithRateLimit(winId?: number): Promise<{ dataUrl: string; error?: string }> {
+  const now = Date.now()
+  const wait = MIN_CAPTURE_INTERVAL_MS - (now - lastCaptureAt)
+  if (wait > 0) await new Promise((r) => setTimeout(r, wait))
+
+  return new Promise((resolve) => {
+    const captureOpts = { format: 'png' as const }
+    const onResult = (dataUrl: string | undefined) => {
+      const err = chrome.runtime.lastError?.message || ''
+      if (err || !dataUrl) {
+        console.warn('[Klavity] captureVisibleTab error:', err || 'no data')
+        resolve({ dataUrl: '', error: err || 'capture failed' })
+      } else {
+        lastCaptureAt = Date.now()
+        resolve({ dataUrl })
+      }
+    }
+
+    if (winId != null) {
+      chrome.tabs.captureVisibleTab(winId, captureOpts, onResult)
+    } else {
+      chrome.tabs.captureVisibleTab(captureOpts, onResult)
+    }
+  })
+}
+
 // ── Live activation config sync (P3b, R5) ────────────────────────────────────
 // Fetch GET /api/extension/config and cache { monitored patterns, review_mode per
 // project, dedicated ext token } in chrome.storage.LOCAL under `klavConfig`. This
@@ -153,24 +188,23 @@ chrome.runtime.onMessage.addListener((msg: BackgroundMessage, sender, sendRespon
   //    foreground tab — same captureVisibleTab affordance, with the Arc winId fallback.
   if (msg.kind === 'KLAV_CAPTURE_REVIEW') {
     const tabId = sender.tab?.id
+    const winId = sender.tab?.windowId
     const reply = (dataUrl: string, error?: string) => {
       if (tabId != null) void safeSend(tabId, { kind: 'KLAV_CAPTURE_REVIEW_RESULT', dataUrl, error })
     }
-    chrome.tabs.captureVisibleTab({ format: 'png' }, (dataUrl) => {
-      const err = chrome.runtime.lastError?.message || ''
-      if (err || !dataUrl) {
-        const winId = sender.tab?.windowId
-        if (winId) {
-          chrome.tabs.captureVisibleTab(winId, { format: 'png' }, (d2) => {
-            const e2 = chrome.runtime.lastError?.message || ''
-            if (e2 || !d2) return reply('', e2 || 'capture failed')
-            reply(d2)
-          })
-          return
-        }
-        return reply('', err || 'capture failed')
+    // Use the rate-limit guard. Try the default window first; fall back to the
+    // sender's windowId if the first attempt errors (Arc multi-window pattern).
+    captureWithRateLimit().then(async (r1) => {
+      if (r1.dataUrl) { reply(r1.dataUrl); return }
+      if (winId != null) {
+        const r2 = await captureWithRateLimit(winId)
+        if (r2.dataUrl) { reply(r2.dataUrl); return }
+        console.warn('[Klavity] KLAV_CAPTURE_REVIEW failed (winId fallback):', r2.error)
+        reply('', r2.error)
+      } else {
+        console.warn('[Klavity] KLAV_CAPTURE_REVIEW failed:', r1.error)
+        reply('', r1.error)
       }
-      reply(dataUrl)
     })
     return true
   }
