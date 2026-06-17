@@ -804,6 +804,22 @@ export async function opsTodaySpend(): Promise<number> {
   return Number((r.rows[0] as any).cost)
 }
 
+// ── model mix (/opsadmin) ── persisted weighted model selection, stored in schema_meta. ──
+export async function getModelWeights(): Promise<Record<string, number>> {
+  const r = await db!.execute({ sql: "SELECT value FROM schema_meta WHERE key=?", args: ["model_weights"] })
+  if (!r.rows.length) return {}
+  try {
+    const o = JSON.parse(String((r.rows[0] as any).value))
+    return o && typeof o === "object" && !Array.isArray(o) ? o : {}
+  } catch { return {} }
+}
+export async function setModelWeights(weights: Record<string, number>): Promise<void> {
+  await db!.execute({
+    sql: "INSERT INTO schema_meta (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+    args: ["model_weights", JSON.stringify(weights)],
+  })
+}
+
 // ── transcripts / sim_traits / trait_events (P3a provenance) ──
 // project_id is the canonical 'proj_'+account id. No live/consent/extension surface here (P3b).
 
