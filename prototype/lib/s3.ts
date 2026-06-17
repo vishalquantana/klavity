@@ -24,12 +24,18 @@ function getClient(): S3Client {
 
 export type UploadedScreenshot = { url: string; key: string; bucket: string; contentType: string; acl: string }
 
-// Upload one screenshot and return its public path-style URL plus storage metadata
-// (key/bucket so callers can record a durable `screenshots` ledger row).
-export async function uploadScreenshotMeta(bytes: ArrayBuffer | Uint8Array, contentType: string): Promise<UploadedScreenshot> {
+// Upload one screenshot and return its storage metadata (key/bucket so callers can record a durable
+// `screenshots` ledger row). `acl` is caller-chosen (§6 locked): 'public-read' for user-initiated Snap
+// reports (default, back-compat), 'private' for Sim/live-review captures. For a private object the
+// returned `url` is the (non-public) path-style URL — callers serve it via a signed GET (presignGet),
+// never as a direct link.
+export async function uploadScreenshotMeta(
+  bytes: ArrayBuffer | Uint8Array,
+  contentType: string,
+  acl: 'public-read' | 'private' = 'public-read',
+): Promise<UploadedScreenshot> {
   const ext = contentType.includes('jpeg') || contentType.includes('jpg') ? 'jpg' : 'png'
   const key = s3Key(FOLDER, Date.now(), crypto.randomUUID(), ext)
-  const acl = 'public-read'
   await getClient().write(key, bytes, { acl, type: contentType })
   return { url: `${ENDPOINT.replace(/\/+$/, '')}/${BUCKET}/${key}`, key, bucket: BUCKET, contentType, acl }
 }
@@ -37,4 +43,10 @@ export async function uploadScreenshotMeta(bytes: ArrayBuffer | Uint8Array, cont
 // Upload one screenshot and return its public path-style URL.
 export async function uploadScreenshot(bytes: ArrayBuffer | Uint8Array, contentType: string): Promise<string> {
   return (await uploadScreenshotMeta(bytes, contentType)).url
+}
+
+// Presigned, time-limited GET URL for a PRIVATE object (Sim/live-review screenshots, §5d). The caller
+// is responsible for membership-checking before handing this out. expiresInSec defaults to 10 minutes.
+export function presignGet(key: string, expiresInSec = 600): string {
+  return getClient().presign(key, { method: 'GET', expiresIn: expiresInSec })
 }

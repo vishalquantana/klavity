@@ -1,9 +1,9 @@
 // Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, upsertPersona, deletePersona, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, projectById, membersOfProject, addProjectMember, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, removeMonitoredUrl, getExtensionTokenEmail, issueExtensionToken } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, upsertPersona, deletePersona, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, projectById, membersOfProject, addProjectMember, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, removeMonitoredUrl, getExtensionTokenEmail, issueExtensionToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById } from "./lib/db"
 import { applyReconcileOps, type ReconcileOp, type Trait } from "./lib/provenance"
 import { sendOtp } from "./lib/mail"
 import { token, otp, emailAllowed, cookie, clearCookie, parseCookies } from "./lib/auth"
-import { uploadScreenshotMeta, type UploadedScreenshot } from "./lib/s3"
+import { uploadScreenshotMeta, presignGet, type UploadedScreenshot } from "./lib/s3"
 import { buildIssueHtml, escapeHtml } from "./lib/feedback"
 import { encryptSecret, decryptSecret } from "./lib/crypto"
 import { planeConfigFromForm, redactPlane, type PlaneStored } from "./lib/connection"
@@ -237,6 +237,51 @@ async function resolveProject(email: string, requested?: string | null): Promise
     if (a) return { id: p.id, access: a }
   }
   return null
+}
+
+// ── /api/sim/review dedupe cache (§5: promote the klav_dev_react_* hash). In-process LRU-ish set keyed
+// by reviewDedupeKey(sim,urlPath,domSig); a page isn't re-reviewed for a Sim until its DOM sig changes.
+// Bounded so it can't grow unbounded across a long-lived SW; eviction is best-effort (dedupe is a cost
+// guard, not a correctness gate — a miss at worst spends one extra budgeted review).
+const REVIEW_SEEN = new Map<string, number>()
+const REVIEW_SEEN_MAX = 5000
+const REVIEW_SEEN_TTL = 6 * 60 * 60 * 1000 // 6h
+function reviewSeen(key: string): boolean {
+  const t = REVIEW_SEEN.get(key)
+  if (t == null) return false
+  if (Date.now() - t > REVIEW_SEEN_TTL) { REVIEW_SEEN.delete(key); return false }
+  return true
+}
+function markReviewSeen(key: string) {
+  if (REVIEW_SEEN.size >= REVIEW_SEEN_MAX) {
+    // drop the oldest ~10% (insertion order ≈ age) to bound memory.
+    let n = Math.ceil(REVIEW_SEEN_MAX * 0.1)
+    for (const k of REVIEW_SEEN.keys()) { REVIEW_SEEN.delete(k); if (--n <= 0) break }
+  }
+  REVIEW_SEEN.set(key, Date.now())
+}
+
+// Decode a data: URL (e.g. captureVisibleTab's "data:image/png;base64,…") → bytes + media type +
+// the raw base64 payload (so the vision call can reuse it without re-encoding multi-MB arrays, which
+// would overflow the call stack via String.fromCharCode(...)).
+function decodeDataUrl(dataUrl: string): { bytes: Uint8Array; contentType: string; base64: string } | null {
+  const m = String(dataUrl || "").match(/^data:([^;,]+)?(;base64)?,(.*)$/s)
+  if (!m) return null
+  const contentType = m[1] || "image/png"
+  const isB64 = !!m[2]
+  const data = m[3] || ""
+  try {
+    const bytes = isB64 ? Uint8Array.from(atob(data), (c) => c.charCodeAt(0)) : new TextEncoder().encode(decodeURIComponent(data))
+    const base64 = isB64 ? data : Buffer.from(bytes).toString("base64")
+    return { bytes, contentType, base64 }
+  } catch { return null }
+}
+
+// Path-only URL split (privacy by structure, §5c): {host, path} with query+fragment stripped.
+function splitUrl(pageUrl: string): { urlHost: string | null; urlPath: string | null } {
+  if (!pageUrl) return { urlHost: null, urlPath: null }
+  try { const u = new URL(pageUrl); return { urlHost: u.host, urlPath: u.pathname } }
+  catch { return { urlHost: null, urlPath: pageUrl.split(/[?#]/)[0] || null } }
 }
 
 Bun.serve({
@@ -519,6 +564,183 @@ Bun.serve({
       // Dedicated narrow-scope token (R5): replaces reusing the raw session id as the Bearer.
       const extToken = await issueExtensionToken(meX, null, SESSION_DAYS * 24 * 60 * 60 * 1000)
       return json({ email: meX, token: extToken, projects: out })
+    }
+
+    // ── monitoring consent (P3b) — grant / pause / revoke for the CALLER on a project. Cookie OR Bearer.
+    // 'granted' = allow capture; 'paused' = user-pause (instant, reversible); 'revoked' = withdraw consent.
+    // This is the per-member-per-project consent row that gate (c) requires before the first capture (§5b).
+    if (req.method === "POST" && path === "/api/consent") {
+      const meC = (await sessionEmail(req)) || (await bearerEmail(req))
+      if (!meC) return json({ error: "Sign in to continue." }, 401)
+      const body = await req.json().catch(() => ({}))
+      const projC = await resolveProject(meC, String(body.projectId || "") || url.searchParams.get("project"))
+      if (!projC) return json({ error: "No project." }, 400)
+      const status = String(body.status || "").trim()
+      if (!["granted", "paused", "revoked"].includes(status)) return json({ error: "status must be granted|paused|revoked." }, 400)
+      await setConsent(projC.id, meC, status as "granted" | "paused" | "revoked")
+      const cur = await getConsent(projC.id, meC)
+      return json({ ok: true, projectId: projC.id, consent: cur?.status ?? status })
+    }
+
+    // ── admin pause (P3b) — project-wide review_mode 'paused' (admin pause) | 'auto' (resume). Cookie OR
+    // Bearer; PROJECT ADMIN ONLY. This is gate (b)'s admin side; user pause is /api/consent (status 'paused').
+    {
+      const pauseMatch = path.match(/^\/api\/projects\/([^/]+)\/pause$/)
+      if (req.method === "POST" && pauseMatch) {
+        const meP = (await sessionEmail(req)) || (await bearerEmail(req))
+        if (!meP) return json({ error: "Sign in to continue." }, 401)
+        const pid = pauseMatch[1]
+        const access = await projectAccess(meP, pid)
+        if (!access) return json({ error: "No access to this project." }, 403)
+        if (access !== "admin") return json({ error: "Only project admins can pause/resume reviews." }, 403)
+        const body = await req.json().catch(() => ({}))
+        // accept { paused: true } or { mode: 'paused'|'auto' }
+        const mode: "paused" | "auto" = body.mode === "auto" || body.paused === false ? "auto" : body.mode === "paused" || body.paused === true ? "paused" : "paused"
+        await setReviewMode(pid, mode)
+        await insertActivity({ projectId: pid, type: "review_mode_changed", actorEmail: meP, meta: { mode } })
+        return json({ ok: true, projectId: pid, reviewMode: mode })
+      }
+    }
+
+    // ── signed screenshot URL (P3b, R7) — membership-checked. PRIVATE Sim screenshots return a short-lived
+    // presigned GET; the existing public-read Snap screenshots return their direct public URL. Cookie OR Bearer.
+    {
+      const shotMatch = path.match(/^\/api\/screenshots\/([^/]+)$/)
+      if (req.method === "GET" && shotMatch) {
+        const meS = (await sessionEmail(req)) || (await bearerEmail(req))
+        if (!meS) return json({ error: "Sign in to continue." }, 401)
+        const shot = await screenshotById(shotMatch[1])
+        if (!shot) return json({ error: "Not found." }, 404)
+        // Membership check: the screenshot's project must be one the caller can access.
+        if (!shot.projectId || !(await projectAccess(meS, shot.projectId))) return json({ error: "No access to this screenshot." }, 403)
+        try {
+          if (shot.acl === "public-read") {
+            const pub = `${(process.env.S3_ENDPOINT || "").replace(/\/+$/, "")}/${shot.bucket}/${shot.s3Key}`
+            return json({ id: shot.id, url: pub, acl: shot.acl })
+          }
+          const url = presignGet(shot.s3Key, 600)
+          return json({ id: shot.id, url, acl: shot.acl, expiresInSec: 600 })
+        } catch (e: any) { return json({ error: e?.message || "could not sign url" }, 500) }
+      }
+    }
+
+    // ── /api/sim/review (P3b, R5) — the core AUTO-COMMENT endpoint the extension calls on a monitored visit.
+    // Body: { projectId?, url, screenshotDataUrl, domSig?, simIds? }. GUARDRAILS run IN ORDER (§5, binding);
+    // each is a hard gate that returns a clear `reason` if blocked. NOTHING is captured/reviewed off-allowlist
+    // and no screenshot/vision work happens until every gate passes. Cookie OR Bearer.
+    if (req.method === "POST" && path === "/api/sim/review") {
+      const meR = (await sessionEmail(req)) || (await bearerEmail(req))
+      try {
+        const body = await req.json().catch(() => ({}))
+        const pageUrl = String(body.url || "")
+        const domSig = body.domSig != null ? String(body.domSig) : null
+        const screenshotDataUrl = String(body.screenshotDataUrl || "")
+        const reqSimIds: string[] = Array.isArray(body.simIds) ? body.simIds.map(String) : []
+
+        // (a) AUTH + project access. Resolve project by matchMonitored(url) when projectId is absent — but
+        //     only across projects the caller can access (no cross-project leakage / off-account capture).
+        if (!meR) return json({ ok: false, reason: "unauthorized", error: "Sign in to continue." }, 401)
+        let projectId: string | null = null
+        const requestedProject = String(body.projectId || "") || url.searchParams.get("project")
+        if (requestedProject) {
+          const a = await resolveProject(meR, requestedProject)
+          if (a) projectId = a.id
+        } else if (pageUrl) {
+          // pick the first accessible project whose allowlist matches this url.
+          for (const p of await listProjects(meR)) {
+            if (!(await projectAccess(meR, p.id))) continue
+            if (await matchMonitored(p.id, pageUrl)) { projectId = p.id; break }
+          }
+        }
+        if (!projectId) return json({ ok: false, reason: "unauthorized", error: "No accessible project for this URL." }, 401)
+
+        // Resolve the inputs the pure gate needs (in gate order; cheap reads, no AI/S3 yet).
+        const reviewMode = await getReviewMode(projectId)
+        const consent = await getConsent(projectId, meR)
+        const consentStatus = consent?.status ?? null
+        const allowlist = pageUrl ? await matchMonitored(projectId, pageUrl) : null
+        const { urlHost, urlPath } = splitUrl(pageUrl)
+
+        // (e) dedupe is computed across the Sims we'd review; if ALL are already-seen we short-circuit.
+        // Resolve target Sims first (project Sims, or the caller-supplied subset) so we can key dedupe.
+        const projectSims = await listPersonas(projectId)
+        const targetSims = reqSimIds.length ? projectSims.filter((p) => reqSimIds.includes(p.id)) : projectSims
+        const seenKeys = targetSims.map((s) => reviewDedupeKey(s.id, urlPath || "", domSig))
+        const allSeen = targetSims.length > 0 && seenKeys.every((k) => reviewSeen(k))
+
+        // (f) budget is the LAST gate and is the ONLY side-effecting pre-check (atomic consume). We only
+        //     attempt it once gates a–e pass, so a blocked request never burns budget. Pre-evaluate a–e
+        //     with budgetConsumed=true to find any earlier block without consuming.
+        const pre = reviewGate({ authed: true, reviewMode, consentStatus, allowlistMatch: !!allowlist, alreadyReviewed: allSeen, budgetConsumed: true })
+        if (!pre.ok) return json({ ok: false, reason: pre.reason, error: pre.message, projectId }, pre.status)
+
+        // All of a–e passed → atomically consume one budget slot (f).
+        const proj = await projectById(projectId)
+        const budget = proj?.reviewBudgetDaily ?? 0
+        const day = reviewDay()
+        const budgetConsumed = await tryConsumeReviewBudget(projectId, day, budget ?? 0)
+        const gate = reviewGate({ authed: true, reviewMode, consentStatus, allowlistMatch: !!allowlist, alreadyReviewed: allSeen, budgetConsumed })
+        if (!gate.ok) {
+          if (gate.reason === "budgetExhausted") {
+            // auto-pause the project + notify the admin (§5 cost guard).
+            await setReviewMode(projectId, "paused")
+            await insertActivity({ projectId, type: "admin_notify", actorEmail: meR, urlHost, urlPath, meta: { reason: "budget_exhausted", day, budget } })
+          }
+          return json({ ok: false, reason: gate.reason, error: gate.message, projectId }, gate.status)
+        }
+
+        // ── ALL GATES PASSED. Only now do we capture + review. ──
+        if (!screenshotDataUrl) return json({ ok: false, reason: "noScreenshot", error: "screenshotDataUrl is required." }, 400)
+        const decoded = decodeDataUrl(screenshotDataUrl)
+        if (!decoded) return json({ ok: false, reason: "badScreenshot", error: "screenshotDataUrl could not be decoded." }, 400)
+
+        // Store the screenshot PRIVATE (acl='private') + record the durable ledger row (P0).
+        const expiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000 // private Sim screenshots: 30-day (§6)
+        const upload = await uploadScreenshotMeta(decoded.bytes, decoded.contentType, "private")
+        const screenshotId = await insertScreenshot({
+          projectId, s3Key: upload.key, bucket: upload.bucket, contentType: upload.contentType,
+          acl: "private", bytes: decoded.bytes.byteLength, ownerEmail: meR, expiresAt,
+        })
+
+        // Run the vision review (reuse reactToPage) for each target Sim; persist feedback + activity.
+        const imageB64 = decoded.base64
+        const out: any[] = []
+        for (let i = 0; i < targetSims.length; i++) {
+          const sim = targetSims[i]
+          // Skip a Sim whose (sim,path,domSig) was already reviewed (per-Sim dedupe; we still captured once).
+          if (reviewSeen(seenKeys[i])) continue
+          let reactions: any[] = []
+          try {
+            const { data } = await reactToPage(sim, imageB64, decoded.contentType, urlPath || pageUrl)
+            reactions = Array.isArray(data?.reactions) ? data.reactions : []
+          } catch (e: any) {
+            console.error("sim/review reactToPage (non-fatal):", e?.message || e)
+            continue
+          }
+          for (const r of reactions) {
+            const citation = await resolveCitations(sim.id, r?.citedTraitIds)
+            const feedbackId = await insertFeedback({
+              projectId, simId: sim.id, actorEmail: meR, urlHost, urlPath,
+              observation: r?.observation ?? null, sentiment: r?.sentiment ?? null,
+              severity: r?.suggestedBug?.severity ?? null, screenshotId, suggestedBug: r?.suggestedBug ?? null,
+              citedTraitIds: citation.citedTraitIds.length ? citation.citedTraitIds : null,
+              sourceQuote: citation.sourceQuote, sourceTranscriptId: citation.sourceTranscriptId, sourceDate: citation.sourceDate,
+            })
+            r.citation = citation.citedTraitIds.length
+              ? { citedTraitIds: citation.citedTraitIds, sourceQuote: citation.sourceQuote, speaker: citation.speaker, sourceTranscriptId: citation.sourceTranscriptId, sourceDate: citation.sourceDate }
+              : null
+            r.feedbackId = feedbackId
+          }
+          // activity: a review ran (actor + sim + path + screenshot) — the R6 observability spine.
+          await insertActivity({ projectId, type: "review_run", actorEmail: meR, simId: sim.id, urlHost, urlPath, screenshotId, meta: { reactions: reactions.length } })
+          markReviewSeen(seenKeys[i])
+          out.push({ simId: sim.id, simName: sim.name, initials: sim.initials, accent: sim.accent, reactions })
+        }
+
+        return json({ ok: true, projectId, screenshotId, reviews: out })
+      } catch (e: any) {
+        return json({ ok: false, reason: "error", error: e?.message || "review failed" }, 500)
+      }
     }
 
     // ── transcripts → reconcile (P3a) — project-scoped via resolveProject; cookie OR Bearer; admin or member ──

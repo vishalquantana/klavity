@@ -16,8 +16,15 @@ const {
 
 await applySchema(db!)
 
+// Bun shares one module registry across test files in a single `bun test` process, so the `db`
+// singleton (created at import time from whichever db-touching test imported first) is shared —
+// meaning these rows can land in a db another file also writes. Namespace every project id with a
+// unique per-run suffix so budget/monitored rows can never collide with another file's fixtures.
+const RUN = `${Date.now()}_${Math.random().toString(36).slice(2)}`
+const P = (s: string) => `proj_${s}_${RUN}`
+
 test("tryConsumeReviewBudget: allows up to budget, then blocks (atomic cap)", async () => {
-  const pid = "proj_budget_a"
+  const pid = P("budget_a")
   const day = "2026-06-17"
   const budget = 3
   // First `budget` calls succeed and increment the counter 1..3.
@@ -33,16 +40,17 @@ test("tryConsumeReviewBudget: allows up to budget, then blocks (atomic cap)", as
 
 test("tryConsumeReviewBudget: per-(project,day) isolation + zero/negative budget always denies", async () => {
   const day = "2026-06-18"
-  expect(await tryConsumeReviewBudget("proj_x", day, 1)).toBe(true)
-  expect(await tryConsumeReviewBudget("proj_x", day, 1)).toBe(false) // x capped
-  expect(await tryConsumeReviewBudget("proj_y", day, 1)).toBe(true)  // y independent
-  expect(await tryConsumeReviewBudget("proj_x", "2026-06-19", 1)).toBe(true) // next day resets
-  expect(await tryConsumeReviewBudget("proj_z", day, 0)).toBe(false) // budget 0 → deny
-  expect(await tryConsumeReviewBudget("proj_z", day, -5)).toBe(false)
+  const x = P("x"), y = P("y"), z = P("z")
+  expect(await tryConsumeReviewBudget(x, day, 1)).toBe(true)
+  expect(await tryConsumeReviewBudget(x, day, 1)).toBe(false) // x capped
+  expect(await tryConsumeReviewBudget(y, day, 1)).toBe(true)  // y independent
+  expect(await tryConsumeReviewBudget(x, "2026-06-19", 1)).toBe(true) // next day resets
+  expect(await tryConsumeReviewBudget(z, day, 0)).toBe(false) // budget 0 → deny
+  expect(await tryConsumeReviewBudget(z, day, -5)).toBe(false)
 })
 
 test("tryConsumeReviewBudget: concurrent calls never exceed the cap", async () => {
-  const pid = "proj_concurrent"
+  const pid = P("concurrent")
   const day = "2026-06-20"
   const budget = 10
   const results = await Promise.all(Array.from({ length: 50 }, () => tryConsumeReviewBudget(pid, day, budget)))
@@ -73,7 +81,7 @@ test("patternMatchesUrl: prefix/glob only (no regex), host+path, query/fragment 
 })
 
 test("matchMonitored: returns first ENABLED allowlist match, else null", async () => {
-  const pid = "proj_match"
+  const pid = P("match")
   await addMonitoredUrl(pid, "app.acme.com/billing")
   const offId = await addMonitoredUrl(pid, "app.acme.com/secret")
   // disable the /secret pattern → must not match even though the URL would
@@ -85,5 +93,5 @@ test("matchMonitored: returns first ENABLED allowlist match, else null", async (
   expect(m?.urlPattern).toBe("app.acme.com/billing")
   expect(await matchMonitored(pid, "https://app.acme.com/secret/x")).toBeNull() // disabled
   expect(await matchMonitored(pid, "https://app.acme.com/other")).toBeNull()    // no pattern
-  expect(await matchMonitored("proj_no_rules", "https://app.acme.com/billing")).toBeNull()
+  expect(await matchMonitored(P("no_rules"), "https://app.acme.com/billing")).toBeNull()
 })

@@ -547,6 +547,25 @@ export async function insertScreenshot(s: ScreenshotInsert): Promise<string> {
   return id
 }
 
+export type ScreenshotRow = {
+  id: string; projectId: string | null; s3Key: string; bucket: string
+  contentType: string; acl: string; bytes: number | null; ownerEmail: string | null
+  expiresAt: number | null; createdAt: number
+}
+// Look up one screenshot ledger row by id (for the membership-checked signed-URL endpoint).
+export async function screenshotById(id: string): Promise<ScreenshotRow | null> {
+  const r = await db!.execute({ sql: "SELECT * FROM screenshots WHERE id=?", args: [id] })
+  if (!r.rows.length) return null
+  const x = r.rows[0] as any
+  return {
+    id: String(x.id), projectId: x.project_id != null ? String(x.project_id) : null,
+    s3Key: String(x.s3_key), bucket: String(x.bucket), contentType: String(x.content_type),
+    acl: String(x.acl || "private"), bytes: x.bytes != null ? Number(x.bytes) : null,
+    ownerEmail: x.owner_email != null ? String(x.owner_email) : null,
+    expiresAt: x.expires_at != null ? Number(x.expires_at) : null, createdAt: Number(x.created_at),
+  }
+}
+
 export type FeedbackInsert = {
   projectId: string; simId?: string | null; actorEmail?: string | null
   urlHost?: string | null; urlPath?: string | null
@@ -993,4 +1012,52 @@ export async function getExtensionTokenEmail(token: string): Promise<string | nu
 }
 export async function revokeExtensionToken(token: string): Promise<void> {
   await db!.execute({ sql: "UPDATE extension_tokens SET revoked=1 WHERE token=?", args: [token] })
+}
+
+// ── /api/sim/review guardrail ordering (§5, binding) ──
+// PURE decision function: given the already-resolved state for one review attempt, return the FIRST
+// failing gate (or { ok:true } if all pass). Kept pure + side-effect-free so the ordering is unit-testable
+// without mocking HTTP/AI/S3. The endpoint resolves each input via the async helpers above, in this order,
+// and short-circuits on the first block — so an off-allowlist URL is NEVER captured/reviewed (gate d), and
+// no vision/screenshot work happens until every gate passes.
+//
+// Gate order (each a hard gate):
+//   a. auth        — caller authenticated + has project access            → 401 'unauthorized'
+//   b. paused      — admin pause (review_mode==='paused') OR user pause
+//                    (consent 'paused'|'revoked')                          → 423 'paused' / 'userPaused'
+//   c. consent     — consent must be 'granted' (else needs first capture)  → 412 'needsConsent'
+//   d. allowlist   — url matches an enabled monitored pattern (ALLOWLIST
+//                    ONLY — never review off-allowlist)                    → 403 'offAllowlist'
+//   e. dedupe      — (sim,urlPath,domSig) already reviewed                 → 200 'alreadyReviewed'
+//   f. budget      — per-project daily atomic cap not exhausted            → 429 'budgetExhausted'
+export type ReviewGateInput = {
+  authed: boolean
+  reviewMode: string | null            // project's review_mode ('auto'|'ready'|'paused')
+  consentStatus: string | null         // caller's monitoring_consent status ('granted'|'paused'|'revoked'|null)
+  allowlistMatch: boolean              // url matched an ENABLED monitored pattern
+  alreadyReviewed: boolean             // (sim,urlPath,domSig) dedupe hit
+  budgetConsumed: boolean              // tryConsumeReviewBudget succeeded (a slot was taken)
+}
+export type ReviewGateResult = { ok: true } | { ok: false; reason: string; status: number; message: string }
+export function reviewGate(i: ReviewGateInput): ReviewGateResult {
+  if (!i.authed) return { ok: false, reason: "unauthorized", status: 401, message: "Sign in to continue." }
+  if (i.reviewMode === "paused") return { ok: false, reason: "paused", status: 423, message: "Reviews are paused for this project by an admin." }
+  if (i.consentStatus === "paused" || i.consentStatus === "revoked") return { ok: false, reason: "userPaused", status: 423, message: "You have paused Sim reviews. Resume to continue." }
+  if (i.consentStatus !== "granted") return { ok: false, reason: "needsConsent", status: 412, message: "Consent is required before Sims can review pages you visit." }
+  if (!i.allowlistMatch) return { ok: false, reason: "offAllowlist", status: 403, message: "This URL is not on the project's monitored allowlist." }
+  if (i.alreadyReviewed) return { ok: false, reason: "alreadyReviewed", status: 200, message: "This page was already reviewed." }
+  if (!i.budgetConsumed) return { ok: false, reason: "budgetExhausted", status: 429, message: "The project's daily review budget is exhausted; reviews were auto-paused." }
+  return { ok: true }
+}
+
+// Stable dedupe key for a single review: (sim_id, normalized url path, dom signature). Promotes the
+// existing `klav_dev_react_*` hash pattern — a page isn't re-reviewed for the same Sim until its DOM
+// signature changes. domSig is the caller-supplied content hash ('' when absent → path-level dedupe).
+export function reviewDedupeKey(simId: string, urlPath: string, domSig: string | null | undefined): string {
+  return `${simId}|${(urlPath || "").replace(/\/+$/, "").toLowerCase()}|${domSig || ""}`
+}
+
+// UTC day string (YYYY-MM-DD) for the per-project budget counter row.
+export function reviewDay(now = Date.now()): string {
+  return new Date(now).toISOString().slice(0, 10)
 }
