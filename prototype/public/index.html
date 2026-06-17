@@ -1134,13 +1134,15 @@ loadSavedSims()
   // Check if extension already has a token by sending a ping
   try {
     const pong = await new Promise((resolve) => {
-      chrome.runtime.sendMessage(extId, { type: 'PING' }, (resp) => resolve(resp))
+      chrome.runtime.sendMessage(extId, { type: 'PING' }, (resp) => {
+        void chrome.runtime.lastError // SW may be asleep; reading clears the unchecked-error warning
+        resolve(resp)
+      })
     })
     if (pong?.klavToken) {
       btn.textContent = '✓ Extension connected'
       btn.classList.add('connected')
       btn.disabled = false
-      btn.onclick = null // already connected, clicking re-connects
     }
   } catch { /* extension not responding to ping, show connect */ }
 
