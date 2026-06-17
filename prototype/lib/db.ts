@@ -1,5 +1,6 @@
 // Turso / libSQL access: users, email-OTP login, sessions, accounts, projects, memberships.
 import { createClient, type Client } from "@libsql/client"
+import { insightsFromTraits, type Trait, type TraitKind, type TraitStatus, type TraitEventRow } from "./provenance"
 
 const url = process.env.TURSO_DATABASE_URL
 const authToken = process.env.TURSO_AUTH_TOKEN
@@ -131,6 +132,34 @@ export async function applySchema(c: Client) {
        project_role TEXT NOT NULL,           -- 'admin' | 'member'
        invited_by TEXT, created_at INTEGER NOT NULL, UNIQUE(project_id, email))`,
     `CREATE INDEX IF NOT EXISTS proj_mem_email_idx ON project_members (email)`,
+
+    // ── Sims-dashboard P3a (additive): provenance — transcripts + normalized sim_traits + append-only audit. ──
+    // No live/consent/extension surface here (that is P3b). project_id is the canonical 'proj_'+account id.
+    // TRANSCRIPTS — now persisted; source_date drives "(Sarah, 2026-06-12)" citations.
+    `CREATE TABLE IF NOT EXISTS transcripts (
+       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, title TEXT, raw_text TEXT NOT NULL,
+       source_date INTEGER NOT NULL, speakers_json TEXT, added_by TEXT NOT NULL, created_at INTEGER NOT NULL)`,
+    `CREATE INDEX IF NOT EXISTS transcript_proj_idx ON transcripts (project_id, source_date)`,
+    // SIM TRAITS — normalized insight w/ provenance (trait_id is the STABLE citation key).
+    `CREATE TABLE IF NOT EXISTS sim_traits (
+       id TEXT PRIMARY KEY, sim_id TEXT NOT NULL, project_id TEXT NOT NULL,
+       kind TEXT NOT NULL,                    -- 'pain'|'want'|'love'
+       text TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', -- active|superseded|contradicted
+       strength INTEGER NOT NULL DEFAULT 1,
+       src_transcript_id TEXT NOT NULL, src_quote TEXT NOT NULL, src_quote_offset INTEGER,
+       src_speaker TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
+    `CREATE INDEX IF NOT EXISTS trait_sim_idx ON sim_traits (sim_id, status)`,
+    // TRAIT EVENTS — append-only audit: which transcript changed which trait.
+    `CREATE TABLE IF NOT EXISTS trait_events (
+       id TEXT PRIMARY KEY, trait_id TEXT NOT NULL, sim_id TEXT NOT NULL, transcript_id TEXT NOT NULL,
+       op TEXT NOT NULL,                      -- create|reinforce|refine|contradict|supersede
+       before_text TEXT, after_text TEXT, quote TEXT NOT NULL, quote_offset INTEGER,
+       speaker TEXT, source_date INTEGER NOT NULL, reason TEXT, created_at INTEGER NOT NULL)`,
+    `CREATE INDEX IF NOT EXISTS trait_evt_idx ON trait_events (trait_id, created_at)`,
+    // RECONCILE RUNS — cost-guard cache: skip re-running reconcile for a (sim,transcript) pair (§5).
+    `CREATE TABLE IF NOT EXISTS reconcile_runs (
+       sim_id TEXT NOT NULL, transcript_id TEXT NOT NULL, created_at INTEGER NOT NULL,
+       PRIMARY KEY (sim_id, transcript_id))`,
   ]
   for (const s of stmts) await c.execute(s)
 }
@@ -617,4 +646,125 @@ export async function dashboardCounts(projectId: string): Promise<{ feedback: nu
     tickets: Number((tk.rows[0] as any).n),
     activity: Number((ev.rows[0] as any).n),
   }
+}
+
+// ── transcripts / sim_traits / trait_events (P3a provenance) ──
+// project_id is the canonical 'proj_'+account id. No live/consent/extension surface here (P3b).
+
+export type TranscriptRow = {
+  id: string; projectId: string; title: string | null; rawText: string
+  sourceDate: number; speakers: string[] | null; addedBy: string; createdAt: number
+}
+function rowToTranscript(x: any): TranscriptRow {
+  return {
+    id: String(x.id), projectId: String(x.project_id),
+    title: x.title != null ? String(x.title) : null, rawText: String(x.raw_text),
+    sourceDate: Number(x.source_date),
+    speakers: x.speakers_json ? JSON.parse(String(x.speakers_json)) : null,
+    addedBy: String(x.added_by), createdAt: Number(x.created_at),
+  }
+}
+export type TranscriptInsert = {
+  projectId: string; title?: string | null; rawText: string
+  sourceDate: number; speakers?: string[] | null; addedBy: string; id?: string
+}
+export async function insertTranscript(t: TranscriptInsert): Promise<string> {
+  const id = t.id ?? "tr_" + crypto.randomUUID()
+  await db!.execute({
+    sql: `INSERT INTO transcripts (id,project_id,title,raw_text,source_date,speakers_json,added_by,created_at)
+          VALUES (?,?,?,?,?,?,?,?)`,
+    args: [id, t.projectId, t.title ?? null, t.rawText, t.sourceDate,
+           t.speakers != null ? JSON.stringify(t.speakers) : null, t.addedBy, Date.now()],
+  })
+  return id
+}
+export async function listTranscripts(projectId: string): Promise<TranscriptRow[]> {
+  const r = await db!.execute({ sql: "SELECT * FROM transcripts WHERE project_id=? ORDER BY source_date DESC", args: [projectId] })
+  return r.rows.map(rowToTranscript)
+}
+
+function rowToTrait(x: any): Trait {
+  return {
+    id: String(x.id), simId: String(x.sim_id), projectId: String(x.project_id),
+    kind: String(x.kind) as TraitKind, text: String(x.text),
+    status: String(x.status || "active") as TraitStatus, strength: Number(x.strength ?? 1),
+    srcTranscriptId: String(x.src_transcript_id), srcQuote: String(x.src_quote),
+    srcQuoteOffset: x.src_quote_offset != null ? Number(x.src_quote_offset) : null,
+    srcSpeaker: x.src_speaker != null ? String(x.src_speaker) : null,
+    createdAt: Number(x.created_at), updatedAt: Number(x.updated_at),
+  }
+}
+// Insert a brand-new trait. Accepts a fully-formed Trait (e.g. a TraitWrite{mode:'insert'}.trait).
+export async function insertTrait(t: Trait): Promise<string> {
+  await db!.execute({
+    sql: `INSERT INTO sim_traits (id,sim_id,project_id,kind,text,status,strength,src_transcript_id,src_quote,src_quote_offset,src_speaker,created_at,updated_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    args: [t.id, t.simId, t.projectId, t.kind, t.text, t.status, t.strength,
+           t.srcTranscriptId, t.srcQuote, t.srcQuoteOffset ?? null, t.srcSpeaker ?? null, t.createdAt, t.updatedAt],
+  })
+  return t.id
+}
+// Update a trait's mutable columns (text/status/strength/provenance/updatedAt) — used by reconcile writes.
+export async function updateTrait(t: Trait): Promise<void> {
+  await db!.execute({
+    sql: `UPDATE sim_traits SET kind=?,text=?,status=?,strength=?,src_transcript_id=?,src_quote=?,src_quote_offset=?,src_speaker=?,updated_at=? WHERE id=?`,
+    args: [t.kind, t.text, t.status, t.strength, t.srcTranscriptId, t.srcQuote,
+           t.srcQuoteOffset ?? null, t.srcSpeaker ?? null, t.updatedAt, t.id],
+  })
+}
+export async function listTraits(simId: string, opts: { activeOnly?: boolean } = {}): Promise<Trait[]> {
+  const r = opts.activeOnly
+    ? await db!.execute({ sql: "SELECT * FROM sim_traits WHERE sim_id=? AND status='active' ORDER BY created_at ASC", args: [simId] })
+    : await db!.execute({ sql: "SELECT * FROM sim_traits WHERE sim_id=? ORDER BY created_at ASC", args: [simId] })
+  return r.rows.map(rowToTrait)
+}
+
+// Append a trait_event audit row (append-only — never updated/deleted).
+export async function insertTraitEvent(e: TraitEventRow): Promise<string> {
+  const id = "tev_" + crypto.randomUUID()
+  await db!.execute({
+    sql: `INSERT INTO trait_events (id,trait_id,sim_id,transcript_id,op,before_text,after_text,quote,quote_offset,speaker,source_date,reason,created_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    args: [id, e.traitId, e.simId, e.transcriptId, e.op, e.beforeText ?? null, e.afterText ?? null,
+           e.quote, e.quoteOffset ?? null, e.speaker ?? null, e.sourceDate, e.reason ?? null, e.createdAt],
+  })
+  return id
+}
+export async function listTraitEvents(simId: string): Promise<TraitEventRow[]> {
+  const r = await db!.execute({ sql: "SELECT * FROM trait_events WHERE sim_id=? ORDER BY created_at ASC", args: [simId] })
+  return r.rows.map((x: any): TraitEventRow => ({
+    traitId: String(x.trait_id), simId: String(x.sim_id), transcriptId: String(x.transcript_id),
+    op: String(x.op) as TraitEventRow["op"],
+    beforeText: x.before_text != null ? String(x.before_text) : null,
+    afterText: x.after_text != null ? String(x.after_text) : null,
+    quote: String(x.quote), quoteOffset: x.quote_offset != null ? Number(x.quote_offset) : null,
+    speaker: x.speaker != null ? String(x.speaker) : null,
+    sourceDate: Number(x.source_date),
+    reason: x.reason != null ? String(x.reason) : null,
+    createdAt: Number(x.created_at),
+  }))
+}
+
+// ── reconcile_runs cost-guard cache (§5): skip re-reconciling a (sim,transcript) pair. ──
+export async function hasReconcileRun(simId: string, transcriptId: string): Promise<boolean> {
+  const r = await db!.execute({ sql: "SELECT 1 FROM reconcile_runs WHERE sim_id=? AND transcript_id=? LIMIT 1", args: [simId, transcriptId] })
+  return r.rows.length > 0
+}
+export async function markReconcileRun(simId: string, transcriptId: string): Promise<void> {
+  await db!.execute({
+    sql: "INSERT OR IGNORE INTO reconcile_runs (sim_id,transcript_id,created_at) VALUES (?,?,?)",
+    args: [simId, transcriptId, Date.now()],
+  })
+}
+
+// Recompute a persona's insights_json read cache from its ACTIVE sim_traits and persist it.
+// Keeps insights_json as the denormalized cache the dashboard/studio render from. Returns the cache.
+export async function rebuildInsightsJson(simId: string) {
+  const active = await listTraits(simId, { activeOnly: true })
+  const insights = insightsFromTraits(active)
+  await db!.execute({
+    sql: "UPDATE personas SET insights_json=?, updated_at=? WHERE id=?",
+    args: [JSON.stringify(insights), Date.now(), simId],
+  })
+  return insights
 }
