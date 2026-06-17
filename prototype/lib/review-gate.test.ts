@@ -2,7 +2,7 @@
 // function over already-resolved state, so we can assert the exact first-failing gate + reason for each
 // combination WITHOUT mocking HTTP/AI/S3 — and assert that a fully-allowed call proceeds (ok:true).
 import { test, expect } from "bun:test"
-import { reviewGate, reviewDedupeKey, reviewDay, type ReviewGateInput } from "./db"
+import { reviewGate, reviewDedupeKey, reviewDay, type ReviewGateInput, type ReviewGateResult } from "./db"
 
 // A state where EVERY gate passes; each test flips exactly one earlier gate to assert ordering.
 const ALLOW: ReviewGateInput = {
@@ -61,4 +61,55 @@ test("reviewDedupeKey: stable per (sim,path,domSig); path normalized, domSig par
 test("reviewDay: UTC YYYY-MM-DD", () => {
   expect(reviewDay(Date.UTC(2026, 5, 17, 23, 59))).toBe("2026-06-17")
   expect(/^\d{4}-\d{2}-\d{2}$/.test(reviewDay())).toBe(true)
+})
+
+test("content-sig dedup: same (sim,path,sig) spends budget at most once", () => {
+  // Two review attempts arrive for the same sim+urlPath with the SAME content signature.
+  // The dedupe key is identical for both, so the seen-set hit on attempt 2 means alreadyReviewed=true
+  // and the gate returns 'alreadyReviewed' (200) WITHOUT consuming budget a second time.
+  const simId = "sim_abc"
+  const urlPath = "/billing/"
+  const contentSig = "sha256-opaque-content-hash-v1"
+
+  // Shared seen-set (like the endpoint maintains per-project-day, or in-memory for the pure logic test).
+  const seen = new Set<string>()
+
+  // Budget counter: tracks how many times a slot would be consumed.
+  let budgetConsumeCount = 0
+  const BASE: Omit<ReviewGateInput, "alreadyReviewed" | "budgetConsumed"> = {
+    authed: true,
+    reviewMode: "auto",
+    consentStatus: "granted",
+    allowlistMatch: true,
+  }
+
+  // Helper: simulate one review attempt using the same pure helpers the endpoint uses.
+  function attempt(): ReviewGateResult {
+    const key = reviewDedupeKey(simId, urlPath, contentSig)
+    const alreadyReviewed = seen.has(key)
+    // Budget is "consumed" (slot taken) only if not already reviewed — mirrors real endpoint logic
+    // where tryConsumeReviewBudget is only called after the dedupe gate passes.
+    const budgetConsumed = !alreadyReviewed ? (budgetConsumeCount++, true) : false
+    const result = reviewGate({ ...BASE, alreadyReviewed, budgetConsumed })
+    if (result.ok) seen.add(key)
+    return result
+  }
+
+  // Attempt 1: fresh — gate should pass (ok:true) and consume budget once.
+  const r1 = attempt()
+  expect(r1.ok).toBe(true)
+  expect(budgetConsumeCount).toBe(1)
+  // The key is now in the seen-set.
+  expect(seen.has(reviewDedupeKey(simId, urlPath, contentSig))).toBe(true)
+
+  // Attempt 2: identical sig — gate must return alreadyReviewed (200), budget NOT consumed again.
+  const r2 = attempt()
+  expect(r2).toMatchObject({ ok: false, reason: "alreadyReviewed", status: 200 })
+  expect(budgetConsumeCount).toBe(1) // still 1 — no second spend
+
+  // Sanity: a DIFFERENT sig on the same (sim,path) gets its own key and IS allowed through.
+  const key2 = reviewDedupeKey(simId, urlPath, "sha256-different-hash")
+  expect(seen.has(key2)).toBe(false)
+  const r3 = reviewGate({ ...BASE, alreadyReviewed: false, budgetConsumed: true })
+  expect(r3.ok).toBe(true)
 })
