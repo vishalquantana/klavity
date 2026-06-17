@@ -10,6 +10,17 @@ top entry here, and every `package.json` (`/`, `core`, `extension`, `sdk`) plus
 the extension `manifest.json` always move together. See the PRD's _Versioning_
 section for the bump rules.
 
+## [0.11.1] — 2026-06-18
+
+### Fixed
+- **Studio now respects the active project.** Opening the Sims Studio from the
+  dashboard carried no project, so it always showed/saved to the account's default
+  project — a new project appeared to show the old project's Sims. The dashboard's
+  "/app" links now carry `?project=<id>` (preserving any `#hash`), and the studio
+  scopes all project-bound calls (`/api/personas` list/create/update/delete and
+  `/api/feedback`) to that project. `/api/extract` and `/api/react` are stateless
+  and unchanged.
+
 ## [0.11.0] — 2026-06-18
 
 ### Added
