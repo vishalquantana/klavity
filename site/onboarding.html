@@ -113,6 +113,8 @@ input.code{font-family:var(--mono);font-size:24px;letter-spacing:.5em;text-align
 .payoff{font-family:var(--display);font-style:italic;font-size:20px;color:var(--paper);max-width:52ch;margin:0 auto 28px;line-height:1.5}
 .hero .cta{display:flex;gap:13px;justify-content:center;align-items:center;flex-wrap:wrap}
 @media(max-width:820px){.how{grid-template-columns:1fr}}
+.reelwrap{max-width:660px;margin:0 auto 30px}
+.reelframe{width:100%;aspect-ratio:16/9;border:1px solid var(--line);border-radius:16px;box-shadow:0 18px 50px rgba(25,20,15,.12);display:block;background:var(--ink-3)}
 
 .theme-toggle{position:fixed;right:16px;bottom:16px;z-index:90;width:40px;height:40px;border-radius:50%;border:1px solid var(--line);background:var(--ink-2);color:var(--paper);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(0,0,0,.12)}
 
@@ -142,11 +144,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         <div class="eyebrow"><span class="spark">▦</span>Welcome to Klavity</div>
         <h1>Your customers review your product — <em>before they ever see it.</em></h1>
         <p class="lede">Klavity turns your real customer calls into <b>Sims</b> — AI personas grounded in the exact words your customers said. They walk your product and react <b>in character</b>, so you catch what they'd hate before they churn — without booking a single call.</p>
-        <div class="how">
-          <div class="st"><span class="sn">01</span><div class="si">🎙</div><h3>Bring your customers in</h3><p>Drop in a sales or support call. Each speaker becomes a Sim — their pains, wants, and the quotes behind them. <em>No call handy? Start with a ready-made review team.</em></p></div>
-          <div class="st"><span class="sn">02</span><div class="si">👀</div><h3>They watch your real product</h3><p>Connect your product's URL. The moment you — or a teammate — open it, your Sims pop up and react in-character, live on the page. Usability testing that runs itself.</p></div>
-          <div class="st"><span class="sn">03</span><div class="si">🎟</div><h3>Turn reactions into tickets</h3><p>Every reaction is one click from a bug or feature ticket — screenshot, page, and the customer's actual quote attached. The "why" travels with the work.</p></div>
-        </div>
+        <div class="reelwrap"><iframe class="reelframe" src="/intro-reel?embed=1" title="How Klavity works" scrolling="no" loading="lazy"></iframe></div>
         <p class="payoff">"It's like having your hardest customers in the room as you build."</p>
         <div class="cta"><button class="btn btn-indigo" onclick="go(1)">Get started →</button></div>
       </div>

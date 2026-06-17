@@ -12,6 +12,13 @@ section for the bump rules.
 
 ## [Unreleased]
 
+### Added
+- **Animated intro reel (mock)** at `/intro-reel` — a ~25s auto-looping CSS/JS
+  storyboard of the product story (call → Sim → live comment → filed ticket),
+  with the real Klavity logo and the little walking Sim characters. A stand-in
+  for the demo video until a real one is produced. (`site/intro-reel.html`,
+  `prototype/server.ts`)
+
 ## [0.8.1] - 2026-06-17
 
 ### Added

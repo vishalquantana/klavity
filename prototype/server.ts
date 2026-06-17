@@ -309,6 +309,7 @@ Bun.serve({
     if (req.method === "GET" && path === "/sim-options") return file(PUB + "/sim-options.html")
     if (req.method === "GET" && path === "/sim-component") return file(PUB + "/sim-component.html")
     if (req.method === "GET" && path === "/snap-popup") return file(PUB + "/snap-popup.html")
+    if (req.method === "GET" && path === "/intro-reel") return file(SITE + "/intro-reel.html")
     if (req.method === "GET" && path === "/klavity-sim.js") return file(PUB + "/klavity-sim.js")
 
     // ── auth: request OTP ──
