@@ -12,6 +12,42 @@ section for the bump rules.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-06-17
+
+### Added
+- **Multi-project model + migration (Sims P2):** the data model evolves from a
+  single flat workspace into **company → projects → Sims**. Four new tables —
+  `accounts` (repurposed from `workspaces`, **id reused** so sessions/tokens stay
+  valid), `account_members` (`owner`|`admin`|`member`), `projects` (with §2.2
+  defaults: `review_mode='auto'`, `observability_mode='named'`,
+  `review_budget_daily=200`, `url_patterns_json`), and `project_members`
+  (`admin`|`member`). `personas` are re-scoped from `workspace_id` to
+  `project_id` (old rows preserved in `personas_v1`; `insights_json` kept as-is).
+  (`prototype/lib/db.ts`)
+- **One-time, idempotent v2 migration (§2.4):** runs inside `initDb()` guarded by
+  a `schema_meta('migrated_v2')` flag. **Additive, never drops in this release.**
+  Each workspace → `accounts` + a deterministic default project
+  (`'proj_'+accountId`); memberships → `account_members` (first admin→owner) +
+  `project_members`; `personas`→`personas_v1`→project-scoped `personas`;
+  `integrations` re-scoped `'workspace'→'project'` (owner_id `'proj_'+id`). Every
+  write is `INSERT OR IGNORE`/existence-checked so a partial failure re-runs
+  cleanly with no duplicates and no data loss. Covered by a local-libsql
+  migration test (`prototype/lib/migrate.test.ts`: seed→migrate→assert→re-run).
+- **Two-tier role model + project routes:** `projectAccess(email, projectId)`
+  (`effective = max(account_role, project_role)`; account owner/admin ⇒ implicit
+  project-admin) gates every project route. New: `GET/POST /api/projects`,
+  `GET /api/projects/:id`, `GET /api/projects/:id/members`,
+  `POST /api/projects/:id/invite` (R4, admin-only). `/api/personas`,
+  `/api/integration`, `/api/feedback`, `/api/dashboard` are re-scoped to a
+  project (accept `?project=` or default to the caller's first). `ensureWorkspace`
+  → `ensureAccount` in `/api/auth/verify`. OTP allowlist bypass now checks
+  "has any account/project membership". (`prototype/server.ts`)
+
+### Changed
+- **Dashboard switcher is functional:** `GET /api/dashboard` lists **real**
+  projects and honors `?project=:id`; the switcher reloads the dashboard on
+  change when more than one project exists. (`prototype/public/dashboard.html`)
+
 ### Fixed
 - **Light theme:** primary (purple) buttons now use white text instead of
   near-black across the dashboard, login, and onboarding pages — dark text on
