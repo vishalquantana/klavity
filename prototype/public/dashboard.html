@@ -27,12 +27,22 @@ a{color:inherit;text-decoration:none}
 .r-admin{background:rgba(139,139,245,.16);color:var(--indigo)} .r-user{background:var(--ink-3);color:var(--paper-faint)}
 .lo{font-size:13px;color:var(--paper-faint);cursor:pointer;background:none;border:none;font-family:var(--body)}.lo:hover{color:var(--paper-dim)}
 .wrap{max-width:1060px;margin:0 auto;padding:34px 24px}
+
+/* header + project switcher */
+.head{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;flex-wrap:wrap;margin-bottom:28px}
 h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02em;margin-bottom:4px}
-.lead{color:var(--paper-dim);font-size:15px;margin-bottom:28px}
+.lead{color:var(--paper-dim);font-size:15px}
+.switcher{display:flex;align-items:center;gap:8px}
+.switcher .sw-lbl{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--paper-faint)}
+.proj-select{appearance:none;background:var(--ink-2);border:1px solid var(--line);border-radius:10px;padding:9px 34px 9px 13px;color:var(--paper);font-family:var(--body);font-weight:600;font-size:14px;cursor:pointer;outline:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center}
+.proj-select:focus{border-color:var(--indigo)}
+
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
 .card{background:var(--ink-2);border:1px solid var(--line);border-radius:18px;padding:22px}
 .card.full{grid-column:1/-1}
 .card h2{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.card h2 .count{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--paper-faint);background:var(--ink-3);padding:2px 8px;border-radius:20px}
+
 .member{display:flex;align-items:center;gap:11px;padding:9px 0;border-bottom:1px solid var(--line)}
 .member:last-child{border-bottom:none}
 .av{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-family:var(--mono);font-weight:600;font-size:11px;color:#fff;flex-shrink:0}
@@ -45,22 +55,72 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 .btn-indigo{color:#fff;background:linear-gradient(135deg,#a9a9ff,var(--indigo))}
 [data-theme="dark"] .btn-indigo{color:#0c0a08}
 .btn-ghost{color:var(--paper);background:transparent;border:1px solid var(--line)}.btn-ghost:hover{border-color:var(--paper-faint)}
-.act{display:flex;flex-direction:column;gap:10px}
-.row-act{display:flex;align-items:center;gap:12px;padding:13px 15px;background:var(--ink);border:1px solid var(--line);border-radius:12px;transition:border-color .2s}
-.row-act:hover{border-color:var(--indigo)}
-.row-act .ico{font-size:20px}.row-act .t{font-size:14px;font-weight:600}.row-act .d{font-size:12px;color:var(--paper-faint)}
-.row-act .go{margin-left:auto;color:var(--indigo)}
-.demo{background:linear-gradient(135deg,rgba(99,102,241,.12),rgba(139,92,246,.05));border-color:rgba(139,139,245,.3)}
-.demo h3{font-family:var(--display);font-weight:600;font-size:22px;margin-bottom:6px}
-.demo p{color:var(--paper-dim);font-size:14px;margin-bottom:16px;max-width:46ch}
+.btn-sm{padding:7px 13px;font-size:13px}
 .msg{font-size:12.5px;color:var(--green);margin-top:8px;min-height:16px}
 .muted{color:var(--paper-faint);font-size:13px}
 .hide{display:none}
+
+/* "what your sims are saying" feed */
+.saying{display:flex;flex-direction:column;gap:12px}
+.say{display:flex;gap:12px;padding:13px 15px;background:var(--ink);border:1px solid var(--line);border-radius:14px}
+.say .body{flex:1;min-width:0}
+.say .name{font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.say .obs{font-size:14px;color:var(--paper);margin-top:4px;line-height:1.45}
+.say .meta{font-size:11.5px;color:var(--paper-faint);margin-top:6px;font-family:var(--mono)}
+.chip{font-family:var(--mono);font-size:9px;letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:20px;background:var(--ink-3);color:var(--paper-faint)}
+.chip.s-frustrated,.chip.s-confused{background:rgba(219,39,119,.14);color:var(--rose)}
+.chip.s-satisfied,.chip.s-delighted{background:rgba(15,157,107,.16);color:var(--green)}
+.chip.k-pain{background:rgba(219,39,119,.14);color:var(--rose)}
+.chip.k-want{background:rgba(217,131,36,.16);color:var(--amber)}
+.chip.k-love{background:rgba(15,157,107,.16);color:var(--green)}
+
+/* sims overview cards */
+.sims{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.sim{display:flex;align-items:center;gap:12px;padding:13px 14px;background:var(--ink);border:1px solid var(--line);border-radius:14px;transition:border-color .2s}
+.sim:hover{border-color:var(--indigo)}
+.sim .body{flex:1;min-width:0}
+.sim .name{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sim .role{font-size:12px;color:var(--paper-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sim .la{font-size:11px;color:var(--paper-faint);font-family:var(--mono);margin-top:2px}
+
+/* tickets + activity rows */
+.list{display:flex;flex-direction:column;gap:10px}
+.row-act{display:flex;align-items:center;gap:12px;padding:13px 15px;background:var(--ink);border:1px solid var(--line);border-radius:12px;transition:border-color .2s}
+.row-act:hover{border-color:var(--indigo)}
+.row-act .ico{font-size:18px;flex-shrink:0}
+.row-act .body{flex:1;min-width:0}
+.row-act .t{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row-act .d{font-size:12px;color:var(--paper-faint);margin-top:2px}
+.row-act .go{margin-left:auto;color:var(--indigo);font-size:12px;white-space:nowrap}
+
+/* empty states */
+.empty{text-align:center;padding:24px 16px;color:var(--paper-faint)}
+.empty .em{font-size:26px;margin-bottom:8px}
+.empty p{font-size:13.5px;margin-bottom:12px;max-width:40ch;margin-left:auto;margin-right:auto;line-height:1.5}
+
+/* demo CTA */
+.demo{background:linear-gradient(135deg,rgba(99,102,241,.12),rgba(139,92,246,.05));border-color:rgba(139,139,245,.3)}
+.demo h3{font-family:var(--display);font-weight:600;font-size:22px;margin-bottom:6px}
+.demo p{color:var(--paper-dim);font-size:14px;margin-bottom:16px;max-width:46ch}
+
+/* skeletons */
+.sk{background:linear-gradient(90deg,var(--ink-3) 25%,var(--ink) 37%,var(--ink-3) 63%);background-size:400% 100%;animation:shimmer 1.4s ease infinite;border-radius:8px}
+@keyframes shimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
+.sk-row{height:54px;margin-bottom:10px}
+
+/* settings drawer (demoted Plane config) */
+details.drawer{background:var(--ink-2);border:1px solid var(--line);border-radius:18px;padding:0;overflow:hidden;margin-top:18px}
+details.drawer>summary{list-style:none;cursor:pointer;padding:18px 22px;display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--paper-faint)}
+details.drawer>summary::-webkit-details-marker{display:none}
+details.drawer>summary .caret{margin-left:auto;transition:transform .2s}
+details.drawer[open]>summary .caret{transform:rotate(90deg)}
+details.drawer .drawer-in{padding:0 22px 22px}
 .conngrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .conngrid input{width:100%;background:var(--ink);border:1px solid var(--line);border-radius:10px;padding:10px 12px;color:var(--paper);font-family:var(--body);font-size:14px;outline:none}
 .conngrid input:focus{border-color:var(--indigo)}
 .flbl{display:block;font-size:12px;color:var(--paper-faint);margin-bottom:5px}
-@media(max-width:760px){.grid{grid-template-columns:1fr}.ws{display:none}.conngrid{grid-template-columns:1fr}}
+
+@media(max-width:760px){.grid{grid-template-columns:1fr}.sims{grid-template-columns:1fr}.ws{display:none}.conngrid{grid-template-columns:1fr}}
 
 .theme-toggle{position:fixed;right:16px;bottom:16px;z-index:90;width:40px;height:40px;border-radius:50%;border:1px solid var(--line);background:var(--ink-2);color:var(--paper);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(0,0,0,.12)}
 /* ── a11y: visible focus + reduced-motion (a11y audit fix) ── */
@@ -79,48 +139,70 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 </div></div>
 
 <div class="wrap">
-  <h1 id="hello">Dashboard</h1>
-  <p class="lead" id="lead">Loading your workspace…</p>
+  <div class="head">
+    <div>
+      <h1 id="hello">Dashboard</h1>
+      <p class="lead" id="lead">Loading your project…</p>
+    </div>
+    <div class="switcher">
+      <span class="sw-lbl">Project</span>
+      <select class="proj-select" id="projSwitch" aria-label="Active project"></select>
+    </div>
+  </div>
 
   <div class="grid">
-    <!-- Live demo -->
-    <div class="card full demo">
-      <h3>Put your Sims on a page</h3>
-      <p>Open the live studio: drop in a transcript, watch a Sim review a page in their own words, and collect their feedback in the draft queue.</p>
-      <a class="btn btn-indigo" href="/app">Launch the Sims studio →</a>
+    <!-- What your Sims are saying -->
+    <div class="card full">
+      <h2>💬 What your Sims are saying</h2>
+      <div id="saying"><div class="sk sk-row"></div><div class="sk sk-row"></div></div>
     </div>
 
-    <!-- People & Teams -->
+    <!-- Sims overview -->
     <div class="card">
-      <h2>👥 People &amp; Teams</h2>
+      <h2>🧬 Your Sims <span class="count" id="simsCount"></span></h2>
+      <div id="sims"><div class="sk sk-row"></div><div class="sk sk-row"></div></div>
+    </div>
+
+    <!-- People & Teams (R2: invite CTA, admin only) -->
+    <div class="card">
+      <h2>👥 Your team <span class="count" id="memCount"></span></h2>
       <div id="members"></div>
       <div id="inviteWrap" class="hide">
+        <div class="muted" style="margin:12px 0 2px">Invite your team to this project — they sign in with an email code and join as a <b>User</b>.</div>
         <div class="invite">
           <input id="inviteEmail" type="email" placeholder="teammate@company.com" />
           <button class="btn btn-indigo" id="inviteBtn">Invite</button>
         </div>
         <div class="msg" id="inviteMsg"></div>
-        <div class="muted" style="margin-top:8px">Invited people sign in with an email code and join as a <b>User</b>.</div>
       </div>
-      <div id="userNote" class="hide muted" style="margin-top:12px">You're a member of this workspace. Only admins can invite people.</div>
+      <div id="userNote" class="hide muted" style="margin-top:12px">You're a member of this project. Only admins can invite people.</div>
     </div>
 
-    <!-- Sims -->
+    <!-- Recent tickets -->
     <div class="card">
-      <h2>🧬 Sims</h2>
-      <div class="act" id="simsAdmin">
-        <a class="row-act" href="/app#add-transcript"><span class="ico">📝</span><div><div class="t">Add a transcript</div><div class="d">Extract new Sims from a customer call</div></div><span class="go">→</span></a>
-        <a class="row-act" href="/app"><span class="ico">🛠️</span><div><div class="t">Configure &amp; review Sims</div><div class="d">Edit personas, run live reviews</div></div><span class="go">→</span></a>
-      </div>
-      <div class="act hide" id="simsUser">
-        <a class="row-act" href="/app"><span class="ico">🧬</span><div><div class="t">Sims shared with you</div><div class="d">Open the studio to review your product</div></div><span class="go">→</span></a>
-      </div>
+      <h2>🐛 Recent tickets <span class="count" id="ticketCount"></span></h2>
+      <div id="tickets"><div class="sk sk-row"></div><div class="sk sk-row"></div></div>
     </div>
 
-    <!-- Team tracker connection -->
-    <div class="card full">
-      <h2>🐛 Team bug tracker · Plane</h2>
-      <div class="muted" style="margin-bottom:14px">Configure the workspace's Plane connection once — teammates just sign into the Snap extension and file reports here. The token is encrypted at rest and never sent to a browser.</div>
+    <!-- Live activity -->
+    <div class="card">
+      <h2>📡 Live activity <span class="count" id="actCount"></span></h2>
+      <div id="activity"><div class="sk sk-row"></div><div class="sk sk-row"></div></div>
+    </div>
+
+    <!-- Launch studio CTA -->
+    <div class="card full demo">
+      <h3>Put your Sims on a page</h3>
+      <p>Open the live studio: drop in a transcript, watch a Sim review a page in their own words, and collect their feedback in the draft queue.</p>
+      <a class="btn btn-indigo" href="/app">Launch the Sims studio →</a>
+    </div>
+  </div>
+
+  <!-- Demoted: Plane connection settings drawer -->
+  <details class="drawer" id="settingsDrawer">
+    <summary>⚙️ Project settings — bug tracker (Plane) <span class="caret">›</span></summary>
+    <div class="drawer-in">
+      <div class="muted" style="margin-bottom:14px">Configure the project's Plane connection once — teammates just sign into the Snap extension and file reports here. The token is encrypted at rest and never sent to a browser.</div>
       <div id="connAdmin" class="hide">
         <div class="conngrid">
           <div><label class="flbl">API Token</label><input id="cn-token" type="password" placeholder="•••• leave blank to keep existing" /></div>
@@ -128,12 +210,12 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           <div><label class="flbl">Workspace Slug</label><input id="cn-workspace" placeholder="acme" /></div>
           <div><label class="flbl">Project ID</label><input id="cn-project" placeholder="proj_abc123" /></div>
         </div>
-        <button class="btn btn-indigo" id="cn-save" style="margin-top:14px">Save team connection</button>
+        <button class="btn btn-indigo" id="cn-save" style="margin-top:14px">Save connection</button>
         <div class="msg" id="cn-msg"></div>
       </div>
-      <div id="connUser" class="hide muted">Only admins can configure the team connection.<span id="connStatus"></span></div>
+      <div id="connUser" class="hide muted">Only admins can configure the tracker connection.<span id="connStatus"></span></div>
     </div>
-  </div>
+  </details>
 </div>
 
 <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode">🌙</button>
@@ -141,40 +223,169 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 <script>
 const $ = (id) => document.getElementById(id)
 const COLORS = ["#6366f1","#e8a24a","#10b981","#ec4899","#06b6d4","#8b5cf6"]
-const col = (s) => COLORS[[...s].reduce((a,c)=>a+c.charCodeAt(0),0)%COLORS.length]
-const initials = (e) => e.slice(0,2).toUpperCase()
+const col = (s) => COLORS[[...String(s||"")].reduce((a,c)=>a+c.charCodeAt(0),0)%COLORS.length]
+const initials = (e) => String(e||"").slice(0,2).toUpperCase()
 const esc = (s) => String(s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))
+const ago = (ts) => {
+  if (!ts) return ""
+  const s = Math.max(0, Math.floor((Date.now()-Number(ts))/1000))
+  if (s < 60) return "just now"
+  const m = Math.floor(s/60); if (m < 60) return m+"m ago"
+  const h = Math.floor(m/60); if (h < 24) return h+"h ago"
+  const d = Math.floor(h/24); if (d < 30) return d+"d ago"
+  return new Date(Number(ts)).toLocaleDateString()
+}
+const ACT_ICON = { feedback_filed:"🐛", review_run:"👁️", sim_activated:"⚡", sim_added:"➕", sim_evolved:"🧬", transcript_added:"📝" }
+const ACT_VERB = { feedback_filed:"filed feedback", review_run:"ran a review", sim_activated:"went live", sim_added:"added a Sim", sim_evolved:"evolved a Sim", transcript_added:"added a transcript" }
 
 let state = null
 
 async function load() {
-  const r = await fetch("/api/me")
-  if (r.status === 401) { location.href = "/login"; return }
-  state = await r.json()
+  let data
+  try {
+    const r = await fetch("/api/dashboard")
+    if (r.status === 401) { location.href = "/login"; return }
+    data = await r.json()
+  } catch (e) { data = null }
+  if (!data || data.error) {
+    $("lead").textContent = "Couldn't load your project. Try refreshing."
+    return
+  }
+  state = data
   render()
 }
+
 function render() {
-  const role = state.active ? state.active.role : "user"
-  $("wsName").textContent = state.active ? state.active.name : "—"
-  $("who").textContent = state.email
-  $("hello").innerHTML = `Welcome back`
-  $("lead").innerHTML = `You're ${role === "admin" ? "an <b>Admin</b>" : "a <b>User</b>"} of <b>${esc(state.active ? state.active.name : "your workspace")}</b>.`
-  // members
-  $("members").innerHTML = state.members.map(m => `
-    <div class="member">
-      <div class="av" style="background:${col(m.email)}">${initials(m.email)}</div>
-      <span class="m-email">${esc(m.email)}${m.email===state.email?' <span class="muted">(you)</span>':''}</span>
-      <span class="rolepill ${m.role==="admin"?"r-admin":"r-user"}">${m.role}</span>
-    </div>`).join("")
-  // role-gated controls
+  const active = state.active
+  const role = active ? active.role : "user"
   const admin = role === "admin"
+  $("wsName").textContent = active ? active.name : "—"
+  $("who").textContent = state.email
+  $("hello").innerHTML = "Welcome back"
+  $("lead").innerHTML = active
+    ? `You're ${admin ? "an <b>Admin</b>" : "a <b>User</b>"} of <b>${esc(active.name)}</b>.`
+    : "Create your first Sim to get started."
+
+  renderSwitcher()
+  renderSaying()
+  renderSims(admin)
+  renderMembers(admin)
+  renderTickets()
+  renderActivity()
+
+  // role-gated controls
   $("inviteWrap").classList.toggle("hide", !admin)
   $("userNote").classList.toggle("hide", admin)
-  $("simsAdmin").classList.toggle("hide", !admin)
-  $("simsUser").classList.toggle("hide", admin)
+  $("settingsDrawer").classList.toggle("hide", false)
   $("connAdmin").classList.toggle("hide", !admin)
   $("connUser").classList.toggle("hide", admin)
   loadConn(admin)
+}
+
+function renderSwitcher() {
+  const sel = $("projSwitch")
+  const projects = state.projects || []
+  const activeId = state.active ? state.active.id : null
+  sel.innerHTML = projects.map(p => `<option value="${esc(p.id)}"${p.id===activeId?" selected":""}>${esc(p.name)}</option>`).join("") || `<option>—</option>`
+  // single project for now; the switcher is rendered as the real control for when P2 lands.
+  sel.disabled = projects.length <= 1
+}
+
+function emptyState(em, text, cta) {
+  return `<div class="empty"><div class="em">${em}</div><p>${esc(text)}</p>${cta||""}</div>`
+}
+
+function renderSaying() {
+  const items = state.saying || []
+  if (!items.length) {
+    $("saying").innerHTML = emptyState("💬", "Your Sims haven't reacted yet. Drop in a transcript and run a review to hear what they think.", `<a class="btn btn-indigo btn-sm" href="/app">Open the studio →</a>`)
+    return
+  }
+  $("saying").innerHTML = `<div class="saying">` + items.map(s => {
+    const tag = s.source === "insight" && s.kind
+      ? `<span class="chip k-${esc(s.kind)}">${esc(s.kind)}</span>`
+      : (s.sentiment ? `<span class="chip s-${esc(s.sentiment)}">${esc(s.sentiment)}</span>` : "")
+    const meta = []
+    if (s.urlPath) meta.push(esc(s.urlPath))
+    if (s.createdAt) meta.push(ago(s.createdAt))
+    if (s.source === "insight") meta.push("from transcript insight")
+    const nm = s.simName || "A Sim"
+    return `<div class="say">
+      <div class="av" style="background:${s.accent||col(nm)}">${esc(s.initials||initials(nm))}</div>
+      <div class="body">
+        <div class="name">${esc(nm)} ${tag}</div>
+        <div class="obs">${esc(s.text)}</div>
+        ${meta.length?`<div class="meta">${meta.join(" · ")}</div>`:""}
+      </div>
+    </div>`
+  }).join("") + `</div>`
+}
+
+function renderSims(admin) {
+  const sims = state.sims || []
+  $("simsCount").textContent = sims.length ? sims.length : ""
+  if (!sims.length) {
+    $("sims").innerHTML = emptyState("🧬", "No Sims yet. Extract personas from a customer call to bring your Sims to life.", `<a class="btn btn-indigo btn-sm" href="/app#add-transcript">Add a transcript →</a>`)
+    return
+  }
+  $("sims").innerHTML = `<div class="sims">` + sims.map(s => `
+    <a class="sim" href="/app">
+      <div class="av" style="background:${s.accent||col(s.name)}">${esc(s.initials||initials(s.name))}</div>
+      <div class="body">
+        <div class="name">${esc(s.name)}</div>
+        <div class="role">${esc(s.role||"")}</div>
+        <div class="la">${s.lastActiveAt?("active "+ago(s.lastActiveAt)):(s.insightsCount+" insight"+(s.insightsCount===1?"":"s"))}</div>
+      </div>
+    </a>`).join("") + `</div>`
+}
+
+function renderMembers(admin) {
+  const members = state.members || []
+  $("memCount").textContent = members.length ? members.length : ""
+  $("members").innerHTML = members.map(m => `
+    <div class="member">
+      <div class="av" style="background:${col(m.email)}">${initials(m.email)}</div>
+      <span class="m-email">${esc(m.email)}${m.email===state.email?' <span class="muted">(you)</span>':''}</span>
+      <span class="rolepill ${m.role==="admin"?"r-admin":"r-user"}">${esc(m.role)}</span>
+    </div>`).join("")
+}
+
+function renderTickets() {
+  const tickets = state.tickets || []
+  $("ticketCount").textContent = tickets.length ? tickets.length : ""
+  if (!tickets.length) {
+    $("tickets").innerHTML = emptyState("🐛", "No tickets filed yet. When a Sim spots a bug, it lands here with a tracker link.", "")
+    return
+  }
+  $("tickets").innerHTML = `<div class="list">` + tickets.map(t => {
+    const link = t.planeIssueUrl
+      ? `<a class="go" href="${esc(t.planeIssueUrl)}" target="_blank" rel="noopener">${esc(t.planeIssueKey?("#"+t.planeIssueKey):"View")} ↗</a>`
+      : (t.planeIssueKey?`<span class="go">#${esc(t.planeIssueKey)}</span>`:"")
+    const sub = [t.simName?("by "+t.simName):"", t.urlPath?esc(t.urlPath):"", ago(t.createdAt)].filter(Boolean).join(" · ")
+    return `<div class="row-act">
+      <span class="ico">🐛</span>
+      <div class="body"><div class="t">${esc(t.title||"Untitled report")}</div><div class="d">${sub}</div></div>
+      ${link}
+    </div>`
+  }).join("") + `</div>`
+}
+
+function renderActivity() {
+  const acts = state.activity || []
+  $("actCount").textContent = acts.length ? acts.length : ""
+  if (!acts.length) {
+    $("activity").innerHTML = emptyState("📡", "No activity yet. Reviews, filings, and Sim updates will stream here.", "")
+    return
+  }
+  $("activity").innerHTML = `<div class="list">` + acts.map(a => {
+    const who = a.actorEmail || a.simName || "Someone"
+    const verb = ACT_VERB[a.type] || esc(a.type)
+    const sub = [a.simName?("Sim "+a.simName):"", a.urlPath?esc(a.urlPath):"", ago(a.createdAt)].filter(Boolean).join(" · ")
+    return `<div class="row-act">
+      <span class="ico">${ACT_ICON[a.type]||"•"}</span>
+      <div class="body"><div class="t">${esc(who)} <span class="muted" style="font-weight:400">${verb}</span></div><div class="d">${sub}</div></div>
+    </div>`
+  }).join("") + `</div>`
 }
 
 async function loadConn(admin) {
@@ -207,7 +418,7 @@ $("cn-save") && ($("cn-save").onclick = async () => {
   const msg = $("cn-msg")
   if (d.error) { msg.style.color = "var(--rose)"; msg.textContent = d.error; return }
   $("cn-token").value = ""; $("cn-token").placeholder = "•••• saved — leave blank to keep"
-  msg.style.color = "var(--green)"; msg.textContent = "✓ Team connection saved (encrypted)."
+  msg.style.color = "var(--green)"; msg.textContent = "✓ Connection saved (encrypted)."
 })
 
 $("inviteBtn") && ($("inviteBtn").onclick = async () => {
@@ -219,7 +430,7 @@ $("inviteBtn") && ($("inviteBtn").onclick = async () => {
   $("inviteBtn").disabled = false
   if (d.error) { $("inviteMsg").style.color="var(--rose)"; $("inviteMsg").textContent = d.error; return }
   $("inviteEmail").value = ""; $("inviteMsg").style.color="var(--green)"; $("inviteMsg").textContent = `Invited ${email} — they can sign in now.`
-  state.members = d.members; render()
+  state.members = d.members; renderMembers(state.active && state.active.role === "admin")
 })
 $("logout").onclick = async () => { await fetch("/api/auth/logout", { method:"POST" }); location.href = "/" }
 load()
