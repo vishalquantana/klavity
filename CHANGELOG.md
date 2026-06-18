@@ -10,6 +10,21 @@ top entry here, and every `package.json` (`/`, `core`, `extension`, `sdk`) plus
 the extension `manifest.json` always move together. See the PRD's _Versioning_
 section for the bump rules.
 
+## [0.15.2] — 2026-06-18
+
+### Fixed
+- **Test isolation across the prototype suite.** All test files run in one Bun process
+  with a shared module registry, so `db.ts`'s client (created once at import) bound to
+  whichever DB-backed test imported first — making the other files collide on that DB and
+  fail only when run together (`bun test`). Added `reconnectDb()` to `db.ts`; each
+  DB-backed test now re-points the singleton at its own temp DB in a `beforeAll`. Full
+  suite is now green run-together (112 pass / 0 fail, was ~11 fail / 4 errors).
+- **Tolerant LLM JSON parsing.** `parseJSON` (used by react/extract/reconcile) now strips
+  code fences anywhere, extracts a top-level object *or* array, and repairs the common
+  model glitches — trailing commas and smart quotes — that threw "Property name must be a
+  string literal" and silently dropped a Sim's review. Falls back to a clear error only
+  when truly unrecoverable.
+
 ## [0.15.1] — 2026-06-18
 
 ### Fixed

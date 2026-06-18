@@ -144,21 +144,35 @@ async function chat(messages: any[], maxTokens: number, jsonMode = false, ctx?: 
   return { content, usage: { input_tokens: u.prompt_tokens, output_tokens: u.completion_tokens } }
 }
 function parseJSON(s: string) {
-  // Strip thinking-model traces (<think>…</think>) and markdown code fences
-  // before extraction — greedy regex breaks when thinking traces contain {…}.
+  // Strip thinking-model traces (<think>…</think>) and ALL markdown code fences (models put
+  // them anywhere, not just line-anchored). Greedy {…} extraction breaks on thinking traces, so
+  // tags go first.
   const tag = "think"
   const open = new RegExp("<" + tag + "[^>]*>[\\s\\S]*?<\\/" + tag + ">", "gi")
   const cleaned = s
     .replace(open, "")
-    .replace(/^```(?:json)?\s*/m, "")
-    .replace(/\s*```\s*$/m, "")
+    .replace(/```(?:json)?/gi, "")
+    .replace(/```/g, "")
     .trim()
-  try { return JSON.parse(cleaned) } catch {
-    const m = cleaned.match(/\{[\s\S]*\}/)
-    if (m) return JSON.parse(m[0])
-    console.error("parseJSON: no JSON object in model output:", JSON.stringify(s.slice(0, 500)))
-    throw new Error("Model did not return valid JSON")
+  const tryParse = (str: string): { ok: true; val: any } | { ok: false } => {
+    try { return { ok: true, val: JSON.parse(str) } } catch { return { ok: false } }
   }
+  // 1) straight parse.
+  let r = tryParse(cleaned); if (r.ok) return r.val
+  // 2) extract the outermost JSON object OR array (some prompts return a top-level array).
+  const obj = cleaned.match(/\{[\s\S]*\}/)
+  const arr = cleaned.match(/\[[\s\S]*\]/)
+  const candidate = obj && (!arr || obj.index! <= arr.index!) ? obj[0] : (arr ? arr[0] : cleaned)
+  r = tryParse(candidate); if (r.ok) return r.val
+  // 3) repair the common LLM JSON glitches that throw "Property name must be a string literal":
+  //    smart quotes, and trailing commas before } or ]. Then retry.
+  const repaired = candidate
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/,\s*([}\]])/g, "$1")
+  r = tryParse(repaired); if (r.ok) return r.val
+  console.error("parseJSON: unrecoverable model output:", JSON.stringify(s.slice(0, 500)))
+  throw new Error("Model did not return valid JSON")
 }
 // Closed enum for issueType — same set used in EXTRACT_SYS and RECONCILE_SYS.
 const ISSUE_TYPE_ENUM = new Set(["label-copy", "layout", "performance", "flow", "error-handling", "accessibility", "visual"])
