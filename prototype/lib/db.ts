@@ -769,6 +769,7 @@ export type FeedbackRow = {
   id: string; projectId: string; simId: string | null; actorEmail: string | null
   urlHost: string | null; urlPath: string | null; observation: string | null
   sentiment: string | null; severity: string | null; screenshotId: string | null
+  suggestedBug: any | null; sourceQuote: string | null; citedTraitIds: any | null; sourceDate: number | null
   planeIssueKey: string | null; planeIssueUrl: string | null; createdAt: number
 }
 function rowToFeedback(x: any): FeedbackRow {
@@ -782,6 +783,10 @@ function rowToFeedback(x: any): FeedbackRow {
     sentiment: x.sentiment != null ? String(x.sentiment) : null,
     severity: x.severity != null ? String(x.severity) : null,
     screenshotId: x.screenshot_id != null ? String(x.screenshot_id) : null,
+    suggestedBug: x.suggested_bug_json ? JSON.parse(String(x.suggested_bug_json)) : null,
+    sourceQuote: x.source_quote != null ? String(x.source_quote) : null,
+    citedTraitIds: x.cited_trait_ids_json ? JSON.parse(String(x.cited_trait_ids_json)) : null,
+    sourceDate: x.source_date != null ? Number(x.source_date) : null,
     planeIssueKey: x.plane_issue_key != null ? String(x.plane_issue_key) : null,
     planeIssueUrl: x.plane_issue_url != null ? String(x.plane_issue_url) : null,
     createdAt: Number(x.created_at),
