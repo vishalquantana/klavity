@@ -856,7 +856,6 @@ async function renderFocusedSim(sim) {
   // Build static HTML for header + insights
   const ins = sim.insights || []
   const insHtml = ins.length ? ins.map(x => {
-    const kindColor = x.kind === "pain" ? "var(--rose)" : x.kind === "want" ? "var(--blue)" : "var(--green)"
     const quoteHtml = x.quote
       ? `<div class="fsv-quote">"${esc(x.quote)}"</div>`
       : ""
@@ -865,7 +864,7 @@ async function renderFocusedSim(sim) {
       : ""
     return `<div class="fsv-insight">
       <div class="fsv-ins-top">
-        <span class="chip k-${esc(x.kind)}" style="flex-shrink:0">${esc(x.kind)}</span>
+        ${badge(x.kind)}
         <span class="fsv-ins-text">${esc(x.text || "")}</span>
       </div>
       ${quoteHtml}${provHtml}
@@ -989,7 +988,7 @@ async function renderFocusedSim(sim) {
       const tx = txMap[txid]
       if (tx) {
         const dateStr = tx.sourceDate ? new Date(Number(tx.sourceDate)).toISOString().slice(0, 10) : ""
-        const parts = [esc(tx.title || "a transcript"), dateStr].filter(Boolean).join(" · ")
+        const parts = [tx.title || "a transcript", dateStr].filter(Boolean).join(" · ")
         el.textContent = "from: " + parts
       }
     })
