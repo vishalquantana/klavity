@@ -103,6 +103,8 @@ export type ContentMessage =
   | { kind: 'KLAV_CAPTURE_REVIEW_RESULT'; dataUrl: string; error?: string }
   | { kind: 'KLAV_CONFIG_UPDATED'; config: KlavConfig | null }   // pushed after a sync so content refreshes its cache
   | { kind: 'KLAV_NUDGE_ROUTE' }                                 // tabs.onUpdated SPA backstop → re-evaluate URL
+  // ── Ad-hoc "Analyze this page" (Task 4) ──
+  | { kind: 'KLAV_ADHOC_REVIEW'; projectId: string }             // popup → content: run an explicit one-shot review
 
 export type Shape =
   | { type: 'pen'; color: string; points: Array<{ x: number; y: number }> }
