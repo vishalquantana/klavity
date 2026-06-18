@@ -90,7 +90,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     <button class="btn" id="verifyBtn">Verify & continue</button>
     <div class="dev hide" id="devBox"></div>
     <div class="msg" id="codeMsg"></div>
-    <div class="foot"><a href="#" id="resend">Use a different email</a></div>
+    <div class="foot"><a href="#" id="resend">Resend code</a> · <a href="#" id="changeEmail">Use a different email</a></div>
   </div>
 </div>
 
@@ -149,31 +149,79 @@ async function post(url, body) {
 function show(step) { $("step-email").classList.toggle("hide", step !== "email"); $("step-code").classList.toggle("hide", step !== "code") }
 function msg(id, text, ok) { const e = $(id); e.textContent = text; e.className = "msg " + (ok ? "ok" : "err") }
 
-$("sendBtn").onclick = async () => {
-  email = $("email").value.trim()
-  if (!email.includes("@")) { msg("emailMsg", "Enter a valid email."); return }
-  $("sendBtn").disabled = true; msg("emailMsg", "Sending…", true)
+// ── resend cooldown ──
+let resendTimer = null
+function startResendCooldown(secs) {
+  clearInterval(resendTimer)
+  let left = secs
+  const link = $("resend")
+  link.style.pointerEvents = "none"; link.style.opacity = ".5"
+  const tick = () => {
+    link.textContent = "Resend in " + left + "s"
+    if (left <= 0) {
+      clearInterval(resendTimer)
+      link.textContent = "Resend code"
+      link.style.pointerEvents = ""; link.style.opacity = ""
+    }
+    left--
+  }
+  tick(); resendTimer = setInterval(tick, 1000)
+}
+
+// ── request a code for the current email; returns true if we advanced to/stayed on the code step ──
+async function requestCode(btn, msgId, advance) {
+  if (!email.includes("@")) { msg(msgId, "Enter a valid email."); return false }
+  const label = btn.textContent
+  btn.disabled = true; btn.textContent = "Sending…"
   try {
     const d = await post("/api/auth/request", { email })
     if (d.error) throw new Error(d.error)
-    $("sentTo").textContent = email; show("code"); $("code").focus()
-    if (d.devCode) { $("devBox").classList.remove("hide"); $("devBox").textContent = "dev code: " + d.devCode }
-    else if (!d.emailed) msg("codeMsg", "Email couldn't be sent — check the server logs for your code.")
-  } catch (e) { msg("emailMsg", e.message) } finally { $("sendBtn").disabled = false }
+    if (d.devCode) {
+      if (advance) { $("sentTo").textContent = email; show("code"); $("code").focus() }
+      $("devBox").classList.remove("hide"); $("devBox").textContent = "dev code: " + d.devCode
+      return true
+    }
+    if (!d.emailed) {
+      // Don't dead-end the user on a code field for an email that will never arrive.
+      msg(msgId, "We couldn't send your code right now. Please try again.")
+      return false
+    }
+    if (advance) { $("sentTo").textContent = email; show("code"); $("code").focus() }
+    else msg(msgId, "A new code is on its way.", true)
+    return true
+  } catch (e) { msg(msgId, e.message); return false }
+  finally { btn.disabled = false; btn.textContent = label }
+}
+
+$("sendBtn").onclick = async () => {
+  email = $("email").value.trim()
+  await requestCode($("sendBtn"), "emailMsg", true)
 }
 $("verifyBtn").onclick = async () => {
   const code = $("code").value.trim()
   if (code.length !== 6) { msg("codeMsg", "Enter the 6-digit code."); return }
-  $("verifyBtn").disabled = true; msg("codeMsg", "Verifying…", true)
+  $("verifyBtn").disabled = true; $("verifyBtn").textContent = "Verifying…"; msg("codeMsg", "Verifying…", true)
   try {
     const d = await post("/api/auth/verify", { email, code })
     if (d.error) throw new Error(d.error)
     location.href = d.redirect || "/dashboard"
-  } catch (e) { msg("codeMsg", e.message); $("verifyBtn").disabled = false }
+  } catch (e) {
+    msg("codeMsg", e.message)
+    $("verifyBtn").disabled = false; $("verifyBtn").textContent = "Verify & continue"
+    const c = $("code"); c.value = ""; c.focus()
+  }
 }
 $("code").addEventListener("keydown", (e) => { if (e.key === "Enter") $("verifyBtn").click() })
 $("email").addEventListener("keydown", (e) => { if (e.key === "Enter") $("sendBtn").click() })
-$("resend").onclick = (e) => { e.preventDefault(); show("email"); $("email").focus() }
+// Resend code: re-send to the SAME email, with a 30s cooldown. Stays on the code step.
+$("resend").onclick = async (e) => {
+  e.preventDefault()
+  if ($("resend").style.pointerEvents === "none") return
+  const ok = await requestCode($("resend"), "codeMsg", false)
+  if (ok) startResendCooldown(30)
+}
+// Use a different email: go back to the email step.
+$("changeEmail").onclick = (e) => { e.preventDefault(); clearInterval(resendTimer); show("email"); $("email").focus() }
 </script>
 </body>
 </html>

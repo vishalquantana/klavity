@@ -10,6 +10,35 @@ top entry here, and every `package.json` (`/`, `core`, `extension`, `sdk`) plus
 the extension `manifest.json` always move together. See the PRD's _Versioning_
 section for the bump rules.
 
+## [0.16.0] — 2026-06-19
+
+### Added
+- **First-run onboarding funnel.** New signups now flow into the guided setup wizard
+  instead of a cold dashboard: the landing "Get started" CTAs point to `/onboarding`,
+  and a first-time login (no prior account) is redirected to `/onboarding` rather than
+  `/dashboard`. The wizard gate now uses the captured company domain to tell new users
+  from returning ones (instead of mere membership, which every login creates).
+- **Dashboard first-run checklist.** A dismissible zero-state card guides new users
+  through Install extension → Add product URL → Add Sims → first review, auto-hidden
+  once the project has at least one Sim. Added a one-line definition of what a Sim is.
+- **Connector "Test connection".** Admins can verify a connector before relying on it —
+  both for an unsaved config in the add form (`POST /api/projects/:id/connectors/test`)
+  and for a saved connector (`POST /api/projects/:id/connectors/:cid/test`); each files a
+  clearly-labelled test ticket and reports success/error inline. Connectors are now also
+  editable, and the auto-copy control is explicitly labelled with a confirm on enable.
+- **Extension Sims controls + privacy.** The Options page now has a "Sims (auto-review)"
+  section with a global on/off kill-switch (`klavSimsEnabled`, default on) honoured by the
+  content script, plus a plain-language privacy statement about screenshot capture.
+
+### Changed
+- **Signed-out popup.** Added a value-proposition tagline and brand mark to the
+  signed-out view, and fixed the "Use my site login" dead-end (clearer label + friendly,
+  actionable copy when no website session exists).
+- **Login OTP flow.** Real "Resend code" (re-sends to the same email, 30s cooldown),
+  distinct from "Use a different email"; the user is no longer dead-ended on an email-send
+  failure (stays on the email step with a retry); added "Sending…"/"Verifying…" states and
+  wrong-code clear-and-refocus.
+
 ## [0.15.6] — 2026-06-18
 
 ### Added

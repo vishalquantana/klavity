@@ -213,6 +213,29 @@ details.drawer .drawer-in{padding:0 22px 22px}
 .conn-fields .field-full{grid-column:1/-1}
 @media(max-width:760px){.conn-fields{grid-template-columns:1fr}}
 .conn-name-row{margin-bottom:10px}
+/* auto-copy labelled control + test/edit row actions */
+.conn-auto{display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap}
+.conn-auto .conn-auto-cap{font-size:11.5px;color:var(--paper-faint)}
+.conn-row-actions{display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap}
+.conn-result{font-size:12px;margin-top:8px;min-height:0}
+.conn-result.ok{color:var(--green)}.conn-result.err{color:var(--rose)}
+.conn-result.pend{color:var(--paper-faint)}
+.conn-result a{color:var(--indigo);text-decoration:underline}
+.conn-edit-hint{font-size:11.5px;color:var(--amber);margin-bottom:10px}
+/* first-run checklist (zero-state guidance) */
+.checklist{background:linear-gradient(135deg,rgba(99,102,241,.12),rgba(139,92,246,.05));border:1px solid rgba(139,139,245,.3);border-radius:18px;padding:22px;margin-bottom:22px;position:relative}
+.checklist h3{font-family:var(--display);font-weight:600;font-size:20px;margin-bottom:4px}
+.checklist .cl-intro{color:var(--paper-dim);font-size:14px;margin-bottom:16px;max-width:52ch}
+.checklist ol{list-style:none;counter-reset:cl;display:flex;flex-direction:column;gap:12px}
+.checklist li{counter-increment:cl;display:flex;gap:12px;align-items:flex-start}
+.checklist li::before{content:counter(cl);flex-shrink:0;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-family:var(--mono);font-weight:600;font-size:12px;color:#fff;background:linear-gradient(135deg,var(--indigo-deep),#a78bfa)}
+[data-theme="dark"] .checklist li::before{color:#0c0a08}
+.checklist .cl-step-t{font-size:14px;font-weight:600}
+.checklist .cl-step-d{font-size:12.5px;color:var(--paper-faint);margin-top:2px}
+.checklist .cl-step-d a{color:var(--indigo);text-decoration:none}
+.checklist .cl-step-d a:hover{text-decoration:underline}
+.checklist .cl-x{position:absolute;top:14px;right:16px;background:none;border:none;color:var(--paper-faint);cursor:pointer;font-size:16px;line-height:1;padding:4px}
+.checklist .cl-x:hover{color:var(--paper-dim)}
 @media(max-width:760px){.grid{grid-template-columns:1fr}.sims{grid-template-columns:1fr}.ws{display:none}.conngrid{grid-template-columns:1fr}}
 
 .theme-toggle{position:fixed;right:16px;bottom:16px;z-index:90;width:40px;height:40px;border-radius:50%;border:1px solid var(--line);background:var(--ink-2);color:var(--paper);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(0,0,0,.12)}
@@ -262,6 +285,39 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     </div>
   </div>
 
+  <!-- First-run checklist (zero-state guidance) — shown only when this project has 0 Sims -->
+  <div class="checklist hide" id="checklist">
+    <button class="cl-x" id="checklistDismiss" aria-label="Dismiss checklist">✕</button>
+    <h3>Welcome to Klavity</h3>
+    <p class="cl-intro">Welcome to Klavity — here's how to get your first review:</p>
+    <ol>
+      <li>
+        <div>
+          <div class="cl-step-t">Install the Klavity browser extension</div>
+          <div class="cl-step-d">Your Sims watch your product through it. <a href="/onboarding">Get the extension →</a></div>
+        </div>
+      </li>
+      <li>
+        <div>
+          <div class="cl-step-t">Add your product's URL so Sims know where to watch</div>
+          <div class="cl-step-d">Allowlist the paths your Sims should react on. <a href="#liveDrawer" id="checklistUrlLink">Open Live Sims settings →</a></div>
+        </div>
+      </li>
+      <li>
+        <div>
+          <div class="cl-step-t">Add your Sims (built from real customer calls)</div>
+          <div class="cl-step-d">Extract personas from a transcript in the studio. <a href="/app" id="checklistStudioLink">Launch the Sims studio →</a></div>
+        </div>
+      </li>
+      <li>
+        <div>
+          <div class="cl-step-t">Watch your first review roll in</div>
+          <div class="cl-step-d">When a Sim reacts to a page, it shows up under Recent tickets and What your Sims are saying.</div>
+        </div>
+      </li>
+    </ol>
+  </div>
+
   <!-- Metrics row — at-a-glance counts (feedback, sims, team, tickets) -->
   <div class="stats" id="stats">
     <div class="stat"><div class="n" id="stFeedback">—</div><div class="l"><span class="ic">💬</span>Feedback received</div></div>
@@ -274,6 +330,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     <!-- Sims overview -->
     <div class="card">
       <h2>🧬 Your Sims <span class="count" id="simsCount"></span></h2>
+      <div class="muted" style="margin:-8px 0 14px;font-size:12.5px">AI personas, built from real customer calls, that react to your pages.</div>
       <div id="sims"><div class="sk sk-row"></div><div class="sk sk-row"></div></div>
     </div>
 
@@ -385,10 +442,12 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
               <input type="checkbox" id="connNewAutoCopy" /> Auto-copy new tickets
             </label>
           </div>
-          <div style="margin-top:12px;display:flex;gap:10px;align-items:center">
+          <div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
             <button class="btn btn-indigo btn-sm" id="connSaveNew">Add destination</button>
+            <button class="btn btn-ghost btn-sm" id="connTestNew">Test connection</button>
             <span class="msg" id="connAddMsg" style="margin:0"></span>
           </div>
+          <div class="conn-result hide" id="connAddTestResult"></div>
         </div>
         <button class="btn btn-ghost btn-sm" id="connAddBtn" style="margin-top:8px">+ Add destination</button>
         <div class="msg" id="connMsg"></div>
@@ -453,6 +512,7 @@ function render() {
     : "Create your first Sim to get started."
 
   renderSwitcher()
+  renderChecklist()
   renderStats()
   renderSaying()
   renderSims(admin)
@@ -474,6 +534,31 @@ function render() {
   $("obsDrawer").classList.toggle("hide", !admin)
   if (admin) { loadLive(); loadObs() }
 }
+
+// ── First-run checklist — shows ONLY when this project has zero Sims, dismissible per-session ──
+function renderChecklist() {
+  const el = $("checklist")
+  if (!el) return
+  const simCount = (state.sims || []).length
+  let dismissed = false
+  try { dismissed = sessionStorage.getItem("klavChecklistDismissed") === "1" } catch (e) {}
+  el.classList.toggle("hide", simCount > 0 || dismissed)
+  // Point step-3 studio link at the active project (mirrors the Sims-link pattern).
+  const pid = curProjId()
+  const studio = $("checklistStudioLink")
+  if (studio && pid) studio.setAttribute("href", "/app?project=" + encodeURIComponent(pid))
+}
+$("checklistDismiss") && ($("checklistDismiss").onclick = () => {
+  try { sessionStorage.setItem("klavChecklistDismissed", "1") } catch (e) {}
+  const el = $("checklist"); if (el) el.classList.add("hide")
+})
+// Step 2: expand the Live Sims drawer and scroll to it (admin-only drawer; harmless otherwise).
+$("checklistUrlLink") && ($("checklistUrlLink").onclick = (e) => {
+  e.preventDefault()
+  const d = $("liveDrawer")
+  if (d && !d.classList.contains("hide")) { d.setAttribute("open", ""); d.scrollIntoView({ behavior: "smooth", block: "start" }) }
+  else { const s = $("settingsDrawer"); if (s) { s.setAttribute("open", ""); s.scrollIntoView({ behavior: "smooth", block: "start" }) } }
+})
 
 // ── Metrics row — real totals from the dashboard `counts`, plus live array lengths ──
 function renderStats() {
@@ -1006,18 +1091,28 @@ function renderConnectors(admin) {
         <span class="conn-name">${esc(c.name)}</span>
         <span class="conn-type">${esc(c.type)}</span>
         <button class="tog${enOn?" on":""}" title="${enOn?"Disable":"Enable"}" data-cid="${esc(c.id)}" data-field="enabled" data-val="${enOn?1:0}">${enOn?"enabled":"disabled"}</button>
-        <button class="tog${acOn?" on":""}" title="Auto-copy toggle" data-cid="${esc(c.id)}" data-field="autoCopy" data-val="${acOn?1:0}">auto</button>
-        <button class="btn btn-ghost btn-sm" style="margin-left:4px" data-del="${esc(c.id)}" aria-label="Delete connector">✕</button>
-      </div>`
+        <button class="btn btn-ghost btn-sm" data-del="${esc(c.id)}" aria-label="Delete connector">✕</button>
+      </div>
+      <div class="conn-auto">
+        <button class="tog${acOn?" on":""}" data-cid="${esc(c.id)}" data-field="autoCopy" data-val="${acOn?1:0}">auto-copy ${acOn?"on":"off"}</button>
+        <span class="conn-auto-cap">New tickets are automatically pushed here.</span>
+      </div>
+      <div class="conn-row-actions">
+        <button class="btn btn-ghost btn-sm" data-test="${esc(c.id)}">Test</button>
+        <button class="btn btn-ghost btn-sm" data-edit="${esc(c.id)}">Edit</button>
+      </div>
+      <div class="conn-result hide" data-result-for="${esc(c.id)}"></div>`
       listEl.appendChild(row)
     })
-    // Wire toggles
+    // Wire toggles (enabled + auto-copy). Auto-copy ON gets a confirm() since it
+    // pushes every future ticket externally — mirrors the delete-confirm pattern.
     listEl.querySelectorAll("button[data-field]").forEach(btn => {
       btn.addEventListener("click", async () => {
         const cid = btn.getAttribute("data-cid")
         const field = btn.getAttribute("data-field")
         const curVal = btn.getAttribute("data-val") === "1"
         const newVal = !curVal
+        if (field === "autoCopy" && newVal && !confirm("Turn on auto-copy? Every new ticket will be pushed to this destination automatically.")) return
         const patch = {}
         patch[field] = newVal
         const r = await fetch(projPath("/connectors/" + encodeURIComponent(cid)), {
@@ -1031,6 +1126,27 @@ function renderConnectors(admin) {
           const msg = $("connMsg")
           if (msg) { msg.style.color = "var(--rose)"; msg.textContent = d.error || "Couldn't update." }
         }
+      })
+    })
+    // Wire Test buttons — POST /connectors/:cid/test, inline pending/result.
+    listEl.querySelectorAll("button[data-test]").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const cid = btn.getAttribute("data-test")
+        const resEl = listEl.querySelector(`[data-result-for="${cssAttr(cid)}"]`)
+        btn.disabled = true
+        showConnResult(resEl, "pend", "Testing…")
+        const r = await fetch(projPath("/connectors/" + encodeURIComponent(cid) + "/test"), { method: "POST" }).catch(() => null)
+        btn.disabled = false
+        const d = r ? await r.json().catch(() => ({})) : {}
+        renderTestResult(resEl, r, d)
+      })
+    })
+    // Wire Edit buttons — reopen the shared form pre-filled in edit mode.
+    listEl.querySelectorAll("button[data-edit]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const cid = btn.getAttribute("data-edit")
+        const conn = (state._connectors || []).find(x => x.id === cid)
+        if (conn) openConnEdit(conn)
       })
     })
     // Wire deletes
@@ -1058,16 +1174,79 @@ function renderConnectors(admin) {
   }
 }
 
-function renderConnectorFields(type) {
+// Escape a value for use inside a CSS attribute selector ([attr="..."]).
+function cssAttr(s) { return String(s == null ? "" : s).replace(/["\\]/g, "\\$&") }
+
+// Inline connector test/result message helpers (reuse .conn-result styling).
+function showConnResult(el, cls, html) {
+  if (!el) return
+  el.className = "conn-result " + cls
+  el.innerHTML = html
+  el.classList.remove("hide")
+}
+// Map a test response (saved or unsaved) to an inline success/failure result.
+function renderTestResult(el, r, d) {
+  const okHttp = r && r.ok
+  const success = d && d.ok === true && okHttp
+  if (success) {
+    const link = d.externalUrl
+      ? ` <a href="${esc(d.externalUrl)}" target="_blank" rel="noopener">View ↗</a>`
+      : ""
+    showConnResult(el, "ok", "✓ Test ticket created" + link)
+  } else {
+    const err = (d && d.error) || (okHttp ? "Test failed" : "Test failed")
+    showConnResult(el, "err", "✕ " + esc(err))
+  }
+}
+
+// Edit mode: when set, the shared "Add destination" form PATCHes this connector
+// instead of creating a new one.
+let connEditId = null
+function openConnEdit(conn) {
+  connEditId = conn.id
+  $("connAddWrap").classList.remove("hide")
+  $("connAddBtn").classList.add("hide")
+  // Lock type to the connector's type (editing type isn't supported server-side here).
+  const tsel = $("connTypeSelect")
+  if (tsel) { tsel.value = conn.type; tsel.disabled = true }
+  $("connNewName").value = conn.name || ""
+  $("connNewAutoCopy").checked = !!conn.autoCopy
+  renderConnectorFields(conn.type, conn.config || {})
+  $("connSaveNew").textContent = "Save changes"
+  $("connAddMsg").textContent = ""
+  $("connAddTestResult") && $("connAddTestResult").classList.add("hide")
+  $("connAddWrap").scrollIntoView({ behavior: "smooth", block: "nearest" })
+}
+function resetConnForm() {
+  connEditId = null
+  const tsel = $("connTypeSelect")
+  if (tsel) { tsel.disabled = false; tsel.value = "" }
+  $("connNewName").value = ""
+  $("connNewAutoCopy").checked = false
+  $("connNewFields").innerHTML = ""
+  $("connSaveNew").textContent = "Add destination"
+  $("connAddMsg").textContent = ""
+  $("connAddTestResult") && $("connAddTestResult").classList.add("hide")
+}
+
+// Render the connector field inputs into the shared add/edit form.
+// `editConfig` pre-fills non-secret values; in edit mode secret fields stay blank
+// and show PERSISTENT helper text "Leave blank to keep the saved value".
+function renderConnectorFields(type, editConfig) {
   const fieldsEl = $("connNewFields")
   if (!fieldsEl) return
+  const isEdit = !!editConfig
+  const cfg = editConfig || {}
   const ct = connectorTypes.find(t => t.type === type)
   if (!ct) { fieldsEl.innerHTML = ""; return }
   fieldsEl.innerHTML = ct.fields.map(f => {
     const full = f.key === "host" || f.label.toLowerCase().includes("url") ? ' class="field-full"' : ''
-    const savedNote = f.secret ? ` placeholder="${esc(f.placeholder || "")} (leave blank to keep saved)"` : ` placeholder="${esc(f.placeholder || "")}"`
+    const val = (!f.secret && cfg[f.key] != null) ? ` value="${esc(cfg[f.key])}"` : ""
+    const ph = ` placeholder="${esc(f.placeholder || "")}"`
+    const hint = (isEdit && f.secret) ? `<div class="conn-edit-hint">Leave blank to keep the saved value</div>` : ""
     return `<div${full}><label class="flbl">${esc(f.label)}${f.required ? " *" : ""}</label>
-      <input type="${f.secret ? "password" : "text"}" data-fkey="${esc(f.key)}" ${savedNote}
+      ${hint}
+      <input type="${f.secret ? "password" : "text"}" data-fkey="${esc(f.key)}"${ph}${val}
         style="width:100%;background:var(--ink-2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--paper);font-family:var(--body);font-size:13px;outline:none" />
     </div>`
   }).join("")
@@ -1075,9 +1254,11 @@ function renderConnectorFields(type) {
 
 $("connTypeSelect") && ($("connTypeSelect").onchange = () => {
   renderConnectorFields($("connTypeSelect").value)
+  $("connAddTestResult") && $("connAddTestResult").classList.add("hide")
 })
 
 $("connAddBtn") && ($("connAddBtn").onclick = () => {
+  resetConnForm()  // fresh create — clear any prior edit state
   $("connAddWrap").classList.remove("hide")
   $("connAddBtn").classList.add("hide")
 })
@@ -1085,7 +1266,34 @@ $("connAddBtn") && ($("connAddBtn").onclick = () => {
 $("connAddCancel") && ($("connAddCancel").onclick = () => {
   $("connAddWrap").classList.add("hide")
   $("connAddBtn").classList.remove("hide")
-  $("connAddMsg").textContent = ""
+  resetConnForm()
+})
+
+// Read the {type, config} the form would submit/PATCH right now.
+function readConnForm() {
+  const type = $("connTypeSelect").value
+  const config = {}
+  $("connNewFields").querySelectorAll("input[data-fkey]").forEach(inp => {
+    const v = inp.value.trim()
+    if (v) config[inp.getAttribute("data-fkey")] = v
+  })
+  return { type, config }
+}
+
+// Test connection (unsaved config) — POST /connectors/test, inline result, no save.
+$("connTestNew") && ($("connTestNew").onclick = async () => {
+  const { type, config } = readConnForm()
+  const resEl = $("connAddTestResult")
+  if (!type) { showConnResult(resEl, "err", "✕ Select a type first."); return }
+  $("connTestNew").disabled = true
+  showConnResult(resEl, "pend", "Testing…")
+  const r = await fetch(projPath("/connectors/test"), {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ type, config })
+  }).catch(() => null)
+  $("connTestNew").disabled = false
+  const d = r ? await r.json().catch(() => ({})) : {}
+  renderTestResult(resEl, r, d)
 })
 
 $("connSaveNew") && ($("connSaveNew").onclick = async () => {
@@ -1095,28 +1303,37 @@ $("connSaveNew") && ($("connSaveNew").onclick = async () => {
   const msg = $("connAddMsg")
   if (!type) { msg.style.color = "var(--rose)"; msg.textContent = "Select a type."; return }
   if (!name) { msg.style.color = "var(--rose)"; msg.textContent = "Enter a name."; return }
-  // Collect fields
+  // Collect fields. In edit mode a BLANK secret is omitted, which keeps the saved value server-side.
   const config = {}
   $("connNewFields").querySelectorAll("input[data-fkey]").forEach(inp => {
     const v = inp.value.trim()
     if (v) config[inp.getAttribute("data-fkey")] = v
   })
   $("connSaveNew").disabled = true
-  const r = await fetch(projPath("/connectors"), {
-    method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ type, name, config, autoCopy })
-  }).catch(() => null)
+  let r
+  if (connEditId) {
+    // Edit existing connector: PATCH { name, config }.
+    r = await fetch(projPath("/connectors/" + encodeURIComponent(connEditId)), {
+      method: "PATCH", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name, config })
+    }).catch(() => null)
+  } else {
+    r = await fetch(projPath("/connectors"), {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ type, name, config, autoCopy })
+    }).catch(() => null)
+  }
   $("connSaveNew").disabled = false
   const d = r ? await r.json().catch(() => ({})) : {}
   if (d.ok) {
-    msg.style.color = "var(--green)"; msg.textContent = "✓ Connector added."
+    msg.style.color = "var(--green)"; msg.textContent = connEditId ? "✓ Connector updated." : "✓ Connector added."
     $("connAddWrap").classList.add("hide"); $("connAddBtn").classList.remove("hide")
-    $("connNewName").value = ""; $("connNewAutoCopy").checked = false; $("connNewFields").innerHTML = ""
+    resetConnForm()
     await loadConnectors(true)
-    // Re-render tickets so copy-to dropdown picks up new connector
+    // Re-render tickets so copy-to dropdown picks up the new/updated connector
     renderTickets()
   } else {
-    msg.style.color = "var(--rose)"; msg.textContent = d.error || "Couldn't add connector."
+    msg.style.color = "var(--rose)"; msg.textContent = d.error || (connEditId ? "Couldn't update connector." : "Couldn't add connector.")
   }
 })
 

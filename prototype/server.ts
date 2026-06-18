@@ -637,10 +637,15 @@ Bun.serve({
         const c = String(code || "").trim()
         if (!(await verifyOtp(e, c))) return json({ error: "Invalid or expired code." }, 401)
         await upsertUser(e)
+        // First-run funnel: capture whether this is a brand-new account BEFORE ensureAccount bootstraps
+        // a default membership (which it always does on first login). A genuinely new user starts in the
+        // signup wizard, not a cold empty dashboard; returning users go straight to the dashboard.
+        const wasNew = (await membershipsFor(e)).length === 0
         await ensureAccount(e)
         const sid = token()
         await createSession(sid, e, Date.now() + SESSION_DAYS * 86400 * 1000)
-        return json({ ok: true, redirect: "/dashboard", token: sid }, 200, { "Set-Cookie": cookie("klav_session", sid, SESSION_DAYS * 86400, SECURE) })
+        const dest = wasNew ? "/onboarding" : "/dashboard"
+        return json({ ok: true, redirect: dest, token: sid }, 200, { "Set-Cookie": cookie("klav_session", sid, SESSION_DAYS * 86400, SECURE) })
       } catch (err: any) { return json({ error: err.message }, 500) }
     }
     if (req.method === "POST" && path === "/api/auth/logout") {
@@ -1348,11 +1353,19 @@ Bun.serve({
     }
     if (req.method === "GET" && path === "/app") return me ? file(PUB + "/index.html") : redirect("/login")
     if (req.method === "GET" && path === "/onboarding") {
-      // The new onboarding is the signup wizard for LOGGED-OUT users (email → OTP → name project inline).
-      // R9/P0 intent preserved: a logged-in user who already has a membership must not get stuck on
-      // onboarding — send them to the dashboard. Logged-out (or logged-in-without-membership) users can
-      // sign up inline, so we SERVE the page rather than bouncing to /login.
-      if (me && (await membershipsFor(me)).length > 0) return redirect("/dashboard")
+      // The onboarding wizard is the signup flow for new users (email → OTP → name project → add URL →
+      // install extension → pick Sims, inline). ensureAccount gives every verified user a default
+      // membership on first login, so "has a membership" can't tell new from returning. Instead, a user
+      // who has ALREADY been through setup is detected by a captured company domain (onboarding step 1);
+      // they skip to the dashboard. Fresh accounts (no domain yet) and logged-out visitors get the wizard.
+      if (me) {
+        const ms = await membershipsFor(me)
+        if (ms.length) {
+          const dr = await db!.execute({ sql: "SELECT domain FROM accounts WHERE id=?", args: [ms[0].workspaceId] })
+          const onboarded = dr.rows.length > 0 && !!(dr.rows[0] as any).domain
+          if (onboarded) return redirect("/dashboard")
+        }
+      }
       return file(SITE + "/onboarding.html")
     }
 
@@ -1695,7 +1708,7 @@ Bun.serve({
         return json({ project: { id: created.id, name: created.name, accountId: created.accountId, status: created.status, role: "admin" } }, 201)
       }
       // Project detail + members (projectAccess-gated) and project-scoped invite (R4) + monitored-urls (P3b) + connectors.
-      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?)?$/)
+      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/test)?)?$/)
       if (projMatch) {
         const pid = projMatch[1]
         const sub = projMatch[2] || ""
@@ -1746,6 +1759,65 @@ Bun.serve({
 
         // ── Connector CRUD (admin-only write; member-readable) ──
         if (sub.startsWith("/connectors")) {
+          // Test-connection routes must be matched BEFORE the generic /connectors/:cid handling,
+          // because `^\/connectors\/([^/]+)$` would otherwise capture cid="test".
+          const testNoCid = sub === "/connectors/test"
+          const cidTestMatch = sub.match(/^\/connectors\/([^/]+)\/test$/)
+
+          // A clearly-labelled test ticket used by both test endpoints to genuinely verify connectivity.
+          const TEST_PAYLOAD: TicketPayload = {
+            title: "✅ Klavity connection test",
+            body: "This is a test ticket created by Klavity to verify this connector is configured correctly. It's safe to close or delete.",
+            severity: null,
+            url: null,
+            simName: "Klavity",
+            createdAt: Date.now(),
+            klavityUrl: `${BASE}/dashboard`,
+          }
+
+          // POST /api/projects/:pid/connectors/test — test an UNSAVED config from the add-destination form (admin only)
+          if (req.method === "POST" && testNoCid) {
+            if (access !== "admin") return json({ error: "Only project admins can manage connectors." }, 403)
+            const body = await req.json().catch(() => ({}))
+            const type = String(body.type || "")
+            const config: Record<string, string> = (body.config && typeof body.config === "object") ? body.config : {}
+            const adapter = getConnector(type)
+            if (!adapter) return json({ error: `Unknown connector type: ${type}` }, 400)
+            const validation = adapter.validate(config)
+            if (!validation.ok) return json({ error: validation.error || "Invalid connector config." }, 400)
+            try {
+              const result = await adapter.createIssue(TEST_PAYLOAD, config)
+              return json({ ok: true, externalKey: result.externalKey, externalUrl: result.externalUrl })
+            } catch (e: any) {
+              return json({ ok: false, error: e?.message || "Test failed" })
+            }
+          }
+
+          // POST /api/projects/:pid/connectors/:cid/test — test an ALREADY-SAVED connector (admin only)
+          if (req.method === "POST" && cidTestMatch) {
+            if (access !== "admin") return json({ error: "Only project admins can manage connectors." }, 403)
+            const connector = await getConnectorById(pid, cidTestMatch[1])
+            if (!connector) return json({ error: "Connector not found." }, 404)
+            const adapter = getConnector(connector.type)
+            if (!adapter) return json({ error: "Unknown connector type." }, 400)
+
+            // Decrypt secret fields before calling createIssue
+            const decryptedConfig: Record<string, string> = { ...connector.config }
+            for (const f of adapter.fields) {
+              if (f.secret && connector.config[f.key]) {
+                try { decryptedConfig[f.key] = await decryptSecret(connector.config[f.key]) }
+                catch { decryptedConfig[f.key] = "" }
+              }
+            }
+
+            try {
+              const result = await adapter.createIssue(TEST_PAYLOAD, decryptedConfig)
+              return json({ ok: true, externalKey: result.externalKey, externalUrl: result.externalUrl })
+            } catch (e: any) {
+              return json({ ok: false, error: e?.message || "Test failed" })
+            }
+          }
+
           const cidMatch = sub.match(/^\/connectors\/([^/]+)$/)
           const cid = cidMatch ? cidMatch[1] : null
 

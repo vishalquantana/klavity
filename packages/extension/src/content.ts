@@ -909,6 +909,12 @@ async function klavSetConsent(projectId: string, status: 'granted' | 'paused' | 
   try { await chrome.storage.local.set({ [klavConsentKey(projectId)]: status }) } catch { /* ignore */ }
 }
 
+// Global Sims kill-switch (Options page). Defaults to ON: a missing/undefined flag
+// means enabled, so existing installs keep working until the user explicitly opts out.
+async function klavSimsEnabled(): Promise<boolean> {
+  try { const r = await chrome.storage.local.get('klavSimsEnabled'); return r.klavSimsEnabled !== false } catch { return true }
+}
+
 function klavSend<T = any>(msg: BackgroundMessage): Promise<T> {
   return new Promise((resolve) => {
     try { chrome.runtime.sendMessage(msg, (resp) => { void chrome.runtime.lastError; resolve(resp as T) }) }
@@ -1096,6 +1102,14 @@ async function maybeActivate(reason: string) {
     const latestSig = klavDomSig()
     if (klavPendingLatest === true) klavPendingLatest = latestSig
     else klavPendingLatest = latestSig  // always overwrite with newest
+    return
+  }
+
+  // Global kill-switch (Options page). When off: no activation, no capture, no
+  // consent card, no "Sims reviewing" indicator. Checked early so it's a true
+  // global off — per-project consent/pause logic below only runs when enabled.
+  if (!(await klavSimsEnabled())) {
+    klavIndicatorEl?.remove(); klavIndicatorEl = null
     return
   }
 

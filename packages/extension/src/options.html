@@ -155,6 +155,23 @@ input::placeholder,textarea::placeholder{color:var(--paper-faint)}
     </div>
   </div>
 
+  <div class="section" id="sims-section">
+    <h2>Sims (auto-review)</h2>
+    <div class="switchrow">
+      <div class="meta">
+        <strong>Let Sims automatically review pages</strong><br>
+        <small>On = Sims review monitored pages and post feedback. Off = no automatic reviews anywhere.</small>
+      </div>
+      <label class="switch"><input type="checkbox" id="simsEnabled"><span class="slider"></span></label>
+    </div>
+    <small style="display:block;margin-top:12px;line-height:1.5;">
+      <strong style="color:var(--paper-dim);">Privacy:</strong> When Sims review a page, Klavity captures a screenshot of the visible area plus the page's structure and sends it to Klavity to generate feedback. This only happens on pages your team is monitoring, and only after you've given consent the first time. Turn the toggle off to stop all automatic reviews.
+    </small>
+    <small style="display:block;margin-top:8px;line-height:1.5;">
+      You can also pause Sims on any page using the "Sims reviewing" pill in the bottom-right corner.
+    </small>
+  </div>
+
   <label style="margin-top:20px;display:flex;align-items:center;gap:8px;">
     <input type="checkbox" id="autoFileErrors" style="width:auto;">
     Auto-file silent tickets for unhandled JS errors

@@ -50,9 +50,19 @@ async function load() {
   setCloud(!!s.backendUrl)
   ;($('autoFileErrors') as HTMLInputElement).checked = s.autoFileErrors
 
+  // Global Sims kill-switch lives in chrome.storage.local (the content script reads it
+  // there). Defaults to ON: a missing/undefined flag means enabled.
+  const local = await chrome.storage.local.get('klavSimsEnabled')
+  ;($('simsEnabled') as HTMLInputElement).checked = local.klavSimsEnabled !== false
+
   showSection(s.integration)
   renderAccount()
 }
+
+// Persist the Sims toggle straight to chrome.storage.local (separate from klavSettings).
+$('simsEnabled').addEventListener('change', (e) => {
+  void chrome.storage.local.set({ klavSimsEnabled: (e.target as HTMLInputElement).checked })
+})
 
 $('integration').addEventListener('change', (e) => {
   showSection((e.target as HTMLSelectElement).value as IntegrationType)

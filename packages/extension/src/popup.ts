@@ -63,7 +63,7 @@ submitEl.addEventListener('click', async () => {
 $('auth-silent').addEventListener('click', async () => {
   setErr('')
   if (await trySilentLogin() && await isSignedIn()) showApp()
-  else setErr('No active Klavity session found in this browser.')
+  else setErr('Not signed in on the website yet — enter your email above to get a code.')
 })
 
 // ── Signed-in view ──────────────────────────────────────────────────────
