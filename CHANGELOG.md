@@ -10,6 +10,25 @@ top entry here, and every `package.json` (`/`, `core`, `extension`, `sdk`) plus
 the extension `manifest.json` always move together. See the PRD's _Versioning_
 section for the bump rules.
 
+## [0.16.1] — 2026-06-19
+
+### Changed
+- **Onboarding step 2 now nudges the extension connection instead of letting it slip.**
+  The primary CTA reads "Connect the extension to continue" and only becomes a plain
+  "Continue →" once the handshake succeeds — so a new team no longer sails past the one
+  step the product needs, while "I'll set this up later" keeps the flow unblocked. The
+  step kicker is now "where Sims watch" (was internal copy), and an inline hint explains
+  URL-pattern wildcards (`/*`) and the path-only normalization the server applies.
+- **Dashboard first-run checklist is now progress-aware.** Completed steps tick off
+  (green ✓ + strikethrough) — "Add your Sims" once a Sim exists, "Watch your first review"
+  once the first observation lands — and the checklist now persists until that first
+  review (the activation goal) rather than disappearing the moment one Sim is added.
+  De-duplicated the doubled "Welcome to Klavity" heading/intro.
+
+### Fixed
+- The onboarding "embed the widget" tile is now clearly marked **Coming soon** and
+  non-interactive, instead of presenting as a clickable option that did nothing.
+
 ## [0.16.0] — 2026-06-19
 
 ### Added

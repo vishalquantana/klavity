@@ -229,6 +229,8 @@ details.drawer .drawer-in{padding:0 22px 22px}
 .checklist ol{list-style:none;counter-reset:cl;display:flex;flex-direction:column;gap:12px}
 .checklist li{counter-increment:cl;display:flex;gap:12px;align-items:flex-start}
 .checklist li::before{content:counter(cl);flex-shrink:0;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-family:var(--mono);font-weight:600;font-size:12px;color:#fff;background:linear-gradient(135deg,var(--indigo-deep),#a78bfa)}
+.checklist li.cl-done::before{content:"✓";background:var(--green)}
+.checklist li.cl-done .cl-step-t{color:var(--paper-faint);text-decoration:line-through}
 [data-theme="dark"] .checklist li::before{color:#0c0a08}
 .checklist .cl-step-t{font-size:14px;font-weight:600}
 .checklist .cl-step-d{font-size:12.5px;color:var(--paper-faint);margin-top:2px}
@@ -289,7 +291,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   <div class="checklist hide" id="checklist">
     <button class="cl-x" id="checklistDismiss" aria-label="Dismiss checklist">✕</button>
     <h3>Welcome to Klavity</h3>
-    <p class="cl-intro">Welcome to Klavity — here's how to get your first review:</p>
+    <p class="cl-intro">Four steps to your first Sim review — we'll tick them off as you go:</p>
     <ol>
       <li>
         <div>
@@ -303,13 +305,13 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           <div class="cl-step-d">Allowlist the paths your Sims should react on. <a href="#liveDrawer" id="checklistUrlLink">Open Live Sims settings →</a></div>
         </div>
       </li>
-      <li>
+      <li id="clSims">
         <div>
           <div class="cl-step-t">Add your Sims (built from real customer calls)</div>
           <div class="cl-step-d">Extract personas from a transcript in the studio. <a href="/app" id="checklistStudioLink">Launch the Sims studio →</a></div>
         </div>
       </li>
-      <li>
+      <li id="clReview">
         <div>
           <div class="cl-step-t">Watch your first review roll in</div>
           <div class="cl-step-d">When a Sim reacts to a page, it shows up under Recent tickets and What your Sims are saying.</div>
@@ -539,10 +541,17 @@ function render() {
 function renderChecklist() {
   const el = $("checklist")
   if (!el) return
-  const simCount = (state.sims || []).length
+  const hasSims = (state.sims || []).length > 0
+  const counts = state.counts || {}
+  // "First review rolled in" = at least one real feedback observation exists for this project.
+  const hasReview = (counts.feedback || 0) > 0 || (state.saying || []).some(s => s.source === "feedback")
   let dismissed = false
   try { dismissed = sessionStorage.getItem("klavChecklistDismissed") === "1" } catch (e) {}
-  el.classList.toggle("hide", simCount > 0 || dismissed)
+  // Keep guiding until the activation goal (first review) is reached — not just until the first Sim.
+  el.classList.toggle("hide", hasReview || dismissed)
+  // Tick off the steps we can detect from dashboard state so "what's left" is obvious at a glance.
+  const simsLi = $("clSims"); if (simsLi) simsLi.classList.toggle("cl-done", hasSims)
+  const revLi = $("clReview"); if (revLi) revLi.classList.toggle("cl-done", hasReview)
   // Point step-3 studio link at the active project (mirrors the Sims-link pattern).
   const pid = curProjId()
   const studio = $("checklistStudioLink")

@@ -183,21 +183,22 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     <div class="panel step hide" data-s="2">
       <div class="content" style="padding:60px clamp(28px,6vw,90px)">
         <div class="panel">
-          <div class="kicker amber">Step 2 of 3 · the new magic</div>
+          <div class="kicker amber">Step 2 of 3 · where Sims watch</div>
           <h1>Where should your Sims <em>watch?</em></h1>
           <p class="sub">Add your product's URL. When you — or a teammate with the extension — open it, your Sims jump out and comment in-character, live on the real page. Every reaction is one click from a ticket.</p>
           <div class="urlrow">
             <input class="in" id="urlInput" placeholder="app.acme.com/*" onkeydown="if(event.key==='Enter')addUrl()" />
             <button class="btn btn-ghost" onclick="addUrl()">Add</button>
           </div>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--paper-faint);line-height:1.5;margin-bottom:12px">Tip: end a path with <code>/*</code> to cover every page beneath it — e.g. <code>app.acme.com/*</code>. We drop <code>https://</code> and anything after <code>?</code> for you.</div>
           <div class="empty hide" id="urlEmpty">No URLs yet — add the page your Sims should watch.</div>
           <div class="chiplist" id="urlChips"></div>
           <div class="err" id="s2err"></div>
           <div class="tiles" style="margin-top:18px">
             <div class="tile sel" id="chromeTile" onclick="connectExtension()"><div class="ti">🧩</div><h3>Connect the Klavity extension</h3><p id="chromeMsg">Required for live Sims on your real pages — click to connect (or install it first).</p></div>
-            <div class="tile alt"><div class="ti">&lt;/&gt;</div><h3>Or embed the widget</h3><p>One script tag for any web app — no extension needed.</p></div>
+            <div class="tile alt" aria-disabled="true" style="opacity:.6;cursor:default" onmouseover="this.style.borderColor='';this.style.transform=''"><div class="ti">&lt;/&gt;</div><h3>Or embed the widget <span style="font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--paper-faint);border:1px solid var(--line);border-radius:6px;padding:2px 6px;vertical-align:middle">Coming soon</span></h3><p>One script tag for any web app — no extension needed.</p></div>
           </div>
-          <div class="row"><button class="btn btn-indigo" onclick="go(3)">Save &amp; continue →</button><span class="skip" onclick="go(3)">I'll add a URL later</span></div>
+          <div class="row"><button class="btn btn-indigo" id="s2continue" onclick="connectExtension()">Connect the extension to continue →</button><span class="skip" onclick="go(3)">I'll set this up later</span></div>
         </div>
       </div>
     </div>
@@ -352,7 +353,11 @@ async function connectExtension(){
         if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message)); else resolve(result)
       })
     })
-    if (resp && resp.ok) { msg.textContent = '✓ Extension connected — your Sims can now go live on monitored URLs.' }
+    if (resp && resp.ok) {
+      msg.textContent = '✓ Extension connected — your Sims can now go live on monitored URLs.'
+      // Now that the extension is wired, turn the primary CTA into a clean "continue".
+      const cont = $('s2continue'); if (cont){ cont.textContent = 'Continue →'; cont.onclick = () => go(3) }
+    }
     else throw new Error('the extension rejected the connection')
   } catch(e){ msg.textContent = 'Couldn’t connect: ' + e.message }
 }
