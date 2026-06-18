@@ -1,5 +1,5 @@
 // Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, upsertPersona, deletePersona, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, issueExtensionToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, upsertPersona, deletePersona, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, issueExtensionToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject } from "./lib/db"
 import { getConnector, listConnectorTypes, type TicketPayload } from "./lib/connectors/index"
 import { applyReconcileOps, recurrenceFromEvents, type ReconcileOp, type Trait, type TraitEventRow } from "./lib/provenance"
 import { sendOtp } from "./lib/mail"
@@ -363,6 +363,13 @@ function citationLine(c: {
 }
 
 // ── http helpers ──
+const WIDGET_CORS: Record<string, string> = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET, POST, OPTIONS",
+  "access-control-allow-headers": "authorization, content-type",
+  "access-control-max-age": "600",
+}
+
 function json(body: unknown, status = 200, headers: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } })
 }
@@ -589,6 +596,11 @@ Bun.serve({
   async fetch(req) {
     const url = new URL(req.url)
     const path = url.pathname
+
+    // ── CORS preflight for cross-origin widget calls ──
+    if (req.method === "OPTIONS" && path.startsWith("/api/")) {
+      return new Response(null, { status: 204, headers: WIDGET_CORS })
+    }
 
     // ── favicon ──
     if (req.method === "GET" && path === "/favicon.svg") return file(PUB + "/favicon.svg")
@@ -864,7 +876,7 @@ Bun.serve({
 
       if (req.method === "GET" && path === "/api/personas") {
         const personas = await listPersonas(wid)
-        return json({ personas })
+        return json({ personas }, 200, WIDGET_CORS)
       }
       if (req.method === "POST" && path === "/api/personas") {
         try {
@@ -941,7 +953,23 @@ Bun.serve({
       if (!["granted", "paused", "revoked"].includes(status)) return json({ error: "status must be granted|paused|revoked." }, 400)
       await setConsent(projC.id, meC, status as "granted" | "paused" | "revoked")
       const cur = await getConsent(projC.id, meC)
-      return json({ ok: true, projectId: projC.id, consent: cur?.status ?? status })
+      return json({ ok: true, projectId: projC.id, consent: cur?.status ?? status }, 200, WIDGET_CORS)
+    }
+
+    // ── widget token — mints a per-user extension token for the embeddable widget. Session-cookie gated
+    // (first-party popup only). Validates project access and that the request origin is on the allowlist.
+    if (req.method === "POST" && path === "/api/widget/token") {
+      const meW = await sessionEmail(req)            // first-party popup → cookie only
+      if (!meW) return json({ error: "Sign in to continue." }, 401)
+      const body = await req.json().catch(() => ({}))
+      const projW = await resolveProject(meW, String(body.projectId || ""))
+      if (!projW) return json({ error: "No access to this project." }, 403)
+      const origin = String(body.origin || "")
+      if (!(await originAllowedForProject(projW.id, origin))) {
+        return json({ error: "This origin is not on the project's watch list." }, 403)
+      }
+      const widgetToken = await issueExtensionToken(meW, projW.id, SESSION_DAYS * 24 * 60 * 60 * 1000)
+      return json({ token: widgetToken })
     }
 
     // ── admin pause (P3b) — project-wide review_mode 'paused' (admin pause) | 'auto' (resume). Cookie OR
@@ -1140,7 +1168,7 @@ Bun.serve({
         }
 
         console.log(`[review] done path=${urlPath || "/"} sims_reviewed=${out.length} reactions=${out.reduce((n: number, r: any) => n + (r.reactions?.length || 0), 0)}`)
-        return json({ ok: true, projectId, screenshotId, reviews: out })
+        return json({ ok: true, projectId, screenshotId, reviews: out }, 200, WIDGET_CORS)
       } catch (e: any) {
         return json({ ok: false, reason: "error", error: e?.message || "review failed" }, 500)
       }
