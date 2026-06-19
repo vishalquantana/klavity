@@ -142,3 +142,29 @@ test("POST /api/sims/:id/traits creates a trait + manual_create event", async ()
   const { events } = await ev.json()
   expect(events.some((e: any) => e.op === "manual_create")).toBe(true)
 })
+
+// ── Task 5: PUT edits trait + logs edit event ──
+test("PUT edits trait text + logs edit event with before/after", async () => {
+  const list = await (await authedFetch(`/api/sims/sim_t/traits?project=${PROJECT_ID}`)).json()
+  const id = list.traits[0].id
+  const oldText = list.traits[0].text
+  const res = await authedFetch(`/api/sims/sim_t/traits/${id}?project=${PROJECT_ID}`, {
+    method: "PUT", body: JSON.stringify({ text: "edited text" }),
+  })
+  expect(res.status).toBe(200)
+  expect((await res.json()).trait.text).toBe("edited text")
+  const { events } = await (await authedFetch(`/api/sims/sim_t/evolution?project=${PROJECT_ID}`)).json()
+  const editEv = events.find((e: any) => e.op === "edit")
+  expect(editEv.beforeText).toBe(oldText)
+  expect(editEv.afterText).toBe("edited text")
+})
+
+// ── Task 5: DELETE soft-archives a trait ──
+test("DELETE archives a trait (soft) — drops from active list, stays in events", async () => {
+  const list = await (await authedFetch(`/api/sims/sim_t/traits?project=${PROJECT_ID}`)).json()
+  const id = list.traits[0].id
+  const res = await authedFetch(`/api/sims/sim_t/traits/${id}?project=${PROJECT_ID}`, { method: "DELETE" })
+  expect(res.status).toBe(200)
+  const after = await (await authedFetch(`/api/sims/sim_t/traits?project=${PROJECT_ID}`)).json()
+  expect(after.traits.some((t: any) => t.id === id)).toBe(false)
+})
