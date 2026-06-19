@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Klavity Snap",
-  "version": "0.19.0",
-  "description": "Right-click to file annotated bug reports to Jira, Linear, GitHub, or Plane.",
+  "version": "0.20.0",
+  "description": "AI Sims review your pages and file bug & feature tickets to Jira, Linear, GitHub, or Plane — or report any page in one click.",
   "permissions": ["activeTab", "storage", "scripting", "tabs", "cookies"],
   "host_permissions": [
     "https://*.atlassian.net/*",

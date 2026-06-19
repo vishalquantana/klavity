@@ -10,20 +10,20 @@ top entry here, and every `package.json` (`/`, `core`, `extension`, `sdk`) plus
 the extension `manifest.json` always move together. See the PRD's _Versioning_
 section for the bump rules.
 
-## [0.19.0] — 2026-06-19
+## [0.20.0] — 2026-06-19
 
 ### Added
 - **Sim Studio: 3-pane studio UI replaces single-Sim view** — live attribution
   inspector, inline versioned editing, new-Sim + transcript upload. The `/app?sim=`
   path now opens a three-column studio (sims list / persona detail / attribution
-  inspector) wired to the v0.18.0 trait/persona/transcript APIs. Column 3 surfaces
+  inspector) wired to the trait/persona/transcript APIs. Column 3 surfaces
   Source / Evolution (lit-spine with `actor` on manual edits) / Transcript (raw text
   with the source quote highlighted). Personas and traits are editable inline
   (PUT/DELETE, every change versioned). New `GET /api/transcripts` lists a project's
   transcripts for column 1's folder. The old single-column focused view
   (`renderFocusedSim`) is retired.
 
-## [0.18.0] — 2026-06-19
+## [0.19.0] — 2026-06-19
 
 ### Added
 - **Sim Studio backend: versioned trait & persona editing.** Human-facing, fully
@@ -38,6 +38,29 @@ section for the bump rules.
     feed now surfaces `actor` on each event.
   - New `persona_edits` audit table; `PUT /api/personas/:id` now diffs identity
     fields and logs one row per change, exposed via `GET /api/personas/:id/edits`.
+
+## [0.18.1] — 2026-06-19
+
+### Changed
+- **Onboarding "Or embed the widget" tile is now live** (was "Coming soon"). It reveals a
+  copy-paste `<script src="…/widget.js" data-project="…">` snippet. The embeddable widget
+  itself shipped in 0.18.0; this flips its onboarding advertisement on after live
+  verification on prod (bundle mount on a 3rd-party page, token mint for allowlisted
+  origins / 403 for others, and cross-origin CORS — including the error-path fix — all
+  confirmed).
+
+## [0.18.0] — 2026-06-19
+
+### Added
+- **Ad-hoc "Analyze this page" (extension).** A signed-in user can run their project's
+  Sims on the current tab with one popup click — regardless of the admin URL allowlist.
+  First use on a domain shows a one-time confirm (a screenshot of the visible area is
+  sent to Klavity); reactions render in-page and persist as dashboard tickets like any
+  review. Built for solo devs: one project resolves silently, no setup. Server-side,
+  `POST /api/sim/review` accepts `adhoc:true` and `reviewGate` bypasses the passive-
+  monitoring gates (pause/consent/allowlist/dedupe) for the explicit action while still
+  enforcing sign-in/project-access and the daily review budget. The Options "Sims"
+  kill-switch does not gate ad-hoc (it is an explicit, user-initiated action).
 
 ## [0.17.0] — 2026-06-19
 
