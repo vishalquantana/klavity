@@ -319,6 +319,173 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .fsv-raw.open{display:block}
 .fsv-raw-loading{font-size:12px;color:var(--paper-faint);padding:8px 0;display:none}
 .fsv-raw-loading.show{display:block}
+
+/* ───────────────────────── Sim Studio (3-pane) ─────────────────────────
+   Ported from public/sim-studio-hybrid.html. All classes namespaced `ss-`
+   to avoid collisions with existing index.html classes. Design tokens
+   (--ink/--paper/--indigo/fonts) already exist above — not re-declared.   */
+.ss-chip{font-family:var(--body);font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--paper-faint);background:var(--ink-3);border:1px solid var(--line);border-radius:20px;padding:3px 9px;display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.ss-kind-dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:none}
+.ss-kind-PAIN{color:var(--rose)} .ss-kind-WANT{color:var(--amber)} .ss-kind-LOVE{color:var(--green)}
+.ss-dot-PAIN{background:var(--rose)} .ss-dot-WANT{background:var(--amber)} .ss-dot-LOVE{background:var(--green)}
+
+/* triptych */
+.ss-grid{display:flex;min-height:0;height:calc(100vh - 120px);max-height:760px;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--ink)}
+.ss-col{display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.ss-scroll{overflow-y:auto;flex:1;min-height:0}
+.ss-scroll::-webkit-scrollbar{width:9px}
+.ss-scroll::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:9px;border:2px solid transparent;background-clip:padding-box}
+
+/* COLUMN 1 — list */
+.ss-col1{width:288px;flex:none;background:var(--ink-2);border-right:1px solid var(--line)}
+.ss-c1-head{flex:none;padding:16px 16px 12px}
+.ss-c1-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.ss-c1-top h2{font-family:var(--display);font-size:19px;font-weight:560;letter-spacing:-.01em}
+.ss-ghostbtn{font-family:var(--body);font-size:11.5px;font-weight:600;color:var(--indigo-deep);background:transparent;border:1px solid var(--line);border-radius:8px;padding:5px 10px;cursor:pointer;transition:.18s}
+.ss-ghostbtn:hover{border-color:var(--indigo-soft);background:color-mix(in srgb,var(--indigo) 8%,transparent)}
+.ss-search{position:relative;margin-top:4px}
+.ss-search input{width:100%;font-family:var(--body);font-size:13px;color:var(--paper);background:var(--ink-3);border:1px solid var(--line);border-radius:10px;padding:9px 12px 9px 32px;outline:none;transition:.18s}
+.ss-search input::placeholder{color:var(--paper-faint)}
+.ss-search input:focus{border-color:var(--indigo-soft);background:var(--ink-2)}
+.ss-search .ss-si{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--paper-faint);font-size:13px;pointer-events:none}
+
+.ss-simrow{display:flex;align-items:center;gap:11px;padding:11px 16px 11px 13px;border-left:3px solid transparent;cursor:pointer;transition:background .15s}
+.ss-simrow:hover{background:var(--ink-3)}
+.ss-simrow.sel{background:var(--ink-3);border-left-color:var(--indigo)}
+.ss-av{flex:none;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:700;font-family:var(--body);letter-spacing:.01em;overflow:hidden}
+.ss-av img{width:100%;height:100%;object-fit:cover}
+.ss-simrow .ss-av{width:38px;height:38px;font-size:13px}
+.ss-simrow .ss-meta{min-width:0;flex:1}
+.ss-simrow .ss-nm{font-weight:700;font-size:13.5px;letter-spacing:-.01em;display:flex;align-items:center;gap:6px}
+.ss-simrow .ss-ro{font-size:11.5px;color:var(--paper-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ss-simrow .ss-mt{font-family:var(--mono);font-size:9.5px;color:var(--paper-faint);margin-top:2px}
+.ss-type-pill{font-size:8px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--paper-faint);border:1px solid var(--line);border-radius:10px;padding:1px 5px}
+
+.ss-folder{margin-top:8px;border-top:1px solid var(--line)}
+.ss-folder-head{display:flex;align-items:center;gap:8px;padding:13px 16px 10px;cursor:pointer;user-select:none}
+.ss-folder-head .ss-tw{font-size:10px;color:var(--paper-faint);transition:transform .2s;width:10px}
+.ss-folder.open .ss-folder-head .ss-tw{transform:rotate(90deg)}
+.ss-folder-head .ss-fl{font-family:var(--body);font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--paper-dim)}
+.ss-folder-head .ss-cnt{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--paper-faint)}
+.ss-folder-body{display:none}
+.ss-folder.open .ss-folder-body{display:block}
+.ss-trow{display:flex;align-items:center;gap:9px;padding:8px 16px 8px 30px;cursor:pointer;transition:background .15s}
+.ss-trow:hover{background:var(--ink-3)}
+.ss-trow .ss-tdoc{font-size:11px;color:var(--paper-faint)}
+.ss-trow .ss-tt{font-size:12px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--paper-dim)}
+.ss-trow .ss-td{font-family:var(--mono);font-size:9.5px;color:var(--paper-faint)}
+
+/* COLUMN 2 — detail */
+.ss-col2{flex:1;min-width:0;background:var(--ink)}
+.ss-c2-pad{padding:22px 26px 60px;max-width:760px}
+.ss-id-card{background:var(--ink-2);border:1px solid var(--line);border-radius:16px;box-shadow:0 10px 30px rgba(25,20,15,.05);padding:20px 22px;display:flex;gap:18px;align-items:flex-start}
+.ss-id-card .ss-av{width:54px;height:54px;font-size:19px}
+.ss-id-main{flex:1;min-width:0}
+.ss-id-name{font-family:var(--display);font-size:27px;font-weight:520;letter-spacing:-.02em;line-height:1.1}
+.ss-id-role-line{display:flex;align-items:center;gap:9px;margin-top:5px;flex-wrap:wrap}
+.ss-id-role{font-size:13.5px;color:var(--paper-dim)}
+.ss-id-summary{margin-top:13px;font-size:14.5px;color:var(--paper-dim);max-width:54ch;line-height:1.55}
+.ss-id-meta{margin-top:11px;font-family:var(--mono);font-size:10.5px;color:var(--paper-faint);letter-spacing:.02em}
+.ss-id-edit input,.ss-id-edit textarea{width:100%;font-family:var(--body);color:var(--paper);background:var(--ink-3);border:1px solid var(--line);border-radius:9px;padding:7px 10px;outline:none;margin-bottom:7px}
+.ss-id-edit input:focus,.ss-id-edit textarea:focus{border-color:var(--indigo-soft)}
+
+.ss-traits-wrap{margin-top:26px;display:flex;flex-direction:column;gap:22px}
+.ss-tgroup-head{display:flex;align-items:center;gap:9px;margin-bottom:10px}
+.ss-tgroup-head .ss-lbl{font-family:var(--body);font-size:10.5px;font-weight:800;letter-spacing:.13em;text-transform:uppercase}
+.ss-tgroup-head .ss-ln{flex:1;height:1px;background:var(--line)}
+.ss-tgroup-head .ss-gc{font-family:var(--mono);font-size:10px;color:var(--paper-faint)}
+
+.ss-trait{background:var(--ink-2);border:1px solid var(--line);border-radius:14px;padding:14px 16px;cursor:pointer;transition:.16s;position:relative}
+.ss-trait:hover{border-color:var(--line-2);transform:translateY(-1px);box-shadow:0 8px 22px rgba(25,20,15,.06)}
+.ss-trait.sel{border-color:var(--indigo);box-shadow:0 0 0 3px color-mix(in srgb,var(--indigo) 22%,transparent)}
+.ss-trait+.ss-trait{margin-top:9px}
+.ss-trait-text{font-size:14.5px;font-weight:500;color:var(--paper);line-height:1.45}
+.ss-trait-foot{display:flex;align-items:center;gap:10px;margin-top:11px;flex-wrap:wrap}
+.ss-prov{font-family:var(--mono);font-size:10px;color:var(--paper-faint);display:inline-flex;align-items:center;gap:5px;background:var(--ink-3);border:1px solid var(--line);border-radius:7px;padding:3px 8px}
+.ss-prov .ss-ar{color:var(--indigo)}
+.ss-strength{display:flex;gap:3px;align-items:center}
+.ss-strength .ss-bar{width:14px;height:4px;border-radius:3px;background:var(--line-2)}
+.ss-strength .ss-bar.on{background:currentColor}
+.ss-strength-lbl{font-family:var(--mono);font-size:9px;color:var(--paper-faint);letter-spacing:.06em;text-transform:uppercase}
+.ss-trait-ctl{position:absolute;top:11px;right:12px;display:flex;gap:4px;opacity:0;transition:opacity .15s}
+.ss-trait:hover .ss-trait-ctl{opacity:1}
+.ss-trait-ctl button{font-size:12px;line-height:1;color:var(--paper-faint);background:var(--ink-3);border:1px solid var(--line);border-radius:7px;padding:3px 6px;cursor:pointer}
+.ss-trait-ctl button:hover{color:var(--paper);border-color:var(--line-2)}
+.ss-trait-edit textarea{width:100%;font-family:var(--body);font-size:14px;color:var(--paper);background:var(--ink-3);border:1px solid var(--indigo-soft);border-radius:9px;padding:8px 10px;outline:none}
+.ss-mini-row{display:flex;gap:6px;margin-top:8px}
+.ss-mini-btn{font-family:var(--body);font-size:11.5px;font-weight:600;border-radius:8px;padding:5px 11px;cursor:pointer;border:1px solid var(--line)}
+.ss-mini-btn.primary{color:#fff;background:var(--indigo-deep);border-color:var(--indigo-deep)}
+.ss-mini-btn.ghost{color:var(--paper-dim);background:transparent}
+
+.ss-c2-empty{padding:60px 26px;color:var(--paper-faint);font-size:14px;max-width:46ch}
+.ss-newform{background:var(--ink-2);border:1px solid var(--indigo-soft);border-radius:14px;padding:14px 16px;margin:12px 16px}
+.ss-newform input,.ss-newform select,.ss-newform textarea{width:100%;font-family:var(--body);font-size:13px;color:var(--paper);background:var(--ink-3);border:1px solid var(--line);border-radius:9px;padding:7px 10px;outline:none;margin-bottom:7px}
+.ss-toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--paper);color:var(--ink);font-size:13px;font-weight:600;padding:10px 18px;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.25);z-index:60;animation:ss-fade .2s ease}
+
+/* COLUMN 3 — inspector */
+.ss-col3{width:368px;flex:none;background:var(--ink-2);border-left:1px solid var(--line)}
+.ss-insp-head{flex:none;padding:16px 18px 0}
+.ss-insp-title{font-family:var(--body);font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint)}
+.ss-insp-trait{font-family:var(--display);font-size:16.5px;font-weight:520;letter-spacing:-.01em;margin-top:6px;line-height:1.25}
+.ss-tabs{display:flex;gap:2px;margin-top:14px;border-bottom:1px solid var(--line)}
+.ss-tab{font-family:var(--body);font-size:12.5px;font-weight:600;color:var(--paper-faint);background:none;border:none;padding:9px 12px;cursor:pointer;position:relative;transition:color .15s}
+.ss-tab:hover{color:var(--paper-dim)}
+.ss-tab.on{color:var(--paper)}
+.ss-tab.on::after{content:"";position:absolute;left:8px;right:8px;bottom:-1px;height:2px;border-radius:2px;background:var(--indigo)}
+.ss-panel{display:none;padding:18px 18px 50px}
+.ss-panel.on{display:block;animation:ss-fade .2s ease}
+@keyframes ss-fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+/* source tab */
+.ss-quote-block{border-left:3px solid var(--indigo);padding:6px 0 6px 16px;margin-bottom:18px}
+.ss-quote-block .ss-q{font-family:var(--display);font-size:18px;font-weight:420;font-style:italic;line-height:1.4;color:var(--paper)}
+.ss-attr-row{display:flex;align-items:center;gap:10px;padding:11px 0;border-top:1px solid var(--line)}
+.ss-attr-row .ss-k{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--paper-faint);width:78px;flex:none}
+.ss-attr-row .ss-v{font-size:13px;color:var(--paper);font-weight:500}
+.ss-attr-row .ss-v.mono{font-family:var(--mono);font-size:11.5px;font-weight:400;color:var(--paper-dim)}
+.ss-spk{display:flex;align-items:center;gap:8px}
+.ss-spk .ss-av{width:24px;height:24px;font-size:9px}
+.ss-viewlink{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--indigo-deep);text-decoration:none;margin-top:16px;cursor:pointer}
+.ss-viewlink:hover{text-decoration:underline}
+.ss-reinforce{margin-top:18px;background:var(--ink-3);border:1px solid var(--line);border-radius:10px;padding:11px 13px;display:flex;align-items:center;gap:10px}
+.ss-reinforce .ss-rn{font-family:var(--display);font-size:21px;font-weight:560;color:var(--rose)}
+.ss-reinforce .ss-rl{font-size:11.5px;color:var(--paper-dim);line-height:1.35}
+.ss-reinforce .ss-rl b{color:var(--paper);font-weight:700}
+
+/* evolution tab — lit-spine evidence */
+.ss-evo-head{margin-bottom:16px}
+.ss-evo-head .ss-lbl{font-family:var(--body);font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint)}
+.ss-evo-head .ss-ti{font-family:var(--display);font-size:15px;font-weight:560;margin-top:3px;line-height:1.2}
+.ss-evo-head .ss-sub{font-size:11px;color:var(--paper-faint);margin-top:4px;line-height:1.4}
+.ss-timeline{position:relative;padding-left:24px}
+.ss-timeline::before{content:"";position:absolute;left:6px;top:8px;bottom:8px;width:2px;background:linear-gradient(var(--line-2),var(--line))}
+.ss-tnode{position:relative;margin-bottom:16px}
+.ss-tnode .ss-tdot{position:absolute;left:-24px;top:15px;width:13px;height:13px;border-radius:50%;background:var(--ink-2);border:2px solid var(--lk,var(--paper-faint));box-shadow:0 0 0 4px color-mix(in srgb,var(--lk,transparent) 20%,transparent);transition:.25s;z-index:2}
+.ss-tcard{background:var(--ink-2);border:1px solid var(--lk,var(--line));border-radius:13px;padding:12px 13px;box-shadow:0 0 0 1px color-mix(in srgb,var(--lk,transparent) 22%,transparent),0 10px 28px color-mix(in srgb,var(--lk,transparent) 20%,transparent);position:relative}
+.ss-tcard .ss-tc-top{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:7px}
+.ss-tcard h4{font-family:var(--display);font-size:13.5px;font-weight:560;line-height:1.2;letter-spacing:-.01em}
+.ss-tcard .ss-speakers{font-size:11px;color:var(--paper-dim);margin-top:4px}
+.ss-tcard .ss-tdate{font-family:var(--mono);font-size:10px;color:var(--paper-faint);margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ss-opbadge{font-family:var(--body);font-size:8.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;border-radius:6px;padding:3px 7px}
+.ss-op-refine{color:#fff;background:var(--indigo-deep)}
+.ss-op-reinforce{color:var(--amber);background:color-mix(in srgb,var(--amber) 16%,transparent);border:1px solid color-mix(in srgb,var(--amber) 40%,transparent)}
+.ss-op-create,.ss-op-manual_create{color:var(--blue);background:color-mix(in srgb,var(--blue) 14%,transparent);border:1px solid color-mix(in srgb,var(--blue) 35%,transparent)}
+.ss-op-edit{color:var(--indigo-deep);background:color-mix(in srgb,var(--indigo) 14%,transparent);border:1px solid color-mix(in srgb,var(--indigo) 35%,transparent)}
+.ss-op-manual_archive,.ss-op-contradict,.ss-op-supersede{color:var(--rose);background:color-mix(in srgb,var(--rose) 13%,transparent);border:1px solid color-mix(in srgb,var(--rose) 35%,transparent)}
+.ss-evidence{margin-top:10px;border:1px dashed color-mix(in srgb,var(--lk) 55%,transparent);background:color-mix(in srgb,var(--lk) 8%,var(--ink-2));border-radius:10px;padding:9px 11px;animation:ss-pop .28s ease}
+@keyframes ss-pop{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+.ss-evidence .ss-ev-lbl{text-transform:uppercase;font-size:8px;letter-spacing:.12em;font-weight:700;color:var(--lk);display:flex;align-items:center;gap:6px;margin-bottom:6px}
+.ss-evidence .ss-ev-lbl::before{content:"\275D";font-size:13px;line-height:0}
+.ss-evidence .ss-ev-quote{font-style:italic;font-size:12px;line-height:1.5;color:var(--paper);font-family:var(--display)}
+.ss-evidence .ss-ev-by{font-family:var(--mono);font-size:9.5px;color:var(--paper-faint);margin-top:7px}
+.ss-tcard .ss-vague-tag{font-family:var(--mono);font-size:9px;color:var(--paper-faint);background:var(--ink-3);border:1px solid var(--line);border-radius:5px;padding:1px 6px}
+
+/* transcript tab */
+.ss-tr-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:8px;flex-wrap:wrap}
+.ss-tr-meta{font-family:var(--mono);font-size:10px;color:var(--paper-faint)}
+.ss-tr-raw{font-family:var(--mono);font-size:11.5px;line-height:1.6;color:var(--paper-dim);white-space:pre-wrap;word-break:break-word}
+.ss-hl{background:color-mix(in srgb,var(--amber) 30%,transparent);border-radius:4px;padding:1px 3px;box-shadow:0 0 0 1px color-mix(in srgb,var(--amber) 45%,transparent);font-weight:500;color:var(--paper)}
+.ss-muted{color:var(--paper-faint);font-size:13px;line-height:1.6;padding:8px 0}
 </style>
 </head>
 <body>
@@ -840,6 +1007,133 @@ function renderEvolution(events){
     </div>`
   }).join("")
 }
+
+// ═══════════════════════════ Sim Studio (3-pane) ═══════════════════════════
+// Ported from public/sim-studio-hybrid.html. Replaces renderFocusedSim for the
+// ?sim= path. Three column renderers fed by live v0.18.0 endpoints; selection
+// state lives in module-scope vars below.
+const SS_KINDVAR = { PAIN: "--rose", WANT: "--amber", LOVE: "--green" }
+const SS_KINDLABEL = { PAIN: "Pain", WANT: "Want", LOVE: "Love" }
+let ssActiveSim = null      // the focused sim object (persona identity)
+let ssTraits = []           // active traits for ssActiveSim
+let ssSelectedTraitId = null
+let ssInspectorTab = "source"
+
+// Entry point: switch to the sims pane, lay out the 3-column shell, then populate.
+function renderStudio(sim) {
+  switchL1Tab('sims')
+  const dock = $("dock"); if (!dock) return
+  ssActiveSim = sim
+  ssTraits = []
+  ssSelectedTraitId = null
+  ssInspectorTab = "source"
+  dock.innerHTML = `<div class="ss-grid">
+    <aside class="ss-col ss-col1" id="ssCol1"></aside>
+    <section class="ss-col ss-col2" id="ssCol2"></section>
+    <aside class="ss-col ss-col3" id="ssCol3"></aside>
+  </div>`
+  renderSimList(sim._id || sim.id || null)
+  renderPersonaDetail(sim)
+}
+
+// ── Column 1 — sims list + transcripts folder (live) ──
+async function renderSimList(activeSimId) {
+  const col = $("ssCol1"); if (!col) return
+  col.innerHTML = `<div class="ss-c1-head">
+      <div class="ss-c1-top"><h2>Sims</h2><button class="ss-ghostbtn" id="ssNewSim">+ New Sim</button></div>
+      <div class="ss-search"><span class="ss-si">⌕</span><input type="text" id="ssSearch" placeholder="Search sims & transcripts…" /></div>
+    </div>
+    <div class="ss-scroll">
+      <div id="ssSimList"><div class="ss-muted" style="padding:8px 16px">Loading sims…</div></div>
+      <div class="ss-folder open" id="ssTrFolder">
+        <div class="ss-folder-head" id="ssTrFolderHead"><span class="ss-tw">▶</span><span class="ss-fl">Transcripts</span><span class="ss-cnt" id="ssTrCount">·</span><button class="ss-ghostbtn" id="ssTrUpload" style="margin-left:8px;padding:2px 8px">+ Upload</button></div>
+        <div class="ss-folder-body" id="ssTrBody"></div>
+      </div>
+    </div>`
+
+  $("ssTrFolderHead").onclick = (e) => { if (e.target.id === "ssTrUpload") return; $("ssTrFolder").classList.toggle("open") }
+  $("ssNewSim").onclick = () => openNewSimForm()
+  $("ssTrUpload").onclick = (e) => { e.stopPropagation(); openTranscriptUpload() }
+  $("ssSearch").oninput = (e) => ssFilterList(e.target.value.trim().toLowerCase())
+
+  // Sims
+  try {
+    const r = await fetch(pq('/api/personas'))
+    const d = await r.json().catch(() => ({}))
+    const personas = (d && d.personas) || []
+    const listEl = $("ssSimList"); if (!listEl) return
+    if (!personas.length) {
+      listEl.innerHTML = `<div class="ss-muted" style="padding:8px 16px">No sims yet.</div>`
+    } else {
+      listEl.innerHTML = personas.map(p => {
+        const av = { avatar: p.avatar, initials: p.initials, name: p.name }
+        const tc = Array.isArray(p.insights) ? p.insights.length : 0
+        const upd = p.updated_at || p.updatedAt
+        const dateStr = upd ? fmtDate(upd) : ""
+        const metaParts = [tc + " trait" + (tc === 1 ? "" : "s"), dateStr ? ("updated " + dateStr) : ""].filter(Boolean)
+        return `<div class="ss-simrow ${p.id === activeSimId ? "sel" : ""}" data-ssim="${esc(p.id)}">
+          <div class="ss-av" style="background:${esc(p.accent || "#6366f1")}">${avatarInner(av)}</div>
+          <div class="ss-meta">
+            <div class="ss-nm">${esc(p.name || "")} <span class="ss-type-pill">${esc(p.type || "")}</span></div>
+            <div class="ss-ro">${esc(p.role || "")}</div>
+            <div class="ss-mt">${esc(metaParts.join(" · "))}</div>
+          </div>
+        </div>`
+      }).join("")
+      listEl.querySelectorAll(".ss-simrow").forEach(row => row.onclick = () => ssNavigateToSim(row.dataset.ssim))
+    }
+  } catch (e) {
+    const listEl = $("ssSimList"); if (listEl) listEl.innerHTML = `<div class="ss-muted" style="padding:8px 16px">Couldn't load sims.</div>`
+  }
+
+  // Transcripts folder
+  try {
+    const r = await fetch(pq('/api/transcripts'))
+    const d = await r.json().catch(() => ({}))
+    const trs = (d && d.transcripts) || []
+    const body = $("ssTrBody"); const cnt = $("ssTrCount")
+    if (cnt) cnt.textContent = String(trs.length)
+    if (body) {
+      body.innerHTML = trs.length ? trs.map(t => `<div class="ss-trow" data-sstx="${esc(t.id)}">
+          <span class="ss-tdoc">▤</span>
+          <span class="ss-tt">${esc(t.title || "Untitled transcript")}</span>
+          <span class="ss-td">${esc(fmtDate(t.sourceDate))}</span>
+        </div>`).join("") : `<div class="ss-muted" style="padding:8px 16px 8px 30px">No transcripts yet.</div>`
+    }
+  } catch (e) {
+    const body = $("ssTrBody"); if (body) body.innerHTML = `<div class="ss-muted" style="padding:8px 16px 8px 30px">Couldn't load transcripts.</div>`
+  }
+}
+
+// Navigate to a sim by id → reloads with ?sim= (reuses the back-link pattern's URLSearchParams).
+function ssNavigateToSim(id) {
+  try {
+    const params = new URLSearchParams(location.search)
+    params.set("sim", id)
+    location.href = "/app?" + params.toString()
+  } catch (e) {
+    const pid = studioProjectId()
+    location.href = "/app?sim=" + encodeURIComponent(id) + (pid ? "&project=" + encodeURIComponent(pid) : "")
+  }
+}
+
+// Client-side filter over the rendered sim rows + transcript rows.
+function ssFilterList(q) {
+  document.querySelectorAll("#ssSimList .ss-simrow").forEach(r => {
+    r.style.display = !q || r.textContent.toLowerCase().includes(q) ? "" : "none"
+  })
+  document.querySelectorAll("#ssTrBody .ss-trow").forEach(r => {
+    r.style.display = !q || r.textContent.toLowerCase().includes(q) ? "" : "none"
+  })
+}
+
+// Stubs filled in later tasks (defined here so renderStudio never throws on missing fns).
+function openNewSimForm() { ssOpenNewSimForm() }
+function openTranscriptUpload() { ssOpenTranscriptUpload() }
+function renderPersonaDetail(sim) { const c = $("ssCol2"); if (c) c.innerHTML = `<div class="ss-c2-pad"><div class="ss-muted">Persona detail loading…</div></div>` }
+function renderInspector(trait) { const c = $("ssCol3"); if (c) c.innerHTML = "" }
+function ssOpenNewSimForm() {}
+function ssOpenTranscriptUpload() {}
 
 // ── Focused single-Sim view — rendered when ?sim=<id> is in the URL ──
 // Renders into #dock (inside #pane-sims). Shows header, provenance insights,
