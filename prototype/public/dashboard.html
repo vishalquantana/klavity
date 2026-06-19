@@ -503,6 +503,17 @@ async function load() {
   }
   state = data
   render()
+  mountReportWidget()
+}
+
+function mountReportWidget() {
+  if (window.__klavReportWidgetMounted) return
+  const pid = curProjId()
+  if (!pid) return                          // no active project yet → skip
+  window.__klavReportWidgetMounted = true
+  const s = document.createElement("script")
+  s.src = "/widget.js"; s.defer = true; s.dataset.project = pid
+  document.body.appendChild(s)
 }
 
 function render() {
