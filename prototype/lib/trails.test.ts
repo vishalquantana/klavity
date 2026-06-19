@@ -33,3 +33,32 @@ test("locator_cache enforces a UNIQUE cache_key", async () => {
   })
   expect(idx.rows.length).toBe(1)
 })
+
+const T = await import("./trails")
+
+test("createTrail + getTrail round-trip, scoped by project", async () => {
+  const id = await T.createTrail("proj_A", { name: "Checkout", intent: "buy the $20 plan", baseUrl: "https://app.test/" })
+  expect(id).toMatch(/^trl_/)
+  const got = await T.getTrail("proj_A", id)
+  expect(got?.name).toBe("Checkout")
+  expect(got?.intent).toBe("buy the $20 plan")
+  expect(got?.status).toBe("draft")
+  expect(await T.getTrail("proj_B", id)).toBeNull() // cross-project isolation
+})
+
+test("addTrailStep + listTrailSteps preserves order and round-trips target/checkpoint", async () => {
+  const trail = await T.createTrail("proj_A", { name: "Login", baseUrl: "https://app.test/" })
+  await T.addTrailStep("proj_A", trail, { idx: 1, action: "type", actionValue: "user@test.dev", target: { role: "textbox", accessibleName: "Email" } })
+  await T.addTrailStep("proj_A", trail, { idx: 0, action: "navigate", actionValue: "https://app.test/login" })
+  await T.addTrailStep("proj_A", trail, { idx: 2, action: "assert", checkpoint: { description: "dashboard visible" } })
+  const steps = await T.listTrailSteps("proj_A", trail)
+  expect(steps.map((s) => s.idx)).toEqual([0, 1, 2])
+  expect(steps[1].target?.accessibleName).toBe("Email")
+  expect(steps[2].checkpoint?.description).toBe("dashboard visible")
+})
+
+test("setTrailStatus updates status", async () => {
+  const id = await T.createTrail("proj_A", { name: "S", baseUrl: "https://app.test/" })
+  await T.setTrailStatus("proj_A", id, "active")
+  expect((await T.getTrail("proj_A", id))?.status).toBe("active")
+})
