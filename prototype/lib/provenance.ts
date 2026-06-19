@@ -5,9 +5,9 @@
 // The route layer (P3a step 2/3) persists these via the db helpers; the test layer asserts them.
 
 export type TraitKind = "pain" | "want" | "love"
-export type TraitStatus = "active" | "superseded" | "contradicted"
+export type TraitStatus = "active" | "superseded" | "contradicted" | "archived"
 export type ReconcileOpName = "add" | "reinforce" | "refine" | "contradict" | "supersede" | "reopen"
-export type TraitEventOp = "create" | "reinforce" | "refine" | "contradict" | "supersede" | "reopen"
+export type TraitEventOp = "create" | "reinforce" | "refine" | "contradict" | "supersede" | "reopen" | "manual_create" | "edit" | "manual_archive"
 
 // A trait as it lives in `sim_traits`.
 export type Trait = {
@@ -79,6 +79,7 @@ export type TraitEventRow = {
   area?: string | null
   issueType?: string | null
   severity?: string | null
+  actor?: string | null
 }
 
 export type ReconcileResult = {

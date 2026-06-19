@@ -237,6 +237,7 @@ export async function applySchema(c: Client) {
     ["trait_events", "area"],
     ["trait_events", "issue_type"],
     ["trait_events", "severity"],
+    ["trait_events", "actor"],
   ]
   for (const [table, col] of newTraitCols) {
     if (!(await columnExists(c, table, col))) {
@@ -1018,11 +1019,11 @@ export async function listTraits(simId: string, opts: { activeOnly?: boolean } =
 export async function insertTraitEvent(e: TraitEventRow): Promise<string> {
   const id = "tev_" + crypto.randomUUID()
   await db!.execute({
-    sql: `INSERT INTO trait_events (id,trait_id,sim_id,transcript_id,op,before_text,after_text,quote,quote_offset,speaker,source_date,reason,area,issue_type,severity,created_at)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    sql: `INSERT INTO trait_events (id,trait_id,sim_id,transcript_id,op,before_text,after_text,quote,quote_offset,speaker,source_date,reason,area,issue_type,severity,actor,created_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [id, e.traitId, e.simId, e.transcriptId, e.op, e.beforeText ?? null, e.afterText ?? null,
            e.quote, e.quoteOffset ?? null, e.speaker ?? null, e.sourceDate, e.reason ?? null,
-           e.area ?? null, e.issueType ?? null, e.severity ?? null, e.createdAt],
+           e.area ?? null, e.issueType ?? null, e.severity ?? null, e.actor ?? null, e.createdAt],
   })
   return id
 }
@@ -1041,6 +1042,7 @@ function rowToTraitEvent(x: any): TraitEventRow {
     area: x.area != null ? String(x.area) : null,
     issueType: x.issue_type != null ? String(x.issue_type) : null,
     severity: x.severity != null ? String(x.severity) : null,
+    actor: x.actor != null ? String(x.actor) : null,
   }
 }
 
