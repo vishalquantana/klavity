@@ -105,3 +105,67 @@ export async function getCacheForStep(projectId: string, stepId: string): Promis
   const r = await db!.execute({ sql: `SELECT * FROM locator_cache WHERE project_id=? AND step_id=? ORDER BY updated_at DESC LIMIT 1`, args: [projectId, stepId] })
   return r.rows.length ? rowToCache(r.rows[0]) : null
 }
+
+import type { Walk, RunStep, Verdict, Tier, FailureClass } from "./trails-types"
+
+function rowToWalk(r: any): Walk {
+  return {
+    id: r.id, trailId: r.trail_id, projectId: r.project_id, trigger: r.trigger,
+    status: r.status, llmCalls: Number(r.llm_calls), summary: pj<Record<string, unknown>>(r.summary_json),
+    startedAt: Number(r.started_at), finishedAt: r.finished_at == null ? null : Number(r.finished_at),
+  }
+}
+
+function rowToRunStep(r: any): RunStep {
+  return {
+    id: r.id, runId: r.run_id, trailId: r.trail_id, stepId: r.step_id, projectId: r.project_id,
+    idx: Number(r.idx), tier: r.tier as Tier, verdict: r.verdict as Verdict, confidence: Number(r.confidence),
+    diagnosis: (r.diagnosis ?? null) as FailureClass | null, healed: Number(r.healed) === 1,
+    evidence: pj<Record<string, unknown>>(r.evidence_json), createdAt: Number(r.created_at),
+  }
+}
+
+export async function startWalk(projectId: string, trailId: string, trigger: "manual" = "manual"): Promise<string> {
+  const id = uid("walk_")
+  await db!.execute({
+    sql: `INSERT INTO trail_runs (id, trail_id, project_id, trigger, status, llm_calls, summary_json, started_at, finished_at)
+          VALUES (?, ?, ?, ?, 'running', 0, NULL, ?, NULL)`,
+    args: [id, trailId, projectId, trigger, Date.now()],
+  })
+  return id
+}
+
+export async function addRunStep(
+  projectId: string,
+  input: { runId: string; trailId: string; stepId: string; idx: number; tier: Tier; verdict: Verdict; confidence?: number; diagnosis?: FailureClass; healed?: boolean; evidence?: Record<string, unknown> },
+): Promise<string> {
+  const id = uid("rstep_")
+  await db!.execute({
+    sql: `INSERT INTO run_steps (id, run_id, trail_id, step_id, project_id, idx, tier, verdict, confidence, diagnosis, healed, evidence_json, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [id, input.runId, input.trailId, input.stepId, projectId, input.idx, input.tier, input.verdict, input.confidence ?? 0, input.diagnosis ?? null, input.healed ? 1 : 0, j(input.evidence), Date.now()],
+  })
+  return id
+}
+
+export async function finishWalk(projectId: string, runId: string, input: { status: Verdict; llmCalls: number; summary?: Record<string, unknown> }): Promise<void> {
+  await db!.execute({
+    sql: `UPDATE trail_runs SET status=?, llm_calls=?, summary_json=?, finished_at=? WHERE project_id=? AND id=?`,
+    args: [input.status, input.llmCalls, j(input.summary), Date.now(), projectId, runId],
+  })
+}
+
+export async function getWalk(projectId: string, runId: string): Promise<Walk | null> {
+  const r = await db!.execute({ sql: `SELECT * FROM trail_runs WHERE project_id=? AND id=?`, args: [projectId, runId] })
+  return r.rows.length ? rowToWalk(r.rows[0]) : null
+}
+
+export async function listRunSteps(projectId: string, runId: string): Promise<RunStep[]> {
+  const r = await db!.execute({ sql: `SELECT * FROM run_steps WHERE project_id=? AND run_id=? ORDER BY idx ASC`, args: [projectId, runId] })
+  return r.rows.map(rowToRunStep)
+}
+
+export async function listWalks(projectId: string, trailId: string): Promise<Walk[]> {
+  const r = await db!.execute({ sql: `SELECT * FROM trail_runs WHERE project_id=? AND trail_id=? ORDER BY started_at DESC`, args: [projectId, trailId] })
+  return r.rows.map(rowToWalk)
+}

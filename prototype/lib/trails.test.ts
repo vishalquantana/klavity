@@ -90,3 +90,28 @@ test("getCacheForStep + cross-project isolation", async () => {
   expect((await T.getCacheForStep("proj_A", step))?.resolvedSelector).toBe("#x")
   expect(await T.getCacheForStep("proj_B", step)).toBeNull()
 })
+
+test("walk lifecycle: start → addRunStep → finish, with reads", async () => {
+  const trail = await T.createTrail("proj_A", { name: "W", baseUrl: "https://app.test/" })
+  const step = await T.addTrailStep("proj_A", trail, { idx: 0, action: "click" })
+  const walk = await T.startWalk("proj_A", trail)
+  expect(walk).toMatch(/^walk_/)
+  expect((await T.getWalk("proj_A", walk))?.status).toBe("running")
+
+  await T.addRunStep("proj_A", { runId: walk, trailId: trail, stepId: step, idx: 0, tier: "cache", verdict: "green", confidence: 1 })
+  await T.addRunStep("proj_A", { runId: walk, trailId: trail, stepId: step, idx: 1, tier: "vision", verdict: "amber", confidence: 0.7, diagnosis: "locator_drift", healed: true, evidence: { note: "re-resolved" } })
+
+  await T.finishWalk("proj_A", walk, { status: "amber", llmCalls: 1, summary: { healed: 1 } })
+  const w = await T.getWalk("proj_A", walk)
+  expect(w?.status).toBe("amber")
+  expect(w?.llmCalls).toBe(1)
+  expect(w?.finishedAt).toBeGreaterThan(0)
+
+  const rs = await T.listRunSteps("proj_A", walk)
+  expect(rs.map((s) => s.verdict)).toEqual(["green", "amber"])
+  expect(rs[1].healed).toBe(true)
+  expect(rs[1].diagnosis).toBe("locator_drift")
+  expect(rs[1].evidence?.note).toBe("re-resolved")
+
+  expect((await T.listWalks("proj_A", trail))[0].id).toBe(walk)
+})
