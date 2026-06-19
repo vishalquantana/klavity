@@ -1,7 +1,9 @@
 // packages/sdk/src/widget.ts
 import { createSim, injectSimStyles, emotionFromSentiment } from "@klavity/core/sim"
 import { toPng } from "html-to-image"
-import { parseScriptConfig, gateMessage } from "./widget-lib"
+import { buildModal } from "@klavity/core/modal"
+import { cropDataUrl } from "@klavity/core/crop"
+import { parseScriptConfig, gateMessage, isFirstParty, buildFeedbackForm } from "./widget-lib"
 
 const HOST_ID = "klavity-widget-host"
 const TOKEN_KEY = "klavity_widget_token"
@@ -30,6 +32,31 @@ async function mount() {
   const dock = document.createElement("div")
   dock.style.cssText = "display:flex;align-items:flex-end;gap:10px;font-family:system-ui,sans-serif"
   root.appendChild(dock)
+
+  // Report launcher lives in its own element so Sims rendering (dock.innerHTML = "") never clobbers it.
+  const reportDock = document.createElement("div")
+  reportDock.style.cssText = "display:flex;align-items:flex-end;gap:10px;font-family:system-ui,sans-serif;margin-bottom:8px"
+  root.appendChild(reportDock)
+
+  // Announce widget presence so the extension can yield (Task 3 handshake).
+  document.dispatchEvent(new CustomEvent("klavity:widget-ready"))
+
+  const firstParty = isFirstParty(location.origin, cfg.backendUrl)
+  const reportBtn = document.createElement("button")
+  reportBtn.textContent = "🐞 Report a bug"
+  reportBtn.style.cssText = "border:0;border-radius:999px;padding:10px 16px;background:#E94F37;color:#fff;font-weight:600;font-size:13px;cursor:pointer;box-shadow:0 8px 24px rgba(233,79,55,.35)"
+  reportBtn.onclick = () => {
+    if (!firstParty && !getToken()) { openConnect(); return }
+    buildModal("bug", {
+      onCaptureFull: async () => toPng(document.body, { filter: (n) => (n as HTMLElement).id !== HOST_ID }),
+      onRegionCapture: async (rect) => cropDataUrl(await toPng(document.body, { filter: (n) => (n as HTMLElement).id !== HOST_ID }), rect),
+      onSubmit: async (p) => submitFeedback(
+        { backendUrl: cfg.backendUrl, projectId: cfg.projectId, firstParty, token: getToken() },
+        { type: p.type as "bug" | "feature", description: p.description, pageUrl: location.href, screenshots: p.screenshots },
+      ),
+    })
+  }
+  reportDock.appendChild(reportBtn)
 
   const banner = (text: string) => {
     let el = root.getElementById("kw-banner") as HTMLDivElement | null
@@ -155,6 +182,25 @@ async function mount() {
   // Boot
   if (getToken()) loadSims(); else renderConnectButton()
   ;(window as any).KlavityWidget = { mount }
+}
+
+export async function submitFeedback(
+  cfg: { backendUrl: string; projectId: string; firstParty: boolean; token: string },
+  payload: { type: "bug" | "feature"; description: string; pageUrl: string; screenshots: string[] },
+): Promise<{ issueKey: string; issueUrl: string }> {
+  const fd = buildFeedbackForm({
+    description: `[${payload.type}] ${payload.description}`,
+    pageUrl: payload.pageUrl,
+    projectId: cfg.projectId,
+    screenshots: payload.screenshots,
+  })
+  const init: RequestInit = { method: "POST", body: fd }
+  if (cfg.firstParty) init.credentials = "include"
+  else init.headers = { authorization: "Bearer " + cfg.token }
+  const r = await fetch(cfg.backendUrl + "/api/feedback", init)
+  if (!r.ok) throw new Error("submit failed: " + r.status)
+  const j = await r.json()
+  return { issueKey: String(j.id || ""), issueUrl: cfg.backendUrl + "/dashboard" }
 }
 
 if (typeof window !== "undefined") {
