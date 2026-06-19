@@ -1364,6 +1364,7 @@ Bun.serve({
             .reverse() // newest-first for the timeline view
             .map((e) => ({
               op: e.op,
+              traitId: e.traitId,
               afterText: e.afterText,
               beforeText: e.beforeText,
               quote: e.quote,

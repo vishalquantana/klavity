@@ -305,6 +305,10 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .ss-dot-PAIN{background:var(--rose)} .ss-dot-WANT{background:var(--amber)} .ss-dot-LOVE{background:var(--green)}
 
 /* triptych */
+/* studio takes over the full page when ?sim= is active — hide the legacy funnel chrome */
+.wrap.ss-active #rail,
+.wrap.ss-active > .grid{display:none !important}
+#ssHost{margin-top:10px}
 .ss-grid{display:flex;min-height:0;height:calc(100vh - 120px);max-height:760px;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--ink)}
 .ss-col{display:flex;flex-direction:column;min-height:0;overflow:hidden}
 .ss-scroll{overflow-y:auto;flex:1;min-height:0}
@@ -996,8 +1000,11 @@ let ssInspectorTab = "source"
 
 // Entry point: switch to the sims pane, lay out the 3-column shell, then populate.
 function renderStudio(sim) {
-  switchL1Tab('sims')
-  const dock = $("dock"); if (!dock) return
+  const wrap = document.querySelector('.wrap')
+  if (wrap) wrap.classList.add('ss-active')
+  let host = document.getElementById('ssHost')
+  if (!host && wrap) { host = document.createElement('div'); host.id = 'ssHost'; wrap.appendChild(host) }
+  if (!host) return
   ssActiveSim = sim
   ssTraits = []
   ssSelectedTraitId = null
@@ -1005,7 +1012,7 @@ function renderStudio(sim) {
   ssEvoEvents = null
   ssEvoLoadedFor = null
   ssPersonaEditing = false
-  dock.innerHTML = `<div class="ss-grid">
+  host.innerHTML = `<div class="ss-grid">
     <aside class="ss-col ss-col1" id="ssCol1"></aside>
     <section class="ss-col ss-col2" id="ssCol2"></section>
     <aside class="ss-col ss-col3" id="ssCol3"></aside>
@@ -1045,7 +1052,7 @@ async function renderSimList(activeSimId) {
     } else {
       listEl.innerHTML = personas.map(p => {
         const av = { avatar: p.avatar, initials: p.initials, name: p.name }
-        const tc = Array.isArray(p.insights) ? p.insights.length : 0
+        const tc = (typeof p.traitCount === "number") ? p.traitCount : (Array.isArray(p.insights) ? p.insights.length : 0)
         const upd = p.updated_at || p.updatedAt
         const dateStr = upd ? fmtDate(upd) : ""
         const metaParts = [tc + " trait" + (tc === 1 ? "" : "s"), dateStr ? ("updated " + dateStr) : ""].filter(Boolean)
@@ -1228,6 +1235,9 @@ async function renderPersonaDetail(sim) {
     const d = await r.json().catch(() => ({}))
     ssTraits = (d && d.traits) || []
   } catch (e) { ssTraits = [] }
+  // Re-render the header now that traits are loaded so the trait count is accurate, then re-wire.
+  detail.innerHTML = ssPersonaHeaderHtml(sim) + `<div id="ssTraitsWrap"></div>`
+  ssWirePersonaHeader(sim)
   ssRenderTraits()
   // Auto-select the first trait
   if (ssTraits.length) { ssSelectedTraitId = ssTraits[0].id; renderInspector(ssTraits[0]) }
@@ -1249,7 +1259,7 @@ function ssPersonaHeaderHtml(sim) {
       </div>
     </div>`
   }
-  const tc = ssTraits.length
+  const tc = ssTraits.length || (typeof sim.traitCount === "number" ? sim.traitCount : 0)
   const dateStr = (sim.updatedAt || sim.updated_at) ? fmtDate(sim.updatedAt || sim.updated_at) : ""
   const metaParts = [tc + " trait" + (tc === 1 ? "" : "s"), dateStr ? ("updated " + dateStr) : ""].filter(Boolean)
   return `<div class="ss-id-card">
@@ -1463,9 +1473,11 @@ async function ssLoadEvolution(simId) {
   return ssEvoEvents
 }
 
-// Heuristic: link a flat evolution event to a trait (the feed carries no traitId).
+// Link an evolution event to a trait. The feed now carries traitId (exact match);
+// the text/quote heuristic remains as a fallback for any legacy event without one.
 function ssEventMatchesTrait(e, trait) {
   if (!trait) return false
+  if (e.traitId) return e.traitId === trait.id
   if (e.afterText && e.afterText === trait.text) return true
   if (e.beforeText && e.beforeText === trait.text) return true
   if (e.transcriptId && trait.srcTranscriptId && e.transcriptId === trait.srcTranscriptId &&

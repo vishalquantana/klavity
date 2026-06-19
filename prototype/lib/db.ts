@@ -621,7 +621,7 @@ export async function deleteIntegration(scope: IntegrationScope, ownerId: string
 export type PersonaRow = {
   id: string; projectId: string; name: string; role: string; type: string
   initials: string; accent: string; summary: string; insights: any[]; avatar: string | null
-  createdAt: number; updatedAt: number
+  createdAt: number; updatedAt: number; traitCount?: number
 }
 function rowToPersona(x: any): PersonaRow {
   return {
@@ -630,10 +630,15 @@ function rowToPersona(x: any): PersonaRow {
     initials: String(x.initials || ""), accent: String(x.accent || "#6366f1"),
     summary: String(x.summary || ""), insights: x.insights_json ? JSON.parse(String(x.insights_json)) : [],
     avatar: x.avatar ? String(x.avatar) : null, createdAt: Number(x.created_at), updatedAt: Number(x.updated_at),
+    traitCount: x.trait_count != null ? Number(x.trait_count) : undefined,
   }
 }
 export async function listPersonas(projectId: string): Promise<PersonaRow[]> {
-  const r = await db!.execute({ sql: "SELECT * FROM personas WHERE project_id=? ORDER BY created_at ASC", args: [projectId] })
+  const r = await db!.execute({
+    sql: `SELECT p.*, (SELECT COUNT(*) FROM sim_traits t WHERE t.sim_id=p.id AND t.status='active') AS trait_count
+          FROM personas p WHERE p.project_id=? ORDER BY p.created_at ASC`,
+    args: [projectId],
+  })
   return r.rows.map(rowToPersona)
 }
 export async function upsertPersona(id: string, projectId: string, data: Omit<PersonaRow, 'id' | 'projectId' | 'createdAt' | 'updatedAt'>) {
