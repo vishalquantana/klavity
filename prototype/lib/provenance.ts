@@ -97,7 +97,7 @@ function defaultNewId(): string {
 
 // ── Quote grounding: verify/anchor an LLM-returned quote against the transcript text. ──
 // Pure. Returns the real substring + char offset when found; flags (verified:false) when not.
-const GROUND_DICE_THRESHOLD = 0.75
+const GROUND_DICE_THRESHOLD = 0.85
 
 // 1:1 char substitutions (length-preserving so offsets stay valid against the ORIGINAL raw).
 function subsChars(s: string): string {
@@ -154,7 +154,9 @@ export function groundQuote(
     if (score > best.score) best = { score, start: sp.start, end: sp.end }
   }
   if (best.score >= GROUND_DICE_THRESHOLD && best.start >= 0) {
-    return { quote: rawText.slice(best.start, best.end).trim(), offset: best.start, verified: true }
+    const trimmedLine = rawText.slice(best.start, best.end)
+    const leadingWs = trimmedLine.length - trimmedLine.trimStart().length
+    return { quote: trimmedLine.trim(), offset: best.start + leadingWs, verified: true }
   }
   return { quote: q, offset: null, verified: false }
 }

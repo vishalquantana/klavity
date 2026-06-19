@@ -630,3 +630,12 @@ test("groundQuote: null rawText â†’ verified null (not attempted); empty quote â
   expect(groundQuote(null, "anything")).toEqual({ quote: "anything", offset: null, verified: null })
   expect(groundQuote("some text", "")).toEqual({ quote: "", offset: null, verified: false })
 })
+
+test("groundQuote: fuzzy snap on a line with leading whitespace round-trips (offset matches quote)", () => {
+  const raw = "Intro line.\n    Lee: The checkout page keeps timing out.\nAna: ok"
+  const g = groundQuote(raw, "lee: the   checkout   page   keeps   timing   out.")
+  expect(g.verified).toBe(true)
+  expect(g.offset).not.toBeNull()
+  expect(raw.slice(g.offset!, g.offset! + g.quote.length)).toBe(g.quote)
+  expect(g.quote.startsWith("Lee:")).toBe(true) // leading spaces trimmed off the quote
+})
