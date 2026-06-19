@@ -28,3 +28,25 @@ test("trait_events round-trips actor + manual op", async () => {
   expect(evs[0].op).toBe("edit")
   expect(evs[0].actor).toBe("dev2@quantana.com.au")
 })
+
+test("logTraitEdit(edit) updates trait text AND appends an edit event", async () => {
+  const now = Date.now()
+  await insertTrait({
+    id: "trait_e", simId: "sim_e", projectId: "proj_e", kind: "want",
+    text: "old", status: "active", strength: 1, srcTranscriptId: "tr_e", srcQuote: "q",
+    srcQuoteOffset: null, srcSpeaker: null, createdAt: now, updatedAt: now,
+  })
+  const updated = {
+    id: "trait_e", simId: "sim_e", projectId: "proj_e", kind: "want" as const,
+    text: "new", status: "active" as const, strength: 1, srcTranscriptId: "tr_e", srcQuote: "q",
+    srcQuoteOffset: null, srcSpeaker: null, createdAt: now, updatedAt: now + 1,
+  }
+  await logTraitEdit({ op: "edit", trait: updated, beforeText: "old", actor: "a@b.com", now: now + 1 })
+  const traits = await listTraits("sim_e")
+  expect(traits[0].text).toBe("new")
+  const evs = await listTraitEvents("sim_e", { traitId: "trait_e" })
+  expect(evs.at(-1)!.op).toBe("edit")
+  expect(evs.at(-1)!.beforeText).toBe("old")
+  expect(evs.at(-1)!.afterText).toBe("new")
+  expect(evs.at(-1)!.actor).toBe("a@b.com")
+})

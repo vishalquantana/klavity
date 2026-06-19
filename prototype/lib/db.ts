@@ -1028,6 +1028,28 @@ export async function insertTraitEvent(e: TraitEventRow): Promise<string> {
   return id
 }
 
+// Human edit/create/archive of a trait — persists the trait state AND appends a matching
+// append-only audit event. The frontend Sim Studio writes go through here so every manual
+// change is versioned alongside AI reconcile history.
+export async function logTraitEdit(args: {
+  op: "manual_create" | "edit" | "manual_archive"
+  trait: Trait
+  beforeText: string | null
+  actor: string
+  now: number
+}): Promise<void> {
+  const { op, trait, beforeText, actor, now } = args
+  if (op === "manual_create") await insertTrait(trait)
+  else await updateTrait(trait)
+  await insertTraitEvent({
+    traitId: trait.id, simId: trait.simId, transcriptId: trait.srcTranscriptId,
+    op, beforeText, afterText: trait.text, quote: trait.srcQuote, quoteOffset: trait.srcQuoteOffset ?? null,
+    speaker: trait.srcSpeaker ?? null, sourceDate: now, reason: "manual:" + op, actor,
+    area: trait.area ?? null, issueType: trait.issueType ?? null, severity: trait.severity ?? null,
+    createdAt: now,
+  })
+}
+
 function rowToTraitEvent(x: any): TraitEventRow {
   return {
     traitId: String(x.trait_id), simId: String(x.sim_id), transcriptId: String(x.transcript_id),
