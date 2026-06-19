@@ -10,6 +10,22 @@ top entry here, and every `package.json` (`/`, `core`, `extension`, `sdk`) plus
 the extension `manifest.json` always move together. See the PRD's _Versioning_
 section for the bump rules.
 
+## [0.18.0] — 2026-06-19
+
+### Added
+- **Sim Studio backend: versioned trait & persona editing.** Human-facing, fully
+  versioned trait and persona-identity editing APIs so the Sim Studio frontend can
+  create / edit / soft-archive traits and rename personas, with every manual change
+  recorded in the append-only ledgers alongside AI-extracted history.
+  - `trait_events` gains an `actor` column and new ops (`manual_create`, `edit`,
+    `manual_archive`); `sim_traits.status` gains `archived` (soft delete). A
+    `logTraitEdit` helper persists the trait write and its audit event atomically.
+  - New project-scoped routes: `GET`/`POST /api/sims/:id/traits`,
+    `PUT`/`DELETE /api/sims/:id/traits/:traitId`. The `/api/sims/:id/evolution`
+    feed now surfaces `actor` on each event.
+  - New `persona_edits` audit table; `PUT /api/personas/:id` now diffs identity
+    fields and logs one row per change, exposed via `GET /api/personas/:id/edits`.
+
 ## [0.17.0] — 2026-06-19
 
 ### Added
