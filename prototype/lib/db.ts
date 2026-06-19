@@ -711,20 +711,23 @@ export type FeedbackInsert = {
   screenshotId?: string | null; suggestedBug?: any; citedTraitIds?: any
   sourceQuote?: string | null; sourceTranscriptId?: string | null; sourceDate?: number | null
   planeIssueKey?: string | null; planeIssueUrl?: string | null
+  issueKey?: string | null
 }
 export async function insertFeedback(f: FeedbackInsert): Promise<string> {
   const id = "fb_" + crypto.randomUUID()
+  const now = Date.now()
   await db!.execute({
     sql: `INSERT INTO feedback (id,project_id,sim_id,actor_email,url_host,url_path,observation,sentiment,severity,
           screenshot_id,suggested_bug_json,cited_trait_ids_json,source_quote,source_transcript_id,source_date,
-          plane_issue_key,plane_issue_url,created_at)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          plane_issue_key,plane_issue_url,issue_key,recurrence_count,recurrence_dates_json,last_seen_at,created_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [id, f.projectId, f.simId ?? null, f.actorEmail ?? null, f.urlHost ?? null, f.urlPath ?? null,
            f.observation ?? null, f.sentiment ?? null, f.severity ?? null, f.screenshotId ?? null,
            f.suggestedBug != null ? JSON.stringify(f.suggestedBug) : null,
            f.citedTraitIds != null ? JSON.stringify(f.citedTraitIds) : null,
            f.sourceQuote ?? null, f.sourceTranscriptId ?? null, f.sourceDate ?? null,
-           f.planeIssueKey ?? null, f.planeIssueUrl ?? null, Date.now()],
+           f.planeIssueKey ?? null, f.planeIssueUrl ?? null,
+           f.issueKey ?? null, 1, JSON.stringify([now]), now, now],
   })
   return id
 }
@@ -824,6 +827,43 @@ export async function listFeedback(projectId: string, opts: { withTicketOnly?: b
     ? await db!.execute({ sql: "SELECT * FROM feedback WHERE project_id=? AND plane_issue_key IS NOT NULL ORDER BY created_at DESC LIMIT ?", args: [projectId, limit] })
     : await db!.execute({ sql: "SELECT * FROM feedback WHERE project_id=? ORDER BY created_at DESC LIMIT ?", args: [projectId, limit] })
   return r.rows.map(rowToFeedback)
+}
+
+export async function findFeedbackByIssueKey(projectId: string, issueKey: string): Promise<{ id: string } | null> {
+  if (!issueKey) return null
+  const r = await db!.execute({
+    sql: "SELECT id FROM feedback WHERE project_id=? AND issue_key=? ORDER BY created_at DESC LIMIT 1",
+    args: [projectId, issueKey],
+  })
+  return r.rows.length ? { id: String((r.rows[0] as any).id) } : null
+}
+
+export async function listRecentFeedbackForDedup(projectId: string, limit = 50): Promise<Array<{ id: string; title: string; observation: string }>> {
+  const r = await db!.execute({
+    sql: `SELECT id, observation, suggested_bug_json FROM feedback
+          WHERE project_id=? AND suggested_bug_json IS NOT NULL
+          ORDER BY created_at DESC LIMIT ?`,
+    args: [projectId, limit],
+  })
+  return r.rows.map((x: any) => {
+    let title = ""
+    try { title = String(JSON.parse(x.suggested_bug_json || "{}")?.title || "") } catch { title = "" }
+    return { id: String(x.id), title, observation: x.observation != null ? String(x.observation) : "" }
+  })
+}
+
+export async function bumpFeedbackRecurrence(id: string, atMs: number): Promise<void> {
+  const r = await db!.execute({ sql: "SELECT recurrence_count, recurrence_dates_json FROM feedback WHERE id=?", args: [id] })
+  if (!r.rows.length) return
+  const row = r.rows[0] as any
+  const count = Number(row.recurrence_count ?? 1) + 1
+  let dates: number[] = []
+  try { dates = JSON.parse(row.recurrence_dates_json || "[]") } catch { dates = [] }
+  dates.push(atMs)
+  await db!.execute({
+    sql: "UPDATE feedback SET recurrence_count=?, recurrence_dates_json=?, last_seen_at=? WHERE id=?",
+    args: [count, JSON.stringify(dates), atMs, id],
+  })
 }
 
 // Cheap headline counts for the dashboard (indexed scans).
@@ -1626,6 +1666,8 @@ export async function feedbackById(projectId: string, id: string): Promise<any |
     notes: x.notes != null ? String(x.notes) : null,
     updatedAt: x.updated_at != null ? Number(x.updated_at) : null,
     createdAt: Number(x.created_at),
+    recurrenceCount: Number(x.recurrence_count ?? 1),
+    recurrenceDatesJson: x.recurrence_dates_json != null ? String(x.recurrence_dates_json) : null,
   }
 }
 
