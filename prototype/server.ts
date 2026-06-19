@@ -773,7 +773,7 @@ Bun.serve({
         const form = await req.formData()
         const description = String(form.get("description") || "").trim()
         const pageUrl = String(form.get("page_url") || "")
-        if (!description) return json({ error: "Description is required." }, 400)
+        if (!description) return wjson({ error: "Description is required." }, 400)
 
         // Resolve the Plane connection: Bearer (personal → team) else forwarded direct creds.
         let planeToken = "", planeWorkspace = "", planeProject = "", planeHost = "https://api.plane.so"
@@ -810,8 +810,8 @@ Bun.serve({
         const imageUrls: string[] = []
         const uploaded: Array<UploadedScreenshot & { bytes: number }> = []
         for (const f of files) {
-          if (f.type && !f.type.startsWith("image/")) return json({ error: `Screenshot ${f.name} is not an image.` }, 400)
-          if (f.size > 8 * 1024 * 1024) return json({ error: `Screenshot ${f.name} exceeds 8MB.` }, 400)
+          if (f.type && !f.type.startsWith("image/")) return wjson({ error: `Screenshot ${f.name} is not an image.` }, 400)
+          if (f.size > 8 * 1024 * 1024) return wjson({ error: `Screenshot ${f.name} exceeds 8MB.` }, 400)
           const buf = await f.arrayBuffer()
           const meta = await uploadScreenshotMeta(buf, f.type || "image/png")
           imageUrls.push(meta.url)
@@ -937,7 +937,7 @@ Bun.serve({
         // Legacy direct-Plane mode: if the caller provided Plane creds directly (no session),
         // still attempt the Plane push for backward-compat with the extension's direct mode.
         if (!planeConnected) {
-          return json({ id: feedbackId ?? "", saved: true })
+          return wjson({ id: feedbackId ?? "", saved: true })
         }
 
         // R8: append the Sim citation line to the issue body when this feedback cites a trait.
@@ -948,14 +948,25 @@ Bun.serve({
         // unauthenticated). Block requests to internal/loopback/link-local addresses — including the
         // cloud metadata IP — and require https so the X-API-Key isn't sent in plaintext. Self-hosted
         // public Plane instances over https still pass.
+        // SSRF guard must run BEFORE any outbound fetch — assertSafeUrl is preserved.
+        // A rejected/unsafe host is now non-fatal: feedback was already persisted above.
         try { await assertSafeUrl(planeHost) }
-        catch (e: any) { console.warn("blocked tracker host:", e?.message || e); return json({ error: "Invalid tracker host." }, 400) }
-        const res = await fetch(`${planeHost}/api/v1/workspaces/${planeWorkspace}/projects/${planeProject}/issues/`, {
-          method: "POST",
-          headers: { "X-API-Key": planeToken, "Content-Type": "application/json" },
-          body: JSON.stringify({ name: `[Klavity] ${description.slice(0, 180)}`, description_html }),
-        })
-        if (!res.ok) { console.error(`Plane API error ${res.status}: ${(await res.text()).slice(0, 300)}`); return json({ error: `The tracker rejected the request (HTTP ${res.status}).` }, 502) }
+        catch (e: any) {
+          console.warn("tracker host rejected (non-fatal):", e?.message || e)
+          return wjson({ id: feedbackId ?? "", saved: true })
+        }
+        let res: Response
+        try {
+          res = await fetch(`${planeHost}/api/v1/workspaces/${planeWorkspace}/projects/${planeProject}/issues/`, {
+            method: "POST",
+            headers: { "X-API-Key": planeToken, "Content-Type": "application/json" },
+            body: JSON.stringify({ name: `[Klavity] ${description.slice(0, 180)}`, description_html }),
+          })
+        } catch (fetchErr: any) {
+          console.error("Plane fetch failed (non-fatal):", fetchErr?.message || fetchErr)
+          return wjson({ id: feedbackId ?? "", saved: true })
+        }
+        if (!res.ok) { console.error(`Plane API error ${res.status}: ${(await res.text()).slice(0, 300)}`); return wjson({ id: feedbackId ?? "", saved: true }) }
 
         const data: any = await res.json()
         const webBase = planeHost === "https://api.plane.so" ? "https://app.plane.so" : planeHost
@@ -969,7 +980,7 @@ Bun.serve({
           catch (e: any) { console.error("feedback tracker backfill (non-fatal):", e?.message || e) }
         }
 
-        return json({
+        return wjson({
           id: issueId,
           // Omit jira_key when Plane gives no sequence_id, so the extension's `?? id` fallback fires.
           ...(seq ? { jira_key: seq } : {}),

@@ -287,25 +287,37 @@ test("C1: GET victim persona edit history is denied", async () => {
 })
 
 // ── Security: SSRF guard on the Plane host (H2). Direct mode is unauthenticated and the host comes
-//    from form input — a link-local/loopback target must be refused before any outbound fetch. ──
-test("H2: /api/feedback refuses a link-local Plane host (SSRF)", async () => {
+//    from form input — a link-local/loopback target must be blocked before any outbound fetch.
+//    Contract updated (Task 2): assertSafeUrl still runs (SSRF protection preserved), but a rejected
+//    tracker host is now NON-FATAL — feedback is still saved (HTTP 200, saved:true). The unsafe host
+//    is never fetched and no Plane issue URL is returned. ──
+test("H2: /api/feedback with a link-local Plane host → saved (non-fatal, no outbound fetch)", async () => {
   const form = new FormData()
   form.set("description", "hi")
   form.set("plane_token", "tok"); form.set("plane_workspace", "ws"); form.set("plane_project_id", "pp")
-  form.set("plane_host", "https://169.254.169.254") // cloud metadata range
+  form.set("plane_host", "https://169.254.169.254") // cloud metadata range — blocked by assertSafeUrl
   const res = await fetch(`${BASE}/api/feedback`, { method: "POST", body: form })
-  expect(res.status).toBe(400)
-  expect((await res.json()).error).toBe("Invalid tracker host.")
+  // Submission must succeed (feedback persisted or unauthenticated → id:"").
+  expect(res.status).toBe(200)
+  const body = await res.json()
+  expect(body.saved).toBe(true)
+  // No Plane issue URL: the unsafe host was never fetched.
+  expect(body.issue_url).toBeUndefined()
+  expect(body.issueUrl).toBeUndefined()
+  expect(body.error).toBeUndefined()
 })
 
-test("H2: /api/feedback refuses a loopback Plane host (SSRF)", async () => {
+test("H2: /api/feedback with a loopback Plane host → saved (non-fatal, no outbound fetch)", async () => {
   const form = new FormData()
   form.set("description", "hi")
   form.set("plane_token", "tok"); form.set("plane_workspace", "ws"); form.set("plane_project_id", "pp")
-  form.set("plane_host", "https://127.0.0.1")
+  form.set("plane_host", "https://127.0.0.1") // loopback — blocked by assertSafeUrl
   const res = await fetch(`${BASE}/api/feedback`, { method: "POST", body: form })
-  expect(res.status).toBe(400)
-  expect((await res.json()).error).toBe("Invalid tracker host.")
+  expect(res.status).toBe(200)
+  const body = await res.json()
+  expect(body.saved).toBe(true)
+  expect(body.issue_url).toBeUndefined()
+  expect(body.error).toBeUndefined()
 })
 
 // ── M2: /api/extension-token mints a revocable ext_ token, NOT the raw session id ──
