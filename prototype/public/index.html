@@ -1267,9 +1267,124 @@ function ssTraitCardHtml(t, k) {
   </div>`
 }
 
-// Filled in Task 6.
-function ssWireTraitControls() {}
-function ssSavePersona(sim) {}
+// ── Task 6: inline edit — persona identity (PUT /api/personas/:id) ──
+async function ssSavePersona(sim) {
+  const nameEl = $("ssEditName"), roleEl = $("ssEditRole"), sumEl = $("ssEditSummary")
+  if (!nameEl) return
+  const name = nameEl.value.trim() || sim.name
+  const role = roleEl ? roleEl.value.trim() : sim.role
+  const summary = sumEl ? sumEl.value.trim() : sim.summary
+  const id = sim._id || sim.id
+  const saveBtn = $("ssPersonaSave"); if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = "Saving…" }
+  try {
+    const r = await fetch(pq(`/api/personas/${encodeURIComponent(id)}`), {
+      method: "PUT", headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name, role, summary, type: sim.type || "client",
+        initials: sim.initials || name.slice(0, 2).toUpperCase(),
+        accent: sim.accent || "#6366f1", insights: sim.insights || [],
+        avatar: sim.avatar || null,
+      }),
+    })
+    if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.error || "save failed") }
+    // Update the in-memory sim + global sims array, exit edit mode, re-render.
+    sim.name = name; sim.role = role; sim.summary = summary
+    const arrSim = sims.find(s => (s._id || s.id) === id)
+    if (arrSim) { arrSim.name = name; arrSim.role = role; arrSim.summary = summary }
+    ssPersonaEditing = false
+    renderStudio(sim)
+  } catch (e) {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = "Save" }
+    ssToast("Save failed: " + e.message)
+  }
+}
+
+// ── Task 6: trait edit (inline textarea → PUT) + archive (✕ → DELETE) ──
+let ssTraitEditingId = null
+function ssWireTraitControls() {
+  const wrap = $("ssTraitsWrap"); if (!wrap) return
+  wrap.querySelectorAll("[data-tedit]").forEach(b => b.onclick = (e) => {
+    e.stopPropagation()
+    ssTraitEditingId = b.dataset.tedit
+    ssOpenTraitEditor(ssTraitEditingId)
+  })
+  wrap.querySelectorAll("[data-tdel]").forEach(b => b.onclick = async (e) => {
+    e.stopPropagation()
+    const id = b.dataset.tdel
+    const t = ssTraits.find(x => x.id === id)
+    if (!confirm(`Archive this trait?\n\n"${t ? t.text : ""}"`)) return
+    await ssArchiveTrait(id)
+  })
+}
+
+// Swap a trait card's text for an inline textarea + Save/Cancel.
+function ssOpenTraitEditor(id) {
+  const card = document.querySelector(`#ssTraitsWrap .ss-trait[data-trait="${CSS.escape(id)}"]`)
+  const t = ssTraits.find(x => x.id === id)
+  if (!card || !t) return
+  card.innerHTML = `<div class="ss-trait-edit">
+      <textarea id="ssTraitText">${esc(t.text || "")}</textarea>
+      <div class="ss-mini-row">
+        <button class="ss-mini-btn primary" id="ssTraitSave">Save</button>
+        <button class="ss-mini-btn ghost" id="ssTraitCancel">Cancel</button>
+      </div>
+    </div>`
+  const ta = $("ssTraitText"); if (ta) { ta.focus() }
+  $("ssTraitSave").onclick = () => ssSaveTrait(id)
+  $("ssTraitCancel").onclick = () => { ssTraitEditingId = null; ssRenderTraits() }
+}
+
+async function ssSaveTrait(id) {
+  const ta = $("ssTraitText"); if (!ta) return
+  const text = ta.value.trim()
+  if (!text) { ssToast("Trait text can't be empty."); return }
+  const simId = ssActiveSim ? (ssActiveSim._id || ssActiveSim.id) : null
+  const btn = $("ssTraitSave"); if (btn) { btn.disabled = true; btn.textContent = "Saving…" }
+  try {
+    const r = await fetch(pq(`/api/sims/${encodeURIComponent(simId)}/traits/${encodeURIComponent(id)}`), {
+      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }),
+    })
+    if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.error || "save failed") }
+    ssTraitEditingId = null
+    await ssRefreshTraits()
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = "Save" }
+    ssToast("Save failed: " + e.message)
+  }
+}
+
+async function ssArchiveTrait(id) {
+  const simId = ssActiveSim ? (ssActiveSim._id || ssActiveSim.id) : null
+  try {
+    const r = await fetch(pq(`/api/sims/${encodeURIComponent(simId)}/traits/${encodeURIComponent(id)}`), { method: "DELETE" })
+    if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.error || "delete failed") }
+    if (ssSelectedTraitId === id) ssSelectedTraitId = null
+    await ssRefreshTraits()
+  } catch (e) { ssToast("Archive failed: " + e.message) }
+}
+
+// Re-fetch traits + evolution and re-render col 2 + inspector (so the Evolution spine shows the new event).
+async function ssRefreshTraits() {
+  const simId = ssActiveSim ? (ssActiveSim._id || ssActiveSim.id) : null
+  if (!simId) return
+  ssEvoEvents = null; ssEvoLoadedFor = null   // force evolution re-fetch
+  try {
+    const r = await fetch(pq(`/api/sims/${encodeURIComponent(simId)}/traits`))
+    const d = await r.json().catch(() => ({}))
+    ssTraits = (d && d.traits) || []
+  } catch (e) { ssTraits = [] }
+  ssRenderTraits()
+  const sel = ssTraits.find(t => t.id === ssSelectedTraitId) || ssTraits[0] || null
+  if (sel) { ssSelectedTraitId = sel.id; document.querySelectorAll("#ssTraitsWrap .ss-trait").forEach(c => c.classList.toggle("sel", c.dataset.trait === sel.id)) }
+  renderInspector(sel)
+}
+
+function ssToast(msg) {
+  const old = document.querySelector(".ss-toast"); if (old) old.remove()
+  const t = document.createElement("div"); t.className = "ss-toast"; t.textContent = msg
+  document.body.appendChild(t)
+  setTimeout(() => { t.remove() }, 3200)
+}
 
 // ── Column 3 — attribution inspector (Source / Evolution / Transcript) ──
 let ssEvoEvents = null         // cached evolution feed for the active sim (flat, newest-first)
