@@ -38,6 +38,15 @@ section for the bump rules.
     feed now surfaces `actor` on each event.
   - New `persona_edits` audit table; `PUT /api/personas/:id` now diffs identity
     fields and logs one row per change, exposed via `GET /api/personas/:id/edits`.
+## [0.18.2] — 2026-06-19
+
+### Fixed
+- **Bug-report screenshot no longer flash-fails on the first try.** The manual right-click
+  capture (`CAPTURE_TAB`) now routes through the same `captureWithRateLimit()` guard the
+  Sim-review path uses, so it waits out Chrome's ~2 captures/sec limit instead of returning
+  an error and hiding the modal with no screenshot (seen as "the widget flashed and grabbed
+  nothing, then worked on retry" — typically right after the service worker woke or just
+  after a Sim review). Keeps the Arc multi-window `windowId` fallback.
 
 ## [0.18.1] — 2026-06-19
 
