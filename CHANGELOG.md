@@ -10,6 +10,19 @@ top entry here, and every `package.json` (`/`, `core`, `extension`, `sdk`) plus
 the extension `manifest.json` always move together. See the PRD's _Versioning_
 section for the bump rules.
 
+## [0.28.0] — 2026-06-20
+
+### Added
+- **Klavity OS — Trails: server-side walk-trigger (Plan G).** `POST /api/trails/:id/walk`
+  runs a Trail on the server and `/trails` gets a **"▶ Run"** button + live polling that shows
+  the verdict, heal-diff, and rrweb replay. Walks run under a **single-slot mutex** (concurrency=1,
+  a 2nd trigger → 409 — never a 2nd browser) with low-memory Chromium flags, a **hard per-walk
+  deadline** that bounds every page operation (browser always closed; a walk crash finalizes RED and
+  can never take down the service). **Demo Trails seed idempotently on boot** (`TRAILS_DEMO_PROJECT_ID`):
+  a fixture set served at `/trails-demo/*` (GREEN baseline / AMBER Tier-1 heal-diff / RED regression)
+  plus a dogfood Trail that walks the real public landing — so `/trails` shows real Walks immediately.
+  Triggered walks capture rrweb replay; Tier-2 vision stays off by default. Additive — engine unchanged.
+
 ## [0.27.0] — 2026-06-20
 
 ### Added
