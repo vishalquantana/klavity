@@ -18,6 +18,9 @@ import { trailsDashboardData } from "./lib/trails-dashboard"
 import { fileFindingById, dismissFinding, realFiler } from "./lib/trails-findings-gate"
 import { getReplay, runsWithReplay } from "./lib/trails-replay"
 import { listRunSteps } from "./lib/trails"
+import { runWalkNow } from "./lib/trails-trigger"
+import { WalkBusyError } from "./lib/trails-browser"
+import { seedDemoTrails } from "./lib/trails-demo-seed"
 
 const KEY = process.env.OPENROUTER_API_KEY
 const MODEL = process.env.KLAV_MODEL || "google/gemini-2.5-flash"
@@ -45,6 +48,19 @@ async function getActiveWeights(): Promise<Record<string, number>> {
 if (db) {
   if (Object.keys(await getModelWeights()).length === 0) await setModelWeights(DEFAULT_WEIGHTS)
   await refreshWeightsCache()
+}
+
+// Plan G — env-gated demo-Trail seed. When TRAILS_DEMO_PROJECT_ID is set, idempotently seed the demo
+// Trails (GREEN baseline / AMBER drift / RED regression + dogfood) for that project so /trails has
+// live data. Best-effort: a seed failure is logged but never blocks boot. Fixture Trails point at
+// this app's own /trails-demo/* (KLAV_BASE_URL origin); the dogfood walks the real public landing.
+if (db && process.env.TRAILS_DEMO_PROJECT_ID) {
+  try {
+    const r = await seedDemoTrails(process.env.TRAILS_DEMO_PROJECT_ID, BASE)
+    if (r.created) console.log(`[trails-demo] seeded ${r.created} demo trail(s) for ${process.env.TRAILS_DEMO_PROJECT_ID}`)
+  } catch (e) {
+    console.warn("[trails-demo] seed failed (continuing):", String(e))
+  }
 }
 
 // ── AI (OpenRouter) ──
@@ -1790,7 +1806,7 @@ Bun.serve({
 
     // ── Klavity OS Trails (Layer E) — project-scoped, authed. Placed before the generic /api/ gate so
     // unauthenticated API calls return a JSON 401 (not a /login redirect), mirroring resolveProject usage.
-    if (path === "/api/trails/dashboard" || path.startsWith("/api/trails/findings/") || path.startsWith("/api/trails/walks/")) {
+    if (path === "/api/trails/dashboard" || path.startsWith("/api/trails/findings/") || path.startsWith("/api/trails/walks/") || /^\/api\/trails\/[^/]+\/walk$/.test(path)) {
       const meT = (await sessionEmail(req)) || (await bearerEmail(req))
       if (!meT) return json({ error: "Unauthorized" }, 401)
       const resolved = await resolveProject(meT, url.searchParams.get("project"))
@@ -1851,6 +1867,22 @@ Bun.serve({
           return json({ ok: true })
         } catch (e) {
           return json(oops(e, "trails-dismiss"), 500)
+        }
+      }
+
+      // POST /api/trails/:id/walk — trigger an on-demand Walk. runWalkNow reserves the single walk-slot
+      // and returns a runId immediately (the walk runs in the background, crash-isolated); the
+      // dashboard polls /api/trails/dashboard until the verdict lands. A 2nd concurrent trigger → 409
+      // (never a 2nd browser on the 1GB box); an unknown trail → 404.
+      const walkMatch = path.match(/^\/api\/trails\/([^/]+)\/walk$/)
+      if (req.method === "POST" && walkMatch) {
+        try {
+          const { runId } = await runWalkNow(projectId, walkMatch[1])
+          return json({ runId })
+        } catch (e: any) {
+          if (e instanceof WalkBusyError) return json({ error: "A walk is already running" }, 409)
+          if (String(e?.message || e) === "trail not found") return json({ error: "No such trail" }, 404)
+          return json(oops(e, "trails-walk"), 500)
         }
       }
 

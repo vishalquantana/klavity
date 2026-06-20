@@ -93,6 +93,11 @@ await rawExec(`INSERT INTO trails (id, project_id, name, intent, base_url, autho
 await rawExec(`INSERT INTO trail_runs (id, trail_id, project_id, trigger, status, llm_calls, started_at, finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [WALK_B_ID, TRAIL_B_ID, PROJECT_B_ID, "manual", "red", 1, NOW, NOW + 1000])
 await rawExec(`INSERT INTO findings (id, project_id, run_id, step_id, trail_id, kind, title, evidence_json, ground_quote, confidence, dedup_key, recurrence, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [B_FINDING_ID, PROJECT_B_ID, WALK_B_ID, null, TRAIL_B_ID, "amber_heal", "B finding", JSON.stringify({ rationale: "b" }), "b", 0.7, "k_b", 1, "queued", NOW, NOW])
 
+// A dedicated Trail for the walk-trigger smoke: an UNREACHABLE base_url so the spawned server's
+// background walk fails fast (no real Chromium work matters — the route returns right after startWalk).
+const WALK_TRAIL_ID = `trl_walk_${ts}`
+await rawExec(`INSERT INTO trails (id, project_id, name, intent, base_url, author_kind, status, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [WALK_TRAIL_ID, PROJECT_ID, "Walk smoke", "", "https://invalid.test/", "human", "active", ADMIN_EMAIL, NOW, NOW])
+
 async function findingStatus(id: string): Promise<string | null> {
   const r = await rawClient.execute({ sql: `SELECT status FROM findings WHERE id=?`, args: [id] })
   return r.rows.length ? String((r.rows[0] as any).status) : null
@@ -243,6 +248,20 @@ test("the trails page references the rrweb-player replay assets", async () => {
   const html = await r.text()
   expect(html).toContain("rrweb-player")
   expect(html).toContain("/api/trails/walks/")
+})
+
+test("POST /api/trails/:id/walk triggers a walk and returns a runId (authed)", async () => {
+  const r = await api("POST", `/api/trails/${WALK_TRAIL_ID}/walk?project=${PROJECT_ID}`, {}, MEMBER_SID)
+  expect(r.status).toBe(200)
+  const b = await r.json(); expect(b.runId).toMatch(/^walk_/)
+})
+test("POST /api/trails/:id/walk is 401 without a session", async () => {
+  const r = await fetch(`${BASE}/api/trails/${WALK_TRAIL_ID}/walk?project=${PROJECT_ID}`, { method: "POST" })
+  expect(r.status).toBe(401)
+})
+test("POST /api/trails/:id/walk is 404 for an unknown trail", async () => {
+  const r = await api("POST", `/api/trails/trl_nope_${ts}/walk?project=${PROJECT_ID}`, {}, MEMBER_SID)
+  expect(r.status).toBe(404)
 })
 
 test("GET /trails-demo/journey/landing.html serves the bundled demo fixture (no auth)", async () => {
