@@ -1819,9 +1819,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     }
 
     // Public widget appearance config (non-sensitive; project-scoped). Lets the widget theme itself pre-auth.
+    // When ?admin=1 is present the request is from the admin UI and must fall through to the session-gated
+    // projMatch block which returns { modalConfig, pro } — do NOT handle it here.
     {
       const m = path.match(/^\/api\/projects\/([^/]+)\/config$/)
-      if (req.method === "GET" && m) {
+      if (req.method === "GET" && m && new URL(req.url).searchParams.get("admin") !== "1") {
         const proj = await projectById(m[1])
         if (!proj) return json({ error: "Not found." }, 404)
         return json({ modalConfig: resolveModalConfig(await getProjectModalConfig(m[1])) })

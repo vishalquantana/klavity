@@ -1421,9 +1421,10 @@ async function loadAppearance() {
       } catch { msg.textContent = "Network error" }
     })
   }
-  // Load current config
+  // Load current config (admin variant: ?admin=1 routes past the public handler to the authed branch
+  // that returns { modalConfig, pro }, so the Pro gating logic receives the correct flag)
   try {
-    const r = await fetch(projPath("/config"))
+    const r = await fetch(projPath("/config") + "?admin=1")
     if (!r.ok) return
     const d = await r.json()
     const c = d.modalConfig || {}
