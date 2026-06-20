@@ -13,14 +13,23 @@ import type { Browser, Page, Locator } from "playwright"
 import type { Fingerprint, Tier, Verdict, TrailStep } from "./trails-types"
 import {
   getTrail, listTrailSteps, getCacheForStep, upsertLocatorCache,
-  startWalk, addRunStep, finishWalk,
+  startWalk, addRunStep, finishWalk, recordFinding,
 } from "./trails"
 import { stepCacheKey } from "./trails-crystallize"
+import { decideFromVision, type VisionResolver, type VisionInput } from "./trails-vision"
 
 export interface WalkOptions {
   /** Concrete URL to walk against (overrides the trail's baseUrl). file:// or http(s)://. */
   fixtureUrl: string
   headless?: boolean
+  /**
+   * Tier-2 vision resolver (Layer D). INJECTABLE: a mock in tests, the real OpenRouter adapter in
+   * prod. When ABSENT the runner behaves exactly like Layer C (RED + needsVision on exhaustion) —
+   * backward-compatible. When present, an exhausted step hands off to vision (heal/regression/low-conf).
+   */
+  vision?: VisionResolver
+  /** Confidence gate for a vision heal (spec §6.3). Default 0.9. */
+  confidenceGate?: number
 }
 
 export interface WalkStepSummary {
@@ -34,8 +43,8 @@ export interface WalkStepSummary {
 export interface WalkSummary {
   runId: string
   verdict: Verdict
-  /** Always 0 in Layer C — this layer is zero-LLM by construction. */
-  llmCalls: 0
+  /** Count of Tier-2 vision model calls (Layer D). 0 on the zero-LLM hot path / no resolver. */
+  llmCalls: number
   steps: WalkStepSummary[]
   healedCount: number
 }
@@ -199,39 +208,41 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
   const stepSummaries: WalkStepSummary[] = []
   let walkVerdict: Verdict = "green"
   let healedCount = 0
+  let llmCalls = 0
 
   try {
     const page: Page = await browser.newPage()
     await page.goto(opts.fixtureUrl)
 
     for (const step of steps) {
-      const { tier, verdict, healed } = await runOneStep(projectId, runId, trail.id, page, step, opts.fixtureUrl)
+      const { tier, verdict, healed, llmCalls: stepLlm } = await runOneStep(projectId, runId, trail.id, page, step, opts)
       stepSummaries.push({ stepId: step.id, idx: step.idx, tier, verdict, healed })
       if (healed) healedCount++
+      llmCalls += stepLlm
       walkVerdict = worse(walkVerdict, verdict)
     }
 
     await finishWalk(projectId, runId, {
       status: walkVerdict,
-      llmCalls: 0,
+      llmCalls,
       summary: { healedCount, stepCount: steps.length },
     })
-    return { runId, verdict: walkVerdict, llmCalls: 0, steps: stepSummaries, healedCount }
+    return { runId, verdict: walkVerdict, llmCalls, steps: stepSummaries, healedCount }
   } catch (e) {
     // Anything thrown (e.g. an unreachable fixtureUrl) must STILL finalize the run — never leave it
     // 'running'. The Walk is RED and the error is recorded in the summary for the trace viewer.
     await finishWalk(projectId, runId, {
       status: "red",
-      llmCalls: 0,
+      llmCalls,
       summary: { healedCount, stepCount: steps.length, error: String(e) },
     })
-    return { runId, verdict: "red", llmCalls: 0, steps: stepSummaries, healedCount }
+    return { runId, verdict: "red", llmCalls, steps: stepSummaries, healedCount }
   } finally {
     await browser.close()
   }
 }
 
-interface OneStepResult { tier: Tier; verdict: Verdict; healed: boolean }
+interface OneStepResult { tier: Tier; verdict: Verdict; healed: boolean; llmCalls: number }
 
 // Execute a single step. Records exactly one run_step. Never silent-greens a break.
 async function runOneStep(
@@ -240,20 +251,21 @@ async function runOneStep(
   trailId: string,
   page: Page,
   step: TrailStep,
-  fixtureUrl: string,
+  opts: WalkOptions,
 ): Promise<OneStepResult> {
+  const fixtureUrl = opts.fixtureUrl
   // navigate / wait have no element to resolve.
   if (step.action === "navigate") {
     // In Layer C the whole walk is scoped to fixtureUrl; re-navigate to it (origin already loaded).
     await page.goto(step.actionValue && /^https?:|^file:/.test(step.actionValue) ? step.actionValue : fixtureUrl)
     await addRunStep(projectId, { runId, trailId, stepId: step.id, idx: step.idx, tier: "none", verdict: "green", confidence: 1, healed: false, evidence: { action: "navigate" } })
-    return { tier: "none", verdict: "green", healed: false }
+    return { tier: "none", verdict: "green", healed: false, llmCalls: 0 }
   }
   if (step.action === "wait") {
     // Condition-based wait, never a blind sleep (spec §8).
     await page.waitForLoadState("networkidle").catch(() => {})
     await addRunStep(projectId, { runId, trailId, stepId: step.id, idx: step.idx, tier: "none", verdict: "green", confidence: 1, healed: false, evidence: { action: "wait" } })
-    return { tier: "none", verdict: "green", healed: false }
+    return { tier: "none", verdict: "green", healed: false, llmCalls: 0 }
   }
 
   // The cached selector is the single source of truth (lives in locator_cache, not step.target).
@@ -266,7 +278,7 @@ async function runOneStep(
   // A checkpoint-only assert (no target at all) is a soft pass that keeps the flow runnable (mirrors codegen).
   if (isAssert && !cachedSelector && !fp) {
     await addRunStep(projectId, { runId, trailId, stepId: step.id, idx: step.idx, tier: "none", verdict: "green", confidence: 1, healed: false, evidence: { checkpoint: step.checkpoint?.description ?? null } })
-    return { tier: "none", verdict: "green", healed: false }
+    return { tier: "none", verdict: "green", healed: false, llmCalls: 0 }
   }
 
   let resolved: ResolveResult
@@ -274,18 +286,31 @@ async function runOneStep(
     resolved = await resolveTarget(page, cachedSelector, fp)
   } catch (e) {
     if (e instanceof ElementGone) {
-      // All tiers exhausted. Diagnosis-first: this is locator_drift we could not safely heal.
-      // Fail-loud: an actionable step whose element is genuinely gone breaks the flow -> RED.
-      // A checkpoint (assert) that cannot bind is also RED (never heal away an assertion).
-      // We DO NOT invoke vision here (later layer); we mark tier 'vision' as the needs-vision handoff,
-      // but the verdict is RED (we cannot perform the action / confirm the goal) — never a silent green.
+      // All deterministic tiers (0/1) are exhausted. Diagnosis-first: this is locator_drift we could
+      // not safely heal without a model.
+      //
+      // Layer D Tier-2: if an injectable vision resolver is provided, hand off to it. The resolver
+      // sees a screenshot + DOM snapshot + the step intent/target/candidate-selectors and decides
+      // heal / regression / low-confidence. decideFromVision applies the spec §6 trust gates:
+      //   - heal           → AMBER (never green, §6.3) + role-consistency re-check (§6.2) + act
+      //                       + persist healed selector + reviewable evidence diff (§6.4).
+      //   - regression     → RED + grounded, deduped finding (kind 'regression', auto-file-eligible).
+      //   - amber_low_conf → AMBER + queue-only finding (kind 'amber_heal'); never act on an
+      //                       unconfirmed target (§6.3).
+      // A failed CHECKPOINT/assert never reaches here as a heal: the assert path stays RED and is
+      // never vision-healed (§6.5). Vision is only consulted for an unresolved target, and an
+      // assert whose target is gone is treated as a regression (RED), not a heal.
+      if (opts.vision) {
+        return await runVisionTier2(projectId, runId, trailId, page, step, opts, fp, cachedSelector, isAssert)
+      }
+      // No resolver → unchanged Layer C behavior: RED + needs-vision handoff marker (never green).
       const verdict: Verdict = "red"
       await addRunStep(projectId, {
         runId, trailId, stepId: step.id, idx: step.idx,
         tier: "vision", verdict, confidence: 0, diagnosis: "locator_drift", healed: false,
         evidence: { reason: "element_gone", needsVision: true, fingerprint: fp, cachedSelector, checkpoint: step.checkpoint?.description ?? null },
       })
-      return { tier: "vision", verdict, healed: false }
+      return { tier: "vision", verdict, healed: false, llmCalls: 0 }
     }
     throw e
   }
@@ -317,7 +342,7 @@ async function runOneStep(
       tier: resolved.tier, verdict, confidence: resolved.confidence, diagnosis: isAssert ? "regression" : "interaction_change", healed: false,
       evidence: { reason: isAssert ? "checkpoint_failed" : "action_failed", checkpoint: step.checkpoint?.description ?? null },
     })
-    return { tier: resolved.tier, verdict, healed: false }
+    return { tier: resolved.tier, verdict, healed: false, llmCalls: 0 }
   }
 
   // Capture the pre-heal selector BEFORE the upsert overwrites it (heal-as-reviewable-diff, §6.4).
@@ -363,5 +388,129 @@ async function runOneStep(
     diagnosis: resolved.healed ? "locator_drift" : undefined, healed: resolved.healed,
     evidence,
   })
-  return { tier: resolved.tier, verdict, healed: resolved.healed }
+  return { tier: resolved.tier, verdict, healed: resolved.healed, llmCalls: 0 }
+}
+
+// ── Layer D Tier-2: vision-LLM re-resolution at the Tier-0/1-exhausted point ──
+// Always counts as exactly one model call (llmCalls: 1). Reuses the existing roleConsistent() gate,
+// upsertLocatorCache, recordFinding, and addRunStep — no duplication. NEVER green: a heal is AMBER.
+async function runVisionTier2(
+  projectId: string,
+  runId: string,
+  trailId: string,
+  page: Page,
+  step: TrailStep,
+  opts: WalkOptions,
+  fp: Fingerprint | null,
+  cachedSelector: string | null,
+  isAssert: boolean,
+): Promise<OneStepResult> {
+  const gate = opts.confidenceGate ?? 0.9
+
+  // Capture the perceptual + structural context the resolver needs.
+  const shot = (await page.screenshot()).toString("base64")
+  const dom = await page.content()
+  const candidateSelectors: string[] = []
+  if (cachedSelector) candidateSelectors.push(cachedSelector)
+  if (fp?.testId) candidateSelectors.push(`[data-testid="${escAttr(fp.testId)}"]`)
+  if (fp?.domPath) candidateSelectors.push(fp.domPath)
+
+  const visionInput: VisionInput = {
+    screenshotB64: shot,
+    mediaType: "image/png",
+    domSnapshot: dom,
+    pageUrl: opts.fixtureUrl,
+    intent: step.checkpoint?.description ?? step.action,
+    action: step.action,
+    target: fp ?? {},
+    candidateSelectors,
+  }
+  const result = await opts.vision!(visionInput, { projectId })
+  const decision = decideFromVision(result, gate)
+
+  const domExcerpt = dom.slice(0, 2000)
+
+  // ── regression: do NOT act → RED + grounded, deduped finding (auto-file-eligible kind) ──
+  if (decision.outcome === "regression") {
+    const title = `Target gone: ${fp?.accessibleName ?? fp?.text ?? step.action}`
+    await recordFinding(projectId, {
+      runId, trailId, stepId: step.id, kind: "regression", title,
+      evidence: { rationale: decision.rationale, target: fp, pageUrl: opts.fixtureUrl, domExcerpt },
+      groundQuote: decision.rationale, confidence: decision.confidence,
+      dedupKey: `${trailId}:${step.id}:gone`,
+    })
+    await addRunStep(projectId, {
+      runId, trailId, stepId: step.id, idx: step.idx,
+      tier: "vision", verdict: "red", confidence: decision.confidence, diagnosis: "regression", healed: false,
+      evidence: { reason: "vision_regression", classification: result.classification, rationale: decision.rationale, target: fp, needsVision: false, checkpoint: step.checkpoint?.description ?? null },
+    })
+    return { tier: "vision", verdict: "red", healed: false, llmCalls: 1 }
+  }
+
+  // ── heal: confirm intent (role consistency, §6.2), act, AMBER, persist + reviewable diff ──
+  if (decision.outcome === "heal" && decision.selector) {
+    const loc = page.locator(decision.selector)
+    const ACTION_TIMEOUT = 5000
+    const ok =
+      (await uniquelyResolves(loc)) &&
+      (await roleConsistent(loc, fp?.role)) &&
+      // An assert is never vision-healed green (§6.5): only actionable steps heal.
+      !isAssert
+    if (ok) {
+      try {
+        switch (step.action) {
+          case "type": await loc.fill(step.actionValue ?? "", { timeout: ACTION_TIMEOUT }); break
+          case "click": await loc.click({ timeout: ACTION_TIMEOUT }); break
+          case "select": await loc.selectOption(step.actionValue ?? "", { timeout: ACTION_TIMEOUT }); break
+        }
+        // Persist the healed selector so the NEXT walk is Tier 0 again (heal-as-cache-update, §6.4).
+        const cacheRow = await getCacheForStep(projectId, step.id)
+        const cKey = cacheRow?.cacheKey ?? (await stepCacheKey(projectId, trailId, step, decision.selector))
+        await upsertLocatorCache(projectId, {
+          trailId, stepId: step.id, cacheKey: cKey, resolvedSelector: decision.selector,
+          fingerprint: fp ?? undefined, confidence: decision.confidence, source: "heal",
+        })
+        await addRunStep(projectId, {
+          runId, trailId, stepId: step.id, idx: step.idx,
+          tier: "vision", verdict: "amber", confidence: decision.confidence, diagnosis: "locator_drift", healed: true,
+          evidence: {
+            healed: true, fromSelector: cachedSelector, toSelector: decision.selector,
+            tier: "vision", confidence: decision.confidence, candidateSignal: "vision",
+            rationale: decision.rationale, classification: result.classification,
+            checkpoint: step.checkpoint?.description ?? null,
+          },
+        })
+        return { tier: "vision", verdict: "amber", healed: true, llmCalls: 1 }
+      } catch {
+        // The vision selector resolved + was role-consistent but the action itself failed — fall
+        // through to the low-confidence/unconfirmed handling below (never a silent green).
+      }
+    }
+    // Resolver claimed a heal but we could NOT confirm it (no unique match / wrong role / action
+    // failed). Treat as unconfirmed → AMBER + queue-only finding; do NOT act, do NOT persist.
+    return await fileAmberHeal(projectId, runId, trailId, step, opts, fp, decision.rationale, decision.confidence, result.classification)
+  }
+
+  // ── amber_low_conf: never act on an unconfirmed target → AMBER + queue-only finding ──
+  return await fileAmberHeal(projectId, runId, trailId, step, opts, fp, decision.rationale, decision.confidence, result.classification)
+}
+
+// AMBER + queue-only (kind 'amber_heal') finding for a healed-but-unconfirmed step (§6.3 / Layer E
+// auto-file convention). The element is NOT acted on and the cache is NOT mutated.
+async function fileAmberHeal(
+  projectId: string, runId: string, trailId: string, step: TrailStep, opts: WalkOptions,
+  fp: Fingerprint | null, rationale: string, confidence: number, classification: string,
+): Promise<OneStepResult> {
+  await recordFinding(projectId, {
+    runId, trailId, stepId: step.id, kind: "amber_heal",
+    title: `Low-confidence heal: ${fp?.accessibleName ?? fp?.text ?? step.action}`,
+    evidence: { rationale, target: fp, pageUrl: opts.fixtureUrl, classification },
+    groundQuote: rationale, confidence, dedupKey: `${trailId}:${step.id}:lowconf`,
+  })
+  await addRunStep(projectId, {
+    runId, trailId, stepId: step.id, idx: step.idx,
+    tier: "vision", verdict: "amber", confidence, diagnosis: "locator_drift", healed: false,
+    evidence: { reason: "vision_low_confidence", classification, rationale, needsVision: false, checkpoint: step.checkpoint?.description ?? null },
+  })
+  return { tier: "vision", verdict: "amber", healed: false, llmCalls: 1 }
 }
