@@ -48,6 +48,27 @@ export interface WalkOptions {
    * Layer C/D (no context, no binding, no extra work) so the engine suite is unchanged.
    */
   replay?: boolean
+  /**
+   * Plan G — prod-safety. Extra args forwarded verbatim to `chromium.launch({ args })` (the 1GB box
+   * uses CHROMIUM_PROD_ARGS: --single-process --no-sandbox --disable-dev-shm-usage --disable-gpu
+   * --no-zygote). Absent (the test default) launches with no extra args — byte-identical to before.
+   */
+  launchArgs?: string[]
+  /**
+   * Plan G — prod-safety. A hard wall-clock budget (ms) for the WHOLE walk. Checked at the top of each
+   * step; when exceeded the step loop stops and the Walk finalizes `red` with `summary.error =
+   * "deadline_exceeded"`. Absent (the test default) = no budget = unchanged behavior. Default in prod
+   * is 120000ms (see lib/trails-trigger.ts), never set here so the engine suite is unaffected.
+   */
+  deadlineMs?: number
+  /**
+   * Plan G — trigger reconciliation. When present, the runner ADOPTS this pre-created Walk row (from
+   * runWalkNow's startWalk) instead of calling startWalk itself, so the run_steps / replay / verdict
+   * all land on the runId the caller already holds. Absent (every existing caller) → unchanged: the
+   * runner mints its own runId. This is the single seam that lets a triggered walk and the route share
+   * one runId without touching any finalize/replay logic below.
+   */
+  runId?: string
 }
 
 export interface WalkStepSummary {
@@ -225,13 +246,18 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
   if (!trail) throw new Error(`trail ${trailId} not found in project ${projectId}`)
   const steps = await listTrailSteps(projectId, trailId)
 
-  const runId = await startWalk(projectId, trailId, "manual")
+  // Adopt a pre-created Walk row (Plan G trigger) so run_steps/replay/verdict share the caller's runId;
+  // otherwise mint our own as before (every existing caller). No behavior change when runId is absent.
+  const runId = opts.runId ?? (await startWalk(projectId, trailId, "manual"))
 
-  const browser: Browser = await chromium.launch({ headless: opts.headless ?? true })
+  const browser: Browser = await chromium.launch({ headless: opts.headless ?? true, args: opts.launchArgs })
   const stepSummaries: WalkStepSummary[] = []
   let walkVerdict: Verdict = "green"
   let healedCount = 0
   let llmCalls = 0
+  // Plan G hard per-walk deadline: a wall-clock budget checked at the top of each step. Infinity = off.
+  const deadline = opts.deadlineMs ? Date.now() + opts.deadlineMs : Infinity
+  let deadlineHit = false
 
   // ── Plan E2: opt-in rrweb capture. DEFAULT-OFF leaves everything below byte-identical (no context,
   // no binding). When on, we open an explicit BrowserContext so setupReplayCapture can inject the
@@ -261,6 +287,11 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
     let segIdx = 0
 
     for (const step of steps) {
+      // Plan G prod-safety: a hard per-walk deadline. If the wall-clock budget is blown, STOP the walk
+      // (don't run this or any further step) and roll the verdict to RED — the page-too-slow / runaway
+      // case can't pin the shared 1GB box. The browser is still closed in the `finally` below.
+      if (Date.now() > deadline) { walkVerdict = "red"; deadlineHit = true; break }
+
       // Drain the CURRENTLY-SHOWN document's rrweb buffer into the current segment BEFORE running the
       // step — if this step navigates, the boundary flush below seals exactly this page's events.
       if (capture) {
@@ -299,7 +330,7 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
     await finishWalk(projectId, runId, {
       status: walkVerdict,
       llmCalls,
-      summary: { healedCount, stepCount: steps.length },
+      summary: { healedCount, stepCount: steps.length, ...(deadlineHit ? { error: "deadline_exceeded" } : {}) },
     })
 
     // Persist the replay AFTER finishWalk. Best-effort: a save failure never changes the Walk result.
