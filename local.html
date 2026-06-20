@@ -7,6 +7,8 @@
 <title>Klavity — customers in the room while you build · Klavity</title>
 <meta name="description" content="Klavity turns real customer calls into AI personas that review your product, file the bugs they find to Jira, Linear, GitHub or Plane — then test every release." />
 <link rel="canonical" href="https://klavity.quantana.top/" />
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<link rel="icon" href="/favicon.ico" sizes="any" />
 
 <!-- Open Graph -->
 <meta property="og:type" content="website" />
@@ -23,7 +25,9 @@
 
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..700&family=Hanken+Grotesk:wght@300..800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..700&family=Hanken+Grotesk:wght@300..800&family=JetBrains+Mono:wght@400;500;700&display=swap" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..700&family=Hanken+Grotesk:wght@300..800&family=JetBrains+Mono:wght@400;500;700&display=swap" media="print" onload="this.media='all'" />
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..700&family=Hanken+Grotesk:wght@300..800&family=JetBrains+Mono:wght@400;500;700&display=swap" /></noscript>
 
 <!-- Shared marketing kit (scoped to the product-arc section on this page) -->
 <link rel="stylesheet" href="/kit.css" />
@@ -50,7 +54,7 @@
   --ink-3:#efeae0;      /* subtle insets */
   --paper:#19140f;      /* primary text */
   --paper-dim:#574f45;  /* secondary text */
-  --paper-faint:#8a8076;/* muted text */
+  --paper-faint:#6b6055;/* muted text — WCAG AA (5.5:1 on cream) */
   --line:rgba(25,20,15,.12); --line-2:rgba(25,20,15,.08);
   --indigo:#6366f1; --indigo-deep:#4f46e5;
   --amber:#d98324; --rose:#db2777; --green:#0f9d6b;
@@ -82,6 +86,16 @@ body::after{
 }
 .wrap{max-width:1160px; margin:0 auto; padding:0 28px; position:relative; z-index:2}
 a{color:inherit; text-decoration:none}
+/* Links distinguishable by more than colour (WCAG 1.4.1): prose/content
+   anchors get an underline affordance; nav, buttons & footer chrome don't. */
+a:hover,a:focus-visible{text-decoration:underline; text-underline-offset:2px}
+.lede a,p a,li a{text-decoration:underline; text-decoration-thickness:1px; text-underline-offset:2px}
+.nav-links a,.nav-links a:hover,.nav-links a:focus-visible,
+.btn,.btn:hover,.btn:focus-visible,
+.brand,.brand:hover,.brand:focus-visible,
+.foot a,.foot a:hover,.foot a:focus-visible,
+.parc-more a,.parc-arc a,
+a:has(> .parc-sim){text-decoration:none}
 .mono{font-family:var(--mono); font-weight:500}
 .tag{
   font-family:var(--mono); font-size:11px; letter-spacing:.18em; text-transform:uppercase;
@@ -390,16 +404,18 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 </style>
 </head>
 <body>
+<a class="skip-link" href="#main">Skip to content</a>
 
 <div class="topbar"></div>
 
 <nav>
   <div class="wrap nav-in">
-    <a class="brand" href="#"><span class="spark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M7 2C7 7 17 7 17 12 17 17 7 17 7 22"/><path d="M17 2C17 7 7 7 7 12 7 17 17 17 17 22"/><path d="M9 5.2h6M9 18.8h6" stroke-width="1.4"/><path d="M7.6 9h8.8M7.6 15h8.8" stroke-width="1.2" opacity=".8"/></svg></span>Klavity</a>
+    <a class="brand" href="/" aria-current="page"><span class="spark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M7 2C7 7 17 7 17 12 17 17 7 17 7 22"/><path d="M17 2C17 7 7 7 7 12 7 17 17 17 17 22"/><path d="M9 5.2h6M9 18.8h6" stroke-width="1.4"/><path d="M7.6 9h8.8M7.6 15h8.8" stroke-width="1.2" opacity=".8"/></svg></span>Klavity</a>
     <div class="nav-links">
       <a href="#how">How it works</a>
-      <a href="#sims">Sims</a>
-      <a href="#snap">Snap</a>
+      <a href="/snap">Snap</a>
+      <a href="/sims">Sims</a>
+      <a href="/autosim">AutoSim</a>
       <a href="#phases">Roadmap</a>
       <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
     </div>
@@ -421,6 +437,8 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     </script>
   </div>
 </nav>
+
+<main id="main">
 
 <header class="hero">
   <div class="wrap hero-grid">
@@ -726,7 +744,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   <div class="wrap">
     <div class="sec-head">
       <span class="tag">The arc</span>
-      <h2>Snap today. <em>Sims now.</em> Autonomous UAT next.</h2>
+      <h2>Snap shipped. <em>Sims live.</em> AutoSim shipped.</h2>
       <p>Named after Ekalavya, the self-taught master — Klavity learns your product and your customers, then acts on its own.</p>
     </div>
     <div class="phases">
@@ -736,14 +754,14 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         <p>Right-click bug reporting from any page, into any tracker. Free and open source — the wedge the rest is built on.</p>
       </div>
       <div class="phase build">
-        <span class="ph-stat s-build">◐ Building</span>
+        <span class="ph-stat s-live">● Live</span>
         <h3>Klavity Sims</h3><div class="pl">the voices</div>
-        <p>AI personas built from real customer interviews that review your product pages — automatically on allowlisted URLs, or on demand with one click — and file what they find. Private beta now.</p>
+        <p>AI personas built from real customer interviews that review your product pages — automatically on allowlisted URLs, or on demand with one click — and file what they find.</p>
       </div>
       <div class="phase">
-        <span class="ph-stat s-soon">○ Next</span>
+        <span class="ph-stat s-live">● Shipped</span>
         <h3>Klavity AutoSim</h3><div class="pl">the autopilot</div>
-        <p>An autonomous UAT agent that explores your staging build, predicts regressions, and fixes the test suite before you ship.</p>
+        <p>Your Sims test every release — and self-heal. Deterministic zero-AI replay heals when the UI moves, and a real break files a grounded finding instead of a silent false-green.</p>
       </div>
     </div>
   </div>
@@ -773,12 +791,14 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   </div>
 </section>
 
+</main>
+
 <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode">🌙</button>
 
 <footer>
   <div class="wrap foot">
-    <a class="brand" href="#" style="font-size:18px"><span class="spark" style="width:24px;height:24px;font-size:13px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M7 2C7 7 17 7 17 12 17 17 7 17 7 22"/><path d="M17 2C17 7 7 7 7 12 7 17 17 17 17 22"/><path d="M9 5.2h6M9 18.8h6" stroke-width="1.5"/></svg></span>Klavity</a>
-    <a href="#how">How it works</a><a href="#snap">Snap</a><a href="#cta">Early access</a>
+    <a class="brand" href="/" style="font-size:18px"><span class="spark" style="width:24px;height:24px;font-size:13px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M7 2C7 7 17 7 17 12 17 17 7 17 7 22"/><path d="M17 2C17 7 7 7 7 12 7 17 17 17 17 22"/><path d="M9 5.2h6M9 18.8h6" stroke-width="1.5"/></svg></span>Klavity</a>
+    <a href="#how">How it works</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="#cta">Early access</a>
     <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a>
     <a href="/privacy">Privacy</a>
     <a href="/terms">Terms</a>
@@ -820,14 +840,14 @@ const REVIEWERS = {
 const MOODS = { love: '😍', neutral: '🤔', frustrated: '😤', confused: '😕' };
 const NOTES = [
   { sel: 'h1', who: 'AK', mood: 'love', text: "I get this headline instantly. Don't you dare touch it." },
-  { sel: '.eyebrow', who: 'PR', mood: 'confused', text: "The 'private beta' pill is sweet, but it's fighting the headline for attention — dim it a touch." },
+  { sel: '.eyebrow', who: 'PR', mood: 'confused', text: "Nice little eyebrow pill, but it's fighting the headline for attention — dim it a touch." },
   { sel: '.hero-cta .btn-indigo', who: 'SC', mood: 'neutral', text: "Add a tiny 'no credit card' line under here and you've removed my last excuse." },
   { sel: '.marquee', who: 'AK', mood: 'love', text: "Real quotes scrolling past — I keep reading them instead of leaving. Nice." },
   { sel: '#how .step', who: 'JM', mood: 'neutral', text: "Three clean steps. I'd number the outcome too — 'a filed ticket' is the payoff." },
   { sel: '#sims .sec-head h2', who: 'PR', mood: 'love', text: "That italic on 'the people from your calls' — yes. Lean into that contrast everywhere." },
   { sel: '#sims .persona', who: 'SC', mood: 'neutral', text: "These quote cards earn trust fast. Put a company logo on them and I'm sold." },
   { sel: '#snap .snap-menu', who: 'JM', mood: 'love', text: "Showing the real right-click menu is clever — I know exactly what I'm installing before I click." },
-  { sel: '.phase.build', who: 'AK', mood: 'neutral', text: "'Building' is exciting, but give me a date. Even 'Q3' tells me whether to wait." },
+  { sel: '.phase.build', who: 'AK', mood: 'love', text: "'Live' — good, I don't have to wait. Now show me how to turn my last call into a Sim." },
   { sel: '.trust', who: 'SC', mood: 'love', text: "THIS is the section that closes me. The verbatim-quote answer kills my 'is this fake?' worry." },
   { sel: '#cta .btn-indigo', who: 'PR', mood: 'frustrated', text: "Two CTAs here — 'Get started' should clearly win over 'Add to Chrome'." },
 ];
