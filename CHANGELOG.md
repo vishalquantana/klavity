@@ -10,6 +10,12 @@ top entry here, and every `package.json` (`/`, `core`, `extension`, `sdk`) plus
 the extension `manifest.json` always move together. See the PRD's _Versioning_
 section for the bump rules.
 
+## [0.30.5] — 2026-06-20
+
+### Changed
+- **Cross-page consistency pass on the marketing site.** The home and the three feature pages now share one navbar (open `( )` logo mark everywhere — replacing the square "K" tile on subpages; `How it works · Snap · Sims · AutoSim · GitHub` + `Log in`/`Get started` on all four). Sims & AutoSim regained the GitHub link and the Snap→Sims→AutoSim footer arc + Home/GitHub footer links. Added the BreadcrumbList JSON-LD (previously home-only) to all subpages.
+- **Established tone:** "Phase 0X · live today" → "Phase 0X · Live" on Snap and Sims (drops the just-launched implication; phase narrative + live dot retained).
+
 ## [0.30.4] — 2026-06-20
 
 ### Changed
