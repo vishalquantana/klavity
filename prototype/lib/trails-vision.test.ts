@@ -1,5 +1,6 @@
 import { test, expect } from "bun:test"
 import { decideFromVision, type VisionResult } from "./trails-vision"
+import { MODEL_CHOICE_IDS } from "./models"
 
 const base = (o: Partial<VisionResult>): VisionResult => ({ found: true, selector: "#x", confidence: 0.95, classification: "moved", rationale: "moved down", ...o })
 
@@ -58,12 +59,27 @@ test("parseVisionJSON tolerates code fences and clamps confidence + validates cl
   expect(r.classification).toBe("unknown") // invalid → unknown
 })
 
-test("openRouterVisionResolver parses the model reply and logs an ai_calls row (type=reheal)", async () => {
+test("parseVisionJSON degrades a malformed reply to a safe sentinel (no throw → amber_low_conf)", () => {
+  const r = parseVisionJSON("the button definitely moved, trust me {not json")
+  expect(r.found).toBe(false)
+  expect(r.selector).toBeNull()
+  expect(r.confidence).toBe(0)
+  expect(r.classification).toBe("unknown")
+  expect(r.rationale).toBe("unparseable model output")
+  // decideFromVision must route this to amber_low_conf (never heal, never regression).
+  expect(decideFromVision(r).outcome).toBe("amber_low_conf")
+})
+
+test("openRouterVisionResolver parses the model reply and logs an ai_calls row (type=reheal); model from the weighted mix", async () => {
   const realFetch = globalThis.fetch
-  globalThis.fetch = mock(async () => new Response(JSON.stringify({
-    choices: [{ message: { content: JSON.stringify({ found: true, selector: "#auth-go", confidence: 0.93, classification: "moved", rationale: "button moved into the footer" }) } }],
-    usage: { prompt_tokens: 1200, completion_tokens: 40, cost: 0.0011 },
-  }), { status: 200 })) as any
+  let sentModel: string | undefined
+  globalThis.fetch = mock(async (_url: any, init: any) => {
+    sentModel = JSON.parse(init.body).model
+    return new Response(JSON.stringify({
+      choices: [{ message: { content: JSON.stringify({ found: true, selector: "#auth-go", confidence: 0.93, classification: "moved", rationale: "button moved into the footer" }) } }],
+      usage: { prompt_tokens: 1200, completion_tokens: 40, cost: 0.0011 },
+    }), { status: 200 })
+  }) as any
 
   const out = await openRouterVisionResolver({ screenshotB64: "QUJD", mediaType: "image/png", domSnapshot: "<div/>", pageUrl: "https://app.test/x", intent: "click sign in", action: "click", target: { role: "button", accessibleName: "Sign in" }, candidateSelectors: [] }, { projectId: "proj_A" })
   expect(out.selector).toBe("#auth-go")
@@ -71,9 +87,14 @@ test("openRouterVisionResolver parses the model reply and logs an ai_calls row (
   expect(out.classification).toBe("moved")
 
   globalThis.fetch = realFetch
-  // recordAiCall is fire-and-forget; allow the microtask to flush
-  await new Promise((r) => setTimeout(r, 30))
+  // The model must come from the weighted MODEL_CHOICE_IDS set (DEFAULT_WEIGHTS applied) — not the
+  // old empty-weights path that always fell back to the single VISION_FALLBACK_MODEL.
+  expect(MODEL_CHOICE_IDS).toContain(sentModel!)
+
+  // recordAiCall is now AWAITED inside the resolver — the row exists with NO sleep/race.
   const rows = await visiondb.execute({ sql: "SELECT type, model, cost_usd FROM ai_calls WHERE type='reheal'", args: [] })
   expect(rows.rows.length).toBe(1)
   expect(Number(rows.rows[0].cost_usd)).toBeCloseTo(0.0011)
+  // The ledgered model matches the one actually sent to OpenRouter.
+  expect(rows.rows[0].model).toBe(sentModel)
 })

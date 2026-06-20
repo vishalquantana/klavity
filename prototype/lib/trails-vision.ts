@@ -12,7 +12,7 @@ export interface VisionResult {
   found: boolean; selector: string | null; confidence: number
   classification: "moved" | "restyled" | "removed" | "unknown"; rationale: string
 }
-export type VisionResolver = (input: VisionInput, ctx?: { projectId?: string | null; email?: string | null }) => Promise<VisionResult>
+export type VisionResolver = (input: VisionInput, ctx?: { projectId?: string | null; email?: string | null; weights?: Record<string, number> }) => Promise<VisionResult>
 
 export interface VisionDecision {
   outcome: "heal" | "regression" | "amber_low_conf"
@@ -37,7 +37,7 @@ export function decideFromVision(r: VisionResult, gate = 0.9): VisionDecision {
 
 // ── Real OpenRouter vision adapter (the only file that does model I/O) ──
 import { recordAiCall } from "./db"
-import { pickModel, MODEL_CHOICE_IDS } from "./models"
+import { pickModel, MODEL_CHOICE_IDS, DEFAULT_WEIGHTS } from "./models"
 
 export const VISION_FALLBACK_MODEL = "qwen/qwen3-vl-235b-a22b-instruct"
 const ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
@@ -66,10 +66,20 @@ export function buildVisionMessages(input: VisionInput): any[] {
   ]
 }
 
+// Safe sentinel for an unparseable model reply: degrades to amber_low_conf for that step (found:false,
+// confidence:0, classification:'unknown') rather than throwing and aborting the step.
+const UNPARSEABLE_VISION: VisionResult = { found: false, selector: null, confidence: 0, classification: "unknown", rationale: "unparseable model output" }
+
 export function parseVisionJSON(content: string): VisionResult {
+  // Keep the existing fence/think stripping; wrap the parse so a malformed reply can't throw.
   const cleaned = content.replace(/<think[\s\S]*?<\/think>/gi, "").replace(/```(?:json)?/gi, "").replace(/```/g, "").trim()
   const m = cleaned.match(/\{[\s\S]*\}/)
-  const obj: any = JSON.parse(m ? m[0] : cleaned)
+  let obj: any
+  try {
+    obj = JSON.parse(m ? m[0] : cleaned)
+  } catch {
+    return UNPARSEABLE_VISION
+  }
   const confidence = Math.max(0, Math.min(1, Number(obj.confidence)))
   const classification = CLASSES.has(String(obj.classification)) ? obj.classification : "unknown"
   return {
@@ -84,7 +94,11 @@ export const openRouterVisionResolver: VisionResolver = async (input, ctx) => {
   const key = process.env.OPENROUTER_API_KEY
   if (!key) throw new Error("OPENROUTER_API_KEY not set")
   const base = process.env.OPENROUTER_BASE || "https://klavity.quantana.top"
-  const model = pickModel({}, MODEL_CHOICE_IDS, VISION_FALLBACK_MODEL, Math.random())
+  // Apply the weighted model mix (DEFAULT_WEIGHTS), with an optional per-call ctx.weights override
+  // for a future per-project read. Previously passed EMPTY weights → always fell back to the single
+  // VISION_FALLBACK_MODEL and the mix never applied.
+  const weights = ctx?.weights ?? DEFAULT_WEIGHTS
+  const model = pickModel(weights, MODEL_CHOICE_IDS, VISION_FALLBACK_MODEL, Math.random())
   const ctl = new AbortController()
   const timer = setTimeout(() => ctl.abort(), 90_000)
   try {
@@ -97,7 +111,11 @@ export const openRouterVisionResolver: VisionResolver = async (input, ctx) => {
     if (!res.ok) throw new Error(`OpenRouter ${res.status}: ${(await res.text()).slice(0, 200)}`)
     const data: any = await res.json()
     const u = data?.usage || {}
-    void recordAiCall({
+    // Billing accuracy: AWAIT the ledger write so short-lived callers (smoke script, one-shot CLI)
+    // don't exit before the billable ai_calls 'reheal' row lands. Still .catch-wrapped so a ledger
+    // failure can never break the resolver. NOTE: only 2xx vision calls are ledgered — error-path
+    // calls (non-2xx / thrown) are intentionally NOT billed/logged.
+    await recordAiCall({
       type: "reheal", model, projectId: ctx?.projectId ?? null, actorEmail: ctx?.email ?? null,
       inputTokens: typeof u.prompt_tokens === "number" ? u.prompt_tokens : null,
       outputTokens: typeof u.completion_tokens === "number" ? u.completion_tokens : null,
