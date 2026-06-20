@@ -19,6 +19,7 @@ import { AsyncLocalStorage } from "node:async_hooks"
 // Per-request context. A project-bound Bearer token (widget token) records its bound project here so
 // resolveProject can constrain it to that project (F5) — without threading state through every route.
 const reqCtx = new AsyncLocalStorage<{ boundProject?: string | null }>()
+import { ingestSnapOrSim } from "./lib/expectations-ingest"
 import { trailsDashboardData } from "./lib/trails-dashboard"
 import { fileFindingById, dismissFinding, realFiler } from "./lib/trails-findings-gate"
 import { getReplay, runsWithReplay } from "./lib/trails-replay"
@@ -1066,6 +1067,16 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   issueKey: suggestedBug ? issueKeyForFeedback(projectId, urlPath, citation.issueType, citation.citedTraitIds) : null,
                 })
               }
+              // ── expectations spine ingest: best-effort, fires on both deduped and new branches ──
+              if (suggestedBug && feedbackId && db) {
+                await ingestSnapOrSim(db, {
+                  projectId, feedbackId, isSnap: !simId,
+                  title: (suggestedBug?.title ?? observation ?? "").slice(0, 200),
+                  dedupKey: issueKeyForFeedback(projectId, urlPath, citation.issueType, citation.citedTraitIds),
+                  urlPath: urlPath ?? null, issueType: citation.issueType ?? null,
+                  citedTraitIds: Array.isArray(citation.citedTraitIds) ? citation.citedTraitIds.map(String) : [],
+                })
+              }
               if (!dedupedInto) {
                 await insertActivity({
                   projectId, type: "feedback_filed", actorEmail: actor, simId,
@@ -1540,6 +1551,16 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               ? { citedTraitIds: citation.citedTraitIds, sourceQuote: citation.sourceQuote, speaker: citation.speaker, sourceTranscriptId: citation.sourceTranscriptId, sourceDate: citation.sourceDate, sourceQuoteVerified: citation.sourceQuoteVerified, recurrence: citation.recurrence }
               : null
             r.feedbackId = feedbackId
+            // ── expectations spine ingest: best-effort, fires on both deduped and new branches ──
+            if (bug && db) {
+              await ingestSnapOrSim(db, {
+                projectId, feedbackId, isSnap: false,
+                title: (bug?.title ?? r?.observation ?? "").slice(0, 200),
+                dedupKey: issueKeyForFeedback(projectId, urlPath, citation.issueType, citation.citedTraitIds),
+                urlPath: urlPath ?? null, issueType: citation.issueType ?? null,
+                citedTraitIds: Array.isArray(citation.citedTraitIds) ? citation.citedTraitIds.map(String) : [],
+              })
+            }
           }
           // activity: a review ran (actor + sim + path + screenshot) — the R6 observability spine.
           await insertActivity({ projectId, type: "review_run", actorEmail: meR, simId: sim.id, urlHost, urlPath, screenshotId, meta: { reactions: reactions.length } })

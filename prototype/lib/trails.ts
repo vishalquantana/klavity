@@ -214,6 +214,11 @@ export async function recordFinding(
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, NULL, ?, ?)`,
     args: [id, projectId, input.runId, input.stepId ?? null, input.trailId, input.kind, input.title, j(input.evidence), input.groundQuote ?? null, input.confidence, input.dedupKey, input.status ?? "queued", now, now],
   })
+  // best-effort spine ingest: an AutoSim finding is also a discovery source
+  try {
+    const { ingestFinding } = await import("./expectations-ingest")
+    await ingestFinding(db!, { projectId, findingId: id, title: input.title, dedupKey: input.dedupKey, urlPath: null })
+  } catch (e) { console.warn("[expectations] recordFinding ingest skipped:", String(e)) }
   return { id, deduped: false, recurrence: 1 }
 }
 
