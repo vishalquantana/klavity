@@ -1,12 +1,13 @@
 // Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, setFeedbackContactEmail } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, setFeedbackContactEmail } from "./lib/db"
 import { issueKeyFor, chooseDedup } from "./lib/dedup"
 import { getConnector, listConnectorTypes, type TicketPayload } from "./lib/connectors/index"
+import { inboundSupported, verifyGithubSignature, extractExternalKey, mapExternalStatus } from "./lib/connectors/inbound"
 import { applyReconcileOps, recurrenceFromEvents, type ReconcileOp, type Trait, type TraitEventRow } from "./lib/provenance"
 import { sendOtp, sendLeadAlert } from "./lib/mail"
 import { token, otp, emailAllowed, cookie, clearCookie, parseCookies, isOpsAdmin } from "./lib/auth"
 import { uploadScreenshotMeta, presignGet, type UploadedScreenshot } from "./lib/s3"
-import { buildIssueHtml, escapeHtml } from "./lib/feedback"
+import { buildIssueHtml, escapeHtml, sanitizeClientContext, clientContextLines } from "./lib/feedback"
 import { encryptSecret, decryptSecret } from "./lib/crypto"
 import { planeConfigFromForm, redactPlane, type PlaneStored } from "./lib/connection"
 import { assertSafeUrl } from "./lib/url-guard"
@@ -24,6 +25,7 @@ import { ingestSnapOrSim } from "./lib/expectations-ingest"
 import { trailsDashboardData } from "./lib/trails-dashboard"
 import { fileFindingById, dismissFinding, realFiler } from "./lib/trails-findings-gate"
 import { getReplay, runsWithReplay } from "./lib/trails-replay"
+import { saveFeedbackReplay, getFeedbackReplay, feedbackIdsWithReplay } from "./lib/feedback-replay"
 import { listRunSteps, listTrails, getTrail, listTrailSteps, insertAssertStep, deleteTrailStep } from "./lib/trails"
 import { runWalkNow } from "./lib/trails-trigger"
 import { WalkBusyError } from "./lib/trails-browser"
@@ -499,6 +501,15 @@ function oops(e: unknown, label: string): { error: string; id: string } {
 // Widget-scoped json: always attaches WIDGET_CORS so every response (success AND error) is
 // readable cross-origin. Used for /api/personas, /api/sim/review, /api/consent only.
 function wjson(body: unknown, status = 200) { return json(body, status, WIDGET_CORS) }
+// Constant-time string compare for shared-secret webhook headers (Plane). Avoids leaking the
+// secret length-by-length / byte-by-byte via response timing. (GitHub uses HMAC in inbound.ts.)
+function timingSafeStrEqual(a: string, b: string): boolean {
+  if (!a || !b) return false
+  if (a.length !== b.length) return false
+  let diff = 0
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
+  return diff === 0
+}
 function file(path: string) { return new Response(Bun.file(path)) }
 function redirect(loc: string, headers: Record<string, string> = {}) { return new Response(null, { status: 302, headers: { Location: loc, ...headers } }) }
 function fmtUsd(n: number): string { return "$" + (Number(n) || 0).toFixed(4) }
@@ -690,6 +701,12 @@ function feedbackToTicketPayload(fb: any, project: { id: string; name?: string }
   else if (fb.simId) lines.push(`Sim: ${fb.simId}`)
   const urlVal = fb.pageUrl ?? fb.urlPath ?? null
   if (urlVal) lines.push(`URL: ${urlVal}`)
+  // G2/G3/G5: append captured dev-tools context (console + network + env + identity/metadata) so the
+  // external ticket carries the same technical context the extension path does.
+  if (fb.clientContext) {
+    const ctxLines = clientContextLines(fb.clientContext)
+    if (ctxLines.length) lines.push(ctxLines.join("\n"))
+  }
   lines.push("Filed by Klavity Sims")
   const body = lines.join("\n\n")
   return {
@@ -957,6 +974,67 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       return wjson({ ok: true })
     }
 
+    // ── inbound two-way status sync (G4): external tracker → Klavity ticket ──
+    // POST /api/connectors/:type/webhook — UNAUTHENTICATED on purpose (the external provider
+    // calls it). Trust is established per-request by verifying the provider's webhook signature
+    // against the secret stored on the matching connector. Supported: github (HMAC X-Hub-Signature-256),
+    // plane (shared-secret X-Plane-Signature). jira/linear are stubbed (return 404 via inboundSupported).
+    const inboundMatch = req.method === "POST" && path.match(/^\/api\/connectors\/([a-z]+)\/webhook$/)
+    if (inboundMatch) {
+      const type = inboundMatch[1]
+      // Unknown / stubbed connector type → 404 (don't reveal which are wired).
+      if (!inboundSupported(type)) return json({ error: "Not found" }, 404)
+
+      // Abuse cap: this is a public, unauthenticated endpoint. Bound per source IP.
+      if (!rlAllow(`inbound:${type}:${clientIp(req, server)}`, 120, 60 * 1000)) {
+        return json({ error: "rate limited" }, 429)
+      }
+
+      // Read the RAW body (needed verbatim for HMAC). Hard size cap before any parse/HMAC work.
+      const raw = await req.text().catch(() => "")
+      if (raw.length > 128 * 1024) return json({ error: "payload too large" }, 413)
+
+      let payload: any
+      try { payload = JSON.parse(raw) } catch { return json({ error: "invalid json" }, 400) }
+
+      // Map the external issue id (exactly as we stored it on outbound copy) → our export → feedback.
+      const externalKey = extractExternalKey(type, payload)
+      if (!externalKey) return json({ ok: true, ignored: "no-external-key" }) // not an issue event we track
+
+      const exportRow = await findExportByExternalKey(type, externalKey)
+      // Accept-and-ignore unknown issues so the endpoint isn't an oracle for which ids exist.
+      if (!exportRow) return json({ ok: true, ignored: "unknown-issue" })
+
+      // Load the connector that produced this export and decrypt its inbound secret.
+      const connector = await getConnectorById(exportRow.projectId, exportRow.connectorId)
+      if (!connector) return json({ ok: true, ignored: "connector-gone" })
+      let inboundSecret = ""
+      if (connector.config.inbound_secret) {
+        try { inboundSecret = await decryptSecret(connector.config.inbound_secret) } catch { inboundSecret = "" }
+      }
+      // No secret configured → two-way sync is opt-in; refuse unsigned/unverifiable callbacks.
+      if (!inboundSecret) return json({ error: "unauthorized" }, 401)
+
+      // ── Verify the provider signature (spoofing guard) ──
+      let verified = false
+      if (type === "github") {
+        verified = await verifyGithubSignature(inboundSecret, raw, req.headers.get("x-hub-signature-256"))
+      } else if (type === "plane") {
+        // Plane sends the configured secret back in a header; constant-time compare.
+        const sent = req.headers.get("x-plane-signature") || ""
+        verified = timingSafeStrEqual(sent, inboundSecret)
+      }
+      if (!verified) return json({ error: "unauthorized" }, 401)
+
+      // Map the provider's state → Klavity status. null = a non-status event → no-op.
+      const newStatus = mapExternalStatus(type, payload)
+      if (!newStatus) return json({ ok: true, ignored: "no-status-change" })
+
+      const updated = await updateFeedbackMeta(exportRow.projectId, exportRow.feedbackId, { status: newStatus })
+      if (!updated) return json({ ok: true, ignored: "feedback-gone" })
+      return json({ ok: true, status: newStatus })
+    }
+
     // ── auth: request OTP ──
     if (req.method === "POST" && path === "/api/auth/request") {
       try {
@@ -1047,6 +1125,25 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const pageUrl = String(form.get("page_url") || "")
         if (!description) return wjson({ error: "Description is required." }, 400)
         if (description.length > 5000) return wjson({ error: "Description too long." }, 400)
+
+        // G2/G3/G5: captured dev-tools context (console + network + env + identity/metadata). Optional
+        // JSON form field; sanitized + capped so a malformed/oversized blob never poisons the row.
+        let clientContext: any = null
+        const ctxRaw = String(form.get("context") || "")
+        if (ctxRaw && ctxRaw.length <= 200_000) {
+          try { clientContext = sanitizeClientContext(JSON.parse(ctxRaw)) } catch { clientContext = null }
+        }
+
+        // ── G1 session replay: the widget/SDK attaches a rolling rrweb event buffer as `replay_events`
+        // (a JSON array string). Parse defensively here; an oversize/garbage field must NEVER fail the
+        // bug submission. The per-event-buffer byte cap below is a coarse pre-parse guard; the durable
+        // size cap (oldest-first trim) lives in saveFeedbackReplay.
+        const REPLAY_RAW_CAP = 6 * 1024 * 1024 // 6MB of raw JSON before gzip — reject anything larger outright
+        let replayEvents: unknown[] | null = null
+        const replayRaw = String(form.get("replay_events") || "")
+        if (replayRaw && replayRaw.length <= REPLAY_RAW_CAP) {
+          try { const parsed = JSON.parse(replayRaw); if (Array.isArray(parsed) && parsed.length) replayEvents = parsed } catch { /* ignore bad replay */ }
+        }
 
         // Resolve the Plane connection: Bearer (personal → team) else forwarded direct creds.
         let planeToken = "", planeWorkspace = "", planeProject = "", planeHost = "https://api.plane.so"
@@ -1164,6 +1261,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   sourceQuote: citation.sourceQuote, sourceTranscriptId: citation.sourceTranscriptId, sourceDate: citation.sourceDate,
                   planeIssueKey: null, planeIssueUrl: null,
                   issueKey: suggestedBug ? issueKeyForFeedback(projectId, urlPath, citation.issueType, citation.citedTraitIds) : null,
+                  clientContext,
                 })
               }
               // ── expectations spine ingest: best-effort, fires on both deduped and new branches ──
@@ -1181,6 +1279,15 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   projectId, type: "feedback_filed", actorEmail: actor, simId,
                   urlHost, urlPath, feedbackId, screenshotId,
                 })
+              }
+
+              // ── G1 session replay attach: store the rolling rrweb buffer keyed to this feedback row.
+              // Best-effort + size-capped (oldest-first trim) inside saveFeedbackReplay — a replay
+              // failure must never fail or slow the submission. Fires for both new and deduped rows so a
+              // recurring bug's freshest replay is available.
+              if (replayEvents && feedbackId) {
+                try { await saveFeedbackReplay(projectId, feedbackId, replayEvents) }
+                catch (re: any) { console.warn("feedback replay save (non-fatal):", re?.message || re) }
               }
 
               // ── auto-copy hook: fire-and-forget, never blocks the response ──
@@ -1253,7 +1360,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
         // R8: append the Sim citation line to the issue body when this feedback cites a trait.
         const citeLine = citation ? citationLine({ sourceQuote: citation.sourceQuote, speaker: citation.speaker, sourceDate: citation.sourceDate, recurrence: citation.recurrence }) : null
-        const description_html = buildIssueHtml(description, pageUrl, imageUrls) +
+        const description_html = buildIssueHtml(description, pageUrl, imageUrls, clientContext) +
           (citeLine ? `<p><em>${escapeHtml(citeLine)}</em></p>` : "")
         // SSRF guard (H2): the Plane host can arrive from untrusted form input (direct mode is
         // unauthenticated). Block requests to internal/loopback/link-local addresses — including the
@@ -2257,6 +2364,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // tickets — all recent feedback (Klavity Cloud is the primary tracker), newest-first.
           // Enriched with status/assignee (management state) and exports (connector push history).
           const ticketIds = feedbackTickets.map(f => f.id)
+          // G1: which tickets carry a session replay → show the "▶ Session replay" affordance only there.
+          const ticketsWithReplay = ticketIds.length ? await feedbackIdsWithReplay(projectId, ticketIds) : new Set<string>()
           const [ticketExportsMap, ticketMetaRows] = await Promise.all([
             ticketIds.length ? exportsForFeedbackIds(ticketIds) : Promise.resolve({} as Record<string, any[]>),
             // Fetch status/assignee via feedbackById in batch (single IN query via raw DB).
@@ -2299,7 +2408,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               observation: f.observation, suggestedBug: f.suggestedBug,
               sentiment: f.sentiment, screenshotId: f.screenshotId,
               sourceQuote: f.sourceQuote, sourceDate: f.sourceDate,
-              notes: meta.notes,
+              notes: meta.notes, hasReplay: ticketsWithReplay.has(f.id),
             }
           })
 
@@ -2394,10 +2503,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
       // ── Ticket management: PATCH /api/feedback/:id and POST /api/feedback/:id/export ──
       // Resolve the feedback's project via feedbackById across accessible projects.
-      const feedbackIdMatch = path.match(/^\/api\/feedback\/([^/]+?)(\/export)?$/)
+      const feedbackIdMatch = path.match(/^\/api\/feedback\/([^/]+?)(\/export|\/replay)?$/)
       if (feedbackIdMatch) {
         const fid = feedbackIdMatch[1]
         const isExport = feedbackIdMatch[2] === "/export"
+        const isReplay = feedbackIdMatch[2] === "/replay"
 
         // Resolve which project this feedback belongs to and check the caller has access.
         let fbRow: any = null
@@ -2410,6 +2520,15 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (row) { fbRow = row; fbAccess = a; break }
         }
         if (!fbRow) return json({ error: "Feedback not found or not accessible." }, 404)
+
+        // GET /api/feedback/:id/replay — the stored rrweb session-replay events for a ticket, so the
+        // dashboard viewer can play them. Project-scoped (access already verified via fbRow above);
+        // 404 when this ticket has no recording (widget didn't capture, or buffer was empty).
+        if (req.method === "GET" && isReplay) {
+          const replay = await getFeedbackReplay(fbRow.projectId, fid)
+          if (!replay) return json({ error: "No replay for this report." }, 404)
+          return json({ feedbackId: fid, events: replay.events, nEvents: replay.nEvents, trimmed: replay.trimmed, createdAt: replay.createdAt })
+        }
 
         // PATCH /api/feedback/:id — any project member may edit status/assignee/notes
         if (req.method === "PATCH" && !isExport) {

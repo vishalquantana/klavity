@@ -22,6 +22,7 @@ export async function dispatchSubmit(
     screenshots: payload.screenshots,
     settings,
     ...(payload.projectId ? { projectId: payload.projectId } : {}),
+    replayEvents: payload.replayEvents,
   }
 
   if (settings.backendUrl) {

@@ -1,6 +1,7 @@
 import { toPng } from 'html-to-image'
-import type { KlavitySettings, ReportType, SubmitReportPayload, IntegrationConfig, ConsoleError, NetworkFailure } from '@klavity/core'
+import type { KlavitySettings, ReportType, SubmitReportPayload, IntegrationConfig, ReportIdentity } from '@klavity/core'
 import { DEFAULT_SETTINGS } from '@klavity/core'
+import { installCapture, buildReportContext, type CaptureBuffers } from '@klavity/core/capture'
 import { dispatchSubmit } from '@klavity/core/submit'
 import { buildModal } from '@klavity/core/modal'
 import { submitReport as jiraSubmit } from '@klavity/core/integrations/jira'
@@ -8,13 +9,28 @@ import { submitReport as linearSubmit } from '@klavity/core/integrations/linear'
 import { submitReport as githubSubmit } from '@klavity/core/integrations/github'
 import { submitReport as planeSubmit } from '@klavity/core/integrations/plane'
 import { submitReport as backendSubmit } from '@klavity/core/integrations/backend'
+import { record as rrwebRecord } from 'rrweb'
+import { startReplayRecording, type ReplayController } from './replay-recorder'
 
 export type SdkConfig = Partial<KlavitySettings>
 
 let _settings: KlavitySettings = DEFAULT_SETTINGS
-const _consoleErrors: ConsoleError[] = []
-const _networkFailures: NetworkFailure[] = []
-const MAX_RING = 50
+// Shared full-fidelity capture buffers (G2/G3) — populated by @klavity/core/capture.
+const _buffers: CaptureBuffers = { consoleErrors: [], networkFailures: [] }
+// Site-owner identity + custom metadata (G5), set via identify()/setMetadata().
+let _identity: ReportIdentity | undefined
+let _metadata: Record<string, string> | undefined
+// G1 session replay: rolling rrweb buffer, attached to reports filed via the Klavity backend.
+let _replay: ReplayController | null = null
+
+function coerceStrings(obj: Record<string, unknown>): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [k, v] of Object.entries(obj)) {
+    if (v === undefined || v === null) continue
+    out[String(k).slice(0, 64)] = String(v).slice(0, 1000)
+  }
+  return out
+}
 
 async function capturePageDataUrl(): Promise<string> {
   return toPng(document.body, {
@@ -33,19 +49,12 @@ async function capturePageDataUrl(): Promise<string> {
 }
 
 function buildContext(): SubmitReportPayload['context'] {
-  return {
-    pageUrl: window.location.href,
-    userAgent: navigator.userAgent,
-    screenSize: `${window.screen.width}x${window.screen.height}`,
-    viewportSize: `${window.innerWidth}x${window.innerHeight}`,
-    consoleErrors: [..._consoleErrors],
-    networkFailures: [..._networkFailures],
-  }
+  return buildReportContext(_buffers, { identity: _identity, metadata: _metadata })
 }
 
 async function dispatchToIntegration(config: IntegrationConfig) {
   return dispatchSubmit(
-    { type: config.type, description: config.description, context: config.context, screenshots: config.screenshots },
+    { type: config.type, description: config.description, context: config.context, screenshots: config.screenshots, replayEvents: config.replayEvents },
     _settings,
     { jira: jiraSubmit, linear: linearSubmit, github: githubSubmit, plane: planeSubmit, backend: backendSubmit },
   )
@@ -60,6 +69,7 @@ export function openModal(type: ReportType = 'bug') {
       context: buildContext(),
       screenshots: payload.screenshots,
       settings: _settings,
+      replayEvents: _replay?.getEvents() ?? [],
     }),
   })
 
@@ -73,25 +83,17 @@ export function openModal(type: ReportType = 'bug') {
 }
 
 function setupErrorCapture() {
-  window.onerror = (msg, _src, _line, _col, err) => {
-    _consoleErrors.push({ message: String(msg), stack: err?.stack, timestamp: Date.now() })
-    if (_consoleErrors.length > MAX_RING) _consoleErrors.shift()
-    return false
-  }
-  window.addEventListener('unhandledrejection', (e) => {
-    _consoleErrors.push({ message: String(e.reason), stack: e.reason?.stack, timestamp: Date.now() })
-    if (_consoleErrors.length > MAX_RING) _consoleErrors.shift()
-  })
-  const origFetch = window.fetch
-  window.fetch = async (...args) => {
-    const res = await origFetch(...args)
-    if (res.status >= 400) {
-      const url = typeof args[0] === 'string' ? args[0] : (args[0] as Request).url
-      _networkFailures.push({ url, status: res.status, method: 'FETCH', timestamp: Date.now() })
-      if (_networkFailures.length > MAX_RING) _networkFailures.shift()
-    }
-    return res
-  }
+  // Full-fidelity capture (G3): all console levels + all fetch/XHR requests, bounded + redacted.
+  installCapture(_buffers, { consoleLevels: true })
+}
+
+// ── Public custom-metadata API (G5) ──
+// window.KlavitySnap.identify({...}) / setMetadata({...}). Values are coerced to strings + capped.
+export function identify(user: ReportIdentity | null) {
+  _identity = user ? (coerceStrings(user as Record<string, unknown>) as ReportIdentity) : undefined
+}
+export function setMetadata(meta: Record<string, unknown> | null) {
+  _metadata = meta ? coerceStrings(meta) : undefined
 }
 
 function addContextMenu() {
@@ -134,11 +136,14 @@ export function init(config: SdkConfig = {}) {
   }
   setupErrorCapture()
   addContextMenu()
+  // G1 session replay: start a rolling rrweb buffer (masked by default). Best-effort — a recorder
+  // failure must never break host-app init. Only meaningful when reporting via the Klavity backend.
+  if (!_replay) { try { _replay = startReplayRecording(rrwebRecord as any) } catch { _replay = null } }
 }
 
 // Expose on window for script-tag usage
 if (typeof window !== 'undefined') {
-  (window as unknown as Record<string, unknown>).KlavitySnap = { init, openModal }
+  (window as unknown as Record<string, unknown>).KlavitySnap = { init, openModal, identify, setMetadata }
 }
 
-export default { init, openModal }
+export default { init, openModal, identify, setMetadata }

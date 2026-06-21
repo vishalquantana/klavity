@@ -1,6 +1,6 @@
 {
   "name": "@klavity/core",
-  "version": "0.34.0",
+  "version": "0.35.0",
   "private": true,
   "author": "Quantana <hello@quantana.com.au> (https://quantana.com.au)",
   "license": "FSL-1.1-ALv2",
@@ -11,6 +11,7 @@
     ".": "./src/index.ts",
     "./sim": "./src/sim.ts",
     "./submit": "./src/submit.ts",
+    "./capture": "./src/capture.ts",
     "./annotator": "./src/annotator.ts",
     "./crop": "./src/crop.ts",
     "./integrations/jira": "./src/integrations/jira.ts",
