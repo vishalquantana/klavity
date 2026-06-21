@@ -187,7 +187,11 @@ details.drawer .drawer-in{padding:0 22px 22px}
 .row-tkt .body{flex:1;min-width:0}
 .row-tkt .t{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .row-tkt .d{font-size:12px;color:var(--paper-faint);margin-top:2px}
-.row-tkt .go{margin-left:auto;color:var(--indigo);font-size:12px;white-space:nowrap;flex-shrink:0}
+.row-tkt .go{color:var(--indigo);font-size:12px;white-space:nowrap;flex-shrink:0}
+.copy-ai-icon{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;font-size:14px;line-height:1;background:transparent;border:1px solid var(--line);border-radius:8px;color:var(--paper);cursor:pointer;transition:border-color .15s,background .15s;padding:0}
+.copy-ai-icon:hover{border-color:var(--indigo);background:rgba(99,102,241,.12)}
+.copy-ai-icon.copied{border-color:var(--green);color:var(--green)}
+.row-tkt .copy-ai-icon{margin-left:auto;flex-shrink:0}
 .tkt-detail{background:var(--ink);border:1px solid var(--line);border-top:none;border-bottom-left-radius:12px;border-bottom-right-radius:12px;padding:14px 15px;display:none;flex-direction:column;gap:12px}
 .tkt-detail.show{display:flex}
 .tkt-status-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -209,8 +213,10 @@ details.drawer .drawer-in{padding:0 22px 22px}
 .kb-dot-open{background:var(--amber)}.kb-dot-in_progress{background:var(--indigo)}.kb-dot-done{background:var(--green)}
 .kb-list{display:flex;flex-direction:column;gap:8px;min-height:24px}
 .kb-empty{font-size:12px;text-align:center;padding:8px 0}
-.kb-card{background:var(--ink-2);border:1px solid var(--line);border-radius:12px;padding:11px 12px;cursor:pointer;transition:border-color .2s;user-select:none}
+.kb-card{position:relative;background:var(--ink-2);border:1px solid var(--line);border-radius:12px;padding:11px 12px;cursor:pointer;transition:border-color .2s;user-select:none}
 .kb-card:hover{border-color:var(--indigo)}
+.kb-card .kb-copy-ai{position:absolute;top:8px;right:8px;width:24px;height:24px;font-size:12px}
+.kb-card-t{padding-right:28px}
 .kb-card.open{border-color:var(--indigo)}
 .kb-card-t{font-size:13px;font-weight:600;line-height:1.3}
 .kb-card-d{font-size:11px;color:var(--paper-faint);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -1138,6 +1144,7 @@ function buildTktDetail(t, admin, onChange) {
       <div class="tkt-actions">
         <div class="tkt-badges">${badgesHtml}</div>
         ${t.hasReplay ? `<button class="btn btn-ghost btn-sm replay-btn" type="button">▶ Session replay</button>` : ""}
+        <button class="btn btn-ghost btn-sm copy-claude-btn" type="button" title="Copy a detailed prompt to paste into Claude / ChatGPT / any AI coding agent">✨ Copy to AI</button>
         <button class="btn btn-ghost btn-sm save-meta-btn">Save</button>
       </div>
       <div class="tkt-gap tkt-copy">${copySelect}</div>
@@ -1191,6 +1198,12 @@ function buildTktDetail(t, admin, onChange) {
     const replayBtn = detailEl.querySelector(".replay-btn")
     if (replayBtn) {
       replayBtn.addEventListener("click", (ev) => { ev.stopPropagation(); openReplay(ticketId) })
+    }
+
+    // Wire up "Copy to AI" — builds a fix-ready markdown prompt for Claude/ChatGPT/etc.
+    const copyClaudeBtn = detailEl.querySelector(".copy-claude-btn")
+    if (copyClaudeBtn) {
+      copyClaudeBtn.addEventListener("click", ev => { ev.stopPropagation(); copyTicketToAI(ticketId, copyClaudeBtn, detailEl) })
     }
 
     // Wire up copy-to button
@@ -1268,10 +1281,13 @@ function renderTickets() {
         <div class="t"></div>
         <div class="d">${sub}</div>
       </div>
+      <button class="copy-ai-icon" type="button" aria-label="Copy to AI" title="Copy to AI — paste into Claude / ChatGPT to fix this bug">✨</button>
       <span class="go" aria-label="Expand">›</span>`
     renderRowTitle()
 
     const detailEl = buildTktDetail(t, admin, () => renderRowTitle())
+    const rowCopyIcon = rowEl.querySelector(".copy-ai-icon")
+    if (rowCopyIcon) rowCopyIcon.addEventListener("click", ev => { ev.stopPropagation(); copyTicketToAI(ticketId, rowCopyIcon, detailEl) })
 
     // Toggle expand/collapse
     rowEl.addEventListener("click", () => {
@@ -1348,6 +1364,7 @@ function renderTicketsKanban() {
         cardEl.querySelector(".kb-card-meta").innerHTML = `${stChip}${sevChip}${assignee}`
       }
       cardEl.innerHTML = `
+        <button class="copy-ai-icon kb-copy-ai" type="button" aria-label="Copy to AI" title="Copy to AI — paste into Claude / ChatGPT to fix this bug">✨</button>
         <div class="kb-card-t">🐛 ${esc(t.title || "Untitled report")}</div>
         <div class="kb-card-d">${sub}</div>
         <div class="kb-card-meta"></div>`
@@ -1358,6 +1375,8 @@ function renderTicketsKanban() {
         // status may have changed → re-bucket the whole board
         if (t.status !== col.status) renderTicketsKanban()
       })
+      const cardCopyIcon = cardEl.querySelector(".copy-ai-icon")
+      if (cardCopyIcon) cardCopyIcon.addEventListener("click", ev => { ev.stopPropagation(); copyTicketToAI(ticketId, cardCopyIcon, detailEl) })
 
       cardEl.addEventListener("click", () => {
         const isOpen = detailEl.classList.contains("show")
@@ -1407,6 +1426,94 @@ function showTktMsg(detailEl, msg, isErr) {
     if (errEl) errEl.classList.add("hide")
     setTimeout(() => { if (msgEl) msgEl.classList.add("hide") }, 2500)
   }
+}
+
+// Copy text to the clipboard, with a fallback for non-secure contexts / older browsers.
+async function copyText(text) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch {}
+  try {
+    const ta = document.createElement("textarea")
+    ta.value = text
+    ta.style.position = "fixed"
+    ta.style.opacity = "0"
+    document.body.appendChild(ta)
+    ta.focus(); ta.select()
+    const ok = document.execCommand("copy")
+    document.body.removeChild(ta)
+    return ok
+  } catch { return false }
+}
+
+// Copy a ticket's fix-ready prompt to the clipboard, with transient button feedback.
+// Works from the labeled detail button and the icon buttons on rows/kanban cards.
+async function copyTicketToAI(ticketId, btn, detailEl) {
+  const tkt = (state.tickets || []).find(x => x.id === ticketId)
+  if (!tkt) return
+  const ok = await copyText(ticketMarkdown(tkt))
+  const orig = btn.innerHTML
+  const labeled = !btn.classList.contains("copy-ai-icon")
+  btn.innerHTML = ok ? (labeled ? "✓ Copied!" : "✓") : (labeled ? "✗ Copy failed" : "✗")
+  btn.classList.toggle("copied", ok)
+  if (detailEl) showTktMsg(detailEl, ok ? "Copied a fix-ready prompt to your clipboard." : "Couldn't access the clipboard.", !ok)
+  setTimeout(() => { btn.innerHTML = orig; btn.classList.remove("copied") }, 2000)
+}
+
+// Build a detailed, fix-ready markdown prompt from a ticket — designed to paste
+// straight into Claude (or any AI coding agent) so it can diagnose and fix the bug.
+function ticketMarkdown(t) {
+  const L = []
+  const date = t.createdAt ? new Date(Number(t.createdAt)).toISOString() : ""
+  L.push("# Bug report: " + (t.title || "Untitled report"))
+  L.push("")
+  const meta = []
+  if (t.status) meta.push("- **Status:** " + (STATUS_LABELS[t.status] || t.status))
+  if (t.severity) meta.push("- **Severity:** " + t.severity)
+  if (t.sentiment) meta.push("- **Sentiment:** " + t.sentiment)
+  if (t.urlPath) meta.push("- **Where:** `" + t.urlPath + "`")
+  if (t.simName) meta.push("- **Reported by:** " + t.simName)
+  if (date) meta.push("- **When:** " + date + (t.createdAt ? " (" + ago(t.createdAt) + ")" : ""))
+  if (t.assignee) meta.push("- **Assignee:** " + t.assignee)
+  if (meta.length) { L.push(meta.join("\n")); L.push("") }
+
+  if (t.observation) {
+    L.push("## What happened")
+    L.push(t.observation)
+    L.push("")
+  }
+  if (t.suggestedBug && (t.suggestedBug.title || t.suggestedBug.body)) {
+    L.push("## Suggested fix")
+    if (t.suggestedBug.title) L.push("**" + t.suggestedBug.title + "**")
+    if (t.suggestedBug.body) { L.push(""); L.push(t.suggestedBug.body) }
+    L.push("")
+  }
+  if (t.sourceQuote) {
+    L.push("## User's own words")
+    L.push("> " + String(t.sourceQuote).replace(/\n/g, "\n> "))
+    if (t.sourceDate) L.push("> \n> — raised " + ago(t.sourceDate))
+    L.push("")
+  }
+  if (t.notes) {
+    L.push("## Management notes")
+    L.push(t.notes)
+    L.push("")
+  }
+  const links = []
+  const exps = t.exports || []
+  exps.forEach(e => { if (e.externalUrl) links.push("- " + (e.type || "tracker") + ": " + e.externalUrl) })
+  if (!exps.length && t.planeIssueUrl) links.push("- plane: " + t.planeIssueUrl)
+  if (links.length) {
+    L.push("## Linked tickets")
+    L.push(links.join("\n"))
+    L.push("")
+  }
+  L.push("---")
+  L.push("Please investigate this bug. Find the root cause in the codebase, explain it, then implement and verify a fix.")
+  return L.join("\n")
 }
 
 function renderActivity() {

@@ -10,6 +10,11 @@ top entry here, and every `package.json` (`/`, `core`, `extension`, `sdk`) plus
 the extension `manifest.json` always move together. See the PRD's _Versioning_
 section for the bump rules.
 
+## [0.39.4] — 2026-06-21
+
+### Added
+- **"Copy to AI" on every ticket.** Each ticket now has a one-click way to copy a detailed, fix-ready Markdown prompt (title, status/severity/sentiment, where it happened, the observation, the suggested fix, the user's verbatim quote, management notes, and any linked tracker URLs — closing with a "find the root cause and fix it" instruction) straight to the clipboard, ready to paste into Claude / ChatGPT / any AI coding agent. It appears as a labeled **✨ Copy to AI** button in the ticket detail actions and as an always-visible ✨ icon on both the Overview list rows and the Kanban cards, so it's reachable without opening the ticket. Built on a shared `buildTktDetail()` so both views stay in sync; clipboard write has an `execCommand` fallback for non-secure contexts. `prototype/public/dashboard.html`.
+
 ## [0.39.3] — 2026-06-21
 
 ### Changed
