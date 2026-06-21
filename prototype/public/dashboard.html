@@ -430,7 +430,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     <h3>Welcome to Klavity</h3>
     <p class="cl-intro">Four steps to your first Sim review — we'll tick them off as you go:</p>
     <ol>
-      <li>
+      <li id="clConnect">
         <div style="flex:1">
           <div class="cl-step-t">Connect your product — pick one</div>
           <div class="cl-step-d">Two ways for Sims and your users to reach Klavity:</div>
@@ -450,7 +450,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           </div>
         </div>
       </li>
-      <li>
+      <li id="clUrl">
         <div>
           <div class="cl-step-t">Add your product's URL so Sims know where to watch</div>
           <div class="cl-step-d">Allowlist the paths your Sims should react on. <a href="#liveDrawer" id="checklistUrlLink">Open Live Sims settings →</a></div>
@@ -788,7 +788,13 @@ function renderChecklist() {
   try { dismissed = sessionStorage.getItem("klavChecklistDismissed") === "1" } catch (e) {}
   // Keep guiding until the activation goal (first review) is reached — not just until the first Sim.
   el.classList.toggle("hide", hasReview || dismissed)
-  // Tick off the steps we can detect from dashboard state so "what's left" is obvious at a glance.
+  // Tick off every step we can detect from dashboard state so "what's left" is obvious at a glance.
+  // Step 2 done = at least one monitored URL is allowlisted for this project (loaded by loadLive()).
+  const hasUrls = (typeof curUrls !== "undefined") && (curUrls || []).length > 0
+  // Step 1 done = the product is wired up — proven by any later progress (a URL, a Sim, feedback, or a review).
+  const connected = hasReview || hasSims || hasUrls || (counts.feedback || 0) > 0
+  const connLi = $("clConnect"); if (connLi) connLi.classList.toggle("cl-done", connected)
+  const urlLi = $("clUrl"); if (urlLi) urlLi.classList.toggle("cl-done", hasUrls)
   const simsLi = $("clSims"); if (simsLi) simsLi.classList.toggle("cl-done", hasSims)
   const revLi = $("clReview"); if (revLi) revLi.classList.toggle("cl-done", hasReview)
   // Point step-3 studio link at the active project (mirrors the Sims-link pattern).
@@ -875,6 +881,7 @@ $("pauseBtn").onclick = async () => {
 let curUrls = []
 function renderUrls(urls) {
   curUrls = urls || []
+  renderChecklist() // URLs load async after first render — re-tick step 1/2 now that we know the allowlist
   const wrap = $("urlList")
   if (!curUrls.length) { wrap.innerHTML = `<div class="muted" style="padding:4px 2px">No monitored URLs yet — add a path pattern below to let your Sims go live there.</div>`; return }
   wrap.innerHTML = curUrls.map(u => {

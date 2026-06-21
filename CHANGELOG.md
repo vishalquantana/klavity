@@ -10,6 +10,19 @@ top entry here, and every `package.json` (`/`, `core`, `extension`, `sdk`) plus
 the extension `manifest.json` always move together. See the PRD's _Versioning_
 section for the bump rules.
 
+## [0.39.3] — 2026-06-21
+
+### Changed
+- **First-run checklist now ticks off all four steps, not just the last two.** The
+  "Welcome to Klavity" onboarding panel promised "we'll tick them off as you go,"
+  but only steps 3 (Add Sims) and 4 (Watch review) were ever detected — steps 1
+  (Connect your product) and 2 (Add product URL) had no IDs and stayed as plain
+  numbers forever. They now get the green ✓ + strikethrough too: step 2 when at
+  least one monitored URL is allowlisted, step 1 once the product is provably
+  wired up (a URL, a Sim, feedback, or a review exists). `renderChecklist()` is
+  re-run after the async monitored-URL load so the ticks land on first paint.
+  `prototype/public/dashboard.html`.
+
 ## [0.39.2] — 2026-06-21
 
 ### Fixed
