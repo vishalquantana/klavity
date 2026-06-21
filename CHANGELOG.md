@@ -10,6 +10,11 @@ top entry here, and every `package.json` (`/`, `core`, `extension`, `sdk`) plus
 the extension `manifest.json` always move together. See the PRD's _Versioning_
 section for the bump rules.
 
+## [0.37.1] — 2026-06-21
+
+### Fixed
+- **"Open tracker" now opens the Klavity dashboard in Klavity Cloud mode.** The popup footer link (and the in-page "View submissions" menu item) only ever set a URL for the *direct* integrations (Jira/Linear/GitHub/Plane); in Cloud mode the href stayed `#`, so clicking it just re-opened the extension popup in a full tab. Both code paths now deep-link to `…/dashboard` (the cloud ticket tracker) — the popup link is scoped to the active project (`?project=<id>`) and updates when the project picker changes. `popup.ts` `setTrackerLink()` + `background.ts` `getTrackerUrl()` both branch on `backendUrl` first.
+
 ## [0.37.0] — 2026-06-21
 
 ### Added

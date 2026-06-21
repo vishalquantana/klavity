@@ -24,6 +24,8 @@ async function getSettings(): Promise<KlavitySettings> {
 }
 
 function getTrackerUrl(settings: KlavitySettings): string {
+  // Klavity Cloud mode: the Klavity dashboard IS the ticket tracker.
+  if (settings.backendUrl) return `${settings.backendUrl.replace(/\/+$/, '')}/dashboard`
   switch (settings.integration) {
     case 'jira': return settings.jira.baseUrl ? `${settings.jira.baseUrl}/browse` : ''
     case 'linear': return 'https://linear.app'

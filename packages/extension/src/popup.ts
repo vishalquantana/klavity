@@ -153,18 +153,28 @@ async function renderSignedIn() {
     label.classList.add('actionable'); label.onclick = () => chrome.runtime.openOptionsPage()
   }
 
-  // Tracker link
+  // Tracker link — in Klavity Cloud mode the Klavity dashboard IS the ticket
+  // tracker (deep-linked to the active project); for direct integrations it
+  // links the connected tool. Re-evaluated once the project picker resolves.
   const trackerLink = $('tracker-link') as HTMLAnchorElement
-  switch (s.integration) {
-    case 'jira': trackerLink.href = s.jira.baseUrl ? `${s.jira.baseUrl}/browse` : '#'; break
-    case 'linear': trackerLink.href = 'https://linear.app'; break
-    case 'github': trackerLink.href = s.github.repo ? `https://github.com/${s.github.repo}/issues` : '#'; break
-    case 'plane': {
-      const h = (s.plane.host || 'https://api.plane.so').replace(/\/+$/, '')
-      const web = h === 'https://api.plane.so' ? 'https://app.plane.so' : h
-      trackerLink.href = s.plane.workspace ? `${web}/${s.plane.workspace}` : '#'
+  const setTrackerLink = (projectId: string | null) => {
+    if (cloud) {
+      const base = (s.backendUrl || 'https://klavity.quantana.top').replace(/\/+$/, '')
+      trackerLink.href = projectId ? `${base}/dashboard?project=${encodeURIComponent(projectId)}` : `${base}/dashboard`
+      return
+    }
+    switch (s.integration) {
+      case 'jira': trackerLink.href = s.jira.baseUrl ? `${s.jira.baseUrl}/browse` : '#'; break
+      case 'linear': trackerLink.href = 'https://linear.app'; break
+      case 'github': trackerLink.href = s.github.repo ? `https://github.com/${s.github.repo}/issues` : '#'; break
+      case 'plane': {
+        const h = (s.plane.host || 'https://api.plane.so').replace(/\/+$/, '')
+        const web = h === 'https://api.plane.so' ? 'https://app.plane.so' : h
+        trackerLink.href = s.plane.workspace ? `${web}/${s.plane.workspace}` : '#'
+      }
     }
   }
+  setTrackerLink(null)
 
   $('open-options').addEventListener('click', () => chrome.runtime.openOptionsPage())
   $('manage-sims').addEventListener('click', () => {
@@ -211,9 +221,11 @@ async function renderSignedIn() {
     sel.addEventListener('change', async () => {
       activeProjectId = sel.value
       await setSelectedProjectId(activeProjectId)
+      setTrackerLink(activeProjectId)
       await renderSims(s, activeProjectId)
     })
   }
+  setTrackerLink(activeProjectId)
 
   // ── Ad-hoc "Analyze this page" ──
   const analyzeBtn = $('btn-analyze') as HTMLButtonElement
