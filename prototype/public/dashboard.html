@@ -692,7 +692,10 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 
     <!-- Tickets kanban board -->
     <div class="card full" data-view="tickets">
+      <div class="kb-toolbar">
       <h2><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20v-9" /> <path d="M14 7a4 4 0 0 1 4 4v3a6 6 0 0 1-12 0v-3a4 4 0 0 1 4-4z" /> <path d="M14.12 3.88 16 2" /> <path d="M21 21a4 4 0 0 0-3.81-4" /> <path d="M21 5a4 4 0 0 1-3.55 3.97" /> <path d="M22 13h-4" /> <path d="M3 21a4 4 0 0 1 3.81-4" /> <path d="M3 5a4 4 0 0 0 3.55 3.97" /> <path d="M6 13H2" /> <path d="m8 2 1.88 1.88" /> <path d="M9 7.13V6a3 3 0 1 1 6 0v1.13" /></svg> Tickets <span class="count" id="ticketKanbanCount"></span></h2>
+        <div class="kb-search"><span class="mag">⌕</span><input id="kanbanSearch" placeholder="Search tickets…" autocomplete="off" /></div>
+      </div>
       <div class="kb-filterbar" id="kbFilterBar"></div>
       <div id="ticketsKanban"><div class="sk sk-row"></div><div class="sk sk-row"></div></div>
       <div id="ticketSingle" class="hide"></div>
@@ -1138,6 +1141,15 @@ async function klavCopy(text, btn, doneLabel) {
     setTimeout(() => { btn.textContent = prev }, 1600)
   } catch (e) { btn.textContent = "Press ⌘C"; setTimeout(() => { btn.textContent = "Copy" }, 1600) }
 }
+// First-run checklist embed buttons — handlers were dropped by a stale-base merge; restored.
+$("embedCopy") && ($("embedCopy").onclick = () => {
+  const pid = curProjId(); if (!pid) return
+  klavCopy(embedSnippet(pid), $("embedCopy"))
+})
+$("embedCopyAI") && ($("embedCopyAI").onclick = () => {
+  const pid = curProjId(); if (!pid) return
+  klavCopy(cspFixPrompt(pid), $("embedCopyAI"), "Copied for AI ✓")
+})
 $("checklistDismiss") && ($("checklistDismiss").onclick = () => {
   try { sessionStorage.setItem("klavChecklistDismissed", "1") } catch (e) {}
   const el = $("checklist"); if (el) el.classList.add("hide")
