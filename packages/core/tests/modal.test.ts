@@ -5,6 +5,18 @@ beforeEach(() => { document.body.innerHTML = '' })
 
 function q(ctrl: any, sel: string) { return ctrl.shadowRoot.querySelector(sel) as HTMLElement | null }
 
+describe('buildModal paste-image support', () => {
+  it('paste handler is registered on open and removed on close', () => {
+    const addSpy = vi.spyOn(document, 'addEventListener')
+    const remSpy = vi.spyOn(document, 'removeEventListener')
+    const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: async () => ({ issueKey: '1', issueUrl: '' }) })
+    expect(addSpy.mock.calls.some(c => c[0] === 'paste')).toBe(true)
+    ctrl.close()
+    expect(remSpy.mock.calls.some(c => c[0] === 'paste')).toBe(true)
+    addSpy.mockRestore(); remSpy.mockRestore()
+  })
+})
+
 describe('buildModal region capture', () => {
   it('shows the Region button only when onRegionCapture is provided', () => {
     const withRegion = buildModal('bug', { onCaptureFull: async () => 'x', onRegionCapture: async () => 'r', onSubmit: async () => ({ issueKey: '1', issueUrl: '' }) })

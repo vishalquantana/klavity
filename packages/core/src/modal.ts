@@ -156,6 +156,7 @@ export function buildModal(
 
   function close() {
     document.removeEventListener('keydown', escHandler, { capture: true })
+    document.removeEventListener('paste', onPaste)
     const m = shadowRoot.querySelector('.klavity-modal') as HTMLElement | null
     if (!m) { host.remove(); return }
     m.classList.add('kl-closing')
@@ -168,6 +169,17 @@ export function buildModal(
     if (e.key === 'Escape') { e.stopPropagation(); close() }
   }
   document.addEventListener('keydown', escHandler, { capture: true })
+
+  const onPaste = (e: ClipboardEvent) => {
+    if (!e.clipboardData) return
+    for (const item of Array.from(e.clipboardData.items)) {
+      if (item.type.startsWith('image/')) {
+        const blob = item.getAsFile()
+        if (blob) fileToDataUrl(blob).then(addScreenshot).catch(() => {})
+      }
+    }
+  }
+  document.addEventListener('paste', onPaste)
 
   // Toggle
   const bugBtn = modal.querySelector('.bug') as HTMLButtonElement
