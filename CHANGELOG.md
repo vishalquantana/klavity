@@ -10,6 +10,11 @@ top entry here, and every `package.json` (`/`, `core`, `extension`, `sdk`) plus
 the extension `manifest.json` always move together. See the PRD's _Versioning_
 section for the bump rules.
 
+## [0.38.4] — 2026-06-21
+
+### Fixed
+- **Marketing-site logo now matches the app.** The public pages drew a hand-rolled curved-parenthesis SVG glyph in `.brand .spark` / `.brand .mark` instead of the real brand mark, so the home page (and `/sims`, `/autosim`, `/snap`, `/blog`, blog posts) showed the wrong logo while the app used the correct `/favicon.svg` (dark rounded square with the dotted-column mark). All six pages now render `/favicon.svg`, matching the dashboard. `site/index.html`, `site/sims.html`, `site/autosim.html`, `site/snap.html`, `site/blog/index.html`, `site/blog/how-to-write-a-bug-report-developers-act-on.html`.
+
 ## [0.38.3] — 2026-06-21
 
 ### Changed
