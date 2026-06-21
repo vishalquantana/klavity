@@ -12,4 +12,6 @@ export const ICON_NAMES = [
   'cloud', 'plug', 'ticket',
   // Added for Noted outcome (Task 7 ext fix)
   'message-circle',
+  // Added for dashboard + index app pages (Task 7 dash)
+  'users', 'settings', 'radio-tower', 'palette', 'lock', 'plus', 'sparkles', 'paperclip',
 ];
