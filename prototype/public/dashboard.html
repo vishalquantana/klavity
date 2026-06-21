@@ -197,6 +197,8 @@ details.drawer .drawer-in{padding:0 22px 22px}
 .seg button.active{background:var(--indigo);color:#fff}
 [data-theme="dark"] .seg button.active{color:#0c0a08}
 .seg button:not(.active):hover{background:var(--ink-3)}
+/* global Focus/Full density toggle in the header — Focus caps the tickets + activity feeds so cards don't run the page to the bottom */
+.dash-mode{margin-top:10px}
 /* Tickets kanban board */
 .kanban{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;align-items:start}
 .kb-col{background:var(--ink);border:1px solid var(--line);border-radius:14px;padding:10px;display:flex;flex-direction:column;gap:8px;min-width:0}
@@ -412,6 +414,13 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         <button class="btn btn-ghost btn-sm" id="newProjCancel">Cancel</button>
       </div>
       <div class="msg" id="newProjMsg" style="text-align:right"></div>
+      <!-- Global density toggle: Focus caps the overview feeds so cards don't run the page to the bottom; Full shows everything. Persisted. -->
+      <div style="text-align:right" data-view="overview">
+        <div class="seg dash-mode" id="dashMode" role="group" aria-label="Feed density">
+          <button type="button" data-mode="focus">Focus</button>
+          <button type="button" data-mode="full">Full</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -684,6 +693,15 @@ const ago = (ts) => {
 const ACT_ICON = { feedback_filed:"🐛", review_run:"👁️", sim_activated:"⚡", sim_added:"➕", sim_evolved:"🧬", transcript_added:"📝" }
 const ACT_VERB = { feedback_filed:"filed feedback", review_run:"ran a review", sim_activated:"went live", sim_added:"added a Sim", sim_evolved:"evolved a Sim", transcript_added:"added a transcript" }
 
+// How many rows the overview tickets + activity feeds show in Focus mode (the default).
+// Keeps /dashboard short — cards show the recent few instead of running the page to the bottom.
+const FEED_VISIBLE = 5
+
+// Global feed density. Focus = cap each overview feed to FEED_VISIBLE; Full = show the whole loaded batch.
+// Persisted per-browser so the choice sticks across reloads/sessions. Default = Focus.
+const DASH_MODE_KEY = "klav_dash_mode"
+let focusMode = (() => { try { return localStorage.getItem(DASH_MODE_KEY) !== "full" } catch { return true } })()
+
 let state = null
 
 function activeProjectParam() {
@@ -736,6 +754,7 @@ function render() {
   renderMembers(admin)
   renderTickets()
   renderActivity()
+  renderDashMode()
   linkProjects()
 
   // role-gated controls
@@ -1222,7 +1241,9 @@ function renderTickets() {
   }
   const wrap = document.createElement("div")
   wrap.className = "tkt-wrap"
-  tickets.forEach(t => {
+  // Focus mode (default) shows just the recent few; Full mode (global header toggle) shows all loaded.
+  const shown = focusMode ? tickets.slice(0, FEED_VISIBLE) : tickets
+  shown.forEach(t => {
     const ticketId = t.id
     const sub = [t.simName ? ("by " + t.simName) : "", t.urlPath ? esc(t.urlPath) : "", ago(t.createdAt)].filter(Boolean).join(" · ")
 
@@ -1388,7 +1409,10 @@ function renderActivity() {
     $("activity").innerHTML = emptyState("📡", "No activity yet. Reviews, filings, and Sim updates will stream here.", "")
     return
   }
-  $("activity").innerHTML = `<div class="list">` + acts.map(a => {
+  // Focus mode (default) shows just the recent few so the card never grows the page;
+  // Full mode (global header toggle) shows the whole loaded batch.
+  const shown = focusMode ? acts.slice(0, FEED_VISIBLE) : acts
+  $("activity").innerHTML = `<div class="list">` + shown.map(a => {
     const who = a.actorEmail || a.simName || "Someone"
     const verb = ACT_VERB[a.type] || esc(a.type)
     const sub = [a.simName?("Sim "+a.simName):"", a.urlPath?esc(a.urlPath):"", ago(a.createdAt)].filter(Boolean).join(" · ")
@@ -1397,6 +1421,26 @@ function renderActivity() {
       <div class="body"><div class="t">${esc(who)} <span class="muted" style="font-weight:400">${verb}</span></div><div class="d">${sub}</div></div>
     </div>`
   }).join("") + `</div>`
+}
+
+// Global Focus/Full density toggle — reflects the current mode and (once) wires the buttons.
+// Toggling persists the choice and re-renders the two overview feeds it caps (tickets + activity).
+function renderDashMode() {
+  const seg = $("dashMode")
+  if (!seg) return
+  seg.querySelectorAll("button").forEach(b => {
+    b.classList.toggle("active", (b.dataset.mode === "full") !== focusMode)
+    if (!b._wired) {
+      b._wired = true
+      b.addEventListener("click", () => {
+        const wantFocus = b.dataset.mode === "focus"
+        if (wantFocus === focusMode) return
+        focusMode = wantFocus
+        try { localStorage.setItem(DASH_MODE_KEY, focusMode ? "focus" : "full") } catch (e) {}
+        renderDashMode(); renderTickets(); renderActivity()
+      })
+    }
+  })
 }
 
 function projQuery() { const p = state && state.active ? state.active.id : null; return p ? "?project=" + encodeURIComponent(p) : "" }

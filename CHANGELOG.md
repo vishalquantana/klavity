@@ -10,6 +10,11 @@ top entry here, and every `package.json` (`/`, `core`, `extension`, `sdk`) plus
 the extension `manifest.json` always move together. See the PRD's _Versioning_
 section for the bump rules.
 
+## [0.39.2] — 2026-06-21
+
+### Fixed
+- **Dashboard cards no longer run the page to the bottom** (KLAVITYKLA-10). The Overview "Recent tickets" and "Live activity" feeds rendered every loaded row (up to 12 and 25), making `/dashboard` ~3,500px tall. A new global **Focus ⇄ Full** toggle in the header (default **Focus**) caps each overview feed to the recent 5; **Full** shows the whole loaded batch. The choice persists per-browser in `localStorage`. The Tickets-view kanban board and the self-capping "What your Sims are saying" feed are unchanged. `prototype/public/dashboard.html`.
+
 ## [0.39.1] — 2026-06-21
 
 ### Added
