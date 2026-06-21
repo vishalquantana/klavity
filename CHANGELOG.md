@@ -10,6 +10,11 @@ top entry here, and every `package.json` (`/`, `core`, `extension`, `sdk`) plus
 the extension `manifest.json` always move together. See the PRD's _Versioning_
 section for the bump rules.
 
+## [0.40.0] — 2026-06-21
+
+### Added
+- **Settings now shows the widget embed code, a live preview, and how to install the extension.** The Report-widget-appearance card gained three things: (1) the copy-paste **embed snippet** for the active project with a Copy button (previously only in the zero-state onboarding checklist); (2) a **live preview** — a themed report-modal mock that re-renders instantly as you change theme / custom colours / thank-you message / widget mode, with a "Show thank-you" toggle and lead-gen CTA reflected. Its palette is ported verbatim from `packages/core/src/modal-theme.ts` so it matches the production modal exactly; (3) a compact **"install the browser extension"** card linking to `/onboarding`. Dashboard-only — `prototype/public/dashboard.html`.
+
 ## [0.39.4] — 2026-06-21
 
 ### Added
