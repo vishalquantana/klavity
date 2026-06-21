@@ -1,5 +1,5 @@
 // Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, setFeedbackContactEmail, exportUserData, eraseUser } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser } from "./lib/db"
 import { issueKeyFor, chooseDedup } from "./lib/dedup"
 import { getConnector, listConnectorTypes, type TicketPayload, type TicketAttachment } from "./lib/connectors/index"
 import { inboundSupported, verifyGithubSignature, verifyLinearSignature, extractExternalKey, mapExternalStatus } from "./lib/connectors/inbound"
@@ -940,6 +940,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (req.method === "GET" && path === "/kit.js") return new Response(Bun.file(SITE + "/kit.js"), { headers: { "content-type": "text/javascript; charset=utf-8" } })
     // ── self-hosted fonts (replaces Google Fonts CDN; same-origin under default-src 'self') ──
     if (req.method === "GET" && path === "/fonts/fonts.css") return new Response(Bun.file(SITE + "/fonts/fonts.css"), { headers: { "content-type": "text/css; charset=utf-8", "cache-control": "public, max-age=31536000, immutable" } })
+    // ── shared design tokens (canonical token set, sourced from the dashboard) ──
+    if (req.method === "GET" && path === "/tokens.css") return new Response(Bun.file(PUB + "/tokens.css"), { headers: { "content-type": "text/css; charset=utf-8", "cache-control": "public, max-age=3600" } })
     if (req.method === "GET" && path.startsWith("/fonts/") && /^[a-z0-9-]+\.woff2$/.test(path.slice(7))) {
       return new Response(Bun.file(SITE + "/fonts/" + path.slice(7)), { headers: { "content-type": "font/woff2", "cache-control": "public, max-age=31536000, immutable" } })
     }
@@ -1028,6 +1030,30 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           })
         } catch (e: any) { console.error("lead alert (non-fatal):", e?.message || e) }
       })().catch(() => {})
+      return wjson({ ok: true })
+    }
+
+    // ── widget heartbeat (TASK #5): the embedded /widget.js pings this once on load so the dashboard can
+    //    show "Widget: active — last seen … on <host>". Public + cross-origin (the widget runs on the
+    //    customer's own domain, NOT our origin), so there's no Origin allowlist here — the only thing it
+    //    records is (project_id, host, last_seen), which is non-sensitive presence telemetry. Project-scoped
+    //    (unknown project → 404), rate-limited per source IP, and the host is derived from the request's
+    //    Origin/Referer (not blindly trusted body input). Best-effort: failures never surface to the page. ──
+    if (req.method === "POST" && path === "/api/widget/ping") {
+      if (!rlAllow(`wping:ip:${clientIp(req, server)}`, 120, 60 * 1000)) return wjson({ error: "rate limited" }, 429)
+      const body: any = await req.json().catch(() => ({}))
+      const projectId = String(body.project_id || "")
+      if (!projectId) return wjson({ error: "invalid" }, 400)
+      const proj = await projectById(projectId)
+      if (!proj) return wjson({ error: "not found" }, 404)
+      // Derive the host from the request itself (Origin first, then Referer) — never the body — so a caller
+      // can't spoof a "seen on" host. Fall back to a body-supplied host only for hosts the request can't
+      // reveal (e.g. file://). Normalize to lowercase host[:port], ≤200 chars.
+      const hostFrom = (s: string) => { try { return new URL(s).host.toLowerCase().slice(0, 200) } catch { return "" } }
+      let host = hostFrom(req.headers.get("origin") || "") || hostFrom(req.headers.get("referer") || "")
+      if (!host) host = String(body.host || "").toLowerCase().replace(/[^a-z0-9.:_-]/g, "").slice(0, 200)
+      if (!host) host = "(unknown)"
+      try { await recordWidgetPing(projectId, host) } catch (e: any) { console.error("widget ping (non-fatal):", e?.message || e) }
       return wjson({ ok: true })
     }
 
@@ -2965,8 +2991,15 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             }
             return json({ ok: true, modalConfig: v.config, pro })
           }
-          // GET here (session-authed) returns current + pro flag + widget config for the admin UI
-          return json({ modalConfig: resolveModalConfig(await getProjectModalConfig(pid)), pro: await isAccountPro(proj.accountId), widget: await getWidgetConfig(pid) })
+          // GET here (session-authed) returns current + pro flag + widget config for the admin UI.
+          // widgetStatus = the heartbeat: when /widget.js last loaded and on which host (null = never seen).
+          const ping = await latestWidgetPing(pid)
+          return json({
+            modalConfig: resolveModalConfig(await getProjectModalConfig(pid)),
+            pro: await isAccountPro(proj.accountId),
+            widget: await getWidgetConfig(pid),
+            widgetStatus: ping ? { host: ping.host, lastSeen: ping.lastSeen, firstSeen: ping.firstSeen, hits: ping.hits } : null,
+          })
         }
 
         // Named observability (R6) — admin-only Activity view: WHO ran WHICH Sim on WHICH path, with the

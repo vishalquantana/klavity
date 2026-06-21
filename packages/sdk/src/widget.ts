@@ -117,6 +117,18 @@ async function mount() {
     }
   } catch { /* default theme + support mode */ }
 
+  // ── Heartbeat (TASK #5): tell the backend this widget is live on this page so the dashboard can show
+  // "Widget: active — last seen … on <host>". Fire-and-forget, non-blocking, and never throws — a failed
+  // ping must never affect the page. keepalive lets it complete even if the user navigates immediately. ──
+  try {
+    fetch(cfg.backendUrl + "/api/widget/ping", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      keepalive: true,
+      body: JSON.stringify({ project_id: cfg.projectId, host: location.host }),
+    }).catch(() => {})
+  } catch { /* best-effort */ }
+
   async function postLead(feedbackId: string, email: string) {
     await fetch(cfg.backendUrl + "/api/widget/lead", {
       method: "POST", headers: { "content-type": "application/json" },

@@ -10,6 +10,16 @@ top entry here, and every `package.json` (`/`, `core`, `extension`, `sdk`) plus
 the extension `manifest.json` always move together. See the PRD's _Versioning_
 section for the bump rules.
 
+## [0.39.1] — 2026-06-21
+
+### Added
+- **Tickets kanban board.** The dashboard Tickets view is now a kanban with Open / In Progress / Done columns; each ticket is a compact card with its status/severity/assignee, and clicking a card opens the shared detail panel where changing status (via the existing `PATCH /api/feedback/:id`) re-buckets the card into its new column. The Overview view keeps the flat "Recent tickets" list. The per-ticket detail logic was refactored into a shared `buildTktDetail()` helper so both views reuse it. `prototype/public/dashboard.html`.
+- **Widget heartbeat / "is my widget live?" diagnostic.** `/widget.js` now fires one best-effort `POST /api/widget/ping` on load (keepalive); the server records (project, host, last-seen, hits) in a new `widget_pings` table, and the dashboard's Report-widget-appearance card shows a live status pill — green "Widget active — last seen … on <host>" or a neutral "not detected yet". `packages/sdk/src/widget.ts` (+ rebuilt bundle), `prototype/server.ts`, `prototype/lib/db.ts`, `prototype/public/dashboard.html`.
+- **Shared design system.** New `prototype/public/tokens.css` codifies the dashboard's canonical tokens (color scale incl. dark theme, the Fraunces/Hanken/JetBrains-Mono font stacks, spacing/radius/elevation scales) with a guide at `docs/design-system.md`. Applied to the **Sim Studio** (`/app`) so its typography and spacing now match the dashboard.
+
+### Fixed
+- **Onboarding preview visible on mobile.** The wizard's left rail was `display:none` under 820px (the preview/progress vanished on phones); it now collapses into a compact sticky horizontal progress strip above the step. `site/onboarding.html`.
+
 ## [0.39.0] — 2026-06-21
 
 ### Added

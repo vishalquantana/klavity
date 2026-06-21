@@ -1,0 +1,101 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   Klavity Design Tokens — the canonical, shared token set.
+   SOURCE OF TRUTH: prototype/public/dashboard.html (its :root / [data-theme]).
+   Extracted here so every surface (dashboard, Sim Studio, future panels) can
+   share one design language. See docs/design-system.md for the guide.
+
+   Load order on a page:  /fonts/fonts.css  →  /tokens.css  →  page <style>.
+   Pages may ADD surface-specific tokens after this, but should not redefine
+   the canonical ones below.
+   ───────────────────────────────────────────────────────────────────────── */
+
+:root{
+  /* ── Surfaces (warm paper/ink scale; LIGHT is the default) ──────────────
+     --ink   = app background (deepest)
+     --ink-2 = cards / panels / bars (raised)
+     --ink-3 = subtle insets / chips / hovers
+     --ink-4 = deeper insets / type pills (studio extra, derived from the set) */
+  --ink:#f5f3ee;
+  --ink-2:#ffffff;
+  --ink-3:#efeae0;
+  --ink-4:#e7e1d6;
+
+  /* ── Text (named "paper" — it sits on --ink) ────────────────────────────
+     --paper       = primary text
+     --paper-dim   = secondary text
+     --paper-faint = muted / labels / meta */
+  --paper:#19140f;
+  --paper-dim:#574f45;
+  --paper-faint:#8a8076;
+
+  /* ── Hairlines / dividers ──────────────────────────────────────────────
+     --line   = standard 1px border
+     --line-2 = slightly stronger border (inputs, scrollbar) */
+  --line:rgba(25,20,15,.12);
+  --line-2:rgba(25,20,15,.18);
+
+  /* ── Brand + semantic accents ──────────────────────────────────────────
+     indigo = primary brand. green=positive, rose=negative/pain,
+     amber=want/attention, blue=informational link. */
+  --indigo:#6366f1;
+  --indigo-deep:#4f46e5;
+  --indigo-soft:#a5b4fc;
+  --amber:#d98324;
+  --rose:#db2777;
+  --green:#0f9d6b;
+  --blue:#2563eb;
+
+  /* ── Type stacks ───────────────────────────────────────────────────────
+     --display = Fraunces (headings, big numbers — set in roman, not bold)
+     --body    = Hanken Grotesk (UI + prose)
+     --mono    = JetBrains Mono (labels, meta, code, uppercase eyebrows) */
+  --display:'Fraunces',serif;
+  --body:'Hanken Grotesk',system-ui,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,monospace;
+
+  /* ── Spacing scale (4px base) — use these, don't invent one-off gaps ──── */
+  --space-1:4px;
+  --space-2:8px;
+  --space-3:12px;
+  --space-4:16px;
+  --space-5:22px;   /* default card padding */
+  --space-6:26px;   /* page gutter / column gap */
+  --space-8:40px;
+
+  /* ── Radius scale ──────────────────────────────────────────────────────
+     sm=inputs/buttons, md=tiles, lg=cards, pill=chips */
+  --radius-sm:10px;
+  --radius-md:14px;
+  --radius-lg:18px;
+  --radius-pill:20px;
+
+  /* ── Elevation ─────────────────────────────────────────────────────────
+     card = resting panel shadow; pop = floating bubbles/menus */
+  --shadow-card:0 10px 30px rgba(25,20,15,.05);
+  --shadow-pop:0 10px 30px rgba(0,0,0,.28);
+}
+
+/* ── Dark theme (set via <html data-theme="dark">) ─────────────────────────
+   Same warm family as the dashboard — NOT a cool/blue dark. Accents lighten
+   so they keep contrast on the dark ink. */
+[data-theme="dark"]{
+  --ink:#0c0a08;
+  --ink-2:#15110d;
+  --ink-3:#1e1813;
+  --ink-4:#26201a;
+  --paper:#f3ece1;
+  --paper-dim:#b3a896;
+  --paper-faint:#776c5d;
+  --line:rgba(243,236,225,.11);
+  --line-2:rgba(243,236,225,.17);
+  --indigo:#8b8bf5;
+  --indigo-deep:#6366f1;
+  --indigo-soft:#a5b4fc;
+  --amber:#e8a24a;
+  --rose:#e8849a;
+  --green:#9fd6a0;
+  --blue:#89b4fa;
+
+  --shadow-card:0 10px 30px rgba(0,0,0,.30);
+  --shadow-pop:0 10px 30px rgba(0,0,0,.45);
+}

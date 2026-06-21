@@ -7,58 +7,34 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Klavity Sims — Live Prototype</title>
+<!-- shared design system: self-hosted fonts + canonical tokens (sourced from the dashboard) -->
+<link rel="stylesheet" href="/fonts/fonts.css" />
+<link rel="stylesheet" href="/tokens.css" />
 <style>
-  :root{
-    /* surfaces (light by default) */
-    --ink:#f5f3ee;        /* app background */
-    --ink-2:#ffffff;      /* cards / panels */
-    --ink-3:#efeae0;      /* subtle insets */
-    --ink-4:#e7e1d6;      /* deeper insets / chips */
-    /* text */
-    --paper:#19140f;      /* primary text */
-    --paper-dim:#574f45;  /* secondary text */
-    --paper-faint:#8a8076;/* muted text */
-    /* lines */
-    --line:rgba(25,20,15,.12);
-    --line-2:rgba(25,20,15,.18);
-    /* brand + accents */
-    --indigo:#6366f1; --indigo-deep:#4f46e5; --indigo-soft:#a5b4fc;
-    --amber:#d98324; --rose:#db2777; --green:#0f9d6b; --blue:#2563eb;
-  }
-  [data-theme="dark"]{
-    --ink:#0a0a0f;        /* app background */
-    --ink-2:#11111a;      /* cards / panels */
-    --ink-3:#0d0d15;      /* subtle insets */
-    --ink-4:#1e1e2e;      /* deeper insets / chips */
-    --paper:#cdd6f4;      /* primary text */
-    --paper-dim:#9399b2;  /* secondary text */
-    --paper-faint:#6c7086;/* muted text */
-    --line:#1e1e2e;
-    --line-2:#313244;
-    --indigo:#6366f1; --indigo-deep:#4f46e5; --indigo-soft:#a5b4fc;
-    --amber:#e8a24a; --rose:#f38ba8; --green:#a6e3a1; --blue:#89b4fa;
-  }
+  /* Design tokens (colors, fonts, spacing, radius, shadow) come from the
+     shared /tokens.css linked above — sourced from the dashboard. Don't
+     redefine the canonical tokens here; add only studio-specific styles. */
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: system-ui, -apple-system, sans-serif; background: var(--ink); color: var(--paper); padding: 20px; }
+  body { font-family: var(--body); background: var(--ink); color: var(--paper); padding: 20px; }
   .wrap { max-width: 1180px; margin: 0 auto; }
   .head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
   .ext-btn { font-size: 12px; font-weight: 600; padding: 7px 14px; border-radius: 8px; border: 1px solid var(--line-2); background: var(--ink-2); color: var(--paper); cursor: pointer; transition: background .15s, color .15s; }
   .studio-proj { display: none; align-items: center; gap: 7px; }
-  .studio-proj .spl { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--paper-faint); font-family: ui-monospace, monospace; }
+  .studio-proj .spl { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--paper-faint); font-family: var(--mono); }
   .studio-proj select { appearance: none; background: var(--ink-2); border: 1px solid var(--line-2); border-radius: 8px; padding: 7px 26px 7px 11px; color: var(--paper); font-family: inherit; font-weight: 600; font-size: 13px; cursor: pointer; outline: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 9px center; }
   .studio-proj select:focus { border-color: var(--blue); }
   .ext-btn:hover:not(:disabled) { border-color: var(--indigo); color: var(--indigo); }
   .ext-btn:disabled { opacity: .45; cursor: not-allowed; }
   .ext-btn.connected { background: rgba(15,157,107,.12); border-color: var(--green); color: var(--green); }
   .logo { width: 34px; height: 34px; border-radius: 9px; overflow: hidden; flex-shrink: 0; }
-  h1 { font-size: 19px; font-weight: 800; }
-  .sub { font-size: 12px; color: var(--paper-faint); }
+  h1 { font-family: var(--display); font-size: 22px; font-weight: 450; letter-spacing: -.02em; }
+  .sub { font-size: 13px; color: var(--paper-dim); margin-top: 2px; }
   .grid { display: grid; grid-template-columns: 340px 1fr 320px; gap: 22px; align-items: start; }
   @media(max-width:1100px){ .grid{grid-template-columns:1fr} #rail{flex-direction:column} #rail .rarrow{transform:rotate(90deg)} }
   .panel { background: var(--ink-2); border: 1px solid var(--line); border-radius: 18px; padding: 22px; box-shadow: 0 10px 30px rgba(25,20,15,.05); }
-  .panel h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--paper-faint); margin-bottom: 10px; }
+  .panel h2 { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--paper-faint); margin-bottom: 10px; }
 
-  textarea { width: 100%; min-height: 150px; background: var(--ink); color: var(--paper); border: 1px solid var(--line-2); border-radius: 8px; padding: 10px; font-size: 12px; line-height: 1.5; resize: vertical; font-family: ui-monospace, monospace; transition: border-color .15s, box-shadow .15s; }
+  textarea { width: 100%; min-height: 150px; background: var(--ink); color: var(--paper); border: 1px solid var(--line-2); border-radius: 8px; padding: 10px; font-size: 12px; line-height: 1.5; resize: vertical; font-family: var(--mono); transition: border-color .15s, box-shadow .15s; }
   textarea.drag-over { border-color: var(--indigo); box-shadow: 0 0 0 3px rgba(99,102,241,.25); }
   .row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
   button, label.ghost { font-size: 13px; font-weight: 600; padding: 9px 16px; border-radius: 8px; border: none; cursor: pointer; transition: opacity .15s, transform .1s; }

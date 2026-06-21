@@ -373,6 +373,17 @@ export async function applySchema(c: Client) {
      )`,
     `CREATE INDEX IF NOT EXISTS exp_proj_status_idx ON expectations(project_id, status)`,
     `CREATE INDEX IF NOT EXISTS exp_proj_dedup_idx ON expectations(project_id, dedup_key)`,
+    // ── widget heartbeat: one row per (project, host) recording the last time /widget.js loaded there.
+    //    Powers the dashboard "Widget: active — last seen … on …" / "not detected yet" indicator. ──
+    `CREATE TABLE IF NOT EXISTS widget_pings (
+       project_id TEXT NOT NULL,
+       host TEXT NOT NULL,
+       first_seen INTEGER NOT NULL,
+       last_seen INTEGER NOT NULL,
+       hits INTEGER NOT NULL DEFAULT 1,
+       PRIMARY KEY (project_id, host)
+     )`,
+    `CREATE INDEX IF NOT EXISTS widget_pings_proj_idx ON widget_pings(project_id, last_seen)`,
   ]
   for (const s of stmts) await c.execute(s)
 
@@ -802,6 +813,31 @@ export async function setWidgetConfig(projectId: string, cfg: { mode?: string; c
 export async function setFeedbackContactEmail(feedbackId: string, projectId: string, email: string): Promise<boolean> {
   const r = await db!.execute({ sql: "UPDATE feedback SET contact_email=? WHERE id=? AND project_id=?", args: [email, feedbackId, projectId] })
   return (r.rowsAffected ?? 0) > 0
+}
+
+// ── widget heartbeat helpers ──
+// recordWidgetPing: upsert the (project, host) row, bumping last_seen + hits. Best-effort idempotent.
+// The host is already validated/normalized by the caller; we store it verbatim (lowercased, ≤200 chars).
+export async function recordWidgetPing(projectId: string, host: string): Promise<void> {
+  const now = Date.now()
+  await db!.execute({
+    sql: `INSERT INTO widget_pings (project_id, host, first_seen, last_seen, hits)
+          VALUES (?,?,?,?,1)
+          ON CONFLICT(project_id, host) DO UPDATE SET last_seen=excluded.last_seen, hits=hits+1`,
+    args: [projectId, host, now, now],
+  })
+}
+
+// latestWidgetPing: the most-recently-seen host for a project (drives the dashboard indicator), or null
+// if the widget has never phoned home for this project.
+export async function latestWidgetPing(projectId: string): Promise<{ host: string; lastSeen: number; firstSeen: number; hits: number } | null> {
+  const r = await db!.execute({
+    sql: "SELECT host, last_seen, first_seen, hits FROM widget_pings WHERE project_id=? ORDER BY last_seen DESC LIMIT 1",
+    args: [projectId],
+  })
+  if (!r.rows.length) return null
+  const row = r.rows[0] as any
+  return { host: String(row.host), lastSeen: Number(row.last_seen), firstSeen: Number(row.first_seen), hits: Number(row.hits) }
 }
 
 // §2.3 effective role: max(account_role, project_role); account owner/admin ⇒ implicit project-admin.
