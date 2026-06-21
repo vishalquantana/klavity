@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Klavity — First Sims: journey mockups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..800;1,9..144,400..600&family=Hanken+Grotesk:wght@300..800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --ink:#f5f3ee;--ink-2:#ffffff;--ink-3:#efeae0;
+  --paper:#19140f;--paper-dim:#574f45;--paper-faint:#8a8076;
+  --indigo:#6366f1;--indigo-deep:#4f46e5;--amber:#d98324;--rose:#db2777;--green:#0f9d6b;--teal:#0ea5a4;--violet:#8b5cf6;
+  --line:rgba(25,20,15,.12);--line-2:rgba(25,20,15,.07);
+  --display:'Fraunces',serif;--body:'Hanken Grotesk',system-ui,sans-serif;--mono:'JetBrains Mono',monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--ink);color:var(--paper);font-family:var(--body);-webkit-font-smoothing:antialiased;line-height:1.5}
+a{color:inherit}
+.mono{font-family:var(--mono)}
+
+/* ============ concept header ============ */
+.concept{max-width:1180px;margin:0 auto;padding:34px 28px 8px}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:12px}
+.concept h1{font-family:var(--display);font-weight:560;font-size:clamp(28px,4.4vw,46px);line-height:1.02;letter-spacing:-.02em;margin:0 0 10px;max-width:18ch}
+.concept h1 em{font-style:italic;color:var(--indigo-deep)}
+.concept .sub{font-size:15.5px;color:var(--paper-dim);max-width:62ch}
+.concept .sub b{color:var(--paper)}
+
+/* ============ shell: rail + stage ============ */
+.shell{max-width:1180px;margin:18px auto 60px;padding:0 28px;display:grid;grid-template-columns:268px 1fr;gap:26px;align-items:start}
+.rail{position:sticky;top:22px;display:flex;flex-direction:column;gap:10px}
+.rail .rl-h{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);padding:0 4px 2px}
+.door{appearance:none;border:1px solid var(--line);background:var(--ink-2);border-radius:15px;padding:13px 14px;text-align:left;cursor:pointer;font-family:var(--body);transition:border-color .18s,transform .12s,box-shadow .18s;position:relative;overflow:hidden}
+.door:hover{border-color:rgba(99,102,241,.5);transform:translateY(-1px)}
+.door.on{border-color:var(--indigo);box-shadow:0 10px 30px -16px rgba(79,70,229,.55)}
+.door.on::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:linear-gradient(var(--indigo-deep),var(--violet))}
+.door .dt{display:flex;align-items:center;gap:9px;font-size:14.5px;font-weight:600;letter-spacing:-.01em}
+.door .dt .gl{width:24px;height:24px;border-radius:7px;display:grid;place-items:center;font-size:13px;flex:none;background:var(--ink-3)}
+.door.on .dt .gl{background:linear-gradient(135deg,var(--indigo-deep),var(--violet));color:#fff}
+.door .dd{font-size:12px;color:var(--paper-faint);margin:5px 0 9px;line-height:1.45}
+.door .meter{display:flex;align-items:center;gap:7px}
+.door .bars{display:flex;gap:3px}
+.door .bars i{width:14px;height:5px;border-radius:3px;background:var(--ink-3);display:block}
+.door .bars i.f{background:var(--green)}
+.door .meter .lab{font-family:var(--mono);font-size:10.5px;color:var(--paper-dim)}
+.rail .hint{font-size:11.5px;color:var(--paper-faint);padding:6px 6px 0;line-height:1.5}
+.rail .hint b{color:var(--paper-dim)}
+
+/* ============ browser frame ============ */
+.frame{border:1px solid var(--line);border-radius:18px;overflow:hidden;background:var(--ink);box-shadow:0 40px 80px -50px rgba(25,20,15,.5)}
+.chrome{display:flex;align-items:center;gap:8px;padding:11px 16px;background:var(--ink-2);border-bottom:1px solid var(--line-2)}
+.chrome .dot{width:11px;height:11px;border-radius:50%}
+.chrome .url{margin-left:12px;flex:1;background:var(--ink);border:1px solid var(--line-2);border-radius:8px;padding:5px 12px;font-family:var(--mono);font-size:11.5px;color:var(--paper-faint)}
+/* product top bar */
+.topbar{display:flex;align-items:center;gap:13px;padding:0 22px;height:58px;background:var(--ink-2);border-bottom:1px solid var(--line-2)}
+.brand{display:flex;align-items:center;gap:9px;font-family:var(--display);font-weight:600;font-size:18px;letter-spacing:-.02em}
+.brand .spark{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;font-size:13px;color:#fff;background:linear-gradient(135deg,var(--indigo-deep),var(--violet))}
+.topbar .ws{padding-left:13px;border-left:1px solid var(--line);font-size:13.5px;color:var(--paper-dim)}
+.topbar .who{margin-left:auto;font-size:12.5px;color:var(--paper-faint)}
+
+.stagewrap{background:var(--ink);padding:30px 30px 34px;min-height:520px}
+.scr{display:none;animation:rise .42s cubic-bezier(.2,.7,.2,1)}
+.scr.show{display:block}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+
+.scr-head{margin-bottom:18px;max-width:64ch}
+.tag{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--indigo-deep);background:rgba(99,102,241,.1);border:1px solid rgba(99,102,241,.22);padding:4px 9px;border-radius:999px;margin-bottom:13px}
+.scr-head h2{font-family:var(--display);font-weight:540;font-size:26px;letter-spacing:-.015em;margin:0 0 6px;line-height:1.08}
+.scr-head p{margin:0;font-size:14px;color:var(--paper-dim);max-width:54ch}
+
+/* inputs */
+.bigfield{display:flex;gap:10px;margin:4px 0 12px}
+.bigfield input,.bigfield .ta{flex:1;background:var(--ink-2);border:1.5px solid var(--line);border-radius:13px;padding:14px 16px;font-family:var(--body);font-size:15px;color:var(--paper);outline:none;transition:border-color .16s,box-shadow .16s}
+.bigfield input:focus{border-color:var(--indigo);box-shadow:0 0 0 4px rgba(99,102,241,.13)}
+textarea.ta{flex:1;width:100%;min-height:150px;resize:vertical;line-height:1.55;background:var(--ink-2);border:1.5px solid var(--line);border-radius:13px;padding:14px 16px;font-family:var(--mono);font-size:12.5px;color:var(--paper);outline:none}
+textarea.ta:focus{border-color:var(--indigo);box-shadow:0 0 0 4px rgba(99,102,241,.13)}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 4px}
+.chip{appearance:none;border:1px dashed var(--line);background:transparent;border-radius:999px;padding:7px 13px;font-family:var(--body);font-size:12.5px;color:var(--paper-dim);cursor:pointer;transition:border-color .15s,color .15s,background .15s}
+.chip:hover{border-color:var(--indigo);color:var(--indigo-deep);background:rgba(99,102,241,.06)}
+.field-note{font-size:12px;color:var(--paper-faint);margin-top:2px}
+
+.btn{appearance:none;border:0;border-radius:12px;padding:14px 20px;font-family:var(--body);font-size:14.5px;font-weight:600;cursor:pointer;transition:transform .12s,filter .16s;white-space:nowrap}
+.btn:active{transform:translateY(1px)}
+.btn-indigo{background:linear-gradient(135deg,var(--indigo-deep),var(--violet));color:#fff;box-shadow:0 12px 26px -14px rgba(79,70,229,.8)}
+.btn-indigo:hover{filter:brightness(1.06)}
+.btn-ghost{background:var(--ink-2);border:1px solid var(--line);color:var(--paper)}
+.btn-sm{padding:9px 15px;font-size:13px;border-radius:10px}
+
+/* ===== the signature: Sim card ===== */
+.simwrap{margin-top:6px;display:grid;gap:12px}
+.simgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.sim{background:var(--ink-2);border:1px solid var(--line);border-radius:16px;padding:16px 17px;position:relative;animation:rise .5s cubic-bezier(.2,.7,.2,1)}
+.sim.pick{cursor:pointer;transition:border-color .16s,box-shadow .16s}
+.sim.pick:hover{border-color:rgba(99,102,241,.5)}
+.sim.sel{border-color:var(--indigo);box-shadow:0 0 0 3px rgba(99,102,241,.16)}
+.sim-top{display:flex;align-items:center;gap:12px;margin-bottom:11px}
+.av{width:46px;height:46px;border-radius:13px;flex:none;display:grid;place-items:center;font-family:var(--mono);font-weight:600;font-size:16px;color:#fff;letter-spacing:.02em}
+.sim-id .nm{font-family:var(--display);font-weight:580;font-size:17px;letter-spacing:-.01em;line-height:1.1}
+.sim-id .rl{font-size:12.5px;color:var(--paper-faint);margin-top:1px}
+.kind{margin-left:auto;font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;padding:3px 7px;border-radius:6px;border:1px solid var(--line);color:var(--paper-faint)}
+.sim-sum{font-size:13px;color:var(--paper-dim);line-height:1.5;margin-bottom:12px}
+.ins{display:flex;flex-direction:column;gap:7px;margin-bottom:13px}
+.in{display:flex;gap:9px;font-size:12.5px;align-items:flex-start}
+.in .ic{flex:none;width:18px;height:18px;border-radius:6px;display:grid;place-items:center;font-size:10px;margin-top:1px}
+.in.pain .ic{background:rgba(219,39,119,.13);color:var(--rose)}
+.in.want .ic{background:rgba(217,131,36,.15);color:var(--amber)}
+.in.love .ic{background:rgba(15,157,107,.14);color:var(--green)}
+.in .qt{color:var(--paper-dim)}
+.in .qt em{color:var(--paper);font-style:italic}
+.sim-foot{display:flex;align-items:center;gap:10px}
+.checkpill{margin-left:auto;width:22px;height:22px;border-radius:50%;border:1.5px solid var(--line);display:grid;place-items:center;color:#fff;font-size:12px;transition:background .15s,border-color .15s}
+.sim.sel .checkpill{background:var(--indigo);border-color:var(--indigo)}
+
+.stickadd{display:flex;align-items:center;gap:14px;margin-top:16px;padding:13px 16px;background:var(--ink-2);border:1px solid var(--line);border-radius:14px;position:sticky;bottom:0}
+.stickadd .cnt{font-size:13.5px;color:var(--paper-dim)}
+.stickadd .cnt b{color:var(--paper)}
+.stickadd .sp{margin-left:auto}
+
+/* skeleton / thinking */
+.think{display:flex;align-items:center;gap:11px;color:var(--paper-dim);font-size:13.5px;padding:14px 2px}
+.spin{width:17px;height:17px;border-radius:50%;border:2.5px solid var(--line);border-top-color:var(--indigo);animation:sp .8s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.sk{background:var(--ink-2);border:1px solid var(--line-2);border-radius:16px;height:150px;position:relative;overflow:hidden}
+.sk::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 20%,rgba(255,255,255,.6) 50%,transparent 80%);transform:translateX(-100%);animation:sh 1.25s infinite}
+@keyframes sh{to{transform:translateX(100%)}}
+
+.toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(20px);background:var(--paper);color:var(--ink);padding:12px 18px;border-radius:12px;font-size:13.5px;font-weight:500;box-shadow:0 18px 50px -16px rgba(0,0,0,.6);opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;z-index:50;display:flex;align-items:center;gap:9px}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast .av{width:26px;height:26px;border-radius:8px;font-size:11px}
+
+/* recommend strip + matrix */
+.rec{max-width:1180px;margin:0 auto 50px;padding:0 28px}
+.rec-card{background:var(--ink-2);border:1px solid var(--line);border-radius:18px;padding:24px 26px;display:grid;grid-template-columns:1.1fr 1fr;gap:28px;align-items:center}
+.rec-card h3{font-family:var(--display);font-weight:560;font-size:21px;margin:0 0 8px;letter-spacing:-.01em}
+.rec-card p{margin:0 0 6px;font-size:13.5px;color:var(--paper-dim);max-width:46ch}
+.rec-card .lead-rec{font-size:13.5px;color:var(--paper);margin-bottom:10px}
+.rec-card .lead-rec b{color:var(--indigo-deep)}
+.matrix{position:relative;height:240px;border:1px solid var(--line);border-radius:14px;background:
+  linear-gradient(var(--line-2),var(--line-2)) center/1px 100% no-repeat,
+  linear-gradient(var(--line-2),var(--line-2)) center/100% 1px no-repeat,
+  var(--ink)}
+.matrix .axl{position:absolute;font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--paper-faint)}
+.ax-x1{left:10px;bottom:8px}.ax-x2{right:10px;bottom:8px}.ax-y1{left:10px;top:8px}.ax-y2{left:10px;bottom:24px}
+.node{position:absolute;transform:translate(-50%,50%);display:flex;align-items:center;gap:7px;background:var(--ink-2);border:1px solid var(--line);border-radius:999px;padding:5px 11px 5px 6px;font-size:12px;font-weight:600;box-shadow:0 6px 18px -10px rgba(25,20,15,.4);cursor:pointer;transition:transform .14s,border-color .14s}
+.node:hover{border-color:var(--indigo);transform:translate(-50%,50%) scale(1.06)}
+.node .nb{width:20px;height:20px;border-radius:6px;display:grid;place-items:center;font-size:11px;color:#fff}
+
+@media(max-width:880px){
+  .shell{grid-template-columns:1fr}
+  .rail{position:static;flex-direction:row;overflow-x:auto;padding-bottom:6px}
+  .door{min-width:215px}
+  .rec-card{grid-template-columns:1fr}
+}
+@media (prefers-reduced-motion: reduce){*{animation-duration:.001ms!important;transition-duration:.001ms!important}}
+:focus-visible{outline:2px solid var(--indigo);outline-offset:2px;border-radius:6px}
+</style>
+</head>
+<body>
+
+<header class="concept">
+  <div class="eyebrow">Klavity · onboarding exploration · first Sims</div>
+  <h1>Four doors,<br><em>one room.</em></h1>
+  <p class="sub">A new project has <b>zero Sims</b> — and most teams don't have a customer-call transcript ready on day one. Each door below is a different way <b>in</b>; every one of them produces the same thing: a living Sim, ready to react to your pages. Ranked fastest&nbsp;→&nbsp;richest.</p>
+</header>
+
+<div class="shell">
+  <!-- ░░ rail ░░ -->
+  <nav class="rail" aria-label="Approaches">
+    <div class="rl-h">Pick a door</div>
+
+    <button class="door on" data-scr="a">
+      <div class="dt"><span class="gl">✍️</span>Describe a user</div>
+      <div class="dd">Type one sentence. We invent a believable Sim from it.</div>
+      <div class="meter"><span class="bars"><i class="f"></i><i class="f"></i><i></i><i></i></span><span class="lab">~10s · no transcript</span></div>
+    </button>
+
+    <button class="door" data-scr="b">
+      <div class="dt"><span class="gl">🃏</span>Pick a starter Sim</div>
+      <div class="dd">Choose from ready-made personas. Zero typing. Edit later.</div>
+      <div class="meter"><span class="bars"><i class="f"></i><i></i><i></i><i></i></span><span class="lab">~5s · fastest</span></div>
+    </button>
+
+    <button class="door" data-scr="c">
+      <div class="dt"><span class="gl">🔮</span>Suggest from your URL</div>
+      <div class="dd">Point us at your product — we propose who uses it.</div>
+      <div class="meter"><span class="bars"><i class="f"></i><i class="f"></i><i class="f"></i><i></i></span><span class="lab">~15s · most magic</span></div>
+    </button>
+
+    <button class="door" data-scr="d">
+      <div class="dt"><span class="gl">🎙️</span>From a real call</div>
+      <div class="dd">Paste a transcript — extract Sims grounded in real words.</div>
+      <div class="meter"><span class="bars"><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i></span><span class="lab">richest · needs a call</span></div>
+    </button>
+
+    <div class="hint">Same payoff everywhere → a <b>Sim card</b>: avatar, role, and three quoted insights (pain · want · love). One <b>“Add”</b> and it’s live on your pages.</div>
+  </nav>
+
+  <!-- ░░ stage ░░ -->
+  <div class="frame">
+    <div class="chrome">
+      <span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span>
+      <span class="url">klavity.quantana.top/dashboard?project=wali</span>
+    </div>
+    <div class="topbar">
+      <span class="brand"><span class="spark">▦</span>Klavity</span>
+      <span class="ws">WALI</span>
+      <span class="who">vishal@quantana.com.au</span>
+    </div>
+    <div class="stagewrap">
+
+      <!-- ===== A · describe ===== -->
+      <section class="scr show" id="scr-a">
+        <div class="scr-head">
+          <span class="tag">⚡ ~10 seconds · nothing to install</span>
+          <h2>Describe a user. We’ll bring them to life.</h2>
+          <p>One plain sentence about who uses your product. We turn it into a Sim with a name, a role, and three things they’ll care about.</p>
+        </div>
+        <div class="bigfield">
+          <input id="briefIn" type="text" placeholder="e.g. A busy ops manager at a logistics firm who lives in spreadsheets" />
+          <button class="btn btn-indigo" onclick="genBrief()">Create Sim →</button>
+        </div>
+        <div class="chips" id="briefChips"></div>
+        <div class="field-note">Not sure? Tap an example — or just write how you’d describe a customer to a teammate.</div>
+        <div class="simwrap" id="briefOut"></div>
+      </section>
+
+      <!-- ===== B · starter gallery ===== -->
+      <section class="scr" id="scr-b">
+        <div class="scr-head">
+          <span class="tag">🃏 fastest · zero typing</span>
+          <h2>Start from a Sim. Tune it whenever.</h2>
+          <p>Hand-built starter personas that fit most products. Tick the ones that feel like your users and add them in one go — you can rename and re-shape them later.</p>
+        </div>
+        <div class="simgrid" id="starterGrid"></div>
+        <div class="stickadd"><span class="cnt"><b id="starterN">0</b> Sims selected</span>
+          <div class="sp"></div>
+          <button class="btn btn-ghost btn-sm" onclick="clearStarters()">Clear</button>
+          <button class="btn btn-indigo btn-sm" onclick="addStarters()">Add selected Sims</button>
+        </div>
+      </section>
+
+      <!-- ===== C · from URL ===== -->
+      <section class="scr" id="scr-c">
+        <div class="scr-head">
+          <span class="tag">🔮 ~15 seconds · AI-suggested</span>
+          <h2>Point us at your product. We’ll suggest who uses it.</h2>
+          <p>We read your public pages and propose a starting cast of Sims. Keep the ones that ring true, drop the rest.</p>
+        </div>
+        <div class="bigfield">
+          <input id="urlIn" type="text" value="app.acme.com" />
+          <button class="btn btn-indigo" onclick="genUrl()">Suggest Sims</button>
+        </div>
+        <div class="field-note">We only read pages a logged-out visitor could see. Nothing is saved until you add a Sim.</div>
+        <div class="simwrap" id="urlOut" style="margin-top:14px"></div>
+      </section>
+
+      <!-- ===== D · transcript ===== -->
+      <section class="scr" id="scr-d">
+        <div class="scr-head">
+          <span class="tag">🎙️ richest · grounded in real words</span>
+          <h2>Paste a customer call. Get Sims who quote it.</h2>
+          <p>Drop in a sales or support transcript. We pull out each distinct person, with the exact lines that reveal what they’re chasing.</p>
+        </div>
+        <div class="bigfield" style="display:block">
+          <textarea class="ta" id="txIn">Maria (Ops Lead): Honestly the worst part is reconciling three exports every Monday. If a number's off I find out from my CFO, not the tool.
+
+Devin (Analyst): I basically live in the filters. I'd pay for saved views — I rebuild the same one ten times a day.
+
+Maria: And onboarding a new hire takes me a full afternoon of screen-shares.</textarea>
+        </div>
+        <button class="btn btn-indigo" onclick="genTx()" style="margin-bottom:6px">Extract Sims →</button>
+        <div class="field-note">Paste 2–3 minutes of dialogue. Names and quotes stay private to your project.</div>
+        <div class="simwrap" id="txOut" style="margin-top:14px"></div>
+        <div class="stickadd" id="txAdd" style="display:none"><span class="cnt"><b id="txN">0</b> Sims found in this call</span>
+          <div class="sp"></div>
+          <button class="btn btn-indigo btn-sm" onclick="addTx()">Add all to project</button>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<!-- recommend + matrix -->
+<div class="rec">
+  <div class="rec-card">
+    <div>
+      <h3>So which door do we ship first?</h3>
+      <p class="lead-rec">Default the empty state to <b>Describe a user</b>, with <b>Pick a starter Sim</b> one tap away.</p>
+      <p>“Describe” gets <em>anyone</em> to a real Sim in one sentence — no transcript, no blank page. “Starter” is the escape hatch for people who don’t even want to type. “Suggest from URL” is the demo-day wow. “From a call” stays as the power path for teams who already record customers.</p>
+    </div>
+    <div class="matrix" aria-hidden="true">
+      <span class="axl ax-x1">low effort</span><span class="axl ax-x2">high effort</span>
+      <span class="axl ax-y1">richer Sim</span><span class="axl ax-y2">rougher Sim</span>
+      <span class="node" style="left:24%;bottom:34%"><span class="nb" style="background:var(--indigo)">🃏</span>Starter</span>
+      <span class="node" style="left:38%;bottom:52%"><span class="nb" style="background:var(--violet)">✍️</span>Describe</span>
+      <span class="node" style="left:60%;bottom:70%"><span class="nb" style="background:var(--teal)">🔮</span>URL</span>
+      <span class="node" style="left:82%;bottom:86%"><span class="nb" style="background:var(--amber)">🎙️</span>Call</span>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const ACCENTS=['#6366f1','#d98324','#db2777','#0f9d6b','#0ea5a4','#8b5cf6'];
+const initials=n=>n.split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+function simCard(s,opts){
+  opts=opts||{};
+  const ins=s.insights.map(i=>`<div class="in ${i.kind}"><span class="ic">${i.kind==='pain'?'▾':i.kind==='want'?'★':'♥'}</span><span class="qt">${i.text} <em>“${i.quote}”</em></span></div>`).join('');
+  const foot = opts.pick
+    ? `<div class="sim-foot"><span class="kind">${s.type||'client'}</span><span class="checkpill">✓</span></div>`
+    : `<div class="sim-foot"><button class="btn btn-indigo btn-sm" onclick="addOne(this,'${s.accent}','${(s.name||'').replace(/'/g,"")}')">＋ Add this Sim</button><button class="btn btn-ghost btn-sm" onclick="this.closest('.sim').style.opacity=.4">Skip</button></div>`;
+  return `<div class="sim ${opts.pick?'pick':''}" ${opts.pick?`data-acc="${s.accent}" data-nm="${s.name}"`:''}>
+    <div class="sim-top"><div class="av" style="background:linear-gradient(135deg,${s.accent},${shade(s.accent)})">${initials(s.name)}</div>
+      <div class="sim-id"><div class="nm">${s.name}</div><div class="rl">${s.role}</div></div>
+      ${opts.pick?'':`<span class="kind">${s.type||'client'}</span>`}</div>
+    <div class="sim-sum">${s.summary}</div>
+    <div class="ins">${ins}</div>${foot}</div>`;
+}
+function shade(hex){ // darken for gradient
+  const n=parseInt(hex.slice(1),16);let r=(n>>16)-26,g=((n>>8)&255)-20,b=(n&255)-30;
+  r=Math.max(0,r);g=Math.max(0,g);b=Math.max(0,b);return '#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1);
+}
+
+/* ---- canned data ---- */
+const BRIEFS={
+  "A busy ops manager who lives in spreadsheets":{name:"Maria Okafor",role:"Operations Manager",type:"client",accent:"#6366f1",summary:"Runs weekly reconciliation across tools; success is a clean number before the CFO asks.",insights:[{kind:'pain',text:'Hates manual exports —',quote:"I reconcile three spreadsheets every Monday."},{kind:'want',text:'Wants alerts —',quote:"Tell me a number's off before my boss does."},{kind:'love',text:'Loves saved views —',quote:"When it remembers my filters, I keep it."}]},
+  "A first-time visitor evaluating us in 2 minutes":{name:"Sam Patel",role:"Evaluating Buyer",type:"client",accent:"#0ea5a4",summary:"Skims the product to decide if it's worth a trial; bounces the moment it gets confusing.",insights:[{kind:'pain',text:'Impatient with setup —',quote:"If I can't see value in two minutes, I'm gone."},{kind:'want',text:'Wants proof fast —',quote:"Just show me it working on something real."},{kind:'love',text:'Loves clarity —',quote:"One clear next step and I'll click it."}]},
+  "A mobile-only user on a flaky connection":{name:"Lena Rossi",role:"On-the-go User",type:"client",accent:"#db2777",summary:"Uses the product entirely on her phone between meetings, often on patchy mobile data.",insights:[{kind:'pain',text:'Fights tiny tap targets —',quote:"Half the buttons are too small on my screen."},{kind:'want',text:'Wants offline grace —',quote:"Don't lose my work when the signal drops."},{kind:'love',text:'Loves speed —',quote:"If it loads fast on 3G, I'm loyal."}]},
+  "A skeptical IT admin worried about security":{name:"Tom Becker",role:"IT Administrator",type:"internal",accent:"#574f45",summary:"Gatekeeps new tools; needs SSO, audit logs, and clear data handling before approving.",insights:[{kind:'pain',text:'Distrusts unknowns —',quote:"Where exactly does our data live?"},{kind:'want',text:'Wants control —',quote:"Give me SSO and role permissions or it's a no."},{kind:'love',text:'Loves transparency —',quote:"A real audit log and I'll champion it internally."}]}
+};
+const STARTERS=[
+  {name:"Maya Chen",role:"First-time visitor",type:"client",accent:"#0ea5a4",summary:"Lands cold, decides in seconds whether to stay.",insights:[{kind:'pain',text:'Confused by jargon —',quote:"What does this actually do?"},{kind:'want',text:'Wants a fast win —',quote:"Show me, don't tell me."},{kind:'love',text:'Loves one clear CTA —',quote:"Tell me the next step."}]},
+  {name:"Devin Ford",role:"Power user",type:"client",accent:"#6366f1",summary:"Lives in the product daily; pushes every shortcut and edge.",insights:[{kind:'pain',text:'Hates repetition —',quote:"I rebuild the same view ten times a day."},{kind:'want',text:'Wants depth —',quote:"Give me saved views and keyboard shortcuts."},{kind:'love',text:'Loves speed —',quote:"Snappy beats pretty every time."}]},
+  {name:"Raj Malhotra",role:"Budget-conscious buyer",type:"client",accent:"#d98324",summary:"Weighs every feature against price before committing.",insights:[{kind:'pain',text:'Wary of lock-in —',quote:"What happens if I want to leave?"},{kind:'want',text:'Wants clear pricing —',quote:"Don't make me email sales."},{kind:'love',text:'Loves ROI proof —',quote:"Show me it pays for itself."}]},
+  {name:"Lena Rossi",role:"Mobile-only user",type:"client",accent:"#db2777",summary:"Does everything from a phone between meetings.",insights:[{kind:'pain',text:'Fights small targets —',quote:"My thumbs keep missing."},{kind:'want',text:'Wants offline grace —',quote:"Don't drop my work on bad signal."},{kind:'love',text:'Loves fast loads —',quote:"3G-fast keeps me here."}]},
+  {name:"Tom Becker",role:"Skeptical admin",type:"internal",accent:"#574f45",summary:"Approves tools only after security checks out.",insights:[{kind:'pain',text:'Distrusts new tools —',quote:"Where does our data go?"},{kind:'want',text:'Wants SSO & roles —',quote:"No SSO, no deal."},{kind:'love',text:'Loves audit logs —',quote:"Give me a paper trail."}]},
+  {name:"Nina Alvarez",role:"Returning churner",type:"client",accent:"#8b5cf6",summary:"Used it once, drifted away — winnable with the right nudge.",insights:[{kind:'pain',text:'Forgot the value —',quote:"Remind me why I signed up."},{kind:'want',text:'Wants a reason back —',quote:"What's new since I left?"},{kind:'love',text:'Loves a warm welcome —',quote:"Pick up where I left off."}]}
+];
+const URLSIMS=[
+  {name:"Priya Nair",role:"Team lead evaluating Acme",type:"client",accent:"#6366f1",summary:"Inferred from your pricing + “for teams” pages: compares tools for a 12-person squad.",insights:[{kind:'pain',text:'Owns the rollout risk —',quote:"If my team won't adopt it, it's on me."},{kind:'want',text:'Wants seat clarity —',quote:"How does per-seat actually scale?"},{kind:'love',text:'Loves quick onboarding —',quote:"If setup is painless, I'll expand."}]},
+  {name:"Carlos Mendez",role:"Solo builder on the free tier",type:"client",accent:"#0f9d6b",summary:"Inferred from your “start free” hero: a one-person shop testing the limits.",insights:[{kind:'pain',text:'Allergic to paywalls —',quote:"Let me feel it before I pay."},{kind:'want',text:'Wants room to grow —',quote:"Will the free tier box me in?"},{kind:'love',text:'Loves momentum —',quote:"If it just works, I'll upgrade."}]},
+  {name:"Hannah Weiss",role:"Enterprise procurement",type:"internal",accent:"#574f45",summary:"Inferred from your security + SLA footer links: due-diligence gatekeeper.",insights:[{kind:'pain',text:'Lives in checklists —',quote:"Send me your SOC 2 and DPA."},{kind:'want',text:'Wants guarantees —',quote:"What's the uptime SLA in writing?"},{kind:'love',text:'Loves a clean trail —',quote:"Good docs make my sign-off easy."}]}
+];
+const TXSIMS=[
+  {name:"Maria (Ops Lead)",role:"Operations Lead",type:"client",accent:"#6366f1",summary:"Owns the Monday reconciliation ritual and the onboarding of new hires.",insights:[{kind:'pain',text:'Manual reconciliation —',quote:"reconciling three exports every Monday"},{kind:'pain',text:'Slow onboarding —',quote:"a full afternoon of screen-shares"},{kind:'want',text:'Wants proactive alerts —',quote:"I find out from my CFO, not the tool"}]},
+  {name:"Devin (Analyst)",role:"Data Analyst",type:"client",accent:"#0ea5a4",summary:"Power user who rebuilds the same filtered view dozens of times a day.",insights:[{kind:'pain',text:'Repetitive filtering —',quote:"I rebuild the same one ten times a day"},{kind:'want',text:'Wants saved views —',quote:"I'd pay for saved views"},{kind:'love',text:'Lives in the product —',quote:"I basically live in the filters"}]}
+];
+
+/* ---- render ---- */
+function chipsHtml(){document.getElementById('briefChips').innerHTML=Object.keys(BRIEFS).map(b=>`<button class="chip" onclick="pickBrief(this)">${b}</button>`).join('')}
+function pickBrief(el){document.getElementById('briefIn').value=el.textContent;genBrief();}
+function genBrief(){
+  const v=document.getElementById('briefIn').value.trim();const out=document.getElementById('briefOut');
+  if(!v){out.innerHTML='';return;}
+  out.innerHTML='<div class="think"><span class="spin"></span>Imagining your Sim…</div>';
+  const data = BRIEFS[v] || BRIEFS[Object.keys(BRIEFS)[0]];
+  setTimeout(()=>{ out.innerHTML=simCard(data); },650);
+}
+function starterRender(){document.getElementById('starterGrid').innerHTML=STARTERS.map((s,i)=>simCard(s,{pick:true}).replace('class="sim pick"',`class="sim pick" onclick="toggleStarter(${i},this)"`)).join('')}
+let starterSel=new Set();
+function toggleStarter(i,el){el.classList.toggle('sel');if(el.classList.contains('sel'))starterSel.add(i);else starterSel.delete(i);document.getElementById('starterN').textContent=starterSel.size;}
+function clearStarters(){starterSel.clear();document.getElementById('starterN').textContent=0;document.querySelectorAll('#starterGrid .sim').forEach(s=>s.classList.remove('sel'));}
+function addStarters(){if(!starterSel.size){toast('Pick at least one Sim first','#574f45','✓');return;}toast(`Added ${starterSel.size} Sim${starterSel.size>1?'s':''} to WALI`,'#6366f1','✓');clearStarters();}
+function genUrl(){
+  const out=document.getElementById('urlOut');
+  out.innerHTML='<div class="think"><span class="spin"></span>Reading app.acme.com…</div><div class="simwrap"><div class="sk"></div><div class="sk"></div></div>';
+  setTimeout(()=>{ out.innerHTML='<div class="field-note" style="margin-bottom:6px">Suggested 3 Sims from your public pages — add the ones that fit:</div><div class="simgrid">'+URLSIMS.map(s=>simCard(s)).join('')+'</div>'; },1100);
+}
+function genTx(){
+  const out=document.getElementById('txOut');const bar=document.getElementById('txAdd');
+  out.innerHTML='<div class="think"><span class="spin"></span>Reading the transcript, pulling out who’s who…</div>';
+  bar.style.display='none';
+  setTimeout(()=>{ out.innerHTML='<div class="simgrid">'+TXSIMS.map(s=>simCard(s,{pick:true})).join('')+'</div>';
+    out.querySelectorAll('.sim').forEach(s=>s.classList.add('sel'));
+    document.getElementById('txN').textContent=TXSIMS.length;bar.style.display='flex'; },1000);
+}
+function addTx(){toast(`Added ${TXSIMS.length} Sims from the call`,'#0ea5a4','✓');}
+function addOne(btn,acc,nm){btn.textContent='✓ Added';btn.style.filter='grayscale(.3)';toast('Added '+(nm||'Sim')+' to WALI',acc,initials(nm||'S'));}
+
+/* toast */
+let tT;function toast(msg,acc,ini){const t=document.getElementById('toast');t.innerHTML=`<span class="av" style="background:linear-gradient(135deg,${acc},${shade(acc)})">${ini}</span>${msg}`;t.classList.add('show');clearTimeout(tT);tT=setTimeout(()=>t.classList.remove('show'),2200);}
+
+/* rail switching */
+document.querySelectorAll('.door').forEach(d=>d.addEventListener('click',()=>{
+  document.querySelectorAll('.door').forEach(x=>x.classList.remove('on'));d.classList.add('on');
+  document.querySelectorAll('.scr').forEach(s=>s.classList.remove('show'));
+  document.getElementById('scr-'+d.dataset.scr).classList.add('show');
+}));
+
+chipsHtml();starterRender();
+</script>
+</body>
+</html>
