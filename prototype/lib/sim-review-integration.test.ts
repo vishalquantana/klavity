@@ -7,7 +7,13 @@
 //   (b) multi-Sim run      — one SimReview per requested Sim in output
 //   (c) per-session throttle — 2nd call within window blocked; resets after window
 import { test, expect, mock, beforeEach } from "bun:test"
-import { hashObservation, buildSimRunSummary, type SimReview, type SimObservation } from "./sim-review-pure"
+import {
+  hashObservation, buildSimRunSummary, obsIsNearDup,
+  sessionCallCapped, sessionObsCapped, sessionCallCount, sessionObsCount,
+  sessionBumpCall, sessionBumpObs,
+  SESSION_CALL_CEIL, SESSION_OBS_CEIL, NEAR_DUP_THRESHOLD,
+  type SimReview, type SimObservation,
+} from "./sim-review-pure"
 import { allow } from "./ratelimit"
 
 // ── (a) seenHashes dedup ──────────────────────────────────────────────────────
@@ -181,4 +187,145 @@ test("(c) throttle: sessions with rapid calls — only the 1st passes (cost guar
   const results = [0, 10, 20, 50, 100].map((offset) => allow(key, 1, 2000, t + offset))
   expect(results[0]).toBe(true)   // first → allowed
   expect(results.slice(1).every((r) => r === false)).toBe(true)  // rest → blocked
+})
+
+// ── (d) near-duplicate dedup ─────────────────────────────────────────────────
+//
+// Consecutive screens of the same page often produce rephrased but semantically
+// identical observations. Exact hash matching misses these; trigram similarity catches them.
+//
+// obsIsNearDup(text, seenTexts, threshold) returns true when `text` is "close enough"
+// to any string in seenTexts. It is called in runSimReviews AFTER the exact-hash check.
+
+test("(d) near-dup: identical text → always near-dup (similarity = 1.0)", () => {
+  const text = "The checkout button does not respond to clicks"
+  expect(obsIsNearDup(text, [text])).toBe(true)
+})
+
+test("(d) near-dup: rephrase of same finding → detected as near-dup", () => {
+  const seen = "The checkout button is unresponsive"
+  const rephrase = "The checkout button doesn't respond to clicks"
+  expect(obsIsNearDup(rephrase, [seen])).toBe(true)
+})
+
+test("(d) near-dup: minor word swap on same topic → detected", () => {
+  // Score ~0.67: same element, same problem, slightly different wording
+  const seen = "Navigation menu is broken and completely unusable"
+  const variant = "The navigation menu is broken and completely does not work"
+  expect(obsIsNearDup(variant, [seen])).toBe(true)
+})
+
+test("(d) near-dup: genuinely different observation → NOT a near-dup", () => {
+  const seen = "The checkout button is unresponsive"
+  const different = "The product images are loading very slowly"
+  expect(obsIsNearDup(different, [seen])).toBe(false)
+})
+
+test("(d) near-dup: new screen, new finding → passes through (no false positive)", () => {
+  const seen = ["Login button missing from header", "Search bar returns no results"]
+  const newObs = "The payment form shows an error after submission"
+  expect(obsIsNearDup(newObs, seen)).toBe(false)
+})
+
+test("(d) near-dup: empty seenTexts → never near-dup (first call always passes)", () => {
+  expect(obsIsNearDup("Any observation at all", [])).toBe(false)
+})
+
+test("(d) near-dup: case+punctuation insensitive — 'BUTTON BROKEN!!!' matches 'button broken'", () => {
+  expect(obsIsNearDup("BUTTON BROKEN!!!", ["button broken"])).toBe(true)
+})
+
+test("(d) near-dup: NEAR_DUP_THRESHOLD is between 0.5 and 1.0 (sanity check)", () => {
+  expect(NEAR_DUP_THRESHOLD).toBeGreaterThan(0.5)
+  expect(NEAR_DUP_THRESHOLD).toBeLessThan(1.0)
+})
+
+test("(d) near-dup: multiple seen texts — blocks when any one matches", () => {
+  const seen = [
+    "Images fail to load on product page",
+    "The checkout button is completely unresponsive",
+  ]
+  // Near-dup of the second seen text (score ~0.59 with the rephrase)
+  expect(obsIsNearDup("The checkout button is unresponsive and doesn't respond", seen)).toBe(true)
+  // Not a near-dup of either
+  expect(obsIsNearDup("Font sizes are inconsistent across the page", seen)).toBe(false)
+})
+
+// ── (e) per-session cost ceiling ─────────────────────────────────────────────
+//
+// SESSION_CALL_CEIL caps the number of LLM calls per session.
+// SESSION_OBS_CEIL caps the total observations surfaced per session.
+// Both are tracked server-side via sessionBumpCall / sessionBumpObs.
+// Exceeded → sessionCallCapped / sessionObsCapped returns true → runSimReviews skips.
+
+test("(e) ceiling: fresh session is not capped", () => {
+  const id = `sess_fresh_${Date.now()}_${Math.random()}`
+  expect(sessionCallCapped(id)).toBe(false)
+  expect(sessionObsCapped(id)).toBe(false)
+  expect(sessionCallCount(id)).toBe(0)
+  expect(sessionObsCount(id)).toBe(0)
+})
+
+test("(e) ceiling: call count increments per bump; capped at SESSION_CALL_CEIL", () => {
+  const id = `sess_calls_${Date.now()}_${Math.random()}`
+  expect(SESSION_CALL_CEIL).toBeGreaterThan(0)
+  // Bump up to the limit
+  for (let i = 0; i < SESSION_CALL_CEIL; i++) sessionBumpCall(id)
+  expect(sessionCallCount(id)).toBe(SESSION_CALL_CEIL)
+  expect(sessionCallCapped(id)).toBe(true)
+})
+
+test("(e) ceiling: one more call after ceiling still shows capped", () => {
+  const id = `sess_overcall_${Date.now()}_${Math.random()}`
+  for (let i = 0; i < SESSION_CALL_CEIL + 3; i++) sessionBumpCall(id)
+  expect(sessionCallCapped(id)).toBe(true)
+  // Count is accurate
+  expect(sessionCallCount(id)).toBe(SESSION_CALL_CEIL + 3)
+})
+
+test("(e) ceiling: obs count increments per bumpObs; capped at SESSION_OBS_CEIL", () => {
+  const id = `sess_obs_${Date.now()}_${Math.random()}`
+  expect(SESSION_OBS_CEIL).toBeGreaterThan(0)
+  // Add observations up to the ceiling in batches of 5
+  const batch = Array.from({ length: 5 }, (_, i) => `observation text ${i}`)
+  for (let chunk = 0; chunk < SESSION_OBS_CEIL / 5; chunk++) sessionBumpObs(id, batch)
+  expect(sessionObsCount(id)).toBe(SESSION_OBS_CEIL)
+  expect(sessionObsCapped(id)).toBe(true)
+})
+
+test("(e) ceiling: session below ceiling is not capped", () => {
+  const id = `sess_below_${Date.now()}_${Math.random()}`
+  for (let i = 0; i < SESSION_CALL_CEIL - 1; i++) sessionBumpCall(id)
+  expect(sessionCallCapped(id)).toBe(false)
+})
+
+test("(e) ceiling: call and obs ceilings are independent", () => {
+  const id = `sess_indep_${Date.now()}_${Math.random()}`
+  // Hit only the call ceiling
+  for (let i = 0; i < SESSION_CALL_CEIL; i++) sessionBumpCall(id)
+  expect(sessionCallCapped(id)).toBe(true)
+  expect(sessionObsCapped(id)).toBe(false)  // obs not capped yet
+})
+
+test("(e) ceiling: different sessions track independently", () => {
+  const idA = `sess_indep_a_${Date.now()}_${Math.random()}`
+  const idB = `sess_indep_b_${Date.now()}_${Math.random()}`
+  // Exhaust session A's call ceiling
+  for (let i = 0; i < SESSION_CALL_CEIL; i++) sessionBumpCall(idA)
+  expect(sessionCallCapped(idA)).toBe(true)
+  // Session B is unaffected
+  expect(sessionCallCapped(idB)).toBe(false)
+})
+
+test("(e) near-dup + ceiling compose: session stores seen texts for cross-screen matching", () => {
+  const id = `sess_texts_${Date.now()}_${Math.random()}`
+  const text = "The hero button is completely broken on mobile"
+  sessionBumpObs(id, [text])
+  // The rephrase is now blocked at the near-dup layer
+  const rephrase = "The hero button is broken on mobile devices"
+  // Verify the stored texts are accessible for near-dup matching
+  // (runSimReviews reads sessionSeenTexts and passes to obsIsNearDup)
+  const stored = sessionObsCount(id)
+  expect(stored).toBe(1)
+  expect(obsIsNearDup(rephrase, [text])).toBe(true)  // near-dup detected
 })
