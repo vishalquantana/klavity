@@ -1,7 +1,7 @@
 // packages/sdk/src/widget.ts
 import { createSim, injectSimStyles, emotionFromSentiment } from "@klavity/core/sim"
 import { safeToPng } from "./capture"
-import { buildModal, installRegionDrag } from "@klavity/core/modal"
+import { buildModal, installRegionDrag, type ModalController } from "@klavity/core/modal"
 import { cropDataUrl, type Rect } from "@klavity/core/crop"
 import { planScrollStitch, clampCaptureHeight } from "./sharp-capture"
 import { installCapture, buildReportContext, type CaptureBuffers } from "@klavity/core/capture"
@@ -255,7 +255,12 @@ async function mount() {
   activeDot.className = "kl-active-dot"
   activeDot.setAttribute("aria-hidden", "true")
   reportBtn.appendChild(activeDot)
+  // Re-entrancy guard: double-clicking the launcher / a menu card must not stack two composers. We keep a
+  // reference to the open one and treat it as "open" only while its shadow host is still in the DOM (the
+  // modal removes its host on close), so a normal re-open after closing still works.
+  let composer: ModalController | null = null
   function openReport(type: "bug" | "feature" = "bug", opts?: { initialShot?: string }) {
+    if (composer && (composer.shadowRoot.host as HTMLElement | null)?.isConnected) return
     const identified = firstParty || !!getToken()  // already known to Klavity (own page session, or signed-in widget)
     // Only the "login" gate forces the connect flow on third-party sites. "email"/"anonymous" let an
     // end-user file WITHOUT a Klavity account; "email" requires a typed email when not already identified.
@@ -293,6 +298,7 @@ async function mount() {
       ),
       success: { copy: successCopy(widget.mode, widget.ctaUrl, suppressSuccessEmail), onLead: postLead },
     }, modalConfig)
+    composer = ctrl // track the open composer so a second open is ignored until this one closes
     // Right-click-drag region: load the cropped selection as the default (first) screenshot, zoomed to fit.
     if (opts?.initialShot) ctrl.addScreenshot(opts.initialShot)
     } catch (e) { console.warn("[Klavity] failed to open the report composer:", e) }

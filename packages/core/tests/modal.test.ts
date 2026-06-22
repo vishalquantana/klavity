@@ -59,6 +59,100 @@ describe('buildModal region capture', () => {
   })
 })
 
+describe('buildModal button guards (re-entrancy)', () => {
+  const ok = async () => ({ issueKey: '1', issueUrl: '' })
+
+  it('Full Page capture is guarded against double-click — one in-flight capture, button disabled', async () => {
+    let resolve!: (v: string) => void
+    const onCaptureFull = vi.fn(() => new Promise<string>(r => { resolve = r }))
+    const ctrl = buildModal('bug', { onCaptureFull, onSubmit: ok })
+    const full = q(ctrl, '#klavity-full') as HTMLButtonElement
+    full.click(); full.click(); full.click() // rapid triple-click
+    expect(onCaptureFull).toHaveBeenCalledTimes(1)
+    expect(full.disabled).toBe(true) // locked while capturing
+    resolve('data:image/png;base64,FULL')
+    await new Promise(r => setTimeout(r, 0))
+    expect(full.disabled).toBe(false) // released after
+    expect(ctrl.shadowRoot.querySelectorAll('.klavity-thumb').length).toBe(1)
+    ctrl.close()
+  })
+
+  it('Submit is disabled and every capture button locked during upload', async () => {
+    let resolve!: (v: { issueKey: string; issueUrl: string }) => void
+    const onSubmit = vi.fn(() => new Promise<{ issueKey: string; issueUrl: string }>(r => { resolve = r }))
+    const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onRegionCapture: async () => 'r', onSubmit })
+    const desc = q(ctrl, '#klavity-desc') as HTMLTextAreaElement
+    desc.value = 'a real bug'; desc.dispatchEvent(new Event('input'))
+    const submit = q(ctrl, '#klavity-submit') as HTMLButtonElement
+    expect(submit.disabled).toBe(false)
+    submit.click()
+    expect(submit.disabled).toBe(true)
+    expect(submit.textContent).toContain('Uploading')
+    expect((q(ctrl, '#klavity-full') as HTMLButtonElement).disabled).toBe(true)
+    expect((q(ctrl, '#klavity-region') as HTMLButtonElement).disabled).toBe(true)
+    resolve({ issueKey: 'K-1', issueUrl: '' })
+    await new Promise(r => setTimeout(r, 0))
+    ctrl.close()
+  })
+
+  it('Submit failure re-enables the composer and shows the error (never stuck)', async () => {
+    const onSubmit = vi.fn(async () => { throw new Error('Network down') })
+    const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit })
+    const desc = q(ctrl, '#klavity-desc') as HTMLTextAreaElement
+    desc.value = 'oops'; desc.dispatchEvent(new Event('input'))
+    const submit = q(ctrl, '#klavity-submit') as HTMLButtonElement
+    submit.click()
+    await new Promise(r => setTimeout(r, 0))
+    const err = q(ctrl, '#klavity-err') as HTMLElement
+    expect(err.style.display).toBe('block')
+    expect(err.textContent).toContain('Network down')
+    expect(submit.disabled).toBe(false) // re-enabled (description still valid)
+    expect(submit.textContent).toBe('Submit')
+    expect((q(ctrl, '#klavity-full') as HTMLButtonElement).disabled).toBe(false)
+    ctrl.close()
+  })
+})
+
+describe('buildModal upload guards', () => {
+  const ok = async () => ({ issueKey: '1', issueUrl: '' })
+  const setFiles = (input: HTMLInputElement, files: File[]) =>
+    Object.defineProperty(input, 'files', { value: files, configurable: true })
+
+  it('enforces the 5-image cap with a clear message', () => {
+    const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: ok })
+    for (let i = 0; i < 5; i++) ctrl.addScreenshot('data:image/png;base64,' + i)
+    expect(ctrl.shadowRoot.querySelectorAll('.klavity-thumb').length).toBe(5)
+    ctrl.addScreenshot('data:image/png;base64,SIXTH') // the 6th is blocked
+    expect(ctrl.shadowRoot.querySelectorAll('.klavity-thumb').length).toBe(5)
+    const err = q(ctrl, '#klavity-err') as HTMLElement
+    expect(err.style.display).toBe('block')
+    expect(err.textContent).toMatch(/up to 5/)
+    ctrl.close()
+  })
+
+  it('rejects a non-image file with a message and adds nothing', async () => {
+    const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: ok })
+    const input = q(ctrl, '#klavity-file') as HTMLInputElement
+    setFiles(input, [new File(['hello'], 'notes.txt', { type: 'text/plain' })])
+    input.dispatchEvent(new Event('change'))
+    await new Promise(r => setTimeout(r, 0))
+    expect(ctrl.shadowRoot.querySelectorAll('.klavity-thumb').length).toBe(0)
+    expect((q(ctrl, '#klavity-err') as HTMLElement).textContent).toMatch(/isn't an image/)
+    ctrl.close()
+  })
+
+  it('rejects an oversized image with a message and adds nothing', async () => {
+    const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: ok })
+    const input = q(ctrl, '#klavity-file') as HTMLInputElement
+    setFiles(input, [new File([new Uint8Array(11 * 1024 * 1024)], 'huge.png', { type: 'image/png' })])
+    input.dispatchEvent(new Event('change'))
+    await new Promise(r => setTimeout(r, 0))
+    expect(ctrl.shadowRoot.querySelectorAll('.klavity-thumb').length).toBe(0)
+    expect((q(ctrl, '#klavity-err') as HTMLElement).textContent).toMatch(/too large/)
+    ctrl.close()
+  })
+})
+
 describe('buildModal autoCaptureOnOpen', () => {
   it('autoCaptureOnOpen calls onCaptureFull once on mount', async () => {
     vi.useFakeTimers()

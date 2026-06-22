@@ -79,6 +79,9 @@ export function buildModal(
   document.body.appendChild(host)
 
   let screenshots: string[] = []
+  // Upload guards (Dev 6 audit #4): cap how many images can be attached and how big each may be.
+  const MAX_IMAGES = 5
+  const MAX_FILE_BYTES = 10 * 1024 * 1024 // 10 MB per image
   // Structured markup per screenshot index { w, h, shapes } so the ticket can re-render a
   // toggleable/zoomable overlay instead of baking the drawing into the uploaded image.
   const annotationsByIndex: Record<number, any> = {}
@@ -121,6 +124,12 @@ export function buildModal(
     .klavity-actions .kl-cap-ic svg,.klavity-toggle .kl-cap-ic svg{display:block;width:15px;height:15px;}
     .klavity-actions button:hover .kl-cap-ic,.klavity-toggle button:hover .kl-cap-ic{transform:scale(1.14) rotate(-6deg);}
     .klavity-actions button:active .kl-cap-ic,.klavity-toggle button:active .kl-cap-ic{transform:scale(1.04);}
+    /* Re-entrancy state: while a capture/submit is in flight every capture button is disabled (dimmed, no
+       hover/press), and the one doing the work pulses to read as "working". */
+    .klavity-actions button:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:none;}
+    .klavity-actions button:disabled .kl-cap-ic{transform:none;}
+    .klavity-actions button.kl-loading{opacity:.9;animation:kl-cap-pulse 1s ease-in-out infinite;}
+    @keyframes kl-cap-pulse{0%,100%{opacity:.55}50%{opacity:.95}}
     .klavity-counter{font-size:11px;color:var(--kl-muted);margin-bottom:8px;font-variant-numeric:tabular-nums;}
     textarea.klavity-desc{width:100%;min-height:100px;resize:vertical;background:var(--kl-input-bg);color:var(--kl-fg);border:1px solid var(--kl-border);border-radius:8px;padding:10px;font-size:14px;margin-bottom:16px;box-sizing:border-box;}
     input.klavity-remail{width:100%;background:var(--kl-input-bg);color:var(--kl-fg);border:1px solid var(--kl-border);border-radius:8px;padding:10px;font-size:14px;margin-bottom:10px;box-sizing:border-box;}
@@ -175,7 +184,7 @@ export function buildModal(
     .klavity-info-pop{position:absolute;bottom:calc(100% + 10px);right:0;width:228px;padding:10px 12px;border-radius:10px;background:var(--kl-bg);color:var(--kl-fg);box-shadow:0 0 0 1px var(--kl-border),0 12px 30px rgba(20,16,40,.22);font-size:12px;line-height:1.45;text-align:left;text-wrap:pretty;opacity:0;visibility:hidden;transform:translateY(4px);transition:opacity .15s ease,transform .15s ease;z-index:6;pointer-events:none;}
     .klavity-info-pop b{color:var(--kl-fg);font-weight:600;}
     .klavity-info-wrap:hover .klavity-info-pop,.klavity-info-wrap:focus-within .klavity-info-pop{opacity:1;visibility:visible;transform:translateY(0);pointer-events:auto;}
-    @media (prefers-reduced-motion: reduce){.klavity-overlay,.klavity-modal,.klavity-modal.kl-closing,.klavity-modal>*{animation-duration:.01ms!important;}.klavity-modal{--kl-lift:none;--kl-press:none;--kl-bhover:none;--kl-bpress:none;}.klavity-info-pop{transform:none;}.klavity-info{transition:none;}.klavity-actions .kl-cap-ic,.klavity-toggle .kl-cap-ic{transition:none;transform:none!important;}}
+    @media (prefers-reduced-motion: reduce){.klavity-overlay,.klavity-modal,.klavity-modal.kl-closing,.klavity-modal>*{animation-duration:.01ms!important;}.klavity-modal{--kl-lift:none;--kl-press:none;--kl-bhover:none;--kl-bpress:none;}.klavity-info-pop{transform:none;}.klavity-info{transition:none;}.klavity-actions button.kl-loading{animation:none;}.klavity-actions .kl-cap-ic,.klavity-toggle .kl-cap-ic{transition:none;transform:none!important;}}
   `
   shadowRoot.appendChild(style)
 
@@ -243,10 +252,44 @@ export function buildModal(
     counter.textContent = `${screenshots.length}/5 images`
   }
 
+  // Surface a problem in the shared error line (used for upload + submit failures alike).
+  function showError(msg: string) {
+    const errEl = shadowRoot.getElementById('klavity-err')
+    if (errEl) { errEl.textContent = msg; (errEl as HTMLElement).style.display = 'block' }
+  }
+  function clearError() {
+    const errEl = shadowRoot.getElementById('klavity-err')
+    if (errEl) (errEl as HTMLElement).style.display = 'none'
+  }
+
   function addScreenshot(dataUrl: string) {
-    if (screenshots.length >= 5) return
+    // Hard cap — every capture/upload/paste path funnels through here, so the limit holds everywhere.
+    if (screenshots.length >= MAX_IMAGES) { showError(`You can attach up to ${MAX_IMAGES} images.`); return }
+    clearError()
     screenshots.push(dataUrl)
     updateStrip()
+  }
+
+  // Image-only validation. Most browsers set file.type to an image/* MIME; HEIC/HEIF (and the odd browser
+  // that reports an empty type) are matched by extension as a fallback.
+  function isImageFile(file: File): boolean {
+    return file.type.startsWith('image/') || /\.(heic|heif|png|jpe?g|gif|webp|bmp|avif|svg)$/i.test(file.name)
+  }
+
+  // Shared ingestion for the file picker AND clipboard paste: enforce cap + type + size, convert, and
+  // surface a clear message on any reject/failure rather than silently dropping or leaving the UI stuck.
+  async function ingestFiles(files: File[]) {
+    clearError()
+    for (const file of files) {
+      if (screenshots.length >= MAX_IMAGES) { showError(`You can attach up to ${MAX_IMAGES} images.`); break }
+      if (!isImageFile(file)) { showError(`"${file.name}" isn't an image — only image files can be attached.`); continue }
+      if (file.size > MAX_FILE_BYTES) { showError(`"${file.name}" is too large — images must be under ${Math.round(MAX_FILE_BYTES / 1024 / 1024)} MB.`); continue }
+      try {
+        addScreenshot(await fileToDataUrl(file))
+      } catch {
+        showError(`Couldn't add "${file.name}". Please try a different image.`)
+      }
+    }
   }
 
   function close() {
@@ -267,12 +310,11 @@ export function buildModal(
 
   const onPaste = (e: ClipboardEvent) => {
     if (!e.clipboardData) return
-    for (const item of Array.from(e.clipboardData.items)) {
-      if (item.type.startsWith('image/')) {
-        const blob = item.getAsFile()
-        if (blob) fileToDataUrl(blob).then(addScreenshot).catch(() => {})
-      }
-    }
+    const imgs = Array.from(e.clipboardData.items)
+      .filter(it => it.type.startsWith('image/'))
+      .map(it => it.getAsFile())
+      .filter((f): f is File => !!f)
+    if (imgs.length) void ingestFiles(imgs)
   }
   document.addEventListener('paste', onPaste)
 
@@ -301,9 +343,23 @@ export function buildModal(
   remail?.addEventListener('input', refreshSubmit)
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close() })
 
+  // Re-entrancy guard (Dev 6 audit #3): block double-click / cross-firing while a capture OR submit is in
+  // flight. `lockComposer(true)` disables every capture button (Sharp/Full Page/Upload/Region) and Submit;
+  // releasing restores Submit to its validity state. Each action also early-returns when `busy` so a
+  // queued double-click can't slip through before the disabled attribute paints.
+  const captureBtnEls = () => Array.from(modal.querySelectorAll('.klavity-actions button')) as HTMLButtonElement[]
+  let busy = false
+  const lockComposer = (on: boolean) => {
+    busy = on
+    captureBtnEls().forEach(b => { b.disabled = on })
+    if (on) submitBtn.disabled = true
+    else refreshSubmit()
+  }
+
   submitBtn.addEventListener('click', async () => {
+    if (busy || submitBtn.disabled) return // re-entrancy: ignore double-clicks / clicks while a capture runs
     const description = desc.value.trim()
-    submitBtn.disabled = true
+    lockComposer(true) // disable Submit + every capture button for the duration of the upload
     submitBtn.textContent = 'Uploading…'
     const errEl = shadowRoot.getElementById('klavity-err')!
     errEl.style.display = 'none'
@@ -346,17 +402,24 @@ export function buildModal(
         setTimeout(close, cfg.thankYou ? 2600 : 1500)
       }
     } catch (err) {
+      // Upload failed — surface the error and re-open the composer (never leave it stuck/disabled).
       resetProgress()
       errEl.textContent = (err as Error).message
       errEl.style.display = 'block'
-      submitBtn.disabled = false
       submitBtn.textContent = 'Submit'
+      lockComposer(false) // re-enable capture buttons + Submit (Submit only if still valid)
     }
   })
 
-  // Capture buttons
-  modal.querySelector('#klavity-full')!.addEventListener('click', async () => {
-    try { addScreenshot(await callbacks.onCaptureFull()) } catch { /* ignore */ }
+  // Capture buttons — each is guarded against double-click / re-entrancy via `busy`/lockComposer.
+  const fullBtn = modal.querySelector('#klavity-full') as HTMLButtonElement
+  fullBtn.addEventListener('click', async () => {
+    if (busy) return
+    lockComposer(true)
+    fullBtn.classList.add('kl-loading')
+    try { addScreenshot(await callbacks.onCaptureFull()) }
+    catch { /* ignore */ }
+    finally { fullBtn.classList.remove('kl-loading'); lockComposer(false) }
   })
   // Sharp capture (real-pixel getDisplayMedia scroll-stitch) — only when the host provides it.
   const sharpBtn = modal.querySelector('#klavity-sharp') as HTMLButtonElement | null
@@ -365,6 +428,8 @@ export function buildModal(
     // embedded (i) (setting button.textContent would wipe both).
     const sharpLabel = sharpBtn.querySelector('.kl-sharp-label') as HTMLElement | null
     const runSharp = async () => {
+      if (busy) return // re-entrancy: a capture/submit is already running
+      lockComposer(true)
       // Hide the composer so it isn't in the captured pixels. onCaptureSharp calls getDisplayMedia as its
       // first step, so the click's user gesture (required by the permission prompt) is preserved.
       host.style.display = 'none'
@@ -375,7 +440,7 @@ export function buildModal(
         const shot = await callbacks.onCaptureSharp!()
         if (shot) addScreenshot(shot)
       } catch { /* user cancelled the share prompt, or capture failed — just restore */ }
-      finally { host.style.display = ''; target.textContent = orig }
+      finally { host.style.display = ''; target.textContent = orig; lockComposer(false) }
     }
     // ONE click → straight to the screen-share permission. getDisplayMedia runs synchronously inside the
     // handler (preserving the click's user gesture).
@@ -391,22 +456,27 @@ export function buildModal(
       })
     }
   }
+  const fileInput = modal.querySelector('#klavity-file') as HTMLInputElement
   modal.querySelector('#klavity-upload')!.addEventListener('click', () => {
-    (modal.querySelector('#klavity-file') as HTMLInputElement).click()
-  })
-  modal.querySelector('#klavity-file')!.addEventListener('change', async (e) => {
-    const files = (e.target as HTMLInputElement).files
-    if (!files) return
-    for (const file of Array.from(files)) {
-      if (screenshots.length >= 5) break
-      addScreenshot(await fileToDataUrl(file))
+    if (busy || screenshots.length >= MAX_IMAGES) {
+      if (screenshots.length >= MAX_IMAGES) showError(`You can attach up to ${MAX_IMAGES} images.`)
+      return
     }
+    fileInput.click()
+  })
+  fileInput.addEventListener('change', async (e) => {
+    const input = e.target as HTMLInputElement
+    const files = input.files ? Array.from(input.files) : []
+    input.value = '' // reset so re-selecting the SAME file fires change again (and clears stuck state)
+    if (files.length) await ingestFiles(files) // ingestFiles enforces cap + type + size + failure handling
   })
 
   // Region capture button — only rendered when the host provides onRegionCapture
   const regionBtn = shadowRoot.getElementById('klavity-region') as HTMLButtonElement | null
   if (regionBtn && callbacks.onRegionCapture) {
     regionBtn.onclick = () => {
+      if (busy) return // re-entrancy: a capture/submit is already running
+      lockComposer(true)
       // Remove the modal's own Esc handler so pressing Esc during region-select only
       // cancels the overlay and does NOT also close the modal.  It is re-added by the
       // cleanup() callback inside mountRegionOverlay (both the cancel and pointerup paths).
@@ -420,12 +490,14 @@ export function buildModal(
           if (shot) addScreenshot(shot)
         } finally {
           host.style.display = ''
+          lockComposer(false)
         }
       }, () => {
         // Re-register the modal Esc handler now that the overlay is gone (cancel/Esc path).
         document.addEventListener('keydown', escHandler, { capture: true })
         // Esc/cancel — re-show the host without calling onRegionCapture
         host.style.display = ''
+        lockComposer(false)
       })
     }
   }
