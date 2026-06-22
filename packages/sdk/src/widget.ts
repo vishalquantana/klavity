@@ -492,10 +492,6 @@ async function mount() {
     }
     menu.appendChild(card("zap", "Report a Bug", "Snap the page and tell us what broke.", { primary: true, onClick: () => openReport("bug") }))
     menu.appendChild(card("lightbulb", "Request a Feature", "Suggest something you'd love to see.", { onClick: () => openReport("feature") }))
-    // Sims live review — only shown to authenticated team members (token present).
-    if (getToken()) {
-      menu.appendChild(card("dna", "Ask Sims to review this", "Get instant in-character reactions from your AI personas.", { onClick: () => void runReview() }))
-    }
     menu.appendChild(card("users", "Deploy all Sims", "Have every Sim jump in and analyze this page.", { onClick: () => { closeMenu(); ;(window as any).KlavitySims?.deploy?.("all") } }))
     menu.appendChild(card("sparkles", "Select Sims…", "Choose which Sims jump into action.", { onClick: () => { void showSimPicker() } }))
     menu.appendChild(card("monitor", "Show browser menu", "Open your browser's own menu instead.", { muted: true, hint: "⇧ right-click", onClick: () => { nativePending = true; showNativeHint(x, y) } }))
@@ -622,31 +618,25 @@ async function mount() {
     col.appendChild(avatars); col.appendChild(btn); dock.appendChild(col)
   }
 
-  // btn is optional — callers from the right-click menu pass nothing; the dock button passes itself.
-  async function runReview(btn?: HTMLButtonElement) {
-    const orig = btn?.textContent ?? null
-    if (btn) { btn.disabled = true; btn.textContent = "Capturing…" }
+  async function runReview(btn: HTMLButtonElement) {
+    btn.disabled = true; const orig = btn.textContent; btn.textContent = "Capturing…"
     let shot = ""
     try {
       shot = await safeToPng(document.body, { filter: (node) => (node as HTMLElement).id !== HOST_ID })
-    } catch {
-      banner("Couldn't capture the page.")
-      if (btn) { btn.disabled = false; if (orig !== null) btn.textContent = orig }
-      return
-    }
-    if (btn) btn.textContent = "Reviewing…"
+    } catch { banner("Couldn't capture the page."); btn.disabled = false; btn.textContent = orig; return }
+    btn.textContent = "Reviewing…"
     let r = await api("/api/sim/review", { method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ projectId: cfg.projectId, url: location.href, domSig: null, screenshotDataUrl: shot, adhoc: true }) })
+      body: JSON.stringify({ projectId: cfg.projectId, url: location.href, domSig: null, screenshotDataUrl: shot }) })
     let j = await r.json().catch(() => ({}))
     // Auto-grant consent once, then retry — the widget user is an authenticated team member.
     if (!j.ok && j.reason === "needsConsent") {
       await api("/api/consent", { method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ projectId: cfg.projectId, status: "granted" }) })
       r = await api("/api/sim/review", { method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ projectId: cfg.projectId, url: location.href, domSig: null, screenshotDataUrl: shot, adhoc: true }) })
+        body: JSON.stringify({ projectId: cfg.projectId, url: location.href, domSig: null, screenshotDataUrl: shot }) })
       j = await r.json().catch(() => ({}))
     }
-    if (btn) { btn.disabled = false; if (orig !== null) btn.textContent = orig }
+    btn.disabled = false; btn.textContent = orig
     if (r.status === 401) { clearToken(); dock.innerHTML = ""; return }  // token expired → drop the Sims dock; never show a bare Connect CTA
     if (!j.ok) { banner(gateMessage(j.reason || "")); return }
     for (const rev of (j.reviews || [])) for (const re of (rev.reactions || [])) {
