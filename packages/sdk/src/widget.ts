@@ -143,7 +143,7 @@ async function mount() {
 
   const reportBtn = document.createElement("button")
   reportBtn.innerHTML = `${icon('bug')} Report a bug`
-  reportBtn.style.cssText = "border:0;border-radius:999px;padding:10px 16px;background:#E94F37;color:#fff;font-weight:600;font-size:13px;cursor:pointer;box-shadow:0 8px 24px rgba(233,79,55,.35)"
+  reportBtn.style.cssText = "border:0;border-radius:999px;padding:10px 16px;background:#5b5bf0;color:#fff;font-weight:600;font-size:13px;cursor:pointer;box-shadow:0 8px 24px rgba(91,91,240,.32);display:inline-flex;align-items:center;gap:7px"
   function openReport(type: "bug" | "feature" = "bug") {
     const identified = firstParty || !!getToken()  // already known to Klavity (own page session, or signed-in widget)
     // Only the "login" gate forces the connect flow on third-party sites. "email"/"anonymous" let an
