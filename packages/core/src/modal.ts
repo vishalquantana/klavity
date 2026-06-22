@@ -162,16 +162,20 @@ export function buildModal(
     .klavity-rm:active,.klavity-mk:active{transform:var(--kl-bpress);}
     /* Keyboard accessibility — visible focus ring on every control */
     .klavity-toggle button:focus-visible,.klavity-actions button:focus-visible,.klavity-submit:focus-visible,.klavity-lead button:focus-visible,.klavity-cta:focus-visible,.klavity-rm:focus-visible,.klavity-mk:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
-    /* ── Sharp (i) info: a 40×40 info button beside Sharp; its tooltip appears on hover/focus and NEVER
-       blocks the one-click capture. Shadow-as-border popover, theme-aware. (i) inherits the .klavity-actions
-       button polish — press scale(0.96), hover, focus ring. ── */
-    .klavity-info-wrap{position:relative;flex:0 0 auto;display:inline-flex;align-self:stretch;}
-    .klavity-info{color:var(--kl-muted);}
-    .klavity-info:hover{color:var(--kl-accent);}
-    .klavity-info-pop{position:absolute;bottom:calc(100% + 8px);right:0;width:228px;padding:10px 12px;border-radius:10px;background:var(--kl-bg);color:var(--kl-fg);box-shadow:0 0 0 1px var(--kl-border),0 12px 30px rgba(20,16,40,.22);font-size:12px;line-height:1.45;text-align:left;text-wrap:pretty;opacity:0;visibility:hidden;transform:translateY(4px);transition:opacity .15s ease,transform .15s ease;z-index:6;pointer-events:none;}
+    /* ── Sharp (i) info: the info affordance lives ON the Sharp button (right side), NOT a separate button.
+       Hover/focus/tap reveals the explainer; the (i) stopPropagations so it NEVER triggers the one-click
+       capture. Generous full-height hit zone (~34×40) at the right edge so the rest of the button stays a
+       one-tap Sharp. Shadow-as-border popover, theme-aware; press scale(0.96), accent hover, focus ring. ── */
+    #klavity-sharp{position:relative;flex:1.4;padding-right:30px;}
+    .klavity-info-wrap{position:absolute;top:0;right:0;bottom:0;width:34px;display:inline-flex;align-items:center;justify-content:center;}
+    .klavity-info{width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:var(--kl-muted);cursor:help;transition:transform .15s cubic-bezier(.34,1.56,.64,1),color .15s ease,background .15s ease;}
+    .klavity-info:hover{color:var(--kl-accent);background:color-mix(in srgb,var(--kl-accent) 16%,transparent);}
+    .klavity-info:active{transform:scale(.96);}
+    .klavity-info:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
+    .klavity-info-pop{position:absolute;bottom:calc(100% + 10px);right:0;width:228px;padding:10px 12px;border-radius:10px;background:var(--kl-bg);color:var(--kl-fg);box-shadow:0 0 0 1px var(--kl-border),0 12px 30px rgba(20,16,40,.22);font-size:12px;line-height:1.45;text-align:left;text-wrap:pretty;opacity:0;visibility:hidden;transform:translateY(4px);transition:opacity .15s ease,transform .15s ease;z-index:6;pointer-events:none;}
     .klavity-info-pop b{color:var(--kl-fg);font-weight:600;}
     .klavity-info-wrap:hover .klavity-info-pop,.klavity-info-wrap:focus-within .klavity-info-pop{opacity:1;visibility:visible;transform:translateY(0);pointer-events:auto;}
-    @media (prefers-reduced-motion: reduce){.klavity-overlay,.klavity-modal,.klavity-modal.kl-closing,.klavity-modal>*{animation-duration:.01ms!important;}.klavity-modal{--kl-lift:none;--kl-press:none;--kl-bhover:none;--kl-bpress:none;}.klavity-info-pop{transform:none;}.klavity-actions .kl-cap-ic,.klavity-toggle .kl-cap-ic{transition:none;transform:none!important;}}
+    @media (prefers-reduced-motion: reduce){.klavity-overlay,.klavity-modal,.klavity-modal.kl-closing,.klavity-modal>*{animation-duration:.01ms!important;}.klavity-modal{--kl-lift:none;--kl-press:none;--kl-bhover:none;--kl-bpress:none;}.klavity-info-pop{transform:none;}.klavity-info{transition:none;}.klavity-actions .kl-cap-ic,.klavity-toggle .kl-cap-ic{transition:none;transform:none!important;}}
   `
   shadowRoot.appendChild(style)
 
@@ -188,7 +192,7 @@ export function buildModal(
     <div class="klavity-page">${icon('map-pin')} ${typeof window !== 'undefined' ? escHtml(window.location.pathname) : ''}</div>
     <div class="klavity-strip" id="klavity-strip"></div>
     <div class="klavity-actions">
-      ${callbacks.onCaptureSharp ? `<button id="klavity-sharp" title="Sharp — pixel-perfect full page, captures every image. Shares this tab (asks permission)."><span class="kl-cap-ic">${icon('sparkles')}</span>Sharp</button><span class="klavity-info-wrap"><button type="button" id="klavity-sharp-info" class="klavity-info" title="What does Sharp do?" aria-label="What does Sharp do?" style="flex:0 0 40px;width:40px;min-width:40px;padding:0;"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></button><span class="klavity-info-pop" role="tooltip">Sharp grabs the <b>whole page — every image, pixel-perfect</b> using your browser's screen-share. Your browser will ask you to <b>share this tab</b>.</span></span>` : ''}
+      ${callbacks.onCaptureSharp ? `<button id="klavity-sharp" title="Sharp — pixel-perfect full page, captures every image. Shares this tab (asks permission)."><span class="kl-cap-ic">${icon('sparkles')}</span><span class="kl-sharp-label">Sharp</span><span class="klavity-info-wrap"><span id="klavity-sharp-info" class="klavity-info" role="button" tabindex="0" title="What does Sharp do?" aria-label="What does Sharp do?"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block;pointer-events:none"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></span><span class="klavity-info-pop" role="tooltip">Sharp grabs the <b>whole page — every image, pixel-perfect</b> using your browser's screen-share. Your browser will ask you to <b>share this tab</b>.</span></span></button>` : ''}
       <button id="klavity-full" title="Full Page — instant capture; may miss some cross-origin images"><span class="kl-cap-ic">${icon('camera')}</span>Full Page</button>
       <button id="klavity-upload"><span class="kl-cap-ic">${icon('image')}</span>Upload</button>
       ${callbacks.onRegionCapture ? `<button id="klavity-region"><span class="kl-cap-ic">${icon('scissors')}</span>Region</button>` : ''}
@@ -357,22 +361,35 @@ export function buildModal(
   // Sharp capture (real-pixel getDisplayMedia scroll-stitch) — only when the host provides it.
   const sharpBtn = modal.querySelector('#klavity-sharp') as HTMLButtonElement | null
   if (sharpBtn && callbacks.onCaptureSharp) {
+    // The "Sharp" word lives in its own span so the "Capturing…" state never clobbers the icon or the
+    // embedded (i) (setting button.textContent would wipe both).
+    const sharpLabel = sharpBtn.querySelector('.kl-sharp-label') as HTMLElement | null
     const runSharp = async () => {
       // Hide the composer so it isn't in the captured pixels. onCaptureSharp calls getDisplayMedia as its
       // first step, so the click's user gesture (required by the permission prompt) is preserved.
       host.style.display = 'none'
-      const orig = sharpBtn.textContent
-      sharpBtn.textContent = 'Capturing…'
+      const target = sharpLabel ?? sharpBtn
+      const orig = target.textContent
+      target.textContent = 'Capturing…'
       try {
         const shot = await callbacks.onCaptureSharp!()
         if (shot) addScreenshot(shot)
       } catch { /* user cancelled the share prompt, or capture failed — just restore */ }
-      finally { host.style.display = ''; sharpBtn.textContent = orig }
+      finally { host.style.display = ''; target.textContent = orig }
     }
     // ONE click → straight to the screen-share permission. getDisplayMedia runs synchronously inside the
-    // handler (preserving the click's user gesture). The (i) info button beside Sharp explains it on demand
-    // (hover/focus tooltip) so the prompt is understandable without ever blocking the capture.
+    // handler (preserving the click's user gesture).
     sharpBtn.addEventListener('click', () => { void runSharp() })
+    // The (i) info icon sits ON the Sharp button; its hover/focus/tap tooltip explains Sharp. Tapping it
+    // must NEVER fire the capture, so swallow the event before it bubbles to the button's click handler.
+    const infoEl = sharpBtn.querySelector('#klavity-sharp-info') as HTMLElement | null
+    if (infoEl) {
+      infoEl.addEventListener('click', e => e.stopPropagation())
+      infoEl.addEventListener('keydown', e => {
+        const k = (e as KeyboardEvent).key
+        if (k === 'Enter' || k === ' ') { e.preventDefault(); e.stopPropagation() }
+      })
+    }
   }
   modal.querySelector('#klavity-upload')!.addEventListener('click', () => {
     (modal.querySelector('#klavity-file') as HTMLInputElement).click()
