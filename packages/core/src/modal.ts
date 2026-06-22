@@ -144,8 +144,23 @@ export function buildModal(
     .klavity-rm:hover,.klavity-mk:hover{transform:var(--kl-bhover);box-shadow:0 3px 9px rgba(0,0,0,.42);}
     .klavity-rm:active,.klavity-mk:active{transform:var(--kl-bpress);}
     /* Keyboard accessibility — visible focus ring on every control */
-    .klavity-toggle button:focus-visible,.klavity-actions button:focus-visible,.klavity-submit:focus-visible,.klavity-lead button:focus-visible,.klavity-cta:focus-visible,.klavity-rm:focus-visible,.klavity-mk:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
-    @media (prefers-reduced-motion: reduce){.klavity-overlay,.klavity-modal,.klavity-modal.kl-closing{animation-duration:.01ms;}.klavity-modal{--kl-lift:none;--kl-press:none;--kl-bhover:none;--kl-bpress:none;}}
+    .klavity-toggle button:focus-visible,.klavity-actions button:focus-visible,.klavity-submit:focus-visible,.klavity-lead button:focus-visible,.klavity-cta:focus-visible,.klavity-rm:focus-visible,.klavity-mk:focus-visible,.klavity-sharp-go:focus-visible,.klavity-sharp-cancel:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
+    /* ── Sharp inline explainer: sets the screen-share expectation before the permission prompt. Subtle
+       fade+rise enter (interruptible transition); shadow-as-border ring; concentric 12px card / 8px buttons. ── */
+    .klavity-sharp-note{margin:-4px 0 12px;padding:12px 14px;border-radius:12px;background:color-mix(in srgb,var(--kl-chip) 84%,var(--kl-accent) 16%);box-shadow:0 0 0 1px var(--kl-border);opacity:0;transform:translateY(6px);transition:opacity .18s ease,transform .18s cubic-bezier(.16,1,.3,1);}
+    .klavity-sharp-note.in{opacity:1;transform:translateY(0);}
+    .klavity-sharp-note-h{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:var(--kl-fg);margin-bottom:5px;}
+    .klavity-sharp-note p{margin:0 0 10px;font-size:12.5px;line-height:1.45;color:var(--kl-muted);text-wrap:pretty;}
+    .klavity-sharp-note p b{color:var(--kl-fg);font-weight:600;}
+    .klavity-sharp-note-a{display:flex;gap:8px;}
+    .klavity-sharp-go,.klavity-sharp-cancel{min-height:40px;display:inline-flex;align-items:center;justify-content:center;gap:6px;border:none;border-radius:8px;cursor:pointer;font-size:12.5px;font-weight:600;transition:transform .15s cubic-bezier(.34,1.56,.64,1),background .15s ease,box-shadow .15s ease,color .15s ease,filter .15s ease;will-change:transform;}
+    .klavity-sharp-go{padding:8px 14px;background:var(--kl-accent);color:var(--kl-on-accent);font-weight:700;}
+    .klavity-sharp-go:hover{transform:var(--kl-lift);filter:brightness(1.05);box-shadow:0 8px 22px color-mix(in srgb,var(--kl-accent) 45%,transparent);}
+    .klavity-sharp-go:active{transform:var(--kl-press);}
+    .klavity-sharp-cancel{padding:8px 12px;background:transparent;color:var(--kl-muted);}
+    .klavity-sharp-cancel:hover{transform:var(--kl-lift);background:color-mix(in srgb,var(--kl-chip) 70%,transparent);color:var(--kl-fg);}
+    .klavity-sharp-cancel:active{transform:var(--kl-press);}
+    @media (prefers-reduced-motion: reduce){.klavity-overlay,.klavity-modal,.klavity-modal.kl-closing{animation-duration:.01ms;}.klavity-modal{--kl-lift:none;--kl-press:none;--kl-bhover:none;--kl-bpress:none;}.klavity-sharp-note,.klavity-sharp-note.in{transform:none;}}
   `
   shadowRoot.appendChild(style)
 
@@ -162,8 +177,8 @@ export function buildModal(
     <div class="klavity-page">${icon('map-pin')} ${typeof window !== 'undefined' ? escHtml(window.location.pathname) : ''}</div>
     <div class="klavity-strip" id="klavity-strip"></div>
     <div class="klavity-actions">
-      ${callbacks.onCaptureSharp ? `<button id="klavity-sharp" title="Pixel-perfect capture of the whole page (incl. cross-origin images)">${icon('sparkles')} Sharp</button>` : ''}
-      <button id="klavity-full">${icon('camera')} Full Page</button>
+      ${callbacks.onCaptureSharp ? `<button id="klavity-sharp" title="Sharp — pixel-perfect full page, captures every image (incl. cross-origin). Shares this tab; your browser will ask permission.">${icon('sparkles')} Sharp</button>` : ''}
+      <button id="klavity-full" title="Full Page — instant capture; may miss some cross-origin images">${icon('camera')} Full Page</button>
       <button id="klavity-upload">${icon('image')} Upload</button>
       ${callbacks.onRegionCapture ? `<button id="klavity-region">${icon('scissors')} Region</button>` : ''}
     </div>
@@ -315,7 +330,7 @@ export function buildModal(
   // Sharp capture (real-pixel getDisplayMedia scroll-stitch) — only when the host provides it.
   const sharpBtn = modal.querySelector('#klavity-sharp') as HTMLButtonElement | null
   if (sharpBtn && callbacks.onCaptureSharp) {
-    sharpBtn.addEventListener('click', async () => {
+    const runSharp = async () => {
       // Hide the composer so it isn't in the captured pixels. onCaptureSharp calls getDisplayMedia as its
       // first step, so the click's user gesture (required by the permission prompt) is preserved.
       host.style.display = 'none'
@@ -326,6 +341,25 @@ export function buildModal(
         if (shot) addScreenshot(shot)
       } catch { /* user cancelled the share prompt, or capture failed — just restore */ }
       finally { host.style.display = ''; sharpBtn.textContent = orig }
+    }
+    // Clicking Sharp does NOT immediately call getDisplayMedia — it first shows a lightweight inline
+    // explainer so the browser's screen-share permission prompt is expected, not a surprise. "Share this
+    // tab" is the user gesture that then triggers the capture.
+    sharpBtn.addEventListener('click', () => {
+      if (modal.querySelector('.klavity-sharp-note')) return // one explainer at a time
+      const note = document.createElement('div')
+      note.className = 'klavity-sharp-note'
+      note.innerHTML =
+        `<div class="klavity-sharp-note-h">${icon('monitor', { size: 15 })}<span>Share this tab to capture</span></div>` +
+        `<p>Sharp grabs the <b>whole page — every image, pixel-perfect</b> using your browser's screen-share. Your browser will ask you to <b>share this tab</b>; that's expected.</p>` +
+        `<div class="klavity-sharp-note-a">` +
+        `<button type="button" class="klavity-sharp-go">${icon('monitor', { size: 14 })} Share this tab</button>` +
+        `<button type="button" class="klavity-sharp-cancel">Cancel</button></div>`
+      ;(modal.querySelector('.klavity-actions') as HTMLElement).insertAdjacentElement('afterend', note)
+      requestAnimationFrame(() => note.classList.add('in'))
+      const dismiss = () => { note.classList.remove('in'); setTimeout(() => note.remove(), 180) }
+      ;(note.querySelector('.klavity-sharp-cancel') as HTMLButtonElement).addEventListener('click', dismiss)
+      ;(note.querySelector('.klavity-sharp-go') as HTMLButtonElement).addEventListener('click', () => { dismiss(); void runSharp() })
     })
   }
   modal.querySelector('#klavity-upload')!.addEventListener('click', () => {
