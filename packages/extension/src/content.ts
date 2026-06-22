@@ -4,6 +4,7 @@ import { icon } from '@klavity/core/icons'
 import { resolveModalConfig } from '@klavity/core/modal-theme'
 import { installCapture, buildReportContext, type CaptureBuffers } from '@klavity/core/capture'
 import { cropDataUrl } from '@klavity/core/crop'
+import { captureFullPage } from './fullpage'
 import { klavContentSig, shouldCapture, createTrailingDebounce, DEBOUNCE_MS, ROUTE_COOLDOWN_MS, MAX_REVIEWS_PER_ROUTE } from './feedback-trigger'
 import { widgetPresent } from './coexist'
 import { makeCaptureAwaiter } from './capture-bridge'
@@ -217,7 +218,16 @@ function sendToBackground(msg: BackgroundMessage, attempt = 0): Promise<void> {
 // onCaptureFull / onRegionCapture are the stable API consumed by Task 5's buildModal.
 const captureAwaiter = makeCaptureAwaiter({ send: (m) => sendToBackground(m) })
 
-const onCaptureFull = async (): Promise<string> => captureAwaiter.captureFull()
+// Full-page scroll-stitch (GoFullPage-style): scroll the page viewport-by-viewport, capture each frame
+// via the SW's captureVisibleTab, and stitch onto a canvas — so reports get the COMPLETE page, not just
+// what's on screen. Falls back to a single visible capture if stitching can't run (no canvas, errors).
+const onCaptureFull = async (): Promise<string> => {
+  try {
+    return await captureFullPage({ capture: () => captureAwaiter.captureFull() })
+  } catch {
+    return captureAwaiter.captureFull()
+  }
+}
 
 const onRegionCapture = async (rect: { x: number; y: number; w: number; h: number }): Promise<string> => {
   const full = await captureAwaiter.captureFull()
