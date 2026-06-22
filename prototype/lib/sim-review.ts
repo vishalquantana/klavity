@@ -69,6 +69,11 @@ export interface SimRunOptions {
   sessionId?: string
   // FEEDBACK MODE: which observations to surface. Default "all". See SimFeedbackMode.
   mode?: SimFeedbackMode
+  // ADHOC / MANUAL TRIGGER: when true, seenHashes and near-dup dedup are skipped.
+  // Use for explicit "Deploy all Sims" / boot triggers where the admin expects fresh
+  // bubbles even on a page they've seen before. Continuous background watch should
+  // keep adhoc=false (default) so repeats are suppressed.
+  adhoc?: boolean
   reactFn: SimReactFn
   resolveCitationsFn: ResolveCitationsFn
   autoCopy?: (feedbackId: string, projectId: string, actor: string) => void
@@ -111,7 +116,8 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
   const {
     projectId, urlPath, urlHost, pageUrl, imageB64, mediaType,
     targetSims, actorEmail, screenshotId, seenHashes = new Set(),
-    sessionId, mode = "all", reactFn, resolveCitationsFn, autoCopy, markSeen, db,
+    sessionId, mode = "all", adhoc = false,
+    reactFn, resolveCitationsFn, autoCopy, markSeen, db,
   } = opts
 
   const out: SimReview[] = []
@@ -154,6 +160,24 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
         }
       })
       simWithMemory = { ...sim, insights: insightsWithMemory }
+
+      // ── Description fallback for zero-trait Sims ─────────────────────────
+      // When a Sim has no extracted traits yet (new Sim, no transcripts processed),
+      // the prompt has nothing to "ground reactions in". We synthesize a minimal
+      // persona-level insight from the Sim's summary/role so the LLM has enough
+      // context to react in-character off the screenshot alone.
+      if (!insightsWithMemory.length && (sim.summary || sim.role)) {
+        const descText = [sim.role, sim.summary].filter(Boolean).join(". ")
+        simWithMemory = {
+          ...simWithMemory,
+          insights: [{
+            traitId: "_persona_description",
+            kind: "description",
+            text: descText.slice(0, 300),
+            strength: 0.5,
+          }],
+        }
+      }
     } catch { /* non-fatal — fall back to plain sim */ }
 
     // LLM call: get this Sim's reactions to the current page.
@@ -170,7 +194,8 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
 
     const observations: SimObservation[] = []
     // Fetch server-side seen texts once per Sim (for near-dup matching across consecutive screens).
-    const serverSeenTexts = sessionId ? sessionSeenTexts(sessionId) : []
+    // Near-dup is also skipped for adhoc/manual triggers so fresh bubbles always render.
+    const serverSeenTexts = (!adhoc && sessionId) ? sessionSeenTexts(sessionId) : []
 
     for (const r of rawReactions) {
       const obsText = String(r?.observation ?? "").trim()
@@ -178,12 +203,14 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
 
       const hash = hashObservation(obsText)
 
-      // 1. CLIENT-SIDE exact dedup: client already showed this hash → skip.
-      if (seenHashes.has(hash)) continue
+      // 1. CLIENT-SIDE exact dedup: skip when hash already seen THIS session.
+      //    BYPASSED for adhoc/manual deploys — the admin expects fresh bubbles
+      //    even on a page they've browsed before.
+      if (!adhoc && seenHashes.has(hash)) continue
 
       // 2. SERVER-SIDE near-dup: catches rephrased versions of the same finding across
-      //    consecutive screens that have different hashes but the same semantic content.
-      if (serverSeenTexts.length > 0 && obsIsNearDup(obsText, serverSeenTexts)) continue
+      //    consecutive screens. Also bypassed for adhoc so all current observations surface.
+      if (!adhoc && serverSeenTexts.length > 0 && obsIsNearDup(obsText, serverSeenTexts)) continue
 
       const citation = await resolveCitationsFn(sim.id, r?.citedTraitIds, projectId, citePre)
       let bug = r?.suggestedBug
@@ -239,8 +266,9 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
       }
 
       const assembled: SimObservation = {
-        text: obsText,
+        observation: obsText,
         sentiment: r?.sentiment ?? null,
+        severity: bug?.severity ?? null,
         quote: citation.sourceQuote,
         hash,
         // region: parse model output; accept both "region" (new) and "box" (legacy field name).
@@ -269,7 +297,7 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
         finalObservations = observations.slice(0, remaining)  // trim to fit
       }
       if (finalObservations.length > 0) {
-        sessionBumpObs(sessionId, finalObservations.map(o => o.text))
+        sessionBumpObs(sessionId, finalObservations.map(o => o.observation))
       }
     }
 

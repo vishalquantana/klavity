@@ -61,8 +61,9 @@ export function parseRegion(raw: any): ObsRegion | null {
 
 /** One Sim's reaction to a page, enriched with dedup + recurrence context. */
 export interface SimObservation {
-  text: string                  // observation text
-  sentiment: string | null      // positive | negative | neutral
+  observation: string           // the observation text (matches client renderFeedback contract)
+  sentiment: string | null      // positive | negative | neutral (or model values: frustrated etc.)
+  severity: string | null       // "high"|"medium"|"low" from bug candidate; null = no bug
   quote: string | null          // verbatim source quote from a trait, if cited
   hash: string                  // sha256 slice-16 dedup token — stable within a session
   region: ObsRegion | null      // normalised 0..1 bbox of the targeted element; null = page-level

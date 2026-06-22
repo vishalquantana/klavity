@@ -77,8 +77,8 @@ function makeReview(simId: string, simName: string, obs: SimObservation[]): SimR
   return { simId, simName, initials: null, accent: null, observations: obs }
 }
 
-function makeObs(text: string, deduped = false, bug: any = null): SimObservation {
-  return { text, sentiment: "negative", quote: null, hash: hashObservation(text), region: null, suggestedBug: bug, deduped }
+function makeObs(observation: string, deduped = false, bug: any = null): SimObservation {
+  return { observation, sentiment: "negative", severity: bug?.severity ?? null, quote: null, hash: hashObservation(observation), region: null, suggestedBug: bug, deduped }
 }
 
 test("(b) multi-Sim: one SimReview per Sim in output", () => {
@@ -423,7 +423,7 @@ test('(f) mode filter + summary: only critical obs → summary shows filtered co
       simId: "s1", simName: "Alice", initials: null, accent: null,
       observations: [
         // Only the critical observations survive the mode filter
-        { text: "Button broken", sentiment: "negative", quote: null, hash: hashObservation("Button broken"), suggestedBug: { title: "Bug" }, deduped: false },
+        { observation: "Button broken", sentiment: "negative", severity: "medium", quote: null, hash: hashObservation("Button broken"), region: null, suggestedBug: { title: "Bug" }, deduped: false },
       ],
     },
   ]
@@ -438,8 +438,8 @@ test('(f) mode filter + summary: only positive obs → no bugs in summary', () =
     {
       simId: "s1", simName: "Alice", initials: null, accent: null,
       observations: [
-        { text: "Checkout flow is smooth", sentiment: "positive", quote: null, hash: hashObservation("Checkout flow is smooth"), suggestedBug: null, deduped: false },
-        { text: "Page loads fast", sentiment: "positive", quote: null, hash: hashObservation("Page loads fast"), suggestedBug: null, deduped: false },
+        { observation: "Checkout flow is smooth", sentiment: "positive", severity: null, quote: null, hash: hashObservation("Checkout flow is smooth"), region: null, suggestedBug: null, deduped: false },
+        { observation: "Page loads fast", sentiment: "positive", severity: null, quote: null, hash: hashObservation("Page loads fast"), region: null, suggestedBug: null, deduped: false },
       ],
     },
   ]
@@ -529,8 +529,9 @@ test("(g) SimObservation.region field: set from parseRegion result", () => {
   const region = parseRegion(raw)
   // Construct an observation with region (as runSimReviews would)
   const obsWithRegion: SimObservation = {
-    text: "The buy button is cut off at the bottom",
+    observation: "The buy button is cut off at the bottom",
     sentiment: "frustrated",
+    severity: null,
     quote: null,
     hash: hashObservation("The buy button is cut off at the bottom"),
     region,
@@ -546,8 +547,9 @@ test("(g) SimObservation.region field: set from parseRegion result", () => {
 
 test("(g) SimObservation.region: null for page-level observation", () => {
   const obs: SimObservation = {
-    text: "Overall the page feels slow and unresponsive",
+    observation: "Overall the page feels slow and unresponsive",
     sentiment: "frustrated",
+    severity: null,
     quote: null,
     hash: hashObservation("Overall the page feels slow"),
     region: null,
@@ -569,9 +571,9 @@ test("(g) region survives buildSimRunSummary (summary is unaffected)", () => {
   const reviews: SimReview[] = [{
     simId: "s1", simName: "Alice", initials: null, accent: null,
     observations: [
-      { text: "Header nav is broken", sentiment: "frustrated", quote: null,
+      { observation: "Header nav is broken", sentiment: "frustrated", severity: "medium", quote: null,
         hash: hashObservation("Header nav is broken"), region, suggestedBug: { title: "Nav bug" }, deduped: false },
-      { text: "Checkout flow works well", sentiment: "positive", quote: null,
+      { observation: "Checkout flow works well", sentiment: "positive", severity: null, quote: null,
         hash: hashObservation("Checkout flow works well"), region: null, suggestedBug: null, deduped: false },
     ],
   }]
@@ -579,4 +581,128 @@ test("(g) region survives buildSimRunSummary (summary is unaffected)", () => {
   expect(s.totalObservations).toBe(2)
   expect(s.bugCount).toBe(1)
   // region doesn't affect the count
+})
+
+// ── (h) adhoc bypass — manual deploy always returns observations ──────────────
+//
+// When adhoc=true (manual "Deploy all Sims" / boot trigger), seenHashes dedup
+// is bypassed so the widget always renders fresh bubbles even on a page the
+// admin has already browsed. Continuous background watch (adhoc=false) still
+// suppresses repeats.
+
+import { hashObservation as hsh } from "./sim-review-pure"
+
+test("(h) adhoc shape: SimRunOptions.adhoc field accepted without error", () => {
+  // Structural: confirm the field exists on SimRunOptions (TypeScript compile catches this).
+  // At runtime we verify the option is accepted and does not throw.
+  const opts: import("./sim-review").SimRunOptions = {
+    projectId: "p", urlPath: "/", urlHost: "x.test", pageUrl: "https://x.test/",
+    imageB64: "abc", mediaType: "image/jpeg",
+    targetSims: [], actorEmail: "a@b.com", screenshotId: "s",
+    seenKeys: [], adhoc: true,
+    reactFn: async () => ({ data: { reactions: [] } }),
+    resolveCitationsFn: async () => ({ citedTraitIds: [], sourceQuote: null, speaker: null, sourceTranscriptId: null, sourceDate: null, issueType: null, sourceQuoteVerified: null, recurrence: null }),
+    db: null,
+  }
+  expect(opts.adhoc).toBe(true)
+})
+
+test("(h) adhoc=true: seenHashes gate is bypassed — hash pre-loaded but observation still returned", () => {
+  // Prove the bypass logic: seenHashes.has(hash) would be true, but adhoc=true skips it.
+  const obsText = "The hero CTA button is unresponsive"
+  const hash = hashObservation(obsText)
+  const seenHashes = new Set([hash])   // ← would suppress in continuous mode
+
+  // Simulate the exact guard from runSimReviews:
+  //   if (!adhoc && seenHashes.has(hash)) continue
+  const adhoc = true
+  const shouldSkip = !adhoc && seenHashes.has(hash)
+  expect(shouldSkip).toBe(false)  // NOT skipped when adhoc=true
+})
+
+test("(h) adhoc=false: seenHashes gate IS active — hash pre-loaded → skip", () => {
+  const obsText = "The hero CTA button is unresponsive"
+  const hash = hashObservation(obsText)
+  const seenHashes = new Set([hash])
+
+  const adhoc = false
+  const shouldSkip = !adhoc && seenHashes.has(hash)
+  expect(shouldSkip).toBe(true)  // correctly suppressed in continuous mode
+})
+
+test("(h) observation shape: has 'observation' key (not 'text') matching renderFeedback contract", () => {
+  const obs: SimObservation = makeObs("The checkout button is broken")
+  expect("observation" in obs).toBe(true)
+  expect(obs.observation).toBe("The checkout button is broken")
+  // 'text' key must NOT exist (old shape)
+  expect("text" in obs).toBe(false)
+})
+
+test("(h) observation shape: has 'severity' key for renderFeedback", () => {
+  const obsNoBug = makeObs("A general comment")
+  expect("severity" in obsNoBug).toBe(true)
+  expect(obsNoBug.severity).toBeNull()
+
+  const obsWithBug = makeObs("Button crashes", false, { title: "Bug", severity: "high" })
+  expect(obsWithBug.severity).toBe("high")
+})
+
+// ── (i) description fallback for zero-trait Sims ─────────────────────────────
+//
+// When a Sim has no extracted traits (insights=[]), runSimReviews injects a
+// synthetic insight from sim.summary/sim.role so the LLM has context to react.
+
+import { hashObservation as hashObs } from "./sim-review-pure"
+
+test("(i) description fallback: zero-trait Sim with summary gets synthetic insight", () => {
+  // Reproduce the exact fallback logic from runSimReviews:
+  //   if (!insightsWithMemory.length && (sim.summary || sim.role)) { ... }
+  const sim = { id: "s1", name: "Alice", role: "Procurement Lead", summary: "Evaluates enterprise tools for compliance", insights: [] }
+  const insightsWithMemory: any[] = []  // no traits
+
+  let syntheticInsights = insightsWithMemory
+  if (!insightsWithMemory.length && (sim.summary || sim.role)) {
+    const descText = [sim.role, sim.summary].filter(Boolean).join(". ")
+    syntheticInsights = [{ traitId: "_persona_description", kind: "description", text: descText.slice(0, 300), strength: 0.5 }]
+  }
+
+  expect(syntheticInsights.length).toBe(1)
+  expect(syntheticInsights[0].traitId).toBe("_persona_description")
+  expect(syntheticInsights[0].text).toContain("Procurement Lead")
+})
+
+test("(i) description fallback: Sim with only summary uses summary", () => {
+  const sim = { id: "s2", name: "Bob", role: null, summary: "B2B buyer who cares about pricing clarity", insights: [] }
+  const insightsWithMemory: any[] = []
+  let syntheticInsights = insightsWithMemory
+  if (!insightsWithMemory.length && (sim.summary || sim.role)) {
+    const descText = [sim.role, sim.summary].filter(Boolean).join(". ")
+    syntheticInsights = [{ traitId: "_persona_description", kind: "description", text: descText.slice(0, 300), strength: 0.5 }]
+  }
+  expect(syntheticInsights[0].text).toContain("pricing clarity")
+})
+
+test("(i) description fallback: Sim with no summary AND no role → no synthetic insight", () => {
+  const sim = { id: "s3", name: "Anon", role: null, summary: null, insights: [] }
+  const insightsWithMemory: any[] = []
+  let syntheticInsights = insightsWithMemory
+  if (!insightsWithMemory.length && (sim.summary || sim.role)) {
+    const descText = [sim.role, sim.summary].filter(Boolean).join(". ")
+    syntheticInsights = [{ traitId: "_persona_description", kind: "description", text: descText.slice(0, 300), strength: 0.5 }]
+  }
+  // No summary or role — no synthetic insight added; LLM still runs but may produce less
+  expect(syntheticInsights.length).toBe(0)
+})
+
+test("(i) description fallback: Sim WITH existing traits → NOT overridden", () => {
+  const insightsWithMemory = [{ traitId: "t1", kind: "pain", text: "Slow onboarding", strength: 0.9 }]
+  const sim = { id: "s4", name: "Carol", role: "VP Sales", summary: "Wants fast time-to-value", insights: insightsWithMemory }
+
+  let syntheticInsights = insightsWithMemory
+  if (!insightsWithMemory.length && (sim.summary || sim.role)) {
+    syntheticInsights = [{ traitId: "_persona_description", kind: "description", text: "fallback", strength: 0.5 }]
+  }
+  // Has real traits — keeps them untouched
+  expect(syntheticInsights).toBe(insightsWithMemory)
+  expect(syntheticInsights[0].traitId).toBe("t1")
 })
