@@ -58,18 +58,23 @@ async function captureWithRateLimit(winId?: number): Promise<{ dataUrl: string; 
     const onResult = (dataUrl: string | undefined) => {
       const err = chrome.runtime.lastError?.message || ''
       if (err || !dataUrl) {
-        console.warn('[Klavity] captureVisibleTab error:', err || 'no data')
         resolve({ dataUrl: '', error: err || 'capture failed' })
       } else {
         lastCaptureAt = Date.now()
         resolve({ dataUrl })
       }
     }
-
-    if (winId != null) {
-      chrome.tabs.captureVisibleTab(winId, captureOpts, onResult)
-    } else {
-      chrome.tabs.captureVisibleTab(captureOpts, onResult)
+    // Chrome can throw synchronously if the extension lacks the required permission
+    // (neither <all_urls> nor an active activeTab grant covers the current tab).
+    // Catch that here so it resolves with an error rather than rejecting the promise.
+    try {
+      if (winId != null) {
+        chrome.tabs.captureVisibleTab(winId, captureOpts, onResult)
+      } else {
+        chrome.tabs.captureVisibleTab(captureOpts, onResult)
+      }
+    } catch (e: any) {
+      resolve({ dataUrl: '', error: e?.message ?? String(e) })
     }
   })
 }
@@ -185,17 +190,35 @@ async function reconcileDynamicScripts(): Promise<void> {
 // submenu. So our actions live in BOTH places with no gesture conflict. Items only show
 // on real web pages (documentUrlPatterns) — clicks route to the same openModal/tracker
 // paths the overlay and popup use.
-function setupContextMenus() {
-  if (!chrome.contextMenus) return
-  chrome.contextMenus.removeAll(() => {
-    const common = { contexts: ['all'] as chrome.contextMenus.ContextType[], documentUrlPatterns: ['http://*/*', 'https://*/*'] }
-    chrome.contextMenus.create({ id: 'klavity-root', title: 'Klavity', ...common })
-    chrome.contextMenus.create({ id: 'klavity-bug', parentId: 'klavity-root', title: 'Report a Bug', ...common })
-    chrome.contextMenus.create({ id: 'klavity-feature', parentId: 'klavity-root', title: 'Request a Feature', ...common })
-    chrome.contextMenus.create({ id: 'klavity-analyze', parentId: 'klavity-root', title: 'Analyse with Sims', ...common })
-    chrome.contextMenus.create({ id: 'klavity-sep', parentId: 'klavity-root', type: 'separator', ...common })
-    chrome.contextMenus.create({ id: 'klavity-tracker', parentId: 'klavity-root', title: 'View submissions', ...common })
-  })
+//
+// setupContextMenus is called from onInstalled AND onStartup (Chrome fires both at
+// extension install/update). removeAll→create is non-atomic, so two concurrent calls
+// interleave: the second removeAll's callback tries to create items the first already
+// created → "Cannot create item with duplicate id" lastError.
+//
+// Fix: serialize via a module-level in-flight promise. Concurrent callers coalesce onto
+// the active run (no second removeAll), and each create() ignores lastError defensively.
+let _menuSetupInflight: Promise<void> | null = null
+
+function setupContextMenus(): Promise<void> {
+  if (!chrome.contextMenus) return Promise.resolve()
+  // If a setup is already running, return its promise — don't start a second removeAll.
+  if (_menuSetupInflight) return _menuSetupInflight
+  _menuSetupInflight = new Promise<void>((resolve) => {
+    chrome.contextMenus.removeAll(() => {
+      void chrome.runtime.lastError  // consume any removeAll error (e.g. menus already absent)
+      const eat = () => void chrome.runtime.lastError  // consume create errors defensively
+      const common = { contexts: ['all'] as chrome.contextMenus.ContextType[], documentUrlPatterns: ['http://*/*', 'https://*/*'] }
+      chrome.contextMenus.create({ id: 'klavity-root', title: 'Klavity', ...common }, eat)
+      chrome.contextMenus.create({ id: 'klavity-bug', parentId: 'klavity-root', title: 'Report a Bug', ...common }, eat)
+      chrome.contextMenus.create({ id: 'klavity-feature', parentId: 'klavity-root', title: 'Request a Feature', ...common }, eat)
+      chrome.contextMenus.create({ id: 'klavity-analyze', parentId: 'klavity-root', title: 'Analyse with Sims', ...common }, eat)
+      chrome.contextMenus.create({ id: 'klavity-sep', parentId: 'klavity-root', type: 'separator', ...common }, eat)
+      chrome.contextMenus.create({ id: 'klavity-tracker', parentId: 'klavity-root', title: 'View submissions', ...common }, eat)
+      resolve()
+    })
+  }).finally(() => { _menuSetupInflight = null })
+  return _menuSetupInflight
 }
 
 chrome.contextMenus?.onClicked.addListener((info, tab) => {
@@ -259,11 +282,11 @@ async function runAnalyze(tab?: chrome.tabs.Tab): Promise<void> {
 }
 
 chrome.runtime.onInstalled.addListener(() => {
-  setupContextMenus()
+  void setupContextMenus()
   void syncConfig()
   void reconcileDynamicScripts() // refresh registrations (e.g. file paths after an update)
 })
-chrome.runtime.onStartup?.addListener?.(() => { setupContextMenus(); void syncConfig() })
+chrome.runtime.onStartup?.addListener?.(() => { void setupContextMenus(); void syncConfig() })
 
 // SPA backstop (P3b): the content script watches history in-page, but some SPA route
 // changes only surface to the platform via tabs.onUpdated. When a monitored tab's URL
@@ -327,12 +350,38 @@ chrome.runtime.onMessage.addListener((msg: BackgroundMessage, sender, sendRespon
   if (msg.kind === 'KLAV_CAPTURE_REVIEW') {
     const tabId = sender.tab?.id
     const winId = sender.tab?.windowId
+    const tabUrl = sender.tab?.url ?? ''
     const reply = (dataUrl: string, error?: string) => {
       if (tabId != null) void safeSend(tabId, { kind: 'KLAV_CAPTURE_REVIEW_RESULT', dataUrl, error })
     }
-    // Use the rate-limit guard. Try the default window first; fall back to the
-    // sender's windowId if the first attempt errors (Arc multi-window pattern).
-    captureWithRateLimit().then(async (r1) => {
+
+    // Pre-check: captureVisibleTab requires either an active activeTab grant (gesture-
+    // triggered, so it expires after the gesture) or a host permission for the tab's
+    // origin. The live-Sim watch fires on scroll/mutation with no user gesture, so
+    // activeTab may have expired. Verify the optional host permission is granted before
+    // attempting; if not, reply gracefully with a single warning instead of throwing an
+    // "Uncaught (in promise)" permission error.
+    const checkPermission = async (): Promise<boolean> => {
+      if (!tabUrl) return true  // no URL info — attempt and let the try-catch catch it
+      try {
+        const origin = new URL(tabUrl).origin
+        if (origin === 'null' || origin === 'chrome-extension:') return true
+        return await chrome.permissions.contains({ origins: [`${origin}/*`] })
+      } catch {
+        return true  // malformed URL — attempt anyway
+      }
+    }
+
+    checkPermission().then(async (hasPermission) => {
+      if (!hasPermission) {
+        console.warn('[Klavity] KLAV_CAPTURE_REVIEW skipped: host permission not granted for', tabUrl,
+          '— grant it in the Klavity popup for continuous Sim monitoring.')
+        reply('', 'permission-denied')
+        return
+      }
+      // Use the rate-limit guard. Try the default window first; fall back to the
+      // sender's windowId if the first attempt errors (Arc multi-window pattern).
+      const r1 = await captureWithRateLimit()
       if (r1.dataUrl) { reply(r1.dataUrl); return }
       if (winId != null) {
         const r2 = await captureWithRateLimit(winId)
@@ -343,6 +392,11 @@ chrome.runtime.onMessage.addListener((msg: BackgroundMessage, sender, sendRespon
         console.warn('[Klavity] KLAV_CAPTURE_REVIEW failed:', r1.error)
         reply('', r1.error)
       }
+    }).catch((e: unknown) => {
+      // Belt-and-suspenders: prevent any uncaught promise rejection in this path.
+      const err = (e as Error)?.message ?? String(e)
+      console.warn('[Klavity] KLAV_CAPTURE_REVIEW unexpected error:', err)
+      reply('', err)
     })
     return true
   }
