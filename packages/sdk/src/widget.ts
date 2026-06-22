@@ -1,6 +1,6 @@
 // packages/sdk/src/widget.ts
 import { createSim, injectSimStyles, emotionFromSentiment } from "@klavity/core/sim"
-import { toPng } from "html-to-image"
+import { safeToPng } from "./capture"
 import { buildModal } from "@klavity/core/modal"
 import { cropDataUrl } from "@klavity/core/crop"
 import { installCapture, buildReportContext, type CaptureBuffers } from "@klavity/core/capture"
@@ -163,8 +163,8 @@ async function mount() {
       // Auto-grab a Full Page shot the moment the modal opens — parity with the extension
       // (content.ts autoCaptureOnOpen). Captures the current page state without an extra click.
       autoCaptureOnOpen: true,
-      onCaptureFull: async () => toPng(document.body, { skipFonts: true, cacheBust: true, pixelRatio: 1, filter: (n) => (n as HTMLElement).id !== HOST_ID }),
-      onRegionCapture: async (rect) => cropDataUrl(await toPng(document.body, { skipFonts: true, cacheBust: true, pixelRatio: 1, filter: (n) => (n as HTMLElement).id !== HOST_ID }), rect),
+      onCaptureFull: async () => safeToPng(document.body, { filter: (n) => (n as HTMLElement).id !== HOST_ID }),
+      onRegionCapture: async (rect) => cropDataUrl(await safeToPng(document.body, { filter: (n) => (n as HTMLElement).id !== HOST_ID }), rect),
       requireEmail,
       onSubmit: async (p) => submitFeedback(
         { backendUrl: cfg.backendUrl, projectId: cfg.projectId, firstParty, token: getToken() },
@@ -312,8 +312,7 @@ async function mount() {
     btn.disabled = true; const orig = btn.textContent; btn.textContent = "Capturing…"
     let shot = ""
     try {
-      shot = await toPng(document.body, { cacheBust: true, pixelRatio: 1, skipFonts: true,
-        filter: (node) => (node as HTMLElement).id !== HOST_ID })
+      shot = await safeToPng(document.body, { filter: (node) => (node as HTMLElement).id !== HOST_ID })
     } catch { banner("Couldn't capture the page."); btn.disabled = false; btn.textContent = orig; return }
     btn.textContent = "Reviewing…"
     let r = await api("/api/sim/review", { method: "POST", headers: { "content-type": "application/json" },
