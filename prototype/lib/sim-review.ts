@@ -18,9 +18,15 @@ import { recurrenceFromEvents, type Trait, type TraitEventRow } from "./provenan
 import { ingestSnapOrSim } from "./expectations-ingest"
 import { buildRecurrenceMemory } from "./recurrence-memory"
 
-// Re-export pure helpers so callers only need one import path.
-export { hashObservation, decodeDataUrl, splitUrl, buildSimRunSummary, type SimObservation, type SimReview } from "./sim-review-pure"
-import { hashObservation } from "./sim-review-pure"
+// Re-export everything from the pure module so callers only need one import path.
+export {
+  hashObservation, decodeDataUrl, splitUrl, buildSimRunSummary,
+  obsIsNearDup, sessionCallCapped, sessionObsCapped, sessionCallCount, sessionObsCount,
+  sessionSeenTexts, sessionBumpCall, sessionBumpObs,
+  SESSION_CALL_CEIL, SESSION_OBS_CEIL, NEAR_DUP_THRESHOLD, SESSION_TTL_MS,
+  type SimObservation, type SimReview,
+} from "./sim-review-pure"
+import { hashObservation, obsIsNearDup, sessionCallCapped, sessionObsCapped, sessionObsCount, sessionBumpCall, sessionBumpObs, sessionSeenTexts, SESSION_CALL_CEIL, SESSION_OBS_CEIL } from "./sim-review-pure"
 import type { SimObservation, SimReview } from "./sim-review-pure"
 
 export type SimReactFn = (
@@ -53,7 +59,13 @@ export interface SimRunOptions {
   actorEmail: string
   screenshotId: string
   seenKeys: string[]
+  // CLIENT-SIDE dedup: exact hashes the client has already displayed this session.
   seenHashes?: Set<string>
+  // SESSION TRACKING: an opaque id for the browse session. When provided:
+  //   - per-session LLM call ceiling (SESSION_CALL_CEIL) is enforced
+  //   - per-session observation ceiling (SESSION_OBS_CEIL) is enforced
+  //   - near-duplicate texts from prior calls are filtered (NEAR_DUP_THRESHOLD)
+  sessionId?: string
   reactFn: SimReactFn
   resolveCitationsFn: ResolveCitationsFn
   autoCopy?: (feedbackId: string, projectId: string, actor: string) => void
@@ -96,13 +108,20 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
   const {
     projectId, urlPath, urlHost, pageUrl, imageB64, mediaType,
     targetSims, actorEmail, screenshotId, seenHashes = new Set(),
-    reactFn, resolveCitationsFn, autoCopy, markSeen, db,
+    sessionId, reactFn, resolveCitationsFn, autoCopy, markSeen, db,
   } = opts
 
   const out: SimReview[] = []
 
   for (let i = 0; i < targetSims.length; i++) {
     const sim = targetSims[i]
+
+    // ── Per-session LLM call ceiling ─────────────────────────────────────────
+    // Guard BEFORE the LLM call so we never spend budget when capped.
+    if (sessionId && sessionCallCapped(sessionId)) {
+      console.log(`[sim-review] session ${sessionId} call ceiling (${SESSION_CALL_CEIL}) reached — skipping sim ${sim.id}`)
+      continue
+    }
 
     // Build regression-gated recurrence memory for this Sim's traits (avoids N+1 per reaction).
     let simWithMemory: any = sim
@@ -143,8 +162,12 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
       console.error(`sim-review reactFn [${sim.id}] (non-fatal):`, e?.message || e)
       continue
     }
+    // Count this LLM call toward the session ceiling regardless of how many observations survive.
+    if (sessionId) sessionBumpCall(sessionId)
 
     const observations: SimObservation[] = []
+    // Fetch server-side seen texts once per Sim (for near-dup matching across consecutive screens).
+    const serverSeenTexts = sessionId ? sessionSeenTexts(sessionId) : []
 
     for (const r of rawReactions) {
       const obsText = String(r?.observation ?? "").trim()
@@ -152,8 +175,12 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
 
       const hash = hashObservation(obsText)
 
-      // SESSION DEDUP: if the client has already shown this observation this session, skip it.
+      // 1. CLIENT-SIDE exact dedup: client already showed this hash → skip.
       if (seenHashes.has(hash)) continue
+
+      // 2. SERVER-SIDE near-dup: catches rephrased versions of the same finding across
+      //    consecutive screens that have different hashes but the same semantic content.
+      if (serverSeenTexts.length > 0 && obsIsNearDup(obsText, serverSeenTexts)) continue
 
       const citation = await resolveCitationsFn(sim.id, r?.citedTraitIds, projectId, citePre)
       let bug = r?.suggestedBug
@@ -220,18 +247,35 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
       })
     }
 
+    // ── Per-session observation ceiling ──────────────────────────────────────
+    // Cap observations surfaced this session to avoid flooding the UI and
+    // burning excessive budget over a long browse session. Trim to fit under the ceiling.
+    let finalObservations = observations
+    if (sessionId && observations.length > 0) {
+      const remaining = SESSION_OBS_CEIL - sessionObsCount(sessionId)
+      if (remaining <= 0) {
+        finalObservations = []  // ceiling already hit
+      } else if (observations.length > remaining) {
+        finalObservations = observations.slice(0, remaining)  // trim to fit
+      }
+      if (finalObservations.length > 0) {
+        sessionBumpObs(sessionId, finalObservations.map(o => o.text))
+      }
+    }
+
     // Activity spine — R6 observability; only log when we actually produced observations.
     if (rawReactions.length > 0) {
       await insertActivity({
         projectId, type: "review_run", actorEmail, simId: sim.id,
-        urlHost, urlPath, screenshotId, meta: { observations: rawReactions.length, new: observations.length },
+        urlHost, urlPath, screenshotId,
+        meta: { reactions: rawReactions.length, new: finalObservations.length },
       })
     }
     markSeen?.(opts.seenKeys[i])
 
     // Only include the Sim in output if it has at least one new observation.
-    if (observations.length > 0) {
-      out.push({ simId: sim.id, simName: sim.name, initials: sim.initials ?? null, accent: sim.accent ?? null, observations })
+    if (finalObservations.length > 0) {
+      out.push({ simId: sim.id, simName: sim.name, initials: sim.initials ?? null, accent: sim.accent ?? null, observations: finalObservations })
     }
   }
 
