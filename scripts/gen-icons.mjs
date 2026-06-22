@@ -50,7 +50,7 @@ const kicon = [
   '  window.kicon = function(name, opts){',
   '    opts = opts || {};',
   '    var body = (window.KLAV_ICONS || {})[name];',
-  '    if (!body) throw new Error("Unknown icon: " + name);',
+  '    if (!body) { console.warn("[Klavity] unknown icon: " + name); return ""; }',
   '    var size = opts.size ?? 18;',
   '    var cls = opts.class ? "icon " + opts.class : "icon";',
   '    var a11y = opts.label ? "role=\\"img\\"" : "aria-hidden=\\"true\\"";',

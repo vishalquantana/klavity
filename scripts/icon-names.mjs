@@ -22,4 +22,6 @@ export const ICON_NAMES = [
   'play', 'pause', 'rotate-cw',
   // Added for icon-guard-enforce: remaining emoji → Lucide (KLAVITYKLA-13)
   'bell', 'refresh-cw', 'bot', 'star',
+  // P0 fix: chevron-left caused white-screen throw on /sim/:id — added with fail-soft guard
+  'chevron-left', 'chevron-right',
 ];

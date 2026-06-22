@@ -14,9 +14,9 @@ function escapeAttr(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-export function icon(name: IconName, opts: IconOpts = {}): string {
-  const body = ICONS[name];
-  if (!body) throw new Error(`Unknown icon: ${String(name)}`);
+export function icon(name: string, opts: IconOpts = {}): string {
+  const body = (ICONS as Record<string, string>)[name];
+  if (!body) { console.warn('[Klavity] unknown icon: ' + name); return ''; }
   const size = opts.size ?? 18;
   const cls = opts.class ? `icon ${opts.class}` : 'icon';
   const a11y = opts.label
