@@ -972,6 +972,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (req.method === "GET" && path === "/sim-studio-c") return file(PUB + "/sim-studio-c-evidence.html")
     if (req.method === "GET" && path === "/sim-studio-hybrid") return file(PUB + "/sim-studio-hybrid.html")
     if (req.method === "GET" && path === "/snap-popup") return file(PUB + "/snap-popup.html")
+    // Right-click menu mockups demo — durable public link. The server has no generic static handler,
+    // so the file in public/ needs an explicit route to be served.
+    if (req.method === "GET" && path === "/rightclick-mockups.html") return file(PUB + "/rightclick-mockups.html")
     if (req.method === "GET" && path === "/widget-connect") {
       return new Response(Bun.file(PUB + "/widget-connect.html"), {
         headers: { "content-type": "text/html; charset=utf-8" },
