@@ -4,8 +4,11 @@ import {
   shouldCapture,
   createTrailingDebounce,
   DEBOUNCE_MS,
+  DEBOUNCE_MAX_WAIT_MS,
   ROUTE_COOLDOWN_MS,
   MAX_REVIEWS_PER_ROUTE,
+  CAPTURE_BACKOFF_MS,
+  CAPTURE_MAX_RETRIES,
 } from "./feedback-trigger";
 
 // ---------------------------------------------------------------------------
@@ -240,12 +243,25 @@ describe("exported consts", () => {
     expect(DEBOUNCE_MS).toBe(1000);
   });
 
+  it("DEBOUNCE_MAX_WAIT_MS is 3500", () => {
+    expect(DEBOUNCE_MAX_WAIT_MS).toBe(3500);
+  });
+
   it("ROUTE_COOLDOWN_MS is 8000", () => {
     expect(ROUTE_COOLDOWN_MS).toBe(8000);
   });
 
   it("MAX_REVIEWS_PER_ROUTE is 6", () => {
     expect(MAX_REVIEWS_PER_ROUTE).toBe(6);
+  });
+
+  it("CAPTURE_BACKOFF_MS is positive and > Chrome rate-limit window (~500ms)", () => {
+    expect(CAPTURE_BACKOFF_MS).toBeGreaterThan(500);
+  });
+
+  it("CAPTURE_MAX_RETRIES is between 1 and 4 (enough retries but not runaway)", () => {
+    expect(CAPTURE_MAX_RETRIES).toBeGreaterThanOrEqual(1);
+    expect(CAPTURE_MAX_RETRIES).toBeLessThanOrEqual(4);
   });
 });
 
@@ -307,5 +323,99 @@ describe("createTrailingDebounce", () => {
     d.schedule();
     vi.advanceTimersByTime(1000);
     expect(fn).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createTrailingDebounce with maxWaitMs — "never settles" page coalescing
+// ---------------------------------------------------------------------------
+
+describe("createTrailingDebounce with maxWaitMs", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("fires at maxWaitMs when mutations arrive continuously (never settles)", () => {
+    vi.useFakeTimers();
+    const fn = vi.fn();
+    const d = createTrailingDebounce(fn, 1000, 3500);
+
+    // Simulate a live feed: mutations every 200ms for 5 full seconds.
+    // Without maxWaitMs the trailing timer keeps resetting and fn never fires.
+    // With maxWaitMs=3500, fn must fire at t=3500 even while mutations continue.
+    for (let t = 0; t < 5000; t += 200) {
+      vi.advanceTimersByTime(200);
+      d.schedule();
+      if (t < 3500) {
+        expect(fn).not.toHaveBeenCalled();
+      }
+    }
+    // Should have fired exactly once at maxWaitMs.
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it("fires at delayMs when page settles before maxWaitMs", () => {
+    vi.useFakeTimers();
+    const fn = vi.fn();
+    const d = createTrailingDebounce(fn, 1000, 3500);
+
+    // Two quick mutations, then silence — normal trailing-edge case.
+    d.schedule();
+    vi.advanceTimersByTime(300);
+    d.schedule();      // resets trailing timer
+    vi.advanceTimersByTime(999);
+    expect(fn).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);      // exactly 1000ms after last schedule
+    expect(fn).toHaveBeenCalledTimes(1);
+    // maxWait timer is cleared — no second fire.
+    vi.advanceTimersByTime(5000);
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it("maxWait ceiling resets after a fire so the next burst gets a fresh window", () => {
+    vi.useFakeTimers();
+    const fn = vi.fn();
+    const d = createTrailingDebounce(fn, 1000, 3500);
+
+    // First burst: settles at 1000ms (before maxWait).
+    d.schedule();
+    vi.advanceTimersByTime(1000);
+    expect(fn).toHaveBeenCalledTimes(1);
+
+    // Second burst: continuous mutations — fire once more via maxWait ceiling.
+    // Each iteration advances 200ms then schedules; first schedule is at t=1200.
+    // maxWait fires at t=1200+3500=4700ms. Loop runs to t=4600ms, then we advance
+    // 500ms more (to t=5100ms) to let the maxWait timer fire at t=4700ms.
+    for (let t = 0; t < 3500; t += 200) {
+      vi.advanceTimersByTime(200);
+      d.schedule();
+    }
+    vi.advanceTimersByTime(500);  // push past the maxWait window (fires at 4700ms)
+    expect(fn).toHaveBeenCalledTimes(2);
+  });
+
+  it("cancel() clears both the trailing timer and the maxWait ceiling", () => {
+    vi.useFakeTimers();
+    const fn = vi.fn();
+    const d = createTrailingDebounce(fn, 1000, 3500);
+
+    // schedule, then cancel before either timer fires
+    d.schedule();
+    vi.advanceTimersByTime(500);  // well before delayMs=1000 and maxWaitMs=3500
+    d.cancel();
+    vi.advanceTimersByTime(5000);
+    expect(fn).not.toHaveBeenCalled();
+  });
+
+  it("behaves identically to no-maxWait version when maxWaitMs is undefined", () => {
+    vi.useFakeTimers();
+    const fn = vi.fn();
+    const d = createTrailingDebounce(fn, 1000);  // no maxWait arg
+
+    d.schedule();
+    vi.advanceTimersByTime(300);
+    d.schedule();
+    vi.advanceTimersByTime(1000);
+    expect(fn).toHaveBeenCalledTimes(1);
   });
 });

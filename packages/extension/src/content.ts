@@ -5,7 +5,7 @@ import { resolveModalConfig } from '@klavity/core/modal-theme'
 import { installCapture, buildReportContext, type CaptureBuffers } from '@klavity/core/capture'
 import { cropDataUrl } from '@klavity/core/crop'
 import { captureFullPage } from './fullpage'
-import { klavContentSig, shouldCapture, createTrailingDebounce, DEBOUNCE_MS, ROUTE_COOLDOWN_MS, MAX_REVIEWS_PER_ROUTE } from './feedback-trigger'
+import { klavContentSig, shouldCapture, createTrailingDebounce, DEBOUNCE_MS, DEBOUNCE_MAX_WAIT_MS, ROUTE_COOLDOWN_MS, MAX_REVIEWS_PER_ROUTE, CAPTURE_BACKOFF_MS, CAPTURE_MAX_RETRIES } from './feedback-trigger'
 import { widgetPresent } from './coexist'
 import { makeCaptureAwaiter } from './capture-bridge'
 
@@ -628,10 +628,17 @@ function klavLog(key: string, ...args: unknown[]) {
 // ── Observer handles (disconnect on route change) ─────────────────────────────
 let klavMutObs: MutationObserver | null = null
 let klavIntObs: IntersectionObserver | null = null
-// Single trailing-edge debounce shared by both change sources (mutation + scroll):
-// every signal resets it, so a settling stream collapses into ONE review ~DEBOUNCE_MS
-// after the last change (fixes the old throttle+debounce combo that fired mid-stream).
-const klavCaptureDebounce = createTrailingDebounce(() => { void maybeActivate('detector') }, DEBOUNCE_MS)
+// Single trailing-edge debounce shared by both change sources (mutation + scroll).
+// maxWaitMs ensures that "never settles" pages (live feeds, ticker animations) still
+// get a capture once every DEBOUNCE_MAX_WAIT_MS even if mutations keep resetting the
+// trailing timer, preventing perpetual capture skips on busy pages.
+const klavCaptureDebounce = createTrailingDebounce(() => { void maybeActivate('detector') }, DEBOUNCE_MS, DEBOUNCE_MAX_WAIT_MS)
+
+// ── Capture retry state ───────────────────────────────────────────────────────
+// After a failed/rate-limited captureVisibleTab, schedule a back-off retry instead of
+// waiting for the next organic DOM change (which may never come on a quiet page).
+let klavCapRetryTimer: ReturnType<typeof setTimeout> | null = null
+let klavCapRetryCount = 0
 // Boot-guard: suppress the first IntersectionObserver fire when it matches the
 // initial viewport (boot's maybeActivate already covers that review).
 let klavBootGuard = true
@@ -966,15 +973,21 @@ async function klavRunAdhoc(projectId: string): Promise<void> {
 }
 
 // Capture the visible tab via the background SW (token + captureVisibleTab live there).
-function klavCapture(): Promise<string | null> {
+// Returns elapsed time so callers can distinguish a fast error (rate-limit / permission)
+// from a slow one (SW eviction / timeout) and choose retry strategy accordingly.
+function klavCapture(): Promise<{ dataUrl: string | null; error: string | null; elapsed: number }> {
+  const start = Date.now()
   return new Promise((resolve) => {
     const onResult = (ev: Event) => {
-      const { dataUrl } = (ev as CustomEvent).detail as { dataUrl: string; error?: string }
-      resolve(dataUrl || null)
+      const { dataUrl, error } = (ev as CustomEvent).detail as { dataUrl: string; error?: string }
+      resolve({ dataUrl: dataUrl || null, error: error || null, elapsed: Date.now() - start })
     }
     document.addEventListener('klavity-review-capture', onResult, { once: true })
     void klavSend({ kind: 'KLAV_CAPTURE_REVIEW' })
-    setTimeout(() => { document.removeEventListener('klavity-review-capture', onResult); resolve(null) }, 4000)
+    setTimeout(() => {
+      document.removeEventListener('klavity-review-capture', onResult)
+      resolve({ dataUrl: null, error: 'timeout', elapsed: Date.now() - start })
+    }, 4000)
   })
 }
 
@@ -1057,10 +1070,33 @@ async function maybeActivate(reason: string) {
   const routeKey = klavNormUrl(url)
   try {
     klavLog('capturing', `[Klavity] change detected (${reason}) → capturing viewport…`)
-    const dataUrl = await klavCapture()
-    // captureVisibleTab is rate-limited by Chrome (~2/sec); on busy pages this is hit often. Non-fatal
-    // (we retry on the next change) — throttle the log so it doesn't spam the console.
-    if (!dataUrl) { klavLog('capfail', '[Klavity] skip: capture failed/rate-limited (will retry next change)'); return }
+    const { dataUrl, error: capError, elapsed: capElapsed } = await klavCapture()
+
+    if (!dataUrl) {
+      // Distinguish rate-limit (fast error < 500ms from Chrome's ~2/s cap) from genuine
+      // failures (SW evicted, permission denied, 4s timeout). Both log differently and
+      // both schedule an automatic back-off retry so a quiet page still gets analysed.
+      const isRateLimit = capElapsed < 500  // fast response → Chrome refused, not a timeout
+      const kind = isRateLimit ? 'rate-limited' : (capError === 'timeout' ? 'timed out' : `failed (${capError ?? 'unknown'})`)
+      klavLog('capfail', `[Klavity] capture ${kind} — scheduling retry`)
+
+      if (klavCapRetryCount < CAPTURE_MAX_RETRIES) {
+        klavCapRetryCount++
+        if (klavCapRetryTimer !== null) clearTimeout(klavCapRetryTimer)
+        klavCapRetryTimer = setTimeout(() => {
+          klavCapRetryTimer = null
+          void maybeActivate('capture-retry')
+        }, CAPTURE_BACKOFF_MS)
+      } else {
+        klavLog('capfail-final', `[Klavity] capture failed after ${CAPTURE_MAX_RETRIES} retries — will try on next page change`)
+        klavCapRetryCount = 0
+      }
+      return
+    }
+
+    // Successful capture — reset retry counter.
+    klavCapRetryCount = 0
+    if (klavCapRetryTimer !== null) { clearTimeout(klavCapRetryTimer); klavCapRetryTimer = null }
 
     // Compute sig AFTER captureVisibleTab returns — same DOM moment as the pixels.
     const postSig = klavDomSig()
@@ -1153,6 +1189,9 @@ function klavDisarmObservers() {
   if (klavMutObs) { klavMutObs.disconnect(); klavMutObs = null }
   if (klavIntObs) { klavIntObs.disconnect(); klavIntObs = null }
   klavCaptureDebounce.cancel()
+  // Cancel any pending capture retry so stale retries don't fire after navigation.
+  if (klavCapRetryTimer !== null) { clearTimeout(klavCapRetryTimer); klavCapRetryTimer = null }
+  klavCapRetryCount = 0
 }
 
 // ── Arm MutationObserver + IntersectionObserver on the content region. ────────

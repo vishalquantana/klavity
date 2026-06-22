@@ -12,11 +12,32 @@
 /** Trailing-edge debounce across all change sources (ms). */
 export const DEBOUNCE_MS = 1000;
 
+/**
+ * Max time a trailing debounce is allowed to keep postponing before it fires anyway.
+ * Prevents "never settles" pages (e.g. live feeds) from blocking captures indefinitely:
+ * if mutations arrive non-stop for DEBOUNCE_MAX_WAIT_MS the capture fires once, then
+ * the trailing-edge logic takes over again.
+ */
+export const DEBOUNCE_MAX_WAIT_MS = 3500;
+
 /** Minimum time between reviews on the same route after a review is confirmed (ms). */
 export const ROUTE_COOLDOWN_MS = 8000;
 
 /** Max reviews allowed per page-load route before the per-route cap blocks. */
 export const MAX_REVIEWS_PER_ROUTE = 6;
+
+/**
+ * How long to wait after a rate-limited capture before automatically retrying (ms).
+ * Slightly longer than Chrome's ~500ms captureVisibleTab limit so the retry has a
+ * good chance of succeeding.
+ */
+export const CAPTURE_BACKOFF_MS = 800;
+
+/**
+ * Maximum number of automatic retries after a failed/rate-limited capture before
+ * giving up and waiting for the next organic page change.
+ */
+export const CAPTURE_MAX_RETRIES = 2;
 
 // ---------------------------------------------------------------------------
 // klavContentSig
@@ -108,28 +129,45 @@ export interface TrailingDebounce {
 }
 
 /**
- * Pure trailing-edge debounce. Every `schedule()` resets the timer, so a stream
- * of calls collapses into ONE `fn()` `delayMs` after the last one — "fire once
- * when it settles". Replaces the old leading-throttle + debounce combo, whose
- * throttle swallowed mid-window calls and inflated the effective delay to ~2×.
+ * Pure trailing-edge debounce with an optional maximum-wait ceiling.
+ *
+ * Normal behaviour: every `schedule()` resets the timer, so a settling stream
+ * collapses into ONE `fn()` call `delayMs` after the last event — "fire once
+ * when it settles".
+ *
+ * When `maxWaitMs` is supplied: if continuous `schedule()` calls keep resetting
+ * the debounce, `fn` fires at most `maxWaitMs` after the FIRST schedule in the
+ * current run.  Prevents "never settles" pages (live feeds, ticker animations)
+ * from blocking captures indefinitely.
+ *
  * Uses only setTimeout/clearTimeout (no DOM/chrome) so it's fake-timer testable.
  */
-export function createTrailingDebounce(fn: () => void, delayMs: number): TrailingDebounce {
+export function createTrailingDebounce(fn: () => void, delayMs: number, maxWaitMs?: number): TrailingDebounce {
   let timer: ReturnType<typeof setTimeout> | null = null;
-  const cancel = () => {
-    if (timer !== null) {
-      clearTimeout(timer);
-      timer = null;
-    }
+  let maxTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const fire = () => {
+    if (timer !== null) { clearTimeout(timer); timer = null; }
+    if (maxTimer !== null) { clearTimeout(maxTimer); maxTimer = null; }
+    fn();
   };
+
+  const cancel = () => {
+    if (timer !== null) { clearTimeout(timer); timer = null; }
+    if (maxTimer !== null) { clearTimeout(maxTimer); maxTimer = null; }
+  };
+
   return {
     cancel,
     schedule() {
-      cancel();
-      timer = setTimeout(() => {
-        timer = null;
-        fn();
-      }, delayMs);
+      // Reset the trailing timer on every call.
+      if (timer !== null) { clearTimeout(timer); timer = null; }
+      timer = setTimeout(fire, delayMs);
+
+      // Arm the max-wait ceiling only on the FIRST schedule in this burst.
+      if (maxWaitMs != null && maxTimer === null) {
+        maxTimer = setTimeout(fire, maxWaitMs);
+      }
     },
   };
 }
