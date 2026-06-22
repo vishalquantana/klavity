@@ -144,23 +144,17 @@ export function buildModal(
     .klavity-rm:hover,.klavity-mk:hover{transform:var(--kl-bhover);box-shadow:0 3px 9px rgba(0,0,0,.42);}
     .klavity-rm:active,.klavity-mk:active{transform:var(--kl-bpress);}
     /* Keyboard accessibility — visible focus ring on every control */
-    .klavity-toggle button:focus-visible,.klavity-actions button:focus-visible,.klavity-submit:focus-visible,.klavity-lead button:focus-visible,.klavity-cta:focus-visible,.klavity-rm:focus-visible,.klavity-mk:focus-visible,.klavity-sharp-go:focus-visible,.klavity-sharp-cancel:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
-    /* ── Sharp inline explainer: sets the screen-share expectation before the permission prompt. Subtle
-       fade+rise enter (interruptible transition); shadow-as-border ring; concentric 12px card / 8px buttons. ── */
-    .klavity-sharp-note{margin:-4px 0 12px;padding:12px 14px;border-radius:12px;background:color-mix(in srgb,var(--kl-chip) 84%,var(--kl-accent) 16%);box-shadow:0 0 0 1px var(--kl-border);opacity:0;transform:translateY(6px);transition:opacity .18s ease,transform .18s cubic-bezier(.16,1,.3,1);}
-    .klavity-sharp-note.in{opacity:1;transform:translateY(0);}
-    .klavity-sharp-note-h{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:var(--kl-fg);margin-bottom:5px;}
-    .klavity-sharp-note p{margin:0 0 10px;font-size:12.5px;line-height:1.45;color:var(--kl-muted);text-wrap:pretty;}
-    .klavity-sharp-note p b{color:var(--kl-fg);font-weight:600;}
-    .klavity-sharp-note-a{display:flex;gap:8px;}
-    .klavity-sharp-go,.klavity-sharp-cancel{min-height:40px;display:inline-flex;align-items:center;justify-content:center;gap:6px;border:none;border-radius:8px;cursor:pointer;font-size:12.5px;font-weight:600;transition:transform .15s cubic-bezier(.34,1.56,.64,1),background .15s ease,box-shadow .15s ease,color .15s ease,filter .15s ease;will-change:transform;}
-    .klavity-sharp-go{padding:8px 14px;background:var(--kl-accent);color:var(--kl-on-accent);font-weight:700;}
-    .klavity-sharp-go:hover{transform:var(--kl-lift);filter:brightness(1.05);box-shadow:0 8px 22px color-mix(in srgb,var(--kl-accent) 45%,transparent);}
-    .klavity-sharp-go:active{transform:var(--kl-press);}
-    .klavity-sharp-cancel{padding:8px 12px;background:transparent;color:var(--kl-muted);}
-    .klavity-sharp-cancel:hover{transform:var(--kl-lift);background:color-mix(in srgb,var(--kl-chip) 70%,transparent);color:var(--kl-fg);}
-    .klavity-sharp-cancel:active{transform:var(--kl-press);}
-    @media (prefers-reduced-motion: reduce){.klavity-overlay,.klavity-modal,.klavity-modal.kl-closing{animation-duration:.01ms;}.klavity-modal{--kl-lift:none;--kl-press:none;--kl-bhover:none;--kl-bpress:none;}.klavity-sharp-note,.klavity-sharp-note.in{transform:none;}}
+    .klavity-toggle button:focus-visible,.klavity-actions button:focus-visible,.klavity-submit:focus-visible,.klavity-lead button:focus-visible,.klavity-cta:focus-visible,.klavity-rm:focus-visible,.klavity-mk:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
+    /* ── Sharp (i) info: a 40×40 info button beside Sharp; its tooltip appears on hover/focus and NEVER
+       blocks the one-click capture. Shadow-as-border popover, theme-aware. (i) inherits the .klavity-actions
+       button polish — press scale(0.96), hover, focus ring. ── */
+    .klavity-info-wrap{position:relative;flex:0 0 auto;display:inline-flex;align-self:stretch;}
+    .klavity-info{color:var(--kl-muted);}
+    .klavity-info:hover{color:var(--kl-accent);}
+    .klavity-info-pop{position:absolute;bottom:calc(100% + 8px);right:0;width:228px;padding:10px 12px;border-radius:10px;background:var(--kl-bg);color:var(--kl-fg);box-shadow:0 0 0 1px var(--kl-border),0 12px 30px rgba(20,16,40,.22);font-size:12px;line-height:1.45;text-align:left;text-wrap:pretty;opacity:0;visibility:hidden;transform:translateY(4px);transition:opacity .15s ease,transform .15s ease;z-index:6;pointer-events:none;}
+    .klavity-info-pop b{color:var(--kl-fg);font-weight:600;}
+    .klavity-info-wrap:hover .klavity-info-pop,.klavity-info-wrap:focus-within .klavity-info-pop{opacity:1;visibility:visible;transform:translateY(0);pointer-events:auto;}
+    @media (prefers-reduced-motion: reduce){.klavity-overlay,.klavity-modal,.klavity-modal.kl-closing{animation-duration:.01ms;}.klavity-modal{--kl-lift:none;--kl-press:none;--kl-bhover:none;--kl-bpress:none;}.klavity-info-pop{transform:none;}}
   `
   shadowRoot.appendChild(style)
 
@@ -177,7 +171,7 @@ export function buildModal(
     <div class="klavity-page">${icon('map-pin')} ${typeof window !== 'undefined' ? escHtml(window.location.pathname) : ''}</div>
     <div class="klavity-strip" id="klavity-strip"></div>
     <div class="klavity-actions">
-      ${callbacks.onCaptureSharp ? `<button id="klavity-sharp" title="Sharp — pixel-perfect full page, captures every image (incl. cross-origin). Shares this tab; your browser will ask permission.">${icon('sparkles')} Sharp</button>` : ''}
+      ${callbacks.onCaptureSharp ? `<button id="klavity-sharp" title="Sharp — pixel-perfect full page, captures every image. Shares this tab (asks permission).">${icon('sparkles')} Sharp</button><span class="klavity-info-wrap"><button type="button" id="klavity-sharp-info" class="klavity-info" title="What does Sharp do?" aria-label="What does Sharp do?" style="flex:0 0 40px;width:40px;min-width:40px;padding:0;"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></button><span class="klavity-info-pop" role="tooltip">Sharp grabs the <b>whole page — every image, pixel-perfect</b> using your browser's screen-share. Your browser will ask you to <b>share this tab</b>.</span></span>` : ''}
       <button id="klavity-full" title="Full Page — instant capture; may miss some cross-origin images">${icon('camera')} Full Page</button>
       <button id="klavity-upload">${icon('image')} Upload</button>
       ${callbacks.onRegionCapture ? `<button id="klavity-region">${icon('scissors')} Region</button>` : ''}
@@ -342,25 +336,10 @@ export function buildModal(
       } catch { /* user cancelled the share prompt, or capture failed — just restore */ }
       finally { host.style.display = ''; sharpBtn.textContent = orig }
     }
-    // Clicking Sharp does NOT immediately call getDisplayMedia — it first shows a lightweight inline
-    // explainer so the browser's screen-share permission prompt is expected, not a surprise. "Share this
-    // tab" is the user gesture that then triggers the capture.
-    sharpBtn.addEventListener('click', () => {
-      if (modal.querySelector('.klavity-sharp-note')) return // one explainer at a time
-      const note = document.createElement('div')
-      note.className = 'klavity-sharp-note'
-      note.innerHTML =
-        `<div class="klavity-sharp-note-h">${icon('monitor', { size: 15 })}<span>Share this tab to capture</span></div>` +
-        `<p>Sharp grabs the <b>whole page — every image, pixel-perfect</b> using your browser's screen-share. Your browser will ask you to <b>share this tab</b>; that's expected.</p>` +
-        `<div class="klavity-sharp-note-a">` +
-        `<button type="button" class="klavity-sharp-go">${icon('monitor', { size: 14 })} Share this tab</button>` +
-        `<button type="button" class="klavity-sharp-cancel">Cancel</button></div>`
-      ;(modal.querySelector('.klavity-actions') as HTMLElement).insertAdjacentElement('afterend', note)
-      requestAnimationFrame(() => note.classList.add('in'))
-      const dismiss = () => { note.classList.remove('in'); setTimeout(() => note.remove(), 180) }
-      ;(note.querySelector('.klavity-sharp-cancel') as HTMLButtonElement).addEventListener('click', dismiss)
-      ;(note.querySelector('.klavity-sharp-go') as HTMLButtonElement).addEventListener('click', () => { dismiss(); void runSharp() })
-    })
+    // ONE click → straight to the screen-share permission. getDisplayMedia runs synchronously inside the
+    // handler (preserving the click's user gesture). The (i) info button beside Sharp explains it on demand
+    // (hover/focus tooltip) so the prompt is understandable without ever blocking the capture.
+    sharpBtn.addEventListener('click', () => { void runSharp() })
   }
   modal.querySelector('#klavity-upload')!.addEventListener('click', () => {
     (modal.querySelector('#klavity-file') as HTMLInputElement).click()
@@ -415,7 +394,8 @@ export function buildModal(
       const editor = document.createElement('div')
       editor.style.cssText = 'position:fixed;inset:0;background:#000;z-index:2147483647;display:flex;flex-direction:column;pointer-events:all;'
       const toolbar = document.createElement('div')
-      toolbar.style.cssText = 'display:flex;gap:8px;padding:8px;background:#1e1e2e;flex-wrap:wrap;'
+      toolbar.className = 'kl-edtb'
+      toolbar.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px;background:#1e1e2e;flex-wrap:wrap;'
       const keyHint = (k: string) => `<span style="opacity:.45;margin-left:5px;font-size:11px;">${k}</span>`
       toolbar.innerHTML = `
         <button data-tool="pen" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">${icon('pencil', { size: 14 })} Pen</button>
@@ -426,14 +406,58 @@ export function buildModal(
         <button data-color="#f97316" style="background:#f97316;width:24px;height:24px;border:none;border-radius:50%;cursor:pointer;"></button>
         <button data-color="#3b82f6" style="background:#3b82f6;width:24px;height:24px;border:none;border-radius:50%;cursor:pointer;"></button>
         <button data-color="#111827" style="background:#111827;width:24px;height:24px;border:none;border-radius:50%;cursor:pointer;border:1px solid #555;"></button>
+        <span style="display:inline-flex;align-items:center;gap:4px;margin-left:6px;">
+          <button id="klavity-zoom-out" class="kl-zb" title="Zoom out" aria-label="Zoom out">−</button>
+          <span id="klavity-zoom-pct" style="min-width:46px;text-align:center;color:#a6adc8;font-size:12px;font-variant-numeric:tabular-nums;">100%</span>
+          <button id="klavity-zoom-in" class="kl-zb" title="Zoom in" aria-label="Zoom in">+</button>
+          <button id="klavity-fit-width" class="kl-zb" title="Fit to width (best for tall pages)" style="font-size:11.5px;">Fit&nbsp;W</button>
+          <button id="klavity-fit-page" class="kl-zb" title="Fit the whole page" style="font-size:11.5px;">Fit&nbsp;page</button>
+        </span>
         <button id="klavity-undo" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;margin-left:auto;">↩ Undo</button>
         <button id="klavity-clear-ann" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">${icon('trash-2', { size: 14 })} Clear</button>
         <button id="klavity-save-ann" style="padding:6px 10px;background:#89b4fa;color:#1e1e2e;border:none;border-radius:4px;cursor:pointer;font-weight:700;">${icon('check', { label: 'Save', size: 14 })} Save</button>
         <button id="klavity-cancel-ann" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">${icon('x', { size: 14 })}</button>
       `
-      canvas.style.cssText = 'flex:1;max-width:100%;max-height:calc(100vh - 60px);object-fit:contain;cursor:crosshair;display:block;margin:auto;'
-      editor.append(toolbar, canvas)
+      // The canvas is rendered at an EXPLICIT CSS size (set by applyScale) inside a scrollable workspace —
+      // no object-fit letterboxing — so a tall full-page capture renders at a readable width and scrolls
+      // vertically instead of collapsing to a thin sliver. touch-action:none keeps touch drags drawing.
+      canvas.style.cssText = 'cursor:crosshair;display:block;margin:12px auto;touch-action:none;background:#fff;border-radius:4px;outline:1px solid rgba(255,255,255,.12);outline-offset:-1px;box-shadow:0 12px 44px rgba(0,0,0,.55);'
+      const scroller = document.createElement('div')
+      scroller.style.cssText = 'flex:1;min-height:0;overflow:auto;display:block;box-shadow:inset 0 1px 0 rgba(255,255,255,.04);'
+      scroller.appendChild(canvas)
+      // Scoped polish for the editor controls (press scale, hover, focus rings) — kept in a <style> since
+      // the editor is built with inline styles and has no access to the modal's class CSS.
+      const cstyle = document.createElement('style')
+      cstyle.textContent =
+        '.kl-edtb button{transition:transform .12s cubic-bezier(.34,1.56,.64,1),background .15s ease;}' +
+        '.kl-edtb button:active{transform:scale(.96);}' +
+        '.kl-edtb button:focus-visible{outline:2px solid #89b4fa;outline-offset:2px;}' +
+        '.kl-edtb .kl-zb{display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:34px;padding:0 9px;background:#313244;color:#cdd6f4;border:none;border-radius:8px;cursor:pointer;font-size:15px;font-weight:600;line-height:1;}' +
+        '.kl-edtb .kl-zb:hover{background:#45475a;}'
+      editor.append(cstyle, toolbar, scroller)
       shadowRoot.appendChild(editor)
+
+      // ── Zoom / fit: render the image at a readable scale (CSS px per image px). Default fit-WIDTH for
+      // tall captures (so they don't become a sliver) and fit-WHOLE for normal ones. toImg() below maps via
+      // getBoundingClientRect(), so coordinates stay correct at ANY scale + scroll position. ──
+      let scale = 1
+      const clampScale = (s: number) => Math.max(0.05, Math.min(5, s || 1))
+      function applyScale(s: number) {
+        scale = clampScale(s)
+        canvas.style.width = Math.round(canvas.width * scale) + 'px'
+        canvas.style.height = Math.round(canvas.height * scale) + 'px'
+        const lbl = toolbar.querySelector('#klavity-zoom-pct') as HTMLElement | null
+        if (lbl) lbl.textContent = Math.round(scale * 100) + '%'
+      }
+      const fitWidthScale = () => (Math.max(1, scroller.clientWidth - 24)) / canvas.width
+      const fitPageScale = () => Math.min((Math.max(1, scroller.clientWidth - 24)) / canvas.width, (Math.max(1, scroller.clientHeight - 24)) / canvas.height)
+      // Default: tall image (taller aspect than the workspace) → fit width; otherwise fit the whole page.
+      const tall = (canvas.height / canvas.width) > (Math.max(1, scroller.clientHeight) / Math.max(1, scroller.clientWidth))
+      applyScale(tall ? fitWidthScale() : fitPageScale())
+      toolbar.querySelector('#klavity-zoom-in')!.addEventListener('click', () => applyScale(scale * 1.25))
+      toolbar.querySelector('#klavity-zoom-out')!.addEventListener('click', () => applyScale(scale / 1.25))
+      toolbar.querySelector('#klavity-fit-width')!.addEventListener('click', () => applyScale(fitWidthScale()))
+      toolbar.querySelector('#klavity-fit-page')!.addEventListener('click', () => applyScale(fitPageScale()))
 
       let activeTool = 'rect'
       let activeColor = '#ef4444'
