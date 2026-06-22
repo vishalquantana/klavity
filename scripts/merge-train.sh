@@ -20,6 +20,19 @@ EXCLUDE_RE='^feat/klavity-os-trails'
 QUIET_MIN=45   # don't merge a branch whose last commit is younger than this (mid-burst)
 now=$(date +%s)
 
+# --- Post-merge integrity gate -------------------------------------------
+# WHY: we merge -X theirs. A worker branch on a STALE base then silently wins
+# its old copy of any file master fixed since — NOT a conflict, so it ships
+# corruption (this reverted kanban-search, embedCopy, sim-widget repeatedly).
+# After each merge we re-check protected invariants vs the PRE-merge tree and
+# REVERT just that branch if it regressed any. Good branches in the same cycle
+# are kept. Extend PROTECTED_* freely.
+DASH="prototype/public/dashboard.html"
+WIDGET_BUNDLE="packages/sdk/dist/klavity-widget.iife.js"
+# "feature markers" whose count in $DASH must never DROP across a merge.
+PROTECTED_PATTERNS=('kanbanSearch\|kb-toolbar' 'embedCopy')
+dash_count(){ [ -f "$DASH" ] && grep -c "$1" "$DASH" 2>/dev/null || echo 0; }
+
 changed=0; merged=""
 for b in $(git for-each-ref --format='%(refname:short)' refs/heads/ | grep -E '^feat/'); do
   echo "$b" | grep -qE "$EXCLUDE_RE" && continue
@@ -28,8 +41,27 @@ for b in $(git for-each-ref --format='%(refname:short)' refs/heads/ | grep -E '^
   ct=$(git log -1 --format=%ct "$b" 2>/dev/null || echo 0)
   age=$(( now - ct ))
   [ "$age" -lt "$QUIET_MIN" ] && { log "skip $b (committed ${age}s ago, still hot)"; continue; }
+
+  pre=$(git rev-parse HEAD)
+  pre_counts=(); for p in "${PROTECTED_PATTERNS[@]}"; do pre_counts+=("$(dash_count "$p")"); done
+
   if git merge --no-edit -X theirs "$b" >/dev/null 2>&1; then
-    log "merged $b (+$ahead)"; changed=1; merged="$merged $b"
+    why=""
+    # 1) protected dashboard feature counts must not drop below pre-merge
+    for i in "${!PROTECTED_PATTERNS[@]}"; do
+      post=$(dash_count "${PROTECTED_PATTERNS[$i]}")
+      [ "$post" -lt "${pre_counts[$i]}" ] && why="$why ${PROTECTED_PATTERNS[$i]}(${pre_counts[$i]}->$post)"
+    done
+    # 2) committed widget bundle must stay valid JS (a broken bundle ships silently)
+    if command -v node >/dev/null && [ -f "$WIDGET_BUNDLE" ] && ! node --check "$WIDGET_BUNDLE" >/dev/null 2>&1; then
+      why="$why widget-bundle-syntax"
+    fi
+    if [ -n "$why" ]; then
+      log "!!! INTEGRITY GATE BLOCKED $b — reverting (stale-base regressed:$why). Branch must rebase onto master."
+      git reset -q --hard "$pre"
+    else
+      log "merged $b (+$ahead)"; changed=1; merged="$merged $b"
+    fi
   else
     log "CONFLICT on $b — aborting that merge, skipping (radar should warn)"
     git merge --abort 2>/dev/null
