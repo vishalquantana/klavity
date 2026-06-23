@@ -518,6 +518,7 @@ function widgetCorsHeaders(req: Request): Record<string, string> {
     "vary": "Origin",
     "access-control-allow-methods": "GET, POST, OPTIONS",
     "access-control-allow-headers": "authorization, content-type",
+    "access-control-allow-credentials": "true",
     "access-control-max-age": "600",
   }
 }
