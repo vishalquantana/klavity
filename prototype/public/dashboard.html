@@ -95,13 +95,8 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 .stat .n{font-family:var(--display);font-weight:500;font-size:32px;line-height:1;letter-spacing:-.02em}
 .stat .l{margin-top:8px;font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--paper-faint);display:flex;align-items:center;gap:6px}
 .stat .l .ic{font-size:13px}
-/* each overview stat card is a "View all →" link to its list page (lift on hover, press .96) */
-.stat-link{cursor:pointer;transition:transform var(--mi-dur) var(--mi-ease),box-shadow var(--mi-dur) var(--mi-ease)}
-.stat-link:hover{transform:translateY(-2px);box-shadow:var(--shadow-border-hover),var(--mi-shadow-card)}
-.stat-link:active{transform:scale(.96);transition-duration:var(--mi-press-dur)}
-.stat-go{display:inline-flex;align-items:center;gap:5px;margin-top:13px;font-family:var(--body);font-size:12px;font-weight:600;color:var(--indigo)}
-.stat-arrow{transition:transform var(--mi-dur) var(--mi-ease)}
-.stat-link:hover .stat-arrow,.stat-link:focus-visible .stat-arrow{transform:translateX(3px)}
+/* stat cards — pure count displays; navigation is via card-go buttons on the grid cards below */
+.stat-go{display:none}
 @media(max-width:760px){.stats{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
 /* insight KPI strip */
 .kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:20px}
@@ -817,10 +812,10 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 
   <!-- Metrics row — at-a-glance counts (feedback, sims, team, tickets) -->
   <div class="stats" id="stats" data-view="overview">
-    <div class="stat stat-link" data-go="triage" role="link" tabindex="0" aria-label="Feedback received, view all"><div class="n" id="stFeedback"><span class="sk sk-num"></span></div><div class="l"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719" /></svg></span>Feedback received</div><span class="stat-go">View all <span class="stat-arrow" aria-hidden="true">→</span></span></div>
-    <div class="stat stat-link" data-go="sims" role="link" tabindex="0" aria-label="Sims, view all"><div class="n" id="stSims"><span class="sk sk-num"></span></div><div class="l"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 16 1.5 1.5" /> <path d="m14 8-1.5-1.5" /> <path d="M15 2c-1.798 1.998-2.518 3.995-2.807 5.993" /> <path d="m16.5 10.5 1 1" /> <path d="m17 6-2.891-2.891" /> <path d="M2 15c6.667-6 13.333 0 20-6" /> <path d="m20 9 .891.891" /> <path d="M3.109 14.109 4 15" /> <path d="m6.5 12.5 1 1" /> <path d="m7 18 2.891 2.891" /> <path d="M9 22c1.798-1.998 2.518-3.995 2.807-5.993" /></svg></span>Sims</div><span class="stat-go">View all <span class="stat-arrow" aria-hidden="true">→</span></span></div>
-    <div class="stat stat-link" data-go="team" role="link" tabindex="0" aria-label="Teammates, view all"><div class="n" id="stTeam"><span class="sk sk-num"></span></div><div class="l"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /> <path d="M16 3.128a4 4 0 0 1 0 7.744" /> <path d="M22 21v-2a4 4 0 0 0-3-3.87" /> <circle cx="9" cy="7" r="4" /></svg></span>Teammates</div><span class="stat-go">View all <span class="stat-arrow" aria-hidden="true">→</span></span></div>
-    <div class="stat stat-link" data-go="tickets" role="link" tabindex="0" aria-label="Tickets filed, view all"><div class="n" id="stTickets"><span class="sk sk-num"></span></div><div class="l"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20v-9" /> <path d="M14 7a4 4 0 0 1 4 4v3a6 6 0 0 1-12 0v-3a4 4 0 0 1 4-4z" /> <path d="M14.12 3.88 16 2" /> <path d="M21 21a4 4 0 0 0-3.81-4" /> <path d="M21 5a4 4 0 0 1-3.55 3.97" /> <path d="M22 13h-4" /> <path d="M3 21a4 4 0 0 1 3.81-4" /> <path d="M3 5a4 4 0 0 0 3.55 3.97" /> <path d="M6 13H2" /> <path d="m8 2 1.88 1.88" /> <path d="M9 7.13V6a3 3 0 1 1 6 0v1.13" /></svg></span>Tickets filed</div><span class="stat-go">View all <span class="stat-arrow" aria-hidden="true">→</span></span></div>
+    <div class="stat"><div class="n" id="stFeedback"><span class="sk sk-num"></span></div><div class="l"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719" /></svg></span>Feedback received</div></div>
+    <div class="stat"><div class="n" id="stSims"><span class="sk sk-num"></span></div><div class="l"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 16 1.5 1.5" /> <path d="m14 8-1.5-1.5" /> <path d="M15 2c-1.798 1.998-2.518 3.995-2.807 5.993" /> <path d="m16.5 10.5 1 1" /> <path d="m17 6-2.891-2.891" /> <path d="M2 15c6.667-6 13.333 0 20-6" /> <path d="m20 9 .891.891" /> <path d="M3.109 14.109 4 15" /> <path d="m6.5 12.5 1 1" /> <path d="m7 18 2.891 2.891" /> <path d="M9 22c1.798-1.998 2.518-3.995 2.807-5.993" /></svg></span>Sims</div></div>
+    <div class="stat"><div class="n" id="stTeam"><span class="sk sk-num"></span></div><div class="l"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /> <path d="M16 3.128a4 4 0 0 1 0 7.744" /> <path d="M22 21v-2a4 4 0 0 0-3-3.87" /> <circle cx="9" cy="7" r="4" /></svg></span>Teammates</div></div>
+    <div class="stat"><div class="n" id="stTickets"><span class="sk sk-num"></span></div><div class="l"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20v-9" /> <path d="M14 7a4 4 0 0 1 4 4v3a6 6 0 0 1-12 0v-3a4 4 0 0 1 4-4z" /> <path d="M14.12 3.88 16 2" /> <path d="M21 21a4 4 0 0 0-3.81-4" /> <path d="M21 5a4 4 0 0 1-3.55 3.97" /> <path d="M22 13h-4" /> <path d="M3 21a4 4 0 0 1 3.81-4" /> <path d="M3 5a4 4 0 0 0 3.55 3.97" /> <path d="M6 13H2" /> <path d="m8 2 1.88 1.88" /> <path d="M9 7.13V6a3 3 0 1 1 6 0v1.13" /></svg></span>Tickets filed</div></div>
   </div>
 
   <div class="grid">
@@ -872,7 +867,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 
     <!-- Live activity -->
     <div class="card" data-view="overview">
-      <h2><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.9 16.1C1 12.2 1 5.8 4.9 1.9" /> <path d="M7.8 4.7a6.14 6.14 0 0 0-.8 7.5" /> <circle cx="12" cy="9" r="2" /> <path d="M16.2 4.8c2 2 2.26 5.11.8 7.47" /> <path d="M19.1 1.9a9.96 9.96 0 0 1 0 14.1" /> <path d="M9.5 18h5" /> <path d="m8 22 4-11 4 11" /></svg> Live activity <span class="count" id="actCount"></span></h2>
+      <h2><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.9 16.1C1 12.2 1 5.8 4.9 1.9" /> <path d="M7.8 4.7a6.14 6.14 0 0 0-.8 7.5" /> <circle cx="12" cy="9" r="2" /> <path d="M16.2 4.8c2 2 2.26 5.11.8 7.47" /> <path d="M19.1 1.9a9.96 9.96 0 0 1 0 14.1" /> <path d="M9.5 18h5" /> <path d="m8 22 4-11 4 11" /></svg> Live activity <span class="count" id="actCount"></span><button class="card-go" type="button" onclick="setView('triage')" style="margin-left:auto" aria-label="View all feedback and activity">View all <span class="card-arrow" aria-hidden="true">→</span></button></h2>
       <div id="activity"><div class="sk-card"><span class="sk sk-av"></span><div class="sk-lines"><span class="sk sk-line" style="width:62%"></span><span class="sk sk-line" style="width:40%"></span></div><span class="sk sk-pill"></span></div><div class="sk-card"><span class="sk sk-av"></span><div class="sk-lines"><span class="sk sk-line" style="width:62%"></span><span class="sk sk-line" style="width:40%"></span></div><span class="sk sk-pill"></span></div></div>
     </div>
 
@@ -3150,13 +3145,7 @@ load()
     if(v==='triage'){if(typeof renderTriage==='function')renderTriage();}
   }
   navs.forEach(function(b){b.addEventListener('click',function(){setView(b.getAttribute('data-go'));});});
-  window.klavSetView=setView; // let the overview KPI cards jump into a view
-  // Overview stat cards each carry a "View all →" to their list page (data-go = target view).
-  document.querySelectorAll('.stat-link[data-go]').forEach(function(c){
-    function go(){ setView(c.getAttribute('data-go')); }
-    c.addEventListener('click', go);
-    c.addEventListener('keydown', function(e){ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); go(); } });
-  });
+  window.klavSetView=setView; // exposed so card-go buttons (onclick="setView(...)") and inline handlers can call it
   // the checklist's "Open Live Sims settings" link lives under the Sims section
   var cl=document.getElementById('checklistUrlLink');
   if(cl){cl.addEventListener('click',function(){setView('sims');});}
