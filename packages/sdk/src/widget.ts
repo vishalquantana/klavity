@@ -11,7 +11,7 @@ import { parseScriptConfig, gateMessage, isFirstParty, buildFeedbackForm, succes
 import { icon } from "@klavity/core/icons"
 import { createSessionReplay, type SessionReplay } from "./session-replay"
 import { on, emit } from "./events"
-import "./sims-live"  // side-effecting: auto-installs window.KlavitySims on load
+import { SimsLive, type LiveObservation } from "./sims-live"  // side-effecting: auto-installs window.KlavitySims on load
 import { startSimsWatch, type SimsWatchController } from "./sims-watch"
 
 const HOST_ID = "klavity-widget-host"
@@ -64,6 +64,27 @@ export function setMetadata(meta: Record<string, unknown> | null) {
 }
 function buildWidgetContext(): ReportContext {
   return buildCaptureContext(_buffers, { identity: _identity, metadata: _metadata })
+}
+
+function simObservationBugDescription(observation: LiveObservation, simName: string): string {
+  const lines = [
+    `Sim observation from ${simName}`,
+    "",
+    (observation.text || "").trim(),
+  ]
+  const severity = String(observation.severity || "").trim()
+  if (severity && severity !== "none") lines.push("", `Severity: ${severity}`)
+  const title = String(observation.suggestedBug?.title || "").trim()
+  if (title) lines.push(`Suggested title: ${title}`)
+  return lines.filter((line, idx) => line !== "" || lines[idx - 1] !== "").join("\n").trim()
+}
+
+function prefillReportDescription(ctrl: ModalController, description: string): void {
+  const desc = ctrl.shadowRoot.getElementById("klavity-desc") as HTMLTextAreaElement | null
+  if (!desc) return
+  desc.value = description
+  desc.dispatchEvent(new Event("input", { bubbles: true }))
+  try { desc.focus({ preventScroll: true }) } catch { desc.focus() }
 }
 
 // Deferred openReport ref — populated inside mount() so window.Klavity.open() works post-mount.
@@ -322,7 +343,7 @@ async function mount() {
   issueBadge.setAttribute("aria-hidden", "true")
   reportBtn.appendChild(issueBadge)
   _issueBadge = issueBadge
-  function openReport(type: "bug" | "feature" = "bug", opts?: { initialShot?: string }) {
+  function openReport(type: "bug" | "feature" = "bug", opts?: { initialShot?: string; initialDescription?: string }) {
     if (composer && (composer.shadowRoot.host as HTMLElement | null)?.isConnected) return
     const identified = firstParty || !!getToken()  // already known to Klavity (own page session, or signed-in widget)
     // Only the "login" gate forces the connect flow on third-party sites. "email"/"anonymous" let an
@@ -380,9 +401,13 @@ async function mount() {
       success: { copy: successCopy(widget.mode, widget.ctaUrl, suppressSuccessEmail), onLead: postLead },
     }, modalConfig)
     composer = ctrl // track the open composer so a second open is ignored until this one closes
+    if (opts?.initialDescription) prefillReportDescription(ctrl, opts.initialDescription)
     // Right-click-drag region: load the cropped selection as the default (first) screenshot, zoomed to fit.
     if (opts?.initialShot) ctrl.addScreenshot(opts.initialShot)
     } catch (e) { console.warn("[Klavity] failed to open the report composer:", e) }
+  }
+  SimsLive.onTriage = (observation, simName) => {
+    openReport("bug", { initialDescription: simObservationBugDescription(observation, simName) })
   }
   // G5: expose openReport through the module-level ref so window.Klavity.open() works.
   _openReport = (type = "bug") => openReport(type as "bug" | "feature")

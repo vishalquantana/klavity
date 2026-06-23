@@ -10839,7 +10839,7 @@ function $d(e) {
   const h = document.createElement("div");
   h.className = "klav-pin-actions";
   const u = document.createElement("button");
-  u.className = "klav-pin-triage", u.innerHTML = ne("bug") + " Triage as bug", u.setAttribute("aria-label", `Triage observation from ${r.name} as a bug`), u.addEventListener("click", () => {
+  u.className = "klav-pin-triage", u.innerHTML = ne("bug") + " Track as Bug", u.setAttribute("aria-label", `Track observation from ${r.name} as a bug`), u.addEventListener("click", () => {
     var x;
     (x = Ut.onTriage) == null || x.call(Ut, i, r.name);
   });

@@ -83,7 +83,7 @@ export interface KlavitySimsAPI {
   setReviewing(reviewing: boolean): void
   renderFeedback(simId: string, simName: string, observations: LiveObservation[]): void
   undeploy(): void
-  /** Set this to receive "Triage as bug" clicks from pinned bubbles. */
+  /** Set this to receive "Track as Bug" clicks from pinned bubbles. */
   onTriage: ((observation: LiveObservation, simName: string) => void) | null
 }
 
@@ -997,8 +997,8 @@ function createExpandedChrome(ann: Annotation): void {
   const actions = document.createElement('div'); actions.className = 'klav-pin-actions'
 
   const triageBtn = document.createElement('button'); triageBtn.className = 'klav-pin-triage'
-  triageBtn.innerHTML = icon('bug') + ' Triage as bug'
-  triageBtn.setAttribute('aria-label', `Triage observation from ${slot.name} as a bug`)
+  triageBtn.innerHTML = icon('bug') + ' Track as Bug'
+  triageBtn.setAttribute('aria-label', `Track observation from ${slot.name} as a bug`)
   triageBtn.addEventListener('click', () => { SimsLive.onTriage?.(obs, slot.name) })
 
   const dismissBtn = document.createElement('button'); dismissBtn.className = 'klav-pin-dismiss'

@@ -75,6 +75,7 @@ beforeEach(() => {
 
 afterEach(() => {
   SimsLive.undeploy()
+  SimsLive.onTriage = null
   vi.useRealTimers()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
@@ -106,6 +107,13 @@ describe("SimsLive walk + outline choreography", () => {
     expect(document.querySelector(".klav-pin")).toBeTruthy()
     expect(document.querySelectorAll(".klav-pin")).toHaveLength(1)
     expect(document.querySelector(".ksl-bubble")).toBeNull()
+
+    const trackBtn = document.querySelector(".klav-pin-triage") as HTMLButtonElement
+    const onTriage = vi.fn()
+    SimsLive.onTriage = onTriage
+    expect(trackBtn.textContent).toContain("Track as Bug")
+    trackBtn.click()
+    expect(onTriage).toHaveBeenCalledWith(obs, SIM.name)
   })
 
   it("falls back to visible text matching when the model returns no region", async () => {

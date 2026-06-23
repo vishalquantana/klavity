@@ -50,6 +50,7 @@ vi.mock("./widget-lib", async () => {
 
 import { mount } from "./widget"
 import { parseScriptConfig } from "./widget-lib"
+import { SimsLive } from "./sims-live"
 
 const HOST_ID = "klavity-widget-host"
 
@@ -73,7 +74,7 @@ function installFetchStub() {
     if (url.includes("/api/projects/") && url.includes("/config")) {
       return jsonResponse({
         modalConfig: nextModalConfig,
-        widget: { mode: "support", ctaUrl: "https://cta.test", reportGate: "email" },
+        widget: { mode: "support", ctaUrl: "https://cta.test", reportGate: "anonymous" },
       })
     }
     // heartbeat ping + any stray call → blank ok
@@ -109,8 +110,17 @@ beforeEach(() => {
   // Wipe any host created by a previous mount() so each test starts clean.
   document.body.innerHTML = ""
   nextModalConfig = {}
+  SimsLive.onTriage = null
   vi.mocked(parseScriptConfig).mockReturnValue({ projectId: "", backendUrl: "" })
 })
+
+function activeComposerShadow(): ShadowRoot {
+  for (const el of Array.from(document.body.querySelectorAll("div")) as HTMLElement[]) {
+    const shadow = el.shadowRoot
+    if (shadow?.getElementById("klavity-desc")) return shadow
+  }
+  throw new Error("composer shadow root not found")
+}
 
 // ── 1. launcherMode === 'hidden' → no visible launcher ────────────────────────
 
@@ -122,6 +132,29 @@ describe("launcherMode: hidden", () => {
     const container = btn.parentElement as HTMLElement
     expect(container).toBeTruthy()
     expect(container.style.display).toBe("none")
+  })
+})
+
+describe("Sim observation tracking", () => {
+  it("opens a prefilled bug composer when Track as Bug is clicked from a Sim observation", async () => {
+    await mountWith({ launcherMode: "full" })
+
+    expect(SimsLive.onTriage).toBeTypeOf("function")
+    SimsLive.onTriage?.({
+      text: "The checkout button feels broken and blocks progress.",
+      sentiment: "frustrated",
+      severity: "high",
+      suggestedBug: { title: "Checkout button blocks progress" },
+    }, "Vishal Kumar")
+
+    const shadow = activeComposerShadow()
+    const desc = shadow.getElementById("klavity-desc") as HTMLTextAreaElement
+    const submit = shadow.getElementById("klavity-submit") as HTMLButtonElement
+    expect(desc.value).toContain("Sim observation from Vishal Kumar")
+    expect(desc.value).toContain("The checkout button feels broken")
+    expect(desc.value).toContain("Severity: high")
+    expect(desc.value).toContain("Suggested title: Checkout button blocks progress")
+    expect(submit.disabled).toBe(false)
   })
 })
 
