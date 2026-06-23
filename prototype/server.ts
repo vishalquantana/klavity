@@ -2079,7 +2079,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           seenKeys: activeIndexes.map((i) => seenKeys[i]),
           seenHashes, sessionId: sessionId ?? undefined, mode,
           adhoc,  // bypass seenHashes + near-dup dedup for manual/boot deploys
-          reactFn: (sim, b64, mt, pu) => reactToPage(sim, b64, mt, pu),
+          reactFn: (sim, b64, mt, pu) => reactToPage(sim, b64, mt, pu, { email: meR, projectId }),
           resolveCitationsFn: resolveCitations,
           autoCopy: autoCopyFeedback,
           markSeen: markReviewSeen,

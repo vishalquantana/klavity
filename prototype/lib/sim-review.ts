@@ -311,6 +311,30 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
             })
           }
         }
+      } else {
+        // Non-bug observation: persist so it shows in Triage/dashboard even when the page is
+        // functioning correctly and the Sim has positive/neutral reactions. Use the observation
+        // hash as the per-project issue key so the same text deduplicates across sessions
+        // (re-triggers bump recurrence) rather than inserting duplicate rows.
+        const existing = await findFeedbackByIssueKey(projectId, hash)
+        if (existing) {
+          await bumpFeedbackRecurrence(existing.id, Date.now())
+          feedbackId = existing.id
+          deduped = true
+          if (db) {
+            try { recurrenceMem = await buildRecurrenceMemory(db, existing.id, projectId) }
+            catch (e: any) { console.warn("[sim-review] recurrence-memory skipped:", e?.message || e) }
+          }
+        } else {
+          feedbackId = await insertFeedback({
+            projectId, simId: sim.id, actorEmail, urlHost, urlPath,
+            observation: obsText || null, sentiment: r?.sentiment ?? null,
+            severity: null, screenshotId, suggestedBug: null,
+            citedTraitIds: citation.citedTraitIds.length ? citation.citedTraitIds : null,
+            sourceQuote: citation.sourceQuote, sourceTranscriptId: citation.sourceTranscriptId, sourceDate: citation.sourceDate,
+            issueKey: hash,
+          })
+        }
       }
 
       const assembled: SimObservation = {
