@@ -452,6 +452,7 @@ export async function applySchema(c: Client) {
     ["recurrence_count",      "INTEGER NOT NULL DEFAULT 1"],
     ["recurrence_dates_json", "TEXT"],
     ["last_seen_at",          "INTEGER"],
+    ["resolved_at",           "INTEGER"],
     // G2/G3/G5: captured dev-tools context (console + network + UA/screen/viewport) and custom
     // identity/metadata, persisted as a JSON blob so every widget/SDK/extension report carries it.
     ["client_context_json",   "TEXT"],
@@ -2123,9 +2124,13 @@ export async function updateFeedbackMeta(
   feedbackId: string,
   meta: Partial<{ status: string; assignee: string | null; notes: string | null; severity: string | null }>
 ): Promise<boolean> {
+  const now = Date.now()
   const sets: string[] = ["updated_at=?"]
-  const args: any[] = [Date.now()]
-  if (meta.status !== undefined) { sets.push("status=?"); args.push(meta.status) }
+  const args: any[] = [now]
+  if (meta.status !== undefined) {
+    sets.push("status=?"); args.push(meta.status)
+    if (meta.status === "done") { sets.push("resolved_at=?"); args.push(now) }
+  }
   if ("assignee" in meta) { sets.push("assignee=?"); args.push(meta.assignee ?? null) }
   if ("notes" in meta) { sets.push("notes=?"); args.push(meta.notes ?? null) }
   if ("severity" in meta) { sets.push("severity=?"); args.push(meta.severity ?? null) }
@@ -2165,9 +2170,12 @@ export async function feedbackById(projectId: string, id: string): Promise<any |
     assignee: x.assignee != null ? String(x.assignee) : null,
     notes: x.notes != null ? String(x.notes) : null,
     updatedAt: x.updated_at != null ? Number(x.updated_at) : null,
+    resolvedAt: x.resolved_at != null ? Number(x.resolved_at) : null,
     createdAt: Number(x.created_at),
+    issueKey: x.issue_key != null ? String(x.issue_key) : null,
     recurrenceCount: Number(x.recurrence_count ?? 1),
     recurrenceDatesJson: x.recurrence_dates_json != null ? String(x.recurrence_dates_json) : null,
+    lastSeenAt: x.last_seen_at != null ? Number(x.last_seen_at) : null,
     clientContext: x.client_context_json != null ? safeJsonParse(x.client_context_json) : null,
   }
 }

@@ -301,6 +301,7 @@ test("grounded+dedup columns exist after initDb (additive, idempotent)", async (
     expect(await columnExistsT(c, "feedback", "recurrence_count")).toBe(true)
     expect(await columnExistsT(c, "feedback", "recurrence_dates_json")).toBe(true)
     expect(await columnExistsT(c, "feedback", "last_seen_at")).toBe(true)
+    expect(await columnExistsT(c, "feedback", "resolved_at")).toBe(true)
   } finally {
     c.close()
     rmDb(file)

@@ -39,7 +39,7 @@ import { WalkBusyError } from "./lib/trails-browser"
 import { seedDemoTrails } from "./lib/trails-demo-seed"
 import { listExpectations, getExpectation, setExpectationStatus, setExpectationEnforced } from "./lib/expectations-db"
 import { validateAssertionDraft } from "./lib/assertion-spec"
-import { buildRecurrenceMemory } from "./lib/recurrence-memory"
+import { buildRecurrenceMemory, listProjectRecurringIssues } from "./lib/recurrence-memory"
 
 const KEY = process.env.OPENROUTER_API_KEY
 const MODEL = process.env.KLAV_MODEL || "google/gemini-2.5-flash"
@@ -3076,7 +3076,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return json({ project: { id: created.id, name: created.name, accountId: created.accountId, status: created.status, role: "admin" } }, 201)
       }
       // Project detail + members (projectAccess-gated) and project-scoped invite (R4) + monitored-urls (P3b) + connectors.
-      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/triage|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/test)?)?$/)
+      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/triage|\/recurring|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/test)?)?$/)
       if (projMatch) {
         const pid = projMatch[1]
         const sub = projMatch[2] || ""
@@ -3337,6 +3337,15 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (req.method === "GET" && sub === "/triage") {
           const triage = await listTriageFeedback(proj.id)
           return json({ triage })
+        }
+
+        // GET /api/projects/:id/recurring — corpus-wide recurring/regression memory for this project.
+        // Read-only, project-scoped, and citation-grounded in real feedback rows.
+        if (req.method === "GET" && sub === "/recurring") {
+          if (!db) return json({ error: "Database unavailable." }, 503)
+          const limit = Math.min(200, Math.max(1, Number(url.searchParams.get("limit") || "50")))
+          const recurring = await listProjectRecurringIssues(db, proj.id, { limit })
+          return json({ projectId: proj.id, recurring })
         }
 
         if (req.method === "GET" && sub === "") {
