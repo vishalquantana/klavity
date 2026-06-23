@@ -1,7 +1,7 @@
 {
   "name": "klavity-snap",
   "private": true,
-  "version": "0.39.179",
+  "version": "0.39.180",
   "author": "Quantana <hello@quantana.com.au> (https://quantana.com.au)",
   "license": "FSL-1.1-ALv2",
   "scripts": {
