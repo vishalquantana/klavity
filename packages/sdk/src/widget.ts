@@ -755,6 +755,12 @@ async function mount() {
     try {
       const benchStart = benchNow()
       const captureStart = benchNow()
+      const targetViewport = {
+        scrollX: window.scrollX || 0,
+        scrollY: window.scrollY || 0,
+        width: window.innerWidth || 1,
+        height: window.innerHeight || 1,
+      }
       const shot = await Promise.race([
         safeToPng(document.body, { skipFonts: true, filter: (n) => (n as HTMLElement).id !== HOST_ID }),
         new Promise<never>((_, rej) => setTimeout(() => rej(new Error("capture timeout")), 10_000)),
@@ -784,7 +790,14 @@ async function mount() {
       for (const review of data.reviews) {
         const rawObs: unknown[] = Array.isArray(review.observations) ? review.observations : (Array.isArray(review.reactions) ? review.reactions : [])
         // Server returns SimObservation with .observation (text) field; sims-live.ts LiveObservation expects .text.
-        const liveObs = rawObs.map((r: any) => ({ text: r.observation ?? r.text ?? '', sentiment: r.sentiment, severity: r.severity, region: r.region, suggestedBug: r.suggestedBug }))
+        const liveObs = rawObs.map((r: any) => ({
+          text: r.observation ?? r.text ?? '',
+          sentiment: r.sentiment,
+          severity: r.severity,
+          region: r.region,
+          suggestedBug: r.suggestedBug,
+          targetViewport,
+        }))
         observations += liveObs.length
         _issueCount += liveObs.length
         try { kl?.renderFeedback?.(review.simId, review.simName ?? '', liveObs) } catch { /* never break page */ }

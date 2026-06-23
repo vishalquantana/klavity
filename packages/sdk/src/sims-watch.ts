@@ -232,6 +232,9 @@ export function startSimsWatch(opts: SimsWatchOptions): SimsWatchController {
     try {
       const benchStart = benchNow()
       const captureStart = benchNow()
+      const targetViewport = typeof window !== 'undefined'
+        ? { scrollX: window.scrollX || 0, scrollY: window.scrollY || 0, width: window.innerWidth || 1, height: window.innerHeight || 1 }
+        : null
       // Race captureViewport against a timeout so a hung capture never locks busy=true.
       const screenshotDataUrl = await Promise.race([
         opts.captureViewport(),
@@ -283,7 +286,14 @@ export function startSimsWatch(opts: SimsWatchOptions): SimsWatchController {
         if (!review?.simId) continue
         const rawObs: unknown[] = Array.isArray(review.observations) ? review.observations : []
         // Server SimObservation uses .observation for text; sims-live.ts LiveObservation expects .text.
-        const liveObs = rawObs.map((r: any) => ({ text: r.observation ?? r.text ?? '', sentiment: r.sentiment, severity: r.severity, region: r.region, suggestedBug: r.suggestedBug }))
+        const liveObs = rawObs.map((r: any) => ({
+          text: r.observation ?? r.text ?? '',
+          sentiment: r.sentiment,
+          severity: r.severity,
+          region: r.region,
+          suggestedBug: r.suggestedBug,
+          targetViewport,
+        }))
         observations += liveObs.length
         try {
           kl?.renderFeedback?.(review.simId, review.simName ?? '', liveObs)

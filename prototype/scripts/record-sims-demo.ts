@@ -240,6 +240,16 @@ async function record(token: string | null): Promise<void> {
       null,
       { timeout: 30_000 },
     )
+    await page.evaluate(() => {
+      const w = window as any
+      w.__klavWalkStats = { maxWalkers: 0 }
+      w.__klavWalkObserver?.disconnect?.()
+      w.__klavWalkObserver = new MutationObserver(() => {
+        const count = document.querySelectorAll(".klav-walker").length
+        w.__klavWalkStats.maxWalkers = Math.max(w.__klavWalkStats.maxWalkers || 0, count)
+      })
+      w.__klavWalkObserver.observe(document.body, { childList: true, subtree: true })
+    })
 
     await openKlavityMenu(page)
     const deploy = page.locator("#klavity-widget-host .klm-card").filter({ hasText: "Deploy all Sims" })
@@ -254,10 +264,7 @@ async function record(token: string | null): Promise<void> {
     log("Waiting for review reactions")
     await page.waitForFunction(
       () => {
-        const dock = document.getElementById("klav-sims-live") as HTMLElement & { shadowRoot?: ShadowRoot }
-        const shadowCount = dock?.shadowRoot?.querySelectorAll(".ksl-bubble").length || 0
-        const lightCount = document.querySelectorAll(".klav-halo,.klav-pin,.klav-walker").length
-        return shadowCount + lightCount > 0
+        return document.querySelectorAll(".klav-halo").length > 0 && document.querySelectorAll(".klav-pin").length > 0
       },
       null,
       { timeout: 90_000 },
@@ -272,8 +279,27 @@ async function record(token: string | null): Promise<void> {
       const halos = document.querySelectorAll(".klav-halo").length
       const pins = document.querySelectorAll(".klav-pin").length
       const walkers = document.querySelectorAll(".klav-walker").length
+      const maxWalkers = ((window as any).__klavWalkStats?.maxWalkers || 0) as number
       const overlayChildren = overlay?.shadowRoot?.childElementCount || 0
-      return { bubbles, slots, halos, pins, walkers, overlayChildren, total: bubbles + halos + pins + walkers }
+      const firstHalo = document.querySelector(".klav-halo") as HTMLElement | null
+      let anchored = false
+      let anchorTag: string | null = null
+      let anchorId: string | null = null
+      if (firstHalo) {
+        const rect = firstHalo.getBoundingClientRect()
+        const x = rect.left + rect.width / 2
+        const y = rect.top + rect.height / 2
+        const hidden = Array.from(document.querySelectorAll("#klav-sims-live,#klav-sims-overlay,#klavity-widget-host,.klav-halo,.klav-pin,.klav-walker")) as HTMLElement[]
+        const prior = hidden.map((el) => [el, el.style.visibility] as const)
+        hidden.forEach((el) => { el.style.visibility = "hidden" })
+        const target = document.elementFromPoint(x, y) as HTMLElement | null
+        prior.forEach(([el, vis]) => { el.style.visibility = vis })
+        anchored = !!target && target !== document.body && target !== document.documentElement
+        anchorTag = target?.tagName || null
+        anchorId = target?.id || null
+      }
+      ;(window as any).__klavWalkObserver?.disconnect?.()
+      return { bubbles, slots, halos, pins, walkers, maxWalkers, overlayChildren, anchored, anchorTag, anchorId, total: bubbles + halos + pins + walkers }
     })
 
     const review = reviewResponse as ReviewResponse | null
@@ -294,8 +320,8 @@ async function record(token: string | null): Promise<void> {
     if (verifierRenderMs <= 0) {
       throw new Error(`Expected positive verifier render duration; got ${verifierRenderMs}`)
     }
-    if (counts.total <= 0) {
-      throw new Error(`Expected reaction nodes; got ${JSON.stringify(counts)}`)
+    if (counts.halos <= 0 || counts.pins <= 0 || counts.maxWalkers <= 0 || !counts.anchored) {
+      throw new Error(`Expected walkers plus anchored halo/pin nodes; got ${JSON.stringify(counts)}`)
     }
 
     log(`Reaction DOM assertion passed: ${JSON.stringify(counts)}`)

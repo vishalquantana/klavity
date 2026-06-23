@@ -5,13 +5,13 @@
  *
  * HOME BASE: Sims huddle bottom-right in the dock — always visible.
  *
- * WALK/BOX/PIN: when renderFeedback() receives an observation that carries a
- * `region` bbox AND is critical/negative (in default "critical" mode), the Sim
+ * WALK/BOX/PIN: when renderFeedback() receives an observation that resolves to a
+ * target element (model `region` first, text-matching fallback second), the Sim
  *   1. WALKS from the huddle to the flagged page element
  *   2. DRAWS a pulsing halo box around that element
  *   3. PINS a speech bubble anchored to the element (stays until dismissed)
  *
- * Non-critical / no-region observations show as a transient huddle bubble.
+ * Page-level observations with no target show as a transient huddle bubble.
  *
  * Public API on window.KlavitySims:
  *   deploy(simIds, sims?, opts?)  — mount dock; opts.mode:'critical'|'all'
@@ -40,6 +40,14 @@ export interface ObservationRegion {
   h: number   // box height as fraction of viewport height
 }
 
+/** Viewport state at the moment the screenshot was captured. */
+export interface ObservationViewport {
+  scrollX: number
+  scrollY: number
+  width: number
+  height: number
+}
+
 export interface LiveSimDescriptor {
   id: string
   name: string
@@ -55,13 +63,15 @@ export interface LiveObservation {
   suggestedBug?: { title?: string } | null
   /** Present when the server identified a specific page element for this observation. */
   region?: ObservationRegion | null
+  /** Captured client viewport so delayed reviews can re-anchor after scrolling. */
+  targetViewport?: ObservationViewport | null
 }
 
 export interface DeployOpts {
   /**
-   * 'critical' (default) — only negative/high-severity observations with a region
+   * 'all' (default) — every observation with a resolved target walks out.
+   * 'critical' — only negative/high-severity observations with a resolved target
    * walk out and get pinned; positives stay in the huddle.
-   * 'all' — every observation with a region walks out regardless of sentiment.
    */
   mode?: 'critical' | 'all'
 }
@@ -86,7 +96,7 @@ let shadowRoot: ShadowRoot | null = null
 let dockEl: HTMLElement | null = null
 let overlayEl: HTMLElement | null = null    // full-page overlay for walkers/halos/pins
 let deployAbort: AbortController | null = null
-let activeMode: 'critical' | 'all' = 'critical'
+let activeMode: 'critical' | 'all' = 'all'
 
 interface SimSlot {
   avatarEl: HTMLElement   // .ksl-slot in the dock
@@ -100,9 +110,12 @@ const simSlots = new Map<string, SimSlot>()
 /** In-transit walker elements (removed on arrival or undeploy). */
 const walkers = new Set<HTMLElement>()
 
-interface Pin { halo: HTMLElement; bubble: HTMLElement }
+interface Pin { halo: HTMLElement; bubble: HTMLElement; cleanup?: () => void }
 /** Active pinned annotations keyed by a unique pin id. */
 const pins = new Map<string, Pin>()
+let walkQueueIndex = 0
+let walkQueueResetTimer: ReturnType<typeof setTimeout> | null = null
+const walkQueueTimers = new Set<ReturnType<typeof setTimeout>>()
 
 // ── Dock CSS (shadow DOM) ─────────────────────────────────────────────────────
 
@@ -391,26 +404,232 @@ function isCritical(obs: LiveObservation): boolean {
   return !!(obs.sentiment && NEG.has(obs.sentiment.toLowerCase()))
 }
 
-/**
- * Locate the page element at the centre of a normalized region.
- * Briefly hides Klavity overlays so they don't intercept the hit-test.
- */
-function findTarget(region: ObservationRegion): Element | null {
-  const cx = Math.round((region.x + region.w / 2) * window.innerWidth)
-  const cy = Math.round((region.y + region.h / 2) * window.innerHeight)
+function prefersReducedMotion(): boolean {
+  try { return window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false }
+  catch { return false }
+}
 
-  // Hide overlays to avoid intercepting the hit-test
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function isOwnOverlayElement(el: Element | null): boolean {
+  if (!el) return false
+  if (el === overlayEl || el === dockHostEl) return true
+  if (el.id === OVERLAY_HOST_ID || el.id === DOCK_HOST_ID || el.id === 'klavity-widget-host') return true
+  const classList = (el as HTMLElement).classList
+  return !!classList && (
+    classList.contains('klav-halo') ||
+    classList.contains('klav-pin') ||
+    classList.contains('klav-walker') ||
+    classList.contains('ksl-bubble') ||
+    classList.contains('ksl-slot')
+  )
+}
+
+function withOverlaysHidden<T>(fn: () => T): T {
   const hiddens: { el: HTMLElement; vis: string }[] = []
   for (const el of [overlayEl, dockHostEl]) {
-    if (el) { hiddens.push({ el, vis: el.style.visibility }); el.style.visibility = 'hidden' }
+    if (!el) continue
+    hiddens.push({ el, vis: el.style.visibility })
+    el.style.visibility = 'hidden'
   }
+  try {
+    return fn()
+  } finally {
+    for (const { el, vis } of hiddens) el.style.visibility = vis
+  }
+}
 
-  const target = document.elementFromPoint(cx, cy)
+function viewportFor(obs: LiveObservation): ObservationViewport {
+  const v = obs.targetViewport
+  return {
+    scrollX: Number.isFinite(v?.scrollX) ? Number(v!.scrollX) : window.scrollX,
+    scrollY: Number.isFinite(v?.scrollY) ? Number(v!.scrollY) : window.scrollY,
+    width: Math.max(1, Number.isFinite(v?.width) ? Number(v!.width) : window.innerWidth),
+    height: Math.max(1, Number.isFinite(v?.height) ? Number(v!.height) : window.innerHeight),
+  }
+}
 
-  for (const { el, vis } of hiddens) el.style.visibility = vis
+function targetRectFromRegion(region: ObservationRegion, viewport: ObservationViewport): DOMRect {
+  return new DOMRect(
+    viewport.scrollX + region.x * viewport.width,
+    viewport.scrollY + region.y * viewport.height,
+    Math.max(1, region.w * viewport.width),
+    Math.max(1, region.h * viewport.height),
+  )
+}
 
-  if (!target || target === document.body || target === document.documentElement) return null
-  return target
+function rectArea(rect: DOMRect): number {
+  return Math.max(0, rect.width) * Math.max(0, rect.height)
+}
+
+function overlapArea(a: DOMRect, b: DOMRect): number {
+  const left = Math.max(a.left, b.left)
+  const right = Math.min(a.right, b.right)
+  const top = Math.max(a.top, b.top)
+  const bottom = Math.min(a.bottom, b.bottom)
+  return Math.max(0, right - left) * Math.max(0, bottom - top)
+}
+
+function viewportToDocumentRect(rect: DOMRect): DOMRect {
+  return new DOMRect(rect.left + window.scrollX, rect.top + window.scrollY, rect.width, rect.height)
+}
+
+function isUsableTarget(el: Element | null): el is HTMLElement {
+  if (!el || !(el instanceof HTMLElement)) return false
+  if (el === document.body || el === document.documentElement || isOwnOverlayElement(el)) return false
+  const rect = el.getBoundingClientRect()
+  if (rect.width < 8 || rect.height < 8) return false
+  try {
+    const cs = getComputedStyle(el)
+    if (cs.display === 'none' || cs.visibility === 'hidden' || Number(cs.opacity) === 0) return false
+  } catch { /* ignore style lookup failures */ }
+  return true
+}
+
+function elementCandidatesFromPoint(clientX: number, clientY: number): HTMLElement[] {
+  return withOverlaysHidden(() => {
+    const seen = new Set<Element>()
+    const out: HTMLElement[] = []
+    const add = (el: Element | null) => {
+      let cur: Element | null = el
+      while (cur && cur !== document.body && cur !== document.documentElement) {
+        if (!seen.has(cur) && isUsableTarget(cur)) {
+          seen.add(cur)
+          out.push(cur)
+        }
+        cur = cur.parentElement
+      }
+    }
+
+    const stack = typeof document.elementsFromPoint === 'function'
+      ? document.elementsFromPoint(clientX, clientY)
+      : [document.elementFromPoint(clientX, clientY)].filter(Boolean) as Element[]
+    for (const el of stack) add(el)
+    return out
+  })
+}
+
+function bestElementForRegion(region: ObservationRegion, obs: LiveObservation): HTMLElement | null {
+  const viewport = viewportFor(obs)
+  const targetDocRect = targetRectFromRegion(region, viewport)
+  const clientX = Math.max(2, Math.min(window.innerWidth - 2, targetDocRect.left + targetDocRect.width / 2 - window.scrollX))
+  const clientY = Math.max(2, Math.min(window.innerHeight - 2, targetDocRect.top + targetDocRect.height / 2 - window.scrollY))
+  const candidates = elementCandidatesFromPoint(clientX, clientY)
+  if (!candidates.length) return null
+
+  const targetArea = Math.max(1, rectArea(targetDocRect))
+  let best: HTMLElement | null = null
+  let bestScore = -Infinity
+  for (const el of candidates) {
+    const rect = viewportToDocumentRect(el.getBoundingClientRect())
+    const overlap = overlapArea(rect, targetDocRect)
+    if (overlap <= 0) continue
+    const area = Math.max(1, rectArea(rect))
+    const coverage = overlap / targetArea
+    const waste = Math.max(0, (area - overlap) / area)
+    const tag = el.tagName.toLowerCase()
+    const semanticBonus = /^(button|a|input|textarea|select|label|section|article|nav|header|footer|main|form)$/.test(tag) ? 0.18 : 0
+    const sizePenalty = area > window.innerWidth * window.innerHeight * 0.92 ? 0.8 : 0
+    const score = coverage - waste * 0.35 + semanticBonus - sizePenalty
+    if (score > bestScore) {
+      best = el
+      bestScore = score
+    }
+  }
+  return best ?? candidates[0] ?? null
+}
+
+async function scrollDocumentPointIntoView(pageX: number, pageY: number): Promise<void> {
+  const margin = 80
+  const inView =
+    pageX >= window.scrollX + margin &&
+    pageX <= window.scrollX + window.innerWidth - margin &&
+    pageY >= window.scrollY + margin &&
+    pageY <= window.scrollY + window.innerHeight - margin
+  if (inView) return
+
+  const maxY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight)
+  const maxX = Math.max(0, document.documentElement.scrollWidth - window.innerWidth)
+  const top = Math.max(0, Math.min(maxY, pageY - window.innerHeight * 0.38))
+  const left = Math.max(0, Math.min(maxX, pageX - window.innerWidth * 0.45))
+  try {
+    window.scrollTo({ top, left, behavior: prefersReducedMotion() ? 'auto' : 'smooth' })
+  } catch {
+    window.scrollTo(left, top)
+  }
+  await sleep(prefersReducedMotion() ? 80 : 520)
+}
+
+const STOP_WORDS = new Set([
+  'about','after','again','also','because','being','button','clear','could','easy','element','feels','from','have','into','just','like','more','page','section','that','the','their','there','this','with','would','where','while','your',
+])
+
+function tokensFrom(text: string): string[] {
+  const seen = new Set<string>()
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .split(/\s+/)
+    .filter((word) => {
+      if (word.length < 4 || STOP_WORDS.has(word) || seen.has(word)) return false
+      seen.add(word)
+      return true
+    })
+}
+
+function inferTargetFromText(obs: LiveObservation): HTMLElement | null {
+  const tokens = tokensFrom(obs.text)
+  if (!tokens.length) return null
+  const selector = [
+    'button','a','input','textarea','select','label','h1','h2','h3','h4','p','li',
+    'nav','header','footer','main','section','article','form','[role]','[aria-label]','[data-testid]','div',
+  ].join(',')
+
+  let best: HTMLElement | null = null
+  let bestScore = 0
+  const elements = Array.from(document.querySelectorAll(selector)).slice(0, 700)
+  for (const el of elements) {
+    if (!isUsableTarget(el)) continue
+    const rect = el.getBoundingClientRect()
+    const visible =
+      rect.bottom > 0 && rect.right > 0 && rect.top < window.innerHeight && rect.left < window.innerWidth
+    if (!visible) continue
+    const text = [
+      el.textContent || '',
+      el.getAttribute('aria-label') || '',
+      el.getAttribute('title') || '',
+      el.getAttribute('placeholder') || '',
+      el.getAttribute('data-testid') || '',
+      el.id || '',
+      typeof el.className === 'string' ? el.className : '',
+    ].join(' ').toLowerCase()
+    if (!text.trim()) continue
+    const hits = tokens.reduce((sum, token) => sum + (text.includes(token) ? 1 : 0), 0)
+    if (!hits) continue
+    const tag = el.tagName.toLowerCase()
+    const semanticBonus = /^(button|a|input|textarea|select|label|h1|h2|h3|section|article|nav|header|footer|main|form)$/.test(tag) ? 0.6 : 0
+    const area = Math.max(1, rect.width * rect.height)
+    const hugePenalty = area > window.innerWidth * window.innerHeight * 0.85 ? 1.1 : 0
+    const score = hits / tokens.length + semanticBonus - hugePenalty
+    if (score > bestScore) {
+      best = el
+      bestScore = score
+    }
+  }
+  return best
+}
+
+async function resolveObservationTarget(obs: LiveObservation): Promise<HTMLElement | null> {
+  if (obs.region) {
+    const viewport = viewportFor(obs)
+    const targetDocRect = targetRectFromRegion(obs.region, viewport)
+    await scrollDocumentPointIntoView(targetDocRect.left + targetDocRect.width / 2, targetDocRect.top + targetDocRect.height / 2)
+    const byRegion = bestElementForRegion(obs.region, obs)
+    if (byRegion) return byRegion
+  }
+  return inferTargetFromText(obs)
 }
 
 // ── Shadow host + overlay ─────────────────────────────────────────────────────
@@ -455,7 +674,7 @@ function deploy(
   if (typeof document === 'undefined') return
   undeploy()   // clean slate
 
-  activeMode = opts.mode ?? 'critical'
+  activeMode = opts.mode ?? 'all'
 
   const shadow = ensureDockHost()
   ensureOverlay()
@@ -572,32 +791,18 @@ function showHaloAndPin(
   targetEl: Element,
 ): void {
   const ov = ensureOverlay()
-  const rect = targetEl.getBoundingClientRect()
   const pinId = `pin_${slot.name}_${Date.now()}`
 
   // Halo
   const halo = document.createElement('div')
   halo.className = 'klav-halo'
-  halo.style.cssText = [
-    `left:${rect.left - 5}px`, `top:${rect.top - 5}px`,
-    `width:${rect.width + 10}px`, `height:${rect.height + 10}px`,
-    `border-color:${slot.accent}`,
-    `box-shadow:0 0 0 4px ${hexToRgba(slot.accent,.16)},0 0 24px ${hexToRgba(slot.accent,.2)}`,
-  ].join(';')
+  halo.style.borderColor = slot.accent
+  halo.style.boxShadow = `0 0 0 4px ${hexToRgba(slot.accent,.16)},0 0 24px ${hexToRgba(slot.accent,.2)}`
   ov.appendChild(halo)
-
-  // Pin bubble position — above element, clamped to viewport
-  const PIN_W = 224, PIN_H_EST = 150
-  let bLeft = rect.left
-  let bTop  = rect.top - PIN_H_EST - 14
-  bLeft = Math.max(10, Math.min(window.innerWidth  - PIN_W - 10, bLeft))
-  if (bTop < 10) bTop = rect.bottom + 14   // flip below if no space above
 
   const pin = document.createElement('div')
   pin.className = 'klav-pin'
   pin.style.borderLeftColor = slot.accent
-  pin.style.left = bLeft + 'px'
-  pin.style.top  = bTop  + 'px'
   pin.setAttribute('role', 'status')
   pin.setAttribute('aria-label', `Pinned feedback from ${slot.name}`)
 
@@ -638,6 +843,8 @@ function showHaloAndPin(
   dismissBtn.addEventListener('click', () => {
     pin.classList.add('is-out')
     halo.style.animation = 'klav-pin-out .22s ease-in forwards'
+    const current = pins.get(pinId)
+    current?.cleanup?.()
     setTimeout(() => { pin.remove(); halo.remove(); pins.delete(pinId) }, 240)
   })
 
@@ -645,14 +852,55 @@ function showHaloAndPin(
   pin.appendChild(hd); pin.appendChild(obsEl); pin.appendChild(actions)
   ov.appendChild(pin)
 
-  pins.set(pinId, { halo, bubble: pin })
+  const ctrl = new AbortController()
+  const updatePosition = () => {
+    const rect = targetEl.getBoundingClientRect()
+    const visible = rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.right > 0 && rect.top < window.innerHeight && rect.left < window.innerWidth
+    halo.style.display = visible ? '' : 'none'
+    pin.style.display = visible ? '' : 'none'
+    if (!visible) return
+
+    halo.style.left = `${rect.left - 5}px`
+    halo.style.top = `${rect.top - 5}px`
+    halo.style.width = `${rect.width + 10}px`
+    halo.style.height = `${rect.height + 10}px`
+
+    // Pin bubble position — above element, clamped to viewport
+    const PIN_W = 224, PIN_H_EST = Math.max(112, pin.offsetHeight || 150)
+    let bLeft = rect.left
+    let bTop = rect.top - PIN_H_EST - 14
+    bLeft = Math.max(10, Math.min(window.innerWidth - PIN_W - 10, bLeft))
+    if (bTop < 10) bTop = rect.bottom + 14   // flip below if no space above
+    pin.style.left = `${bLeft}px`
+    pin.style.top = `${bTop}px`
+  }
+  const scheduleUpdate = () => requestAnimationFrame(updatePosition)
+  updatePosition()
+  window.addEventListener('scroll', scheduleUpdate, { passive: true, signal: ctrl.signal })
+  window.addEventListener('resize', scheduleUpdate, { signal: ctrl.signal })
+
+  pins.set(pinId, { halo, bubble: pin, cleanup: () => ctrl.abort() })
+}
+
+function enqueueWalk(slot: SimSlot, obs: LiveObservation): void {
+  const delay = walkQueueIndex * 650
+  walkQueueIndex += 1
+  if (walkQueueResetTimer) clearTimeout(walkQueueResetTimer)
+  walkQueueResetTimer = setTimeout(() => {
+    walkQueueIndex = 0
+    walkQueueResetTimer = null
+  }, delay + 2200)
+  const timer = setTimeout(() => {
+    walkQueueTimers.delete(timer)
+    void walkAndPin(slot, obs)
+  }, delay)
+  walkQueueTimers.add(timer)
 }
 
 /** Full walk + pin sequence for one observation. */
 async function walkAndPin(slot: SimSlot, obs: LiveObservation): Promise<void> {
   if (!overlayEl || !dockHostEl) return
-  const region = obs.region!
-  const targetEl = findTarget(region)
+  const targetEl = await resolveObservationTarget(obs)
   if (!targetEl) {
     // Fallback to huddle if element not found
     showHuddleBubble(slot, [obs])
@@ -761,15 +1009,13 @@ function renderFeedback(simId: string, simName: string, observations: LiveObserv
   const toHuddle: LiveObservation[] = []
 
   for (const obs of observations) {
-    const shouldWalk = obs.region && (activeMode === 'all' || isCritical(obs))
+    const shouldWalk = activeMode === 'all' || isCritical(obs)
     if (shouldWalk) toWalk.push(obs)
     else             toHuddle.push(obs)
   }
 
   // Walk observations: staggered so Sims leave one after the other
-  toWalk.forEach((obs, i) => {
-    setTimeout(() => void walkAndPin(slot, obs), i * 500)
-  })
+  toWalk.forEach((obs) => enqueueWalk(slot, obs))
 
   // Huddle observations: show as a single transient bubble (first + "+N more")
   if (toHuddle.length) showHuddleBubble(slot, toHuddle)
@@ -784,12 +1030,17 @@ function undeploy(): void {
 
   // 2. Abort global listeners
   deployAbort?.abort(); deployAbort = null
+  if (walkQueueResetTimer) clearTimeout(walkQueueResetTimer)
+  walkQueueResetTimer = null
+  walkQueueTimers.forEach((timer) => clearTimeout(timer))
+  walkQueueTimers.clear()
+  walkQueueIndex = 0
 
   // 3. Remove all in-transit walkers immediately
   walkers.forEach(w => w.remove()); walkers.clear()
 
   // 4. Remove all pinned halos + bubbles
-  pins.forEach(({ halo, bubble }) => { halo.remove(); bubble.remove() }); pins.clear()
+  pins.forEach(({ halo, bubble, cleanup }) => { cleanup?.(); halo.remove(); bubble.remove() }); pins.clear()
 
   // 5. Remove overlay host (and any leftover children)
   overlayEl?.remove(); overlayEl = null
