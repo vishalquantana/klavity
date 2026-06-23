@@ -34,6 +34,7 @@ const OUTSIDER_SID = `sess_outsider_gates_${RUN}`
 const ACCOUNT_ID = `acct_gates_${RUN}`
 const PROJECT_ID = `proj_gates_${RUN}`
 const ZERO_BUDGET_PROJECT_ID = `proj_gates_zero_budget_${RUN}`
+const CONCURRENT_BUDGET_PROJECT_ID = `proj_gates_concurrent_budget_${RUN}`
 const SIM_ID = `sim_gates_${RUN}`
 const NOW = Date.now()
 const TINY_PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
@@ -47,7 +48,7 @@ async function seed() {
   await rawExec("INSERT INTO accounts (id, name, owner_email, created_at) VALUES (?, ?, ?, ?)", [ACCOUNT_ID, "Sim Review Gates", OWNER_EMAIL, NOW])
   await rawExec("INSERT INTO account_members (id, account_id, email, account_role, created_at) VALUES (?, ?, ?, ?, ?)", [`am_gates_${RUN}`, ACCOUNT_ID, OWNER_EMAIL, "owner", NOW])
 
-  for (const [projectId, budget] of [[PROJECT_ID, 100], [ZERO_BUDGET_PROJECT_ID, 0]] as const) {
+  for (const [projectId, budget] of [[PROJECT_ID, 100], [ZERO_BUDGET_PROJECT_ID, 0], [CONCURRENT_BUDGET_PROJECT_ID, 3]] as const) {
     await rawExec(
       "INSERT INTO projects (id, account_id, name, status, review_mode, review_budget_daily, observability_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [projectId, ACCOUNT_ID, "Gate Project", "active", "auto", budget, "named", NOW, NOW],
@@ -180,4 +181,41 @@ test("gate order: budget is last and returns budgetExhausted after earlier gates
 
   expect(res.status).toBe(429)
   expect(body).toMatchObject({ ok: false, reason: "budgetExhausted" })
+})
+
+test("budget gate: concurrent review requests consume exactly the daily cap", async () => {
+  const cap = 3
+  const attempts = cap + 1
+  await rawExec("DELETE FROM review_counts WHERE project_id=?", [CONCURRENT_BUDGET_PROJECT_ID])
+  await rawExec("UPDATE projects SET review_mode='auto', review_budget_daily=? WHERE id=?", [cap, CONCURRENT_BUDGET_PROJECT_ID])
+
+  const results = await Promise.all(
+    Array.from({ length: attempts }, (_, i) => postReview(OWNER_SID, {
+      projectId: CONCURRENT_BUDGET_PROJECT_ID,
+      url: "https://allowed.test/pricing",
+      domSig: `budget-race-${RUN}-${i}`,
+      // The budget gate runs before screenshot validation. Omitting the screenshot
+      // keeps this test focused on gate concurrency without making real LLM calls.
+      screenshotDataUrl: undefined,
+    })),
+  )
+
+  const consumed = results.filter(({ res, body }) => res.status === 400 && body.reason === "noScreenshot").length
+  const exhausted = results.filter(({ res, body }) => res.status === 429 && body.reason === "budgetExhausted").length
+  const unexpected = results.filter(({ res, body }) => {
+    return !(
+      (res.status === 400 && body.reason === "noScreenshot") ||
+      (res.status === 429 && body.reason === "budgetExhausted")
+    )
+  })
+
+  expect(consumed).toBe(cap)
+  expect(exhausted).toBe(attempts - cap)
+  expect(unexpected).toEqual([])
+
+  const row = await rawClient.execute({
+    sql: "SELECT count FROM review_counts WHERE project_id=?",
+    args: [CONCURRENT_BUDGET_PROJECT_ID],
+  })
+  expect(Number((row.rows[0] as any)?.count ?? 0)).toBe(cap)
 })

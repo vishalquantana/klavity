@@ -64,6 +64,29 @@ test("tryConsumeReviewBudget: concurrent calls never exceed the cap", async () =
   expect(await reviewBudgetUsed(pid, day)).toBe(budget)
 })
 
+test("tryConsumeReviewBudget: cold-row concurrent race grants exactly M and stores no overflow", async () => {
+  const pid = P("cold_race")
+  const day = "2026-06-21"
+  const budget = 4
+  const attempts = 40
+
+  expect(await reviewBudgetUsed(pid, day)).toBe(0)
+
+  const results = await Promise.all(
+    Array.from({ length: attempts }, () => tryConsumeReviewBudget(pid, day, budget)),
+  )
+
+  expect(results.filter(Boolean).length).toBe(budget)
+  expect(results.filter((ok) => !ok).length).toBe(attempts - budget)
+  expect(await reviewBudgetUsed(pid, day)).toBe(budget)
+
+  const afterCap = await Promise.all(
+    Array.from({ length: 10 }, () => tryConsumeReviewBudget(pid, day, budget)),
+  )
+  expect(afterCap).toEqual(Array.from({ length: 10 }, () => false))
+  expect(await reviewBudgetUsed(pid, day)).toBe(budget)
+})
+
 test("patternMatchesUrl: prefix/glob only (no regex), host+path, query/fragment stripped", () => {
   // plain prefix on a path boundary
   expect(patternMatchesUrl("app.example.com/billing", "https://app.example.com/billing/invoices?x=1")).toBe(true)

@@ -162,6 +162,35 @@ test("runSimReviews: all N Sims produce output when all reactFns succeed", async
   expect(names).toEqual(["Alice", "Bob", "Carol"])
 })
 
+test("runSimReviews: parallel Sims keep their per-Sim dedupe keys aligned", async () => {
+  const sims = [
+    { id: `sim_key_a_${Date.now()}`, name: "Alpha", role: "Buyer", summary: "Checks clarity.", insights: [], initials: "A", accent: "#6366f1" },
+    { id: `sim_key_b_${Date.now()}`, name: "Beta", role: "Dev", summary: "Checks resilience.", insights: [], initials: "B", accent: "#8b5cf6" },
+    { id: `sim_key_c_${Date.now()}`, name: "Gamma", role: "PM", summary: "Checks flow.", insights: [], initials: "G", accent: "#a78bfa" },
+  ]
+  const seenKeys = sims.map((sim) => `seen-key:${sim.id}`)
+  const marked: string[] = []
+  const delays: Record<string, number> = {
+    [sims[0].id]: 30,
+    [sims[1].id]: 5,
+    [sims[2].id]: 15,
+  }
+
+  const reviews = await baseRun({
+    targetSims: sims,
+    seenKeys,
+    markSeen: (key) => { marked.push(key) },
+    reactFn: async (sim) => {
+      await new Promise((resolve) => setTimeout(resolve, delays[sim.id] ?? 0))
+      return { data: { reactions: [{ observation: `${sim.name} saw a distinct issue`, sentiment: "negative" }] } }
+    },
+  })
+
+  expect(reviews.map((r) => r.simId)).toEqual(sims.map((s) => s.id))
+  expect(marked).toEqual(seenKeys)
+  expect(new Set(marked).size).toBe(sims.length)
+})
+
 test("runSimReviews: one Sim's reactFn throwing does NOT prevent other Sims from running", async () => {
   // Sim B's reactFn throws — Sims A and C must still produce their observations.
   const sims = [
