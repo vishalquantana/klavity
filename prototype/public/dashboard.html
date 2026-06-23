@@ -45,7 +45,8 @@ body[data-view="sims"] [data-view]:not([data-view~="sims"]),
 body[data-view="tickets"] [data-view]:not([data-view~="tickets"]),
 body[data-view="team"] [data-view]:not([data-view~="team"]),
 body[data-view="triage"] [data-view]:not([data-view~="triage"]),
-body[data-view="settings"] [data-view]:not([data-view~="settings"]){display:none!important}
+body[data-view="settings"] [data-view]:not([data-view~="settings"]),
+body[data-view="recurring"] [data-view]:not([data-view~="recurring"]){display:none!important}
 @media(max-width:820px){
   .side{position:static;height:auto;width:100%;flex-direction:row;overflow-x:auto;gap:6px;border-right:none;border-bottom:1px solid var(--line);padding:10px 12px}
   .side .brand{display:none}
@@ -162,6 +163,18 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 /* per-view refit: use the wide shell well instead of a lone narrow card in a 2-col grid */
 body[data-view="sims"] .grid>.card[data-view~="sims"]{grid-column:1/-1}
 body[data-view="team"] .grid>.card[data-view~="team"]{grid-column:1/-1;max-width:820px}
+body[data-view="recurring"] .grid>.card[data-view~="recurring"]{grid-column:1/-1}
+/* ── Recurring Issues view ── */
+.ri-item{padding:14px 0;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:6px}
+.ri-item:first-child{border-top:none;padding-top:6px}
+.ri-head{display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap}
+.ri-title{font-size:14px;font-weight:600;flex:1;min-width:0;line-height:1.4}
+.ri-chips{display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex-shrink:0}
+.ri-regression{font-family:var(--mono);font-size:9px;letter-spacing:.07em;text-transform:uppercase;padding:3px 8px;border-radius:20px;background:rgba(219,39,119,.14);color:var(--rose);display:inline-flex;align-items:center;gap:4px}
+.ri-count{font-family:var(--mono);font-size:10px;letter-spacing:.05em;padding:3px 9px;border-radius:20px;background:rgba(99,102,241,.12);color:var(--indigo)}
+.ri-meta{font-size:12px;color:var(--paper-faint);line-height:1.5}
+.ri-summary{font-size:12.5px;color:var(--paper-dim);font-style:italic;border-left:2px solid var(--line);padding-left:10px}
+.ri-section-desc{font-size:13px;color:var(--paper-faint);margin:-10px 0 16px;line-height:1.5;max-width:620px}
 
 .card h2{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:16px;display:flex;align-items:center;gap:8px}
 .card h2 .count{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--paper-faint);background:var(--ink-3);padding:2px 8px;border-radius:20px}
@@ -752,6 +765,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     <button class="nv" data-go="sims"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 16 1.5 1.5" /> <path d="m14 8-1.5-1.5" /> <path d="M15 2c-1.798 1.998-2.518 3.995-2.807 5.993" /> <path d="m16.5 10.5 1 1" /> <path d="m17 6-2.891-2.891" /> <path d="M2 15c6.667-6 13.333 0 20-6" /> <path d="m20 9 .891.891" /> <path d="M3.109 14.109 4 15" /> <path d="m6.5 12.5 1 1" /> <path d="m7 18 2.891 2.891" /> <path d="M9 22c1.798-1.998 2.518-3.995 2.807-5.993" /></svg></span>Sims</button>
     <button class="nv" data-go="tickets"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20v-9" /> <path d="M14 7a4 4 0 0 1 4 4v3a6 6 0 0 1-12 0v-3a4 4 0 0 1 4-4z" /> <path d="M14.12 3.88 16 2" /> <path d="M21 21a4 4 0 0 0-3.81-4" /> <path d="M21 5a4 4 0 0 1-3.55 3.97" /> <path d="M22 13h-4" /> <path d="M3 21a4 4 0 0 1 3.81-4" /> <path d="M3 5a4 4 0 0 0 3.55 3.97" /> <path d="M6 13H2" /> <path d="m8 2 1.88 1.88" /> <path d="M9 7.13V6a3 3 0 1 1 6 0v1.13" /></svg></span>Tickets <span class="ct" id="navTicketCount"></span></button>
     <button class="nv" data-go="triage"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg></span>Triage <span class="ct" id="navTriageCount"></span></button>
+    <button class="nv" data-go="recurring"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path d="M8 16H3v5" /></svg></span>Recurring <span class="ct" id="navRecurringCount"></span></button>
     <button class="nv" data-go="team"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /> <path d="M16 3.128a4 4 0 0 1 0 7.744" /> <path d="M22 21v-2a4 4 0 0 0-3-3.87" /> <circle cx="9" cy="7" r="4" /></svg></span>Team <span class="ct" id="navTeamCount"></span></button>
     <button class="nv" data-go="settings"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" /> <circle cx="12" cy="12" r="3" /></svg></span>Settings</button>
     <!-- App version pinned to the sidebar footer. The placeholder below is replaced
@@ -1102,6 +1116,13 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       </div>
     </div>
   </details>
+    <!-- ── Recurring Issues view (KLAVITYKLA-2 project-level rollup) ── -->
+    <div class="card full" data-view="recurring">
+      <h2><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path d="M8 16H3v5" /></svg> Recurring Issues <span class="count" id="recurringCount"></span></h2>
+      <p class="ri-section-desc">Issues that have appeared more than once — or resurfaced after being resolved. Regressions are listed first. Data is drawn from the project's full feedback history.</p>
+      <div id="recurringList"><div class="sk-card"><span class="sk sk-av"></span><div class="sk-lines"><span class="sk sk-line" style="width:68%"></span><span class="sk sk-line" style="width:44%"></span></div><span class="sk sk-pill"></span></div><div class="sk-card"><span class="sk sk-av"></span><div class="sk-lines"><span class="sk sk-line" style="width:55%"></span><span class="sk sk-line" style="width:38%"></span></div><span class="sk sk-pill"></span></div></div>
+    </div>
+
   </div><!-- /.content -->
 </div>
 
@@ -1409,6 +1430,61 @@ function renderTriageItems(items) {
       await fetch("/api/feedback/" + encodeURIComponent(id), { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) }).catch(() => {})
       await refreshAll()
       renderTriage()
+
+// ── Recurring Issues view — lazy-loaded when the tab is first activated ──
+let _recurringLoaded = false
+async function renderRecurringIssues() {
+  if (_recurringLoaded) return
+  const pid = curProjId(); if (!pid) return
+  const el = $("recurringList"); if (!el) return
+  try {
+    const r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/recurring?limit=100")
+    if (!r.ok) { el.innerHTML = `<div class="empty"><p>Couldn't load recurring issues.</p></div>`; return }
+    const d = await r.json()
+    const items = (d.recurring || [])
+    _recurringLoaded = true
+    // Show regression count in the sidebar badge; total count in the section header
+    const regressionCount = items.filter(x => x.regressed).length
+    const navBadge = $("navRecurringCount")
+    if (navBadge) navBadge.textContent = regressionCount ? String(regressionCount) : ""
+    const headCount = $("recurringCount")
+    if (headCount) headCount.textContent = items.length ? String(items.length) : ""
+    if (!items.length) {
+      el.innerHTML = emptyState(kicon('refresh-cw',{size:32}), "No recurring issues yet — patterns surface here as Sims file similar bugs across multiple reviews.", "")
+      return
+    }
+    el.innerHTML = items.map(item => {
+      const sev = item.severity
+      const sevChip = sev ? `<span class="chip sev-${esc(sev)}">${esc(sev)}</span>` : ""
+      const regChip = item.regressed
+        ? `<span class="ri-regression">${kicon('triangle-alert',{size:11})} Regression</span>`
+        : ""
+      const countChip = item.count >= 2
+        ? `<span class="ri-count">reported ${item.count}×</span>`
+        : ""
+      const title = esc(item.title || item.occurrences?.[0]?.title || "Untitled issue")
+      const firstSeen = item.firstSeenAt ? ago(item.firstSeenAt) : ""
+      const lastSeen = item.lastSeenAt ? ago(item.lastSeenAt) : ""
+      const metaParts = []
+      if (firstSeen) metaParts.push("First seen " + firstSeen)
+      if (lastSeen && lastSeen !== firstSeen) metaParts.push("last seen " + lastSeen)
+      if (item.regressed && item.resolvedAt) metaParts.push("resolved " + ago(item.resolvedAt) + " → resurfaced")
+      if (item.citedSimName) metaParts.push("filed by " + esc(item.citedSimName))
+      if (item.expectationStatus && item.expectationStatus !== "candidate") metaParts.push("expectation: " + esc(item.expectationStatus))
+      return `<div class="ri-item">
+        <div class="ri-head">
+          <div class="ri-title">${title}</div>
+          <div class="ri-chips">${regChip}${countChip}${sevChip}</div>
+        </div>
+        ${metaParts.length ? `<div class="ri-meta">${metaParts.join(" · ")}</div>` : ""}
+        ${item.summary ? `<div class="ri-summary">${esc(item.summary)}</div>` : ""}
+      </div>`
+    }).join("")
+  } catch(e) {
+    const el2 = $("recurringList"); if (el2) el2.innerHTML = `<div class="empty"><p>Couldn't load recurring issues.</p></div>`
+  }
+}
+
     }
     row.querySelector(".tg-accept").addEventListener("click", () => patch({ status: "open", severity: row.querySelector(".tg-sev").value }))
     row.querySelector(".tg-dismiss").addEventListener("click", () => patch({ status: "dismissed" }))
@@ -3158,7 +3234,7 @@ load()
 <script>
 // ===== sidebar view switching =====
 (function(){
-  var VIEWS=['overview','triage','sims','tickets','team','settings'];
+  var VIEWS=['overview','triage','sims','tickets','team','settings','recurring'];
   var navs=[].slice.call(document.querySelectorAll('.side .nv'));
   function setView(v){
     if(VIEWS.indexOf(v)<0)v='overview';
@@ -3167,6 +3243,7 @@ load()
     try{history.replaceState(null,'',v==='overview'?(location.pathname+location.search):('#'+v));}catch(e){}
     window.scrollTo(0,0);
     if(v==='triage'){if(typeof renderTriage==='function')renderTriage();}
+    if(v==='recurring'){if(typeof renderRecurringIssues==='function')renderRecurringIssues();}
   }
   navs.forEach(function(b){b.addEventListener('click',function(){setView(b.getAttribute('data-go'));});});
   window.klavSetView=setView; // exposed so card-go buttons (onclick="setView(...)") and inline handlers can call it
