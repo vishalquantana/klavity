@@ -321,6 +321,12 @@ async function mount() {
           // Forward the gate's required email → server reporter_email. Without this, an "email"-gated
           // project (the default for cross-origin support widgets) rejects every submit with 400.
           reporterEmail: p.reporterEmail },
+        // Drive the modal's progress fill with real XHR upload bytes — overrides the modal's own
+        // estimated 10 s animation so the bar reflects actual network speed.
+        (pct) => {
+          const fill = composer?.shadowRoot.getElementById("klavity-progress-fill") as HTMLElement | null
+          if (fill) { fill.style.transition = "width 0.15s ease"; fill.style.width = pct + "%" }
+        },
       ),
       success: { copy: successCopy(widget.mode, widget.ctaUrl, suppressSuccessEmail), onLead: postLead },
     }, modalConfig)
@@ -828,6 +834,11 @@ async function mount() {
 export async function submitFeedback(
   cfg: { backendUrl: string; projectId: string; firstParty: boolean; token: string },
   payload: { type: "bug" | "feature"; description: string; pageUrl: string; referrer?: string; screenshots: string[]; context?: ReportContext; replayEvents?: unknown[]; annotations?: any; reporterEmail?: string },
+  // Optional progress callback: called with 0–90 during the upload phase, leaving the final 10%
+  // for server-side processing. When provided, the upload uses XMLHttpRequest instead of fetch so
+  // the browser exposes real upload progress events. Omitting it (e.g. extension path) keeps the
+  // plain-fetch behaviour unchanged.
+  onProgress?: (pct: number) => void,
 ): Promise<{ issueKey: string; issueUrl: string }> {
   // Compress screenshots (PNG → JPEG, downscale very wide ones) so the upload is fast. Best-effort,
   // parallel; each falls back to its original on failure.
@@ -844,11 +855,37 @@ export async function submitFeedback(
   // Reporter identity for the "email" gate: an end-user with no Klavity account types an email so the
   // server accepts the anonymous cross-origin report and can notify them on fix.
   if (payload.reporterEmail) fd.set("reporter_email", payload.reporterEmail)
+
+  // XHR path — used when the caller wants real upload-progress events (widget submit flow).
+  // fetch() gives no upload progress; XHR's upload.onprogress fires as bytes hit the wire.
+  if (onProgress) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      // Report 0–90 % during the upload phase; the remaining 10 % covers server processing latency
+      // so the bar never falsely reads 100 % before the response is actually received.
+      xhr.upload.onprogress = (ev) => {
+        if (ev.lengthComputable) onProgress(Math.min(90, Math.round((ev.loaded / ev.total) * 90)))
+      }
+      xhr.onload = () => {
+        if (xhr.status < 200 || xhr.status >= 300) { reject(new Error("submit failed: " + xhr.status)); return }
+        try {
+          const j = JSON.parse(xhr.responseText)
+          resolve({ issueKey: String(j.id || ""), issueUrl: cfg.backendUrl + "/dashboard" })
+        } catch { reject(new Error("submit failed: invalid response")) }
+      }
+      xhr.onerror = () => reject(new Error("submit failed: network error"))
+      xhr.open("POST", cfg.backendUrl + "/api/feedback")
+      if (cfg.firstParty) xhr.withCredentials = true
+      else if (cfg.token) xhr.setRequestHeader("authorization", "Bearer " + cfg.token)
+      // else: anonymous cross-origin report — no auth header (server uses project gate + CORS).
+      xhr.send(fd)
+    })
+  }
+
+  // Plain fetch path (no progress callback): extension submit, or callers that manage their own UI.
   const init: RequestInit = { method: "POST", body: fd }
   if (cfg.firstParty) init.credentials = "include"
   else if (cfg.token) init.headers = { authorization: "Bearer " + cfg.token }
-  // else: anonymous cross-origin report (email/anonymous gate) — no auth header; the server applies
-  // the project's report gate (valid project + email when required + rate limits) and CORS.
   const r = await fetch(cfg.backendUrl + "/api/feedback", init)
   if (!r.ok) throw new Error("submit failed: " + r.status)
   const j = await r.json()
