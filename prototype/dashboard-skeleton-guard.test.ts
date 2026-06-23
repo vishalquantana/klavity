@@ -32,6 +32,7 @@ function extractFn(src: string, startSig: string): string {
 const skeletonHostsSrc = (HTML.match(/const SKELETON_HOSTS = \[[^\]]*\]/) || [])[0]
 const swrSectionSrc = extractFn(HTML, "async function swrSection(")
 const clearStuckSrc = extractFn(HTML, "function clearStuckSkeletons(")
+const renderSimsFeedSrc = extractFn(HTML, "function renderSimsFeed(")
 
 expect(skeletonHostsSrc).toBeTruthy()
 
@@ -160,4 +161,56 @@ test("swrSection keeps the skeleton-clearing guarantee in a finally block", () =
   expect(swrSectionSrc).toContain("finally")
   expect(swrSectionSrc).toMatch(/querySelector\(["']\.sk["']\)/)
   expect(swrSectionSrc).toContain("emptyState(")
+})
+
+test("sidebar view switcher dedupes nav buttons and exposes the inline setView API", () => {
+  expect(HTML).toContain("function normalizeSidebar()")
+  expect(HTML).toContain("if(!key||seen[key]){b.remove();return;}")
+  expect(HTML).toContain("side.dataset.navBound='1'")
+  expect(HTML).toContain("window.setView=setView")
+})
+
+test("Sims page leads with Sims feed and keeps Live/Observability under Settings", () => {
+  expect(HTML.indexOf('id="simsFeed"')).toBeGreaterThan(-1)
+  expect(HTML.indexOf('id="simLiveStrip"')).toBeGreaterThan(-1)
+  expect(HTML.indexOf('id="simsFeed"')).toBeLessThan(HTML.indexOf('id="simLiveStrip"'))
+  expect(HTML).toContain('id="liveDrawer" data-view="settings"')
+  expect(HTML).toContain('id="obsDrawer" data-view="settings"')
+  expect(HTML).toContain('id="simLiveDismiss"')
+})
+
+test("renderSimsFeed shows actual observation text with a Triage link", () => {
+  const els: Record<string, any> = {
+    simsFeed: { innerHTML: "" },
+    simsCount: { textContent: "" },
+  }
+  const state = {
+    active: { id: "proj_1" },
+    sims: [{ id: "sim_1", name: "Alice Buyer", role: "Buyer", initials: "AB", accent: "#6366f1" }],
+    simFeedback: {
+      sim_1: [{ id: "fb_1", text: "The checkout CTA disappears below the fold.", sentiment: "confused", urlPath: "/checkout", createdAt: 1700000000000 }],
+    },
+    saying: [],
+  }
+  const factory = new Function(
+    "state", "$", "emptyState", "kicon", "curProjId", "esc", "safeAccent", "col", "initials", "ago",
+    `${renderSimsFeedSrc}\nreturn renderSimsFeed;`,
+  )
+  const renderSimsFeed = factory(
+    state,
+    (id: string) => els[id] ?? null,
+    () => "",
+    () => "",
+    () => state.active.id,
+    (s: unknown) => String(s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch] as string)),
+    (_accent: string, fallback: string) => fallback,
+    () => "#6366f1",
+    (s: string) => s.slice(0, 2).toUpperCase(),
+    () => "just now",
+  )
+  renderSimsFeed()
+  expect(els.simsFeed.innerHTML).toContain("The checkout CTA disappears below the fold.")
+  expect(els.simsFeed.innerHTML).toContain("View in Triage")
+  expect(els.simsFeed.innerHTML).toContain('href="#triage"')
+  expect(els.simsCount.textContent).toBe("1")
 })
