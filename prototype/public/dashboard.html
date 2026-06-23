@@ -224,13 +224,21 @@ body[data-view="recurring"] .grid>.card[data-view~="recurring"]{grid-column:1/-1
 .sim .role{font-size:12px;color:var(--paper-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sim .la{font-size:11px;color:var(--paper-faint);font-family:var(--mono);margin-top:2px}
 /* sims-tab: per-Sim grouped feedback rows */
-/* sims live-trigger guidance steps */
-.sim-live-intro{margin-bottom:2px}
-.sim-live-steps{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px;margin-top:18px}
+/* sims live-trigger guidance strip */
+.sim-live-strip{padding:14px 16px}
+.sim-live-strip.hide{display:none!important}
+.sim-live-strip h2{margin-bottom:8px}
+.sim-live-intro{display:flex;align-items:flex-start;gap:16px}
+.sim-live-copy{flex:1;min-width:0}
+.sim-live-copy p{font-size:12.5px;line-height:1.45;max-width:760px}
+.sim-live-dismiss{background:none;border:1px solid var(--line);color:var(--paper-faint);border-radius:8px;width:30px;height:30px;display:grid;place-items:center;cursor:pointer;flex:none;transition:border-color .15s,color .15s,transform .1s}
+.sim-live-dismiss:hover{border-color:var(--indigo);color:var(--paper)}
+.sim-live-dismiss:active{transform:scale(.96)}
+.sim-live-steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-top:10px}
 .sim-live-step{display:flex;align-items:flex-start;gap:12px}
-.sim-live-n{width:24px;height:24px;border-radius:50%;background:var(--indigo);color:#fff;font-family:var(--mono);font-size:11px;font-weight:700;display:grid;place-items:center;flex-shrink:0;margin-top:2px}
-.sim-live-step b{display:block;font-size:13.5px;font-weight:600;margin-bottom:3px}
-.sim-live-step .muted{font-size:12px}
+.sim-live-n{width:22px;height:22px;border-radius:50%;background:var(--indigo);color:#fff;font-family:var(--mono);font-size:10px;font-weight:700;display:grid;place-items:center;flex-shrink:0;margin-top:1px}
+.sim-live-step b{display:block;font-size:12.5px;font-weight:600;margin-bottom:2px}
+.sim-live-step .muted{font-size:11.5px}
 .sim-live-pill{display:inline-flex;align-items:center;gap:5px;background:var(--ink-3);border:1px solid var(--line);border-radius:8px;padding:3px 8px;font-family:var(--mono);font-size:11px;color:var(--paper-faint);margin-top:6px}
 .sf-row{border:1px solid var(--line);border-radius:14px;overflow:hidden;margin-bottom:12px}
 .sf-hd{display:flex;align-items:center;gap:12px;padding:13px 15px;background:var(--ink);text-decoration:none;color:var(--paper);transition:background .15s,transform .1s}
@@ -245,7 +253,9 @@ body[data-view="recurring"] .grid>.card[data-view~="recurring"]{grid-column:1/-1
 .sf-ob:last-child{border-bottom:none}
 .sf-ob-tags{display:flex;gap:6px;flex-wrap:wrap}
 .sf-ob-text{font-size:13.5px;line-height:1.45;color:var(--paper)}
-.sf-ob-meta{font-size:11px;color:var(--paper-faint);font-family:var(--mono)}
+.sf-ob-meta{font-size:11px;color:var(--paper-faint);font-family:var(--mono);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.sf-triage{color:var(--indigo);font-family:var(--body);font-size:12px;font-weight:600}
+.sf-triage:hover{text-decoration:underline}
 .sf-none{padding:11px 15px;font-size:13px;color:var(--paper-faint);font-style:italic}
 
 /* tickets + activity rows */
@@ -902,24 +912,27 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       <div id="saying"><div class="sk-card"><span class="sk sk-av"></span><div class="sk-lines"><span class="sk sk-line" style="width:62%"></span><span class="sk sk-line" style="width:40%"></span></div><span class="sk sk-pill"></span></div><div class="sk-card"><span class="sk sk-av"></span><div class="sk-lines"><span class="sk sk-line" style="width:62%"></span><span class="sk sk-line" style="width:40%"></span></div><span class="sk sk-pill"></span></div></div>
     </div>
 
-    <!-- Sims tab: live-trigger guidance — "customers in the room while you build" -->
-    <div class="card full" data-view="sims">
-      <h2><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.9 16.1C1 12.2 1 5.8 4.9 1.9" /> <path d="M7.8 4.7a6.14 6.14 0 0 0-.8 7.5" /> <circle cx="12" cy="9" r="2" /> <path d="M16.2 4.8c2 2 2.26 5.11.8 7.47" /> <path d="M19.1 1.9a9.96 9.96 0 0 1 0 14.1" /> <path d="M9.5 18h5" /> <path d="m8 22 4-11 4 11" /></svg> Sims — live on your product</h2>
-      <div class="sim-live-intro">
-        <p class="muted" style="font-size:13.5px;line-height:1.55;max-width:640px">Your Sims jump out and react to any page you're on, on demand — like having customers in the room while you build. No scheduled run, no URL box: they analyse the exact page you're looking at, in real time.</p>
-        <div class="sim-live-steps">
-          <div class="sim-live-step"><span class="sim-live-n">1</span><div><b>Browse your product</b><div class="muted">Open any page you want Sim feedback on in your browser.</div></div></div>
-          <div class="sim-live-step"><span class="sim-live-n">2</span><div><b>Trigger a live review</b><div class="muted">Right-click the page or open the Klavity extension popup.</div><div class="sim-live-pill"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 16 1.5 1.5" /><path d="m14 8-1.5-1.5" /><path d="M15 2c-1.798 1.998-2.518 3.995-2.807 5.993" /><path d="m16.5 10.5 1 1" /><path d="m17 6-2.891-2.891" /><path d="M2 15c6.667-6 13.333 0 20-6" /><path d="m20 9 .891.891" /><path d="M3.109 14.109 4 15" /><path d="m6.5 12.5 1 1" /><path d="m7 18 2.891 2.891" /><path d="M9 22c1.798-1.998 2.518-3.995 2.807-5.993" /></svg> Ask Sims to review this</div></div></div>
-          <div class="sim-live-step"><span class="sim-live-n">3</span><div><b>See instant reactions</b><div class="muted">Each Sim tells you what they notice, in their own voice — observations land here and in your ticket queue.</div></div></div>
-        </div>
-      </div>
-    </div>
-
     <!-- Sims tab: each Sim with the feedback they have given (primary Sims view) -->
-    <div class="card full" data-view="sims">
+    <div class="card full sims-hero" data-view="sims">
       <h2 style="display:flex;align-items:center;gap:10px"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 16 1.5 1.5" /> <path d="m14 8-1.5-1.5" /> <path d="M15 2c-1.798 1.998-2.518 3.995-2.807 5.993" /> <path d="m16.5 10.5 1 1" /> <path d="m17 6-2.891-2.891" /> <path d="M2 15c6.667-6 13.333 0 20-6" /> <path d="m20 9 .891.891" /> <path d="M3.109 14.109 4 15" /> <path d="m6.5 12.5 1 1" /> <path d="m7 18 2.891 2.891" /> <path d="M9 22c1.798-1.998 2.518-3.995 2.807-5.993" /></svg> Your Sims <span class="count" id="simsCount"></span>
         <button class="btn btn-indigo btn-sm hide" id="newSimBtn" style="margin-left:auto" onclick="openSimModal()">＋ New Sim</button></h2>
       <div id="simsFeed"><div class="sk-card"><span class="sk sk-av"></span><div class="sk-lines"><span class="sk sk-line" style="width:62%"></span><span class="sk sk-line" style="width:40%"></span></div><span class="sk sk-pill"></span></div><div class="sk-card"><span class="sk sk-av"></span><div class="sk-lines"><span class="sk sk-line" style="width:62%"></span><span class="sk sk-line" style="width:40%"></span></div><span class="sk sk-pill"></span></div></div>
+    </div>
+
+    <!-- Sims tab: compact, dismissible live-trigger guidance — kept for onboarding, no longer the hero -->
+    <div class="card full sim-live-strip" id="simLiveStrip" data-view="sims">
+      <div class="sim-live-intro">
+        <div class="sim-live-copy">
+          <h2><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.9 16.1C1 12.2 1 5.8 4.9 1.9" /> <path d="M7.8 4.7a6.14 6.14 0 0 0-.8 7.5" /> <circle cx="12" cy="9" r="2" /> <path d="M16.2 4.8c2 2 2.26 5.11.8 7.47" /> <path d="M19.1 1.9a9.96 9.96 0 0 1 0 14.1" /> <path d="M9.5 18h5" /> <path d="m8 22 4-11 4 11" /></svg> Sims — live on your product</h2>
+          <p class="muted">Your Sims can react to the exact page you're viewing, on demand. Use the extension to ask them for a live review; observations land above and in Triage.</p>
+          <div class="sim-live-steps">
+            <div class="sim-live-step"><span class="sim-live-n">1</span><div><b>Browse</b><div class="muted">Open the product page.</div></div></div>
+            <div class="sim-live-step"><span class="sim-live-n">2</span><div><b>Trigger</b><div class="muted">Right-click or open the extension.</div><div class="sim-live-pill"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 16 1.5 1.5" /><path d="m14 8-1.5-1.5" /><path d="M15 2c-1.798 1.998-2.518 3.995-2.807 5.993" /><path d="m16.5 10.5 1 1" /><path d="m17 6-2.891-2.891" /><path d="M2 15c6.667-6 13.333 0 20-6" /><path d="m20 9 .891.891" /><path d="M3.109 14.109 4 15" /><path d="m6.5 12.5 1 1" /><path d="m7 18 2.891 2.891" /><path d="M9 22c1.798-1.998 2.518-3.995 2.807-5.993" /></svg> Ask Sims to review this</div></div></div>
+            <div class="sim-live-step"><span class="sim-live-n">3</span><div><b>Review</b><div class="muted">Read observations and triage what matters.</div></div></div>
+          </div>
+        </div>
+        <button class="sim-live-dismiss" id="simLiveDismiss" type="button" aria-label="Dismiss live Sims explainer"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18" /> <path d="m6 6 12 12" /></svg></button>
+      </div>
     </div>
 
     <!-- Launch studio CTA -->
@@ -930,8 +943,8 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     </div>
   </div>
 
-  <!-- Admin: Live Sims — monitored URLs + pause (P3b, R5). Admin-only. -->
-  <details class="drawer hide" id="liveDrawer" data-view="sims">
+  <!-- Admin: Live Sims — monitored URLs + pause (P3b, R5). Admin-only. Lives under Settings, not the main Sims feed. -->
+  <details class="drawer hide" id="liveDrawer" data-view="settings">
     <summary><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.9 16.1C1 12.2 1 5.8 4.9 1.9" /> <path d="M7.8 4.7a6.14 6.14 0 0 0-.8 7.5" /> <circle cx="12" cy="9" r="2" /> <path d="M16.2 4.8c2 2 2.26 5.11.8 7.47" /> <path d="M19.1 1.9a9.96 9.96 0 0 1 0 14.1" /> <path d="M9.5 18h5" /> <path d="m8 22 4-11 4 11" /></svg> Live Sims — monitored URLs & pause <span class="caret">›</span></summary>
     <div class="drawer-in">
       <div class="muted" style="margin-bottom:14px">When a teammate (with the Snap extension, signed in) opens a URL that matches a pattern below, this project's Sims <b>auto-comment in-character</b> on that page — popping up and filing what they think. Capture happens <b>only</b> on these allowlisted paths, each member consents before their first capture, and screenshots are private.</div>
@@ -957,8 +970,8 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     </div>
   </details>
 
-  <!-- Admin: Observability (R6) — named activity feed of who ran which Sim on which path. Admin-only. -->
-  <details class="drawer hide" id="obsDrawer" data-view="sims">
+  <!-- Admin: Observability (R6) — named activity feed of who ran which Sim on which path. Admin-only; Settings sub-area. -->
+  <details class="drawer hide" id="obsDrawer" data-view="settings">
     <summary><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" /> <circle cx="12" cy="12" r="3" /></svg> Observability — Sim review activity <span class="caret">›</span></summary>
     <div class="drawer-in">
       <div class="muted" style="margin-bottom:6px">Every live Sim review, <b>named</b>: which teammate triggered which Sim on which path. Click <b>View screenshot</b> for the private capture (a short-lived signed link). URLs are path-only; off-allowlist navigation is never recorded.</div>
@@ -1652,9 +1665,16 @@ $("checklistDismiss") && ($("checklistDismiss").onclick = () => {
   try { sessionStorage.setItem("klavChecklistDismissed", "1") } catch (e) {}
   const el = $("checklist"); if (el) el.classList.add("hide")
 })
-// Step 2: expand the Live Sims drawer and scroll to it (admin-only drawer; harmless otherwise).
+const simLiveStrip = $("simLiveStrip")
+try { if (simLiveStrip && sessionStorage.getItem("klavSimLiveStripDismissed") === "1") simLiveStrip.classList.add("hide") } catch (e) {}
+$("simLiveDismiss") && ($("simLiveDismiss").onclick = () => {
+  try { sessionStorage.setItem("klavSimLiveStripDismissed", "1") } catch (e) {}
+  const el = $("simLiveStrip"); if (el) el.classList.add("hide")
+})
+// Step 2: open Settings and expand the Live Sims drawer (admin-only drawer; harmless otherwise).
 $("checklistUrlLink") && ($("checklistUrlLink").onclick = (e) => {
   e.preventDefault()
+  if (typeof setView === "function") setView("settings")
   const d = $("liveDrawer")
   if (d && !d.classList.contains("hide")) { d.setAttribute("open", ""); d.scrollIntoView({ behavior: "smooth", block: "start" }) }
   else { const s = $("settingsDrawer"); if (s) { s.setAttribute("open", ""); s.scrollIntoView({ behavior: "smooth", block: "start" }) } }
@@ -2027,6 +2047,7 @@ function renderSimsFeed() {
           const meta = []
           if (o.urlPath) meta.push(esc(o.urlPath))
           if (o.createdAt) meta.push(ago(o.createdAt))
+          meta.push(`<a class="sf-triage" href="#triage" onclick="setView('triage')">View in Triage →</a>`)
           return `<div class="sf-ob">
             ${tags.length ? `<div class="sf-ob-tags">${tags.join("")}</div>` : ""}
             <div class="sf-ob-text">${esc(o.text)}</div>
@@ -3273,9 +3294,9 @@ load()
   }
   window.setView=setView;
   window.klavSetView=setView; // exposed so card-go buttons (onclick="setView(...)") and inline handlers can call it
-  // the checklist's "Open Live Sims settings" link lives under the Sims section
+  // the checklist's "Open Live Sims settings" link lives under Settings
   var cl=document.getElementById('checklistUrlLink');
-  if(cl){cl.addEventListener('click',function(){setView('sims');});}
+  if(cl){cl.addEventListener('click',function(){setView('settings');});}
   // triage banner click: switch to triage view
   var tb=document.getElementById('triageBanner');
   if(tb){tb.addEventListener('click',function(e){e.preventDefault();setView('triage');});}
