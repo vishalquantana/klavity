@@ -117,7 +117,7 @@ export function buildModal(
     .klavity-modal>.klavity-toggle{animation-delay:.05s}.klavity-modal>.klavity-page{animation-delay:.09s}.klavity-modal>.klavity-strip{animation-delay:.12s}.klavity-modal>.klavity-actions{animation-delay:.15s}.klavity-modal>textarea.klavity-desc{animation-delay:.18s}.klavity-modal>input.klavity-remail{animation-delay:.21s}.klavity-modal>.klavity-submit{animation-delay:.23s}
     .klavity-modal.kl-closing{animation:kl-genie-out .5s cubic-bezier(.55,0,.85,.25) both;}
     .klavity-toggle{display:flex;gap:8px;margin-bottom:16px;padding-right:34px;}
-    .klavity-toggle button{flex:1;min-height:40px;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 12px;border-radius:8px;border:none;cursor:pointer;font-size:14px;font-weight:600;background:var(--kl-chip);color:var(--kl-fg);}
+    .klavity-toggle button{flex:1;min-height:40px;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 12px;border-radius:8px;border:none;cursor:pointer;font-size:14px;font-weight:600;background:var(--kl-chip);color:var(--kl-fg);line-height:1;}
     .klavity-toggle .bug.active{background:var(--kl-accent);color:var(--kl-on-accent);}
     .klavity-toggle .feat.active{background:var(--kl-accent);color:var(--kl-on-accent);}
     .klavity-page{font-size:12px;color:var(--kl-muted);margin-bottom:12px;}
@@ -136,13 +136,10 @@ export function buildModal(
        bottom (pencil) pseudo-areas don't overlap each other; the pencil shares the image's markup action. */
     .klavity-rm::after,.klavity-mk::after{content:"";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:40px;height:40px;}
     .klavity-actions{display:flex;gap:8px;margin-bottom:12px;}
-    .klavity-actions button{flex:1;min-height:40px;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px;background:var(--kl-chip);color:var(--kl-fg);border:none;border-radius:8px;cursor:pointer;font-size:12px;}
-    /* Optical icon alignment + micro-animation for icon+label buttons (capture row + Bug/Feature toggle): a
-       fixed-size, block-rendered icon flex-centered with its label (no baseline drift / stray whitespace),
-       with a springy scale+tilt on hover — same feel as the right-click menu's icon chips. */
-    .klavity-actions .kl-cap-ic,.klavity-toggle .kl-cap-ic{display:inline-flex;align-items:center;flex:none;transition:transform .2s cubic-bezier(.34,1.56,.64,1);}
-    .klavity-actions .kl-cap-ic svg,.klavity-toggle .kl-cap-ic svg{display:block;width:15px;height:15px;}
-    .klavity-actions button:hover .kl-cap-ic,.klavity-toggle button:hover .kl-cap-ic{transform:scale(1.14) rotate(-6deg);}
+    .klavity-actions button{flex:1;min-height:40px;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px;background:var(--kl-chip);color:var(--kl-fg);border:none;border-radius:8px;cursor:pointer;font-size:12px;line-height:1;}
+    .klavity-actions .kl-cap-ic,.klavity-toggle .kl-cap-ic{display:inline-flex;align-items:center;justify-content:center;flex:none;transition:transform .2s cubic-bezier(.34,1.56,.64,1);line-height:1;}
+    .klavity-actions .kl-cap-ic svg,.klavity-toggle .kl-cap-ic svg{display:block;width:15px;height:15px;vertical-align:middle;margin:0;}
+    .klavity-actions button:hover .kl-cap-ic,.klavity-toggle button:hover .kl-cap-ic,.klavity-actions button:focus-visible .kl-cap-ic,.klavity-toggle button:focus-visible .kl-cap-ic{transform:scale(1.14) rotate(-6deg);}
     .klavity-actions button:active .kl-cap-ic,.klavity-toggle button:active .kl-cap-ic{transform:scale(1.04);}
     /* Re-entrancy state: while a capture/submit is in flight every capture button is disabled (dimmed, no
        hover/press), and the one doing the work pulses to read as "working". */
@@ -196,11 +193,15 @@ export function buildModal(
     /* Thumbnail action badges (X remove, pencil edit) — pop on hover, press in */
     .klavity-rm:hover,.klavity-mk:hover{transform:var(--kl-bhover);box-shadow:0 3px 9px rgba(0,0,0,.42);}
     .klavity-rm:active,.klavity-mk:active{transform:var(--kl-bpress);}
+    .klavity-rm svg,.klavity-mk svg{transition:transform .2s ease;will-change:transform;}
+    .klavity-rm:hover svg{transform:rotate(90deg);}
+    .klavity-mk:hover svg{transform:rotate(15deg) scale(1.1);}
     /* Close (×) — top-right corner; same lift+accent / press / focus feel as the rest. 30px visible button
        with a ::after pseudo extending the hit area to ≥40×40 (sits in the reserved toggle padding, so it
        never overlaps the Bug/Feature buttons). */
     .klavity-x{position:absolute;top:14px;right:14px;z-index:3;width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;padding:0;background:transparent;color:var(--kl-muted);border:none;border-radius:9px;cursor:pointer;transition:transform .15s cubic-bezier(.34,1.56,.64,1),background .15s ease,color .15s ease;will-change:transform;}
-    .klavity-x svg{display:block;}
+    .klavity-x svg{display:block;transition:transform .25s ease;will-change:transform;}
+    .klavity-x:hover svg{transform:rotate(90deg) scale(1.12);}
     .klavity-x::after{content:"";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:40px;height:40px;}
     .klavity-x:hover{transform:var(--kl-lift);color:var(--kl-accent);background:color-mix(in srgb,var(--kl-accent) 14%,transparent);}
     .klavity-x:active{transform:var(--kl-press);}
@@ -229,7 +230,7 @@ export function buildModal(
       background:color-mix(in srgb,var(--kl-accent) 12%,var(--kl-chip));
       box-shadow:0 0 0 1.5px var(--kl-accent),0 4px 14px color-mix(in srgb,var(--kl-accent) 18%,transparent);
     }
-    .klavity-actions button.kl-active .kl-cap-ic{color:var(--kl-accent);}
+    .klavity-actions button.kl-active .kl-cap-ic,.klavity-toggle button.active .kl-cap-ic{color:var(--kl-accent);transform:scale(1.08) rotate(3deg);}
     .klavity-actions button.kl-active::after{
       content:"";position:absolute;top:6px;right:7px;
       width:6px;height:4px;
@@ -257,9 +258,9 @@ export function buildModal(
     <div class="klavity-strip" id="klavity-strip"></div>
     <div class="klavity-actions">
       ${callbacks.onCaptureSharp ? `<button id="klavity-sharp" title="Screen — pixel-perfect full page, every image. Shares this tab (asks permission)."><span class="kl-cap-ic">${icon('chrome')}</span><span class="kl-sharp-label">Screen</span><span class="klavity-info-pop" role="tooltip">Screen grabs the <b>whole page — every image, pixel-perfect</b> using your browser's screen-share. Your browser will ask you to <b>share this tab</b>.</span></button>` : ''}
-      <button id="klavity-full" title="Full Page — instant capture; may miss some cross-origin images"><span class="kl-cap-ic">${icon('camera')}</span>Full Page</button>
-      <button id="klavity-upload"><span class="kl-cap-ic">${icon('image')}</span>Upload</button>
-      ${callbacks.onRegionCapture ? `<button id="klavity-region"><span class="kl-cap-ic">${icon('scissors')}</span>Region</button>` : ''}
+      <button id="klavity-full" title="Full Page — instant capture; may miss some cross-origin images"><span class="kl-cap-ic">${icon('camera')}</span><span class="kl-full-label">Full Page</span></button>
+      <button id="klavity-upload"><span class="kl-cap-ic">${icon('image')}</span><span class="kl-upload-label">Upload</span></button>
+      ${callbacks.onRegionCapture ? `<button id="klavity-region"><span class="kl-cap-ic">${icon('scissors')}</span><span class="kl-region-label">Region</span></button>` : ''}
     </div>
     <input type="file" id="klavity-file" accept="image/*,.heic,.heif" multiple style="display:none">
     <div class="klavity-counter" id="klavity-counter">0/5 images</div>
@@ -560,6 +561,7 @@ export function buildModal(
     const runSharp = async () => {
       if (busy) return // re-entrancy: a capture/submit is already running
       lockComposer(true)
+      sharpBtn.classList.add('kl-loading')
       // Hide the composer so it isn't in the captured pixels. onCaptureSharp calls getDisplayMedia as its
       // first step, so the click's user gesture (required by the permission prompt) is preserved.
       host.style.display = 'none'
@@ -570,7 +572,12 @@ export function buildModal(
         const shot = await callbacks.onCaptureSharp!()
         if (shot) { addScreenshot(shot); setActiveCapture(sharpBtn) }
       } catch { /* user cancelled the share prompt, or capture failed — just restore */ }
-      finally { host.style.display = ''; target.textContent = orig; lockComposer(false) }
+      finally {
+        host.style.display = ''
+        target.textContent = orig
+        sharpBtn.classList.remove('kl-loading')
+        lockComposer(false)
+      }
     }
     // ONE click → straight to the screen-share permission. getDisplayMedia runs synchronously inside the
     // handler (preserving the click's user gesture).
