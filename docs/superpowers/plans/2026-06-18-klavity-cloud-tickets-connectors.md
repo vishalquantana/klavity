@@ -167,7 +167,7 @@ export function listConnectorTypes(): { type: string; label: string; fields: Con
 import { test, expect, mock } from "bun:test"
 import { getConnector, listConnectorTypes } from "./index"
 const TICKET = { title: "Bug", body: "desc", severity: "high", url: "https://app/x",
-  simName: "Vamshi", createdAt: 1, klavityUrl: "https://klavity.quantana.top/dashboard" }
+  simName: "Vamshi", createdAt: 1, klavityUrl: "https://klavity.in/dashboard" }
 
 test("github createIssue posts to repo and extracts number+url", async () => {
   const calls: any[] = []

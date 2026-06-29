@@ -12,7 +12,7 @@
 
 - SemVer lockstep on release: bump `package.json` (`/`, `packages/core`, `packages/extension`, `packages/sdk`) + `packages/extension/manifest.json` + `docs/PRD.md` + top `CHANGELOG.md` entry together. Current version at planning time: `0.30.5` (re-check at release time — other sessions ship concurrently) → release this feature as `0.31.0` (new feature → minor; verify it's still the next free minor when you cut it).
 - Dedicated lead Plane project: `f2982ce0-6bb5-410f-9c77-b84a7b90441c`, workspace `qbuilder`, host `https://plane.quantana.top`.
-- Widget modes: `support` (default) | `leadgen` | `off`. Default CTA URL: `https://klavity.quantana.top/onboarding`.
+- Widget modes: `support` (default) | `leadgen` | `off`. Default CTA URL: `https://klavity.in/onboarding`.
 - Anonymous intake is **first-party only** (request `Origin` must equal `KLAV_BASE_URL` origin). Cross-origin customer intake is out of scope.
 - `widget_notify_email` is server-side only — never returned by any public endpoint.
 - Deploy: commit → push master → ssh `root@66.135.20.62`, `cd /opt/klav`, `sudo -u klav git fetch origin master && sudo -u klav git reset --hard origin/master`, `systemctl restart klav`, poll health (~10–15s boot, expect a brief 502 then 200). Print an IST timestamp (`date "+%Y-%m-%d %H:%M IST"`) on deploy.
@@ -58,7 +58,7 @@ beforeAll(async () => {
 
 test("defaults: mode=support, ctaUrl falls back to onboarding", async () => {
   const cfg = await getWidgetConfig("p1")
-  expect(cfg).toEqual({ mode: "support", ctaUrl: "https://klavity.quantana.top/onboarding" })
+  expect(cfg).toEqual({ mode: "support", ctaUrl: "https://klavity.in/onboarding" })
 })
 
 test("unknown project → null", async () => {
@@ -66,8 +66,8 @@ test("unknown project → null", async () => {
 })
 
 test("setWidgetConfig persists; notify stays server-side", async () => {
-  await setWidgetConfig("p1", { mode: "leadgen", ctaUrl: "https://klavity.quantana.top/onboarding", notifyEmail: "lead@x.com" })
-  expect(await getWidgetConfig("p1")).toEqual({ mode: "leadgen", ctaUrl: "https://klavity.quantana.top/onboarding" })
+  await setWidgetConfig("p1", { mode: "leadgen", ctaUrl: "https://klavity.in/onboarding", notifyEmail: "lead@x.com" })
+  expect(await getWidgetConfig("p1")).toEqual({ mode: "leadgen", ctaUrl: "https://klavity.in/onboarding" })
   expect(await getWidgetNotifyEmail("p1")).toBe("lead@x.com")
 })
 
@@ -109,7 +109,7 @@ widgetNotifyEmail: x.widget_notify_email != null ? String(x.widget_notify_email)
 - [ ] **Step 5: Add the helper functions (near `projectById`, ~646)**
 
 ```ts
-const DEFAULT_WIDGET_CTA = "https://klavity.quantana.top/onboarding"
+const DEFAULT_WIDGET_CTA = "https://klavity.in/onboarding"
 
 export async function getWidgetConfig(projectId: string): Promise<{ mode: string; ctaUrl: string } | null> {
   const p = await projectById(projectId)
@@ -161,24 +161,24 @@ git commit -m "feat(db): widget-config columns + contact_email + helpers"
 
 **Interfaces:**
 - Consumes: `getWidgetConfig` (Task 1).
-- Produces: `GET /api/widget/config?project=<id>` → `200 {mode, ctaUrl}`; unknown/missing project → `200 {mode:"support", ctaUrl:"https://klavity.quantana.top/onboarding"}` (safe default, never 404, never `notify_email`).
+- Produces: `GET /api/widget/config?project=<id>` → `200 {mode, ctaUrl}`; unknown/missing project → `200 {mode:"support", ctaUrl:"https://klavity.in/onboarding"}` (safe default, never 404, never `notify_email`).
 
 - [ ] **Step 1: Write the failing test**
 
-Create `prototype/server.widget-config.test.ts` modeled on `server.feedback-widget.test.ts` (copy its seed/spawn/afterAll boilerplate verbatim, adding `widget_mode`,`widget_cta_url`,`widget_notify_email` to the `projects` CREATE and `contact_email` to the `feedback` CREATE). Seed one project `p1` with `widget_mode='leadgen', widget_cta_url='https://klavity.quantana.top/onboarding', widget_notify_email='lead@x.com'`. Then:
+Create `prototype/server.widget-config.test.ts` modeled on `server.feedback-widget.test.ts` (copy its seed/spawn/afterAll boilerplate verbatim, adding `widget_mode`,`widget_cta_url`,`widget_notify_email` to the `projects` CREATE and `contact_email` to the `feedback` CREATE). Seed one project `p1` with `widget_mode='leadgen', widget_cta_url='https://klavity.in/onboarding', widget_notify_email='lead@x.com'`. Then:
 
 ```ts
 test("returns configured mode + ctaUrl, never notify_email", async () => {
   const r = await fetch(`${BASE}/api/widget/config?project=p1`)
   expect(r.status).toBe(200)
   const j = await r.json()
-  expect(j).toEqual({ mode: "leadgen", ctaUrl: "https://klavity.quantana.top/onboarding" })
+  expect(j).toEqual({ mode: "leadgen", ctaUrl: "https://klavity.in/onboarding" })
   expect(JSON.stringify(j)).not.toContain("lead@x.com")
 })
 
 test("unknown project → safe default", async () => {
   const j = await (await fetch(`${BASE}/api/widget/config?project=nope`)).json()
-  expect(j).toEqual({ mode: "support", ctaUrl: "https://klavity.quantana.top/onboarding" })
+  expect(j).toEqual({ mode: "support", ctaUrl: "https://klavity.in/onboarding" })
 })
 ```
 
@@ -194,7 +194,7 @@ In `prototype/server.ts`, right after the `/widget.js` route (~line 884), add:
 ```ts
 if (req.method === "GET" && path === "/api/widget/config") {
   const pid = url.searchParams.get("project") || ""
-  const cfg = (pid && await getWidgetConfig(pid)) || { mode: "support", ctaUrl: "https://klavity.quantana.top/onboarding" }
+  const cfg = (pid && await getWidgetConfig(pid)) || { mode: "support", ctaUrl: "https://klavity.in/onboarding" }
   return wjson(cfg) // wjson = JSON + WIDGET_CORS (cross-origin GET is fine; config is public)
 }
 ```
@@ -232,7 +232,7 @@ Create `prototype/server.feedback-anon.test.ts` (copy seed/spawn boilerplate fro
 ```ts
 test("anonymous first-party submit persists with null actor", async () => {
   const fd = new FormData()
-  fd.set("description", "anon bug"); fd.set("page_url", "https://klavity.quantana.top/snap"); fd.set("project_id", "p1")
+  fd.set("description", "anon bug"); fd.set("page_url", "https://klavity.in/snap"); fd.set("project_id", "p1")
   const r = await fetch(`${BASE}/api/feedback`, { method: "POST", body: fd, headers: { origin: BASE } })
   expect(r.status).toBe(200)
   const j = await r.json(); expect(j.saved).toBe(true); expect(j.id).toBeTruthy()
@@ -477,7 +477,7 @@ Create `prototype/server.widget-admin.test.ts` (subprocess; seed account `acc1` 
 
 ```ts
 test("admin can set widget config", async () => {
-  const r = await fetch(`${BASE}/api/project/widget-config`, { method:"POST", headers:{ "content-type":"application/json", cookie: ownerCookie }, body: JSON.stringify({ project_id:"p1", mode:"leadgen", cta_url:"https://klavity.quantana.top/onboarding", notify_email:"lead@x.com" }) })
+  const r = await fetch(`${BASE}/api/project/widget-config`, { method:"POST", headers:{ "content-type":"application/json", cookie: ownerCookie }, body: JSON.stringify({ project_id:"p1", mode:"leadgen", cta_url:"https://klavity.in/onboarding", notify_email:"lead@x.com" }) })
   expect(r.status).toBe(200)
   const row = await rawClient.execute({ sql:"SELECT widget_mode, widget_notify_email FROM projects WHERE id=?", args:["p1"] })
   expect(row.rows[0].widget_mode).toBe("leadgen")
@@ -572,9 +572,9 @@ test("support mode → status hook, email shown, no CTA", () => {
   expect(s.headline.toLowerCase()).toContain("filed")
 })
 test("leadgen mode → email + CTA to ctaUrl", () => {
-  const s = successCopy("leadgen", "https://klavity.quantana.top/onboarding")
+  const s = successCopy("leadgen", "https://klavity.in/onboarding")
   expect(s.showEmail).toBe(true); expect(s.showCta).toBe(true)
-  expect(s.ctaUrl).toBe("https://klavity.quantana.top/onboarding")
+  expect(s.ctaUrl).toBe("https://klavity.in/onboarding")
 })
 test("off mode → no email, no CTA", () => {
   const s = successCopy("off", "https://x/onboarding")
@@ -620,7 +620,7 @@ Expected: PASS (3 tests).
 In `mount()` (after `parseScriptConfig`), fetch the config and store it:
 
 ```ts
-let widgetCfg = { mode: "support", ctaUrl: "https://klavity.quantana.top/onboarding" }
+let widgetCfg = { mode: "support", ctaUrl: "https://klavity.in/onboarding" }
 try {
   const r = await fetch(cfg.backendUrl + "/api/widget/config?project=" + encodeURIComponent(cfg.projectId))
   if (r.ok) widgetCfg = await r.json()
@@ -645,7 +645,7 @@ Extend `buildModal`'s callbacks with `onSuccess?: (feedbackId: string) => void` 
 ```ts
 const pb = document.createElement("div")
 pb.style.cssText = "text-align:center;font-size:10px;color:#585b70;margin-top:12px"
-pb.innerHTML = `Powered by <a href="https://klavity.quantana.top" target="_blank" rel="noopener" style="color:#7f849c;text-decoration:none">Klavity</a>`
+pb.innerHTML = `Powered by <a href="https://klavity.in" target="_blank" rel="noopener" style="color:#7f849c;text-decoration:none">Klavity</a>`
 modal.appendChild(pb)
 ```
 
@@ -694,7 +694,7 @@ if (!conns.some(c => c.type === "plane")) {
     createdBy: ACCOUNT_OWNER,
   })
 }
-await setWidgetConfig(proj.id, { mode: "leadgen", ctaUrl: "https://klavity.quantana.top/onboarding", notifyEmail: process.env.PROVISION_NOTIFY_EMAIL! })
+await setWidgetConfig(proj.id, { mode: "leadgen", ctaUrl: "https://klavity.in/onboarding", notifyEmail: process.env.PROVISION_NOTIFY_EMAIL! })
 console.log("WEBSITE_PROJECT_ID=" + proj.id)
 ```
 
@@ -730,7 +730,7 @@ Expected: prints `WEBSITE_PROJECT_ID=proj_…`. Record it as `<WEBSITE_PID>`. (R
 Before `</body>` in each `site/*.html` listed above:
 
 ```html
-<script src="https://klavity.quantana.top/widget.js" data-project="<WEBSITE_PID>" defer></script>
+<script src="https://klavity.in/widget.js" data-project="<WEBSITE_PID>" defer></script>
 ```
 
 - [ ] **Step 3: SemVer lockstep bump to `0.31.0`**
@@ -755,13 +755,13 @@ ssh root@66.135.20.62 'cd /opt/klav && sudo -u klav git fetch origin master && s
 
 ```bash
 # health
-curl -s -o /dev/null -w "%{http_code}\n" https://klavity.quantana.top/   # expect 200 after boot
+curl -s -o /dev/null -w "%{http_code}\n" https://klavity.in/   # expect 200 after boot
 # widget served
-curl -s -o /dev/null -w "%{http_code}\n" https://klavity.quantana.top/widget.js   # 200
+curl -s -o /dev/null -w "%{http_code}\n" https://klavity.in/widget.js   # 200
 # config endpoint returns leadgen for our project
-curl -s "https://klavity.quantana.top/api/widget/config?project=<WEBSITE_PID>"   # {"mode":"leadgen",...}
+curl -s "https://klavity.in/api/widget/config?project=<WEBSITE_PID>"   # {"mode":"leadgen",...}
 # embed present on home
-curl -s https://klavity.quantana.top/ | grep -c 'data-project="<WEBSITE_PID>"'   # 1
+curl -s https://klavity.in/ | grep -c 'data-project="<WEBSITE_PID>"'   # 1
 ```
 Then a manual end-to-end: open the home page, right-click → file a test bug → confirm the success screen is leadgen → enter `vishal@quantana.com.au` → confirm a card appears in Plane project `f2982ce0…` and a lead-alert email arrives. Print an IST timestamp.
 

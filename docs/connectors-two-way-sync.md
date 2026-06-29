@@ -11,7 +11,7 @@ Leaving the Inbound Webhook Secret blank keeps the connector outbound-only.
 ## Webhook URL
 
 ```
-https://klavity.quantana.top/api/connectors/<type>/webhook
+https://klavity.in/api/connectors/<type>/webhook
 ```
 
 `<type>` is one of `github`, `plane`, `jira`, `linear`. The dashboard connector editor

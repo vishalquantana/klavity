@@ -3,9 +3,9 @@
 Paste these into the Chrome Web Store Developer Dashboard for the **Klavity** item (v0.21.1).
 
 URLs to use in the dashboard:
-- **Privacy policy:** https://klavity.quantana.top/privacy
-- **Terms of service:** https://klavity.quantana.top/terms
-- **Homepage URL:** https://klavity.quantana.top
+- **Privacy policy:** https://klavity.in/privacy
+- **Terms of service:** https://klavity.in/terms
+- **Homepage URL:** https://klavity.in
 - **Support / contact:** hello@quantana.com.au
 
 ---
@@ -31,7 +31,7 @@ URLs to use in the dashboard:
 >
 > • **You're in control.** Sims only review pages after you consent, and only on pages you allowlist or explicitly analyze. Pause anytime, or turn automatic reviews off entirely in Options.
 >
-> Built by Quantana. Open-core (FSL-1.1-ALv2). Privacy: https://klavity.quantana.top/privacy · Terms: https://klavity.quantana.top/terms
+> Built by Quantana. Open-core (FSL-1.1-ALv2). Privacy: https://klavity.in/privacy · Terms: https://klavity.in/terms
 
 **Screenshots:** at least one 1280×800 or 640×400. Suggested shots: the popup (sign-in + "Analyze this page"), an in-page Sim reaction bubble, and the dashboard ticket list.
 
@@ -51,8 +51,8 @@ URLs to use in the dashboard:
 | `storage` | Store the user's settings, sign-in session, selected project, and per-domain consent locally in the browser. |
 | `scripting` | Inject Klavity's in-page reporter and Sim review overlay into the page the user is actively working on. |
 | `tabs` | Read the active tab's URL so reports and reviews are attributed to the correct page and routed to that tab. |
-| `cookies` | Read the Klavity session cookie on klavity.quantana.top for silent sign-in, so a user already signed in to the website doesn't re-enter a code. |
-| `host_permissions: klavity.quantana.top/*` (+ `localhost`) | The extension's own backend — sign-in, config sync, AI review, and ticket filing all call the Klavity API. |
+| `cookies` | Read the Klavity session cookie on klavity.in for silent sign-in, so a user already signed in to the website doesn't re-enter a code. |
+| `host_permissions: klavity.in/*` (+ `localhost`) | The extension's own backend — sign-in, config sync, AI review, and ticket filing all call the Klavity API. |
 | `optional_host_permissions: *://*/*` | NOT requested at install. Granted at runtime, **per-domain**, only for the specific sites a user or their admin chooses to monitor for passive auto-review. "Analyze this page" works anywhere via `activeTab` and needs no host grant. |
 | `https://*.atlassian.net/*`, `https://api.linear.app/*`, `https://api.github.com/*`, `https://api.plane.so/*` | File tickets directly from the browser to the issue tracker the user has connected (Jira, Linear, GitHub, Plane) when using direct-integration mode. |
 
@@ -70,7 +70,7 @@ Certify (all true for Klavity):
 - ✅ Data is **not** used or transferred for purposes unrelated to the item's single purpose.
 - ✅ Data is **not** used or transferred to determine creditworthiness or for lending.
 
-**Privacy policy URL:** https://klavity.quantana.top/privacy
+**Privacy policy URL:** https://klavity.in/privacy
 
 ---
 

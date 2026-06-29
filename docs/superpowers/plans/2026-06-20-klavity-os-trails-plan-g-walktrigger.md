@@ -300,7 +300,7 @@ export async function runWalkNow(
 **Files:** Create `prototype/public/trails-demo/**` (copy fixtures), `prototype/lib/trails-demo-seed.ts`, `prototype/lib/trails-demo-seed.test.ts`; Modify `prototype/server.ts` (static route only in this task)
 
 **Interfaces:**
-- Produces: `async function seedDemoTrails(projectId: string, baseUrl: string): Promise<{ created: number; trailIds: Record<string, string> }>` — idempotently create the demo Trails for `projectId` (skip any whose `name` already exists for the project). `baseUrl` is the app origin (e.g. `https://klavity.quantana.top`) used to point fixture Trails at `/trails-demo/...`. Demo trails: `Demo · baseline` (GREEN), `Demo · drift (heals)` (Tier-1), `Demo · regression` (RED), `Dogfood · landing` (real public site).
+- Produces: `async function seedDemoTrails(projectId: string, baseUrl: string): Promise<{ created: number; trailIds: Record<string, string> }>` — idempotently create the demo Trails for `projectId` (skip any whose `name` already exists for the project). `baseUrl` is the app origin (e.g. `https://klavity.in`) used to point fixture Trails at `/trails-demo/...`. Demo trails: `Demo · baseline` (GREEN), `Demo · drift (heals)` (Tier-1), `Demo · regression` (RED), `Dogfood · landing` (real public site).
 
 - [ ] **Step 1: Copy the fixtures into public/ and add the static route**
 

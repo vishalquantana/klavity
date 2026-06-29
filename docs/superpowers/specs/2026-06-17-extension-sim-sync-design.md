@@ -46,7 +46,7 @@ Add to `packages/extension/manifest.json`:
 ```json
 "externally_connectable": {
   "matches": [
-    "https://klavity.quantana.top/*",
+    "https://klavity.in/*",
     "http://localhost:*"
   ]
 }
@@ -60,7 +60,7 @@ In `packages/extension/src/content.ts`, at the top of the script (before any oth
 
 ```ts
 // Expose extension ID to Klavity web app so it can send us a connect message
-if (location.hostname === 'klavity.quantana.top' || location.hostname === 'localhost') {
+if (location.hostname === 'klavity.in' || location.hostname === 'localhost') {
   window.__klavityExtensionId = chrome.runtime.id
 }
 ```

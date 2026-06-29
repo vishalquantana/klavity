@@ -45,7 +45,7 @@
 - **Code:** `background.ts:70-72` (`captureVisibleTab`), `background.ts:127,218` (`tabs.query`, `onUpdated`), `background.ts:204,343` + `popup.ts:182,326,333` + `content.ts`/`auth.ts` links (`tabs.create`).
 
 ### `cookies`
-- **Purpose:** Silent SSO — if the user is already signed in to `klavity.quantana.top` in the browser, reuse that session to log the extension in without a second OTP.
+- **Purpose:** Silent SSO — if the user is already signed in to `klavity.in` in the browser, reuse that session to log the extension in without a second OTP.
 - **Why needed:** Reads exactly **one** cookie (`klav_session`) from the Klavity backend origin to bootstrap the extension's own narrow `ext_…` token.
 - **Narrowest alternative considered:** Falls back gracefully when `cookies` is unavailable (`if (!chrome.cookies?.get) return false`, `auth.ts:31`). Reads only the named cookie at the backend base URL — not arbitrary cookies across sites. Could be dropped if silent-login is sacrificed (see Recommendations).
 - **Data touched:** The single `klav_session` HttpOnly cookie value for the Klavity origin only.
@@ -64,7 +64,7 @@
 
 These are the origins the extension may talk to / be injected on **at install** (no per-use prompt).
 
-### `https://klavity.quantana.top/*`
+### `https://klavity.in/*`
 - **Purpose:** The Klavity backend — all API calls (auth, feedback, Sim review, project config, tokens) and the `expose-id` content script.
 - **Why needed:** First-party backend; the extension is non-functional without it.
 - **Data touched:** User email/auth, reports, screenshots, Sim data.
@@ -107,7 +107,7 @@ These are the origins the extension may talk to / be injected on **at install** 
 1. **`https://*.atlassian.net/*`, `https://api.linear.app/*`, `https://api.github.com/*`, `https://api.plane.so/*`** — appear **unused** in the harmonized Klavity-only submission flow (copy-to-tracker is now server-side). **Confirm no direct-tracker code path, then remove all four.** `[GAP — needs owner input]`.
 2. **`http://localhost/*`** (host permission + static content-script match) — dev convenience; **drop from the public Web Store build** via a prod manifest variant.
 
-**Keep (justified, in active use):** `activeTab`, `storage`, `scripting`, `tabs`, `cookies`, `contextMenus`, `https://klavity.quantana.top/*`, and `optional_host_permissions: *://*/*` (runtime opt-in, the correct narrow pattern).
+**Keep (justified, in active use):** `activeTab`, `storage`, `scripting`, `tabs`, `cookies`, `contextMenus`, `https://klavity.in/*`, and `optional_host_permissions: *://*/*` (runtime opt-in, the correct narrow pattern).
 
 **Verify with owner:**
 - Confirm the four tracker host permissions are truly dead code before removal (search returned no live `fetch` to them, but config still references them).

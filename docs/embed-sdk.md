@@ -8,7 +8,7 @@ Add Klavity to any web page with a single `<script>` tag. Users can right-click 
 
 ```html
 <script
-  src="https://klavity.quantana.top/widget.js"
+  src="https://klavity.in/widget.js"
   data-project="YOUR_PROJECT_ID"
   defer
 ></script>
@@ -37,7 +37,7 @@ All options are set as `data-*` attributes on the `<script>` tag.
 
 ```html
 <script
-  src="https://klavity.quantana.top/widget.js"
+  src="https://klavity.in/widget.js"
   data-project="proj_abc123"
   data-user-id="u_42"
   data-user-email="ada@example.com"
@@ -166,7 +166,7 @@ You can set this via `data-*` attributes (static, known at page load) **or** via
 
 ```html
 <!-- Script tag: no data-user-* (user not known yet at load time) -->
-<script src="https://klavity.quantana.top/widget.js"
+<script src="https://klavity.in/widget.js"
         data-project="proj_abc123"
         data-replay="on"
         defer></script>
@@ -234,7 +234,7 @@ To keep the widget out of the critical path on high-traffic pages, load it after
 ```js
 window.addEventListener('load', () => {
   const s = document.createElement('script')
-  s.src = 'https://klavity.quantana.top/widget.js'
+  s.src = 'https://klavity.in/widget.js'
   s.setAttribute('data-project', 'proj_abc123')
   s.defer = true
   document.body.appendChild(s)

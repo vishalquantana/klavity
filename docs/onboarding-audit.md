@@ -63,7 +63,7 @@ The "Install it" link goes to: `https://github.com/vishalquantana/klav-snap#inst
 
 **What Priya sees** when she opens the widget tile:  
 ```
-<script src="https://klavity.quantana.top/widget.js" data-project="proj_xxx" defer></script>
+<script src="https://klavity.in/widget.js" data-project="proj_xxx" defer></script>
 ```
 *"Your project ID is filled in — paste this before `</body>` on any page."*
 

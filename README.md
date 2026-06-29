@@ -4,12 +4,12 @@
 
 [![Chrome Web Store](https://img.shields.io/badge/Chrome%20Web%20Store-install-4285F4.svg?logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/klavity-%E2%80%93-ai-bug-reporter/olahjdcgbdjajbfmgnakjlehgjdmaene)
 [![License: FSL-1.1-ALv2](https://img.shields.io/badge/license-FSL--1.1--ALv2-0f9d6b.svg)](LICENSE)
-[![Live demo](https://img.shields.io/badge/demo-klavity.quantana.top-6366f1.svg)](https://klavity.quantana.top)
+[![Live demo](https://img.shields.io/badge/demo-klavity.in-6366f1.svg)](https://klavity.in)
 [![Open core](https://img.shields.io/badge/open-core-db2777.svg)](#license)
 
 **Klavity** turns bug reporting, customer research, and end-to-end testing into one continuous loop — built around a recurring cast of AI **Sims** (personas grounded in real customer calls). Snap is **Phase 1**: the in-app reporter that catches a bug the moment a human sees it.
 
-🌐 **Live:** [klavity.quantana.top](https://klavity.quantana.top) &nbsp;·&nbsp; [Snap](https://klavity.quantana.top/snap) · [Sims](https://klavity.quantana.top/sims) · [AutoSim](https://klavity.quantana.top/autosim)
+🌐 **Live:** [klavity.in](https://klavity.in) &nbsp;·&nbsp; [Snap](https://klavity.in/snap) · [Sims](https://klavity.in/sims) · [AutoSim](https://klavity.in/autosim)
 
 > Named after **Ekalavya**, the self-taught master — Klavity learns your product and tests it the way your users would.
 
@@ -21,9 +21,9 @@ Three phases, one set of AI Sims walking the same trail through your product:
 
 | Phase | Product | What it does | Status |
 |---|---|---|---|
-| **1** | **[Klavity Snap](https://klavity.quantana.top/snap)** | Right-click → describe → a grounded bug (screenshot + console + network) lands in your tracker. **No extension needed.** | ✅ **Shipped** (this repo) |
-| **2** | **[Klavity Sims](https://klavity.quantana.top/sims)** | Turn customer-call transcripts into AI personas that walk your real pages and react in their own voice — filing grounded bugs carrying the persona + a verbatim quote. | ✅ **Live** |
-| **3** | **[Klavity AutoSim](https://klavity.quantana.top/autosim)** | Your Sims test every release: author a flow once, replay it with **zero AI**, and **self-heal** when the UI changes — never a silent false-green. | ✅ **Shipped** |
+| **1** | **[Klavity Snap](https://klavity.in/snap)** | Right-click → describe → a grounded bug (screenshot + console + network) lands in your tracker. **No extension needed.** | ✅ **Shipped** (this repo) |
+| **2** | **[Klavity Sims](https://klavity.in/sims)** | Turn customer-call transcripts into AI personas that walk your real pages and react in their own voice — filing grounded bugs carrying the persona + a verbatim quote. | ✅ **Live** |
+| **3** | **[Klavity AutoSim](https://klavity.in/autosim)** | Your Sims test every release: author a flow once, replay it with **zero AI**, and **self-heal** when the UI changes — never a silent false-green. | ✅ **Shipped** |
 
 > AutoSim was formerly called "Klavity OS." Everywhere you see it now, it's **AutoSim**.
 
@@ -59,7 +59,7 @@ Three phases, one set of AI Sims walking the same trail through your product:
 Embed the report widget on your own site so logged-in users can right-click → report, with the full-page screenshot auto-attached:
 
 ```html
-<script src="https://klavity.quantana.top/widget.js" defer></script>
+<script src="https://klavity.in/widget.js" defer></script>
 ```
 
 ### Chrome extension (report on any site)

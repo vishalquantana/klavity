@@ -13,7 +13,7 @@
 - **No backend/server changes.** All endpoints already exist: `POST /api/auth/request`, `POST /api/auth/verify` (`server.ts:316,333`), `GET /api/extension/config` (`server.ts:554`), `GET /api/personas?project=<id>` (`server.ts:497`).
 - **No CORS work needed.** MV3 grants extension popup/SW privileged cross-origin fetch to `host_permissions` hosts (manifest has `<all_urls>`); existing fetches in `background.ts:61` / `popup.ts:69` prove it.
 - **`klav_session` cookie is `HttpOnly; SameSite=Lax; Secure`** (`lib/auth.ts:35`) — read it only via `chrome.cookies.get`, never `document.cookie`.
-- **Default backend base:** `https://klavity.quantana.top` (matches `background.ts:51`). Strip trailing slashes.
+- **Default backend base:** `https://klavity.in` (matches `background.ts:51`). Strip trailing slashes.
 - **`auth.ts` imports from `@klavity/core` must be `import type` only** — value imports pull DOM-heavy modules into the Vitest node env.
 - **Bootstrap token = raw session id**, persisted to `klavSettings.klavToken` (sync). The scoped `ext_` token lands in `klavConfig.token` (local) via `syncConfig()`. Set `klavSettings.connectionMode = 'klavity'` on sign-in, `'direct'` on sign-out.
 - **Test commands run from `packages/extension/`:** `pnpm test` (= `vitest run --passWithNoTests`) or `pnpm exec vitest run <file>`.
@@ -79,7 +79,7 @@ function makeChrome(opts: { cookie?: string; hasCookies?: boolean } = {}) {
     },
     runtime: {
       lastError: undefined as any,
-      sendMessage: vi.fn((_msg: any, cb: any) => cb({ ok: true, config: { email: 'a@b.com', token: 'ext_x', backendUrl: 'https://klavity.quantana.top', projects: [], syncedAt: 1 } })),
+      sendMessage: vi.fn((_msg: any, cb: any) => cb({ ok: true, config: { email: 'a@b.com', token: 'ext_x', backendUrl: 'https://klavity.in', projects: [], syncedAt: 1 } })),
     },
   }
 }
@@ -88,7 +88,7 @@ beforeEach(() => { vi.restoreAllMocks() })
 
 describe('backendBase', () => {
   it('defaults to production and strips trailing slash', () => {
-    expect(backendBase({})).toBe('https://klavity.quantana.top')
+    expect(backendBase({})).toBe('https://klavity.in')
     expect(backendBase({ backendUrl: 'http://localhost:3000/' })).toBe('http://localhost:3000')
   })
 })
@@ -189,7 +189,7 @@ Create `packages/extension/src/auth.ts`:
 ```ts
 import type { KlavitySettings, KlavConfig, KlavMonitoredProject } from '@klavity/core'
 
-const DEFAULT_BACKEND = 'https://klavity.quantana.top'
+const DEFAULT_BACKEND = 'https://klavity.in'
 
 export function backendBase(s: Partial<KlavitySettings>): string {
   return (s.backendUrl || DEFAULT_BACKEND).replace(/\/+$/, '')
@@ -336,7 +336,7 @@ git commit -m "feat(ext): auth module — silent cookie + OTP sign-in, project h
 - Modify: `prototype/public/index.html:1317`
 
 **Interfaces:**
-- Produces: the DOM attribute `document.documentElement.dataset.klavityExtId` (= `chrome.runtime.id`) on `klavity.quantana.top` / `localhost` pages, read by the Studio page's connect-button init.
+- Produces: the DOM attribute `document.documentElement.dataset.klavityExtId` (= `chrome.runtime.id`) on `klavity.in` / `localhost` pages, read by the Studio page's connect-button init.
 
 - [ ] **Step 1: Create the dedicated id-exposer content script**
 
@@ -356,7 +356,7 @@ In `packages/extension/src/content.ts`, delete the current lines 1-4:
 
 ```ts
 // Expose our extension ID to the Klavity web app so it can send us a CONNECT message.
-if (location.hostname === 'klavity.quantana.top' || location.hostname === 'localhost') {
+if (location.hostname === 'klavity.in' || location.hostname === 'localhost') {
   ;(window as any).__klavityExtensionId = chrome.runtime.id
 }
 ```
@@ -376,7 +376,7 @@ In `packages/extension/manifest.json`, add a second entry to the `content_script
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://klavity.quantana.top/*", "http://localhost/*"],
+      "matches": ["https://klavity.in/*", "http://localhost/*"],
       "js": ["src/expose-id.ts"],
       "run_at": "document_start"
     }
@@ -582,7 +582,7 @@ async function renderSignedIn() {
 
   $('open-options').addEventListener('click', () => chrome.runtime.openOptionsPage())
   $('manage-sims').addEventListener('click', () => {
-    const url = s.backendUrl || 'https://klavity.quantana.top'
+    const url = s.backendUrl || 'https://klavity.in'
     chrome.tabs.create({ url: `${url}/app` })
   })
 
@@ -638,7 +638,7 @@ async function renderSims(s: KlavitySettings) {
       <a class="empty-link" id="add-sim-link" href="#" style="text-align:center;">+ Open Sim Studio →</a>`
     $('add-sim-link')?.addEventListener('click', (e) => {
       e.preventDefault()
-      chrome.tabs.create({ url: `${s.backendUrl || 'https://klavity.quantana.top'}/app` })
+      chrome.tabs.create({ url: `${s.backendUrl || 'https://klavity.in'}/app` })
     })
     return
   }
@@ -853,7 +853,7 @@ Add this section to `packages/extension/SMOKE_TEST.md`:
 ```markdown
 ## Sign-in & sims (2026-06)
 
-- [ ] Fresh install while logged into klavity.quantana.top → open popup → silent login → signed-in, sims listed.
+- [ ] Fresh install while logged into klavity.in → open popup → silent login → signed-in, sims listed.
 - [ ] Fresh install while NOT logged in → email + 6-digit code → signed-in, sims listed.
 - [ ] Invalid/expired code → inline error, stays on the code field.
 - [ ] Multi-project account → header picker switches projects → sims update → last choice remembered on reopen.

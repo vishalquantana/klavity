@@ -1,6 +1,6 @@
 # Encryption at Rest — Klavity Snap
 
-**Date:** 2026-06-21 · **Scope:** every persistent data store behind https://klavity.quantana.top · **For:** CASA Tier 2 (ASVS V6 Stored Cryptography) + GDPR Art. 32.
+**Date:** 2026-06-21 · **Scope:** every persistent data store behind https://klavity.in · **For:** CASA Tier 2 (ASVS V6 Stored Cryptography) + GDPR Art. 32.
 Evidence is cited to `file:line`. "Provider-managed" = encryption is the hosting provider's responsibility and must be **confirmed in their console**, not in our code.
 
 ---

@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-18
 **Status:** Approved, ready for implementation plan
-**Author:** brainstormed with vishal@quantana.com.au (dogfooding klavity.quantana.top)
+**Author:** brainstormed with vishal@quantana.com.au (dogfooding klavity.in)
 
 ## Problem
 

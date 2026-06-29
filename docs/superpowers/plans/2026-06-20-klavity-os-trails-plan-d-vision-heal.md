@@ -255,7 +255,7 @@ export function parseVisionJSON(content: string): VisionResult {
 export const openRouterVisionResolver: VisionResolver = async (input, ctx) => {
   const key = process.env.OPENROUTER_API_KEY
   if (!key) throw new Error("OPENROUTER_API_KEY not set")
-  const base = process.env.OPENROUTER_BASE || "https://klavity.quantana.top"
+  const base = process.env.OPENROUTER_BASE || "https://klavity.in"
   const model = pickModel({}, MODEL_CHOICE_IDS, VISION_FALLBACK_MODEL, Math.random())
   const ctl = new AbortController()
   const timer = setTimeout(() => ctl.abort(), 90_000)
@@ -488,6 +488,6 @@ git commit -m "chore(klavity-os): opt-in real-key vision smoke script (skips wit
 ## Real-key validation (run once after build, optional)
 
 ```bash
-cd prototype && OPENROUTER_API_KEY=<key> OPENROUTER_BASE=https://klavity.quantana.top bun run scripts/smoke-vision.ts
+cd prototype && OPENROUTER_API_KEY=<key> OPENROUTER_BASE=https://klavity.in bun run scripts/smoke-vision.ts
 ```
 Confirms the live model returns parseable JSON and an `ai_calls` `reheal` row is written. Not part of CI.

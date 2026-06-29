@@ -2,7 +2,7 @@
 
 These are the **infrastructure items the code can't set** (provider consoles, server config, repo settings). Work top to bottom; for each, run the check and **fill in the "Return" value**. Send the whole filled-in sheet back.
 
-Context: prod = `klavity.quantana.top` on a Vultr instance running `klav.service` (Bun). Object storage = **Vultr Object Storage** (S3-compatible). DB = **Turso**. Secrets in `/etc/klav/klav.env`.
+Context: prod = `klavity.in` on a Vultr instance running `klav.service` (Bun). Object storage = **Vultr Object Storage** (S3-compatible). DB = **Turso**. Secrets in `/etc/klav/klav.env`.
 
 > For the `aws` CLI commands below, configure it once with the Vultr Object Storage keys and always pass `--endpoint-url=https://<region>.vultrobjects.com` (the region host shown for the bucket in the Vultr portal, e.g. `sjc1`, `ewr1`, `ams1`, `del1`, `blr1`). Or use `s3cmd` if you prefer.
 
@@ -92,21 +92,21 @@ Context: prod = `klavity.quantana.top` on a Vultr instance running `klav.service
 
 **D1. Security headers present.**
   ```
-  curl -sI https://klavity.quantana.top | grep -iE "strict-transport-security|content-security-policy|x-frame-options|x-content-type-options|referrer-policy|x-powered-by"
+  curl -sI https://klavity.in | grep -iE "strict-transport-security|content-security-policy|x-frame-options|x-content-type-options|referrer-policy|x-powered-by"
   ```
 - ✅ Pass = HSTS, CSP, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy` all present; **`X-Powered-By` absent**.
 - **Return:** the full output.
 
 **D2. HTTPS enforced (HTTP→HTTPS redirect).**
   ```
-  curl -sI http://klavity.quantana.top | grep -iE "^HTTP|location"
+  curl -sI http://klavity.in | grep -iE "^HTTP|location"
   ```
 - ✅ Pass = 301/308 to `https://`.
 - **Return:** the output.
 
 **D3. CORS not wildcard on app routes.**
   ```
-  curl -sI -H "Origin: https://evil.example" https://klavity.quantana.top/ | grep -i access-control
+  curl -sI -H "Origin: https://evil.example" https://klavity.in/ | grep -i access-control
   ```
 - ✅ Pass = no `Access-Control-Allow-Origin: *` reflected for the page/app routes. (The 3 public widget API endpoints are intentionally `*` with Bearer auth and no credentials — that's expected; everything else should not be.)
 - **Return:** the output.
@@ -115,7 +115,7 @@ Context: prod = `klavity.quantana.top` on a Vultr instance running `klav.service
   ```
   grep -iE "klav(ity)?\.quantana\.top" /etc/caddy/Caddyfile   # or wherever the Caddyfile lives
   ```
-- The repo `deploy/Caddyfile` references `klav.quantana.top`; prod serves `klavity.quantana.top`. Confirm the **deployed** Caddyfile matches the live host.
+- The repo `deploy/Caddyfile` references `klav.quantana.top`; prod serves `klavity.in`. Confirm the **deployed** Caddyfile matches the live host.
 - **Return:** the matching Caddyfile site line(s).
 
 ---

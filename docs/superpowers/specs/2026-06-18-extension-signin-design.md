@@ -37,7 +37,7 @@ site.
   cannot read it, but `chrome.cookies.get()` **can** read HttpOnly cookies — this is why the
   silent path requires the `cookies` permission, not page JS.
 - **No server CORS work is required.** The extension already performs cross-origin fetches to
-  `klavity.quantana.top` with `Authorization` headers from the background worker
+  `klavity.in` with `Authorization` headers from the background worker
   (`background.ts:61`) and the popup (`popup.ts:69`), and they succeed — MV3 grants extension
   pages and the service worker privileged cross-origin access to hosts listed in
   `host_permissions`, and the manifest declares `<all_urls>`. Popup→`/api/auth/*` fetches are
@@ -77,7 +77,7 @@ Pure-ish module wrapping the auth flow; the only place that knows how a token is
   runs `syncConfig()` (mints `ext_` token, caches `klavConfig.projects`).
 
 **`backendUrl` resolution:** use existing `klavSettings.backendUrl` if set, else default to
-`https://klavity.quantana.top` (matches `background.ts:51`). The cookie read and OTP fetch both
+`https://klavity.in` (matches `background.ts:51`). The cookie read and OTP fetch both
 target this base.
 
 ### `src/popup.ts` / `src/popup.html` — stateful UI
@@ -135,7 +135,7 @@ cannot read `chrome.runtime.id`. Bridge via the shared DOM instead:
 - **`content.ts`** (isolated world, at `document_start`): replace the `window.__klavityExtensionId`
   assignment with
   `document.documentElement.dataset.klavityExtId = chrome.runtime.id`
-  (guarded to the `klavity.quantana.top` / `localhost` hostnames as today). Set
+  (guarded to the `klavity.in` / `localhost` hostnames as today). Set
   `"run_at": "document_start"` on this content script so the attribute is written as early as
   possible. The page-side fallback below still applies, to fully absorb any residual race.
 - **`prototype/public/index.html`** (`:1317`): read

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a report-submission mode to the embeddable Klavity widget, mount it on klavity.quantana.top so logged-in users report without the extension, and make the extension yield to the widget so they never both appear.
+**Goal:** Add a report-submission mode to the embeddable Klavity widget, mount it on klavity.in so logged-in users report without the extension, and make the extension yield to the widget so they never both appear.
 
 **Architecture:** Extend the existing Sims widget bundle (`packages/sdk/src/widget.ts`, already mounts Shadow host `#klavity-widget-host`) with a "Report a bug" launcher that opens the reusable `@klavity/core` `buildModal`, captures via `html-to-image`, and POSTs `/api/feedback` (cookie auth when first-party, Bearer when cross-origin). The extension's right-click report menu checks for `#klavity-widget-host` and stands down. Backend adds CORS to `/api/feedback` and makes the legacy Plane-host push non-fatal.
 
@@ -40,10 +40,10 @@ import { isFirstParty, buildFeedbackForm } from "../src/widget-lib"
 
 describe("isFirstParty", () => {
   it("true when script origin equals backend origin", () => {
-    expect(isFirstParty("https://klavity.quantana.top", "https://klavity.quantana.top")).toBe(true)
+    expect(isFirstParty("https://klavity.in", "https://klavity.in")).toBe(true)
   })
   it("false for a customer origin", () => {
-    expect(isFirstParty("https://app.acme.com", "https://klavity.quantana.top")).toBe(false)
+    expect(isFirstParty("https://app.acme.com", "https://klavity.in")).toBe(false)
   })
 })
 
@@ -137,7 +137,7 @@ test("OPTIONS /api/feedback returns CORS preflight headers", async () => {
 test("POST /api/feedback with a link-local plane_host still saves (non-fatal tracker)", async () => {
   const fd = new FormData()
   fd.set("description", "regression: link-local plane host must not 400")
-  fd.set("page_url", "https://klavity.quantana.top/dashboard")
+  fd.set("page_url", "https://klavity.in/dashboard")
   fd.set("plane_host", "http://169.254.169.254")
   fd.set("plane_workspace", "w"); fd.set("plane_project_id", "p"); fd.set("plane_token", "t")
   const r = await fetch(`${BASE}/api/feedback`, { method: "POST", body: fd })
@@ -301,8 +301,8 @@ describe("submitFeedback", () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ id: "fb1", saved: true }), { status: 200 }))
     vi.stubGlobal("fetch", fetchMock)
     const res = await submitFeedback(
-      { backendUrl: "https://klavity.quantana.top", projectId: "p1", firstParty: true, token: "" },
-      { type: "bug", description: "x", pageUrl: "https://klavity.quantana.top/dashboard", screenshots: [] },
+      { backendUrl: "https://klavity.in", projectId: "p1", firstParty: true, token: "" },
+      { type: "bug", description: "x", pageUrl: "https://klavity.in/dashboard", screenshots: [] },
     )
     const [, init] = fetchMock.mock.calls[0]
     expect(init.credentials).toBe("include")
@@ -313,7 +313,7 @@ describe("submitFeedback", () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ id: "fb2", saved: true }), { status: 200 }))
     vi.stubGlobal("fetch", fetchMock)
     await submitFeedback(
-      { backendUrl: "https://klavity.quantana.top", projectId: "p1", firstParty: false, token: "ext_abc" },
+      { backendUrl: "https://klavity.in", projectId: "p1", firstParty: false, token: "ext_abc" },
       { type: "bug", description: "x", pageUrl: "https://app.acme.com/p", screenshots: [] },
     )
     const [, init] = fetchMock.mock.calls[0]
@@ -407,7 +407,7 @@ git commit -m "feat(widget): report-a-bug mode (core modal + html-to-image + /ap
 
 **Interfaces:**
 - Consumes: built `/widget.js`; the logged-in user's active project id.
-- Produces: the widget mounted first-party on klavity.quantana.top.
+- Produces: the widget mounted first-party on klavity.in.
 
 - [ ] **Step 1: Confirm /widget.js serves the built bundle**
 
@@ -434,7 +434,7 @@ Expected: feedback row appears; no console errors.
 
 ```bash
 git add prototype/public/dashboard.html prototype/server.ts
-git commit -m "feat(app): mount the report widget on klavity.quantana.top (dogfood)"
+git commit -m "feat(app): mount the report widget on klavity.in (dogfood)"
 ```
 
 ---
@@ -451,7 +451,7 @@ Note the current version; the next is a MINOR bump.
 
 - [ ] **Step 2: Bump all 5 manifests + CHANGELOG + PRD**
 
-Add a CHANGELOG entry: "Report widget: embeddable bug/feature submission, dogfooded on klavity.quantana.top, takes precedence over the extension; /api/feedback no longer 400s on an unsafe tracker host." Update `docs/PRD.md` to describe the report widget surface and the extension-yield behavior. Bump every manifest version in lockstep.
+Add a CHANGELOG entry: "Report widget: embeddable bug/feature submission, dogfooded on klavity.in, takes precedence over the extension; /api/feedback no longer 400s on an unsafe tracker host." Update `docs/PRD.md` to describe the report widget surface and the extension-yield behavior. Bump every manifest version in lockstep.
 
 - [ ] **Step 3: Run the full suites**
 
@@ -481,7 +481,7 @@ Expected: `active`. Confirm `GET /widget.js` returns the new bundle and `GET /` 
 
 - [ ] **Step 2: Coexistence + submit verification**
 
-On klavity.quantana.top **with the extension installed**, logged in:
+On klavity.in **with the extension installed**, logged in:
 - Confirm only the widget's "🐞 Report a bug" launcher appears; right-click does **not** show the extension's Klavity menu (passes through to native).
 - Submit a Bug → confirm a dashboard feedback row appears AND a ticket lands in the qbuilder Plane project (`proj 05ea72ad…`).
 - Temporarily test cross-origin is unaffected: the existing Sims dock still works.

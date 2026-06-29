@@ -660,7 +660,7 @@ git commit -m "chore: release 0.9.0 — opsadmin AI credit dashboard (env exampl
 1. Set `OPS_ADMIN_EMAILS=vishal@quantana.com.au,dev2@quantana.com.au` (and optionally `OPS_DAILY_CAP_USD=50`) in the production env on the Vultr box (66.135.20.62) — these are NOT in the committed example with values.
 2. `git push` master → `ssh` to the box → pull → `systemctl restart klav.service`.
 3. The `ai_calls` table is created automatically on boot via `applySchema` (idempotent).
-4. Verify: log in as an ops admin at `https://klavity.quantana.top/opsadmin` and confirm the dashboard loads; trigger one AI action and confirm a row + cost appears.
+4. Verify: log in as an ops admin at `https://klavity.in/opsadmin` and confirm the dashboard loads; trigger one AI action and confirm a row + cost appears.
 
 ## Self-Review Notes
 

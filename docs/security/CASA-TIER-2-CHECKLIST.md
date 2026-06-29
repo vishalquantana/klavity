@@ -4,7 +4,7 @@
 > Every item is marked `[x]` done / `[~]` partial / `[ ]` gap, with `file:line` evidence from the real codebase.
 > Unverifiable items are marked `[GAP — needs owner input]`.
 >
-> **App:** Klavity Snap `v0.37.1` · **Backend:** `prototype/server.ts` (Bun) at `https://klavity.quantana.top` behind Caddy
+> **App:** Klavity Snap `v0.37.1` · **Backend:** `prototype/server.ts` (Bun) at `https://klavity.in` behind Caddy
 > **Note on CASA driver:** This extension declares **no Google OAuth sensitive/restricted scopes** (no `identity`/OAuth client in `manifest.json`). CASA here is driven by Chrome **powerful-permission** review (activeTab, scripting, tabs, cookies, etc.), not OAuth scope verification. See `docs/security/PERMISSION-JUSTIFICATION.md`.
 > **Source-scan basis:** SAST+SCA self-scan `SECURITY-SCAN-2026-06-21.md` (Semgrep 1.167.0, pnpm audit).
 > **Date prepared:** 2026-06-21 (IST).
@@ -21,7 +21,7 @@
 - [ ] Incident response plan created — `[GAP — needs owner input]`. No IR runbook in repo. Building blocks exist (correlation IDs `oops()` `server.ts:496-500`, AI-cost ledger, opsadmin dashboard). **Fix:** document on-call, breach notification, key-rotation steps.
 
 ### Security Controls (fix before the scan)
-- [x] HTTPS enforced on all endpoints — Caddy auto-HTTPS terminates TLS for the site (`deploy/Caddyfile:1`, ACME on the bare domain) and reverse-proxies to `127.0.0.1:4317` (`deploy/Caddyfile:12`). App marks cookies `Secure` when `SECURE` (`prototype/lib/auth.ts:35`). **Note/gap:** the committed Caddyfile site block is `klav.quantana.top` (old infra name), while prod serves `klavity.quantana.top` — confirm the deployed Caddyfile matches the live host (`[GAP — needs owner input]`: verify deployed config / add explicit HTTP→HTTPS redirect if not auto).
+- [x] HTTPS enforced on all endpoints — Caddy auto-HTTPS terminates TLS for the site (`deploy/Caddyfile:1`, ACME on the bare domain) and reverse-proxies to `127.0.0.1:4317` (`deploy/Caddyfile:12`). App marks cookies `Secure` when `SECURE` (`prototype/lib/auth.ts:35`). **Note/gap:** the committed Caddyfile site block is `klav.quantana.top` (old infra name), while prod serves `klavity.in` — confirm the deployed Caddyfile matches the live host (`[GAP — needs owner input]`: verify deployed config / add explicit HTTP→HTTPS redirect if not auto).
 - [x] HSTS header configured — `Strict-Transport-Security: max-age=31536000; includeSubDomains` emitted on every response when `SECURE` (`prototype/server.ts:857`). **Note:** no `preload` token (acceptable for Tier 2; add if HSTS-preload submission desired).
 - [x] Content Security Policy (CSP) configured — full CSP on every response: `default-src 'self'`, `frame-ancestors 'none'`, `object-src 'none'`, `base-uri 'self'` (`prototype/server.ts:839-851,856`). **Caveat (defense-in-depth):** `script-src` still allows `'unsafe-inline' 'unsafe-eval'` (`server.ts:841`) — flagged in scan report (Outstanding hardening) for a future nonce-based pass. Functionally present and passing; tighten when browser-testable.
 - [x] `X-Content-Type-Options: nosniff` set — `prototype/server.ts:854`.
@@ -57,7 +57,7 @@
 ### DAST (Dynamic Analysis)
 - [ ] Receive DAST report from assessor — pending (assessor-run). Pre-listed self-found items below in Phase 3.
 - [ ] Fix all Low/Medium/High findings — pending DAST.
-- [ ] Run independent verification scan — pending. **Planned:** OWASP ZAP baseline against `https://klavity.quantana.top`.
+- [ ] Run independent verification scan — pending. **Planned:** OWASP ZAP baseline against `https://klavity.in`.
 
 ### Dependency Audit
 - [x] Run dependency audit (`pnpm audit`) — run today. 5 advisories, **all in devDependencies** (vitest/vite/esbuild build-test toolchain; not in the shipped `bun run server.ts` + `dist/` runtime) — `SECURITY-SCAN-2026-06-21.md` §SCA.
@@ -138,4 +138,4 @@
 4. **Self-host Google Fonts** to drop `fonts.googleapis.com`/`fonts.gstatic.com` from CSP (in progress) and resolve the SRI Low.
 5. **DB access control** is app-layer (SQLite, no RLS) — document as the authoritative boundary; confirm Turso token/network scoping.
 
-**GAPS — needs owner input / new docs:** consolidated security-architecture doc, PII data-flow diagram, data-retention policy, incident-response runbook, SAQ workbook (54 Qs), at-rest-encryption evidence (DB + S3) and DB screenshot, CI enforcement of `--frozen-lockfile` + scheduled monthly audit, annual revalidation date (placeholder 2027-06-21), Caddyfile host mismatch (`klav.quantana.top` vs live `klavity.quantana.top`) — verify deployed config.
+**GAPS — needs owner input / new docs:** consolidated security-architecture doc, PII data-flow diagram, data-retention policy, incident-response runbook, SAQ workbook (54 Qs), at-rest-encryption evidence (DB + S3) and DB screenshot, CI enforcement of `--frozen-lockfile` + scheduled monthly audit, annual revalidation date (placeholder 2027-06-21), Caddyfile host mismatch (`klav.quantana.top` vs live `klavity.in`) — verify deployed config.

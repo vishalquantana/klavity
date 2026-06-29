@@ -419,14 +419,14 @@ In `renderSims`, in the `sims.length === 0` branch (`popup.ts:177`), convert the
     if (ab) {
       ab.classList.add('studio')
       ab.textContent = 'Add a Sim first →'
-      ab.onclick = () => chrome.tabs.create({ url: `${base || 'https://klavity.quantana.top'}/app` })
+      ab.onclick = () => chrome.tabs.create({ url: `${base || 'https://klavity.in'}/app` })
     }
     simsList.innerHTML = `
       <div class="empty-state">No sims yet. Build them in Klavity Studio.</div>
       <a class="empty-link" id="add-sim-link" href="#" style="text-align:center;">+ Open Sim Studio →</a>`
     $('add-sim-link')?.addEventListener('click', (e) => {
       e.preventDefault()
-      chrome.tabs.create({ url: `${base || 'https://klavity.quantana.top'}/app` })
+      chrome.tabs.create({ url: `${base || 'https://klavity.in'}/app` })
     })
     return
   }

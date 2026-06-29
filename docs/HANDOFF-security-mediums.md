@@ -82,11 +82,11 @@ systemctl restart klav; sleep 6
 echo "active=$(systemctl is-active klav) deployed=$(git -C /opt/klav rev-parse --short HEAD)"
 EOF
 ```
-**Verify `deployed` == pushed SHA** (active alone is not proof). Poll `https://klavity.quantana.top/` for 200 (~10s boot; 502 early is the boot race).
+**Verify `deployed` == pushed SHA** (active alone is not proof). Poll `https://klavity.in/` for 200 (~10s boot; 502 early is the boot race).
 
 ### 8. Post-deploy verification (IMPORTANT — CSP risk)
-- **Browser-verify CSP didn't break anything:** load `https://klavity.quantana.top/`, the dashboard, and `/trails`; check the console for `Content-Security-Policy` violation errors and confirm fonts/replay render. If anything breaks, loosen the offending CSP directive (most likely add a host to `style-src`/`connect-src`/`script-src`, or relax `worker-src`/`media-src` for rrweb) and redeploy.
-- Confirm a response carries the new headers: `curl -sI https://klavity.quantana.top/ | grep -iE 'x-frame|content-security|strict-transport'`.
+- **Browser-verify CSP didn't break anything:** load `https://klavity.in/`, the dashboard, and `/trails`; check the console for `Content-Security-Policy` violation errors and confirm fonts/replay render. If anything breaks, loosen the offending CSP directive (most likely add a host to `style-src`/`connect-src`/`script-src`, or relax `worker-src`/`media-src` for rrweb) and redeploy.
+- Confirm a response carries the new headers: `curl -sI https://klavity.in/ | grep -iE 'x-frame|content-security|strict-transport'`.
 
 ### 9. Memory
 Update `klavity_security_owasp.md` (+ MEMORY.md index line): F5/AI-caps/headers SHIPPED v0.29.0; note ALS-vs-threading choice made; list any remaining Lows.
@@ -95,6 +95,6 @@ Update `klavity_security_owasp.md` (+ MEMORY.md index line): F5/AI-caps/headers 
 verify response returns `token:sid` in body (drop it); `verifyOtp` check-then-act not atomic; `javascript:`/`data:` not scheme-checked on connector-supplied `href`s in `dashboard.html`; `wrapUntrusted` regex is whitespace-naive.
 
 ## Key facts
-- Prod: `klavity.quantana.top` → Vultr `66.135.20.62` (`ssh root@` works, key-based). Deploy dir `/opt/klav` (git checkout on master), service `klav.service`, secrets `/etc/klav/klav.env`. Caddy terminates TLS → Bun on `:4317` (peer is loopback → `isTrustedProxyPeer` trusts XFF, which the new F5/rate-limit code relies on for real client IPs).
+- Prod: `klavity.in` → Vultr `66.135.20.62` (`ssh root@` works, key-based). Deploy dir `/opt/klav` (git checkout on master), service `klav.service`, secrets `/etc/klav/klav.env`. Caddy terminates TLS → Bun on `:4317` (peer is loopback → `isTrustedProxyPeer` trusts XFF, which the new F5/rate-limit code relies on for real client IPs).
 - Tests: `bun test` from `prototype/`. Server tests spawn a real subprocess vs a temp DB; they set `KLAV_TEST_ALLOW_LOOPBACK=1` only where a localhost receiver is needed.
 - Prod Plane connector is on a public host (`plane.quantana.top` → 139.84.156.188) so the SSRF guard allows it — don't break that.

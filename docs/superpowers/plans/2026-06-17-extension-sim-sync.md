@@ -45,7 +45,7 @@
   ],
   "externally_connectable": {
     "matches": [
-      "https://klavity.quantana.top/*",
+      "https://klavity.in/*",
       "http://localhost:*"
     ]
   },
@@ -108,7 +108,7 @@ git -C /Users/vishalkumar/Downloads/qbug/klav-snap commit -m "feat(extension): a
 
 ```typescript
 // Expose our extension ID to the Klavity web app so it can send us a CONNECT message.
-if (location.hostname === 'klavity.quantana.top' || location.hostname === 'localhost') {
+if (location.hostname === 'klavity.in' || location.hostname === 'localhost') {
   ;(window as any).__klavityExtensionId = chrome.runtime.id
 }
 ```
@@ -121,7 +121,7 @@ import type { ContentMessage, BackgroundMessage, ...
 After the change it should start with:
 ```typescript
 // Expose our extension ID to the Klavity web app so it can send us a CONNECT message.
-if (location.hostname === 'klavity.quantana.top' || location.hostname === 'localhost') {
+if (location.hostname === 'klavity.in' || location.hostname === 'localhost') {
   ;(window as any).__klavityExtensionId = chrome.runtime.id
 }
 

@@ -42,7 +42,7 @@ breakdown):
 - Four integrations: Jira, Linear, GitHub Issues, Plane.
 - Cloud switch (`backendUrl`) → direct mode or Klavity Cloud / self-hosted.
 - Embeddable SDK `@klavity/snap` (script tag + npm).
-- Embeddable report widget: dogfooded on klavity.quantana.top for logged-in users; Bearer-token support for cross-origin submission.
+- Embeddable report widget: dogfooded on klavity.in for logged-in users; Bearer-token support for cross-origin submission.
 - Account login + per-user/admin Plane connection, AES-GCM secret encryption.
 - **Widget appearance settings (v0.31.0):** per-project theme (light [default], dark, glass, neon, liquid [experimental]) with custom colors/font (Pro-gated), custom post-submit thank-you message, and Genie open/close animation. Theme config served via `GET /api/projects/:id/config`; `custom` theme requires Pro account.
 

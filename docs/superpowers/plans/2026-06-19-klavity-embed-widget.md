@@ -357,9 +357,9 @@ import { parseScriptConfig, gateMessage } from "../src/widget-lib"
 
 describe("parseScriptConfig", () => {
   it("reads data-project and derives backend origin from src", () => {
-    const cfg = parseScriptConfig({ dataset: { project: "P1" }, src: "https://klavity.quantana.top/widget.js?v=1" })
+    const cfg = parseScriptConfig({ dataset: { project: "P1" }, src: "https://klavity.in/widget.js?v=1" })
     expect(cfg.projectId).toBe("P1")
-    expect(cfg.backendUrl).toBe("https://klavity.quantana.top")
+    expect(cfg.backendUrl).toBe("https://klavity.in")
   })
 })
 
@@ -691,7 +691,7 @@ Start the prototype (`cd prototype && bun server.ts`). Create `/tmp/widget-test.
 ```
 Add (after the tiles, inside step 2's panel) a hidden snippet block the user can copy:
 ```html
-<pre class="hide" id="widgetSnippet" style="margin-top:12px;background:var(--ink-2);border:1px solid var(--line);border-radius:10px;padding:12px;font-family:var(--mono);font-size:11.5px;overflow:auto">&lt;script src="https://klavity.quantana.top/widget.js" data-project="YOUR_PROJECT_ID" defer&gt;&lt;/script&gt;</pre>
+<pre class="hide" id="widgetSnippet" style="margin-top:12px;background:var(--ink-2);border:1px solid var(--line);border-radius:10px;padding:12px;font-family:var(--mono);font-size:11.5px;overflow:auto">&lt;script src="https://klavity.in/widget.js" data-project="YOUR_PROJECT_ID" defer&gt;&lt;/script&gt;</pre>
 ```
 
 - [ ] **Step 4: Version lockstep bump to 0.17.0**
@@ -705,7 +705,7 @@ git add -A && git commit -m "release(widget): embeddable live-Sims widget v0.17.
 git push origin master
 ssh root@66.135.20.62 'sudo -u klav git -C /opt/klav pull --ff-only && sudo -u klav bash -lc "cd /opt/klav/prototype && ~/.bun/bin/bun install --production" ; systemctl restart klav'
 ```
-Then poll health (`curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4317/` → 200, ~10s boot) and verify `curl -s https://klavity.quantana.top/widget.js | head -c 200` returns JS.
+Then poll health (`curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4317/` → 200, ~10s boot) and verify `curl -s https://klavity.in/widget.js | head -c 200` returns JS.
 
 > **Build note for prod:** `packages/sdk/dist/klavity-widget.iife.js` must exist on the box. Either commit the built artifact (simplest — Task 6 Step 6 commits it) or add a build step to deploy. This plan commits the artifact, so the prod pull ships it directly.
 

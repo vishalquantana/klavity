@@ -1,7 +1,7 @@
 # Incident Response Plan — Klavity Snap
 
 **Scope:** Security incidents affecting the Klavity Snap backend
-(`prototype/server.ts`, Bun) at https://klavity.quantana.top, its Turso database,
+(`prototype/server.ts`, Bun) at https://klavity.in, its Turso database,
 S3 screenshot/replay storage, OpenRouter (AI), SendGrid (email/OTP), and the
 Plane/Jira/GitHub/Linear connectors. Hosted on Vultr (66.135.20.62) behind Caddy;
 secrets load from `/etc/klav/klav.env` via systemd.

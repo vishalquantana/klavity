@@ -13,8 +13,8 @@
 embeddable JavaScript widget capture page reports (screenshots, console/network context, optional
 rrweb session replay); a Bun backend stores them, runs LLM-based "Sim" reviews, and can copy tickets
 to external trackers (Plane/Jira/GitHub/Linear).
-**Production URL:** https://klavity.quantana.top
-**API URL:** Same origin — `https://klavity.quantana.top/api/*` (no separate API host).
+**Production URL:** https://klavity.in
+**API URL:** Same origin — `https://klavity.in/api/*` (no separate API host).
 The Chrome extension is published as MV3 (`packages/extension/manifest.json:1-57`).
 
 The backend is a single Bun HTTP process (`prototype/server.ts`) fronted by Caddy on a Vultr host.

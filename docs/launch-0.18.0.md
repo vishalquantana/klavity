@@ -25,7 +25,7 @@ Drop one script tag onto your web app and your Sims review the real page **with 
 extension at all** — ideal for teammates who won't install anything:
 
 ```html
-<script src="https://klavity.quantana.top/widget.js" data-project="…" defer></script>
+<script src="https://klavity.in/widget.js" data-project="…" defer></script>
 ```
 
 ## 🔌 Ship tickets where your team already works
@@ -44,9 +44,9 @@ status, and reaction bubbles that tell you the outcome ("saved to your dashboard
 Capture is **consent-gated** — a per-site confirm before the first screenshot, and automatic
 review only on URLs you allowlist. Screenshots are stored privately and **expire after 30
 days**; integration secrets are encrypted at rest. Full details:
-[Privacy](https://klavity.quantana.top/privacy) · [Terms](https://klavity.quantana.top/terms).
+[Privacy](https://klavity.in/privacy) · [Terms](https://klavity.in/terms).
 
 ---
 
-**Try it:** [klavity.quantana.top](https://klavity.quantana.top) · Built by
+**Try it:** [klavity.in](https://klavity.in) · Built by
 [Quantana](https://quantana.com.au) · Open-core (FSL-1.1-ALv2)

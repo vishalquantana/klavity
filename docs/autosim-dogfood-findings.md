@@ -4,7 +4,7 @@
 
 **YES — for simple assert trails. Partially for multi-step interactive flows.**
 
-Trail 1 (home heading assert): **GREEN** in ~2.8s against https://klavity.quantana.top/
+Trail 1 (home heading assert): **GREEN** in ~2.8s against https://klavity.in/
 - 1 step, Tier-0 cache resolution, 0 LLM calls, 0 heals
 - Walk row created + finalized correctly in SQLite DB
 
@@ -15,7 +15,7 @@ Trail 2 (onboarding intro→form): **RED** — multi-step interactive walk fails
 ## 2. What concretely WORKS
 
 - **Playwright/Chromium launch**: Local installation (Chrome for Testing 145.0) works in headless mode
-- **Navigation to prod site**: page.goto("https://klavity.quantana.top/") and "/onboarding" succeed
+- **Navigation to prod site**: page.goto("https://klavity.in/") and "/onboarding" succeed
 - **End-to-end pipeline**: crystallize → locator_cache seeding → walkTrail → runId → verdict persisted to DB
 - **Tier-0 cache resolution**: cached selectors resolve correctly for static page elements
 - **Walk DB row lifecycle**: `startWalk`, `addRunStep`, `finishWalk` all persist correctly

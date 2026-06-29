@@ -1,16 +1,16 @@
 # Klavity Report Widget — dogfooded, extension-yielding
 
 > **Status:** Design (approved scope). **Date:** 2026-06-20. **Target version:** MINOR (new user-facing surface).
-> **Origin:** "New user on klavity.quantana.top should submit tickets without the extension; customer sites with the widget should use the widget, not the extension; the two must not fight." Submitting a report on klavity.quantana.top today only works via the browser extension (`content.ts`), so a new user without the extension cannot report.
+> **Origin:** "New user on klavity.in should submit tickets without the extension; customer sites with the widget should use the widget, not the extension; the two must not fight." Submitting a report on klavity.in today only works via the browser extension (`content.ts`), so a new user without the extension cannot report.
 
 ## 1. Goal & principle
 
-**One widget, dogfooded.** Ship an embeddable **report-submission** widget (`<script>` tag, `data-project`) that customers drop onto their site — and load that *same* bundle on klavity.quantana.top itself. The widget **takes precedence over the browser extension**, and a DOM-mediated handshake guarantees the widget and the extension never both render their report UI on the same page.
+**One widget, dogfooded.** Ship an embeddable **report-submission** widget (`<script>` tag, `data-project`) that customers drop onto their site — and load that *same* bundle on klavity.in itself. The widget **takes precedence over the browser extension**, and a DOM-mediated handshake guarantees the widget and the extension never both render their report UI on the same page.
 
 This is the report-submission counterpart to the existing **Sims-review** embed widget (`2026-06-19-klavity-embed-widget-design.md`). The two widgets are the same family and may be unified later; this spec covers report submission only.
 
 ```html
-<script src="https://klavity.quantana.top/widget.js" data-project="PROJECT_ID" defer></script>
+<script src="https://klavity.in/widget.js" data-project="PROJECT_ID" defer></script>
 ```
 
 ## 2. Scope (locked decisions)
@@ -40,9 +40,9 @@ Self-contained IIFE built via the existing `packages/sdk` widget build (`vite.wi
 
 ### 3.2 Auth (logged-in only)
 Two code paths, chosen by whether the widget origin matches `backendUrl`:
-- **First-party (klavity.quantana.top loads klavity.quantana.top/widget.js):** the script origin == `backendUrl`, so submit with **`credentials: "include"`** and let the **session cookie** authenticate. `/api/feedback` already resolves the actor via `sessionEmail(req)` (server.ts ~794). A logged-in new user just works — no popup, no token.
+- **First-party (klavity.in loads klavity.in/widget.js):** the script origin == `backendUrl`, so submit with **`credentials: "include"`** and let the **session cookie** authenticate. `/api/feedback` already resolves the actor via `sessionEmail(req)` (server.ts ~794). A logged-in new user just works — no popup, no token.
 - **Cross-origin (customer site):** reuse the **connect-popup token** handshake from the Sims-widget spec (`GET /widget-connect` → `POST /api/widget/token` → `postMessage` token → `localStorage["klavity_widget_token"]`). Submit with `Authorization: Bearer <token>`. `/api/feedback` already supports Bearer via `bearerEmail` (server.ts ~745).
-- If first-party but **not** logged in: the modal shows a "Sign in to Klavity to report" state linking to `/login`. (On klavity.quantana.top a "new user" on `/dashboard` is already logged in.)
+- If first-party but **not** logged in: the modal shows a "Sign in to Klavity to report" state linking to `/login`. (On klavity.in a "new user" on `/dashboard` is already logged in.)
 
 ### 3.3 Submit — `POST /api/feedback` (unchanged contract)
 Multipart form: `description`, `page_url`, `screenshots[]`, `project_id`. Server persists to the durable ledger and the **connector auto-copy hook** files it into Plane. No backend submit-path change. The widget does **not** send `plane_*` direct-mode fields (so it never touches the legacy inline-push path).
@@ -63,9 +63,9 @@ Chrome content scripts run in an **isolated world**: they share the DOM with the
 - **Precedence:** the widget always wins; the extension never overrides a present widget.
 - **Boundary:** only the extension's **report** entry points yield. Analyze/Sims-review entry points are untouched.
 
-## 5. Mount on klavity.quantana.top
+## 5. Mount on klavity.in
 
-Add `<script src="/widget.js" data-project="<active project id>" defer></script>` to the app shell pages (`prototype/public/dashboard.html` and the other logged-in app pages that should offer reporting). The `data-project` is the logged-in user's **active project** id (the app already resolves this server-side; for the default account this is the "Default Project" `proj_32948ecf-…` that monitors klavity.quantana.top). First-party load → cookie auth → submit works for any logged-in user.
+Add `<script src="/widget.js" data-project="<active project id>" defer></script>` to the app shell pages (`prototype/public/dashboard.html` and the other logged-in app pages that should offer reporting). The `data-project` is the logged-in user's **active project** id (the app already resolves this server-side; for the default account this is the "Default Project" `proj_32948ecf-…` that monitors klavity.in). First-party load → cookie auth → submit works for any logged-in user.
 
 ## 6. Components & boundaries
 
@@ -79,10 +79,10 @@ Add `<script src="/widget.js" data-project="<active project id>" defer></script>
 | `prototype/public/dashboard.html` (+ app pages) | Mount the widget first-party | `/widget.js` |
 | `GET /widget-connect` + `POST /api/widget/token` | Cross-origin connect (reused from Sims-widget spec; build only if not already present) | existing auth/token machinery |
 
-## 7. Data flow (first-party happy path — klavity.quantana.top)
+## 7. Data flow (first-party happy path — klavity.in)
 
 ```
-klavity.quantana.top/dashboard  (logged-in new user, no extension needed)
+klavity.in/dashboard  (logged-in new user, no extension needed)
   <script /widget.js data-project=P>
   mount #klavity-widget-host (Shadow) ; dispatch klavity:widget-ready
   click launcher → @klavity/core report modal
@@ -107,7 +107,7 @@ If the extension is *also* installed: it sees `#klavity-widget-host` / hears `kl
 - **Unit (vitest, sdk/core):** `parseScriptConfig` first-party vs cross-origin branch; capture filter excludes `#klavity-widget-host`; submit payload shape; "not logged in" state.
 - **Extension (vitest):** `content.ts` does **not** render report UI when `#klavity-widget-host` exists at inject time; tears down its report UI on `klavity:widget-ready` fired after inject; analyze/Sims paths unaffected.
 - **Backend (bun test, prototype):** `/api/feedback` `OPTIONS` preflight returns expected CORS headers; cookie path and Bearer path both persist; **Plane-host rider** — a link-local `plane_host` no longer 400s (returns `200 saved`, feedback persisted), regression test for the observed prod bug.
-- **Manual (post-deploy):** load klavity.quantana.top **with the extension installed** → only the widget appears (not both) → submit a Bug → dashboard row appears + a ticket lands in the qbuilder Plane project.
+- **Manual (post-deploy):** load klavity.in **with the extension installed** → only the widget appears (not both) → submit a Bug → dashboard row appears + a ticket lands in the qbuilder Plane project.
 
 ## 10. Rollout
 

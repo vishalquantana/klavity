@@ -46,7 +46,7 @@ admin-configurable mode**, not a hardcoded choice.
 
 ## The funnel (per page)
 
-1. Page embeds `<script src="https://klavity.quantana.top/widget.js" data-project="<id>" defer>`.
+1. Page embeds `<script src="https://klavity.in/widget.js" data-project="<id>" defer>`.
 2. Visitor sees the floating "🐞 Report a bug" launcher; right-click anywhere (or the
    launcher) opens the composer. First-party (same origin as backend) → no "Connect" prompt.
 3. Visitor describes the bug; full-page screenshot auto-captured. **Submit** files the
@@ -75,7 +75,7 @@ Public endpoint: `GET /api/widget/config?project=<id>` →
 
 - Non-sensitive display config only. **`notify_email` is never returned** (stays server-side).
 - The widget calls this on mount (after `parseScriptConfig`) and caches for the session.
-- Unknown/missing project → default `{ mode: "support", ctaUrl: "https://klavity.quantana.top/onboarding" }`
+- Unknown/missing project → default `{ mode: "support", ctaUrl: "https://klavity.in/onboarding" }`
   (the widget still works; it just can't be misconfigured into leaking anything).
 
 ## Admin config (per project)
@@ -85,7 +85,7 @@ Three fields, surfaced in the existing project-settings surface (alongside conne
 | Field | Values | Default |
 |---|---|---|
 | `widget_mode` | `support` \| `leadgen` \| `off` | `support` |
-| `widget_cta_url` | URL | `https://klavity.quantana.top/onboarding` |
+| `widget_cta_url` | URL | `https://klavity.in/onboarding` |
 | `widget_notify_email` | email (server-side only) | project owner email |
 
 Persisted on the project (new columns on `projects`, or a small `project_settings`
@@ -146,7 +146,7 @@ PLG "free markup for your users" vision) widens the security surface materially 
 - Create a dedicated **"website" Klavity project**; add a **Plane connector** →
   `f2982ce0-6bb5-410f-9c77-b84a7b90441c` (qbuilder, host `plane.quantana.top`).
   (Separate from `proj_32948ecf…`, which routes to the dev tracker.)
-- Set it: `widget_mode=leadgen`, `widget_cta_url=https://klavity.quantana.top/onboarding`,
+- Set it: `widget_mode=leadgen`, `widget_cta_url=https://klavity.in/onboarding`,
   `widget_notify_email=<Vishal>`.
 - Embed `<script src="/widget.js" data-project="<website-project-id>" defer>` on **all
   marketing pages** (home + `/snap` `/sims` `/autosim` + onboarding/privacy/terms).

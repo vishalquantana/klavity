@@ -524,7 +524,7 @@ ssh root@66.135.20.62 'cd /opt/klav && sudo -u klav git fetch origin master && s
 # build the extension artifact for the user to upload to the Chrome Web Store:
 cd packages/extension && vite build   # → packages/extension/dist
 ```
-Print an IST timestamp. Poll `https://klavity.quantana.top/` for 200 and verify `/widget.js` still serves + the lead-gen widget still themes/submits (the harmonized buildModal is now live for the widget).
+Print an IST timestamp. Poll `https://klavity.in/` for 200 and verify `/widget.js` still serves + the lead-gen widget still themes/submits (the harmonized buildModal is now live for the widget).
 
 - [ ] **Step 4: Hand off the extension build**
 

@@ -40,7 +40,7 @@ Pure additive UI + docs. No backend/protocol change.
 | Linear | `Linear-Signature` (HMAC of body; set webhook secret) | Issues | state.type completed/canceled→done · started→in_progress · backlog/unstarted/triage→open |
 | Jira   | `X-Klavity-Token:` or `Authorization: Bearer <secret>` header (?token= deprecated) | Issue updated | statusCategory done→done · indeterminate→in_progress · new→open |
 
-Webhook URL (all): `https://klavity.quantana.top/api/connectors/<type>/webhook`
+Webhook URL (all): `https://klavity.in/api/connectors/<type>/webhook`
 
 ## Out of scope
 Polling fallback, two-way *content* sync (only status), per-instance webhook URLs

@@ -1,7 +1,7 @@
 # Klavity — Data-at-Rest & Database Security Evidence (Turso Cloud)
 
 **Subject:** Google CASA Tier 2 + GDPR Art. 32 — encryption-at-rest and database access controls
-**Application:** Klavity (klavity.quantana.top)
+**Application:** Klavity (klavity.in)
 **Data store:** Turso Cloud (libSQL)
 **Database (name):** `klav`  ·  **ID:** `019ecec7-0a01-7534-9c9e-9ac4a11aae1c`  ·  **Group:** `aiquantana`
 **Database URL:** `libsql://klav-vishalquantana.aws-ap-south-1.turso.io`

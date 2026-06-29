@@ -61,7 +61,7 @@ HTTPS + HSTS · full CSP · `X-Content-Type-Options: nosniff` · `X-Frame-Option
 | A2 | ✅ **DONE — S3 screenshots `private` + permanent signed link + native attachment** | `s3.ts:35`, `lib/imgsign.ts`, `lib/connectors/*` | Permanent revocable `/img` link (no expiry) + native attach to Plane/Jira/Linear. |
 | A3 | ✅ **DONE — webhook token moved to header** (`?token=` deprecated fallback) | `server.ts`, `lib/connectors/inbound.ts` | — |
 | A4 | ✅ **DONE — `klav.env.example` completed** | `deploy/klav.env.example` | All `process.env.*` enumerated with placeholders. |
-| A5 | Verify deployed Caddy host matches `klavity.quantana.top` (file says `klav.quantana.top`) | `deploy/Caddyfile` | **Open** — confirm prod config (ops). |
+| A5 | Verify deployed Caddy host matches `klavity.in` (file says `klav.quantana.top`) | `deploy/Caddyfile` | **Open** — confirm prod config (ops). |
 | A6 | Drop `http://localhost/*` from the **published** extension build | `manifest.json` | **Open** — kept (dev needs it); split dev/prod build later. Minor. |
 
 ### B. Hardening (needs browser-tested pass)

@@ -8,7 +8,7 @@
 A single `<script>` tag a team drops into their own web app so their Klavity **Sims react live on the real page** — with **no Chrome extension**. It reuses the existing review pipeline, Sim component, allowlist, budget cap, and feedback creation. v1 is deliberately small and safe.
 
 ```html
-<script src="https://klavity.quantana.top/widget.js" data-project="PROJECT_ID" defer></script>
+<script src="https://klavity.in/widget.js" data-project="PROJECT_ID" defer></script>
 ```
 
 ## 2. Scope (locked decisions)
@@ -52,7 +52,7 @@ No changes to the review pipeline, gating, or feedback persistence — the widge
 ## 4. Data flow (happy path)
 
 ```
-customer page (app.acme.com)            klavity.quantana.top
+customer page (app.acme.com)            klavity.in
   <script widget.js data-project=P>
   ── no token? render "Connect" ──
   click Connect → popup ───────────────▶ /widget-connect?project=P&origin=app.acme.com

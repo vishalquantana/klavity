@@ -201,7 +201,7 @@ test("buildTicketFromFinding embeds grounded evidence + heal diff", () => {
     id: "find_1", projectId: "proj_z", runId: "walk_1", stepId: "tstep_1", trailId: "trl_1",
     kind: "regression", title: "Checkout button gone", evidence: { fromSelector: "#checkout", toSelector: null, rationale: "no checkout affordance" },
     groundQuote: "no checkout affordance", confidence: 0.95, dedupKey: "k", recurrence: 1, status: "queued", connectorRef: null, createdAt: 1, updatedAt: 1,
-  } as any, "https://klavity.quantana.top")
+  } as any, "https://klavity.in")
   expect(t.title).toContain("Checkout button gone")
   expect(t.body).toContain("no checkout affordance")
   expect(t.klavityUrl).toContain("/trails?project=proj_z")
