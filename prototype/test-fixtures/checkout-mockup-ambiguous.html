@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Ambiguous selector fixture</title></head>
+<body>
+  <!-- Two buttons with the same class: any selector using .dup-btn alone is ambiguous -->
+  <button class="dup-btn" id="btn-a">Action A</button>
+  <button class="dup-btn" id="btn-b">Action B</button>
+  <!-- Unique button for control -->
+  <button id="unique-btn">Unique</button>
+  <!-- Unique input -->
+  <input id="email" type="email" placeholder="you@test.com" />
+</body>
+</html>

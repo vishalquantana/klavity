@@ -200,3 +200,61 @@ test("(v) a testId containing a double-quote round-trips through cache and resol
   const row = await T.getCacheForStep(projectId, stepIds[0])
   expect(row?.resolvedSelector).toContain("weird")
 }, 30000)
+
+test("(vi) an ambiguous selector (matches >1 elements) fails RED with reason=ambiguous_selector and queues a regression finding — never silently acts on an arbitrary match", async () => {
+  const projectId = "proj_ambiguous"
+  // Crystallize with selector '.dup-btn' which matches TWO buttons in the fixture.
+  // At crystallize time it looks valid (the author may not know count>1 at run time).
+  const traj = {
+    name: "Ambiguous click",
+    intent: "click the duplicate-class button",
+    baseUrl: "https://app.test/",
+    authorKind: "llm" as const,
+    createdBy: "agent@klavity",
+    steps: [
+      { action: "click" as const, url: "https://app.test/", domHash: "da",
+        target: { role: "button", text: "Action A", resolvedSelector: ".dup-btn" } },
+    ],
+  }
+  const { trailId, stepIds } = await crystallize(projectId, traj)
+
+  const summary = await walkTrail(projectId, trailId, { fixtureUrl: fixtureUrl("checkout-mockup-ambiguous.html") })
+
+  // Walk must be RED (not green or amber) — silent wrong-click is worse than a clear failure.
+  expect(summary.verdict).toBe("red")
+
+  // The failing step must record reason=ambiguous_selector in evidence (not element_gone).
+  const runSteps = await T.listRunSteps(projectId, summary.runId)
+  expect(runSteps).toHaveLength(1)
+  const rs = runSteps[0]
+  expect(rs.verdict).toBe("red")
+  expect((rs.evidence as any)?.reason).toBe("ambiguous_selector")
+  expect((rs.evidence as any)?.matchCount).toBe(2)
+  expect((rs.evidence as any)?.selector).toBe(".dup-btn")
+
+  // A regression finding must be queued with the clear title.
+  const findings = await T.listFindings(projectId)
+  expect(findings.length).toBeGreaterThanOrEqual(1)
+  const f = findings[0]
+  expect(f.kind).toBe("regression")
+  expect(f.title).toContain("Ambiguous selector")
+  expect(f.title).toContain("2")
+  expect(f.title).toContain(".dup-btn")
+  expect(f.dedupKey).toContain("ambiguous_selector")
+
+  // Also assert: a UNIQUE selector on the same fixture walks GREEN (control case).
+  const traj2 = {
+    name: "Unique click control",
+    intent: "click the unique button",
+    baseUrl: "https://app.test/",
+    authorKind: "llm" as const,
+    createdBy: "agent@klavity",
+    steps: [
+      { action: "click" as const, url: "https://app.test/", domHash: "db",
+        target: { role: "button", text: "Unique", resolvedSelector: "#unique-btn" } },
+    ],
+  }
+  const ctrl = await crystallize(projectId, traj2)
+  const ctrlSummary = await walkTrail(projectId, ctrl.trailId, { fixtureUrl: fixtureUrl("checkout-mockup-ambiguous.html") })
+  expect(ctrlSummary.verdict).toBe("green")
+}, 30000)

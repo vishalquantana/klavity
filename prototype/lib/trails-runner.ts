@@ -119,6 +119,15 @@ class ElementGone extends Error {
   }
 }
 
+// Thrown when the cached selector matches >1 element — a crystallize data-quality issue,
+// NOT a heal candidate. Healing an ambiguous selector would silently act on an arbitrary
+// match; instead we fail loud with a recordable finding so the author can fix the selector.
+class AmbiguousSelector extends Error {
+  constructor(public readonly selector: string, public readonly matchCount: number) {
+    super(`ambiguous selector "${selector}" matched ${matchCount} elements`)
+  }
+}
+
 // Verdict ordering: worst wins for the Walk roll-up.
 const SEVERITY: Record<Verdict, number> = { green: 0, skip: 0, amber: 1, red: 2 }
 function worse(a: Verdict, b: Verdict): Verdict {
@@ -194,9 +203,14 @@ async function resolveTarget(
   // Tier 0: the cached concrete selector, verbatim. Zero work, zero heal.
   if (cachedSelector) {
     const loc = page.locator(cachedSelector)
-    if (await uniquelyResolves(loc)) {
+    const count = await loc.count()
+    if (count === 1) {
       return { tier: "cache", selector: cachedSelector, locator: loc, healed: false, confidence: CACHE_CONFIDENCE }
     }
+    // count > 1: the selector is AMBIGUOUS — healing an arbitrary match is unsafe.
+    // Throw immediately so the caller records a clear 'ambiguous_selector' finding.
+    // count = 0: element may have drifted legitimately → fall through to Tier-1 healing.
+    if (count > 1) throw new AmbiguousSelector(cachedSelector, count)
   }
 
   // Tier 1 multi-candidate semantic fallback (no LLM). Each must uniquely resolve.
@@ -410,6 +424,25 @@ async function runOneStep(
   try {
     resolved = await resolveTarget(page, cachedSelector, fp)
   } catch (e) {
+    if (e instanceof AmbiguousSelector) {
+      // The crystallized selector matched N>1 elements — this is a data-quality problem,
+      // not a healer opportunity. Record a deduped 'regression' finding so the author sees
+      // exactly which selector to fix, then fail this step RED immediately.
+      const title = `Ambiguous selector matched ${e.matchCount} elements: "${e.selector}"`
+      await recordFinding(projectId, {
+        runId, trailId, stepId: step.id,
+        kind: "regression", title,
+        evidence: { selector: e.selector, matchCount: e.matchCount, stepAction: step.action },
+        confidence: 1.0,
+        dedupKey: `ambiguous_selector:${trailId}:${step.id}`,
+      })
+      await addRunStep(projectId, {
+        runId, trailId, stepId: step.id, idx: step.idx,
+        tier: "cache", verdict: "red", confidence: 1, diagnosis: "locator_drift", healed: false,
+        evidence: { reason: "ambiguous_selector", selector: e.selector, matchCount: e.matchCount },
+      })
+      return { tier: "cache", verdict: "red", healed: false, llmCalls: 0 }
+    }
     if (e instanceof ElementGone) {
       // All deterministic tiers (0/1) are exhausted. Diagnosis-first: this is locator_drift we could
       // not safely heal without a model.
