@@ -369,6 +369,106 @@ describe('buildModal success screen auto-dismiss', () => {
   })
 })
 
+describe('buildModal success reference + dashboard link', () => {
+  const successCopy = {
+    headline: 'Bug filed',
+    body: 'Thanks',
+    emailLabel: '',
+    ctaText: '',
+    ctaUrl: '',
+    showEmail: false,
+    showCta: false,
+  }
+  const FB_ID = 'fb_1a2b3c4d-5e6f-4a81-9203-a4b5c6d7e8f9'
+  const DASH_URL = 'https://klavity.quantana.top/dashboard?project=proj_x#tickets'
+
+  async function submitWith(result: { issueKey: string; issueUrl: string }, success?: any) {
+    const ctrl = buildModal('bug', {
+      onCaptureFull: async () => 'x',
+      onSubmit: async () => result,
+      ...(success ? { success } : {}),
+    })
+    const desc = q(ctrl, '#klavity-desc') as HTMLTextAreaElement
+    desc.value = 'a bug'; desc.dispatchEvent(new Event('input'))
+    ;(q(ctrl, '#klavity-submit') as HTMLButtonElement).click()
+    await vi.advanceTimersByTimeAsync(0)
+    return ctrl
+  }
+
+  it('authed reporter: shows shortened reference AND a View-in-dashboard link (target=_blank), keeping the 5s auto-dismiss', async () => {
+    vi.useFakeTimers()
+    const ctrl = await submitWith({ issueKey: FB_ID, issueUrl: DASH_URL }, { copy: successCopy })
+    const ref = q(ctrl, '.klavity-ref') as HTMLElement
+    expect(ref).not.toBeNull()
+    expect(ref.textContent).toContain('Filed as')
+    // The fb_<uuid> id is shortened to a quotable reference — never the full uuid.
+    expect((q(ctrl, '.klavity-ref code') as HTMLElement).textContent).toBe('fb_1a2b3c4d')
+    const a = q(ctrl, '.klavity-ref a') as HTMLAnchorElement
+    expect(a).not.toBeNull()
+    expect(a.href).toBe(DASH_URL)
+    expect(a.target).toBe('_blank')
+    expect(a.rel).toBe('noopener')
+    expect(a.textContent).toBe('View in dashboard')
+    // Existing auto-dismiss behavior stays intact: progress bar present, closes after 5s
+    // (+700ms genie-out fallback — jsdom fires no animationend).
+    expect(q(ctrl, '.klavity-toast-progress')).not.toBeNull()
+    await vi.advanceTimersByTimeAsync(5000)
+    await vi.advanceTimersByTimeAsync(800)
+    expect(document.body.contains(ctrl.shadowRoot.host)).toBe(false)
+    vi.useRealTimers()
+  })
+
+  it('anonymous reporter (no issueUrl): shows just the reference, NO dashboard link', async () => {
+    vi.useFakeTimers()
+    const ctrl = await submitWith({ issueKey: FB_ID, issueUrl: '' }, { copy: successCopy })
+    expect((q(ctrl, '.klavity-ref code') as HTMLElement).textContent).toBe('fb_1a2b3c4d')
+    expect(q(ctrl, '.klavity-ref a')).toBeNull()
+    ctrl.close()
+    vi.useRealTimers()
+  })
+
+  it('non-http(s) issueUrl never renders a link', async () => {
+    vi.useFakeTimers()
+    // eslint-disable-next-line no-script-url
+    const ctrl = await submitWith({ issueKey: FB_ID, issueUrl: 'javascript:alert(1)' }, { copy: successCopy })
+    expect(q(ctrl, '.klavity-ref')).not.toBeNull()
+    expect(q(ctrl, '.klavity-ref a')).toBeNull()
+    ctrl.close()
+    vi.useRealTimers()
+  })
+
+  it('tracker keys (e.g. Plane sequence ids) pass through unshortened', async () => {
+    vi.useFakeTimers()
+    const ctrl = await submitWith({ issueKey: 'KLAV-123', issueUrl: '' }, { copy: successCopy })
+    expect((q(ctrl, '.klavity-ref code') as HTMLElement).textContent).toBe('KLAV-123')
+    ctrl.close()
+    vi.useRealTimers()
+  })
+
+  it('fallback themed card (extension path, no success copy): shortened ref + dashboard link for authed reporters', async () => {
+    vi.useFakeTimers()
+    const ctrl = await submitWith({ issueKey: FB_ID, issueUrl: DASH_URL }) // no success → themed card
+    const card = ctrl.shadowRoot.querySelector('div div') as HTMLElement
+    expect(ctrl.shadowRoot.textContent).toContain('Filed as')
+    expect(ctrl.shadowRoot.textContent).toContain('fb_1a2b3c4d')
+    expect(ctrl.shadowRoot.textContent).not.toContain(FB_ID) // full uuid never shown
+    const a = ctrl.shadowRoot.querySelector('a') as HTMLAnchorElement
+    expect(a).not.toBeNull()
+    expect(a.href).toBe(DASH_URL)
+    expect(a.target).toBe('_blank')
+    expect(card).not.toBeNull()
+    vi.useRealTimers()
+  })
+
+  it('fallback themed card without issueUrl shows the ref only (anonymous-style)', async () => {
+    vi.useFakeTimers()
+    const ctrl = await submitWith({ issueKey: FB_ID, issueUrl: '' })
+    expect(ctrl.shadowRoot.textContent).toContain('fb_1a2b3c4d')
+    expect(ctrl.shadowRoot.querySelector('a')).toBeNull()
+    vi.useRealTimers()
+  })
+})
+
 describe('buildModal Screen tooltip positioning', () => {
   it('clamps tooltip within modal and viewport boundaries', () => {
     const ctrl = buildModal('bug', {

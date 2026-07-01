@@ -13,6 +13,24 @@ function escHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
+/** Human-quotable ticket reference. Klavity feedback ids are "fb_<uuid>" — far too long to read
+ *  aloud or quote to support, so shorten to the first uuid block ("fb_1a2b3c4d"). Tracker keys
+ *  (e.g. a Plane sequence like "42" or "KLAV-123") pass through unchanged. */
+function displayRef(issueKey: string): string {
+  const m = /^fb_([0-9a-f]{8})[0-9a-f-]+$/i.exec(issueKey)
+  return m ? 'fb_' + m[1] : issueKey
+}
+
+/** Only ever link out to a real http(s) URL — issueUrl flows in from the host/server response, so
+ *  anything else (empty, javascript:, garbage) renders no link at all. */
+function safeHttpUrl(u: string | null | undefined): string {
+  if (!u) return ''
+  try {
+    const p = new URL(u)
+    return p.protocol === 'https:' || p.protocol === 'http:' ? p.href : ''
+  } catch { return '' }
+}
+
 export interface SuccessCopy {
   headline: string
   body: string
@@ -171,6 +189,11 @@ export function buildModal(
     .klavity-lead button:hover::after, .klavity-cta:hover::after{transform:translateX(100%);}
     .klavity-lead button:disabled{opacity:.5;cursor:not-allowed;}
     .klavity-thanks{font-size:13px;color:var(--kl-fg);margin-bottom:12px;}
+    .klavity-ref{margin:0 0 18px;font-size:13px;color:var(--kl-muted);display:flex;align-items:center;gap:8px;flex-wrap:wrap;animation:kl-rise .45s cubic-bezier(.16,1,.3,1) .15s both;}
+    .klavity-ref code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;background:var(--kl-chip);color:var(--kl-fg);padding:2px 8px;border-radius:6px;user-select:all;}
+    .klavity-ref a{color:var(--kl-accent);font-weight:600;text-decoration:underline;text-underline-offset:2px;transition:color .15s ease,transform .15s cubic-bezier(.2,.7,.2,1);display:inline-block;}
+    .klavity-ref a:hover{transform:var(--kl-lift);}
+    .klavity-ref a:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;border-radius:4px;}
     .klavity-cta{position:relative;overflow:hidden;display:inline-block;padding:12px 20px;background:linear-gradient(135deg,var(--kl-accent),color-mix(in srgb,var(--kl-accent) 70%,#8b5cf6));color:var(--kl-on-accent);border-radius:99px;font-size:14px;font-weight:700;text-decoration:none;margin-bottom:12px;text-align:center;box-shadow:0 4px 14px color-mix(in srgb,var(--kl-accent) 35%,transparent);}
     .klavity-pb{text-align:center;font-size:10px;color:var(--kl-muted);margin-top:12px;}
     .klavity-pb a{color:var(--kl-muted);text-decoration:none;transition:color .15s ease;}
@@ -534,24 +557,37 @@ export function buildModal(
       if (callbacks.success) {
         // Mode-aware lead/CTA screen rendered THROUGH the existing themed modal — no auto-close;
         // the user must interact (submit email or click the CTA, or dismiss via overlay/esc).
-        renderSuccess(result.issueKey, callbacks.success)
+        renderSuccess(result.issueKey, result.issueUrl, callbacks.success)
       } else {
-        // Their themed auto-close card: custom thank-you (2600ms) or "check-circle Filed as KEY" (1500ms).
+        // Their themed auto-close card: custom thank-you (2600ms) or "check-circle Filed as KEY".
+        // When the host resolved a dashboard link (authed reporters only — extension / logged-in
+        // session), append it and hold the card a little longer so the link is actually clickable.
         const wrap = document.createElement('div')
         wrap.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:all;'
         const card = document.createElement('div')
         card.style.cssText = 'background:var(--kl-bg);color:var(--kl-fg);border:1px solid var(--kl-border);border-radius:var(--kl-radius);padding:32px;font-family:var(--kl-font,system-ui),sans-serif;font-size:16px;text-align:center;box-shadow:var(--kl-shadow);'
+        let cardLink = ''
         if (cfg.thankYou) {
           card.textContent = cfg.thankYou
         } else {
           card.innerHTML = `${icon('check-circle', { label: 'Filed', size: 20 })} Filed as `
-          card.appendChild(document.createTextNode(result.issueKey))
+          card.appendChild(document.createTextNode(displayRef(result.issueKey)))
+          cardLink = safeHttpUrl(result.issueUrl)
+          if (cardLink) {
+            const a = document.createElement('a')
+            a.href = cardLink
+            a.target = '_blank'
+            a.rel = 'noopener'
+            a.textContent = 'View in dashboard'
+            a.style.cssText = 'display:block;margin-top:12px;font-size:14px;font-weight:600;color:var(--kl-accent);text-decoration:underline;text-underline-offset:2px;'
+            card.appendChild(a)
+          }
         }
         wrap.appendChild(card)
         // keep the themed style element; swap only the body
         overlay.remove()
         shadowRoot.appendChild(wrap)
-        setTimeout(close, cfg.thankYou ? 2600 : 1500)
+        setTimeout(close, cfg.thankYou ? 2600 : cardLink ? 4000 : 1500)
       }
     } catch (err) {
       // Upload failed — surface the error and re-open the composer (never leave it stuck/disabled).
@@ -843,7 +879,7 @@ export function buildModal(
   // Genie animation + injected --kl-* vars) for headline/body, optional email-lead capture, optional
   // CTA, and an always-on "Powered by Klavity" footer. Dynamic data (feedbackId, email) is never
   // injected via innerHTML — only static copy uses innerHTML — matching this file's XSS guards.
-  function renderSuccess(feedbackId: string, success: NonNullable<ModalCallbacks['success']>) {
+  function renderSuccess(feedbackId: string, issueUrl: string, success: NonNullable<ModalCallbacks['success']>) {
     const { copy, onLead } = success
     modal.innerHTML = ''
     const wrap = document.createElement('div')
@@ -858,6 +894,32 @@ export function buildModal(
       const p = document.createElement('p')
       p.textContent = copy.body
       wrap.appendChild(p)
+    }
+
+    // Ticket reference — always shown when we have one, so even an anonymous end-user on a
+    // customer's site can quote it to support ("my report fb_1a2b3c4d"). The "View in dashboard"
+    // link renders ONLY when the host resolved a real http(s) issueUrl: the server returns one
+    // solely for authed reporters (extension / logged-in session), never for anonymous widget
+    // submissions, where a dashboard link would be useless and leak app structure. Dynamic values
+    // go in via textContent/href assignment (never innerHTML) per this file's XSS guards.
+    if (feedbackId) {
+      const ref = document.createElement('div')
+      ref.className = 'klavity-ref'
+      const label = document.createElement('span')
+      label.textContent = 'Filed as'
+      const code = document.createElement('code')
+      code.textContent = displayRef(feedbackId)
+      ref.append(label, code)
+      const linkUrl = safeHttpUrl(issueUrl)
+      if (linkUrl) {
+        const a = document.createElement('a')
+        a.href = linkUrl
+        a.target = '_blank'
+        a.rel = 'noopener'
+        a.textContent = 'View in dashboard'
+        ref.appendChild(a)
+      }
+      wrap.appendChild(ref)
     }
 
     const startAutodismiss = () => {

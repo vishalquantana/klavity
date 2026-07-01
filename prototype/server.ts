@@ -1758,7 +1758,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // Legacy direct-Plane mode: if the caller provided Plane creds directly (no session),
         // still attempt the Plane push for backward-compat with the extension's direct mode.
         if (!planeConnected) {
-          return wjson({ id: feedbackId ?? "", saved: true, ...(recurrenceMem ? { recurrence: recurrenceMem } : {}) })
+          // Success-screen deep link: ONLY authed reporters (extension Bearer / logged-in session)
+          // get a dashboard URL — anonymous widget end-users on a customer's site have no dashboard
+          // access, so handing them a link would be useless (and leak our app structure). They get
+          // just the reference id to quote to support. The dashboard has no per-ticket route yet, so
+          // the deepest stable link is the Tickets board of the submitting project.
+          const dashBase = baseOrigin || reqOrigin
+          const linkProject = String(form.get("project_id") || "") || url.searchParams.get("project") || ""
+          const issueUrl = (!anonActor && feedbackId && dashBase)
+            ? `${dashBase}/dashboard${linkProject ? `?project=${encodeURIComponent(linkProject)}` : ""}#tickets`
+            : ""
+          return wjson({ id: feedbackId ?? "", saved: true, ...(issueUrl ? { issue_url: issueUrl } : {}), ...(recurrenceMem ? { recurrence: recurrenceMem } : {}) })
         }
 
         // R8: append the Sim citation line to the issue body when this feedback cites a trait.

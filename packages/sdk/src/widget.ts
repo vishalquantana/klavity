@@ -936,7 +936,9 @@ export async function submitFeedback(
         if (xhr.status < 200 || xhr.status >= 300) { reject(new Error("submit failed: " + xhr.status)); return }
         try {
           const j = JSON.parse(xhr.responseText)
-          resolve({ issueKey: String(j.id || ""), issueUrl: cfg.backendUrl + "/dashboard" })
+          // issue_url is only returned for AUTHED reporters (the server withholds it on anonymous
+          // widget submissions — no dashboard access → no dashboard link on the success screen).
+          resolve({ issueKey: String(j.jira_key || j.id || ""), issueUrl: String(j.issue_url || "") })
         } catch { reject(new Error("submit failed: invalid response")) }
       }
       xhr.onerror = () => reject(new Error("submit failed: network error"))
@@ -955,7 +957,8 @@ export async function submitFeedback(
   const r = await fetch(cfg.backendUrl + "/api/feedback", init)
   if (!r.ok) throw new Error("submit failed: " + r.status)
   const j = await r.json()
-  return { issueKey: String(j.id || ""), issueUrl: cfg.backendUrl + "/dashboard" }
+  // Same contract as the XHR path above: issue_url only present for authed reporters.
+  return { issueKey: String(j.jira_key || j.id || ""), issueUrl: String(j.issue_url || "") }
 }
 
 if (typeof window !== "undefined") {
