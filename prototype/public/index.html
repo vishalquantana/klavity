@@ -618,6 +618,14 @@ let sims = []
 function studioProjectId() { try { return new URLSearchParams(location.search).get("project") } catch (e) { return null } }
 function studioSimId() { try { return new URLSearchParams(location.search).get("sim") } catch (e) { return null } }
 function pq(path) { const p = studioProjectId(); if (!p) return path; return path + (path.includes("?") ? "&" : "?") + "project=" + encodeURIComponent(p) }
+// Resolve the active Studio project with precedence (KLAVITYKLA-47):
+//   ?project= URL param, IF it names one of the user's projects (guards stale/foreign deep links)
+//   > the first project in /api/projects (the account default; no last-used persistence exists).
+// Pure — unit-tested by extraction in studio-project-selection.test.ts.
+function resolveStudioProject(paramId, projects) {
+  if (paramId && (projects || []).some(p => p && p.id === paramId)) return paramId
+  return (projects && projects.length) ? projects[0].id : null
+}
 
 // ── Backend persona persistence ──
 async function apiSaveSim(sim) {
@@ -2128,7 +2136,17 @@ async function loadStudioProjects() {
   let projects = []
   try { const r = await fetch("/api/projects"); if (r.ok) projects = (await r.json()).projects || [] } catch (e) {}
   if (!projects.length) return
-  const active = studioProjectId() || projects[0].id
+  const requested = studioProjectId()
+  const active = resolveStudioProject(requested, projects)
+  if (requested && requested !== active) {
+    // Stale/foreign ?project= deep link: drop the param so pq()-scoped API calls stop 400ing
+    // ("No project.") and re-pull sims for the fallback project the badge now shows.
+    try {
+      const u = new URL(location.href); u.searchParams.delete("project")
+      history.replaceState(null, "", u.pathname + u.search + u.hash)
+      loadSavedSims()
+    } catch (e) {}
+  }
   const escAttr = (s) => String(s || "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]))
   sel.innerHTML = projects.map(p => `<option value="${escAttr(p.id)}"${p.id === active ? " selected" : ""}>${escAttr(p.name || "Project")}</option>`).join("")
   wrap.style.display = "flex"

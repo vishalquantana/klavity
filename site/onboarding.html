@@ -358,7 +358,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           </div>
           <div class="row"><button class="btn btn-amber" onclick="openStudio()">Open the Studio →</button><span class="skip" onclick="openStudio()">Pick later in the Studio</span></div>
           <!-- Snap-only exit: founders who just want bug reports shouldn't be forced through Sims. -->
-          <div style="margin-top:16px"><a class="snap-exit" href="/dashboard">Skip for now — take me to my reports →</a></div>
+          <div style="margin-top:16px"><a class="snap-exit" id="skipToDash" href="/dashboard">Skip for now — take me to my reports →</a></div>
         </div>
       </div>
     </div>
@@ -376,7 +376,12 @@ let intent = 'transcript'     // step-3 choice: 'transcript' | 'hats'
 
 // Fill the embed snippet with the real project ID so users never hand-edit it.
 function widgetSnippetText(){ return '<script src="https://klavity.in/widget.js" data-project="' + (projectId || 'YOUR_PROJECT_ID') + '" defer><\/script>' }
-function renderWidgetSnippet(){ var s = document.getElementById('snipPid'); if (s) s.textContent = projectId || 'YOUR_PROJECT_ID' }
+function renderWidgetSnippet(){
+  var s = document.getElementById('snipPid'); if (s) s.textContent = projectId || 'YOUR_PROJECT_ID'
+  // Also deep-link the "Skip for now" exit at the onboarding project, so /dashboard opens
+  // the project created in step 1 rather than the account default (KLAVITYKLA-47).
+  var a = document.getElementById('skipToDash'); if (a && projectId) a.href = '/dashboard?project=' + encodeURIComponent(projectId)
+}
 ;(function(){
   var cp = document.getElementById('copySnippet'); if (!cp) return
   cp.addEventListener('click', function(){
@@ -684,7 +689,12 @@ function pickIntent(which){
 }
 function openStudio(){
   // Transcript → /app#add-transcript ; Hats → /app?starter=hats (studio reads either, light handoff).
-  const dest = intent === 'hats' ? '/app?starter=hats' : '/app#add-transcript'
+  // Carry the onboarding project id (KLAVITYKLA-47): without it the Studio opens the account's
+  // default project, so starter Sims + saved reviews land in the WRONG project. Query goes before #hash.
+  const proj = projectId ? 'project=' + encodeURIComponent(projectId) : ''
+  const dest = intent === 'hats'
+    ? '/app?starter=hats' + (proj ? '&' + proj : '')
+    : '/app' + (proj ? '?' + proj : '') + '#add-transcript'
   window.location.href = dest
 }
 
