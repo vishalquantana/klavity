@@ -164,9 +164,9 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 
 /* draft pill */
 .pill.pill-draft{background:rgba(139,139,245,.14);color:var(--indigo)}
-.trail .activate-btn{flex-shrink:0;font-family:var(--mono);font-size:10px;letter-spacing:.04em;padding:5px 10px;border-radius:8px;border:1px solid rgba(99,102,241,.4);background:transparent;color:var(--indigo);cursor:pointer;transition:transform .15s ease}
-.trail .activate-btn:hover:not(:disabled){background:rgba(99,102,241,.1);transform:translateY(-1px)}
-.trail .activate-btn:active{transform:translateY(0) scale(.97)}
+.trail .activate-btn{flex-shrink:0;font-family:var(--mono);font-size:10px;letter-spacing:.04em;padding:5px 10px;border-radius:8px;border:1px solid rgba(99,102,241,.4);background:transparent;color:var(--indigo);cursor:pointer;transition:transform var(--mi-dur) var(--mi-ease)}
+.trail .activate-btn:hover:not(:disabled){background:rgba(99,102,241,.1);transform:var(--mi-lift)}
+.trail .activate-btn:active{transform:var(--mi-press)}
 </style>
 <script src="/icons.generated.js"></script>
 </head>
@@ -747,6 +747,7 @@ async function loadAccounts(){
     if(!r.ok) return
     var d = await r.json()
     var sel = document.getElementById("ntAcc")
+    sel.length = 1
     ;(d.accounts || []).forEach(function(a){
       var o = document.createElement("option"); o.value = a.name; o.textContent = a.name + " (" + a.loginEmail + ")"; sel.appendChild(o)
     })
@@ -774,7 +775,7 @@ async function pollAuthor(sessionId, box){
       var ap = document.getElementById("ntApprove")
       ap.addEventListener("click", async function(){
         ap.disabled = true; ap.textContent = "Activating..."
-        var ar = await fetch("/api/trails/" + ap.dataset.trail + "/approve" + projQ(), { method: "POST" })
+        var ar = await fetch("/api/trails/" + encodeURIComponent(ap.dataset.trail) + "/approve" + projQ(), { method: "POST" })
         if(ar.ok){ document.getElementById("ntBg").classList.remove("show"); await render(await loadData()) }
         else { ap.disabled = false; ap.textContent = "Looks right — activate" }
       })
@@ -785,6 +786,12 @@ async function pollAuthor(sessionId, box){
     document.getElementById("ntGo").disabled = false
     return
   }
+  document.getElementById("ntGo").disabled = false
+  box.innerHTML = box.innerHTML || ''
+  var stallDiv = document.createElement("div")
+  stallDiv.className = "nt-stall"
+  stallDiv.textContent = "Timed out waiting for the AutoSim - it may still be running. Reopen this page shortly."
+  box.appendChild(stallDiv)
 }
 
 document.getElementById("newTrailBtn").addEventListener("click", function(){
