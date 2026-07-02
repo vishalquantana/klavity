@@ -690,8 +690,26 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .sm-in.want .ic{background:rgba(217,131,36,.15);color:var(--amber)}
 .sm-in.love .ic{background:rgba(15,157,107,.14);color:var(--green)}
 .sm-in .qt{color:var(--paper-dim)}.sm-in .qt em{color:var(--paper);font-style:italic}
+.sm-in-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px}
 .sm-foot{display:flex;align-items:center;gap:9px}.sm-foot .grow{flex:1}
-@media(max-width:540px){.sm-field{flex-direction:column}.sm-seg button .e{display:none}.sm-modal{padding:24px 18px}}
+/* v3 preview: client/user + side badges, persona-core panel, scope/portability tags */
+.sm-badges{margin-left:auto;display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.sm-badges .sm-kind{margin-left:0}
+.sm-kind.client{color:var(--indigo);border-color:rgba(99,102,241,.35);background:rgba(99,102,241,.07)}
+.sm-kind.user{color:var(--green);border-color:rgba(15,157,107,.32);background:rgba(15,157,107,.07)}
+.sm-side{font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;padding:3px 6px;border-radius:6px;border:1px solid var(--line);color:var(--paper-faint)}
+.sm-core{background:var(--ink-3);border:1px solid var(--line);border-radius:11px;padding:10px 12px;margin-bottom:12px;display:flex;flex-direction:column;gap:7px}
+.sm-core-row{display:flex;align-items:flex-start;gap:8px;font-size:12px;line-height:1.45}
+.sm-core-ic{flex:none;width:20px;height:20px;border-radius:6px;display:grid;place-items:center;background:rgba(99,102,241,.1);color:var(--indigo)}
+.sm-core-lb{flex:none;width:74px;color:var(--paper-faint);font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;padding-top:4px}
+.sm-core-vl{color:var(--paper-dim);flex:1;min-width:0;padding-top:2px}
+.sm-watch{display:flex;flex-wrap:wrap;gap:5px}
+.sm-tag{display:inline-flex;align-items:center;font-family:var(--mono);font-size:9px;letter-spacing:.05em;text-transform:uppercase;padding:2px 6px;border-radius:5px;border:1px solid var(--line);color:var(--paper-faint);background:var(--ink-2)}
+.sm-tag.lens{color:var(--amber);border-color:rgba(217,131,36,.28);background:rgba(217,131,36,.08)}
+.sm-tag.port{color:var(--green);border-color:rgba(15,157,107,.28);background:rgba(15,157,107,.08)}
+.sm-call-actions{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:2px}
+.sm-file{cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+@media(max-width:540px){.sm-field{flex-direction:column}.sm-seg button .e{display:none}.sm-modal{padding:24px 18px}.sm-core-lb{width:64px}}
 /* Report-widget embed + live preview + extension card (Settings → Report widget appearance) */
 .wp-embed{margin:4px 0 14px}
 .wp-embed-label{font-size:12px;font-weight:600;opacity:.7;margin-bottom:6px}
@@ -3533,9 +3551,13 @@ load()
       <p class="sm-note">We read your public home page and propose a starting cast — keep the ones that ring true. Nothing’s saved until you add a Sim.</p>
     </div>
     <div class="sm-pane" data-pane="call">
-      <textarea class="sm-ta" id="smTx" placeholder="Paste a sales or support call — 2–3 minutes of dialogue works best."></textarea>
-      <div style="text-align:center"><button class="btn btn-indigo" id="smTxGo">Extract Sims →</button></div>
-      <p class="sm-note lft">Most realistic — Sims quote the call. Names &amp; quotes stay private to this project.</p>
+      <textarea class="sm-ta" id="smTx" placeholder="Paste a sales or support call — 2–3 minutes of dialogue works best. Or upload a transcript file."></textarea>
+      <div class="sm-call-actions">
+        <label class="sm-file btn btn-ghost btn-sm" for="smFile" id="smFileLbl">Upload transcript
+          <input id="smFile" type="file" accept=".txt,.vtt,.srt,text/plain" hidden /></label>
+        <button class="btn btn-indigo" id="smTxGo">Extract Sims →</button>
+      </div>
+      <p class="sm-note lft">Most realistic — Sims quote the call. Drop in a <b>.txt</b>, <b>.vtt</b> or <b>.srt</b> transcript, or paste it. Names &amp; quotes stay private to this project.</p>
     </div>
     <div class="sm-out" id="smOut"></div>
   </div>
@@ -3553,19 +3575,33 @@ load()
     "A skeptical IT admin worried about security",
   ];
   function inits(n){return String(n||"").replace(/\(.*?\)/g,"").trim().split(/\s+/).slice(0,2).map(w=>w[0]||"").join("").toUpperCase()||"S"}
+  // client = judges outcomes, user = operates the product; fall back to legacy `type` when v3 fields are absent
+  function simClassOf(s){ return (s.simClass==="client"||s.simClass==="user")?s.simClass:(s.type==="internal"?"user":"client"); }
+  function sideOf(s){ return (s.side==="external"||s.side==="internal")?s.side:(s.type==="internal"?"internal":"external"); }
   function simCardHtml(s,idx){
     const ins=(s.insights||[]).slice(0,3).map(i=>{
       const k=(i.kind==="pain"||i.kind==="want"||i.kind==="love")?i.kind:"want";
       const g=k==="pain"?kicon('frown',{label:'pain'}):k==="want"?kicon('lightbulb',{label:'want'}):kicon('heart',{label:'love'});
-      return `<div class="sm-in ${k}"><span class="ic">${g}</span><span class="qt">${esc(i.text||"")} ${i.quote?`<em>“${esc(i.quote)}”</em>`:""}</span></div>`;
+      const scope=i.scope?`<span class="sm-tag">${esc(i.scope)}</span>`:"";
+      const port=i.portability?`<span class="sm-tag ${i.portability==="portable"?"port":""}">${esc(i.portability)}</span>`:"";
+      const tags=(scope||port)?`<span class="sm-in-tags">${scope}${port}</span>`:"";
+      return `<div class="sm-in ${k}"><span class="ic">${g}</span><span class="qt">${esc(i.text||"")} ${i.quote?`<em>“${esc(i.quote)}”</em>`:""}${tags}</span></div>`;
     }).join("");
     const acc=safeAccent(s.accent,col(s.name||"x"));
     const first=esc(String(s.name||"Sim").split(" ")[0]);
+    const cls=simClassOf(s), side=sideOf(s);
+    const core=s.core||{};
+    const goals=Array.isArray(core.goals)?core.goals.filter(Boolean).slice(0,3).join(" · "):"";
+    const watch=(Array.isArray(core.watchFor)?core.watchFor:[]).filter(Boolean).slice(0,4);
+    const row=(icon,label,val)=>val?`<div class="sm-core-row"><span class="sm-core-ic">${kicon(icon,{label:label,size:13})}</span><span class="sm-core-lb">${esc(label)}</span><span class="sm-core-vl">${esc(val)}</span></div>`:"";
+    const watchRow=watch.length?`<div class="sm-core-row"><span class="sm-core-ic">${kicon("eye",{label:"watches for",size:13})}</span><span class="sm-core-lb">watches</span><span class="sm-core-vl"><span class="sm-watch">${watch.map(w=>`<span class="sm-tag lens">${esc(w)}</span>`).join("")}</span></span></div>`:"";
+    const coreHtml=(goals||core.temperament||core.voice||watch.length)?`<div class="sm-core">${row("star","goals",goals)}${row("sun","mood",core.temperament)}${row("mic","voice",core.voice)}${watchRow}</div>`:"";
     return `<div class="sm-sim" data-idx="${idx}">
       <div class="sm-sim-top"><div class="sm-av" style="background:${acc}">${esc(s.initials||inits(s.name))}</div>
         <div><div class="sm-nm">${esc(s.name||"Sim")}</div><div class="sm-rl">${esc(s.role||"")}</div></div>
-        <span class="sm-kind">${esc(s.type==="internal"?"internal":"client")}</span></div>
+        <span class="sm-badges"><span class="sm-kind ${cls}">${cls==="client"?"client":"user"}</span><span class="sm-side">${esc(side)}</span></span></div>
       ${s.summary?`<div class="sm-sum">${esc(s.summary)}</div>`:""}
+      ${coreHtml}
       <div class="sm-ins">${ins}</div>
       <div class="sm-foot"><button class="btn btn-indigo btn-sm" data-add="${idx}">＋ Add ${first}</button>
         <button class="btn btn-ghost btn-sm" data-skip="${idx}">Skip</button><span class="grow"></span></div></div>`;
@@ -3603,7 +3639,10 @@ load()
   async function saveSim(s,cardEl,btn){
     const orig=btn?btn.textContent:""; if(btn){ btn.disabled=true; btn.textContent="Adding…"; }
     try{
-      await postJSON("/api/personas"+projQ(),{ name:s.name, role:s.role, type:s.type, initials:s.initials||inits(s.name), accent:safeAccent(s.accent,col(s.name||"x")), summary:s.summary||"", insights:Array.isArray(s.insights)?s.insights:[] });
+      await postJSON("/api/personas"+projQ(),{ name:s.name, role:s.role, type:s.type,
+        simClass:simClassOf(s), side:sideOf(s), core:s.core||null,
+        initials:s.initials||inits(s.name), accent:safeAccent(s.accent,col(s.name||"x")), summary:s.summary||"",
+        insights:(Array.isArray(s.insights)?s.insights:[]).map(i=>({ ...i, scope:i.scope||null, portability:i.portability||null })) });
       simAdded=true;
       if(cardEl){ cardEl.classList.add("added"); cardEl.querySelectorAll("button").forEach(b=>b.disabled=true); if(btn) btn.textContent="Added"; } // emoji-ok
     }catch(e){ if(btn){ btn.disabled=false; btn.textContent=orig; } fail(e.message); }
@@ -3628,6 +3667,28 @@ load()
   $("smChips").addEventListener("click",(e)=>{ const c=e.target.closest(".sm-chip"); if(!c)return; $("smBrief").value=c.textContent; genBrief(); });
   // primary actions
   $("smBriefGo").onclick=genBrief; $("smUrlGo").onclick=genSite; $("smTxGo").onclick=genCall;
+
+  // "From a call" transcript file upload (.txt / .vtt / .srt) — loads file text into the paste box before Extract
+  const smFileLbl=$("smFileLbl"); if(smFileLbl) smFileLbl.innerHTML=kicon("paperclip",{size:14})+" Upload transcript"+smFileLbl.querySelector("input").outerHTML;
+  function parseTranscriptFile(name,text){
+    const ext=(String(name).split(".").pop()||"").toLowerCase();
+    if(ext!=="vtt"&&ext!=="srt") return text; // plain text: use as-is
+    const out=[]; // strip WebVTT/SRT cue numbers + timestamp lines, keep spoken lines
+    for(const raw of String(text).replace(/\r/g,"").split("\n")){
+      const t=raw.trim();
+      if(!t||/^WEBVTT/i.test(t)||/^\d+$/.test(t)||t.includes("-->")||/^(NOTE|STYLE|REGION)\b/i.test(t)) continue;
+      out.push(t.replace(/<[^>]+>/g,"")); // drop inline vtt tags
+    }
+    return out.join("\n");
+  }
+  const smFile=$("smFile");
+  if(smFile) smFile.addEventListener("change",(e)=>{
+    const f=e.target.files&&e.target.files[0]; if(!f) return;
+    const rd=new FileReader();
+    rd.onload=()=>{ let txt=String(rd.result||""); try{ txt=parseTranscriptFile(f.name,txt); }catch(err){} $("smTx").value=txt; smFile.value=""; $("smTx").focus(); };
+    rd.onerror=()=>{ fail("Couldn't read that file — try pasting the transcript instead."); smFile.value=""; };
+    rd.readAsText(f);
+  });
   $("smBrief").addEventListener("keydown",(e)=>{ if(e.key==="Enter"){ e.preventDefault(); genBrief(); } });
   $("smUrl").addEventListener("keydown",(e)=>{ if(e.key==="Enter"){ e.preventDefault(); genSite(); } });
 
