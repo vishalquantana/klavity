@@ -1,0 +1,12 @@
+<!DOCTYPE html><html><head><title>Author mockup</title></head><body>
+<h1>Acme</h1>
+<form onsubmit="return false">
+  <input id="email" type="email" aria-label="Email" placeholder="Email" />
+  <input id="pw" type="password" aria-label="Password" placeholder="Password" />
+  <button id="signin" onclick="if(document.getElementById('email').value&&document.getElementById('pw').value){document.getElementById('app').style.display='block';this.closest('form').style.display='none'}">Sign in</button>
+</form>
+<div id="app" style="display:none">
+  <div id="welcome" data-testid="welcome">Welcome back</div>
+  <button id="logout" onclick="location.reload()">Log out</button>
+</div>
+</body></html>
