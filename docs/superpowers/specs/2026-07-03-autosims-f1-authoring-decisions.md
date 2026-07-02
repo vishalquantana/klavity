@@ -57,9 +57,16 @@ F1 closes the gap: **users can create real Trails.**
   client, enterprise client) that watch the SAME Walk's evidence and give
   feedback — lenses multiply feedback, never Walks (explicitly NOT
   tenant-multiplied walks). Design against F1's real output.
-- **CI/CD trigger** (user intent 2026-07-03): AutoSims eventually run from
-  pipelines; walk-trigger API is the natural seam.
-- **Live real-time watching** of a server-run Walk (user intent
-  2026-07-03): today = live step poll + rrweb after-the-fact; true live
-  view under research.
+- **F1.5 — live screencast view** (locked 2026-07-03): F1 ships with
+  step-poll progress (proven Plan-G pattern); the CDP
+  `Page.startScreencast` → Bun-WS relay is the immediate fast-follow,
+  serving both authoring live-watch and Walk debugging. VNC rejected
+  (see research doc 2026-07-03).
+- **CI v1** (after F1, needs real Trails to gate): `POST /api/runs` over
+  the walk-trigger + poll + `junit.xml` + ~40-line GitHub Action +
+  optional commit-status callback; advisory-by-default + flake
+  quarantine; AMBER never passes a blocking gate silently.
 - Scheduled/cron Walks; Steel infra; visual-diff judge oracle.
+
+**Sequencing: F1 → F1.5 screencast → CI v1 → F2 recorder/hybrid-auth →
+Plan H Client Sims.**
