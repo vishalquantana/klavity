@@ -5,7 +5,7 @@
 // (4) applyReconcileOps carries scope/portability onto the persisted trait rows, and
 // (5) ensureTraitsSeeded carries scope/portability from cached insights onto seeded traits.
 // Hermetic pattern: set TURSO_DATABASE_URL to a local file BEFORE importing ./db.
-import { test, expect, afterAll } from "bun:test"
+import { test, expect, beforeAll, afterAll } from "bun:test"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { randomUUID } from "node:crypto"
@@ -16,17 +16,18 @@ const DB_FILE = join(tmpdir(), `klav-pfv3-${Date.now()}-${randomUUID()}.db`)
 function rmDb() {
   for (const s of ["", "-wal", "-shm"]) { try { unlinkSync(DB_FILE + s) } catch {} }
 }
-rmDb()
-process.env.TURSO_DATABASE_URL = "file:" + DB_FILE
-delete process.env.TURSO_AUTH_TOKEN
 
+// All test files share ONE Bun process + one `db` singleton. Re-point it at our own file in a
+// beforeAll (the reconnectDb pattern) so tests are ORDER-INDEPENDENT even when a sibling hermetic
+// file owns the singleton first and deletes its file in afterAll (SQLITE_READONLY_DBMOVED otherwise).
 async function loadDb() {
   const m = await import("./db")
+  m.reconnectDb("file:" + DB_FILE)
   await m.applySchema(m.db!)
   await m.migrateV2(m.db!)
   return m
 }
-
+beforeAll(loadDb)
 afterAll(rmDb)
 
 const RUN = `${Date.now()}_${Math.random().toString(36).slice(2)}`
