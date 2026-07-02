@@ -21,7 +21,7 @@ beforeAll(async () => {
 
 const { crystallize } = await import("./trails-crystallize")
 const { walkTrail } = await import("./trails-runner")
-const { listFindings, setTrailStatus } = await import("./trails")
+const { listFindings, setTrailStatus, getTrail } = await import("./trails")
 
 const fixtureUrl = (name: string) =>
   pathToFileURL(resolve(import.meta.dir, "../test-fixtures", name)).href
@@ -102,3 +102,10 @@ test("explicit suppressFindings:true suppresses findings even on an ACTIVE trail
   expect(summary.verdict).toBe("red")
   expect((await listFindings(P)).length).toBe(0)
 }, 30000)
+
+test("crystallize leaves a trail in draft status", async () => {
+  const P = "proj_draft_gate_d"
+  const { trailId } = await crystallize(P, checkoutTrajectory())
+  const trail = await getTrail(P, trailId)
+  expect(trail?.status).toBe("draft")
+})

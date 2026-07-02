@@ -47,7 +47,7 @@ test("crystallize persists a Trail with the trajectory metadata", async () => {
   expect(trail?.intent).toBe("log in, add the $20 plan, check out")
   expect(trail?.baseUrl).toBe("https://app.test/")
   expect(trail?.authorKind).toBe("llm")
-  expect(trail?.status).toBe("active") // crystallize promotes draft → active (AutoSims F1)
+  expect(trail?.status).toBe("draft") // crystallize leaves trail draft; explicit approval activates it
   // cross-project isolation
   expect(await T.getTrail("proj_other", trailId)).toBeNull()
 })

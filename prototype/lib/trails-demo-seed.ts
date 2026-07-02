@@ -9,7 +9,7 @@
 // whose /trails-demo/<variant> resolves to the bundled public/trails-demo copies.
 import type { Trajectory } from "./trails-crystallize"
 import { crystallize } from "./trails-crystallize"
-import { listTrails } from "./trails"
+import { listTrails, setTrailStatus } from "./trails"
 
 const NAME_BASELINE = "Demo · baseline"
 const NAME_DRIFT = "Demo · drift (heals)"
@@ -88,6 +88,8 @@ export async function seedDemoTrails(
     const have = existing.get(name)
     if (have) { trailIds[name] = have; continue }
     const { trailId } = await crystallize(projectId, traj)
+    // Demo trails are meant to walk and file findings; activate them explicitly so Walks file Findings.
+    await setTrailStatus(projectId, trailId, "active")
     trailIds[name] = trailId
     created++
   }

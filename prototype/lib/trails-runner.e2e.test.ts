@@ -217,6 +217,7 @@ test("(vi) an ambiguous selector (matches >1 elements) fails RED with reason=amb
     ],
   }
   const { trailId, stepIds } = await crystallize(projectId, traj)
+  await T.setTrailStatus(projectId, trailId, "active")
 
   const summary = await walkTrail(projectId, trailId, { fixtureUrl: fixtureUrl("checkout-mockup-ambiguous.html") })
 

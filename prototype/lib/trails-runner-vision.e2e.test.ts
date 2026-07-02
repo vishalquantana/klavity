@@ -19,6 +19,13 @@ const { crystallize } = await import("./trails-crystallize")
 const { walkTrail } = await import("./trails-runner")
 import type { VisionResolver } from "./trails-vision"
 
+// Helper: crystallize + activate (domain: just-crystallized → draft; only active trails file findings).
+async function crystallizeActive(proj: string, traj: Parameters<typeof crystallize>[1]) {
+  const result = await crystallize(proj, traj)
+  await T.setTrailStatus(proj, result.trailId, "active")
+  return result
+}
+
 const FIX = (name: string) => pathToFileURL(resolve(import.meta.dir, "..", "test-fixtures", name)).href
 const PROJ = "proj_vis"
 
@@ -27,7 +34,7 @@ const PROJ = "proj_vis"
 // changed or gone) — so ONLY the (mock) vision can place it. Mirrors the real crystallize signature:
 // crystallize(projectId, Trajectory{ steps[].target.resolvedSelector }).
 async function seedTrail(): Promise<string> {
-  const { trailId } = await crystallize(PROJ, {
+  const { trailId } = await crystallizeActive(PROJ, {
     name: "Sign in",
     baseUrl: FIX("checkout-mockup.html"),
     authorKind: "llm",
@@ -44,7 +51,7 @@ async function seedTrail(): Promise<string> {
 // vision tier. §6.5: an assert whose target is gone is a HARD checkpoint failure and must NEVER be
 // vision-downgraded to amber_heal, regardless of what the model classifies.
 async function seedAssertTrail(): Promise<string> {
-  const { trailId } = await crystallize(PROJ, {
+  const { trailId } = await crystallizeActive(PROJ, {
     name: "Sign in visible",
     baseUrl: FIX("checkout-mockup.html"),
     authorKind: "llm",
@@ -60,7 +67,7 @@ async function seedAssertTrail(): Promise<string> {
 // A 2-step trail: step 0 clicks the (vision-resolved) Sign in; step 1 types into #email which still
 // exists Tier-0 on the moved fixture. Used to prove the walk CONTINUES past a failing vision step.
 async function seedTwoStepTrail(): Promise<string> {
-  const { trailId } = await crystallize(PROJ, {
+  const { trailId } = await crystallizeActive(PROJ, {
     name: "Sign in then type",
     baseUrl: FIX("checkout-mockup.html"),
     authorKind: "llm",
@@ -79,7 +86,7 @@ async function seedTwoStepTrail(): Promise<string> {
 // now-revealed #add-plan is visible — Tier-0 on the moved fixture, so it only passes if the healed
 // click actually fired its onclick.
 async function seedHealThenEffectTrail(): Promise<string> {
-  const { trailId } = await crystallize(PROJ, {
+  const { trailId } = await crystallizeActive(PROJ, {
     name: "Sign in then checkout visible",
     baseUrl: FIX("checkout-mockup.html"),
     authorKind: "llm",
