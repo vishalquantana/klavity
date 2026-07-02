@@ -95,10 +95,7 @@ const EXTRACT_SYS =
   "type is \"client\" for an external customer/user, \"internal\" for someone on the product/company team. " +
   "Each insight is typed pain | want | love and MUST be anchored to a short verbatim quote from the transcript. " +
   "Skip a pure facilitator/interviewer who reveals no preferences of their own. Be faithful to what people actually said.\n\n" +
-  "TONE — sarcasm, irony, and negation: speakers are frequently sarcastic (e.g. 'oh it is REAL intuitive' or 'loved being dumped on step 3' meaning the OPPOSITE) " +
-  "or use negation ('it is not that X is slow, it is that Y returns nothing'). Infer the speaker's TRUE sentiment from context and consequences, not surface words. " +
-  "Do NOT emit a 'love' insight for praise that is clearly sarcastic — classify it as the real pain. " +
-  "Resolve negation to the actual complaint. When genuine tone is ambiguous, prefer to omit an insight rather than mis-sign it.\n\n" +
+  // TODO: insert final TONE + ALTITUDE paragraphs here once locked (replacing this comment).
   "Each insight MUST name the CONCRETE artifact (which button, label, screen, flow, API, etc.) in the text field. " +
   "Set area to a short descriptor of the UI/domain area (e.g. \"checkout-flow\", \"export-modal\", \"onboarding\"). " +
   "Set issueType to EXACTLY ONE of: label-copy | layout | performance | flow | error-handling | accessibility | visual (or null if it genuinely does not fit). " +
