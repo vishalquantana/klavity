@@ -20,3 +20,7 @@ test("messages wrap DOM/URL as untrusted and offer cred placeholders", () => {
   expect(text).toContain("{{cred:admin:email}}")
   expect(msgs[0].content).toBe(AUTHOR_SYS)
 })
+
+// NOTE: openRouterAuthorModel's finally-block reconciliation (v0.40+) cannot be tested in pure unit tests
+// because it requires DB access to reconcileDailySpend. Integration/e2e tests verify that the reservation
+// is properly cleaned up on fetch/res.json errors via the daily_ai_spend table state.
