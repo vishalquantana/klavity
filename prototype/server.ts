@@ -42,6 +42,7 @@ import { listExpectations, getExpectation, setExpectationStatus, setExpectationE
 import { validateAssertionDraft } from "./lib/assertion-spec"
 import { buildRecurrenceMemory, listProjectRecurringIssues } from "./lib/recurrence-memory"
 import { publishBlogPost, SLUG_RE, type PublishInput } from "./lib/blog-publish"
+import { getExtractModel } from "./lib/extract-model"
 
 const KEY = process.env.OPENROUTER_API_KEY
 const MODEL = process.env.KLAV_MODEL || "google/gemini-2.5-flash"
@@ -94,6 +95,10 @@ const EXTRACT_SYS =
   "type is \"client\" for an external customer/user, \"internal\" for someone on the product/company team. " +
   "Each insight is typed pain | want | love and MUST be anchored to a short verbatim quote from the transcript. " +
   "Skip a pure facilitator/interviewer who reveals no preferences of their own. Be faithful to what people actually said.\n\n" +
+  "TONE — sarcasm, irony, and negation: speakers are frequently sarcastic (e.g. 'oh it is REAL intuitive' or 'loved being dumped on step 3' meaning the OPPOSITE) " +
+  "or use negation ('it is not that X is slow, it is that Y returns nothing'). Infer the speaker's TRUE sentiment from context and consequences, not surface words. " +
+  "Do NOT emit a 'love' insight for praise that is clearly sarcastic — classify it as the real pain. " +
+  "Resolve negation to the actual complaint. When genuine tone is ambiguous, prefer to omit an insight rather than mis-sign it.\n\n" +
   "Each insight MUST name the CONCRETE artifact (which button, label, screen, flow, API, etc.) in the text field. " +
   "Set area to a short descriptor of the UI/domain area (e.g. \"checkout-flow\", \"export-modal\", \"onboarding\"). " +
   "Set issueType to EXACTLY ONE of: label-copy | layout | performance | flow | error-handling | accessibility | visual (or null if it genuinely does not fit). " +
@@ -166,7 +171,7 @@ const ASSERT_SYS =
 // jsonMode forces structured output — safe for text calls, but Gemini's vision path
 // via OpenRouter often returns empty content under json_object, so leave it OFF for
 // image calls and rely on the prompt + parseJSON's extraction instead.
-async function chat(messages: any[], maxTokens: number, jsonMode = false, ctx?: { type: string; email?: string | null; projectId?: string | null }) {
+async function chat(messages: any[], maxTokens: number, jsonMode = false, ctx?: { type: string; email?: string | null; projectId?: string | null; model?: string }) {
   const t0 = Date.now()
   const label = ctx?.type || "chat"
   // M5/LLM10: enforce the daily spend cap server-side, ATOMICALLY. The old `opsTodaySpend() >= cap`
@@ -189,7 +194,7 @@ async function chat(messages: any[], maxTokens: number, jsonMode = false, ctx?: 
       console.error("tryReserveDailySpend check failed:", e?.message || e)
     }
   }
-  const model = pickModel(await getActiveWeights(), MODEL_CHOICE_IDS, MODEL, Math.random())
+  const model = ctx?.model ?? pickModel(await getActiveWeights(), MODEL_CHOICE_IDS, MODEL, Math.random())
   const ctl = new AbortController()
   const timer = setTimeout(() => ctl.abort(), 90_000)  // never hang a request forever
   let res: Response
@@ -279,7 +284,7 @@ function sanitizeTypedFields(o: any): { area: string | null; issueType: string |
 
 async function extractPersonas(transcript: string, ctx?: { email?: string | null; projectId?: string | null }) {
   // H4/LLM01: the transcript is untrusted — delimit it and tell the model to treat it as data.
-  const { content, usage } = await chat([{ role: "system", content: EXTRACT_SYS + UNTRUSTED_GUARD }, { role: "user", content: "TRANSCRIPT:\n" + wrapUntrusted(transcript) }], 4000, false, { type: "extract", ...ctx })
+  const { content, usage } = await chat([{ role: "system", content: EXTRACT_SYS + UNTRUSTED_GUARD }, { role: "user", content: "TRANSCRIPT:\n" + wrapUntrusted(transcript) }], 4000, false, { type: "extract", model: getExtractModel(), ...ctx })
   const data = parseJSON(content)
   // Sanitize the new typed fields on each insight in every extracted persona.
   if (Array.isArray(data?.personas)) {
