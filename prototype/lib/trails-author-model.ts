@@ -81,6 +81,7 @@ export const openRouterAuthorModel: AuthorModel = async (input, ctx) => {
   if (!(await tryReserveDailySpend(DEFAULT_AI_CALL_EST_USD, cap))) throw new Error("Daily AI budget reached")
   const model = pickModel(DEFAULT_WEIGHTS, MODEL_CHOICE_IDS, AUTHOR_FALLBACK_MODEL, Math.random())
   const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 90_000)
+  let reconciled = false
   try {
     const res = await fetch(ENDPOINT, {
       method: "POST", signal: ctl.signal,
@@ -89,11 +90,12 @@ export const openRouterAuthorModel: AuthorModel = async (input, ctx) => {
       body: JSON.stringify({ model, max_tokens: 600, messages: buildAuthorMessages(input),
         usage: { include: true }, response_format: { type: "json_object" } }),
     })
-    if (!res.ok) { await reconcileDailySpend(DEFAULT_AI_CALL_EST_USD, 0); throw new Error(`author model ${res.status}`) }
+    if (!res.ok) { await reconcileDailySpend(DEFAULT_AI_CALL_EST_USD, 0); reconciled = true; throw new Error(`author model ${res.status}`) }
     const data: any = await res.json()
     const u = data?.usage || {}
     const cost = typeof u.cost === "number" ? u.cost : 0
     await reconcileDailySpend(DEFAULT_AI_CALL_EST_USD, cost)
+    reconciled = true
     await recordAiCall({
       type: "author-drive", model, projectId: ctx.projectId, actorEmail: ctx.email ?? null,
       inputTokens: typeof u.prompt_tokens === "number" ? u.prompt_tokens : null,
@@ -101,5 +103,8 @@ export const openRouterAuthorModel: AuthorModel = async (input, ctx) => {
       costUsd: cost || null,
     }).catch(() => {})
     return { action: parseAuthorAction(data?.choices?.[0]?.message?.content ?? ""), costUsd: cost }
-  } finally { clearTimeout(timer) }
+  } finally {
+    clearTimeout(timer)
+    if (!reconciled) await reconcileDailySpend(DEFAULT_AI_CALL_EST_USD, 0).catch(() => {})
+  }
 }
