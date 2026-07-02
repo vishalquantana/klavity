@@ -20,6 +20,25 @@ the Trail itself. (Resolved 2026-07-03: user-facing name for the Klavity OS
 autonomous track.)
 _Avoid_: Trail (for the actor), bot, test runner
 
+**User Persona**:
+The simulated end-user an AutoSim walks *as*. Its character shapes the
+journey at authoring time (which options it picks) and it binds to a Test
+Account for authed flows. A walker, not a judge.
+_Avoid_: user (bare — ambiguous with Klavity's own users), client
+
+**Client Sim**:
+A stakeholder-lens Sim that *watches* Walks rather than driving them — it
+reviews a Walk's evidence and produces feedback from its perspective (e.g.
+the price-sensitive client, the enterprise client). Many Client Sims can
+review the same Walk; they never multiply Walks. A judge, not a walker.
+_Avoid_: client (bare), observer, tenant
+
+**Test Account**:
+A named, project-scoped login identity (e.g. "admin", "free-user") that a
+Trail's login steps reference. Trails hold references to a Test Account,
+never its secret.
+_Avoid_: creds, test user
+
 ### Journeys
 
 **Trail**:
