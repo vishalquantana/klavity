@@ -359,6 +359,14 @@ export async function applySchema(c: Client) {
        created_at INTEGER NOT NULL
      )`,
     `CREATE INDEX IF NOT EXISTS walk_replay_run_idx ON walk_replays(project_id, run_id)`,
+    // ── AutoSims F1: named per-project Test Accounts. password_enc is AES-GCM via lib/crypto.ts
+    //    (KLAV_SECRET envelope key). The plaintext secret is NEVER stored or returned by any API. ──
+    `CREATE TABLE IF NOT EXISTS test_accounts (
+       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL,
+       login_email TEXT NOT NULL, password_enc TEXT NOT NULL,
+       created_by TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+       UNIQUE(project_id, name))`,
+    `CREATE INDEX IF NOT EXISTS test_acc_proj_idx ON test_accounts (project_id)`,
     // ── G1 session replay: rrweb DOM-event recording attached to a bug report (free vs Marker's $149). ──
     // events_gz = base64(gzip(JSON.stringify(events))); trimmed=1 when the buffer was capped oldest-first.
     `CREATE TABLE IF NOT EXISTS feedback_replays (
