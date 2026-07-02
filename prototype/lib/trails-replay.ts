@@ -144,7 +144,7 @@ export async function setupReplayCapture(context: BrowserContext): Promise<Repla
           // deadlocks page creation and yields no useful frames. Only record real documents.
           try { if (!location || location.href === 'about:blank' || !document.body) return; } catch(e){ return; }
           if (window.__klavRecording) return; window.__klavRecording = true;
-          rec({ emit: function(ev){ try{ window.__klavBuf.push(ev); }catch(e){} } });
+          rec({ maskAllInputs: true, emit: function(ev){ try{ window.__klavBuf.push(ev); }catch(e){} } });
           setInterval(function(){ try{ window.__klavDrain(); }catch(e){} }, 250);
         }
         // Defer to a real document: run on DOMContentLoaded (and immediately if already loaded).

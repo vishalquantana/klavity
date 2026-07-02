@@ -18,6 +18,7 @@ import {
 import { stepCacheKey } from "./trails-crystallize"
 import { decideFromVision, type VisionResolver, type VisionInput, type VisionResult, type VisionDecision } from "./trails-vision"
 import { setupReplayCapture, saveReplay, type ReplayCapture } from "./trails-replay"
+import { hasCredRef, resolveCredRefs, type CredResolver } from "./trails-creds"
 
 // Cap the DOM sent to the vision MODEL (robustness #5) — separate from the evidence domExcerpt cap.
 // Keeps the model input bounded so an oversized page can't blow the token budget / 4xx context limit.
@@ -69,6 +70,12 @@ export interface WalkOptions {
    * one runId without touching any finalize/replay logic below.
    */
   runId?: string
+  /**
+   * ADR-0001: resolves {{cred:...}} placeholders in a type-step's actionValue at fill time.
+   * INJECTABLE (fake in tests). Default = resolveCredRefs (real test_accounts lookup). The resolved
+   * value goes ONLY into locator.fill — evidence/run_steps keep the placeholder.
+   */
+  credResolver?: CredResolver
 }
 
 export interface WalkStepSummary {
@@ -479,9 +486,12 @@ async function runOneStep(
   const ACTION_TIMEOUT = 5000
   try {
     switch (step.action) {
-      case "type":
-        await resolved.locator.fill(step.actionValue ?? "", { timeout: ACTION_TIMEOUT })
+      case "type": {
+        const raw = step.actionValue ?? ""
+        const val = hasCredRef(raw) ? await (opts.credResolver ?? resolveCredRefs)(projectId, raw) : raw
+        await resolved.locator.fill(val, { timeout: ACTION_TIMEOUT })
         break
+      }
       case "click":
         await resolved.locator.click({ timeout: ACTION_TIMEOUT })
         break
@@ -662,7 +672,11 @@ async function runVisionTier2(
     if (ok) {
       try {
         switch (step.action) {
-          case "type": await loc.fill(step.actionValue ?? "", { timeout: ACTION_TIMEOUT }); break
+          case "type": {
+            const raw = step.actionValue ?? ""
+            const val = hasCredRef(raw) ? await (opts.credResolver ?? resolveCredRefs)(projectId, raw) : raw
+            await loc.fill(val, { timeout: ACTION_TIMEOUT }); break
+          }
           case "click": await loc.click({ timeout: ACTION_TIMEOUT }); break
           case "select": await loc.selectOption(step.actionValue ?? "", { timeout: ACTION_TIMEOUT }); break
         }
