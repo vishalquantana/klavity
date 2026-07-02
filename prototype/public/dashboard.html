@@ -471,6 +471,18 @@ details.drawer .drawer-in{padding:0 22px 22px}
 .conn-edit-hint{font-size:11.5px;color:var(--amber);margin-bottom:10px}
 .conn-help{font-size:12px;color:var(--paper-faint)}
 .conn-help a{color:var(--indigo);text-decoration:none}
+
+/* test-accounts section */
+.tacc-list{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
+.tacc-row{display:flex;align-items:center;gap:10px;padding:11px 14px;background:var(--ink);border:1px solid var(--line);border-radius:12px;font-size:13.5px}
+.tacc-row b{font-weight:600;flex-shrink:0}
+.tacc-row .tacc-email{flex:1;min-width:0;color:var(--paper-faint);font-family:var(--mono);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tacc-add{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px}
+.tacc-add input{background:var(--ink);border:1px solid var(--line);border-radius:10px;padding:8px 11px;color:var(--paper);font-family:var(--body);font-size:13px;outline:none;transition:border-color var(--mi-dur) var(--mi-ease)}
+.tacc-add input:focus{border-color:var(--indigo)}
+.tacc-add input[type="password"]{letter-spacing:.1em}
+.tacc-hint{font-size:12px;color:var(--paper-faint);margin:0 0 12px}
+.tacc-msg{font-size:12.5px;margin-top:8px;min-height:16px;color:var(--green)}
 .conn-help a:hover{text-decoration:underline}
 /* two-way status-sync setup panel (G4) — shown for inbound-capable connectors */
 .sync-panel{grid-column:1/-1;margin-top:4px;padding:13px 14px;background:var(--ink-2);border:1px solid var(--line);border-radius:10px}
@@ -1216,6 +1228,28 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       </div>
     </div>
   </details>
+
+  <!-- Test accounts (AutoSims login journeys) -->
+  <details class="drawer hide" id="taccDrawer" data-view="settings">
+    <summary><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="5" rx="2"/><path d="M2 10h20"/></svg> Test accounts <span class="muted" style="font-size:11px;text-transform:none;letter-spacing:0">for AutoSims login journeys</span> <span class="caret">›</span></summary>
+    <div class="drawer-in">
+      <!-- Admin controls -->
+      <div id="taccAdmin" class="hide">
+        <p class="tacc-hint">Stored encrypted. Trails reference them as placeholders only. Password logins only — OTP / SSO comes later.</p>
+        <div id="taccList" class="tacc-list"></div>
+        <div class="tacc-add">
+          <input id="taccName" placeholder="name (e.g. admin)" maxlength="40" />
+          <input id="taccEmail" type="email" placeholder="login email" />
+          <input id="taccPw" type="password" placeholder="password" autocomplete="new-password" />
+          <button class="btn btn-indigo btn-sm" id="taccAdd">Add account</button>
+        </div>
+        <div class="tacc-msg" id="taccMsg"></div>
+      </div>
+      <!-- Non-admin read-only note -->
+      <div id="taccUser" class="hide muted">Only admins can manage test accounts.</div>
+    </div>
+  </details>
+
     <!-- ── Recurring Issues view (KLAVITYKLA-2 project-level rollup) ── -->
     <div class="card full" data-view="recurring">
       <h2><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path d="M8 16H3v5" /></svg> Recurring Issues <span class="count" id="recurringCount"></span></h2>
@@ -1656,6 +1690,11 @@ function render(fromCache) {
   $("connAdmin").classList.toggle("hide", !admin)
   $("connUser").classList.toggle("hide", admin)
 
+  // Test accounts drawer: admin-only add/delete; hide whole drawer from non-project members (403)
+  $("taccDrawer").classList.toggle("hide", false)
+  $("taccAdmin").classList.toggle("hide", !admin)
+  $("taccUser").classList.toggle("hide", admin)
+
   // P3b admin-only: live-Sims config (monitored URLs + pause) and named observability.
   $("liveDrawer").classList.toggle("hide", !admin)
   $("obsDrawer").classList.toggle("hide", !admin)
@@ -1664,7 +1703,7 @@ function render(fromCache) {
   if (!fromCache) {
     loadConnectors(admin)
     loadAppearance()
-    if (admin) { loadLive(); loadObs() }
+    if (admin) { loadLive(); loadObs(); taccRender() }
   }
 
   // Deep link: extension's "Analyze this page" with 0 Sims (and any ?create-sim=1) lands here.
@@ -3377,6 +3416,50 @@ function renderWidgetStatus(s) {
   txt.innerHTML = "<b>Widget " + (stale ? "idle" : "active") + "</b> — last seen " + esc(ago(s.lastSeen))
     + (s.host && s.host !== "(unknown)" ? " on <b>" + esc(s.host) + "</b>" : "")
 }
+
+// ── Test Accounts (AutoSims login journeys) ──────────────────────────────────
+async function taccRender() {
+  var pid = curProjId(); if (!pid) return
+  var list = $("taccList"); if (!list) return
+  var r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/test-accounts")
+  if (!r.ok) { $("taccDrawer").classList.add("hide"); return }
+  var d = await r.json()
+  list.innerHTML = (d.accounts || []).map(function(a) {
+    return '<div class="tacc-row"><b>' + esc(a.name) + '</b><span class="tacc-email">' + esc(a.loginEmail) + '</span>'
+      + '<button class="btn btn-ghost btn-sm" data-tacc-del="' + esc(String(a.id)) + '">Delete</button></div>'
+  }).join("") || '<div class="muted">No test accounts yet.</div>'
+}
+var _taccWired = false
+function _wireTacc() {
+  if (_taccWired) return; _taccWired = true
+  var addBtn = $("taccAdd")
+  if (addBtn) addBtn.addEventListener("click", async function() {
+    var msg = $("taccMsg"); if (msg) { msg.textContent = ""; msg.style.color = "var(--green)" }
+    var body = {
+      name: $("taccName").value.trim(),
+      login_email: $("taccEmail").value.trim(),
+      password: $("taccPw").value
+    }
+    var pid = curProjId(); if (!pid) return
+    var r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/test-accounts",
+      { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
+    if (r.ok) {
+      $("taccName").value = ""; $("taccEmail").value = ""; $("taccPw").value = ""
+      taccRender()
+    } else {
+      var err = await r.json().catch(function() { return {} })
+      if (msg) { msg.style.color = "var(--rose)"; msg.textContent = err.error || "Failed to add account." }
+    }
+  })
+  var listEl = $("taccList")
+  if (listEl) listEl.addEventListener("click", async function(e) {
+    var b = e.target.closest("[data-tacc-del]"); if (!b) return
+    var pid = curProjId(); if (!pid) return
+    await fetch("/api/projects/" + encodeURIComponent(pid) + "/test-accounts/" + encodeURIComponent(b.dataset.taccDel), { method: "DELETE" })
+    taccRender()
+  })
+}
+_wireTacc()
 
 $("inviteBtn") && ($("inviteBtn").onclick = async () => {
   const email = $("inviteEmail").value.trim()
