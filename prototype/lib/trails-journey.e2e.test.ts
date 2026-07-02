@@ -219,6 +219,7 @@ test("TIER-2 VISION HEAL + RESUME journey-drift-t2/: relabeled Checkout placed b
 test("REGRESSION journey-regression/: removed Checkout → RED with a grounded 'regression' finding, the journey does NOT silently complete", async () => {
   const projectId = "proj_journey_regression"
   const { trailId, stepIds } = await crystallize(projectId, journeyTrajectory())
+  await T.setTrailStatus(projectId, trailId, "active")
 
   const summary = await walkTrail(projectId, trailId, {
     fixtureUrl: landingOf("journey-regression"),
