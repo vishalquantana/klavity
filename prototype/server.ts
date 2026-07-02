@@ -2660,7 +2660,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     const needLogin = () => (req.method === "GET" ? redirect("/login") : json({ error: "Sign in to continue." }, 401))
 
     if (req.method === "GET" && path === "/dashboard") return me ? await dashboardPage() : redirect("/login")
-    if (req.method === "GET" && path === "/trails") return me ? file(PUB + "/trails.html") : redirect("/login")
+    if (req.method === "GET" && (path === "/trails" || path === "/autosims")) return me ? file(PUB + "/trails.html") : redirect("/login")
     if (req.method === "GET" && path === "/sim-runs") return me ? file(PUB + "/sim-runs.html") : redirect("/login")
     // Plan G — served demo fixtures the seeded demo Trails walk against (public, non-sensitive HTML).
     // Sanitized: reject path traversal; serve only from PUB/trails-demo. No auth (a Walk hits these

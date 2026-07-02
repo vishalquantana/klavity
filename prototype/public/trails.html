@@ -5,7 +5,7 @@
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="icon" href="/favicon.ico" sizes="any">
 <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Trails · Klavity</title>
+<title>AutoSims · Klavity</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" /><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..800;1,9..144,400..600&family=Hanken+Grotesk:wght@300..800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="/vendor/klv-view.css" />
@@ -124,7 +124,7 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 
 /* replay modal */
 .modal-bg{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;padding:24px}
-.modal-bg.open{display:flex}
+.modal-bg.open,.modal-bg.show{display:flex}
 .modal{background:var(--ink-2);border:1px solid var(--line);border-radius:18px;max-width:1000px;width:100%;max-height:92vh;overflow:auto;padding:20px 22px}
 .modal .mhead{display:flex;align-items:center;gap:12px;margin-bottom:14px}
 .modal .mhead h3{font-family:var(--display);font-weight:500;font-size:20px}
@@ -141,6 +141,32 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 .chapters .ch.on{color:var(--paper);border-color:var(--indigo);background:var(--ink-3)}
 #playerHost{min-height:200px;border-radius:12px;overflow:hidden}
 .modal .mnote{font-size:12.5px;color:var(--paper-faint);margin-top:10px;font-family:var(--mono)}
+
+/* New Trail modal */
+#ntBg .modal{max-width:600px}
+#ntBg label{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--paper-dim);margin-bottom:12px}
+#ntBg input,#ntBg textarea,#ntBg select{background:var(--ink);border:1px solid var(--line);border-radius:9px;color:var(--paper);font-family:var(--body);font-size:14px;padding:9px 12px;outline:none;width:100%}
+#ntBg input:focus,#ntBg textarea:focus,#ntBg select:focus{border-color:var(--indigo)}
+#ntBg h2{font-family:var(--display);font-weight:500;font-size:22px;margin-bottom:6px}
+#ntBg .lead{color:var(--paper-dim);font-size:14px;margin-bottom:16px}
+#ntBg .row{display:flex;gap:10px;margin-top:16px}
+.hint{font-size:12px;color:var(--paper-faint);margin-bottom:12px}
+#ntProgress{margin-top:12px}
+.nt-step{font-family:var(--mono);font-size:12px;padding:6px 10px;border-radius:8px;margin-bottom:4px;background:var(--ink-3);border:1px solid var(--line)}
+.nt-step.ok{border-color:rgba(15,157,107,.3)}
+.nt-step.err{border-color:rgba(219,39,119,.3)}
+.nt-step .why{color:var(--paper-faint);font-size:11px}
+.nt-live{font-family:var(--mono);font-size:12px;color:var(--paper-faint);margin-top:6px;animation:blink 1.4s ease infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
+.nt-done{font-family:var(--mono);font-size:13px;color:var(--green);margin-top:8px;padding:8px 10px;background:rgba(15,157,107,.08);border-radius:8px}
+.nt-stall{font-family:var(--mono);font-size:13px;color:var(--rose);margin-top:8px;padding:8px 10px;background:rgba(219,39,119,.08);border-radius:8px}
+.v-true{color:var(--green)}.v-false{color:var(--rose)}
+
+/* draft pill */
+.pill.pill-draft{background:rgba(139,139,245,.14);color:var(--indigo)}
+.trail .activate-btn{flex-shrink:0;font-family:var(--mono);font-size:10px;letter-spacing:.04em;padding:5px 10px;border-radius:8px;border:1px solid rgba(99,102,241,.4);background:transparent;color:var(--indigo);cursor:pointer;transition:transform .15s ease}
+.trail .activate-btn:hover:not(:disabled){background:rgba(99,102,241,.1);transform:translateY(-1px)}
+.trail .activate-btn:active{transform:translateY(0) scale(.97)}
 </style>
 <script src="/icons.generated.js"></script>
 </head>
@@ -149,7 +175,7 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
   <a class="brand" href="/dashboard"><img src="/favicon.svg" width="28" height="28" alt="Klavity" style="border-radius:8px;display:block" />Klavity</a>
   <nav class="nav">
     <a href="/dashboard">Dashboard</a>
-    <a href="/trails" class="on">Trails</a>
+    <a href="/trails" class="on">AutoSims</a>
   </nav>
   <div class="right">
     <span class="who" id="who"></span>
@@ -160,12 +186,13 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 <div class="wrap">
   <div class="head">
     <div>
-      <h1>Trails</h1>
-      <p class="lead" id="lead">Authored user-flows, walked deterministically — AI only steps in on a break.</p>
+      <h1>AutoSims</h1>
+      <p class="lead" id="lead">Your AutoSims walk these Trails — journeys they enforce on every run.</p>
     </div>
     <div class="switcher">
       <span class="sw-lbl">Project</span>
       <select class="proj-select" id="projSwitch" aria-label="Active project"></select>
+      <button class="btn btn-indigo" id="newTrailBtn">+ New Trail</button>
     </div>
   </div>
 
@@ -215,6 +242,23 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
       <h2>Enforced <span class="count" id="expEnfCount">0</span></h2>
       <div id="expEnf"></div>
     </div>
+  </div>
+</div>
+
+<!-- New Trail authoring modal -->
+<div class="modal-bg" id="ntBg">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="New Trail">
+    <h2>New Trail</h2>
+    <p class="lead">Describe the journey. An AutoSim will drive your site once, then replay it deterministically.</p>
+    <label>Name <input id="ntName" maxlength="80" placeholder="Login and create a project" /></label>
+    <label>Start URL <input id="ntUrl" placeholder="https://yourapp.com" /></label>
+    <label>Objective
+      <textarea id="ntObj" rows="4" placeholder="Log in, create a project, open it, then delete it and log out."></textarea>
+    </label>
+    <p class="hint" id="ntCleanupHint">Tip: end the journey where it started — include the cleanup ("...then delete it") so every run leaves your data tidy.</p>
+    <label>Test account <select id="ntAcc"><option value="">(none — public pages)</option></select></label>
+    <div class="row"><button class="btn btn-indigo" id="ntGo">Create Trail</button><button class="btn btn-ghost" id="ntCancel">Cancel</button></div>
+    <div id="ntProgress"></div>
   </div>
 </div>
 
@@ -374,26 +418,32 @@ function renderTrails(d){
   var trails = d.trails || []
   $("trailsCount").textContent = String(trails.length)
   var tEl = $("trails")
-  tEl.innerHTML = trails.length ? "" : '<div class="empty"><div class="em">'+window.kicon('footprints',{size:18})+'</div><p>No Trails yet.</p></div>'
+  tEl.innerHTML = trails.length ? "" : '<div class="empty"><div class="em">'+window.kicon('footprints',{size:18})+'</div><p>No Trails yet. Hit "+ New Trail" above to author one.</p></div>'
   trails.forEach(function(t){
     var w = latestWalkFor(d.recentWalks||[], t.id)
     var v = w ? String(w.status||"") : ""
+    var isDraft = t.status === "draft"
     var row = document.createElement("div")
     row.className = "trail"
     var html = '<div class="body"><div class="t">'+esc(t.name)+'</div><div class="d">'+esc(t.baseUrl)+'</div></div>'
     html += '<span class="run-msg"></span>'
     html += '<span class="heal-diff" data-heal="'+esc(t.id)+'" style="display:none"></span>'
-    if (v) html += '<span class="pill '+esc(v)+'">'+esc(v)+'</span>'
-    if (w && w.hasReplay) html += '<button class="replay-btn" data-replay="'+esc(w.id)+'">'+kicon('play',{size:12})+' Replay</button>'
-    html += '<button class="run-btn" data-run="'+esc(t.id)+'">'+kicon('play',{size:12})+' Run</button>'
+    if (isDraft) {
+      html += '<span class="pill pill-draft">draft</span>'
+      html += '<button class="activate-btn" data-activate="'+esc(t.id)+'">Activate</button>'
+    } else {
+      if (v) html += '<span class="pill '+esc(v)+'">'+esc(v)+'</span>'
+      if (w && w.hasReplay) html += '<button class="replay-btn" data-replay="'+esc(w.id)+'">'+kicon('play',{size:12})+' Replay</button>'
+      html += '<button class="run-btn" data-run="'+esc(t.id)+'">'+kicon('play',{size:12})+' Run</button>'
+    }
     row.innerHTML = html
     tEl.appendChild(row)
-    // For an AMBER latest walk, surface the heal-diff (#checkout → …) asynchronously.
+    // For an AMBER latest walk, surface the heal-diff (#checkout — ...) asynchronously.
     if (w && v === "amber"){
       healDiffFor(w.id).then(function(diff){
         if (!diff) return
         var el = row.querySelector('[data-heal="'+t.id+'"]')
-        if (el){ el.style.display=""; el.textContent = diff.from + " → " + diff.to }
+        if (el){ el.style.display=""; el.textContent = diff.from + " to " + diff.to }
       })
     }
   })
@@ -402,6 +452,15 @@ function renderTrails(d){
   })
   tEl.querySelectorAll("button[data-replay]").forEach(function(btn){
     btn.onclick = function(){ openReplay(btn.getAttribute("data-replay")) }
+  })
+  tEl.querySelectorAll("button[data-activate]").forEach(function(btn){
+    btn.onclick = async function(){
+      var pid2 = projParam(); var qs2 = pid2 ? "?project=" + encodeURIComponent(pid2) : ""
+      btn.disabled = true; btn.textContent = "Activating..."
+      var ar = await fetch("/api/trails/" + encodeURIComponent(btn.getAttribute("data-activate")) + "/approve" + qs2, { method: "POST" })
+      if (ar.ok){ await render(await loadData()) }
+      else { btn.disabled = false; btn.textContent = "Activate" }
+    }
   })
 }
 
@@ -674,6 +733,79 @@ async function loadExpectations() {
     renderExpectations(d.expectations || [])
   } catch(e) { /* non-fatal: board stays empty */ }
 }
+
+// ── New Trail authoring modal ─────────────────────────────────────────────────
+
+function projQ(){
+  var pid = projParam(); return pid ? "?project=" + encodeURIComponent(pid) : ""
+}
+
+async function loadAccounts(){
+  try{
+    var pid2 = projParam() || ""
+    var r = await fetch("/api/projects/" + pid2 + "/test-accounts")
+    if(!r.ok) return
+    var d = await r.json()
+    var sel = document.getElementById("ntAcc")
+    ;(d.accounts || []).forEach(function(a){
+      var o = document.createElement("option"); o.value = a.name; o.textContent = a.name + " (" + a.loginEmail + ")"; sel.appendChild(o)
+    })
+  }catch(e){}
+}
+
+function stepLine(s){
+  var cls = s.ok ? "ok" : "err"
+  return '<div class="nt-step ' + cls + '"><b>' + esc(s.op) + '</b> ' + esc(s.selector || s.url || "") +
+    ' <span class="why">' + esc(s.rationale || "") + (s.error ? " — " + esc(s.error) : "") + "</span></div>"
+}
+
+async function pollAuthor(sessionId, box){
+  for(var i = 0; i < 200; i++){
+    await new Promise(function(res){ setTimeout(res, 2000) })
+    var r = await fetch("/api/trails/author/" + sessionId + projQ())
+    if(!r.ok) continue
+    var s = await r.json()
+    var html = (s.steps || []).map(stepLine).join("")
+    if(s.status === "running"){ box.innerHTML = html + '<div class="nt-live">AutoSim is driving...</div>'; continue }
+    if(s.status === "crystallized"){
+      box.innerHTML = html +
+        '<div class="nt-done">Trail created (draft). Verification walk: <b class="v-' + esc(s.verificationVerdict || "") + '">' + esc(String(s.verificationVerdict || "?").toUpperCase()) + "</b></div>" +
+        '<button class="btn btn-indigo" id="ntApprove" data-trail="' + esc(s.trailId) + '">Looks right — activate</button>'
+      var ap = document.getElementById("ntApprove")
+      ap.addEventListener("click", async function(){
+        ap.disabled = true; ap.textContent = "Activating..."
+        var ar = await fetch("/api/trails/" + ap.dataset.trail + "/approve" + projQ(), { method: "POST" })
+        if(ar.ok){ document.getElementById("ntBg").classList.remove("show"); await render(await loadData()) }
+        else { ap.disabled = false; ap.textContent = "Looks right — activate" }
+      })
+      return
+    }
+    box.innerHTML = html + '<div class="nt-stall">Stopped: ' + esc(s.stallReason || s.status) +
+      '</div><div class="hint">Refine the objective above and hit Create Trail again.</div>'
+    document.getElementById("ntGo").disabled = false
+    return
+  }
+}
+
+document.getElementById("newTrailBtn").addEventListener("click", function(){
+  document.getElementById("ntBg").classList.add("show"); loadAccounts()
+})
+document.getElementById("ntCancel").addEventListener("click", function(){ document.getElementById("ntBg").classList.remove("show") })
+document.getElementById("ntGo").addEventListener("click", async function(){
+  var btn = this; btn.disabled = true
+  var box = document.getElementById("ntProgress"); box.innerHTML = ""
+  var body = { name: document.getElementById("ntName").value.trim(),
+    objective: document.getElementById("ntObj").value.trim(),
+    base_url: document.getElementById("ntUrl").value.trim(),
+    test_account: document.getElementById("ntAcc").value || undefined }
+  var r = await fetch("/api/trails/author" + projQ(), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
+  if(!r.ok){ var e = await r.json().catch(function(){ return {} }); box.innerHTML = '<div class="nt-stall">' + esc(e.error || r.statusText) + "</div>"; btn.disabled = false; return }
+  var d = await r.json()
+  pollAuthor(d.sessionId, box)
+})
+
+// Close ntBg on backdrop click
+document.getElementById("ntBg").addEventListener("click", function(e){ if(e.target === this) this.classList.remove("show") })
 
 load()
 loadExpectations()
