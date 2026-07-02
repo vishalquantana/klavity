@@ -19,7 +19,7 @@ export const resolveCredRefs: CredResolver = async (projectId, value) => {
     const [whole, name, field] = m
     const sec = await getTestAccountSecret(projectId, name)
     if (!sec) throw new Error(`unknown test account: ${name}`)
-    out = out.replace(whole, field === "email" ? sec.loginEmail : sec.password)
+    out = out.replaceAll(whole, field === "email" ? sec.loginEmail : sec.password)
   }
   return out
 }

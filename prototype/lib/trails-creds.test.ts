@@ -40,6 +40,7 @@ test("resolveCredRefs substitutes email and password", async () => {
   await createTestAccount(P, { name: "admin", loginEmail: "vishal@quantana.com.au", password: "pw-999" })
   expect(await resolveCredRefs(P, "{{cred:admin:email}}")).toBe("vishal@quantana.com.au")
   expect(await resolveCredRefs(P, "{{cred:admin:password}}")).toBe("pw-999")
+  expect(await resolveCredRefs(P, "{{cred:admin:password}}+{{cred:admin:password}}")).toBe("pw-999+pw-999")
 })
 
 test("unknown account throws; other project cannot resolve", async () => {
