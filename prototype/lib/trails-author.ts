@@ -140,7 +140,9 @@ export async function authorTrail(
       fixtureUrl: req.baseUrl, suppressFindings: true, credResolver,
       launchArgs: opts.launchArgs, headless: opts.headless,
     })
-    return { status: "crystallized", trailId, verificationRunId: v.runId, verificationVerdict: v.verdict === "skip" ? "red" : v.verdict, steps: log, stallReason: null, llmCalls, costUsd }
+    // I1: skip means "inconclusive / no steps ran" — map to amber, not red, so an empty
+    // Verification Walk never looks like a regression to the reviewer.
+    return { status: "crystallized", trailId, verificationRunId: v.runId, verificationVerdict: v.verdict === "skip" ? "amber" : v.verdict, steps: log, stallReason: null, llmCalls, costUsd }
   } catch (e: any) {
     await browser.close().catch(() => {})
     return { status: "failed", trailId: null, verificationRunId: null, verificationVerdict: null, steps: log, stallReason: String(e?.message || e), llmCalls, costUsd }

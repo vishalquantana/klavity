@@ -42,6 +42,7 @@ export async function initDb() {
   await db!.execute("ALTER TABLE accounts ADD COLUMN plan TEXT NOT NULL DEFAULT 'free'").catch((e: any) => console.warn("accounts.plan ALTER skipped:", e?.message || e))
   await migrateConnectorsPlane(db)
   await backfillTriageV1(db)
+  await backfillTrailStatus(db)
   console.log("✓ Turso connected, schema ready")
 }
 
@@ -435,6 +436,9 @@ export async function applySchema(c: Client) {
        llm_calls INTEGER NOT NULL DEFAULT 0, cost_usd REAL NOT NULL DEFAULT 0,
        created_by TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
     `CREATE INDEX IF NOT EXISTS author_sess_proj_idx ON author_sessions (project_id, created_at)`,
+    // ── One-time guarded migrations (C1 etc.) use this table instead of schema_meta so the
+    // migration namespace is separate from runtime KV. ──
+    `CREATE TABLE IF NOT EXISTS schema_migrations (key TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)`,
   ]
   for (const s of stmts) await c.execute(s)
 
@@ -663,6 +667,29 @@ export async function backfillTriageV1(c: Client) {
           WHERE status='open' AND COALESCE(severity,'') != 'high' AND recurrence_count < 3`,
   })
   await metaSet(c, "triage_backfill_v1", String(Date.now()))
+}
+
+// ── C1 fix: one-time backfill of pre-existing 'draft' trails to 'active'. ──
+// Context: trails.status defaulted 'draft' and nothing ever set 'active' before the AutoSims F1
+// branch shipped the draft-gate. Every pre-existing trail was therefore silently 'draft', causing
+// walkTrail to suppress ALL findings for ALL live trails. This one-time guarded backfill promotes
+// every draft trail that was NOT intentionally created through the new LLM authoring flow (those
+// are identified by a corresponding author_sessions row with trail_id set).
+// Idempotent: guarded by schema_migrations key 'trails_status_backfill_2026_07_03'.
+export async function backfillTrailStatus(c: Client): Promise<{ activated: number }> {
+  const migKey = "trails_status_backfill_2026_07_03"
+  const already = await c.execute({ sql: "SELECT key FROM schema_migrations WHERE key=?", args: [migKey] })
+  if (already.rows.length) return { activated: 0 }
+  const r = await c.execute({
+    sql: `UPDATE trails SET status='active', updated_at=?
+          WHERE status='draft'
+            AND id NOT IN (SELECT trail_id FROM author_sessions WHERE trail_id IS NOT NULL)`,
+    args: [Date.now()],
+  })
+  const activated = Number(r.rowsAffected ?? 0)
+  await c.execute({ sql: "INSERT INTO schema_migrations (key, applied_at) VALUES (?, ?)", args: [migKey, Date.now()] })
+  console.log(`[backfillTrailStatus] activated ${activated} pre-existing draft trail(s) → active`)
+  return { activated }
 }
 
 async function tableExists(c: Client, name: string): Promise<boolean> {

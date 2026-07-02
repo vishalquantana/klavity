@@ -1239,7 +1239,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         <div id="taccList" class="tacc-list"></div>
         <div class="tacc-add">
           <input id="taccName" placeholder="name (e.g. admin)" maxlength="40" />
-          <input id="taccEmail" type="email" placeholder="login email" />
+          <input id="taccEmail" type="text" placeholder="login email" />
           <input id="taccPw" type="password" placeholder="password" autocomplete="new-password" />
           <button class="btn btn-indigo btn-sm" id="taccAdd">Add account</button>
         </div>
@@ -3422,7 +3422,14 @@ async function taccRender() {
   var pid = curProjId(); if (!pid) return
   var list = $("taccList"); if (!list) return
   var r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/test-accounts")
-  if (!r.ok) { $("taccDrawer").classList.add("hide"); return }
+  if (!r.ok) {
+    // 403 = not authorized — hide the whole drawer; other errors show inline so the drawer
+    // stays open and the user gets actionable feedback rather than a silent disappearance.
+    if (r.status === 403) { $("taccDrawer").classList.add("hide"); return }
+    var msg = $("taccMsg")
+    if (msg) { msg.style.color = "var(--rose)"; msg.textContent = "Failed to load test accounts (" + r.status + ")." }
+    return
+  }
   var d = await r.json()
   list.innerHTML = (d.accounts || []).map(function(a) {
     return '<div class="tacc-row"><b>' + esc(a.name) + '</b><span class="tacc-email">' + esc(a.loginEmail) + '</span>'
