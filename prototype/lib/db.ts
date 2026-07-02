@@ -426,6 +426,15 @@ export async function applySchema(c: Client) {
        finished_at INTEGER
      )`,
     `CREATE INDEX IF NOT EXISTS sim_runs_proj_idx ON sim_runs(project_id, created_at DESC)`,
+    // ── AutoSims F1: authoring sessions — one row per "New Trail" attempt; polled by the UI. ──
+    `CREATE TABLE IF NOT EXISTS author_sessions (
+       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL, objective TEXT NOT NULL,
+       base_url TEXT NOT NULL, test_account TEXT, status TEXT NOT NULL DEFAULT 'running',
+       steps_json TEXT NOT NULL DEFAULT '[]', stall_reason TEXT, trail_id TEXT,
+       verification_run_id TEXT, verification_verdict TEXT,
+       llm_calls INTEGER NOT NULL DEFAULT 0, cost_usd REAL NOT NULL DEFAULT 0,
+       created_by TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
+    `CREATE INDEX IF NOT EXISTS author_sess_proj_idx ON author_sessions (project_id, created_at)`,
   ]
   for (const s of stmts) await c.execute(s)
 
