@@ -35,8 +35,9 @@ import { trailsDashboardData } from "./lib/trails-dashboard"
 import { fileFindingById, dismissFinding, realFiler } from "./lib/trails-findings-gate"
 import { getReplay, runsWithReplay } from "./lib/trails-replay"
 import { saveFeedbackReplay, getFeedbackReplay, feedbackIdsWithReplay, pruneOldFeedbackReplays } from "./lib/feedback-replay"
-import { listRunSteps, listTrails, getTrail, listTrailSteps, insertAssertStep, deleteTrailStep } from "./lib/trails"
+import { listRunSteps, listTrails, getTrail, setTrailStatus, listTrailSteps, insertAssertStep, deleteTrailStep } from "./lib/trails"
 import { runWalkNow } from "./lib/trails-trigger"
+import { runAuthorNow, getAuthorSession } from "./lib/trails-author"
 import { WalkBusyError } from "./lib/trails-browser"
 import { seedDemoTrails } from "./lib/trails-demo-seed"
 import { listExpectations, getExpectation, setExpectationStatus, setExpectationEnforced } from "./lib/expectations-db"
@@ -2737,7 +2738,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
     // ── Klavity OS Trails (Layer E) — project-scoped, authed. Placed before the generic /api/ gate so
     // unauthenticated API calls return a JSON 401 (not a /login redirect), mirroring resolveProject usage.
-    if (path === "/api/trails/dashboard" || path.startsWith("/api/trails/findings/") || path.startsWith("/api/trails/walks/") || /^\/api\/trails\/[^/]+\/walk$/.test(path)) {
+    if (path === "/api/trails/dashboard" || path.startsWith("/api/trails/findings/") || path.startsWith("/api/trails/walks/")
+        || path === "/api/trails/author" || path.startsWith("/api/trails/author/")
+        || /^\/api\/trails\/[^/]+\/(walk|approve)$/.test(path)) {
       const meT = (await sessionEmail(req)) || (await bearerEmail(req))
       if (!meT) return json({ error: "Unauthorized" }, 401)
       const resolved = await resolveProject(meT, url.searchParams.get("project"))
@@ -2814,6 +2817,42 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (e instanceof WalkBusyError) return json({ error: "A walk is already running" }, 409)
           if (String(e?.message || e) === "trail not found") return json({ error: "No such trail" }, 404)
           return json(oops(e, "trails-walk"), 500)
+        }
+      }
+
+      // ── AutoSims F1: LLM-drive authoring ──
+      if (req.method === "POST" && path === "/api/trails/author") {
+        const body = await req.json().catch(() => ({}))
+        const name = String(body.name || "").trim().slice(0, 80)
+        const objective = String(body.objective || "").trim()
+        const baseUrl = String(body.base_url || "").trim()
+        const testAccount = body.test_account ? String(body.test_account) : undefined
+        if (!name) return json({ error: "name required" }, 400)
+        if (objective.length < 10 || objective.length > 2000) return json({ error: "objective must be 10-2000 chars" }, 400)
+        if (!/^https?:\/\//.test(baseUrl) || baseUrl.length > 500) return json({ error: "base_url must be an http(s) URL" }, 400)
+        if (testAccount && !(await getTestAccountByName(projectId, testAccount))) return json({ error: `unknown test account "${testAccount}"` }, 400)
+        try {
+          const { sessionId } = await runAuthorNow(projectId, { name, objective, baseUrl, testAccountName: testAccount, createdBy: meT })
+          return json({ sessionId }, 202)
+        } catch (e) {
+          if (e instanceof WalkBusyError) return json({ error: "An AutoSim is already running — try again shortly." }, 409)
+          return json(oops(e, "trails-author"), 500)
+        }
+      }
+      if (req.method === "GET" && path.startsWith("/api/trails/author/")) {
+        const s = await getAuthorSession(projectId, path.slice("/api/trails/author/".length))
+        return s ? json(s) : json({ error: "Not found" }, 404)
+      }
+
+      // ── AutoSims F1: approve a Draft Trail → Active (only Active trails file findings) ──
+      {
+        const mA = path.match(/^\/api\/trails\/([^/]+)\/approve$/)
+        if (req.method === "POST" && mA) {
+          const trail = await getTrail(projectId, mA[1])
+          if (!trail) return json({ error: "Not found" }, 404)
+          if (trail.status !== "draft") return json({ error: `Trail is ${trail.status}, not draft` }, 409)
+          await setTrailStatus(projectId, trail.id, "active")
+          return json({ ok: true })
         }
       }
 
