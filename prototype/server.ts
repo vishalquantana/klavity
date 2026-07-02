@@ -14,7 +14,7 @@ import { runRetentionSweep } from "./lib/retention"
 import { SCREENSHOTS, resolveScreenshotConfig, mbLabel } from "./lib/screenshot-config"
 import { buildIssueHtml, escapeHtml, sanitizeClientContext, clientContextLines } from "./lib/feedback"
 import { encryptSecret, decryptSecret } from "./lib/crypto"
-import { createTestAccount, listTestAccounts, getTestAccountByName, deleteTestAccount } from "./lib/test-accounts"
+import { createTestAccount, listTestAccounts, getTestAccountById, getTestAccountByName, deleteTestAccount } from "./lib/test-accounts"
 import { planeConfigFromForm, redactPlane, type PlaneStored } from "./lib/connection"
 import { assertSafeUrl } from "./lib/url-guard"
 import { safeFetch } from "./lib/safe-fetch"
@@ -3606,7 +3606,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             if (!password || password.length > 200) return json({ error: "password required (max 200 chars)" }, 400)
             if (await getTestAccountByName(pid, name)) return json({ error: `A test account named "${name}" already exists.` }, 409)
             const id = await createTestAccount(pid, { name, loginEmail, password, createdBy: me })
-            const [account] = (await listTestAccounts(pid)).filter((a) => a.id === id)
+            const account = await getTestAccountById(pid, id)
+            if (!account) return json({ error: "Internal error: account vanished after insert" }, 500)
             return json({ account }, 201)
           }
           if (req.method === "DELETE" && sub.startsWith("/test-accounts/")) {

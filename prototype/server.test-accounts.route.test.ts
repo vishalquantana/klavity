@@ -133,7 +133,6 @@ const pid = PROJECT_ID
 const otherPid = OTHER_PROJECT_ID
 const adminCookie = `klav_session=${ADMIN_SID}`
 const memberCookie = `klav_session=${MEMBER_SID}`
-const base = () => BASE
 
 // ── Tests (assertions verbatim from task brief) ───────────────────────────────
 
@@ -167,6 +166,59 @@ test("validation: name 1-40 chars [a-z0-9_-], email required, password 1-200", a
 })
 
 test("cross-project access is 403/404", async () => {
+  // GET on a project admin is not a member of
   const r = await fetch(`${BASE}/api/projects/${otherPid}/test-accounts`, { headers: { cookie: adminCookie } })
   expect([403, 404]).toContain(r.status)
+  // member POST on project B → 403/404
+  const postOther = await fetch(`${BASE}/api/projects/${otherPid}/test-accounts`, {
+    method: "POST", headers: { cookie: memberCookie, "content-type": "application/json" },
+    body: JSON.stringify({ name: "cross", login_email: "x@b.c", password: "pw" }),
+  })
+  expect([403, 404]).toContain(postOther.status)
+  // member DELETE on project B → 403/404
+  const deleteOther = await fetch(`${BASE}/api/projects/${otherPid}/test-accounts/tacc_fake`, {
+    method: "DELETE", headers: { cookie: memberCookie },
+  })
+  expect([403, 404]).toContain(deleteOther.status)
+})
+
+test("DELETE: admin can delete existing account; member cannot; unknown id is 404", async () => {
+  // Create a fresh account specifically for deletion testing
+  const createRes = await fetch(`${BASE}/api/projects/${pid}/test-accounts`, {
+    method: "POST", headers: { cookie: adminCookie, "content-type": "application/json" },
+    body: JSON.stringify({ name: "to-delete", login_email: "del@test.local", password: "delpass" }),
+  })
+  expect(createRes.status).toBe(201)
+  const { account } = await createRes.json()
+  const accountId: string = account.id
+
+  // member DELETE → 403
+  const memberDel = await fetch(`${BASE}/api/projects/${pid}/test-accounts/${accountId}`, {
+    method: "DELETE", headers: { cookie: memberCookie },
+  })
+  expect(memberDel.status).toBe(403)
+
+  // account still present after rejected member delete
+  const listAfterMemberDel = await fetch(`${BASE}/api/projects/${pid}/test-accounts`, { headers: { cookie: memberCookie } })
+  const { accounts: listBefore } = await listAfterMemberDel.json()
+  expect(listBefore.some((a: any) => a.id === accountId)).toBe(true)
+
+  // admin DELETE existing → 200 { ok: true }
+  const adminDel = await fetch(`${BASE}/api/projects/${pid}/test-accounts/${accountId}`, {
+    method: "DELETE", headers: { cookie: adminCookie },
+  })
+  expect(adminDel.status).toBe(200)
+  const delBody = await adminDel.json()
+  expect(delBody.ok).toBe(true)
+
+  // account no longer appears in GET list
+  const listAfterDel = await fetch(`${BASE}/api/projects/${pid}/test-accounts`, { headers: { cookie: adminCookie } })
+  const { accounts: listAfter } = await listAfterDel.json()
+  expect(listAfter.some((a: any) => a.id === accountId)).toBe(false)
+
+  // admin DELETE unknown id → 404
+  const notFound = await fetch(`${BASE}/api/projects/${pid}/test-accounts/tacc_does_not_exist`, {
+    method: "DELETE", headers: { cookie: adminCookie },
+  })
+  expect(notFound.status).toBe(404)
 })

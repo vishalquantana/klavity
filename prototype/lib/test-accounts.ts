@@ -61,6 +61,15 @@ export async function getTestAccountSecret(
   return { loginEmail: String(row.login_email), password: await decryptSecret(String(row.password_enc)) }
 }
 
+export async function getTestAccountById(projectId: string, id: string): Promise<TestAccount | null> {
+  const r = await db!.execute({
+    sql: `SELECT id,project_id,name,login_email,created_by,created_at,updated_at
+          FROM test_accounts WHERE project_id=? AND id=?`,
+    args: [projectId, id],
+  })
+  return r.rows.length ? row2acc(r.rows[0]) : null
+}
+
 export async function deleteTestAccount(projectId: string, id: string): Promise<boolean> {
   const r = await db!.execute({
     sql: `DELETE FROM test_accounts WHERE project_id=? AND id=?`, args: [projectId, id],
