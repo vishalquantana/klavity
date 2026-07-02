@@ -76,6 +76,13 @@ export interface WalkOptions {
    * value goes ONLY into locator.fill — evidence/run_steps keep the placeholder.
    */
   credResolver?: CredResolver
+  /**
+   * Draft-gate (AutoSims F1): when true, the runner records run_steps as normal (evidence is
+   * preserved) but NEVER calls recordFinding. Effective rule: auto-set to true when trail.status
+   * === "draft" (see walkTrail entry). Callers may also pass it explicitly (e.g. for a
+   * Verification Walk triggered before a Trail is activated).
+   */
+  suppressFindings?: boolean
 }
 
 export interface WalkStepSummary {
@@ -265,6 +272,9 @@ async function resolveTarget(
 export async function walkTrail(projectId: string, trailId: string, opts: WalkOptions): Promise<WalkSummary> {
   const trail = await getTrail(projectId, trailId)
   if (!trail) throw new Error(`trail ${trailId} not found in project ${projectId}`)
+  // Draft-gate (AutoSims F1): draft Trails and explicit Verification Walks never file Findings.
+  // Evidence (run_steps) is still captured so the author can review what happened.
+  opts = { ...opts, suppressFindings: opts.suppressFindings ?? (trail.status === "draft") }
   const steps = await listTrailSteps(projectId, trailId)
 
   // Adopt a pre-created Walk row (Plan G trigger) so run_steps/replay/verdict share the caller's runId;
@@ -436,13 +446,15 @@ async function runOneStep(
       // not a healer opportunity. Record a deduped 'regression' finding so the author sees
       // exactly which selector to fix, then fail this step RED immediately.
       const title = `Ambiguous selector matched ${e.matchCount} elements: "${e.selector}"`
-      await recordFinding(projectId, {
-        runId, trailId, stepId: step.id,
-        kind: "regression", title,
-        evidence: { selector: e.selector, matchCount: e.matchCount, stepAction: step.action },
-        confidence: 1.0,
-        dedupKey: `ambiguous_selector:${trailId}:${step.id}`,
-      })
+      if (!opts.suppressFindings) {
+        await recordFinding(projectId, {
+          runId, trailId, stepId: step.id,
+          kind: "regression", title,
+          evidence: { selector: e.selector, matchCount: e.matchCount, stepAction: step.action },
+          confidence: 1.0,
+          dedupKey: `ambiguous_selector:${trailId}:${step.id}`,
+        })
+      }
       await addRunStep(projectId, {
         runId, trailId, stepId: step.id, idx: step.idx,
         tier: "cache", verdict: "red", confidence: 1, diagnosis: "locator_drift", healed: false,
@@ -583,12 +595,14 @@ async function runVisionTier2(
   // regardless of what the model would classify (moved / low-confidence / restyled). No model call.
   if (isAssert) {
     const title = `Checkpoint target gone: ${fp?.accessibleName ?? fp?.text ?? step.checkpoint?.description ?? step.action}`
-    await recordFinding(projectId, {
-      runId, trailId, stepId: step.id, kind: "regression", title,
-      evidence: { reason: "checkpoint_gone", target: fp, pageUrl: opts.fixtureUrl, checkpoint: step.checkpoint?.description ?? null },
-      groundQuote: title, confidence: 1,
-      dedupKey: `${trailId}:${step.id}:checkpoint-gone`,
-    })
+    if (!opts.suppressFindings) {
+      await recordFinding(projectId, {
+        runId, trailId, stepId: step.id, kind: "regression", title,
+        evidence: { reason: "checkpoint_gone", target: fp, pageUrl: opts.fixtureUrl, checkpoint: step.checkpoint?.description ?? null },
+        groundQuote: title, confidence: 1,
+        dedupKey: `${trailId}:${step.id}:checkpoint-gone`,
+      })
+    }
     await addRunStep(projectId, {
       runId, trailId, stepId: step.id, idx: step.idx,
       tier: "vision", verdict: "red", confidence: 1, diagnosis: "regression", healed: false,
@@ -645,12 +659,14 @@ async function runVisionTier2(
   // ── regression: do NOT act → RED + grounded, deduped finding (auto-file-eligible kind) ──
   if (decision.outcome === "regression") {
     const title = `Target gone: ${fp?.accessibleName ?? fp?.text ?? step.action}`
-    await recordFinding(projectId, {
-      runId, trailId, stepId: step.id, kind: "regression", title,
-      evidence: { rationale: decision.rationale, target: fp, pageUrl: opts.fixtureUrl, domExcerpt },
-      groundQuote: decision.rationale, confidence: decision.confidence,
-      dedupKey: `${trailId}:${step.id}:gone`,
-    })
+    if (!opts.suppressFindings) {
+      await recordFinding(projectId, {
+        runId, trailId, stepId: step.id, kind: "regression", title,
+        evidence: { rationale: decision.rationale, target: fp, pageUrl: opts.fixtureUrl, domExcerpt },
+        groundQuote: decision.rationale, confidence: decision.confidence,
+        dedupKey: `${trailId}:${step.id}:gone`,
+      })
+    }
     await addRunStep(projectId, {
       runId, trailId, stepId: step.id, idx: step.idx,
       tier: "vision", verdict: "red", confidence: decision.confidence, diagnosis: "regression", healed: false,
@@ -718,12 +734,14 @@ async function fileAmberHeal(
   projectId: string, runId: string, trailId: string, step: TrailStep, opts: WalkOptions,
   fp: Fingerprint | null, rationale: string, confidence: number, classification: string,
 ): Promise<OneStepResult> {
-  await recordFinding(projectId, {
-    runId, trailId, stepId: step.id, kind: "amber_heal",
-    title: `Low-confidence heal: ${fp?.accessibleName ?? fp?.text ?? step.action}`,
-    evidence: { rationale, target: fp, pageUrl: opts.fixtureUrl, classification },
-    groundQuote: rationale, confidence, dedupKey: `${trailId}:${step.id}:lowconf`,
-  })
+  if (!opts.suppressFindings) {
+    await recordFinding(projectId, {
+      runId, trailId, stepId: step.id, kind: "amber_heal",
+      title: `Low-confidence heal: ${fp?.accessibleName ?? fp?.text ?? step.action}`,
+      evidence: { rationale, target: fp, pageUrl: opts.fixtureUrl, classification },
+      groundQuote: rationale, confidence, dedupKey: `${trailId}:${step.id}:lowconf`,
+    })
+  }
   await addRunStep(projectId, {
     runId, trailId, stepId: step.id, idx: step.idx,
     tier: "vision", verdict: "amber", confidence, diagnosis: "locator_drift", healed: false,

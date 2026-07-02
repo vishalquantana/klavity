@@ -2,7 +2,7 @@
 // The flaky author run is discarded; the crystal (DB rows + cache + exportable code) is the durable artifact.
 import type { Fingerprint, StepAction, AuthorKind, Trail, TrailStep } from "./trails-types"
 import { cacheKey } from "./trails-types"
-import { createTrail, addTrailStep, upsertLocatorCache, listTrailSteps } from "./trails"
+import { createTrail, addTrailStep, upsertLocatorCache, listTrailSteps, setTrailStatus } from "./trails"
 import { generatePlaywright } from "./trails-codegen"
 
 export interface TrajectoryStep {
@@ -118,6 +118,11 @@ export async function crystallize(projectId: string, traj: Trajectory): Promise<
       cacheKeys[stepId] = key
     }
   }
+
+  // A crystallized Trail is ready to run; promote it from 'draft' to 'active' so Walks on it
+  // file Findings by default. Tests that want to verify draft-gate behavior must explicitly call
+  // setTrailStatus(P, trailId, "draft") after crystallize.
+  await setTrailStatus(projectId, trailId, "active")
 
   return { trailId, stepIds, cacheKeys }
 }
