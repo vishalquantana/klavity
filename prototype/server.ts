@@ -14,6 +14,7 @@ import { runRetentionSweep } from "./lib/retention"
 import { SCREENSHOTS, resolveScreenshotConfig, mbLabel } from "./lib/screenshot-config"
 import { buildIssueHtml, escapeHtml, sanitizeClientContext, clientContextLines } from "./lib/feedback"
 import { encryptSecret, decryptSecret } from "./lib/crypto"
+import { createTestAccount, listTestAccounts, getTestAccountByName, deleteTestAccount } from "./lib/test-accounts"
 import { planeConfigFromForm, redactPlane, type PlaneStored } from "./lib/connection"
 import { assertSafeUrl } from "./lib/url-guard"
 import { safeFetch } from "./lib/safe-fetch"
@@ -3264,7 +3265,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return json({ project: { id: created.id, name: created.name, accountId: created.accountId, status: created.status, role: "admin" } }, 201)
       }
       // Project detail + members (projectAccess-gated) and project-scoped invite (R4) + monitored-urls (P3b) + connectors.
-      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/triage|\/recurring|\/replays|\/widget-status|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/test)?)?$/)
+      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/triage|\/recurring|\/replays|\/widget-status|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/test)?|\/test-accounts(?:\/[^/]+)?)?$/)
       if (projMatch) {
         const pid = projMatch[1]
         const sub = projMatch[2] || ""
@@ -3531,6 +3532,34 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             // (CORS-open) config GET earlier in this file never returns it: resolveModalConfig strips it.
             ...(access === "admin" ? { slackWebhookUrl: typeof curCfg.slack_webhook_url === "string" ? curCfg.slack_webhook_url : null } : {}),
           })
+        }
+
+        // ── AutoSims F1: named Test Accounts (ADR-0001). Secret write-only; never returned. ──
+        if (sub === "/test-accounts" || sub.startsWith("/test-accounts/")) {
+          if (req.method === "GET" && sub === "/test-accounts") {
+            return json({ accounts: await listTestAccounts(pid) })
+          }
+          if (req.method === "POST" && sub === "/test-accounts") {
+            if (access !== "admin") return json({ error: "Only project admins can manage test accounts." }, 403)
+            const body = await req.json().catch(() => ({}))
+            const name = String(body.name || "").trim()
+            const loginEmail = String(body.login_email || "").trim()
+            const password = String(body.password || "")
+            if (!/^[a-z0-9_-]{1,40}$/.test(name)) return json({ error: "name must be 1-40 chars: a-z 0-9 _ -" }, 400)
+            if (!loginEmail || loginEmail.length > 200 || !loginEmail.includes("@")) return json({ error: "login_email required" }, 400)
+            if (!password || password.length > 200) return json({ error: "password required (max 200 chars)" }, 400)
+            if (await getTestAccountByName(pid, name)) return json({ error: `A test account named "${name}" already exists.` }, 409)
+            const id = await createTestAccount(pid, { name, loginEmail, password, createdBy: me })
+            const [account] = (await listTestAccounts(pid)).filter((a) => a.id === id)
+            return json({ account }, 201)
+          }
+          if (req.method === "DELETE" && sub.startsWith("/test-accounts/")) {
+            if (access !== "admin") return json({ error: "Only project admins can manage test accounts." }, 403)
+            const accId = sub.slice("/test-accounts/".length)
+            const ok = await deleteTestAccount(pid, accId)
+            return ok ? json({ ok: true }) : json({ error: "Not found" }, 404)
+          }
+          return json({ error: "Method not allowed" }, 405)
         }
 
         // Named observability (R6) — admin-only Activity view: WHO ran WHICH Sim on WHICH path, with the
