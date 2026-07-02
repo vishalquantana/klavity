@@ -434,6 +434,19 @@ export async function applySchema(c: Client) {
     ["trait_events", "actor"],
     ["sim_traits", "src_verified"],
     ["trait_events", "verified"],
+    // v3 persona wiring: finding altitude + durability on each trait row.
+    ["sim_traits", "scope"],
+    ["sim_traits", "portability"],
+    // v3 persona core (portable persona identity) + two-axis classification. goals_json /
+    // watchfor_json store JSON string arrays; the rest are plain TEXT. All null-default so
+    // pre-v3 personas keep working (legacy `type` shim stays authoritative until backfilled).
+    ["personas", "sim_class"],
+    ["personas", "side"],
+    ["personas", "goals_json"],
+    ["personas", "expertise"],
+    ["personas", "temperament"],
+    ["personas", "voice"],
+    ["personas", "watchfor_json"],
   ]
   for (const [table, col] of newTraitCols) {
     if (!(await columnExists(c, table, col))) {
@@ -958,12 +971,34 @@ export async function deleteIntegration(scope: IntegrationScope, ownerId: string
 }
 
 // ── personas (Sims) — project-scoped as of P2 (insights_json kept; P3 normalizes to sim_traits) ──
+// v3 persona CORE — the portable persona identity that travels to any product/site. REACT grounds
+// reactions in it (see REACT_SYS). goals / watchFor are string arrays; the rest are short strings.
+export type PersonaCore = {
+  goals: string[]; expertise: string; temperament: string; voice: string; watchFor: string[]
+}
 export type PersonaRow = {
   id: string; projectId: string; name: string; role: string; type: string
   initials: string; accent: string; summary: string; insights: any[]; avatar: string | null
   createdAt: number; updatedAt: number; traitCount?: number
+  // v3 two-axis classification + portable core. Optional so pre-v3 rows/callers keep working.
+  simClass?: string | null; side?: string | null; core?: PersonaCore | null
+}
+// Parse a JSON string-array column defensively (bad/absent JSON → []).
+function parseStrArray(raw: any): string[] {
+  if (raw == null) return []
+  try { const a = JSON.parse(String(raw)); return Array.isArray(a) ? a.map((x) => String(x)) : [] } catch { return [] }
 }
 function rowToPersona(x: any): PersonaRow {
+  const simClass = x.sim_class != null ? String(x.sim_class) : null
+  const side = x.side != null ? String(x.side) : null
+  // Assemble the core only when at least one core field is populated; otherwise leave it null so
+  // REACT can tell a v3 persona (has core) from a legacy one (no core) at runtime.
+  const goals = parseStrArray(x.goals_json)
+  const watchFor = parseStrArray(x.watchfor_json)
+  const expertise = x.expertise != null ? String(x.expertise) : ""
+  const temperament = x.temperament != null ? String(x.temperament) : ""
+  const voice = x.voice != null ? String(x.voice) : ""
+  const hasCore = goals.length || watchFor.length || expertise || temperament || voice
   return {
     id: String(x.id), projectId: String(x.project_id), name: String(x.name),
     role: String(x.role || ""), type: String(x.type || "client"),
@@ -971,6 +1006,8 @@ function rowToPersona(x: any): PersonaRow {
     summary: String(x.summary || ""), insights: x.insights_json ? JSON.parse(String(x.insights_json)) : [],
     avatar: x.avatar ? String(x.avatar) : null, createdAt: Number(x.created_at), updatedAt: Number(x.updated_at),
     traitCount: x.trait_count != null ? Number(x.trait_count) : undefined,
+    simClass, side,
+    core: hasCore ? { goals, expertise, temperament, voice, watchFor } : null,
   }
 }
 export async function listPersonas(projectId: string): Promise<PersonaRow[]> {
@@ -983,14 +1020,23 @@ export async function listPersonas(projectId: string): Promise<PersonaRow[]> {
 }
 export async function upsertPersona(id: string, projectId: string, data: Omit<PersonaRow, 'id' | 'projectId' | 'createdAt' | 'updatedAt'>) {
   const now = Date.now()
+  const core = data.core ?? null
   await db!.execute({
-    sql: `INSERT INTO personas (id,project_id,name,role,type,initials,accent,summary,insights_json,avatar,created_at,updated_at)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+    sql: `INSERT INTO personas (id,project_id,name,role,type,initials,accent,summary,insights_json,avatar,sim_class,side,goals_json,expertise,temperament,voice,watchfor_json,created_at,updated_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
           ON CONFLICT(id) DO UPDATE SET name=excluded.name,role=excluded.role,type=excluded.type,
           initials=excluded.initials,accent=excluded.accent,summary=excluded.summary,
-          insights_json=excluded.insights_json,avatar=excluded.avatar,updated_at=excluded.updated_at`,
+          insights_json=excluded.insights_json,avatar=excluded.avatar,
+          sim_class=excluded.sim_class,side=excluded.side,goals_json=excluded.goals_json,
+          expertise=excluded.expertise,temperament=excluded.temperament,voice=excluded.voice,
+          watchfor_json=excluded.watchfor_json,updated_at=excluded.updated_at`,
     args: [id, projectId, data.name, data.role, data.type, data.initials, data.accent, data.summary,
-           JSON.stringify(data.insights), data.avatar ?? null, now, now],
+           JSON.stringify(data.insights), data.avatar ?? null,
+           data.simClass ?? null, data.side ?? null,
+           core ? JSON.stringify(core.goals ?? []) : null,
+           core?.expertise ?? null, core?.temperament ?? null, core?.voice ?? null,
+           core ? JSON.stringify(core.watchFor ?? []) : null,
+           now, now],
   })
 }
 export async function deletePersona(id: string, projectId: string) {
@@ -1521,29 +1567,33 @@ function rowToTrait(x: any): Trait {
     area: x.area != null ? String(x.area) : null,
     issueType: x.issue_type != null ? String(x.issue_type) : null,
     severity: x.severity != null ? String(x.severity) : null,
+    scope: x.scope != null ? String(x.scope) : null,
+    portability: x.portability != null ? String(x.portability) : null,
   }
 }
 // Insert a brand-new trait. Accepts a fully-formed Trait (e.g. a TraitWrite{mode:'insert'}.trait).
 export async function insertTrait(t: Trait): Promise<string> {
   await db!.execute({
-    sql: `INSERT INTO sim_traits (id,sim_id,project_id,kind,text,status,strength,src_transcript_id,src_quote,src_quote_offset,src_verified,src_speaker,area,issue_type,severity,created_at,updated_at)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    sql: `INSERT INTO sim_traits (id,sim_id,project_id,kind,text,status,strength,src_transcript_id,src_quote,src_quote_offset,src_verified,src_speaker,area,issue_type,severity,scope,portability,created_at,updated_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [t.id, t.simId, t.projectId, t.kind, t.text, t.status, t.strength,
            t.srcTranscriptId, t.srcQuote, t.srcQuoteOffset ?? null,
            t.srcVerified == null ? null : (t.srcVerified ? 1 : 0),
            t.srcSpeaker ?? null,
-           t.area ?? null, t.issueType ?? null, t.severity ?? null, t.createdAt, t.updatedAt],
+           t.area ?? null, t.issueType ?? null, t.severity ?? null,
+           t.scope ?? null, t.portability ?? null, t.createdAt, t.updatedAt],
   })
   return t.id
 }
 // Update a trait's mutable columns (text/status/strength/provenance/updatedAt + typed fields) — used by reconcile writes.
 export async function updateTrait(t: Trait): Promise<void> {
   await db!.execute({
-    sql: `UPDATE sim_traits SET kind=?,text=?,status=?,strength=?,src_transcript_id=?,src_quote=?,src_quote_offset=?,src_verified=?,src_speaker=?,area=?,issue_type=?,severity=?,updated_at=? WHERE id=?`,
+    sql: `UPDATE sim_traits SET kind=?,text=?,status=?,strength=?,src_transcript_id=?,src_quote=?,src_quote_offset=?,src_verified=?,src_speaker=?,area=?,issue_type=?,severity=?,scope=?,portability=?,updated_at=? WHERE id=?`,
     args: [t.kind, t.text, t.status, t.strength, t.srcTranscriptId, t.srcQuote,
            t.srcQuoteOffset ?? null, t.srcVerified == null ? null : (t.srcVerified ? 1 : 0),
            t.srcSpeaker ?? null,
-           t.area ?? null, t.issueType ?? null, t.severity ?? null, t.updatedAt, t.id],
+           t.area ?? null, t.issueType ?? null, t.severity ?? null,
+           t.scope ?? null, t.portability ?? null, t.updatedAt, t.id],
   })
 }
 // FIX B (citation IDOR defense-in-depth): pass projectId to scope the read to a single project —
@@ -1732,6 +1782,12 @@ export async function ensureTraitsSeeded(simId: string): Promise<number> {
       srcTranscriptId: "legacy_import", srcQuote: quote, srcQuoteOffset: null,
       srcSpeaker: ins?.speaker != null ? String(ins.speaker) : null,
       createdAt, updatedAt: now,
+      // Carry v3 finding-altitude/durability from the cached insight onto the seeded trait row.
+      area: ins?.area != null ? String(ins.area) : null,
+      issueType: ins?.issueType != null ? String(ins.issueType) : null,
+      severity: ins?.severity != null ? String(ins.severity) : null,
+      scope: ins?.scope != null ? String(ins.scope) : null,
+      portability: ins?.portability != null ? String(ins.portability) : null,
     }
     await insertTrait(trait)
     await insertTraitEvent({

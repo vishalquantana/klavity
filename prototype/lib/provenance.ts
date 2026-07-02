@@ -28,6 +28,10 @@ export type Trait = {
   area?: string | null
   issueType?: string | null
   severity?: string | null
+  // v3: scope = finding altitude (ui|feature|workflow|strategy); portability = durability across
+  // products (portable|site-specific). Both null-default so pre-v3 rows/ops degrade gracefully.
+  scope?: string | null
+  portability?: string | null
 }
 
 // The structured op an LLM reconcile returns. `traitId` targets an existing trait for
@@ -44,6 +48,8 @@ export type ReconcileOp = {
   area?: string | null
   issueType?: string | null
   severity?: string | null
+  scope?: string | null
+  portability?: string | null
 }
 
 // Context the caller supplies: the transcript this reconcile pass is grounded in + id/clock fns.
@@ -241,6 +247,8 @@ export function applyReconcileOps(
     area: o.area ?? null,
     issueType: o.issueType ?? null,
     severity: o.severity ?? null,
+    scope: o.scope ?? null,
+    portability: o.portability ?? null,
     }
   }
 
@@ -273,6 +281,8 @@ export function applyReconcileOps(
         targetActive.area = o.area ?? null
         targetActive.issueType = o.issueType ?? null
         targetActive.severity = o.severity ?? null
+        targetActive.scope = o.scope ?? null
+        targetActive.portability = o.portability ?? null
         traitWrites.push({ mode: "update", trait: { ...targetActive } })
         traitEvents.push(baseEvt(targetActive.id, "reinforce", targetActive.text, targetActive.text, o))
         break
@@ -292,6 +302,8 @@ export function applyReconcileOps(
         targetActive.area = o.area ?? null
         targetActive.issueType = o.issueType ?? null
         targetActive.severity = o.severity ?? null
+        targetActive.scope = o.scope ?? null
+        targetActive.portability = o.portability ?? null
         traitWrites.push({ mode: "update", trait: { ...targetActive } })
         traitEvents.push(baseEvt(targetActive.id, "refine", before, targetActive.text, o))
         break
@@ -347,6 +359,8 @@ export function applyReconcileOps(
         targetResolved.area = o.area ?? null
         targetResolved.issueType = o.issueType ?? null
         targetResolved.severity = o.severity ?? null
+        targetResolved.scope = o.scope ?? null
+        targetResolved.portability = o.portability ?? null
         traitWrites.push({ mode: "update", trait: { ...targetResolved } })
         traitEvents.push(baseEvt(targetResolved.id, "reopen", null, targetResolved.text, o))
         break
@@ -372,6 +386,8 @@ export type InsightCacheItem = {
   area: string | null
   issueType: string | null
   severity: string | null
+  scope: string | null
+  portability: string | null
 }
 export function insightsFromTraits(activeTraits: Trait[]): InsightCacheItem[] {
   return activeTraits
@@ -387,6 +403,8 @@ export function insightsFromTraits(activeTraits: Trait[]): InsightCacheItem[] {
       area: t.area ?? null,
       issueType: t.issueType ?? null,
       severity: t.severity ?? null,
+      scope: t.scope ?? null,
+      portability: t.portability ?? null,
     }))
 }
 
