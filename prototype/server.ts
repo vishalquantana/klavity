@@ -131,10 +131,21 @@ const EXTRACT_SYS =
 
 const REACT_SYS =
   "You ARE the given user persona, reviewing a screenshot of a product page as if really using it. " +
-  "React in FIRST PERSON, grounded in this persona's documented pains, wants, and loves. " +
+  "React in FIRST PERSON, grounded in this persona's documented pains, wants, and loves.\n\n" +
+  "REACT THROUGH THE PERSONA'S CORE. The persona carries a \"core\" object — goals (jobs-to-be-done), " +
+  "expertise, temperament, voice, and watchFor (the things this persona scrutinizes on ANY page). " +
+  "Scrutinize the page through its watchFor lens, judge it against its goals, and MATCH its voice and " +
+  "temperament in every observation. If a core is present, it — not generic UX opinion — drives what you notice.\n\n" +
+  "ADAPT TO simClass:\n" +
+  "- simClass \"user\": you OPERATE the product hands-on. React to concrete UI and interaction friction — " +
+  "specific elements, labels, controls, layout, latency you can see. Point at the exact thing (set region).\n" +
+  "- simClass \"client\": you judge OUTCOMES, not buttons. React at the outcome level — does this page deliver the " +
+  "business result you care about, seen through your goals + watchFor? Do NOT nitpick individual controls or pixels; " +
+  "region will usually be null because your reaction is page/outcome-level, not element-level.\n" +
+  "When simClass is absent, default to hands-on user behaviour.\n\n" +
   "Give 1-3 reactions, most important first. For each reaction, set \"region\" to the normalised 0..1 bounding box " +
   "of the specific element or area you are reacting to (x,y = top-left corner; w,h = size; all values 0..1), " +
-  "or null for page-level/general observations where no single element is the focus. " +
+  "or null for page-level/general observations where no single element is the focus (clients usually null). " +
   "suggestedBug is filled only when it's a real problem worth filing to an issue tracker, else null. " +
   "Stay in character and be specific to what you actually see.\n\n" +
   "The persona's insights each carry a stable \"traitId\". For every reaction, set citedTraitIds to the list of traitIds " +
@@ -172,13 +183,19 @@ const RECONCILE_SYS =
   "  clearly describes the same issue that was previously resolved.\n\n" +
   "For every op, also set: area (short UI/domain area descriptor), " +
   "issueType (EXACTLY ONE of: label-copy|layout|performance|flow|error-handling|accessibility|visual, or null), " +
-  "severity (high|medium|low based on expressed impact, or null).\n\n" +
+  "severity (high|medium|low based on expressed impact, or null), " +
+  "scope (EXACTLY ONE of: ui|feature|workflow|strategy — ui = a granular defect on a specific artifact; " +
+  "feature = a missing/requested capability; workflow = a change to a multi-step process, role, or permission; " +
+  "strategy = a higher-level product direction), and " +
+  "portability (portable = a durable persona trait/need that also applies on other products; " +
+  "site-specific = a finding about THIS product).\n\n" +
   "Be conservative: only emit an op when the transcript clearly supports it. quote is verbatim from the transcript; " +
   "speaker is who said it; reason is a short why.\n\n" +
   "Respond with ONLY a JSON object, no prose, in exactly this shape:\n" +
   '{"ops":[{"op":"add"|"reinforce"|"refine"|"contradict"|"supersede"|"reopen","kind":"pain"|"want"|"love",' +
   '"text":string,"quote":string,"speaker":string,"traitId":string|null,"reason":string,' +
-  '"area":string|null,"issueType":"label-copy"|"layout"|"performance"|"flow"|"error-handling"|"accessibility"|"visual"|null,"severity":"high"|"medium"|"low"|null}]}'
+  '"area":string|null,"issueType":"label-copy"|"layout"|"performance"|"flow"|"error-handling"|"accessibility"|"visual"|null,"severity":"high"|"medium"|"low"|null,' +
+  '"scope":"ui"|"feature"|"workflow"|"strategy"|null,"portability":"portable"|"site-specific"|null}]}'
 
 const ASSERT_SYS =
   "You convert a VALIDATED product issue into ONE deterministic UI assertion for an existing end-to-end Trail. " +
@@ -793,6 +810,34 @@ function splitUrl(pageUrl: string): { urlHost: string | null; urlPath: string | 
 function normAccent(v: unknown): string {
   const s = String(v ?? "")
   return /^#[0-9a-fA-F]{6}$/.test(s) ? s : "#6366f1"
+}
+
+// v3 persona classification enums (mirror EXTRACT_SYS). Anything off-enum → null.
+const SIM_CLASS_ENUM = new Set(["client", "user"])
+const SIDE_ENUM = new Set(["external", "internal"])
+// Normalize a POST/PUT /api/personas body into the v3 persona fields the DB expects:
+// { type (legacy shim), simClass, side, core|null }. simClass/side are validated against their
+// enums; core is assembled only when the body carries one. The legacy `type` (client|internal) is
+// derived from simClass/side when present so pre-v3 consumers keep working, else falls back to body.type.
+function v3PersonaFields(body: any): { type: string; simClass: string | null; side: string | null; core: import("./lib/db").PersonaCore | null } {
+  const simClass = SIM_CLASS_ENUM.has(String(body?.simClass)) ? String(body.simClass) : null
+  const side = SIDE_ENUM.has(String(body?.side)) ? String(body.side) : null
+  // Legacy type shim: client-class OR external-side → "client"; a user/internal persona → "internal".
+  let type: string
+  if (simClass) type = simClass === "client" ? "client" : "internal"
+  else if (side) type = side === "external" ? "client" : "internal"
+  else type = body?.type === "internal" ? "internal" : "client"
+  const c = body?.core
+  const core = c && typeof c === "object"
+    ? {
+        goals: Array.isArray(c.goals) ? c.goals.map((x: any) => String(x)) : [],
+        expertise: c.expertise != null ? String(c.expertise) : "",
+        temperament: c.temperament != null ? String(c.temperament) : "",
+        voice: c.voice != null ? String(c.voice) : "",
+        watchFor: Array.isArray(c.watchFor) ? c.watchFor.map((x: any) => String(x)) : [],
+      }
+    : null
+  return { type, simClass, side, core }
 }
 
 // Build a normalized TicketPayload from a feedback row for the connector adapters. Async because it
@@ -1894,14 +1939,16 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         try {
           const body = await req.json()
           const id = "sim_" + crypto.randomUUID()
+          const v3 = v3PersonaFields(body)
           await upsertPersona(id, wid, {
             name: String(body.name || "Unnamed"), role: String(body.role || ""),
-            type: body.type === "internal" ? "internal" : "client",
+            type: v3.type,
             initials: String(body.initials || "").slice(0, 2).toUpperCase(),
             accent: normAccent(body.accent),
             summary: String(body.summary || ""),
             insights: Array.isArray(body.insights) ? body.insights : [],
             avatar: body.avatar ? String(body.avatar) : null,
+            simClass: v3.simClass, side: v3.side, core: v3.core,
           })
           const [saved] = (await listPersonas(wid)).filter(p => p.id === id)
           return wjson({ persona: saved }, 201)
@@ -1918,14 +1965,23 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             // refuse — upsertPersona's ON CONFLICT(id) would otherwise overwrite another tenant's persona.
             if (!before) return wjson({ error: "Not found" }, 404)
             const now = Date.now()
+            const v3 = v3PersonaFields(body)
+            // Edit-preserve: a legacy identity-only PUT (no simClass/side/core in the body) must NOT
+            // wipe a Sim's existing v3 core — fall back to the stored values when the body omits them.
+            const simClass = v3.simClass ?? before.simClass ?? null
+            const side = v3.side ?? before.side ?? null
+            const core = v3.core ?? before.core ?? null
+            const type = (v3.simClass || v3.side) ? v3.type
+              : (body?.type === "internal" ? "internal" : (body?.type === "client" ? "client" : before.type))
             await upsertPersona(pid, wid, {
               name: String(body.name || "Unnamed"), role: String(body.role || ""),
-              type: body.type === "internal" ? "internal" : "client",
+              type,
               initials: String(body.initials || "").slice(0, 2).toUpperCase(),
               accent: normAccent(body.accent),
               summary: String(body.summary || ""),
               insights: Array.isArray(body.insights) ? body.insights : [],
               avatar: body.avatar ? String(body.avatar) : null,
+              simClass, side, core,
             })
             // Version each changed identity field in the append-only persona_edits audit.
             if (before) {
