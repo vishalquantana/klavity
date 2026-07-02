@@ -233,16 +233,19 @@ export function buildModal(
     .klavity-x:active{transform:var(--kl-press);}
     /* Keyboard accessibility — visible focus ring on every control */
     .klavity-toggle button:focus-visible,.klavity-actions button:focus-visible,.klavity-submit:focus-visible,.klavity-lead button:focus-visible,.klavity-cta:focus-visible,.klavity-rm:focus-visible,.klavity-mk:focus-visible,.klavity-x:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
-    /* ── Sharp info: the tooltip (.kl-float-tip) is positioned via JS relative to the Screen button
-       and lives outside the overflow:hidden modal so it is never clipped. ── */
+    /* ── Screen button: the (i) badge is a purely visual affordance nested inside the button.
+       Hovering the entire Screen button shows the floating tooltip (KLA-15/KLA-26/KLA-31). ── */
     #klavity-sharp{flex:1.4;}
+    /* Faded (i) circle inside the Screen button — lights up on button hover to signal "info here". */
+    .kl-info-badge{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;flex:none;opacity:0.4;transition:opacity .15s ease;}
+    .klavity-actions button:hover .kl-info-badge,.klavity-actions button:focus-visible .kl-info-badge{opacity:0.85;}
     /* .klavity-info-pop is kept in markup for its text; visibility is JS-driven via .kl-float-tip so
        the tooltip is rendered outside the overflow:hidden modal and is never clipped. */
     .klavity-info-pop{display:none;}
     /* Floating tooltip — appended to the shadow root (sibling of overlay), position:fixed to viewport so
-       overflow:hidden on .klavity-modal cannot clip it. JS positions it with edge-detection. */
-    .kl-float-tip{position:fixed;width:228px;max-width:calc(100vw - 16px);padding:10px 12px;border-radius:10px;background:var(--kl-bg);color:var(--kl-fg);box-shadow:0 0 0 1px var(--kl-border),0 12px 30px rgba(20,16,40,.22);font-size:12px;line-height:1.45;text-align:left;text-wrap:pretty;z-index:2147483647;pointer-events:none;visibility:hidden;opacity:0;transition:opacity .15s ease;}
-    .kl-float-tip.kl-show{visibility:visible;opacity:1;}
+       overflow:hidden on .klavity-modal cannot clip it. JS positions it with full viewport edge-detection. */
+    .kl-float-tip{position:fixed;width:228px;max-width:calc(100vw - 16px);padding:10px 12px;border-radius:10px;background:var(--kl-bg);color:var(--kl-fg);box-shadow:0 0 0 1px var(--kl-border),0 12px 30px rgba(20,16,40,.22);font-size:12px;line-height:1.45;text-align:left;text-wrap:pretty;z-index:2147483647;pointer-events:none;visibility:hidden;opacity:0;transition:opacity .15s ease,visibility .15s step-end;}
+    .kl-float-tip.kl-show{visibility:visible;opacity:1;transition:opacity .15s ease;}
     .kl-float-tip b{color:var(--kl-fg);font-weight:600;}
     /* ── Capture-source active/selected indicator (KLA-21) ──────────────────────────────────────
        .kl-active is applied to whichever capture button the user most recently used successfully.
@@ -291,7 +294,7 @@ export function buildModal(
     <div class="klavity-page">${icon('map-pin')} ${typeof window !== 'undefined' ? escHtml(window.location.pathname) : ''}</div>
     <div class="klavity-strip" id="klavity-strip"></div>
     <div class="klavity-actions">
-      ${callbacks.onCaptureSharp ? `<button id="klavity-sharp" title="Screen — pixel-perfect full page, every image. Shares this tab (asks permission)."><span class="kl-cap-ic">${icon('chrome')}</span><span class="kl-sharp-label">Screen</span><span class="klavity-info-pop" role="tooltip">Screen grabs the <b>whole page — every image, pixel-perfect</b> using your browser's screen-share. Your browser will ask you to <b>share this tab</b>.</span></button>` : ''}
+      ${callbacks.onCaptureSharp ? `<button id="klavity-sharp" aria-describedby="klavity-sharp-tip"><span class="kl-cap-ic">${icon('app-window')}</span><span class="kl-sharp-label">Screen</span><span class="kl-info-badge" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></span><span id="klavity-sharp-tip" class="klavity-info-pop" role="tooltip">Screen grabs the <b>whole page — every image, pixel-perfect</b> using your browser's screen-share. Your browser will ask you to <b>share this tab</b>.</span></button>` : ''}
       <button id="klavity-full" title="Full Page — instant capture; may miss some cross-origin images"><span class="kl-cap-ic">${icon('camera')}</span><span class="kl-full-label">Full Page</span></button>
       <button id="klavity-upload"><span class="kl-cap-ic">${icon('image')}</span><span class="kl-upload-label">Upload</span></button>
       ${callbacks.onRegionCapture ? `<button id="klavity-region"><span class="kl-cap-ic">${icon('scissors')}</span><span class="kl-region-label">Region</span></button>` : ''}
@@ -326,14 +329,11 @@ export function buildModal(
       const PAD = 8
       const vw = window.innerWidth, vh = window.innerHeight
 
-      const modalEl = shadowRoot.querySelector('.klavity-modal')
-      const modalRect = modalEl ? modalEl.getBoundingClientRect() : { left: 0, right: vw, top: 0, bottom: vh }
-
-      // Horizontal: clamp within modal and viewport boundaries
-      const leftBoundary = Math.max(PAD, modalRect.left + PAD)
-      const rightBoundary = Math.min(vw - PAD, modalRect.right - PAD)
+      // Horizontal: center over the Screen button, clamped to viewport only.
+      // The tooltip is position:fixed and lives outside the modal, so there is no overflow
+      // clipping — we must NOT constrain to modalRect (that would cause edge clipping).
       const preferredLeft = (r.left + r.width / 2) - TIP_W / 2
-      const left = Math.max(leftBoundary, Math.min(preferredLeft, rightBoundary - TIP_W))
+      const left = Math.max(PAD, Math.min(preferredLeft, vw - TIP_W - PAD))
       ft.style.left = left + 'px'
 
       ft.style.top = '-9999px'     // off-screen to measure height before final placement
@@ -343,15 +343,11 @@ export function buildModal(
       ft.style.display = ''
       ft.style.visibility = ''
 
-      // Vertical: prefer above; flip below if there's not enough room above. Clamp within modal and viewport
-      const topBoundary = Math.max(PAD, modalRect.top + PAD)
-      const bottomBoundary = Math.min(vh - PAD, modalRect.bottom - PAD)
-      const spaceAbove = r.top - topBoundary
-      let top = r.top - tipH - 10
-      if (top < topBoundary || spaceAbove < tipH) {
-        top = r.bottom + 10
-      }
-      top = Math.max(topBoundary, Math.min(top, bottomBoundary - tipH))
+      // Vertical: prefer below the button (Screen is near the top of the modal so there's
+      // more room below). Flip above if the viewport below is too short.
+      let top = r.bottom + 8
+      if (top + tipH + PAD > vh) top = r.top - tipH - 8
+      top = Math.max(PAD, Math.min(top, vh - tipH - PAD))
       ft.style.top = top + 'px'
 
       ft.classList.add('kl-show')
