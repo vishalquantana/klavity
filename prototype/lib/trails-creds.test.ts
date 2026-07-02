@@ -1,0 +1,74 @@
+// Hermetic tests for trails-creds.ts (pure unit) + a runner-level e2e guard.
+// Mirrors the DB setup of lib/trails-runner.e2e.test.ts.
+import { test, expect, beforeAll } from "bun:test"
+import { tmpdir } from "node:os"
+import { join, resolve } from "node:path"
+import { pathToFileURL } from "node:url"
+
+process.env.KLAV_SECRET = Buffer.alloc(32, 7).toString("base64")
+const file = join(tmpdir(), `klav-creds-${Date.now()}-${Math.random().toString(36).slice(2)}.db`)
+process.env.TURSO_DATABASE_URL = "file:" + file
+delete process.env.TURSO_AUTH_TOKEN
+
+const { reconnectDb, applySchema, migrateV2 } = await import("./db")
+
+beforeAll(async () => {
+  const db = reconnectDb("file:" + file)
+  await applySchema(db)
+  await migrateV2(db)
+})
+
+const { hasCredRef, resolveCredRefs } = await import("./trails-creds")
+const { createTestAccount } = await import("./test-accounts")
+const { crystallize } = await import("./trails-crystallize")
+const { walkTrail } = await import("./trails-runner")
+const T = await import("./trails")
+
+const P = "proj_creds_test"
+
+const fixtureUrl = (name: string) =>
+  pathToFileURL(resolve(import.meta.dir, "../test-fixtures", name)).href
+
+// ── pure unit tests ───────────────────────────────────────────────────────────
+
+test("hasCredRef detects placeholders", () => {
+  expect(hasCredRef("{{cred:admin:password}}")).toBe(true)
+  expect(hasCredRef("plain text")).toBe(false)
+})
+
+test("resolveCredRefs substitutes email and password", async () => {
+  await createTestAccount(P, { name: "admin", loginEmail: "vishal@quantana.com.au", password: "pw-999" })
+  expect(await resolveCredRefs(P, "{{cred:admin:email}}")).toBe("vishal@quantana.com.au")
+  expect(await resolveCredRefs(P, "{{cred:admin:password}}")).toBe("pw-999")
+})
+
+test("unknown account throws; other project cannot resolve", async () => {
+  await expect(resolveCredRefs(P, "{{cred:ghost:password}}")).rejects.toThrow("unknown test account")
+  await expect(resolveCredRefs("proj_other", "{{cred:admin:password}}")).rejects.toThrow()
+})
+
+// ── runner-level e2e guard ────────────────────────────────────────────────────
+
+test("walk resolves cred at fill time; placeholder (not secret) in DB + codegen", async () => {
+  const traj = {
+    name: "login", baseUrl: "file://x", authorKind: "llm" as const,
+    steps: [
+      { action: "type" as const, actionValue: "{{cred:admin:password}}",
+        target: { role: "textbox", accessibleName: "Password", resolvedSelector: "#pw" }, url: "u", domHash: "h" },
+      { action: "click" as const, target: { role: "button", accessibleName: "Sign in", resolvedSelector: "#go" }, url: "u", domHash: "h" },
+    ],
+  }
+  const { trailId } = await crystallize(P, traj)
+  let resolvedTo = ""
+  const summary = await walkTrail(P, trailId, {
+    fixtureUrl: fixtureUrl("login-mockup.html"),
+    credResolver: async (_p, v) => { resolvedTo = "pw-999"; return v.replace(/\{\{cred:[^}]+\}\}/, "pw-999") },
+  })
+  expect(summary.verdict).toBe("green")
+  expect(resolvedTo).toBe("pw-999")
+  const steps = await T.listTrailSteps(P, trailId)
+  expect(JSON.stringify(steps)).toContain("{{cred:admin:password}}")
+  expect(JSON.stringify(steps)).not.toContain("pw-999")
+  const runSteps = await T.listRunSteps(P, summary.runId)
+  expect(JSON.stringify(runSteps)).not.toContain("pw-999")
+}, 30000)
