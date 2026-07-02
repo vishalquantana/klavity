@@ -76,10 +76,10 @@ test("studio: pq appends ?project= (and &project= when a query exists)", () => {
 // =============================================================================
 // 3 · Onboarding: openStudio carries the step-1 project into the Studio
 // =============================================================================
-function runOpenStudio(intent: string, projectId: string | null): string {
+function runOpenStudio(intent: string, projectId: string | null, goal: string | null = null): string {
   const win = { location: { href: "" } }
-  const openStudio = new Function("intent", "projectId", "window",
-    openStudioSrc + "\nreturn openStudio;")(intent, projectId, win) as () => void
+  const openStudio = new Function("intent", "projectId", "goal", "window",
+    openStudioSrc + "\nreturn openStudio;")(intent, projectId, goal, win) as () => void
   openStudio()
   return win.location.href
 }
@@ -93,6 +93,12 @@ test("onboarding: no resolved project degrades to the original destinations", ()
   expect(runOpenStudio("hats", null)).toBe("/app?starter=hats")
   expect(runOpenStudio("transcript", null)).toBe("/app#add-transcript")
 })
+// Goal fork: the chosen goal rides along into the Studio (after project, before any #hash)
+// so the Studio/dashboard can tailor the first-run experience to Snap vs Sims.
+test("onboarding: the goal fork carries goal= on both Studio handoffs", () => {
+  expect(runOpenStudio("hats", "proj_9db93ede", "sims")).toBe("/app?starter=hats&project=proj_9db93ede&goal=sims")
+  expect(runOpenStudio("transcript", "proj_9db93ede", "snap")).toBe("/app?project=proj_9db93ede&goal=snap#add-transcript")
+})
 
 // =============================================================================
 // 4 · Onboarding: the "Skip for now" /dashboard exit deep-links the project
@@ -103,11 +109,22 @@ test("onboarding: renderWidgetSnippet points skipToDash at /dashboard?project=",
     skipToDash: { textContent: "", href: "/dashboard" },
   }
   const doc = { getElementById: (id: string) => els[id] || null }
-  const render = new Function("projectId", "document",
-    renderSnippetSrc + "\nreturn renderWidgetSnippet;")("proj_9db93ede", doc) as () => void
+  const render = new Function("projectId", "document", "goal",
+    renderSnippetSrc + "\nreturn renderWidgetSnippet;")("proj_9db93ede", doc, null) as () => void
   render()
   expect(els.snipPid.textContent).toBe("proj_9db93ede")
   expect(els.skipToDash.href).toBe("/dashboard?project=proj_9db93ede")
   // The markup must still carry the id the deep-link hook targets.
   expect(ONBOARD).toContain('id="skipToDash"')
+})
+test("onboarding: skipToDash also carries goal= once a goal is chosen", () => {
+  const els: Record<string, { textContent: string; href: string }> = {
+    snipPid: { textContent: "", href: "" },
+    skipToDash: { textContent: "", href: "/dashboard" },
+  }
+  const doc = { getElementById: (id: string) => els[id] || null }
+  const render = new Function("projectId", "document", "goal",
+    renderSnippetSrc + "\nreturn renderWidgetSnippet;")("proj_9db93ede", doc, "snap") as () => void
+  render()
+  expect(els.skipToDash.href).toBe("/dashboard?project=proj_9db93ede&goal=snap")
 })
