@@ -101,6 +101,30 @@ input.code{font-family:var(--mono);font-size:24px;letter-spacing:.5em;text-align
 .tile h3{font-family:var(--display);font-weight:600;font-size:18px;margin-bottom:6px}
 .tile p{font-size:13.5px;color:var(--paper-dim);line-height:1.5}
 .tile.alt{border-style:dashed}
+/* goal chooser (welcome) — pick Snap-first or Sims-first */
+.goalpick{margin:6px auto 0;max-width:760px}
+.goalpick .glabel{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:16px}
+.goaltiles{display:grid;grid-template-columns:1fr 1fr;gap:14px;text-align:left}
+button.goaltile{font-family:var(--body);color:inherit;width:100%;background:var(--ink-2);border:1px solid var(--line);border-radius:16px;padding:22px;cursor:pointer;display:flex;flex-direction:column;align-items:flex-start;gap:10px;transition:transform 150ms ease,border-color 150ms ease,box-shadow 150ms ease}
+button.goaltile:hover{border-color:var(--indigo);transform:translateY(-3px) scale(1.01)}
+button.goaltile:active{transform:scale(.98)}
+button.goaltile[aria-pressed="true"]{border-color:var(--indigo);box-shadow:0 0 0 3px rgba(99,102,241,.12)}
+.goaltile.sims[aria-pressed="true"]{border-color:var(--amber);box-shadow:0 0 0 3px rgba(217,131,36,.14)}
+.goaltile .gic{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:var(--ink-3);border:1px solid var(--line);color:var(--indigo)}
+.goaltile.sims .gic{color:var(--amber)}
+.goaltile .gtag{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--indigo)}
+.goaltile.sims .gtag{color:var(--amber)}
+.goaltile h3{font-family:var(--display);font-weight:600;font-size:18px;line-height:1.2}
+.goaltile p{font-size:13.5px;color:var(--paper-dim);line-height:1.5}
+.goalpick .gnote{font-size:13px;color:var(--paper-faint);margin-top:15px}
+@media(max-width:820px){.goaltiles{grid-template-columns:1fr}}
+/* snap goal: hide the Sims/Studio rail steps + the step-2 install tiles */
+.shell[data-goal="snap"] .rstep[data-r="3"],.shell[data-goal="snap"] .rstep[data-r="4"]{display:none}
+/* forward "add Sims too" link on step 2 (snap only) */
+.snap-fwd{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;color:var(--paper-faint);cursor:pointer;transition:transform 150ms ease,color 150ms ease}
+.snap-fwd:hover{color:var(--amber);transform:translateY(-1.5px) scale(1.02)}
+.snap-fwd:active{transform:scale(0.97)}
+
 .hatdots{display:flex;gap:5px;margin-top:11px}
 .hd{width:19px;height:19px;border-radius:50%;display:grid;place-items:center;font-family:var(--mono);font-size:8px;font-weight:700;color:#fff}
 
@@ -215,11 +239,30 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     <div class="panel step" data-s="0" style="max-width:none">
       <div class="hero">
         <div class="eyebrow"><span class="spark">▦</span>Welcome to Klavity</div>
-        <h1>Your customers review your product — <em>before they ever see it.</em></h1>
-        <p class="lede">Klavity turns your real customer calls into <b>Sims</b> — AI personas grounded in the exact words your customers said. They walk your product and react <b>in character</b>, so you catch what they'd hate before they leave — without booking a single call. It also includes <b>Snap</b> — a one-click bug reporter your site visitors can use right now, no calls needed.</p>
+        <h1>Catch what's broken — <em>before and after</em> your customers do.</h1>
+        <p class="lede">Klavity finds your product's problems two ways. <b>Snap</b> is a one-click bug reporter you drop on your live site — real visitors flag issues with full context, and you get clean tickets. <b>Sims</b> turns your real customer calls into AI personas that walk your product and react <b>in character</b>, so you catch what they'd hate before they ever arrive.</p>
         <div class="reelwrap"><iframe class="reelframe" src="/intro-reel?embed=1" title="How Klavity works" scrolling="no" loading="lazy"></iframe></div>
         <p class="payoff">"It's like having your hardest customers in the room as you build."</p>
-        <div class="cta"><button class="btn btn-indigo" onclick="go(1)">Get started →</button></div>
+
+        <!-- ── GOAL FORK: what does the founder want first? Adapts the rest of the flow. ── -->
+        <div class="goalpick" role="group" aria-label="What do you want to set up first?">
+          <div class="glabel">What do you want first?</div>
+          <div class="goaltiles">
+            <button type="button" class="goaltile snap" id="goalSnap" aria-pressed="false" onclick="chooseGoal('snap')">
+              <span class="gic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 9l5 12 1.8-5.2L21 14Z" /><path d="M7.2 2.2 8 5.1" /><path d="m5.1 7.2-2.9-.8" /><path d="M14 4.1 12 6" /><path d="m6 12-1.9 2" /></svg></span>
+              <span class="gtag">Snap · live site</span>
+              <h3>Catch bugs from real visitors</h3>
+              <p>A one-click bug reporter on your live site. Add one snippet and start collecting clean, detailed tickets today.</p>
+            </button>
+            <button type="button" class="goaltile sims" id="goalSims" aria-pressed="false" onclick="chooseGoal('sims')">
+              <span class="gic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg></span>
+              <span class="gtag">Sims · pre-launch</span>
+              <h3>AI-review my product before customers see it</h3>
+              <p>AI personas built from your real customer calls. They walk your product and react in character, surfacing problems early.</p>
+            </button>
+          </div>
+          <p class="gnote">Either way you'll end with a working project — and you can add the other any time.</p>
+        </div>
       </div>
     </div>
 
@@ -229,7 +272,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         <div class="panel">
           <!-- 1a: signup form -->
           <div id="s1form">
-            <div class="kicker">Step 1 of 3</div>
+            <div class="kicker" id="s1kick">Step 1 of 3</div>
             <h2>Create your <em>project.</em></h2>
             <p class="sub">A project is one product — its Sims, the pages they watch, and the tickets they file. You can add more projects later. We'll email you a 6-digit sign-in code. No password.</p>
             <label class="fld"><span class="lt">Your email</span><input class="in" id="email" type="email" placeholder="you@example.com" autocomplete="email" /></label>
@@ -240,7 +283,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           </div>
           <!-- 1b: code entry -->
           <div id="s1code" class="hide">
-            <div class="kicker">Step 1 of 3 · check your email</div>
+            <div class="kicker" id="s1ckick">Step 1 of 3 · check your email</div>
             <h2>Enter your <em>6-digit code.</em></h2>
             <p class="sub">We emailed a sign-in code to <b id="codeEmail">you</b>. Pop it in below to finish creating your project.</p>
             <label class="fld"><span class="lt">6-digit code</span><input class="in code" id="code" inputmode="numeric" maxlength="6" placeholder="••••••" /></label>
@@ -256,12 +299,12 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     <div class="panel step hide" data-s="2">
       <div class="content" style="padding:60px clamp(28px,6vw,90px)">
         <div class="panel">
-          <div class="kicker amber">Step 2 of 3 · add to your site</div>
+          <div class="kicker amber" id="s2kick">Step 2 of 3 · add to your site</div>
           <h2>Add Klavity to your <em>site.</em></h2>
-          <p class="sub">The widget puts a one-click bug button on every page your visitors see — no extra apps needed. If you also want AI Sims reviewing your product live, connect the browser extension too.</p>
+          <p class="sub" id="s2sub">The widget puts a one-click bug button on every page your visitors see — no extra apps needed. If you also want AI Sims reviewing your product live, connect the browser extension too.</p>
 
-          <!-- ── Two paths: widget (primary) + extension (secondary) ── -->
-          <div class="tiles">
+          <!-- ── Two paths: widget (primary) + extension (secondary). Hidden on the Snap goal. ── -->
+          <div class="tiles" id="installTiles">
             <div class="tile sel" id="widgetTile" onclick="selectInstall('widget')">
               <div class="ti">&lt;/&gt;</div>
               <h3>Embed the bug-report widget</h3>
@@ -330,8 +373,10 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           <div class="err" id="s2err"></div>
           <div class="row">
             <button class="btn btn-indigo" id="s2continue" onclick="s2proceed()">Continue →</button>
-            <span class="skip" onclick="go(3)">Set up later</span>
+            <span class="skip" id="s2skip" onclick="s2SkipLater()">Set up later</span>
           </div>
+          <!-- Snap goal: an optional forward door into the Sims step (hidden for the Sims goal). -->
+          <div class="hide" id="s2AddSims" style="margin-top:16px"><span class="snap-fwd" role="button" tabindex="0" onclick="go(3)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();go(3)}">Want AI reviews too? Add Sims →</span></div>
         </div>
       </div>
     </div>
@@ -373,6 +418,50 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 let cur = 0
 let projectId = null          // resolved after sign-in (the user's default project)
 let intent = 'transcript'     // step-3 choice: 'transcript' | 'hats'
+let goal = null               // goal fork: 'snap' (bug reports first) | 'sims' (AI review first)
+
+// ── Goal fork ────────────────────────────────────────────────────────────────
+// Snap  = 2-step flow (create project → add the widget), ends at /dashboard reports.
+// Sims  = the full 3-step path (create → add to site → pick Sims → Studio).
+// The choice is persisted (localStorage + ?goal= query param) so the dashboard/Studio
+// can read it, and so a returning founder sees their prior pick pre-highlighted.
+function persistGoal(g){
+  try { localStorage.setItem('klav-onboarding-goal', g) } catch(e){}
+  try { const u = new URL(window.location.href); u.searchParams.set('goal', g); history.replaceState(null, '', u) } catch(e){}
+}
+function setText(id, t){ const el = document.getElementById(id); if (el) el.textContent = t }
+function applyGoal(){
+  const isSnap = goal === 'snap'
+  const shell = document.getElementById('shell')
+  if (goal) shell.setAttribute('data-goal', goal); else shell.removeAttribute('data-goal')
+  // reflect the choice on the welcome tiles (pre-select on return visits)
+  const gSnap = $('goalSnap'), gSims = $('goalSims')
+  if (gSnap) gSnap.setAttribute('aria-pressed', String(isSnap))
+  if (gSims) gSims.setAttribute('aria-pressed', String(goal === 'sims'))
+  // step counters — Snap is a 2-step flow, Sims stays 3
+  const total = isSnap ? 2 : 3
+  setText('s1kick',  'Step 1 of ' + total)
+  setText('s1ckick', 'Step 1 of ' + total + ' · check your email')
+  setText('s2kick',  'Step 2 of ' + total + ' · add to your site')
+  // step-2 copy + install options adapt to the goal
+  const sub = $('s2sub')
+  if (sub) sub.textContent = isSnap
+    ? 'Drop one snippet on your site and every visitor gets a one-click bug button — clean, detailed tickets land in your dashboard automatically. No extra apps.'
+    : 'The widget puts a one-click bug button on every page your visitors see — no extra apps needed. If you also want AI Sims reviewing your product live, connect the browser extension too.'
+  const tiles = $('installTiles')
+  if (tiles) tiles.classList.toggle('hide', isSnap)   // Snap = widget only, no path choice
+  if (isSnap){ installPath = 'widget'; if ($('widgetSection')) $('widgetSection').classList.remove('hide'); if ($('extSection')) $('extSection').classList.add('hide') }
+  const addSims = $('s2AddSims')
+  if (addSims) addSims.classList.toggle('hide', !isSnap)
+  updateS2Cta()
+  renderWidgetSnippet()
+}
+function chooseGoal(g){
+  goal = g
+  persistGoal(g)
+  applyGoal()
+  go(1)
+}
 
 // Fill the embed snippet with the real project ID so users never hand-edit it.
 function widgetSnippetText(){ return '<script src="https://klavity.in/widget.js" data-project="' + (projectId || 'YOUR_PROJECT_ID') + '" defer><\/script>' }
@@ -380,7 +469,8 @@ function renderWidgetSnippet(){
   var s = document.getElementById('snipPid'); if (s) s.textContent = projectId || 'YOUR_PROJECT_ID'
   // Also deep-link the "Skip for now" exit at the onboarding project, so /dashboard opens
   // the project created in step 1 rather than the account default (KLAVITYKLA-47).
-  var a = document.getElementById('skipToDash'); if (a && projectId) a.href = '/dashboard?project=' + encodeURIComponent(projectId)
+  var a = document.getElementById('skipToDash')
+  if (a && projectId) a.href = '/dashboard?project=' + encodeURIComponent(projectId) + (goal ? '&goal=' + encodeURIComponent(goal) : '')
 }
 ;(function(){
   var cp = document.getElementById('copySnippet'); if (!cp) return
@@ -498,19 +588,33 @@ function selectInstall(which) {
   $('chromeTile').classList.toggle('sel', which === 'extension')
   $('widgetSection').classList.toggle('hide', which !== 'widget')
   $('extSection').classList.toggle('hide', which !== 'extension')
-  const cont = $('s2continue')
-  if (which === 'extension') {
-    cont.textContent = 'Connect & continue →'
-    cont.onclick = connectExtension
-  } else {
-    cont.textContent = 'Continue →'
-    cont.onclick = () => go(3)
-  }
+  updateS2Cta()
   syncWidgetPoll()
 }
 
+// The step-2 primary button adapts to both the install path and the goal:
+//   extension → connect handshake; Snap+widget → finish to reports; Sims+widget → step 3.
+function updateS2Cta(){
+  const cont = $('s2continue'); if (!cont) return
+  if (installPath === 'extension') { cont.textContent = 'Connect & continue →'; cont.onclick = connectExtension; return }
+  if (goal === 'snap') { cont.textContent = 'Finish — go to my reports →'; cont.onclick = finishToReports }
+  else { cont.textContent = 'Continue →'; cont.onclick = () => go(3) }
+}
+
+// Snap goal ends at the dashboard with the project + goal in the query so it opens the
+// right project's reports (and can tailor its own first-run hints to the goal).
+function finishToReports(){
+  const q = new URLSearchParams()
+  if (projectId) q.set('project', projectId)
+  q.set('goal', 'snap')
+  window.location.href = '/dashboard?' + q.toString()
+}
+
+function s2SkipLater(){ if (goal === 'snap') finishToReports(); else go(3) }
+
 function s2proceed() {
   if (installPath === 'extension') connectExtension()
+  else if (goal === 'snap') finishToReports()
   else go(3)
 }
 
@@ -691,10 +795,13 @@ function openStudio(){
   // Transcript → /app#add-transcript ; Hats → /app?starter=hats (studio reads either, light handoff).
   // Carry the onboarding project id (KLAVITYKLA-47): without it the Studio opens the account's
   // default project, so starter Sims + saved reviews land in the WRONG project. Query goes before #hash.
-  const proj = projectId ? 'project=' + encodeURIComponent(projectId) : ''
+  const params = []
+  if (projectId) params.push('project=' + encodeURIComponent(projectId))
+  if (goal) params.push('goal=' + encodeURIComponent(goal))
+  const qs = params.length ? '?' + params.join('&') : ''
   const dest = intent === 'hats'
-    ? '/app?starter=hats' + (proj ? '&' + proj : '')
-    : '/app' + (proj ? '?' + proj : '') + '#add-transcript'
+    ? '/app?starter=hats' + (projectId ? '&project=' + encodeURIComponent(projectId) : '') + (goal ? '&goal=' + encodeURIComponent(goal) : '')
+    : '/app' + qs + '#add-transcript'
   window.location.href = dest
 }
 
@@ -702,6 +809,13 @@ function openStudio(){
 //    the server would have redirected them to /dashboard. But a signed-in user WITHOUT a project
 //    name set (edge) lands here — pre-resolve their project and let them skip the OTP sub-step. ──
 async function bootstrap(){
+  // Pre-apply a prior goal (URL wins over localStorage) so the matching tile shows as chosen
+  // and the step counters/rail are already adapted — but we still start on the welcome screen.
+  try {
+    const urlGoal = new URL(window.location.href).searchParams.get('goal')
+    const savedGoal = urlGoal || localStorage.getItem('klav-onboarding-goal')
+    if (savedGoal === 'snap' || savedGoal === 'sims') { goal = savedGoal; applyGoal() }
+  } catch(e){}
   // 10s timeout: a hanging /api/me must never block paint() — the welcome screen must always show.
   const ctrl = new AbortController()
   const tmo = setTimeout(() => ctrl.abort(), 10000)
