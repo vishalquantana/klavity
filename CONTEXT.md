@@ -44,8 +44,15 @@ _Avoid_: creds, test user
 **Trail**:
 A crystallized, deterministically replayable user journey — the artifact an
 AutoSim walks. Authored once (by AI drive or human demo), then replayed
-without an LLM while green.
+without an LLM while green. Lifecycle: Draft (just crystallized, files
+nothing) → Active (human-approved, may produce Findings).
 _Avoid_: test, script, scenario, AutoSim (for the artifact)
+
+**Verification Walk**:
+The automatic rehearsal Walk of a Draft Trail that proves it replays
+deterministically before a human is asked to approve it. Never produces
+Findings.
+_Avoid_: dry run, smoke test
 
 **Walk**:
 One execution of a Trail by an AutoSim, ending in a Verdict.
