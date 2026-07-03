@@ -1,0 +1,30 @@
+Customer discovery call — Klavity ↔ Northwind Books (online store owner)
+Date: 2026-06-30 · Attendees: Priya (Klavity, PM), Marcus (Northwind Books, founder/owner)
+
+Priya: Thanks for hopping on, Marcus. To start — walk me through how you're handling bug reports from your shoppers today?
+
+Marcus: Honestly? It's a mess. People email support@ when checkout breaks, but half the time they don't say which page or what browser. I get "it didn't work" and a screenshot of nothing useful. By the time I reproduce it, the customer's gone and probably bought from someone else.
+
+Priya: That gap between "something broke" and you having enough to fix it — how often does that cost you a sale?
+
+Marcus: Weekly, at least. Our checkout is the scary one. If the pay button hangs, that's real money. I lie awake about the checkout page more than anything else on the site.
+
+Priya: Got it. And when a report does come in with enough detail, what do you do with it?
+
+Marcus: I paste it into a Notion board by hand, tag it, and hope I remember to look. There's no real triage. Anything that isn't on fire slips. I'd love it to just land somewhere as a clean ticket with the URL, the browser, a screenshot — so I'm not playing detective.
+
+Priya: Makes sense. Who else touches this — is it just you?
+
+Marcus: Mostly me. I've got one part-time developer, Elena, who fixes things on weekends. She hates vague tickets even more than I do — she wants exact steps to reproduce or she won't touch it. If a ticket doesn't have the console error she just bounces it back to me.
+
+Priya: So Elena needs reproduction detail to act; you need the reports to not get lost. What would "great" look like for you six months from now?
+
+Marcus: A one-click button on my store so a shopper can flag a bug in the moment, with all the context captured automatically, and it shows up already sorted by how urgent it is. Checkout issues jump the queue. Cosmetic stuff waits. And I'd love to catch the obvious breakage before a customer ever sees it — I don't trust my own testing, I always miss something.
+
+Priya: Last thing — anything you're worried about with adding a tool like this?
+
+Marcus: Two things. One, I don't want it to slow the site down or look ugly on the storefront — brand matters. Two, I'm not technical enough to babysit a complicated setup. If it's more than pasting one snippet, I'll never finish it. Keep it dead simple and I'm in.
+
+Priya: That's really helpful, Marcus. Simple install, automatic context, urgency-sorted tickets, and a way to catch breakage early. I'll follow up with next steps.
+
+Marcus: Perfect. Seriously — solve the checkout-panic problem and you've got me.
