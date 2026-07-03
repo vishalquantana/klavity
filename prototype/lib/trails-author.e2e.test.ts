@@ -116,3 +116,24 @@ test("session is project-scoped", async () => {
   const { sessionId } = await runAuthorNow("proj_a1", { name: "s", objective: "o", baseUrl: fixtureUrl("author-mockup.html") }, { model: scripted([{ op: "stall", rationale: "x" }]) })
   expect(await getAuthorSession("proj_b1", sessionId)).toBeNull()
 }, 30000)
+
+test("drive deadline stalls a too-slow authoring run and releases cleanly", async () => {
+  const slow: AuthorModel = async () => {
+    await new Promise((r) => setTimeout(r, 300))
+    return { action: { op: "assert", selector: "h1", value: null, url: null, checkpoint: "still here", rationale: "r" }, costUsd: 0.0001 }
+  }
+  const out = await authorTrail("proj_deadline", { name: "x", objective: "o", baseUrl: fixtureUrl("author-mockup.html") }, { model: slow, driveDeadlineMs: 900 })
+  expect(out.status).toBe("stalled")
+  expect(out.stallReason).toContain("deadline")
+}, 30000)
+
+test("boot sweep marks orphaned running author_sessions failed", async () => {
+  const { reconnectDb: rdb, sweepOrphanedAuthorSessions } = await import("./db")
+  const sid = await (await import("./trails-author")).createAuthorSession("proj_sweep", { name: "s", objective: "o".repeat(12), baseUrl: "https://x.y" })
+  const { db } = await import("./db")
+  const { swept } = await sweepOrphanedAuthorSessions(db!)
+  expect(swept).toBeGreaterThanOrEqual(1)
+  const s = await getAuthorSession("proj_sweep", sid)
+  expect(s!.status).toBe("failed")
+  expect(s!.stallReason).toContain("restart")
+})
