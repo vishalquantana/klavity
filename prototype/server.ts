@@ -2669,6 +2669,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     const sharedWalkMatch = path.match(/^\/shared\/walk-report\/([a-f0-9]{64})$/)
     if (req.method === "GET" && sharedWalkMatch) {
       const rawToken = sharedWalkMatch[1]
+      if (!rlAllow("sharepdf:" + clientIp(req, server), 30, 60_000)) return new Response("Rate limited", { status: 429 })
       const resolved = await resolveShareToken(rawToken)
       if (!resolved) return new Response("Not found", { status: 404 })
       try {

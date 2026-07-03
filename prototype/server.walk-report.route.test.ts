@@ -268,3 +268,23 @@ test("POST /api/trails/walks/:runId/share — cross-project walk returns 404", a
   })
   expect(r.status).toBe(404)
 })
+
+test("GET /shared/walk-report/:token — rate-limited after 30 rapid requests", async () => {
+  // Mint a token via the API first
+  const mintR = await fetch(`${base}/api/trails/walks/${WALK_RUN_ID}/share?project=${pid}`, {
+    method: "POST",
+    headers: { cookie: adminCookie },
+  })
+  const { url: shareUrl } = await mintR.json()
+
+  // Hit the shared URL 31 times rapidly
+  let got429 = false
+  for (let i = 0; i < 31; i++) {
+    const r = await fetch(shareUrl)
+    if (r.status === 429) {
+      got429 = true
+      break
+    }
+  }
+  expect(got429).toBe(true)
+})
