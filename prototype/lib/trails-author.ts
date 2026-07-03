@@ -52,7 +52,7 @@ async function captureFingerprint(page: Page, selector: string): Promise<Fingerp
   })
 }
 
-const OP2ACTION: Record<string, StepAction> = { navigate: "navigate", click: "click", type: "type", select: "select", assert: "assert" }
+const OP2ACTION: Record<string, StepAction> = { navigate: "navigate", click: "click", type: "type", select: "select", assert: "assert", wait: "wait" }
 
 export async function authorTrail(
   projectId: string, req: AuthorRequest,
@@ -114,7 +114,11 @@ export async function authorTrail(
       if (a.op === "done") break
       const entry: AuthorStepLog = { idx: log.length, op: a.op, selector: a.selector, value: a.value, url: page.url(), rationale: a.rationale, ok: false }
       try {
-        if (a.op === "navigate") {
+        if (a.op === "wait") {
+          const ms = Math.min(Math.max(Number(a.value) || 1000, 500), 15_000)
+          await page.waitForTimeout(ms)
+          traj.push({ action: "wait", actionValue: String(ms), url: page.url(), domHash: sha256hex(dom) })
+        } else if (a.op === "navigate") {
           await page.goto(a.url!, { timeout: 20_000, waitUntil: "domcontentloaded" })
           traj.push({ action: "navigate", actionValue: a.url!, url: page.url(), domHash: sha256hex(dom) })
         } else {
