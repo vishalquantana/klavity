@@ -21,7 +21,7 @@ beforeAll(async () => {
 })
 
 import { authorTrail, runAuthorNow, getAuthorSession, AUTHOR_MAX_STEPS } from "./trails-author"
-import type { AuthorModel } from "./trails-author-model"
+import { parseAuthorAction, type AuthorModel } from "./trails-author-model"
 import { createTestAccount } from "./test-accounts"
 import * as T from "./trails"
 
@@ -64,6 +64,28 @@ test("bad selector: model gets an error turn, then stalls out after 3 consecutiv
   expect(out.status).toBe("stalled")
   expect(out.stallReason).toContain("#does-not-exist")
   expect(out.trailId).toBeNull()
+}, 30000)
+
+test("one malformed model reply is retried, not fatal (KLAVITYKLA-48 #1)", async () => {
+  await createTestAccount("proj_badroll", { name: "admin", loginEmail: "a@b.c", password: "p" })
+  // First reply is garbage (parse fallback), the rest is the good login script — must crystallize.
+  let first = true
+  const good = scripted(LOGIN_SCRIPT)
+  const flaky: AuthorModel = async (input, ctx) => {
+    if (first) { first = false; return { action: parseAuthorAction("]]]not json[[["), costUsd: 0.001 } }
+    return good(input, ctx)
+  }
+  const out = await authorTrail("proj_badroll", { name: "flaky", objective: "log in", baseUrl: fixtureUrl("author-mockup.html") }, { model: flaky })
+  expect(out.status).toBe("crystallized")
+  expect(out.verificationVerdict).toBe("green")
+  expect(out.llmCalls).toBe(6) // 1 bad roll + 5 good
+}, 60000)
+
+test("three consecutive malformed replies still stall out", async () => {
+  const garbage: AuthorModel = async () => ({ action: parseAuthorAction("not json"), costUsd: 0.001 })
+  const out = await authorTrail("proj_badroll2", { name: "x", objective: "o", baseUrl: fixtureUrl("author-mockup.html") }, { model: garbage })
+  expect(out.status).toBe("stalled")
+  expect(out.stallReason).toContain("malformed")
 }, 30000)
 
 test("model stall op surfaces the rationale", async () => {
