@@ -56,7 +56,7 @@ const OP2ACTION: Record<string, StepAction> = { navigate: "navigate", click: "cl
 
 export async function authorTrail(
   projectId: string, req: AuthorRequest,
-  opts: { model: AuthorModel; headless?: boolean; launchArgs?: string[]; credResolver?: CredResolver; onStep?: (log: AuthorStepLog[]) => void | Promise<void> },
+  opts: { model: AuthorModel; headless?: boolean; launchArgs?: string[]; credResolver?: CredResolver; onStep?: (log: AuthorStepLog[]) => void | Promise<void>; driveDeadlineMs?: number },
 ): Promise<AuthorOutcome> {
   const credResolver = opts.credResolver ?? resolveCredRefs
   const credFields: string[] = []
@@ -69,6 +69,13 @@ export async function authorTrail(
   const history: string[] = []
   const traj: TrajectoryStep[] = []
   let llmCalls = 0, costUsd = 0, misses = 0
+  // Overall drive deadline. Without it a single hung page op (a crashed Chromium can make
+  // page.content()/screenshot never settle) held the shared walk slot INDEFINITELY — observed
+  // live on prod 2026-07-04: dead browser, slot stuck, every walk/authoring 409ing until a
+  // service restart. Every per-iteration op below is also individually bounded.
+  const deadlineAt = Date.now() + (opts.driveDeadlineMs ?? 300_000)
+  const bounded = <T>(p: Promise<T>, ms: number, what: string): Promise<T> =>
+    Promise.race([p, new Promise<never>((_, rej) => setTimeout(() => rej(new Error(`${what} timed out after ${ms}ms`)), ms))])
   const browser = await chromium.launch({ headless: opts.headless ?? true, args: opts.launchArgs ?? [] })
   const stall = async (why: string): Promise<AuthorOutcome> => {
     await browser.close().catch(() => {})
@@ -85,11 +92,12 @@ export async function authorTrail(
     }
     for (let idx = 0; idx < AUTHOR_MAX_STEPS; idx++) {
       if (costUsd >= AUTHOR_MAX_COST_USD) return await stall(`authoring budget cap $${AUTHOR_MAX_COST_USD} reached after ${llmCalls} model calls`)
-      const screenshotB64 = (await page.screenshot({ type: "jpeg", quality: 60 })).toString("base64")
-      const dom = (await page.content()).slice(0, DOM_CAP)
+      if (Date.now() > deadlineAt) return await stall(`authoring drive deadline exceeded (${Math.round((opts.driveDeadlineMs ?? 300_000) / 1000)}s) after ${log.length} steps`)
+      const screenshotB64 = (await bounded(page.screenshot({ type: "jpeg", quality: 60, timeout: 15_000 }), 20_000, "screenshot")).toString("base64")
+      const dom = (await bounded(page.content(), 15_000, "page.content")).slice(0, DOM_CAP)
       let r: { action: AuthorAction; costUsd: number }
       try {
-        r = await opts.model({ objective: req.objective, pageUrl: page.url(), screenshotB64, mediaType: "image/jpeg", domSnapshot: dom, history, credFields }, { projectId, email: req.createdBy ?? null })
+        r = await bounded(opts.model({ objective: req.objective, pageUrl: page.url(), screenshotB64, mediaType: "image/jpeg", domSnapshot: dom, history, credFields }, { projectId, email: req.createdBy ?? null }), 120_000, "author model call")
       } catch (e: any) { return await stall(`author model error: ${e?.message || e}`) }
       llmCalls++; costUsd += r.costUsd || 0
       const a = r.action

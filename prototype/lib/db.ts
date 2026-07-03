@@ -43,6 +43,7 @@ export async function initDb() {
   await migrateConnectorsPlane(db)
   await backfillTriageV1(db)
   await backfillTrailStatus(db)
+  await sweepOrphanedAuthorSessions(db)
   console.log("✓ Turso connected, schema ready")
 }
 
@@ -702,6 +703,22 @@ export async function backfillTrailStatus(c: Client): Promise<{ activated: numbe
   await c.execute({ sql: "INSERT INTO schema_migrations (key, applied_at) VALUES (?, ?)", args: [migKey, Date.now()] })
   console.log(`[backfillTrailStatus] activated ${activated} pre-existing draft trail(s) → active`)
   return { activated }
+}
+
+// Authoring runs in-process holding the walk slot; a service restart (the merge-train restarts on
+// every deploy) kills it mid-flight and leaves its author_sessions row 'running' forever — the UI
+// polls a zombie. At boot no authoring can legitimately be in flight (single-process design), so
+// mark every 'running' session failed with an honest reason. Observed live 2026-07-04.
+export async function sweepOrphanedAuthorSessions(c: Client): Promise<{ swept: number }> {
+  const r = await c.execute({
+    sql: `UPDATE author_sessions SET status='failed',
+            stall_reason='interrupted by a server restart - please retry', updated_at=?
+          WHERE status='running'`,
+    args: [Date.now()],
+  })
+  const swept = Number(r.rowsAffected ?? 0)
+  if (swept) console.log(`[author-sessions] swept ${swept} orphaned running session(s) → failed`)
+  return { swept }
 }
 
 async function tableExists(c: Client, name: string): Promise<boolean> {
