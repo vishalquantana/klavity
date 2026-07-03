@@ -32,3 +32,9 @@ test("messages wrap DOM/URL as untrusted and offer cred placeholders", () => {
 // NOTE: openRouterAuthorModel's finally-block reconciliation (v0.40+) cannot be tested in pure unit tests
 // because it requires DB access to reconcileDailySpend. Integration/e2e tests verify that the reservation
 // is properly cleaned up on fetch/res.json errors via the daily_ai_spend table state.
+test("wait op parses with a ms value; wait without value is a retryable parse stall", () => {
+  const w = parseAuthorAction('{"op":"wait","value":"8000","rationale":"extraction running"}')
+  expect(w.op).toBe("wait"); expect(w.value).toBe("8000"); expect(w.parseError).toBeUndefined()
+  const bad = parseAuthorAction('{"op":"wait","rationale":"x"}')
+  expect(bad.op).toBe("stall"); expect(bad.parseError).toBe(true)
+})
