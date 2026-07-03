@@ -39,6 +39,8 @@ import { listRunSteps, listTrails, getTrail, setTrailStatus, listTrailSteps, ins
 import { runWalkNow } from "./lib/trails-trigger"
 import { runAuthorNow, getAuthorSession } from "./lib/trails-author"
 import { WalkBusyError } from "./lib/trails-browser"
+import { mintShareToken, resolveShareToken, renderWalkPdf } from "./lib/trails-share"
+import { gatherWalkReport } from "./lib/trails-report"
 import { seedDemoTrails } from "./lib/trails-demo-seed"
 import { listExpectations, getExpectation, setExpectationStatus, setExpectationEnforced } from "./lib/expectations-db"
 import { validateAssertionDraft } from "./lib/assertion-spec"
@@ -2662,6 +2664,29 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (req.method === "GET" && path === "/dashboard") return me ? await dashboardPage() : redirect("/login")
     if (req.method === "GET" && (path === "/trails" || path === "/autosims")) return me ? file(PUB + "/trails.html") : redirect("/login")
     if (req.method === "GET" && path === "/sim-runs") return me ? file(PUB + "/sim-runs.html") : redirect("/login")
+    // GET /shared/walk-report/:token — serve the walk PDF for a valid, unexpired share token.
+    // Unauthenticated (no session required). 404 on bad/expired/tampered token (not 401).
+    const sharedWalkMatch = path.match(/^\/shared\/walk-report\/([a-f0-9]{64})$/)
+    if (req.method === "GET" && sharedWalkMatch) {
+      const rawToken = sharedWalkMatch[1]
+      const resolved = await resolveShareToken(rawToken)
+      if (!resolved) return new Response("Not found", { status: 404 })
+      try {
+        const pdfBytes = await renderWalkPdf(resolved.projectId, resolved.runId, BASE)
+        const shortId = resolved.runId.slice(0, 8)
+        return new Response(pdfBytes, {
+          headers: {
+            "content-type": "application/pdf",
+            "content-disposition": `inline; filename="klavity-walk-${shortId}.pdf"`,
+            "content-length": String(pdfBytes.byteLength),
+          },
+        })
+      } catch (e: any) {
+        if (e instanceof WalkBusyError) return new Response("AutoSim busy", { status: 409 })
+        return new Response("Internal error", { status: 500 })
+      }
+    }
+
     // Plan G — served demo fixtures the seeded demo Trails walk against (public, non-sensitive HTML).
     // Sanitized: reject path traversal; serve only from PUB/trails-demo. No auth (a Walk hits these
     // unauthenticated, same-origin) — the files are bundled static fixtures, never user data.
@@ -2909,6 +2934,45 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (trail.status !== "draft") return json({ error: `Trail is ${trail.status}, not draft` }, 409)
           await setTrailStatus(projectId, trail.id, "active")
           return json({ ok: true })
+        }
+      }
+
+      // GET /api/trails/walks/:runId/report.pdf — download the walk as a PDF.
+      // 404 for unknown/cross-project walk; 409 if Chromium walk slot is busy.
+      const reportPdfMatch = path.match(/^\/api\/trails\/walks\/([^/]+)\/report\.pdf$/)
+      if (req.method === "GET" && reportPdfMatch) {
+        const runId = reportPdfMatch[1]
+        // IDOR guard: gatherWalkReport is project-scoped; null = not in this project
+        const check = await gatherWalkReport(projectId, runId)
+        if (!check) return json({ error: "Not found" }, 404)
+        try {
+          const pdfBytes = await renderWalkPdf(projectId, runId, BASE)
+          const shortId = runId.slice(0, 8)
+          return new Response(pdfBytes, {
+            headers: {
+              "content-type": "application/pdf",
+              "content-disposition": `attachment; filename="klavity-walk-${shortId}.pdf"`,
+              "content-length": String(pdfBytes.byteLength),
+            },
+          })
+        } catch (e: any) {
+          if (e instanceof WalkBusyError) return json({ error: "AutoSim busy" }, 409)
+          return json(oops(e, "trails-report-pdf"), 500)
+        }
+      }
+
+      // POST /api/trails/walks/:runId/share — mint an expiring share link for a walk.
+      const shareMatch = path.match(/^\/api\/trails\/walks\/([^/]+)\/share$/)
+      if (req.method === "POST" && shareMatch) {
+        const runId = shareMatch[1]
+        const check = await gatherWalkReport(projectId, runId)
+        if (!check) return json({ error: "Not found" }, 404)
+        try {
+          const rawToken = await mintShareToken(projectId, runId, meT)
+          const expiresAt = Date.now() + 30 * 24 * 3600e3
+          return json({ url: BASE + "/shared/walk-report/" + rawToken, expiresAt })
+        } catch (e) {
+          return json(oops(e, "trails-share-mint"), 500)
         }
       }
 

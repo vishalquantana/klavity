@@ -170,20 +170,30 @@ test("(render-9) findings section shows finding titles", () => {
   expect(html).toContain("the sign in button text changed")
 })
 
-test("(render-10) {{cred: placeholder passes through un-resolved", () => {
+test("(render-10) {{cred: placeholder passes through un-resolved and secrets never appear", () => {
   const data = makeData()
+  // Seed a step whose evidence contains actionValue with a real secret marker (pw-s3cr3t!)
+  // The renderer must NEVER resolve or emit the secret value.
   data.steps = [{
     ...data.steps[0],
-    evidence: { action: "type", selector: "#password", value: "{{cred:my_password}}" },
+    evidence: {
+      action: "type",
+      selector: "#password",
+      actionValue: "{{cred:admin:password}}",
+      // Simulate what a resolver WOULD produce — the renderer must NOT touch this
+      _resolvedSecret: "pw-s3cr3t!",
+    },
   }]
   const html = renderWalkReportHtml(data, { baseUrl: "https://test.example", generatedAt: Date.now() })
-  // the placeholder should appear escaped but intact (rendered in evidence text if shown)
-  // The renderer doesn't resolve {{cred:...}}, it just passes through
-  // It appears in evidence.value but the renderer doesn't render action value per spec — just action+selector
-  // However the test requirement is that no resolution happens. Verify no secret substitution.
+  // Must never contain the literal secret value
   expect(html).not.toContain("SECRET")
-  // The cred placeholder can appear in the html if we render evidence.value; ensure it's not resolved
-  // (it's fine if the placeholder itself is present — it's just a string)
+  expect(html).not.toContain("pw-s3cr3t!")
+  // Must not contain any resolved secret from _resolvedSecret field
+  expect(html).not.toContain("pw-")
+  // The placeholder string itself is acceptable if the renderer renders evidence.actionValue
+  // but it must appear VERBATIM (still a {{cred:...}} token), never replaced.
+  // Confirm no <script> tags snuck in
+  expect((html.match(/<script/gi) ?? []).length).toBe(0)
 })
 
 test("(render-11) finding groundQuote with XSS chars is escaped", () => {
