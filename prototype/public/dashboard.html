@@ -3804,6 +3804,11 @@ load()
     try{ const u=new URL(location.href); u.searchParams.delete("create-sim"); if(u.hash==="#create-sim")u.hash=""; history.replaceState(null,"",u.pathname+u.search); }catch(e){}
     window.openSimModal();
   };
+  // Deep-link race fix (found by an AutoSim walk 2026-07-04): the dashboard render can fire
+  // BEFORE this script parses (same-box API returns instantly in headless walks), and its
+  // `if (window.maybeOpenCreateSim)` guard silently dropped the ?create-sim=1 deep link.
+  // Re-check once we exist - the autoOpened flag keeps this idempotent.
+  window.maybeOpenCreateSim();
 })();
 </script>
 <script>
