@@ -10,6 +10,7 @@
 // Project-scoped: projectId is the first arg of every persisted call and every query.
 import { chromium } from "playwright"
 import type { Browser, BrowserContext, Page, Locator } from "playwright"
+import { uploadScreenshotMeta } from "./s3"
 import type { Fingerprint, Tier, Verdict, TrailStep } from "./trails-types"
 import {
   getTrail, listTrailSteps, getCacheForStep, upsertLocatorCache,
@@ -83,6 +84,21 @@ export interface WalkOptions {
    * Verification Walk triggered before a Trail is activated).
    */
   suppressFindings?: boolean
+  /**
+   * PDF task 1 — OPT-IN per-step screenshot capture. DEFAULT-OFF. When true, after each
+   * actionable step's action settles the runner captures a jpeg (quality 45) and uploads it via
+   * shotUploader. The returned key is merged into the step's evidence as `screenshotKey`.
+   * Capture is SKIPPED for navigate/wait steps (no meaningful state to capture).
+   * Failures are best-effort: a try/catch ensures a capture/upload failure NEVER fails or slows
+   * a step — evidence just lacks the key.
+   */
+  stepShots?: boolean
+  /**
+   * Injectable screenshot uploader. Signature: (bytes: Uint8Array, contentType: string) =>
+   * Promise<{ key: string }>. Default (when stepShots=true and this is absent) = the real S3
+   * uploader adapted from uploadScreenshotMeta. In tests, pass a fake that never touches S3.
+   */
+  shotUploader?: (bytes: Uint8Array, contentType: string) => Promise<{ key: string }>
 }
 
 export interface WalkStepSummary {
@@ -264,6 +280,31 @@ async function resolveTarget(
   throw new ElementGone(fp)
 }
 
+// Default real uploader: wraps uploadScreenshotMeta to conform to the injectable (bytes, ct) => {key} sig.
+async function defaultShotUploader(bytes: Uint8Array, contentType: string): Promise<{ key: string }> {
+  const meta = await uploadScreenshotMeta(bytes, contentType)
+  return { key: meta.key }
+}
+
+/**
+ * Best-effort per-step screenshot capture. Called AFTER an actionable step's action has settled.
+ * Returns the S3 key on success, undefined on any failure (try/catch — never fails a step).
+ * JPEG quality 45 for the PDF plan (compact, readable). Never called for navigate/wait.
+ */
+async function maybeShot(page: Page, opts: WalkOptions): Promise<string | undefined> {
+  if (!opts.stepShots) return undefined
+  try {
+    const buf = await page.screenshot({ type: "jpeg", quality: 45 })
+    const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf)
+    const uploader = opts.shotUploader ?? defaultShotUploader
+    const result = await uploader(bytes, "image/jpeg")
+    return result.key
+  } catch {
+    // Best-effort: upload failure must never fail or slow the step.
+    return undefined
+  }
+}
+
 /**
  * Walk a crystallized Trail against a real page. Project-scoped.
  * Opens the page once, replays each step (Tier 0 cache -> Tier 1 heal), evaluates checkpoints,
@@ -433,7 +474,14 @@ async function runOneStep(
   const isAssert = step.action === "assert"
   // A checkpoint-only assert (no target at all) is a soft pass that keeps the flow runnable (mirrors codegen).
   if (isAssert && !cachedSelector && !fp) {
-    await addRunStep(projectId, { runId, trailId, stepId: step.id, idx: step.idx, tier: "none", verdict: "green", confidence: 1, healed: false, evidence: { checkpoint: step.checkpoint?.description ?? null } })
+    const screenshotKey = await maybeShot(page, opts)
+    await addRunStep(projectId, {
+      runId, trailId, stepId: step.id, idx: step.idx, tier: "none", verdict: "green", confidence: 1, healed: false,
+      evidence: {
+        checkpoint: step.checkpoint?.description ?? null,
+        ...(screenshotKey !== undefined ? { screenshotKey } : {}),
+      },
+    })
     return { tier: "none", verdict: "green", healed: false, llmCalls: 0 }
   }
 
@@ -455,10 +503,17 @@ async function runOneStep(
           dedupKey: `ambiguous_selector:${trailId}:${step.id}`,
         })
       }
+      // PDF task 1: best-effort screenshot to capture the failure state.
+      const screenshotKey = await maybeShot(page, opts)
       await addRunStep(projectId, {
         runId, trailId, stepId: step.id, idx: step.idx,
         tier: "cache", verdict: "red", confidence: 1, diagnosis: "locator_drift", healed: false,
-        evidence: { reason: "ambiguous_selector", selector: e.selector, matchCount: e.matchCount },
+        evidence: {
+          reason: "ambiguous_selector",
+          selector: e.selector,
+          matchCount: e.matchCount,
+          ...(screenshotKey !== undefined ? { screenshotKey } : {}),
+        },
       })
       return { tier: "cache", verdict: "red", healed: false, llmCalls: 0 }
     }
@@ -483,10 +538,19 @@ async function runOneStep(
       }
       // No resolver → unchanged Layer C behavior: RED + needs-vision handoff marker (never green).
       const verdict: Verdict = "red"
+      // PDF task 1: best-effort screenshot to capture the failure state.
+      const screenshotKey = await maybeShot(page, opts)
       await addRunStep(projectId, {
         runId, trailId, stepId: step.id, idx: step.idx,
         tier: "vision", verdict, confidence: 0, diagnosis: "locator_drift", healed: false,
-        evidence: { reason: "element_gone", needsVision: true, fingerprint: fp, cachedSelector, checkpoint: step.checkpoint?.description ?? null },
+        evidence: {
+          reason: "element_gone",
+          needsVision: true,
+          fingerprint: fp,
+          cachedSelector,
+          checkpoint: step.checkpoint?.description ?? null,
+          ...(screenshotKey !== undefined ? { screenshotKey } : {}),
+        },
       })
       return { tier: "vision", verdict, healed: false, llmCalls: 0 }
     }
@@ -518,10 +582,16 @@ async function runOneStep(
   } catch {
     // The element resolved but the action/assertion failed (e.g. checkpoint not visible) -> fail-loud RED.
     const verdict: Verdict = "red"
+    // PDF task 1: best-effort screenshot even on action failure (shows the failure state).
+    const screenshotKey = await maybeShot(page, opts)
     await addRunStep(projectId, {
       runId, trailId, stepId: step.id, idx: step.idx,
       tier: resolved.tier, verdict, confidence: resolved.confidence, diagnosis: isAssert ? "regression" : "interaction_change", healed: false,
-      evidence: { reason: isAssert ? "checkpoint_failed" : "action_failed", checkpoint: step.checkpoint?.description ?? null },
+      evidence: {
+        reason: isAssert ? "checkpoint_failed" : "action_failed",
+        checkpoint: step.checkpoint?.description ?? null,
+        ...(screenshotKey !== undefined ? { screenshotKey } : {}),
+      },
     })
     return { tier: resolved.tier, verdict, healed: false, llmCalls: 0 }
   }
@@ -550,6 +620,9 @@ async function runOneStep(
   // Walk rolls up to AMBER (worst-of). A non-healed cache/Tier-0 hit stays GREEN.
   const verdict: Verdict = resolved.healed ? "amber" : "green"
 
+  // PDF task 1: capture a per-step screenshot AFTER the action settles (best-effort).
+  const screenshotKey = await maybeShot(page, opts)
+
   // spec §6.4: persist the reviewable diff into the run_step evidence (recoverable from/to selectors).
   const evidence: Record<string, unknown> = resolved.healed
     ? {
@@ -560,8 +633,14 @@ async function runOneStep(
         confidence: resolved.confidence,
         candidateSignal: resolved.candidateSignal,
         checkpoint: step.checkpoint?.description ?? null,
+        ...(screenshotKey !== undefined ? { screenshotKey } : {}),
       }
-    : { selector: resolved.selector, healed: false, checkpoint: step.checkpoint?.description ?? null }
+    : {
+        selector: resolved.selector,
+        healed: false,
+        checkpoint: step.checkpoint?.description ?? null,
+        ...(screenshotKey !== undefined ? { screenshotKey } : {}),
+      }
 
   await addRunStep(projectId, {
     runId, trailId, stepId: step.id, idx: step.idx,
