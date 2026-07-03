@@ -19,11 +19,14 @@ const WALK_DEADLINE_MS = 120_000
 
 // Default real walk: drive the Trail's own baseUrl with prod-safe Chromium + replay capture, ADOPTING
 // the pre-created runId so everything lands on the caller's runId. Vision is OFF here.
+// stepShots:true enables per-step jpeg captures (PDF task 1); the default S3 uploader is used
+// (injected via walkTrail default; try/catch ensures S3-absent local envs never fail a step).
 const realWalk: WalkFn = async (projectId, trailId, runId) => {
   const trail = await getTrail(projectId, trailId)
   if (!trail) return { verdict: "red", llmCalls: 0 }
   const s = await walkTrail(projectId, trailId, {
     fixtureUrl: trail.baseUrl, replay: true, launchArgs: CHROMIUM_PROD_ARGS, deadlineMs: WALK_DEADLINE_MS, runId,
+    stepShots: true,
   })
   return { verdict: s.verdict, llmCalls: s.llmCalls }
 }
