@@ -52,7 +52,7 @@ export async function gatherWalkReport(
     if (key) {
       try {
         const url = presign(key)
-        if (url) screenshotUrl = url
+        if (url && url.startsWith("https://")) screenshotUrl = url
       } catch {
         // best-effort
       }
