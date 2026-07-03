@@ -123,9 +123,9 @@ export async function authorTrail(
           traj.push({ action: "navigate", actionValue: a.url!, url: page.url(), domHash: sha256hex(dom) })
         } else {
           const loc = page.locator(a.selector!)
-          const n = await loc.count()
+          const n = await bounded(loc.count(), 10_000, "locator.count")
           if (n !== 1) throw new Error(`selector "${a.selector}" matched ${n} elements (need exactly 1)`)
-          const fp = await captureFingerprint(page, a.selector!)
+          const fp = await bounded(captureFingerprint(page, a.selector!), 10_000, "fingerprint capture")
           if (a.op === "click") await loc.click({ timeout: ACTION_TIMEOUT })
           else if (a.op === "type") {
             const raw = a.value ?? ""
@@ -158,7 +158,7 @@ export async function authorTrail(
     // Verification Walk: zero-LLM rehearsal; draft status suppresses findings (Task 4), but pass
     // the flag explicitly too — a Verification Walk never files regardless of trail status.
     const v = await walkTrail(projectId, trailId, {
-      fixtureUrl: req.baseUrl, suppressFindings: true, credResolver,
+      fixtureUrl: req.baseUrl, suppressFindings: true, credResolver, deadlineMs: 180_000,
       launchArgs: opts.launchArgs, headless: opts.headless,
     })
     // I1: skip means "inconclusive / no steps ran" — map to amber, not red, so an empty
