@@ -9,6 +9,12 @@ export interface AuthorAction {
   op: "navigate" | "click" | "type" | "select" | "assert" | "done" | "stall"
   selector: string | null; value: string | null; url: string | null
   checkpoint: string | null; rationale: string
+  /**
+   * True when this stall is a PARSE fallback (malformed/invalid model reply), not a deliberate
+   * model decision. The authoring loop treats parse fallbacks as retryable misses (KLAVITYKLA-48
+   * #1): one bad roll must not kill an otherwise-good multi-step attempt.
+   */
+  parseError?: boolean
 }
 export interface AuthorStepInput {
   objective: string; pageUrl: string; screenshotB64: string; mediaType: string
@@ -47,8 +53,11 @@ export function buildAuthorMessages(input: AuthorStepInput): any[] {
 }
 
 const OPS = new Set(["navigate", "click", "type", "select", "assert", "done", "stall"])
+// Parse-fallback stall: malformed/invalid model reply. parseError marks it retryable — a
+// deliberate model stall (valid JSON with op:"stall") takes the normal construction path
+// below and carries NO parseError flag.
 const STALL = (why: string): AuthorAction =>
-  ({ op: "stall", selector: null, value: null, url: null, checkpoint: null, rationale: why })
+  ({ op: "stall", selector: null, value: null, url: null, checkpoint: null, rationale: why, parseError: true })
 
 export function parseAuthorAction(content: string): AuthorAction {
   const cleaned = content.replace(/<think[\s\S]*?<\/think>/gi, "").replace(/```(?:json)?/gi, "").replace(/```/g, "").trim()

@@ -93,6 +93,15 @@ export async function authorTrail(
       } catch (e: any) { return await stall(`author model error: ${e?.message || e}`) }
       llmCalls++; costUsd += r.costUsd || 0
       const a = r.action
+      if (a.op === "stall" && a.parseError) {
+        // KLAVITYKLA-48 #1: a malformed reply is a bad ROLL, not a dead end — one garbage JSON
+        // response was killing otherwise-good multi-step attempts. Treat it exactly like a failed
+        // action: count a consecutive miss, tell the model, and let it try again.
+        misses++
+        history.push(`(your last reply was invalid: ${a.rationale} — respond with ONE strict JSON action object)`)
+        if (misses >= MAX_CONSECUTIVE_MISSES) return await stall(`stuck after ${misses} malformed model replies; last: ${a.rationale}`)
+        continue
+      }
       if (a.op === "stall") return await stall(a.rationale || "model stalled")
       if (a.op === "done") break
       const entry: AuthorStepLog = { idx: log.length, op: a.op, selector: a.selector, value: a.value, url: page.url(), rationale: a.rationale, ok: false }
