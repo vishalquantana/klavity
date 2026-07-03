@@ -11,7 +11,8 @@
 <link rel="stylesheet" href="/vendor/klv-view.css" />
 <style>
 :root{--ink:#f5f3ee;--ink-2:#ffffff;--ink-3:#efeae0;--paper:#19140f;--paper-dim:#574f45;--paper-faint:#8a8076;--indigo:#6366f1;--indigo-deep:#4f46e5;--amber:#d98324;--rose:#db2777;--green:#0f9d6b;--line:rgba(25,20,15,.12);
---display:'Fraunces',serif;--body:'Hanken Grotesk',system-ui,sans-serif;--mono:'JetBrains Mono',monospace}
+--display:'Fraunces',serif;--body:'Hanken Grotesk',system-ui,sans-serif;--mono:'JetBrains Mono',monospace;
+--mi-ease:cubic-bezier(.2,.7,.3,1);--mi-dur:.15s;--mi-lift:translateY(-1px) scale(1.02);--mi-press:scale(.97)}
 [data-theme="dark"]{--ink:#0c0a08;--ink-2:#15110d;--ink-3:#1e1813;--paper:#f3ece1;--paper-dim:#b3a896;--paper-faint:#776c5d;--indigo:#8b8bf5;--indigo-deep:#6366f1;--amber:#e8a24a;--rose:#e8849a;--green:#9fd6a0;--line:rgba(243,236,225,.11)}
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--ink);color:var(--paper);font-family:var(--body);min-height:100vh}
@@ -94,8 +95,14 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 .trail .run-msg{font-family:var(--mono);font-size:10px;color:var(--amber);flex-shrink:0}
 
 /* replay button on a walk row */
-.walk .replay-btn{flex-shrink:0;font-family:var(--mono);font-size:10px;letter-spacing:.04em;padding:5px 10px;border-radius:9px;border:1px solid var(--line);background:transparent;color:var(--paper-dim);cursor:pointer}
-.walk .replay-btn:hover{border-color:var(--indigo);color:var(--paper)}
+.walk .replay-btn{flex-shrink:0;font-family:var(--mono);font-size:10px;letter-spacing:.04em;padding:5px 10px;border-radius:9px;border:1px solid var(--line);background:transparent;color:var(--paper-dim);cursor:pointer;transition:transform var(--mi-dur) var(--mi-ease),border-color var(--mi-dur) var(--mi-ease),color var(--mi-dur) var(--mi-ease)}
+.walk .replay-btn:hover{border-color:var(--indigo);color:var(--paper);transform:var(--mi-lift)}
+.walk .replay-btn:active{transform:var(--mi-press)}
+/* PDF + Share buttons on walk rows */
+.walk .walk-pdf-btn,.walk .walk-share-btn{flex-shrink:0;font-family:var(--mono);font-size:10px;letter-spacing:.04em;padding:5px 10px;border-radius:9px;border:1px solid var(--line);background:transparent;color:var(--paper-dim);cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:4px;transition:transform var(--mi-dur) var(--mi-ease),border-color var(--mi-dur) var(--mi-ease),color var(--mi-dur) var(--mi-ease)}
+.walk .walk-pdf-btn:hover,.walk .walk-share-btn:hover{border-color:var(--indigo);color:var(--paper);transform:var(--mi-lift)}
+.walk .walk-pdf-btn:active,.walk .walk-share-btn:active{transform:var(--mi-press)}
+.walk .walk-share-msg{font-family:var(--mono);font-size:10px;color:var(--green);flex-shrink:0;min-width:0}
 
 /* expectations board — three kanban columns */
 .exp-board{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:18px}
@@ -504,13 +511,40 @@ async function render(d){
     const when = w.startedAt ? new Date(w.startedAt).toLocaleString() : ""
     const row = document.createElement("div")
     row.className = "walk"
+    const pdfHref = '/api/trails/walks/' + encodeURIComponent(w.id) + '/report.pdf' + projQ()
     row.innerHTML = '<div class="body"><div class="t">'+esc(w.trailId)+'</div><div class="d">'+esc(w.id)+' · '+esc(when)+' · '+esc(w.llmCalls||0)+' LLM</div></div>'
-      + (w.hasReplay ? '<button class="replay-btn" data-replay="'+esc(w.id)+'">&#9654; Replay</button>' : '')
+      + (w.hasReplay ? '<button class="replay-btn" data-replay="'+esc(w.id)+'">'+kicon('play',{size:10})+' Replay</button>' : '')
+      + '<a class="walk-pdf-btn" href="'+esc(pdfHref)+'" target="_blank" rel="noopener">'+kicon('file-text',{size:10})+' PDF</a>'
+      + '<button class="walk-share-btn" data-share-run="'+esc(w.id)+'">'+kicon('link',{size:10})+' Share</button>'
+      + '<span class="walk-share-msg" data-share-msg="'+esc(w.id)+'"></span>'
       + '<span class="pill '+esc(v)+'">'+esc(v)+'</span>'
     wEl.appendChild(row)
   }
   wEl.querySelectorAll("button[data-replay]").forEach(function(btn){
     btn.onclick = function(){ openReplay(btn.getAttribute("data-replay")) }
+  })
+  wEl.querySelectorAll("button[data-share-run]").forEach(function(btn){
+    btn.onclick = async function(){
+      const runId = btn.getAttribute("data-share-run")
+      const msgEl = wEl.querySelector('[data-share-msg="'+runId+'"]')
+      btn.disabled = true
+      if (msgEl) msgEl.textContent = ""
+      try {
+        const r = await fetch('/api/trails/walks/' + encodeURIComponent(runId) + '/share' + projQ(), { method: "POST" })
+        const d = await r.json().catch(function(){ return {} })
+        if (r.ok && d.url) {
+          await navigator.clipboard.writeText(d.url)
+          if (msgEl) { msgEl.style.color = "var(--green)"; msgEl.textContent = "Link copied - valid 30 days" }
+          setTimeout(function(){ if (msgEl) msgEl.textContent = ""; btn.disabled = false }, 4000)
+        } else {
+          if (msgEl) { msgEl.style.color = "var(--rose)"; msgEl.textContent = d.error || "Share failed." }
+          btn.disabled = false
+        }
+      } catch(e) {
+        if (msgEl) { msgEl.style.color = "var(--rose)"; msgEl.textContent = "Network error." }
+        btn.disabled = false
+      }
+    }
   })
 
   // review queue
@@ -769,16 +803,47 @@ async function pollAuthor(sessionId, box){
     var html = (s.steps || []).map(stepLine).join("")
     if(s.status === "running"){ box.innerHTML = html + '<div class="nt-live">AutoSim is driving...</div>'; continue }
     if(s.status === "crystallized"){
+      var vRunId = s.verificationRunId || ""
+      var pdfLink = vRunId ? ('<a class="walk-pdf-btn" href="' + esc('/api/trails/walks/' + encodeURIComponent(vRunId) + '/report.pdf' + projQ()) + '" target="_blank" rel="noopener" style="margin-left:8px">' + kicon('file-text',{size:10}) + ' PDF</a>') : ""
       box.innerHTML = html +
         '<div class="nt-done">Trail created (draft). Verification walk: <b class="v-' + esc(s.verificationVerdict || "") + '">' + esc(String(s.verificationVerdict || "?").toUpperCase()) + "</b></div>" +
-        '<button class="btn btn-indigo" id="ntApprove" data-trail="' + esc(s.trailId) + '">Looks right — activate</button>'
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px">' +
+        '<button class="btn btn-indigo" id="ntApprove" data-trail="' + esc(s.trailId) + '">Looks right - activate</button>' +
+        pdfLink +
+        (vRunId ? '<button class="walk-share-btn" id="ntShare" style="margin-left:0">'+kicon('link',{size:10})+' Share</button><span id="ntShareMsg" class="walk-share-msg"></span>' : '') +
+        '</div>'
       var ap = document.getElementById("ntApprove")
       ap.addEventListener("click", async function(){
         ap.disabled = true; ap.textContent = "Activating..."
         var ar = await fetch("/api/trails/" + encodeURIComponent(ap.dataset.trail) + "/approve" + projQ(), { method: "POST" })
         if(ar.ok){ document.getElementById("ntBg").classList.remove("show"); await render(await loadData()) }
-        else { ap.disabled = false; ap.textContent = "Looks right — activate" }
+        else { ap.disabled = false; ap.textContent = "Looks right - activate" }
       })
+      if(vRunId){
+        var shareBtn = document.getElementById("ntShare")
+        var shareMsgEl = document.getElementById("ntShareMsg")
+        if(shareBtn){
+          shareBtn.addEventListener("click", async function(){
+            shareBtn.disabled = true
+            if(shareMsgEl) shareMsgEl.textContent = ""
+            try {
+              var sr = await fetch('/api/trails/walks/' + encodeURIComponent(vRunId) + '/share' + projQ(), { method: "POST" })
+              var sd = await sr.json().catch(function(){ return {} })
+              if(sr.ok && sd.url){
+                await navigator.clipboard.writeText(sd.url)
+                if(shareMsgEl){ shareMsgEl.style.color = "var(--green)"; shareMsgEl.textContent = "Link copied - valid 30 days" }
+                setTimeout(function(){ if(shareMsgEl) shareMsgEl.textContent = ""; shareBtn.disabled = false }, 4000)
+              } else {
+                if(shareMsgEl){ shareMsgEl.style.color = "var(--rose)"; shareMsgEl.textContent = sd.error || "Share failed." }
+                shareBtn.disabled = false
+              }
+            } catch(e) {
+              if(shareMsgEl){ shareMsgEl.style.color = "var(--rose)"; shareMsgEl.textContent = "Network error." }
+              shareBtn.disabled = false
+            }
+          })
+        }
+      }
       return
     }
     box.innerHTML = html + '<div class="nt-stall">Stopped: ' + esc(s.stallReason || s.status) +
