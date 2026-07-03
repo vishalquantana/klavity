@@ -439,6 +439,18 @@ export async function applySchema(c: Client) {
     // ── One-time guarded migrations (C1 etc.) use this table instead of schema_meta so the
     // migration namespace is separate from runtime KV. ──
     `CREATE TABLE IF NOT EXISTS schema_migrations (key TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)`,
+    // ── Walk share tokens: unguessable expiring links that serve a walk PDF without login. ──
+    // token_hash = sha256hex(rawToken); the raw 32-byte hex token is NEVER stored, only returned once.
+    `CREATE TABLE IF NOT EXISTS walk_share_tokens (
+       id TEXT PRIMARY KEY,
+       token_hash TEXT NOT NULL UNIQUE,
+       run_id TEXT NOT NULL,
+       project_id TEXT NOT NULL,
+       created_by TEXT,
+       expires_at INTEGER NOT NULL,
+       created_at INTEGER NOT NULL
+     )`,
+    `CREATE INDEX IF NOT EXISTS wst_token_hash_idx ON walk_share_tokens (token_hash)`,
   ]
   for (const s of stmts) await c.execute(s)
 
