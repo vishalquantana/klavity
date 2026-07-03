@@ -459,7 +459,13 @@ async function runOneStep(
     return { tier: "none", verdict: "green", healed: false, llmCalls: 0 }
   }
   if (step.action === "wait") {
-    // Condition-based wait, never a blind sleep (spec §8).
+    // An authored wait's actionValue is EXPLICIT intent (the author model chose it for a reason —
+    // e.g. an async login round-trip or an AI extraction) — honor it as a minimum, THEN settle on
+    // networkidle. networkidle alone was instantly satisfied when the triggering fetch hadn't
+    // started yet (observed live 2026-07-04: replay navigated cookie-less mid-login → bounced to
+    // /login and the walk cascaded RED). Capped so a bad value can't blow the walk deadline.
+    const minMs = Math.min(Math.max(Number(step.actionValue) || 0, 0), 15_000)
+    if (minMs > 0) await page.waitForTimeout(minMs)
     await page.waitForLoadState("networkidle").catch(() => {})
     await addRunStep(projectId, { runId, trailId, stepId: step.id, idx: step.idx, tier: "none", verdict: "green", confidence: 1, healed: false, evidence: { action: "wait" } })
     return { tier: "none", verdict: "green", healed: false, llmCalls: 0 }
