@@ -108,6 +108,18 @@ export async function renderWalkPdf(
       try {
         const page = await browser.newPage()
         await page.setContent(html, { waitUntil: "domcontentloaded" })
+        // Step screenshots + fonts load from presigned/absolute URLs AFTER domcontentloaded —
+        // printing immediately yields image-less PDFs. Wait for every <img> to settle (load OR
+        // error, so a dead S3 link can't hang us); the outer 30s deadline still bounds everything.
+        await page
+          .evaluate(() =>
+            Promise.all(
+              Array.from(document.images)
+                .filter((img) => !img.complete)
+                .map((img) => new Promise((res) => { img.onload = img.onerror = () => res(null) })),
+            ),
+          )
+          .catch(() => {})
         const pdfBytes = await page.pdf({ format: "A4" })
         await page.close()
         return pdfBytes
