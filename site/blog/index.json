@@ -82,5 +82,12 @@
     "excerpt": "File a bug to your tracker without losing context: capture evidence first, map it to each tool's required fields, and search before filing to avoid dupes.",
     "category": "Guides",
     "date": "2026-07-02"
+  },
+  {
+    "slug": "session-replay-vs-bug-reports-when-to-use-each",
+    "title": "Session Replay vs. Bug Reports: When to Use Each Tool",
+    "excerpt": "Session replay records everything and hopes you find the bug later. Bug reports capture the exact moment a person flags one. Which should you reach for?",
+    "category": "Compare",
+    "date": "2026-07-03"
   }
 ]
