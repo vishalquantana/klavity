@@ -36,8 +36,12 @@ describe("buildAuthorMessages text-only", () => {
   })
 })
 
-describe("authorTrail textFirst escalation", () => {
+describe("authorTrail textFirst default + escalation", () => {
   const FIXTURE_URL = "data:text/html," + encodeURIComponent(`<html><body><a id="go" href="#x">Go</a></body></html>`)
+  const doneModel = (shots: boolean[]): AuthorModel => async (input) => {
+    shots.push(input.screenshotB64.length > 0)
+    return { action: { op: "done", selector: null, value: null, url: null, checkpoint: null, rationale: "done" }, costUsd: 0 }
+  }
   test("happy path sends NO screenshot; after a miss the retry attaches one", async () => {
     const shots: boolean[] = []
     let call = 0
@@ -56,14 +60,27 @@ describe("authorTrail textFirst escalation", () => {
     expect(shots[1]).toBe(true)  // after miss: screenshot attached
     expect(shots[2]).toBe(false) // miss counter reset on success → text-only again
   }, 60000)
-  test("flag off → screenshot on every call (current behavior)", async () => {
+  test("default (no flag) → text-first: NO screenshot on the happy path", async () => {
     const shots: boolean[] = []
-    const model: AuthorModel = async (input) => {
-      shots.push(input.screenshotB64.length > 0)
-      return { action: { op: "done", selector: null, value: null, url: null, checkpoint: null, rationale: "done" }, costUsd: 0 }
-    }
-    await authorTrail(projectId, { name: "tf2", objective: "o", baseUrl: FIXTURE_URL }, { model })
+    await authorTrail(projectId, { name: "tf-default", objective: "o", baseUrl: FIXTURE_URL }, { model: doneModel(shots) })
+    expect(shots).toEqual([false])
+  }, 60000)
+  test("opt-out via textFirst:false → screenshot on every call (arm A)", async () => {
+    const shots: boolean[] = []
+    await authorTrail(projectId, { name: "tf-optout", objective: "o", baseUrl: FIXTURE_URL }, { model: doneModel(shots), textFirst: false })
     expect(shots).toEqual([true])
+  }, 60000)
+  test("kill-switch KLAV_AUTHOR_TEXT_FIRST=0 → screenshot on every call", async () => {
+    const prev = process.env.KLAV_AUTHOR_TEXT_FIRST
+    process.env.KLAV_AUTHOR_TEXT_FIRST = "0"
+    try {
+      const shots: boolean[] = []
+      await authorTrail(projectId, { name: "tf-kill", objective: "o", baseUrl: FIXTURE_URL }, { model: doneModel(shots) })
+      expect(shots).toEqual([true])
+    } finally {
+      if (prev === undefined) delete process.env.KLAV_AUTHOR_TEXT_FIRST
+      else process.env.KLAV_AUTHOR_TEXT_FIRST = prev
+    }
   }, 60000)
 })
 

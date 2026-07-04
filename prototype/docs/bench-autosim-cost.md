@@ -107,3 +107,8 @@ Earlier flawed-objective runs (home page has no blog link — both arms honestly
 $0.0027/$0.0012, $0.0024/$0.0009, $0.0026/$0.0007, $0.0014/$0.0016 — B cheaper in 3 of 4.
 **Recommendation: flip-worthy, but owner's call — enable via `KLAV_AUTHOR_TEXT_FIRST=1` in
 /etc/klav/klav.env (instant revert by unsetting).**
+
+**DECISION 2026-07-04: text-first is now the DEFAULT** (owner flipped arm B on). `authorTrail`
+runs text-only on the happy path and escalates a screenshot only after a miss. Kill-switch:
+set `KLAV_AUTHOR_TEXT_FIRST=0` in `/etc/klav/klav.env` to revert to arm A (screenshot every
+step). Reheal Tier-2 still uses vision regardless.

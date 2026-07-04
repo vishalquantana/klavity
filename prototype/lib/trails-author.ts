@@ -63,7 +63,10 @@ export async function authorTrail(
   projectId: string, req: AuthorRequest,
   opts: { model: AuthorModel; headless?: boolean; launchArgs?: string[]; credResolver?: CredResolver; onStep?: (log: AuthorStepLog[]) => void | Promise<void>; driveDeadlineMs?: number; textFirst?: boolean },
 ): Promise<AuthorOutcome> {
-  const textFirst = opts.textFirst ?? process.env.KLAV_AUTHOR_TEXT_FIRST === "1"
+  // Text-first is the DEFAULT (bench 2026-07-04: arm B ~50% cheaper, 6/6 green verdicts vs arm A
+  // screenshot-every-step). Happy-path steps run text-only; a miss escalates by re-attaching the
+  // screenshot (see `includeShot` below). Kill-switch: KLAV_AUTHOR_TEXT_FIRST=0 reverts to arm A.
+  const textFirst = opts.textFirst ?? process.env.KLAV_AUTHOR_TEXT_FIRST !== "0"
   const credResolver = opts.credResolver ?? resolveCredRefs
   const credFields: string[] = []
   if (req.testAccountName) {
