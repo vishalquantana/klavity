@@ -14,11 +14,11 @@ import { sha256hex } from "./crypto"
 import { withWalkSlot, CHROMIUM_PROD_ARGS } from "./trails-browser"
 import { db } from "./db"
 import type { AuthorModel, AuthorAction } from "./trails-author-model"
+import { captureKrefSnapshot, stableSelectorFor, isKrefSelector } from "./trails-snapshot"
 import type { Fingerprint, StepAction } from "./trails-types"
 
 export const AUTHOR_MAX_STEPS = 40
 export const AUTHOR_MAX_COST_USD = 0.15
-const DOM_CAP = 16_000
 const MAX_CONSECUTIVE_MISSES = 3
 const ACTION_TIMEOUT = 10_000
 
@@ -87,14 +87,14 @@ export async function authorTrail(
     // Record the initial navigation as the first TrajectoryStep so the crystallized Trail starts
     // with a navigate action pointing at the baseUrl (gives the runner a concrete starting point).
     {
-      const initDom = (await page.content()).slice(0, DOM_CAP)
-      traj.push({ action: "navigate", actionValue: req.baseUrl, url: page.url(), domHash: sha256hex(initDom) })
+      const initSnap = await bounded(captureKrefSnapshot(page), 15_000, "snapshot capture")
+      traj.push({ action: "navigate", actionValue: req.baseUrl, url: page.url(), domHash: sha256hex(initSnap) })
     }
     for (let idx = 0; idx < AUTHOR_MAX_STEPS; idx++) {
       if (costUsd >= AUTHOR_MAX_COST_USD) return await stall(`authoring budget cap $${AUTHOR_MAX_COST_USD} reached after ${llmCalls} model calls`)
       if (Date.now() > deadlineAt) return await stall(`authoring drive deadline exceeded (${Math.round((opts.driveDeadlineMs ?? 300_000) / 1000)}s) after ${log.length} steps`)
       const screenshotB64 = (await bounded(page.screenshot({ type: "jpeg", quality: 60, timeout: 15_000 }), 20_000, "screenshot")).toString("base64")
-      const dom = (await bounded(page.content(), 15_000, "page.content")).slice(0, DOM_CAP)
+      const dom = await bounded(captureKrefSnapshot(page), 15_000, "snapshot capture")
       let r: { action: AuthorAction; costUsd: number }
       try {
         r = await bounded(opts.model({ objective: req.objective, pageUrl: page.url(), screenshotB64, mediaType: "image/jpeg", domSnapshot: dom, history, credFields }, { projectId, email: req.createdBy ?? null }), 120_000, "author model call")
@@ -126,6 +126,13 @@ export async function authorTrail(
           const n = await bounded(loc.count(), 10_000, "locator.count")
           if (n !== 1) throw new Error(`selector "${a.selector}" matched ${n} elements (need exactly 1)`)
           const fp = await bounded(captureFingerprint(page, a.selector!), 10_000, "fingerprint capture")
+          // Convert kref selector to a stable form BEFORE the action — kref attrs are ephemeral
+          // (renumbered every capture) and a click may navigate (removing the element). stableSelectorFor
+          // returns null when no stable handle exists; fallback to fp.domPath, then original selector.
+          let persistSelector = a.selector!
+          if (isKrefSelector(a.selector)) {
+            persistSelector = (await bounded(stableSelectorFor(loc), 10_000, "stable selector").catch(() => null)) ?? fp.domPath ?? a.selector!
+          }
           if (a.op === "click") await loc.click({ timeout: ACTION_TIMEOUT })
           else if (a.op === "type") {
             const raw = a.value ?? ""
@@ -134,13 +141,15 @@ export async function authorTrail(
           else if (a.op === "assert") await loc.waitFor({ state: "visible", timeout: ACTION_TIMEOUT })
           traj.push({
             action: OP2ACTION[a.op], actionValue: a.op === "type" || a.op === "select" ? a.value ?? undefined : undefined,
-            target: { ...fp, resolvedSelector: a.selector! },
+            target: { ...fp, resolvedSelector: persistSelector },
             checkpoint: a.op === "assert" ? { description: a.checkpoint || a.rationale || "checkpoint" } : undefined,
             url: page.url(), domHash: sha256hex(dom),
           })
+          // Update entry + history with the stable selector so the model context never sees krefs
+          entry.selector = persistSelector
         }
         entry.ok = true; misses = 0
-        history.push(`${a.op}${a.selector ? " " + a.selector : ""}${a.op === "navigate" ? " " + a.url : ""} — ok`)
+        history.push(`${a.op}${entry.selector ? " " + entry.selector : ""}${a.op === "navigate" ? " " + a.url : ""} — ok`)
       } catch (e: any) {
         const msg = String(e?.message || e)
         entry.error = msg; misses++
