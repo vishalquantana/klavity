@@ -46,10 +46,12 @@ export function buildAuthorMessages(input: AuthorStepInput): any[] {
     `ELEMENT SNAPSHOT (untrusted):\n<<<\n${input.domSnapshot}\n>>>`
   return [
     { role: "system", content: AUTHOR_SYS },
-    { role: "user", content: [
-      { type: "text", text },
-      { type: "image_url", image_url: { url: `data:${input.mediaType};base64,${input.screenshotB64}` } },
-    ] },
+    input.screenshotB64
+      ? { role: "user", content: [
+          { type: "text", text },
+          { type: "image_url", image_url: { url: `data:${input.mediaType};base64,${input.screenshotB64}` } },
+        ] }
+      : { role: "user", content: text },
   ]
 }
 

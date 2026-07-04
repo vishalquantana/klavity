@@ -61,8 +61,9 @@ const OP2ACTION: Record<string, StepAction> = { navigate: "navigate", click: "cl
 
 export async function authorTrail(
   projectId: string, req: AuthorRequest,
-  opts: { model: AuthorModel; headless?: boolean; launchArgs?: string[]; credResolver?: CredResolver; onStep?: (log: AuthorStepLog[]) => void | Promise<void>; driveDeadlineMs?: number },
+  opts: { model: AuthorModel; headless?: boolean; launchArgs?: string[]; credResolver?: CredResolver; onStep?: (log: AuthorStepLog[]) => void | Promise<void>; driveDeadlineMs?: number; textFirst?: boolean },
 ): Promise<AuthorOutcome> {
+  const textFirst = opts.textFirst ?? process.env.KLAV_AUTHOR_TEXT_FIRST === "1"
   const credResolver = opts.credResolver ?? resolveCredRefs
   const credFields: string[] = []
   if (req.testAccountName) {
@@ -98,7 +99,10 @@ export async function authorTrail(
     for (let idx = 0; idx < AUTHOR_MAX_STEPS; idx++) {
       if (costUsd >= AUTHOR_MAX_COST_USD) return await stall(`authoring budget cap $${AUTHOR_MAX_COST_USD} reached after ${llmCalls} model calls`)
       if (Date.now() > deadlineAt) return await stall(`authoring drive deadline exceeded (${Math.round((opts.driveDeadlineMs ?? 300_000) / 1000)}s) after ${log.length} steps`)
-      const screenshotB64 = (await bounded(page.screenshot({ type: "jpeg", quality: 60, timeout: 15_000 }), 20_000, "screenshot")).toString("base64")
+      const includeShot = !textFirst || misses > 0
+      const screenshotB64 = includeShot
+        ? (await bounded(page.screenshot({ type: "jpeg", quality: 60, timeout: 15_000 }), 20_000, "screenshot")).toString("base64")
+        : ""
       const dom = await bounded(captureKrefSnapshot(page), 15_000, "snapshot capture")
       let r: { action: AuthorAction; costUsd: number }
       try {
