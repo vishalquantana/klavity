@@ -216,3 +216,29 @@ test("no vision resolver → unchanged RED + needsVision (backward compatible)",
   const steps = await T.listRunSteps(PROJ, walk.runId)
   expect((steps[0].evidence as any).needsVision).toBe(true)
 })
+
+test("Tier-2 heal via kref selector persists a STABLE selector to cache + evidence", async () => {
+  // Fixture: cached selector #signin is gone from Tier-0/1; the real button is
+  // <a id="totally-new-id" ... role="button" aria-label="Account access">Enter</a>.
+  // The mock resolver receives the kref snapshot (not raw HTML) and returns a kref selector.
+  const visionKref: VisionResolver = async (input) => {
+    expect(input.domSnapshot).toContain("[ref=")         // model sees the kref snapshot
+    expect(input.domSnapshot).not.toContain("<html")      // not raw HTML
+    // Parse the kref ref for the "Account access" button in the snapshot.
+    const ref = input.domSnapshot.match(/button "Account access" \[ref=(e\d+)\]/)?.[1]
+    if (!ref) throw new Error(`button "Account access" not found in snapshot:\n${input.domSnapshot}`)
+    return { found: true, selector: `[data-kref="${ref}"]`, confidence: 0.95, classification: "moved", rationale: "same sign-in affordance moved to nav" }
+  }
+  const trailId = await seedTrail()
+  const walk = await walkTrail(PROJ, trailId, { fixtureUrl: FIX("checkout-mockup-moved.html"), vision: visionKref })
+  expect(walk.verdict).toBe("amber")
+  // Healed selector persisted as a STABLE selector (not a kref ephemeral).
+  const steps = await T.listRunSteps(PROJ, walk.runId)
+  const healStep = steps.find((s: any) => s.healed)
+  expect(healStep).toBeTruthy()
+  const cache = await T.getCacheForStep(PROJ, healStep!.stepId)
+  expect(cache!.resolvedSelector).toBe("#totally-new-id")        // converted from kref to #id
+  expect(cache!.resolvedSelector).not.toContain("data-kref")
+  // Evidence toSelector must also be stable.
+  expect(JSON.stringify(healStep!.evidence)).not.toContain("data-kref")
+}, 30000)
