@@ -1,0 +1,121 @@
+// Compact model-readable page snapshot for AutoSims (bench: prototype/docs/bench-autosim-cost.md).
+// One line per VISIBLE semantic element: `role "name" {disabled?} [ref=eN]`, indented by depth.
+// Interactive elements are stamped with data-kref="eN" so every [ref=eN] the model cites is a
+// REAL unique CSS selector — [data-kref="eN"] — for the current page state ONLY.
+//
+// INVARIANT (spec §1): kref selectors are EPHEMERAL — renumbered every capture, gone on reload.
+// Persistence points (trajectory resolvedSelector, locator_cache, heal toSelector) must convert
+// via stableSelectorFor() (fallback: fingerprint domPath) before storing anything.
+import type { Page, Locator } from "playwright"
+
+export const KREF_SNAPSHOT_CAP = 24_000
+const TRUNCATION_MARKER = "\n…[snapshot truncated]"
+
+/** True iff s is exactly one stamped kref selector, e.g. `[data-kref="e12"]`. */
+export function isKrefSelector(s: string | null | undefined): boolean {
+  return typeof s === "string" && /^\[data-kref="e\d+"\]$/.test(s.trim())
+}
+
+/**
+ * Serialize the page to a compact ref-annotated element tree and stamp data-kref attrs.
+ * Deterministic single page.evaluate; previous stamps are cleared first so re-captures
+ * renumber cleanly. Output capped at `cap` chars with an explicit truncation marker.
+ */
+export async function captureKrefSnapshot(page: Page, cap = KREF_SNAPSHOT_CAP): Promise<string> {
+  const out = await page.evaluate(() => {
+    // Runs in page context: everything must be inlined.
+    document.querySelectorAll("[data-kref]").forEach((el) => el.removeAttribute("data-kref"))
+    let n = 0
+    const lines: string[] = []
+    const SKIP = new Set(["script", "style", "noscript", "svg", "template", "iframe"])
+    const INTERACTIVE = new Set(["a", "button", "input", "select", "textarea", "summary", "option"])
+    const TEXTUAL = new Set(["label", "p", "li", "td", "th", "figcaption", "blockquote"])
+    const visible = (el: Element): boolean => {
+      const r = (el as HTMLElement).getBoundingClientRect?.()
+      if (!r || (r.width === 0 && r.height === 0)) return false
+      const s = getComputedStyle(el as HTMLElement)
+      return s.display !== "none" && s.visibility !== "hidden"
+    }
+    const roleOf = (el: Element): string | null => {
+      const explicit = el.getAttribute("role")
+      if (explicit) return explicit
+      const t = el.tagName.toLowerCase()
+      if (t === "a" && el.hasAttribute("href")) return "link"
+      if (t === "button" || (t === "input" && ["button", "submit"].includes((el as HTMLInputElement).type))) return "button"
+      if (t === "input") {
+        const ty = (el as HTMLInputElement).type
+        return ty === "checkbox" ? "checkbox" : ty === "radio" ? "radio" : "textbox"
+      }
+      if (t === "select") return "combobox"
+      if (t === "textarea") return "textbox"
+      if (t === "summary") return "button"
+      if (t === "option") return "option"
+      if (/^h[1-6]$/.test(t)) return "heading"
+      if (t === "img" && el.getAttribute("alt")) return "img"
+      return null
+    }
+    const nameOf = (el: Element): string => {
+      const cand =
+        el.getAttribute("aria-label") || el.getAttribute("placeholder") ||
+        (el as HTMLImageElement).alt || (el.textContent || "").trim() ||
+        el.getAttribute("name") || el.getAttribute("title") || (el as HTMLInputElement).value || ""
+      return cand.replace(/\s+/g, " ").slice(0, 80)
+    }
+    const walk = (el: Element, depth: number) => {
+      for (const child of Array.from(el.children)) {
+        const t = child.tagName.toLowerCase()
+        if (SKIP.has(t)) continue
+        let emitted = false
+        if (visible(child)) {
+          const role = roleOf(child)
+          const indent = "  ".repeat(Math.min(depth, 6))
+          if (role) {
+            let line = `${indent}${role} "${nameOf(child)}"`
+            if ((child as HTMLInputElement).disabled) line += " {disabled}"
+            if (INTERACTIVE.has(t) || child.getAttribute("role")) {
+              const ref = `e${++n}`
+              child.setAttribute("data-kref", ref)
+              line += ` [ref=${ref}]`
+            }
+            lines.push(line)
+            emitted = true
+          } else if (TEXTUAL.has(t)) {
+            // Structural text digest (NO ref): only direct text, only when it has no element
+            // children carrying the same text — keeps asserts groundable without ballooning.
+            const own = (child.textContent || "").trim().replace(/\s+/g, " ")
+            if (own && own.length >= 3 && child.children.length === 0) {
+              lines.push(`${indent}text "${own.slice(0, 80)}"`)
+              emitted = true
+            }
+          }
+        }
+        walk(child, emitted ? depth + 1 : depth)
+      }
+    }
+    walk(document.body, 0)
+    return lines.join("\n")
+  })
+  if (out.length > cap) return out.slice(0, cap - TRUNCATION_MARKER.length) + TRUNCATION_MARKER
+  return out
+}
+
+/**
+ * Stable CSS for an element the model addressed by kref (or any locator): #id → [data-testid]
+ * → tag[aria-label]. Returns null when no stable handle exists — callers fall back to the
+ * step fingerprint's domPath. Mirrors the runner's persistableSelector ladder.
+ */
+export async function stableSelectorFor(loc: Locator): Promise<string | null> {
+  try {
+    return await loc.first().evaluate((el: Element) => {
+      const esc = (v: string) => v.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
+      if (el.id) return "#" + CSS.escape(el.id)
+      const tid = el.getAttribute("data-testid")
+      if (tid) return `[data-testid="${esc(tid)}"]`
+      const al = el.getAttribute("aria-label")
+      if (al) return `${el.tagName.toLowerCase()}[aria-label="${esc(al)}"]`
+      return null
+    })
+  } catch {
+    return null
+  }
+}
