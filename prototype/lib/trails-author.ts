@@ -22,6 +22,11 @@ export const AUTHOR_MAX_COST_USD = 0.15
 const MAX_CONSECUTIVE_MISSES = 3
 const ACTION_TIMEOUT = 10_000
 
+/** Strip ephemeral kref attribute references from strings before persisting or adding to history.
+ *  Conveys which ref failed without embedding the literal data-kref attr (which is stale by the
+ *  next model call anyway since every iteration re-captures and renumbers refs). */
+const dekref = (s: string) => s.replace(/\[data-kref="(e\d+)"\]/g, "snapshot ref $1")
+
 export interface AuthorRequest { name: string; objective: string; baseUrl: string; testAccountName?: string; createdBy?: string }
 export interface AuthorStepLog { idx: number; op: string; selector: string | null; value: string | null; url: string; rationale: string; ok: boolean; error?: string }
 export interface AuthorOutcome {
@@ -152,9 +157,13 @@ export async function authorTrail(
         history.push(`${a.op}${entry.selector ? " " + entry.selector : ""}${a.op === "navigate" ? " " + a.url : ""} — ok`)
       } catch (e: any) {
         const msg = String(e?.message || e)
-        entry.error = msg; misses++
-        history.push(`${a.op}${a.selector ? " " + a.selector : ""} — FAILED: ${msg}`)
-        if (misses >= MAX_CONSECUTIVE_MISSES) { log.push(entry); await opts.onStep?.(log); return await stall(`stuck after ${misses} failed attempts; last: ${msg}`) }
+        const safeMsg = dekref(msg)
+        const safeSelector = a.selector && isKrefSelector(a.selector) ? dekref(a.selector) : a.selector
+        entry.error = safeMsg
+        entry.selector = safeSelector
+        misses++
+        history.push(`${a.op}${safeSelector ? " " + safeSelector : ""} — FAILED: ${safeMsg}`)
+        if (misses >= MAX_CONSECUTIVE_MISSES) { log.push(entry); await opts.onStep?.(log); return await stall(`stuck after ${misses} failed attempts; last: ${safeMsg}`) }
       }
       log.push(entry)
       await opts.onStep?.(log)
