@@ -1,107 +1,101 @@
-# Task 2 Report: Test Accounts API Routes
+# Task 2 Report: Authoring adopts kref snapshot
 
 ## Status: DONE
 
-## Implementation
+## What was done
 
-### Files changed
-- `prototype/server.ts` — 2 changes:
-  1. Added import: `import { createTestAccount, listTestAccounts, getTestAccountByName, deleteTestAccount } from "./lib/test-accounts"`
-  2. Updated `projMatch` regex (line ~3267) to include `/test-accounts(?:\/[^/]+)?` so the router captures both `/test-accounts` and `/test-accounts/:accId` URLs
-  3. Inserted the handler block between `/config` and `/activity` blocks, using local variable names `pid`, `access`, `me` exactly as found in the surrounding code
+### domHash safety grep (pre-change check)
+Ran `grep -rn "domHash" prototype/lib/ | grep -v test` as required. Confirmed: no replay-time recomputation of domHash from live DOM. The `domHash` field is:
+- Stored as a page-state fingerprint at authoring time
+- Used as a cache-key salt component from the stored `TrajectoryStep.domHash`
+- Never recomputed from live DOM at replay
 
-- `prototype/server.test-accounts.route.test.ts` — New hermetic route test file
+Result: CLEAR — implementation proceeded.
 
-### Route handler
+### Step 1: Failing test written
+Created `prototype/lib/trails-author.kref.e2e.test.ts` with two tests:
+1. "kref action executes; trajectory + step log persist stable selectors only" — scripted model answers with a kref selector parsed from the snapshot, verifies the click executes, checks nothing persisted is a kref, checks `#go` stable selector in locator_cache.
+2. "AUTHOR_SYS teaches kref + bans Playwright pseudo-classes; label is ELEMENT SNAPSHOT" — asserts AUTHOR_SYS contains `data-kref`, pseudo-class mention, and buildAuthorMessages emits `ELEMENT SNAPSHOT (untrusted)`.
 
-Three sub-routes implemented inside the `sub === "/test-accounts" || sub.startsWith("/test-accounts/")` guard:
+Initial run: 2 fail (expected).
 
-- `GET /api/projects/:id/test-accounts` — any project member; returns `{ accounts: TestAccount[] }` (password never in response by design of `listTestAccounts`)
-- `POST /api/projects/:id/test-accounts` — admin only; validates `name` (regex `/^[a-z0-9_-]{1,40}$/`), `login_email` (contains `@`, ≤200 chars), `password` (non-empty, ≤200 chars); 409 on duplicate name; returns `{ account }` with 201
-- `DELETE /api/projects/:id/test-accounts/:accId` — admin only; 404 if not found, `{ ok: true }` on success
+### Step 2: trails-author-model.ts updated
+- First sentence: "screenshot and DOM snapshot" → "screenshot and ELEMENT SNAPSHOT (a compact accessibility-style tree)"
+- Selector rule (line 31): replaced with kref-prefer rule including the `[data-kref="eN"]` instruction and explicit ban on Playwright pseudo-classes (`:has-text`, `:visible`, `:text`) with "plain CSS only" note
+- buildAuthorMessages: "DOM SNAPSHOT (untrusted):" → "ELEMENT SNAPSHOT (untrusted):"
 
-## TDD Evidence
+### Step 3: trails-author.ts updated
+- Added import: `captureKrefSnapshot, stableSelectorFor, isKrefSelector` from `./trails-snapshot`
+- Removed `DOM_CAP = 16_000` constant (no longer needed; snapshot module owns its cap)
+- Initial-nav step: `page.content().slice(0, DOM_CAP)` → `captureKrefSnapshot(page)` via `bounded()`
+- Loop capture: `page.content().slice(0, DOM_CAP)` → `captureKrefSnapshot(page)` via `bounded()`
+- Selector-op branch (before the click): added `persistSelector` conversion via `stableSelectorFor(loc)` with fallback to `fp.domPath ?? a.selector!`
+- traj.push: `resolvedSelector: a.selector!` → `resolvedSelector: persistSelector`
+- entry.selector: updated to `persistSelector` after computation
+- history.push: uses `entry.selector` (stable) instead of `a.selector` (potentially kref)
 
-**RED phase:** `bun test server.test-accounts.route.test.ts` before implementation:
-- `member can list, only admin can create/delete, secret never returned` → FAIL (POST returned 404, expected 201)
-- `validation: name 1-40 chars [a-z0-9_-], email required, password 1-200` → FAIL (returned 404, expected 400)
-- `cross-project access is 403/404` → PASS (server returned 403 for unknown project — acceptable per `expect([403, 404]).toContain(r.status)`)
-- Result: 1 pass, 2 fail
+### Deviation: locator_cache assertion
+The brief's test asserts `expect(json).toContain("#go")` on `JSON.stringify(getTrail + listTrailSteps)`. However, `crystallize` stores `target_json` as fingerprint-only (strips `resolvedSelector` via `fingerprintOnly()`); the selector lives exclusively in `locator_cache`. The test was updated to also query `T.getCacheForStep(PROJECT_ID, clickStep!.id)` and include the cache row in the JSON assertion. This is the correct place to verify stable selectors and matches what `trails-runner.e2e.test.ts` does (it uses `T.getCacheForStep` for selector assertions).
 
-**GREEN phase:** After implementation:
-- All 3 tests PASS — 3 pass, 0 fail, 7 expect() calls
+## Test commands + counts
 
-**Full suite:** 939 pass, 1 fail (timing flakes in `lib/trails-journey.e2e.test.ts` and `lib/trails-runner-deadline.test.ts` under full-suite load — both pass cleanly in isolation, pre-existing known flake).
+```
+cd prototype && bun test lib/trails-author.kref.e2e.test.ts server.trails-author.route.test.ts lib/trails-runner.e2e.test.ts
+```
+
+Result: **13 pass, 1 fail**
+
+The 1 failing test is "POST /api/trails/author validates and returns a pollable session" in `server.trails-author.route.test.ts` — the pre-existing env-dependent failure (OPENROUTER_API_KEY is set in .env, so the model runs and stalls for a page-content reason instead of failing with "OPENROUTER"). This is the exact failure profile described in the brief as "same-profile = OK".
+
+Additional runs confirming no regressions:
+- `bun test lib/trails-author.e2e.test.ts lib/trails-author-model.test.ts`: **16 pass, 0 fail**
 
 ## Commit
 
-- SHA: `3d6a30b`
-- Message: `feat(autosims): /api/projects/:id/test-accounts routes (admin-gated, secret write-only)`
-- Branch: `feat/autosims-domain-model`
+- SHA: `232960b`
+- Message: `feat(autosims): authoring drives on kref element snapshot; stable selectors persisted`
+- Branch: `feat/autosim-cost-bench`
 
-## Self-Review
+## Self-review
 
-1. **Secret write-only confirmed:** `listTestAccounts` (used for both GET response and POST response via filter) selects only `id,project_id,name,login_email,created_by,created_at,updated_at` — `password_enc` is never fetched; test assertion `expect(JSON.stringify(created)).not.toContain("pw-123")` passes.
+- Persistence invariant holds: no `data-kref` string in crystallized trail steps, locator_cache, step log, or history. Verified by test.
+- `stableSelectorFor` is called BEFORE the click action (brief ordering requirement), so the kref attr is still present on the DOM element.
+- `bounded()` wrapping added for `stableSelectorFor` call with 10_000ms timeout and `.catch(() => null)` fallback.
+- History now shows stable selectors, preventing kref refs from poisoning model context on future turns.
+- All wait/navigate paths are untouched (as specified).
+- No version bumps, no CHANGELOG edits.
 
-2. **Regex correctly captures both paths:** `/test-accounts(?:\/[^/]+)?` matches `/test-accounts` (no trailing segment) and `/test-accounts/tacc_uuid` (with ID segment).
+---
 
-3. **Variable name alignment:** The surrounding `/api/projects/:id/` block uses `pid` (projMatch[1]), `access` (from `projectAccess(me, pid)`), `me` (from `sessionEmail(req)`) — all used correctly in the handler.
-
-4. **Cross-project isolation:** Access check `const access = await projectAccess(me, pid)` happens before any sub-route handler executes; a user with no membership gets 403 before reaching the test-accounts block.
-
-5. **409 duplicate name:** Prevents silent overwrites of encrypted credentials.
-
-## Concerns
-
-None. Implementation is clean and matches the brief verbatim.
-
-## Fix pass
+## Review-findings fix (commit 02a3f31)
 
 ### Findings addressed
 
-**Finding 1 — TOCTOU in POST 201 response (server.ts)**
+1. **[Important] FAILED-action path leaked krefs into `history`**: The catch block pushed raw `a.selector` (a kref like `[data-kref="e3"]`) into `history[]`, and the error message from the `n !== 1` throw also embedded it. Both now sanitized.
+2. **[Important] No test covered the failure path**: Added a new test in `trails-author.kref.e2e.test.ts`.
+3. **[Important] `entry.selector`/`entry.error` on failed steps kept raw kref**: Both now sanitized before persistence.
 
-Added `getTestAccountById(projectId: string, id: string): Promise<TestAccount | null>` to `lib/test-accounts.ts`. It uses the same column list as `listTestAccounts` (never selects `password_enc`) and reuses the existing `row2acc` mapper. The POST handler in `server.ts` now calls this point-read instead of the old filter-after-list pattern; if the row is null (extreme concurrent-delete race), it returns 500.
+### What changed
 
-Changed files:
-- `prototype/lib/test-accounts.ts` — added `getTestAccountById` function
-- `prototype/server.ts` — updated import to include `getTestAccountById`; replaced `const [account] = (await listTestAccounts(pid)).filter(...)` with `const account = await getTestAccountById(pid, id)` + null-guard returning 500
+**`prototype/lib/trails-author.ts`**
+- Added `dekref` sanitizer near the top (after constants, before interface declarations):
+  ```ts
+  const dekref = (s: string) => s.replace(/\[data-kref="(e\d+)"\]/g, "snapshot ref $1")
+  ```
+- In the catch block: compute `safeMsg = dekref(msg)` and `safeSelector = a.selector && isKrefSelector(a.selector) ? dekref(a.selector) : a.selector`; assign both to `entry.error` and `entry.selector`; use `safeSelector`/`safeMsg` in `history.push` and the stall message.
+- The `n !== 1` throw (line 127) is left unmodified — `dekref` applied at consumption points (history/entry.error) is sufficient as instructed.
 
-**Finding 2 — Missing DELETE coverage in route test file**
+**`prototype/lib/trails-author.kref.e2e.test.ts`**
+- Added third test: "failed kref action: data-kref never reaches step log or history"
+  - Scripted model call 1 returns `{op:"click", selector:'[data-kref="e999"]', ...}` — matches 0 elements → FAILED
+  - Call 2 captures `input.history` and returns done
+  - Asserts: `JSON.stringify(out.steps)` does NOT contain `data-kref`, DOES contain `snapshot ref e999`
+  - Asserts: `JSON.stringify(historyOnCall2)` does NOT contain `data-kref`
 
-Added two new test blocks to `prototype/server.test-accounts.route.test.ts`:
-
-1. Extended `"cross-project access is 403/404"` to also cover: member POST on project B → 403/404; member DELETE on project B → 403/404.
-
-2. New test `"DELETE: admin can delete existing account; member cannot; unknown id is 404"`:
-   - Creates a fresh account (`to-delete`) via admin POST
-   - member DELETE → 403 and account still present in GET list
-   - admin DELETE existing → 200 `{ok: true}`
-   - account absent from GET list after deletion
-   - admin DELETE unknown id → 404
-
-**Finding 3 — Dead code in test file**
-
-Removed the unused `const base = () => BASE` helper from `prototype/server.test-accounts.route.test.ts`.
-
-### TDD note
-
-The DELETE handler was already correctly implemented in 3d6a30b. Writing the DELETE tests first and running them confirmed they passed immediately — no handler change needed. The TOCTOU fix (finding 1) required the new `getTestAccountById` function in lib, which is tested via the route test's POST assertions.
-
-### Test run
+### Test command + counts
 
 ```
-bun test server.test-accounts.route.test.ts lib/test-accounts.test.ts
+cd prototype && bun test lib/trails-author.kref.e2e.test.ts lib/trails-author.textfirst.test.ts 2>/dev/null; bun test lib/trails-author.kref.e2e.test.ts
 ```
 
-Output:
-```
-bun test v1.3.14 (0d9b296a)
-
- 9 pass
- 0 fail
- 29 expect() calls
-Ran 9 tests across 2 files. [433.00ms]
-```
-
-9 tests pass (5 route tests across 2 files + 4 lib unit tests), 0 failures, 29 expect() calls.
+Result: **3 pass, 0 fail** (textfirst file absent — silently skipped as expected)
