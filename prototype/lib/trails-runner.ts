@@ -20,10 +20,7 @@ import { stepCacheKey } from "./trails-crystallize"
 import { decideFromVision, type VisionResolver, type VisionInput, type VisionResult, type VisionDecision } from "./trails-vision"
 import { setupReplayCapture, saveReplay, type ReplayCapture } from "./trails-replay"
 import { hasCredRef, resolveCredRefs, type CredResolver } from "./trails-creds"
-
-// Cap the DOM sent to the vision MODEL (robustness #5) — separate from the evidence domExcerpt cap.
-// Keeps the model input bounded so an oversized page can't blow the token budget / 4xx context limit.
-const VISION_DOM_MODEL_CAP = 16_000
+import { captureKrefSnapshot, stableSelectorFor, isKrefSelector } from "./trails-snapshot"
 
 export interface WalkOptions {
   /** Concrete URL to walk against (overrides the trail's baseUrl). file:// or http(s)://. */
@@ -709,14 +706,14 @@ async function runVisionTier2(
     // page.content() takes no per-call timeout in this Playwright version; it is already governed by
     // the page-level setDefaultTimeout(opTimeout) set in walkTrail. screenshot IS bounded explicitly.
     dom = await page.content()
+    // Capture the kref snapshot for the MODEL payload. data-kref attrs are stamped on the live page
+    // now; they remain valid until the next captureKrefSnapshot call (which renumbers). Do NOT
+    // re-capture between here and the act block — it would invalidate any kref the model returns.
+    const modelDom = await captureKrefSnapshot(page)
     const candidateSelectors: string[] = []
     if (cachedSelector) candidateSelectors.push(cachedSelector)
     if (fp?.testId) candidateSelectors.push(`[data-testid="${escAttr(fp.testId)}"]`)
     if (fp?.domPath) candidateSelectors.push(fp.domPath)
-
-    // Robustness #5: cap the DOM sent to the MODEL (separate from evidence domExcerpt) so an oversized
-    // page can't blow the token budget / trip a 4xx context-limit. Evidence excerpt is capped below.
-    const modelDom = dom.length > VISION_DOM_MODEL_CAP ? dom.slice(0, VISION_DOM_MODEL_CAP) : dom
 
     const visionInput: VisionInput = {
       screenshotB64: shot,
@@ -771,6 +768,13 @@ async function runVisionTier2(
       // a redundant belt so an assert can never reach the heal/act path even if that guard changes.
       !isAssert
     if (ok) {
+      // Convert any kref selector to a stable one BEFORE the act: a click may navigate away,
+      // making the page (and its stamped data-kref attrs) unavailable for stableSelectorFor after.
+      // data-kref must never be persisted (spec §1 invariant).
+      let persistSelector = decision.selector
+      if (isKrefSelector(decision.selector)) {
+        persistSelector = (await stableSelectorFor(loc).catch(() => null)) ?? fp?.domPath ?? decision.selector
+      }
       try {
         switch (step.action) {
           case "type": {
@@ -783,16 +787,16 @@ async function runVisionTier2(
         }
         // Persist the healed selector so the NEXT walk is Tier 0 again (heal-as-cache-update, §6.4).
         const cacheRow = await getCacheForStep(projectId, step.id)
-        const cKey = cacheRow?.cacheKey ?? (await stepCacheKey(projectId, trailId, step, decision.selector))
+        const cKey = cacheRow?.cacheKey ?? (await stepCacheKey(projectId, trailId, step, persistSelector))
         await upsertLocatorCache(projectId, {
-          trailId, stepId: step.id, cacheKey: cKey, resolvedSelector: decision.selector,
+          trailId, stepId: step.id, cacheKey: cKey, resolvedSelector: persistSelector,
           fingerprint: fp ?? undefined, confidence: decision.confidence, source: "heal",
         })
         await addRunStep(projectId, {
           runId, trailId, stepId: step.id, idx: step.idx,
           tier: "vision", verdict: "amber", confidence: decision.confidence, diagnosis: "locator_drift", healed: true,
           evidence: {
-            healed: true, fromSelector: cachedSelector, toSelector: decision.selector,
+            healed: true, fromSelector: cachedSelector, toSelector: persistSelector,
             tier: "vision", confidence: decision.confidence, candidateSignal: "vision",
             rationale: decision.rationale, classification: result.classification,
             checkpoint: step.checkpoint?.description ?? null,
