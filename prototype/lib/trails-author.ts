@@ -4,7 +4,6 @@
 // findings) → outcome. On "stall"/caps/errors: stalled outcome with the exact reason (stop-show-
 // refine UX). Secrets: the model only ever sees {{cred:...}} placeholders (credFields); values are
 // resolved at fill time and never logged (history/trajectory keep the placeholder).
-import { chromium, type Page } from "playwright"
 import { crystallize, type Trajectory, type TrajectoryStep } from "./trails-crystallize"
 import { setTrailStatus } from "./trails"
 import { walkTrail } from "./trails-runner"
@@ -12,10 +11,11 @@ import { hasCredRef, resolveCredRefs, type CredResolver } from "./trails-creds"
 import { getTestAccountByName } from "./test-accounts"
 import { sha256hex } from "./crypto"
 import { withWalkSlot, CHROMIUM_PROD_ARGS } from "./trails-browser"
+import { acquireBrowser } from "./trails-browser-page"
 import { db } from "./db"
 import type { AuthorModel, AuthorAction } from "./trails-author-model"
-import { captureKrefSnapshot, stableSelectorFor, isKrefSelector } from "./trails-snapshot"
-import type { Fingerprint, StepAction } from "./trails-types"
+import { isKrefSelector } from "./trails-snapshot"
+import type { StepAction } from "./trails-types"
 
 export const AUTHOR_MAX_STEPS = 40
 export const AUTHOR_MAX_COST_USD = 0.15
@@ -34,27 +34,6 @@ export interface AuthorOutcome {
   trailId: string | null; verificationRunId: string | null
   verificationVerdict: "green" | "amber" | "red" | null
   steps: AuthorStepLog[]; stallReason: string | null; llmCalls: number; costUsd: number
-}
-
-async function captureFingerprint(page: Page, selector: string): Promise<Fingerprint> {
-  return await page.locator(selector).first().evaluate((el: Element) => {
-    const tag = el.tagName.toLowerCase()
-    const roleMap: Record<string, string> = { button: "button", a: "link", input: "textbox", select: "combobox", textarea: "textbox" }
-    const text = (el.textContent || "").trim().slice(0, 80)
-    const accName = el.getAttribute("aria-label") || (el as any).placeholder || text
-    let path = "", cur: Element | null = el
-    for (let d = 0; cur && d < 4; d++) {
-      let i = 1, sib = cur.previousElementSibling
-      while (sib) { if (sib.tagName === cur.tagName) i++; sib = sib.previousElementSibling }
-      path = cur.tagName.toLowerCase() + ":nth-of-type(" + i + ")" + (path ? ">" + path : "")
-      cur = cur.parentElement
-    }
-    return {
-      role: el.getAttribute("role") || roleMap[tag] || undefined,
-      accessibleName: accName || undefined, text: text || undefined,
-      testId: el.getAttribute("data-testid") || undefined, domPath: path,
-    }
-  })
 }
 
 const OP2ACTION: Record<string, StepAction> = { navigate: "navigate", click: "click", type: "type", select: "select", assert: "assert", wait: "wait" }
@@ -85,18 +64,20 @@ export async function authorTrail(
   const deadlineAt = Date.now() + (opts.driveDeadlineMs ?? 300_000)
   const bounded = <T>(p: Promise<T>, ms: number, what: string): Promise<T> =>
     Promise.race([p, new Promise<never>((_, rej) => setTimeout(() => rej(new Error(`${what} timed out after ${ms}ms`)), ms))])
-  const browser = await chromium.launch({ headless: opts.headless ?? true, args: opts.launchArgs ?? [] })
+  // Browser via the adapter seam: local Playwright by default; Puppeteer→remote (Steel) when
+  // AUTOSIM_CDP_URL is set (moves the browser off the 1GB box). Behavior-identical on the default.
+  const handle = await acquireBrowser({ headless: opts.headless, launchArgs: opts.launchArgs })
   const stall = async (why: string): Promise<AuthorOutcome> => {
-    await browser.close().catch(() => {})
+    await handle.close()
     return { status: "stalled", trailId: null, verificationRunId: null, verificationVerdict: null, steps: log, stallReason: why, llmCalls, costUsd }
   }
   try {
-    const page = await browser.newPage()
-    await page.goto(req.baseUrl, { timeout: 20_000, waitUntil: "domcontentloaded" })
+    const page = await handle.newPage()
+    await page.goto(req.baseUrl, 20_000)
     // Record the initial navigation as the first TrajectoryStep so the crystallized Trail starts
     // with a navigate action pointing at the baseUrl (gives the runner a concrete starting point).
     {
-      const initSnap = await bounded(captureKrefSnapshot(page), 15_000, "snapshot capture")
+      const initSnap = await bounded(page.krefSnapshot(), 15_000, "snapshot capture")
       traj.push({ action: "navigate", actionValue: req.baseUrl, url: page.url(), domHash: sha256hex(initSnap) })
     }
     for (let idx = 0; idx < AUTHOR_MAX_STEPS; idx++) {
@@ -104,9 +85,9 @@ export async function authorTrail(
       if (Date.now() > deadlineAt) return await stall(`authoring drive deadline exceeded (${Math.round((opts.driveDeadlineMs ?? 300_000) / 1000)}s) after ${log.length} steps`)
       const includeShot = !textFirst || misses > 0
       const screenshotB64 = includeShot
-        ? (await bounded(page.screenshot({ type: "jpeg", quality: 60, timeout: 15_000 }), 20_000, "screenshot")).toString("base64")
+        ? await bounded(page.screenshotJpeg(60, 15_000), 20_000, "screenshot")
         : ""
-      const dom = await bounded(captureKrefSnapshot(page), 15_000, "snapshot capture")
+      const dom = await bounded(page.krefSnapshot(), 15_000, "snapshot capture")
       let r: { action: AuthorAction; costUsd: number }
       try {
         r = await bounded(opts.model({ objective: req.objective, pageUrl: page.url(), screenshotB64, mediaType: "image/jpeg", domSnapshot: dom, history, credFields }, { projectId, email: req.createdBy ?? null }), 120_000, "author model call")
@@ -128,29 +109,28 @@ export async function authorTrail(
       try {
         if (a.op === "wait") {
           const ms = Math.min(Math.max(Number(a.value) || 1000, 500), 15_000)
-          await page.waitForTimeout(ms)
+          await page.waitMs(ms)
           traj.push({ action: "wait", actionValue: String(ms), url: page.url(), domHash: sha256hex(dom) })
         } else if (a.op === "navigate") {
-          await page.goto(a.url!, { timeout: 20_000, waitUntil: "domcontentloaded" })
+          await page.goto(a.url!, 20_000)
           traj.push({ action: "navigate", actionValue: a.url!, url: page.url(), domHash: sha256hex(dom) })
         } else {
-          const loc = page.locator(a.selector!)
-          const n = await bounded(loc.count(), 10_000, "locator.count")
+          const n = await bounded(page.count(a.selector!), 10_000, "locator.count")
           if (n !== 1) throw new Error(`selector "${a.selector}" matched ${n} elements (need exactly 1)`)
-          const fp = await bounded(captureFingerprint(page, a.selector!), 10_000, "fingerprint capture")
+          const fp = await bounded(page.fingerprint(a.selector!), 10_000, "fingerprint capture")
           // Convert kref selector to a stable form BEFORE the action — kref attrs are ephemeral
-          // (renumbered every capture) and a click may navigate (removing the element). stableSelectorFor
+          // (renumbered every capture) and a click may navigate (removing the element). stableSelector
           // returns null when no stable handle exists; fallback to fp.domPath, then original selector.
           let persistSelector = a.selector!
           if (isKrefSelector(a.selector)) {
-            persistSelector = (await bounded(stableSelectorFor(loc), 10_000, "stable selector").catch(() => null)) ?? fp.domPath ?? a.selector!
+            persistSelector = (await bounded(page.stableSelector(a.selector!), 10_000, "stable selector").catch(() => null)) ?? fp.domPath ?? a.selector!
           }
-          if (a.op === "click") await loc.click({ timeout: ACTION_TIMEOUT })
+          if (a.op === "click") await page.click(a.selector!, ACTION_TIMEOUT)
           else if (a.op === "type") {
             const raw = a.value ?? ""
-            await loc.fill(hasCredRef(raw) ? await credResolver(projectId, raw) : raw, { timeout: ACTION_TIMEOUT })
-          } else if (a.op === "select") await loc.selectOption(a.value ?? "", { timeout: ACTION_TIMEOUT })
-          else if (a.op === "assert") await loc.waitFor({ state: "visible", timeout: ACTION_TIMEOUT })
+            await page.fill(a.selector!, hasCredRef(raw) ? await credResolver(projectId, raw) : raw, ACTION_TIMEOUT)
+          } else if (a.op === "select") await page.selectOption(a.selector!, a.value ?? "", ACTION_TIMEOUT)
+          else if (a.op === "assert") await page.assertVisible(a.selector!, ACTION_TIMEOUT)
           traj.push({
             action: OP2ACTION[a.op], actionValue: a.op === "type" || a.op === "select" ? a.value ?? undefined : undefined,
             target: { ...fp, resolvedSelector: persistSelector },
@@ -175,7 +155,7 @@ export async function authorTrail(
       log.push(entry)
       await opts.onStep?.(log)
     }
-    await browser.close().catch(() => {})
+    await handle.close()
     if (!traj.length) return { status: "stalled", trailId: null, verificationRunId: null, verificationVerdict: null, steps: log, stallReason: "model finished without performing any step", llmCalls, costUsd }
     const trajectory: Trajectory = { name: req.name, intent: req.objective, baseUrl: req.baseUrl, authorKind: "llm", createdBy: req.createdBy, steps: traj }
     const { trailId } = await crystallize(projectId, trajectory)
@@ -190,7 +170,7 @@ export async function authorTrail(
     // Verification Walk never looks like a regression to the reviewer.
     return { status: "crystallized", trailId, verificationRunId: v.runId, verificationVerdict: v.verdict === "skip" ? "amber" : v.verdict, steps: log, stallReason: null, llmCalls, costUsd }
   } catch (e: any) {
-    await browser.close().catch(() => {})
+    await handle.close()
     return { status: "failed", trailId: null, verificationRunId: null, verificationVerdict: null, steps: log, stallReason: String(e?.message || e), llmCalls, costUsd }
   }
 }
