@@ -86,3 +86,24 @@ screenshot only on the retry after a miss). Same objective, real OpenRouter spen
 Run: `bun scripts/bench-author-ab.ts` — append the console.table rows here per run.
 Decision rule: flip the default only if arm B is ≥50% cheaper AND status/verdict are not worse
 across 3 runs.
+
+### Results 2026-07-04 (objective: open most recent post from /blog + assert heading)
+
+| run | arm | status | verdict | llmCalls | cost | secs |
+|---|---|---|---|---|---|---|
+| 1 | A current | crystallized | green | 14 | $0.01181 | 44 |
+| 1 | B text-first | crystallized | green | 6 | $0.00237 | 15 |
+| 2 | A current | crystallized | green | 7 | $0.00563 | 28 |
+| 2 | B text-first | crystallized | green | 13 (1 miss) | $0.00676 | 27 |
+| 3 | A current | crystallized | green | 7 | $0.00474 | 24 |
+| 3 | B text-first | crystallized | green | 4 | $0.00196 | 10 |
+
+**Aggregate: A $0.02218 vs B $0.01109 → B 50.0% cheaper; verdicts equal (6/6 green).**
+Per-run: B won 2 of 3 (−80%, −59%); run 2 B wandered (+20%, 13 calls incl. 1 escalation).
+Reading: quality is NOT worse (all green, and in the earlier impossible-objective runs both
+arms stalled honestly); cost sits exactly at the ≥50% rule's edge with high path-length
+variance. Bigger sessions amplify the saving (per-call: A $0.00079 vs B $0.00048).
+Earlier flawed-objective runs (home page has no blog link — both arms honestly stalled):
+$0.0027/$0.0012, $0.0024/$0.0009, $0.0026/$0.0007, $0.0014/$0.0016 — B cheaper in 3 of 4.
+**Recommendation: flip-worthy, but owner's call — enable via `KLAV_AUTHOR_TEXT_FIRST=1` in
+/etc/klav/klav.env (instant revert by unsetting).**

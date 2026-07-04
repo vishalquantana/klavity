@@ -29,8 +29,10 @@ await db.execute({
 })
 
 // ── Bench config ────────────────────────────────────────────────────────────────────────────────
-const OBJECTIVE = "Open the blog from the home page, open the most recent post, then assert the post heading is visible."
-const BASE_URL = "https://klavity.in/"
+// Objective must be achievable from BASE_URL — the home page has NO blog link (verified
+// 2026-07-04; both arms honestly stalled on the old home-page phrasing), so start at /blog.
+const OBJECTIVE = "Open the most recent blog post from this blog index, then assert the post's main heading is visible."
+const BASE_URL = "https://klavity.in/blog"
 
 async function arm(name: string, textFirst: boolean) {
   const t0 = Date.now()
@@ -49,6 +51,7 @@ async function arm(name: string, textFirst: boolean) {
     steps: out.steps.length,
     misses: out.steps.filter((s) => !s.ok).length,
     secs: Math.round((Date.now() - t0) / 1000),
+    stallReason: out.stallReason ? out.stallReason.slice(0, 60) : null,
   }
 }
 
