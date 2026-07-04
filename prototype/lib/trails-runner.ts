@@ -20,7 +20,7 @@ import { stepCacheKey } from "./trails-crystallize"
 import { decideFromVision, type VisionResolver, type VisionInput, type VisionResult, type VisionDecision } from "./trails-vision"
 import { setupReplayCapture, saveReplay, type ReplayCapture } from "./trails-replay"
 import { hasCredRef, resolveCredRefs, type CredResolver } from "./trails-creds"
-import { captureKrefSnapshot, stableSelectorFor, isKrefSelector } from "./trails-snapshot"
+import { captureKrefSnapshot, stableSelectorFor, structuralPathFor, isKrefSelector } from "./trails-snapshot"
 
 export interface WalkOptions {
   /** Concrete URL to walk against (overrides the trail's baseUrl). file:// or http(s)://. */
@@ -771,9 +771,24 @@ async function runVisionTier2(
       // Convert any kref selector to a stable one BEFORE the act: a click may navigate away,
       // making the page (and its stamped data-kref attrs) unavailable for stableSelectorFor after.
       // data-kref must never be persisted (spec §1 invariant).
-      let persistSelector = decision.selector
+      //
+      // Fallback chain for a kref selector:
+      //   stableSelectorFor(loc)   → #id / [data-testid] / tag[aria-label]
+      //   fp?.domPath              → stored structural path from fingerprint (old trails)
+      //   structuralPathFor(loc)   → live 4-level tag:nth-of-type path (bare elements)
+      //   null                     → all failed; skip upsertLocatorCache (next walk re-heals)
+      //                              and use a descriptive dekref'd form in evidence.
+      let persistSelector: string | null = decision.selector
+      let skipPersist = false
       if (isKrefSelector(decision.selector)) {
-        persistSelector = (await stableSelectorFor(loc).catch(() => null)) ?? fp?.domPath ?? decision.selector
+        const stable = await stableSelectorFor(loc).catch(() => null)
+        const structural = stable == null ? await structuralPathFor(loc).catch(() => null) : null
+        persistSelector = stable ?? fp?.domPath ?? structural ?? null
+        if (persistSelector === null) {
+          // All fallbacks exhausted — act on the element (best-effort) but NEVER store a kref.
+          // The next walk will simply re-heal: graceful, invariant-safe.
+          skipPersist = true
+        }
       }
       try {
         switch (step.action) {
@@ -786,17 +801,23 @@ async function runVisionTier2(
           case "select": await loc.selectOption(step.actionValue ?? "", { timeout: ACTION_TIMEOUT }); break
         }
         // Persist the healed selector so the NEXT walk is Tier 0 again (heal-as-cache-update, §6.4).
-        const cacheRow = await getCacheForStep(projectId, step.id)
-        const cKey = cacheRow?.cacheKey ?? (await stepCacheKey(projectId, trailId, step, persistSelector))
-        await upsertLocatorCache(projectId, {
-          trailId, stepId: step.id, cacheKey: cKey, resolvedSelector: persistSelector,
-          fingerprint: fp ?? undefined, confidence: decision.confidence, source: "heal",
-        })
+        // SKIP when persistSelector is null (kref with no stable fallback) — invariant: no kref stored.
+        if (!skipPersist && persistSelector !== null) {
+          const cacheRow = await getCacheForStep(projectId, step.id)
+          const cKey = cacheRow?.cacheKey ?? (await stepCacheKey(projectId, trailId, step, persistSelector))
+          await upsertLocatorCache(projectId, {
+            trailId, stepId: step.id, cacheKey: cKey, resolvedSelector: persistSelector,
+            fingerprint: fp ?? undefined, confidence: decision.confidence, source: "heal",
+          })
+        }
+        // evidence.toSelector: use the stable selector when available; otherwise a descriptive
+        // dekref'd form so the run_step evidence is human-readable and never embeds a raw kref.
+        const toSelectorEvidence = persistSelector ?? decision.selector.replace(/\[data-kref="(e\d+)"\]/, "snapshot ref $1")
         await addRunStep(projectId, {
           runId, trailId, stepId: step.id, idx: step.idx,
           tier: "vision", verdict: "amber", confidence: decision.confidence, diagnosis: "locator_drift", healed: true,
           evidence: {
-            healed: true, fromSelector: cachedSelector, toSelector: persistSelector,
+            healed: true, fromSelector: cachedSelector, toSelector: toSelectorEvidence,
             tier: "vision", confidence: decision.confidence, candidateSignal: "vision",
             rationale: decision.rationale, classification: result.classification,
             checkpoint: step.checkpoint?.description ?? null,

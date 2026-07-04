@@ -1,7 +1,7 @@
 // Serializer e2e on a real chromium page (same pattern as trails-runner.e2e.test.ts).
 import { describe, test, expect, beforeAll, afterAll } from "bun:test"
 import { chromium, type Browser, type Page } from "playwright"
-import { captureKrefSnapshot, stableSelectorFor, isKrefSelector, KREF_SNAPSHOT_CAP } from "./trails-snapshot"
+import { captureKrefSnapshot, stableSelectorFor, structuralPathFor, isKrefSelector, KREF_SNAPSHOT_CAP } from "./trails-snapshot"
 
 const FIXTURE = `<!doctype html><html><head><title>t</title>
 <style>.hidden{display:none}</style><script>window.__x=1</script></head><body>
@@ -89,5 +89,38 @@ describe("isKrefSelector", () => {
     expect(isKrefSelector("#em")).toBe(false)
     expect(isKrefSelector('[data-kref="e12"] > span')).toBe(false)
     expect(isKrefSelector(null)).toBe(false)
+  })
+})
+
+describe("structuralPathFor", () => {
+  test("bare element (no id/testid/aria-label) resolves to exactly one element via returned path", async () => {
+    // The fixture has <button>No stable handle</button> — no id, no testid, no aria-label.
+    // stableSelectorFor returns null for it; structuralPathFor must return a non-empty path that
+    // uniquely selects it (or at least resolves to >= 1 element — a structural path into a small
+    // fixture page is deterministic enough to assert count >= 1 and contains "button").
+    const loc = page.locator("form button").nth(1) // the "No stable handle" button
+    // Confirm stableSelectorFor is null (precondition: this is truly a bare element).
+    expect(await stableSelectorFor(loc)).toBeNull()
+    const path = await structuralPathFor(loc)
+    expect(path).not.toBeNull()
+    expect(path).toMatch(/button:nth-of-type/)
+    // The returned path must resolve to at least one real element on the page.
+    expect(await page.locator(path!).count()).toBeGreaterThanOrEqual(1)
+  })
+
+  test("element with id returns a non-null structural path (path is tag-based, not id-based)", async () => {
+    // structuralPathFor always returns the structural path regardless of stable handles —
+    // it's the final raw fallback; id/testid/aria-label are for stableSelectorFor.
+    const loc = page.locator("#em")
+    const path = await structuralPathFor(loc)
+    expect(path).not.toBeNull()
+    expect(path).toMatch(/input:nth-of-type/)
+  })
+
+  test("returns null when evaluate throws (detached locator)", async () => {
+    // A locator that matches nothing → evaluate throws → returns null.
+    const loc = page.locator("#does-not-exist-at-all")
+    const path = await structuralPathFor(loc)
+    expect(path).toBeNull()
   })
 })

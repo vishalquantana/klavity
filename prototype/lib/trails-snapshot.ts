@@ -119,3 +119,43 @@ export async function stableSelectorFor(loc: Locator): Promise<string | null> {
     return null
   }
 }
+
+/**
+ * Structural 4-level CSS path for any attached element: `tag:nth-of-type(i)>...`. Runs entirely
+ * inside a page.evaluate (page context) — no imports, no closures from module scope. This path
+ * is stable across re-numberings of data-kref and survives elements that have NO id, testid, or
+ * aria-label. Always returns a non-empty string for an attached element; returns null only if the
+ * evaluate call itself throws (element detached, page closed, etc.).
+ *
+ * Used as the last-resort fallback before giving up persistence in the vision heal path:
+ *   stableSelectorFor → fp?.domPath → structuralPathFor → null (skip upsert).
+ *
+ * The algorithm mirrors captureFingerprint in trails-author.ts: walk up ≤4 ancestors, counting
+ * same-tag preceding siblings to build `:nth-of-type(i)` segments joined by ` > `.
+ */
+export async function structuralPathFor(loc: Locator): Promise<string | null> {
+  try {
+    // count() is synchronous snapshot — it does NOT auto-wait, so 0 means "gone right now".
+    // Bail early to avoid the auto-wait behaviour of evaluate() on an unmatched locator.
+    if (await loc.count() === 0) return null
+    return await loc.first().evaluate((el: Element) => {
+      // Everything inlined — this runs in the page context, not the module scope.
+      let path = ""
+      let cur: Element | null = el
+      for (let d = 0; cur && d < 4; d++) {
+        let i = 1
+        let sib = cur.previousElementSibling
+        while (sib) {
+          if (sib.tagName === cur.tagName) i++
+          sib = sib.previousElementSibling
+        }
+        const segment = cur.tagName.toLowerCase() + ":nth-of-type(" + i + ")"
+        path = path ? segment + ">" + path : segment
+        cur = cur.parentElement
+      }
+      return path || null
+    })
+  } catch {
+    return null
+  }
+}
