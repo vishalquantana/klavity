@@ -217,6 +217,53 @@ test("no vision resolver → unchanged RED + needsVision (backward compatible)",
   expect((steps[0].evidence as any).needsVision).toBe(true)
 })
 
+// ── Kref fallback chain: structuralPathFor fires when element has no id/testid/aria-label ──
+// The vision model returns a kref selector for a bare button. stableSelectorFor returns null
+// (no stable handle). fp is null (bare trail seeded without a fingerprint). structuralPathFor
+// must fire as the last resort: the persisted cache row must contain NO "data-kref" substring.
+test("kref heal on bare element (no id/testid/aria-label, null fp) → structural path in cache, no kref", async () => {
+  const FIX_BARE = pathToFileURL(resolve(import.meta.dir, "..", "test-fixtures", "checkout-mockup-bare.html")).href
+  // Seed a 1-step trail pointing to a selector that will NOT resolve on the bare fixture
+  // (forces Tier-0/1 exhaustion → vision tier).  No target fingerprint stored (null fp).
+  const { trailId } = await crystallizeActive(PROJ, {
+    name: "Bare button heal",
+    baseUrl: FIX_BARE,
+    authorKind: "llm",
+    steps: [
+      { action: "click", intent: "click the Confirm button", url: FIX_BARE, domHash: "h0",
+        // resolvedSelector is a gone id so Tier 0 misses; no fingerprint signals for Tier 1.
+        target: { resolvedSelector: "#gone-selector" } },
+    ],
+  } as any)
+
+  // Vision resolver: capture the kref snapshot and return the kref for the bare "Confirm" button.
+  const visionKrefBare: VisionResolver = async (input) => {
+    // The bare button has no stable handle, so it appears in the snapshot by role+text only.
+    const ref = input.domSnapshot.match(/button "Confirm" \[ref=(e\d+)\]/)?.[1]
+    if (!ref) throw new Error(`"Confirm" button not found in kref snapshot:\n${input.domSnapshot}`)
+    return { found: true, selector: `[data-kref="${ref}"]`, confidence: 0.92, classification: "moved", rationale: "bare confirm button found by snapshot ref" }
+  }
+
+  const walk = await walkTrail(PROJ, trailId, { fixtureUrl: FIX_BARE, vision: visionKrefBare })
+  // Walk must be AMBER (healed) — not RED (failed) or GREEN (impossible for a vision heal).
+  expect(walk.verdict).toBe("amber")
+  expect(walk.llmCalls).toBe(1)
+
+  const steps = await T.listRunSteps(PROJ, walk.runId)
+  const healStep = steps.find((s: any) => s.healed)
+  expect(healStep).toBeTruthy()
+
+  // The cache row must NOT contain any "data-kref" substring — the structural path fallback fired.
+  const cache = await T.getCacheForStep(PROJ, healStep!.stepId)
+  expect(cache).toBeTruthy()
+  expect(cache!.resolvedSelector).not.toContain("data-kref")
+  // The structural path is a tag:nth-of-type CSS path.
+  expect(cache!.resolvedSelector).toMatch(/nth-of-type/)
+
+  // Evidence toSelector must also be free of raw kref.
+  expect(JSON.stringify(healStep!.evidence)).not.toContain('[data-kref=')
+}, 30000)
+
 test("Tier-2 heal via kref selector persists a STABLE selector to cache + evidence", async () => {
   // Fixture: cached selector #signin is gone from Tier-0/1; the real button is
   // <a id="totally-new-id" ... role="button" aria-label="Account access">Enter</a>.
