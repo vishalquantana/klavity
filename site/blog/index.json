@@ -89,5 +89,12 @@
     "excerpt": "Session replay records everything and hopes you find the bug later. Bug reports capture the exact moment a person flags one. Which should you reach for?",
     "category": "Compare",
     "date": "2026-07-03"
+  },
+  {
+    "slug": "what-is-synthetic-user-testing",
+    "title": "What Is Synthetic User Testing? A Practical Definition",
+    "excerpt": "Synthetic user testing uses AI personas built from real customer data to simulate how users navigate your product and surface usability bugs early.",
+    "category": "Learn",
+    "date": "2026-07-04"
   }
 ]
