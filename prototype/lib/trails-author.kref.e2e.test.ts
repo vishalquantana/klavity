@@ -79,6 +79,33 @@ describe("authoring with kref selectors", () => {
     const msgs = buildAuthorMessages({ objective: "o", pageUrl: "u", screenshotB64: "x", mediaType: "image/jpeg", domSnapshot: "snap", history: [], credFields: [] })
     expect(JSON.stringify(msgs)).toContain("ELEMENT SNAPSHOT (untrusted)")
   })
+
+  test("failed kref action: data-kref never reaches step log or history", async () => {
+    const seen: AuthorStepInput[] = []
+    // Call 1: model returns a kref selector that matches 0 elements (e999 won't exist in DOM)
+    // Call 2: model returns done; we capture history to verify no kref leaked
+    let historyOnCall2: string[] = []
+    const model: AuthorModel = async (input) => {
+      seen.push(input)
+      if (seen.length === 1) {
+        // Intentionally return a kref that won't exist → selector matched 0 elements → FAILED
+        return { action: { op: "click", selector: '[data-kref="e999"]', value: null, url: null, checkpoint: null, rationale: "click nonexistent" }, costUsd: 0 }
+      }
+      // Capture history as the model sees it on the second call
+      historyOnCall2 = [...input.history]
+      return { action: { op: "done", selector: null, value: null, url: null, checkpoint: null, rationale: "done" }, costUsd: 0 }
+    }
+    const out = await authorTrail(PROJECT_ID, { name: "kref fail t", objective: "test fail path", baseUrl: FIXTURE_URL }, { model })
+    // authorTrail with only an initial navigate step still crystallizes (trajectory has the navigate)
+    expect(out.status).toBe("crystallized")
+    // (a) step log must NOT contain data-kref but MUST contain "snapshot ref e999"
+    const stepsJson = JSON.stringify(out.steps)
+    expect(stepsJson).not.toContain("data-kref")
+    expect(stepsJson).toContain("snapshot ref e999")
+    // (b) history seen by model on call 2 must not contain data-kref
+    expect(JSON.stringify(historyOnCall2)).not.toContain("data-kref")
+    expect(JSON.stringify(historyOnCall2)).toContain("snapshot ref e999")
+  }, 60000)
 })
 
 afterAll(async () => { /* in-memory db, nothing to clean */ })
