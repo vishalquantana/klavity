@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Klavity Mock Checkout (bare: target has no id/testid/aria-label)</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <!-- Bare button: no id, no data-testid, no aria-label.
+         stableSelectorFor returns null; structuralPathFor must kick in as the kref fallback. -->
+    <div class="action-row">
+      <button type="button">Confirm</button>
+    </div>
+  </main>
+</body>
+</html>
