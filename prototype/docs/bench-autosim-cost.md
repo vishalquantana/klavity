@@ -78,3 +78,11 @@ App/form pages (the AutoSim case) shrink 90–97%. Dense content pages shrink le
 - The kref serializer is minimal (no plain-text blocks) — assertions that need page text may
   want a short visible-text digest appended.
 - news.ycombinator.com capture was rate-limited during the run (excluded from live phase).
+
+## Full authored-Trail A/B (scripts/bench-author-ab.ts)
+
+Arm A = kref snapshot + screenshot every step. Arm B = KLAV_AUTHOR_TEXT_FIRST (text-first,
+screenshot only on the retry after a miss). Same objective, real OpenRouter spend.
+Run: `bun scripts/bench-author-ab.ts` — append the console.table rows here per run.
+Decision rule: flip the default only if arm B is ≥50% cheaper AND status/verdict are not worse
+across 3 runs.
