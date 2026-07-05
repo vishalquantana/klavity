@@ -96,5 +96,12 @@
     "excerpt": "Synthetic user testing uses AI personas built from real customer data to simulate how users navigate your product and surface usability bugs early.",
     "category": "Learn",
     "date": "2026-07-04"
+  },
+  {
+    "slug": "jira-vs-linear-vs-github-issues-bug-tracker",
+    "title": "Jira vs. Linear vs. GitHub Issues: Which Bug Tracker?",
+    "excerpt": "Jira, Linear, and GitHub Issues all track bugs, but they optimize for different teams. Here's how they compare on setup, workflows, cost, and code proximity.",
+    "category": "Compare",
+    "date": "2026-07-05"
   }
 ]
