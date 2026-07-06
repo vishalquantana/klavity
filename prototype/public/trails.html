@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<script>(function(){try{var t=localStorage.getItem('klav-theme');if(t==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();</script>
+<script>(function(){try{var t=localStorage.getItem('klav-theme');if(t==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}try{if(new URLSearchParams(location.search).get('embed')==='1')document.documentElement.classList.add('embed');}catch(e){}})();</script>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="icon" href="/favicon.ico" sizes="any">
 <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -28,6 +28,12 @@ a{color:inherit;text-decoration:none}
 .who{font-size:13px;color:var(--paper-dim)}
 .lo{font-size:13px;color:var(--paper-faint);cursor:pointer;background:none;border:none;font-family:var(--body)}.lo:hover{color:var(--paper-dim)}
 .wrap{max-width:1060px;margin:0 auto;padding:34px 24px}
+/* embed mode: rendered inside the dashboard shell iframe — drop our own top bar + gradient */
+html.embed .bar{display:none}
+html.embed .wrap{padding-top:22px}
+html.embed body::after{display:none}
+/* the shell owns project selection — hide our duplicate switcher, keep "+ New Trail" */
+html.embed .switcher .sw-lbl,html.embed .switcher .proj-select{display:none}
 .head{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;flex-wrap:wrap;margin-bottom:24px}
 h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02em;margin-bottom:4px}
 .lead{color:var(--paper-dim);font-size:15px}
