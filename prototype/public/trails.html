@@ -295,16 +295,44 @@ function $(id){return document.getElementById(id)}
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
 function projParam(){try{return new URLSearchParams(location.search).get("project")}catch(e){return null}}
 
-// ── Walk replay (rrweb-player) ───────────────────────────────────────────────────
+// ── Walk replay ──────────────────────────────────────────────────────────────────
+// rrweb-player v2.0.1 has a compile bug: the reactive statement that creates the
+// rrweb.Replayer from events+frame is missing from the Svelte compiled output
+// (ctx[7]/replayer stays undefined → if_block never fires → blank white frame).
+// Fix: use rrweb.Replayer directly from klv-buffer.min.js (already in vendor/).
+// klv-view.min.js is kept for its CSS (replayer-wrapper, rr-player, mouse cursor).
 var replayState = { segments: [], steps: [], player: null, focusStep: null }
 
+// Lazy-load klv-buffer.min.js (rrweb full bundle) the first time replay is opened.
+// klv-view.min.js is already loaded (provides CSS + broken rrweb-player UMD).
+var _rrwebReady = null
+function ensureRrweb(){
+  if (_rrwebReady) return _rrwebReady
+  _rrwebReady = new Promise(function(resolve, reject){
+    if (window.rrweb && window.rrweb.Replayer) { resolve(); return }
+    var s = document.createElement("script")
+    s.src = "/vendor/klv-buffer.min.js"
+    s.onload = function(){ resolve() }
+    s.onerror = function(){ reject(new Error("Failed to load rrweb bundle")) }
+    document.head.appendChild(s)
+  })
+  return _rrwebReady
+}
+
 function destroyPlayer(){
-  try { if (replayState.player && replayState.player.$destroy) replayState.player.$destroy() } catch(e){}
+  try {
+    if (replayState.player) {
+      // rrweb.Replayer: pause before clearing so the RAF loop stops
+      if (typeof replayState.player.pause === "function") replayState.player.pause()
+      // rrweb-player Svelte component (fallback path): destroy the Svelte instance
+      if (typeof replayState.player.$destroy === "function") replayState.player.$destroy()
+    }
+  } catch(e){}
   replayState.player = null
   var host = $("playerHost"); if (host) host.innerHTML = ""
 }
 
-// Play one per-page segment as a chapter. rrweb-player needs ≥2 events; pad if a segment is thin.
+// Play one per-page segment as a chapter. Needs ≥2 events for a valid recording.
 function playSegment(i){
   var seg = replayState.segments[i]; if (!seg) return
   destroyPlayer()
@@ -314,11 +342,20 @@ function playSegment(i){
   var events = (seg.events||[]).slice()
   if (events.length < 2){ $("replayNote").textContent = "Chapter "+(i+1)+": too few frames to scrub (page changed too fast)."; return }
   try {
-    var RRWebPlayer = (window.rrwebPlayer && (window.rrwebPlayer.default || window.rrwebPlayer.Player)) || window.rrwebPlayer
-    replayState.player = new RRWebPlayer({
-      target: $("playerHost"),
-      props: { events: events, width: 920, autoPlay: true, showController: true },
+    // Use rrweb.Replayer directly (bypasses the broken rrweb-player Svelte wrapper).
+    // klv-buffer.min.js is loaded lazily in openReplay() before playSegment() is called.
+    var Replayer = window.rrweb && window.rrweb.Replayer
+    if (!Replayer) throw new Error("rrweb.Replayer not available")
+    var host = $("playerHost")
+    var replayer = new Replayer(events, {
+      root: host,
+      skipInactive: true,
+      showWarning: false,
+      showDebug: false,
+      mouseTail: true,
     })
+    replayState.player = replayer
+    replayer.play()
     $("replayNote").textContent = "Chapter "+(i+1)+" of "+replayState.segments.length+" · "+(seg.url||"")
   } catch(e){
     $("replayNote").textContent = "Could not start the player for this chapter."
@@ -363,6 +400,9 @@ async function openReplay(runId){
   $("replaySteps").innerHTML = ""; $("replayChapters").innerHTML = ""
   destroyPlayer()
   $("replayBg").classList.add("open")
+  // Pre-load the rrweb bundle (klv-buffer.min.js) so window.rrweb.Replayer is available
+  // before the first playSegment() call. No-op if already loaded.
+  try { await ensureRrweb() } catch(e){ /* non-fatal; playSegment will show an error if missing */ }
   var r
   try { r = await fetch("/api/trails/walks/" + encodeURIComponent(runId) + "/replay" + qs) }
   catch(e){ $("replayNote").textContent = "Network error loading replay."; return }
