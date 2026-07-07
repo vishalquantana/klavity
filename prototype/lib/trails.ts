@@ -16,19 +16,20 @@ function rowToTrail(r: any): Trail {
     schedule: r.schedule_cron ?? null,
     scheduledLastRunAt: r.scheduled_last_run_at == null ? null : Number(r.scheduled_last_run_at),
     judgePersonaId: r.judge_persona_id ?? null,
+    objectiveVerified: r.objective_verified == null ? null : !!r.objective_verified,
   }
 }
 
 export async function createTrail(
   projectId: string,
-  input: { name: string; intent?: string; baseUrl: string; viewport?: TrailViewport | string | null; authorKind?: Trail["authorKind"]; createdBy?: string },
+  input: { name: string; intent?: string; baseUrl: string; viewport?: TrailViewport | string | null; authorKind?: Trail["authorKind"]; createdBy?: string; objectiveVerified?: boolean | null },
 ): Promise<string> {
   const id = uid("trl_"); const now = Date.now()
   const viewport = normalizeTrailViewport(input.viewport)
   await db!.execute({
-    sql: `INSERT INTO trails (id, project_id, name, intent, base_url, viewport_json, baseline_ref, author_kind, status, created_by, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, NULL, ?, 'draft', ?, ?, ?)`,
-    args: [id, projectId, input.name, input.intent ?? "", input.baseUrl, j(viewport), input.authorKind ?? "human", input.createdBy ?? null, now, now],
+    sql: `INSERT INTO trails (id, project_id, name, intent, base_url, viewport_json, baseline_ref, author_kind, status, created_by, created_at, updated_at, objective_verified)
+          VALUES (?, ?, ?, ?, ?, ?, NULL, ?, 'draft', ?, ?, ?, ?)`,
+    args: [id, projectId, input.name, input.intent ?? "", input.baseUrl, j(viewport), input.authorKind ?? "human", input.createdBy ?? null, now, now, input.objectiveVerified === undefined ? null : (input.objectiveVerified === null ? null : (input.objectiveVerified ? 1 : 0))],
   })
   return id
 }
