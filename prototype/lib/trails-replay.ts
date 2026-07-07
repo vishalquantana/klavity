@@ -21,6 +21,7 @@ export interface ReplaySegment {
   idx: number
   url: string
   events: unknown[]
+  truncated?: boolean
 }
 
 // ── storage ───────────────────────────────────────────────────────────────────────
@@ -125,13 +126,38 @@ export interface ReplayCapture {
  * (page.evaluate) so no tail events are lost before a navigation, then seals the page as a segment.
  */
 export async function setupReplayCapture(context: BrowserContext): Promise<ReplayCapture> {
+  const maxEvents = Number(process.env.KLAV_REPLAY_MAX_EVENTS) || 5000
+  const maxTotalEvents = Number(process.env.KLAV_REPLAY_MAX_TOTAL_EVENTS) || 15000
+
   let current: unknown[] = []
+  let currentTruncated = false
   const segments: ReplaySegment[] = []
+
+  const applyCapping = () => {
+    const totalSoFar = segments.reduce((sum, s) => sum + s.events.length, 0)
+    const remainingWalkCap = Math.max(0, maxTotalEvents - totalSoFar)
+    const effectiveCap = Math.min(maxEvents, remainingWalkCap)
+
+    if (current.length > effectiveCap) {
+      currentTruncated = true
+      const snapshot = current.find((e: any) => e && e.type === 2)
+      const newestCount = snapshot ? Math.max(0, effectiveCap - 1) : effectiveCap
+      const sliced = newestCount > 0 ? current.slice(current.length - newestCount) : []
+      if (snapshot && !sliced.some((e: any) => e && e.type === 2)) {
+        current = [snapshot, ...sliced]
+      } else {
+        current = sliced
+      }
+    }
+  }
 
   // The page calls this with a BATCH of rrweb events. _src is the binding source (unused).
   await context.exposeBinding("__klavReplayPush", (_src, batch: unknown) => {
-    if (Array.isArray(batch)) for (const ev of batch) current.push(ev)
-    else if (batch != null) current.push(batch)
+    const list = Array.isArray(batch) ? batch : (batch != null ? [batch] : [])
+    for (const ev of list) {
+      current.push(ev)
+    }
+    applyCapping()
   })
 
   const rrweb = loadRrwebSource()
@@ -212,9 +238,16 @@ export async function setupReplayCapture(context: BrowserContext): Promise<Repla
       }
       // For a navigation-boundary flush we do NOT touch `page` (it holds the next document now); the
       // 250ms timer already drained this page's events into `current`. Seal and reset.
+      applyCapping()
       if (current.length === 0) return
-      segments.push({ idx, url, events: current })
+      segments.push({
+        idx,
+        url,
+        events: current,
+        ...(currentTruncated ? { truncated: true } : {})
+      })
       current = []
+      currentTruncated = false
     },
   }
 }
