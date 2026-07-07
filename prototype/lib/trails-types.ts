@@ -1,6 +1,6 @@
 // Pure types + cacheKey hash for Klavity OS "Trails". No db/runtime imports.
 
-export type TrailStatus = "draft" | "active" | "archived"
+export type TrailStatus = "draft" | "active" | "paused" | "archived"
 export type AuthorKind = "llm" | "human" | "mixed"
 export type StepAction = "navigate" | "click" | "type" | "select" | "assert" | "wait"
 export type Tier = "cache" | "candidate" | "vision" | "none"

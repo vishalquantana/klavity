@@ -48,6 +48,12 @@ test("runWalkNow throws on an unknown trail", async () => {
   await expect(runWalkNow("proj_t", "trl_nope")).rejects.toThrow()
 })
 
+test("runWalkNow throws on a paused trail", async () => {
+  const trail = await seedTrail()
+  await T.updateTrail("proj_t", trail, { status: "paused" })
+  await expect(runWalkNow("proj_t", trail)).rejects.toThrow("trail is paused")
+})
+
 // KLA-100: cancelCurrentWalk fires the signal that reaches the walk fn
 test("cancelCurrentWalk aborts the in-flight walk and the run finalizes red", async () => {
   const trail = await seedTrail()

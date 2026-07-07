@@ -68,6 +68,27 @@ test("setTrailStatus updates status", async () => {
   expect((await T.getTrail("proj_A", id))?.status).toBe("active")
 })
 
+test("updateTrail renames a trail", async () => {
+  const id = await T.createTrail("proj_A", { name: "Old Name", baseUrl: "https://app.test/" })
+  const ok = await T.updateTrail("proj_A", id, { name: "New Name" })
+  expect(ok).toBe(true)
+  expect((await T.getTrail("proj_A", id))?.name).toBe("New Name")
+})
+
+test("updateTrail pauses and resumes a trail", async () => {
+  const id = await T.createTrail("proj_A", { name: "Pauseable", baseUrl: "https://app.test/" })
+  await T.setTrailStatus("proj_A", id, "active")
+  await T.updateTrail("proj_A", id, { status: "paused" })
+  expect((await T.getTrail("proj_A", id))?.status).toBe("paused")
+  await T.updateTrail("proj_A", id, { status: "active" })
+  expect((await T.getTrail("proj_A", id))?.status).toBe("active")
+})
+
+test("updateTrail returns false for unknown trail id", async () => {
+  const ok = await T.updateTrail("proj_A", "trl_nope", { name: "X" })
+  expect(ok).toBe(false)
+})
+
 test("upsertLocatorCache inserts then updates on (project_id, step_id) conflict (heal overwrites in place)", async () => {
   const trail = await T.createTrail("proj_A", { name: "C", baseUrl: "https://app.test/" })
   const step = await T.addTrailStep("proj_A", trail, { idx: 0, action: "click" })

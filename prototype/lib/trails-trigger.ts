@@ -47,6 +47,7 @@ export async function runWalkNow(
 ): Promise<{ runId: string }> {
   const trail = await getTrail(projectId, trailId)
   if (!trail) throw new Error("trail not found")
+  if (trail.status === "paused") throw new Error("trail is paused")
 
   // A deferred we resolve the instant the Walk row exists, so the caller gets a real runId while the
   // background walk keeps running and HOLDING the slot until it finalizes.
