@@ -119,6 +119,13 @@ export interface WalkOptions {
    * also intercepted. Absent (all existing callers) → no interception, byte-identical behavior.
    */
   networkMocks?: NetworkMock[]
+  /**
+   * KLA-68: per-step retry budget. When a step action throws (transient failure — slow load, race
+   * condition, brief unresponsiveness), the runner retries the action up to this many additional
+   * times with a fixed backoff before declaring the step RED. Each retry re-uses the already-resolved
+   * locator so the element-resolution cost is paid only once. Default 2. Set to 0 to disable.
+   */
+  stepRetries?: number
 }
 
 export interface WalkStepSummary {
@@ -153,6 +160,40 @@ export interface WalkSummary {
 }
 
 const CACHE_CONFIDENCE = 1.0
+// KLA-68: fixed backoff between per-step retries (ms). Short enough not to blow the walk deadline
+// while giving a transiently-slow page time to settle before the next attempt.
+export const STEP_RETRY_BACKOFF_MS = 500
+// KLA-68: default number of retries per step. Callers can override via WalkOptions.stepRetries.
+export const DEFAULT_STEP_RETRIES = 2
+
+/**
+ * KLA-68: Run `action` up to `maxRetries + 1` times, waiting `backoffMs` between attempts.
+ * `shouldStop()` is checked before each retry — when it returns true the loop exits early
+ * (deadline guard). Returns `undefined` on success, the last caught error on exhaustion.
+ * Exported for focused unit testing of the retry policy without needing a browser.
+ */
+export async function withStepRetry(
+  action: () => Promise<void>,
+  maxRetries: number,
+  backoffMs: number,
+  shouldStop: () => boolean,
+  sleep: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms)),
+): Promise<unknown | undefined> {
+  let lastError: unknown
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (attempt > 0) {
+      if (shouldStop()) break
+      await sleep(backoffMs)
+    }
+    try {
+      await action()
+      return undefined  // success
+    } catch (e) {
+      lastError = e
+    }
+  }
+  return lastError  // undefined only if loop never ran, which can't happen (attempt 0 always runs)
+}
 
 // Tier-1 candidate confidence varies by signal strength so Layer D's future >=0.9 gate has real
 // signal (not a flat tautology). With fix #1 ALL heals are AMBER regardless of confidence; this is
@@ -778,71 +819,83 @@ async function runOneStep(
     ? Math.max(0, Math.min(step.timeoutMs, remainingBudget))
     : Math.max(5000, Math.min(15000, remainingBudget))
 
-  // Perform the action (Playwright auto-waits for actionability — the "test DNA" we deliberately keep).
-  // Bounded timeout: actionability that never clears is a real break, not a reason to hang.
-  try {
-    switch (step.action) {
-      case "type": {
-        const raw = step.actionValue ?? ""
-        const val = hasCredRef(raw) ? await (opts.credResolver ?? resolveCredRefs)(projectId, raw) : raw
-        if (hasCredRef(raw) && opts._resolvedCreds) {
-          opts._resolvedCreds.add(val)
+  // KLA-68: per-step retry via withStepRetry. On a transient action failure, back off and retry
+  // up to opts.stepRetries (default DEFAULT_STEP_RETRIES) additional times before going RED.
+  // The resolved locator is reused — element-resolution cost is paid only once per step.
+  const maxRetries = opts.stepRetries ?? DEFAULT_STEP_RETRIES
+  const lastActionError = await withStepRetry(
+    async () => {
+      // Perform the action (Playwright auto-waits for actionability — the "test DNA" we deliberately keep).
+      // Bounded timeout: actionability that never clears is a real break, not a reason to hang.
+      switch (step.action) {
+        case "type": {
+          const raw = step.actionValue ?? ""
+          const val = hasCredRef(raw) ? await (opts.credResolver ?? resolveCredRefs)(projectId, raw) : raw
+          if (hasCredRef(raw) && opts._resolvedCreds) {
+            opts._resolvedCreds.add(val)
+          }
+          await resolved.locator.fill(val, { timeout: actionTimeout })
+          break
         }
-        await resolved.locator.fill(val, { timeout: actionTimeout })
-        break
-      }
-      case "click":
-        await clickWithTransitionFallback(resolved.locator, actionTimeout, actionTimeout)
-        break
-      case "select":
-        await resolved.locator.selectOption(step.actionValue ?? "", { timeout: actionTimeout })
-        break
-      case "hover":
-        await resolved.locator.hover({ timeout: actionTimeout })
-        break
-      case "keyPress":
-        await resolved.locator.press(step.actionValue ?? "Enter", { timeout: actionTimeout })
-        break
-      case "clearField":
-        await resolved.locator.clear({ timeout: actionTimeout })
-        break
-      case "assert": {
-        // Hard checkpoint: the element must be visible. Never overridden by healing.
-        const kind = (step.checkpoint && step.checkpoint.kind) || "visible"
-        switch (kind) {
-          case "textEquals": {
-            await resolved.locator.waitFor({ state: "visible", timeout: actionTimeout })
-            const actual = (await resolved.locator.allInnerTexts()).join(" ").trim()
-            if (actual !== step.checkpoint!.value) throw new Error(`checkpoint textEquals failed: expected "${step.checkpoint.value}" got "${actual}"`)
-            break
+        case "click":
+          await clickWithTransitionFallback(resolved.locator, actionTimeout, actionTimeout)
+          break
+        case "select":
+          await resolved.locator.selectOption(step.actionValue ?? "", { timeout: actionTimeout })
+          break
+        case "hover":
+          await resolved.locator.hover({ timeout: actionTimeout })
+          break
+        case "keyPress":
+          await resolved.locator.press(step.actionValue ?? "Enter", { timeout: actionTimeout })
+          break
+        case "clearField":
+          await resolved.locator.clear({ timeout: actionTimeout })
+          break
+        case "assert": {
+          // Hard checkpoint: the element must be visible. Never overridden by healing.
+          const kind = (step.checkpoint && step.checkpoint.kind) || "visible"
+          switch (kind) {
+            case "textEquals": {
+              await resolved.locator.waitFor({ state: "visible", timeout: actionTimeout })
+              const actual = (await resolved.locator.allInnerTexts()).join(" ").trim()
+              if (actual !== step.checkpoint!.value) throw new Error(`checkpoint textEquals failed: expected "${step.checkpoint.value}" got "${actual}"`)
+              break
+            }
+            case "textContains": {
+              await resolved.locator.waitFor({ state: "visible", timeout: actionTimeout })
+              const actual = (await resolved.locator.allInnerTexts()).join(" ").trim()
+              if (!actual.includes(step.checkpoint!.value)) throw new Error(`checkpoint textContains failed: "${step.checkpoint.value}" not in "${actual}"`)
+              break
+            }
+            case "urlMatches": {
+              // URL assertions use the page url, not a locator. Poll briefly so transient navigations settle.
+              await resolved.locator.waitFor({ state: "visible", timeout: actionTimeout }).catch(() => {})
+              const re = new RegExp(step.checkpoint!.regex!)
+              if (!re.test(page.url())) throw new Error(`checkpoint urlMatches failed: "${page.url()}" did not match ${step.checkpoint.regex}`)
+              break
+            }
+            case "elementCount": {
+              await resolved.locator.waitFor({ state: "visible", timeout: actionTimeout }).catch(() => {})
+              const n = await resolved.locator.count()
+              if (n !== step.checkpoint!.count) throw new Error(`checkpoint elementCount failed: expected ${step.checkpoint.count} got ${n}`)
+              break
+            }
+            default: // "visible" or unknown — fall through to the visible check.
+              await resolved.locator.waitFor({ state: "visible", timeout: actionTimeout })
           }
-          case "textContains": {
-            await resolved.locator.waitFor({ state: "visible", timeout: actionTimeout })
-            const actual = (await resolved.locator.allInnerTexts()).join(" ").trim()
-            if (!actual.includes(step.checkpoint!.value)) throw new Error(`checkpoint textContains failed: "${step.checkpoint.value}" not in "${actual}"`)
-            break
-          }
-          case "urlMatches": {
-            // URL assertions use the page url, not a locator. Poll briefly so transient navigations settle.
-            await resolved.locator.waitFor({ state: "visible", timeout: actionTimeout }).catch(() => {})
-            const re = new RegExp(step.checkpoint!.regex!)
-            if (!re.test(page.url())) throw new Error(`checkpoint urlMatches failed: "${page.url()}" did not match ${step.checkpoint.regex}`)
-            break
-          }
-          case "elementCount": {
-            await resolved.locator.waitFor({ state: "visible", timeout: actionTimeout }).catch(() => {})
-            const n = await resolved.locator.count()
-            if (n !== step.checkpoint!.count) throw new Error(`checkpoint elementCount failed: expected ${step.checkpoint.count} got ${n}`)
-            break
-          }
-          default: // "visible" or unknown — fall through to the visible check.
-            await resolved.locator.waitFor({ state: "visible", timeout: actionTimeout })
+          break
         }
-        break
       }
-    }
-  } catch {
-    // The element resolved but the action/assertion failed (e.g. checkpoint not visible) -> fail-loud RED.
+    },
+    maxRetries,
+    STEP_RETRY_BACKOFF_MS,
+    () => Date.now() + STEP_RETRY_BACKOFF_MS >= deadline,
+    (ms) => page.waitForTimeout(ms),
+  )
+
+  if (lastActionError !== undefined) {
+    // All retry attempts exhausted — the element resolved but the action/assertion failed -> RED.
     const verdict: Verdict = "red"
     // PDF task 1: best-effort screenshot even on action failure (shows the failure state).
     const screenshotKey = await maybeShot(page, opts)
@@ -853,6 +906,7 @@ async function runOneStep(
         reason: isAssert ? "checkpoint_failed" : "action_failed",
         checkpoint: step.checkpoint?.description ?? null,
         recordedStep: recordedStep(resolved.selector, fp),
+        retries: maxRetries,
         ...(screenshotKey !== undefined ? { screenshotKey } : {}),
       },
     })
