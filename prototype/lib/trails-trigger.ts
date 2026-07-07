@@ -13,7 +13,7 @@ import { getTrail, startWalk, finishWalk } from "./trails"
 import { walkTrail } from "./trails-runner"
 import type { Verdict } from "./trails-types"
 
-export type WalkFn = (projectId: string, trailId: string, runId: string) => Promise<{ verdict: Verdict; llmCalls: number }>
+export type WalkFn = (projectId: string, trailId: string, runId: string) => Promise<{ verdict: Verdict; llmCalls: number; summary?: Record<string, unknown> }>
 
 const WALK_DEADLINE_MS = 120_000
 
@@ -23,12 +23,12 @@ const WALK_DEADLINE_MS = 120_000
 // (injected via walkTrail default; try/catch ensures S3-absent local envs never fail a step).
 const realWalk: WalkFn = async (projectId, trailId, runId) => {
   const trail = await getTrail(projectId, trailId)
-  if (!trail) return { verdict: "red", llmCalls: 0 }
+  if (!trail) return { verdict: "red", llmCalls: 0, summary: { error: `trail ${trailId} not found in project ${projectId}` } }
   const s = await walkTrail(projectId, trailId, {
     fixtureUrl: trail.baseUrl, replay: true, launchArgs: CHROMIUM_PROD_ARGS, deadlineMs: WALK_DEADLINE_MS, runId,
     stepShots: true,
   })
-  return { verdict: s.verdict, llmCalls: s.llmCalls }
+  return { verdict: s.verdict, llmCalls: s.llmCalls, summary: { ...(s.reasons.length ? { reasons: s.reasons } : {}) } }
 }
 
 /**
@@ -62,8 +62,8 @@ export async function runWalkNow(
     resolveStarted(runId)
     const walk = deps?.walk ?? realWalk
     try {
-      const { verdict, llmCalls } = await walk(projectId, trailId, runId)
-      await finishWalk(projectId, runId, { status: verdict, llmCalls })
+      const { verdict, llmCalls, summary } = await walk(projectId, trailId, runId)
+      await finishWalk(projectId, runId, { status: verdict, llmCalls, ...(summary ? { summary } : {}) })
     } catch (e: any) {
       // Crash isolation: a walk throw finalizes the run RED + releases the slot, never propagates.
       await finishWalk(projectId, runId, { status: "red", llmCalls: 0, summary: { error: String(e?.message || e) } }).catch(() => {})
