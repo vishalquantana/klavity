@@ -17,7 +17,7 @@ export async function trailsDashboardData(projectId: string): Promise<TrailsDash
   const [trails, recentWalks, queue, precision] = await Promise.all([
     listTrails(projectId),
     listRecentWalks(projectId, 20),
-    listFindings(projectId, { status: "queued" }),
+    listFindings(projectId, { status: "queued", limit: 50 }),
     projectPrecision(projectId),
   ])
   return { trails, recentWalks, queue, precision }

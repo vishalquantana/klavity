@@ -227,12 +227,24 @@ export async function recordFinding(
   return { id, deduped: false, recurrence: 1 }
 }
 
-export async function listFindings(projectId: string, opts?: { status?: FindingStatus }): Promise<Finding[]> {
-  const r = opts?.status
-    ? await db!.execute({ sql: `SELECT * FROM findings WHERE project_id=? AND status=? ORDER BY updated_at DESC`, args: [projectId, opts.status] })
-    : await db!.execute({ sql: `SELECT * FROM findings WHERE project_id=? ORDER BY updated_at DESC`, args: [projectId] })
+export async function listFindings(
+  projectId: string,
+  opts?: { status?: FindingStatus; limit?: number; offset?: number },
+): Promise<Finding[]> {
+  const limit = Math.min(Math.max(opts?.limit ?? DEFAULT_FINDINGS_LIMIT, 1), MAX_FINDINGS_LIMIT)
+  const offset = opts?.offset ?? 0
+  const where = opts?.status ? ` AND status=?` : ""
+  const args: (string | number)[] = [projectId]
+  if (opts?.status) args.push(opts.status)
+  const r = await db!.execute({
+    sql: `SELECT * FROM findings WHERE project_id=?${where} ORDER BY updated_at DESC LIMIT ? OFFSET ?`,
+    args: [...args, limit, offset],
+  })
   return r.rows.map(rowToFinding)
 }
+
+const DEFAULT_FINDINGS_LIMIT = 500
+const MAX_FINDINGS_LIMIT = 10_000
 
 export async function setFindingStatus(projectId: string, id: string, status: FindingStatus, connectorRef?: string): Promise<void> {
   await db!.execute({
