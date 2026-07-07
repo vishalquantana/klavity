@@ -82,7 +82,7 @@ test("happy path: authors, crystallizes DRAFT trail, verification walk GREEN, no
   const out = await authorTrail(P, { name: "Login journey", objective: "log in and see the welcome screen", baseUrl: fixtureUrl("author-mockup.html") }, { model: scripted(LOGIN_SCRIPT) })
   expect(out.status).toBe("crystallized")
   expect(out.verificationVerdict).toBe("green")
-  expect(out.llmCalls).toBe(5)
+  expect(out.llmCalls).toBe(6)
   const trail = await T.getTrail(P, out.trailId!)
   expect(trail!.status).toBe("draft")
   expect(trail!.authorKind).toBe("llm")
@@ -114,7 +114,7 @@ test("one malformed model reply is retried, not fatal (KLAVITYKLA-48 #1)", async
   const out = await authorTrail("proj_badroll", { name: "flaky", objective: "log in", baseUrl: fixtureUrl("author-mockup.html") }, { model: flaky })
   expect(out.status).toBe("crystallized")
   expect(out.verificationVerdict).toBe("green")
-  expect(out.llmCalls).toBe(6) // 1 bad roll + 5 good
+  expect(out.llmCalls).toBe(7) // 1 bad roll + 5 good + 1 verification
 }, 60000)
 
 test("three consecutive malformed replies still stall out", async () => {
@@ -322,4 +322,71 @@ test("runAuthorNow persists step artifacts (screenshotKey, krefSnapshot) in the 
   expect(step.krefSnapshot).toBeTruthy()
   expect(step.krefSnapshot).toContain("Email")
 }, 60000)
+
+test("objective verification: done on wrong page (verification NO) yields stall / no crystallize (KLA-76)", async () => {
+  const P_V1 = "proj_verify_wrong"
+  await createTestAccount(P_V1, { name: "admin", loginEmail: "a@b.c", password: "p" })
+
+  const model = scripted([
+    { op: "type", selector: "#email", value: "test@domain.com" },
+    { op: "done" }
+  ])
+
+  let verifyCalls = 0
+  const verifier = async () => {
+    verifyCalls++
+    return { achieved: false, evidenceSelector: null, reason: "still on login page" }
+  }
+
+  const out = await authorTrail(
+    P_V1,
+    { name: "Verify Wrong Page Test", objective: "reach dashboard", baseUrl: fixtureUrl("author-mockup.html") },
+    {
+      model,
+      verifier,
+      headless: true
+    }
+  )
+
+  expect(out.status).toBe("stalled")
+  expect(out.stallReason).toContain("failed verification attempts")
+  expect(out.objectiveVerified).toBe(false)
+  expect(out.trailId).toBeNull()
+  expect(verifyCalls).toBeGreaterThanOrEqual(1)
+}, 60000)
+
+test("objective verification: done on right page (verification YES) crystallizes with objectiveVerified recorded (KLA-76)", async () => {
+  const P_V2 = "proj_verify_right"
+  await createTestAccount(P_V2, { name: "admin", loginEmail: "a@b.c", password: "p" })
+
+  const model = scripted([
+    { op: "type", selector: "#email", value: "test@domain.com" },
+    { op: "done" }
+  ])
+
+  let verifyCalls = 0
+  const verifier = async () => {
+    verifyCalls++
+    return { achieved: true, evidenceSelector: "#welcome", reason: null }
+  }
+
+  const out = await authorTrail(
+    P_V2,
+    { name: "Verify Right Page Test", objective: "reach welcome", baseUrl: fixtureUrl("author-mockup.html") },
+    {
+      model,
+      verifier,
+      headless: true
+    }
+  )
+
+  expect(out.status).toBe("crystallized")
+  expect(out.objectiveVerified).toBe(true)
+  expect(out.trailId).toBeTruthy()
+  expect(verifyCalls).toBe(1)
+
+  const trail = await T.getTrail(P_V2, out.trailId!)
+  expect(trail!.objectiveVerified).toBe(true)
+}, 60000)
+
 

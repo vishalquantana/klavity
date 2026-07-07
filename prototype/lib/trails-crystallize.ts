@@ -25,6 +25,7 @@ export interface Trajectory {
   authorKind?: AuthorKind
   createdBy?: string
   steps: TrajectoryStep[]
+  objectiveVerified?: boolean | null
 }
 
 export interface CrystallizeResult {
@@ -86,6 +87,7 @@ export async function crystallize(projectId: string, traj: Trajectory): Promise<
     viewport: traj.viewport,
     authorKind: traj.authorKind ?? "llm",
     createdBy: traj.createdBy,
+    objectiveVerified: traj.objectiveVerified,
   })
 
   const stepIds: string[] = []
