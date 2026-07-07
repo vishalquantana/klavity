@@ -2080,6 +2080,18 @@ export async function revokeExtensionToken(token: string): Promise<void> {
   await db!.execute({ sql: "UPDATE extension_tokens SET revoked=1 WHERE token=? OR token=?", args: [sha256hex(token), token] })
 }
 
+// ── CI tokens (KLA-90) — machine-to-machine, project-bound Bearer tokens with kci_ prefix.
+// Stored in extension_tokens (same security guarantees: sha256hex-hashed, revocable, expiry-aware).
+// Distinct from extension tokens by prefix so callers can tell them apart without a DB round-trip.
+export async function issueCIToken(email: string, projectId: string): Promise<string> {
+  const token = "kci_" + crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "")
+  await db!.execute({
+    sql: "INSERT INTO extension_tokens (token,email,project_id,created_at,expires_at,revoked) VALUES (?,?,?,?,?,0)",
+    args: [sha256hex(token), email, projectId, Date.now(), null],
+  })
+  return token
+}
+
 // ── /api/sim/review guardrail ordering (§5, binding) ──
 // PURE decision function: given the already-resolved state for one review attempt, return the FIRST
 // failing gate (or { ok:true } if all pass). Kept pure + side-effect-free so the ordering is unit-testable
