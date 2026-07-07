@@ -536,6 +536,12 @@ export async function applySchema(c: Client) {
   // pins the version a Walk ran against so past runs never drift from the steps they executed.
   await c.execute("ALTER TABLE trails ADD COLUMN step_version INTEGER NOT NULL DEFAULT 1").catch((e) => console.warn("trails.step_version ALTER skipped:", e?.message || e))
   await c.execute("ALTER TABLE trail_runs ADD COLUMN trail_version INTEGER NOT NULL DEFAULT 1").catch((e) => console.warn("trail_runs.trail_version ALTER skipped:", e?.message || e))
+  // KLA-70: dedup-race fix — enforce UNIQUE(project_id, dedup_key) so recordFinding's
+  // INSERT ON CONFLICT is atomic. Pre-collapse any legacy duplicates (keep oldest rowid) first.
+  await c.execute("DELETE FROM findings WHERE rowid NOT IN (SELECT MIN(rowid) FROM findings GROUP BY project_id, dedup_key)")
+    .catch((e: any) => console.warn("findings dedup pre-collapse skipped:", e?.message || e))
+  await c.execute("CREATE UNIQUE INDEX IF NOT EXISTS finding_dedup_uq ON findings(project_id, dedup_key)")
+    .catch((e: any) => console.warn("finding_dedup_uq skipped:", e?.message || e))
 }
 
 // ── schema_meta helpers ──
