@@ -24,6 +24,24 @@ export interface ReplaySegment {
   truncated?: boolean
 }
 
+function positiveInt(value: unknown, fallback: number): number {
+  const n = Number(value)
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback
+}
+
+export function trimReplayEventBuffer(events: unknown[], cap: number): { events: unknown[]; truncated: boolean } {
+  const effectiveCap = Math.max(0, Math.floor(cap))
+  if (events.length <= effectiveCap) return { events, truncated: false }
+
+  const snapshot = events.find((e: any) => e && e.type === 2)
+  const newestCount = snapshot ? Math.max(0, effectiveCap - 1) : effectiveCap
+  const sliced = newestCount > 0 ? events.slice(events.length - newestCount) : []
+  if (snapshot && !sliced.some((e: any) => e && e.type === 2)) {
+    return { events: [snapshot, ...sliced], truncated: true }
+  }
+  return { events: sliced, truncated: true }
+}
+
 // ── storage ───────────────────────────────────────────────────────────────────────
 export async function saveReplay(projectId: string, runId: string, segments: ReplaySegment[], resolvedCreds?: Set<string>): Promise<void> {
   let json = JSON.stringify(segments)
@@ -110,6 +128,8 @@ export interface ReplayCapture {
    * the live page briefly so its async full-snapshot is captured even after a fast final assert.
    */
   flush: (idx: number, url: string, page: Page, final?: boolean) => Promise<void>
+  /** Current process-side rrweb event count, exposed so watchdog/tests can verify bounded memory. */
+  bufferedEventCount: () => number
   segments: ReplaySegment[]
 }
 
@@ -126,8 +146,8 @@ export interface ReplayCapture {
  * (page.evaluate) so no tail events are lost before a navigation, then seals the page as a segment.
  */
 export async function setupReplayCapture(context: BrowserContext): Promise<ReplayCapture> {
-  const maxEvents = Number(process.env.KLAV_REPLAY_MAX_EVENTS) || 5000
-  const maxTotalEvents = Number(process.env.KLAV_REPLAY_MAX_TOTAL_EVENTS) || 15000
+  const maxEvents = positiveInt(process.env.KLAV_REPLAY_MAX_EVENTS, 5000)
+  const maxTotalEvents = positiveInt(process.env.KLAV_REPLAY_MAX_TOTAL_EVENTS, 15000)
 
   let current: unknown[] = []
   let currentTruncated = false
@@ -138,26 +158,21 @@ export async function setupReplayCapture(context: BrowserContext): Promise<Repla
     const remainingWalkCap = Math.max(0, maxTotalEvents - totalSoFar)
     const effectiveCap = Math.min(maxEvents, remainingWalkCap)
 
-    if (current.length > effectiveCap) {
-      currentTruncated = true
-      const snapshot = current.find((e: any) => e && e.type === 2)
-      const newestCount = snapshot ? Math.max(0, effectiveCap - 1) : effectiveCap
-      const sliced = newestCount > 0 ? current.slice(current.length - newestCount) : []
-      if (snapshot && !sliced.some((e: any) => e && e.type === 2)) {
-        current = [snapshot, ...sliced]
-      } else {
-        current = sliced
-      }
-    }
+    const capped = trimReplayEventBuffer(current, effectiveCap)
+    current = capped.events
+    currentTruncated = currentTruncated || capped.truncated
   }
 
   // The page calls this with a BATCH of rrweb events. _src is the binding source (unused).
   await context.exposeBinding("__klavReplayPush", (_src, batch: unknown) => {
-    const list = Array.isArray(batch) ? batch : (batch != null ? [batch] : [])
+    const payload = batch as any
+    if (payload && payload.truncated) currentTruncated = true
+    const rawEvents = payload && Array.isArray(payload.events) ? payload.events : batch
+    const list = Array.isArray(rawEvents) ? rawEvents : (rawEvents != null ? [rawEvents] : [])
     for (const ev of list) {
       current.push(ev)
+      applyCapping()
     }
-    applyCapping()
   })
 
   const rrweb = loadRrwebSource()
@@ -173,10 +188,32 @@ export async function setupReplayCapture(context: BrowserContext): Promise<Repla
         // In-page buffer: emit just appends (cheap, synchronous-safe). A timer drains batches to the
         // binding off the snapshot path. __klavDrain() forces an immediate drain (used at flush).
         window.__klavBuf = [];
+        window.__klavMaxBufferedEvents = ${JSON.stringify(maxEvents)};
+        window.__klavBufTruncated = false;
+        window.__klavCapBuf = function(){
+          var cap = window.__klavMaxBufferedEvents || 5000;
+          if (!window.__klavBuf || window.__klavBuf.length <= cap) return;
+          window.__klavBufTruncated = true;
+          var snapshot = null;
+          for (var i = 0; i < window.__klavBuf.length; i++) {
+            var candidate = window.__klavBuf[i];
+            if (candidate && candidate.type === 2) { snapshot = candidate; break; }
+          }
+          var newestCount = snapshot ? Math.max(0, cap - 1) : cap;
+          var sliced = newestCount > 0 ? window.__klavBuf.slice(window.__klavBuf.length - newestCount) : [];
+          var hasSnapshot = false;
+          if (snapshot) {
+            for (var j = 0; j < sliced.length; j++) {
+              if (sliced[j] && sliced[j].type === 2) { hasSnapshot = true; break; }
+            }
+          }
+          window.__klavBuf = snapshot && !hasSnapshot ? [snapshot].concat(sliced) : sliced;
+        };
         window.__klavDrain = function(){
           if (!window.__klavBuf.length) return;
           var batch = window.__klavBuf; window.__klavBuf = [];
-          try { window.__klavReplayPush(batch); } catch(e) {}
+          var truncated = !!window.__klavBufTruncated; window.__klavBufTruncated = false;
+          try { window.__klavReplayPush({ events: batch, truncated: truncated }); } catch(e) {}
         };
         function startRec(){
           // Skip the implicit about:blank Playwright opens before the first goto — recording it
@@ -205,7 +242,7 @@ export async function setupReplayCapture(context: BrowserContext): Promise<Repla
             maskInputFn: function(text, element) {
               return '*'.repeat((text || '').length);
             },
-            emit: function(ev){ try{ window.__klavBuf.push(ev); }catch(e){} }
+            emit: function(ev){ try{ window.__klavBuf.push(ev); window.__klavCapBuf(); }catch(e){} }
           });
           setInterval(function(){ try{ window.__klavDrain(); }catch(e){} }, 250);
         }
@@ -220,6 +257,9 @@ export async function setupReplayCapture(context: BrowserContext): Promise<Repla
 
   return {
     segments,
+    bufferedEventCount() {
+      return current.length
+    },
     async drain(page: Page) {
       // Force the live page to flush its buffer to the binding (→ `current`). Best-effort.
       try { await page.evaluate("window.__klavDrain && window.__klavDrain()") } catch {}
