@@ -20,7 +20,7 @@ import { stepCacheKey } from "./trails-crystallize"
 import { decideFromVision, type VisionResolver, type VisionInput, type VisionResult, type VisionDecision } from "./trails-vision"
 import { setupReplayCapture, saveReplay, type ReplayCapture } from "./trails-replay"
 import { hasCredRef, resolveCredRefs, type CredResolver } from "./trails-creds"
-import { captureKrefSnapshot, stableSelectorFor, structuralPathFor, isKrefSelector } from "./trails-snapshot"
+import { captureKrefSnapshot, stableSelectorFor, structuralPathFor, isKrefSelector, recordedStepState } from "./trails-snapshot"
 import { clickWithTransitionFallback } from "./trails-click"
 
 export interface WalkOptions {
@@ -467,12 +467,18 @@ async function runOneStep(
   opTimeout: number,
 ): Promise<OneStepResult> {
   const fixtureUrl = opts.fixtureUrl
+  const stepPageUrl = page.url()
+  const recordedStep = (selector: string | null | undefined, target?: Fingerprint | null) =>
+    recordedStepState(step, selector, stepPageUrl, target)
   // navigate / wait have no element to resolve.
   if (step.action === "navigate") {
     // In Layer C the whole walk is scoped to fixtureUrl; re-navigate to it (origin already loaded).
     // Bound the nav at opTimeout (Plan G) so a live-network navigate step can't hang on the 30s default.
     await page.goto(step.actionValue && /^https?:|^file:/.test(step.actionValue) ? step.actionValue : fixtureUrl, { timeout: opTimeout })
-    await addRunStep(projectId, { runId, trailId, stepId: step.id, idx: step.idx, tier: "none", verdict: "green", confidence: 1, healed: false, evidence: { action: "navigate" } })
+    await addRunStep(projectId, {
+      runId, trailId, stepId: step.id, idx: step.idx, tier: "none", verdict: "green", confidence: 1, healed: false,
+      evidence: { action: "navigate", recordedStep: recordedStep(null, null), resultUrl: page.url() },
+    })
     return { tier: "none", verdict: "green", healed: false, llmCalls: 0 }
   }
   if (step.action === "wait") {
@@ -484,7 +490,10 @@ async function runOneStep(
     const minMs = Math.min(Math.max(Number(step.actionValue) || 0, 0), 15_000)
     if (minMs > 0) await page.waitForTimeout(minMs)
     await page.waitForLoadState("networkidle").catch(() => {})
-    await addRunStep(projectId, { runId, trailId, stepId: step.id, idx: step.idx, tier: "none", verdict: "green", confidence: 1, healed: false, evidence: { action: "wait" } })
+    await addRunStep(projectId, {
+      runId, trailId, stepId: step.id, idx: step.idx, tier: "none", verdict: "green", confidence: 1, healed: false,
+      evidence: { action: "wait", recordedStep: recordedStep(null, null) },
+    })
     return { tier: "none", verdict: "green", healed: false, llmCalls: 0 }
   }
 
@@ -502,6 +511,7 @@ async function runOneStep(
       runId, trailId, stepId: step.id, idx: step.idx, tier: "none", verdict: "green", confidence: 1, healed: false,
       evidence: {
         checkpoint: step.checkpoint?.description ?? null,
+        recordedStep: recordedStep(null, null),
         ...(screenshotKey !== undefined ? { screenshotKey } : {}),
       },
     })
@@ -535,6 +545,7 @@ async function runOneStep(
           reason: "ambiguous_selector",
           selector: e.selector,
           matchCount: e.matchCount,
+          recordedStep: recordedStep(e.selector, fp),
           ...(screenshotKey !== undefined ? { screenshotKey } : {}),
         },
       })
@@ -572,6 +583,7 @@ async function runOneStep(
           fingerprint: fp,
           cachedSelector,
           checkpoint: step.checkpoint?.description ?? null,
+          recordedStep: recordedStep(cachedSelector, fp),
           ...(screenshotKey !== undefined ? { screenshotKey } : {}),
         },
       })
@@ -613,6 +625,7 @@ async function runOneStep(
       evidence: {
         reason: isAssert ? "checkpoint_failed" : "action_failed",
         checkpoint: step.checkpoint?.description ?? null,
+        recordedStep: recordedStep(resolved.selector, fp),
         ...(screenshotKey !== undefined ? { screenshotKey } : {}),
       },
     })
@@ -656,12 +669,14 @@ async function runOneStep(
         confidence: resolved.confidence,
         candidateSignal: resolved.candidateSignal,
         checkpoint: step.checkpoint?.description ?? null,
+        recordedStep: recordedStep(resolved.selector, fp),
         ...(screenshotKey !== undefined ? { screenshotKey } : {}),
       }
     : {
         selector: resolved.selector,
         healed: false,
         checkpoint: step.checkpoint?.description ?? null,
+        recordedStep: recordedStep(resolved.selector, fp),
         ...(screenshotKey !== undefined ? { screenshotKey } : {}),
       }
 
@@ -690,6 +705,9 @@ async function runVisionTier2(
   opTimeout: number,
 ): Promise<OneStepResult> {
   const gate = opts.confidenceGate ?? 0.9
+  const stepPageUrl = page.url()
+  const recordedStep = (selector: string | null | undefined, target?: Fingerprint | null) =>
+    recordedStepState(step, selector, stepPageUrl, target)
 
   // §6.5 — HARD checkpoint guardrail, BEFORE any model I/O. Reaching the vision tier means Tier-0/1
   // exhausted the deterministic resolvers: the assert's target is GONE. Healing never overrides a
@@ -708,7 +726,7 @@ async function runVisionTier2(
     await addRunStep(projectId, {
       runId, trailId, stepId: step.id, idx: step.idx,
       tier: "vision", verdict: "red", confidence: 1, diagnosis: "regression", healed: false,
-      evidence: { reason: "checkpoint_gone", target: fp, cachedSelector, needsVision: false, checkpoint: step.checkpoint?.description ?? null },
+      evidence: { reason: "checkpoint_gone", target: fp, cachedSelector, needsVision: false, checkpoint: step.checkpoint?.description ?? null, recordedStep: recordedStep(cachedSelector, fp) },
     })
     return { tier: "vision", verdict: "red", healed: false, llmCalls: 0 }
   }
@@ -751,7 +769,7 @@ async function runVisionTier2(
     await addRunStep(projectId, {
       runId, trailId, stepId: step.id, idx: step.idx,
       tier: "vision", verdict: "red", confidence: 0, diagnosis: "runtime_error", healed: false,
-      evidence: { reason: "vision_error", needsVision: true, error: String(e), target: fp, checkpoint: step.checkpoint?.description ?? null },
+      evidence: { reason: "vision_error", needsVision: true, error: String(e), target: fp, checkpoint: step.checkpoint?.description ?? null, recordedStep: recordedStep(cachedSelector, fp) },
     })
     return { tier: "vision", verdict: "red", healed: false, llmCalls: 0 }
   }
@@ -772,7 +790,7 @@ async function runVisionTier2(
     await addRunStep(projectId, {
       runId, trailId, stepId: step.id, idx: step.idx,
       tier: "vision", verdict: "red", confidence: decision.confidence, diagnosis: "regression", healed: false,
-      evidence: { reason: "vision_regression", classification: result.classification, rationale: decision.rationale, target: fp, needsVision: false, checkpoint: step.checkpoint?.description ?? null },
+      evidence: { reason: "vision_regression", classification: result.classification, rationale: decision.rationale, target: fp, needsVision: false, checkpoint: step.checkpoint?.description ?? null, recordedStep: recordedStep(cachedSelector, fp) },
     })
     return { tier: "vision", verdict: "red", healed: false, llmCalls: 1 }
   }
@@ -841,6 +859,7 @@ async function runVisionTier2(
             tier: "vision", confidence: decision.confidence, candidateSignal: "vision",
             rationale: decision.rationale, classification: result.classification,
             checkpoint: step.checkpoint?.description ?? null,
+            recordedStep: recordedStep(toSelectorEvidence, fp),
           },
         })
         return { tier: "vision", verdict: "amber", healed: true, llmCalls: 1 }
@@ -851,11 +870,11 @@ async function runVisionTier2(
     }
     // Resolver claimed a heal but we could NOT confirm it (no unique match / wrong role / action
     // failed). Treat as unconfirmed → AMBER + queue-only finding; do NOT act, do NOT persist.
-    return await fileAmberHeal(projectId, runId, trailId, step, opts, fp, decision.rationale, decision.confidence, result.classification)
+    return await fileAmberHeal(projectId, runId, trailId, step, opts, fp, decision.rationale, decision.confidence, result.classification, stepPageUrl, decision.selector ?? cachedSelector)
   }
 
   // ── amber_low_conf: never act on an unconfirmed target → AMBER + queue-only finding ──
-  return await fileAmberHeal(projectId, runId, trailId, step, opts, fp, decision.rationale, decision.confidence, result.classification)
+  return await fileAmberHeal(projectId, runId, trailId, step, opts, fp, decision.rationale, decision.confidence, result.classification, stepPageUrl, decision.selector ?? cachedSelector)
 }
 
 // AMBER + queue-only (kind 'amber_heal') finding for a healed-but-unconfirmed step (§6.3 / Layer E
@@ -863,6 +882,7 @@ async function runVisionTier2(
 async function fileAmberHeal(
   projectId: string, runId: string, trailId: string, step: TrailStep, opts: WalkOptions,
   fp: Fingerprint | null, rationale: string, confidence: number, classification: string,
+  pageUrl: string, selector: string | null | undefined,
 ): Promise<OneStepResult> {
   if (!opts.suppressFindings) {
     await recordFinding(projectId, {
@@ -875,7 +895,14 @@ async function fileAmberHeal(
   await addRunStep(projectId, {
     runId, trailId, stepId: step.id, idx: step.idx,
     tier: "vision", verdict: "amber", confidence, diagnosis: "locator_drift", healed: false,
-    evidence: { reason: "vision_low_confidence", classification, rationale, needsVision: false, checkpoint: step.checkpoint?.description ?? null },
+    evidence: {
+      reason: "vision_low_confidence",
+      classification,
+      rationale,
+      needsVision: false,
+      checkpoint: step.checkpoint?.description ?? null,
+      recordedStep: recordedStepState(step, selector, pageUrl, fp),
+    },
   })
   return { tier: "vision", verdict: "amber", healed: false, llmCalls: 1 }
 }

@@ -1,7 +1,7 @@
 // Serializer e2e on a real chromium page (same pattern as trails-runner.e2e.test.ts).
 import { describe, test, expect, beforeAll, afterAll } from "bun:test"
 import { chromium, type Browser, type Page } from "playwright"
-import { captureKrefSnapshot, stableSelectorFor, structuralPathFor, isKrefSelector, KREF_SNAPSHOT_CAP } from "./trails-snapshot"
+import { captureKrefSnapshot, stableSelectorFor, structuralPathFor, isKrefSelector, recordedStepState, KREF_SNAPSHOT_CAP } from "./trails-snapshot"
 
 const FIXTURE = `<!doctype html><html><head><title>t</title>
 <style>.hidden{display:none}</style><script>window.__x=1</script></head><body>
@@ -89,6 +89,34 @@ describe("isKrefSelector", () => {
     expect(isKrefSelector("#em")).toBe(false)
     expect(isKrefSelector('[data-kref="e12"] > span')).toBe(false)
     expect(isKrefSelector(null)).toBe(false)
+  })
+})
+
+describe("recordedStepState", () => {
+  test("pins full replay step data and strips raw kref selectors", () => {
+    const state = recordedStepState(
+      {
+        id: "ts_1",
+        idx: 7,
+        action: "click",
+        actionValue: null,
+        target: { role: "button", accessibleName: "Continue", domPath: '[data-kref="e4"] > span' },
+        checkpoint: { description: "continue visible" },
+      },
+      '[data-kref="e4"]',
+      "https://app.test/wizard",
+    )
+
+    expect(state).toMatchObject({
+      stepId: "ts_1",
+      idx: 7,
+      action: "click",
+      actionValue: null,
+      selector: "snapshot ref e4",
+      checkpoint: { description: "continue visible" },
+      pageUrl: "https://app.test/wizard",
+    })
+    expect(state.target?.domPath).toBe("snapshot ref e4 > span")
   })
 })
 
