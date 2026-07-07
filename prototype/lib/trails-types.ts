@@ -26,6 +26,8 @@ export interface Trail {
   baselineRef: string | null; authorKind: AuthorKind; status: TrailStatus
   createdBy: string | null; createdAt: number; updatedAt: number
   stepVersion: number
+  schedule: string | null         // 5-field cron expression (UTC), null = no schedule
+  scheduledLastRunAt: number | null  // epoch ms when last scheduled walk was triggered
 }
 
 export type CheckpointKind = "visible" | "textEquals" | "textContains" | "urlMatches" | "elementCount"
