@@ -97,6 +97,12 @@ export interface WalkOptions {
    * uploader adapted from uploadScreenshotMeta. In tests, pass a fake that never touches S3.
    */
   shotUploader?: (bytes: Uint8Array, contentType: string) => Promise<{ key: string }>
+  /**
+   * KLA-100 mid-run cancel. When the signal is aborted the runner stops at the NEXT step boundary
+   * (between steps, after the current Playwright action finishes) and finalizes the walk RED with
+   * summary.error = "cancelled". Absent (all existing callers) → unchanged behavior.
+   */
+  signal?: AbortSignal
 }
 
 export interface WalkStepSummary {
@@ -335,6 +341,7 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
   // Plan G hard per-walk deadline: a wall-clock budget checked at the top of each step. Infinity = off.
   const deadline = opts.deadlineMs ? Date.now() + opts.deadlineMs : Infinity
   let deadlineHit = false
+  let cancelledBySignal = false
 
   // Plan G prod-safety — make the deadline a REAL ceiling, not just a between-steps check. A single
   // live-network navigation (initial goto OR a navigate step) must NOT be allowed to hang on
@@ -379,6 +386,8 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
       // (don't run this or any further step) and roll the verdict to RED — the page-too-slow / runaway
       // case can't pin the shared 1GB box. The browser is still closed in the `finally` below.
       if (Date.now() > deadline) { walkVerdict = "red"; deadlineHit = true; break }
+      // KLA-100: cancel signal check — stop at the next step boundary after the abort fires.
+      if (opts.signal?.aborted) { walkVerdict = "red"; cancelledBySignal = true; break }
 
       // Drain the CURRENTLY-SHOWN document's rrweb buffer into the current segment BEFORE running the
       // step — if this step navigates, the boundary flush below seals exactly this page's events.
@@ -420,7 +429,7 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
     await finishWalk(projectId, runId, {
       status: walkVerdict,
       llmCalls,
-      summary: { healedCount, stepCount: steps.length, ...(deadlineHit ? { error: "deadline_exceeded" } : {}) },
+      summary: { healedCount, stepCount: steps.length, ...(deadlineHit ? { error: "deadline_exceeded" } : cancelledBySignal ? { error: "cancelled" } : {}) },
     })
 
     // Persist the replay AFTER finishWalk. Best-effort: a save failure never changes the Walk result.

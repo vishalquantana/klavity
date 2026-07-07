@@ -6,7 +6,9 @@
 // The walk fn is INJECTABLE (deps.walk) so unit tests run with a stub (no browser); the default
 // realWalk drives the Trail's own baseUrl with prod-safe Chromium + replay capture, adopting the
 // pre-created runId so the run_steps / replay / verdict all land on the runId the caller holds.
-import { withWalkSlot, WalkBusyError, CHROMIUM_PROD_ARGS } from "./trails-browser"
+// Vision (Tier-2) is OFF in realWalk; a flagged Trail (the regression demo) opts in via a custom
+// deps.walk that calls walkTrail with a vision resolver.
+import { withWalkSlot, WalkBusyError, CHROMIUM_PROD_ARGS, setCurrentWalkRunId, getCurrentWalkAbortSignal } from "./trails-browser"
 import { getTrail, startWalk, finishWalk } from "./trails"
 import { walkTrail } from "./trails-runner"
 import type { Verdict } from "./trails-types"
@@ -26,9 +28,10 @@ const realWalk: WalkFn = async (projectId, trailId, runId) => {
   const trail = await getTrail(projectId, trailId)
   if (!trail) return { verdict: "red", llmCalls: 0, summary: { error: `trail ${trailId} not found in project ${projectId}` } }
   const vision = configuredVisionResolver()
+  const signal = getCurrentWalkAbortSignal() ?? undefined
   const s = await walkTrail(projectId, trailId, {
     fixtureUrl: trail.baseUrl, replay: true, launchArgs: CHROMIUM_PROD_ARGS, deadlineMs: WALK_DEADLINE_MS, runId,
-    stepShots: true,
+    stepShots: true, signal,
     ...(vision ? { vision } : {}),
   })
   return { verdict: s.verdict, llmCalls: s.llmCalls, summary: { ...(s.reasons.length ? { reasons: s.reasons } : {}) } }
@@ -62,6 +65,7 @@ export async function runWalkNow(
       rejectStart(e)
       return
     }
+    setCurrentWalkRunId(runId)
     resolveStarted(runId)
     const walk = deps?.walk ?? realWalk
     try {
