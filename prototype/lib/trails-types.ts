@@ -28,10 +28,21 @@ export interface Trail {
   stepVersion: number
 }
 
+export type CheckpointKind = "visible" | "textEquals" | "textContains" | "urlMatches" | "elementCount"
+
+export interface Checkpoint {
+  description: string
+  /** Defaults to "visible" for legacy rows that never persisted a kind. */
+  kind?: CheckpointKind
+  value?: string     // textEquals / textContains
+  regex?: string     // urlMatches
+  count?: number     // elementCount
+}
+
 export interface TrailStep {
   id: string; trailId: string; projectId: string; idx: number
   action: StepAction; actionValue: string | null
-  target: Fingerprint | null; checkpoint: { description: string } | null; createdAt: number
+  target: Fingerprint | null; checkpoint: Checkpoint | null; createdAt: number
 }
 
 export interface LocatorCacheRow {

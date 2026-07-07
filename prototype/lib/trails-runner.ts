@@ -507,6 +507,30 @@ async function runOneStep(
   const fp: Fingerprint | null = cacheRow?.fingerprint ?? step.target ?? null
 
   const isAssert = step.action === "assert"
+  // urlMatches asserts against page.url(), not an element — run it directly without resolveTarget.
+  if (isAssert && step.checkpoint && step.checkpoint.kind === "urlMatches") {
+    try {
+      const re = new RegExp(step.checkpoint.regex!)
+      for (let i = 0; i < 50; i++) { // poll up to ~5s for navigations to settle
+        if (re.test(page.url())) break
+        await page.waitForTimeout(100)
+      }
+      if (!re.test(page.url())) throw new Error(`checkpoint urlMatches failed: "${page.url()}" did not match /${step.checkpoint.regex}/`)
+    } catch {
+      const verdict: Verdict = "red"
+      const screenshotKey = await maybeShot(page, opts)
+      await addRunStep(projectId, { runId, trailId, stepId: step.id, idx: step.idx, tier: "none", verdict, confidence: 1, diagnosis: "regression", healed: false,
+        evidence: { reason: "checkpoint_failed", checkpoint: step.checkpoint?.description ?? null, recordedStep: recordedStep(null, fp), ...(screenshotKey !== undefined ? { screenshotKey } : {}) },
+      })
+      return { tier: "none", verdict, healed: false, llmCalls: 0 }
+    }
+    const screenshotKey = await maybeShot(page, opts)
+    await addRunStep(projectId, { runId, trailId, stepId: step.id, idx: step.idx, tier: "none", verdict: "green", confidence: 1, healed: false,
+      evidence: { checkpoint: step.checkpoint?.description ?? null, recordedStep: recordedStep(null, fp), ...(screenshotKey !== undefined ? { screenshotKey } : {}) },
+    })
+    return { tier: "none", verdict: "green", healed: false, llmCalls: 0 }
+  }
+
   // A checkpoint-only assert (no target at all) is a soft pass that keeps the flow runnable (mirrors codegen).
   if (isAssert && !cachedSelector && !fp) {
     const screenshotKey = await maybeShot(page, opts)
@@ -612,10 +636,40 @@ async function runOneStep(
       case "select":
         await resolved.locator.selectOption(step.actionValue ?? "", { timeout: ACTION_TIMEOUT })
         break
-      case "assert":
+      case "assert": {
         // Hard checkpoint: the element must be visible. Never overridden by healing.
-        await resolved.locator.waitFor({ state: "visible", timeout: 5000 })
+        const kind = (step.checkpoint && step.checkpoint.kind) || "visible"
+        switch (kind) {
+          case "textEquals": {
+            await resolved.locator.waitFor({ state: "visible", timeout: 5000 })
+            const actual = (await resolved.locator.allInnerTexts()).join(" ").trim()
+            if (actual !== step.checkpoint!.value) throw new Error(`checkpoint textEquals failed: expected "${step.checkpoint.value}" got "${actual}"`)
+            break
+          }
+          case "textContains": {
+            await resolved.locator.waitFor({ state: "visible", timeout: 5000 })
+            const actual = (await resolved.locator.allInnerTexts()).join(" ").trim()
+            if (!actual.includes(step.checkpoint!.value)) throw new Error(`checkpoint textContains failed: "${step.checkpoint.value}" not in "${actual}"`)
+            break
+          }
+          case "urlMatches": {
+            // URL assertions use the page url, not a locator. Poll briefly so transient navigations settle.
+            await resolved.locator.waitFor({ state: "visible", timeout: 5000 }).catch(() => {})
+            const re = new RegExp(step.checkpoint!.regex!)
+            if (!re.test(page.url())) throw new Error(`checkpoint urlMatches failed: "${page.url()}" did not match ${step.checkpoint.regex}`)
+            break
+          }
+          case "elementCount": {
+            await resolved.locator.waitFor({ state: "visible", timeout: 5000 }).catch(() => {})
+            const n = await resolved.locator.count()
+            if (n !== step.checkpoint!.count) throw new Error(`checkpoint elementCount failed: expected ${step.checkpoint.count} got ${n}`)
+            break
+          }
+          default: // "visible" or unknown — fall through to the visible check.
+            await resolved.locator.waitFor({ state: "visible", timeout: 5000 })
+        }
         break
+      }
     }
   } catch {
     // The element resolved but the action/assertion failed (e.g. checkpoint not visible) -> fail-loud RED.
