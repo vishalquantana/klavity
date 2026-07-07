@@ -865,16 +865,32 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     </div>
   </div>
 
-  <!-- First-run checklist (zero-state guidance) — shown only when this project has 0 Sims -->
+  <!-- First-run checklist (value-ordered, non-gated) — shown until all 5 are done or dismissed -->
   <div class="checklist hide" id="checklist" data-view="overview">
     <button class="cl-x" id="checklistDismiss" aria-label="Dismiss checklist"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18" /> <path d="m6 6 12 12" /></svg></button>
     <h3>Welcome to Klavity</h3>
-    <p class="cl-intro">We'll tick these off as you go. Steps 1–2 get real bug reports flowing (Snap); steps 3–5 add AI Sim reviews — take either path, or both:</p>
+    <p class="cl-intro">Zero gates — start anywhere. Tick these off as you explore:</p>
+    <!-- Progress bar -->
+    <div style="margin:0 0 16px;background:var(--ink-3);border-radius:999px;height:5px;overflow:hidden">
+      <div id="clProgress" style="height:100%;border-radius:999px;background:linear-gradient(90deg,var(--indigo),var(--green));transition:width .4s ease;width:0%"></div>
+    </div>
     <ol>
+      <li id="clSeeReact">
+        <div>
+          <div class="cl-step-t">See a Sim react to a page</div>
+          <div class="cl-step-d">Paste your URL and meet your Sims — <button class="cl-step-d" style="background:none;border:none;padding:0;color:var(--indigo);cursor:pointer;font-size:inherit;font-family:inherit;text-decoration:none" onclick="openSimModalSite()">Try it from your site →</button></div>
+        </div>
+      </li>
+      <li id="clFirstReport">
+        <div>
+          <div class="cl-step-t">File your first finding</div>
+          <div class="cl-step-d">Click the widget button on your site and send a test report — it lands in <a href="#triage" onclick="setView('triage');return false">New reports</a>, ready to accept as a bug or dismiss.</div>
+        </div>
+      </li>
       <li id="clConnect">
-        <div style="flex:1">
-          <div class="cl-step-t">Connect your product — pick one</div>
-          <div class="cl-step-d">Two ways for Sims and your users to reach Klavity:</div>
+        <div>
+          <div class="cl-step-t">Connect your product <span class="cl-path-tag">optional</span></div>
+          <div class="cl-step-d">Two ways to get Klavity watching:</div>
           <div class="cl-paths">
             <div class="cl-path">
               <div class="cl-path-t">&lt;/&gt; Embed the report widget</div>
@@ -893,37 +909,25 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           </div>
         </div>
       </li>
-      <li id="clFirstReport">
-        <div>
-          <div class="cl-step-t">Get your first bug report</div>
-          <div class="cl-step-d">Click the widget button on your site and send a test report — it lands in <a href="#triage" onclick="setView('triage');return false">New reports</a>, ready to accept as a bug or dismiss.</div>
-        </div>
-      </li>
-      <li id="clUrl">
-        <div>
-          <div class="cl-step-t">Add your product's URL so Sims know where to watch <span class="cl-path-tag">Sims path</span></div>
-          <div class="cl-step-d">Allowlist the paths your Sims should react on. <a href="#liveDrawer" id="checklistUrlLink">Open Live Sims settings →</a></div>
-        </div>
-      </li>
       <li id="clSims">
         <div>
-          <div class="cl-step-t">Add your Sims (built from real customer calls) <span class="cl-path-tag">Sims path</span></div>
-          <div class="cl-step-d">Extract personas from a transcript in the studio. <a href="/app" id="checklistStudioLink">Launch the Sims studio →</a></div>
+          <div class="cl-step-t">Add a real Sim from a customer call</div>
+          <div class="cl-step-d">Upload a transcript and we extract personas grounded in their exact words. <a href="/app" id="checklistStudioLink">Launch the Sims studio →</a></div>
         </div>
       </li>
       <li id="clReview">
         <div>
-          <div class="cl-step-t">Watch your first review roll in <span class="cl-path-tag">Sims path</span></div>
-          <div class="cl-step-d">When a Sim reacts to a page, it shows up under Recent tickets and What your Sims are saying.</div>
+          <div class="cl-step-t">Add an AutoSim journey</div>
+          <div class="cl-step-d">Describe a critical user path in plain English — Klavity runs it on every deploy. <a href="#" onclick="setView('autosims');return false">Open AutoSims →</a></div>
         </div>
       </li>
     </ol>
   </div>
 
-  <!-- First-report celebration — one-time dismissible callout when the project's first feedback lands -->
+  <!-- First-catch celebration — one-time dismissible callout when the first Sim reaction / finding appears -->
   <div class="first-report hide" id="firstReportCallout" data-view="overview" role="status">
     <span class="fr-ic" data-ki="sparkles"></span>
-    <span class="fr-txt"><b>Your first bug report is in!</b> Review it in <a href="#triage" onclick="setView('triage');return false">New reports</a> — accept it as a bug or dismiss it.</span>
+    <span class="fr-txt"><b>A customer just found something before your users would.</b> Review it in <a href="#triage" onclick="setView('triage');return false">New reports</a> — accept it as a bug or dismiss it.</span>
     <button class="fr-x" id="firstReportDismiss" type="button" aria-label="Dismiss first-report celebration"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18" /> <path d="m6 6 12 12" /></svg></button>
   </div>
 
@@ -1725,33 +1729,42 @@ function render(fromCache) {
   if (window.maybeStartTour) window.maybeStartTour()
 }
 
-// ── First-run checklist — shows ONLY when this project has zero Sims, dismissible per-session ──
-// Path-aware (Snap vs Sims): the widget step ticks on the /widget.js heartbeat, the first-report
-// step ticks on the first human (non-Sim) feedback row — Sims steps stay for the Sims path.
+// ── First-run checklist — value-ordered, NON-GATED; auto-ticks from dashboard state ──
+// Shows until all 5 are done or the user dismisses. No step blocks another.
 function renderChecklist() {
   const el = $("checklist")
   if (!el) return
   const hasSims = (state.sims || []).length > 0
   const counts = state.counts || {}
-  // "First review rolled in" = at least one real feedback observation exists for this project.
-  const hasReview = (counts.feedback || 0) > 0 || (state.saying || []).some(s => s.source === "feedback")
-  // Snap path: widget heartbeat (from /api/dashboard widgetStatus) + first human bug report.
-  const widgetSeen = !!(state.widgetStatus && state.widgetStatus.lastSeen)
+  // "See a Sim react" = personas have been fetched (sims exist) OR at least one reaction observation exists
+  const hasReaction = hasSims || (state.saying || []).some(s => s.source === 'feedback' || s.simName)
+  // "File first finding" = any human (non-Sim) feedback has been triaged as a bug ticket
   const hasHumanReport = (state.tickets || []).some(t => !t.simName)
+  // "Connect" = widget heartbeat or any feedback flowing OR extension used
+  const widgetSeen = !!(state.widgetStatus && state.widgetStatus.lastSeen)
+  const connected = widgetSeen || (counts.feedback || 0) > 0 || hasSims
+  // "Add real Sim from call" = at least one Sim from transcript source
+  const hasSims_fromCall = hasSims // best approximation without extra API field
+  // "AutoSim journey" = any trails exist
+  const hasTrails = (state.trails || []).length > 0
+
   let dismissed = false
   try { dismissed = sessionStorage.getItem("klavChecklistDismissed") === "1" } catch (e) {}
-  // Keep guiding until the activation goal (first review) is reached — not just until the first Sim.
-  el.classList.toggle("hide", hasReview || dismissed)
-  // Tick off every step we can detect from dashboard state so "what's left" is obvious at a glance.
-  // URL step done = at least one monitored URL is allowlisted for this project (loaded by loadLive()).
-  const hasUrls = (typeof curUrls !== "undefined") && (curUrls || []).length > 0
-  // Step 1 done = the product is wired up — a widget heartbeat, or any later progress (a URL, a Sim, feedback).
-  const connected = widgetSeen || hasReview || hasSims || hasUrls || (counts.feedback || 0) > 0
-  const connLi = $("clConnect"); if (connLi) connLi.classList.toggle("cl-done", connected)
-  const frLi = $("clFirstReport"); if (frLi) frLi.classList.toggle("cl-done", hasHumanReport)
-  const urlLi = $("clUrl"); if (urlLi) urlLi.classList.toggle("cl-done", hasUrls)
-  const simsLi = $("clSims"); if (simsLi) simsLi.classList.toggle("cl-done", hasSims)
-  const revLi = $("clReview"); if (revLi) revLi.classList.toggle("cl-done", hasReview)
+  // All 5 done = hide automatically (celebrate, then hide)
+  const allDone = hasReaction && hasHumanReport && connected && hasSims_fromCall && hasTrails
+  el.classList.toggle("hide", allDone || dismissed)
+
+  // Tick individual items
+  const seeReactLi = $("clSeeReact");  if (seeReactLi) seeReactLi.classList.toggle("cl-done", hasReaction)
+  const frLi = $("clFirstReport");     if (frLi) frLi.classList.toggle("cl-done", hasHumanReport)
+  const connLi = $("clConnect");       if (connLi) connLi.classList.toggle("cl-done", connected)
+  const simsLi = $("clSims");          if (simsLi) simsLi.classList.toggle("cl-done", hasSims_fromCall)
+  const revLi = $("clReview");         if (revLi) revLi.classList.toggle("cl-done", hasTrails)
+
+  // Progress bar
+  const done = [hasReaction, hasHumanReport, connected, hasSims_fromCall, hasTrails].filter(Boolean).length
+  const bar = $("clProgress"); if (bar) bar.style.width = (done / 5 * 100) + "%"
+
   // Widget path: mirror the onboarding "widget detected" live state on the heartbeat.
   const wd = $("clWidgetDetect")
   if (wd) {
@@ -1768,7 +1781,7 @@ function renderChecklist() {
   const pid = curProjId()
   const studio = $("checklistStudioLink")
   if (studio && pid) studio.setAttribute("href", "/app?project=" + encodeURIComponent(pid))
-  // Step 1, widget path: show the real embed snippet for THIS project so it's copy-paste ready.
+  // Step 3, widget path: show the real embed snippet for THIS project so it's copy-paste ready.
   const snip = $("embedSnippet")
   if (snip && pid) snip.textContent = embedSnippet(pid)
 }
@@ -2144,7 +2157,8 @@ function emptyState(em, text, cta) {
 function renderSaying() {
   const items = state.saying || []
   if (!items.length) {
-    $("saying").innerHTML = emptyState(kicon('message-circle',{size:32}), "Your Sims haven't reacted yet. Drop in a transcript and run a review to hear what they think.", `<a class="btn btn-indigo btn-sm" href="/app">Open the studio →</a>`)
+    // A4: Inbox empty state → points to meeting your Sims (from-your-site action, not studio)
+    $("saying").innerHTML = emptyState(kicon('message-circle',{size:32}), "Your Sims will surface findings here — meet your Sims to get started.", `<button class="btn btn-indigo btn-sm" onclick="openSimModalSite()">Meet your Sims →</button>`)
     return
   }
   $("saying").innerHTML = `<div class="saying">` + items.map(s => {
@@ -2170,7 +2184,8 @@ function renderSaying() {
 function renderSims(admin) {
   const sims = state.sims || []
   if (!sims.length) {
-    $("sims").innerHTML = emptyState(kicon('dna',{size:32}), "No Sims yet — bring your first one to life in a sentence.", `<button class="btn btn-indigo btn-sm" onclick="openSimModal()">＋ Create your first Sim</button>`)
+    // A4: Sims empty state → primary action opens the From-your-site flow
+    $("sims").innerHTML = emptyState(kicon('dna',{size:32}), "No Sims yet — paste your product URL and meet the AI customers it suggests.", `<button class="btn btn-indigo btn-sm" onclick="openSimModalSite()">Meet your Sims →</button>`)
     return
   }
   const pid = curProjId()
@@ -2200,7 +2215,8 @@ function renderSimsFeed() {
   const countEl = $("simsCount")
   if (countEl) countEl.textContent = sims.length ? String(sims.length) : ""
   if (!sims.length) {
-    el.innerHTML = emptyState(kicon('dna',{size:32}), "No Sims yet — bring your first one to life in a sentence.", `<button class="btn btn-indigo btn-sm" onclick="openSimModal()">＋ Create your first Sim</button>`)
+    // A4: Sims feed empty state → from-your-site flow
+    el.innerHTML = emptyState(kicon('dna',{size:32}), "No Sims yet — paste your product URL and meet the AI customers it suggests.", `<button class="btn btn-indigo btn-sm" onclick="openSimModalSite()">Meet your Sims →</button>`)
     return
   }
   // Use dedicated per-Sim feedback map from the API (simFeedback) — only Sim-generated observations,
@@ -3832,6 +3848,15 @@ load()
   // `if (window.maybeOpenCreateSim)` guard silently dropped the ?create-sim=1 deep link.
   // Re-check once we exist - the autoOpened flag keeps this idempotent.
   window.maybeOpenCreateSim();
+  // A4: opener that pre-selects the "From your site" tab — used by empty states and checklist item 1
+  window.openSimModalSite = function(){
+    window.openSimModal()
+    // Switch to the "site" pane after a tick so the modal is visible
+    setTimeout(function(){
+      var siteBtn = document.querySelector('.sm-seg button[data-pane="site"]')
+      if(siteBtn) siteBtn.click()
+    }, 60)
+  }
 })();
 </script>
 <script>
