@@ -346,3 +346,28 @@ test("(vii) inline go(N) wizard transitions are verified and repaired after a no
   expect(summary.steps[0].verdict).toBe("green")
   expect(summary.steps[1].verdict).toBe("green")
 }, 30000)
+
+test("(viii) inline wizard with unrecognized fn name + trusted-block guard transitions correctly (KLA-58)", async () => {
+  const projectId = "proj_inline_unknown"
+  const traj = {
+    name: "Unknown-fn wizard",
+    intent: "click Continue (uses showStep not go) and reach the name step",
+    baseUrl: "https://app.test/",
+    authorKind: "llm" as const,
+    createdBy: "agent@klavity",
+    steps: [
+      { action: "click" as const, url: "https://app.test/", domHash: "uf0",
+        target: { role: "button", accessibleName: "Continue", text: "Continue", resolvedSelector: "#continue" } },
+      { action: "assert" as const, checkpoint: { description: "name input visible after Continue" }, url: "https://app.test/", domHash: "uf1",
+        target: { role: "textbox", accessibleName: "Full name", resolvedSelector: "#fullname" } },
+    ],
+  }
+  const { trailId } = await crystallize(projectId, traj)
+
+  const summary = await walkTrail(projectId, trailId, { fixtureUrl: fixtureUrl("onclick-wizard-unknown-fn.html") })
+
+  expect(summary.verdict).toBe("green")
+  expect(summary.steps).toHaveLength(2)
+  expect(summary.steps[0].verdict).toBe("green")
+  expect(summary.steps[1].verdict).toBe("green")
+}, 30000)
