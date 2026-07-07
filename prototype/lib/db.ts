@@ -641,6 +641,9 @@ export async function applySchema(c: Client) {
   // KLA-104: pause-for-secret — opaque key stored while a walk is paused; cleared on resume or expiry.
   await c.execute("ALTER TABLE trail_runs ADD COLUMN paused_secret_key TEXT")
     .catch((e: any) => console.warn("trail_runs.paused_secret_key ALTER skipped:", e?.message || e))
+  // KLA-121: share-token lifecycle — revocation timestamp (NULL = active).
+  await c.execute("ALTER TABLE walk_share_tokens ADD COLUMN revoked_at INTEGER")
+    .catch((e: any) => console.warn("walk_share_tokens.revoked_at ALTER skipped:", e?.message || e))
 }
 
 // ── schema_meta helpers ──
