@@ -42,7 +42,7 @@ import { startTrailScheduler, isValidCron } from "./lib/trails-scheduler"
 import { startCrashReaper } from "./lib/trails-reaper"
 import { runAuthorNow, getAuthorSession, getActiveAuthorSession } from "./lib/trails-author"
 import { WalkBusyError, cancelCurrentWalk, PdfBusyError } from "./lib/trails-browser"
-import { mintShareToken, resolveShareToken, renderWalkPdf } from "./lib/trails-share"
+import { mintShareToken, resolveShareToken, renderWalkPdf, revokeShareToken, listShareTokens } from "./lib/trails-share"
 import { gatherWalkReport } from "./lib/trails-report"
 import { liveWatchSseResponse } from "./lib/trails-live-watch"
 import { normalizeTrailViewport } from "./lib/trails-viewport"
@@ -3341,23 +3341,49 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return json({ ok: true })
       }
 
+      // GET /api/trails/walks/:runId/share — list active (non-revoked, non-expired) share tokens.
       // POST /api/trails/walks/:runId/share — mint an expiring share link for a walk.
-      // Returns { url, replayUrl, expiresAt } — replayUrl is non-null only when a replay was captured.
       const shareMatch = path.match(/^\/api\/trails\/walks\/([^/]+)\/share$/)
-      if (req.method === "POST" && shareMatch) {
+      if (shareMatch) {
         const runId = shareMatch[1]
-        const check = await gatherWalkReport(projectId, runId)
-        if (!check) return json({ error: "Not found" }, 404)
+
+        if (req.method === "GET") {
+          try {
+            const tokens = await listShareTokens(projectId, runId)
+            return json({ tokens })
+          } catch (e) {
+            return json(oops(e, "trails-share-list"), 500)
+          }
+        }
+
+        // POST — mint. Returns { url, replayUrl, expiresAt } — replayUrl non-null when a replay exists.
+        if (req.method === "POST") {
+          const check = await gatherWalkReport(projectId, runId)
+          if (!check) return json({ error: "Not found" }, 404)
+          try {
+            const [rawToken, replaySet] = await Promise.all([
+              mintShareToken(projectId, runId, meT),
+              runsWithReplay(projectId, [runId]),
+            ])
+            const expiresAt = Date.now() + 30 * 24 * 3600e3
+            const replayUrl = replaySet.has(runId) ? BASE + "/shared/walk-replay/" + rawToken : null
+            return json({ url: BASE + "/shared/walk-report/" + rawToken, replayUrl, expiresAt })
+          } catch (e) {
+            return json(oops(e, "trails-share-mint"), 500)
+          }
+        }
+      }
+
+      // DELETE /api/trails/walks/:runId/share/:tokenId — revoke a share token by its row id.
+      const shareRevokeMatch = path.match(/^\/api\/trails\/walks\/([^/]+)\/share\/([^/]+)$/)
+      if (req.method === "DELETE" && shareRevokeMatch) {
+        const tokenId = shareRevokeMatch[2]
         try {
-          const [rawToken, replaySet] = await Promise.all([
-            mintShareToken(projectId, runId, meT),
-            runsWithReplay(projectId, [runId]),
-          ])
-          const expiresAt = Date.now() + 30 * 24 * 3600e3
-          const replayUrl = replaySet.has(runId) ? BASE + "/shared/walk-replay/" + rawToken : null
-          return json({ url: BASE + "/shared/walk-report/" + rawToken, replayUrl, expiresAt })
+          const revoked = await revokeShareToken(tokenId)
+          if (!revoked) return json({ error: "Token not found or already revoked" }, 404)
+          return json({ ok: true })
         } catch (e) {
-          return json(oops(e, "trails-share-mint"), 500)
+          return json(oops(e, "trails-share-revoke"), 500)
         }
       }
 
