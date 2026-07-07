@@ -40,6 +40,8 @@ export async function initDb() {
   }
   await db!.execute("ALTER TABLE projects ADD COLUMN modal_config_json TEXT DEFAULT '{}'").catch((e: any) => console.warn("projects.modal_config_json ALTER skipped:", e?.message || e))
   await db!.execute("ALTER TABLE accounts ADD COLUMN plan TEXT NOT NULL DEFAULT 'free'").catch((e: any) => console.warn("accounts.plan ALTER skipped:", e?.message || e))
+  // KLA-103: add auth_shape to test_accounts for OTP/passwordless support (existing rows get default 'password').
+  await db!.execute("ALTER TABLE test_accounts ADD COLUMN auth_shape TEXT NOT NULL DEFAULT 'password'").catch((e: any) => console.warn("test_accounts.auth_shape ALTER skipped:", e?.message || e))
   await migrateConnectorsPlane(db)
   await backfillTriageV1(db)
   await backfillTrailStatus(db)
@@ -363,10 +365,13 @@ export async function applySchema(c: Client) {
      )`,
     `CREATE INDEX IF NOT EXISTS walk_replay_run_idx ON walk_replays(project_id, run_id)`,
     // ── AutoSims F1: named per-project Test Accounts. password_enc is AES-GCM via lib/crypto.ts
-    //    (KLAV_SECRET envelope key). The plaintext secret is NEVER stored or returned by any API. ──
+    //    (KLAV_SECRET envelope key). The plaintext secret is NEVER stored or returned by any API.
+    //    KLA-103: auth_shape ('password'|'otp') allows OTP/passwordless accounts; password_enc is
+    //    empty string for OTP accounts (no secret to store). ──
     `CREATE TABLE IF NOT EXISTS test_accounts (
        id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL,
        login_email TEXT NOT NULL, password_enc TEXT NOT NULL,
+       auth_shape TEXT NOT NULL DEFAULT 'password',
        created_by TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
        UNIQUE(project_id, name))`,
     `CREATE INDEX IF NOT EXISTS test_acc_proj_idx ON test_accounts (project_id)`,

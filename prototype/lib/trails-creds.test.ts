@@ -70,6 +70,35 @@ test("unknown account throws; other project cannot resolve", async () => {
   await expect(resolveCredRefs("proj_other", "{{cred:admin:password}}")).rejects.toThrow()
 })
 
+// ── KLA-103: OTP auth shape ───────────────────────────────────────────────────
+
+const P_OTP = "proj_creds_otp"
+
+test("resolveCredRefs {{cred:otp-acct:otp}} returns fixed OTP code when KLAV_TEST_OTP=1", async () => {
+  await createTestAccount(P_OTP, { name: "otp-acct", loginEmail: "otp@test.local", authShape: "otp" })
+  process.env.KLAV_TEST_OTP = "1"
+  expect(await resolveCredRefs(P_OTP, "{{cred:otp-acct:email}}")).toBe("otp@test.local")
+  expect(await resolveCredRefs(P_OTP, "{{cred:otp-acct:otp}}")).toBe("666666")
+  delete process.env.KLAV_TEST_OTP
+})
+
+test("resolveCredRefs {{cred:otp-acct:otp}} throws when KLAV_TEST_OTP not set", async () => {
+  delete process.env.KLAV_TEST_OTP
+  await expect(resolveCredRefs(P_OTP, "{{cred:otp-acct:otp}}")).rejects.toThrow()
+})
+
+test("resolveCredRefs {{cred:otp-acct:password}} throws for OTP-shape account", async () => {
+  process.env.KLAV_TEST_OTP = "1"
+  await expect(resolveCredRefs(P_OTP, "{{cred:otp-acct:password}}")).rejects.toThrow("does not have a password")
+  delete process.env.KLAV_TEST_OTP
+})
+
+test("resolveCredRefs {{cred:admin:otp}} throws for password-shape account", async () => {
+  process.env.KLAV_TEST_OTP = "1"
+  await expect(resolveCredRefs(P, "{{cred:admin:otp}}")).rejects.toThrow("does not have an OTP code")
+  delete process.env.KLAV_TEST_OTP
+})
+
 // ── runner-level e2e guard ────────────────────────────────────────────────────
 
 test("walk resolves cred at fill time; placeholder (not secret) in DB + codegen", async () => {
