@@ -1359,11 +1359,30 @@ document.getElementById("ntGo").addEventListener("click", async function(){
   pollAuthor(d.sessionId, box)
 })
 
+async function reattachActiveAuthorSession(){
+  try {
+    var r = await fetch("/api/trails/author/active" + projQ())
+    if(!r.ok) return
+    var s = await r.json()
+    if(!s || s.status !== "running") return
+    // Open the modal, fill in read-only context fields so the user knows what's running
+    document.getElementById("ntName").value = s.name || ""
+    document.getElementById("ntUrl").value = s.baseUrl || ""
+    document.getElementById("ntObj").value = s.objective || ""
+    document.getElementById("ntGo").disabled = true
+    var box = document.getElementById("ntProgress")
+    box.innerHTML = '<div class="nt-live">Resuming AutoSim session...</div>'
+    document.getElementById("ntBg").classList.add("show")
+    pollAuthor(s.id, box)
+  } catch(e) {}
+}
+
 // Close ntBg on backdrop click
 document.getElementById("ntBg").addEventListener("click", function(e){ if(e.target === this) this.classList.remove("show") })
 
 load()
 loadExpectations()
+reattachActiveAuthorSession()
 </script>
 </body>
 </html>
