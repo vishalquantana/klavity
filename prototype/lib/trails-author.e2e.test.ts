@@ -1,7 +1,7 @@
 // AutoSims F1 — authoring engine e2e tests. Hermetic local libsql + KLAV_SECRET.
 // Real headless Chromium (Playwright), scripted fake AuthorModel — no network, no OpenRouter.
 // Mirrors trails-runner.e2e.test.ts setup conventions.
-import { test, expect, beforeAll } from "bun:test"
+import { test, expect, beforeAll, beforeEach } from "bun:test"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { pathToFileURL } from "node:url"
@@ -22,6 +22,7 @@ beforeAll(async () => {
 
 import { authorTrail, runAuthorNow, getAuthorSession, AUTHOR_MAX_STEPS } from "./trails-author"
 import { parseAuthorAction, type AuthorModel } from "./trails-author-model"
+import { AuthorBusyError, _resetAuthorAdmissionForTest, _resetWalkPoolForTest } from "./trails-browser"
 import { createTestAccount } from "./test-accounts"
 import * as T from "./trails"
 
@@ -40,6 +41,41 @@ const LOGIN_SCRIPT = [
   { op: "assert", selector: "#welcome", checkpoint: "Logged-in welcome visible" },
   { op: "done" },
 ]
+
+beforeEach(() => {
+  _resetWalkPoolForTest(1, 0)
+  _resetAuthorAdmissionForTest()
+})
+
+function fakeBrowser(closeSpy: { count: number }) {
+  const page = {
+    url: () => "https://app.test/",
+    goto: async () => {},
+    screenshotJpeg: async () => "",
+    krefSnapshot: async () => "<button id='go'>Go</button>",
+    count: async () => 1,
+    fingerprint: async () => ({ role: "button", accessibleName: "Go", domPath: "button:nth-of-type(1)" }),
+    stableSelector: async () => "#go",
+    click: async () => {},
+    fill: async () => {},
+    selectOption: async () => {},
+    hover: async () => {},
+    keyPress: async () => {},
+    clearField: async () => {},
+    assertVisible: async () => {},
+    assertTextEquals: async () => {},
+    assertTextContains: async () => {},
+    assertUrlMatches: async () => {},
+    assertElementCount: async () => {},
+    waitMs: async () => {},
+    mockNetwork: async () => {},
+  }
+  return {
+    kind: "fake",
+    newPage: async () => page,
+    close: async () => { closeSpy.count++ },
+  } as any
+}
 
 test("happy path: authors, crystallizes DRAFT trail, verification walk GREEN, no findings, no secret anywhere", async () => {
   await createTestAccount(P, { name: "admin", loginEmail: "vishal@quantana.com.au", password: "pw-authoring" })
@@ -111,6 +147,60 @@ test("runAuthorNow persists a pollable session that reaches crystallized", async
   }
   throw new Error("session never finished")
 }, 60000)
+
+test("runAuthorNow rejects a second active authoring session before creating another browser", async () => {
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => { release = resolve })
+  const holdingAuthor: typeof authorTrail = async () => {
+    await gate
+    return {
+      status: "stalled",
+      trailId: null,
+      verificationRunId: null,
+      verificationVerdict: null,
+      steps: [],
+      stallReason: "released",
+      llmCalls: 0,
+      costUsd: 0,
+    }
+  }
+
+  const first = await runAuthorNow("proj_admit", { name: "s", objective: "o", baseUrl: fixtureUrl("author-mockup.html") }, { author: holdingAuthor, model: scripted([{ op: "done" }]) })
+  await expect(runAuthorNow("proj_admit", { name: "s2", objective: "o", baseUrl: fixtureUrl("author-mockup.html") }, { author: holdingAuthor, model: scripted([{ op: "done" }]) })).rejects.toBeInstanceOf(AuthorBusyError)
+
+  release()
+  for (let i = 0; i < 80; i++) {
+    const s = await getAuthorSession("proj_admit", first.sessionId)
+    if (s?.status !== "running") { expect(s?.status).toBe("stalled"); return }
+    await new Promise((r) => setTimeout(r, 25))
+  }
+  throw new Error("first author session never released")
+})
+
+test("authorTrail closes an acquired browser on model error and before verification", async () => {
+  const errored = { count: 0 }
+  const bad = await authorTrail("proj_cleanup_err", { name: "x", objective: "o", baseUrl: "https://app.test/" }, {
+    model: async () => { throw new Error("model down") },
+    browserFactory: async () => fakeBrowser(errored),
+    sleepMs: async () => {},
+  })
+  expect(bad.status).toBe("stalled")
+  expect(errored.count).toBe(1)
+
+  const closed = { count: 0 }
+  let closeCountAtVerification = -1
+  const ok = await authorTrail("proj_cleanup_ok", { name: "x", objective: "o", baseUrl: "https://app.test/" }, {
+    model: scripted([{ op: "done" }]),
+    browserFactory: async () => fakeBrowser(closed),
+    verificationWalk: async () => {
+      closeCountAtVerification = closed.count
+      return { runId: "walk_fake", verdict: "green", llmCalls: 0, steps: [], healedCount: 0, reasons: [] } as any
+    },
+  })
+  expect(ok.status).toBe("crystallized")
+  expect(closeCountAtVerification).toBe(1)
+  expect(closed.count).toBe(1)
+})
 
 test("session is project-scoped", async () => {
   const { sessionId } = await runAuthorNow("proj_a1", { name: "s", objective: "o", baseUrl: fixtureUrl("author-mockup.html") }, { model: scripted([{ op: "stall", rationale: "x" }]) })

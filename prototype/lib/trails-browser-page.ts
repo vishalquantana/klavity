@@ -222,7 +222,17 @@ class PlaywrightPage implements BrowserPage {
 
 class PlaywrightHandle implements BrowserHandle {
   readonly kind = "local"
-  constructor(private browser: import("playwright").Browser) {}
+  private watchdog: ReturnType<typeof setTimeout> | null = null
+  private closed = false
+  constructor(private browser: import("playwright").Browser, watchdogMs?: number) {
+    if (watchdogMs && watchdogMs > 0) {
+      this.watchdog = setTimeout(() => {
+        try { (this.browser as any).process?.()?.kill?.("SIGKILL") } catch {}
+        this.browser.close().catch(() => {})
+      }, watchdogMs)
+      this.watchdog.unref?.()
+    }
+  }
   async newPage(viewport?: TrailViewport | null) {
     if (viewport) {
       const context = await this.browser.newContext(playwrightContextOptionsForTrailViewport(viewport))
@@ -230,7 +240,13 @@ class PlaywrightHandle implements BrowserHandle {
     }
     return new PlaywrightPage(await this.browser.newPage())
   }
-  async close() { await this.browser.close().catch(() => {}) }
+  async close() {
+    if (this.closed) return
+    this.closed = true
+    if (this.watchdog) clearTimeout(this.watchdog)
+    this.watchdog = null
+    await this.browser.close().catch(() => {})
+  }
 }
 
 // ── Puppeteer-over-CDP impl — remote browser (Steel). Actionability re-added via waitForSelector. ──
@@ -337,7 +353,17 @@ class PuppeteerHandle implements BrowserHandle {
 }
 
 // ── Factory ───────────────────────────────────────────────────────────────────────────────────────
-export interface AcquireOpts { headless?: boolean; launchArgs?: string[] }
+export interface AcquireOpts { headless?: boolean; launchArgs?: string[]; watchdogMs?: number }
+
+function mergeLocalChromiumArgs(args?: string[]): string[] {
+  return Array.from(new Set(args ?? []))
+}
+
+function localBrowserWatchdogMs(opts: AcquireOpts): number {
+  const envMs = Number(process.env.AUTOSIM_BROWSER_WATCHDOG_MS)
+  if (opts.watchdogMs != null) return opts.watchdogMs
+  return Number.isFinite(envMs) && envMs > 0 ? envMs : 360_000
+}
 
 /**
  * Return a BrowserHandle (BrowserPage-based interface). Default: local Playwright.
@@ -351,7 +377,8 @@ export async function acquireBrowser(opts: AcquireOpts = {}): Promise<BrowserHan
   const cdpBase = process.env.AUTOSIM_CDP_URL
   if (cdpBase) return await connectRemotePuppeteer(cdpBase, opts)
   const { chromium } = await import("playwright")
-  return new PlaywrightHandle(await chromium.launch({ headless: opts.headless ?? true, args: opts.launchArgs ?? [] }))
+  const browser = await chromium.launch({ headless: opts.headless ?? true, args: mergeLocalChromiumArgs(opts.launchArgs) })
+  return new PlaywrightHandle(browser, localBrowserWatchdogMs(opts))
 }
 
 /**
@@ -448,8 +475,25 @@ export async function acquirePlaywrightBrowser(opts: AcquireOpts = {}): Promise<
   const { chromium } = await import("playwright")
   const cdpBase = process.env.AUTOSIM_CDP_URL
   if (!cdpBase) {
-    const browser = await chromium.launch({ headless: opts.headless ?? true, args: opts.launchArgs ?? [] })
-    return { browser, close: () => browser.close().catch(() => {}), kind: "local" }
+    const browser = await chromium.launch({ headless: opts.headless ?? true, args: mergeLocalChromiumArgs(opts.launchArgs) })
+    let watchdog: ReturnType<typeof setTimeout> | null = null
+    const watchdogMs = localBrowserWatchdogMs(opts)
+    if (watchdogMs > 0) {
+      watchdog = setTimeout(() => {
+        try { (browser as any).process?.()?.kill?.("SIGKILL") } catch {}
+        browser.close().catch(() => {})
+      }, watchdogMs)
+      watchdog.unref?.()
+    }
+    return {
+      browser,
+      close: async () => {
+        if (watchdog) clearTimeout(watchdog)
+        watchdog = null
+        await browser.close().catch(() => {})
+      },
+      kind: "local",
+    }
   }
   const key = process.env.STEEL_API_KEY
   if (key) {
