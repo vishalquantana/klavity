@@ -40,10 +40,11 @@ await rawExec(`CREATE TABLE IF NOT EXISTS personas (id TEXT PRIMARY KEY, project
 await rawExec(`CREATE TABLE IF NOT EXISTS monitored_urls (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, url_pattern TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL, UNIQUE(project_id, url_pattern))`)
 await rawExec(`CREATE TABLE IF NOT EXISTS monitoring_consent (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, email TEXT NOT NULL, status TEXT NOT NULL, granted_at INTEGER, updated_at INTEGER NOT NULL, UNIQUE(project_id, email))`)
 await rawExec(`CREATE TABLE IF NOT EXISTS extension_tokens (token TEXT PRIMARY KEY, email TEXT NOT NULL, project_id TEXT, created_at INTEGER NOT NULL, expires_at INTEGER, revoked INTEGER NOT NULL DEFAULT 0)`)
-// AutoSims F1: test_accounts table
+// AutoSims F1: test_accounts table (KLA-103: auth_shape column added)
 await rawExec(`CREATE TABLE IF NOT EXISTS test_accounts (
   id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL,
   login_email TEXT NOT NULL, password_enc TEXT NOT NULL,
+  auth_shape TEXT NOT NULL DEFAULT 'password',
   created_by TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
   UNIQUE(project_id, name))`)
 await rawExec(`CREATE INDEX IF NOT EXISTS test_acc_proj_idx ON test_accounts (project_id)`)
@@ -221,4 +222,49 @@ test("DELETE: admin can delete existing account; member cannot; unknown id is 40
     method: "DELETE", headers: { cookie: adminCookie },
   })
   expect(notFound.status).toBe(404)
+})
+
+// ── KLA-103: OTP/passwordless auth shape via HTTP route ───────────────────────
+
+test("POST with auth_shape=otp: no password needed; account lists with authShape=otp", async () => {
+  const res = await fetch(`${BASE}/api/projects/${pid}/test-accounts`, {
+    method: "POST", headers: { cookie: adminCookie, "content-type": "application/json" },
+    body: JSON.stringify({ name: "otp-login", login_email: "otp@test.local", auth_shape: "otp" }),
+  })
+  expect(res.status).toBe(201)
+  const { account } = await res.json()
+  expect(account.authShape).toBe("otp")
+  expect(JSON.stringify(account)).not.toContain("password")
+  // Confirm it appears in list
+  const listRes = await fetch(`${BASE}/api/projects/${pid}/test-accounts`, { headers: { cookie: adminCookie } })
+  const { accounts } = await listRes.json()
+  const found = accounts.find((a: any) => a.name === "otp-login")
+  expect(found).toBeDefined()
+  expect(found.authShape).toBe("otp")
+})
+
+test("POST with auth_shape=otp and a password field: password is ignored, creates ok", async () => {
+  const res = await fetch(`${BASE}/api/projects/${pid}/test-accounts`, {
+    method: "POST", headers: { cookie: adminCookie, "content-type": "application/json" },
+    body: JSON.stringify({ name: "otp-with-pw", login_email: "otp2@test.local", auth_shape: "otp", password: "ignored" }),
+  })
+  expect(res.status).toBe(201)
+  const { account } = await res.json()
+  expect(account.authShape).toBe("otp")
+})
+
+test("POST with invalid auth_shape returns 400", async () => {
+  const res = await fetch(`${BASE}/api/projects/${pid}/test-accounts`, {
+    method: "POST", headers: { cookie: adminCookie, "content-type": "application/json" },
+    body: JSON.stringify({ name: "bad-shape", login_email: "x@test.local", auth_shape: "magic_link" }),
+  })
+  expect(res.status).toBe(400)
+})
+
+test("POST with auth_shape=password and no password returns 400", async () => {
+  const res = await fetch(`${BASE}/api/projects/${pid}/test-accounts`, {
+    method: "POST", headers: { cookie: adminCookie, "content-type": "application/json" },
+    body: JSON.stringify({ name: "pw-missing", login_email: "x@test.local", auth_shape: "password" }),
+  })
+  expect(res.status).toBe(400)
 })

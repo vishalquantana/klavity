@@ -1,8 +1,7 @@
-// ADR-0001: Trails store {{cred:<account>:email|password|otp}} placeholders, never secrets. This
-// module resolves a placeholder to its live value at RUN TIME only. Callers must never persist,
-// log, or send the resolved value anywhere (evidence keeps the placeholder; screenshots dot passwords).
-// :otp resolves to the fixed test-OTP code (666666) when KLAV_TEST_OTP is set — always used for
-// test account logins so AutoSim never triggers a real OTP email or hits the rate limit.
+// ADR-0001: Trails store {{cred:<account>:email|password|otp}} placeholders, never secrets. This module
+// resolves a placeholder to its live value at RUN TIME only. Callers must never persist, log, or
+// send the resolved value anywhere (evidence keeps the placeholder; screenshots dot passwords).
+// KLA-103: added "otp" field for OTP/passwordless auth shapes (uses KLAV_TEST_OTP bypass).
 import { getTestAccountSecret } from "./test-accounts"
 
 export const CRED_RE = /\{\{cred:([a-z0-9_-]{1,40}):(email|password|otp)\}\}/g
@@ -30,7 +29,22 @@ export const resolveCredRefs: CredResolver = async (projectId, value) => {
     }
     const sec = await getTestAccountSecret(projectId, name)
     if (!sec) throw new Error(`unknown test account: ${name}`)
-    out = out.replaceAll(whole, field === "email" ? sec.loginEmail : sec.password)
+    let resolved: string
+    if (field === "email") {
+      resolved = sec.loginEmail
+    } else if (field === "password") {
+      if (sec.authShape !== "password" || sec.password === undefined) {
+        throw new Error(`test account "${name}" does not have a password (auth_shape: ${sec.authShape})`)
+      }
+      resolved = sec.password
+    } else {
+      // field === "otp"
+      if (sec.authShape !== "otp" || sec.otpCode === undefined) {
+        throw new Error(`test account "${name}" does not have an OTP code (auth_shape: ${sec.authShape})`)
+      }
+      resolved = sec.otpCode
+    }
+    out = out.replaceAll(whole, resolved)
   }
   return out
 }
