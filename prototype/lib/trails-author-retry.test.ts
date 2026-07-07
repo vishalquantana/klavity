@@ -203,3 +203,39 @@ test.if(RUN_BROWSER)("retry attempts are capped — model is not called indefini
   expect(out.status).toBe("stalled")
   expect(callCount).toBeLessThan(50)  // definitely not infinite
 })
+
+// ── KLA-69: stall second-opinion re-roll ─────────────────────────────────────────────────────────
+
+test.if(RUN_BROWSER)("KLA-69: first-roll deliberate stall followed by valid second roll proceeds", async () => {
+  let callCount = 0
+  const model: AuthorModel = async () => {
+    callCount++
+    if (callCount === 1) {
+      // First roll: deliberate stall (no parseError)
+      return { action: { op: "stall", selector: null, value: null, url: null, checkpoint: null, rationale: "button not visible yet" }, costUsd: 0 }
+    }
+    // Second roll (reroll): valid action — completes the objective
+    return { action: { op: "done", selector: null, value: null, url: null, checkpoint: null, rationale: "done" }, costUsd: 0 }
+  }
+  const out = await authorTrail("proj_stall_reroll", { name: "T", objective: "do X", baseUrl: FIXTURE_URL },
+    makeAuthorOpts(model))
+  // Stall reroll allowed the walk to continue — should crystallize rather than stall
+  expect(out.status).toBe("crystallized")
+  // Model was called at least twice: 1 initial stall + 1 reroll
+  expect(callCount).toBeGreaterThanOrEqual(2)
+}, 30000)
+
+test.if(RUN_BROWSER)("KLA-69: persistent stall on both rolls terminates with stall outcome", async () => {
+  let callCount = 0
+  const model: AuthorModel = async () => {
+    callCount++
+    // Always return a deliberate stall
+    return { action: { op: "stall", selector: null, value: null, url: null, checkpoint: null, rationale: "always stuck" }, costUsd: 0 }
+  }
+  const out = await authorTrail("proj_stall_persist", { name: "T", objective: "do X", baseUrl: FIXTURE_URL },
+    makeAuthorOpts(model))
+  expect(out.status).toBe("stalled")
+  // Should have stalled after exactly 2 model calls: first roll + one reroll
+  expect(callCount).toBe(2)
+  expect(out.stallReason).toMatch(/always stuck/)
+}, 30000)
