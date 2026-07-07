@@ -14,8 +14,8 @@ import { withWalkSlot, withAuthorSlot, CHROMIUM_PROD_ARGS } from "./trails-brows
 import { acquireBrowser, type BrowserHandle } from "./trails-browser-page"
 import { db, projectById, touchAuthorHeartbeat } from "./db"
 import { uploadScreenshotMeta } from "./s3"
-import type { AuthorModel, AuthorAction } from "./trails-author-model"
-import { ModelCallError } from "./trails-author-model"
+import type { AuthorModel, AuthorAction, ObjectiveVerifier, ObjectiveVerificationResult } from "./trails-author-model"
+import { ModelCallError, openRouterObjectiveVerifier } from "./trails-author-model"
 import { isKrefSelector } from "./trails-snapshot"
 import type { StepAction, TrailViewport } from "./trails-types"
 import { normalizeTrailViewport } from "./trails-viewport"
@@ -52,6 +52,7 @@ export interface AuthorOutcome {
   trailId: string | null; verificationRunId: string | null
   verificationVerdict: "green" | "amber" | "red" | null
   steps: AuthorStepLog[]; stallReason: string | null; llmCalls: number; costUsd: number
+  objectiveVerified?: boolean | null
 }
 
 const OP2ACTION: Record<string, StepAction> = { navigate: "navigate", click: "click", type: "type", select: "select", assert: "assert", wait: "wait", hover: "hover", keyPress: "keyPress", clearField: "clearField" }
@@ -64,6 +65,7 @@ export async function authorTrail(
     driveDeadlineMs?: number; textFirst?: boolean; verificationVision?: VisionResolver | false
     browserFactory?: typeof acquireBrowser; verificationWalk?: typeof walkTrail
     shotUploader?: (bytes: Uint8Array, contentType: string) => Promise<{ key: string }>
+    verifier?: ObjectiveVerifier
     /**
      * KLA-56: injectable sleep for retry back-off. Default = real setTimeout-based sleep.
      * Tests inject `() => Promise.resolve()` to avoid real delays.
@@ -103,6 +105,7 @@ export async function authorTrail(
   const traj: TrajectoryStep[] = []
   let llmCalls = 0, costUsd = 0, misses = 0
   let lastSuccessKey: string | null = null, consecutiveSuccessKey = 0
+  let objectiveVerified = false
   // Overall drive deadline. Without it a single hung page op (a crashed Chromium can make
   // page.content()/screenshot never settle) held the shared walk slot INDEFINITELY — observed
   // live on prod 2026-07-04: dead browser, slot stuck, every walk/authoring 409ing until a
@@ -127,7 +130,7 @@ export async function authorTrail(
   }
   const stall = async (why: string): Promise<AuthorOutcome> => {
     await closeHandle()
-    return { status: "stalled", trailId: null, verificationRunId: null, verificationVerdict: null, steps: log, stallReason: why, llmCalls, costUsd }
+    return { status: "stalled", trailId: null, verificationRunId: null, verificationVerdict: null, steps: log, stallReason: why, llmCalls, costUsd, objectiveVerified }
   }
   try {
     const page = await handle!.newPage(viewport)
@@ -194,7 +197,35 @@ export async function authorTrail(
         continue
       }
       if (a.op === "stall") return await stall(a.rationale || "model stalled")
-      if (a.op === "done") break
+      if (a.op === "done") {
+        let verifyResult: ObjectiveVerificationResult
+        try {
+          const verifier = opts.verifier ?? openRouterObjectiveVerifier
+          verifyResult = await bounded(verifier({
+            objective: req.objective,
+            pageUrl: page.url(),
+            domSnapshot: dom,
+          }, { projectId, email: req.createdBy ?? null }), 120_000, "objective verification call")
+          llmCalls++
+          costUsd += verifyResult.costUsd || 0
+        } catch (verifyErr: any) {
+          misses++
+          const errMsg = verifyErr?.message || String(verifyErr)
+          history.push(`(objective verification failed: ${errMsg} — retrying done from last state)`)
+          if (misses >= MAX_CONSECUTIVE_MISSES) return await stall(`stuck after verifier error: ${errMsg}`)
+          continue
+        }
+
+        if (verifyResult.achieved) {
+          objectiveVerified = true
+          break
+        } else {
+          misses++
+          history.push(`(verification failed: your proposed 'done' action was rejected because the objective has not been achieved yet: ${verifyResult.reason || "unknown reason"} — continue until the objective is fully achieved)`)
+          if (misses >= MAX_CONSECUTIVE_MISSES) return await stall(`stuck after ${misses} failed verification attempts; last: ${verifyResult.reason}`)
+          continue
+        }
+      }
       const entry: AuthorStepLog = { idx: log.length, op: a.op, selector: a.selector, value: a.value, url: page.url(), rationale: a.rationale, ok: false }
       try {
         if (a.op === "wait") {
@@ -299,8 +330,8 @@ export async function authorTrail(
       await opts.onStep?.(log)
     }
     await closeHandle()
-    if (!traj.length) return { status: "stalled", trailId: null, verificationRunId: null, verificationVerdict: null, steps: log, stallReason: "model finished without performing any step", llmCalls, costUsd }
-    const trajectory: Trajectory = { name: req.name, intent: req.objective, baseUrl: req.baseUrl, viewport, authorKind: "llm", createdBy: req.createdBy, steps: traj }
+    if (!traj.length) return { status: "stalled", trailId: null, verificationRunId: null, verificationVerdict: null, steps: log, stallReason: "model finished without performing any step", llmCalls, costUsd, objectiveVerified }
+    const trajectory: Trajectory = { name: req.name, intent: req.objective, baseUrl: req.baseUrl, viewport, authorKind: "llm", createdBy: req.createdBy, steps: traj, objectiveVerified }
     const { trailId } = await crystallize(projectId, trajectory)
     await setTrailStatus(projectId, trailId, "draft")
     // Verification Walk: zero-LLM rehearsal; draft status suppresses findings (Task 4), but pass
@@ -313,10 +344,10 @@ export async function authorTrail(
     })
     // I1: skip means "inconclusive / no steps ran" — map to amber, not red, so an empty
     // Verification Walk never looks like a regression to the reviewer.
-    return { status: "crystallized", trailId, verificationRunId: v.runId, verificationVerdict: v.verdict === "skip" ? "amber" : v.verdict, steps: log, stallReason: null, llmCalls, costUsd }
+    return { status: "crystallized", trailId, verificationRunId: v.runId, verificationVerdict: v.verdict === "skip" ? "amber" : v.verdict, steps: log, stallReason: null, llmCalls, costUsd, objectiveVerified }
   } catch (e: any) {
     await closeHandle()
-    return { status: "failed", trailId: null, verificationRunId: null, verificationVerdict: null, steps: log, stallReason: String(e?.message || e), llmCalls, costUsd }
+    return { status: "failed", trailId: null, verificationRunId: null, verificationVerdict: null, steps: log, stallReason: String(e?.message || e), llmCalls, costUsd, objectiveVerified }
   }
 }
 
@@ -327,20 +358,21 @@ export interface AuthorSession {
   steps: AuthorStepLog[]; stallReason: string | null; trailId: string | null
   verificationRunId: string | null; verificationVerdict: string | null
   llmCalls: number; costUsd: number; createdBy: string | null; createdAt: number; updatedAt: number
+  objectiveVerified: boolean | null
 }
 
 export async function createAuthorSession(projectId: string, req: AuthorRequest): Promise<string> {
   const id = "auth_" + crypto.randomUUID()
   const now = Date.now()
   await db!.execute({
-    sql: `INSERT INTO author_sessions (id,project_id,name,objective,base_url,test_account,status,created_by,created_at,updated_at)
-          VALUES (?,?,?,?,?,?,'running',?,?,?)`,
+    sql: `INSERT INTO author_sessions (id,project_id,name,objective,base_url,test_account,status,created_by,created_at,updated_at,objective_verified)
+          VALUES (?,?,?,?,?,?,'running',?,?,?,0)`,
     args: [id, projectId, req.name, req.objective, req.baseUrl, req.testAccountName ?? null, req.createdBy ?? null, now, now],
   })
   return id
 }
 
-export async function updateAuthorSession(projectId: string, id: string, patch: Partial<Pick<AuthorSession, "status" | "steps" | "stallReason" | "trailId" | "verificationRunId" | "verificationVerdict" | "llmCalls" | "costUsd">>): Promise<void> {
+export async function updateAuthorSession(projectId: string, id: string, patch: Partial<Pick<AuthorSession, "status" | "steps" | "stallReason" | "trailId" | "verificationRunId" | "verificationVerdict" | "llmCalls" | "costUsd" | "objectiveVerified">>): Promise<void> {
   const sets: string[] = ["updated_at=?"]; const args: any[] = [Date.now()]
   if (patch.status !== undefined) { sets.push("status=?"); args.push(patch.status) }
   if (patch.steps !== undefined) { sets.push("steps_json=?"); args.push(JSON.stringify(patch.steps)) }
@@ -348,6 +380,7 @@ export async function updateAuthorSession(projectId: string, id: string, patch: 
   if (patch.trailId !== undefined) { sets.push("trail_id=?"); args.push(patch.trailId) }
   if (patch.verificationRunId !== undefined) { sets.push("verification_run_id=?"); args.push(patch.verificationRunId) }
   if (patch.verificationVerdict !== undefined) { sets.push("verification_verdict=?"); args.push(patch.verificationVerdict) }
+  if (patch.objectiveVerified !== undefined) { sets.push("objective_verified=?"); args.push(patch.objectiveVerified === null ? null : (patch.objectiveVerified ? 1 : 0)) }
   if (patch.llmCalls !== undefined) { sets.push("llm_calls=?"); args.push(patch.llmCalls) }
   if (patch.costUsd !== undefined) { sets.push("cost_usd=?"); args.push(patch.costUsd) }
   args.push(projectId, id)
@@ -371,6 +404,7 @@ export async function getAuthorSession(projectId: string, id: string): Promise<A
     llmCalls: Number(row.llm_calls), costUsd: Number(row.cost_usd),
     createdBy: row.created_by ? String(row.created_by) : null,
     createdAt: Number(row.created_at), updatedAt: Number(row.updated_at),
+    objectiveVerified: row.objective_verified == null ? null : !!row.objective_verified,
   }
 }
 
@@ -394,6 +428,7 @@ export async function getActiveAuthorSession(projectId: string): Promise<AuthorS
     llmCalls: Number(row.llm_calls), costUsd: Number(row.cost_usd),
     createdBy: row.created_by ? String(row.created_by) : null,
     createdAt: Number(row.created_at), updatedAt: Number(row.updated_at),
+    objectiveVerified: row.objective_verified == null ? null : !!row.objective_verified,
   }
 }
 
@@ -438,6 +473,7 @@ export async function runAuthorNow(projectId: string, req: AuthorRequest, deps?:
         status: out.status, steps: out.steps, stallReason: out.stallReason, trailId: out.trailId,
         verificationRunId: out.verificationRunId, verificationVerdict: out.verificationVerdict,
         llmCalls: out.llmCalls, costUsd: out.costUsd,
+        objectiveVerified: out.objectiveVerified,
       })
     } catch (e: any) {
       await updateAuthorSession(projectId, sessionId, { status: "failed", stallReason: String(e?.message || e) }).catch(() => {})
