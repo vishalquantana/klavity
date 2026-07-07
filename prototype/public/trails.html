@@ -96,6 +96,10 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 .trail .run-btn{flex-shrink:0;font-family:var(--mono);font-size:11px;letter-spacing:.04em;padding:7px 13px;border-radius:9px;border:1px solid var(--line);background:var(--ink-3);color:var(--paper);cursor:pointer}
 .trail .run-btn:hover:not(:disabled){border-color:var(--indigo)}
 .trail .run-btn:disabled{opacity:.55;cursor:default}
+.trail .cancel-btn{flex-shrink:0;font-family:var(--mono);font-size:11px;letter-spacing:.04em;padding:7px 13px;border-radius:9px;border:1px solid var(--rose);background:transparent;color:var(--rose);cursor:pointer;transition:background var(--mi-dur) var(--mi-ease),transform var(--mi-dur) var(--mi-ease)}
+.trail .cancel-btn:hover:not(:disabled){background:rgba(var(--rose-rgb,248,113,113),.12);transform:var(--mi-lift)}
+.trail .cancel-btn:active{transform:var(--mi-press)}
+.trail .cancel-btn:disabled{opacity:.55;cursor:default}
 .trail .heal-diff{font-family:var(--mono);font-size:11px;color:var(--paper-faint);background:var(--ink-3);padding:5px 9px;border-radius:8px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0}
 .trail .run-msg{font-family:var(--mono);font-size:10px;color:var(--amber);flex-shrink:0}
 
@@ -475,7 +479,7 @@ async function runTrail(trailId, btn, row){
   var pid = projParam()
   var qs = pid ? "?project=" + encodeURIComponent(pid) : ""
   var msg = row.querySelector(".run-msg")
-  btn.disabled = true; btn.textContent = "running…"; if (msg) msg.textContent = ""
+  btn.disabled = true; btn.innerHTML = kicon('loader',{size:12})+' running…'; if (msg) msg.textContent = ""
   var r
   try { r = await fetch("/api/trails/" + encodeURIComponent(trailId) + "/walk" + qs, { method:"POST", headers:{ "content-type":"application/json" }, body:"{}" }) }
   catch(e){ btn.disabled=false; btn.innerHTML=kicon('play',{size:12})+' Run'; if(msg) msg.textContent="network error"; return }
@@ -483,14 +487,29 @@ async function runTrail(trailId, btn, row){
   if (!r.ok){ btn.disabled=false; btn.innerHTML=kicon('play',{size:12})+' Run'; if(msg){ msg.style.color="var(--rose)"; msg.textContent="couldn't start" } return }
   var b = await r.json().catch(function(){return{}})
   var runId = b.runId
+
+  // Show a Cancel button while polling.
+  var cancelBtn = document.createElement("button")
+  cancelBtn.className = "cancel-btn"
+  cancelBtn.innerHTML = kicon('square',{size:12})+' Cancel'
+  cancelBtn.onclick = async function(){
+    cancelBtn.disabled = true; cancelBtn.innerHTML = kicon('loader',{size:12})+' cancelling…'
+    try {
+      await fetch("/api/trails/walks/" + encodeURIComponent(runId) + "/cancel" + qs, { method:"POST", headers:{"content-type":"application/json"}, body:"{}" })
+    } catch(e) {}
+    // Let the polling loop pick up the finished status on the next tick.
+  }
+  row.insertBefore(cancelBtn, btn)
+
   // Poll the dashboard until this run leaves 'running' (~1.5s cadence, bounded).
   for (var i=0;i<80;i++){
     await new Promise(function(res){ setTimeout(res, 1500) })
     var dd = await loadData()
     if (!dd) continue
     var w = (dd.recentWalks||[]).find(function(x){ return x.id === runId })
-    if (w && w.status !== "running"){ await render(dd); return }
+    if (w && w.status !== "running"){ cancelBtn.remove(); await render(dd); return }
   }
+  cancelBtn.remove()
   await load() // give up polling; show whatever the dashboard has
 }
 

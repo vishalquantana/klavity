@@ -10,7 +10,7 @@ const { reconnectDb, applySchema, migrateV2 } = await import("./db")
 beforeAll(async () => { const db = reconnectDb("file:" + file); await applySchema(db); await migrateV2(db) })
 const T = await import("./trails")
 const { runWalkNow } = await import("./trails-trigger")
-const { WalkBusyError, isWalkInFlight } = await import("./trails-browser")
+const { WalkBusyError, isWalkInFlight, cancelCurrentWalk } = await import("./trails-browser")
 
 async function seedTrail() {
   return T.createTrail("proj_t", { name: "T", baseUrl: "https://app.test/", authorKind: "llm" })
@@ -46,4 +46,31 @@ test("a walk that throws finalizes the run red and releases the slot (crash isol
 
 test("runWalkNow throws on an unknown trail", async () => {
   await expect(runWalkNow("proj_t", "trl_nope")).rejects.toThrow()
+})
+
+// KLA-100: cancelCurrentWalk fires the signal that reaches the walk fn
+test("cancelCurrentWalk aborts the in-flight walk and the run finalizes red", async () => {
+  const trail = await seedTrail()
+  let capturedSignal: AbortSignal | undefined
+  const holdingWalk = async (_p: string, _t: string, runId: string) => {
+    // The trigger sets currentWalkRunId before calling the walk fn; grab the signal here.
+    capturedSignal = (await import("./trails-browser")).getCurrentWalkAbortSignal() ?? undefined
+    // Simulate work: wait until the signal aborts, then propagate cancellation.
+    await new Promise<void>((res) => {
+      if (capturedSignal?.aborted) { res(); return }
+      capturedSignal?.addEventListener("abort", () => res(), { once: true })
+      setTimeout(res, 5000) // safety fallback
+    })
+    return { verdict: "red" as const, llmCalls: 0, summary: { error: "cancelled" } }
+  }
+  const { runId } = await runWalkNow("proj_t", trail, { walk: holdingWalk })
+  expect(runId).toMatch(/^walk_/)
+  // Give the walk fn a tick to register the signal
+  await new Promise((r) => setTimeout(r, 10))
+  const didFire = cancelCurrentWalk(runId)
+  expect(didFire).toBe(true)
+  await waitFor(async () => (await T.getWalk("proj_t", runId))?.status === "red")
+  const walk = await T.getWalk("proj_t", runId)
+  expect((walk?.summary as any)?.error).toBe("cancelled")
+  expect(isWalkInFlight()).toBe(false)
 })
