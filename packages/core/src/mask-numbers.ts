@@ -10,7 +10,7 @@ export function maskNumbers(root: Element): () => void {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
       let el: Element | null = node.parentElement
-      while (el) {
+      while (el && el !== root) {
         if (SKIP_TAGS.has(el.tagName)) return NodeFilter.FILTER_REJECT
         el = el.parentElement
       }
@@ -32,8 +32,7 @@ export function maskNumbers(root: Element): () => void {
       if (i % 2 === 1) {
         const span = document.createElement('span')
         span.style.cssText = 'background:#111;color:transparent;border-radius:2px;'
-        span.textContent = '█'.repeat(part.length)
-        span.dataset.original = part
+        span.textContent = part
         return span
       }
       return document.createTextNode(part)
