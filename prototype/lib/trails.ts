@@ -1,5 +1,5 @@
 import { db } from "./db"
-import type { Trail, TrailStep, TrailStatus, StepAction, Fingerprint, TrailViewport } from "./trails-types"
+import type { Trail, TrailEnvironment, TrailStep, TrailStatus, StepAction, Fingerprint, TrailViewport } from "./trails-types"
 import { normalizeTrailViewport, parseTrailViewportJson } from "./trails-viewport"
 
 function uid(prefix: string): string { return prefix + crypto.randomUUID() }
@@ -17,19 +17,32 @@ function rowToTrail(r: any): Trail {
     scheduledLastRunAt: r.scheduled_last_run_at == null ? null : Number(r.scheduled_last_run_at),
     judgePersonaId: r.judge_persona_id ?? null,
     objectiveVerified: r.objective_verified == null ? null : !!r.objective_verified,
+    environments: pj<TrailEnvironment[]>(r.environments_json) ?? [],
   }
+}
+
+/**
+ * KLA-93: resolve the effective base URL for a run given an optional named environment.
+ * Returns the environment's baseUrl when found, or the trail's default baseUrl.
+ * Throws when a name is given but not found — that's always a caller error.
+ */
+export function resolveEnvironmentUrl(trail: Trail, environmentName?: string | null): string {
+  if (!environmentName) return trail.baseUrl
+  const env = trail.environments.find((e) => e.name === environmentName)
+  if (!env) throw new Error(`environment "${environmentName}" not found on trail ${trail.id}`)
+  return env.baseUrl
 }
 
 export async function createTrail(
   projectId: string,
-  input: { name: string; intent?: string; baseUrl: string; viewport?: TrailViewport | string | null; authorKind?: Trail["authorKind"]; createdBy?: string; objectiveVerified?: boolean | null },
+  input: { name: string; intent?: string; baseUrl: string; viewport?: TrailViewport | string | null; authorKind?: Trail["authorKind"]; createdBy?: string; objectiveVerified?: boolean | null; environments?: TrailEnvironment[] },
 ): Promise<string> {
   const id = uid("trl_"); const now = Date.now()
   const viewport = normalizeTrailViewport(input.viewport)
   await db!.execute({
-    sql: `INSERT INTO trails (id, project_id, name, intent, base_url, viewport_json, baseline_ref, author_kind, status, created_by, created_at, updated_at, objective_verified)
-          VALUES (?, ?, ?, ?, ?, ?, NULL, ?, 'draft', ?, ?, ?, ?)`,
-    args: [id, projectId, input.name, input.intent ?? "", input.baseUrl, j(viewport), input.authorKind ?? "human", input.createdBy ?? null, now, now, input.objectiveVerified === undefined ? null : (input.objectiveVerified === null ? null : (input.objectiveVerified ? 1 : 0))],
+    sql: `INSERT INTO trails (id, project_id, name, intent, base_url, viewport_json, baseline_ref, author_kind, status, created_by, created_at, updated_at, objective_verified, environments_json)
+          VALUES (?, ?, ?, ?, ?, ?, NULL, ?, 'draft', ?, ?, ?, ?, ?)`,
+    args: [id, projectId, input.name, input.intent ?? "", input.baseUrl, j(viewport), input.authorKind ?? "human", input.createdBy ?? null, now, now, input.objectiveVerified === undefined ? null : (input.objectiveVerified === null ? null : (input.objectiveVerified ? 1 : 0)), input.environments?.length ? j(input.environments) : null],
   })
   return id
 }
@@ -63,7 +76,7 @@ export async function deleteTrail(projectId: string, id: string): Promise<void> 
   await db!.execute({ sql: `DELETE FROM trails WHERE project_id=? AND id=?`, args: [projectId, id] })
 }
 
-export type TrailPatch = { name?: string; status?: TrailStatus; schedule?: string | null; viewport?: TrailViewport | string | null; judgePersonaId?: string | null }
+export type TrailPatch = { name?: string; status?: TrailStatus; schedule?: string | null; viewport?: TrailViewport | string | null; judgePersonaId?: string | null; environments?: TrailEnvironment[] }
 
 export async function updateTrail(projectId: string, id: string, patch: TrailPatch): Promise<boolean> {
   const r = await db!.execute({ sql: `SELECT id FROM trails WHERE project_id=? AND id=?`, args: [projectId, id] })
@@ -75,6 +88,7 @@ export async function updateTrail(projectId: string, id: string, patch: TrailPat
   if ("schedule" in patch) { sets.push("schedule_cron=?"); args.push(patch.schedule ?? null) }
   if ("viewport" in patch) { sets.push("viewport_json=?"); args.push(j(normalizeTrailViewport(patch.viewport))) }
   if ("judgePersonaId" in patch) { sets.push("judge_persona_id=?"); args.push(patch.judgePersonaId ?? null) }
+  if ("environments" in patch) { sets.push("environments_json=?"); args.push(patch.environments?.length ? j(patch.environments) : null) }
   if (!sets.length) return true
   sets.push("updated_at=?"); args.push(Date.now())
   args.push(projectId, id)
@@ -176,6 +190,7 @@ function rowToWalk(r: any): Walk {
     trailVersion: r.trail_version == null ? 1 : Number(r.trail_version),
     summary: pj<Record<string, unknown>>(r.summary_json),
     startedAt: Number(r.started_at), finishedAt: r.finished_at == null ? null : Number(r.finished_at),
+    environmentName: r.environment_name ?? null,
   }
 }
 
@@ -188,16 +203,22 @@ function rowToRunStep(r: any): RunStep {
   }
 }
 
-export async function startWalk(projectId: string, trailId: string, trigger: "manual" = "manual"): Promise<string> {
+export async function startWalk(
+  projectId: string,
+  trailId: string,
+  trigger: "manual" = "manual",
+  /** KLA-93: optional named environment to run against. Recorded on the walk row; null = default baseUrl. */
+  environmentName?: string | null,
+): Promise<string> {
   const id = uid("walk_")
   // Pin the Trail's current step_version so this Walk always shows the steps it actually ran against,
   // even if the Trail is edited later. DEFAULT 1 handles rows written before this column existed.
   const tv = await db!.execute({ sql: `SELECT step_version FROM trails WHERE project_id=? AND id=?`, args: [projectId, trailId] })
   const trailVersion = tv.rows.length ? (Number((tv.rows[0] as any).step_version) || 1) : 1
   await db!.execute({
-    sql: `INSERT INTO trail_runs (id, trail_id, project_id, trigger, status, llm_calls, summary_json, trail_version, started_at, finished_at)
-          VALUES (?, ?, ?, ?, 'running', 0, NULL, ?, ?, NULL)`,
-    args: [id, trailId, projectId, trigger, trailVersion, Date.now()],
+    sql: `INSERT INTO trail_runs (id, trail_id, project_id, trigger, status, llm_calls, summary_json, trail_version, environment_name, started_at, finished_at)
+          VALUES (?, ?, ?, ?, 'running', 0, NULL, ?, ?, ?, NULL)`,
+    args: [id, trailId, projectId, trigger, trailVersion, environmentName ?? null, Date.now()],
   })
   return id
 }
