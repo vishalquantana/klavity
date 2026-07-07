@@ -36,6 +36,9 @@ export async function ingestSnapOrSim(c: Client, args: {
 
 /**
  * Ingest an AutoSim finding into the expectations spine.
+ * KLA-95: uses kind "autosim" (not the old "finding") so mergeSource sets sim:true and
+ * enables cross-source corroboration with Snap reports on the same expectation.
+ * urlPath is populated from the walk step URL so the expectation can match by page.
  * findings carry their own dedupKey (a different keyspace from feedback);
  * cross-source collapse happens via the lexical title fallback in upsertExpectation.
  */
@@ -52,7 +55,7 @@ export async function ingestFinding(c: Client, args: {
       title: args.title.slice(0, 200),
       urlPath: args.urlPath ?? null,
       dedupKey: args.dedupKey,
-      source: { kind: "finding", id: args.findingId },
+      source: { kind: "autosim", id: args.findingId },
     })
   } catch (e) {
     console.warn("[expectations] ingestFinding skipped:", String(e))

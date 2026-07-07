@@ -2,7 +2,10 @@
 // Pure (DB-free) corroboration + lifecycle for the expectations spine.
 import { lexicalSim } from "./dedup"
 
-export type SourceKind = "snap" | "sim" | "finding"
+// KLA-95: "autosim" = an AutoSim trail walk finding; counts as "sim" for corroboration purposes
+// so cross-source validation (snap+sim) works when a Snap report matches an AutoSim finding.
+// "finding" is kept for backward-compatibility with existing rows written before this fix.
+export type SourceKind = "snap" | "sim" | "autosim" | "finding"
 export type SourceRef = { kind: SourceKind; id: string }
 export type Corroboration = { snap: boolean; sim: boolean; recurrence: number }
 export type ExpStatus = "candidate" | "validated" | "enforced" | "retired"
@@ -12,7 +15,7 @@ export const RECURRENCE_VALIDATE_N = 3
 export function mergeSource(c: Corroboration, kind: SourceKind): Corroboration {
   return {
     snap: c.snap || kind === "snap",
-    sim: c.sim || kind === "sim",
+    sim: c.sim || kind === "sim" || kind === "autosim",
     recurrence: (c.recurrence ?? 0) + 1,
   }
 }

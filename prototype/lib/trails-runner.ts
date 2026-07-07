@@ -974,6 +974,7 @@ async function runOneStep(
           confidence: 1.0,
           dedupKey: `ambiguous_selector:${trailId}:${step.id}`,
           contentSig: contentSigFor({ kind: "regression", selector: e.selector, urlPath: page.url() }),
+          urlPath: page.url(),
         })
       }
       // PDF task 1: best-effort screenshot to capture the failure state.
@@ -1021,6 +1022,7 @@ async function runOneStep(
           groundQuote: title, confidence: 0.7,
           dedupKey: `${trailId}:${step.id}:element-gone`,
           contentSig: contentSigFor({ kind: "regression", fp, urlPath: stepPageUrl }),
+          urlPath: stepPageUrl,
         })
       }
       // PDF task 1: best-effort screenshot to capture the failure state.
@@ -1138,6 +1140,7 @@ async function runOneStep(
         groundQuote: title, confidence: 0.8,
         dedupKey: `${trailId}:${step.id}:${isAssert ? "checkpoint-failed" : "action-failed"}`,
         contentSig: contentSigFor({ kind: "regression", fp, urlPath: stepPageUrl }),
+        urlPath: stepPageUrl,
       })
     }
     // PDF task 1: best-effort screenshot even on action failure (shows the failure state).
@@ -1241,6 +1244,7 @@ async function runVisionTier2(
         groundQuote: title, confidence: 1,
         dedupKey: `${trailId}:${step.id}:checkpoint-gone`,
         contentSig: contentSigFor({ kind: "regression", fp, urlPath: stepPageUrl }),
+        urlPath: stepPageUrl,
       })
     }
     await addStepRun({
@@ -1307,6 +1311,7 @@ async function runVisionTier2(
         groundQuote: decision.rationale, confidence: decision.confidence,
         dedupKey: `${trailId}:${step.id}:gone`,
         contentSig: contentSigFor({ kind: "regression", fp, urlPath: stepPageUrl }),
+        urlPath: stepPageUrl,
       })
     }
     await addStepRun({
@@ -1424,6 +1429,7 @@ async function fileAmberHeal(
       evidence: { rationale, target: fp, pageUrl: opts.fixtureUrl, classification },
       groundQuote: rationale, confidence, dedupKey: `${trailId}:${step.id}:lowconf`,
       contentSig: contentSigFor({ kind: "amber_heal", fp, urlPath: pageUrl }),
+      urlPath: pageUrl,
     })
   }
   await addStepRun({
