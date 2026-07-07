@@ -53,6 +53,22 @@ export interface AuthorOutcome {
   steps: AuthorStepLog[]; stallReason: string | null; llmCalls: number; costUsd: number
 }
 
+/** KLA-57: Checkpoint — partial drive state persisted after each step so a stalled run is resumable. */
+export interface AuthorCheckpoint {
+  /** Accumulated trajectory steps (including the initial navigate). */
+  traj: TrajectoryStep[]
+  /** LLM conversation history (human-readable action log). */
+  history: string[]
+  /** Steps completed so far (loop index continues from here on resume). */
+  stepIdx: number
+  /** Total model calls consumed. Counts against the per-run budget on resume. */
+  llmCalls: number
+  /** Total cost incurred. Counts against AUTHOR_MAX_COST_USD on resume. */
+  costUsd: number
+  /** URL the browser was at when the checkpoint was written. Resume navigates here first. */
+  lastUrl: string
+}
+
 const OP2ACTION: Record<string, StepAction> = { navigate: "navigate", click: "click", type: "type", select: "select", assert: "assert", wait: "wait", hover: "hover", keyPress: "keyPress", clearField: "clearField" }
 
 export async function authorTrail(
@@ -72,6 +88,16 @@ export async function authorTrail(
      * Wired by runAuthorNow to touchAuthorHeartbeat(sessionId). Best-effort: errors are swallowed.
      */
     onHeartbeat?: () => void | Promise<void>
+    /**
+     * KLA-57: prior checkpoint to resume from. Browser navigates to checkpoint.lastUrl and the
+     * drive loop continues from checkpoint.stepIdx with accumulated traj/history/cost.
+     */
+    checkpoint?: AuthorCheckpoint
+    /**
+     * KLA-57: called after each completed step (and on stall) with the full current checkpoint.
+     * Wired by runAuthorNow to persist checkpoint_json so a stalled run is resumable.
+     */
+    onCheckpoint?: (cp: AuthorCheckpoint) => void | Promise<void>
   },
 ): Promise<AuthorOutcome> {
   // Text-first is the DEFAULT (bench 2026-07-04: arm B ~50% cheaper, 6/6 green verdicts vs arm A
@@ -96,11 +122,26 @@ export async function authorTrail(
     if (process.env.KLAV_TEST_OTP) credFields.push(`{{cred:${acc.name}:otp}}`)
   }
   const sleepMs = opts.sleepMs ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
-  const log: AuthorStepLog[] = []
-  const history: string[] = []
-  const traj: TrajectoryStep[] = []
-  let llmCalls = 0, costUsd = 0, misses = 0
+  // KLA-57: pre-populate drive state from checkpoint on resume; fresh start otherwise.
+  const cp = opts.checkpoint
+  const log: AuthorStepLog[] = cp ? cp.traj.slice(1).map((_, i) => ({
+    // Synthesize minimal log entries for already-completed steps so UI shows prior progress.
+    // Full step details were persisted as steps_json on the original session; the new session
+    // session's steps_json is kept in sync via onStep.
+    idx: i, op: "resumed", selector: null, value: null, url: cp.lastUrl, rationale: "(resumed from checkpoint)", ok: true,
+  })) : []
+  const history: string[] = cp ? [...cp.history] : []
+  const traj: TrajectoryStep[] = cp ? [...cp.traj] : []
+  let llmCalls = cp ? cp.llmCalls : 0
+  let costUsd = cp ? cp.costUsd : 0
+  let misses = 0
   let lastSuccessKey: string | null = null, consecutiveSuccessKey = 0
+  const startIdx = cp ? cp.stepIdx : 0
+
+  const snapshotCheckpoint = (url: string): AuthorCheckpoint => ({
+    traj: [...traj], history: [...history], stepIdx: log.length,
+    llmCalls, costUsd, lastUrl: url,
+  })
   // Overall drive deadline. Without it a single hung page op (a crashed Chromium can make
   // page.content()/screenshot never settle) held the shared walk slot INDEFINITELY — observed
   // live on prod 2026-07-04: dead browser, slot stuck, every walk/authoring 409ing until a
@@ -123,24 +164,47 @@ export async function authorTrail(
     handle = null
     await h.close().catch(() => {})
   }
-  const stall = async (why: string): Promise<AuthorOutcome> => {
+  const stall = async (why: string, currentUrl?: string): Promise<AuthorOutcome> => {
+    // KLA-57: persist checkpoint before closing so the session is resumable.
+    if (opts.onCheckpoint) {
+      try { await opts.onCheckpoint(snapshotCheckpoint(currentUrl ?? req.baseUrl)) } catch {}
+    }
+    // KLA-57: crystallize whatever we have when we stall with > 1 step (skip pure-navigate-only runs).
+    // This gives the user a reviewable partial draft trail even when the drive didn't finish.
+    let partialTrailId: string | null = null
+    if (traj.length > 1) {
+      try {
+        const partialTrajectory: Trajectory = {
+          name: req.name, intent: req.objective, baseUrl: req.baseUrl,
+          viewport: normalizeTrailViewport(req.viewport), authorKind: "llm",
+          createdBy: req.createdBy, steps: traj,
+        }
+        const r = await crystallize(projectId, partialTrajectory)
+        await setTrailStatus(projectId, r.trailId, "draft")
+        partialTrailId = r.trailId
+      } catch { /* best-effort; a crystallize failure must never re-throw from stall */ }
+    }
     await closeHandle()
-    return { status: "stalled", trailId: null, verificationRunId: null, verificationVerdict: null, steps: log, stallReason: why, llmCalls, costUsd }
+    return { status: "stalled", trailId: partialTrailId, verificationRunId: null, verificationVerdict: null, steps: log, stallReason: why, llmCalls, costUsd }
   }
   try {
     const page = await handle!.newPage(viewport)
-    await page.goto(req.baseUrl, 20_000)
-    // Record the initial navigation as the first TrajectoryStep so the crystallized Trail starts
-    // with a navigate action pointing at the baseUrl (gives the runner a concrete starting point).
-    {
+    if (cp) {
+      // KLA-57: resume — navigate to where the prior drive stalled. The traj/history are already
+      // pre-populated from the checkpoint; we skip re-recording the initial navigate step.
+      await page.goto(cp.lastUrl, 20_000)
+    } else {
+      await page.goto(req.baseUrl, 20_000)
+      // Record the initial navigation as the first TrajectoryStep so the crystallized Trail starts
+      // with a navigate action pointing at the baseUrl (gives the runner a concrete starting point).
       const initSnap = await bounded(page.krefSnapshot(), 15_000, "snapshot capture")
       traj.push({ action: "navigate", actionValue: req.baseUrl, url: page.url(), domHash: sha256hex(initSnap) })
     }
-    for (let idx = 0; idx < AUTHOR_MAX_STEPS; idx++) {
+    for (let idx = startIdx; idx < AUTHOR_MAX_STEPS; idx++) {
       // KLA-55: heartbeat — signals the crash-reaper that this session is still alive. Best-effort.
       opts.onHeartbeat?.()
-      if (costUsd >= AUTHOR_MAX_COST_USD) return await stall(`authoring budget cap $${AUTHOR_MAX_COST_USD} reached after ${llmCalls} model calls`)
-      if (Date.now() > deadlineAt) return await stall(`authoring drive deadline exceeded (${Math.round(driveDeadlineMs / 1000)}s) after ${log.length} steps`)
+      if (costUsd >= AUTHOR_MAX_COST_USD) return await stall(`authoring budget cap $${AUTHOR_MAX_COST_USD} reached after ${llmCalls} model calls`, page.url())
+      if (Date.now() > deadlineAt) return await stall(`authoring drive deadline exceeded (${Math.round(driveDeadlineMs / 1000)}s) after ${log.length} steps`, page.url())
       const includeShot = !textFirst || misses > 0
       const screenshotB64 = includeShot
         ? await bounded(page.screenshotJpeg(60, 15_000), 20_000, "screenshot")
@@ -163,8 +227,8 @@ export async function authorTrail(
             break
           } catch (e: any) {
             if (e instanceof ModelCallError) {
-              if (e.budgetExhausted) return await stall(`budget_exhausted: daily AI budget reached after ${llmCalls} model calls`)
-              if (!e.retryable) return await stall(`model auth error: ${e.message}`)
+              if (e.budgetExhausted) return await stall(`budget_exhausted: daily AI budget reached after ${llmCalls} model calls`, page.url())
+              if (!e.retryable) return await stall(`model auth error: ${e.message}`, page.url())
             }
             lastErr = e
             if (attempt < MAX_API_RETRIES - 1) await sleepMs(MODEL_RETRY_BASE_MS * Math.pow(2, attempt))
@@ -176,7 +240,7 @@ export async function authorTrail(
           misses++
           const errMsg = (lastErr as any)?.message || String(lastErr)
           history.push(`(model call failed after ${MAX_API_RETRIES} attempts: ${errMsg} — retrying from last state)`)
-          if (misses >= MAX_CONSECUTIVE_MISSES) return await stall(`stuck after ${misses} failed model calls; last error: ${errMsg}`)
+          if (misses >= MAX_CONSECUTIVE_MISSES) return await stall(`stuck after ${misses} failed model calls; last error: ${errMsg}`, page.url())
           continue
         }
       }
@@ -188,10 +252,10 @@ export async function authorTrail(
         // action: count a consecutive miss, tell the model, and let it try again.
         misses++
         history.push(`(your last reply was invalid: ${a.rationale} — respond with ONE strict JSON action object)`)
-        if (misses >= MAX_CONSECUTIVE_MISSES) return await stall(`stuck after ${misses} malformed model replies; last: ${a.rationale}`)
+        if (misses >= MAX_CONSECUTIVE_MISSES) return await stall(`stuck after ${misses} malformed model replies; last: ${a.rationale}`, page.url())
         continue
       }
-      if (a.op === "stall") return await stall(a.rationale || "model stalled")
+      if (a.op === "stall") return await stall(a.rationale || "model stalled", page.url())
       if (a.op === "done") break
       const entry: AuthorStepLog = { idx: log.length, op: a.op, selector: a.selector, value: a.value, url: page.url(), rationale: a.rationale, ok: false }
       try {
@@ -242,7 +306,8 @@ export async function authorTrail(
             const safeSelector = a.selector && isKrefSelector(a.selector) ? dekref(a.selector) : a.selector
             entry.ok = true; log.push(entry); await opts.onStep?.(log)
             return await stall(
-              `progress stall: '${a.op}' on '${safeSelector ?? a.url ?? "page"}' repeated ${consecutiveSuccessKey + 1}× without state change — refine the objective to include the next step`
+              `progress stall: '${a.op}' on '${safeSelector ?? a.url ?? "page"}' repeated ${consecutiveSuccessKey + 1}× without state change — refine the objective to include the next step`,
+              page.url(),
             )
           }
         } else {
@@ -259,10 +324,14 @@ export async function authorTrail(
         entry.selector = safeSelector
         misses++
         history.push(`${a.op}${safeSelector ? " " + safeSelector : ""} — FAILED: ${safeMsg}`)
-        if (misses >= MAX_CONSECUTIVE_MISSES) { log.push(entry); await opts.onStep?.(log); return await stall(`stuck after ${misses} failed attempts; last: ${safeMsg}`) }
+        if (misses >= MAX_CONSECUTIVE_MISSES) { log.push(entry); await opts.onStep?.(log); return await stall(`stuck after ${misses} failed attempts; last: ${safeMsg}`, page.url()) }
       }
       log.push(entry)
       await opts.onStep?.(log)
+      // KLA-57: persist checkpoint after each step so a subsequent stall or crash has a recovery point.
+      if (opts.onCheckpoint) {
+        try { await opts.onCheckpoint(snapshotCheckpoint(page.url())) } catch {}
+      }
     }
     await closeHandle()
     if (!traj.length) return { status: "stalled", trailId: null, verificationRunId: null, verificationVerdict: null, steps: log, stallReason: "model finished without performing any step", llmCalls, costUsd }
@@ -293,20 +362,24 @@ export interface AuthorSession {
   steps: AuthorStepLog[]; stallReason: string | null; trailId: string | null
   verificationRunId: string | null; verificationVerdict: string | null
   llmCalls: number; costUsd: number; createdBy: string | null; createdAt: number; updatedAt: number
+  /** KLA-57: session this was resumed from, if any. */
+  resumedFrom: string | null
+  /** KLA-57: latest drive-state checkpoint (traj+history+cost+url). Null until first step. */
+  checkpoint: AuthorCheckpoint | null
 }
 
-export async function createAuthorSession(projectId: string, req: AuthorRequest): Promise<string> {
+export async function createAuthorSession(projectId: string, req: AuthorRequest, resumedFrom?: string | null): Promise<string> {
   const id = "auth_" + crypto.randomUUID()
   const now = Date.now()
   await db!.execute({
-    sql: `INSERT INTO author_sessions (id,project_id,name,objective,base_url,test_account,status,created_by,created_at,updated_at)
-          VALUES (?,?,?,?,?,?,'running',?,?,?)`,
-    args: [id, projectId, req.name, req.objective, req.baseUrl, req.testAccountName ?? null, req.createdBy ?? null, now, now],
+    sql: `INSERT INTO author_sessions (id,project_id,name,objective,base_url,test_account,status,created_by,resumed_from,created_at,updated_at)
+          VALUES (?,?,?,?,?,?,'running',?,?,?,?)`,
+    args: [id, projectId, req.name, req.objective, req.baseUrl, req.testAccountName ?? null, req.createdBy ?? null, resumedFrom ?? null, now, now],
   })
   return id
 }
 
-export async function updateAuthorSession(projectId: string, id: string, patch: Partial<Pick<AuthorSession, "status" | "steps" | "stallReason" | "trailId" | "verificationRunId" | "verificationVerdict" | "llmCalls" | "costUsd">>): Promise<void> {
+export async function updateAuthorSession(projectId: string, id: string, patch: Partial<Pick<AuthorSession, "status" | "steps" | "stallReason" | "trailId" | "verificationRunId" | "verificationVerdict" | "llmCalls" | "costUsd" | "checkpoint">>): Promise<void> {
   const sets: string[] = ["updated_at=?"]; const args: any[] = [Date.now()]
   if (patch.status !== undefined) { sets.push("status=?"); args.push(patch.status) }
   if (patch.steps !== undefined) { sets.push("steps_json=?"); args.push(JSON.stringify(patch.steps)) }
@@ -316,16 +389,16 @@ export async function updateAuthorSession(projectId: string, id: string, patch: 
   if (patch.verificationVerdict !== undefined) { sets.push("verification_verdict=?"); args.push(patch.verificationVerdict) }
   if (patch.llmCalls !== undefined) { sets.push("llm_calls=?"); args.push(patch.llmCalls) }
   if (patch.costUsd !== undefined) { sets.push("cost_usd=?"); args.push(patch.costUsd) }
+  if (patch.checkpoint !== undefined) { sets.push("checkpoint_json=?"); args.push(patch.checkpoint === null ? null : JSON.stringify(patch.checkpoint)) }
   args.push(projectId, id)
   await db!.execute({ sql: `UPDATE author_sessions SET ${sets.join(",")} WHERE project_id=? AND id=?`, args })
 }
 
-export async function getAuthorSession(projectId: string, id: string): Promise<AuthorSession | null> {
-  const r = await db!.execute({ sql: `SELECT * FROM author_sessions WHERE project_id=? AND id=?`, args: [projectId, id] })
-  if (!r.rows.length) return null
-  const row: any = r.rows[0]
+function rowToAuthorSession(row: any): AuthorSession {
   let steps: AuthorStepLog[] = []
   try { steps = JSON.parse(String(row.steps_json || "[]")) } catch {}
+  let checkpoint: AuthorCheckpoint | null = null
+  try { if (row.checkpoint_json) checkpoint = JSON.parse(String(row.checkpoint_json)) } catch {}
   return {
     id: String(row.id), projectId: String(row.project_id), name: String(row.name), objective: String(row.objective),
     baseUrl: String(row.base_url), testAccount: row.test_account ? String(row.test_account) : null,
@@ -337,7 +410,15 @@ export async function getAuthorSession(projectId: string, id: string): Promise<A
     llmCalls: Number(row.llm_calls), costUsd: Number(row.cost_usd),
     createdBy: row.created_by ? String(row.created_by) : null,
     createdAt: Number(row.created_at), updatedAt: Number(row.updated_at),
+    resumedFrom: row.resumed_from ? String(row.resumed_from) : null,
+    checkpoint,
   }
+}
+
+export async function getAuthorSession(projectId: string, id: string): Promise<AuthorSession | null> {
+  const r = await db!.execute({ sql: `SELECT * FROM author_sessions WHERE project_id=? AND id=?`, args: [projectId, id] })
+  if (!r.rows.length) return null
+  return rowToAuthorSession(r.rows[0])
 }
 
 export async function getActiveAuthorSession(projectId: string): Promise<AuthorSession | null> {
@@ -346,21 +427,7 @@ export async function getActiveAuthorSession(projectId: string): Promise<AuthorS
     args: [projectId],
   })
   if (!r.rows.length) return null
-  const row: any = r.rows[0]
-  let steps: AuthorStepLog[] = []
-  try { steps = JSON.parse(String(row.steps_json || "[]")) } catch {}
-  return {
-    id: String(row.id), projectId: String(row.project_id), name: String(row.name), objective: String(row.objective),
-    baseUrl: String(row.base_url), testAccount: row.test_account ? String(row.test_account) : null,
-    status: String(row.status) as AuthorSession["status"], steps,
-    stallReason: row.stall_reason ? String(row.stall_reason) : null,
-    trailId: row.trail_id ? String(row.trail_id) : null,
-    verificationRunId: row.verification_run_id ? String(row.verification_run_id) : null,
-    verificationVerdict: row.verification_verdict ? String(row.verification_verdict) : null,
-    llmCalls: Number(row.llm_calls), costUsd: Number(row.cost_usd),
-    createdBy: row.created_by ? String(row.created_by) : null,
-    createdAt: Number(row.created_at), updatedAt: Number(row.updated_at),
-  }
+  return rowToAuthorSession(r.rows[0])
 }
 
 /**
@@ -369,11 +436,28 @@ export async function getActiveAuthorSession(projectId: string): Promise<AuthorS
  * Mirrors runWalkNow's deferred-promise structure: slot is acquired in this turn (WalkBusyError
  * propagates to the caller before we return), session row is created inside the slot, and the
  * sessionId is resolved back to the caller as soon as the row exists.
+ *
+ * KLA-57: pass `resumeSessionId` to continue a stalled/failed session. The prior session's
+ * checkpoint (traj+history+cost+url) is loaded and the drive loop continues from where it left
+ * off. A new session row is created that links back via `resumed_from`.
  */
-export async function runAuthorNow(projectId: string, req: AuthorRequest, deps?: { model?: AuthorModel; author?: typeof authorTrail }): Promise<{ sessionId: string }> {
+export async function runAuthorNow(
+  projectId: string,
+  req: AuthorRequest,
+  deps?: { model?: AuthorModel; author?: typeof authorTrail; resumeSessionId?: string },
+): Promise<{ sessionId: string }> {
   const { openRouterAuthorModel } = await import("./trails-author-model")
   const model = deps?.model ?? openRouterAuthorModel
   const author = deps?.author ?? authorTrail
+
+  // KLA-57: load checkpoint from the session being resumed (if any).
+  let resumeCheckpoint: AuthorCheckpoint | undefined
+  const resumeSessionId = deps?.resumeSessionId
+  if (resumeSessionId) {
+    const prior = await getAuthorSession(projectId, resumeSessionId)
+    if (prior?.checkpoint) resumeCheckpoint = prior.checkpoint
+    // If no checkpoint exists (e.g. crashed at step 0), fall through to a clean start.
+  }
 
   // Deferred: resolve to sessionId once the DB row exists, reject on slot-busy or session-create error.
   let resolveStarted!: (sessionId: string) => void
@@ -387,7 +471,7 @@ export async function runAuthorNow(projectId: string, req: AuthorRequest, deps?:
   const slotHeld = withAuthorSlot(() => withWalkSlot(async () => {
     let sessionId: string
     try {
-      sessionId = await createAuthorSession(projectId, req)
+      sessionId = await createAuthorSession(projectId, req, resumeSessionId ?? null)
     } catch (e) {
       rejectStart(e)
       return
@@ -399,6 +483,9 @@ export async function runAuthorNow(projectId: string, req: AuthorRequest, deps?:
         onStep: (log) => updateAuthorSession(projectId, sessionId, { steps: log }).catch(() => {}),
         // KLA-55: update heartbeat each iteration so the reaper knows this session is alive.
         onHeartbeat: () => touchAuthorHeartbeat(sessionId).catch(() => {}),
+        // KLA-57: persist checkpoint after each step and on stall so the run is resumable.
+        onCheckpoint: (cp) => updateAuthorSession(projectId, sessionId, { checkpoint: cp }).catch(() => {}),
+        checkpoint: resumeCheckpoint,
       })
       await updateAuthorSession(projectId, sessionId, {
         status: out.status, steps: out.steps, stallReason: out.stallReason, trailId: out.trailId,
