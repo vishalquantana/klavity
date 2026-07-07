@@ -2,6 +2,7 @@ import type { ReportType } from './types'
 import { Annotator } from './annotator'
 import { themeCss, resolveModalConfig, type ModalConfig } from './modal-theme'
 import { icon } from './icons'
+import { maskNumbers } from './mask-numbers'
 
 // Re-exported here so the widget + extension can import the shared right-click-drag region gesture from
 // the same module they already use for buildModal (avoids adding a package.json export entry, which the
@@ -98,6 +99,7 @@ export function buildModal(
   config: ModalConfig = {},
 ): ModalController {
   const cfg = resolveModalConfig(config)
+  let maskOn = !!(cfg.maskNumbers)
   // Create shadow host
   const host = document.createElement('div')
   host.style.cssText = 'position:fixed;inset:0;z-index:2147483647;pointer-events:none;'
@@ -165,6 +167,9 @@ export function buildModal(
     .klavity-actions button:disabled .kl-cap-ic{transform:none;}
     .klavity-actions button.kl-loading{opacity:.9;animation:kl-cap-pulse 1s ease-in-out infinite;}
     @keyframes kl-cap-pulse{0%,100%{opacity:.55}50%{opacity:.95}}
+    .klav-mask-row{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--kl-muted);cursor:pointer;margin-bottom:10px;user-select:none;}
+    .klav-mask-row input[type=checkbox]{accent-color:var(--kl-accent);width:13px;height:13px;cursor:pointer;}
+    .klav-mask-row:hover{color:var(--kl-fg);}
     .klavity-counter{font-size:11px;color:var(--kl-muted);margin-bottom:8px;font-variant-numeric:tabular-nums;}
     textarea.klavity-desc{width:100%;min-height:100px;resize:vertical;background:var(--kl-input-bg);color:var(--kl-fg);border:1px solid var(--kl-border);border-radius:8px;padding:10px;font-size:14px;margin-bottom:16px;box-sizing:border-box;box-shadow:0 1px 2px rgba(25,20,15,.04);}
     input.klavity-remail{width:100%;background:var(--kl-input-bg);color:var(--kl-fg);border:1px solid var(--kl-border);border-radius:8px;padding:10px;font-size:14px;margin-bottom:10px;box-sizing:border-box;box-shadow:0 1px 2px rgba(25,20,15,.04);}
@@ -299,6 +304,7 @@ export function buildModal(
       <button id="klavity-upload"><span class="kl-cap-ic">${icon('image')}</span><span class="kl-upload-label">Upload</span></button>
       ${callbacks.onRegionCapture ? `<button id="klavity-region"><span class="kl-cap-ic">${icon('scissors')}</span><span class="kl-region-label">Region</span></button>` : ''}
     </div>
+    <label class="klav-mask-row"><input type="checkbox" id="klavity-mask-numbers"${maskOn ? ' checked' : ''}>${icon('eye-off', { size: 13 })}<span>Mask numbers</span></label>
     <input type="file" id="klavity-file" accept="image/*,.heic,.heif" multiple style="display:none">
     <div class="klavity-counter" id="klavity-counter">0/5 images</div>
     <div class="klavity-error" id="klavity-err"></div>
@@ -310,6 +316,9 @@ export function buildModal(
 
   overlay.appendChild(modal)
   shadowRoot.appendChild(overlay)
+
+  const maskChk = shadowRoot.getElementById('klavity-mask-numbers') as HTMLInputElement | null
+  if (maskChk) maskChk.addEventListener('change', () => { maskOn = maskChk.checked })
 
   // ── Floating info tooltip — lives outside the modal so overflow:hidden never clips it. ──
   // .klavity-info-pop in the markup is the text source; we copy its innerHTML into a shadow-root-level
@@ -601,7 +610,11 @@ export function buildModal(
     if (busy) return
     lockComposer(true)
     fullBtn.classList.add('kl-loading')
-    try { addScreenshot(await callbacks.onCaptureFull()); setActiveCapture(fullBtn) }
+    try {
+      const restore = maskOn ? maskNumbers(document.body) : null
+      try { addScreenshot(await callbacks.onCaptureFull()); setActiveCapture(fullBtn) }
+      finally { restore?.() }
+    }
     catch { /* ignore */ }
     finally { fullBtn.classList.remove('kl-loading'); lockComposer(false) }
   })
@@ -620,7 +633,10 @@ export function buildModal(
       const orig = target.textContent
       target.textContent = 'Capturing…'
       try {
-        const shot = await callbacks.onCaptureSharp!()
+        const restore = maskOn ? maskNumbers(document.body) : null
+        let shot: string | undefined
+        try { shot = await callbacks.onCaptureSharp!() }
+        finally { restore?.() }
         if (shot) { addScreenshot(shot); setActiveCapture(sharpBtn) }
       } catch { /* user cancelled the share prompt, or capture failed — just restore */ }
       finally {
@@ -670,7 +686,10 @@ export function buildModal(
         // Re-register the modal Esc handler now that the overlay is gone (success path).
         document.addEventListener('keydown', escHandler, { capture: true })
         try {
-          const shot = await callbacks.onRegionCapture!(rect)
+          const restore = maskOn ? maskNumbers(document.body) : null
+          let shot: string | undefined
+          try { shot = await callbacks.onRegionCapture!(rect) }
+          finally { restore?.() }
           if (shot) { addScreenshot(shot); setActiveCapture(regionBtn) }
         } finally {
           host.style.display = ''
