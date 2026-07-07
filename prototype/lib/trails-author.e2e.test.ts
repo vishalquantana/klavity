@@ -227,3 +227,99 @@ test("boot sweep marks orphaned running author_sessions failed", async () => {
   expect(s!.status).toBe("failed")
   expect(s!.stallReason).toContain("restart")
 })
+
+test("persists step artifacts (screenshotKey, krefSnapshot) on every executed step (KLA-75)", async () => {
+  const P_ART = "proj_sess_artifacts"
+  await createTestAccount(P_ART, { name: "admin", loginEmail: "a@b.c", password: "p" })
+
+  const uploadedKeys: string[] = []
+  const shotUploader = async (bytes: Uint8Array) => {
+    const key = `shot_${Date.now()}_${uploadedKeys.length}`
+    uploadedKeys.push(key)
+    return { key }
+  }
+
+  let stepLogsReceived: any[] = []
+  const onStep = (log: any[]) => {
+    stepLogsReceived = log
+  }
+
+  const model = scripted([
+    { op: "type", selector: "#email", value: "test@domain.com" },
+    { op: "click", selector: "#signin" },
+    { op: "done" }
+  ])
+
+  const out = await authorTrail(
+    P_ART,
+    { name: "Artifacts Test", objective: "test logging", baseUrl: fixtureUrl("author-mockup.html") },
+    {
+      model,
+      shotUploader,
+      onStep,
+      headless: true
+    }
+  )
+
+  expect(out.status).toBe("crystallized")
+  expect(out.steps.length).toBe(2)
+
+  for (const step of out.steps) {
+    expect(step.screenshotKey).toBeTruthy()
+    expect(step.screenshotKey).toMatch(/^shot_\d+_\d+$/)
+    expect(step.krefSnapshot).toBeTruthy()
+    expect(step.krefSnapshot).toContain("Email")
+    expect(step.krefSnapshot!.length).toBeLessThanOrEqual(50015)
+  }
+
+  expect(stepLogsReceived.length).toBe(2)
+  for (const step of stepLogsReceived) {
+    expect(step.screenshotKey).toBeTruthy()
+    expect(step.krefSnapshot).toBeTruthy()
+  }
+}, 60000)
+
+test("runAuthorNow persists step artifacts (screenshotKey, krefSnapshot) in the DB (KLA-75)", async () => {
+  const P_DB = "proj_sess_db_artifacts"
+  await createTestAccount(P_DB, { name: "admin", loginEmail: "a@b.c", password: "p" })
+
+  const uploadedKeys: string[] = []
+  const shotUploader = async (bytes: Uint8Array) => {
+    const key = `db_shot_${Date.now()}_${uploadedKeys.length}`
+    uploadedKeys.push(key)
+    return { key }
+  }
+
+  const model = scripted([
+    { op: "type", selector: "#email", value: "db@domain.com" },
+    { op: "done" }
+  ])
+
+  const customAuthor: typeof authorTrail = (projId, r, opts) => {
+    return authorTrail(projId, r, { ...opts, shotUploader, headless: true })
+  }
+
+  const { sessionId } = await runAuthorNow(
+    P_DB,
+    { name: "DB Artifacts Test", objective: "test db save", baseUrl: fixtureUrl("author-mockup.html") },
+    { model, author: customAuthor }
+  )
+
+  let session: any = null
+  for (let i = 0; i < 40; i++) {
+    session = await getAuthorSession(P_DB, sessionId)
+    if (session && session.status !== "running") break
+    await new Promise((r) => setTimeout(r, 200))
+  }
+
+  expect(session).not.toBeNull()
+  expect(session.status).toBe("crystallized")
+  expect(session.steps.length).toBe(1)
+  
+  const step = session.steps[0]
+  expect(step.screenshotKey).toBeTruthy()
+  expect(step.screenshotKey).toMatch(/^db_shot_\d+_\d+$/)
+  expect(step.krefSnapshot).toBeTruthy()
+  expect(step.krefSnapshot).toContain("Email")
+}, 60000)
+

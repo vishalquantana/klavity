@@ -13,6 +13,7 @@ import { sha256hex } from "./crypto"
 import { withWalkSlot, withAuthorSlot, CHROMIUM_PROD_ARGS } from "./trails-browser"
 import { acquireBrowser, type BrowserHandle } from "./trails-browser-page"
 import { db, projectById, touchAuthorHeartbeat } from "./db"
+import { uploadScreenshotMeta } from "./s3"
 import type { AuthorModel, AuthorAction } from "./trails-author-model"
 import { ModelCallError } from "./trails-author-model"
 import { isKrefSelector } from "./trails-snapshot"
@@ -62,6 +63,7 @@ export async function authorTrail(
     credResolver?: CredResolver; onStep?: (log: AuthorStepLog[]) => void | Promise<void>
     driveDeadlineMs?: number; textFirst?: boolean; verificationVision?: VisionResolver | false
     browserFactory?: typeof acquireBrowser; verificationWalk?: typeof walkTrail
+    shotUploader?: (bytes: Uint8Array, contentType: string) => Promise<{ key: string }>
     /**
      * KLA-56: injectable sleep for retry back-off. Default = real setTimeout-based sleep.
      * Tests inject `() => Promise.resolve()` to avoid real delays.
@@ -240,7 +242,17 @@ export async function authorTrail(
           consecutiveSuccessKey++
           if (consecutiveSuccessKey >= LOOP_STALL_N) {
             const safeSelector = a.selector && isKrefSelector(a.selector) ? dekref(a.selector) : a.selector
-            entry.ok = true; log.push(entry); await opts.onStep?.(log)
+            entry.ok = true
+            try {
+              const b64 = await page.screenshotJpeg(45, 10_000)
+              if (b64 && b64.length > 0) {
+                const bytes = Buffer.from(b64, "base64")
+                const upload = opts.shotUploader ? await opts.shotUploader(bytes, "image/jpeg") : await uploadScreenshotMeta(bytes, "image/jpeg")
+                entry.screenshotKey = upload.key
+              }
+            } catch {}
+            entry.krefSnapshot = dom.length > 50000 ? dom.slice(0, 50000) + "\n...[TRUNCATED]" : dom
+            log.push(entry); await opts.onStep?.(log)
             return await stall(
               `progress stall: '${a.op}' on '${safeSelector ?? a.url ?? "page"}' repeated ${consecutiveSuccessKey + 1}× without state change — refine the objective to include the next step`
             )
@@ -259,8 +271,30 @@ export async function authorTrail(
         entry.selector = safeSelector
         misses++
         history.push(`${a.op}${safeSelector ? " " + safeSelector : ""} — FAILED: ${safeMsg}`)
-        if (misses >= MAX_CONSECUTIVE_MISSES) { log.push(entry); await opts.onStep?.(log); return await stall(`stuck after ${misses} failed attempts; last: ${safeMsg}`) }
+        if (misses >= MAX_CONSECUTIVE_MISSES) {
+          try {
+            const b64 = await page.screenshotJpeg(45, 10_000)
+            if (b64 && b64.length > 0) {
+              const bytes = Buffer.from(b64, "base64")
+              const upload = opts.shotUploader ? await opts.shotUploader(bytes, "image/jpeg") : await uploadScreenshotMeta(bytes, "image/jpeg")
+              entry.screenshotKey = upload.key
+            }
+          } catch {}
+          entry.krefSnapshot = dom.length > 50000 ? dom.slice(0, 50000) + "\n...[TRUNCATED]" : dom
+          log.push(entry); await opts.onStep?.(log); return await stall(`stuck after ${misses} failed attempts; last: ${safeMsg}`) 
+        }
       }
+      try {
+        const b64 = await page.screenshotJpeg(45, 10_000)
+        if (b64 && b64.length > 0) {
+          const bytes = Buffer.from(b64, "base64")
+          const upload = opts.shotUploader ? await opts.shotUploader(bytes, "image/jpeg") : await uploadScreenshotMeta(bytes, "image/jpeg")
+          entry.screenshotKey = upload.key
+        }
+      } catch (err) {
+        console.warn("[trails-author] step screenshot upload failed:", String(err))
+      }
+      entry.krefSnapshot = dom.length > 50000 ? dom.slice(0, 50000) + "\n...[TRUNCATED]" : dom
       log.push(entry)
       await opts.onStep?.(log)
     }
