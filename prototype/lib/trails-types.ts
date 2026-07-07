@@ -5,6 +5,7 @@ export type AuthorKind = "llm" | "human" | "mixed"
 export type StepAction = "navigate" | "click" | "type" | "select" | "assert" | "wait" | "hover" | "keyPress" | "clearField" | "callModule"
 export type Tier = "cache" | "candidate" | "vision" | "none"
 export type Verdict = "green" | "amber" | "red" | "skip"
+export type FailureKind = "crash" | "regression"
 export type FailureClass =
   | "locator_drift" | "timing" | "test_data" | "runtime_error"
   | "visual" | "interaction_change" | "regression" | "unknown"

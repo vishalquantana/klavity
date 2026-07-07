@@ -829,7 +829,7 @@ export async function sweepOrphanedWalks(c: Client): Promise<{ swept: number }> 
   const now = Date.now()
   const r = await c.execute({
     sql: `UPDATE trail_runs SET status='red', finished_at=?,
-            summary_json=JSON_OBJECT('error','interrupted by a server restart')
+            summary_json=JSON_OBJECT('failureKind','crash','error','interrupted by a server restart')
           WHERE status='running'`,
     args: [now],
   })
@@ -858,7 +858,7 @@ export async function sweepStaleWalks(c: Client, thresholdMs = DEFAULT_STALE_MS)
   const now = Date.now()
   const r = await c.execute({
     sql: `UPDATE trail_runs SET status='red', finished_at=?,
-            summary_json=JSON_OBJECT('error','stale heartbeat — process may have crashed')
+            summary_json=JSON_OBJECT('failureKind','crash','error','stale heartbeat — process may have crashed')
           WHERE status='running' AND last_beat_at IS NOT NULL AND last_beat_at < ?`,
     args: [now, cutoff],
   })

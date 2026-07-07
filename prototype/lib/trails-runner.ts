@@ -11,7 +11,7 @@
 import type { Browser, BrowserContext, Page, Locator } from "playwright"
 import { acquirePlaywrightBrowser, playwrightContextOptionsForTrailViewport, startCdpScreencast } from "./trails-browser-page"
 import { uploadScreenshotMeta } from "./s3"
-import type { Fingerprint, Tier, Verdict, TrailStep } from "./trails-types"
+import type { FailureKind, Fingerprint, Tier, Verdict, TrailStep } from "./trails-types"
 import { expandModuleSteps } from "./trails-modules"
 import {
   getTrail, listTrailSteps, getCacheForStep, upsertLocatorCache,
@@ -135,6 +135,7 @@ export interface WalkStepSummary {
   tier: Tier
   verdict: Verdict
   healed: boolean
+  failureKind?: FailureKind
 }
 
 export interface WalkSummary {
@@ -158,6 +159,7 @@ export interface WalkSummary {
    * of `finishWalk` always see WHY the walk ended red — never a silent or blank RED (KLAVITYKLA-48).
    */
   reasons: string[]
+  failureKind?: FailureKind
 }
 
 const CACHE_CONFIDENCE = 1.0
@@ -233,6 +235,22 @@ class AmbiguousSelector extends Error {
 const SEVERITY: Record<Verdict, number> = { green: 0, skip: 0, amber: 1, red: 2 }
 function worse(a: Verdict, b: Verdict): Verdict {
   return SEVERITY[b] > SEVERITY[a] ? b : a
+}
+
+export function failureKindForThrownError(_error: unknown): FailureKind {
+  return "crash"
+}
+
+export function failureKindForExpectationFailure(): FailureKind {
+  return "regression"
+}
+
+export function tagRedEvidence<T extends Record<string, unknown>>(failureKind: FailureKind, evidence: T): T & { failureKind: FailureKind } {
+  return { ...evidence, failureKind }
+}
+
+function worseFailureKind(a: FailureKind | null, b: FailureKind): FailureKind {
+  return a === "crash" || b === "crash" ? "crash" : "regression"
 }
 
 // A locator "resolves" iff it matches exactly one element. Visibility is checked by the action
@@ -496,6 +514,7 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
   const deadline = opts.deadlineMs ? Date.now() + opts.deadlineMs : Infinity
   let deadlineHit = false
   let cancelledBySignal = false
+  let redFailureKind: FailureKind | null = null
   const shotUploads = opts.stepShots
     ? createStepShotUploadQueue(projectId, opts.shotUploader ?? defaultShotUploader)
     : null
@@ -610,13 +629,16 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
 
       const evBefore = evCol.offsets()
       const stepStart = Date.now()
-      const { tier, verdict, healed, llmCalls: stepLlm } = await runOneStep(projectId, runId, trail.id, page, step, opts, opTimeout, deadline, { col: evCol, before: evBefore, start: stepStart }, shotUploads)
-      stepSummaries.push({ stepId: step.id, idx: step.idx, tier, verdict, healed })
+      const { tier, verdict, healed, llmCalls: stepLlm, failureKind } = await runOneStep(projectId, runId, trail.id, page, step, opts, opTimeout, deadline, { col: evCol, before: evBefore, start: stepStart }, shotUploads)
+      stepSummaries.push({ stepId: step.id, idx: step.idx, tier, verdict, healed, ...(failureKind ? { failureKind } : {}) })
       if (healed) healedCount++
       llmCalls += stepLlm
       walkVerdict = worse(walkVerdict, verdict)
       // KLAVITYKLA-48: every RED must carry a reason — accumulate per-step so the Walk summary is never silent.
-      if (verdict === "red") redReasons.push(`step ${step.idx} (${step.action}${step.target?.accessibleName ? ` "${step.target.accessibleName}"` : ""}): RED`)
+      if (verdict === "red") {
+        redReasons.push(`step ${step.idx} (${step.action}${step.target?.accessibleName ? ` "${step.target.accessibleName}"` : ""}): RED`)
+        redFailureKind = worseFailureKind(redFailureKind, failureKind ?? failureKindForExpectationFailure())
+      }
 
       if (capture) {
         try {
@@ -643,10 +665,13 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
 
     // KLA-74: include browser diagnostics in the walk summary when anything was captured.
     const evSummary = evCol.hasEvidence() ? evCol.summary() : null
+    const walkFailureKind = walkVerdict === "red"
+      ? (deadlineHit || cancelledBySignal ? failureKindForThrownError(deadlineHit ? "deadline_exceeded" : "cancelled") : redFailureKind ?? failureKindForExpectationFailure())
+      : null
     await finishWalk(projectId, runId, {
       status: walkVerdict,
       llmCalls,
-      summary: { healedCount, stepCount: steps.length, ...(deadlineHit ? { error: "deadline_exceeded" } : cancelledBySignal ? { error: "cancelled" } : {}), ...(evSummary ? { evidence: evSummary } : {}) },
+      summary: { healedCount, stepCount: steps.length, ...(walkFailureKind ? { failureKind: walkFailureKind } : {}), ...(deadlineHit ? { error: "deadline_exceeded" } : cancelledBySignal ? { error: "cancelled" } : {}), ...(evSummary ? { evidence: evSummary } : {}) },
     })
 
     if (walkVerdict === "red") {
@@ -659,7 +684,7 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
         console.warn("[trails-replay] saveReplay failed:", String(e))
       }
     }
-    return { runId, verdict: walkVerdict, llmCalls, steps: stepSummaries, healedCount, reasons: redReasons, ...(evSummary ? { evidence: evSummary } : {}) }
+    return { runId, verdict: walkVerdict, llmCalls, steps: stepSummaries, healedCount, reasons: redReasons, ...(walkFailureKind ? { failureKind: walkFailureKind } : {}), ...(evSummary ? { evidence: evSummary } : {}) }
   } catch (e) {
     // Anything thrown (e.g. an unreachable fixtureUrl) must STILL finalize the run — never leave it
     // 'running'. The Walk is RED and the error is recorded in the summary for the trace viewer.
@@ -668,10 +693,10 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
     await finishWalk(projectId, runId, {
       status: "red",
       llmCalls,
-      summary: { ...redReasons.length ? { reasons: redReasons } : {}, error: String(e), ...(evSummaryCatch ? { evidence: evSummaryCatch } : {}) },
+      summary: { ...redReasons.length ? { reasons: redReasons } : {}, failureKind: failureKindForThrownError(e), error: String(e), ...(evSummaryCatch ? { evidence: evSummaryCatch } : {}) },
     })
     notifyWalkRed({ trailName: trail.name, trailId, projectId, runId, reasons: redReasons, at: Date.now() }).catch(() => {})
-    return { runId, verdict: "red", llmCalls, steps: stepSummaries, healedCount, reasons: redReasons, ...(evSummaryCatch ? { evidence: evSummaryCatch } : {}) }
+    return { runId, verdict: "red", llmCalls, steps: stepSummaries, healedCount, reasons: redReasons, failureKind: failureKindForThrownError(e), ...(evSummaryCatch ? { evidence: evSummaryCatch } : {}) }
   } finally {
     if (stopLiveScreencast) {
       try { await stopLiveScreencast() } catch {}
@@ -682,7 +707,7 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
   }
 }
 
-interface OneStepResult { tier: Tier; verdict: Verdict; healed: boolean; llmCalls: number }
+interface OneStepResult { tier: Tier; verdict: Verdict; healed: boolean; llmCalls: number; failureKind?: FailureKind }
 
 // KLA-74: evidence context threaded into runOneStep + callees so they can inject
 // durationMs + per-step browser events into every addRunStep evidence blob.
@@ -732,9 +757,9 @@ async function runOneStep(
   if (step.action === "callModule") {
     await addStepRun({
       runId, trailId, stepId: step.id, idx: step.idx, tier: "none", verdict: "red", confidence: 0, healed: false,
-      evidence: { action: "callModule", error: "module not expanded — module missing or empty", actionValue: step.actionValue },
+      evidence: tagRedEvidence(failureKindForExpectationFailure(), { action: "callModule", error: "module not expanded — module missing or empty", actionValue: step.actionValue }),
     })
-    return { tier: "none", verdict: "red", healed: false, llmCalls: 0 }
+    return { tier: "none", verdict: "red", healed: false, llmCalls: 0, failureKind: failureKindForExpectationFailure() }
   }
   // navigate / wait have no element to resolve.
   if (step.action === "navigate") {
@@ -788,9 +813,9 @@ async function runOneStep(
       // KLA-82: emit a heuristic Finding for urlMatches failures so they appear in reports.
       const verdict: Verdict = "red"
       await addStepRunWithShot({ runId, trailId, stepId: step.id, idx: step.idx, tier: "none", verdict, confidence: 1, diagnosis: "regression", healed: false,
-        evidence: { reason: "checkpoint_failed", checkpoint: step.checkpoint?.description ?? null, recordedStep: recordedStep(null, fp) },
+        evidence: tagRedEvidence(failureKindForExpectationFailure(), { reason: "checkpoint_failed", checkpoint: step.checkpoint?.description ?? null, recordedStep: recordedStep(null, fp) }),
       })
-      return { tier: "none", verdict, healed: false, llmCalls: 0 }
+      return { tier: "none", verdict, healed: false, llmCalls: 0, failureKind: failureKindForExpectationFailure() }
     }
     await addStepRunWithShot({ runId, trailId, stepId: step.id, idx: step.idx, tier: "none", verdict: "green", confidence: 1, healed: false,
       evidence: { checkpoint: step.checkpoint?.description ?? null, recordedStep: recordedStep(null, fp) },
@@ -823,7 +848,7 @@ async function runOneStep(
         await recordFinding(projectId, {
           runId, trailId, stepId: step.id,
           kind: "regression", title,
-          evidence: { selector: e.selector, matchCount: e.matchCount, stepAction: step.action },
+          evidence: tagRedEvidence(failureKindForExpectationFailure(), { selector: e.selector, matchCount: e.matchCount, stepAction: step.action }),
           confidence: 1.0,
           dedupKey: `ambiguous_selector:${trailId}:${step.id}`,
           contentSig: contentSigFor({ kind: "regression", selector: e.selector, urlPath: page.url() }),
@@ -834,13 +859,14 @@ async function runOneStep(
         runId, trailId, stepId: step.id, idx: step.idx,
         tier: "cache", verdict: "red", confidence: 1, diagnosis: "locator_drift", healed: false,
         evidence: {
+          failureKind: failureKindForExpectationFailure(),
           reason: "ambiguous_selector",
           selector: e.selector,
           matchCount: e.matchCount,
           recordedStep: recordedStep(e.selector, fp),
         },
       })
-      return { tier: "cache", verdict: "red", healed: false, llmCalls: 0 }
+      return { tier: "cache", verdict: "red", healed: false, llmCalls: 0, failureKind: failureKindForExpectationFailure() }
     }
     if (e instanceof ElementGone) {
       // All deterministic tiers (0/1) are exhausted. Diagnosis-first: this is locator_drift we could
@@ -869,7 +895,7 @@ async function runOneStep(
         const title = `Element not found: ${fp?.accessibleName ?? fp?.text ?? step.action}${step.target?.role ? ` (${step.target.role})` : ""}`
         await recordFinding(projectId, {
           runId, trailId, stepId: step.id, kind: "regression", title,
-          evidence: { reason: "element_gone", fingerprint: fp, cachedSelector, action: step.action, pageUrl: stepPageUrl },
+          evidence: tagRedEvidence(failureKindForExpectationFailure(), { reason: "element_gone", fingerprint: fp, cachedSelector, action: step.action, pageUrl: stepPageUrl }),
           groundQuote: title, confidence: 0.7,
           dedupKey: `${trailId}:${step.id}:element-gone`,
           contentSig: contentSigFor({ kind: "regression", fp, urlPath: stepPageUrl }),
@@ -880,6 +906,7 @@ async function runOneStep(
         runId, trailId, stepId: step.id, idx: step.idx,
         tier: "vision", verdict, confidence: 0, diagnosis: "locator_drift", healed: false,
         evidence: {
+          failureKind: failureKindForExpectationFailure(),
           reason: "element_gone",
           needsVision: true,
           fingerprint: fp,
@@ -888,7 +915,7 @@ async function runOneStep(
           recordedStep: recordedStep(cachedSelector, fp),
         },
       })
-      return { tier: "vision", verdict, healed: false, llmCalls: 0 }
+      return { tier: "vision", verdict, healed: false, llmCalls: 0, failureKind: failureKindForExpectationFailure() }
     }
     throw e
   }
@@ -985,7 +1012,7 @@ async function runOneStep(
         : `Action failed: ${step.action}${fp?.accessibleName ? ` on "${fp.accessibleName}"` : ""}`
       await recordFinding(projectId, {
         runId, trailId, stepId: step.id, kind: "regression", title,
-        evidence: { reason: isAssert ? "checkpoint_failed" : "action_failed", action: step.action, selector: resolved.selector, checkpoint: step.checkpoint?.description ?? null, pageUrl: stepPageUrl },
+        evidence: tagRedEvidence(failureKindForExpectationFailure(), { reason: isAssert ? "checkpoint_failed" : "action_failed", action: step.action, selector: resolved.selector, checkpoint: step.checkpoint?.description ?? null, pageUrl: stepPageUrl }),
         groundQuote: title, confidence: 0.8,
         dedupKey: `${trailId}:${step.id}:${isAssert ? "checkpoint-failed" : "action-failed"}`,
         contentSig: contentSigFor({ kind: "regression", fp, urlPath: stepPageUrl }),
@@ -996,12 +1023,13 @@ async function runOneStep(
       runId, trailId, stepId: step.id, idx: step.idx,
       tier: resolved.tier, verdict, confidence: resolved.confidence, diagnosis: isAssert ? "regression" : "interaction_change", healed: false,
       evidence: {
+        failureKind: failureKindForExpectationFailure(),
         reason: isAssert ? "checkpoint_failed" : "action_failed",
         checkpoint: step.checkpoint?.description ?? null,
         recordedStep: recordedStep(resolved.selector, fp),
       },
     })
-    return { tier: resolved.tier, verdict, healed: false, llmCalls: 0 }
+    return { tier: resolved.tier, verdict, healed: false, llmCalls: 0, failureKind: failureKindForExpectationFailure() }
   }
 
   // Capture the pre-heal selector BEFORE the upsert overwrites it (heal-as-reviewable-diff, §6.4).
@@ -1087,7 +1115,7 @@ async function runVisionTier2(
     if (!opts.suppressFindings) {
       await recordFinding(projectId, {
         runId, trailId, stepId: step.id, kind: "regression", title,
-        evidence: { reason: "checkpoint_gone", target: fp, pageUrl: opts.fixtureUrl, checkpoint: step.checkpoint?.description ?? null },
+        evidence: tagRedEvidence(failureKindForExpectationFailure(), { reason: "checkpoint_gone", target: fp, pageUrl: opts.fixtureUrl, checkpoint: step.checkpoint?.description ?? null }),
         groundQuote: title, confidence: 1,
         dedupKey: `${trailId}:${step.id}:checkpoint-gone`,
         contentSig: contentSigFor({ kind: "regression", fp, urlPath: stepPageUrl }),
@@ -1096,9 +1124,9 @@ async function runVisionTier2(
     await addStepRun({
       runId, trailId, stepId: step.id, idx: step.idx,
       tier: "vision", verdict: "red", confidence: 1, diagnosis: "regression", healed: false,
-      evidence: { reason: "checkpoint_gone", target: fp, cachedSelector, needsVision: false, checkpoint: step.checkpoint?.description ?? null, recordedStep: recordedStep(cachedSelector, fp) },
+      evidence: tagRedEvidence(failureKindForExpectationFailure(), { reason: "checkpoint_gone", target: fp, cachedSelector, needsVision: false, checkpoint: step.checkpoint?.description ?? null, recordedStep: recordedStep(cachedSelector, fp) }),
     })
-    return { tier: "vision", verdict: "red", healed: false, llmCalls: 0 }
+    return { tier: "vision", verdict: "red", healed: false, llmCalls: 0, failureKind: failureKindForExpectationFailure() }
   }
 
   // Per-step resilience (production hardening): a bad/timed-out/malformed vision response — at the
@@ -1140,9 +1168,9 @@ async function runVisionTier2(
     await addStepRun({
       runId, trailId, stepId: step.id, idx: step.idx,
       tier: "vision", verdict: "red", confidence: 0, diagnosis: "runtime_error", healed: false,
-      evidence: { reason: "vision_error", needsVision: true, error: String(e), target: fp, checkpoint: step.checkpoint?.description ?? null, recordedStep: recordedStep(cachedSelector, fp) },
+      evidence: tagRedEvidence(failureKindForThrownError(e), { reason: "vision_error", needsVision: true, error: String(e), target: fp, checkpoint: step.checkpoint?.description ?? null, recordedStep: recordedStep(cachedSelector, fp) }),
     })
-    return { tier: "vision", verdict: "red", healed: false, llmCalls: 0 }
+    return { tier: "vision", verdict: "red", healed: false, llmCalls: 0, failureKind: failureKindForThrownError(e) }
   }
 
   const domExcerpt = dom.slice(0, 2000)
@@ -1153,7 +1181,7 @@ async function runVisionTier2(
     if (!opts.suppressFindings) {
       await recordFinding(projectId, {
         runId, trailId, stepId: step.id, kind: "regression", title,
-        evidence: { rationale: decision.rationale, target: fp, pageUrl: opts.fixtureUrl, domExcerpt },
+        evidence: tagRedEvidence(failureKindForExpectationFailure(), { rationale: decision.rationale, target: fp, pageUrl: opts.fixtureUrl, domExcerpt }),
         groundQuote: decision.rationale, confidence: decision.confidence,
         dedupKey: `${trailId}:${step.id}:gone`,
         contentSig: contentSigFor({ kind: "regression", fp, urlPath: stepPageUrl }),
@@ -1162,9 +1190,9 @@ async function runVisionTier2(
     await addStepRun({
       runId, trailId, stepId: step.id, idx: step.idx,
       tier: "vision", verdict: "red", confidence: decision.confidence, diagnosis: "regression", healed: false,
-      evidence: { reason: "vision_regression", classification: result.classification, rationale: decision.rationale, target: fp, needsVision: false, checkpoint: step.checkpoint?.description ?? null, recordedStep: recordedStep(cachedSelector, fp) },
+      evidence: tagRedEvidence(failureKindForExpectationFailure(), { reason: "vision_regression", classification: result.classification, rationale: decision.rationale, target: fp, needsVision: false, checkpoint: step.checkpoint?.description ?? null, recordedStep: recordedStep(cachedSelector, fp) }),
     })
-    return { tier: "vision", verdict: "red", healed: false, llmCalls: 1 }
+    return { tier: "vision", verdict: "red", healed: false, llmCalls: 1, failureKind: failureKindForExpectationFailure() }
   }
 
   // ── heal: confirm intent (role consistency, §6.2), act, AMBER, persist + reviewable diff ──
