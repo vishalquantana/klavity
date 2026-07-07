@@ -18,8 +18,13 @@ import { isKrefSelector } from "./trails-snapshot"
 import type { StepAction } from "./trails-types"
 import { configuredVisionResolver, type VisionResolver } from "./trails-vision"
 
-export const AUTHOR_MAX_STEPS = 40
-export const AUTHOR_MAX_COST_USD = 0.15
+const AUTOSIM_MAX_STEPS_DEFAULT = 40
+const AUTOSIM_MAX_COST_USD_DEFAULT = 0.15
+const AUTOSIM_MAX_MS_DEFAULT = 300_000
+
+export const AUTHOR_MAX_STEPS = Number(process.env.AUTOSIM_MAX_STEPS) || AUTOSIM_MAX_STEPS_DEFAULT
+export const AUTHOR_MAX_COST_USD = Number(process.env.AUTOSIM_MAX_COST_USD) || AUTOSIM_MAX_COST_USD_DEFAULT
+export const AUTOSIM_DEADLINE_MS_DEFAULT = Number(process.env.AUTOSIM_MAX_MS) || AUTOSIM_MAX_MS_DEFAULT
 const MAX_CONSECUTIVE_MISSES = 3
 const ACTION_TIMEOUT = 10_000
 
@@ -62,7 +67,8 @@ export async function authorTrail(
   // page.content()/screenshot never settle) held the shared walk slot INDEFINITELY — observed
   // live on prod 2026-07-04: dead browser, slot stuck, every walk/authoring 409ing until a
   // service restart. Every per-iteration op below is also individually bounded.
-  const deadlineAt = Date.now() + (opts.driveDeadlineMs ?? 300_000)
+  const driveDeadlineMs = opts.driveDeadlineMs ?? AUTOSIM_DEADLINE_MS_DEFAULT
+  const deadlineAt = Date.now() + driveDeadlineMs
   const bounded = <T>(p: Promise<T>, ms: number, what: string): Promise<T> =>
     Promise.race([p, new Promise<never>((_, rej) => setTimeout(() => rej(new Error(`${what} timed out after ${ms}ms`)), ms))])
   // Browser via the adapter seam: local Playwright by default; Puppeteer→remote (Steel) when
@@ -83,7 +89,7 @@ export async function authorTrail(
     }
     for (let idx = 0; idx < AUTHOR_MAX_STEPS; idx++) {
       if (costUsd >= AUTHOR_MAX_COST_USD) return await stall(`authoring budget cap $${AUTHOR_MAX_COST_USD} reached after ${llmCalls} model calls`)
-      if (Date.now() > deadlineAt) return await stall(`authoring drive deadline exceeded (${Math.round((opts.driveDeadlineMs ?? 300_000) / 1000)}s) after ${log.length} steps`)
+      if (Date.now() > deadlineAt) return await stall(`authoring drive deadline exceeded (${Math.round(driveDeadlineMs / 1000)}s) after ${log.length} steps`)
       const includeShot = !textFirst || misses > 0
       const screenshotB64 = includeShot
         ? await bounded(page.screenshotJpeg(60, 15_000), 20_000, "screenshot")
