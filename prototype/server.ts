@@ -32,7 +32,7 @@ import { AsyncLocalStorage } from "node:async_hooks"
 const reqCtx = new AsyncLocalStorage<{ boundProject?: string | null }>()
 import { ingestSnapOrSim } from "./lib/expectations-ingest"
 import { runSimReviews, decodeDataUrl as decodeDataUrlLib, splitUrl as splitUrlLib, buildSimRunSummary, activeReviewIndexes, type SimReview } from "./lib/sim-review"
-import { trailsDashboardData } from "./lib/trails-dashboard"
+import { trailsDashboardData, walkTrends } from "./lib/trails-dashboard"
 import { fileFindingById, dismissFinding, realFiler } from "./lib/trails-findings-gate"
 import { getReplay, runsWithReplay } from "./lib/trails-replay"
 import { saveFeedbackReplay, getFeedbackReplay, feedbackIdsWithReplay, pruneOldFeedbackReplays } from "./lib/feedback-replay"
@@ -2918,7 +2918,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
     // ── Klavity OS Trails (Layer E) — project-scoped, authed. Placed before the generic /api/ gate so
     // unauthenticated API calls return a JSON 401 (not a /login redirect), mirroring resolveProject usage.
-    if (path === "/api/trails/dashboard" || path.startsWith("/api/trails/findings/") || path.startsWith("/api/trails/walks/")
+    if (path === "/api/trails/dashboard" || path === "/api/trails/trends" || path.startsWith("/api/trails/findings/") || path.startsWith("/api/trails/walks/")
         || path === "/api/trails/author" || path.startsWith("/api/trails/author/")
         || /^\/api\/trails\/[^/]+$/.test(path)
         || /^\/api\/trails\/[^/]+\/(walk|approve|steps|judge-persona)$/.test(path)
@@ -2940,6 +2940,22 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           return json({ email: meT, project: { id: projectId, role: resolved.access }, ...data, recentWalks })
         } catch (e) {
           return json(oops(e, "trails-dashboard"), 500)
+        }
+      }
+
+      // GET /api/trails/trends — KLA-78: walk metrics bucketed by calendar day for a project/trail.
+      // Returns { buckets: TrendBucket[] } ordered oldest→newest over the last ?days=N (default 30).
+      // Optional ?trail=<trailId> scopes to a single Trail. Running walks are excluded (non-terminal).
+      if (req.method === "GET" && path === "/api/trails/trends") {
+        try {
+          const params = new URL(req.url).searchParams
+          const rawDays = params.get("days")
+          const bucketDays = rawDays ? Math.max(1, Math.min(365, Number(rawDays) || 30)) : 30
+          const trailId = params.get("trail") || undefined
+          const buckets = await walkTrends(projectId, { trailId, bucketDays })
+          return json({ buckets })
+        } catch (e) {
+          return json(oops(e, "trails-trends"), 500)
         }
       }
 
