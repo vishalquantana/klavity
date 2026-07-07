@@ -4,11 +4,12 @@
 // it never runs under tests (NODE_ENV==='test').
 import { db, deleteExpiredOtps, deleteExpiredSessions, expiredScreenshotKeys, deleteScreenshotRow } from "./db"
 import { deleteObject } from "./s3"
+import { pruneRunHistory } from "./trails-run-retention"
 
-export type RetentionResult = { otps: number; sessions: number; screenshots: number; s3Errors: number }
+export type RetentionResult = { otps: number; sessions: number; screenshots: number; s3Errors: number; runsDeleted: number }
 
 export async function runRetentionSweep(now = Date.now()): Promise<RetentionResult> {
-  const result: RetentionResult = { otps: 0, sessions: 0, screenshots: 0, s3Errors: 0 }
+  const result: RetentionResult = { otps: 0, sessions: 0, screenshots: 0, s3Errors: 0, runsDeleted: 0 }
   if (!db) return result // no DB configured → nothing to sweep
 
   result.otps = await deleteExpiredOtps(now)
@@ -28,8 +29,15 @@ export async function runRetentionSweep(now = Date.now()): Promise<RetentionResu
     result.screenshots++
   }
 
-  if (result.otps || result.sessions || result.screenshots) {
-    console.log(`✓ retention sweep: ${result.otps} otps, ${result.sessions} sessions, ${result.screenshots} screenshots (${result.s3Errors} s3 errors)`)
+  // KLA-96: prune old run history (trail_runs + children) to prevent unbounded DB growth.
+  const runPrune = await pruneRunHistory(db, { now }).catch((e: any) => {
+    console.warn("retention: run-history prune failed:", e?.message || e)
+    return null
+  })
+  if (runPrune) result.runsDeleted = runPrune.runsDeleted
+
+  if (result.otps || result.sessions || result.screenshots || result.runsDeleted) {
+    console.log(`✓ retention sweep: ${result.otps} otps, ${result.sessions} sessions, ${result.screenshots} screenshots (${result.s3Errors} s3 errors), ${result.runsDeleted} old runs`)
   }
   return result
 }
