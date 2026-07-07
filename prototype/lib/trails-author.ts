@@ -336,7 +336,18 @@ export async function authorTrail(
         entry.selector = safeSelector
         misses++
         history.push(`${a.op}${safeSelector ? " " + safeSelector : ""} — FAILED: ${safeMsg}`)
-        if (misses >= MAX_CONSECUTIVE_MISSES) { log.push(entry); await opts.onStep?.(log); return await stall(`stuck after ${misses} failed attempts; last: ${safeMsg}`, page.url()) }
+        if (misses >= MAX_CONSECUTIVE_MISSES) {
+          try {
+            const b64 = await page.screenshotJpeg(45, 10_000)
+            if (b64 && b64.length > 0) {
+              const bytes = Buffer.from(b64, "base64")
+              const upload = opts.shotUploader ? await opts.shotUploader(bytes, "image/jpeg") : await uploadScreenshotMeta(bytes, "image/jpeg")
+              entry.screenshotKey = upload.key
+            }
+          } catch {}
+          entry.krefSnapshot = dom.length > 50000 ? dom.slice(0, 50000) + "\n...[TRUNCATED]" : dom
+          log.push(entry); await opts.onStep?.(log); return await stall(`stuck after ${misses} failed attempts; last: ${safeMsg}`, page.url())
+        }
       }
       try {
         const b64 = await page.screenshotJpeg(45, 10_000)
