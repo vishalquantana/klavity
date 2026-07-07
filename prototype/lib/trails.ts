@@ -380,7 +380,7 @@ function rowToFinding(r: any): Finding {
 
 export async function recordFinding(
   projectId: string,
-  input: { runId: string; trailId: string; stepId?: string; kind: FindingKind; title: string; evidence?: Record<string, unknown>; groundQuote?: string; confidence: number; dedupKey: string; contentSig?: string | null; status?: FindingStatus },
+  input: { runId: string; trailId: string; stepId?: string; kind: FindingKind; title: string; evidence?: Record<string, unknown>; groundQuote?: string; confidence: number; dedupKey: string; contentSig?: string | null; status?: FindingStatus; urlPath?: string | null },
 ): Promise<{ id: string; deduped: boolean; recurrence: number }> {
   // ── Cross-trail content dedup (KLA-77) ─────────────────────────────────────
   // If a content sig matches an existing finding in this project (regardless of which Trail or
@@ -403,7 +403,7 @@ export async function recordFinding(
       const recurrence = Number(row.recurrence) + 1
       try {
         const { ingestFinding } = await import("./expectations-ingest")
-        await ingestFinding(db!, { projectId, findingId: id, title: input.title, dedupKey: input.dedupKey, urlPath: null })
+        await ingestFinding(db!, { projectId, findingId: id, title: input.title, dedupKey: input.dedupKey, urlPath: input.urlPath ?? null })
       } catch (e) { console.warn(`[expectations] recordFinding content-dedup ingest skipped:`, String(e)) }
       return { id, deduped: true, recurrence }
     }
@@ -432,7 +432,7 @@ export async function recordFinding(
   const deduped = id !== candidateId
   try {
     const { ingestFinding } = await import("./expectations-ingest")
-    await ingestFinding(db!, { projectId, findingId: id, title: input.title, dedupKey: input.dedupKey, urlPath: null })
+    await ingestFinding(db!, { projectId, findingId: id, title: input.title, dedupKey: input.dedupKey, urlPath: input.urlPath ?? null })
   } catch (e) { console.warn(`[expectations] recordFinding ${deduped ? "dedup " : ""}ingest skipped:`, String(e)) }
   return { id, deduped, recurrence }
 }
