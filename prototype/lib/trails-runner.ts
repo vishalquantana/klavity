@@ -12,6 +12,7 @@ import type { Browser, BrowserContext, Page, Locator } from "playwright"
 import { acquirePlaywrightBrowser, playwrightContextOptionsForTrailViewport, startCdpScreencast } from "./trails-browser-page"
 import { uploadScreenshotMeta } from "./s3"
 import type { Fingerprint, Tier, Verdict, TrailStep, NetworkMock } from "./trails-types"
+import { expandModuleSteps } from "./trails-modules"
 import {
   getTrail, listTrailSteps, getCacheForStep, upsertLocatorCache,
   startWalk, addRunStep, finishWalk, recordFinding,
@@ -360,7 +361,10 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
   // Draft-gate (AutoSims F1): draft Trails and explicit Verification Walks never file Findings.
   // Evidence (run_steps) is still captured so the author can review what happened.
   opts = { ...opts, suppressFindings: opts.suppressFindings ?? (trail.status === "draft") }
-  const steps = await listTrailSteps(projectId, trailId)
+  // KLA-106: expand callModule steps inline before walking. Pure DB read, backward-compatible:
+  // a trail with no callModule steps is returned unchanged by expandModuleSteps.
+  const rawSteps = await listTrailSteps(projectId, trailId)
+  const steps = await expandModuleSteps(projectId, rawSteps)
 
   // Adopt a pre-created Walk row (Plan G trigger) so run_steps/replay/verdict share the caller's runId;
   // otherwise mint our own as before (every existing caller). No behavior change when runId is absent.
@@ -552,6 +556,15 @@ async function runOneStep(
   const stepPageUrl = page.url()
   const recordedStep = (selector: string | null | undefined, target?: Fingerprint | null) =>
     recordedStepState(step, selector, stepPageUrl, target)
+  // A callModule step that survived expansion (unknown/empty module) → record RED so the author
+  // sees it rather than crashing the whole walk with an unhandled action.
+  if (step.action === "callModule") {
+    await addRunStep(projectId, {
+      runId, trailId, stepId: step.id, idx: step.idx, tier: "none", verdict: "red", confidence: 0, healed: false,
+      evidence: { action: "callModule", error: "module not expanded — module missing or empty", actionValue: step.actionValue },
+    })
+    return { tier: "none", verdict: "red", healed: false, llmCalls: 0 }
+  }
   // navigate / wait have no element to resolve.
   if (step.action === "navigate") {
     // In Layer C the whole walk is scoped to fixtureUrl; re-navigate to it (origin already loaded).

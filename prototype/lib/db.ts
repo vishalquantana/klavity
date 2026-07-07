@@ -287,6 +287,28 @@ export async function applySchema(c: Client) {
        created_at INTEGER NOT NULL
      )`,
     `CREATE INDEX IF NOT EXISTS tstep_trail_idx ON trail_steps(trail_id, idx)`,
+    // ── KLA-106: Trail Modules — named reusable step-groups ──
+    `CREATE TABLE IF NOT EXISTS trail_modules (
+       id TEXT PRIMARY KEY,
+       project_id TEXT NOT NULL,
+       name TEXT NOT NULL,
+       description TEXT NOT NULL DEFAULT '',
+       created_at INTEGER NOT NULL,
+       updated_at INTEGER NOT NULL
+     )`,
+    `CREATE INDEX IF NOT EXISTS tmod_proj_idx ON trail_modules(project_id)`,
+    `CREATE TABLE IF NOT EXISTS trail_module_steps (
+       id TEXT PRIMARY KEY,
+       module_id TEXT NOT NULL,
+       project_id TEXT NOT NULL,
+       idx INTEGER NOT NULL,
+       action TEXT NOT NULL,
+       action_value TEXT,
+       target_json TEXT,
+       checkpoint_json TEXT,
+       created_at INTEGER NOT NULL
+     )`,
+    `CREATE INDEX IF NOT EXISTS tmodstep_mod_idx ON trail_module_steps(module_id, idx)`,
     `CREATE TABLE IF NOT EXISTS locator_cache (
        id TEXT PRIMARY KEY,
        project_id TEXT NOT NULL,

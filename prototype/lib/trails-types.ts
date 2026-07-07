@@ -2,7 +2,7 @@
 
 export type TrailStatus = "draft" | "active" | "paused" | "archived"
 export type AuthorKind = "llm" | "human" | "mixed"
-export type StepAction = "navigate" | "click" | "type" | "select" | "assert" | "wait" | "hover" | "keyPress" | "clearField"
+export type StepAction = "navigate" | "click" | "type" | "select" | "assert" | "wait" | "hover" | "keyPress" | "clearField" | "callModule"
 export type Tier = "cache" | "candidate" | "vision" | "none"
 export type Verdict = "green" | "amber" | "red" | "skip"
 export type FailureClass =
@@ -106,6 +106,38 @@ export interface Finding {
   status: FindingStatus; connectorRef: string | null; connectorError: string | null
   createdAt: number; updatedAt: number
 }
+
+// ── Trail Modules (KLA-106): named reusable step-groups ──────────────────────────────────────────
+
+/**
+ * A named, reusable group of steps. Trails reference modules via a `callModule` step whose
+ * `actionValue` is `JSON.stringify({ moduleId, params })`. At runtime, `expandModuleSteps`
+ * (trails-modules.ts) inlines the module's steps with `{{param:name}}` substitution applied.
+ */
+export interface TrailModule {
+  id: string
+  projectId: string
+  name: string
+  description: string
+  createdAt: number
+  updatedAt: number
+}
+
+/** A single step stored inside a TrailModule. Same shape as TrailStep but references moduleId. */
+export interface TrailModuleStep {
+  id: string
+  moduleId: string
+  projectId: string
+  idx: number
+  action: Exclude<StepAction, "callModule">  // modules cannot nest callModule (v1)
+  actionValue: string | null
+  target: Fingerprint | null
+  checkpoint: Checkpoint | null
+  createdAt: number
+}
+
+/** Params passed at a callModule call site: `Record<paramName, resolvedValue>`. */
+export type ModuleParams = Record<string, string>
 
 // ── Network mocking (KLA-111) ─────────────────────────────────────────────────────────────────────
 export type NetworkMockAction = "stub" | "block"
