@@ -74,6 +74,42 @@ test("(i) walks GREEN on the unchanged mockup with tier 'cache' on every step an
   expect(runSteps.every((r) => r.tier === "cache")).toBe(true)
 }, 30000)
 
+test("(i.b) run evidence pins the recorded step state, not just selector replay hints", async () => {
+  const projectId = "proj_replay_pin"
+  const { trailId, stepIds } = await crystallize(projectId, checkoutTrajectory())
+
+  const summary = await walkTrail(projectId, trailId, { fixtureUrl: fixtureUrl("checkout-mockup.html") })
+
+  await T.updateTrailStep(projectId, stepIds[0], { actionValue: "mutated@test.dev" })
+  await T.upsertLocatorCache(projectId, {
+    trailId,
+    stepId: stepIds[0],
+    cacheKey: "mutated-cache-key",
+    resolvedSelector: "#mutated-email",
+    confidence: 1,
+    source: "heal",
+  })
+
+  const runSteps = await T.listRunSteps(projectId, summary.runId)
+  const emailStep = runSteps.find((r) => r.idx === 0)!
+  const recorded = (emailStep.evidence as any)?.recordedStep
+
+  expect(recorded).toMatchObject({
+    stepId: stepIds[0],
+    idx: 0,
+    action: "type",
+    actionValue: "user@test.dev",
+    selector: "#email",
+    target: {
+      role: "textbox",
+      accessibleName: "Email",
+      testId: "email-input",
+    },
+  })
+  expect(recorded.actionValue).not.toBe("mutated@test.dev")
+  expect(recorded.selector).not.toBe("#mutated-email")
+}, 30000)
+
 test("(ii) Tier 1 heals a cosmetic rename by role+accessible-name -> AMBER (healed-but-unconfirmed, never green), zero LLM, healed selector persisted", async () => {
   const projectId = "proj_heal"
   const { trailId, stepIds } = await crystallize(projectId, checkoutTrajectory())
