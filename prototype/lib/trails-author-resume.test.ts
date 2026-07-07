@@ -16,6 +16,9 @@ import type { AuthorModel } from "./trails-author-model"
 import type { AuthorCheckpoint } from "./trails-author"
 const { authorTrail, createAuthorSession, updateAuthorSession, getAuthorSession } = await import("./trails-author")
 
+// authorTrail tests launch a real browser — only run when KLAV_E2E=1
+const RUN_BROWSER = !!process.env.KLAV_E2E
+
 const FIXTURE_URL = "data:text/html," + encodeURIComponent(`<html><body><button id="ok">OK</button></body></html>`)
 const noSleepOpts = { sleepMs: () => Promise.resolve() }
 
@@ -33,7 +36,7 @@ function stallModel(): AuthorModel {
 
 // ── Checkpoint is emitted after each step ────────────────────────────────────────────────────────
 
-test("onCheckpoint is called at least once after a successful run", async () => {
+test.if(RUN_BROWSER)("onCheckpoint is called at least once after a successful run", async () => {
   const checkpoints: AuthorCheckpoint[] = []
   const out = await authorTrail("proj_cp", { name: "T", objective: "test", baseUrl: FIXTURE_URL },
     makeOpts(doneModel(), { onCheckpoint: (cp: AuthorCheckpoint) => { checkpoints.push(cp) } }))
@@ -45,7 +48,7 @@ test("onCheckpoint is called at least once after a successful run", async () => 
   expect(checkpoints.length).toBeGreaterThanOrEqual(0)
 })
 
-test("onCheckpoint is called on stall with the accumulated trajectory", async () => {
+test.if(RUN_BROWSER)("onCheckpoint is called on stall with the accumulated trajectory", async () => {
   const checkpoints: AuthorCheckpoint[] = []
   const out = await authorTrail("proj_cp2", { name: "T", objective: "test", baseUrl: FIXTURE_URL },
     makeOpts(stallModel(), { onCheckpoint: (cp: AuthorCheckpoint) => { checkpoints.push(cp) } }))
@@ -58,7 +61,7 @@ test("onCheckpoint is called on stall with the accumulated trajectory", async ()
   expect(Array.isArray(last.history)).toBe(true)
 })
 
-test("checkpoint carries llmCalls and costUsd", async () => {
+test.if(RUN_BROWSER)("checkpoint carries llmCalls and costUsd", async () => {
   const checkpoints: AuthorCheckpoint[] = []
   await authorTrail("proj_cp3", { name: "T", objective: "test", baseUrl: FIXTURE_URL },
     makeOpts(stallModel(), { onCheckpoint: (cp: AuthorCheckpoint) => { checkpoints.push(cp) } }))
@@ -69,7 +72,7 @@ test("checkpoint carries llmCalls and costUsd", async () => {
 
 // ── Stall crystallizes partial trail when steps exist ───────────────────────────────────────────
 
-describe("stall with partial steps", () => {
+describe.if(RUN_BROWSER)("stall with partial steps", () => {
   test("stall with no real steps returns trailId null (only initial navigate)", async () => {
     // stallModel fires immediately — the drive stalls before recording any real action.
     // traj has only the initial navigate step → too short to crystallize.
@@ -97,7 +100,7 @@ describe("stall with partial steps", () => {
 
 // ── Resume from checkpoint ───────────────────────────────────────────────────────────────────────
 
-test("resume: authorTrail picks up from checkpoint stepIdx", async () => {
+test.if(RUN_BROWSER)("resume: authorTrail picks up from checkpoint stepIdx", async () => {
   const stepsSeen: number[] = []
   let loopIdx = 0
   const model: AuthorModel = async () => {
@@ -126,7 +129,7 @@ test("resume: authorTrail picks up from checkpoint stepIdx", async () => {
   expect(out.llmCalls).toBeGreaterThanOrEqual(5)
 })
 
-test("resume: checkpoint traj is included in the crystallized trail", async () => {
+test.if(RUN_BROWSER)("resume: checkpoint traj is included in the crystallized trail", async () => {
   const fakeCheckpoint: AuthorCheckpoint = {
     traj: [
       { action: "navigate", actionValue: FIXTURE_URL, url: FIXTURE_URL, domHash: "abc" },
@@ -143,7 +146,7 @@ test("resume: checkpoint traj is included in the crystallized trail", async () =
   expect(out.trailId).not.toBeNull()
 })
 
-test("resume: cost budget cap accounts for inherited costUsd", async () => {
+test.if(RUN_BROWSER)("resume: cost budget cap accounts for inherited costUsd", async () => {
   // Checkpoint already spent right up to the cap — the next call should immediately stall.
   const { AUTHOR_MAX_COST_USD } = await import("./trails-author")
   const fakeCheckpoint: AuthorCheckpoint = {

@@ -198,6 +198,17 @@ export interface BrowserHandle {
   readonly kind: string
 }
 
+/**
+ * Run a cleanup promise with a hard timeout; silently proceeds after ms (exported for tests).
+ * Prevents a hung browser.close() / disconnect() from pinning a worker slot indefinitely.
+ */
+export async function safeClose(p: Promise<unknown>, ms = 5_000): Promise<void> {
+  await Promise.race([
+    p.then(() => {}, () => {}),
+    new Promise<void>(res => { const t = setTimeout(res, ms); t.unref?.() }),
+  ])
+}
+
 // ── Playwright impl (default) — wraps a Playwright Page, preserving current auto-wait behavior ─────
 class PlaywrightPage implements BrowserPage {
   constructor(private page: import("playwright").Page) {}
@@ -296,7 +307,7 @@ class PlaywrightHandle implements BrowserHandle {
     this.closed = true
     if (this.watchdog) clearTimeout(this.watchdog)
     this.watchdog = null
-    await this.browser.close().catch(() => {})
+    await safeClose(this.browser.close())
   }
 }
 
@@ -398,7 +409,7 @@ class PuppeteerHandle implements BrowserHandle {
     }
     return new PuppeteerPage(page)
   }
-  async close() { try { await this.browser.disconnect() } catch {} await this.release().catch(() => {}) }
+  async close() { await safeClose(this.browser.disconnect()); await safeClose(this.release()) }
 }
 
 // ── Factory ───────────────────────────────────────────────────────────────────────────────────────
@@ -539,7 +550,7 @@ export async function acquirePlaywrightBrowser(opts: AcquireOpts = {}): Promise<
       close: async () => {
         if (watchdog) clearTimeout(watchdog)
         watchdog = null
-        await browser.close().catch(() => {})
+        await safeClose(browser.close())
       },
       kind: "local",
     }
@@ -550,18 +561,24 @@ export async function acquirePlaywrightBrowser(opts: AcquireOpts = {}): Promise<
     const session: any = await (await fetch(`${apiUrl}/v1/sessions`, {
       method: "POST", headers: { "Steel-Api-Key": key, "Content-Type": "application/json" }, body: "{}",
     })).json()
-    const browser = await chromium.connectOverCDP(`${cdpBase}?apiKey=${key}&sessionId=${session.id}`)
     const release = async () => {
       await fetch(`${apiUrl}/v1/sessions/${session.id}/release`, { method: "POST", headers: { "Steel-Api-Key": key } }).catch(() => {})
     }
+    let browser: import("playwright").Browser
+    try {
+      browser = await chromium.connectOverCDP(`${cdpBase}?apiKey=${key}&sessionId=${session.id}`)
+    } catch (e) {
+      await release().catch(() => {})
+      throw e
+    }
     return {
       browser,
-      close: async () => { try { await browser.close() } catch {} await release() },
+      close: async () => { await safeClose(browser.close()); await safeClose(release()) },
       kind: "steel:" + (session.region ?? "remote"),
     }
   }
   const browser = await chromium.connectOverCDP(cdpBase)
-  return { browser, close: () => browser.close().catch(() => {}), kind: "cdp-remote" }
+  return { browser, close: () => safeClose(browser.close()), kind: "cdp-remote" }
 }
 
 async function connectRemotePuppeteer(cdpBase: string, _opts: AcquireOpts): Promise<BrowserHandle> {
@@ -572,8 +589,14 @@ async function connectRemotePuppeteer(cdpBase: string, _opts: AcquireOpts): Prom
     const session: any = await (await fetch(`${apiUrl}/v1/sessions`, {
       method: "POST", headers: { "Steel-Api-Key": key, "Content-Type": "application/json" }, body: "{}",
     })).json()
-    const browser = await puppeteer.connect({ browserWSEndpoint: `${cdpBase}?apiKey=${key}&sessionId=${session.id}`, defaultViewport: null })
     const release = async () => { await fetch(`${apiUrl}/v1/sessions/${session.id}/release`, { method: "POST", headers: { "Steel-Api-Key": key } }).catch(() => {}) }
+    let browser: any
+    try {
+      browser = await puppeteer.connect({ browserWSEndpoint: `${cdpBase}?apiKey=${key}&sessionId=${session.id}`, defaultViewport: null })
+    } catch (e) {
+      await release().catch(() => {})
+      throw e
+    }
     return new PuppeteerHandle(browser, release, session.region ?? "remote")
   }
   const browser = await puppeteer.connect({ browserWSEndpoint: cdpBase, defaultViewport: null })

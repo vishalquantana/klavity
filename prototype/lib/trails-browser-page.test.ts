@@ -4,7 +4,7 @@
 // exercised by the live spike (needs network + key), not unit-tested here.
 // acquirePlaywrightBrowser (used by the walker) is also tested here for its local/fallback path.
 import { describe, test, expect, afterAll } from "bun:test"
-import { acquireBrowser, acquirePlaywrightBrowser, playwrightContextOptionsForTrailViewport, startCdpScreencast, type BrowserHandle, type PlaywrightBrowserHandle } from "./trails-browser-page"
+import { acquireBrowser, acquirePlaywrightBrowser, playwrightContextOptionsForTrailViewport, startCdpScreencast, safeClose, type BrowserHandle, type PlaywrightBrowserHandle } from "./trails-browser-page"
 
 // Real-browser tests only run when KLAV_E2E=1 (browsers installed). CI default suite is hermetic.
 const RUN_BROWSER = !!process.env.KLAV_E2E
@@ -147,3 +147,51 @@ test("startCdpScreencast starts, ACKs frames, publishes data URLs, and stops cle
   expect(sent.some((s) => s.method === "Page.stopScreencast")).toBe(true)
   expect(frames[0].dataUrl).toBe("data:image/jpeg;base64,abc")
 })
+
+// ── Cleanup safety tests (no real browser needed) ──────────────────────────────────────────────────
+
+test("safeClose: resolves within timeout even if the wrapped promise never settles", async () => {
+  const hung = new Promise<void>(() => {}) // intentionally never resolves
+  const t0 = Date.now()
+  await safeClose(hung, 50) // 50ms for test speed
+  expect(Date.now() - t0).toBeLessThan(500)
+}, 2000)
+
+test("safeClose: resolves immediately when the wrapped promise resolves normally", async () => {
+  const t0 = Date.now()
+  await safeClose(Promise.resolve(), 5_000)
+  expect(Date.now() - t0).toBeLessThan(200)
+})
+
+test("safeClose: resolves without throwing even if the wrapped promise rejects", async () => {
+  await safeClose(Promise.reject(new Error("close error")), 5_000)
+  // no throw — close errors are silenced, caller just proceeds
+})
+
+test("acquireBrowser Steel path: releases session when connectOverCDP fails", async () => {
+  let released = false
+  const realFetch = globalThis.fetch
+  globalThis.fetch = (async (url: string, opts?: any) => {
+    if (typeof url === "string" && url.includes("/v1/sessions") && opts?.method === "POST" && !url.includes("/release")) {
+      return { json: async () => ({ id: "sess_leak_test", region: "us-test" }) } as any
+    }
+    if (typeof url === "string" && url.includes("/v1/sessions/sess_leak_test/release")) {
+      released = true
+      return { ok: true } as any
+    }
+    return realFetch(url as any, opts as any)
+  }) as typeof fetch
+
+  process.env.AUTOSIM_CDP_URL = "wss://127.0.0.1:1/nonexistent" // unreachable
+  process.env.STEEL_API_KEY = "test-key-kla62"
+  try {
+    await acquireBrowser()
+  } catch {
+    // expected — connect to port 1 will fail
+  } finally {
+    globalThis.fetch = realFetch
+    delete process.env.AUTOSIM_CDP_URL
+    delete process.env.STEEL_API_KEY
+  }
+  expect(released).toBe(true)
+}, 10_000)
