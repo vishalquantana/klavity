@@ -103,5 +103,12 @@
     "excerpt": "Jira, Linear, and GitHub Issues all track bugs, but they optimize for different teams. Here's how they compare on setup, workflows, cost, and code proximity.",
     "category": "Compare",
     "date": "2026-07-05"
+  },
+  {
+    "slug": "turn-customer-interview-transcripts-into-personas",
+    "title": "How to Turn Customer Interview Transcripts Into Personas",
+    "excerpt": "Customer interview transcripts are full of persona signal: goals, blockers, and the words users use. Here's how to turn them into testable personas.",
+    "category": "Guides",
+    "date": "2026-07-07"
   }
 ]
