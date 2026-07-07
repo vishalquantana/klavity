@@ -53,3 +53,42 @@ test("a hung initial-goto times out (bounded by opTimeout), finalizes RED well u
   // Well under Playwright's 30s default — proving the initial goto was bounded by opTimeout, not 30s.
   expect(elapsed).toBeLessThan(20000)
 }, 30000)
+
+test("a walk with a slow wait step overrunning the deadline is bounded and terminates quickly (KLA-61)", async () => {
+  const base = landing("journey")
+  const { trailId } = await crystallize("proj_dl_slow_step", {
+    name: "SlowStep", baseUrl: base, authorKind: "llm",
+    steps: [
+      { action: "wait", url: base, domHash: "landing", actionValue: "10000" },
+      { action: "assert", checkpoint: { description: "anything" }, url: base, domHash: "x", target: { role: "heading", accessibleName: "X", text: "X", testId: "x", resolvedSelector: "#x" } },
+    ],
+  })
+  const t0 = Date.now()
+  const summary = await walkTrail("proj_dl_slow_step", trailId, { fixtureUrl: landing("journey"), deadlineMs: 2000 })
+  const elapsed = Date.now() - t0
+  expect(summary.verdict).toBe("red")
+  expect(elapsed).toBeLessThan(4000)
+  const walk = await T.getWalk("proj_dl_slow_step", summary.runId)
+  expect(walk?.status).toBe("red")
+  expect((walk?.summary as any)?.error).toContain("deadline")
+}, 15000)
+
+test("a step that would start with under 1s remaining is skipped (KLA-61)", async () => {
+  const base = landing("journey")
+  const { trailId } = await crystallize("proj_dl_skip_step", {
+    name: "SkipStep", baseUrl: base, authorKind: "llm",
+    steps: [
+      { action: "wait", url: base, domHash: "landing", actionValue: "1200" },
+      { action: "wait", url: base, domHash: "landing", actionValue: "5000" },
+    ],
+  })
+  const t0 = Date.now()
+  const summary = await walkTrail("proj_dl_skip_step", trailId, { fixtureUrl: landing("journey"), deadlineMs: 2000 })
+  const elapsed = Date.now() - t0
+  expect(summary.verdict).toBe("red")
+  expect(elapsed).toBeLessThan(2000)
+  const walk = await T.getWalk("proj_dl_skip_step", summary.runId)
+  expect(walk?.status).toBe("red")
+  expect((walk?.summary as any)?.error).toContain("deadline")
+}, 15000)
+
