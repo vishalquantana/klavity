@@ -160,7 +160,12 @@ export async function clickWithTransitionFallback(
   await waitForAnimationSettle(target.page(), remaining)
   if (await transitionSatisfied(target.page(), intent).catch(() => false)) return
 
-  // Transition didn't complete within the cap → invoke the known page API as fallback.
+  // KLA-66: transition didn't complete after the click. Invoke the page API to keep the UI
+  // moving (so later steps aren't stranded), then throw so the runner records this as a RED
+  // regression finding rather than silently masking a broken click.
   await invokeTransitionFallback(target.page(), intent)
   await wait(TRANSITION_SETTLE_MS)
+  throw new Error(
+    `transition_regression: click on "${intent.kind}" element did not produce the expected page transition; fallback invoked`,
+  )
 }
