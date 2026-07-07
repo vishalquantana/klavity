@@ -758,6 +758,7 @@ function renderQueue(queue){
     html += '<div class="ft">'+esc(f.title)+'</div>'
     if (rationale) html += '<div class="quote">'+esc(rationale)+'</div>'
     if (fromSel || toSel) html += '<div class="diff">'+esc(fromSel || "(none)")+' &rarr; '+esc(toSel || "(none)")+'</div>'
+    if (f.connectorError) html += '<div class="msg" style="color:var(--rose)">Auto-file failed: '+esc(f.connectorError)+'</div>'
     html += '<div class="acts">'
       + '<button class="btn btn-indigo" data-act="file" data-id="'+esc(f.id)+'">File</button>'
       + '<button class="btn btn-ghost" data-act="dismiss" data-id="'+esc(f.id)+'">Dismiss</button>'
