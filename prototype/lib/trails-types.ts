@@ -25,6 +25,7 @@ export interface Trail {
   id: string; projectId: string; name: string; intent: string; baseUrl: string
   baselineRef: string | null; authorKind: AuthorKind; status: TrailStatus
   createdBy: string | null; createdAt: number; updatedAt: number
+  stepVersion: number
 }
 
 export interface TrailStep {
@@ -41,7 +42,7 @@ export interface LocatorCacheRow {
 
 export interface Walk {
   id: string; trailId: string; projectId: string; trigger: "manual"
-  status: "running" | Verdict; llmCalls: number
+  status: "running" | Verdict; llmCalls: number; trailVersion: number
   summary: Record<string, unknown> | null; startedAt: number; finishedAt: number | null
 }
 
