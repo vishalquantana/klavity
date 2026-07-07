@@ -38,6 +38,7 @@ import { getReplay, runsWithReplay } from "./lib/trails-replay"
 import { saveFeedbackReplay, getFeedbackReplay, feedbackIdsWithReplay, pruneOldFeedbackReplays } from "./lib/feedback-replay"
 import { listRunSteps, listTrails, getTrail, getWalk, setTrailStatus, listTrailSteps, insertAssertStep, deleteTrailStep, updateTrailStep, updateTrail, countRunSteps, countTrailSteps } from "./lib/trails"
 import { runWalkNow } from "./lib/trails-trigger"
+import { startTrailScheduler, isValidCron } from "./lib/trails-scheduler"
 import { runAuthorNow, getAuthorSession, getActiveAuthorSession } from "./lib/trails-author"
 import { WalkBusyError, cancelCurrentWalk } from "./lib/trails-browser"
 import { mintShareToken, resolveShareToken, renderWalkPdf } from "./lib/trails-share"
@@ -2993,8 +2994,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         }
       }
 
-      // PATCH /api/trails/:id — rename a trail and/or pause/resume it.
-      // Accepts: { name?: string, status?: "active"|"paused" }
+      // PATCH /api/trails/:id — rename, pause/resume, or set/clear a cron schedule.
+      // Accepts: { name?: string, status?: "active"|"paused", schedule?: string|null }
       // draft→active promotion is handled by the dedicated /approve endpoint; archived is terminal.
       {
         const mPatchTrail = path.match(/^\/api\/trails\/([^/]+)$/)
@@ -3003,7 +3004,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (!trail) return json({ error: "Not found" }, 404)
           const body = await req.json().catch(() => null)
           if (!body || typeof body !== "object") return json({ error: "Invalid body" }, 400)
-          const patch: { name?: string; status?: "active" | "paused" } = {}
+          const patch: { name?: string; status?: "active" | "paused"; schedule?: string | null } = {}
           if ("name" in body) {
             const n = typeof body.name === "string" ? body.name.trim() : ""
             if (!n || n.length > 80) return json({ error: "name must be 1–80 characters" }, 400)
@@ -3015,6 +3016,15 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             if (trail.status === "draft") return json({ error: "Use /approve to activate a draft trail" }, 409)
             if (trail.status === "archived") return json({ error: "Archived trails cannot be changed" }, 409)
             patch.status = body.status
+          }
+          if ("schedule" in body) {
+            if (body.schedule === null || body.schedule === "") {
+              patch.schedule = null
+            } else {
+              const expr = typeof body.schedule === "string" ? body.schedule.trim() : ""
+              if (!isValidCron(expr)) return json({ error: "Invalid cron expression (5 UTC fields required, e.g. '0 2 * * *')" }, 400)
+              patch.schedule = expr
+            }
           }
           if (!Object.keys(patch).length) return json({ error: "Nothing to patch" }, 400)
           await updateTrail(projectId, trail.id, patch)
@@ -4192,4 +4202,6 @@ console.log(`   model: ${MODEL} · auth: ${db ? "Turso OTP" : "DISABLED (no Turs
 if (db && process.env.NODE_ENV !== "test") {
   setTimeout(() => { runRetentionSweep().catch((e) => console.warn("retention sweep failed:", e?.message || e)) }, 30_000)
   setInterval(() => { runRetentionSweep().catch((e) => console.warn("retention sweep failed:", e?.message || e)) }, 6 * 60 * 60 * 1000)
+  // KLA-88: trail cron scheduler — ticks every minute, fires scheduled walks.
+  startTrailScheduler()
 }

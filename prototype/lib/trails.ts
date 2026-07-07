@@ -11,6 +11,8 @@ function rowToTrail(r: any): Trail {
     baselineRef: r.baseline_ref ?? null, authorKind: r.author_kind, status: r.status,
     createdBy: r.created_by ?? null, createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
     stepVersion: r.step_version == null ? 1 : Number(r.step_version),
+    schedule: r.schedule_cron ?? null,
+    scheduledLastRunAt: r.scheduled_last_run_at == null ? null : Number(r.scheduled_last_run_at),
   }
 }
 
@@ -41,20 +43,30 @@ export async function setTrailStatus(projectId: string, id: string, status: Trai
   await db!.execute({ sql: `UPDATE trails SET status=?, updated_at=? WHERE project_id=? AND id=?`, args: [status, Date.now(), projectId, id] })
 }
 
-export type TrailPatch = { name?: string; status?: TrailStatus }
+export type TrailPatch = { name?: string; status?: TrailStatus; schedule?: string | null }
 
 export async function updateTrail(projectId: string, id: string, patch: TrailPatch): Promise<boolean> {
   const r = await db!.execute({ sql: `SELECT id FROM trails WHERE project_id=? AND id=?`, args: [projectId, id] })
   if (!r.rows.length) return false
   const sets: string[] = []
-  const args: (string | number)[] = []
+  const args: (string | number | null)[] = []
   if (patch.name != null) { sets.push("name=?"); args.push(patch.name) }
   if (patch.status != null) { sets.push("status=?"); args.push(patch.status) }
+  if ("schedule" in patch) { sets.push("schedule_cron=?"); args.push(patch.schedule ?? null) }
   if (!sets.length) return true
   sets.push("updated_at=?"); args.push(Date.now())
   args.push(projectId, id)
   await db!.execute({ sql: `UPDATE trails SET ${sets.join(", ")} WHERE project_id=? AND id=?`, args })
   return true
+}
+
+export async function listAllScheduledTrails(): Promise<Trail[]> {
+  const r = await db!.execute({ sql: `SELECT * FROM trails WHERE schedule_cron IS NOT NULL AND status='active'`, args: [] })
+  return r.rows.map(rowToTrail)
+}
+
+export async function touchScheduledLastRunAt(projectId: string, trailId: string, ts: number): Promise<void> {
+  await db!.execute({ sql: `UPDATE trails SET scheduled_last_run_at=?, updated_at=? WHERE project_id=? AND id=?`, args: [ts, ts, projectId, trailId] })
 }
 
 function rowToStep(r: any): TrailStep {
