@@ -2,8 +2,9 @@
 // into trails-browser-page.ts (kref snapshot / fingerprint / stable selector) behave as before, and
 // that selector-based click/fill/assert work against a real fixture. The Puppeteer-Steel impl is
 // exercised by the live spike (needs network + key), not unit-tested here.
+// acquirePlaywrightBrowser (used by the walker) is also tested here for its local/fallback path.
 import { describe, test, expect, afterAll } from "bun:test"
-import { acquireBrowser, type BrowserHandle } from "./trails-browser-page"
+import { acquireBrowser, acquirePlaywrightBrowser, type BrowserHandle, type PlaywrightBrowserHandle } from "./trails-browser-page"
 
 const FIXTURE = "data:text/html," + encodeURIComponent(`<!doctype html><html><body>
   <h1>Sign up</h1>
@@ -15,7 +16,11 @@ const FIXTURE = "data:text/html," + encodeURIComponent(`<!doctype html><html><bo
 </body></html>`)
 
 let handle: BrowserHandle
-afterAll(async () => { await handle?.close() })
+let pwHandle: PlaywrightBrowserHandle
+afterAll(async () => {
+  await handle?.close()
+  await pwHandle?.close()
+})
 
 describe("PlaywrightPage adapter (default)", () => {
   test("acquireBrowser() with no AUTOSIM_CDP_URL → local Playwright handle", async () => {
@@ -59,5 +64,36 @@ describe("PlaywrightPage adapter (default)", () => {
     // page still alive + selectors resolve after the interactions
     expect(await page.count("#email")).toBe(1)
     expect(await page.count("#plan")).toBe(1)
+  })
+})
+
+describe("acquirePlaywrightBrowser (walker seam)", () => {
+  test("no AUTOSIM_CDP_URL → local kind, native Playwright Browser", async () => {
+    delete process.env.AUTOSIM_CDP_URL
+    delete process.env.STEEL_API_KEY
+    pwHandle = await acquirePlaywrightBrowser({ headless: true })
+    expect(pwHandle.kind).toBe("local")
+    // Verify it is a real Playwright Browser with newPage() / newContext()
+    expect(typeof pwHandle.browser.newPage).toBe("function")
+    expect(typeof pwHandle.browser.newContext).toBe("function")
+  })
+
+  test("local Playwright Browser can navigate and evaluate DOM", async () => {
+    const page = await pwHandle.browser.newPage()
+    await page.goto(FIXTURE, { timeout: 20_000 })
+    const title = await page.evaluate(() => document.querySelector("h1")?.textContent)
+    expect(title).toBe("Sign up")
+    const emailCount = await page.locator("#email").count()
+    expect(emailCount).toBe(1)
+    await page.close()
+  })
+
+  test("with invalid AUTOSIM_CDP_URL (no key) → connectOverCDP throws, not local launch", async () => {
+    process.env.AUTOSIM_CDP_URL = "ws://127.0.0.1:19999/devtools/browser/nonexistent"
+    delete process.env.STEEL_API_KEY
+    let threw = false
+    try { await acquirePlaywrightBrowser({ headless: true }) } catch { threw = true }
+    expect(threw).toBe(true)
+    delete process.env.AUTOSIM_CDP_URL
   })
 })
