@@ -85,9 +85,27 @@ done
 [ -f docs/PRD.md ] && sed -i '' "s/\(\*\*Version:\*\* \)\`[0-9][0-9.]*\`/\1\`$next\`/" docs/PRD.md
 
 git add -A
+pre_push_base=$(git rev-parse 'HEAD@{u}' 2>/dev/null || echo "")
 git commit -q -m "orchestrator: integrate$merged → v$next" 2>/dev/null
 if git push -q origin master 2>/dev/null; then
   log "pushed v$next ($(git rev-parse --short HEAD)) — integrated:$merged"
+  # Slack deploy notification — fail-safe: missing hook file or curl error never blocks the train.
+  # Webhook is a SECRET; lives only in ~/.config/klav-orchestrator/slack-deploy-webhook (0600), never in-repo.
+  hookf="$HOME/.config/klav-orchestrator/slack-deploy-webhook"
+  if [ -r "$hookf" ]; then
+    # Build subjects as JSON \n escapes via pure bash concat (printf/awk/sed all mangle backslashes).
+    subjects=""
+    if [ -n "$pre_push_base" ]; then
+      while IFS= read -r subj; do
+        [ -n "$subj" ] && subjects="${subjects}\\n• ${subj}"
+      done < <(git log --no-merges --format='%s' "$pre_push_base..HEAD" 2>/dev/null \
+               | grep -v '^orchestrator:' | head -10 | tr -d '"\\' | tr -d '\r')
+    fi
+    payload='{"text":"🚀 *Klavity v'"$next"'* pushed — prod auto-deploys in ~30s (health-rollback armed)\n'
+    payload="${payload}Integrated:${merged}${subjects}\"}"
+    curl -sf -m 8 -X POST -H 'Content-Type: application/json' -d "$payload" "$(cat "$hookf")" >/dev/null 2>&1 \
+      || log "slack notify failed (non-fatal)"
+  fi
 else
   log "PUSH FAILED (will retry next cycle)"
 fi
