@@ -119,13 +119,14 @@ export async function authorTrail(
           const n = await bounded(page.count(a.selector!), 10_000, "locator.count")
           if (n !== 1) throw new Error(`selector "${a.selector}" matched ${n} elements (need exactly 1)`)
           const fp = await bounded(page.fingerprint(a.selector!), 10_000, "fingerprint capture")
-          // Convert kref selector to a stable form BEFORE the action — kref attrs are ephemeral
-          // (renumbered every capture) and a click may navigate (removing the element). stableSelector
-          // returns null when no stable handle exists; fallback to fp.domPath, then original selector.
-          let persistSelector = a.selector!
-          if (isKrefSelector(a.selector)) {
-            persistSelector = (await bounded(page.stableSelector(a.selector!), 10_000, "stable selector").catch(() => null)) ?? fp.domPath ?? a.selector!
-          }
+          // Stabilize the selector BEFORE the action so we never persist a brittle path.
+          // kref attrs are ephemeral (renumbered every capture) — MUST replace.
+          // Non-kref selectors emitted by the model (e.g. `.submit-btn`) can also be fragile;
+          // prefer id / data-testid / aria-label anchors when stableSelector finds one.
+          const stable = await bounded(page.stableSelector(a.selector!), 10_000, "stable selector").catch(() => null)
+          let persistSelector = isKrefSelector(a.selector)
+            ? (stable ?? fp.domPath ?? a.selector!)
+            : (stable ?? a.selector!)
           if (a.op === "click") await page.click(a.selector!, ACTION_TIMEOUT)
           else if (a.op === "type") {
             const raw = a.value ?? ""
