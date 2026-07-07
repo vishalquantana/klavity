@@ -219,10 +219,11 @@ export async function authorTrail(
       // Fatal errors (budget exhausted, 401/403) stall immediately with a distinct reason.
       // Generic (non-ModelCallError) throws are treated as retryable — one network blip must not
       // kill an entire authoring run.
+      // KLA-69: hoist modelInput + modelCtx out of inner block so the stall-reroll can reuse them.
+      const modelInput = { objective: req.objective, pageUrl: page.url(), screenshotB64, mediaType: "image/jpeg", domSnapshot: dom, history, credFields }
+      const modelCtx = { projectId, email: req.createdBy ?? null, projectInstructions }
       let r: { action: AuthorAction; costUsd: number }
       {
-        const modelInput = { objective: req.objective, pageUrl: page.url(), screenshotB64, mediaType: "image/jpeg", domSnapshot: dom, history, credFields }
-        const modelCtx = { projectId, email: req.createdBy ?? null, projectInstructions }
         let lastErr: unknown = null
         let succeeded = false
         for (let attempt = 0; attempt < MAX_API_RETRIES; attempt++) {
@@ -250,7 +251,8 @@ export async function authorTrail(
         }
       }
       llmCalls++; costUsd += r.costUsd || 0
-      const a = r.action
+      // KLA-69: `let` so the stall second-opinion block can replace the action with a reroll result.
+      let a = r.action
       if (a.op === "stall" && a.parseError) {
         // KLAVITYKLA-48 #1: a malformed reply is a bad ROLL, not a dead end — one garbage JSON
         // response was killing otherwise-good multi-step attempts. Treat it exactly like a failed
@@ -260,7 +262,35 @@ export async function authorTrail(
         if (misses >= MAX_CONSECUTIVE_MISSES) return await stall(`stuck after ${misses} malformed model replies; last: ${a.rationale}`, page.url())
         continue
       }
-      if (a.op === "stall") return await stall(a.rationale || "model stalled", page.url())
+      if (a.op === "stall") {
+        // KLA-69: deliberate stall — get a second opinion before accepting it as final.
+        // One spurious stall (model confused by a loading state, ambiguous page) must not kill an
+        // otherwise-green walk. Re-roll once with a nudge; cap at one retry to bound cost.
+        const firstRationale = a.rationale || "model stalled"
+        history.push(`(you returned "stall": "${firstRationale}" — if you are truly blocked stall again; otherwise try a different approach on this page)`)
+        try {
+          const r2 = await bounded(opts.model(modelInput, modelCtx), 120_000, "author model call (stall reroll)")
+          llmCalls++; costUsd += r2.costUsd || 0
+          if (r2.action.op !== "stall") {
+            if (r2.action.parseError) {
+              // Reroll returned a parse-error stall — count as miss and continue outer loop.
+              misses++
+              history.push(`(reroll reply was invalid: ${r2.action.rationale} — respond with ONE strict JSON action object)`)
+              if (misses >= MAX_CONSECUTIVE_MISSES) return await stall(`stuck after ${misses} malformed model replies; last: ${r2.action.rationale}`, page.url())
+              continue
+            }
+            // Reroll produced a valid action — proceed with it instead of stalling.
+            a = r2.action
+          } else {
+            // Both rolls say stall — accept the second roll's rationale as the final word.
+            return await stall(r2.action.rationale || firstRationale, page.url())
+          }
+        } catch {
+          // Reroll itself threw (network/timeout/budget) — accept the original stall rather than
+          // spending more budget on a broken path.
+          return await stall(firstRationale, page.url())
+        }
+      }
       if (a.op === "done") {
         let verifyResult: ObjectiveVerificationResult
         try {
