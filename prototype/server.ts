@@ -36,7 +36,7 @@ import { trailsDashboardData } from "./lib/trails-dashboard"
 import { fileFindingById, dismissFinding, realFiler } from "./lib/trails-findings-gate"
 import { getReplay, runsWithReplay } from "./lib/trails-replay"
 import { saveFeedbackReplay, getFeedbackReplay, feedbackIdsWithReplay, pruneOldFeedbackReplays } from "./lib/feedback-replay"
-import { listRunSteps, listTrails, getTrail, getWalk, setTrailStatus, listTrailSteps, insertAssertStep, deleteTrailStep, updateTrailStep } from "./lib/trails"
+import { listRunSteps, listTrails, getTrail, getWalk, setTrailStatus, listTrailSteps, insertAssertStep, deleteTrailStep, updateTrailStep, updateTrail } from "./lib/trails"
 import { runWalkNow } from "./lib/trails-trigger"
 import { runAuthorNow, getAuthorSession } from "./lib/trails-author"
 import { WalkBusyError, cancelCurrentWalk } from "./lib/trails-browser"
@@ -2825,6 +2825,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     // unauthenticated API calls return a JSON 401 (not a /login redirect), mirroring resolveProject usage.
     if (path === "/api/trails/dashboard" || path.startsWith("/api/trails/findings/") || path.startsWith("/api/trails/walks/")
         || path === "/api/trails/author" || path.startsWith("/api/trails/author/")
+        || /^\/api\/trails\/[^/]+$/.test(path)
         || /^\/api\/trails\/[^/]+\/(walk|approve|steps)$/.test(path)
         || /^\/api\/trails\/[^/]+\/steps\/[^/]+$/.test(path)) {
       const meT = (await sessionEmail(req)) || (await bearerEmail(req))
@@ -2909,6 +2910,35 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         }
       }
 
+      // PATCH /api/trails/:id — rename a trail and/or pause/resume it.
+      // Accepts: { name?: string, status?: "active"|"paused" }
+      // draft→active promotion is handled by the dedicated /approve endpoint; archived is terminal.
+      {
+        const mPatchTrail = path.match(/^\/api\/trails\/([^/]+)$/)
+        if (req.method === "PATCH" && mPatchTrail) {
+          const trail = await getTrail(projectId, mPatchTrail[1])
+          if (!trail) return json({ error: "Not found" }, 404)
+          const body = await req.json().catch(() => null)
+          if (!body || typeof body !== "object") return json({ error: "Invalid body" }, 400)
+          const patch: { name?: string; status?: "active" | "paused" } = {}
+          if ("name" in body) {
+            const n = typeof body.name === "string" ? body.name.trim() : ""
+            if (!n || n.length > 80) return json({ error: "name must be 1–80 characters" }, 400)
+            patch.name = n
+          }
+          if ("status" in body) {
+            if (body.status !== "active" && body.status !== "paused")
+              return json({ error: "status must be 'active' or 'paused'" }, 400)
+            if (trail.status === "draft") return json({ error: "Use /approve to activate a draft trail" }, 409)
+            if (trail.status === "archived") return json({ error: "Archived trails cannot be changed" }, 409)
+            patch.status = body.status
+          }
+          if (!Object.keys(patch).length) return json({ error: "Nothing to patch" }, 400)
+          await updateTrail(projectId, trail.id, patch)
+          return json({ ok: true })
+        }
+      }
+
       // POST /api/trails/:id/walk — trigger an on-demand Walk. runWalkNow reserves the single walk-slot
       // and returns a runId immediately (the walk runs in the background, crash-isolated); the
       // dashboard polls /api/trails/dashboard until the verdict lands. A 2nd concurrent trigger → 409
@@ -2921,6 +2951,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         } catch (e: any) {
           if (e instanceof WalkBusyError) return json({ error: "A walk is already running" }, 409)
           if (String(e?.message || e) === "trail not found") return json({ error: "No such trail" }, 404)
+          if (String(e?.message || e) === "trail is paused") return json({ error: "Trail is paused — resume it first" }, 409)
           return json(oops(e, "trails-walk"), 500)
         }
       }
