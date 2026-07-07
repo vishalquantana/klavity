@@ -61,15 +61,84 @@ export async function resolveShareToken(
 
   const tokenHash = sha256hex(rawToken)
   const r = await db.execute({
-    sql: `SELECT project_id, run_id, expires_at FROM walk_share_tokens WHERE token_hash = ?`,
+    sql: `SELECT project_id, run_id, expires_at, revoked_at FROM walk_share_tokens WHERE token_hash = ?`,
     args: [tokenHash],
   })
   if (!r.rows.length) return null
 
-  const row = r.rows[0] as { project_id: string; run_id: string; expires_at: number }
+  const row = r.rows[0] as { project_id: string; run_id: string; expires_at: number; revoked_at: number | null }
   if (Date.now() > Number(row.expires_at)) return null
+  if (row.revoked_at != null) return null
 
   return { projectId: String(row.project_id), runId: String(row.run_id) }
+}
+
+// ---------------------------------------------------------------------------
+// revokeShareToken — mark a token as revoked by its row id (wst_…).
+// Returns true if a row was found and revoked, false if not found / already revoked.
+// ---------------------------------------------------------------------------
+
+export async function revokeShareToken(tokenId: string): Promise<boolean> {
+  const { db } = await import("./db")
+  if (!db) throw new Error("DB not initialised")
+
+  const r = await db.execute({
+    sql: `UPDATE walk_share_tokens SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL`,
+    args: [Date.now(), tokenId],
+  })
+  return Number(r.rowsAffected ?? 0) > 0
+}
+
+// ---------------------------------------------------------------------------
+// listShareTokens — active (non-revoked, non-expired) tokens for a walk.
+// token_hash is never returned — it's the secret; id (wst_…) is used for revocation.
+// ---------------------------------------------------------------------------
+
+export type ShareTokenSummary = {
+  id: string
+  projectId: string
+  runId: string
+  createdBy: string | null
+  expiresAt: number
+  createdAt: number
+}
+
+export async function listShareTokens(projectId: string, runId: string): Promise<ShareTokenSummary[]> {
+  const { db } = await import("./db")
+  if (!db) return []
+
+  const r = await db.execute({
+    sql: `SELECT id, project_id, run_id, created_by, expires_at, created_at
+          FROM walk_share_tokens
+          WHERE project_id = ? AND run_id = ? AND revoked_at IS NULL AND expires_at > ?
+          ORDER BY created_at DESC`,
+    args: [projectId, runId, Date.now()],
+  })
+
+  return r.rows.map((row: any) => ({
+    id: String(row.id),
+    projectId: String(row.project_id),
+    runId: String(row.run_id),
+    createdBy: row.created_by != null ? String(row.created_by) : null,
+    expiresAt: Number(row.expires_at),
+    createdAt: Number(row.created_at),
+  }))
+}
+
+// ---------------------------------------------------------------------------
+// purgeExpiredShareTokens — delete rows that are expired OR revoked.
+// Called from the data-retention sweep so these don't accumulate.
+// ---------------------------------------------------------------------------
+
+export async function purgeExpiredShareTokens(now = Date.now()): Promise<number> {
+  const { db } = await import("./db")
+  if (!db) return 0
+
+  const r = await db.execute({
+    sql: `DELETE FROM walk_share_tokens WHERE expires_at < ? OR revoked_at IS NOT NULL`,
+    args: [now],
+  })
+  return Number(r.rowsAffected ?? 0)
 }
 
 // ---------------------------------------------------------------------------
