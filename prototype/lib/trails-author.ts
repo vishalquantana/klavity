@@ -16,6 +16,7 @@ import { db } from "./db"
 import type { AuthorModel, AuthorAction } from "./trails-author-model"
 import { isKrefSelector } from "./trails-snapshot"
 import type { StepAction } from "./trails-types"
+import { configuredVisionResolver, type VisionResolver } from "./trails-vision"
 
 export const AUTHOR_MAX_STEPS = 40
 export const AUTHOR_MAX_COST_USD = 0.15
@@ -40,7 +41,7 @@ const OP2ACTION: Record<string, StepAction> = { navigate: "navigate", click: "cl
 
 export async function authorTrail(
   projectId: string, req: AuthorRequest,
-  opts: { model: AuthorModel; headless?: boolean; launchArgs?: string[]; credResolver?: CredResolver; onStep?: (log: AuthorStepLog[]) => void | Promise<void>; driveDeadlineMs?: number; textFirst?: boolean },
+  opts: { model: AuthorModel; headless?: boolean; launchArgs?: string[]; credResolver?: CredResolver; onStep?: (log: AuthorStepLog[]) => void | Promise<void>; driveDeadlineMs?: number; textFirst?: boolean; verificationVision?: VisionResolver | false },
 ): Promise<AuthorOutcome> {
   // Text-first is the DEFAULT (bench 2026-07-04: arm B ~50% cheaper, 6/6 green verdicts vs arm A
   // screenshot-every-step). Happy-path steps run text-only; a miss escalates by re-attaching the
@@ -162,9 +163,11 @@ export async function authorTrail(
     await setTrailStatus(projectId, trailId, "draft")
     // Verification Walk: zero-LLM rehearsal; draft status suppresses findings (Task 4), but pass
     // the flag explicitly too — a Verification Walk never files regardless of trail status.
+    const vision = opts.verificationVision === false ? undefined : (opts.verificationVision ?? configuredVisionResolver())
     const v = await walkTrail(projectId, trailId, {
       fixtureUrl: req.baseUrl, suppressFindings: true, credResolver, deadlineMs: 180_000,
       launchArgs: opts.launchArgs, headless: opts.headless,
+      ...(vision ? { vision } : {}),
     })
     // I1: skip means "inconclusive / no steps ran" — map to amber, not red, so an empty
     // Verification Walk never looks like a regression to the reviewer.

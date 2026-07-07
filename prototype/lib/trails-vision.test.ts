@@ -42,7 +42,7 @@ process.env.OPENROUTER_API_KEY = "test-key"
 const { reconnectDb, applySchema, migrateV2 } = await import("./db")
 const visiondb = reconnectDb("file:" + dbFile)
 await applySchema(visiondb); await migrateV2(visiondb)
-const { openRouterVisionResolver, buildVisionMessages, parseVisionJSON } = await import("./trails-vision")
+const { openRouterVisionResolver, configuredVisionResolver, buildVisionMessages, parseVisionJSON } = await import("./trails-vision")
 
 test("buildVisionMessages embeds the screenshot as a data URL and asks for strict JSON", () => {
   const msgs = buildVisionMessages({ screenshotB64: "QUJD", mediaType: "image/png", domSnapshot: "<button/>", pageUrl: "https://app.test/x", intent: "click sign in", action: "click", target: { role: "button", accessibleName: "Sign in" }, candidateSelectors: ["#a"] })
@@ -70,31 +70,81 @@ test("parseVisionJSON degrades a malformed reply to a safe sentinel (no throw �
   expect(decideFromVision(r).outcome).toBe("amber_low_conf")
 })
 
-test("openRouterVisionResolver parses the model reply and logs an ai_calls row (type=reheal); model from the weighted mix", async () => {
+test("configuredVisionResolver is on with an API key and off via kill switch", () => {
+  const prevKey = process.env.OPENROUTER_API_KEY
+  const prevFlag = process.env.KLAV_AUTOSIM_VISION_SELFHEAL
+  try {
+    delete process.env.OPENROUTER_API_KEY
+    delete process.env.KLAV_AUTOSIM_VISION_SELFHEAL
+    expect(configuredVisionResolver()).toBeUndefined()
+
+    process.env.OPENROUTER_API_KEY = "test-key"
+    expect(configuredVisionResolver()).toBe(openRouterVisionResolver)
+
+    process.env.KLAV_AUTOSIM_VISION_SELFHEAL = "0"
+    expect(configuredVisionResolver()).toBeUndefined()
+  } finally {
+    if (prevKey === undefined) delete process.env.OPENROUTER_API_KEY
+    else process.env.OPENROUTER_API_KEY = prevKey
+    if (prevFlag === undefined) delete process.env.KLAV_AUTOSIM_VISION_SELFHEAL
+    else process.env.KLAV_AUTOSIM_VISION_SELFHEAL = prevFlag
+  }
+})
+
+test("openRouterVisionResolver parses the model reply, reserves/reconciles spend, and logs a reheal row", async () => {
+  const prevCap = process.env.OPS_DAILY_CAP_USD
   const realFetch = globalThis.fetch
   let sentModel: string | undefined
-  globalThis.fetch = mock(async (_url: any, init: any) => {
-    sentModel = JSON.parse(init.body).model
-    return new Response(JSON.stringify({
-      choices: [{ message: { content: JSON.stringify({ found: true, selector: "#auth-go", confidence: 0.93, classification: "moved", rationale: "button moved into the footer" }) } }],
-      usage: { prompt_tokens: 1200, completion_tokens: 40, cost: 0.0011 },
-    }), { status: 200 })
+  process.env.OPS_DAILY_CAP_USD = "50"
+  try {
+    globalThis.fetch = mock(async (_url: any, init: any) => {
+      sentModel = JSON.parse(init.body).model
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: JSON.stringify({ found: true, selector: "#auth-go", confidence: 0.93, classification: "moved", rationale: "button moved into the footer" }) } }],
+        usage: { prompt_tokens: 1200, completion_tokens: 40, cost: 0.0011 },
+      }), { status: 200 })
+    }) as any
+
+    const out = await openRouterVisionResolver({ screenshotB64: "QUJD", mediaType: "image/png", domSnapshot: "<div/>", pageUrl: "https://app.test/x", intent: "click sign in", action: "click", target: { role: "button", accessibleName: "Sign in" }, candidateSelectors: [] }, { projectId: "proj_A" })
+    expect(out.selector).toBe("#auth-go")
+    expect(out.confidence).toBeCloseTo(0.93)
+    expect(out.classification).toBe("moved")
+
+    // The model must come from the weighted MODEL_CHOICE_IDS set (DEFAULT_WEIGHTS applied) — not the
+    // old empty-weights path that always fell back to the single VISION_FALLBACK_MODEL.
+    expect(MODEL_CHOICE_IDS).toContain(sentModel!)
+
+    // recordAiCall is now AWAITED inside the resolver — the row exists with NO sleep/race.
+    const rows = await visiondb.execute({ sql: "SELECT type, model, cost_usd FROM ai_calls WHERE type='reheal'", args: [] })
+    expect(rows.rows.length).toBe(1)
+    expect(Number(rows.rows[0].cost_usd)).toBeCloseTo(0.0011)
+    // The ledgered model matches the one actually sent to OpenRouter.
+    expect(rows.rows[0].model).toBe(sentModel)
+
+    const spend = await visiondb.execute("SELECT reserved_usd FROM daily_ai_spend")
+    expect(Number(spend.rows[0].reserved_usd)).toBeCloseTo(0.0011)
+  } finally {
+    globalThis.fetch = realFetch
+    if (prevCap === undefined) delete process.env.OPS_DAILY_CAP_USD
+    else process.env.OPS_DAILY_CAP_USD = prevCap
+  }
+})
+
+test("openRouterVisionResolver fails closed before fetch when daily AI budget is exhausted", async () => {
+  const prevCap = process.env.OPS_DAILY_CAP_USD
+  const realFetch = globalThis.fetch
+  let called = false
+  globalThis.fetch = mock(async () => {
+    called = true
+    return new Response("{}", { status: 200 })
   }) as any
-
-  const out = await openRouterVisionResolver({ screenshotB64: "QUJD", mediaType: "image/png", domSnapshot: "<div/>", pageUrl: "https://app.test/x", intent: "click sign in", action: "click", target: { role: "button", accessibleName: "Sign in" }, candidateSelectors: [] }, { projectId: "proj_A" })
-  expect(out.selector).toBe("#auth-go")
-  expect(out.confidence).toBeCloseTo(0.93)
-  expect(out.classification).toBe("moved")
-
-  globalThis.fetch = realFetch
-  // The model must come from the weighted MODEL_CHOICE_IDS set (DEFAULT_WEIGHTS applied) — not the
-  // old empty-weights path that always fell back to the single VISION_FALLBACK_MODEL.
-  expect(MODEL_CHOICE_IDS).toContain(sentModel!)
-
-  // recordAiCall is now AWAITED inside the resolver — the row exists with NO sleep/race.
-  const rows = await visiondb.execute({ sql: "SELECT type, model, cost_usd FROM ai_calls WHERE type='reheal'", args: [] })
-  expect(rows.rows.length).toBe(1)
-  expect(Number(rows.rows[0].cost_usd)).toBeCloseTo(0.0011)
-  // The ledgered model matches the one actually sent to OpenRouter.
-  expect(rows.rows[0].model).toBe(sentModel)
+  process.env.OPS_DAILY_CAP_USD = "0.000001"
+  try {
+    await expect(openRouterVisionResolver({ screenshotB64: "QUJD", mediaType: "image/png", domSnapshot: "<div/>", pageUrl: "https://app.test/x", intent: "click sign in", action: "click", target: { role: "button", accessibleName: "Sign in" }, candidateSelectors: [] }, { projectId: "proj_A" })).rejects.toThrow("Daily AI budget reached")
+    expect(called).toBe(false)
+  } finally {
+    globalThis.fetch = realFetch
+    if (prevCap === undefined) delete process.env.OPS_DAILY_CAP_USD
+    else process.env.OPS_DAILY_CAP_USD = prevCap
+  }
 })
