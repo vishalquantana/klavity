@@ -76,3 +76,12 @@ export async function deleteTestAccount(projectId: string, id: string): Promise<
   })
   return Number(r.rowsAffected) > 0
 }
+
+/** Returns true if the email is registered as a login_email in ANY project's test accounts. */
+export async function isTestAccountEmail(email: string): Promise<boolean> {
+  const r = await db!.execute({
+    sql: `SELECT 1 FROM test_accounts WHERE LOWER(login_email)=? LIMIT 1`,
+    args: [email.trim().toLowerCase()],
+  })
+  return r.rows.length > 0
+}
