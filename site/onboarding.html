@@ -307,7 +307,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
             </div>
           </div>
           <div class="db-catch">
-            <div class="db-ct">⚡ Bug surfaced pre-launch</div>
+            <div class="db-ct"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:5px" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>Bug surfaced pre-launch</div>
             <div class="db-cd">Overdue KPI card is not clickable — no drill-down to the overdue list · confidence 0.86</div>
           </div>
           <div class="db-cta">
@@ -505,6 +505,50 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 
 <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401" /></svg></button>
 <script>(function(){var b=document.getElementById('themeToggle');if(!b)return;var R=document.documentElement;function dark(){return R.getAttribute('data-theme')==='dark'}function svgIcon(name,label){var body=(window.KLAV_ICONS||{})[name]||'';var a11y=label?'role="img"':'aria-hidden="true"';var title=label?'<title>'+label+'</title>':'';return'<svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" '+a11y+'>'+title+body+'</svg>'}function paint(){b.innerHTML=svgIcon(dark()?'sun':'moon',dark()?'Switch to light mode':'Switch to dark mode')}paint();b.addEventListener('click',function(){var n=dark()?'light':'dark';if(n==='dark')R.setAttribute('data-theme','dark');else R.removeAttribute('data-theme');try{localStorage.setItem('klav-theme',n)}catch(e){}paint()})})();</script>
+<style>
+/* Phase B: live-reaction wire (renders into Phase A's .uh-catch slot) */
+@keyframes uhpulse{0%,100%{opacity:.4}50%{opacity:1}}
+.uh-live-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--indigo,#6366f1);animation:uhpulse 1.2s ease infinite;margin-right:7px;vertical-align:middle}
+.uh-rx{border-left:3px solid var(--indigo,#6366f1);padding:2px 0 2px 12px;margin-top:2px}
+.uh-rx-top{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap}
+.uh-rx-pill{font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:3px 8px;border-radius:20px}
+.uh-rx-pill.crit{background:rgba(219,39,119,.14);color:var(--rose,#db2777)}
+.uh-rx-pill.pos{background:rgba(15,157,107,.14);color:var(--green,#0f9d6b)}
+.uh-rx-pill.neu{background:rgba(99,102,241,.12);color:var(--indigo,#6366f1)}
+.uh-rx-lead{font-size:13px;color:var(--paper-dim,#7a6f63)}
+.uh-rx-title{font-weight:600;font-size:14px;margin-bottom:3px}
+.uh-rx-obs{font-size:14px;line-height:1.5;font-style:italic}
+</style>
+<script>
+// Phase B wire — window.klavPreviewReact: the one-paste LIVE reaction. Phase A's uhShowPersonas()
+// calls this after personas return; we POST /api/sim/preview (headless screenshot + ephemeral-Sim
+// reaction) and render the catch into the .uh-catch slot. Fails soft — never shows an error here.
+(function(){
+  function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+  function softNote(node,pname){ node.innerHTML='<b>'+esc(pname)+'</b> is ready to react — run a review in the dashboard to hear what your Sims think.' }
+  window.klavPreviewReact = async function(url, personas){
+    var r=document.getElementById('uhResult'); if(!r) return
+    var persona=(personas&&personas[0])||null
+    var pname=(persona&&persona.name)||'A customer'
+    var node=r.querySelector('.uh-catch')
+    if(!node){ node=document.createElement('div'); node.className='uh-catch'; r.appendChild(node) }
+    node.innerHTML='<span class="uh-live-dot"></span>'+esc(pname)+' is opening your page and reacting…'
+    try{
+      var res=await fetch('/api/sim/preview',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({url:url,persona:persona})})
+      if(!res.ok) throw 0
+      var d=await res.json(); var rx=d&&d.reaction
+      if(!rx||!(rx.observation||rx.title)){ softNote(node,pname); return }
+      var sent=String(rx.sentiment||'neutral')
+      var cls=sent==='critical'?'crit':sent==='positive'?'pos':'neu'
+      var word=sent==='critical'?'caught something':sent==='positive'?'liked it':'noticed'
+      var lead=sent==='critical'?(esc(pname)+' found something before your users would:'):(esc(pname)+' reacted to your real page:')
+      node.innerHTML='<div class="uh-rx"><div class="uh-rx-top"><span class="uh-rx-pill '+cls+'">'+word+'</span><span class="uh-rx-lead">'+lead+'</span></div>'
+        +(rx.title?'<div class="uh-rx-title">'+esc(rx.title)+'</div>':'')
+        +'<div class="uh-rx-obs">“'+esc(rx.observation||rx.title)+'”</div></div>'
+    }catch(e){ softNote(node,pname) }
+  }
+})();
+</script>
 <script>
 // ── A2: URL → Meet your Sims ──────────────────────────────────────────────────
 // Calls POST /api/persona/site with {url} → {personas} and renders the cards.
