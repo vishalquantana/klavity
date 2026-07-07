@@ -630,10 +630,18 @@ async function runTrail(trailId, btn, row){
   }
   row.insertBefore(cancelBtn, btn)
 
-  // Poll the lightweight /progress endpoint for live step feedback (~1.5s cadence, bounded).
-  // When the walk finishes, do one full dashboard reload to paint the verdict + replay button.
-  for (var i=0;i<80;i++){
-    await new Promise(function(res){ setTimeout(res, 1500) })
+  // Poll the lightweight /progress endpoint for live step feedback.
+  // Phase 1 (fast): 80 ticks × 1.5 s = 120 s — matches the server-side walk deadline.
+  // Phase 2 (grace): keep polling at 3 s for an extra 90 s past the nominal deadline.
+  //   A walk that hits its deadline can take a few extra seconds for the server to finalize
+  //   the DB row (write terminal status, flush replay). Without this grace window the UI
+  //   gives up polling at exactly the deadline and shows stale "running" forever.
+  var POLL_GRACE_MS = 90_000
+  var gracePhaseStarted = 0
+  for (var i = 0; ; i++) {
+    var inGrace = i >= 80
+    await new Promise(function(res){ setTimeout(res, inGrace ? 3000 : 1500) })
+    if (inGrace && gracePhaseStarted === 0) gracePhaseStarted = Date.now()
     var prog = null
     try {
       var pr = await fetch("/api/trails/walks/" + encodeURIComponent(runId) + "/progress" + qs)
@@ -648,6 +656,8 @@ async function runTrail(trailId, btn, row){
     if (prog && prog.totalSteps > 0) {
       btn.innerHTML = kicon('loader',{size:12})+' step '+prog.stepsDone+'/'+prog.totalSteps
     }
+    // Grace window exhausted — give up and do a best-effort refresh.
+    if (inGrace && Date.now() - gracePhaseStarted > POLL_GRACE_MS) break
   }
   cancelBtn.remove()
   await load() // give up polling; show whatever the dashboard has

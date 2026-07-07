@@ -320,9 +320,44 @@ async function load(){
   // Replay
   if(d.hasReplay){
     loadReplay()
+  } else if(v === "running") {
+    $("replayBody").innerHTML='<div style="font-size:13px;color:var(--paper-faint);padding:20px 0;text-align:center">Walk in progress — replay will appear when it finishes.</div>'
   } else {
     showNoReplay("No replay was recorded for this Walk.")
   }
+
+  // If still running, poll /progress and reload when a terminal state is reached.
+  // Uses the same grace-window logic as trails.html: 80 fast ticks then 90 s of grace at 3 s.
+  if(v === "running") startRunningPoll(walkId, qs)
+}
+
+// Poll /progress for a running walk until it reaches a terminal state, then reload.
+// Grace window: 80 × 1.5 s fast phase, then up to 90 s at 3 s to survive the finalization
+// window that occurs when the server writes the terminal status after the walk deadline fires.
+var _activePoll = false
+function startRunningPoll(runId, qs){
+  if(_activePoll) return
+  _activePoll = true
+  var GRACE_MS = 90_000
+  var graceStarted = 0
+  ;(async function(){
+    for(var i = 0; _activePoll; i++){
+      var inGrace = i >= 80
+      await new Promise(function(res){ setTimeout(res, inGrace ? 3000 : 1500) })
+      if(inGrace && graceStarted === 0) graceStarted = Date.now()
+      var prog = null
+      try{
+        var pr = await fetch("/api/trails/walks/"+encodeURIComponent(runId)+"/progress"+qs)
+        if(pr.ok) prog = await pr.json().catch(function(){ return null })
+      }catch(e){}
+      if(prog && prog.status !== "running"){
+        _activePoll = false
+        await load()  // full reload to paint verdict pill, steps, replay
+        return
+      }
+      if(inGrace && Date.now() - graceStarted > GRACE_MS){ _activePoll = false; break }
+    }
+  })()
 }
 
 function renderSteps(steps){
