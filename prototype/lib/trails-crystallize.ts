@@ -1,6 +1,6 @@
 // Layer B (orchestration, pure of browser/LLM): resolved trajectory -> Trail + steps + seeded locator_cache.
 // The flaky author run is discarded; the crystal (DB rows + cache + exportable code) is the durable artifact.
-import type { Fingerprint, StepAction, AuthorKind, Trail, TrailStep } from "./trails-types"
+import type { Fingerprint, StepAction, AuthorKind, Trail, TrailStep, TrailViewport } from "./trails-types"
 import { cacheKey } from "./trails-types"
 import { createTrail, addTrailStep, upsertLocatorCache, listTrailSteps } from "./trails"
 import { generatePlaywright } from "./trails-codegen"
@@ -21,6 +21,7 @@ export interface Trajectory {
   name: string
   intent?: string
   baseUrl: string
+  viewport?: TrailViewport | string | null
   authorKind?: AuthorKind
   createdBy?: string
   steps: TrajectoryStep[]
@@ -82,6 +83,7 @@ export async function crystallize(projectId: string, traj: Trajectory): Promise<
     name: traj.name,
     intent: traj.intent,
     baseUrl: traj.baseUrl,
+    viewport: traj.viewport,
     authorKind: traj.authorKind ?? "llm",
     createdBy: traj.createdBy,
   })

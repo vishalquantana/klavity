@@ -1,5 +1,6 @@
 import { db } from "./db"
-import type { Trail, TrailStep, TrailStatus, StepAction, Fingerprint, PersonaVerdict, WalkJudgment } from "./trails-types"
+import type { Trail, TrailStep, TrailStatus, StepAction, Fingerprint, TrailViewport } from "./trails-types"
+import { normalizeTrailViewport, parseTrailViewportJson } from "./trails-viewport"
 
 function uid(prefix: string): string { return prefix + crypto.randomUUID() }
 function j<T>(v: T | null | undefined): string | null { return v == null ? null : JSON.stringify(v) }
@@ -8,6 +9,7 @@ function pj<T>(s: unknown): T | null { return s ? (JSON.parse(String(s)) as T) :
 function rowToTrail(r: any): Trail {
   return {
     id: r.id, projectId: r.project_id, name: r.name, intent: r.intent, baseUrl: r.base_url,
+    viewport: parseTrailViewportJson(r.viewport_json),
     baselineRef: r.baseline_ref ?? null, authorKind: r.author_kind, status: r.status,
     createdBy: r.created_by ?? null, createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
     stepVersion: r.step_version == null ? 1 : Number(r.step_version),
@@ -19,13 +21,14 @@ function rowToTrail(r: any): Trail {
 
 export async function createTrail(
   projectId: string,
-  input: { name: string; intent?: string; baseUrl: string; authorKind?: Trail["authorKind"]; createdBy?: string },
+  input: { name: string; intent?: string; baseUrl: string; viewport?: TrailViewport | string | null; authorKind?: Trail["authorKind"]; createdBy?: string },
 ): Promise<string> {
   const id = uid("trl_"); const now = Date.now()
+  const viewport = normalizeTrailViewport(input.viewport)
   await db!.execute({
-    sql: `INSERT INTO trails (id, project_id, name, intent, base_url, baseline_ref, author_kind, status, created_by, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, NULL, ?, 'draft', ?, ?, ?)`,
-    args: [id, projectId, input.name, input.intent ?? "", input.baseUrl, input.authorKind ?? "human", input.createdBy ?? null, now, now],
+    sql: `INSERT INTO trails (id, project_id, name, intent, base_url, viewport_json, baseline_ref, author_kind, status, created_by, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, NULL, ?, 'draft', ?, ?, ?)`,
+    args: [id, projectId, input.name, input.intent ?? "", input.baseUrl, j(viewport), input.authorKind ?? "human", input.createdBy ?? null, now, now],
   })
   return id
 }
@@ -44,7 +47,7 @@ export async function setTrailStatus(projectId: string, id: string, status: Trai
   await db!.execute({ sql: `UPDATE trails SET status=?, updated_at=? WHERE project_id=? AND id=?`, args: [status, Date.now(), projectId, id] })
 }
 
-export type TrailPatch = { name?: string; status?: TrailStatus; schedule?: string | null; judgePersonaId?: string | null }
+export type TrailPatch = { name?: string; status?: TrailStatus; schedule?: string | null; viewport?: TrailViewport | string | null }
 
 export async function updateTrail(projectId: string, id: string, patch: TrailPatch): Promise<boolean> {
   const r = await db!.execute({ sql: `SELECT id FROM trails WHERE project_id=? AND id=?`, args: [projectId, id] })
@@ -54,7 +57,7 @@ export async function updateTrail(projectId: string, id: string, patch: TrailPat
   if (patch.name != null) { sets.push("name=?"); args.push(patch.name) }
   if (patch.status != null) { sets.push("status=?"); args.push(patch.status) }
   if ("schedule" in patch) { sets.push("schedule_cron=?"); args.push(patch.schedule ?? null) }
-  if ("judgePersonaId" in patch) { sets.push("judge_persona_id=?"); args.push(patch.judgePersonaId ?? null) }
+  if ("viewport" in patch) { sets.push("viewport_json=?"); args.push(j(normalizeTrailViewport(patch.viewport))) }
   if (!sets.length) return true
   sets.push("updated_at=?"); args.push(Date.now())
   args.push(projectId, id)

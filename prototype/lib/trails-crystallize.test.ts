@@ -46,10 +46,17 @@ test("crystallize persists a Trail with the trajectory metadata", async () => {
   expect(trail?.name).toBe("Checkout")
   expect(trail?.intent).toBe("log in, add the $20 plan, check out")
   expect(trail?.baseUrl).toBe("https://app.test/")
+  expect(trail?.viewport).toBeNull()
   expect(trail?.authorKind).toBe("llm")
   expect(trail?.status).toBe("draft") // crystallize leaves trail draft; explicit approval activates it
   // cross-project isolation
   expect(await T.getTrail("proj_other", trailId)).toBeNull()
+})
+
+test("crystallize persists the trajectory viewport config on the Trail", async () => {
+  const { trailId } = await crystallize("proj_viewport", { ...sampleTrajectory, viewport: "mobile" })
+  const trail = await T.getTrail("proj_viewport", trailId)
+  expect(trail?.viewport).toMatchObject({ preset: "mobile", width: 390, height: 844, isMobile: true })
 })
 
 test("crystallize writes one trail_step per trajectory step, in order, fingerprint only (no resolvedSelector in target_json)", async () => {

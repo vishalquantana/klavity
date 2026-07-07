@@ -28,7 +28,7 @@ await rawExec(`CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, name TE
 await rawExec(`CREATE TABLE IF NOT EXISTS account_members (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, email TEXT NOT NULL, account_role TEXT NOT NULL DEFAULT 'member', created_at INTEGER NOT NULL, UNIQUE(account_id, email))`)
 await rawExec(`CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, name TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', review_mode TEXT NOT NULL DEFAULT 'auto', review_budget_daily INTEGER, observability_mode TEXT NOT NULL DEFAULT 'named', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
 await rawExec(`CREATE TABLE IF NOT EXISTS project_members (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, email TEXT NOT NULL, project_role TEXT NOT NULL DEFAULT 'member', invited_by TEXT, created_at INTEGER NOT NULL, UNIQUE(project_id, email))`)
-await rawExec(`CREATE TABLE IF NOT EXISTS trails (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL, intent TEXT NOT NULL DEFAULT '', base_url TEXT NOT NULL, baseline_ref TEXT, author_kind TEXT NOT NULL DEFAULT 'human', status TEXT NOT NULL DEFAULT 'draft', created_by TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
+await rawExec(`CREATE TABLE IF NOT EXISTS trails (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL, intent TEXT NOT NULL DEFAULT '', base_url TEXT NOT NULL, viewport_json TEXT, baseline_ref TEXT, author_kind TEXT NOT NULL DEFAULT 'human', status TEXT NOT NULL DEFAULT 'draft', created_by TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
 await rawExec(`CREATE TABLE IF NOT EXISTS trail_runs (id TEXT PRIMARY KEY, trail_id TEXT NOT NULL, project_id TEXT NOT NULL, trigger TEXT NOT NULL DEFAULT 'manual', status TEXT NOT NULL DEFAULT 'running', llm_calls INTEGER NOT NULL DEFAULT 0, summary_json TEXT, started_at INTEGER NOT NULL, finished_at INTEGER)`)
 await rawExec(`CREATE TABLE IF NOT EXISTS findings (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, run_id TEXT NOT NULL, step_id TEXT, trail_id TEXT NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, evidence_json TEXT, ground_quote TEXT, confidence REAL NOT NULL DEFAULT 0, dedup_key TEXT NOT NULL, recurrence INTEGER NOT NULL DEFAULT 1, status TEXT NOT NULL DEFAULT 'queued', connector_ref TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
 // run_steps (player timeline) + walk_replays (gzipped rrweb segments) — mirrors applySchema DDL.
@@ -222,6 +222,25 @@ test("POST .../dismiss on a non-existent finding id returns 404 (not a misleadin
   const r = await api("POST", `/api/trails/findings/find_nope_${ts}/dismiss?project=${PROJECT_ID}`, {}, MEMBER_SID)
   expect(r.status).toBe(404)
   expect((await r.json()).ok).toBe(false)
+})
+
+test("PATCH /api/trails/:id persists a viewport preset and dashboard returns it", async () => {
+  const r = await api("PATCH", `/api/trails/${TRAIL_ID}?project=${PROJECT_ID}`, { viewport: "mobile" }, MEMBER_SID)
+  expect(r.status).toBe(200)
+  const row = await rawClient.execute({ sql: `SELECT viewport_json FROM trails WHERE id=?`, args: [TRAIL_ID] })
+  const viewport = JSON.parse(String((row.rows[0] as any).viewport_json))
+  expect(viewport).toMatchObject({ preset: "mobile", width: 390, height: 844, isMobile: true })
+
+  const dash = await api("GET", `/api/trails/dashboard?project=${PROJECT_ID}`, null, MEMBER_SID)
+  const b = await dash.json()
+  const trail = b.trails.find((t: any) => t.id === TRAIL_ID)
+  expect(trail.viewport).toMatchObject({ preset: "mobile", width: 390, height: 844, isMobile: true })
+})
+
+test("PATCH /api/trails/:id rejects invalid viewport dimensions", async () => {
+  const r = await api("PATCH", `/api/trails/${TRAIL_ID}?project=${PROJECT_ID}`, { viewport: { width: 99, height: 844 } }, MEMBER_SID)
+  expect(r.status).toBe(400)
+  expect((await r.json()).error).toContain("viewport.width")
 })
 
 test("GET /api/trails/walks/:runId/replay returns segments + steps when authed (project-scoped)", async () => {

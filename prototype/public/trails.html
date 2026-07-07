@@ -345,6 +345,7 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
       <textarea id="ntObj" rows="4" placeholder="Log in, create a project, open it, then delete it and log out."></textarea>
     </label>
     <p class="hint" id="ntCleanupHint">Tip: end the journey where it started — include the cleanup ("...then delete it") so every run leaves your data tidy.</p>
+    <label>Viewport <select id="ntViewport"><option value="desktop">Desktop 1280×720</option><option value="mobile">Mobile 390×844</option></select></label>
     <label>Test account <select id="ntAcc"><option value="">(none — public pages)</option></select></label>
     <div class="row"><button class="btn btn-indigo" id="ntGo">Create Trail</button><button class="btn btn-ghost" id="ntCancel">Cancel</button></div>
     <div id="ntProgress"></div>
@@ -899,7 +900,8 @@ function renderTrails(d){
     var row = document.createElement("div")
     row.className = "trail" + (isPaused ? " paused" : "")
     var schedChip = t.schedule ? '<span class="schedule-chip">'+kicon('clock',{size:9})+' '+esc(t.schedule)+'</span>' : ''
-    var html = '<div class="body"><div class="t" data-trail-name-el="'+esc(t.id)+'">'+esc(t.name)+'</div><div class="d">'+esc(t.baseUrl)+'</div></div>'
+    var vp = t.viewport ? ((t.viewport.preset ? t.viewport.preset + " " : "") + t.viewport.width + "×" + t.viewport.height) : "default viewport"
+    var html = '<div class="body"><div class="t" data-trail-name-el="'+esc(t.id)+'">'+esc(t.name)+'</div><div class="d">'+esc(t.baseUrl)+' · '+esc(vp)+'</div></div>'
     html += schedChip
     html += '<span class="run-msg"></span>'
     html += '<span class="heal-diff" data-heal="'+esc(t.id)+'" style="display:none"></span>'
@@ -1538,6 +1540,7 @@ document.getElementById("ntGo").addEventListener("click", async function(){
   var body = { name: document.getElementById("ntName").value.trim(),
     objective: document.getElementById("ntObj").value.trim(),
     base_url: document.getElementById("ntUrl").value.trim(),
+    viewport: document.getElementById("ntViewport").value || "desktop",
     test_account: document.getElementById("ntAcc").value || undefined }
   var r = await fetch("/api/trails/author" + projQ(), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
   if(!r.ok){ var e = await r.json().catch(function(){ return {} }); box.innerHTML = '<div class="nt-stall">' + esc(e.error || r.statusText) + "</div>"; btn.disabled = false; return }
