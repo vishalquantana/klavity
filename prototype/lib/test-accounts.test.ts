@@ -20,9 +20,11 @@ test("create + list never exposes the secret; get-secret decrypts", async () => 
   const list = await listTestAccounts(P)
   expect(list.length).toBe(1)
   expect(list[0].name).toBe("admin")
+  expect(list[0].authShape).toBe("password")
   expect(JSON.stringify(list)).not.toContain("s3cret-pw")
   const sec = await getTestAccountSecret(P, "admin")
-  expect(sec).toEqual({ loginEmail: "vishal@quantana.com.au", password: "s3cret-pw" })
+  expect(sec).toMatchObject({ loginEmail: "vishal@quantana.com.au", authShape: "password", password: "s3cret-pw" })
+  expect(sec?.otpCode).toBeUndefined()
 })
 
 test("stored blob is ciphertext, not plaintext", async () => {
@@ -47,4 +49,47 @@ test("delete is project-scoped and idempotent-false on miss", async () => {
   expect(await deleteTestAccount("proj_stranger", acc.id)).toBe(false)
   expect(await deleteTestAccount(P, acc.id)).toBe(true)
   expect((await listTestAccounts(P)).length).toBe(0)
+})
+
+// ── KLA-103: OTP/passwordless auth shape ─────────────────────────────────────
+
+const P2 = "proj_tacc_otp"
+
+test("create OTP account: no password required; stored password_enc is empty string", async () => {
+  const id = await createTestAccount(P2, { name: "otp-user", loginEmail: "otp@test.local", authShape: "otp" })
+  expect(id.startsWith("tacc_")).toBe(true)
+  const list = await listTestAccounts(P2)
+  expect(list.length).toBe(1)
+  expect(list[0].authShape).toBe("otp")
+  // Stored password_enc must be empty (no secret to encrypt for OTP accounts)
+  const { db } = await import("./db")
+  const r = await db!.execute({ sql: "SELECT password_enc FROM test_accounts WHERE project_id=? AND name=?", args: [P2, "otp-user"] })
+  expect(String((r.rows[0] as any).password_enc)).toBe("")
+})
+
+test("getTestAccountSecret for OTP shape returns otpCode when KLAV_TEST_OTP=1", async () => {
+  process.env.KLAV_TEST_OTP = "1"
+  const sec = await getTestAccountSecret(P2, "otp-user")
+  expect(sec?.authShape).toBe("otp")
+  expect(sec?.otpCode).toBe("666666")
+  expect(sec?.password).toBeUndefined()
+  delete process.env.KLAV_TEST_OTP
+})
+
+test("getTestAccountSecret for OTP shape throws when KLAV_TEST_OTP is not set", async () => {
+  delete process.env.KLAV_TEST_OTP
+  await expect(getTestAccountSecret(P2, "otp-user")).rejects.toThrow("KLAV_TEST_OTP is not enabled")
+})
+
+test("KLAV_TEST_OTP_CODE overrides the default 666666", async () => {
+  process.env.KLAV_TEST_OTP = "1"
+  process.env.KLAV_TEST_OTP_CODE = "123456"
+  const sec = await getTestAccountSecret(P2, "otp-user")
+  expect(sec?.otpCode).toBe("123456")
+  delete process.env.KLAV_TEST_OTP
+  delete process.env.KLAV_TEST_OTP_CODE
+})
+
+test("password shape without password throws at creation", async () => {
+  await expect(createTestAccount(P2, { name: "no-pw", loginEmail: "x@test.local", authShape: "password" })).rejects.toThrow("password is required")
 })
