@@ -146,3 +146,127 @@ test("replays do NOT record real input values or credentials (KLA-60)", async ()
   expect(rawSegmentsJson).not.toContain(SENTINEL_EMAIL)
 }, 60000)
 
+test("replay capping: synthetic event flood yields bounded buffer, snapshot retained, truncated flag set", async () => {
+  const origMax = process.env.KLAV_REPLAY_MAX_EVENTS
+  const origTotal = process.env.KLAV_REPLAY_MAX_TOTAL_EVENTS
+  process.env.KLAV_REPLAY_MAX_EVENTS = "10"
+  process.env.KLAV_REPLAY_MAX_TOTAL_EVENTS = "25"
+
+  try {
+    let bindingCallback: any = null
+    const mockContext: any = {
+      exposeBinding: async (name: string, cb: any) => {
+        if (name === "__klavReplayPush") bindingCallback = cb
+      },
+      addInitScript: async () => {}
+    }
+
+    const cap = await R.setupReplayCapture(mockContext)
+
+    expect(bindingCallback).not.toBeNull()
+
+    // 1. Generate synthetic events. We want a full snapshot (type 2) at the start, and then many subsequent events (type 3).
+    const events: any[] = [
+      { type: 4, timestamp: 1 }, // meta
+      { type: 2, timestamp: 2, data: "snapshot" }, // snapshot
+    ]
+    for (let i = 0; i < 20; i++) {
+      events.push({ type: 3, timestamp: 10 + i, data: `mutation_${i}` })
+    }
+
+    // Push events to the binding callback
+    await bindingCallback({}, events)
+
+    // Drain and flush
+    const mockPage: any = {
+      evaluate: async () => {}
+    }
+    await cap.flush(0, "http://test.url/1", mockPage)
+
+    // Assert segment
+    expect(cap.segments.length).toBe(1)
+    const seg1 = cap.segments[0]
+    expect(seg1.truncated).toBe(true)
+    expect(seg1.events.length).toBe(10) // capped at KLAV_REPLAY_MAX_EVENTS = 10
+    // Keep snapshot (type 2)
+    const snapshotEvent: any = seg1.events[0]
+    expect(snapshotEvent.type).toBe(2)
+    expect(snapshotEvent.data).toBe("snapshot")
+
+    // The remaining 9 events should be the newest ones (mutation_11 to mutation_19)
+    const lastEvent: any = seg1.events[9]
+    expect(lastEvent.data).toBe("mutation_19")
+
+    // 2. Test total event capping across multiple segments.
+    // Total cap is 25. Segment 1 used 10. Segment 2 will try to push 20 events.
+    const events2: any[] = [
+      { type: 2, timestamp: 100, data: "snapshot2" }
+    ]
+    for (let i = 0; i < 20; i++) {
+      events2.push({ type: 3, timestamp: 200 + i, data: `mutation2_${i}` })
+    }
+
+    await bindingCallback({}, events2)
+    await cap.flush(1, "http://test.url/2", mockPage)
+
+    expect(cap.segments.length).toBe(2)
+    const seg2 = cap.segments[1]
+    expect(seg2.truncated).toBe(true)
+    // Remaining cap for walk = 25 - 10 = 15. Since seg2 cap is min(10, 15) = 10, seg2 should have 10 events.
+    expect(seg2.events.length).toBe(10)
+    expect(seg2.events[0].type).toBe(2)
+    expect(seg2.events[0].data).toBe("snapshot2")
+
+    // Let's flush a third segment to see it cap down to 5 (since total events in seg1 + seg2 = 20, remaining = 5)
+    const events3: any[] = [
+      { type: 2, timestamp: 300, data: "snapshot3" }
+    ]
+    for (let i = 0; i < 20; i++) {
+      events3.push({ type: 3, timestamp: 400 + i, data: `mutation3_${i}` })
+    }
+    await bindingCallback({}, events3)
+    await cap.flush(2, "http://test.url/3", mockPage)
+
+    expect(cap.segments.length).toBe(3)
+    const seg3 = cap.segments[2]
+    expect(seg3.truncated).toBe(true)
+    // Remaining cap for walk = 25 - 20 = 5.
+    expect(seg3.events.length).toBe(5)
+    expect(seg3.events[0].type).toBe(2)
+    expect(seg3.events[0].data).toBe("snapshot3")
+
+    // Let's check a fourth segment when remaining cap is 0
+    const events4: any[] = [
+      { type: 2, timestamp: 500, data: "snapshot4" }
+    ]
+    for (let i = 0; i < 5; i++) {
+      events4.push({ type: 3, timestamp: 600 + i, data: `mutation4_${i}` })
+    }
+    await bindingCallback({}, events4)
+    await cap.flush(3, "http://test.url/4", mockPage)
+
+    expect(cap.segments.length).toBe(4)
+    const seg4 = cap.segments[3]
+    expect(seg4.truncated).toBe(true)
+    // Remaining cap = 0. So it should only contain the snapshot (length 1)
+    expect(seg4.events.length).toBe(1)
+    expect(seg4.events[0].type).toBe(2)
+    expect(seg4.events[0].data).toBe("snapshot4")
+
+    // Verify replay still saves correctly
+    const projectId = "proj_cap_test"
+    await R.saveReplay(projectId, "run_cap_test", cap.segments)
+
+    const saved = await R.getReplay(projectId, "run_cap_test")
+    expect(saved).not.toBeNull()
+    expect(saved!.length).toBe(4)
+    expect(saved![0].truncated).toBe(true)
+    expect(saved![0].events.length).toBe(10)
+    expect(saved![3].events.length).toBe(1)
+  } finally {
+    process.env.KLAV_REPLAY_MAX_EVENTS = origMax
+    process.env.KLAV_REPLAY_MAX_TOTAL_EVENTS = origTotal
+  }
+}, 30000)
+
+
