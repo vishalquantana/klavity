@@ -22,6 +22,7 @@ import { setupReplayCapture, saveReplay, type ReplayCapture } from "./trails-rep
 import { hasCredRef, resolveCredRefs, type CredResolver } from "./trails-creds"
 import { captureKrefSnapshot, stableSelectorFor, structuralPathFor, isKrefSelector, recordedStepState } from "./trails-snapshot"
 import { clickWithTransitionFallback } from "./trails-click"
+import { notifyWalkRed } from "./walk-red-alert"
 
 export interface WalkOptions {
   /** Concrete URL to walk against (overrides the trail's baseUrl). file:// or http(s)://. */
@@ -470,6 +471,10 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
       summary: { healedCount, stepCount: steps.length, ...(deadlineHit ? { error: "deadline_exceeded" } : cancelledBySignal ? { error: "cancelled" } : {}) },
     })
 
+    if (walkVerdict === "red") {
+      notifyWalkRed({ trailName: trail.name, trailId, projectId, runId, reasons: redReasons, at: Date.now() }).catch(() => {})
+    }
+
     // Persist the replay AFTER finishWalk. Best-effort: a save failure never changes the Walk result.
     if (capture && capture.segments.length) {
       try { await saveReplay(projectId, runId, capture.segments) } catch (e) {
@@ -486,6 +491,7 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
       llmCalls,
       summary: { ...redReasons.length ? { reasons: redReasons } : {}, error: String(e) },
     })
+    notifyWalkRed({ trailName: trail.name, trailId, projectId, runId, reasons: redReasons, at: Date.now() }).catch(() => {})
     return { runId, verdict: "red", llmCalls, steps: stepSummaries, healedCount, reasons: redReasons }
   } finally {
     await bh.close()
