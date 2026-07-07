@@ -183,6 +183,22 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 .trail .activate-btn{flex-shrink:0;font-family:var(--mono);font-size:10px;letter-spacing:.04em;padding:5px 10px;border-radius:8px;border:1px solid rgba(99,102,241,.4);background:transparent;color:var(--indigo);cursor:pointer;transition:transform var(--mi-dur) var(--mi-ease)}
 .trail .activate-btn:hover:not(:disabled){background:rgba(99,102,241,.1);transform:var(--mi-lift)}
 .trail .activate-btn:active{transform:var(--mi-press)}
+/* paused trail dimming */
+.trail.paused{opacity:.65}
+.pill.paused{background:rgba(139,139,139,.15);color:var(--paper-faint)}
+/* kebab menu on trail row */
+.trail .kebab-btn{flex-shrink:0;background:none;border:1px solid transparent;border-radius:8px;color:var(--paper-faint);font-size:16px;line-height:1;padding:4px 7px;cursor:pointer;transition:color var(--mi-dur) var(--mi-ease),border-color var(--mi-dur) var(--mi-ease),transform var(--mi-dur) var(--mi-ease)}
+.trail .kebab-btn:hover{color:var(--paper);border-color:var(--line);transform:var(--mi-lift)}
+.trail .kebab-btn:active{transform:var(--mi-press)}
+.trail-menu{position:absolute;z-index:30;min-width:150px;background:var(--ink-2);border:1px solid var(--line);border-radius:12px;padding:6px;box-shadow:0 6px 24px rgba(0,0,0,.28);display:none}
+.trail-menu.open{display:block}
+.trail-menu button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:none;border:none;color:var(--paper);font-family:var(--body);font-size:13px;padding:7px 11px;border-radius:8px;cursor:pointer;transition:background var(--mi-dur) var(--mi-ease)}
+.trail-menu button:hover{background:var(--ink-3)}
+.trail-menu button.danger{color:var(--rose)}
+/* rename-in-place input on trail row */
+.trail .trail-rename-input{font-size:14px;font-weight:600;background:var(--ink-3);border:1px solid var(--indigo);border-radius:8px;color:var(--paper);font-family:var(--body);padding:3px 8px;outline:none;min-width:120px;max-width:280px}
+/* wrapper to allow relative positioning of kebab menu */
+.trail-wrap{position:relative}
 
 /* Draft Review modal */
 #drBg .modal{max-width:660px;max-height:88vh;display:flex;flex-direction:column}
@@ -763,21 +779,38 @@ function renderTrails(d){
     var w = latestWalkFor(d.recentWalks||[], t.id)
     var v = w ? String(w.status||"") : ""
     var isDraft = t.status === "draft"
+    var isPaused = t.status === "paused"
+    var wrap = document.createElement("div")
+    wrap.className = "trail-wrap"
     var row = document.createElement("div")
-    row.className = "trail"
-    var html = '<div class="body"><div class="t">'+esc(t.name)+'</div><div class="d">'+esc(t.baseUrl)+'</div></div>'
+    row.className = "trail" + (isPaused ? " paused" : "")
+    var html = '<div class="body"><div class="t" data-trail-name-el="'+esc(t.id)+'">'+esc(t.name)+'</div><div class="d">'+esc(t.baseUrl)+'</div></div>'
     html += '<span class="run-msg"></span>'
     html += '<span class="heal-diff" data-heal="'+esc(t.id)+'" style="display:none"></span>'
     if (isDraft) {
       html += '<span class="pill pill-draft">draft</span>'
       html += '<button class="activate-btn" data-activate="'+esc(t.id)+'">Activate</button>'
     } else {
-      if (v) html += '<span class="pill '+esc(v)+'">'+esc(v)+'</span>'
-      if (w && w.hasReplay) html += '<button class="replay-btn" data-replay="'+esc(w.id)+'">'+kicon('play',{size:12})+' Replay</button>'
-      html += '<button class="run-btn" data-run="'+esc(t.id)+'">'+kicon('play',{size:12})+' Run</button>'
+      if (isPaused) {
+        html += '<span class="pill paused">paused</span>'
+      } else {
+        if (v) html += '<span class="pill '+esc(v)+'">'+esc(v)+'</span>'
+        if (w && w.hasReplay) html += '<button class="replay-btn" data-replay="'+esc(w.id)+'">'+kicon('play',{size:12})+' Replay</button>'
+      }
+      if (!isPaused) html += '<button class="run-btn" data-run="'+esc(t.id)+'">'+kicon('play',{size:12})+' Run</button>'
+      html += '<button class="kebab-btn" data-kebab="'+esc(t.id)+'" aria-label="Trail options">&#8942;</button>'
     }
     row.innerHTML = html
-    tEl.appendChild(row)
+    // Kebab dropdown (positioned relative to wrap)
+    var menu = document.createElement("div")
+    menu.className = "trail-menu"
+    menu.id = "km-" + t.id
+    var pauseLabel = isPaused ? (kicon('play',{size:12}) + ' Resume') : (kicon('pause',{size:12}) + ' Pause')
+    menu.innerHTML = '<button data-rename="'+esc(t.id)+'">'+kicon('pencil',{size:12})+' Rename</button>'
+      + '<button data-toggle-pause="'+esc(t.id)+'" data-paused="'+String(isPaused)+'">'+pauseLabel+'</button>'
+    wrap.appendChild(row)
+    wrap.appendChild(menu)
+    tEl.appendChild(wrap)
     // For an AMBER latest walk, surface the heal-diff (#checkout — ...) asynchronously.
     if (w && v === "amber"){
       healDiffFor(w.id).then(function(diff){
@@ -796,6 +829,76 @@ function renderTrails(d){
   tEl.querySelectorAll("button[data-activate]").forEach(function(btn){
     btn.onclick = function(){ openDraftReview(btn.getAttribute("data-activate")) }
   })
+  // Kebab menu toggle
+  tEl.querySelectorAll("button[data-kebab]").forEach(function(btn){
+    btn.onclick = function(e){
+      e.stopPropagation()
+      var id = btn.getAttribute("data-kebab")
+      var menu = document.getElementById("km-"+id)
+      if (!menu) return
+      var isOpen = menu.classList.contains("open")
+      document.querySelectorAll(".trail-menu.open").forEach(function(m){ m.classList.remove("open") })
+      if (!isOpen) {
+        menu.style.top = (btn.offsetTop + btn.offsetHeight + 4) + "px"
+        menu.style.right = "0"
+        menu.classList.add("open")
+      }
+    }
+  })
+  // Rename
+  tEl.querySelectorAll("button[data-rename]").forEach(function(btn){
+    btn.onclick = async function(){
+      var id = btn.getAttribute("data-rename")
+      var menu = document.getElementById("km-"+id)
+      if (menu) menu.classList.remove("open")
+      var nameEl = tEl.querySelector('[data-trail-name-el="'+id+'"]')
+      if (!nameEl) return
+      var current = nameEl.textContent || ""
+      var input = document.createElement("input")
+      input.type = "text"
+      input.className = "trail-rename-input"
+      input.value = current
+      nameEl.replaceWith(input)
+      input.focus()
+      input.select()
+      async function commit(){
+        var newName = input.value.trim()
+        if (!newName || newName === current) { input.replaceWith(nameEl); return }
+        try {
+          var r = await fetch("/api/trails/"+encodeURIComponent(id)+projQ(), { method:"PATCH", headers:{"Content-Type":"application/json"}, body: JSON.stringify({name: newName}) })
+          if (r.ok) { nameEl.textContent = newName; input.replaceWith(nameEl) }
+          else { var d = await r.json().catch(function(){return{}}); alert(d.error || "Rename failed"); input.replaceWith(nameEl) }
+        } catch(e) { input.replaceWith(nameEl) }
+      }
+      input.onblur = commit
+      input.onkeydown = function(e){ if (e.key === "Enter"){ e.preventDefault(); commit() } if (e.key === "Escape"){ input.replaceWith(nameEl) } }
+    }
+  })
+  // Pause / Resume
+  tEl.querySelectorAll("button[data-toggle-pause]").forEach(function(btn){
+    btn.onclick = async function(){
+      var id = btn.getAttribute("data-toggle-pause")
+      var wasPaused = btn.getAttribute("data-paused") === "true"
+      var menu = document.getElementById("km-"+id)
+      if (menu) menu.classList.remove("open")
+      var newStatus = wasPaused ? "active" : "paused"
+      try {
+        var r = await fetch("/api/trails/"+encodeURIComponent(id)+projQ(), { method:"PATCH", headers:{"Content-Type":"application/json"}, body: JSON.stringify({status: newStatus}) })
+        if (r.ok) {
+          // Reload to reflect state change
+          var d2 = await loadData()
+          if (d2) render(d2)
+        } else {
+          var d3 = await r.json().catch(function(){return{}})
+          alert(d3.error || "Could not update trail status")
+        }
+      } catch(e) { /* ignore */ }
+    }
+  })
+  // Close menus on outside click
+  document.addEventListener("click", function(){
+    document.querySelectorAll(".trail-menu.open").forEach(function(m){ m.classList.remove("open") })
+  }, {once: false, capture: false})
 }
 
 async function loadData(){

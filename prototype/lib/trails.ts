@@ -40,6 +40,22 @@ export async function setTrailStatus(projectId: string, id: string, status: Trai
   await db!.execute({ sql: `UPDATE trails SET status=?, updated_at=? WHERE project_id=? AND id=?`, args: [status, Date.now(), projectId, id] })
 }
 
+export type TrailPatch = { name?: string; status?: TrailStatus }
+
+export async function updateTrail(projectId: string, id: string, patch: TrailPatch): Promise<boolean> {
+  const r = await db!.execute({ sql: `SELECT id FROM trails WHERE project_id=? AND id=?`, args: [projectId, id] })
+  if (!r.rows.length) return false
+  const sets: string[] = []
+  const args: (string | number)[] = []
+  if (patch.name != null) { sets.push("name=?"); args.push(patch.name) }
+  if (patch.status != null) { sets.push("status=?"); args.push(patch.status) }
+  if (!sets.length) return true
+  sets.push("updated_at=?"); args.push(Date.now())
+  args.push(projectId, id)
+  await db!.execute({ sql: `UPDATE trails SET ${sets.join(", ")} WHERE project_id=? AND id=?`, args })
+  return true
+}
+
 function rowToStep(r: any): TrailStep {
   return {
     id: r.id, trailId: r.trail_id, projectId: r.project_id, idx: Number(r.idx),
