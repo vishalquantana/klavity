@@ -48,6 +48,21 @@ export async function setTrailStatus(projectId: string, id: string, status: Trai
   await db!.execute({ sql: `UPDATE trails SET status=?, updated_at=? WHERE project_id=? AND id=?`, args: [status, Date.now(), projectId, id] })
 }
 
+export async function deleteTrail(projectId: string, id: string): Promise<void> {
+  const runIds = await db!.execute({ sql: `SELECT id FROM trail_runs WHERE project_id=? AND trail_id=?`, args: [projectId, id] })
+  for (const row of runIds.rows) {
+    const runId = String((row as any).id)
+    await db!.execute({ sql: `DELETE FROM walk_replays WHERE project_id=? AND run_id=?`, args: [projectId, runId] })
+    await db!.execute({ sql: `DELETE FROM walk_judgments WHERE project_id=? AND run_id=?`, args: [projectId, runId] }).catch(() => {})
+  }
+  await db!.execute({ sql: `DELETE FROM run_steps WHERE project_id=? AND trail_id=?`, args: [projectId, id] })
+  await db!.execute({ sql: `DELETE FROM findings WHERE project_id=? AND trail_id=?`, args: [projectId, id] })
+  await db!.execute({ sql: `DELETE FROM trail_runs WHERE project_id=? AND trail_id=?`, args: [projectId, id] })
+  await db!.execute({ sql: `DELETE FROM locator_cache WHERE project_id=? AND trail_id=?`, args: [projectId, id] })
+  await db!.execute({ sql: `DELETE FROM trail_steps WHERE project_id=? AND trail_id=?`, args: [projectId, id] })
+  await db!.execute({ sql: `DELETE FROM trails WHERE project_id=? AND id=?`, args: [projectId, id] })
+}
+
 export type TrailPatch = { name?: string; status?: TrailStatus; schedule?: string | null; viewport?: TrailViewport | string | null; judgePersonaId?: string | null }
 
 export async function updateTrail(projectId: string, id: string, patch: TrailPatch): Promise<boolean> {
