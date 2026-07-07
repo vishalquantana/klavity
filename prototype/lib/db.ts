@@ -561,6 +561,9 @@ export async function applySchema(c: Client) {
   // page itself is already captured as url_host/url_path; this records the upstream traffic source so
   // we can see which external site each widget interaction/lead originated from.
   await c.execute("ALTER TABLE feedback ADD COLUMN source_referrer TEXT").catch((e) => console.warn("feedback.source_referrer ALTER skipped:", e?.message || e))
+  // KLA-94: opt-in auto-file flag. When enabled AND a finding meets the confidence/severity threshold,
+  // the walk executor automatically creates a ticket via the project's connector. Default OFF (back-compat).
+  await c.execute("ALTER TABLE projects ADD COLUMN trails_autofile_enabled INTEGER NOT NULL DEFAULT 0").catch((e) => console.warn("projects.trails_autofile_enabled ALTER skipped:", e?.message || e))
 
   // KLA-117: optional per-Trail viewport/device config for AutoSim walks.
   if (!(await columnExists(c, "trails", "viewport_json"))) {
@@ -974,6 +977,7 @@ export type ProjectRow = {
   widgetMode: string; widgetCtaUrl: string | null; widgetNotifyEmail: string | null
   widgetReportGate: string
   instructionsMd?: string | null
+  trailsAutofileEnabled: boolean
 }
 function rowToProject(x: any): ProjectRow {
   return {
@@ -987,6 +991,7 @@ function rowToProject(x: any): ProjectRow {
     widgetNotifyEmail: x.widget_notify_email != null ? String(x.widget_notify_email) : null,
     widgetReportGate: ["anonymous", "email", "login"].includes(String(x.widget_report_gate)) ? String(x.widget_report_gate) : "email",
     instructionsMd: x.instructions_md != null ? String(x.instructions_md) : undefined,
+    trailsAutofileEnabled: !!x.trails_autofile_enabled,
   }
 }
 
@@ -1121,6 +1126,10 @@ export async function setWidgetConfig(projectId: string, cfg: { mode?: string; c
   if (!sets.length) return
   sets.push("updated_at=?"); args.push(Date.now()); args.push(projectId)
   await db!.execute({ sql: `UPDATE projects SET ${sets.join(", ")} WHERE id=?`, args })
+}
+
+export async function setProjectTrailsAutofile(projectId: string, enabled: boolean): Promise<void> {
+  await db!.execute({ sql: "UPDATE projects SET trails_autofile_enabled=?, updated_at=? WHERE id=?", args: [enabled ? 1 : 0, Date.now(), projectId] })
 }
 
 export async function setFeedbackContactEmail(feedbackId: string, projectId: string, email: string): Promise<boolean> {
