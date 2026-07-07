@@ -62,7 +62,9 @@ function makeAuthorOpts(model: AuthorModel, extra: Record<string, any> = {}) {
 
 // ── Budget-exhausted → distinct stallReason ───────────────────────────────────────────────────────
 
-test("budget-exhausted error surfaces as stallReason starting with budget_exhausted", async () => {
+const RUN_BROWSER = !!process.env.KLAV_E2E
+
+test.if(RUN_BROWSER)("budget-exhausted error surfaces as stallReason starting with budget_exhausted", async () => {
   const model: AuthorModel = async () => {
     throw new ModelCallError("Daily AI budget reached", false, true)
   }
@@ -74,7 +76,7 @@ test("budget-exhausted error surfaces as stallReason starting with budget_exhaus
 
 // ── Fatal non-retryable error → immediate stall ───────────────────────────────────────────────────
 
-test("401 auth error causes immediate fatal stall without retry", async () => {
+test.if(RUN_BROWSER)("401 auth error causes immediate fatal stall without retry", async () => {
   let callCount = 0
   const model: AuthorModel = async () => {
     callCount++
@@ -87,7 +89,7 @@ test("401 auth error causes immediate fatal stall without retry", async () => {
   expect(callCount).toBe(1)  // no retry on fatal
 })
 
-test("403 forbidden causes immediate fatal stall without retry", async () => {
+test.if(RUN_BROWSER)("403 forbidden causes immediate fatal stall without retry", async () => {
   let callCount = 0
   const model: AuthorModel = async () => {
     callCount++
@@ -101,7 +103,7 @@ test("403 forbidden causes immediate fatal stall without retry", async () => {
 
 // ── Retryable error → backoff retries, then miss ─────────────────────────────────────────────────
 
-test("single 429 that resolves on next attempt → not a miss, authoring continues", async () => {
+test.if(RUN_BROWSER)("single 429 that resolves on next attempt → not a miss, authoring continues", async () => {
   let callCount = 0
   const model: AuthorModel = async () => {
     callCount++
@@ -114,7 +116,7 @@ test("single 429 that resolves on next attempt → not a miss, authoring continu
   expect(callCount).toBe(2)  // 1 failure + 1 success
 })
 
-test("persistent 429 exhausts API retries and counts as a miss", async () => {
+test.if(RUN_BROWSER)("persistent 429 exhausts API retries and counts as a miss", async () => {
   let callCount = 0
   // Always throw 429 — exhausts retries, eventually hits MAX_CONSECUTIVE_MISSES
   const model: AuthorModel = async () => {
@@ -129,7 +131,7 @@ test("persistent 429 exhausts API retries and counts as a miss", async () => {
   expect(callCount).toBeGreaterThan(1)
 })
 
-test("5xx server error retries and succeeds on third attempt", async () => {
+test.if(RUN_BROWSER)("5xx server error retries and succeeds on third attempt", async () => {
   let callCount = 0
   const model: AuthorModel = async () => {
     callCount++
@@ -142,7 +144,7 @@ test("5xx server error retries and succeeds on third attempt", async () => {
   expect(callCount).toBe(3)
 })
 
-test("timeout error (retryable) retries then stalls after cap", async () => {
+test.if(RUN_BROWSER)("timeout error (retryable) retries then stalls after cap", async () => {
   let callCount = 0
   const model: AuthorModel = async () => {
     callCount++
@@ -156,7 +158,7 @@ test("timeout error (retryable) retries then stalls after cap", async () => {
 
 // ── Unknown (non-ModelCallError) throw → treated as retryable miss ────────────────────────────────
 
-test("generic Error (non-classified) from model → treated as retryable miss", async () => {
+test.if(RUN_BROWSER)("generic Error (non-classified) from model → treated as retryable miss", async () => {
   let callCount = 0
   const model: AuthorModel = async () => {
     callCount++
@@ -171,7 +173,7 @@ test("generic Error (non-classified) from model → treated as retryable miss", 
 
 // ── Sleep is called with increasing backoff on each retry ────────────────────────────────────────
 
-test("exponential backoff: each retry sleeps progressively longer", async () => {
+test.if(RUN_BROWSER)("exponential backoff: each retry sleeps progressively longer", async () => {
   const sleeps: number[] = []
   const sleepMs = (ms: number) => { sleeps.push(ms); return Promise.resolve() }
   let callCount = 0
@@ -189,7 +191,7 @@ test("exponential backoff: each retry sleeps progressively longer", async () => 
 
 // ── Retry count is properly bounded (no infinite loop) ───────────────────────────────────────────
 
-test("retry attempts are capped — model is not called indefinitely", async () => {
+test.if(RUN_BROWSER)("retry attempts are capped — model is not called indefinitely", async () => {
   let callCount = 0
   const model: AuthorModel = async () => {
     callCount++

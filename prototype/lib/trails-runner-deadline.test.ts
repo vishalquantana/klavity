@@ -14,7 +14,9 @@ const T = await import("./trails")
 
 const landing = (dir: string) => pathToFileURL(resolve(import.meta.dir, "..", "test-fixtures", dir, "landing.html")).href
 
-test("deadlineMs finalizes the walk red instead of running every step", async () => {
+const RUN_BROWSER = !!process.env.KLAV_E2E
+
+test.if(RUN_BROWSER)("deadlineMs finalizes the walk red instead of running every step", async () => {
   const base = landing("journey")
   const { trailId } = await crystallize("proj_dl", {
     name: "DL", baseUrl: base, authorKind: "llm",
@@ -35,7 +37,7 @@ test("deadlineMs finalizes the walk red instead of running every step", async ()
 // trail whose fixtureUrl is a NON-ROUTABLE host that HANGS the TCP connect (10.255.255.1). With a small
 // deadlineMs the initial goto must TIME OUT, finalize the walk RED, and return well under Playwright's
 // 30s default — proving a hung live-network navigation can't pin the single walk-slot + browser.
-test("a hung initial-goto times out (bounded by opTimeout), finalizes RED well under 30s", async () => {
+test.if(RUN_BROWSER)("a hung initial-goto times out (bounded by opTimeout), finalizes RED well under 30s", async () => {
   const base = landing("journey")
   const { trailId } = await crystallize("proj_dl_hang", {
     name: "Hang", baseUrl: base, authorKind: "llm",

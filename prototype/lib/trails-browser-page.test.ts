@@ -6,6 +6,9 @@
 import { describe, test, expect, afterAll } from "bun:test"
 import { acquireBrowser, acquirePlaywrightBrowser, playwrightContextOptionsForTrailViewport, startCdpScreencast, type BrowserHandle, type PlaywrightBrowserHandle } from "./trails-browser-page"
 
+// Real-browser tests only run when KLAV_E2E=1 (browsers installed). CI default suite is hermetic.
+const RUN_BROWSER = !!process.env.KLAV_E2E
+
 const FIXTURE = "data:text/html," + encodeURIComponent(`<!doctype html><html><body>
   <h1>Sign up</h1>
   <input id="email" aria-label="Email" placeholder="you@co.com" />
@@ -22,7 +25,7 @@ afterAll(async () => {
   await pwHandle?.close()
 })
 
-describe("PlaywrightPage adapter (default)", () => {
+describe.if(RUN_BROWSER)("PlaywrightPage adapter (default)", () => {
   test("acquireBrowser() with no AUTOSIM_CDP_URL → local Playwright handle", async () => {
     delete process.env.AUTOSIM_CDP_URL
     handle = await acquireBrowser({ headless: true })
@@ -79,7 +82,7 @@ describe("PlaywrightPage adapter (default)", () => {
   })
 })
 
-describe("acquirePlaywrightBrowser (walker seam)", () => {
+describe.if(RUN_BROWSER)("acquirePlaywrightBrowser (walker seam)", () => {
   test("no AUTOSIM_CDP_URL → local kind, native Playwright Browser", async () => {
     delete process.env.AUTOSIM_CDP_URL
     delete process.env.STEEL_API_KEY

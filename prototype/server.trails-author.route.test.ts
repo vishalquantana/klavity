@@ -185,7 +185,9 @@ const otherCookie = `klav_session=${OTHER_SID}`
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-test("POST /api/trails/author validates and returns a pollable session", async () => {
+const RUN_BROWSER = !!process.env.KLAV_E2E
+
+test.if(RUN_BROWSER)("POST /api/trails/author validates and returns a pollable session", async () => {
   const r = await fetch(`${base}/api/trails/author?project=${pid}`, {
     method: "POST", headers: { cookie: adminCookie, "content-type": "application/json" },
     body: JSON.stringify({ name: "Login", objective: "log in and reach the dashboard", base_url: "https://example.com" }),

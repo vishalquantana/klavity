@@ -367,11 +367,11 @@ test("(gather-7) findings are filtered to the walk's runId only", async () => {
 })
 
 // ---------------------------------------------------------------------------
-// Section C — Real Chromium PDF e2e
+// Section C — Real Chromium PDF e2e (KLAV_E2E=1 only — browsers not installed in CI default)
 // ---------------------------------------------------------------------------
 import { chromium } from "playwright"
 
-test("(pdf-e2e) setContent -> pdf bytes start with %PDF and length > 10kB", async () => {
+test.if(!!process.env.KLAV_E2E)("(pdf-e2e) setContent -> pdf bytes start with %PDF and length > 10kB", async () => {
   const data = makeData()
   data.steps = [
     {
