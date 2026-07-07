@@ -36,7 +36,7 @@ import { trailsDashboardData } from "./lib/trails-dashboard"
 import { fileFindingById, dismissFinding, realFiler } from "./lib/trails-findings-gate"
 import { getReplay, runsWithReplay } from "./lib/trails-replay"
 import { saveFeedbackReplay, getFeedbackReplay, feedbackIdsWithReplay, pruneOldFeedbackReplays } from "./lib/feedback-replay"
-import { listRunSteps, listTrails, getTrail, getWalk, setTrailStatus, listTrailSteps, insertAssertStep, deleteTrailStep, updateTrailStep, updateTrail, countRunSteps, countTrailSteps } from "./lib/trails"
+import { listRunSteps, listTrails, getTrail, getWalk, setTrailStatus, listTrailSteps, insertAssertStep, deleteTrailStep, updateTrailStep, updateTrail, countRunSteps, countTrailSteps, type TrailPatch } from "./lib/trails"
 import { runWalkNow } from "./lib/trails-trigger"
 import { startTrailScheduler, isValidCron } from "./lib/trails-scheduler"
 import { runAuthorNow, getAuthorSession, getActiveAuthorSession } from "./lib/trails-author"
@@ -44,6 +44,7 @@ import { WalkBusyError, cancelCurrentWalk } from "./lib/trails-browser"
 import { mintShareToken, resolveShareToken, renderWalkPdf } from "./lib/trails-share"
 import { gatherWalkReport } from "./lib/trails-report"
 import { liveWatchSseResponse } from "./lib/trails-live-watch"
+import { normalizeTrailViewport } from "./lib/trails-viewport"
 import { seedDemoTrails } from "./lib/trails-demo-seed"
 import { listExpectations, getExpectation, setExpectationStatus, setExpectationEnforced } from "./lib/expectations-db"
 import { validateAssertionDraft } from "./lib/assertion-spec"
@@ -3016,7 +3017,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (!trail) return json({ error: "Not found" }, 404)
           const body = await req.json().catch(() => null)
           if (!body || typeof body !== "object") return json({ error: "Invalid body" }, 400)
-          const patch: { name?: string; status?: "active" | "paused"; schedule?: string | null } = {}
+          const patch: TrailPatch = {}
           if ("name" in body) {
             const n = typeof body.name === "string" ? body.name.trim() : ""
             if (!n || n.length > 80) return json({ error: "name must be 1–80 characters" }, 400)
@@ -3037,6 +3038,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               if (!isValidCron(expr)) return json({ error: "Invalid cron expression (5 UTC fields required, e.g. '0 2 * * *')" }, 400)
               patch.schedule = expr
             }
+          }
+          if ("viewport" in body) {
+            try { patch.viewport = normalizeTrailViewport((body as any).viewport) }
+            catch (e: any) { return json({ error: e?.message || "Invalid viewport" }, 400) }
           }
           if (!Object.keys(patch).length) return json({ error: "Nothing to patch" }, 400)
           await updateTrail(projectId, trail.id, patch)
@@ -3067,13 +3072,18 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const name = String(body.name || "").trim().slice(0, 80)
         const objective = String(body.objective || "").trim()
         const baseUrl = String(body.base_url || "").trim()
+        let viewport: ReturnType<typeof normalizeTrailViewport> = null
+        if ("viewport" in body) {
+          try { viewport = normalizeTrailViewport((body as any).viewport) }
+          catch (e: any) { return json({ error: e?.message || "Invalid viewport" }, 400) }
+        }
         const testAccount = body.test_account ? String(body.test_account) : undefined
         if (!name) return json({ error: "name required" }, 400)
         if (objective.length < 10 || objective.length > 2000) return json({ error: "objective must be 10-2000 chars" }, 400)
         if (!/^https?:\/\//.test(baseUrl) || baseUrl.length > 500) return json({ error: "base_url must be an http(s) URL" }, 400)
         if (testAccount && !(await getTestAccountByName(projectId, testAccount))) return json({ error: `unknown test account "${testAccount}"` }, 400)
         try {
-          const { sessionId } = await runAuthorNow(projectId, { name, objective, baseUrl, testAccountName: testAccount, createdBy: meT })
+          const { sessionId } = await runAuthorNow(projectId, { name, objective, baseUrl, viewport, testAccountName: testAccount, createdBy: meT })
           return json({ sessionId }, 202)
         } catch (e) {
           if (e instanceof WalkBusyError) return json({ error: "An AutoSim is already running — try again shortly." }, 409)

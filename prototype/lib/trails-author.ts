@@ -15,7 +15,8 @@ import { acquireBrowser } from "./trails-browser-page"
 import { db, projectById } from "./db"
 import type { AuthorModel, AuthorAction } from "./trails-author-model"
 import { isKrefSelector } from "./trails-snapshot"
-import type { StepAction } from "./trails-types"
+import type { StepAction, TrailViewport } from "./trails-types"
+import { normalizeTrailViewport } from "./trails-viewport"
 import { configuredVisionResolver, type VisionResolver } from "./trails-vision"
 
 const AUTOSIM_MAX_STEPS_DEFAULT = 40
@@ -36,7 +37,7 @@ const LOOP_STALL_N = 3
  *  next model call anyway since every iteration re-captures and renumbers refs). */
 const dekref = (s: string) => s.replace(/\[data-kref="(e\d+)"\]/g, "snapshot ref $1")
 
-export interface AuthorRequest { name: string; objective: string; baseUrl: string; testAccountName?: string; createdBy?: string }
+export interface AuthorRequest { name: string; objective: string; baseUrl: string; viewport?: TrailViewport | string | null; testAccountName?: string; createdBy?: string }
 export interface AuthorStepLog { idx: number; op: string; selector: string | null; value: string | null; url: string; rationale: string; ok: boolean; error?: string }
 export interface AuthorOutcome {
   status: "crystallized" | "stalled" | "failed"
@@ -62,6 +63,7 @@ export async function authorTrail(
     projectInstructions = proj?.instructionsMd
   } catch { /* best-effort; missing instructions is not fatal */ }
   const credResolver = opts.credResolver ?? resolveCredRefs
+  const viewport = normalizeTrailViewport(req.viewport)
   const credFields: string[] = []
   if (req.testAccountName) {
     const acc = await getTestAccountByName(projectId, req.testAccountName)
@@ -92,7 +94,7 @@ export async function authorTrail(
     return { status: "stalled", trailId: null, verificationRunId: null, verificationVerdict: null, steps: log, stallReason: why, llmCalls, costUsd }
   }
   try {
-    const page = await handle.newPage()
+    const page = await handle.newPage(viewport)
     await page.goto(req.baseUrl, 20_000)
     // Record the initial navigation as the first TrajectoryStep so the crystallized Trail starts
     // with a navigate action pointing at the baseUrl (gives the runner a concrete starting point).
@@ -198,7 +200,7 @@ export async function authorTrail(
     }
     await handle.close()
     if (!traj.length) return { status: "stalled", trailId: null, verificationRunId: null, verificationVerdict: null, steps: log, stallReason: "model finished without performing any step", llmCalls, costUsd }
-    const trajectory: Trajectory = { name: req.name, intent: req.objective, baseUrl: req.baseUrl, authorKind: "llm", createdBy: req.createdBy, steps: traj }
+    const trajectory: Trajectory = { name: req.name, intent: req.objective, baseUrl: req.baseUrl, viewport, authorKind: "llm", createdBy: req.createdBy, steps: traj }
     const { trailId } = await crystallize(projectId, trajectory)
     await setTrailStatus(projectId, trailId, "draft")
     // Verification Walk: zero-LLM rehearsal; draft status suppresses findings (Task 4), but pass

@@ -9,7 +9,7 @@
 //
 // Project-scoped: projectId is the first arg of every persisted call and every query.
 import type { Browser, BrowserContext, Page, Locator } from "playwright"
-import { acquirePlaywrightBrowser, startCdpScreencast } from "./trails-browser-page"
+import { acquirePlaywrightBrowser, playwrightContextOptionsForTrailViewport, startCdpScreencast } from "./trails-browser-page"
 import { uploadScreenshotMeta } from "./s3"
 import type { Fingerprint, Tier, Verdict, TrailStep, NetworkMock } from "./trails-types"
 import {
@@ -395,19 +395,28 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
   let capture: ReplayCapture | null = null
   let stopLiveScreencast: (() => Promise<void>) | null = null
   let liveWatchEnded = false
+  const contextOptions = playwrightContextOptionsForTrailViewport(trail.viewport)
   const closeLiveWatch = (message = "ended") => {
     if (!opts.liveWatch || liveWatchEnded) return
     liveWatchEnded = true
     endLiveWatchRun(projectId, runId, message)
   }
-  if (opts.replay) {
+  if (opts.replay || contextOptions) {
     try {
-      context = await browser.newContext()
-      capture = await setupReplayCapture(context)
+      context = await browser.newContext(contextOptions as any)
     } catch (e) {
-      console.warn("[trails-replay] capture setup failed, walking without replay:", String(e))
-      if (context) { try { await context.close() } catch {} }
+      console.warn("[trails-context] browser context setup failed, walking with a default page:", String(e))
       context = null
+    }
+    if (context && opts.replay) {
+      try {
+        capture = await setupReplayCapture(context)
+      } catch (e) {
+        console.warn("[trails-replay] capture setup failed, walking without replay:", String(e))
+        if (!contextOptions) { try { await context.close() } catch {}; context = null }
+        capture = null
+      }
+    } else {
       capture = null
     }
   }
