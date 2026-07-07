@@ -6,27 +6,30 @@
 // The walk fn is INJECTABLE (deps.walk) so unit tests run with a stub (no browser); the default
 // realWalk drives the Trail's own baseUrl with prod-safe Chromium + replay capture, adopting the
 // pre-created runId so the run_steps / replay / verdict all land on the runId the caller holds.
-// Vision (Tier-2) is OFF in realWalk; a flagged Trail (the regression demo) opts in via a custom
-// deps.walk that calls walkTrail with a vision resolver.
 import { withWalkSlot, WalkBusyError, CHROMIUM_PROD_ARGS } from "./trails-browser"
 import { getTrail, startWalk, finishWalk } from "./trails"
 import { walkTrail } from "./trails-runner"
 import type { Verdict } from "./trails-types"
+import { configuredVisionResolver } from "./trails-vision"
 
 export type WalkFn = (projectId: string, trailId: string, runId: string) => Promise<{ verdict: Verdict; llmCalls: number; summary?: Record<string, unknown> }>
 
 const WALK_DEADLINE_MS = 120_000
 
 // Default real walk: drive the Trail's own baseUrl with prod-safe Chromium + replay capture, ADOPTING
-// the pre-created runId so everything lands on the caller's runId. Vision is OFF here.
+// the pre-created runId so everything lands on the caller's runId. Tier-2 vision self-heal is enabled
+// when OpenRouter is configured (and KLAV_AUTOSIM_VISION_SELFHEAL is not set to 0); the resolver itself
+// is daily-spend capped.
 // stepShots:true enables per-step jpeg captures (PDF task 1); the default S3 uploader is used
 // (injected via walkTrail default; try/catch ensures S3-absent local envs never fail a step).
 const realWalk: WalkFn = async (projectId, trailId, runId) => {
   const trail = await getTrail(projectId, trailId)
   if (!trail) return { verdict: "red", llmCalls: 0, summary: { error: `trail ${trailId} not found in project ${projectId}` } }
+  const vision = configuredVisionResolver()
   const s = await walkTrail(projectId, trailId, {
     fixtureUrl: trail.baseUrl, replay: true, launchArgs: CHROMIUM_PROD_ARGS, deadlineMs: WALK_DEADLINE_MS, runId,
     stepShots: true,
+    ...(vision ? { vision } : {}),
   })
   return { verdict: s.verdict, llmCalls: s.llmCalls, summary: { ...(s.reasons.length ? { reasons: s.reasons } : {}) } }
 }
