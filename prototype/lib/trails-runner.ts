@@ -23,8 +23,8 @@ import { setupReplayCapture, saveReplay, type ReplayCapture } from "./trails-rep
 import { hasCredRef, resolveCredRefs, type CredResolver } from "./trails-creds"
 import { captureKrefSnapshot, stableSelectorFor, structuralPathFor, isKrefSelector, recordedStepState } from "./trails-snapshot"
 import { clickWithTransitionFallback } from "./trails-click"
-import { notifyWalkRed } from "./walk-red-alert"
-import { endLiveWatchRun, publishLiveWatchFrame, startLiveWatchRun } from "./trails-live-watch"
+import { matchesMock } from "./trails-browser-page"
+import type { NetworkMock } from "./trails-browser-page"
 
 export interface WalkOptions {
   /** Concrete URL to walk against (overrides the trail's baseUrl). file:// or http(s)://. */
@@ -107,19 +107,12 @@ export interface WalkOptions {
    */
   signal?: AbortSignal
   /**
-   * KLA-111: network stubs/blocks applied to the page before the initial navigation.
-   * Each mock intercepts requests whose URL matches `mock.url` (substring or ** glob):
-   *   - "stub": return a canned response (status/body/contentType/headers).
-   *   - "block": abort the request (simulates offline/ad-blocking).
-   * Absent or empty → no interception (byte-identical to all existing callers).
+   * KLA-111: Optional network stubs/blocks for the walk. Each entry matches browser requests by URL
+   * pattern (exact string, glob "**" or RegExp) and either returns a canned response (stub) or
+   * aborts the request (block). Installed before the first page navigation so the initial load is
+   * also intercepted. Absent (all existing callers) → no interception, byte-identical behavior.
    */
   networkMocks?: NetworkMock[]
-  /**
-   * KLA-79 live-watch: best-effort CDP Page.startScreencast frame streaming for the in-flight walk.
-   * Frames stay in-process and are exposed by the authenticated /live SSE route. Off by default for
-   * tests/direct callers; runWalkNow enables it for dashboard-triggered walks.
-   */
-  liveWatch?: boolean
 }
 
 export interface WalkStepSummary {
@@ -443,13 +436,23 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
     // THROWS — it is inside this try, so it finalizes the walk RED via the catch below, never a hang.
     page.setDefaultNavigationTimeout(opTimeout)
     page.setDefaultTimeout(opTimeout)
-
-    // KLA-111: install network stubs/blocks BEFORE the first navigation so every request
-    // (including the initial page load) is covered. Routes persist for the page's lifetime.
+    // KLA-111: install network mocks BEFORE the first navigation so the initial page load is intercepted.
     if (opts.networkMocks?.length) {
-      await applyNetworkMocks(page, opts.networkMocks)
+      await page.route("**/*", (route) => {
+        const reqUrl = route.request().url()
+        for (const mock of opts.networkMocks!) {
+          if (!matchesMock(mock.url, reqUrl)) continue
+          if (mock.block) { route.abort("blockedbyclient").catch(() => {}); return }
+          route.fulfill({
+            status: mock.stub.status ?? 200,
+            contentType: mock.stub.contentType ?? "text/plain",
+            body: mock.stub.body ?? "",
+          }).catch(() => {})
+          return
+        }
+        route.continue().catch(() => {})
+      })
     }
-
     await page.goto(opts.fixtureUrl, { timeout: opTimeout })
 
     // Track the document URL across steps so a full-page navigation (click-driven or explicit
