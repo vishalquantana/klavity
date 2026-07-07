@@ -799,7 +799,13 @@ function renderTrails(d){
       if (isPaused) {
         html += '<span class="pill paused">paused</span>'
       } else {
-        if (v) html += '<span class="pill '+esc(v)+'">'+esc(v)+'</span>'
+        if (v) {
+        html += '<span class="pill '+esc(v)+'">'+esc(v)+'</span>'
+        var trailGuidance = ""
+        if (v === "red") trailGuidance = ' <span class="muted">— regression or hard failure; check the walk report.</span>'
+        else if (v === "amber") trailGuidance = ' <span class="muted">— healed but unconfirmed; review findings queue.</span>'
+        if (trailGuidance) html += trailGuidance
+      }
         if (w && w.hasReplay) html += '<button class="replay-btn" data-replay="'+esc(w.id)+'">'+kicon('play',{size:12})+' Replay</button>'
       }
       if (!isPaused) html += '<button class="run-btn" data-run="'+esc(t.id)+'">'+kicon('play',{size:12})+' Run</button>'
@@ -961,7 +967,9 @@ async function render(d){
       + '<a class="walk-pdf-btn" href="'+esc(pdfHref)+'" target="_blank" rel="noopener">'+kicon('file-text',{size:10})+' PDF</a>'
       + '<button class="walk-share-btn" data-share-run="'+esc(w.id)+'">'+kicon('link',{size:10})+' Share</button>'
       + '<span class="walk-share-msg" data-share-msg="'+esc(w.id)+'"></span>'
+      + (v === "red" ? ' <span class="muted">— regression or hard failure; check walk report.</span>' : '')
       + '<span class="pill '+esc(v)+'">'+esc(v)+'</span>'
+      + (v === "amber" ? ' <span class="muted">— healed but unconfirmed; review findings queue.</span>' : '')
     wEl.appendChild(row)
   }
   wEl.querySelectorAll("button[data-share-run]").forEach(function(btn){
@@ -1287,8 +1295,12 @@ async function pollAuthor(sessionId, box){
     if(s.status === "crystallized"){
       var vRunId = s.verificationRunId || ""
       var pdfLink = vRunId ? ('<a class="walk-pdf-btn" href="' + esc('/api/trails/walks/' + encodeURIComponent(vRunId) + '/report.pdf' + projQ()) + '" target="_blank" rel="noopener" style="margin-left:8px">' + kicon('file-text',{size:10}) + ' PDF</a>') : ""
+      var v = String(s.verificationVerdict || "").toLowerCase()
+      var vGuidance = ""
+      if (v === "red" || v === "false") vGuidance = ' <span class="muted">— AutoSim couldn\'t replay deterministically; review the PDF before activating.</span>'
+      else if (v === "amber") vGuidance = ' <span class="muted">— healed but unconfirmed; review the findings queue or activate to enable enforcement.</span>'
       box.innerHTML = html +
-        '<div class="nt-done">Trail created (draft). Verification walk: <b class="v-' + esc(s.verificationVerdict || "") + '">' + esc(String(s.verificationVerdict || "?").toUpperCase()) + "</b></div>" +
+        '<div class="nt-done">Trail created (draft). Verification walk: <b class="v-' + esc(s.verificationVerdict || "") + '">' + esc(String(s.verificationVerdict || "?").toUpperCase()) + "</b>" + vGuidance + "</div>" +
         '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px">' +
         '<button class="btn btn-indigo" id="ntApprove" data-trail="' + esc(s.trailId) + '">Looks right - activate</button>' +
         pdfLink +
