@@ -201,11 +201,11 @@ body{background:var(--ink);color:var(--paper);font-family:var(--body);line-heigh
     <!-- LEFT RAIL -->
     <aside class="rail">
       <div class="mbx">
-        <button id="mbSims" class="on" onclick="setMailbox('sims')"><span class="ic">◍</span> Sims <span class="ct">3</span></button>
-        <button id="mbTr" onclick="setMailbox('transcripts')"><span class="ic">▤</span> Transcripts <span class="ct">4</span></button>
+        <button id="mbSims" class="on" onclick="setMailbox('sims')"><span class="ic" data-ki="dna" data-ki-s="13"></span> Sims <span class="ct">3</span></button>
+        <button id="mbTr" onclick="setMailbox('transcripts')"><span class="ic" data-ki="file-text" data-ki-s="13"></span> Transcripts <span class="ct">4</span></button>
       </div>
       <div class="search">
-        <span class="si">⌕</span>
+        <span class="si" data-ki="search" data-ki-s="13"></span>
         <input id="searchBox" placeholder="Search sims…" />
       </div>
 
@@ -684,5 +684,6 @@ document.getElementById('themeToggle').addEventListener('click', ()=>{
 /* init */
 selectSim('sarah', document.querySelector('#listSims .row[data-sim="sarah"]'));
 </script>
+<script>(function(){document.querySelectorAll('[data-ki]').forEach(function(e){var s=e.getAttribute('data-ki-s');try{e.innerHTML=kicon(e.getAttribute('data-ki'),s?{size:+s}:undefined);}catch(x){}})})();</script>
 </body>
 </html>

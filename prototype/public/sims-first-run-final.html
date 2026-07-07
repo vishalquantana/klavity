@@ -164,7 +164,7 @@ Devin (Analyst): I basically live in the filters. I'd pay for saved views — I 
 const initials=n=>n.replace(/\(.*?\)/g,'').trim().split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
 function shade(hex){const n=parseInt(hex.slice(1),16);let r=Math.max(0,(n>>16)-26),g=Math.max(0,((n>>8)&255)-20),b=Math.max(0,(n&255)-30);return '#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1);}
 function simCard(s,btns){
-  const ins=s.insights.map(i=>`<div class=”in ${i.kind}”><span class=”ic”>${i.kind==='pain'?'▾':i.kind==='want'?kicon('star',{size:12}):kicon('heart',{size:12})}</span><span class=”qt”>${i.text} <em>”${i.quote}”</em></span></div>`).join('');
+  const ins=s.insights.map(i=>`<div class=”in ${i.kind}”><span class=”ic”>${i.kind==='pain'?kicon('frown',{size:12}):i.kind==='want'?kicon('star',{size:12}):kicon('heart',{size:12})}</span><span class=”qt”>${i.text} <em>”${i.quote}”</em></span></div>`).join('');
   return `<div class=”sim”><div class=”sim-top”><div class=”av” style=”background:linear-gradient(135deg,${s.accent},${shade(s.accent)})”>${initials(s.name)}</div>
     <div class="sim-id"><div class="nm">${s.name}</div><div class="rl">${s.role}</div></div><span class="kind">${s.type||'client'}</span></div>
     <div class="sim-sum">${s.summary}</div><div class="ins">${ins}</div>${btns}</div>`;
