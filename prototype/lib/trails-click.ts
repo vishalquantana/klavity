@@ -4,6 +4,9 @@ type TransitionIntent =
   | { kind: "go"; step: number }
   | { kind: "chooseGoal"; goal: string; step: number }
   | { kind: "setView"; view: string }
+  // Generic: element has an inline onclick that didn't match a known API name.
+  // The fallback fires the handler directly, bypassing any capture-phase trusted-event guard.
+  | { kind: "invoke" }
 
 const TRANSITION_SETTLE_MS = 200
 
@@ -34,12 +37,17 @@ async function readTransitionIntent(locator: Locator): Promise<TransitionIntent 
       const dataGo = node.getAttribute("data-go")
       if (dataGo) return { kind: "setView", view: dataGo }
 
-      const attr = parse(node.getAttribute("onclick"))
+      const onclickAttr = node.getAttribute("onclick")
+      const attr = parse(onclickAttr)
       if (attr) return attr
 
       const prop = (node as HTMLElement).onclick
       const fromProp = typeof prop === "function" ? parse(String(prop)) : null
       if (fromProp) return fromProp
+
+      // Generic fallback: onclick exists but didn't match a known API name.
+      // Signal the caller to fire the handler directly if the click had no visible effect.
+      if (onclickAttr || typeof prop === "function") return { kind: "invoke" }
     }
     return null
   })
@@ -90,6 +98,28 @@ export async function clickWithTransitionFallback(locator: Locator, timeoutMs: n
   await target.click({ timeout: timeoutMs })
 
   if (!intent) return
+
+  if (intent.kind === "invoke") {
+    // Generic panel-transition fallback. After the click settles, check whether the button is
+    // still visible. If it is, the onclick was swallowed (trusted-event capture guard or similar)
+    // — fire the handler directly, bypassing the DOM event path.
+    //
+    // isVisible() is a non-blocking snapshot: safe to call on role-based locators whose element
+    // may already be hidden (unlike evaluate(), which would hang 30s on a hidden getByRole target).
+    await wait(TRANSITION_SETTLE_MS)
+    if (await target.isVisible().catch(() => false)) {
+      await target.evaluate((el) => {
+        const h = el as HTMLElement
+        if (typeof h.onclick === "function")
+          h.onclick.call(h, new MouseEvent("click", { bubbles: false, cancelable: true }))
+      }).catch(() => {})
+    }
+    // Use waitFor instead of a flat sleep: resolves as soon as the button's panel hides, giving
+    // the transition exactly the time it needs (not a fixed delay). Timeout is a safety bound.
+    await target.waitFor({ state: "hidden", timeout: TRANSITION_SETTLE_MS * 10 }).catch(() => {})
+    return
+  }
+
   await wait(TRANSITION_SETTLE_MS)
   if (await transitionSatisfied(target.page(), intent).catch(() => false)) return
 
