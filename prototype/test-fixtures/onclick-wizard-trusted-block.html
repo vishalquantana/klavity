@@ -1,0 +1,37 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Inline onclick wizard</title>
+  <style>
+    .hide { display: none; }
+  </style>
+</head>
+<body>
+  <section class="step" data-s="0">
+    <h1>Welcome</h1>
+    <button id="continue" onclick="go(1)">Continue</button>
+  </section>
+  <section class="step hide" data-s="1">
+    <h1>Project details</h1>
+    <label>Email <input id="email" aria-label="Email"></label>
+  </section>
+  <script>
+    let cur = 0
+    function paint() {
+      document.querySelectorAll(".step").forEach((el) => {
+        el.classList.toggle("hide", Number(el.dataset.s) !== cur)
+      })
+    }
+    function go(n) {
+      cur = n
+      paint()
+    }
+    document.addEventListener("click", function(e) {
+      if (e.isTrusted && e.target && e.target.id === "continue") {
+        e.stopImmediatePropagation()
+      }
+    }, true)
+  </script>
+</body>
+</html>
