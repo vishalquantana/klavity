@@ -109,3 +109,40 @@ test("KLAV_TEST_FAKE_PDF=1 returns fake PDF bytes without Chromium", async () =>
     process.env.KLAV_TEST_FAKE_PDF = prev ?? undefined as any
   }
 })
+
+test("renderWalkPdf succeeds while a walk holds the walk slot (KLA-59)", async () => {
+  const { renderWalkPdf } = await import("./trails-share")
+  const { withWalkSlot, _resetWalkPoolForTest } = await import("./trails-browser")
+  
+  _resetWalkPoolForTest(1, 0)
+  
+  const prevFake = process.env.KLAV_TEST_FAKE_PDF
+  process.env.KLAV_TEST_FAKE_PDF = "1"
+  
+  try {
+    let walkFinished = false
+    let releaseWalk!: () => void
+    const walkGate = new Promise<void>((res) => { releaseWalk = res })
+    
+    const walkPromise = withWalkSlot(async () => {
+      await walkGate
+      walkFinished = true
+    })
+    
+    await Promise.resolve()
+    
+    // PDF render does not use the walk slot, so it should run successfully concurrently!
+    const pdfBytes = await renderWalkPdf("proj_any", "walk_any", "https://x.test")
+    const text = new TextDecoder().decode(pdfBytes)
+    expect(text).toContain("%PDF-fake-for-tests")
+    
+    expect(walkFinished).toBe(false)
+    
+    releaseWalk()
+    await walkPromise
+    expect(walkFinished).toBe(true)
+  } finally {
+    process.env.KLAV_TEST_FAKE_PDF = prevFake ?? undefined as any
+  }
+})
+

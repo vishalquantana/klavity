@@ -17,6 +17,12 @@ export class AuthorBusyError extends WalkBusyError {
   }
 }
 
+export class PdfBusyError extends Error {
+  constructor(msg = "PDF rendering is busy — try again shortly") {
+    super(msg); this.name = "PdfBusyError"
+  }
+}
+
 // Per-slot context carried through the async call chain via AsyncLocalStorage.
 interface SlotCtx { ac: AbortController; runId: string | null }
 const _als = new AsyncLocalStorage<SlotCtx>()
@@ -29,6 +35,7 @@ let _active = 0
 const _waiters: Array<() => void> = []
 const _activeCtxs = new Set<SlotCtx>()
 let _authorActive = false
+let _pdfActive = false
 
 /** Reset pool limits — for use in tests only. */
 export function _resetWalkPoolForTest(concurrency: number, maxQueue: number): void {
@@ -41,6 +48,10 @@ export function _resetWalkPoolForTest(concurrency: number, maxQueue: number): vo
 
 export function _resetAuthorAdmissionForTest(): void {
   _authorActive = false
+}
+
+export function _resetPdfAdmissionForTest(): void {
+  _pdfActive = false
 }
 
 export function isWalkInFlight(): boolean { return _active > 0 }
@@ -111,6 +122,16 @@ export async function withAuthorSlot<T>(fn: () => Promise<T>): Promise<T> {
     return await fn()
   } finally {
     _authorActive = false
+  }
+}
+
+export async function withPdfSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (_pdfActive) throw new PdfBusyError()
+  _pdfActive = true
+  try {
+    return await fn()
+  } finally {
+    _pdfActive = false
   }
 }
 

@@ -1,8 +1,8 @@
 import { test, expect, beforeEach } from "bun:test"
-import { withWalkSlot, withAuthorSlot, isWalkInFlight, WalkBusyError, AuthorBusyError, CHROMIUM_PROD_ARGS, cancelCurrentWalk, setCurrentWalkRunId, getCurrentWalkAbortSignal, currentWalkRunId, _resetWalkPoolForTest, _resetAuthorAdmissionForTest } from "./trails-browser"
+import { withWalkSlot, withAuthorSlot, withPdfSlot, isWalkInFlight, WalkBusyError, AuthorBusyError, PdfBusyError, CHROMIUM_PROD_ARGS, cancelCurrentWalk, setCurrentWalkRunId, getCurrentWalkAbortSignal, currentWalkRunId, _resetWalkPoolForTest, _resetAuthorAdmissionForTest, _resetPdfAdmissionForTest } from "./trails-browser"
 
 // Isolate pool state between tests.
-beforeEach(() => { _resetWalkPoolForTest(3, 10); _resetAuthorAdmissionForTest() })
+beforeEach(() => { _resetWalkPoolForTest(3, 10); _resetAuthorAdmissionForTest(); _resetPdfAdmissionForTest() })
 
 test("withWalkSlot runs the fn and clears the slot after", async () => {
   expect(isWalkInFlight()).toBe(false)
@@ -178,4 +178,32 @@ test("currentWalkRunId is scoped to the slot's async context", async () => {
   await withWalkSlot(async () => { setCurrentWalkRunId("walk_xyz"); seenInside = currentWalkRunId() })
   expect(seenInside).toBe("walk_xyz")
   expect(currentWalkRunId()).toBe(null) // AsyncLocalStorage: null outside the slot context
+})
+
+test("withPdfSlot rejects a concurrent PDF rendering session", async () => {
+  let release!: () => void
+  const gate = new Promise<void>((r) => { release = r })
+  const first = withPdfSlot(async () => { await gate; return "first" })
+  await Promise.resolve()
+  await expect(withPdfSlot(async () => "second")).rejects.toBeInstanceOf(PdfBusyError)
+  release()
+  expect(await first).toBe("first")
+  expect(await withPdfSlot(async () => "after")).toBe("after")
+})
+
+test("a PDF render can run concurrently while a walk holds the walk slot", async () => {
+  _resetWalkPoolForTest(1, 0)
+  let releaseWalk!: () => void
+  const walkGate = new Promise<void>((r) => { releaseWalk = r })
+  const walkSlot = withWalkSlot(async () => { await walkGate; return "walk-done" })
+  await Promise.resolve() // let walk acquire its slot
+  expect(isWalkInFlight()).toBe(true)
+
+  // PDF render does not use the walk slot, so it should run successfully concurrently!
+  const pdfResult = await withPdfSlot(async () => "pdf-done")
+  expect(pdfResult).toBe("pdf-done")
+
+  // Release the walk slot
+  releaseWalk()
+  expect(await walkSlot).toBe("walk-done")
 })
