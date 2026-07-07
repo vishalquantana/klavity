@@ -379,7 +379,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
             <h2>Enter your <em>6-digit code.</em></h2>
             <p class="sub">We emailed a sign-in code to <b id="codeEmail">you</b>. Pop it in below to finish creating your project.</p>
             <label class="fld"><span class="lt">6-digit code</span><input class="in code" id="code" inputmode="numeric" maxlength="6" placeholder="••••••" /></label>
-            <div class="row"><button class="btn btn-indigo" id="verifyBtn" onclick="verifyCode()">Verify &amp; create →</button><span class="skip" onclick="backToEmail()">Use a different email</span></div>
+            <div class="row"><button class="btn btn-indigo" id="verifyBtn" onclick="verifyCode()">Verify &amp; create →</button><span id="onb-use-different-email" class="skip" onclick="backToEmail()">Use a different email</span></div>
             <div class="err" id="s1cerr"></div>
             <div class="note hide" id="devNote"></div>
           </div>
@@ -455,7 +455,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
               <div style="font-family:var(--mono);font-size:11px;color:var(--paper-faint);margin-bottom:8px">Which pages should your Sims watch? (paste your site address)</div>
               <div class="urlrow">
                 <input class="in" id="urlInput" aria-label="Your site URL" placeholder="yoursite.com" onkeydown="if(event.key==='Enter')addUrl()" />
-                <button class="btn btn-ghost" onclick="addUrl()">Add</button>
+                <button id="onb-add-url" class="btn btn-ghost" onclick="addUrl()">Add</button>
               </div>
               <div class="empty hide" id="urlEmpty">No URLs yet — add your site above.</div>
               <div class="chiplist" id="urlChips"></div>
@@ -493,7 +493,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
               </div>
             </div>
           </div>
-          <div class="row"><button class="btn btn-amber" onclick="openStudio()">Open the Studio →</button><span class="skip" onclick="openStudio()">Pick later in the Studio</span></div>
+          <div class="row"><button id="onb-open-studio" class="btn btn-amber" onclick="openStudio()">Open the Studio →</button><span id="onb-pick-later" class="skip" onclick="openStudio()">Pick later in the Studio</span></div>
           <!-- Snap-only exit: founders who just want bug reports shouldn't be forced through Sims. -->
           <div style="margin-top:16px"><a class="snap-exit" id="skipToDash" href="/dashboard">Skip for now — take me to my reports →</a></div>
         </div>
