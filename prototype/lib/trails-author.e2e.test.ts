@@ -202,6 +202,43 @@ test("authorTrail closes an acquired browser on model error and before verificat
   expect(closed.count).toBe(1)
 })
 
+test("verification exception cleans up the already-created draft trail and walk artifacts", async () => {
+  const projectId = "proj_verify_cleanup"
+  const closed = { count: 0 }
+  let createdRunId: string | null = null
+  let createdTrailId: string | null = null
+
+  const out = await authorTrail(projectId, { name: "x", objective: "o", baseUrl: "https://app.test/" }, {
+    model: scripted([{ op: "done" }]),
+    browserFactory: async () => fakeBrowser(closed),
+    verifier: async () => ({ achieved: true, evidenceSelector: "#go", reason: null }),
+    verificationWalk: async (p, trailId) => {
+      createdTrailId = trailId
+      createdRunId = await T.startWalk(p, trailId)
+      const steps = await T.listTrailSteps(p, trailId)
+      await T.addRunStep(p, {
+        runId: createdRunId,
+        trailId,
+        stepId: steps[0].id,
+        idx: 0,
+        tier: "cache",
+        verdict: "green",
+      })
+      throw new Error("verification exploded")
+    },
+  })
+
+  expect(out.status).toBe("failed")
+  expect(out.trailId).toBeNull()
+  expect(out.stallReason).toContain("verification exploded")
+  expect(closed.count).toBe(1)
+  expect(createdTrailId).toBeTruthy()
+  expect(await T.getTrail(projectId, createdTrailId!)).toBeNull()
+  expect(await T.listTrails(projectId)).toHaveLength(0)
+  expect(await T.getWalk(projectId, createdRunId!)).toBeNull()
+  expect(await T.listRunSteps(projectId, createdRunId!)).toHaveLength(0)
+})
+
 test("session is project-scoped", async () => {
   const { sessionId } = await runAuthorNow("proj_a1", { name: "s", objective: "o", baseUrl: fixtureUrl("author-mockup.html") }, { model: scripted([{ op: "stall", rationale: "x" }]) })
   expect(await getAuthorSession("proj_b1", sessionId)).toBeNull()
@@ -388,5 +425,4 @@ test("objective verification: done on right page (verification YES) crystallizes
   const trail = await T.getTrail(P_V2, out.trailId!)
   expect(trail!.objectiveVerified).toBe(true)
 }, 60000)
-
 

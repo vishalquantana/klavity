@@ -5,7 +5,7 @@
 // refine UX). Secrets: the model only ever sees {{cred:...}} placeholders (credFields); values are
 // resolved at fill time and never logged (history/trajectory keep the placeholder).
 import { crystallize, type Trajectory, type TrajectoryStep } from "./trails-crystallize"
-import { setTrailStatus } from "./trails"
+import { deleteTrail, setTrailStatus } from "./trails"
 import { walkTrail } from "./trails-runner"
 import { hasCredRef, resolveCredRefs, type CredResolver } from "./trails-creds"
 import { getTestAccountByName } from "./test-accounts"
@@ -406,11 +406,23 @@ export async function authorTrail(
     // Verification Walk: zero-LLM rehearsal; draft status suppresses findings (Task 4), but pass
     // the flag explicitly too — a Verification Walk never files regardless of trail status.
     const vision = opts.verificationVision === false ? undefined : (opts.verificationVision ?? configuredVisionResolver())
-    const v = await (opts.verificationWalk ?? walkTrail)(projectId, trailId, {
-      fixtureUrl: req.baseUrl, suppressFindings: true, credResolver, deadlineMs: 180_000,
-      launchArgs, headless: opts.headless,
-      ...(vision ? { vision } : {}),
-    })
+    let v: Awaited<ReturnType<typeof walkTrail>>
+    try {
+      v = await (opts.verificationWalk ?? walkTrail)(projectId, trailId, {
+        fixtureUrl: req.baseUrl, suppressFindings: true, credResolver, deadlineMs: 180_000,
+        launchArgs, headless: opts.headless,
+        ...(vision ? { vision } : {}),
+      })
+    } catch (verificationErr: any) {
+      try {
+        await deleteTrail(projectId, trailId)
+      } catch (cleanupErr: any) {
+        console.warn("[trails-author] verification failed and draft cleanup failed:", String(cleanupErr?.message || cleanupErr))
+        await setTrailStatus(projectId, trailId, "archived").catch(() => {})
+      }
+      const reason = String(verificationErr?.message || verificationErr)
+      return { status: "failed", trailId: null, verificationRunId: null, verificationVerdict: null, steps: log, stallReason: reason, llmCalls, costUsd, objectiveVerified }
+    }
     // I1: skip means "inconclusive / no steps ran" — map to amber, not red, so an empty
     // Verification Walk never looks like a regression to the reviewer.
     return { status: "crystallized", trailId, verificationRunId: v.runId, verificationVerdict: v.verdict === "skip" ? "amber" : v.verdict, steps: log, stallReason: null, llmCalls, costUsd, objectiveVerified }
