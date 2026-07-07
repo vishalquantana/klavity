@@ -8,8 +8,8 @@
 // healing never overrides a checkpoint, fail-loud (removed actionable element -> RED).
 //
 // Project-scoped: projectId is the first arg of every persisted call and every query.
-import { chromium } from "playwright"
 import type { Browser, BrowserContext, Page, Locator } from "playwright"
+import { acquirePlaywrightBrowser } from "./trails-browser-page"
 import { uploadScreenshotMeta } from "./s3"
 import type { Fingerprint, Tier, Verdict, TrailStep } from "./trails-types"
 import {
@@ -330,7 +330,10 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
   // otherwise mint our own as before (every existing caller). No behavior change when runId is absent.
   const runId = opts.runId ?? (await startWalk(projectId, trailId, "manual"))
 
-  const browser: Browser = await chromium.launch({ headless: opts.headless ?? true, args: opts.launchArgs })
+  // Browser via the seam: local Playwright by default; connectOverCDP → remote (Steel) when
+  // AUTOSIM_CDP_URL is set (moves the walk off the 1GB box). bh.close() handles Steel release.
+  const bh = await acquirePlaywrightBrowser({ headless: opts.headless, launchArgs: opts.launchArgs })
+  const browser: Browser = bh.browser
   const stepSummaries: WalkStepSummary[] = []
   let walkVerdict: Verdict = "green"
   let healedCount = 0
@@ -450,7 +453,7 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
     })
     return { runId, verdict: "red", llmCalls, steps: stepSummaries, healedCount, reasons: redReasons }
   } finally {
-    await browser.close()
+    await bh.close()
   }
 }
 

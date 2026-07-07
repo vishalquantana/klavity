@@ -193,20 +193,68 @@ class PuppeteerHandle implements BrowserHandle {
 export interface AcquireOpts { headless?: boolean; launchArgs?: string[] }
 
 /**
- * Return a browser handle. Default: local Playwright chromium (behavior-identical to before).
+ * Return a BrowserHandle (BrowserPage-based interface). Default: local Playwright.
  * When AUTOSIM_CDP_URL is set: connect to a remote browser via Puppeteer over CDP.
  *   - If STEEL_API_KEY is also set, AUTOSIM_CDP_URL is treated as the Steel connect base
  *     (e.g. wss://connect.steel.dev): a Steel session is created, connected, and released on close.
  *   - Otherwise AUTOSIM_CDP_URL is treated as a ready browser CDP ws endpoint (self-hosted).
+ * Used by: trails-author (authoring drive) and sim-preview.
  */
 export async function acquireBrowser(opts: AcquireOpts = {}): Promise<BrowserHandle> {
   const cdpBase = process.env.AUTOSIM_CDP_URL
-  if (cdpBase) return await connectRemote(cdpBase, opts)
+  if (cdpBase) return await connectRemotePuppeteer(cdpBase, opts)
   const { chromium } = await import("playwright")
   return new PlaywrightHandle(await chromium.launch({ headless: opts.headless ?? true, args: opts.launchArgs ?? [] }))
 }
 
-async function connectRemote(cdpBase: string, _opts: AcquireOpts): Promise<BrowserHandle> {
+/**
+ * Return a native Playwright Browser handle that honors AUTOSIM_CDP_URL / STEEL_API_KEY.
+ * Used by trails-runner (walk engine), which depends on Playwright's BrowserContext / Page /
+ * Locator / addInitScript APIs that the Puppeteer shim does not provide.
+ *
+ * Remote path: chromium.connectOverCDP(). The 2026-07-04 spike found this hung FROM a Mac over
+ * transcontinental Steel (~940ms RTT); from a co-located prod box the RTT is ~50–150ms and the
+ * connection is stable. AUTOSIM_CDP_URL unset → local chromium.launch() (the tested default).
+ *
+ * Session lifecycle: caller gets a `close()` that both disconnects the browser AND releases any
+ * Steel session, so runners only need to call `bh.close()` in their `finally` block.
+ */
+export interface PlaywrightBrowserHandle {
+  readonly browser: import("playwright").Browser
+  /** Disconnects the browser and releases any remote session (Steel). */
+  readonly close: () => Promise<void>
+  /** "local" | "cdp-remote" | "steel:<region>" */
+  readonly kind: string
+}
+
+export async function acquirePlaywrightBrowser(opts: AcquireOpts = {}): Promise<PlaywrightBrowserHandle> {
+  const { chromium } = await import("playwright")
+  const cdpBase = process.env.AUTOSIM_CDP_URL
+  if (!cdpBase) {
+    const browser = await chromium.launch({ headless: opts.headless ?? true, args: opts.launchArgs ?? [] })
+    return { browser, close: () => browser.close().catch(() => {}), kind: "local" }
+  }
+  const key = process.env.STEEL_API_KEY
+  if (key) {
+    const apiUrl = process.env.STEEL_API_URL ?? "https://api.steel.dev"
+    const session: any = await (await fetch(`${apiUrl}/v1/sessions`, {
+      method: "POST", headers: { "Steel-Api-Key": key, "Content-Type": "application/json" }, body: "{}",
+    })).json()
+    const browser = await chromium.connectOverCDP(`${cdpBase}?apiKey=${key}&sessionId=${session.id}`)
+    const release = async () => {
+      await fetch(`${apiUrl}/v1/sessions/${session.id}/release`, { method: "POST", headers: { "Steel-Api-Key": key } }).catch(() => {})
+    }
+    return {
+      browser,
+      close: async () => { try { await browser.close() } catch {} await release() },
+      kind: "steel:" + (session.region ?? "remote"),
+    }
+  }
+  const browser = await chromium.connectOverCDP(cdpBase)
+  return { browser, close: () => browser.close().catch(() => {}), kind: "cdp-remote" }
+}
+
+async function connectRemotePuppeteer(cdpBase: string, _opts: AcquireOpts): Promise<BrowserHandle> {
   const { default: puppeteer } = await import("puppeteer-core") // lazy: prod (flag off) never loads it
   const key = process.env.STEEL_API_KEY
   if (key) {
