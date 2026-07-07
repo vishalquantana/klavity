@@ -667,7 +667,18 @@ async function runOneStep(
       }
       if (!re.test(page.url())) throw new Error(`checkpoint urlMatches failed: "${page.url()}" did not match /${step.checkpoint.regex}/`)
     } catch {
+      // KLA-82: emit a heuristic Finding for urlMatches failures so they appear in reports.
       const verdict: Verdict = "red"
+      if (!opts.suppressFindings) {
+        const title = `Checkpoint failed: ${step.checkpoint?.description ?? `URL did not match /${step.checkpoint?.regex}/`}`
+        await recordFinding(projectId, {
+          runId, trailId, stepId: step.id, kind: "regression", title,
+          evidence: { reason: "checkpoint_failed", kind: "urlMatches", regex: step.checkpoint?.regex, actualUrl: page.url(), pageUrl: stepPageUrl },
+          groundQuote: title, confidence: 0.9,
+          dedupKey: `${trailId}:${step.id}:url-checkpoint-failed`,
+          contentSig: contentSigFor({ kind: "regression", fp, urlPath: stepPageUrl }),
+        })
+      }
       const screenshotKey = await maybeShot(page, opts)
       await addStepRun({ runId, trailId, stepId: step.id, idx: step.idx, tier: "none", verdict, confidence: 1, diagnosis: "regression", healed: false,
         evidence: { reason: "checkpoint_failed", checkpoint: step.checkpoint?.description ?? null, recordedStep: recordedStep(null, fp), ...(screenshotKey !== undefined ? { screenshotKey } : {}) },
@@ -749,7 +760,19 @@ async function runOneStep(
         return await runVisionTier2(projectId, runId, trailId, page, step, opts, fp, cachedSelector, isAssert, opTimeout, deadline, addStepRun)
       }
       // No resolver → unchanged Layer C behavior: RED + needs-vision handoff marker (never green).
+      // KLA-82: emit a heuristic Finding even without a vision resolver so the failure is NEVER
+      // invisible in reports. Uses step fingerprint + page URL as the dedup key.
       const verdict: Verdict = "red"
+      if (!opts.suppressFindings) {
+        const title = `Element not found: ${fp?.accessibleName ?? fp?.text ?? step.action}${step.target?.role ? ` (${step.target.role})` : ""}`
+        await recordFinding(projectId, {
+          runId, trailId, stepId: step.id, kind: "regression", title,
+          evidence: { reason: "element_gone", fingerprint: fp, cachedSelector, action: step.action, pageUrl: stepPageUrl },
+          groundQuote: title, confidence: 0.7,
+          dedupKey: `${trailId}:${step.id}:element-gone`,
+          contentSig: contentSigFor({ kind: "regression", fp, urlPath: stepPageUrl }),
+        })
+      }
       // PDF task 1: best-effort screenshot to capture the failure state.
       const screenshotKey = await maybeShot(page, opts)
       await addStepRun({
@@ -843,7 +866,20 @@ async function runOneStep(
     }
   } catch {
     // The element resolved but the action/assertion failed (e.g. checkpoint not visible) -> fail-loud RED.
+    // KLA-82: emit a heuristic Finding so the failure is visible in reports even without a vision resolver.
     const verdict: Verdict = "red"
+    if (!opts.suppressFindings) {
+      const title = isAssert
+        ? `Checkpoint failed: ${step.checkpoint?.description ?? fp?.accessibleName ?? fp?.text ?? "visible"}`
+        : `Action failed: ${step.action}${fp?.accessibleName ? ` on "${fp.accessibleName}"` : ""}`
+      await recordFinding(projectId, {
+        runId, trailId, stepId: step.id, kind: "regression", title,
+        evidence: { reason: isAssert ? "checkpoint_failed" : "action_failed", action: step.action, selector: resolved.selector, checkpoint: step.checkpoint?.description ?? null, pageUrl: stepPageUrl },
+        groundQuote: title, confidence: 0.8,
+        dedupKey: `${trailId}:${step.id}:${isAssert ? "checkpoint-failed" : "action-failed"}`,
+        contentSig: contentSigFor({ kind: "regression", fp, urlPath: stepPageUrl }),
+      })
+    }
     // PDF task 1: best-effort screenshot even on action failure (shows the failure state).
     const screenshotKey = await maybeShot(page, opts)
     await addStepRun({

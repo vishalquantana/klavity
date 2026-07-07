@@ -438,3 +438,29 @@ test("(x) hard-broken click (go() does nothing) fails RED fast — no animation 
   // Total must be well under the click step's 10s budget — proves no spurious animation delay.
   expect(elapsed).toBeLessThan(6000)
 }, 20000)
+
+test("(xi) RED walk with NO vision resolver still emits at least one Finding (KLA-82)", async () => {
+  const projectId = "proj_kla82_finding"
+  // Use the removed-element fixture: #signin is absent. Without a vision resolver, the runner
+  // previously recorded RED run_steps but no Findings — failure was invisible in reports.
+  const { trailId } = await crystallize(projectId, checkoutTrajectory())
+  await T.setTrailStatus(projectId, trailId, "active")
+
+  // Explicitly pass NO vision resolver — the bug path.
+  const summary = await walkTrail(projectId, trailId, { fixtureUrl: fixtureUrl("checkout-mockup-removed.html") })
+
+  expect(summary.verdict).toBe("red")
+  expect(summary.llmCalls).toBe(0) // confirm zero LLM calls
+
+  // KLA-82 guarantee: at least one Finding must exist even without a vision resolver.
+  const findings = await T.listFindings(projectId)
+  expect(findings.length).toBeGreaterThanOrEqual(1)
+
+  const f = findings[0]
+  expect(f.kind).toBe("regression")
+  expect(f.trailId).toBe(trailId)
+  // Finding title must describe what failed (element name or action)
+  expect(f.title.length).toBeGreaterThan(0)
+  // dedupKey is stable (same run of the same trail+step always produces the same key)
+  expect(f.dedupKey).toContain(trailId)
+}, 30000)
