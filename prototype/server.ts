@@ -36,7 +36,7 @@ import { trailsDashboardData } from "./lib/trails-dashboard"
 import { fileFindingById, dismissFinding, realFiler } from "./lib/trails-findings-gate"
 import { getReplay, runsWithReplay } from "./lib/trails-replay"
 import { saveFeedbackReplay, getFeedbackReplay, feedbackIdsWithReplay, pruneOldFeedbackReplays } from "./lib/feedback-replay"
-import { listRunSteps, listTrails, getTrail, getWalk, setTrailStatus, listTrailSteps, insertAssertStep, deleteTrailStep, updateTrailStep, updateTrail, countRunSteps, countTrailSteps, type TrailPatch } from "./lib/trails"
+import { listRunSteps, listTrails, getTrail, getWalk, setTrailStatus, listTrailSteps, insertAssertStep, deleteTrailStep, updateTrailStep, updateTrail, countRunSteps, countTrailSteps, listTrailRunHistory, type TrailPatch } from "./lib/trails"
 import { runWalkNow } from "./lib/trails-trigger"
 import { startTrailScheduler, isValidCron } from "./lib/trails-scheduler"
 import { startCrashReaper } from "./lib/trails-reaper"
@@ -3122,6 +3122,26 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (!Object.keys(patch).length) return json({ error: "Nothing to patch" }, 400)
           await updateTrail(projectId, trail.id, patch)
           return json({ ok: true })
+        }
+      }
+
+      // GET /api/trails/:trailId/runs — KLA-85: per-trail run history, newest-first, bounded by ?limit=N.
+      // Returns { runs: TrailRunHistoryEntry[] } with timestamp, status, stepCount, durationMs per run.
+      // 404 when the trail does not exist in this project (also guards cross-project access).
+      {
+        const runsMatch = path.match(/^\/api\/trails\/([^/]+)\/runs$/)
+        if (req.method === "GET" && runsMatch) {
+          try {
+            const trailId = runsMatch[1]
+            const trail = await getTrail(projectId, trailId)
+            if (!trail) return json({ error: "Trail not found" }, 404)
+            const rawLimit = new URL(req.url).searchParams.get("limit")
+            const limit = rawLimit ? Math.max(1, Math.min(200, Number(rawLimit) || 20)) : 20
+            const runs = await listTrailRunHistory(projectId, trailId, limit)
+            return json({ runs })
+          } catch (e) {
+            return json(oops(e, "trails-run-history"), 500)
+          }
         }
       }
 
