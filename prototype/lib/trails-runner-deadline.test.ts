@@ -56,7 +56,7 @@ test.if(RUN_BROWSER)("a hung initial-goto times out (bounded by opTimeout), fina
   expect(elapsed).toBeLessThan(20000)
 }, 30000)
 
-test("a walk with a slow wait step overrunning the deadline is bounded and terminates quickly (KLA-61)", async () => {
+test.if(RUN_BROWSER)("a walk with a slow wait step overrunning the deadline is bounded and terminates quickly (KLA-61)", async () => {
   const base = landing("journey")
   const { trailId } = await crystallize("proj_dl_slow_step", {
     name: "SlowStep", baseUrl: base, authorKind: "llm",
@@ -75,7 +75,7 @@ test("a walk with a slow wait step overrunning the deadline is bounded and termi
   expect((walk?.summary as any)?.error).toContain("deadline")
 }, 15000)
 
-test("a step that would start with under 1s remaining is skipped (KLA-61)", async () => {
+test.if(RUN_BROWSER)("a step that would start with under 1s remaining is skipped (KLA-61)", async () => {
   const base = landing("journey")
   const { trailId } = await crystallize("proj_dl_skip_step", {
     name: "SkipStep", baseUrl: base, authorKind: "llm",
