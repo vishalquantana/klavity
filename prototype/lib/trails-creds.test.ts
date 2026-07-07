@@ -44,11 +44,12 @@ test("resolveCredRefs substitutes email and password", async () => {
   expect(await resolveCredRefs(P, "{{cred:admin:password}}+{{cred:admin:password}}")).toBe("pw-999+pw-999")
 })
 
-test("resolveCredRefs :otp returns 666666 when KLAV_TEST_OTP is set", async () => {
+test("resolveCredRefs :otp returns 666666 when KLAV_TEST_OTP is set (OTP-shape account)", async () => {
+  await createTestAccount(P, { name: "otp-admin", loginEmail: "otp-admin@test.local", authShape: "otp" })
   const saved = process.env.KLAV_TEST_OTP
   try {
     process.env.KLAV_TEST_OTP = "1"
-    expect(await resolveCredRefs(P, "{{cred:admin:otp}}")).toBe("666666")
+    expect(await resolveCredRefs(P, "{{cred:otp-admin:otp}}")).toBe("666666")
   } finally {
     if (saved === undefined) delete process.env.KLAV_TEST_OTP
     else process.env.KLAV_TEST_OTP = saved

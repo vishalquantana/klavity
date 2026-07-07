@@ -20,13 +20,6 @@ export const resolveCredRefs: CredResolver = async (projectId, value) => {
   let out = value
   for (const m of value.matchAll(CRED_RE)) {
     const [whole, name, field] = m
-    if (field === "otp") {
-      // :otp only works when the test-OTP bypass is active on the server; fail loud otherwise so
-      // a misconfigured prod run surfaces the problem immediately rather than hanging on OTP input.
-      if (!process.env.KLAV_TEST_OTP) throw new Error(`{{cred:${name}:otp}} requires KLAV_TEST_OTP to be set`)
-      out = out.replaceAll(whole, TEST_OTP_CODE)
-      continue
-    }
     const sec = await getTestAccountSecret(projectId, name)
     if (!sec) throw new Error(`unknown test account: ${name}`)
     let resolved: string
@@ -38,11 +31,14 @@ export const resolveCredRefs: CredResolver = async (projectId, value) => {
       }
       resolved = sec.password
     } else {
-      // field === "otp"
-      if (sec.authShape !== "otp" || sec.otpCode === undefined) {
+      // field === "otp": only works when the test-OTP bypass is active on the server; fail loud
+      // otherwise so a misconfigured prod run surfaces the problem immediately. Always validate
+      // authShape first so a password-shape account with an :otp ref fails loud (config mistake).
+      if (!process.env.KLAV_TEST_OTP) throw new Error(`{{cred:${name}:otp}} requires KLAV_TEST_OTP to be set`)
+      if (sec.authShape !== "otp") {
         throw new Error(`test account "${name}" does not have an OTP code (auth_shape: ${sec.authShape})`)
       }
-      resolved = sec.otpCode
+      resolved = TEST_OTP_CODE
     }
     out = out.replaceAll(whole, resolved)
   }
