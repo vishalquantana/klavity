@@ -2825,7 +2825,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     // unauthenticated API calls return a JSON 401 (not a /login redirect), mirroring resolveProject usage.
     if (path === "/api/trails/dashboard" || path.startsWith("/api/trails/findings/") || path.startsWith("/api/trails/walks/")
         || path === "/api/trails/author" || path.startsWith("/api/trails/author/")
-        || /^\/api\/trails\/[^/]+\/(walk|approve)$/.test(path)) {
+        || /^\/api\/trails\/[^/]+\/(walk|approve|steps)$/.test(path)) {
       const meT = (await sessionEmail(req)) || (await bearerEmail(req))
       if (!meT) return json({ error: "Unauthorized" }, 401)
       const resolved = await resolveProject(meT, url.searchParams.get("project"))
@@ -2946,6 +2946,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (req.method === "GET" && path.startsWith("/api/trails/author/")) {
         const s = await getAuthorSession(projectId, path.slice("/api/trails/author/".length))
         return s ? json(s) : json({ error: "Not found" }, 404)
+      }
+
+      // GET /api/trails/:id/steps — return a draft trail's steps so the UI can show a review before Activate.
+      {
+        const mS = path.match(/^\/api\/trails\/([^/]+)\/steps$/)
+        if (req.method === "GET" && mS) {
+          const trail = await getTrail(projectId, mS[1])
+          if (!trail) return json({ error: "Not found" }, 404)
+          const steps = await listTrailSteps(projectId, trail.id)
+          return json({ trail, steps })
+        }
       }
 
       // ── AutoSims F1: approve a Draft Trail → Active (only Active trails file findings) ──
