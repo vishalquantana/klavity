@@ -36,7 +36,8 @@ import { trailsDashboardData } from "./lib/trails-dashboard"
 import { fileFindingById, dismissFinding, realFiler } from "./lib/trails-findings-gate"
 import { getReplay, runsWithReplay } from "./lib/trails-replay"
 import { saveFeedbackReplay, getFeedbackReplay, feedbackIdsWithReplay, pruneOldFeedbackReplays } from "./lib/feedback-replay"
-import { listRunSteps, listTrails, getTrail, getWalk, setTrailStatus, listTrailSteps, insertAssertStep, deleteTrailStep, updateTrailStep, updateTrail, countRunSteps, countTrailSteps } from "./lib/trails"
+import { listRunSteps, listTrails, getTrail, getWalk, setTrailStatus, listTrailSteps, insertAssertStep, deleteTrailStep, updateTrailStep, updateTrail, countRunSteps, countTrailSteps, getWalkJudgment } from "./lib/trails"
+import { judgeWalk } from "./lib/trails-judge"
 import { runWalkNow } from "./lib/trails-trigger"
 import { startTrailScheduler, isValidCron } from "./lib/trails-scheduler"
 import { runAuthorNow, getAuthorSession, getActiveAuthorSession } from "./lib/trails-author"
@@ -2891,7 +2892,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (path === "/api/trails/dashboard" || path.startsWith("/api/trails/findings/") || path.startsWith("/api/trails/walks/")
         || path === "/api/trails/author" || path.startsWith("/api/trails/author/")
         || /^\/api\/trails\/[^/]+$/.test(path)
-        || /^\/api\/trails\/[^/]+\/(walk|approve|steps)$/.test(path)
+        || /^\/api\/trails\/[^/]+\/(walk|approve|steps|judge-persona)$/.test(path)
         || /^\/api\/trails\/[^/]+\/steps\/[^/]+$/.test(path)) {
       const meT = (await sessionEmail(req)) || (await bearerEmail(req))
       if (!meT) return json({ error: "Unauthorized" }, 401)
@@ -2950,6 +2951,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
       // GET /api/trails/walks/:runId — walk metadata + trail name + steps for the full-page walk detail.
       // Lighter than /replay (no rrweb segments). Returns hasReplay so the page knows whether to show player.
+      // KLA-73: also returns the latest persona judgment (judgment field, null if none yet).
       const walkDetailMatch = path.match(/^\/api\/trails\/walks\/([^/]+)$/)
       if (req.method === "GET" && walkDetailMatch) {
         try {
@@ -2959,11 +2961,79 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             listRunSteps(projectId, runId),
           ])
           if (!walk) return json({ error: "Walk not found." }, 404)
-          const trail = await getTrail(projectId, walk.trailId)
-          const replaySet = await runsWithReplay(projectId, [runId])
-          return json({ walk, trail, steps, hasReplay: replaySet.has(runId) })
+          const [trail, replaySet, judgment] = await Promise.all([
+            getTrail(projectId, walk.trailId),
+            runsWithReplay(projectId, [runId]),
+            getWalkJudgment(projectId, runId),
+          ])
+          return json({ walk, trail, steps, hasReplay: replaySet.has(runId), judgment: judgment ?? null })
         } catch (e) {
           return json(oops(e, "trails-walk-detail"), 500)
+        }
+      }
+
+      // POST /api/trails/walks/:runId/judge — KLA-73: invoke a persona to judge this Walk's findings.
+      // Body: { personaId?: string } — if omitted, falls back to the Trail's judgePersonaId.
+      // Returns the created WalkJudgment.
+      {
+        const judgeMatch = path.match(/^\/api\/trails\/walks\/([^/]+)\/judge$/)
+        if (req.method === "POST" && judgeMatch) {
+          const runId = judgeMatch[1]
+          try {
+            const walk = await getWalk(projectId, runId)
+            if (!walk) return json({ error: "Walk not found" }, 404)
+            const body = await req.json().catch(() => ({}))
+            const trail = await getTrail(projectId, walk.trailId)
+            const personaId = (body as any)?.personaId || trail?.judgePersonaId
+            if (!personaId) return json({ error: "No persona selected — pass personaId in body or set a judge persona on the Trail" }, 400)
+            const personas = await listPersonas(projectId)
+            const persona = personas.find(p => p.id === personaId)
+            if (!persona) return json({ error: "Persona not found in this project" }, 404)
+
+            const llmFn = async (systemPrompt: string, userContent: string) => {
+              const apiKey = process.env.KLAV_OPENROUTER_KEY
+              if (!apiKey) throw new Error("KLAV_OPENROUTER_KEY not configured")
+              const model = process.env.KLAV_JUDGE_MODEL || "openai/gpt-4o-mini"
+              const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}`, "HTTP-Referer": "https://klavity.in" },
+                body: JSON.stringify({
+                  model,
+                  messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userContent }],
+                  response_format: { type: "json_object" },
+                }),
+              })
+              if (!resp.ok) throw new Error(`OpenRouter ${resp.status}: ${await resp.text().catch(() => "?")}`)
+              const data: any = await resp.json()
+              const raw = JSON.parse(data.choices?.[0]?.message?.content || "{}")
+              return { verdicts: Array.isArray(raw.verdicts) ? raw.verdicts : [], overall_note: raw.overall_note ?? null }
+            }
+
+            const judgment = await judgeWalk({ projectId, runId, persona, llmFn })
+            return json({ judgment })
+          } catch (e: any) {
+            return json(oops(e, "trails-judge"), 500)
+          }
+        }
+      }
+
+      // PATCH /api/trails/:trailId/judge-persona — KLA-73: set (or clear) the default judge persona for a Trail.
+      // Body: { personaId: string | null }
+      {
+        const jpMatch = path.match(/^\/api\/trails\/([^/]+)\/judge-persona$/)
+        if (req.method === "PATCH" && jpMatch) {
+          const trail = await getTrail(projectId, jpMatch[1])
+          if (!trail) return json({ error: "Not found" }, 404)
+          const body = await req.json().catch(() => null)
+          if (!body || typeof body !== "object") return json({ error: "Invalid body" }, 400)
+          const pid = (body as any).personaId
+          if (pid !== null && pid !== undefined && typeof pid !== "string") return json({ error: "personaId must be a string or null" }, 400)
+          if (pid) {
+            const personas = await listPersonas(projectId)
+            if (!personas.some(p => p.id === pid)) return json({ error: "Persona not found in this project" }, 404)
+          }
+          await updateTrail(projectId, trail.id, { judgePersonaId: pid ?? null })
+          return json({ ok: true })
         }
       }
 

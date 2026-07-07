@@ -1,5 +1,5 @@
 import { db } from "./db"
-import type { Trail, TrailStep, TrailStatus, StepAction, Fingerprint } from "./trails-types"
+import type { Trail, TrailStep, TrailStatus, StepAction, Fingerprint, PersonaVerdict, WalkJudgment } from "./trails-types"
 
 function uid(prefix: string): string { return prefix + crypto.randomUUID() }
 function j<T>(v: T | null | undefined): string | null { return v == null ? null : JSON.stringify(v) }
@@ -13,6 +13,7 @@ function rowToTrail(r: any): Trail {
     stepVersion: r.step_version == null ? 1 : Number(r.step_version),
     schedule: r.schedule_cron ?? null,
     scheduledLastRunAt: r.scheduled_last_run_at == null ? null : Number(r.scheduled_last_run_at),
+    judgePersonaId: r.judge_persona_id ?? null,
   }
 }
 
@@ -43,7 +44,7 @@ export async function setTrailStatus(projectId: string, id: string, status: Trai
   await db!.execute({ sql: `UPDATE trails SET status=?, updated_at=? WHERE project_id=? AND id=?`, args: [status, Date.now(), projectId, id] })
 }
 
-export type TrailPatch = { name?: string; status?: TrailStatus; schedule?: string | null }
+export type TrailPatch = { name?: string; status?: TrailStatus; schedule?: string | null; judgePersonaId?: string | null }
 
 export async function updateTrail(projectId: string, id: string, patch: TrailPatch): Promise<boolean> {
   const r = await db!.execute({ sql: `SELECT id FROM trails WHERE project_id=? AND id=?`, args: [projectId, id] })
@@ -53,6 +54,7 @@ export async function updateTrail(projectId: string, id: string, patch: TrailPat
   if (patch.name != null) { sets.push("name=?"); args.push(patch.name) }
   if (patch.status != null) { sets.push("status=?"); args.push(patch.status) }
   if ("schedule" in patch) { sets.push("schedule_cron=?"); args.push(patch.schedule ?? null) }
+  if ("judgePersonaId" in patch) { sets.push("judge_persona_id=?"); args.push(patch.judgePersonaId ?? null) }
   if (!sets.length) return true
   sets.push("updated_at=?"); args.push(Date.now())
   args.push(projectId, id)
@@ -370,4 +372,50 @@ export async function updateTrailStep(projectId: string, stepId: string, patch: 
   })
   await bumpStepVersion(projectId, String(row.trail_id))
   return true
+}
+
+// ── KLA-73: Persona-judged walks ──────────────────────────────────────────────
+
+function rowToJudgment(r: any): WalkJudgment {
+  return {
+    id: String(r.id),
+    projectId: String(r.project_id),
+    runId: String(r.run_id),
+    personaId: String(r.persona_id),
+    personaName: String(r.persona_name),
+    verdicts: r.verdicts_json ? JSON.parse(String(r.verdicts_json)) : [],
+    overallNote: r.overall_note ?? null,
+    createdAt: Number(r.created_at),
+  }
+}
+
+export async function recordWalkJudgment(
+  projectId: string,
+  input: { runId: string; personaId: string; personaName: string; verdicts: PersonaVerdict[]; overallNote?: string | null },
+): Promise<string> {
+  const id = uid("wj_")
+  await db!.execute({
+    sql: `INSERT INTO walk_judgments (id, project_id, run_id, persona_id, persona_name, verdicts_json, overall_note, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [id, projectId, input.runId, input.personaId, input.personaName, JSON.stringify(input.verdicts), input.overallNote ?? null, Date.now()],
+  })
+  return id
+}
+
+/** Returns the most-recent judgment for a walk, or null if none exists. */
+export async function getWalkJudgment(projectId: string, runId: string): Promise<WalkJudgment | null> {
+  const r = await db!.execute({
+    sql: `SELECT * FROM walk_judgments WHERE project_id=? AND run_id=? ORDER BY created_at DESC LIMIT 1`,
+    args: [projectId, runId],
+  })
+  return r.rows.length ? rowToJudgment(r.rows[0]) : null
+}
+
+/** Returns all judgments for a walk (newest first). */
+export async function listWalkJudgments(projectId: string, runId: string): Promise<WalkJudgment[]> {
+  const r = await db!.execute({
+    sql: `SELECT * FROM walk_judgments WHERE project_id=? AND run_id=? ORDER BY created_at DESC`,
+    args: [projectId, runId],
+  })
+  return r.rows.map(rowToJudgment)
 }
