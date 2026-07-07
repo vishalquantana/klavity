@@ -8,6 +8,53 @@
 import type { Fingerprint, NetworkMock, TrailViewport } from "./trails-types"
 import { KREF_SNAPSHOT_CAP } from "./trails-snapshot"
 import { clickWithTransitionFallback } from "./trails-click"
+// ── Network mocking (KLA-111) ─────────────────────────────────────────────────────────────────────
+// A Trail can declare zero or more mocks. Each mock matches browser requests by URL pattern
+// (exact string, glob-style "*" wildcard, or RegExp). The first matching mock wins.
+//
+// Two actions:
+//   stub  — reply with a canned body + optional status/contentType (default 200 + text/plain).
+//   block — abort the request (like an ad-blocker); the browser sees a network error.
+//
+// Usage:
+//   const page = await handle.newPage()
+//   await page.interceptNetwork([{ url: '**/api/flags', stub: { body: '{"dark":true}', contentType: 'application/json' } }])
+//   await page.goto(url, timeout)
+export type NetworkMockStub = {
+  /** HTTP status code. Default 200. */
+  status?: number
+  /** Response body as a string. Default empty string. */
+  body?: string
+  /** Content-Type header. Default 'text/plain'. */
+  contentType?: string
+}
+/**
+ * Describes a single network interception rule.
+ * Match order: the first rule whose `url` pattern matches a request wins.
+ * `url` accepts an exact URL string, a glob pattern ("**", "*"), or a RegExp.
+ */
+export type NetworkMock =
+  | { url: string | RegExp; stub: NetworkMockStub; block?: never }
+  | { url: string | RegExp; block: true; stub?: never }
+
+/** Return true if `requestUrl` matches `pattern` (string glob or RegExp). */
+export function matchesMock(pattern: string | RegExp, requestUrl: string): boolean {
+  if (pattern instanceof RegExp) return pattern.test(requestUrl)
+  // Build a regex from the glob pattern. Process ** before * to avoid double-substitution:
+  // replace ** with a placeholder first, then * with [^/]*, then restore the placeholder as .*
+  // This prevents ".* " from having its "*" re-replaced by the single-star handler.
+  const DSTAR = "\u0000DSTAR\u0000"
+  const escaped = pattern
+    .replace(/[.+?^${}()|[\]\\]/g, "\\$&") // escape regex special chars (not *)
+    .replace(/\*\*/g, DSTAR)                    // save ** as placeholder
+    .replace(/\*/g, "[^/]*")                     // single * → within-segment glob
+    .replace(new RegExp(DSTAR, "g"), ".*")        // restore ** → any-segment glob
+  // When the pattern starts with ".*" (i.e. started with "**"), it must match from anywhere
+  // in the URL, so we skip the "^" anchor to allow prefix-matching.
+  const anchored = escaped.startsWith(".*") ? escaped + "$" : "^" + escaped + "$"
+  return new RegExp(anchored).test(requestUrl)
+}
+
 
 // ── Page-context evaluate bodies (run in the browser; NO module-scope closures). Shared verbatim by
 //    both drivers — Playwright and Puppeteer both serialize a function to the page identically. ──────
@@ -137,11 +184,12 @@ export interface BrowserPage {
   assertElementCount(selector: string, expected: number, timeoutMs: number): Promise<void>
   waitMs(ms: number): Promise<void>
   /**
-   * KLA-111: install network stubs/blocks for this page.
-   * Called once before the first navigation; patterns persist for the page's lifetime.
-   * No-op when mocks is empty.
+   * KLA-111: Install network mocks before navigating. Subsequent requests whose URL matches a mock
+   * rule are either stubbed with a canned response or aborted (blocked). Call before goto() so
+   * mocks are in place for the initial page load. Calling again REPLACES all previously installed
+   * mocks (idempotent: unroutes old handlers then installs fresh ones). No-op when mocks is empty.
    */
-  mockNetwork(mocks: NetworkMock[]): Promise<void>
+  interceptNetwork(mocks: NetworkMock[]): Promise<void>
 }
 export interface BrowserHandle {
   newPage(viewport?: TrailViewport | null): Promise<BrowserPage>
@@ -202,21 +250,24 @@ class PlaywrightPage implements BrowserPage {
     throw new Error(`assertElementCount: expected ${expected} but found ${n}`)
   }
   async waitMs(ms: number) { await new Promise((r) => setTimeout(r, ms)) }
-  async mockNetwork(mocks: NetworkMock[]) {
-    // `mock.url` is a substring: any request whose full URL contains it is intercepted.
-    for (const mock of mocks) {
-      const pattern = (url: URL) => url.href.includes(mock.url)
-      if (mock.action === "block") {
-        await this.page.route(pattern, (route) => route.abort())
-      } else {
-        await this.page.route(pattern, (route) => route.fulfill({
-          status: mock.status ?? 200,
-          contentType: mock.contentType ?? "application/json",
-          headers: mock.headers ?? {},
-          body: mock.body ?? "",
-        }))
+  async interceptNetwork(mocks: NetworkMock[]): Promise<void> {
+    // Remove any previously installed Klavity route handlers before installing fresh ones.
+    await this.page.unroute("**/*").catch(() => {})
+    if (!mocks.length) return
+    await this.page.route("**/*", (route) => {
+      const reqUrl = route.request().url()
+      for (const mock of mocks) {
+        if (!matchesMock(mock.url, reqUrl)) continue
+        if (mock.block) { route.abort("blockedbyclient").catch(() => {}); return }
+        route.fulfill({
+          status: mock.stub.status ?? 200,
+          contentType: mock.stub.contentType ?? "text/plain",
+          body: mock.stub.body ?? "",
+        }).catch(() => {})
+        return
       }
-    }
+      route.continue().catch(() => {})
+    })
   }
 }
 
@@ -306,28 +357,26 @@ class PuppeteerPage implements BrowserPage {
     throw new Error(`assertElementCount: expected ${expected} but found ${n}`)
   }
   async waitMs(ms: number) { await new Promise((r) => setTimeout(r, ms)) }
-  async mockNetwork(mocks: NetworkMock[]) {
+  async interceptNetwork(mocks: NetworkMock[]): Promise<void> {
+    // Puppeteer: enable request interception and handle each request against the mock list.
+    // setRequestInterception(true) is idempotent in Puppeteer; safe to call repeatedly.
     if (!mocks.length) return
     await this.page.setRequestInterception(true)
-    this.page.on("request", (request: any) => {
-      const url: string = request.url()
-      const mock = mocks.find((m) => {
-        // Support simple glob patterns (** = anything) and substring matches.
-        const pat = m.url
-        if (pat.includes("**")) {
-          const re = new RegExp("^" + pat.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*\*/g, ".*").replace(/\*/g, "[^/]*") + "$")
-          return re.test(url)
-        }
-        return url.includes(pat)
-      })
-      if (!mock) { request.continue().catch(() => {}); return }
-      if (mock.action === "block") { request.abort().catch(() => {}); return }
-      request.respond({
-        status: mock.status ?? 200,
-        contentType: mock.contentType ?? "application/json",
-        headers: mock.headers ?? {},
-        body: mock.body ?? "",
-      }).catch(() => {})
+    // Remove any previously registered Klavity listener to avoid double-handling.
+    this.page.removeAllListeners("request")
+    this.page.on("request", (req: any) => {
+      const reqUrl: string = req.url()
+      for (const mock of mocks) {
+        if (!matchesMock(mock.url, reqUrl)) continue
+        if (mock.block) { req.abort().catch(() => {}); return }
+        req.respond({
+          status: mock.stub.status ?? 200,
+          contentType: mock.stub.contentType ?? "text/plain",
+          body: mock.stub.body ?? "",
+        }).catch(() => {})
+        return
+      }
+      req.continue().catch(() => {})
     })
   }
 }
