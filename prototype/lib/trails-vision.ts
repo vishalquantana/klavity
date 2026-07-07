@@ -36,7 +36,7 @@ export function decideFromVision(r: VisionResult, gate = 0.9): VisionDecision {
 }
 
 // ── Real OpenRouter vision adapter (the only file that does model I/O) ──
-import { recordAiCall } from "./db"
+import { DEFAULT_AI_CALL_EST_USD, reconcileDailySpend, recordAiCall, tryReserveDailySpend } from "./db"
 import { pickModel, MODEL_CHOICE_IDS, DEFAULT_WEIGHTS } from "./models"
 
 export const VISION_FALLBACK_MODEL = "qwen/qwen3-vl-235b-a22b-instruct"
@@ -90,9 +90,22 @@ export function parseVisionJSON(content: string): VisionResult {
   }
 }
 
+/**
+ * Production wiring gate for Tier-2 self-heal. Default is ON when OpenRouter is configured; operators
+ * can disable it instantly with KLAV_AUTOSIM_VISION_SELFHEAL=0. Tests and local dev without a key stay
+ * on the old no-vision path.
+ */
+export function configuredVisionResolver(): VisionResolver | undefined {
+  if (process.env.KLAV_AUTOSIM_VISION_SELFHEAL === "0") return undefined
+  if (!process.env.OPENROUTER_API_KEY) return undefined
+  return openRouterVisionResolver
+}
+
 export const openRouterVisionResolver: VisionResolver = async (input, ctx) => {
   const key = process.env.OPENROUTER_API_KEY
   if (!key) throw new Error("OPENROUTER_API_KEY not set")
+  const cap = Number(process.env.OPS_DAILY_CAP_USD || 50)
+  if (!(await tryReserveDailySpend(DEFAULT_AI_CALL_EST_USD, cap))) throw new Error("Daily AI budget reached")
   const base = process.env.OPENROUTER_BASE || "https://klavity.quantana.top"
   // Apply the weighted model mix (DEFAULT_WEIGHTS), with an optional per-call ctx.weights override
   // for a future per-project read. Previously passed EMPTY weights → always fell back to the single
@@ -101,6 +114,7 @@ export const openRouterVisionResolver: VisionResolver = async (input, ctx) => {
   const model = pickModel(weights, MODEL_CHOICE_IDS, VISION_FALLBACK_MODEL, Math.random())
   const ctl = new AbortController()
   const timer = setTimeout(() => ctl.abort(), 90_000)
+  let reconciled = false
   try {
     const res = await fetch(ENDPOINT, {
       method: "POST",
@@ -108,9 +122,16 @@ export const openRouterVisionResolver: VisionResolver = async (input, ctx) => {
       body: JSON.stringify({ model, max_tokens: 600, messages: buildVisionMessages(input), usage: { include: true }, response_format: { type: "json_object" } }),
       signal: ctl.signal,
     })
-    if (!res.ok) throw new Error(`OpenRouter ${res.status}: ${(await res.text()).slice(0, 200)}`)
+    if (!res.ok) {
+      await reconcileDailySpend(DEFAULT_AI_CALL_EST_USD, 0)
+      reconciled = true
+      throw new Error(`OpenRouter ${res.status}: ${(await res.text()).slice(0, 200)}`)
+    }
     const data: any = await res.json()
     const u = data?.usage || {}
+    const cost = typeof u.cost === "number" ? u.cost : 0
+    await reconcileDailySpend(DEFAULT_AI_CALL_EST_USD, cost)
+    reconciled = true
     // Billing accuracy: AWAIT the ledger write so short-lived callers (smoke script, one-shot CLI)
     // don't exit before the billable ai_calls 'reheal' row lands. Still .catch-wrapped so a ledger
     // failure can never break the resolver. NOTE: only 2xx vision calls are ledgered — error-path
@@ -119,10 +140,11 @@ export const openRouterVisionResolver: VisionResolver = async (input, ctx) => {
       type: "reheal", model, projectId: ctx?.projectId ?? null, actorEmail: ctx?.email ?? null,
       inputTokens: typeof u.prompt_tokens === "number" ? u.prompt_tokens : null,
       outputTokens: typeof u.completion_tokens === "number" ? u.completion_tokens : null,
-      costUsd: typeof u.cost === "number" ? u.cost : null,
+      costUsd: cost || null,
     }).catch(() => {})
     return parseVisionJSON(data?.choices?.[0]?.message?.content ?? "")
   } finally {
     clearTimeout(timer)
+    if (!reconciled) await reconcileDailySpend(DEFAULT_AI_CALL_EST_USD, 0).catch(() => {})
   }
 }
