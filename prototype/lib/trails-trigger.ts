@@ -31,7 +31,7 @@ const realWalk: WalkFn = async (projectId, trailId, runId) => {
   const signal = getCurrentWalkAbortSignal() ?? undefined
   const s = await walkTrail(projectId, trailId, {
     fixtureUrl: trail.baseUrl, replay: true, launchArgs: CHROMIUM_PROD_ARGS, deadlineMs: WALK_DEADLINE_MS, runId,
-    stepShots: true, signal,
+    stepShots: true, signal, liveWatch: true,
     ...(vision ? { vision } : {}),
   })
   return { verdict: s.verdict, llmCalls: s.llmCalls, summary: { ...(s.reasons.length ? { reasons: s.reasons } : {}) } }

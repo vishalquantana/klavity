@@ -9,7 +9,7 @@
 //
 // Project-scoped: projectId is the first arg of every persisted call and every query.
 import type { Browser, BrowserContext, Page, Locator } from "playwright"
-import { acquirePlaywrightBrowser } from "./trails-browser-page"
+import { acquirePlaywrightBrowser, startCdpScreencast } from "./trails-browser-page"
 import { uploadScreenshotMeta } from "./s3"
 import type { Fingerprint, Tier, Verdict, TrailStep, NetworkMock } from "./trails-types"
 import {
@@ -23,6 +23,7 @@ import { hasCredRef, resolveCredRefs, type CredResolver } from "./trails-creds"
 import { captureKrefSnapshot, stableSelectorFor, structuralPathFor, isKrefSelector, recordedStepState } from "./trails-snapshot"
 import { clickWithTransitionFallback } from "./trails-click"
 import { notifyWalkRed } from "./walk-red-alert"
+import { endLiveWatchRun, publishLiveWatchFrame, startLiveWatchRun } from "./trails-live-watch"
 
 export interface WalkOptions {
   /** Concrete URL to walk against (overrides the trail's baseUrl). file:// or http(s)://. */
@@ -112,6 +113,12 @@ export interface WalkOptions {
    * Absent or empty → no interception (byte-identical to all existing callers).
    */
   networkMocks?: NetworkMock[]
+  /**
+   * KLA-79 live-watch: best-effort CDP Page.startScreencast frame streaming for the in-flight walk.
+   * Frames stay in-process and are exposed by the authenticated /live SSE route. Off by default for
+   * tests/direct callers; runWalkNow enables it for dashboard-triggered walks.
+   */
+  liveWatch?: boolean
 }
 
 export interface WalkStepSummary {
@@ -386,6 +393,13 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
   // recorder + a binding; the page lives in that context. ALL capture is best-effort/try-caught. ──
   let context: BrowserContext | null = null
   let capture: ReplayCapture | null = null
+  let stopLiveScreencast: (() => Promise<void>) | null = null
+  let liveWatchEnded = false
+  const closeLiveWatch = (message = "ended") => {
+    if (!opts.liveWatch || liveWatchEnded) return
+    liveWatchEnded = true
+    endLiveWatchRun(projectId, runId, message)
+  }
   if (opts.replay) {
     try {
       context = await browser.newContext()
@@ -400,6 +414,17 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
 
   try {
     const page: Page = context ? await context.newPage() : await browser.newPage()
+    if (opts.liveWatch) {
+      startLiveWatchRun(projectId, runId)
+      try {
+        stopLiveScreencast = await startCdpScreencast(page, (frame) => {
+          publishLiveWatchFrame(projectId, runId, frame.dataUrl)
+        })
+      } catch (e) {
+        closeLiveWatch("screencast unavailable")
+        console.warn("[trails-live-watch] screencast unavailable, continuing walk:", String(e))
+      }
+    }
     // Cap EVERY default page operation/navigation at opTimeout so nothing falls back to Playwright's
     // 30s default. The initial goto below is bounded explicitly too (belt-and-braces). A goto timeout
     // THROWS — it is inside this try, so it finalizes the walk RED via the catch below, never a hang.
@@ -494,6 +519,10 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
     notifyWalkRed({ trailName: trail.name, trailId, projectId, runId, reasons: redReasons, at: Date.now() }).catch(() => {})
     return { runId, verdict: "red", llmCalls, steps: stepSummaries, healedCount, reasons: redReasons }
   } finally {
+    if (stopLiveScreencast) {
+      try { await stopLiveScreencast() } catch {}
+    }
+    closeLiveWatch()
     await bh.close()
   }
 }
