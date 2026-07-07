@@ -171,3 +171,68 @@ test("listFindings filters by status; setFindingStatus transitions and records c
   expect(filed?.connectorRef).toBe("plane:ISSUE-12")
   expect((await T.listFindings("proj_A", { status: "queued" })).some((x) => x.id === f.id)).toBe(false)
 })
+
+// ── KLA-92: Trail step versioning ──
+
+test("Trail.stepVersion starts at 1 and increments on addTrailStep", async () => {
+  const id = await T.createTrail("proj_V", { name: "Ver", baseUrl: "https://v.test/" })
+  const t0 = await T.getTrail("proj_V", id)
+  expect(t0?.stepVersion).toBe(1)
+
+  await T.addTrailStep("proj_V", id, { idx: 0, action: "navigate", actionValue: "https://v.test/" })
+  const t1 = await T.getTrail("proj_V", id)
+  expect(t1?.stepVersion).toBe(2)
+
+  await T.addTrailStep("proj_V", id, { idx: 1, action: "click" })
+  const t2 = await T.getTrail("proj_V", id)
+  expect(t2?.stepVersion).toBe(3)
+})
+
+test("Trail.stepVersion increments on updateTrailStep", async () => {
+  const id = await T.createTrail("proj_V", { name: "VerUp", baseUrl: "https://v.test/" })
+  const step = await T.addTrailStep("proj_V", id, { idx: 0, action: "type", actionValue: "old" })
+  const before = (await T.getTrail("proj_V", id))!.stepVersion
+  await T.updateTrailStep("proj_V", step, { actionValue: "new" })
+  const after = (await T.getTrail("proj_V", id))!.stepVersion
+  expect(after).toBe(before + 1)
+})
+
+test("Trail.stepVersion increments on deleteTrailStep", async () => {
+  const id = await T.createTrail("proj_V", { name: "VerDel", baseUrl: "https://v.test/" })
+  const step = await T.addTrailStep("proj_V", id, { idx: 0, action: "click" })
+  const before = (await T.getTrail("proj_V", id))!.stepVersion
+  await T.deleteTrailStep("proj_V", step)
+  const after = (await T.getTrail("proj_V", id))!.stepVersion
+  expect(after).toBe(before + 1)
+})
+
+test("Walk.trailVersion is pinned to Trail.stepVersion at walk start and does not change when steps are later edited", async () => {
+  const id = await T.createTrail("proj_V", { name: "VerWalk", baseUrl: "https://v.test/" })
+  await T.addTrailStep("proj_V", id, { idx: 0, action: "navigate", actionValue: "https://v.test/" })
+  await T.addTrailStep("proj_V", id, { idx: 1, action: "click" })
+  const vAtStart = (await T.getTrail("proj_V", id))!.stepVersion
+  expect(vAtStart).toBeGreaterThan(1) // sanity: steps were added
+
+  const walkId = await T.startWalk("proj_V", id)
+  const walk = await T.getWalk("proj_V", walkId)
+  expect(walk?.trailVersion).toBe(vAtStart)
+
+  // Modify the trail AFTER the walk started
+  const steps = await T.listTrailSteps("proj_V", id)
+  await T.updateTrailStep("proj_V", steps[0].id, { actionValue: "https://v.test/changed" })
+  const vAfter = (await T.getTrail("proj_V", id))!.stepVersion
+  expect(vAfter).toBe(vAtStart + 1)
+
+  // Walk still shows the version it was pinned to
+  const walkAfter = await T.getWalk("proj_V", walkId)
+  expect(walkAfter?.trailVersion).toBe(vAtStart)
+})
+
+test("Walk.trailVersion and Trail.stepVersion are present in JSON (API shape)", async () => {
+  const id = await T.createTrail("proj_V", { name: "VerJson", baseUrl: "https://v.test/" })
+  const t = await T.getTrail("proj_V", id)
+  expect(typeof t?.stepVersion).toBe("number")
+  const walkId = await T.startWalk("proj_V", id)
+  const w = await T.getWalk("proj_V", walkId)
+  expect(typeof w?.trailVersion).toBe("number")
+})

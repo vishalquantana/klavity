@@ -10,6 +10,7 @@ function rowToTrail(r: any): Trail {
     id: r.id, projectId: r.project_id, name: r.name, intent: r.intent, baseUrl: r.base_url,
     baselineRef: r.baseline_ref ?? null, authorKind: r.author_kind, status: r.status,
     createdBy: r.created_by ?? null, createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
+    stepVersion: r.step_version == null ? 1 : Number(r.step_version),
   }
 }
 
@@ -65,6 +66,13 @@ function rowToStep(r: any): TrailStep {
   }
 }
 
+async function bumpStepVersion(projectId: string, trailId: string): Promise<void> {
+  await db!.execute({
+    sql: `UPDATE trails SET step_version = step_version + 1, updated_at = ? WHERE project_id = ? AND id = ?`,
+    args: [Date.now(), projectId, trailId],
+  })
+}
+
 export async function addTrailStep(
   projectId: string, trailId: string,
   input: { idx: number; action: StepAction; actionValue?: string; target?: Fingerprint; checkpoint?: { description: string } },
@@ -75,6 +83,7 @@ export async function addTrailStep(
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [id, trailId, projectId, input.idx, input.action, input.actionValue ?? null, j(input.target), j(input.checkpoint), Date.now()],
   })
+  await bumpStepVersion(projectId, trailId)
   return id
 }
 
@@ -128,7 +137,9 @@ import type { Walk, RunStep, Verdict, Tier, FailureClass } from "./trails-types"
 function rowToWalk(r: any): Walk {
   return {
     id: r.id, trailId: r.trail_id, projectId: r.project_id, trigger: r.trigger,
-    status: r.status, llmCalls: Number(r.llm_calls), summary: pj<Record<string, unknown>>(r.summary_json),
+    status: r.status, llmCalls: Number(r.llm_calls),
+    trailVersion: r.trail_version == null ? 1 : Number(r.trail_version),
+    summary: pj<Record<string, unknown>>(r.summary_json),
     startedAt: Number(r.started_at), finishedAt: r.finished_at == null ? null : Number(r.finished_at),
   }
 }
@@ -144,10 +155,14 @@ function rowToRunStep(r: any): RunStep {
 
 export async function startWalk(projectId: string, trailId: string, trigger: "manual" = "manual"): Promise<string> {
   const id = uid("walk_")
+  // Pin the Trail's current step_version so this Walk always shows the steps it actually ran against,
+  // even if the Trail is edited later. DEFAULT 1 handles rows written before this column existed.
+  const tv = await db!.execute({ sql: `SELECT step_version FROM trails WHERE project_id=? AND id=?`, args: [projectId, trailId] })
+  const trailVersion = tv.rows.length ? (Number((tv.rows[0] as any).step_version) || 1) : 1
   await db!.execute({
-    sql: `INSERT INTO trail_runs (id, trail_id, project_id, trigger, status, llm_calls, summary_json, started_at, finished_at)
-          VALUES (?, ?, ?, ?, 'running', 0, NULL, ?, NULL)`,
-    args: [id, trailId, projectId, trigger, Date.now()],
+    sql: `INSERT INTO trail_runs (id, trail_id, project_id, trigger, status, llm_calls, summary_json, trail_version, started_at, finished_at)
+          VALUES (?, ?, ?, ?, 'running', 0, NULL, ?, ?, NULL)`,
+    args: [id, trailId, projectId, trigger, trailVersion, Date.now()],
   })
   return id
 }
@@ -315,11 +330,14 @@ export async function insertAssertStep(
     args: [id, trailId, projectId, afterStepIdx + 1, "assert", null,
            JSON.stringify(target), JSON.stringify({ kind: "visible", description }), Date.now()],
   })
+  await bumpStepVersion(projectId, trailId)
   return id
 }
 
 export async function deleteTrailStep(projectId: string, stepId: string): Promise<void> {
+  const r = await db!.execute({ sql: `SELECT trail_id FROM trail_steps WHERE id=? AND project_id=?`, args: [stepId, projectId] })
   await db!.execute({ sql: `DELETE FROM trail_steps WHERE id=? AND project_id=?`, args: [stepId, projectId] })
+  if (r.rows.length) await bumpStepVersion(projectId, String((r.rows[0] as any).trail_id))
 }
 
 export type StepPatch = { actionValue?: string | null; checkpoint?: { description: string } | null }
@@ -334,5 +352,6 @@ export async function updateTrailStep(projectId: string, stepId: string, patch: 
     sql: `UPDATE trail_steps SET action_value=?, checkpoint_json=? WHERE id=? AND project_id=?`,
     args: [newActionValue, newCheckpoint, stepId, projectId],
   })
+  await bumpStepVersion(projectId, String(row.trail_id))
   return true
 }

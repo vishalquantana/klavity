@@ -532,6 +532,10 @@ export async function applySchema(c: Client) {
     await c.execute("ALTER TABLE findings ADD COLUMN connector_error TEXT").catch((e: any) =>
       console.warn("findings.connector_error ALTER skipped:", e?.message || e))
   }
+  // KLA-92: Trail step versioning — step_version bumps whenever steps change; trail_version
+  // pins the version a Walk ran against so past runs never drift from the steps they executed.
+  await c.execute("ALTER TABLE trails ADD COLUMN step_version INTEGER NOT NULL DEFAULT 1").catch((e) => console.warn("trails.step_version ALTER skipped:", e?.message || e))
+  await c.execute("ALTER TABLE trail_runs ADD COLUMN trail_version INTEGER NOT NULL DEFAULT 1").catch((e) => console.warn("trail_runs.trail_version ALTER skipped:", e?.message || e))
 }
 
 // ── schema_meta helpers ──
