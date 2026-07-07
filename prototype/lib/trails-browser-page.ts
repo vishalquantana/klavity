@@ -127,6 +127,9 @@ export interface BrowserPage {
   click(selector: string, timeoutMs: number): Promise<void>
   fill(selector: string, value: string, timeoutMs: number): Promise<void>
   selectOption(selector: string, value: string, timeoutMs: number): Promise<void>
+  hover(selector: string, timeoutMs: number): Promise<void>
+  keyPress(selector: string, key: string, timeoutMs: number): Promise<void>
+  clearField(selector: string, timeoutMs: number): Promise<void>
   assertVisible(selector: string, timeoutMs: number): Promise<void>
   assertTextEquals(selector: string, value: string, timeoutMs: number): Promise<void>
   assertTextContains(selector: string, text: string, timeoutMs: number): Promise<void>
@@ -154,6 +157,9 @@ class PlaywrightPage implements BrowserPage {
   async click(selector: string, timeoutMs: number) { await clickWithTransitionFallback(this.page.locator(selector), timeoutMs) }
   async fill(selector: string, value: string, timeoutMs: number) { await this.page.locator(selector).fill(value, { timeout: timeoutMs }) }
   async selectOption(selector: string, value: string, timeoutMs: number) { await this.page.locator(selector).selectOption(value, { timeout: timeoutMs }) }
+  async hover(selector: string, timeoutMs: number) { await this.page.locator(selector).hover({ timeout: timeoutMs }) }
+  async keyPress(selector: string, key: string, timeoutMs: number) { await this.page.locator(selector).press(key, { timeout: timeoutMs }) }
+  async clearField(selector: string, timeoutMs: number) { await this.page.locator(selector).clear({ timeout: timeoutMs }) }
   async assertVisible(selector: string, timeoutMs: number) { await this.page.locator(selector).waitFor({ state: "visible", timeout: timeoutMs }) }
   async assertTextEquals(selector: string, value: string, timeoutMs: number) {
     const locator = this.page.locator(selector)
@@ -216,6 +222,13 @@ class PuppeteerPage implements BrowserPage {
     await el.type(value)
   }
   async selectOption(selector: string, value: string, timeoutMs: number) { await this.page.waitForSelector(selector, { timeout: timeoutMs }); await this.page.select(selector, value) }
+  async hover(selector: string, timeoutMs: number) { await this.page.waitForSelector(selector, { visible: true, timeout: timeoutMs }); await this.page.hover(selector) }
+  async keyPress(selector: string, key: string, timeoutMs: number) { await this.page.waitForSelector(selector, { visible: true, timeout: timeoutMs }); await this.page.focus(selector); await this.page.keyboard.press(key) }
+  async clearField(selector: string, timeoutMs: number) {
+    const el = await this.page.waitForSelector(selector, { visible: true, timeout: timeoutMs })
+    await el.click({ clickCount: 3 }).catch(() => {})
+    await this.page.keyboard.press("Backspace")
+  }
   async assertVisible(selector: string, timeoutMs: number) { await this.page.waitForSelector(selector, { visible: true, timeout: timeoutMs }) }
   async assertTextEquals(selector: string, value: string, timeoutMs: number) {
     const el = await this.page.waitForSelector(selector, { visible: true, timeout: timeoutMs })

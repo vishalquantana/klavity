@@ -636,6 +636,15 @@ async function runOneStep(
       case "select":
         await resolved.locator.selectOption(step.actionValue ?? "", { timeout: ACTION_TIMEOUT })
         break
+      case "hover":
+        await resolved.locator.hover({ timeout: ACTION_TIMEOUT })
+        break
+      case "keyPress":
+        await resolved.locator.press(step.actionValue ?? "Enter", { timeout: ACTION_TIMEOUT })
+        break
+      case "clearField":
+        await resolved.locator.clear({ timeout: ACTION_TIMEOUT })
+        break
       case "assert": {
         // Hard checkpoint: the element must be visible. Never overridden by healing.
         const kind = (step.checkpoint && step.checkpoint.kind) || "visible"
@@ -894,6 +903,9 @@ async function runVisionTier2(
           }
           case "click": await clickWithTransitionFallback(loc, ACTION_TIMEOUT); break
           case "select": await loc.selectOption(step.actionValue ?? "", { timeout: ACTION_TIMEOUT }); break
+          case "hover": await loc.hover({ timeout: ACTION_TIMEOUT }); break
+          case "keyPress": await loc.press(step.actionValue ?? "Enter", { timeout: ACTION_TIMEOUT }); break
+          case "clearField": await loc.clear({ timeout: ACTION_TIMEOUT }); break
         }
         // Persist the healed selector so the NEXT walk is Tier 0 again (heal-as-cache-update, §6.4).
         // SKIP when persistSelector is null (kref with no stable fallback) — invariant: no kref stored.

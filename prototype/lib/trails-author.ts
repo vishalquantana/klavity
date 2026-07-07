@@ -45,7 +45,7 @@ export interface AuthorOutcome {
   steps: AuthorStepLog[]; stallReason: string | null; llmCalls: number; costUsd: number
 }
 
-const OP2ACTION: Record<string, StepAction> = { navigate: "navigate", click: "click", type: "type", select: "select", assert: "assert", wait: "wait" }
+const OP2ACTION: Record<string, StepAction> = { navigate: "navigate", click: "click", type: "type", select: "select", assert: "assert", wait: "wait", hover: "hover", keyPress: "keyPress", clearField: "clearField" }
 
 export async function authorTrail(
   projectId: string, req: AuthorRequest,
@@ -152,8 +152,11 @@ export async function authorTrail(
             await page.fill(a.selector!, hasCredRef(raw) ? await credResolver(projectId, raw) : raw, ACTION_TIMEOUT)
           } else if (a.op === "select") await page.selectOption(a.selector!, a.value ?? "", ACTION_TIMEOUT)
           else if (a.op === "assert") await page.assertVisible(a.selector!, ACTION_TIMEOUT)
+          else if (a.op === "hover") await page.hover(a.selector!, ACTION_TIMEOUT)
+          else if (a.op === "keyPress") await page.keyPress(a.selector!, a.value ?? "Enter", ACTION_TIMEOUT)
+          else if (a.op === "clearField") await page.clearField(a.selector!, ACTION_TIMEOUT)
           traj.push({
-            action: OP2ACTION[a.op], actionValue: a.op === "type" || a.op === "select" ? a.value ?? undefined : undefined,
+            action: OP2ACTION[a.op], actionValue: a.op === "type" || a.op === "select" || a.op === "keyPress" ? a.value ?? undefined : undefined,
             target: { ...fp, resolvedSelector: persistSelector },
             checkpoint: a.op === "assert" ? { description: a.checkpoint || a.rationale || "checkpoint" } : undefined,
             url: page.url(), domHash: sha256hex(dom),
