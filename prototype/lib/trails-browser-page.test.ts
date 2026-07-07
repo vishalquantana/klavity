@@ -4,7 +4,7 @@
 // exercised by the live spike (needs network + key), not unit-tested here.
 // acquirePlaywrightBrowser (used by the walker) is also tested here for its local/fallback path.
 import { describe, test, expect, afterAll } from "bun:test"
-import { acquireBrowser, acquirePlaywrightBrowser, startCdpScreencast, type BrowserHandle, type PlaywrightBrowserHandle } from "./trails-browser-page"
+import { acquireBrowser, acquirePlaywrightBrowser, playwrightContextOptionsForTrailViewport, startCdpScreencast, type BrowserHandle, type PlaywrightBrowserHandle } from "./trails-browser-page"
 
 const FIXTURE = "data:text/html," + encodeURIComponent(`<!doctype html><html><body>
   <h1>Sign up</h1>
@@ -64,6 +64,18 @@ describe("PlaywrightPage adapter (default)", () => {
     // page still alive + selectors resolve after the interactions
     expect(await page.count("#email")).toBe(1)
     expect(await page.count("#plan")).toBe(1)
+  })
+
+  test("newPage applies a requested Trail viewport", async () => {
+    const page = await handle.newPage({ width: 390, height: 844, isMobile: true, deviceScaleFactor: 2 })
+    await page.goto(FIXTURE, 20_000)
+    expect(await page.count("#email")).toBe(1)
+    expect(playwrightContextOptionsForTrailViewport({ width: 390, height: 844, isMobile: true, deviceScaleFactor: 2 })).toEqual({
+      viewport: { width: 390, height: 844 },
+      isMobile: true,
+      hasTouch: true,
+      deviceScaleFactor: 2,
+    })
   })
 })
 

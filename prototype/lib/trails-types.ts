@@ -10,6 +10,15 @@ export type FailureClass =
   | "visual" | "interaction_change" | "regression" | "unknown"
 export type FindingKind = "regression" | "visual" | "amber_heal"
 export type FindingStatus = "queued" | "auto_filed" | "filed" | "dismissed"
+export type TrailViewportPreset = "desktop" | "mobile"
+
+export interface TrailViewport {
+  width: number
+  height: number
+  preset?: TrailViewportPreset
+  isMobile?: boolean
+  deviceScaleFactor?: number
+}
 
 export interface Fingerprint {
   role?: string
@@ -23,6 +32,7 @@ export interface Fingerprint {
 
 export interface Trail {
   id: string; projectId: string; name: string; intent: string; baseUrl: string
+  viewport: TrailViewport | null
   baselineRef: string | null; authorKind: AuthorKind; status: TrailStatus
   createdBy: string | null; createdAt: number; updatedAt: number
   stepVersion: number

@@ -48,7 +48,21 @@ test("createTrail + getTrail round-trip, scoped by project", async () => {
   expect(got?.name).toBe("Checkout")
   expect(got?.intent).toBe("buy the $20 plan")
   expect(got?.status).toBe("draft")
+  expect(got?.viewport).toBeNull()
   expect(await T.getTrail("proj_B", id)).toBeNull() // cross-project isolation
+})
+
+test("Trail viewport presets and custom dimensions persist and can be cleared", async () => {
+  const id = await T.createTrail("proj_A", { name: "Mobile", baseUrl: "https://app.test/", viewport: "mobile" })
+  const mobile = await T.getTrail("proj_A", id)
+  expect(mobile?.viewport).toMatchObject({ preset: "mobile", width: 390, height: 844, isMobile: true })
+
+  await T.updateTrail("proj_A", id, { viewport: { width: 1024, height: 768, deviceScaleFactor: 1 } })
+  const custom = await T.getTrail("proj_A", id)
+  expect(custom?.viewport).toEqual({ width: 1024, height: 768, isMobile: false, deviceScaleFactor: 1 })
+
+  await T.updateTrail("proj_A", id, { viewport: null })
+  expect((await T.getTrail("proj_A", id))?.viewport).toBeNull()
 })
 
 test("addTrailStep + listTrailSteps preserves order and round-trips target/checkpoint", async () => {

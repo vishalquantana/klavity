@@ -266,6 +266,7 @@ export async function applySchema(c: Client) {
        name TEXT NOT NULL,
        intent TEXT NOT NULL DEFAULT '',
        base_url TEXT NOT NULL,
+       viewport_json TEXT,
        baseline_ref TEXT,
        author_kind TEXT NOT NULL DEFAULT 'human',
        status TEXT NOT NULL DEFAULT 'draft',
@@ -535,6 +536,11 @@ export async function applySchema(c: Client) {
   // page itself is already captured as url_host/url_path; this records the upstream traffic source so
   // we can see which external site each widget interaction/lead originated from.
   await c.execute("ALTER TABLE feedback ADD COLUMN source_referrer TEXT").catch((e) => console.warn("feedback.source_referrer ALTER skipped:", e?.message || e))
+
+  // KLA-117: optional per-Trail viewport/device config for AutoSim walks.
+  if (!(await columnExists(c, "trails", "viewport_json"))) {
+    await c.execute("ALTER TABLE trails ADD COLUMN viewport_json TEXT").catch((e) => console.warn("trails.viewport_json ALTER skipped:", e?.message || e))
+  }
 
   if (!(await columnExists(c, "findings", "connector_error"))) {
     await c.execute("ALTER TABLE findings ADD COLUMN connector_error TEXT").catch((e: any) =>
