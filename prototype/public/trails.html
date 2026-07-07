@@ -1246,6 +1246,36 @@ function stepLine(s){
     ' <span class="why">' + esc(s.rationale || "") + (s.error ? " — " + esc(s.error) : "") + "</span></div>"
 }
 
+// Map the raw technical stall/error strings from AutoSim's authoring/runner paths into short,
+// friendly messages for non-technical users. Purely additive — every branch returns a string;
+// unknown reasons fall through to the original so nothing goes silent.
+function humanizeStall(reason){
+  if (!reason) return null
+  var r = String(reason)
+  // Author budget cap hit — the LLM drive ran out of spend before finishing the trail.
+  if (/budget cap/i.test(r)) return "We hit our cost limit while drafting this trail."
+  // Drive deadline exceeded — AutoSim took too long on a single authoring run.
+  if (/drive deadline|deadline exceeded/i.test(r)) return "AutoSim ran out of time while working on your trail."
+  // LLM call failed server-side.
+  if (/author model error/i.test(r)) return "Something went wrong with AutoSim's reasoning — please try again shortly."
+  // Model returned malformed JSON / nonsense replies.
+  if (/malformed.*reply|invalid.*reply|parse.*error/i.test(r)) return "AutoSim got confused by an unexpected response and couldn't continue."
+  // Selector matched zero or many elements — a UI drift / ambiguous-trail issue.
+  if (/matched \d+ elements/i.test(r)) return "The step we recorded no longer points at exactly one element on the page."
+  if (/selector .+ matched 0 elements/i.test(r)) return "We couldn't find that element on the page — it may have changed."
+  // Generic stuck-after-N-failed-attempts path.
+  if (/stuck after \d+ failed attempts/i.test(r)) return "AutoSim kept running into the same problem and gave up."
+  if (/stuck after \d+ malformed model replies/i.test(r)) return "AutoSim received several unexpected responses and couldn't move forward."
+  // Test-account lookup failed.
+  if (/unknown test account/i.test(r)) return "That test account wasn't found — check the name and try again."
+  // Model explicitly stalled with a rationale (e.g. auth wall). Keep user's words; they're usually OK.
+  if (/^model stalled$|^stall:$/i.test(r)) return reason || "AutoSim stopped — see details below."
+  // Walk-level errors surfaced through the author path (catch-all for failed status).
+  if (/not found/i.test(r) && /trail/i.test(r)) return "We couldn't find that trail in this project."
+  // Anything else: pass through unchanged so we never silently swallow an unknown case.
+  return reason
+}
+
 async function pollAuthor(sessionId, box){
   for(var i = 0; i < 200; i++){
     await new Promise(function(res){ setTimeout(res, 2000) })
@@ -1298,7 +1328,8 @@ async function pollAuthor(sessionId, box){
       }
       return
     }
-    box.innerHTML = html + '<div class="nt-stall">Stopped: ' + esc(s.stallReason || s.status) +
+    var display = humanizeStall(s.stallReason) || s.status
+    box.innerHTML = html + '<div class="nt-stall">Stopped: ' + esc(display) +
       '</div><div class="hint">Refine the objective above and hit Create Trail again.</div>'
     document.getElementById("ntGo").disabled = false
     return
