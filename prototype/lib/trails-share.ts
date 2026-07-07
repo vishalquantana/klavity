@@ -80,6 +80,7 @@ export async function renderWalkPdf(
   projectId: string,
   runId: string,
   baseUrl: string,
+  opts?: { replayUrl?: string },
 ): Promise<Uint8Array> {
   // Module-level injectable seam (set via _setPdfRendererForTests in unit tests)
   if (_customPdfRenderer) return _customPdfRenderer(projectId, runId, baseUrl)
@@ -102,7 +103,7 @@ export async function renderWalkPdf(
   const data = await gatherWalkReport(projectId, runId)
   if (!data) throw new Error("walk not found or access denied")
 
-  const html = renderWalkReportHtml(data, { baseUrl, generatedAt: Date.now() })
+  const html = renderWalkReportHtml(data, { baseUrl, generatedAt: Date.now(), replayUrl: opts?.replayUrl })
 
   return withPdfSlot(async () => {
     const deadline = new Promise<never>((_, reject) =>

@@ -2681,6 +2681,25 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (req.method === "GET" && path === "/autosims/walks") return me ? file(PUB + "/autosims-walks.html") : redirect("/login")
     if (req.method === "GET" && /^\/autosims\/walk\/[^/]+$/.test(path)) return me ? file(PUB + "/autosims-walk.html") : redirect("/login")
     if (req.method === "GET" && path === "/sim-runs") return me ? file(PUB + "/sim-runs.html") : redirect("/login")
+    // GET /shared/walk-replay/:token — serve the rrweb replay JSON for a valid, unexpired share token.
+    // Unauthenticated. Returns { runId, segments, steps } — same shape as the auth'd /replay endpoint.
+    // 404 when token is bad/expired OR the walk has no saved replay (capture was off).
+    const sharedWalkReplayMatch = path.match(/^\/shared\/walk-replay\/([a-f0-9]{64})$/)
+    if (req.method === "GET" && sharedWalkReplayMatch) {
+      const rawToken = sharedWalkReplayMatch[1]
+      if (!rlAllow("sharereplay:" + clientIp(req, server), 30, 60_000)) return new Response("Rate limited", { status: 429 })
+      const resolved = await resolveShareToken(rawToken)
+      if (!resolved) return new Response("Not found", { status: 404 })
+      try {
+        const segments = await getReplay(resolved.projectId, resolved.runId)
+        if (!segments) return json({ error: "No replay for this walk." }, 404)
+        const steps = await listRunSteps(resolved.projectId, resolved.runId)
+        return json({ runId: resolved.runId, segments, steps })
+      } catch (e) {
+        return json(oops(e, "trails-share-replay"), 500)
+      }
+    }
+
     // GET /shared/walk-report/:token — serve the walk PDF for a valid, unexpired share token.
     // Unauthenticated (no session required). 404 on bad/expired/tampered token (not 401).
     const sharedWalkMatch = path.match(/^\/shared\/walk-report\/([a-f0-9]{64})$/)
@@ -2690,7 +2709,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const resolved = await resolveShareToken(rawToken)
       if (!resolved) return new Response("Not found", { status: 404 })
       try {
-        const pdfBytes = await renderWalkPdf(resolved.projectId, resolved.runId, BASE)
+        const replaySet = await runsWithReplay(resolved.projectId, [resolved.runId])
+        const replayUrl = replaySet.has(resolved.runId) ? BASE + "/shared/walk-replay/" + rawToken : undefined
+        const pdfBytes = await renderWalkPdf(resolved.projectId, resolved.runId, BASE, { replayUrl })
         const shortId = resolved.runId.slice(0, 8)
         return new Response(pdfBytes, {
           headers: {
@@ -3265,7 +3286,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const check = await gatherWalkReport(projectId, runId)
         if (!check) return json({ error: "Not found" }, 404)
         try {
-          const pdfBytes = await renderWalkPdf(projectId, runId, BASE)
+          const replaySet = await runsWithReplay(projectId, [runId])
+          const replayUrl = replaySet.has(runId) ? BASE + "/api/trails/walks/" + runId + "/replay" : undefined
+          const pdfBytes = await renderWalkPdf(projectId, runId, BASE, { replayUrl })
           const shortId = runId.slice(0, 8)
           return new Response(pdfBytes, {
             headers: {
@@ -3319,15 +3342,20 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       }
 
       // POST /api/trails/walks/:runId/share — mint an expiring share link for a walk.
+      // Returns { url, replayUrl, expiresAt } — replayUrl is non-null only when a replay was captured.
       const shareMatch = path.match(/^\/api\/trails\/walks\/([^/]+)\/share$/)
       if (req.method === "POST" && shareMatch) {
         const runId = shareMatch[1]
         const check = await gatherWalkReport(projectId, runId)
         if (!check) return json({ error: "Not found" }, 404)
         try {
-          const rawToken = await mintShareToken(projectId, runId, meT)
+          const [rawToken, replaySet] = await Promise.all([
+            mintShareToken(projectId, runId, meT),
+            runsWithReplay(projectId, [runId]),
+          ])
           const expiresAt = Date.now() + 30 * 24 * 3600e3
-          return json({ url: BASE + "/shared/walk-report/" + rawToken, expiresAt })
+          const replayUrl = replaySet.has(runId) ? BASE + "/shared/walk-replay/" + rawToken : null
+          return json({ url: BASE + "/shared/walk-report/" + rawToken, replayUrl, expiresAt })
         } catch (e) {
           return json(oops(e, "trails-share-mint"), 500)
         }
