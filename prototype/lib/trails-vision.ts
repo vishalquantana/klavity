@@ -125,6 +125,12 @@ export const openRouterVisionResolver: VisionResolver = async (input, ctx) => {
     if (!res.ok) {
       await reconcileDailySpend(DEFAULT_AI_CALL_EST_USD, 0)
       reconciled = true
+      // Error-path: still record to ai_calls with ok=false so cost ledger captures every call
+      // attempt, not just successes (KLA-123).
+      await recordAiCall({
+        type: "reheal", model, projectId: ctx?.projectId ?? null, actorEmail: ctx?.email ?? null,
+        inputTokens: null, outputTokens: null, costUsd: 0, ok: false,
+      }).catch(() => {})
       throw new Error(`OpenRouter ${res.status}: ${(await res.text()).slice(0, 200)}`)
     }
     const data: any = await res.json()
@@ -134,8 +140,8 @@ export const openRouterVisionResolver: VisionResolver = async (input, ctx) => {
     reconciled = true
     // Billing accuracy: AWAIT the ledger write so short-lived callers (smoke script, one-shot CLI)
     // don't exit before the billable ai_calls 'reheal' row lands. Still .catch-wrapped so a ledger
-    // failure can never break the resolver. NOTE: only 2xx vision calls are ledgered — error-path
-    // calls (non-2xx / thrown) are intentionally NOT billed/logged.
+    // failure can never break the resolver. Both success and error-path calls are now recorded —
+    // successes with ok=1, errors with ok=false (KLA-123).
     await recordAiCall({
       type: "reheal", model, projectId: ctx?.projectId ?? null, actorEmail: ctx?.email ?? null,
       inputTokens: typeof u.prompt_tokens === "number" ? u.prompt_tokens : null,

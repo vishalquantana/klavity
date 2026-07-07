@@ -111,10 +111,9 @@ export interface WalkSummary {
   runId: string
   verdict: Verdict
   /**
-   * Count of Tier-2 vision model calls (Layer D), a `number`. 0 on the zero-LLM hot path / no
-   * resolver. NOTE: only 2xx vision calls are ledgered in ai_calls (type 'reheal'); error-path
-   * calls (non-2xx / thrown — see runVisionTier2's per-step catch) are intentionally NOT billed
-   * or logged, and a gone-assert short-circuits to RED before any model call (llmCalls unchanged).
+    * Count of Tier-2 vision model calls (Layer D), a `number`. 0 on the zero-LLM hot path / no
+    * resolver. Both success and error-path vision calls are ledgered in ai_calls (type 'reheal');
+    * errors have ok=false so cost accounting stays complete even when a Tier-2 call fails (KLA-123).
    */
   llmCalls: number
   steps: WalkStepSummary[]
