@@ -130,27 +130,34 @@ document.querySelectorAll(".filter-btn").forEach(function(btn){
 async function load(){
   var pid=projParam()
   var qs=pid?"?project="+encodeURIComponent(pid):""
-  var r
-  try{r=await fetch("/api/dashboard"+qs)}
-  catch(e){$("lead").textContent="Network error.";return}
-  if(r.status===401){location.href="/login";return}
-  if(!r.ok){$("lead").textContent="Error loading project.";return}
-  var d=await r.json()
-  $("who").textContent=d.email||""
-  state.projId=d.active?d.active.id:null
+  var dash,trails
+  try{
+    var res=await Promise.all([fetch("/api/dashboard"+qs),fetch("/api/trails/dashboard"+qs)])
+    if(res[0].status===401||res[1].status===401){location.href="/login";return}
+    if(!res[0].ok){$("lead").textContent="Error loading project.";return}
+    dash=await res[0].json()
+    trails=res[1].ok?await res[1].json():{recentWalks:[],trails:[]}
+  }catch(e){$("lead").textContent="Network error.";return}
+  $("who").textContent=dash.email||""
+  state.projId=dash.active?dash.active.id:null
+
+  // trail name lookup so rows show human name instead of raw id
+  var trailNameFor={}
+  ;(trails.trails||[]).forEach(function(t){trailNameFor[t.id]=t.name})
+  state.trailNameFor=trailNameFor
 
   // Switcher
   var sel=$("projSwitch")
-  var projs=d.projects||[]
-  sel.innerHTML=projs.map(function(p){return'<option value="'+esc(p.id)+'"'+(p.id===(d.active&&d.active.id)?" selected":"")+'>'+esc(p.name)+'</option>'}).join("")
+  var projs=dash.projects||[]
+  sel.innerHTML=projs.map(function(p){return'<option value="'+esc(p.id)+'"'+(p.id===(dash.active&&dash.active.id)?" selected":"")+'>'+esc(p.name)+'</option>'}).join("")
   sel.disabled=false
   sel.onchange=function(){
     var np=sel.value;if(!np) return
     location.href="/autosims/walks?project="+encodeURIComponent(np)
   }
 
-  // Walks from dashboard + replay annotation
-  var walks=d.recentWalks||[]
+  // Walks from trails dashboard (recentWalks includes hasReplay annotation)
+  var walks=trails.recentWalks||[]
   state.walks=walks
   renderList()
 }
@@ -178,9 +185,10 @@ function renderList(){
     var detailHref="/autosims/walk/"+encodeURIComponent(w.id)+(pid?"?project="+encodeURIComponent(pid):"")
     var row=document.createElement("div")
     row.className="walk-row"
+    var trailLabel=(state.trailNameFor&&state.trailNameFor[w.trailId])||w.trailId
     row.innerHTML='<a class="overlay" href="'+esc(detailHref)+'"></a>'
       +'<div class="wr-left">'
-        +'<div class="wr-trail">'+esc(w.trailId)+'</div>'
+        +'<div class="wr-trail">'+esc(trailLabel)+'</div>'
         +'<div class="wr-meta">'
           +'<span>'+esc(w.id.slice(0,16))+'…</span>'
           +(when?'<span>'+esc(when)+'</span>':"")
