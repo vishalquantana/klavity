@@ -80,6 +80,28 @@ describe("authoring with kref selectors", () => {
     expect(JSON.stringify(msgs)).toContain("ELEMENT SNAPSHOT (untrusted)")
   })
 
+  test("non-kref brittle selector: stableSelector upgrades to id anchor before persisting", async () => {
+    // Model emits a tag selector ("a") which is valid but brittle — stableSelector should
+    // upgrade it to "#go" (the id anchor) before crystallizing the trail.
+    const model: AuthorModel = async (input) => {
+      if (input.history.length === 0)
+        return { action: { op: "click", selector: "a", value: null, url: null, checkpoint: null, rationale: "click link" }, costUsd: 0 }
+      return { action: { op: "done", selector: null, value: null, url: null, checkpoint: null, rationale: "done" }, costUsd: 0 }
+    }
+    const out = await authorTrail(PROJECT_ID, { name: "non-kref stable", objective: "click link", baseUrl: FIXTURE_URL }, { model })
+    expect(out.status).toBe("crystallized")
+    // step log selector should be the stable id, not the raw "a" tag
+    const clickStep = out.steps.find((s) => s.op === "click")
+    expect(clickStep).toBeDefined()
+    expect(clickStep!.selector).toBe("#go")
+    // Trail should carry the stable selector in the locator cache
+    const steps = await T.listTrailSteps(PROJECT_ID, out.trailId!)
+    const ts = steps.find((s) => s.action === "click")
+    expect(ts).toBeDefined()
+    const cacheRow = await T.getCacheForStep(PROJECT_ID, ts!.id)
+    expect(cacheRow!.resolvedSelector).toBe("#go")
+  }, 60000)
+
   test("failed kref action: data-kref never reaches step log or history", async () => {
     const seen: AuthorStepInput[] = []
     // Call 1: model returns a kref selector that matches 0 elements (e999 won't exist in DOM)
