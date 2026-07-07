@@ -5,7 +5,7 @@
 // Rationale + cost/perf: docs/bench-autosim-cost.md (Steel section) + the 2026-07-04 spike.
 // The runner (trails-runner.ts) stays on Playwright for now — its heal ladder is deeply coupled to
 // Playwright getByRole/getByText/networkidle; porting it is a separate, larger effort.
-import type { Fingerprint } from "./trails-types"
+import type { Fingerprint, NetworkMock } from "./trails-types"
 import { KREF_SNAPSHOT_CAP } from "./trails-snapshot"
 import { clickWithTransitionFallback } from "./trails-click"
 
@@ -133,6 +133,12 @@ export interface BrowserPage {
   assertUrlMatches(pattern: RegExp | string, timeoutMs: number): Promise<void>
   assertElementCount(selector: string, expected: number, timeoutMs: number): Promise<void>
   waitMs(ms: number): Promise<void>
+  /**
+   * KLA-111: install network stubs/blocks for this page.
+   * Called once before the first navigation; patterns persist for the page's lifetime.
+   * No-op when mocks is empty.
+   */
+  mockNetwork(mocks: NetworkMock[]): Promise<void>
 }
 export interface BrowserHandle {
   newPage(): Promise<BrowserPage>
@@ -190,6 +196,22 @@ class PlaywrightPage implements BrowserPage {
     throw new Error(`assertElementCount: expected ${expected} but found ${n}`)
   }
   async waitMs(ms: number) { await new Promise((r) => setTimeout(r, ms)) }
+  async mockNetwork(mocks: NetworkMock[]) {
+    // `mock.url` is a substring: any request whose full URL contains it is intercepted.
+    for (const mock of mocks) {
+      const pattern = (url: URL) => url.href.includes(mock.url)
+      if (mock.action === "block") {
+        await this.page.route(pattern, (route) => route.abort())
+      } else {
+        await this.page.route(pattern, (route) => route.fulfill({
+          status: mock.status ?? 200,
+          contentType: mock.contentType ?? "application/json",
+          headers: mock.headers ?? {},
+          body: mock.body ?? "",
+        }))
+      }
+    }
+  }
 }
 
 class PlaywrightHandle implements BrowserHandle {
@@ -249,6 +271,30 @@ class PuppeteerPage implements BrowserPage {
     throw new Error(`assertElementCount: expected ${expected} but found ${n}`)
   }
   async waitMs(ms: number) { await new Promise((r) => setTimeout(r, ms)) }
+  async mockNetwork(mocks: NetworkMock[]) {
+    if (!mocks.length) return
+    await this.page.setRequestInterception(true)
+    this.page.on("request", (request: any) => {
+      const url: string = request.url()
+      const mock = mocks.find((m) => {
+        // Support simple glob patterns (** = anything) and substring matches.
+        const pat = m.url
+        if (pat.includes("**")) {
+          const re = new RegExp("^" + pat.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*\*/g, ".*").replace(/\*/g, "[^/]*") + "$")
+          return re.test(url)
+        }
+        return url.includes(pat)
+      })
+      if (!mock) { request.continue().catch(() => {}); return }
+      if (mock.action === "block") { request.abort().catch(() => {}); return }
+      request.respond({
+        status: mock.status ?? 200,
+        contentType: mock.contentType ?? "application/json",
+        headers: mock.headers ?? {},
+        body: mock.body ?? "",
+      }).catch(() => {})
+    })
+  }
 }
 
 class PuppeteerHandle implements BrowserHandle {

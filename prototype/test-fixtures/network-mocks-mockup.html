@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+<head><title>Network Mocks Test Fixture</title></head>
+<body>
+  <button id="fetch-btn">Fetch data</button>
+  <div id="api-result">pending</div>
+  <div id="blocked-result">not-blocked</div>
+  <script>
+    document.getElementById("fetch-btn").addEventListener("click", async () => {
+      // First request: should be stubbed with a canned JSON body.
+      try {
+        const res = await fetch("https://api.klavity-mock-test.internal/data")
+        const text = await res.text()
+        document.getElementById("api-result").textContent = text
+      } catch (e) {
+        document.getElementById("api-result").textContent = "error"
+      }
+      // Second request: should be blocked (aborted by the mock).
+      try {
+        await fetch("https://analytics.klavity-mock-test.internal/track")
+        document.getElementById("blocked-result").textContent = "not-blocked"
+      } catch (_e) {
+        document.getElementById("blocked-result").textContent = "blocked"
+      }
+    })
+  </script>
+</body>
+</html>

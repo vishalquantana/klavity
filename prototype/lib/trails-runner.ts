@@ -11,7 +11,7 @@
 import type { Browser, BrowserContext, Page, Locator } from "playwright"
 import { acquirePlaywrightBrowser } from "./trails-browser-page"
 import { uploadScreenshotMeta } from "./s3"
-import type { Fingerprint, Tier, Verdict, TrailStep } from "./trails-types"
+import type { Fingerprint, Tier, Verdict, TrailStep, NetworkMock } from "./trails-types"
 import {
   getTrail, listTrailSteps, getCacheForStep, upsertLocatorCache,
   startWalk, addRunStep, finishWalk, recordFinding,
@@ -103,6 +103,14 @@ export interface WalkOptions {
    * summary.error = "cancelled". Absent (all existing callers) → unchanged behavior.
    */
   signal?: AbortSignal
+  /**
+   * KLA-111: network stubs/blocks applied to the page before the initial navigation.
+   * Each mock intercepts requests whose URL matches `mock.url` (substring or ** glob):
+   *   - "stub": return a canned response (status/body/contentType/headers).
+   *   - "block": abort the request (simulates offline/ad-blocking).
+   * Absent or empty → no interception (byte-identical to all existing callers).
+   */
+  networkMocks?: NetworkMock[]
 }
 
 export interface WalkStepSummary {
@@ -313,6 +321,26 @@ async function maybeShot(page: Page, opts: WalkOptions): Promise<string | undefi
   }
 }
 
+// KLA-111: apply NetworkMock entries to a Playwright Page via page.route().
+// `mock.url` is treated as a substring: any request whose full URL contains it is intercepted.
+// For "stub" mocks, route.fulfill() returns the canned response; for "block", route.abort() drops it.
+// Called once before the initial navigation so all requests (including subresources) are covered.
+async function applyNetworkMocks(page: Page, mocks: NetworkMock[]) {
+  for (const mock of mocks) {
+    const pattern = (url: URL) => url.href.includes(mock.url)
+    if (mock.action === "block") {
+      await page.route(pattern, (route) => route.abort())
+    } else {
+      await page.route(pattern, (route) => route.fulfill({
+        status: mock.status ?? 200,
+        contentType: mock.contentType ?? "application/json",
+        headers: mock.headers ?? {},
+        body: mock.body ?? "",
+      }))
+    }
+  }
+}
+
 /**
  * Walk a crystallized Trail against a real page. Project-scoped.
  * Opens the page once, replays each step (Tier 0 cache -> Tier 1 heal), evaluates checkpoints,
@@ -376,6 +404,13 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
     // THROWS — it is inside this try, so it finalizes the walk RED via the catch below, never a hang.
     page.setDefaultNavigationTimeout(opTimeout)
     page.setDefaultTimeout(opTimeout)
+
+    // KLA-111: install network stubs/blocks BEFORE the first navigation so every request
+    // (including the initial page load) is covered. Routes persist for the page's lifetime.
+    if (opts.networkMocks?.length) {
+      await applyNetworkMocks(page, opts.networkMocks)
+    }
+
     await page.goto(opts.fixtureUrl, { timeout: opTimeout })
 
     // Track the document URL across steps so a full-page navigation (click-driven or explicit
