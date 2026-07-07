@@ -39,7 +39,7 @@ import { saveFeedbackReplay, getFeedbackReplay, feedbackIdsWithReplay, pruneOldF
 import { listRunSteps, listTrails, getTrail, getWalk, setTrailStatus, listTrailSteps, insertAssertStep, deleteTrailStep } from "./lib/trails"
 import { runWalkNow } from "./lib/trails-trigger"
 import { runAuthorNow, getAuthorSession } from "./lib/trails-author"
-import { WalkBusyError } from "./lib/trails-browser"
+import { WalkBusyError, cancelCurrentWalk } from "./lib/trails-browser"
 import { mintShareToken, resolveShareToken, renderWalkPdf } from "./lib/trails-share"
 import { gatherWalkReport } from "./lib/trails-report"
 import { seedDemoTrails } from "./lib/trails-demo-seed"
@@ -2993,6 +2993,20 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (e instanceof WalkBusyError) return json({ error: "AutoSim busy" }, 409)
           return json(oops(e, "trails-report-pdf"), 500)
         }
+      }
+
+      // POST /api/trails/walks/:runId/cancel — KLA-100: abort an in-flight Walk at the next step boundary.
+      // IDOR guard: walk must belong to this project. 409 when walk is not running (already finished).
+      // Returns { ok: true } if the signal was fired, { ok: false, queued: true } if the walk is "running"
+      // in the DB but no in-process signal exists (e.g. server restarted mid-walk — extremely rare).
+      const cancelMatch = path.match(/^\/api\/trails\/walks\/([^/]+)\/cancel$/)
+      if (req.method === "POST" && cancelMatch) {
+        const runId = cancelMatch[1]
+        const walk = await getWalk(projectId, runId)
+        if (!walk) return json({ error: "Not found" }, 404)
+        if (walk.status !== "running") return json({ error: "Walk is not running" }, 409)
+        const signalled = cancelCurrentWalk(runId)
+        return json({ ok: signalled, queued: !signalled })
       }
 
       // POST /api/trails/walks/:runId/share — mint an expiring share link for a walk.
