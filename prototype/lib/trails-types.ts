@@ -104,7 +104,7 @@ export interface RunStep {
 export interface Finding {
   id: string; projectId: string; runId: string; stepId: string | null; trailId: string
   kind: FindingKind; title: string; evidence: Record<string, unknown> | null
-  groundQuote: string | null; confidence: number; dedupKey: string; recurrence: number
+  groundQuote: string | null; confidence: number; dedupKey: string; contentSig: string | null; recurrence: number
   status: FindingStatus; connectorRef: string | null; connectorError: string | null
   createdAt: number; updatedAt: number
 }

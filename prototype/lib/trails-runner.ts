@@ -22,6 +22,7 @@ import { stepCacheKey } from "./trails-crystallize"
 import { decideFromVision, type VisionResolver, type VisionInput, type VisionResult, type VisionDecision } from "./trails-vision"
 import { setupReplayCapture, saveReplay, type ReplayCapture } from "./trails-replay"
 import { hasCredRef, resolveCredRefs, type CredResolver } from "./trails-creds"
+import { contentSigFor } from "./trails-findings-dedup"
 import { captureKrefSnapshot, stableSelectorFor, structuralPathFor, isKrefSelector, recordedStepState } from "./trails-snapshot"
 import { clickWithTransitionFallback } from "./trails-click"
 import { matchesMock } from "./trails-browser-page"
@@ -710,6 +711,7 @@ async function runOneStep(
           evidence: { selector: e.selector, matchCount: e.matchCount, stepAction: step.action },
           confidence: 1.0,
           dedupKey: `ambiguous_selector:${trailId}:${step.id}`,
+          contentSig: contentSigFor({ kind: "regression", selector: e.selector, urlPath: page.url() }),
         })
       }
       // PDF task 1: best-effort screenshot to capture the failure state.
@@ -941,6 +943,7 @@ async function runVisionTier2(
         evidence: { reason: "checkpoint_gone", target: fp, pageUrl: opts.fixtureUrl, checkpoint: step.checkpoint?.description ?? null },
         groundQuote: title, confidence: 1,
         dedupKey: `${trailId}:${step.id}:checkpoint-gone`,
+        contentSig: contentSigFor({ kind: "regression", fp, urlPath: stepPageUrl }),
       })
     }
     await addStepRun({
@@ -1006,6 +1009,7 @@ async function runVisionTier2(
         evidence: { rationale: decision.rationale, target: fp, pageUrl: opts.fixtureUrl, domExcerpt },
         groundQuote: decision.rationale, confidence: decision.confidence,
         dedupKey: `${trailId}:${step.id}:gone`,
+        contentSig: contentSigFor({ kind: "regression", fp, urlPath: stepPageUrl }),
       })
     }
     await addStepRun({
@@ -1118,6 +1122,7 @@ async function fileAmberHeal(
       title: `Low-confidence heal: ${fp?.accessibleName ?? fp?.text ?? step.action}`,
       evidence: { rationale, target: fp, pageUrl: opts.fixtureUrl, classification },
       groundQuote: rationale, confidence, dedupKey: `${trailId}:${step.id}:lowconf`,
+      contentSig: contentSigFor({ kind: "amber_heal", fp, urlPath: pageUrl }),
     })
   }
   await addStepRun({

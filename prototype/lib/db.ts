@@ -618,6 +618,12 @@ export async function applySchema(c: Client) {
     .catch((e: any) => console.warn("trails.objective_verified ALTER skipped:", e?.message || e))
   await c.execute("ALTER TABLE author_sessions ADD COLUMN objective_verified INTEGER")
     .catch((e: any) => console.warn("author_sessions.objective_verified ALTER skipped:", e?.message || e))
+  // KLA-77: cross-trail finding dedup — content signature column so the same broken element
+  // surfaced from two different Trails collapses to ONE finding with a recurrence bump.
+  await c.execute("ALTER TABLE findings ADD COLUMN content_sig TEXT")
+    .catch((e: any) => console.warn("findings.content_sig ALTER skipped:", e?.message || e))
+  await c.execute("CREATE INDEX IF NOT EXISTS finding_content_sig_idx ON findings(project_id, content_sig) WHERE content_sig IS NOT NULL")
+    .catch((e: any) => console.warn("finding_content_sig_idx skipped:", e?.message || e))
 }
 
 // ── schema_meta helpers ──
