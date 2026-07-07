@@ -153,8 +153,10 @@ export async function dismissFinding(projectId: string, findingId: string): Prom
 // ── Real connector filer ─────────────────────────────────────────────────────────
 // Pure: shape a grounded TicketPayload (matching lib/connectors/index.ts) from a Trail finding.
 // Body carries the grounded evidence (rationale + verbatim groundQuote) and the heal from→to diff,
-// plus run/step ids, so the external ticket is auditable. severity is derived from the kind.
-function severityForKind(kind: Finding["kind"]): string {
+// plus run/step ids, so the external ticket is auditable.
+// KLA-81: severity uses the pre-computed finding.severity when present; falls back to kind-only
+// derivation for legacy rows that pre-date the severity column.
+export function severityForKind(kind: Finding["kind"]): string {
   return kind === "regression" ? "high" : kind === "visual" ? "low" : "medium"
 }
 
@@ -175,7 +177,7 @@ export function buildTicketFromFinding(finding: Finding, baseUrl: string): Ticke
   return {
     title: "[Klavity Trails] " + finding.title,
     body: lines.join("\n\n"),
-    severity: severityForKind(finding.kind),
+    severity: finding.severity ?? severityForKind(finding.kind),
     url: null,
     simName: null,
     createdAt: finding.createdAt,

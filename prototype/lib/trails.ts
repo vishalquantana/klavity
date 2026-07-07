@@ -1,5 +1,6 @@
 import { db } from "./db"
 import type { Trail, TrailEnvironment, TrailStep, TrailStatus, StepAction, Fingerprint, TrailViewport } from "./trails-types"
+import { computeFindingSeverity } from "./trails-findings-severity"
 import { normalizeTrailViewport, parseTrailViewportJson } from "./trails-viewport"
 
 function uid(prefix: string): string { return prefix + crypto.randomUUID() }
@@ -372,7 +373,9 @@ function rowToFinding(r: any): Finding {
     kind: r.kind as FindingKind, title: r.title, evidence: pj<Record<string, unknown>>(r.evidence_json),
     groundQuote: r.ground_quote ?? null, confidence: Number(r.confidence), dedupKey: r.dedup_key,
     contentSig: r.content_sig ?? null,
-    recurrence: Number(r.recurrence), status: r.status as FindingStatus, connectorRef: r.connector_ref ?? null,
+    recurrence: Number(r.recurrence),
+    severity: r.severity ?? null,
+    status: r.status as FindingStatus, connectorRef: r.connector_ref ?? null,
     connectorError: r.connector_error ?? null,
     createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
   }
@@ -395,12 +398,14 @@ export async function recordFinding(
     if (existing.rows.length) {
       const row = existing.rows[0] as any
       const now = Date.now()
+      const recurrence = Number(row.recurrence) + 1
+      // KLA-81: recompute severity with the updated recurrence count.
+      const severity = computeFindingSeverity({ kind: input.kind, confidence: input.confidence, recurrence })
       await db!.execute({
-        sql: `UPDATE findings SET recurrence=recurrence+1, updated_at=? WHERE id=?`,
-        args: [now, String(row.id)],
+        sql: `UPDATE findings SET recurrence=?, severity=?, updated_at=? WHERE id=?`,
+        args: [recurrence, severity, now, String(row.id)],
       })
       const id = String(row.id)
-      const recurrence = Number(row.recurrence) + 1
       try {
         const { ingestFinding } = await import("./expectations-ingest")
         await ingestFinding(db!, { projectId, findingId: id, title: input.title, dedupKey: input.dedupKey, urlPath: input.urlPath ?? null })
@@ -415,13 +420,15 @@ export async function recordFinding(
   // inserting a duplicate. Status is intentionally NOT updated so dismissed rows stay dismissed.
   // The UNIQUE INDEX finding_dedup_uq (added in applySchema migration) makes this atomic.
   const candidateId = uid("find_"); const now = Date.now()
+  // KLA-81: compute initial severity (recurrence=1 for new rows; bumped rows recompute below).
+  const initialSeverity = computeFindingSeverity({ kind: input.kind, confidence: input.confidence, recurrence: 1 })
   await db!.execute({
-    sql: `INSERT INTO findings (id, project_id, run_id, step_id, trail_id, kind, title, evidence_json, ground_quote, confidence, dedup_key, content_sig, recurrence, status, connector_ref, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, NULL, ?, ?)
+    sql: `INSERT INTO findings (id, project_id, run_id, step_id, trail_id, kind, title, evidence_json, ground_quote, confidence, dedup_key, content_sig, recurrence, severity, status, connector_ref, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, NULL, ?, ?)
           ON CONFLICT(project_id, dedup_key) DO UPDATE SET
             recurrence = findings.recurrence + 1,
             updated_at = excluded.updated_at`,
-    args: [candidateId, projectId, input.runId, input.stepId ?? null, input.trailId, input.kind, input.title, j(input.evidence), input.groundQuote ?? null, input.confidence, input.dedupKey, input.contentSig ?? null, input.status ?? "queued", now, now],
+    args: [candidateId, projectId, input.runId, input.stepId ?? null, input.trailId, input.kind, input.title, j(input.evidence), input.groundQuote ?? null, input.confidence, input.dedupKey, input.contentSig ?? null, initialSeverity, input.status ?? "queued", now, now],
   })
   const row = await db!.execute({
     sql: `SELECT id, recurrence FROM findings WHERE project_id=? AND dedup_key=?`,
@@ -430,6 +437,11 @@ export async function recordFinding(
   const id = String((row.rows[0] as any).id)
   const recurrence = Number((row.rows[0] as any).recurrence)
   const deduped = id !== candidateId
+  // KLA-81: if this was a dedup bump, recompute severity with the new recurrence count.
+  if (deduped) {
+    const severity = computeFindingSeverity({ kind: input.kind, confidence: input.confidence, recurrence })
+    await db!.execute({ sql: `UPDATE findings SET severity=? WHERE id=?`, args: [severity, id] })
+  }
   try {
     const { ingestFinding } = await import("./expectations-ingest")
     await ingestFinding(db!, { projectId, findingId: id, title: input.title, dedupKey: input.dedupKey, urlPath: input.urlPath ?? null })

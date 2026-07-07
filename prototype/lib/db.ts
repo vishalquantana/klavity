@@ -644,6 +644,10 @@ export async function applySchema(c: Client) {
   // KLA-121: share-token lifecycle — revocation timestamp (NULL = active).
   await c.execute("ALTER TABLE walk_share_tokens ADD COLUMN revoked_at INTEGER")
     .catch((e: any) => console.warn("walk_share_tokens.revoked_at ALTER skipped:", e?.message || e))
+  // KLA-81: computed severity stored at finding-creation time so ticket-filers + UIs don't have
+  // to re-derive it. NULL on legacy rows → callers fall back to severityForKind(kind).
+  await c.execute("ALTER TABLE findings ADD COLUMN severity TEXT")
+    .catch((e: any) => console.warn("findings.severity ALTER skipped:", e?.message || e))
 }
 
 // ── schema_meta helpers ──
