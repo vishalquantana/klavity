@@ -72,6 +72,29 @@ export interface Finding {
   createdAt: number; updatedAt: number
 }
 
+// ── Network mocking (KLA-111) ─────────────────────────────────────────────────────────────────────
+export type NetworkMockAction = "stub" | "block"
+
+/**
+ * Intercept a URL pattern during a Walk or author drive.
+ * - "stub": return a canned HTTP response (status/body/contentType/headers).
+ * - "block": abort the request (simulates network failure or ad/tracker blocking).
+ * `url` is a substring or glob pattern matched against the full request URL.
+ */
+export interface NetworkMock {
+  /** Substring matched against the full request URL (e.g. "api.example.com/users" matches "https://api.example.com/users?page=1"). */
+  url: string
+  action: NetworkMockAction
+  /** HTTP status for stub responses. Default 200. */
+  status?: number
+  /** Response body string for stub responses. Default "". */
+  body?: string
+  /** Content-Type header for stub responses. Default "application/json". */
+  contentType?: string
+  /** Additional response headers for stub responses. */
+  headers?: Record<string, string>
+}
+
 function normalizeUrl(raw: string): string {
   try {
     const u = new URL(raw)
