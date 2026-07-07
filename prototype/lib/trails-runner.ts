@@ -31,6 +31,7 @@ import { endLiveWatchRun, publishLiveWatchFrame, startLiveWatchRun } from "./tra
 import { WalkEvidenceCollector, type EvidenceOffsets, type WalkEvidenceSummary } from "./trails-walk-evidence"
 
 export interface WalkOptions {
+  _resolvedCreds?: Set<string>
   /** Concrete URL to walk against (overrides the trail's baseUrl). file:// or http(s)://. */
   fixtureUrl: string
   headless?: boolean
@@ -362,7 +363,7 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
   if (!trail) throw new Error(`trail ${trailId} not found in project ${projectId}`)
   // Draft-gate (AutoSims F1): draft Trails and explicit Verification Walks never file Findings.
   // Evidence (run_steps) is still captured so the author can review what happened.
-  opts = { ...opts, suppressFindings: opts.suppressFindings ?? (trail.status === "draft") }
+  opts = { ...opts, suppressFindings: opts.suppressFindings ?? (trail.status === "draft"), _resolvedCreds: new Set<string>() }
   // KLA-106: expand callModule steps inline before walking. Pure DB read, backward-compatible:
   // a trail with no callModule steps is returned unchanged by expandModuleSteps.
   const rawSteps = await listTrailSteps(projectId, trailId)
@@ -543,7 +544,7 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
 
     // Persist the replay AFTER finishWalk. Best-effort: a save failure never changes the Walk result.
     if (capture && capture.segments.length) {
-      try { await saveReplay(projectId, runId, capture.segments) } catch (e) {
+      try { await saveReplay(projectId, runId, capture.segments, opts._resolvedCreds) } catch (e) {
         console.warn("[trails-replay] saveReplay failed:", String(e))
       }
     }
@@ -775,6 +776,9 @@ async function runOneStep(
       case "type": {
         const raw = step.actionValue ?? ""
         const val = hasCredRef(raw) ? await (opts.credResolver ?? resolveCredRefs)(projectId, raw) : raw
+        if (hasCredRef(raw) && opts._resolvedCreds) {
+          opts._resolvedCreds.add(val)
+        }
         await resolved.locator.fill(val, { timeout: actionTimeout })
         break
       }
@@ -1050,6 +1054,9 @@ async function runVisionTier2(
           case "type": {
             const raw = step.actionValue ?? ""
             const val = hasCredRef(raw) ? await (opts.credResolver ?? resolveCredRefs)(projectId, raw) : raw
+            if (hasCredRef(raw) && opts._resolvedCreds) {
+              opts._resolvedCreds.add(val)
+            }
             await loc.fill(val, { timeout: ACTION_TIMEOUT }); break
           }
           case "click": await clickWithTransitionFallback(loc, ACTION_TIMEOUT); break
