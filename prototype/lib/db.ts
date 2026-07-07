@@ -605,6 +605,13 @@ export async function applySchema(c: Client) {
     .catch((e: any) => console.warn("trail_runs.last_beat_at ALTER skipped:", e?.message || e))
   await c.execute("ALTER TABLE author_sessions ADD COLUMN last_beat_at INTEGER")
     .catch((e: any) => console.warn("author_sessions.last_beat_at ALTER skipped:", e?.message || e))
+  // KLA-57: partial-trajectory checkpoint (traj+history+cost+url) persisted after each step so
+  // a stalled drive is resumable without discarding accumulated progress.
+  await c.execute("ALTER TABLE author_sessions ADD COLUMN checkpoint_json TEXT")
+    .catch((e: any) => console.warn("author_sessions.checkpoint_json ALTER skipped:", e?.message || e))
+  // KLA-57: back-link to the session this one was resumed from (null for fresh starts).
+  await c.execute("ALTER TABLE author_sessions ADD COLUMN resumed_from TEXT")
+    .catch((e: any) => console.warn("author_sessions.resumed_from ALTER skipped:", e?.message || e))
 }
 
 // ── schema_meta helpers ──
