@@ -94,3 +94,17 @@ describe('maskNumbers', () => {
     restore()
   })
 })
+
+import { resolveModalConfig } from './modal-theme'
+
+describe('resolveModalConfig maskNumbers', () => {
+  it('accepts maskNumbers: true', () => {
+    const cfg = resolveModalConfig({ maskNumbers: true })
+    expect(cfg.maskNumbers).toBe(true)
+  })
+
+  it('defaults maskNumbers to undefined when absent', () => {
+    const cfg = resolveModalConfig({})
+    expect(cfg.maskNumbers).toBeUndefined()
+  })
+})
