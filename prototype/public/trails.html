@@ -523,11 +523,12 @@ async function runTrail(trailId, btn, row){
   await load() // give up polling; show whatever the dashboard has
 }
 
-// Fetch a Walk's run_steps via the replay route and return the first heal-diff (fromSelector→toSelector).
+// Fetch a Walk's run_steps via the lightweight walk-detail route and return the first heal-diff (fromSelector→toSelector).
 async function healDiffFor(runId){
   var pid = projParam(); var qs = pid ? "?project=" + encodeURIComponent(pid) : ""
   try {
-    var r = await fetch("/api/trails/walks/" + encodeURIComponent(runId) + "/replay" + qs)
+    // Use the /walks/:id detail endpoint, not /replay — that one bundles MB of rrweb segments we don't need.
+    var r = await fetch("/api/trails/walks/" + encodeURIComponent(runId) + qs)
     if (!r.ok) return null
     var d = await r.json()
     var step = (d.steps||[]).find(function(s){ var e=s.evidence||{}; return e.healed && (e.fromSelector||e.toSelector) })
