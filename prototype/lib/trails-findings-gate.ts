@@ -14,7 +14,7 @@
 
 import type { Finding } from "./trails-types"
 import { listFindings, setFindingConnectorError, setFindingStatus } from "./trails"
-import { listAutoCopyConnectors } from "./db"
+import { listAutoCopyConnectors, projectById } from "./db"
 import { getConnector, type TicketPayload } from "./connectors/index"
 import { decryptSecret } from "./crypto"
 
@@ -76,11 +76,6 @@ async function recordConnectorFailure(projectId: string, findingId: string, fail
 // Executor: walk-scoped gate. For each still-queued finding of this run, auto-file the hard
 // high-confidence regressions (never double-file an already-filed item — we only consider 'queued'),
 // queue the rest. A filer failure leaves the finding queued (fail-loud, never silent-green).
-//
-// INTENTIONALLY INERT: this auto-file executor is NOT wired into walkTrail/the runner in this slice. The
-// live path today is the human review queue (manual file/dismiss). Auto-file stays behind a future
-// per-project opt-in toggle (it must ship together with the dismissed-dedup suppression in recordFinding),
-// so a Walk never auto-files anything today.
 export async function processWalkFindings(
   projectId: string,
   runId: string,
@@ -105,6 +100,20 @@ export async function processWalkFindings(
     queued.push(f.id)
   }
   return { autoFiled, queued }
+}
+
+// KLA-94: opt-in auto-file gate. Checks the per-project flag; if OFF, returns immediately (all findings
+// stay queued — preserving the human-review default). If ON, delegates to processWalkFindings with the
+// production connector (or an injected filer for tests). Never throws — failures are recorded on the
+// finding row by processWalkFindings and this function is always called best-effort from walkTrail.
+export async function maybeAutoFileWalkFindings(
+  projectId: string,
+  runId: string,
+  filer: Filer = realFiler,
+): Promise<{ autoFiled: string[]; queued: string[] }> {
+  const proj = await projectById(projectId)
+  if (!proj?.trailsAutofileEnabled) return { autoFiled: [], queued: [] }
+  return processWalkFindings(projectId, runId, { filer })
 }
 
 // Human "file from queue": load the finding, push it, mark 'filed' with the connector ref.

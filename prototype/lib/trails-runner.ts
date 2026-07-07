@@ -29,6 +29,7 @@ import { clickWithTransitionFallback } from "./trails-click"
 import { matchesMock } from "./trails-browser-page"
 import type { NetworkMock } from "./trails-browser-page"
 import { notifyWalkRed } from "./walk-red-alert"
+import { maybeAutoFileWalkFindings } from "./trails-findings-gate"
 import { endLiveWatchRun, publishLiveWatchFrame, startLiveWatchRun } from "./trails-live-watch"
 import { WalkEvidenceCollector, type EvidenceOffsets, type WalkEvidenceSummary } from "./trails-walk-evidence"
 
@@ -689,6 +690,10 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
     if (walkVerdict === "red") {
       notifyWalkRed({ trailName: trail.name, trailId, projectId, runId, reasons: redReasons, at: Date.now() }).catch(() => {})
     }
+
+    // KLA-94: opt-in auto-file. Runs after finishWalk so the walk is already settled. Best-effort:
+    // a filing failure leaves findings queued for human review and never changes the walk verdict.
+    maybeAutoFileWalkFindings(projectId, runId).catch(() => {})
 
     // Persist the replay AFTER finishWalk. Best-effort: a save failure never changes the Walk result.
     if (capture && capture.segments.length) {

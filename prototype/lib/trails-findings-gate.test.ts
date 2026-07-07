@@ -191,3 +191,57 @@ test("realFiler returns null when the project has no auto-copy connector", async
   const r = await G.realFiler("proj_no_connector", { id: "find_x" } as any)
   expect(r).toBeNull()
 })
+
+// ── KLA-94: opt-in auto-file gate ─────────────────────────────────────────────
+
+const DB = await import("./db")
+
+test("maybeAutoFileWalkFindings: flag OFF leaves high-confidence finding queued", async () => {
+  const proj = "proj_autofile_off"
+  // Project row created implicitly by startWalk (project need not pre-exist in the projects table
+  // for startWalk — but trailsAutofileEnabled defaults to 0 for any row that does exist).
+  const walk = await T.startWalk(proj, "trl_af_off")
+  const f = await T.recordFinding(proj, {
+    runId: walk, trailId: "trl_af_off",
+    kind: "regression", title: "button gone", confidence: 0.95, dedupKey: "af_off_1",
+  })
+  let filerCalls = 0
+  const filer = async () => { filerCalls++; return { connectorRef: "plane:PROJ-9" } }
+  const res = await G.maybeAutoFileWalkFindings(proj, walk, filer)
+  // Flag OFF → immediate return, filer never called.
+  expect(res.autoFiled).toHaveLength(0)
+  expect(res.queued).toHaveLength(0)
+  expect(filerCalls).toBe(0)
+  // Finding remains queued.
+  const after = (await T.listFindings(proj)).find((x) => x.id === f.id)
+  expect(after?.status).toBe("queued")
+})
+
+test("maybeAutoFileWalkFindings: flag ON auto-files high-confidence regression, leaves low-confidence queued", async () => {
+  const proj = "proj_autofile_on"
+  // Enable the flag for this project by inserting and then enabling.
+  await db.execute({ sql: "INSERT OR IGNORE INTO projects (id, account_id, name, status, review_mode, observability_mode, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)", args: [proj, "acct_af", "autofile-test", "active", "auto", "named", Date.now(), Date.now()] })
+  await DB.setProjectTrailsAutofile(proj, true)
+
+  const walk = await T.startWalk(proj, "trl_af_on")
+  const high = await T.recordFinding(proj, {
+    runId: walk, trailId: "trl_af_on",
+    kind: "regression", title: "button gone", confidence: 0.95, dedupKey: "af_on_high",
+  })
+  const low = await T.recordFinding(proj, {
+    runId: walk, trailId: "trl_af_on",
+    kind: "regression", title: "low conf", confidence: 0.5, dedupKey: "af_on_low",
+  })
+
+  const filer = async () => ({ connectorRef: "plane:PROJ-11" })
+  const res = await G.maybeAutoFileWalkFindings(proj, walk, filer)
+
+  expect(res.autoFiled).toContain(high.id)
+  expect(res.queued).toContain(low.id)
+
+  const afterHigh = (await T.listFindings(proj)).find((x) => x.id === high.id)
+  const afterLow = (await T.listFindings(proj)).find((x) => x.id === low.id)
+  expect(afterHigh?.status).toBe("auto_filed")
+  expect(afterHigh?.connectorRef).toBe("plane:PROJ-11")
+  expect(afterLow?.status).toBe("queued")
+})
