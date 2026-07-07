@@ -337,7 +337,8 @@ export async function applySchema(c: Client) {
        llm_calls INTEGER NOT NULL DEFAULT 0,
        summary_json TEXT,
        started_at INTEGER NOT NULL,
-       finished_at INTEGER
+       finished_at INTEGER,
+       paused_secret_key TEXT
      )`,
     `CREATE INDEX IF NOT EXISTS walk_trail_idx ON trail_runs(trail_id, started_at)`,
     `CREATE TABLE IF NOT EXISTS run_steps (
@@ -456,7 +457,8 @@ export async function applySchema(c: Client) {
        error_msg TEXT,
        actor_email TEXT,
        created_at INTEGER NOT NULL,
-       finished_at INTEGER
+       finished_at INTEGER,
+       paused_secret_key TEXT
      )`,
     `CREATE INDEX IF NOT EXISTS sim_runs_proj_idx ON sim_runs(project_id, created_at DESC)`,
     // ── AutoSims F1: authoring sessions — one row per "New Trail" attempt; polled by the UI. ──
@@ -636,6 +638,9 @@ export async function applySchema(c: Client) {
   // KLA-93: which named environment a run was executed against. NULL = default (trail.baseUrl).
   await c.execute("ALTER TABLE trail_runs ADD COLUMN environment_name TEXT")
     .catch((e: any) => console.warn("trail_runs.environment_name ALTER skipped:", e?.message || e))
+  // KLA-104: pause-for-secret — opaque key stored while a walk is paused; cleared on resume or expiry.
+  await c.execute("ALTER TABLE trail_runs ADD COLUMN paused_secret_key TEXT")
+    .catch((e: any) => console.warn("trail_runs.paused_secret_key ALTER skipped:", e?.message || e))
 }
 
 // ── schema_meta helpers ──

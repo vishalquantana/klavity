@@ -2,7 +2,7 @@
 
 export type TrailStatus = "draft" | "active" | "paused" | "archived"
 export type AuthorKind = "llm" | "human" | "mixed"
-export type StepAction = "navigate" | "click" | "type" | "select" | "assert" | "wait" | "hover" | "keyPress" | "clearField" | "callModule"
+export type StepAction = "navigate" | "click" | "type" | "select" | "assert" | "wait" | "hover" | "keyPress" | "clearField" | "callModule" | "pauseForSecret"
 export type Tier = "cache" | "candidate" | "vision" | "none"
 export type Verdict = "green" | "amber" | "red" | "skip"
 export type FailureKind = "crash" | "regression"
@@ -101,7 +101,8 @@ export interface LocatorCacheRow {
 
 export interface Walk {
   id: string; trailId: string; projectId: string; trigger: "manual"
-  status: "running" | Verdict; llmCalls: number; trailVersion: number
+  /** running = in progress; paused = waiting for a secret via POST /resume; finished verdicts below */
+  status: "running" | "paused" | Verdict; llmCalls: number; trailVersion: number
   summary: Record<string, unknown> | null; startedAt: number; finishedAt: number | null
   /** KLA-93: name of the environment this walk ran against. Null = default (trail.baseUrl). */
   environmentName: string | null
