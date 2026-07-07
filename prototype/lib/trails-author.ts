@@ -140,6 +140,12 @@ export async function authorTrail(
   let costUsd = cp ? cp.costUsd : 0
   let misses = 0
   let lastSuccessKey: string | null = null, consecutiveSuccessKey = 0
+  const startIdx = cp ? cp.stepIdx : 0
+
+  const snapshotCheckpoint = (url: string): AuthorCheckpoint => ({
+    traj: [...traj], history: [...history], stepIdx: log.length,
+    llmCalls, costUsd, lastUrl: url,
+  })
   let objectiveVerified = false
   // Overall drive deadline. Without it a single hung page op (a crashed Chromium can make
   // page.content()/screenshot never settle) held the shared walk slot INDEFINITELY — observed
@@ -184,7 +190,7 @@ export async function authorTrail(
       } catch { /* best-effort; a crystallize failure must never re-throw from stall */ }
     }
     await closeHandle()
-    return { status: "stalled", trailId: null, verificationRunId: null, verificationVerdict: null, steps: log, stallReason: why, llmCalls, costUsd, objectiveVerified }
+    return { status: "stalled", trailId: partialTrailId, verificationRunId: null, verificationVerdict: null, steps: log, stallReason: why, llmCalls, costUsd, objectiveVerified }
   }
   try {
     const page = await handle!.newPage(viewport)
@@ -254,7 +260,7 @@ export async function authorTrail(
         if (misses >= MAX_CONSECUTIVE_MISSES) return await stall(`stuck after ${misses} malformed model replies; last: ${a.rationale}`, page.url())
         continue
       }
-      if (a.op === "stall") return await stall(a.rationale || "model stalled")
+      if (a.op === "stall") return await stall(a.rationale || "model stalled", page.url())
       if (a.op === "done") {
         let verifyResult: ObjectiveVerificationResult
         try {
@@ -270,7 +276,7 @@ export async function authorTrail(
           misses++
           const errMsg = verifyErr?.message || String(verifyErr)
           history.push(`(objective verification failed: ${errMsg} — retrying done from last state)`)
-          if (misses >= MAX_CONSECUTIVE_MISSES) return await stall(`stuck after verifier error: ${errMsg}`)
+          if (misses >= MAX_CONSECUTIVE_MISSES) return await stall(`stuck after verifier error: ${errMsg}`, page.url())
           continue
         }
 
@@ -280,7 +286,7 @@ export async function authorTrail(
         } else {
           misses++
           history.push(`(verification failed: your proposed 'done' action was rejected because the objective has not been achieved yet: ${verifyResult.reason || "unknown reason"} — continue until the objective is fully achieved)`)
-          if (misses >= MAX_CONSECUTIVE_MISSES) return await stall(`stuck after ${misses} failed verification attempts; last: ${verifyResult.reason}`)
+          if (misses >= MAX_CONSECUTIVE_MISSES) return await stall(`stuck after ${misses} failed verification attempts; last: ${verifyResult.reason}`, page.url())
           continue
         }
       }
@@ -421,6 +427,10 @@ export interface AuthorSession {
   steps: AuthorStepLog[]; stallReason: string | null; trailId: string | null
   verificationRunId: string | null; verificationVerdict: string | null
   llmCalls: number; costUsd: number; createdBy: string | null; createdAt: number; updatedAt: number
+  /** KLA-57: session this was resumed from, if any. */
+  resumedFrom: string | null
+  /** KLA-57: latest drive-state checkpoint (traj+history+cost+url). Null until first step. */
+  checkpoint: AuthorCheckpoint | null
   objectiveVerified: boolean | null
 }
 
@@ -428,14 +438,14 @@ export async function createAuthorSession(projectId: string, req: AuthorRequest,
   const id = "auth_" + crypto.randomUUID()
   const now = Date.now()
   await db!.execute({
-    sql: `INSERT INTO author_sessions (id,project_id,name,objective,base_url,test_account,status,created_by,created_at,updated_at,objective_verified)
-          VALUES (?,?,?,?,?,?,'running',?,?,?,0)`,
-    args: [id, projectId, req.name, req.objective, req.baseUrl, req.testAccountName ?? null, req.createdBy ?? null, now, now],
+    sql: `INSERT INTO author_sessions (id,project_id,name,objective,base_url,test_account,status,created_by,resumed_from,created_at,updated_at,objective_verified)
+          VALUES (?,?,?,?,?,?,'running',?,?,?,?,0)`,
+    args: [id, projectId, req.name, req.objective, req.baseUrl, req.testAccountName ?? null, req.createdBy ?? null, resumedFrom ?? null, now, now],
   })
   return id
 }
 
-export async function updateAuthorSession(projectId: string, id: string, patch: Partial<Pick<AuthorSession, "status" | "steps" | "stallReason" | "trailId" | "verificationRunId" | "verificationVerdict" | "llmCalls" | "costUsd" | "objectiveVerified">>): Promise<void> {
+export async function updateAuthorSession(projectId: string, id: string, patch: Partial<Pick<AuthorSession, "status" | "steps" | "stallReason" | "trailId" | "verificationRunId" | "verificationVerdict" | "llmCalls" | "costUsd" | "checkpoint" | "objectiveVerified">>): Promise<void> {
   const sets: string[] = ["updated_at=?"]; const args: any[] = [Date.now()]
   if (patch.status !== undefined) { sets.push("status=?"); args.push(patch.status) }
   if (patch.steps !== undefined) { sets.push("steps_json=?"); args.push(JSON.stringify(patch.steps)) }
@@ -467,6 +477,8 @@ function rowToAuthorSession(row: any): AuthorSession {
     llmCalls: Number(row.llm_calls), costUsd: Number(row.cost_usd),
     createdBy: row.created_by ? String(row.created_by) : null,
     createdAt: Number(row.created_at), updatedAt: Number(row.updated_at),
+    resumedFrom: row.resumed_from ? String(row.resumed_from) : null,
+    checkpoint,
     objectiveVerified: row.objective_verified == null ? null : !!row.objective_verified,
   }
 }
