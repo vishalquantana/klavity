@@ -22,6 +22,8 @@ import { setupReplayCapture, saveReplay, type ReplayCapture } from "./trails-rep
 import { hasCredRef, resolveCredRefs, type CredResolver } from "./trails-creds"
 import { captureKrefSnapshot, stableSelectorFor, structuralPathFor, isKrefSelector, recordedStepState } from "./trails-snapshot"
 import { clickWithTransitionFallback } from "./trails-click"
+import { matchesMock } from "./trails-browser-page"
+import type { NetworkMock } from "./trails-browser-page"
 
 export interface WalkOptions {
   /** Concrete URL to walk against (overrides the trail's baseUrl). file:// or http(s)://. */
@@ -103,6 +105,13 @@ export interface WalkOptions {
    * summary.error = "cancelled". Absent (all existing callers) → unchanged behavior.
    */
   signal?: AbortSignal
+  /**
+   * KLA-111: Optional network stubs/blocks for the walk. Each entry matches browser requests by URL
+   * pattern (exact string, glob "**" or RegExp) and either returns a canned response (stub) or
+   * aborts the request (block). Installed before the first page navigation so the initial load is
+   * also intercepted. Absent (all existing callers) → no interception, byte-identical behavior.
+   */
+  networkMocks?: NetworkMock[]
 }
 
 export interface WalkStepSummary {
@@ -373,6 +382,23 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
     // THROWS — it is inside this try, so it finalizes the walk RED via the catch below, never a hang.
     page.setDefaultNavigationTimeout(opTimeout)
     page.setDefaultTimeout(opTimeout)
+    // KLA-111: install network mocks BEFORE the first navigation so the initial page load is intercepted.
+    if (opts.networkMocks?.length) {
+      await page.route("**/*", (route) => {
+        const reqUrl = route.request().url()
+        for (const mock of opts.networkMocks!) {
+          if (!matchesMock(mock.url, reqUrl)) continue
+          if (mock.block) { route.abort("blockedbyclient").catch(() => {}); return }
+          route.fulfill({
+            status: mock.stub.status ?? 200,
+            contentType: mock.stub.contentType ?? "text/plain",
+            body: mock.stub.body ?? "",
+          }).catch(() => {})
+          return
+        }
+        route.continue().catch(() => {})
+      })
+    }
     await page.goto(opts.fixtureUrl, { timeout: opTimeout })
 
     // Track the document URL across steps so a full-page navigation (click-driven or explicit
