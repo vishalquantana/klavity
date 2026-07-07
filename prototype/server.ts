@@ -14,7 +14,7 @@ import { runRetentionSweep } from "./lib/retention"
 import { SCREENSHOTS, resolveScreenshotConfig, mbLabel } from "./lib/screenshot-config"
 import { buildIssueHtml, escapeHtml, sanitizeClientContext, clientContextLines } from "./lib/feedback"
 import { encryptSecret, decryptSecret } from "./lib/crypto"
-import { createTestAccount, listTestAccounts, getTestAccountById, getTestAccountByName, deleteTestAccount } from "./lib/test-accounts"
+import { createTestAccount, listTestAccounts, getTestAccountById, getTestAccountByName, deleteTestAccount, isTestAccountEmail } from "./lib/test-accounts"
 import { planeConfigFromForm, redactPlane, type PlaneStored } from "./lib/connection"
 import { assertSafeUrl } from "./lib/url-guard"
 import { safeFetch } from "./lib/safe-fetch"
@@ -1446,6 +1446,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const { email } = await req.json()
         const e = String(email || "").trim().toLowerCase()
         if (!e || !e.includes("@")) return json({ error: "Enter a valid email." }, 400)
+        // Test-OTP short-circuit: when KLAV_TEST_OTP is set AND the email is a registered test
+        // account email, skip rate-limiting and skip sending a real OTP email entirely. AutoSim
+        // login Trails use the fixed code 666666 (accepted by /api/auth/verify below), so running
+        // many login Trails in succession never exhausts the 5/email/15min request rate limit.
+        if (process.env.KLAV_TEST_OTP && await isTestAccountEmail(e)) {
+          console.warn(`[TEST-OTP-REQUEST] email=${e} is a test account — skipping rate limit + email send (KLAV_TEST_OTP active)`)
+          return json({ ok: true, emailed: false })
+        }
         // Throttle issuance per email AND per IP (H1): stops OTP/email bombing and shrinks the window
         // an attacker has to brute-force a code. Both must pass.
         const reqIp = clientIp(req, server)
@@ -1478,17 +1486,19 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const failEmailKey = `otpfail:e:${e}`
         if (rlCount(failKey) >= OTP_FAIL_MAX || rlCount(failEmailKey) >= OTP_FAIL_EMAIL_MAX)
           return json({ error: "Too many attempts. Please wait a few minutes and try again." }, 429, { "Retry-After": "900" })
-        // ── TEST-OTP bypass (gated: KLAV_TEST_OTP env + per-email allowlist) ──
+        // ── TEST-OTP bypass (gated: KLAV_TEST_OTP env + per-email allowlist OR test account DB) ──
         // Fixed code 666666 is accepted ONLY when:
         //   (a) KLAV_TEST_OTP env var is set/truthy (OFF by default in production), AND
-        //   (b) the email is listed in KLAV_TEST_OTP_EMAILS (comma-separated allowlist).
+        //   (b) the email is listed in KLAV_TEST_OTP_EMAILS (comma-separated allowlist) OR is
+        //       a registered test account login_email in the DB (so AutoSim login Trails never need
+        //       KLAV_TEST_OTP_EMAILS to be manually kept in sync with test accounts).
         // Any other email, or when the env is unset, 666666 is rejected by the normal verifyOtp path.
         // This is server-env-gated only — no URL param or header can enable it.
         const TEST_OTP_CODE = "666666"
         const testOtpEnabled = !!process.env.KLAV_TEST_OTP && c === TEST_OTP_CODE
         const testOtpAllowlist = (process.env.KLAV_TEST_OTP_EMAILS ?? "")
           .split(",").map((s) => s.trim().toLowerCase()).filter(Boolean)
-        const testOtpGranted = testOtpEnabled && testOtpAllowlist.includes(e)
+        const testOtpGranted = testOtpEnabled && (testOtpAllowlist.includes(e) || await isTestAccountEmail(e))
         if (!(testOtpGranted || await verifyOtp(e, c))) {
           rlRecord(failKey, OTP_FAIL_WINDOW)
           rlRecord(failEmailKey, OTP_FAIL_EMAIL_WINDOW)

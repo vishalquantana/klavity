@@ -67,6 +67,9 @@ export async function authorTrail(
     const acc = await getTestAccountByName(projectId, req.testAccountName)
     if (!acc) return { status: "failed", trailId: null, verificationRunId: null, verificationVerdict: null, steps: [], stallReason: `unknown test account: ${req.testAccountName}`, llmCalls: 0, costUsd: 0 }
     credFields.push(`{{cred:${acc.name}:email}}`, `{{cred:${acc.name}:password}}`)
+    // When the test-OTP bypass is active, expose the :otp placeholder so the author model can fill
+    // in the fixed code (666666) without triggering a real OTP email or hitting the rate limit.
+    if (process.env.KLAV_TEST_OTP) credFields.push(`{{cred:${acc.name}:otp}}`)
   }
   const log: AuthorStepLog[] = []
   const history: string[] = []
