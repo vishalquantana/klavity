@@ -554,6 +554,22 @@ export async function applySchema(c: Client) {
     .catch((e: any) => console.warn("findings dedup pre-collapse skipped:", e?.message || e))
   await c.execute("CREATE UNIQUE INDEX IF NOT EXISTS finding_dedup_uq ON findings(project_id, dedup_key)")
     .catch((e: any) => console.warn("finding_dedup_uq skipped:", e?.message || e))
+  // KLA-73: persona-judged walks — which persona judges this Trail's results.
+  await c.execute("ALTER TABLE trails ADD COLUMN judge_persona_id TEXT").catch((e: any) =>
+    console.warn("trails.judge_persona_id ALTER skipped:", e?.message || e))
+  // KLA-73: walk_judgments — one row per (run, persona) judgment session.
+  await c.execute(`CREATE TABLE IF NOT EXISTS walk_judgments (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    run_id TEXT NOT NULL,
+    persona_id TEXT NOT NULL,
+    persona_name TEXT NOT NULL,
+    verdicts_json TEXT NOT NULL,
+    overall_note TEXT,
+    created_at INTEGER NOT NULL
+  )`).catch((e: any) => console.warn("walk_judgments CREATE skipped:", e?.message || e))
+  await c.execute("CREATE INDEX IF NOT EXISTS wj_run_idx ON walk_judgments (project_id, run_id, created_at)")
+    .catch((e: any) => console.warn("wj_run_idx skipped:", e?.message || e))
 }
 
 // ── schema_meta helpers ──

@@ -28,6 +28,29 @@ export interface Trail {
   stepVersion: number
   schedule: string | null         // 5-field cron expression (UTC), null = no schedule
   scheduledLastRunAt: number | null  // epoch ms when last scheduled walk was triggered
+  /** KLA-73: persona chosen to judge walk results for this Trail. Null = no judge assigned. */
+  judgePersonaId: string | null
+}
+
+/** One persona's verdict on a single finding produced by a Walk. */
+export interface PersonaVerdict {
+  findingId: string
+  verdict: "valid" | "false_positive" | "clarify"
+  confidence: number
+  rationale: string
+}
+
+/** A complete persona-judged review of all findings from one Walk. */
+export interface WalkJudgment {
+  id: string
+  projectId: string
+  runId: string
+  personaId: string
+  personaName: string
+  verdicts: PersonaVerdict[]
+  /** Optional overall summary the persona offers across all findings. */
+  overallNote: string | null
+  createdAt: number
 }
 
 export type CheckpointKind = "visible" | "textEquals" | "textContains" | "urlMatches" | "elementCount"
