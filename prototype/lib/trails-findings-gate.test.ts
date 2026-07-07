@@ -52,6 +52,28 @@ test("processWalkFindings auto-files high-confidence regressions, queues the res
   expect(filed.connectorRef).toBe("plane:PROJ-7")
 })
 
+test("processWalkFindings records and logs connector failures on the finding", async () => {
+  const proj = "proj_gate_fail"
+  const walk = await T.startWalk(proj, "trl_fail")
+  const f = await T.recordFinding(proj, { runId: walk, trailId: "trl_fail", kind: "regression", title: "gone", confidence: 0.95, dedupKey: "gf1" })
+  const originalWarn = console.warn
+  const logs: string[] = []
+  console.warn = (...args: unknown[]) => { logs.push(args.map(String).join(" ")) }
+  try {
+    const res = await G.processWalkFindings(proj, walk, {
+      filer: async () => { throw new Error("Plane HTTP 500") },
+    })
+    expect(res.autoFiled).toHaveLength(0)
+    expect(res.queued).toEqual([f.id])
+  } finally {
+    console.warn = originalWarn
+  }
+  const after = (await T.listFindings(proj)).find((x) => x.id === f.id)
+  expect(after?.status).toBe("queued")
+  expect(after?.connectorError).toContain("Plane HTTP 500")
+  expect(logs.some((line) => line.includes("connector filing failed") && line.includes("Plane HTTP 500"))).toBe(true)
+})
+
 test("fileFindingById files a queued finding via the injected filer", async () => {
   const proj = "proj_gate_file"
   const walk = await T.startWalk(proj, "trl_f")
@@ -156,7 +178,7 @@ test("buildTicketFromFinding embeds grounded evidence + heal diff", () => {
   const t = G.buildTicketFromFinding({
     id: "find_1", projectId: "proj_z", runId: "walk_1", stepId: "tstep_1", trailId: "trl_1",
     kind: "regression", title: "Checkout button gone", evidence: { fromSelector: "#checkout", toSelector: null, rationale: "no checkout affordance" },
-    groundQuote: "no checkout affordance", confidence: 0.95, dedupKey: "k", recurrence: 1, status: "queued", connectorRef: null, createdAt: 1, updatedAt: 1,
+    groundQuote: "no checkout affordance", confidence: 0.95, dedupKey: "k", recurrence: 1, status: "queued", connectorRef: null, connectorError: null, createdAt: 1, updatedAt: 1,
   } as any, "https://klavity.quantana.top")
   expect(t.title).toContain("Checkout button gone")
   expect(t.body).toContain("no checkout affordance")
