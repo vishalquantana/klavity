@@ -27,6 +27,9 @@ export const AUTHOR_MAX_COST_USD = Number(process.env.AUTOSIM_MAX_COST_USD) || A
 export const AUTOSIM_DEADLINE_MS_DEFAULT = Number(process.env.AUTOSIM_MAX_MS) || AUTOSIM_MAX_MS_DEFAULT
 const MAX_CONSECUTIVE_MISSES = 3
 const ACTION_TIMEOUT = 10_000
+// KLA-129: stall if the exact same action (op+selector+value+url) fires this many consecutive
+// times without a different action in between — the model is stuck re-doing the same step.
+const LOOP_STALL_N = 3
 
 /** Strip ephemeral kref attribute references from strings before persisting or adding to history.
  *  Conveys which ref failed without embedding the literal data-kref attr (which is stale by the
@@ -69,6 +72,7 @@ export async function authorTrail(
   const history: string[] = []
   const traj: TrajectoryStep[] = []
   let llmCalls = 0, costUsd = 0, misses = 0
+  let lastSuccessKey: string | null = null, consecutiveSuccessKey = 0
   // Overall drive deadline. Without it a single hung page op (a crashed Chromium can make
   // page.content()/screenshot never settle) held the shared walk slot INDEFINITELY — observed
   // live on prod 2026-07-04: dead browser, slot stuck, every walk/authoring 409ing until a
@@ -153,6 +157,23 @@ export async function authorTrail(
           })
           // Update entry + history with the stable selector so the model context never sees krefs
           entry.selector = persistSelector
+        }
+        // Loop guard (KLA-129): if the same action fires LOOP_STALL_N consecutive times without a
+        // different action in between, the model is stuck re-doing the same step — break out now
+        // rather than spinning to AUTHOR_MAX_STEPS and crystallizing a useless trail.
+        const successKey = `${a.op}|${a.selector ?? ""}|${a.value ?? ""}|${a.url ?? ""}`
+        if (successKey === lastSuccessKey) {
+          consecutiveSuccessKey++
+          if (consecutiveSuccessKey >= LOOP_STALL_N) {
+            const safeSelector = a.selector && isKrefSelector(a.selector) ? dekref(a.selector) : a.selector
+            entry.ok = true; log.push(entry); await opts.onStep?.(log)
+            return await stall(
+              `progress stall: '${a.op}' on '${safeSelector ?? a.url ?? "page"}' repeated ${consecutiveSuccessKey + 1}× without state change — refine the objective to include the next step`
+            )
+          }
+        } else {
+          lastSuccessKey = successKey
+          consecutiveSuccessKey = 0
         }
         entry.ok = true; misses = 0
         history.push(`${a.op}${entry.selector ? " " + entry.selector : ""}${a.op === "navigate" ? " " + a.url : ""} — ok`)

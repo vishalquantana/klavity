@@ -109,4 +109,36 @@ describe("authorTrail textFirst default + escalation", () => {
   }, 60000)
 })
 
+describe("authorTrail loop guard (KLA-129)", () => {
+  const FIXTURE_EMAIL = "data:text/html," + encodeURIComponent(`<html><body><input id="email"/></body></html>`)
+  const FIXTURE_EMAIL_BTN = "data:text/html," + encodeURIComponent(`<html><body><input id="email"/><button id="btn">Submit</button></body></html>`)
+
+  test("stalls when same type action repeats consecutively (the email-loop bug)", async () => {
+    let calls = 0
+    const model: AuthorModel = async () => {
+      calls++
+      // Simulates the KLA-129 bug: LLM always re-fills the email field, never clicks Submit
+      return { action: { op: "type", selector: "#email", value: "test@example.com", url: null, checkpoint: null, rationale: "fill email" }, costUsd: 0 }
+    }
+    const out = await authorTrail(projectId, { name: "kla129-loop", objective: "login", baseUrl: FIXTURE_EMAIL }, { model, textFirst: false })
+    expect(out.status).toBe("stalled")
+    expect(out.stallReason).toMatch(/progress stall/)
+    // Must break out well before AUTHOR_MAX_STEPS (40) — loop guard should fire by ~5 calls
+    expect(calls).toBeLessThan(10)
+  }, 60_000)
+
+  test("loop guard resets on action change — no false-positive stall", async () => {
+    let calls = 0
+    const model: AuthorModel = async () => {
+      calls++
+      if (calls <= 2) return { action: { op: "type", selector: "#email", value: "test@example.com", url: null, checkpoint: null, rationale: "type" }, costUsd: 0 }
+      if (calls === 3) return { action: { op: "click", selector: "#btn", value: null, url: null, checkpoint: null, rationale: "click submit" }, costUsd: 0 }
+      return { action: { op: "done", selector: null, value: null, url: null, checkpoint: null, rationale: "done" }, costUsd: 0 }
+    }
+    // 2 type-same + 1 click (different) → count resets → done; must NOT stall
+    const out = await authorTrail(projectId, { name: "kla129-ok", objective: "login", baseUrl: FIXTURE_EMAIL_BTN }, { model, textFirst: false })
+    expect(out.status).toBe("crystallized")
+  }, 60_000)
+})
+
 afterAll(async () => { /* in-memory db, nothing to clean */ })
