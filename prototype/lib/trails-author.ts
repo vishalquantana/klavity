@@ -12,7 +12,7 @@ import { getTestAccountByName } from "./test-accounts"
 import { sha256hex } from "./crypto"
 import { withWalkSlot, CHROMIUM_PROD_ARGS } from "./trails-browser"
 import { acquireBrowser } from "./trails-browser-page"
-import { db } from "./db"
+import { db, projectById } from "./db"
 import type { AuthorModel, AuthorAction } from "./trails-author-model"
 import { isKrefSelector } from "./trails-snapshot"
 import type { StepAction } from "./trails-types"
@@ -52,6 +52,12 @@ export async function authorTrail(
   // screenshot-every-step). Happy-path steps run text-only; a miss escalates by re-attaching the
   // screenshot (see `includeShot` below). Kill-switch: KLAV_AUTHOR_TEXT_FIRST=0 reverts to arm A.
   const textFirst = opts.textFirst ?? process.env.KLAV_AUTHOR_TEXT_FIRST !== "0"
+  // KLA-102: per-project instructions injected into the authoring prompt for trail context.
+  let projectInstructions: string | undefined
+  try {
+    const proj = await projectById(projectId)
+    projectInstructions = proj?.instructionsMd
+  } catch { /* best-effort; missing instructions is not fatal */ }
   const credResolver = opts.credResolver ?? resolveCredRefs
   const credFields: string[] = []
   if (req.testAccountName) {
@@ -97,7 +103,7 @@ export async function authorTrail(
       const dom = await bounded(page.krefSnapshot(), 15_000, "snapshot capture")
       let r: { action: AuthorAction; costUsd: number }
       try {
-        r = await bounded(opts.model({ objective: req.objective, pageUrl: page.url(), screenshotB64, mediaType: "image/jpeg", domSnapshot: dom, history, credFields }, { projectId, email: req.createdBy ?? null }), 120_000, "author model call")
+        r = await bounded(opts.model({ objective: req.objective, pageUrl: page.url(), screenshotB64, mediaType: "image/jpeg", domSnapshot: dom, history, credFields }, { projectId, email: req.createdBy ?? null, projectInstructions }), 120_000, "author model call")
       } catch (e: any) { return await stall(`author model error: ${e?.message || e}`) }
       llmCalls++; costUsd += r.costUsd || 0
       const a = r.action

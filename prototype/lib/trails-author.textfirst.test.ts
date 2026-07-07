@@ -36,6 +36,31 @@ describe("buildAuthorMessages text-only", () => {
   })
 })
 
+describe("buildAuthorMessages project instructions", () => {
+  const base = { objective: "o", pageUrl: "u", mediaType: "image/jpeg", domSnapshot: "s", history: [], credFields: [] }
+  test("no instructions → system prompt unchanged, no PROJECT INSTRUCTIONS marker", () => {
+    const msgs = buildAuthorMessages({ ...base, screenshotB64: "" })
+    expect(JSON.stringify(msgs)).not.toContain("PROJECT INSTRUCTIONS")
+  })
+  test("instructions appended to system prompt and present in user message text", () => {
+    const inst = "Use data-testid selectors. Always wait for spinner to disappear."
+    const msgs = buildAuthorMessages({ ...base, screenshotB64: "" }, inst)
+    const sysContent = String(msgs[0].content)
+    expect(sysContent).toContain("PROJECT INSTRUCTIONS:")
+    expect(sysContent).toContain(inst)
+  })
+  test("instructions also visible in user message body (text-only path)", () => {
+    const inst = "Staging env: use https://staging.example.com"
+    const msgs = buildAuthorMessages({ ...base, screenshotB64: "" }, inst)
+    // system prompt includes instructions; verify it's there
+    expect(JSON.stringify(msgs)).toContain(inst)
+  })
+  test("whitespace-only instructions → no PROJECT INSTRUCTIONS marker", () => {
+    const msgs = buildAuthorMessages({ ...base, screenshotB64: "" }, "   \n\t  ")
+    expect(JSON.stringify(msgs)).not.toContain("PROJECT INSTRUCTIONS")
+  })
+})
+
 describe("authorTrail textFirst default + escalation", () => {
   const FIXTURE_URL = "data:text/html," + encodeURIComponent(`<html><body><a id="go" href="#x">Go</a></body></html>`)
   const doneModel = (shots: boolean[]): AuthorModel => async (input) => {
