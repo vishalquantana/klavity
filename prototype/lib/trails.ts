@@ -215,6 +215,19 @@ export async function addRunStep(
   return id
 }
 
+export async function mergeRunStepEvidence(projectId: string, runStepId: string, patch: Record<string, unknown>): Promise<void> {
+  const r = await db!.execute({
+    sql: `SELECT evidence_json FROM run_steps WHERE project_id=? AND id=?`,
+    args: [projectId, runStepId],
+  })
+  if (!r.rows.length) return
+  const existing = pj<Record<string, unknown>>((r.rows[0] as any).evidence_json) ?? {}
+  await db!.execute({
+    sql: `UPDATE run_steps SET evidence_json=? WHERE project_id=? AND id=?`,
+    args: [j({ ...existing, ...patch }), projectId, runStepId],
+  })
+}
+
 export async function finishWalk(projectId: string, runId: string, input: { status: Verdict; llmCalls: number; summary?: Record<string, unknown> }): Promise<void> {
   await db!.execute({
     sql: `UPDATE trail_runs SET status=?, llm_calls=?, summary_json=?, finished_at=? WHERE project_id=? AND id=?`,
