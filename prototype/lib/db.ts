@@ -273,7 +273,8 @@ export async function applySchema(c: Client) {
        status TEXT NOT NULL DEFAULT 'draft',
        created_by TEXT,
        created_at INTEGER NOT NULL,
-       updated_at INTEGER NOT NULL
+       updated_at INTEGER NOT NULL,
+       objective_verified INTEGER
      )`,
     `CREATE INDEX IF NOT EXISTS trail_proj_idx ON trails(project_id, status)`,
     `CREATE TABLE IF NOT EXISTS trail_steps (
@@ -465,7 +466,8 @@ export async function applySchema(c: Client) {
        steps_json TEXT NOT NULL DEFAULT '[]', stall_reason TEXT, trail_id TEXT,
        verification_run_id TEXT, verification_verdict TEXT,
        llm_calls INTEGER NOT NULL DEFAULT 0, cost_usd REAL NOT NULL DEFAULT 0,
-       created_by TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
+       created_by TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+       objective_verified INTEGER)`,
     `CREATE INDEX IF NOT EXISTS author_sess_proj_idx ON author_sessions (project_id, created_at)`,
     // ── One-time guarded migrations (C1 etc.) use this table instead of schema_meta so the
     // migration namespace is separate from runtime KV. ──
@@ -612,6 +614,10 @@ export async function applySchema(c: Client) {
   // KLA-57: back-link to the session this one was resumed from (null for fresh starts).
   await c.execute("ALTER TABLE author_sessions ADD COLUMN resumed_from TEXT")
     .catch((e: any) => console.warn("author_sessions.resumed_from ALTER skipped:", e?.message || e))
+  await c.execute("ALTER TABLE trails ADD COLUMN objective_verified INTEGER")
+    .catch((e: any) => console.warn("trails.objective_verified ALTER skipped:", e?.message || e))
+  await c.execute("ALTER TABLE author_sessions ADD COLUMN objective_verified INTEGER")
+    .catch((e: any) => console.warn("author_sessions.objective_verified ALTER skipped:", e?.message || e))
 }
 
 // ── schema_meta helpers ──
