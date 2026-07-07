@@ -544,6 +544,10 @@ export async function applySchema(c: Client) {
   // pins the version a Walk ran against so past runs never drift from the steps they executed.
   await c.execute("ALTER TABLE trails ADD COLUMN step_version INTEGER NOT NULL DEFAULT 1").catch((e) => console.warn("trails.step_version ALTER skipped:", e?.message || e))
   await c.execute("ALTER TABLE trail_runs ADD COLUMN trail_version INTEGER NOT NULL DEFAULT 1").catch((e) => console.warn("trail_runs.trail_version ALTER skipped:", e?.message || e))
+  // KLA-88: per-Trail cron schedule — schedule_cron stores a 5-field UTC cron expression;
+  // scheduled_last_run_at guards against double-fire within the same minute window.
+  await c.execute("ALTER TABLE trails ADD COLUMN schedule_cron TEXT").catch((e) => console.warn("trails.schedule_cron ALTER skipped:", e?.message || e))
+  await c.execute("ALTER TABLE trails ADD COLUMN scheduled_last_run_at INTEGER").catch((e) => console.warn("trails.scheduled_last_run_at ALTER skipped:", e?.message || e))
   // KLA-70: dedup-race fix — enforce UNIQUE(project_id, dedup_key) so recordFinding's
   // INSERT ON CONFLICT is atomic. Pre-collapse any legacy duplicates (keep oldest rowid) first.
   await c.execute("DELETE FROM findings WHERE rowid NOT IN (SELECT MIN(rowid) FROM findings GROUP BY project_id, dedup_key)")
