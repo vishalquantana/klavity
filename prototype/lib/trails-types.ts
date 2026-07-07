@@ -40,7 +40,9 @@ export interface Trail {
   scheduledLastRunAt: number | null  // epoch ms when last scheduled walk was triggered
   /** KLA-73: persona chosen to judge walk results for this Trail. Null = no judge assigned. */
   judgePersonaId: string | null
+  objectiveVerified?: boolean | null
 }
+
 
 /** One persona's verdict on a single finding produced by a Walk. */
 export interface PersonaVerdict {
