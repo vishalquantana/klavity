@@ -1,0 +1,37 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Inline onclick wizard — unknown function name</title>
+  <style>
+    .hide { display: none; }
+  </style>
+</head>
+<body>
+  <section class="step" data-s="0">
+    <h1>Welcome</h1>
+    <button id="continue" onclick="showStep(1)">Continue</button>
+  </section>
+  <section class="step hide" data-s="1">
+    <h1>Your details</h1>
+    <label>Full name <input id="fullname" aria-label="Full name"></label>
+  </section>
+  <script>
+    let cur = 0
+    function showStep(n) {
+      cur = n
+      document.querySelectorAll(".step").forEach(function(el) {
+        el.classList.toggle("hide", Number(el.dataset.s) !== cur)
+      })
+    }
+    // Same trusted-click guard as onclick-wizard-trusted-block.html: real (trusted) clicks on
+    // #continue are stopped at the capture phase so the inline onclick never fires via the DOM
+    // event path. The guard simulates pages that gate inline handlers on e.isTrusted.
+    document.addEventListener("click", function(e) {
+      if (e.isTrusted && e.target && e.target.id === "continue") {
+        e.stopImmediatePropagation()
+      }
+    }, true)
+  </script>
+</body>
+</html>
