@@ -12,7 +12,7 @@ import { getTestAccountByName } from "./test-accounts"
 import { sha256hex } from "./crypto"
 import { withWalkSlot, withAuthorSlot, CHROMIUM_PROD_ARGS } from "./trails-browser"
 import { acquireBrowser, type BrowserHandle } from "./trails-browser-page"
-import { db, projectById } from "./db"
+import { db, projectById, touchAuthorHeartbeat } from "./db"
 import type { AuthorModel, AuthorAction } from "./trails-author-model"
 import { ModelCallError } from "./trails-author-model"
 import { isKrefSelector } from "./trails-snapshot"
@@ -67,6 +67,11 @@ export async function authorTrail(
      * Tests inject `() => Promise.resolve()` to avoid real delays.
      */
     sleepMs?: (ms: number) => Promise<void>
+    /**
+     * KLA-55: called at the top of each drive iteration to update the author session heartbeat.
+     * Wired by runAuthorNow to touchAuthorHeartbeat(sessionId). Best-effort: errors are swallowed.
+     */
+    onHeartbeat?: () => void | Promise<void>
   },
 ): Promise<AuthorOutcome> {
   // Text-first is the DEFAULT (bench 2026-07-04: arm B ~50% cheaper, 6/6 green verdicts vs arm A
@@ -132,6 +137,8 @@ export async function authorTrail(
       traj.push({ action: "navigate", actionValue: req.baseUrl, url: page.url(), domHash: sha256hex(initSnap) })
     }
     for (let idx = 0; idx < AUTHOR_MAX_STEPS; idx++) {
+      // KLA-55: heartbeat — signals the crash-reaper that this session is still alive. Best-effort.
+      opts.onHeartbeat?.()
       if (costUsd >= AUTHOR_MAX_COST_USD) return await stall(`authoring budget cap $${AUTHOR_MAX_COST_USD} reached after ${llmCalls} model calls`)
       if (Date.now() > deadlineAt) return await stall(`authoring drive deadline exceeded (${Math.round(driveDeadlineMs / 1000)}s) after ${log.length} steps`)
       const includeShot = !textFirst || misses > 0
@@ -390,6 +397,8 @@ export async function runAuthorNow(projectId: string, req: AuthorRequest, deps?:
       const out = await author(projectId, req, {
         model, launchArgs: CHROMIUM_PROD_ARGS,
         onStep: (log) => updateAuthorSession(projectId, sessionId, { steps: log }).catch(() => {}),
+        // KLA-55: update heartbeat each iteration so the reaper knows this session is alive.
+        onHeartbeat: () => touchAuthorHeartbeat(sessionId).catch(() => {}),
       })
       await updateAuthorSession(projectId, sessionId, {
         status: out.status, steps: out.steps, stallReason: out.stallReason, trailId: out.trailId,

@@ -17,6 +17,7 @@ import {
   getTrail, listTrailSteps, getCacheForStep, upsertLocatorCache,
   startWalk, addRunStep, finishWalk, recordFinding,
 } from "./trails"
+import { touchWalkHeartbeat } from "./db"
 import { stepCacheKey } from "./trails-crystallize"
 import { decideFromVision, type VisionResolver, type VisionInput, type VisionResult, type VisionDecision } from "./trails-vision"
 import { setupReplayCapture, saveReplay, type ReplayCapture } from "./trails-replay"
@@ -477,6 +478,9 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
     let segIdx = 0
 
     for (const step of steps) {
+      // KLA-55: heartbeat — updated at the top of each step so the stale reaper knows this walk
+      // is still alive. Best-effort: a failed touch never stops the walk.
+      touchWalkHeartbeat(runId).catch(() => {})
       // Plan G prod-safety: a hard per-walk deadline. If the wall-clock budget is blown, STOP the walk
       // (don't run this or any further step) and roll the verdict to RED — the page-too-slow / runaway
       // case can't pin the shared 1GB box. The browser is still closed in the `finally` below.

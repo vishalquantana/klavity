@@ -39,6 +39,7 @@ import { saveFeedbackReplay, getFeedbackReplay, feedbackIdsWithReplay, pruneOldF
 import { listRunSteps, listTrails, getTrail, getWalk, setTrailStatus, listTrailSteps, insertAssertStep, deleteTrailStep, updateTrailStep, updateTrail, countRunSteps, countTrailSteps, type TrailPatch } from "./lib/trails"
 import { runWalkNow } from "./lib/trails-trigger"
 import { startTrailScheduler, isValidCron } from "./lib/trails-scheduler"
+import { startCrashReaper } from "./lib/trails-reaper"
 import { runAuthorNow, getAuthorSession, getActiveAuthorSession } from "./lib/trails-author"
 import { WalkBusyError, cancelCurrentWalk, PdfBusyError } from "./lib/trails-browser"
 import { mintShareToken, resolveShareToken, renderWalkPdf } from "./lib/trails-share"
@@ -4307,4 +4308,6 @@ if (db && process.env.NODE_ENV !== "test") {
   setInterval(() => { runRetentionSweep().catch((e) => console.warn("retention sweep failed:", e?.message || e)) }, 6 * 60 * 60 * 1000)
   // KLA-88: trail cron scheduler — ticks every minute, fires scheduled walks.
   startTrailScheduler()
+  // KLA-55: crash reaper — sweeps stale-heartbeat walks/sessions every 60s.
+  startCrashReaper(db!)
 }
