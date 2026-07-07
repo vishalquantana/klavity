@@ -309,7 +309,7 @@ const ACCENTS=['#6366f1','#d98324','#db2777','#0f9d6b','#0ea5a4','#8b5cf6'];
 const initials=n=>n.split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
 function simCard(s,opts){
   opts=opts||{};
-  const ins=s.insights.map(i=>`<div class=”in ${i.kind}”><span class=”ic”>${i.kind==='pain'?'▾':i.kind==='want'?kicon('star',{size:12}):kicon('heart',{size:12})}</span><span class=”qt”>${i.text} <em>”${i.quote}”</em></span></div>`).join('');
+  const ins=s.insights.map(i=>`<div class=”in ${i.kind}”><span class=”ic”>${i.kind==='pain'?kicon('frown',{size:12}):i.kind==='want'?kicon('star',{size:12}):kicon('heart',{size:12})}</span><span class=”qt”>${i.text} <em>”${i.quote}”</em></span></div>`).join('');
   const foot = opts.pick
     ? `<div class=”sim-foot”><span class=”kind”>${s.type||'client'}</span><span class=”checkpill”>\u2713</span></div>`
     : `<div class="sim-foot"><button class="btn btn-indigo btn-sm" onclick="addOne(this,'${s.accent}','${(s.name||'').replace(/'/g,"")}')">＋ Add this Sim</button><button class="btn btn-ghost btn-sm" onclick="this.closest('.sim').style.opacity=.4">Skip</button></div>`;
