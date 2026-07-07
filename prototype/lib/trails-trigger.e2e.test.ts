@@ -3,7 +3,7 @@
 // replay end to end:
 //   baseline   → GREEN + replay (≥1 segment)
 //   drift      → AMBER + a fromSelector→toSelector heal-diff in a run_step's evidence
-//   regression → RED + a grounded 'regression' finding (mock vision resolver injected via deps.walk)
+//   regression → RED + a grounded 'regression' finding via production Tier-2 vision wiring
 // Pointing baseUrl at the bundled public/ dir makes seedDemoTrails build
 // `${baseUrl}/trails-demo/<variant>/landing.html` resolve to the real served copies — no network.
 import { test, expect, beforeAll } from "bun:test"
@@ -16,10 +16,8 @@ beforeAll(async () => { const db = reconnectDb("file:" + file); await applySchem
 const T = await import("./trails")
 const { seedDemoTrails, DEMO_TRAIL_NAMES } = await import("./trails-demo-seed")
 const { runWalkNow } = await import("./trails-trigger")
-const { walkTrail } = await import("./trails-runner")
-const { CHROMIUM_PROD_ARGS, isWalkInFlight } = await import("./trails-browser")
+const { isWalkInFlight } = await import("./trails-browser")
 const R = await import("./trails-replay")
-import type { VisionResolver } from "./trails-vision"
 
 // baseUrl = the bundled public/ dir → ${baseUrl}/trails-demo/journey/landing.html resolves to the
 // served fixture copies committed in Task 4.
@@ -60,26 +58,42 @@ test("drift demo trail → AMBER with a fromSelector→toSelector heal-diff in e
   expect((healed!.evidence as any).toSelector).toBeTruthy()
 }, 60000)
 
-test("regression demo trail (mock vision 'removed') → RED + a grounded regression finding", async () => {
-  // The regression demo is the ONE Trail flagged to allow vision: inject a mock resolver via a custom
-  // deps.walk that calls walkTrail with vision, adopting the trigger's runId.
-  const visionRemoved: VisionResolver = async () => ({
-    found: false, selector: null, confidence: 0.95, classification: "removed",
-    rationale: "there is no Checkout/pay affordance on the cart page anymore",
-  })
+test("regression demo trail → production Tier-2 vision runs and records a grounded finding", async () => {
+  const prevKey = process.env.OPENROUTER_API_KEY
+  const prevFlag = process.env.KLAV_AUTOSIM_VISION_SELFHEAL
+  const prevCap = process.env.OPS_DAILY_CAP_USD
+  const realFetch = globalThis.fetch
+  let visionCalls = 0
+  process.env.OPENROUTER_API_KEY = "test-key"
+  delete process.env.KLAV_AUTOSIM_VISION_SELFHEAL
+  process.env.OPS_DAILY_CAP_USD = "50"
+  globalThis.fetch = async () => {
+    visionCalls++
+    return new Response(JSON.stringify({
+      choices: [{ message: { content: JSON.stringify({
+        found: false, selector: null, confidence: 0.95, classification: "removed",
+        rationale: "there is no Checkout/pay affordance on the cart page anymore",
+      }) } }],
+      usage: { prompt_tokens: 100, completion_tokens: 20, cost: 0.001 },
+    }), { status: 200 })
+  }
+
   const trailId = trailIds[DEMO_TRAIL_NAMES.regression]
-  const { runId } = await runWalkNow(PROJ, trailId, {
-    walk: async (projectId, tId, rId) => {
-      const trail = await T.getTrail(projectId, tId)
-      const s = await walkTrail(projectId, tId, {
-        fixtureUrl: trail!.baseUrl, replay: true, launchArgs: CHROMIUM_PROD_ARGS, vision: visionRemoved, runId: rId,
-      })
-      return { verdict: s.verdict, llmCalls: s.llmCalls }
-    },
-  })
-  const walk = await waitDone(runId)
-  expect(walk.status).toBe("red")
-  const findings = (await T.listFindings(PROJ)).filter(f => f.runId === runId && f.kind === "regression")
-  expect(findings.length).toBeGreaterThanOrEqual(1)
-  expect(findings[0].groundQuote).toBeTruthy()
+  try {
+    const { runId } = await runWalkNow(PROJ, trailId)
+    const walk = await waitDone(runId)
+    expect(walk.status).toBe("red")
+    expect(visionCalls).toBe(1)
+    const findings = (await T.listFindings(PROJ)).filter(f => f.runId === runId && f.kind === "regression")
+    expect(findings.length).toBeGreaterThanOrEqual(1)
+    expect(findings[0].groundQuote).toBeTruthy()
+  } finally {
+    globalThis.fetch = realFetch
+    if (prevKey === undefined) delete process.env.OPENROUTER_API_KEY
+    else process.env.OPENROUTER_API_KEY = prevKey
+    if (prevFlag === undefined) delete process.env.KLAV_AUTOSIM_VISION_SELFHEAL
+    else process.env.KLAV_AUTOSIM_VISION_SELFHEAL = prevFlag
+    if (prevCap === undefined) delete process.env.OPS_DAILY_CAP_USD
+    else process.env.OPS_DAILY_CAP_USD = prevCap
+  }
 }, 60000)
