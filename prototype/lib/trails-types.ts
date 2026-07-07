@@ -2,7 +2,7 @@
 
 export type TrailStatus = "draft" | "active" | "paused" | "archived"
 export type AuthorKind = "llm" | "human" | "mixed"
-export type StepAction = "navigate" | "click" | "type" | "select" | "assert" | "wait"
+export type StepAction = "navigate" | "click" | "type" | "select" | "assert" | "wait" | "hover" | "keyPress" | "clearField"
 export type Tier = "cache" | "candidate" | "vision" | "none"
 export type Verdict = "green" | "amber" | "red" | "skip"
 export type FailureClass =
