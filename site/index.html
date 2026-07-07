@@ -867,7 +867,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     <h2>Ship like your best customer is <em>looking over your shoulder.</em></h2>
     <p class="lede" style="margin:18px auto 0; max-width:40ch; text-align:center">Because, finally, they are.</p>
     <div class="final-cta">
-      <a class="btn btn-indigo" href="/onboarding">Get started →</a>
+      <a id="cta-primary-cta" class="btn btn-indigo" href="/onboarding">Get started →</a>
       <a class="btn btn-ghost" href="https://chromewebstore.google.com/detail/olahjdcgbdjajbfmgnakjlehgjdmaene" target="_blank" rel="noopener">Add to Chrome</a>
     </div>
   </div>
@@ -929,7 +929,7 @@ const NOTES = [
   { sel: '#sims .persona', who: 'SC', mood: 'neutral', text: "These quote cards earn trust fast. Put a company logo on them and I'm sold." },
   { sel: '#snap .snap-menu', who: 'JM', mood: 'love', text: "Showing the real right-click menu is clever — I know exactly what I'm installing before I click." },
   { sel: '.trust', who: 'SC', mood: 'love', text: "THIS is the section that closes me. The verbatim-quote answer kills my 'is this fake?' worry." },
-  { sel: '#cta .btn-indigo', who: 'PR', mood: 'frustrated', text: "Two CTAs here — 'Get started' should clearly win over 'Add to Chrome'." },
+  { sel: '#cta-primary-cta', who: 'PR', mood: 'frustrated', text: "Two CTAs here — 'Get started' should clearly win over 'Add to Chrome'." },
 ];
 
 const hl = document.createElement('div'); hl.className = 'klavity-hl'; document.body.appendChild(hl);
