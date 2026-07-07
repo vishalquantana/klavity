@@ -179,6 +179,27 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 .trail .activate-btn{flex-shrink:0;font-family:var(--mono);font-size:10px;letter-spacing:.04em;padding:5px 10px;border-radius:8px;border:1px solid rgba(99,102,241,.4);background:transparent;color:var(--indigo);cursor:pointer;transition:transform var(--mi-dur) var(--mi-ease)}
 .trail .activate-btn:hover:not(:disabled){background:rgba(99,102,241,.1);transform:var(--mi-lift)}
 .trail .activate-btn:active{transform:var(--mi-press)}
+
+/* Draft Review modal */
+#drBg .modal{max-width:660px;max-height:88vh;display:flex;flex-direction:column}
+#drBg .dr-body{overflow-y:auto;flex:1;margin:0 -4px;padding:0 4px}
+#drBg .dr-trail-name{font-family:var(--display);font-size:20px;font-weight:500;margin-bottom:2px}
+#drBg .dr-trail-url{font-family:var(--mono);font-size:11px;color:var(--paper-faint);margin-bottom:18px}
+#drBg .dr-steps{display:flex;flex-direction:column;gap:8px;margin-bottom:20px}
+.dr-step{display:flex;align-items:flex-start;gap:12px;padding:12px 14px;background:var(--ink);border:1px solid var(--line);border-radius:12px}
+.dr-step-n{font-family:var(--mono);font-size:10px;color:var(--paper-faint);background:var(--ink-3);border-radius:6px;padding:2px 7px;flex-shrink:0;margin-top:2px}
+.dr-step-body{flex:1;min-width:0}
+.dr-step-action{display:inline-block;font-family:var(--mono);font-size:9px;letter-spacing:.07em;text-transform:uppercase;padding:2px 7px;border-radius:20px;margin-bottom:5px;flex-shrink:0}
+.dr-step-action.navigate{background:rgba(99,102,241,.12);color:var(--indigo)}
+.dr-step-action.click{background:rgba(15,157,107,.12);color:var(--green)}
+.dr-step-action.type{background:rgba(217,131,36,.14);color:var(--amber)}
+.dr-step-action.select{background:rgba(217,131,36,.14);color:var(--amber)}
+.dr-step-action.assert{background:rgba(219,39,119,.12);color:var(--rose)}
+.dr-step-action.wait{background:var(--ink-3);color:var(--paper-faint)}
+.dr-step-main{font-size:13px;line-height:1.45;word-break:break-word}
+.dr-step-sub{font-size:11.5px;color:var(--paper-faint);margin-top:3px;word-break:break-word}
+.dr-foot{display:flex;gap:10px;align-items:center;padding-top:14px;border-top:1px solid var(--line)}
+.dr-err{font-size:13px;color:var(--rose);margin-top:8px}
 </style>
 <script src="/icons.generated.js"></script>
 </head>
@@ -272,6 +293,26 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
     <label>Test account <select id="ntAcc"><option value="">(none — public pages)</option></select></label>
     <div class="row"><button class="btn btn-indigo" id="ntGo">Create Trail</button><button class="btn btn-ghost" id="ntCancel">Cancel</button></div>
     <div id="ntProgress"></div>
+  </div>
+</div>
+
+<!-- Draft Review modal — shows the authored steps before the user confirms Activate -->
+<div class="modal-bg" id="drBg">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Review Trail before activating">
+    <div class="mhead">
+      <h3>Review Trail</h3>
+      <button class="mclose" id="drClose" aria-label="Close">&times;</button>
+    </div>
+    <div class="dr-body" id="drBody">
+      <div class="dr-trail-name" id="drName"></div>
+      <div class="dr-trail-url" id="drUrl"></div>
+      <div class="dr-steps" id="drSteps"></div>
+    </div>
+    <div class="dr-foot">
+      <button class="btn btn-indigo" id="drActivate">Activate Trail</button>
+      <button class="btn btn-ghost" id="drCancel">Cancel</button>
+      <span class="dr-err hide" id="drErr"></span>
+    </div>
   </div>
 </div>
 
@@ -467,6 +508,111 @@ async function healDiffFor(runId){
   } catch(e){ return null }
 }
 
+// ── Draft Review modal ────────────────────────────────────────────────────────
+var drState = { trailId: null }
+
+function drStepLabel(action){
+  return { navigate:"navigate", click:"click", type:"type", select:"select", assert:"assert", wait:"wait" }[action] || action
+}
+
+function drStepMain(step){
+  var av = step.actionValue || ""
+  var fp = step.target || {}
+  var name = fp.accessibleName || fp.text || fp.role || fp.testId || fp.domPath || ""
+  if (step.action === "navigate") return av || "(no URL)"
+  if (step.action === "assert") return (step.checkpoint && step.checkpoint.description) ? step.checkpoint.description : "(no checkpoint)"
+  if (step.action === "wait") return av ? "Wait " + av + " ms" : "Wait"
+  if (step.action === "type") return av ? "“" + av + "”" : "(no value)"
+  if (step.action === "select") return av ? "Select “" + av + "”" : "(no value)"
+  return name || av || "(target)"
+}
+
+function drStepSub(step){
+  var fp = step.target || {}
+  var name = fp.accessibleName || fp.text || fp.role || fp.testId || ""
+  if (step.action === "navigate") return ""
+  if (step.action === "assert") return ""
+  if (step.action === "wait") return ""
+  if (step.action === "type" || step.action === "select") return name ? "in “" + name + "”" : (fp.domPath ? fp.domPath : "")
+  // click: main is already the name; sub is domPath hint
+  return fp.domPath ? fp.domPath : ""
+}
+
+function renderDrSteps(steps){
+  var el = $("drSteps")
+  if (!steps || !steps.length){
+    el.innerHTML = '<div style="color:var(--paper-faint);font-size:13px;padding:12px 0">No steps authored yet.</div>'
+    return
+  }
+  el.innerHTML = ""
+  steps.forEach(function(s){
+    var action = String(s.action || "")
+    var main = drStepMain(s)
+    var sub = drStepSub(s)
+    var card = document.createElement("div")
+    card.className = "dr-step"
+    card.innerHTML = '<span class="dr-step-n">' + esc(String(s.idx + 1)) + '</span>'
+      + '<div class="dr-step-body">'
+      + '<span class="dr-step-action ' + esc(action) + '">' + esc(drStepLabel(action)) + '</span>'
+      + '<div class="dr-step-main">' + esc(main) + '</div>'
+      + (sub ? '<div class="dr-step-sub">' + esc(sub) + '</div>' : "")
+      + '</div>'
+    el.appendChild(card)
+  })
+}
+
+async function openDraftReview(trailId){
+  drState.trailId = trailId
+  var pid = projParam(); var qs = pid ? "?project=" + encodeURIComponent(pid) : ""
+  $("drName").textContent = "Loading…"
+  $("drUrl").textContent = ""
+  $("drSteps").innerHTML = ""
+  $("drErr").textContent = ""; $("drErr").classList.add("hide")
+  $("drActivate").disabled = false; $("drActivate").textContent = "Activate Trail"
+  $("drBg").classList.add("open")
+  var r
+  try { r = await fetch("/api/trails/" + encodeURIComponent(trailId) + "/steps" + qs) }
+  catch(e){ $("drName").textContent = "Network error"; return }
+  if (!r.ok){ $("drName").textContent = "Couldn't load steps."; return }
+  var d = await r.json()
+  var trail = d.trail || {}
+  $("drName").textContent = trail.name || "Trail"
+  $("drUrl").textContent = trail.baseUrl || ""
+  renderDrSteps(d.steps || [])
+}
+
+function closeDraftReview(){
+  $("drBg").classList.remove("open")
+  drState.trailId = null
+}
+
+$("drClose").onclick = closeDraftReview
+$("drCancel").onclick = closeDraftReview
+$("drBg").onclick = function(e){ if (e.target === $("drBg")) closeDraftReview() }
+
+$("drActivate").onclick = async function(){
+  var trailId = drState.trailId; if (!trailId) return
+  var pid = projParam(); var qs = pid ? "?project=" + encodeURIComponent(pid) : ""
+  $("drActivate").disabled = true; $("drActivate").textContent = "Activating…"
+  $("drErr").textContent = ""; $("drErr").classList.add("hide")
+  try {
+    var ar = await fetch("/api/trails/" + encodeURIComponent(trailId) + "/approve" + qs, { method: "POST" })
+    if (ar.ok){
+      closeDraftReview()
+      await render(await loadData())
+    } else {
+      var body = await ar.json().catch(function(){ return {} })
+      $("drErr").textContent = body.error || "Activation failed."
+      $("drErr").classList.remove("hide")
+      $("drActivate").disabled = false; $("drActivate").textContent = "Activate Trail"
+    }
+  } catch(e){
+    $("drErr").textContent = "Network error."
+    $("drErr").classList.remove("hide")
+    $("drActivate").disabled = false; $("drActivate").textContent = "Activate Trail"
+  }
+}
+
 function renderTrails(d){
   var trails = d.trails || []
   $("trailsCount").textContent = String(trails.length)
@@ -507,13 +653,7 @@ function renderTrails(d){
     btn.onclick = function(){ openReplay(btn.getAttribute("data-replay")) }
   })
   tEl.querySelectorAll("button[data-activate]").forEach(function(btn){
-    btn.onclick = async function(){
-      var pid2 = projParam(); var qs2 = pid2 ? "?project=" + encodeURIComponent(pid2) : ""
-      btn.disabled = true; btn.textContent = "Activating..."
-      var ar = await fetch("/api/trails/" + encodeURIComponent(btn.getAttribute("data-activate")) + "/approve" + qs2, { method: "POST" })
-      if (ar.ok){ await render(await loadData()) }
-      else { btn.disabled = false; btn.textContent = "Activate" }
-    }
+    btn.onclick = function(){ openDraftReview(btn.getAttribute("data-activate")) }
   })
 }
 
