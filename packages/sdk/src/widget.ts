@@ -223,21 +223,21 @@ async function mount() {
 
   const host = document.createElement("div")
   host.id = HOST_ID
-  host.style.cssText = "position:fixed;right:18px;bottom:18px;z-index:2147483646"
+  host.style.cssText = "position:fixed;right:18px;bottom:18px;z-index:2147483646;pointer-events:none"
   document.body.appendChild(host)
   const root = host.attachShadow({ mode: "open" })
   injectSimStyles(root)
   const chrome = document.createElement("div")
-  chrome.style.cssText = "display:flex;flex-direction:column;align-items:flex-end;gap:8px;font-family:system-ui,sans-serif"
+  chrome.style.cssText = "display:flex;flex-direction:column;align-items:flex-end;gap:8px;font-family:system-ui,sans-serif;pointer-events:none"
   root.appendChild(chrome)
   const dock = document.createElement("div")
-  dock.style.cssText = "display:flex;flex-direction:column;align-items:flex-end;gap:8px;font-family:system-ui,sans-serif"
+  dock.style.cssText = "display:flex;flex-direction:column;align-items:flex-end;gap:8px;font-family:system-ui,sans-serif;pointer-events:none"
   chrome.appendChild(dock)
 
   // Report launcher is separate from the SimsLive dock. When the live Sims dock appears,
   // this host lifts itself above it so the two bottom-right controls do not overlap.
   const reportDock = document.createElement("div")
-  reportDock.style.cssText = "display:flex;align-items:flex-end;gap:10px;font-family:system-ui,sans-serif"
+  reportDock.style.cssText = "display:flex;align-items:flex-end;gap:10px;font-family:system-ui,sans-serif;pointer-events:none"
   chrome.appendChild(reportDock)
 
   const setLiveDockActive = (active: boolean) => {
@@ -334,11 +334,11 @@ async function mount() {
   reportBtn.className = "kl-launcher-btn"
   if (launcherMode === 'icon') {
     reportBtn.innerHTML = icon('bug')
-    reportBtn.style.cssText = `position:relative;border:0;border-radius:50%;padding:10px;background:${launcherIconColor};color:#fff;font-weight:600;font-size:13px;cursor:pointer;box-shadow:0 8px 24px rgba(91,91,240,.32);display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px`
+    reportBtn.style.cssText = `position:relative;border:0;border-radius:50%;padding:10px;background:${launcherIconColor};color:#fff;font-weight:600;font-size:13px;cursor:pointer;box-shadow:0 8px 24px rgba(91,91,240,.32);display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;pointer-events:auto`
   } else {
     const label = launcherMode === 'custom' ? launcherText : 'Report a bug'
     reportBtn.innerHTML = `${icon('bug')} ${label}`
-    reportBtn.style.cssText = `position:relative;border:0;border-radius:999px;padding:10px 16px;background:${launcherIconColor};color:#fff;font-weight:600;font-size:13px;cursor:pointer;box-shadow:0 8px 24px rgba(91,91,240,.32);display:inline-flex;align-items:center;gap:7px`
+    reportBtn.style.cssText = `position:relative;border:0;border-radius:999px;padding:10px 16px;background:${launcherIconColor};color:#fff;font-weight:600;font-size:13px;cursor:pointer;box-shadow:0 8px 24px rgba(91,91,240,.32);display:inline-flex;align-items:center;gap:7px;pointer-events:auto`
   }
   if (launcherMode === 'hidden') reportDock.style.display = "none"
   reportBtn.title = "Klavity is active on this page — right-click anywhere or click here to report"
@@ -534,7 +534,7 @@ async function mount() {
     const menu = document.createElement("div")
     menuEl = menu
     menu.className = "klm-menu"
-    menu.style.cssText = "position:fixed;z-index:2147483647;width:200px;max-width:calc(100vw - 16px);border-radius:20px;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;transform-origin:top left;padding:8px;display:flex;flex-direction:column;gap:7px;box-sizing:border-box;" +
+    menu.style.cssText = "position:fixed;z-index:2147483647;width:200px;max-width:calc(100vw - 16px);border-radius:20px;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;transform-origin:top left;padding:8px;display:flex;flex-direction:column;gap:7px;box-sizing:border-box;pointer-events:auto;" +
       "background:radial-gradient(135% 90% at 50% -12%, rgba(139,92,246,.18), rgba(139,92,246,0) 55%), linear-gradient(180deg, rgba(250,247,240,.95), rgba(243,236,225,.96));" +
       "border:1px solid rgba(255,255,255,.55);" +
       "box-shadow:0 24px 60px -12px rgba(76,40,130,.32), 0 8px 22px rgba(99,102,241,.16), 0 1.5px 4px rgba(25,20,15,.10), inset 0 1px 0 rgba(255,255,255,.75);" +
