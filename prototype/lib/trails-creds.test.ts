@@ -33,6 +33,7 @@ const fixtureUrl = (name: string) =>
 
 test("hasCredRef detects placeholders", () => {
   expect(hasCredRef("{{cred:admin:password}}")).toBe(true)
+  expect(hasCredRef("{{cred:admin:otp}}")).toBe(true)
   expect(hasCredRef("plain text")).toBe(false)
 })
 
@@ -41,6 +42,27 @@ test("resolveCredRefs substitutes email and password", async () => {
   expect(await resolveCredRefs(P, "{{cred:admin:email}}")).toBe("vishal@quantana.com.au")
   expect(await resolveCredRefs(P, "{{cred:admin:password}}")).toBe("pw-999")
   expect(await resolveCredRefs(P, "{{cred:admin:password}}+{{cred:admin:password}}")).toBe("pw-999+pw-999")
+})
+
+test("resolveCredRefs :otp returns 666666 when KLAV_TEST_OTP is set", async () => {
+  const saved = process.env.KLAV_TEST_OTP
+  try {
+    process.env.KLAV_TEST_OTP = "1"
+    expect(await resolveCredRefs(P, "{{cred:admin:otp}}")).toBe("666666")
+  } finally {
+    if (saved === undefined) delete process.env.KLAV_TEST_OTP
+    else process.env.KLAV_TEST_OTP = saved
+  }
+})
+
+test("resolveCredRefs :otp throws when KLAV_TEST_OTP is not set", async () => {
+  const saved = process.env.KLAV_TEST_OTP
+  try {
+    delete process.env.KLAV_TEST_OTP
+    await expect(resolveCredRefs(P, "{{cred:admin:otp}}")).rejects.toThrow("KLAV_TEST_OTP")
+  } finally {
+    if (saved !== undefined) process.env.KLAV_TEST_OTP = saved
+  }
 })
 
 test("unknown account throws; other project cannot resolve", async () => {

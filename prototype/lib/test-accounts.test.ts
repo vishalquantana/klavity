@@ -8,7 +8,7 @@ process.env.TURSO_DATABASE_URL = "file:" + file
 delete process.env.TURSO_AUTH_TOKEN
 
 import { reconnectDb, applySchema } from "./db"
-import { createTestAccount, listTestAccounts, getTestAccountByName, getTestAccountSecret, deleteTestAccount } from "./test-accounts"
+import { createTestAccount, listTestAccounts, getTestAccountByName, getTestAccountSecret, deleteTestAccount, isTestAccountEmail } from "./test-accounts"
 
 beforeAll(async () => { await applySchema(reconnectDb("file:" + file)) })
 
@@ -40,6 +40,14 @@ test("duplicate name in a project rejects; same name in another project ok", asy
 test("project scoping: other project cannot read the secret", async () => {
   expect(await getTestAccountSecret("proj_stranger", "admin")).toBeNull()
   expect(await getTestAccountByName("proj_stranger", "admin")).toBeNull()
+})
+
+test("isTestAccountEmail matches any project's login_email", async () => {
+  const probeProj = "proj_tacc_probe"
+  await createTestAccount(probeProj, { name: "probe", loginEmail: "tacc-probe@example.com", password: "pw" })
+  expect(await isTestAccountEmail("tacc-probe@example.com")).toBe(true)
+  expect(await isTestAccountEmail("TACC-Probe@example.com")).toBe(true)
+  expect(await isTestAccountEmail("nobody@example.com")).toBe(false)
 })
 
 test("delete is project-scoped and idempotent-false on miss", async () => {
