@@ -1,5 +1,8 @@
-import { test, expect } from "bun:test"
-import { withWalkSlot, isWalkInFlight, WalkBusyError, CHROMIUM_PROD_ARGS, cancelCurrentWalk, setCurrentWalkRunId, getCurrentWalkAbortSignal, currentWalkRunId } from "./trails-browser"
+import { test, expect, beforeEach } from "bun:test"
+import { withWalkSlot, isWalkInFlight, WalkBusyError, CHROMIUM_PROD_ARGS, cancelCurrentWalk, setCurrentWalkRunId, getCurrentWalkAbortSignal, currentWalkRunId, _resetWalkPoolForTest } from "./trails-browser"
+
+// Isolate pool state between tests (default: 3 concurrent, queue 10).
+beforeEach(() => { _resetWalkPoolForTest(3, 10) })
 
 test("withWalkSlot runs the fn and clears the slot after", async () => {
   expect(isWalkInFlight()).toBe(false)
@@ -8,7 +11,66 @@ test("withWalkSlot runs the fn and clears the slot after", async () => {
   expect(isWalkInFlight()).toBe(false)
 })
 
-test("a second concurrent withWalkSlot throws WalkBusyError (max 1)", async () => {
+// ── Pool concurrency tests ─────────────────────────────────────────────────────
+
+test("concurrent walks up to the pool size all run simultaneously", async () => {
+  _resetWalkPoolForTest(3, 0)
+  let active = 0; let maxSeen = 0
+  const gates: Array<() => void> = []
+  const slots = [0, 1, 2].map(() => withWalkSlot(async () => {
+    active++; maxSeen = Math.max(maxSeen, active)
+    await new Promise<void>((r) => { gates.push(r) })
+    active--
+  }))
+  // Yield twice so all three acquire their slots
+  await Promise.resolve(); await Promise.resolve()
+  expect(active).toBe(3)
+  expect(maxSeen).toBe(3)
+  gates.forEach((r) => r())
+  await Promise.all(slots)
+  expect(isWalkInFlight()).toBe(false)
+})
+
+test("a walk beyond pool size queues and runs when a slot frees", async () => {
+  _resetWalkPoolForTest(2, 5)
+  let rel1!: () => void, rel2!: () => void
+  const g1 = new Promise<void>((r) => { rel1 = r })
+  const g2 = new Promise<void>((r) => { rel2 = r })
+
+  const s1 = withWalkSlot(async () => { await g1; return "s1" })
+  const s2 = withWalkSlot(async () => { await g2; return "s2" })
+  await Promise.resolve(); await Promise.resolve()
+  expect(isWalkInFlight()).toBe(true)
+
+  // 3rd call queues (does NOT throw — pool=2, maxQueue=5)
+  const s3 = withWalkSlot(async () => "s3")
+  // Release slot 1 → queued s3 should pick it up
+  rel1()
+  expect(await s1).toBe("s1")
+  expect(await s3).toBe("s3")
+  rel2()
+  expect(await s2).toBe("s2")
+  expect(isWalkInFlight()).toBe(false)
+})
+
+test("WalkBusyError when both pool and queue are exhausted", async () => {
+  _resetWalkPoolForTest(1, 1)
+  let release!: () => void
+  const gate = new Promise<void>((r) => { release = r })
+  const first = withWalkSlot(async () => { await gate; return "a" })
+  await Promise.resolve()
+  // 2nd: queues (pool=1 full, queue has 1 slot)
+  const second = withWalkSlot(async () => "b")
+  // 3rd: pool full + queue full → WalkBusyError
+  await expect(withWalkSlot(async () => "c")).rejects.toBeInstanceOf(WalkBusyError)
+  release()
+  expect(await first).toBe("a")
+  expect(await second).toBe("b")
+  expect(isWalkInFlight()).toBe(false)
+})
+
+test("a second concurrent withWalkSlot throws WalkBusyError when maxQueue=0", async () => {
+  _resetWalkPoolForTest(1, 0)
   let release: () => void = () => {}
   const gate = new Promise<void>((res) => { release = res })
   const first = withWalkSlot(async () => { await gate; return "a" })
@@ -58,17 +120,34 @@ test("cancelCurrentWalk fires the signal for the matching runId", async () => {
     await gate
   })
   await Promise.resolve() // let slot acquire
-  expect(currentWalkRunId()).toBe("walk_cancel_me")
+  // currentWalkRunId() uses AsyncLocalStorage — returns null outside the slot's async context
+  expect(currentWalkRunId()).toBe(null)
+  expect(isWalkInFlight()).toBe(true)
   expect(capturedSignal?.aborted).toBe(false)
   const result = cancelCurrentWalk("walk_cancel_me")
   expect(result).toBe(true)
   expect(capturedSignal?.aborted).toBe(true)
   release()
   await slot
-  // Slot cleared after completion
   expect(isWalkInFlight()).toBe(false)
-  expect(currentWalkRunId()).toBe(null)
   expect(getCurrentWalkAbortSignal()).toBe(null)
+})
+
+test("cancelCurrentWalk can target a specific slot in a concurrent pool", async () => {
+  _resetWalkPoolForTest(2, 0)
+  let rel1!: () => void, rel2!: () => void
+  let sig1: AbortSignal | null = null, sig2: AbortSignal | null = null
+  const g1 = new Promise<void>((r) => { rel1 = r })
+  const g2 = new Promise<void>((r) => { rel2 = r })
+  const s1 = withWalkSlot(async () => { setCurrentWalkRunId("run_1"); sig1 = getCurrentWalkAbortSignal(); await g1 })
+  const s2 = withWalkSlot(async () => { setCurrentWalkRunId("run_2"); sig2 = getCurrentWalkAbortSignal(); await g2 })
+  await Promise.resolve(); await Promise.resolve()
+  expect(cancelCurrentWalk("run_1")).toBe(true)
+  expect(sig1?.aborted).toBe(true)
+  expect(sig2?.aborted).toBe(false)
+  rel1(); rel2()
+  await Promise.all([s1, s2])
+  expect(isWalkInFlight()).toBe(false)
 })
 
 test("getCurrentWalkAbortSignal returns null outside a slot and non-null inside", async () => {
@@ -77,4 +156,12 @@ test("getCurrentWalkAbortSignal returns null outside a slot and non-null inside"
   await withWalkSlot(async () => { inner = getCurrentWalkAbortSignal() })
   expect(inner).not.toBe(null)
   expect(getCurrentWalkAbortSignal()).toBe(null)
+})
+
+test("currentWalkRunId is scoped to the slot's async context", async () => {
+  expect(currentWalkRunId()).toBe(null)
+  let seenInside: string | null = null
+  await withWalkSlot(async () => { setCurrentWalkRunId("walk_xyz"); seenInside = currentWalkRunId() })
+  expect(seenInside).toBe("walk_xyz")
+  expect(currentWalkRunId()).toBe(null) // AsyncLocalStorage: null outside the slot context
 })
