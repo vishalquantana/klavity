@@ -232,6 +232,29 @@ export async function getAuthorSession(projectId: string, id: string): Promise<A
   }
 }
 
+export async function getActiveAuthorSession(projectId: string): Promise<AuthorSession | null> {
+  const r = await db!.execute({
+    sql: `SELECT * FROM author_sessions WHERE project_id=? AND status='running' ORDER BY created_at DESC LIMIT 1`,
+    args: [projectId],
+  })
+  if (!r.rows.length) return null
+  const row: any = r.rows[0]
+  let steps: AuthorStepLog[] = []
+  try { steps = JSON.parse(String(row.steps_json || "[]")) } catch {}
+  return {
+    id: String(row.id), projectId: String(row.project_id), name: String(row.name), objective: String(row.objective),
+    baseUrl: String(row.base_url), testAccount: row.test_account ? String(row.test_account) : null,
+    status: String(row.status) as AuthorSession["status"], steps,
+    stallReason: row.stall_reason ? String(row.stall_reason) : null,
+    trailId: row.trail_id ? String(row.trail_id) : null,
+    verificationRunId: row.verification_run_id ? String(row.verification_run_id) : null,
+    verificationVerdict: row.verification_verdict ? String(row.verification_verdict) : null,
+    llmCalls: Number(row.llm_calls), costUsd: Number(row.cost_usd),
+    createdBy: row.created_by ? String(row.created_by) : null,
+    createdAt: Number(row.created_at), updatedAt: Number(row.updated_at),
+  }
+}
+
 /**
  * Fire-and-poll trigger (Plan-G pattern). Holds the single walk slot for the WHOLE attempt
  * (authoring drive + verification walk) — throws WalkBusyError synchronously if slot busy.
