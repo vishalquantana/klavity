@@ -485,6 +485,8 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
       // (don't run this or any further step) and roll the verdict to RED — the page-too-slow / runaway
       // case can't pin the shared 1GB box. The browser is still closed in the `finally` below.
       if (Date.now() > deadline) { walkVerdict = "red"; deadlineHit = true; break }
+      // KLA-61: a step that would start with under ~1s remaining is skipped with deadline_exceeded
+      if (deadline - Date.now() < 1000) { walkVerdict = "red"; deadlineHit = true; break }
       // KLA-100: cancel signal check — stop at the next step boundary after the abort fires.
       if (opts.signal?.aborted) { walkVerdict = "red"; cancelledBySignal = true; break }
 
@@ -496,7 +498,7 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
 
       const evBefore = evCol.offsets()
       const stepStart = Date.now()
-      const { tier, verdict, healed, llmCalls: stepLlm } = await runOneStep(projectId, runId, trail.id, page, step, opts, opTimeout, { col: evCol, before: evBefore, start: stepStart })
+      const { tier, verdict, healed, llmCalls: stepLlm } = await runOneStep(projectId, runId, trail.id, page, step, opts, opTimeout, deadline, { col: evCol, before: evBefore, start: stepStart })
       stepSummaries.push({ stepId: step.id, idx: step.idx, tier, verdict, healed })
       if (healed) healedCount++
       llmCalls += stepLlm
@@ -583,8 +585,13 @@ async function runOneStep(
   step: TrailStep,
   opts: WalkOptions,
   opTimeout: number,
+  deadline: number,
   evCtx: EvCtx = null,
 ): Promise<OneStepResult> {
+  // KLA-61: dynamically adjust page timeouts based on remaining walk deadline
+  const currentTimeout = Math.max(0, Math.min(opTimeout, deadline - Date.now()))
+  page.setDefaultNavigationTimeout(currentTimeout)
+  page.setDefaultTimeout(currentTimeout)
   // KLA-74: wrapper that prepends durationMs + per-step browser events to every addRunStep evidence blob.
   // Built once here and passed down to runVisionTier2 / fileAmberHeal so all paths are covered.
   const addStepRun = (input: Parameters<typeof addRunStep>[1]) => {
@@ -613,7 +620,7 @@ async function runOneStep(
   if (step.action === "navigate") {
     // In Layer C the whole walk is scoped to fixtureUrl; re-navigate to it (origin already loaded).
     // Bound the nav at opTimeout (Plan G) so a live-network navigate step can't hang on the 30s default.
-    await page.goto(step.actionValue && /^https?:|^file:/.test(step.actionValue) ? step.actionValue : fixtureUrl, { timeout: opTimeout })
+    await page.goto(step.actionValue && /^https?:|^file:/.test(step.actionValue) ? step.actionValue : fixtureUrl, { timeout: currentTimeout })
     await addStepRun({
       runId, trailId, stepId: step.id, idx: step.idx, tier: "none", verdict: "green", confidence: 1, healed: false,
       evidence: { action: "navigate", recordedStep: recordedStep(null, null), resultUrl: page.url() },
@@ -627,8 +634,11 @@ async function runOneStep(
     // started yet (observed live 2026-07-04: replay navigated cookie-less mid-login → bounced to
     // /login and the walk cascaded RED). Capped so a bad value can't blow the walk deadline.
     const minMs = Math.min(Math.max(Number(step.actionValue) || 0, 0), 15_000)
-    if (minMs > 0) await page.waitForTimeout(minMs)
-    await page.waitForLoadState("networkidle").catch(() => {})
+    const remaining = Math.max(0, deadline - Date.now())
+    const waitMs = Math.min(minMs, remaining)
+    if (waitMs > 0) await page.waitForTimeout(waitMs)
+    const postWaitRemaining = Math.max(0, deadline - Date.now())
+    await page.waitForLoadState("networkidle", { timeout: Math.min(opTimeout, postWaitRemaining) }).catch(() => {})
     await addStepRun({
       runId, trailId, stepId: step.id, idx: step.idx, tier: "none", verdict: "green", confidence: 1, healed: false,
       evidence: { action: "wait", recordedStep: recordedStep(null, null) },
@@ -649,7 +659,9 @@ async function runOneStep(
       const re = new RegExp(step.checkpoint.regex!)
       for (let i = 0; i < 50; i++) { // poll up to ~5s for navigations to settle
         if (re.test(page.url())) break
-        await page.waitForTimeout(100)
+        const loopTimeout = Math.max(0, Math.min(100, deadline - Date.now()))
+        if (loopTimeout === 0) throw new Error("deadline exceeded")
+        await page.waitForTimeout(loopTimeout)
       }
       if (!re.test(page.url())) throw new Error(`checkpoint urlMatches failed: "${page.url()}" did not match /${step.checkpoint.regex}/`)
     } catch {
@@ -731,7 +743,7 @@ async function runOneStep(
       // whose target could not be deterministically resolved is a checkpoint failure, never a heal
       // and never an amber_heal, regardless of what vision would classify.
       if (opts.vision) {
-        return await runVisionTier2(projectId, runId, trailId, page, step, opts, fp, cachedSelector, isAssert, opTimeout, addStepRun)
+        return await runVisionTier2(projectId, runId, trailId, page, step, opts, fp, cachedSelector, isAssert, opTimeout, deadline, addStepRun)
       }
       // No resolver → unchanged Layer C behavior: RED + needs-vision handoff marker (never green).
       const verdict: Verdict = "red"
@@ -757,61 +769,61 @@ async function runOneStep(
 
   // Perform the action (Playwright auto-waits for actionability — the "test DNA" we deliberately keep).
   // Bounded timeout: actionability that never clears is a real break, not a reason to hang.
-  const ACTION_TIMEOUT = 5000
+  const actionTimeout = Math.max(0, Math.min(5000, deadline - Date.now()))
   try {
     switch (step.action) {
       case "type": {
         const raw = step.actionValue ?? ""
         const val = hasCredRef(raw) ? await (opts.credResolver ?? resolveCredRefs)(projectId, raw) : raw
-        await resolved.locator.fill(val, { timeout: ACTION_TIMEOUT })
+        await resolved.locator.fill(val, { timeout: actionTimeout })
         break
       }
       case "click":
-        await clickWithTransitionFallback(resolved.locator, ACTION_TIMEOUT)
+        await clickWithTransitionFallback(resolved.locator, actionTimeout)
         break
       case "select":
-        await resolved.locator.selectOption(step.actionValue ?? "", { timeout: ACTION_TIMEOUT })
+        await resolved.locator.selectOption(step.actionValue ?? "", { timeout: actionTimeout })
         break
       case "hover":
-        await resolved.locator.hover({ timeout: ACTION_TIMEOUT })
+        await resolved.locator.hover({ timeout: actionTimeout })
         break
       case "keyPress":
-        await resolved.locator.press(step.actionValue ?? "Enter", { timeout: ACTION_TIMEOUT })
+        await resolved.locator.press(step.actionValue ?? "Enter", { timeout: actionTimeout })
         break
       case "clearField":
-        await resolved.locator.clear({ timeout: ACTION_TIMEOUT })
+        await resolved.locator.clear({ timeout: actionTimeout })
         break
       case "assert": {
         // Hard checkpoint: the element must be visible. Never overridden by healing.
         const kind = (step.checkpoint && step.checkpoint.kind) || "visible"
         switch (kind) {
           case "textEquals": {
-            await resolved.locator.waitFor({ state: "visible", timeout: 5000 })
+            await resolved.locator.waitFor({ state: "visible", timeout: actionTimeout })
             const actual = (await resolved.locator.allInnerTexts()).join(" ").trim()
             if (actual !== step.checkpoint!.value) throw new Error(`checkpoint textEquals failed: expected "${step.checkpoint.value}" got "${actual}"`)
             break
           }
           case "textContains": {
-            await resolved.locator.waitFor({ state: "visible", timeout: 5000 })
+            await resolved.locator.waitFor({ state: "visible", timeout: actionTimeout })
             const actual = (await resolved.locator.allInnerTexts()).join(" ").trim()
             if (!actual.includes(step.checkpoint!.value)) throw new Error(`checkpoint textContains failed: "${step.checkpoint.value}" not in "${actual}"`)
             break
           }
           case "urlMatches": {
             // URL assertions use the page url, not a locator. Poll briefly so transient navigations settle.
-            await resolved.locator.waitFor({ state: "visible", timeout: 5000 }).catch(() => {})
+            await resolved.locator.waitFor({ state: "visible", timeout: actionTimeout }).catch(() => {})
             const re = new RegExp(step.checkpoint!.regex!)
             if (!re.test(page.url())) throw new Error(`checkpoint urlMatches failed: "${page.url()}" did not match ${step.checkpoint.regex}`)
             break
           }
           case "elementCount": {
-            await resolved.locator.waitFor({ state: "visible", timeout: 5000 }).catch(() => {})
+            await resolved.locator.waitFor({ state: "visible", timeout: actionTimeout }).catch(() => {})
             const n = await resolved.locator.count()
             if (n !== step.checkpoint!.count) throw new Error(`checkpoint elementCount failed: expected ${step.checkpoint.count} got ${n}`)
             break
           }
           default: // "visible" or unknown — fall through to the visible check.
-            await resolved.locator.waitFor({ state: "visible", timeout: 5000 })
+            await resolved.locator.waitFor({ state: "visible", timeout: actionTimeout })
         }
         break
       }
@@ -905,6 +917,7 @@ async function runVisionTier2(
   cachedSelector: string | null,
   isAssert: boolean,
   opTimeout: number,
+  deadline: number,
   addStepRun: StepRunFn = (i) => addRunStep(projectId, i),
 ): Promise<OneStepResult> {
   const gate = opts.confidenceGate ?? 0.9
@@ -943,7 +956,8 @@ async function runVisionTier2(
   let result: VisionResult
   let decision: VisionDecision
   try {
-    const shot = (await page.screenshot({ timeout: opTimeout })).toString("base64")
+    const currentTimeout = Math.max(0, Math.min(opTimeout, deadline - Date.now()))
+    const shot = (await page.screenshot({ timeout: currentTimeout })).toString("base64")
     // page.content() takes no per-call timeout in this Playwright version; it is already governed by
     // the page-level setDefaultTimeout(opTimeout) set in walkTrail. screenshot IS bounded explicitly.
     dom = await page.content()
