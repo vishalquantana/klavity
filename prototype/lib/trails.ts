@@ -261,6 +261,44 @@ export async function getWalk(projectId: string, runId: string): Promise<Walk | 
   return r.rows.length ? rowToWalk(r.rows[0]) : null
 }
 
+/**
+ * KLA-104: Pause a running walk, storing an opaque key the caller must echo when resuming.
+ * Called by resolvePauseSecret inside the runner; returns the key so the runner can poll on it.
+ */
+export async function pauseWalk(
+  projectId: string, runId: string, secretKey: string,
+): Promise<void> {
+  await db!.execute({
+    sql: `UPDATE trail_runs SET status='paused', paused_secret_key=? WHERE project_id=? AND id=?`,
+    args: [secretKey, projectId, runId],
+  })
+}
+
+/**
+ * KLA-104: Resume a paused walk. The caller must supply the exact secretKey registered during
+ * pause AND the secret value. On success sets status back to 'running', stores the secret value
+ * in paused_secret_key so the polling runner can read it, then clears it.
+ * Returns false when runId not found, wrong key, or walk not currently paused.
+ */
+export async function resumeWalk(
+  projectId: string, runId: string, secretKey: string, secretValue: string,
+): Promise<boolean> {
+  const r = await db!.execute({
+    sql: `SELECT status, paused_secret_key FROM trail_runs WHERE project_id=? AND id=?`,
+    args: [projectId, runId],
+  })
+  if (!r.rows.length) return false
+  const row = r.rows[0] as any
+  if (row.status !== "paused" || row.paused_secret_key !== secretKey) return false
+  // Store the resolved secret in paused_secret_key so the polling runner sees it,
+  // switch status back to running.  Runner clears the column after reading.
+  await db!.execute({
+    sql: `UPDATE trail_runs SET status='running', paused_secret_key=? WHERE project_id=? AND id=?`,
+    args: [secretValue, projectId, runId],
+  })
+  return true
+}
+
 export async function listRunSteps(projectId: string, runId: string): Promise<RunStep[]> {
   const r = await db!.execute({ sql: `SELECT * FROM run_steps WHERE project_id=? AND run_id=? ORDER BY idx ASC`, args: [projectId, runId] })
   return r.rows.map(rowToRunStep)

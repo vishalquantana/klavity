@@ -36,7 +36,7 @@ import { trailsDashboardData } from "./lib/trails-dashboard"
 import { fileFindingById, dismissFinding, realFiler } from "./lib/trails-findings-gate"
 import { getReplay, runsWithReplay } from "./lib/trails-replay"
 import { saveFeedbackReplay, getFeedbackReplay, feedbackIdsWithReplay, pruneOldFeedbackReplays } from "./lib/feedback-replay"
-import { listRunSteps, listTrails, getTrail, getWalk, setTrailStatus, listTrailSteps, insertAssertStep, deleteTrailStep, updateTrailStep, updateTrail, countRunSteps, countTrailSteps, listTrailRunHistory, type TrailPatch } from "./lib/trails"
+import { listRunSteps, listTrails, getTrail, getWalk, setTrailStatus, listTrailSteps, insertAssertStep, deleteTrailStep, updateTrailStep, updateTrail, countRunSteps, countTrailSteps, listTrailRunHistory, type TrailPatch, resumeWalk } from "./lib/trails"
 import { runWalkNow } from "./lib/trails-trigger"
 import { startTrailScheduler, isValidCron } from "./lib/trails-scheduler"
 import { startCrashReaper } from "./lib/trails-reaper"
@@ -3298,6 +3298,24 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (walk.status !== "running") return json({ error: "Walk is not running" }, 409)
         const signalled = cancelCurrentWalk(runId)
         return json({ ok: signalled, queued: !signalled })
+      }
+
+      // POST /api/trails/walks/:runId/resume — KLA-104: provide a secret to a paused Walk.
+      // Body: { secretKey: string, secretValue: string }. secretKey must match the challenge key
+      // stored when the walk paused. Returns { ok: true } on success, 409 when not paused / wrong key.
+      const resumeMatch = path.match(/^\/api\/trails\/walks\/([^/]+)\/resume$/)
+      if (req.method === "POST" && resumeMatch) {
+        const runId = resumeMatch[1]
+        const walk = await getWalk(projectId, runId)
+        if (!walk) return json({ error: "Not found" }, 404)
+        if (walk.status !== "paused") return json({ error: "Walk is not paused" }, 409)
+        let body: any = {}
+        try { body = await req.json() } catch { /* empty body = wrong key → 409 below */ }
+        const { secretKey, secretValue } = body
+        if (!secretKey || !secretValue) return json({ error: "secretKey and secretValue are required" }, 400)
+        const ok = await resumeWalk(projectId, runId, secretKey, secretValue)
+        if (!ok) return json({ error: "Invalid secretKey or walk no longer paused" }, 409)
+        return json({ ok: true })
       }
 
       // POST /api/trails/walks/:runId/share — mint an expiring share link for a walk.

@@ -16,9 +16,9 @@ import { expandModuleSteps } from "./trails-modules"
 import {
   getTrail, listTrailSteps, getCacheForStep, upsertLocatorCache,
   startWalk, addRunStep, mergeRunStepEvidence, finishWalk, recordFinding,
-  resolveEnvironmentUrl,
+  resolveEnvironmentUrl, pauseWalk, resumeWalk, getWalk,
 } from "./trails"
-import { touchWalkHeartbeat } from "./db"
+import { touchWalkHeartbeat, db } from "./db"
 import { stepCacheKey } from "./trails-crystallize"
 import { decideFromVision, type VisionResolver, type VisionInput, type VisionResult, type VisionDecision } from "./trails-vision"
 import { setupReplayCapture, saveReplay, type ReplayCapture } from "./trails-replay"
@@ -135,6 +135,21 @@ export interface WalkOptions {
    * recorded on the trail_runs row. Absent → use fixtureUrl unchanged (backward-compatible).
    */
   environmentName?: string | null
+
+  // ── KLA-104: pause/resume for secret (2FA / OTP / OAuth tokens) ──────────────────
+  /**
+   * Map of key → secret value PRE-LOADED before the walk starts (e.g. from test-account store or
+   * caller injection). When a `pauseForSecret` step's actionValue matches a key, the secret is
+   * used immediately without pausing. Keys can be `{{cred:name:otp}}` placeholders or bare labels.
+   */
+  injectedSecrets?: Record<string, string>
+  /**
+   * Async callback invoked when a `pauseForSecret` step cannot find the secret in `injectedSecrets`.
+   * The runner passes `{ stepIdx, actionValue }` and waits for the returned Promise to resolve with
+   * the secret string. This is the low-latency path (e.g. in-process test helpers); the
+   * DB-poll/HTTP path is used when this is absent and the walk must pause for a human response.
+   */
+  secretResolver?: (ctx: { stepIdx: number; actionValue: string | null }) => Promise<string>
 }
 
 export interface WalkStepSummary {
@@ -731,7 +746,77 @@ interface OneStepResult { tier: Tier; verdict: Verdict; healed: boolean; llmCall
 type EvCtx = { col: WalkEvidenceCollector; before: EvidenceOffsets; start: number } | null
 type StepRunFn = (input: Parameters<typeof addRunStep>[1]) => ReturnType<typeof addRunStep>
 
+// ── KLA-104: pause/resume-for-secret ─────────────────────────────────────────────────────────────
+/**
+ * Resolves the secret for a `pauseForSecret` step. Resolution priority:
+ *   1. opts.injectedSecrets[actionValue] — instant (test injection or pre-loaded test account value)
+ *   2. opts.secretResolver({ stepIdx, actionValue }) — async callback (in-process test helper)
+ *   3. DB pause + poll loop — walk status set to "paused"; HTTP caller calls POST /resume
+ *
+ * Returns the resolved secret string, or null on timeout/error (step goes RED).
+ */
+const PAUSE_POLL_MS = 500
+const PAUSE_MAX_WAIT_MS = 10 * 60 * 1000  // 10 min hard cap; deadline also bounds this
+
+async function resolvePauseSecret(
+  projectId: string,
+  runId: string,
+  step: TrailStep,
+  opts: WalkOptions,
+  deadline: number,
+): Promise<string | null> {
+  const key = step.actionValue ?? ""
+
+  // Path 1: injected secret (fastest — no I/O, no pause)
+  if (opts.injectedSecrets && key in opts.injectedSecrets) {
+    return opts.injectedSecrets[key]
+  }
+
+  // Path 2: async callback resolver (in-process; e.g. test helper or server-side lookup)
+  if (opts.secretResolver) {
+    try {
+      return await opts.secretResolver({ stepIdx: step.idx, actionValue: step.actionValue })
+    } catch (e) {
+      console.warn("[KLA-104] secretResolver threw:", e)
+      return null
+    }
+  }
+
+  // Path 3: DB-backed pause + HTTP poll
+  // Generate an opaque challenge key the resume endpoint must echo back.
+  const challengeKey = `pfs_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+  await pauseWalk(projectId, runId, challengeKey)
+
+  const giveUpAt = Math.min(Date.now() + PAUSE_MAX_WAIT_MS, deadline)
+  while (Date.now() < giveUpAt) {
+    await new Promise<void>((r) => setTimeout(r, PAUSE_POLL_MS))
+    const row = await getWalk(projectId, runId)
+    if (!row) break  // walk was deleted
+    if (row.status === "running") {
+      // resumeWalk wrote the secret into paused_secret_key and flipped status=running.
+      // Read the raw column value via a direct DB query so we get it before the runner
+      // re-polls (getWalk doesn't expose paused_secret_key to keep Walk interface clean).
+      const r = await db!.execute({
+        sql: "SELECT paused_secret_key FROM trail_runs WHERE project_id=? AND id=?",
+        args: [projectId, runId],
+      })
+      const secretValue = r.rows.length ? String((r.rows[0] as any).paused_secret_key ?? "") : ""
+      // Clear the column now that we have the value.
+      await db!.execute({
+        sql: "UPDATE trail_runs SET paused_secret_key=NULL WHERE project_id=? AND id=?",
+        args: [projectId, runId],
+      })
+      return secretValue || null
+    }
+    // status=paused → keep polling; any other status (red/green) → walk was killed
+    if (row.status !== "paused") break
+  }
+  console.warn("[KLA-104] resolvePauseSecret timed out or walk terminated for runId:", runId)
+  return null
+}
+
 // Execute a single step. Records exactly one run_step. Never silent-greens a break.
+
 async function runOneStep(
   projectId: string,
   runId: string,
@@ -807,8 +892,28 @@ async function runOneStep(
     })
     return { tier: "none", verdict: "green", healed: false, llmCalls: 0 }
   }
+  if (step.action === "pauseForSecret") {
+    // KLA-104: Pause the walk, wait for a secret (OTP/OAuth token) then resume.
+    const secretValue = await resolvePauseSecret(projectId, runId, step, opts, deadline)
+    await addStepRun({
+      runId, trailId, stepId: step.id, idx: step.idx, tier: "none",
+      verdict: secretValue === null ? "red" : "green", confidence: secretValue === null ? 0 : 1,
+      healed: false,
+      evidence: {
+        action: "pauseForSecret",
+        actionValue: step.actionValue,
+        resolved: secretValue !== null,
+        recordedStep: recordedStep(null, null),
+      },
+    })
+    if (secretValue === null) {
+      return { tier: "none", verdict: "red", healed: false, llmCalls: 0, failureKind: "crash" }
+    }
+    return { tier: "none", verdict: "green", healed: false, llmCalls: 0 }
+  }
 
   // The cached selector is the single source of truth (lives in locator_cache, not step.target).
+
   const cacheRow = await getCacheForStep(projectId, step.id)
   const cachedSelector = cacheRow?.resolvedSelector ?? null
   // Fingerprint signals for Tier 1: prefer the cache row's, fall back to the step's stored target.
