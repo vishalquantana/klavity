@@ -5,6 +5,27 @@
 import { pickModel, DEFAULT_WEIGHTS, MODEL_CHOICE_IDS } from "./models"
 import { recordAiCall, tryReserveDailySpend, reconcileDailySpend, DEFAULT_AI_CALL_EST_USD } from "./db"
 
+/**
+ * KLA-56: Typed error thrown by openRouterAuthorModel so the drive loop can distinguish
+ * retryable transient failures (429, 5xx, timeout) from fatal ones (401/403, budget exhausted).
+ *
+ * `retryable=true`  → caller should back off and retry (rate limit / server error / network blip)
+ * `retryable=false` → caller should stall immediately (auth failure, budget exhausted)
+ * `budgetExhausted` → caller surfaces a distinct "budget_exhausted:" stallReason (always retryable=false)
+ * `httpStatus`      → the HTTP status that triggered this (0 = network/timeout error)
+ */
+export class ModelCallError extends Error {
+  constructor(
+    message: string,
+    public readonly retryable: boolean,
+    public readonly budgetExhausted: boolean = false,
+    public readonly httpStatus?: number,
+  ) {
+    super(message)
+    this.name = "ModelCallError"
+  }
+}
+
 export interface AuthorAction {
   op: "navigate" | "click" | "type" | "select" | "assert" | "wait" | "hover" | "keyPress" | "clearField" | "done" | "stall"
   selector: string | null; value: string | null; url: string | null
@@ -94,21 +115,36 @@ export const AUTHOR_FALLBACK_MODEL = "qwen/qwen3-vl-235b-a22b-instruct"
 
 export const openRouterAuthorModel: AuthorModel = async (input, ctx) => {
   const key = process.env.OPENROUTER_API_KEY
-  if (!key) throw new Error("OPENROUTER_API_KEY not set")
+  if (!key) throw new ModelCallError("OPENROUTER_API_KEY not set", false)
   const cap = Number(process.env.OPS_DAILY_CAP_USD || 50)
-  if (!(await tryReserveDailySpend(DEFAULT_AI_CALL_EST_USD, cap))) throw new Error("Daily AI budget reached")
+  // KLA-56: budget-exhausted is a distinct fatal error — surfaces as "budget_exhausted:" stall.
+  if (!(await tryReserveDailySpend(DEFAULT_AI_CALL_EST_USD, cap)))
+    throw new ModelCallError("Daily AI budget reached", false, true)
   const model = pickModel(DEFAULT_WEIGHTS, MODEL_CHOICE_IDS, AUTHOR_FALLBACK_MODEL, Math.random())
   const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 90_000)
   let reconciled = false
   try {
-    const res = await fetch(ENDPOINT, {
-      method: "POST", signal: ctl.signal,
-      headers: { Authorization: `Bearer ${key}`, "content-type": "application/json",
-        "HTTP-Referer": process.env.OPENROUTER_BASE || "https://klavity.in", "X-Title": "Klavity" },
-      body: JSON.stringify({ model, max_tokens: 600, messages: buildAuthorMessages(input, ctx.projectInstructions),
-        usage: { include: true }, response_format: { type: "json_object" } }),
-    })
-    if (!res.ok) { await reconcileDailySpend(DEFAULT_AI_CALL_EST_USD, 0); reconciled = true; throw new Error(`author model ${res.status}`) }
+    let res: Response
+    try {
+      res = await fetch(ENDPOINT, {
+        method: "POST", signal: ctl.signal,
+        headers: { Authorization: `Bearer ${key}`, "content-type": "application/json",
+          "HTTP-Referer": process.env.OPENROUTER_BASE || "https://klavity.in", "X-Title": "Klavity" },
+        body: JSON.stringify({ model, max_tokens: 600, messages: buildAuthorMessages(input, ctx.projectInstructions),
+          usage: { include: true }, response_format: { type: "json_object" } }),
+      })
+    } catch (fetchErr: any) {
+      // Network error or AbortController timeout — retryable.
+      await reconcileDailySpend(DEFAULT_AI_CALL_EST_USD, 0); reconciled = true
+      throw new ModelCallError(`author model timed out or network error: ${fetchErr?.message || fetchErr}`, true, false, 0)
+    }
+    if (!res.ok) {
+      await reconcileDailySpend(DEFAULT_AI_CALL_EST_USD, 0); reconciled = true
+      // 401/403 = auth failure → fatal. 429/5xx = transient → retryable.
+      const retryable = res.status === 429 || res.status >= 500
+      const fatal = res.status === 401 || res.status === 403
+      throw new ModelCallError(`author model ${res.status}`, retryable && !fatal, false, res.status)
+    }
     const data: any = await res.json()
     const u = data?.usage || {}
     const cost = typeof u.cost === "number" ? u.cost : 0

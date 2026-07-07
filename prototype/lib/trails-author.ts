@@ -14,6 +14,7 @@ import { withWalkSlot, CHROMIUM_PROD_ARGS } from "./trails-browser"
 import { acquireBrowser } from "./trails-browser-page"
 import { db, projectById } from "./db"
 import type { AuthorModel, AuthorAction } from "./trails-author-model"
+import { ModelCallError } from "./trails-author-model"
 import { isKrefSelector } from "./trails-snapshot"
 import type { StepAction, TrailViewport } from "./trails-types"
 import { normalizeTrailViewport } from "./trails-viewport"
@@ -27,6 +28,12 @@ export const AUTHOR_MAX_STEPS = Number(process.env.AUTOSIM_MAX_STEPS) || AUTOSIM
 export const AUTHOR_MAX_COST_USD = Number(process.env.AUTOSIM_MAX_COST_USD) || AUTOSIM_MAX_COST_USD_DEFAULT
 export const AUTOSIM_DEADLINE_MS_DEFAULT = Number(process.env.AUTOSIM_MAX_MS) || AUTOSIM_MAX_MS_DEFAULT
 const MAX_CONSECUTIVE_MISSES = 3
+
+// KLA-56: retry config for transient model/API errors (429, 5xx, timeout).
+// Up to MAX_API_RETRIES attempts per model call with exponential back-off.
+// The back-off delay for attempt i (0-based) = MODEL_RETRY_BASE_MS * 2^i.
+const MAX_API_RETRIES = 3
+const MODEL_RETRY_BASE_MS = 1_000
 const ACTION_TIMEOUT = 10_000
 // KLA-129: stall if the exact same action (op+selector+value+url) fires this many consecutive
 // times without a different action in between — the model is stuck re-doing the same step.
@@ -50,7 +57,16 @@ const OP2ACTION: Record<string, StepAction> = { navigate: "navigate", click: "cl
 
 export async function authorTrail(
   projectId: string, req: AuthorRequest,
-  opts: { model: AuthorModel; headless?: boolean; launchArgs?: string[]; credResolver?: CredResolver; onStep?: (log: AuthorStepLog[]) => void | Promise<void>; driveDeadlineMs?: number; textFirst?: boolean; verificationVision?: VisionResolver | false },
+  opts: {
+    model: AuthorModel; headless?: boolean; launchArgs?: string[]
+    credResolver?: CredResolver; onStep?: (log: AuthorStepLog[]) => void | Promise<void>
+    driveDeadlineMs?: number; textFirst?: boolean; verificationVision?: VisionResolver | false
+    /**
+     * KLA-56: injectable sleep for retry back-off. Default = real setTimeout-based sleep.
+     * Tests inject `() => Promise.resolve()` to avoid real delays.
+     */
+    sleepMs?: (ms: number) => Promise<void>
+  },
 ): Promise<AuthorOutcome> {
   // Text-first is the DEFAULT (bench 2026-07-04: arm B ~50% cheaper, 6/6 green verdicts vs arm A
   // screenshot-every-step). Happy-path steps run text-only; a miss escalates by re-attaching the
@@ -73,6 +89,7 @@ export async function authorTrail(
     // in the fixed code (666666) without triggering a real OTP email or hitting the rate limit.
     if (process.env.KLAV_TEST_OTP) credFields.push(`{{cred:${acc.name}:otp}}`)
   }
+  const sleepMs = opts.sleepMs ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
   const log: AuthorStepLog[] = []
   const history: string[] = []
   const traj: TrajectoryStep[] = []
@@ -110,10 +127,40 @@ export async function authorTrail(
         ? await bounded(page.screenshotJpeg(60, 15_000), 20_000, "screenshot")
         : ""
       const dom = await bounded(page.krefSnapshot(), 15_000, "snapshot capture")
+      // KLA-56: retry transient model/API errors (429, 5xx, timeout) with exponential back-off.
+      // Fatal errors (budget exhausted, 401/403) stall immediately with a distinct reason.
+      // Generic (non-ModelCallError) throws are treated as retryable — one network blip must not
+      // kill an entire authoring run.
       let r: { action: AuthorAction; costUsd: number }
-      try {
-        r = await bounded(opts.model({ objective: req.objective, pageUrl: page.url(), screenshotB64, mediaType: "image/jpeg", domSnapshot: dom, history, credFields }, { projectId, email: req.createdBy ?? null, projectInstructions }), 120_000, "author model call")
-      } catch (e: any) { return await stall(`author model error: ${e?.message || e}`) }
+      {
+        const modelInput = { objective: req.objective, pageUrl: page.url(), screenshotB64, mediaType: "image/jpeg", domSnapshot: dom, history, credFields }
+        const modelCtx = { projectId, email: req.createdBy ?? null, projectInstructions }
+        let lastErr: unknown = null
+        let succeeded = false
+        for (let attempt = 0; attempt < MAX_API_RETRIES; attempt++) {
+          try {
+            r = await bounded(opts.model(modelInput, modelCtx), 120_000, "author model call")
+            succeeded = true
+            break
+          } catch (e: any) {
+            if (e instanceof ModelCallError) {
+              if (e.budgetExhausted) return await stall(`budget_exhausted: daily AI budget reached after ${llmCalls} model calls`)
+              if (!e.retryable) return await stall(`model auth error: ${e.message}`)
+            }
+            lastErr = e
+            if (attempt < MAX_API_RETRIES - 1) await sleepMs(MODEL_RETRY_BASE_MS * Math.pow(2, attempt))
+          }
+        }
+        if (!succeeded) {
+          // All retry attempts exhausted — count as a miss so the consecutive-miss cap eventually
+          // stalls rather than looping forever. This mirrors parse-error treatment (KLAVITYKLA-48 #1).
+          misses++
+          const errMsg = (lastErr as any)?.message || String(lastErr)
+          history.push(`(model call failed after ${MAX_API_RETRIES} attempts: ${errMsg} — retrying from last state)`)
+          if (misses >= MAX_CONSECUTIVE_MISSES) return await stall(`stuck after ${misses} failed model calls; last error: ${errMsg}`)
+          continue
+        }
+      }
       llmCalls++; costUsd += r.costUsd || 0
       const a = r.action
       if (a.op === "stall" && a.parseError) {
