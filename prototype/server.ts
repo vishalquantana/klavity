@@ -36,7 +36,7 @@ import { trailsDashboardData } from "./lib/trails-dashboard"
 import { fileFindingById, dismissFinding, realFiler } from "./lib/trails-findings-gate"
 import { getReplay, runsWithReplay } from "./lib/trails-replay"
 import { saveFeedbackReplay, getFeedbackReplay, feedbackIdsWithReplay, pruneOldFeedbackReplays } from "./lib/feedback-replay"
-import { listRunSteps, listTrails, getTrail, setTrailStatus, listTrailSteps, insertAssertStep, deleteTrailStep } from "./lib/trails"
+import { listRunSteps, listTrails, getTrail, getWalk, setTrailStatus, listTrailSteps, insertAssertStep, deleteTrailStep } from "./lib/trails"
 import { runWalkNow } from "./lib/trails-trigger"
 import { runAuthorNow, getAuthorSession } from "./lib/trails-author"
 import { WalkBusyError } from "./lib/trails-browser"
@@ -2664,6 +2664,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
     if (req.method === "GET" && path === "/dashboard") return me ? await dashboardPage() : redirect("/login")
     if (req.method === "GET" && (path === "/trails" || path === "/autosims")) return me ? file(PUB + "/trails.html") : redirect("/login")
+    if (req.method === "GET" && path === "/autosims/walks") return me ? file(PUB + "/autosims-walks.html") : redirect("/login")
+    if (req.method === "GET" && /^\/autosims\/walk\/[^/]+$/.test(path)) return me ? file(PUB + "/autosims-walk.html") : redirect("/login")
     if (req.method === "GET" && path === "/sim-runs") return me ? file(PUB + "/sim-runs.html") : redirect("/login")
     // GET /shared/walk-report/:token — serve the walk PDF for a valid, unexpired share token.
     // Unauthenticated (no session required). 404 on bad/expired/tampered token (not 401).
@@ -2857,6 +2859,25 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           return json({ runId, segments, steps })
         } catch (e) {
           return json(oops(e, "trails-replay"), 500)
+        }
+      }
+
+      // GET /api/trails/walks/:runId — walk metadata + trail name + steps for the full-page walk detail.
+      // Lighter than /replay (no rrweb segments). Returns hasReplay so the page knows whether to show player.
+      const walkDetailMatch = path.match(/^\/api\/trails\/walks\/([^/]+)$/)
+      if (req.method === "GET" && walkDetailMatch) {
+        try {
+          const runId = walkDetailMatch[1]
+          const [walk, steps] = await Promise.all([
+            getWalk(projectId, runId),
+            listRunSteps(projectId, runId),
+          ])
+          if (!walk) return json({ error: "Walk not found." }, 404)
+          const trail = await getTrail(projectId, walk.trailId)
+          const replaySet = await runsWithReplay(projectId, [runId])
+          return json({ walk, trail, steps, hasReplay: replaySet.has(runId) })
+        } catch (e) {
+          return json(oops(e, "trails-walk-detail"), 500)
         }
       }
 

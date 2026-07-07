@@ -188,6 +188,7 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
   <nav class="nav">
     <a href="/dashboard">Dashboard</a>
     <a href="/trails" class="on">AutoSims</a>
+    <a href="/autosims/walks" id="navWalks">All Walks</a>
   </nav>
   <div class="right">
     <span class="who" id="who"></span>
@@ -534,6 +535,9 @@ async function load(){
 
 async function render(d){
   $("who").textContent = d.email || ""
+  // Keep "All Walks" nav link scoped to the active project
+  var _pid = projParam()
+  if (_pid) $("navWalks").href = "/autosims/walks?project=" + encodeURIComponent(_pid)
   renderTrails(d)
 
   // precision
@@ -557,17 +561,16 @@ async function render(d){
     const row = document.createElement("div")
     row.className = "walk"
     const pdfHref = '/api/trails/walks/' + encodeURIComponent(w.id) + '/report.pdf' + projQ()
+    const detailHref = '/autosims/walk/' + encodeURIComponent(w.id) + projQ()
     row.innerHTML = '<div class="body"><div class="t">'+esc(w.trailId)+'</div><div class="d">'+esc(w.id)+' · '+esc(when)+' · '+esc(w.llmCalls||0)+' LLM</div></div>'
-      + (w.hasReplay ? '<button class="replay-btn" data-replay="'+esc(w.id)+'">'+kicon('play',{size:10})+' Replay</button>' : '')
+      + (w.hasReplay ? '<a class="replay-btn" href="'+esc(detailHref)+'">'+kicon('play',{size:10})+' Replay</a>' : '')
+      + '<a class="replay-btn" href="'+esc(detailHref)+'">'+kicon('eye',{size:10})+' View</a>'
       + '<a class="walk-pdf-btn" href="'+esc(pdfHref)+'" target="_blank" rel="noopener">'+kicon('file-text',{size:10})+' PDF</a>'
       + '<button class="walk-share-btn" data-share-run="'+esc(w.id)+'">'+kicon('link',{size:10})+' Share</button>'
       + '<span class="walk-share-msg" data-share-msg="'+esc(w.id)+'"></span>'
       + '<span class="pill '+esc(v)+'">'+esc(v)+'</span>'
     wEl.appendChild(row)
   }
-  wEl.querySelectorAll("button[data-replay]").forEach(function(btn){
-    btn.onclick = function(){ openReplay(btn.getAttribute("data-replay")) }
-  })
   wEl.querySelectorAll("button[data-share-run]").forEach(function(btn){
     btn.onclick = async function(){
       const runId = btn.getAttribute("data-share-run")
