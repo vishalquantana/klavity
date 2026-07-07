@@ -6,6 +6,7 @@ export default defineConfig({
     environmentMatchGlobs: [
       ['tests/modal.test.ts', 'jsdom'],
       ['../../site/kit.icon.test.mjs', 'jsdom'],
+      ['src/mask-numbers.test.ts', 'jsdom'],
     ],
   },
 })
