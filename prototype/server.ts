@@ -36,7 +36,7 @@ import { trailsDashboardData } from "./lib/trails-dashboard"
 import { fileFindingById, dismissFinding, realFiler } from "./lib/trails-findings-gate"
 import { getReplay, runsWithReplay } from "./lib/trails-replay"
 import { saveFeedbackReplay, getFeedbackReplay, feedbackIdsWithReplay, pruneOldFeedbackReplays } from "./lib/feedback-replay"
-import { listRunSteps, listTrails, getTrail, getWalk, setTrailStatus, listTrailSteps, insertAssertStep, deleteTrailStep } from "./lib/trails"
+import { listRunSteps, listTrails, getTrail, getWalk, setTrailStatus, listTrailSteps, insertAssertStep, deleteTrailStep, updateTrailStep } from "./lib/trails"
 import { runWalkNow } from "./lib/trails-trigger"
 import { runAuthorNow, getAuthorSession } from "./lib/trails-author"
 import { WalkBusyError, cancelCurrentWalk } from "./lib/trails-browser"
@@ -2825,7 +2825,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     // unauthenticated API calls return a JSON 401 (not a /login redirect), mirroring resolveProject usage.
     if (path === "/api/trails/dashboard" || path.startsWith("/api/trails/findings/") || path.startsWith("/api/trails/walks/")
         || path === "/api/trails/author" || path.startsWith("/api/trails/author/")
-        || /^\/api\/trails\/[^/]+\/(walk|approve|steps)$/.test(path)) {
+        || /^\/api\/trails\/[^/]+\/(walk|approve|steps)$/.test(path)
+        || /^\/api\/trails\/[^/]+\/steps\/[^/]+$/.test(path)) {
       const meT = (await sessionEmail(req)) || (await bearerEmail(req))
       if (!meT) return json({ error: "Unauthorized" }, 401)
       const resolved = await resolveProject(meT, url.searchParams.get("project"))
@@ -2956,6 +2957,44 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (!trail) return json({ error: "Not found" }, 404)
           const steps = await listTrailSteps(projectId, trail.id)
           return json({ trail, steps })
+        }
+      }
+
+      // PATCH /api/trails/:id/steps/:stepId — edit a draft trail step's actionValue or checkpoint description.
+      {
+        const mPatch = path.match(/^\/api\/trails\/([^/]+)\/steps\/([^/]+)$/)
+        if (req.method === "PATCH" && mPatch) {
+          const trail = await getTrail(projectId, mPatch[1])
+          if (!trail) return json({ error: "Not found" }, 404)
+          if (trail.status !== "draft") return json({ error: "Trail is not a draft" }, 409)
+          const body = await req.json().catch(() => null)
+          if (!body || typeof body !== "object") return json({ error: "Invalid body" }, 400)
+          const patch: { actionValue?: string | null; checkpoint?: { description: string } | null } = {}
+          if ("actionValue" in body) patch.actionValue = typeof body.actionValue === "string" ? body.actionValue : (body.actionValue == null ? null : undefined)
+          if ("checkpoint" in body) {
+            if (body.checkpoint == null) patch.checkpoint = null
+            else if (typeof body.checkpoint === "object" && typeof (body.checkpoint as any).description === "string") patch.checkpoint = { description: (body.checkpoint as any).description }
+            else return json({ error: "checkpoint must be null or {description}" }, 400)
+          }
+          if (Object.keys(patch).length === 0) return json({ error: "Nothing to patch" }, 400)
+          const updated = await updateTrailStep(projectId, mPatch[2], patch)
+          if (!updated) return json({ error: "Step not found" }, 404)
+          return json({ ok: true })
+        }
+      }
+
+      // DELETE /api/trails/:id/steps/:stepId — remove a step from a draft trail.
+      {
+        const mDel = path.match(/^\/api\/trails\/([^/]+)\/steps\/([^/]+)$/)
+        if (req.method === "DELETE" && mDel) {
+          const trail = await getTrail(projectId, mDel[1])
+          if (!trail) return json({ error: "Not found" }, 404)
+          if (trail.status !== "draft") return json({ error: "Trail is not a draft" }, 409)
+          const steps = await listTrailSteps(projectId, trail.id)
+          const target = steps.find((s) => s.id === mDel[2])
+          if (!target) return json({ error: "Step not found" }, 404)
+          await deleteTrailStep(projectId, mDel[2])
+          return json({ ok: true })
         }
       }
 
