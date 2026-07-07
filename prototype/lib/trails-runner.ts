@@ -15,7 +15,7 @@ import type { Fingerprint, Tier, Verdict, TrailStep } from "./trails-types"
 import { expandModuleSteps } from "./trails-modules"
 import {
   getTrail, listTrailSteps, getCacheForStep, upsertLocatorCache,
-  startWalk, addRunStep, finishWalk, recordFinding,
+  startWalk, addRunStep, mergeRunStepEvidence, finishWalk, recordFinding,
 } from "./trails"
 import { touchWalkHeartbeat } from "./db"
 import { stepCacheKey } from "./trails-crystallize"
@@ -93,11 +93,12 @@ export interface WalkOptions {
   suppressFindings?: boolean
   /**
    * PDF task 1 — OPT-IN per-step screenshot capture. DEFAULT-OFF. When true, after each
-   * actionable step's action settles the runner captures a jpeg (quality 45) and uploads it via
-   * shotUploader. The returned key is merged into the step's evidence as `screenshotKey`.
+   * actionable step's action settles the runner captures a jpeg (quality 45), records the
+   * run_step immediately, then queues shotUploader work off the step/deadline path. The returned
+   * key is patched into the step's evidence as `screenshotKey`.
    * Capture is SKIPPED for navigate/wait steps (no meaningful state to capture).
-   * Failures are best-effort: a try/catch ensures a capture/upload failure NEVER fails or slows
-   * a step — evidence just lacks the key.
+   * Failures are best-effort: a try/catch ensures a capture/upload failure NEVER fails a step —
+   * evidence just lacks the key.
    */
   stepShots?: boolean
   /**
@@ -358,20 +359,85 @@ async function defaultShotUploader(bytes: Uint8Array, contentType: string): Prom
 
 /**
  * Best-effort per-step screenshot capture. Called AFTER an actionable step's action has settled.
- * Returns the S3 key on success, undefined on any failure (try/catch — never fails a step).
- * JPEG quality 45 for the PDF plan (compact, readable). Never called for navigate/wait.
+ * Returns jpeg bytes on success, undefined on any failure (try/catch — never fails a step).
+ * Upload is intentionally NOT done here: KLA-83 keeps S3 I/O off the step/deadline path.
  */
-async function maybeShot(page: Page, opts: WalkOptions): Promise<string | undefined> {
+async function maybeCaptureShot(page: Page, opts: WalkOptions): Promise<{ bytes: Uint8Array; contentType: "image/jpeg" } | undefined> {
   if (!opts.stepShots) return undefined
   try {
     const buf = await page.screenshot({ type: "jpeg", quality: 45 })
     const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf)
-    const uploader = opts.shotUploader ?? defaultShotUploader
-    const result = await uploader(bytes, "image/jpeg")
-    return result.key
+    return { bytes, contentType: "image/jpeg" }
   } catch {
-    // Best-effort: upload failure must never fail or slow the step.
+    // Best-effort: capture failure must never fail a step.
     return undefined
+  }
+}
+
+export interface StepShotUploadQueue {
+  enqueue: (runStepId: string, bytes: Uint8Array, contentType: string) => boolean
+  drain: () => Promise<void>
+  pending: () => number
+}
+
+function positiveInt(value: unknown, fallback: number): number {
+  const n = Number(value)
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback
+}
+
+export function createStepShotUploadQueue(
+  projectId: string,
+  uploader: (bytes: Uint8Array, contentType: string) => Promise<{ key: string }>,
+  patchEvidence: (projectId: string, runStepId: string, patch: Record<string, unknown>) => Promise<void> = mergeRunStepEvidence,
+  options?: { concurrency?: number; maxBuffered?: number },
+): StepShotUploadQueue {
+  const concurrency = positiveInt(options?.concurrency ?? process.env.KLAV_STEP_SHOT_UPLOAD_CONCURRENCY, 4)
+  const maxBuffered = positiveInt(options?.maxBuffered ?? process.env.KLAV_STEP_SHOT_UPLOAD_MAX_BUFFERED, 64)
+  const queue: Array<{ runStepId: string; bytes: Uint8Array; contentType: string }> = []
+  const idleResolvers: Array<() => void> = []
+  let active = 0
+
+  const notifyIdle = () => {
+    if (active !== 0 || queue.length !== 0) return
+    const resolvers = idleResolvers.splice(0)
+    for (const resolve of resolvers) resolve()
+  }
+
+  const pump = () => {
+    while (active < concurrency && queue.length) {
+      const job = queue.shift()!
+      active++
+      ;(async () => {
+        try {
+          const result = await uploader(job.bytes, job.contentType)
+          if (result?.key) {
+            await patchEvidence(projectId, job.runStepId, { screenshotKey: result.key })
+          }
+        } catch {
+          // Best-effort: upload/patch failure must never affect the walk.
+        } finally {
+          active--
+          pump()
+          notifyIdle()
+        }
+      })()
+    }
+  }
+
+  return {
+    enqueue(runStepId, bytes, contentType) {
+      if (active + queue.length >= maxBuffered) return false
+      queue.push({ runStepId, bytes, contentType })
+      pump()
+      return true
+    },
+    async drain() {
+      if (active === 0 && queue.length === 0) return
+      await new Promise<void>((resolve) => idleResolvers.push(resolve))
+    },
+    pending() {
+      return active + queue.length
+    },
   }
 }
 
@@ -430,6 +496,9 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
   const deadline = opts.deadlineMs ? Date.now() + opts.deadlineMs : Infinity
   let deadlineHit = false
   let cancelledBySignal = false
+  const shotUploads = opts.stepShots
+    ? createStepShotUploadQueue(projectId, opts.shotUploader ?? defaultShotUploader)
+    : null
 
   // Plan G prod-safety — make the deadline a REAL ceiling, not just a between-steps check. A single
   // live-network navigation (initial goto OR a navigate step) must NOT be allowed to hang on
@@ -541,7 +610,7 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
 
       const evBefore = evCol.offsets()
       const stepStart = Date.now()
-      const { tier, verdict, healed, llmCalls: stepLlm } = await runOneStep(projectId, runId, trail.id, page, step, opts, opTimeout, deadline, { col: evCol, before: evBefore, start: stepStart })
+      const { tier, verdict, healed, llmCalls: stepLlm } = await runOneStep(projectId, runId, trail.id, page, step, opts, opTimeout, deadline, { col: evCol, before: evBefore, start: stepStart }, shotUploads)
       stepSummaries.push({ stepId: step.id, idx: step.idx, tier, verdict, healed })
       if (healed) healedCount++
       llmCalls += stepLlm
@@ -609,6 +678,7 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
     }
     closeLiveWatch()
     await bh.close()
+    if (shotUploads) await shotUploads.drain()
   }
 }
 
@@ -630,6 +700,7 @@ async function runOneStep(
   opTimeout: number,
   deadline: number,
   evCtx: EvCtx = null,
+  shotUploads: StepShotUploadQueue | null = null,
 ): Promise<OneStepResult> {
   // KLA-61: dynamically adjust page timeouts based on remaining walk deadline
   const currentTimeout = Math.max(0, Math.min(opTimeout, deadline - Date.now()))
@@ -645,6 +716,12 @@ async function runOneStep(
     if (se.failedRequests?.length)  diagExtra.failedRequests  = se.failedRequests
     if (se.failedResponses?.length) diagExtra.failedResponses = se.failedResponses
     return addRunStep(projectId, { ...input, evidence: { ...diagExtra, ...(input.evidence ?? {}) } })
+  }
+  const addStepRunWithShot = async (input: Parameters<typeof addRunStep>[1]) => {
+    const shot = await maybeCaptureShot(page, opts)
+    const runStepId = await addStepRun(input)
+    if (shot) shotUploads?.enqueue(runStepId, shot.bytes, shot.contentType)
+    return runStepId
   }
   const fixtureUrl = opts.fixtureUrl
   const stepPageUrl = page.url()
@@ -710,38 +787,24 @@ async function runOneStep(
     } catch {
       // KLA-82: emit a heuristic Finding for urlMatches failures so they appear in reports.
       const verdict: Verdict = "red"
-      if (!opts.suppressFindings) {
-        const title = `Checkpoint failed: ${step.checkpoint?.description ?? `URL did not match /${step.checkpoint?.regex}/`}`
-        await recordFinding(projectId, {
-          runId, trailId, stepId: step.id, kind: "regression", title,
-          evidence: { reason: "checkpoint_failed", kind: "urlMatches", regex: step.checkpoint?.regex, actualUrl: page.url(), pageUrl: stepPageUrl },
-          groundQuote: title, confidence: 0.9,
-          dedupKey: `${trailId}:${step.id}:url-checkpoint-failed`,
-          contentSig: contentSigFor({ kind: "regression", fp, urlPath: stepPageUrl }),
-        })
-      }
-      const screenshotKey = await maybeShot(page, opts)
-      await addStepRun({ runId, trailId, stepId: step.id, idx: step.idx, tier: "none", verdict, confidence: 1, diagnosis: "regression", healed: false,
-        evidence: { reason: "checkpoint_failed", checkpoint: step.checkpoint?.description ?? null, recordedStep: recordedStep(null, fp), ...(screenshotKey !== undefined ? { screenshotKey } : {}) },
+      await addStepRunWithShot({ runId, trailId, stepId: step.id, idx: step.idx, tier: "none", verdict, confidence: 1, diagnosis: "regression", healed: false,
+        evidence: { reason: "checkpoint_failed", checkpoint: step.checkpoint?.description ?? null, recordedStep: recordedStep(null, fp) },
       })
       return { tier: "none", verdict, healed: false, llmCalls: 0 }
     }
-    const screenshotKey = await maybeShot(page, opts)
-    await addStepRun({ runId, trailId, stepId: step.id, idx: step.idx, tier: "none", verdict: "green", confidence: 1, healed: false,
-      evidence: { checkpoint: step.checkpoint?.description ?? null, recordedStep: recordedStep(null, fp), ...(screenshotKey !== undefined ? { screenshotKey } : {}) },
+    await addStepRunWithShot({ runId, trailId, stepId: step.id, idx: step.idx, tier: "none", verdict: "green", confidence: 1, healed: false,
+      evidence: { checkpoint: step.checkpoint?.description ?? null, recordedStep: recordedStep(null, fp) },
     })
     return { tier: "none", verdict: "green", healed: false, llmCalls: 0 }
   }
 
   // A checkpoint-only assert (no target at all) is a soft pass that keeps the flow runnable (mirrors codegen).
   if (isAssert && !cachedSelector && !fp) {
-    const screenshotKey = await maybeShot(page, opts)
-    await addStepRun({
+    await addStepRunWithShot({
       runId, trailId, stepId: step.id, idx: step.idx, tier: "none", verdict: "green", confidence: 1, healed: false,
       evidence: {
         checkpoint: step.checkpoint?.description ?? null,
         recordedStep: recordedStep(null, null),
-        ...(screenshotKey !== undefined ? { screenshotKey } : {}),
       },
     })
     return { tier: "none", verdict: "green", healed: false, llmCalls: 0 }
@@ -767,8 +830,7 @@ async function runOneStep(
         })
       }
       // PDF task 1: best-effort screenshot to capture the failure state.
-      const screenshotKey = await maybeShot(page, opts)
-      await addStepRun({
+      await addStepRunWithShot({
         runId, trailId, stepId: step.id, idx: step.idx,
         tier: "cache", verdict: "red", confidence: 1, diagnosis: "locator_drift", healed: false,
         evidence: {
@@ -776,7 +838,6 @@ async function runOneStep(
           selector: e.selector,
           matchCount: e.matchCount,
           recordedStep: recordedStep(e.selector, fp),
-          ...(screenshotKey !== undefined ? { screenshotKey } : {}),
         },
       })
       return { tier: "cache", verdict: "red", healed: false, llmCalls: 0 }
@@ -815,8 +876,7 @@ async function runOneStep(
         })
       }
       // PDF task 1: best-effort screenshot to capture the failure state.
-      const screenshotKey = await maybeShot(page, opts)
-      await addStepRun({
+      await addStepRunWithShot({
         runId, trailId, stepId: step.id, idx: step.idx,
         tier: "vision", verdict, confidence: 0, diagnosis: "locator_drift", healed: false,
         evidence: {
@@ -826,7 +886,6 @@ async function runOneStep(
           cachedSelector,
           checkpoint: step.checkpoint?.description ?? null,
           recordedStep: recordedStep(cachedSelector, fp),
-          ...(screenshotKey !== undefined ? { screenshotKey } : {}),
         },
       })
       return { tier: "vision", verdict, healed: false, llmCalls: 0 }
@@ -933,16 +992,13 @@ async function runOneStep(
       })
     }
     // PDF task 1: best-effort screenshot even on action failure (shows the failure state).
-    const screenshotKey = await maybeShot(page, opts)
-    await addStepRun({
+    await addStepRunWithShot({
       runId, trailId, stepId: step.id, idx: step.idx,
       tier: resolved.tier, verdict, confidence: resolved.confidence, diagnosis: isAssert ? "regression" : "interaction_change", healed: false,
       evidence: {
         reason: isAssert ? "checkpoint_failed" : "action_failed",
         checkpoint: step.checkpoint?.description ?? null,
         recordedStep: recordedStep(resolved.selector, fp),
-        retries: maxRetries,
-        ...(screenshotKey !== undefined ? { screenshotKey } : {}),
       },
     })
     return { tier: resolved.tier, verdict, healed: false, llmCalls: 0 }
@@ -972,9 +1028,6 @@ async function runOneStep(
   // Walk rolls up to AMBER (worst-of). A non-healed cache/Tier-0 hit stays GREEN.
   const verdict: Verdict = resolved.healed ? "amber" : "green"
 
-  // PDF task 1: capture a per-step screenshot AFTER the action settles (best-effort).
-  const screenshotKey = await maybeShot(page, opts)
-
   // spec §6.4: persist the reviewable diff into the run_step evidence (recoverable from/to selectors).
   const evidence: Record<string, unknown> = resolved.healed
     ? {
@@ -986,17 +1039,15 @@ async function runOneStep(
         candidateSignal: resolved.candidateSignal,
         checkpoint: step.checkpoint?.description ?? null,
         recordedStep: recordedStep(resolved.selector, fp),
-        ...(screenshotKey !== undefined ? { screenshotKey } : {}),
       }
     : {
         selector: resolved.selector,
         healed: false,
         checkpoint: step.checkpoint?.description ?? null,
         recordedStep: recordedStep(resolved.selector, fp),
-        ...(screenshotKey !== undefined ? { screenshotKey } : {}),
       }
 
-  await addStepRun({
+  await addStepRunWithShot({
     runId, trailId, stepId: step.id, idx: step.idx,
     tier: resolved.tier, verdict, confidence: resolved.confidence,
     diagnosis: resolved.healed ? "locator_drift" : undefined, healed: resolved.healed,
