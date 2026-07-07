@@ -3,6 +3,60 @@
 // parse with a safe stall sentinel, injectable adapter (tests never hit the network), ai_calls
 // ledger type "author-drive", and daily-cap reservation (tryReserveDailySpend) before spending.
 import { pickModel, DEFAULT_WEIGHTS, MODEL_CHOICE_IDS } from "./models"
+
+// ---------------------------------------------------------------------------
+// KLA-122: Flash-lite model-mix
+//
+// Enabled by KLAV_AUTHOR_MODEL_MIX=1 (default OFF → existing behavior).
+//
+// SIMPLE step criteria (all must hold):
+//   1. No credential placeholders in the author input (credFields is empty)
+//   2. History depth ≤ SIMPLE_STEP_MAX_HISTORY — early in an objective the next
+//      action is usually obvious (scroll, initial assert, simple click)
+//   3. The DOM snapshot is short (≤ SIMPLE_DOM_MAX_CHARS) — small pages need
+//      less visual reasoning
+//
+// Simple  → LITE_WEIGHTS   (flash-lite, cheapest capable model)
+// Hard    → DEFAULT_WEIGHTS (existing weighted mix, unchanged behavior)
+//
+// Objective verifier → always LITE_WEIGHTS when model-mix enabled (text-only,
+// no screenshot; the task is inherently simpler than the drive step).
+// ---------------------------------------------------------------------------
+
+export const LITE_MODEL = "google/gemini-3.1-flash-lite"
+export const LITE_WEIGHTS: Record<string, number> = { [LITE_MODEL]: 100 }
+
+const SIMPLE_STEP_MAX_HISTORY = 3   // ≤ 3 prior actions → likely simple entry page
+const SIMPLE_DOM_MAX_CHARS   = 6000 // compact pages rarely need the full strong model
+
+/** Returns true when a drive step is "simple" and can be routed to the lite model. */
+export function isSimpleAuthorStep(input: AuthorStepInput): boolean {
+  if (input.credFields.length > 0) return false
+  if (input.history.length > SIMPLE_STEP_MAX_HISTORY) return false
+  if (input.domSnapshot.length > SIMPLE_DOM_MAX_CHARS) return false
+  return true
+}
+
+/**
+ * Pick model weights for an author-drive step.
+ *
+ * @param input   - The AuthorStepInput for this step.
+ * @param enabled - Whether model-mix is active (controlled by KLAV_AUTHOR_MODEL_MIX env).
+ *                  Pass `process.env.KLAV_AUTHOR_MODEL_MIX === "1"` at the call site.
+ */
+export function selectAuthorWeights(input: AuthorStepInput, enabled: boolean): Record<string, number> {
+  if (!enabled) return DEFAULT_WEIGHTS
+  return isSimpleAuthorStep(input) ? LITE_WEIGHTS : DEFAULT_WEIGHTS
+}
+
+/**
+ * Pick model weights for the objective verifier.
+ * Text-only, no screenshot — always lite when model-mix is enabled.
+ */
+export function selectVerifierWeights(enabled: boolean): Record<string, number> {
+  if (!enabled) return DEFAULT_WEIGHTS
+  return LITE_WEIGHTS
+}
 import { recordAiCall, tryReserveDailySpend, reconcileDailySpend, DEFAULT_AI_CALL_EST_USD } from "./db"
 
 /**
@@ -120,7 +174,10 @@ export const openRouterAuthorModel: AuthorModel = async (input, ctx) => {
   // KLA-56: budget-exhausted is a distinct fatal error — surfaces as "budget_exhausted:" stall.
   if (!(await tryReserveDailySpend(DEFAULT_AI_CALL_EST_USD, cap)))
     throw new ModelCallError("Daily AI budget reached", false, true)
-  const model = pickModel(DEFAULT_WEIGHTS, MODEL_CHOICE_IDS, AUTHOR_FALLBACK_MODEL, Math.random())
+  // KLA-122: route simple steps to the lite model; hard steps keep DEFAULT_WEIGHTS.
+  const modelMixEnabled = process.env.KLAV_AUTHOR_MODEL_MIX === "1"
+  const weights = selectAuthorWeights(input, modelMixEnabled)
+  const model = pickModel(weights, MODEL_CHOICE_IDS, AUTHOR_FALLBACK_MODEL, Math.random())
   const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 90_000)
   let reconciled = false
   try {
@@ -217,7 +274,9 @@ export const openRouterObjectiveVerifier: ObjectiveVerifier = async (input, ctx)
   const cap = Number(process.env.OPS_DAILY_CAP_USD || 50)
   if (!(await tryReserveDailySpend(DEFAULT_AI_CALL_EST_USD, cap)))
     throw new ModelCallError("Daily AI budget reached", false, true)
-  const model = pickModel(DEFAULT_WEIGHTS, MODEL_CHOICE_IDS, AUTHOR_FALLBACK_MODEL, Math.random())
+  // KLA-122: verifier is text-only (no screenshot) → always lite when model-mix is enabled.
+  const modelMixEnabled = process.env.KLAV_AUTHOR_MODEL_MIX === "1"
+  const model = pickModel(selectVerifierWeights(modelMixEnabled), MODEL_CHOICE_IDS, AUTHOR_FALLBACK_MODEL, Math.random())
   const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 90_000)
   let reconciled = false
   try {
