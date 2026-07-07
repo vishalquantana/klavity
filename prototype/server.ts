@@ -40,7 +40,7 @@ import { listRunSteps, listTrails, getTrail, getWalk, setTrailStatus, listTrailS
 import { runWalkNow } from "./lib/trails-trigger"
 import { startTrailScheduler, isValidCron } from "./lib/trails-scheduler"
 import { runAuthorNow, getAuthorSession, getActiveAuthorSession } from "./lib/trails-author"
-import { WalkBusyError, cancelCurrentWalk } from "./lib/trails-browser"
+import { WalkBusyError, cancelCurrentWalk, PdfBusyError } from "./lib/trails-browser"
 import { mintShareToken, resolveShareToken, renderWalkPdf } from "./lib/trails-share"
 import { gatherWalkReport } from "./lib/trails-report"
 import { liveWatchSseResponse } from "./lib/trails-live-watch"
@@ -2699,6 +2699,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           },
         })
       } catch (e: any) {
+        if (e instanceof PdfBusyError) {
+          return new Response("PDF generator busy", {
+            status: 429,
+            headers: { "retry-after": "5" },
+          })
+        }
         if (e instanceof WalkBusyError) return new Response("AutoSim busy", { status: 409 })
         return new Response("Internal error", { status: 500 })
       }
@@ -3248,6 +3254,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             },
           })
         } catch (e: any) {
+          if (e instanceof PdfBusyError) {
+            return new Response(JSON.stringify({ error: "PDF generator busy" }), {
+              status: 429,
+              headers: { "content-type": "application/json", "retry-after": "5" },
+            })
+          }
           if (e instanceof WalkBusyError) return json({ error: "AutoSim busy" }, 409)
           return json(oops(e, "trails-report-pdf"), 500)
         }
