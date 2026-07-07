@@ -344,6 +344,7 @@ export async function applySchema(c: Client) {
        recurrence INTEGER NOT NULL DEFAULT 1,
        status TEXT NOT NULL DEFAULT 'queued',
        connector_ref TEXT,
+       connector_error TEXT,
        created_at INTEGER NOT NULL,
        updated_at INTEGER NOT NULL
      )`,
@@ -526,6 +527,11 @@ export async function applySchema(c: Client) {
   // page itself is already captured as url_host/url_path; this records the upstream traffic source so
   // we can see which external site each widget interaction/lead originated from.
   await c.execute("ALTER TABLE feedback ADD COLUMN source_referrer TEXT").catch((e) => console.warn("feedback.source_referrer ALTER skipped:", e?.message || e))
+
+  if (!(await columnExists(c, "findings", "connector_error"))) {
+    await c.execute("ALTER TABLE findings ADD COLUMN connector_error TEXT").catch((e: any) =>
+      console.warn("findings.connector_error ALTER skipped:", e?.message || e))
+  }
 }
 
 // ── schema_meta helpers ──

@@ -13,7 +13,7 @@
 //     auto-copy decrypt loop in server.ts (getConnector(type).createIssue + decryptSecret per secret field).
 
 import type { Finding } from "./trails-types"
-import { listFindings, setFindingStatus } from "./trails"
+import { listFindings, setFindingConnectorError, setFindingStatus } from "./trails"
 import { listAutoCopyConnectors } from "./db"
 import { getConnector, type TicketPayload } from "./connectors/index"
 import { decryptSecret } from "./crypto"
@@ -47,8 +47,31 @@ export async function projectPrecision(
 
 // ── Injectable filer ─────────────────────────────────────────────────────────────
 // Files one finding to the project's external tracker; returns the external ref (e.g. "plane:PROJ-42")
-// or null if there's no connector / the push failed.
-export type Filer = (projectId: string, finding: Finding) => Promise<{ connectorRef: string } | null>
+// or a log-safe error if the connector push failed. Null means there was no connector to try.
+export type FilerResult = { connectorRef: string } | { connectorError: string }
+export type Filer = (projectId: string, finding: Finding) => Promise<FilerResult | null>
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
+function connectorFailureMessage(scope: string, err: unknown): string {
+  return `${scope}: ${errorMessage(err)}`.slice(0, 1000)
+}
+
+function isFiled(result: FilerResult | null): result is { connectorRef: string } {
+  return !!result && "connectorRef" in result
+}
+
+function failureFrom(result: FilerResult | null): string | null {
+  return result && "connectorError" in result ? result.connectorError : null
+}
+
+async function recordConnectorFailure(projectId: string, findingId: string, failure: string): Promise<void> {
+  const msg = failure.slice(0, 1000)
+  console.warn(`[trails-findings] connector filing failed for ${projectId}/${findingId}: ${msg}`)
+  await setFindingConnectorError(projectId, findingId, msg)
+}
 
 // Executor: walk-scoped gate. For each still-queued finding of this run, auto-file the hard
 // high-confidence regressions (never double-file an already-filed item — we only consider 'queued'),
@@ -68,12 +91,16 @@ export async function processWalkFindings(
   const queued: string[] = []
   for (const f of findings) {
     if (decideFindingAction(f, deps.threshold) === "auto_file") {
-      const r = await deps.filer(projectId, f).catch(() => null)
-      if (r) {
+      const r = await deps.filer(projectId, f).catch((err) => ({
+        connectorError: connectorFailureMessage("auto-file threw", err),
+      }))
+      if (isFiled(r)) {
         await setFindingStatus(projectId, f.id, "auto_filed", r.connectorRef)
         autoFiled.push(f.id)
         continue
       }
+      const failure = failureFrom(r)
+      if (failure) await recordConnectorFailure(projectId, f.id, failure)
     }
     queued.push(f.id)
   }
@@ -91,8 +118,14 @@ export async function fileFindingById(
 ): Promise<{ ok: boolean; connectorRef?: string }> {
   const f = (await listFindings(projectId)).find((x) => x.id === findingId)
   if (!f || f.status !== "queued") return { ok: false }
-  const r = await deps.filer(projectId, f).catch(() => null)
-  if (!r) return { ok: false }
+  const r = await deps.filer(projectId, f).catch((err) => ({
+    connectorError: connectorFailureMessage("manual file threw", err),
+  }))
+  if (!isFiled(r)) {
+    const failure = failureFrom(r)
+    if (failure) await recordConnectorFailure(projectId, findingId, failure)
+    return { ok: false }
+  }
   await setFindingStatus(projectId, findingId, "filed", r.connectorRef)
   return { ok: true, connectorRef: r.connectorRef }
 }
@@ -149,6 +182,7 @@ export const realFiler: Filer = async (projectId, finding) => {
   if (!connectors.length) return null
   const baseUrl = process.env.KLAV_BASE_URL || "https://klavity.quantana.top"
   const ticket = buildTicketFromFinding(finding, baseUrl)
+  const failures: string[] = []
   for (const c of connectors) {
     const adapter = getConnector(c.type)
     if (!adapter) continue
@@ -162,9 +196,10 @@ export const realFiler: Filer = async (projectId, finding) => {
     try {
       const result = await adapter.createIssue(ticket, cfg)
       return { connectorRef: `${c.type}:${result.externalKey ?? result.externalUrl ?? c.id}` }
-    } catch {
-      // Try the next connector; a total failure across all → null (finding stays queued/fail-loud).
+    } catch (err) {
+      failures.push(connectorFailureMessage(`${c.type} connector ${c.id}`, err))
+      // Try the next connector; a total failure across all returns a persisted/logged failure.
     }
   }
-  return null
+  return failures.length ? { connectorError: failures.join("; ").slice(0, 1000) } : null
 }

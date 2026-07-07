@@ -185,6 +185,7 @@ function rowToFinding(r: any): Finding {
     kind: r.kind as FindingKind, title: r.title, evidence: pj<Record<string, unknown>>(r.evidence_json),
     groundQuote: r.ground_quote ?? null, confidence: Number(r.confidence), dedupKey: r.dedup_key,
     recurrence: Number(r.recurrence), status: r.status as FindingStatus, connectorRef: r.connector_ref ?? null,
+    connectorError: r.connector_error ?? null,
     createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
   }
 }
@@ -235,10 +236,34 @@ export async function listFindings(projectId: string, opts?: { status?: FindingS
 }
 
 export async function setFindingStatus(projectId: string, id: string, status: FindingStatus, connectorRef?: string): Promise<void> {
-  await db!.execute({
-    sql: `UPDATE findings SET status=?, connector_ref=COALESCE(?, connector_ref), updated_at=? WHERE project_id=? AND id=?`,
-    args: [status, connectorRef ?? null, Date.now(), projectId, id],
-  })
+  try {
+    await db!.execute({
+      sql: `UPDATE findings
+            SET status=?,
+                connector_ref=COALESCE(?, connector_ref),
+                connector_error=CASE WHEN ? IN ('filed','auto_filed') THEN NULL ELSE connector_error END,
+                updated_at=?
+            WHERE project_id=? AND id=?`,
+      args: [status, connectorRef ?? null, status, Date.now(), projectId, id],
+    })
+  } catch (e) {
+    if (!String((e as any)?.message || e).includes("connector_error")) throw e
+    await db!.execute({
+      sql: `UPDATE findings SET status=?, connector_ref=COALESCE(?, connector_ref), updated_at=? WHERE project_id=? AND id=?`,
+      args: [status, connectorRef ?? null, Date.now(), projectId, id],
+    })
+  }
+}
+
+export async function setFindingConnectorError(projectId: string, id: string, error: string): Promise<void> {
+  try {
+    await db!.execute({
+      sql: `UPDATE findings SET connector_error=?, updated_at=? WHERE project_id=? AND id=?`,
+      args: [error, Date.now(), projectId, id],
+    })
+  } catch (e) {
+    if (!String((e as any)?.message || e).includes("connector_error")) throw e
+  }
 }
 
 // Insert an assert-type trail step at afterStepIdx+1. Returns the new "ts_"-prefixed step id.
