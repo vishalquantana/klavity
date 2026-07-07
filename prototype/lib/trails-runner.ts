@@ -52,9 +52,9 @@ export interface WalkOptions {
    */
   replay?: boolean
   /**
-   * Plan G — prod-safety. Extra args forwarded verbatim to `chromium.launch({ args })` (the 1GB box
-   * uses CHROMIUM_PROD_ARGS: --single-process --no-sandbox --disable-dev-shm-usage --disable-gpu
-   * --no-zygote). Absent (the test default) launches with no extra args — byte-identical to before.
+   * Plan G — prod-safety. Extra args forwarded to `chromium.launch({ args })`; production callers
+   * pass CHROMIUM_PROD_ARGS (--single-process, --no-sandbox, --disable-dev-shm-usage,
+   * --disable-gpu, --no-zygote, etc.).
    */
   launchArgs?: string[]
   /**

@@ -1,8 +1,8 @@
 import { test, expect, beforeEach } from "bun:test"
-import { withWalkSlot, isWalkInFlight, WalkBusyError, CHROMIUM_PROD_ARGS, cancelCurrentWalk, setCurrentWalkRunId, getCurrentWalkAbortSignal, currentWalkRunId, _resetWalkPoolForTest } from "./trails-browser"
+import { withWalkSlot, withAuthorSlot, isWalkInFlight, WalkBusyError, AuthorBusyError, CHROMIUM_PROD_ARGS, cancelCurrentWalk, setCurrentWalkRunId, getCurrentWalkAbortSignal, currentWalkRunId, _resetWalkPoolForTest, _resetAuthorAdmissionForTest } from "./trails-browser"
 
-// Isolate pool state between tests (default: 3 concurrent, queue 10).
-beforeEach(() => { _resetWalkPoolForTest(3, 10) })
+// Isolate pool state between tests.
+beforeEach(() => { _resetWalkPoolForTest(3, 10); _resetAuthorAdmissionForTest() })
 
 test("withWalkSlot runs the fn and clears the slot after", async () => {
   expect(isWalkInFlight()).toBe(false)
@@ -90,6 +90,20 @@ test("CHROMIUM_PROD_ARGS carries the low-memory flags", () => {
   for (const a of ["--single-process", "--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--no-zygote"]) {
     expect(CHROMIUM_PROD_ARGS).toContain(a)
   }
+  for (const a of ["--disable-extensions", "--disable-background-networking", "--disable-renderer-backgrounding"]) {
+    expect(CHROMIUM_PROD_ARGS).toContain(a)
+  }
+})
+
+test("withAuthorSlot rejects a concurrent authoring session", async () => {
+  let release!: () => void
+  const gate = new Promise<void>((r) => { release = r })
+  const first = withAuthorSlot(async () => { await gate; return "first" })
+  await Promise.resolve()
+  await expect(withAuthorSlot(async () => "second")).rejects.toBeInstanceOf(AuthorBusyError)
+  release()
+  expect(await first).toBe("first")
+  expect(await withAuthorSlot(async () => "after")).toBe("after")
 })
 
 // ── KLA-100 cancel helpers ─────────────────────────────────────────────────────

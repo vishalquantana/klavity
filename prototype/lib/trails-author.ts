@@ -10,8 +10,8 @@ import { walkTrail } from "./trails-runner"
 import { hasCredRef, resolveCredRefs, type CredResolver } from "./trails-creds"
 import { getTestAccountByName } from "./test-accounts"
 import { sha256hex } from "./crypto"
-import { withWalkSlot, CHROMIUM_PROD_ARGS } from "./trails-browser"
-import { acquireBrowser } from "./trails-browser-page"
+import { withWalkSlot, withAuthorSlot, CHROMIUM_PROD_ARGS } from "./trails-browser"
+import { acquireBrowser, type BrowserHandle } from "./trails-browser-page"
 import { db, projectById } from "./db"
 import type { AuthorModel, AuthorAction } from "./trails-author-model"
 import { ModelCallError } from "./trails-author-model"
@@ -61,6 +61,7 @@ export async function authorTrail(
     model: AuthorModel; headless?: boolean; launchArgs?: string[]
     credResolver?: CredResolver; onStep?: (log: AuthorStepLog[]) => void | Promise<void>
     driveDeadlineMs?: number; textFirst?: boolean; verificationVision?: VisionResolver | false
+    browserFactory?: typeof acquireBrowser; verificationWalk?: typeof walkTrail
     /**
      * KLA-56: injectable sleep for retry back-off. Default = real setTimeout-based sleep.
      * Tests inject `() => Promise.resolve()` to avoid real delays.
@@ -105,13 +106,24 @@ export async function authorTrail(
     Promise.race([p, new Promise<never>((_, rej) => setTimeout(() => rej(new Error(`${what} timed out after ${ms}ms`)), ms))])
   // Browser via the adapter seam: local Playwright by default; Puppeteer→remote (Steel) when
   // AUTOSIM_CDP_URL is set (moves the browser off the 1GB box). Behavior-identical on the default.
-  const handle = await acquireBrowser({ headless: opts.headless, launchArgs: opts.launchArgs })
+  const launchArgs = Array.from(new Set([...CHROMIUM_PROD_ARGS, ...(opts.launchArgs ?? [])]))
+  let handle: BrowserHandle | null = await (opts.browserFactory ?? acquireBrowser)({
+    headless: opts.headless,
+    launchArgs,
+    watchdogMs: driveDeadlineMs + 30_000,
+  })
+  const closeHandle = async () => {
+    if (!handle) return
+    const h = handle
+    handle = null
+    await h.close().catch(() => {})
+  }
   const stall = async (why: string): Promise<AuthorOutcome> => {
-    await handle.close()
+    await closeHandle()
     return { status: "stalled", trailId: null, verificationRunId: null, verificationVerdict: null, steps: log, stallReason: why, llmCalls, costUsd }
   }
   try {
-    const page = await handle.newPage(viewport)
+    const page = await handle!.newPage(viewport)
     await page.goto(req.baseUrl, 20_000)
     // Record the initial navigation as the first TrajectoryStep so the crystallized Trail starts
     // with a navigate action pointing at the baseUrl (gives the runner a concrete starting point).
@@ -245,7 +257,7 @@ export async function authorTrail(
       log.push(entry)
       await opts.onStep?.(log)
     }
-    await handle.close()
+    await closeHandle()
     if (!traj.length) return { status: "stalled", trailId: null, verificationRunId: null, verificationVerdict: null, steps: log, stallReason: "model finished without performing any step", llmCalls, costUsd }
     const trajectory: Trajectory = { name: req.name, intent: req.objective, baseUrl: req.baseUrl, viewport, authorKind: "llm", createdBy: req.createdBy, steps: traj }
     const { trailId } = await crystallize(projectId, trajectory)
@@ -253,16 +265,16 @@ export async function authorTrail(
     // Verification Walk: zero-LLM rehearsal; draft status suppresses findings (Task 4), but pass
     // the flag explicitly too — a Verification Walk never files regardless of trail status.
     const vision = opts.verificationVision === false ? undefined : (opts.verificationVision ?? configuredVisionResolver())
-    const v = await walkTrail(projectId, trailId, {
+    const v = await (opts.verificationWalk ?? walkTrail)(projectId, trailId, {
       fixtureUrl: req.baseUrl, suppressFindings: true, credResolver, deadlineMs: 180_000,
-      launchArgs: opts.launchArgs, headless: opts.headless,
+      launchArgs, headless: opts.headless,
       ...(vision ? { vision } : {}),
     })
     // I1: skip means "inconclusive / no steps ran" — map to amber, not red, so an empty
     // Verification Walk never looks like a regression to the reviewer.
     return { status: "crystallized", trailId, verificationRunId: v.runId, verificationVerdict: v.verdict === "skip" ? "amber" : v.verdict, steps: log, stallReason: null, llmCalls, costUsd }
   } catch (e: any) {
-    await handle.close()
+    await closeHandle()
     return { status: "failed", trailId: null, verificationRunId: null, verificationVerdict: null, steps: log, stallReason: String(e?.message || e), llmCalls, costUsd }
   }
 }
@@ -351,9 +363,10 @@ export async function getActiveAuthorSession(projectId: string): Promise<AuthorS
  * propagates to the caller before we return), session row is created inside the slot, and the
  * sessionId is resolved back to the caller as soon as the row exists.
  */
-export async function runAuthorNow(projectId: string, req: AuthorRequest, deps?: { model?: AuthorModel }): Promise<{ sessionId: string }> {
+export async function runAuthorNow(projectId: string, req: AuthorRequest, deps?: { model?: AuthorModel; author?: typeof authorTrail }): Promise<{ sessionId: string }> {
   const { openRouterAuthorModel } = await import("./trails-author-model")
   const model = deps?.model ?? openRouterAuthorModel
+  const author = deps?.author ?? authorTrail
 
   // Deferred: resolve to sessionId once the DB row exists, reject on slot-busy or session-create error.
   let resolveStarted!: (sessionId: string) => void
@@ -364,7 +377,7 @@ export async function runAuthorNow(projectId: string, req: AuthorRequest, deps?:
   // concurrent runAuthorNow rejects on `slotHeld` before it ever resolves `started`. On a free slot
   // the promise runs the whole authoring drive + verification walk in the background; we only await
   // `started` (resolved as soon as the session row exists).
-  const slotHeld = withWalkSlot(async () => {
+  const slotHeld = withAuthorSlot(() => withWalkSlot(async () => {
     let sessionId: string
     try {
       sessionId = await createAuthorSession(projectId, req)
@@ -374,7 +387,7 @@ export async function runAuthorNow(projectId: string, req: AuthorRequest, deps?:
     }
     resolveStarted(sessionId)
     try {
-      const out = await authorTrail(projectId, req, {
+      const out = await author(projectId, req, {
         model, launchArgs: CHROMIUM_PROD_ARGS,
         onStep: (log) => updateAuthorSession(projectId, sessionId, { steps: log }).catch(() => {}),
       })
@@ -386,7 +399,7 @@ export async function runAuthorNow(projectId: string, req: AuthorRequest, deps?:
     } catch (e: any) {
       await updateAuthorSession(projectId, sessionId, { status: "failed", stallReason: String(e?.message || e) }).catch(() => {})
     }
-  })
+  }))
 
   // Surface a synchronous WalkBusyError (or a createAuthorSession failure) to the caller; otherwise
   // resolve as soon as the session row exists. The background `slotHeld` keeps running; swallow its

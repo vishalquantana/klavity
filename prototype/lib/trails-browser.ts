@@ -1,4 +1,4 @@
-// Concurrency pool + bounded queue for walk slots. Up to KLAV_WALK_CONCURRENCY (default 3) walks run
+// Concurrency pool + bounded queue for walk slots. Up to KLAV_WALK_CONCURRENCY (default 1) walks run
 // simultaneously; additional requests queue (up to KLAV_WALK_QUEUE, default 10). When both the pool
 // and queue are exhausted, WalkBusyError is thrown (→ HTTP 409). Per-slot context (AbortController,
 // runId) is propagated via AsyncLocalStorage so callers inside a slot see THEIR walk's signal/runId.
@@ -10,17 +10,25 @@ export class WalkBusyError extends Error {
   constructor(msg = "Walk queue is full — try again shortly") { super(msg); this.name = "WalkBusyError" }
 }
 
+export class AuthorBusyError extends WalkBusyError {
+  constructor(msg = "An AutoSim authoring session is already running — try again shortly") {
+    super(msg)
+    this.name = "AuthorBusyError"
+  }
+}
+
 // Per-slot context carried through the async call chain via AsyncLocalStorage.
 interface SlotCtx { ac: AbortController; runId: string | null }
 const _als = new AsyncLocalStorage<SlotCtx>()
 
 // Mutable so tests can reconfigure; initialised from env once at startup.
-let _maxConcurrency = Math.max(1, parseInt(process.env.KLAV_WALK_CONCURRENCY ?? "3", 10) || 3)
+let _maxConcurrency = Math.max(1, parseInt(process.env.KLAV_WALK_CONCURRENCY ?? "1", 10) || 1)
 let _maxQueue = Math.max(0, parseInt(process.env.KLAV_WALK_QUEUE ?? "10", 10) || 0)
 
 let _active = 0
 const _waiters: Array<() => void> = []
 const _activeCtxs = new Set<SlotCtx>()
+let _authorActive = false
 
 /** Reset pool limits — for use in tests only. */
 export function _resetWalkPoolForTest(concurrency: number, maxQueue: number): void {
@@ -29,6 +37,10 @@ export function _resetWalkPoolForTest(concurrency: number, maxQueue: number): vo
   _active = 0
   _waiters.length = 0
   _activeCtxs.clear()
+}
+
+export function _resetAuthorAdmissionForTest(): void {
+  _authorActive = false
 }
 
 export function isWalkInFlight(): boolean { return _active > 0 }
@@ -87,8 +99,25 @@ export async function withWalkSlot<T>(fn: () => Promise<T>): Promise<T> {
   return _runInSlot(fn, { ac: new AbortController(), runId: null })
 }
 
+/**
+ * Authoring is deliberately stricter than generic walks on the 1GB box: only one author drive may be
+ * active or waiting for the browser slot at a time. A second request fails fast instead of creating a
+ * poll session that might later spawn another local Chromium under load.
+ */
+export async function withAuthorSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (_authorActive) throw new AuthorBusyError()
+  _authorActive = true
+  try {
+    return await fn()
+  } finally {
+    _authorActive = false
+  }
+}
+
 // Low-memory / single-process Chromium flags for the shared 1GB prod box (spec §5.2). Headless, one
 // page, no sandbox (the box is already an isolated VM), no zygote/GPU/dev-shm pressure.
 export const CHROMIUM_PROD_ARGS: string[] = [
   "--single-process", "--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--no-zygote",
+  "--disable-extensions", "--disable-background-networking", "--disable-background-timer-throttling",
+  "--disable-renderer-backgrounding", "--disable-sync", "--metrics-recording-only", "--mute-audio",
 ]
