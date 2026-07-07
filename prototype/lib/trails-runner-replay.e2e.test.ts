@@ -176,6 +176,7 @@ test("replay capping: synthetic event flood yields bounded buffer, snapshot reta
 
     // Push events to the binding callback
     await bindingCallback({}, events)
+    expect(cap.bufferedEventCount()).toBeLessThanOrEqual(10)
 
     // Drain and flush
     const mockPage: any = {
@@ -207,6 +208,7 @@ test("replay capping: synthetic event flood yields bounded buffer, snapshot reta
     }
 
     await bindingCallback({}, events2)
+    expect(cap.bufferedEventCount()).toBeLessThanOrEqual(10)
     await cap.flush(1, "http://test.url/2", mockPage)
 
     expect(cap.segments.length).toBe(2)
@@ -225,6 +227,7 @@ test("replay capping: synthetic event flood yields bounded buffer, snapshot reta
       events3.push({ type: 3, timestamp: 400 + i, data: `mutation3_${i}` })
     }
     await bindingCallback({}, events3)
+    expect(cap.bufferedEventCount()).toBeLessThanOrEqual(5)
     await cap.flush(2, "http://test.url/3", mockPage)
 
     expect(cap.segments.length).toBe(3)
@@ -243,6 +246,7 @@ test("replay capping: synthetic event flood yields bounded buffer, snapshot reta
       events4.push({ type: 3, timestamp: 600 + i, data: `mutation4_${i}` })
     }
     await bindingCallback({}, events4)
+    expect(cap.bufferedEventCount()).toBe(1)
     await cap.flush(3, "http://test.url/4", mockPage)
 
     expect(cap.segments.length).toBe(4)
@@ -269,4 +273,38 @@ test("replay capping: synthetic event flood yields bounded buffer, snapshot reta
   }
 }, 30000)
 
+test("replay capping: browser-side capped batches keep the truncated marker", async () => {
+  const origMax = process.env.KLAV_REPLAY_MAX_EVENTS
+  const origTotal = process.env.KLAV_REPLAY_MAX_TOTAL_EVENTS
+  process.env.KLAV_REPLAY_MAX_EVENTS = "10"
+  process.env.KLAV_REPLAY_MAX_TOTAL_EVENTS = "50"
 
+  try {
+    let bindingCallback: any = null
+    const mockContext: any = {
+      exposeBinding: async (name: string, cb: any) => {
+        if (name === "__klavReplayPush") bindingCallback = cb
+      },
+      addInitScript: async () => {}
+    }
+
+    const cap = await R.setupReplayCapture(mockContext)
+    await bindingCallback({}, {
+      truncated: true,
+      events: [
+        { type: 2, timestamp: 1, data: "snapshot" },
+        ...Array.from({ length: 9 }, (_, i) => ({ type: 3, timestamp: 2 + i, data: `kept_${i}` })),
+      ],
+    })
+    expect(cap.bufferedEventCount()).toBe(10)
+
+    const mockPage: any = { evaluate: async () => {} }
+    await cap.flush(0, "http://test.url/browser-capped", mockPage)
+    expect(cap.segments.length).toBe(1)
+    expect(cap.segments[0].truncated).toBe(true)
+    expect(cap.segments[0].events.length).toBe(10)
+  } finally {
+    process.env.KLAV_REPLAY_MAX_EVENTS = origMax
+    process.env.KLAV_REPLAY_MAX_TOTAL_EVENTS = origTotal
+  }
+}, 30000)
