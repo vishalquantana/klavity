@@ -239,7 +239,7 @@ function escAttr(v: string): string {
 }
 
 // Thrown when no tier can resolve the target to exactly-one actionable element.
-class ElementGone extends Error {
+export class ElementGone extends Error {
   constructor(public readonly fp: Fingerprint | null) {
     super("element gone: no tier resolved the target")
   }
@@ -286,7 +286,7 @@ async function uniquelyResolves(loc: Locator): Promise<boolean> {
 // A heal candidate is only acceptable if the resolved element is consistent with the target's
 // declared role. This is what stops the silent-false-green where a removed <button>Sign in</button>
 // "heals" to the surviving <h1>Sign in</h1> heading by text — different role => reject the candidate.
-async function roleConsistent(loc: Locator, expectedRole: string | undefined): Promise<boolean> {
+export async function roleConsistent(loc: Locator, expectedRole: string | undefined): Promise<boolean> {
   if (!expectedRole) return true
   try {
     const tag = await loc.evaluate((el: Element) => el.tagName.toLowerCase())
@@ -335,12 +335,28 @@ async function persistableSelector(page: Page, loc: Locator): Promise<string | n
   }
 }
 
+// KLA-71: normalize a URL to origin+pathname for same-page comparison. Query params and
+// fragments can legitimately vary within a single "page"; we only care about the path.
+function samePageUrl(a: string, b: string): boolean {
+  try {
+    const ua = new URL(a); const ub = new URL(b)
+    return ua.origin === ub.origin && ua.pathname === ub.pathname
+  } catch {
+    return a === b  // non-parseable (e.g. data:, about:blank) → exact match
+  }
+}
+
 // Tier 0 -> Tier 1 candidate ladder. Returns the first tier whose candidate uniquely resolves.
 // Order: cached selector (Tier 0) -> role+name -> text -> testid -> structural domPath (Tier 1).
-async function resolveTarget(
+//
+// KLA-71: expectedUrl is captured before entering this function (page.url() at step start).
+// Any Tier-1 candidate is rejected if page.url() has navigated away (cross-page heal guard).
+// role+name signal now also enforces roleConsistent for belt-and-suspenders parity with signals 2-4.
+export async function resolveTarget(
   page: Page,
   cachedSelector: string | null,
   fp: Fingerprint | null,
+  expectedUrl?: string,
 ): Promise<ResolveResult> {
   // Tier 0: the cached concrete selector, verbatim. Zero work, zero heal.
   if (cachedSelector) {
@@ -356,11 +372,14 @@ async function resolveTarget(
   }
 
   // Tier 1 multi-candidate semantic fallback (no LLM). Each must uniquely resolve.
+  // KLA-71 cross-page guard: page must still be at the expected URL before accepting any candidate.
   if (fp) {
-    // 1. role + accessible-name (the faithful accname signal, strongest semantic anchor)
+    // 1. role + accessible-name (the faithful accname signal, strongest semantic anchor).
+    // KLA-71: roleConsistent added for parity with signals 2-4 (belt-and-suspenders on top of
+    // getByRole's own ARIA role filter). Cross-page guard applied before returning.
     if (fp.role && fp.accessibleName) {
       const loc = page.getByRole(fp.role as any, { name: fp.accessibleName, exact: true })
-      if (await uniquelyResolves(loc)) {
+      if (await uniquelyResolves(loc) && (await roleConsistent(loc, fp.role)) && (!expectedUrl || samePageUrl(page.url(), expectedUrl))) {
         return { tier: "candidate", selector: await persistableSelector(page, loc), locator: loc, healed: true, confidence: SIGNAL_CONFIDENCE["role+name"], candidateSignal: "role+name" }
       }
     }
@@ -368,7 +387,7 @@ async function resolveTarget(
     //    verification): a removed <button> must NOT heal onto a same-text <h1>.
     if (fp.text) {
       const loc = page.getByText(fp.text, { exact: true })
-      if ((await uniquelyResolves(loc)) && (await roleConsistent(loc, fp.role))) {
+      if ((await uniquelyResolves(loc)) && (await roleConsistent(loc, fp.role)) && (!expectedUrl || samePageUrl(page.url(), expectedUrl))) {
         return { tier: "candidate", selector: await persistableSelector(page, loc), locator: loc, healed: true, confidence: SIGNAL_CONFIDENCE.text, candidateSignal: "text" }
       }
     }
@@ -376,14 +395,14 @@ async function resolveTarget(
     if (fp.testId) {
       const tidSel = `[data-testid="${escAttr(fp.testId)}"]`
       const loc = page.locator(tidSel)
-      if ((await uniquelyResolves(loc)) && (await roleConsistent(loc, fp.role))) {
+      if ((await uniquelyResolves(loc)) && (await roleConsistent(loc, fp.role)) && (!expectedUrl || samePageUrl(page.url(), expectedUrl))) {
         return { tier: "candidate", selector: tidSel, locator: loc, healed: true, confidence: SIGNAL_CONFIDENCE.testid, candidateSignal: "testid" }
       }
     }
     // 4. structural domPath
     if (fp.domPath) {
       const loc = page.locator(fp.domPath)
-      if ((await uniquelyResolves(loc)) && (await roleConsistent(loc, fp.role))) {
+      if ((await uniquelyResolves(loc)) && (await roleConsistent(loc, fp.role)) && (!expectedUrl || samePageUrl(page.url(), expectedUrl))) {
         return { tier: "candidate", selector: fp.domPath, locator: loc, healed: true, confidence: SIGNAL_CONFIDENCE.domPath, candidateSignal: "domPath" }
       }
     }
@@ -959,7 +978,7 @@ async function runOneStep(
 
   let resolved: ResolveResult
   try {
-    resolved = await resolveTarget(page, cachedSelector, fp)
+    resolved = await resolveTarget(page, cachedSelector, fp, stepPageUrl)
   } catch (e) {
     if (e instanceof AmbiguousSelector) {
       // The crystallized selector matched N>1 elements — this is a data-quality problem,
