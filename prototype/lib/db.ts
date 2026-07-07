@@ -45,6 +45,7 @@ export async function initDb() {
   await migrateConnectorsPlane(db)
   await backfillTriageV1(db)
   await backfillTrailStatus(db)
+  await sweepOrphanedWalks(db)
   await sweepOrphanedAuthorSessions(db)
   console.log("✓ Turso connected, schema ready")
 }
@@ -598,6 +599,12 @@ export async function applySchema(c: Client) {
   )`).catch((e: any) => console.warn("walk_judgments CREATE skipped:", e?.message || e))
   await c.execute("CREATE INDEX IF NOT EXISTS wj_run_idx ON walk_judgments (project_id, run_id, created_at)")
     .catch((e: any) => console.warn("wj_run_idx skipped:", e?.message || e))
+  // KLA-55: crash-reaper heartbeat columns — updated by active walks/author drives so the reaper
+  // can distinguish a stale-running row from a genuinely-running one even without a restart.
+  await c.execute("ALTER TABLE trail_runs ADD COLUMN last_beat_at INTEGER")
+    .catch((e: any) => console.warn("trail_runs.last_beat_at ALTER skipped:", e?.message || e))
+  await c.execute("ALTER TABLE author_sessions ADD COLUMN last_beat_at INTEGER")
+    .catch((e: any) => console.warn("author_sessions.last_beat_at ALTER skipped:", e?.message || e))
 }
 
 // ── schema_meta helpers ──
@@ -790,6 +797,65 @@ export async function sweepOrphanedAuthorSessions(c: Client): Promise<{ swept: n
   })
   const swept = Number(r.rowsAffected ?? 0)
   if (swept) console.log(`[author-sessions] swept ${swept} orphaned running session(s) → failed`)
+  return { swept }
+}
+
+// KLA-55: Boot sweep for trail_runs — finalize any walk left 'running' from a previous process.
+// At boot no walk can legitimately be in flight (single-process, walk slot model), so every
+// 'running' row is from a crashed/OOM-killed process. Mark them red with a clear reason.
+export async function sweepOrphanedWalks(c: Client): Promise<{ swept: number }> {
+  const now = Date.now()
+  const r = await c.execute({
+    sql: `UPDATE trail_runs SET status='red', finished_at=?,
+            summary_json=JSON_OBJECT('error','interrupted by a server restart')
+          WHERE status='running'`,
+    args: [now],
+  })
+  const swept = Number(r.rowsAffected ?? 0)
+  if (swept) console.log(`[trail-runs] swept ${swept} orphaned running walk(s) → red`)
+  return { swept }
+}
+
+// KLA-55: Heartbeat touches — updated at the start of each step/iteration so the stale-reaper
+// can distinguish a live walk from a crashed one without needing a restart signal.
+export async function touchWalkHeartbeat(runId: string, c?: Client): Promise<void> {
+  await (c ?? db!).execute({ sql: `UPDATE trail_runs SET last_beat_at=? WHERE id=?`, args: [Date.now(), runId] })
+}
+
+export async function touchAuthorHeartbeat(sessionId: string, c?: Client): Promise<void> {
+  await (c ?? db!).execute({ sql: `UPDATE author_sessions SET last_beat_at=? WHERE id=?`, args: [Date.now(), sessionId] })
+}
+
+// KLA-55: Stale-heartbeat reaper — sweeps rows whose heartbeat is older than thresholdMs.
+// Only reaps rows that HAVE a heartbeat (last_beat_at IS NOT NULL) — pre-KLA-55 rows without
+// a beat are left for the boot sweep to handle on next restart, not silently reaped here.
+const DEFAULT_STALE_MS = Number(process.env.WALK_STALE_MS) || 3 * 60 * 1000
+
+export async function sweepStaleWalks(c: Client, thresholdMs = DEFAULT_STALE_MS): Promise<{ swept: number }> {
+  const cutoff = Date.now() - thresholdMs
+  const now = Date.now()
+  const r = await c.execute({
+    sql: `UPDATE trail_runs SET status='red', finished_at=?,
+            summary_json=JSON_OBJECT('error','stale heartbeat — process may have crashed')
+          WHERE status='running' AND last_beat_at IS NOT NULL AND last_beat_at < ?`,
+    args: [now, cutoff],
+  })
+  const swept = Number(r.rowsAffected ?? 0)
+  if (swept) console.log(`[trail-runs] stale reaper swept ${swept} walk(s) → red`)
+  return { swept }
+}
+
+export async function sweepStaleAuthorSessions(c: Client, thresholdMs = DEFAULT_STALE_MS): Promise<{ swept: number }> {
+  const cutoff = Date.now() - thresholdMs
+  const now = Date.now()
+  const r = await c.execute({
+    sql: `UPDATE author_sessions SET status='failed', updated_at=?,
+            stall_reason='stale heartbeat — process may have crashed, please retry'
+          WHERE status='running' AND last_beat_at IS NOT NULL AND last_beat_at < ?`,
+    args: [now, cutoff],
+  })
+  const swept = Number(r.rowsAffected ?? 0)
+  if (swept) console.log(`[author-sessions] stale reaper swept ${swept} session(s) → failed`)
   return { swept }
 }
 
