@@ -9,7 +9,7 @@
 // Vision (Tier-2) is OFF in realWalk; a flagged Trail (the regression demo) opts in via a custom
 // deps.walk that calls walkTrail with a vision resolver.
 import { withWalkSlot, WalkBusyError, CHROMIUM_PROD_ARGS, setCurrentWalkRunId, getCurrentWalkAbortSignal } from "./trails-browser"
-import { getTrail, startWalk, finishWalk } from "./trails"
+import { getTrail, startWalk, finishWalk, getWalk } from "./trails"
 import { walkTrail } from "./trails-runner"
 import type { Verdict } from "./trails-types"
 import { configuredVisionResolver } from "./trails-vision"
@@ -71,10 +71,16 @@ export async function runWalkNow(
     const walk = deps?.walk ?? realWalk
     try {
       const { verdict, llmCalls, summary } = await walk(projectId, trailId, runId)
-      await finishWalk(projectId, runId, { status: verdict, llmCalls, ...(summary ? { summary } : {}) })
+      const currentWalk = await getWalk(projectId, runId)
+      if (!currentWalk || currentWalk.status === "running") {
+        await finishWalk(projectId, runId, { status: verdict, llmCalls, ...(summary ? { summary } : {}) })
+      }
     } catch (e: any) {
       // Crash isolation: a walk throw finalizes the run RED + releases the slot, never propagates.
-      await finishWalk(projectId, runId, { status: "red", llmCalls: 0, summary: { error: String(e?.message || e) } }).catch(() => {})
+      const currentWalk = await getWalk(projectId, runId).catch(() => null)
+      if (!currentWalk || currentWalk.status === "running") {
+        await finishWalk(projectId, runId, { status: "red", llmCalls: 0, summary: { error: String(e?.message || e) } }).catch(() => {})
+      }
     }
   })
 

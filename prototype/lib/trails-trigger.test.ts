@@ -110,3 +110,26 @@ test("cancelCurrentWalk aborts the in-flight walk and the run finalizes red", as
   expect((walk?.summary as any)?.error).toBe("cancelled")
   expect(isWalkInFlight()).toBe(false)
 })
+
+test("rich summary survives when walk fn already calls finishWalk (KLA-65 regression)", async () => {
+  const trail = await seedTrail()
+  // Mock a walk fn that simulates walkTrail by calling finishWalk before returning
+  const walkFailingToMerge = async (projectId: string, trailId: string, runId: string) => {
+    await T.finishWalk(projectId, runId, {
+      status: "green",
+      llmCalls: 2,
+      summary: { healedCount: 5, stepCount: 10 }
+    })
+    return { verdict: "green" as const, llmCalls: 2, summary: { reasons: ["some-reason"] } }
+  }
+
+  const { runId } = await runWalkNow("proj_t", trail, { walk: walkFailingToMerge })
+  await waitFor(async () => (await T.getWalk("proj_t", runId))?.status === "green")
+
+  const finalWalk = await T.getWalk("proj_t", runId)
+  expect(finalWalk).toBeTruthy()
+  expect(finalWalk!.summary).toBeTruthy()
+  expect((finalWalk!.summary as any).healedCount).toBe(5)
+  expect((finalWalk!.summary as any).stepCount).toBe(10)
+})
+
