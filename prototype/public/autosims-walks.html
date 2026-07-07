@@ -68,6 +68,32 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 .empty{text-align:center;padding:60px 24px;color:var(--paper-faint)}
 .empty p{font-size:14px;line-height:1.6;margin-top:12px}
 .empty a{color:var(--indigo)}
+
+/* ── KLA-78: trend panel ─────────────────────────────────────────────────── */
+.trend-panel{background:var(--ink-2);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-bottom:24px}
+.trend-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.trend-title{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--paper-faint)}
+.trend-days-lbl{font-family:var(--mono);font-size:10px;color:var(--paper-faint)}
+/* sparkline row */
+.sparkline{display:flex;align-items:flex-end;gap:3px;height:36px;margin-bottom:10px}
+.spark-bar-wrap{display:flex;flex-direction:column;align-items:center;flex:1;height:100%}
+.spark-bar-stack{display:flex;flex-direction:column-reverse;width:100%;height:100%;border-radius:3px;overflow:hidden;gap:0}
+.spark-seg{width:100%;min-height:1px}
+.spark-seg.g{background:var(--green);opacity:.8}
+.spark-seg.a{background:var(--amber);opacity:.8}
+.spark-seg.r{background:var(--rose);opacity:.8}
+/* trend table */
+.trend-tbl{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:10px}
+.trend-tbl th{color:var(--paper-faint);text-align:right;padding:3px 6px;letter-spacing:.05em;font-weight:400}
+.trend-tbl th:first-child{text-align:left}
+.trend-tbl td{padding:3px 6px;text-align:right;color:var(--paper-dim)}
+.trend-tbl td:first-child{text-align:left;color:var(--paper-faint)}
+.trend-tbl td.tc-g{color:var(--green)}
+.trend-tbl td.tc-a{color:var(--amber)}
+.trend-tbl td.tc-r{color:var(--rose)}
+.trend-tbl td.tc-p{color:var(--indigo)}
+.trend-tbl tr:last-child td{border-top:1px solid var(--line);padding-top:5px}
+.trend-none{font-family:var(--mono);font-size:11px;color:var(--paper-faint);text-align:center;padding:10px 0}
 </style>
 <script src="/icons.generated.js"></script>
 </head>
@@ -96,6 +122,24 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
     </div>
   </div>
 
+  <!-- KLA-78: trend panel (populated after load) -->
+  <div class="trend-panel" id="trendPanel" style="display:none">
+    <div class="trend-header">
+      <span class="trend-title">Walk trend</span>
+      <span class="trend-days-lbl" id="trendDaysLbl"></span>
+    </div>
+    <div class="sparkline" id="sparkline"></div>
+    <div class="trend-none" id="trendNone" style="display:none">No completed walks in this window yet.</div>
+    <div style="overflow-x:auto">
+      <table class="trend-tbl" id="trendTbl" style="display:none">
+        <thead><tr>
+          <th>Date</th><th>✓ Green</th><th>◑ Amber</th><th>✗ Red</th><th>Total</th><th>Pass %</th>
+        </tr></thead>
+        <tbody id="trendTbody"></tbody>
+      </table>
+    </div>
+  </div>
+
   <div class="filters" id="filters">
     <button class="filter-btn on" data-filter="all">All</button>
     <button class="filter-btn" data-filter="green">Green</button>
@@ -111,10 +155,10 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 
 <script>
 function $(id){return document.getElementById(id)}
-function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,c=({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]||c)}
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]||c})}
 function projParam(){try{return new URLSearchParams(location.search).get("project")}catch(e){return null}}
 
-var state={walks:[],filter:"all",activeId:null,projId:null}
+var state={walks:[],filter:"all",activeId:null,projId:null,trailNameFor:{}}
 
 $("logout").onclick=async function(){await fetch("/api/auth/logout",{method:"POST"});location.href="/"}
 
@@ -126,6 +170,55 @@ document.querySelectorAll(".filter-btn").forEach(function(btn){
     renderList()
   }
 })
+
+// KLA-78: render trend panel from bucket data
+function renderTrend(buckets){
+  var panel=$("trendPanel")
+  var sparkEl=$("sparkline")
+  var noneEl=$("trendNone")
+  var tblEl=$("trendTbl")
+  var tbody=$("trendTbody")
+  panel.style.display=""
+
+  if(!buckets||!buckets.length){
+    sparkEl.style.display="none"
+    noneEl.style.display=""
+    tblEl.style.display="none"
+    return
+  }
+  noneEl.style.display="none"
+  tblEl.style.display=""
+
+  // Sparkline — proportional stacked bars (green bottom, amber mid, red top)
+  var maxTotal=Math.max.apply(null,buckets.map(function(b){return b.total||0}))||1
+  sparkEl.innerHTML=buckets.map(function(b){
+    var h=Math.max(4,Math.round((b.total/maxTotal)*36))
+    var gPct=b.total?Math.round(b.green/b.total*100):0
+    var aPct=b.total?Math.round(b.amber/b.total*100):0
+    var rPct=b.total?100-gPct-aPct:0
+    return '<div class="spark-bar-wrap" title="'+esc(b.day)+': '+esc(b.green)+'G '+esc(b.amber)+'A '+esc(b.red)+'R">'
+      +'<div class="spark-bar-stack" style="height:'+h+'px">'
+        +(rPct>0?'<div class="spark-seg r" style="height:'+rPct+'%"></div>':"")
+        +(aPct>0?'<div class="spark-seg a" style="height:'+aPct+'%"></div>':"")
+        +(gPct>0?'<div class="spark-seg g" style="height:'+gPct+'%"></div>':"")
+      +'</div>'
+    +'</div>'
+  }).join("")
+
+  // Table (newest first for easy reading — buckets from API are oldest first, so reverse)
+  var rows=[].concat(buckets).reverse().slice(0,14)
+  tbody.innerHTML=rows.map(function(b){
+    var passStr=b.passRate!=null?Math.round(b.passRate*100)+"%":"—"
+    return '<tr>'
+      +'<td>'+esc(b.day)+'</td>'
+      +'<td class="tc-g">'+esc(b.green)+'</td>'
+      +'<td class="tc-a">'+esc(b.amber)+'</td>'
+      +'<td class="tc-r">'+esc(b.red)+'</td>'
+      +'<td>'+esc(b.total)+'</td>'
+      +'<td class="tc-p">'+esc(passStr)+'</td>'
+    +'</tr>'
+  }).join("")
+}
 
 async function load(){
   var pid=projParam()
@@ -157,8 +250,6 @@ async function load(){
   }
 
   // Walks from /api/trails/dashboard (recentWalks + hasReplay annotation).
-  // Fetch in parallel with the dashboard call where possible; here we already have the project
-  // switcher rendered so we fire it after we know the project id.
   var t
   try{
     var rt=await fetch("/api/trails/dashboard"+qs)
@@ -168,6 +259,14 @@ async function load(){
   }catch(e){$("lead").textContent="Error loading Walks.";renderList();return}
   state.walks=t.recentWalks||[]
   renderList()
+
+  // KLA-78: load trend in parallel (non-blocking — trend failure doesn't break walk list)
+  var TREND_DAYS=30
+  $("trendDaysLbl").textContent="last "+TREND_DAYS+" days"
+  fetch("/api/trails/trends"+qs+(qs?"&":"?")+"days="+TREND_DAYS)
+    .then(function(r){return r.ok?r.json():null})
+    .then(function(d){if(d)renderTrend(d.buckets)})
+    .catch(function(){/* trend is best-effort */})
 }
 
 function renderList(){
