@@ -266,6 +266,45 @@ export async function listRecentWalks(projectId: string, limit = 20): Promise<Wa
   return r.rows.map(rowToWalk)
 }
 
+export interface TrailRunHistoryEntry {
+  runId: string
+  status: "running" | "green" | "amber" | "red"
+  startedAt: number
+  durationMs: number | null  // null when the run is still in progress
+  stepCount: number
+}
+
+// KLA-85: per-trail run history, newest-first, bounded by limit. Each entry carries enough
+// data for a history table (timestamp, verdict badge, duration, step count) without loading
+// the full run_steps payload. stepCount is a correlated subquery — efficient for the
+// expected page sizes (limit ≤ 100).
+export async function listTrailRunHistory(
+  projectId: string,
+  trailId: string,
+  limit = 20,
+): Promise<TrailRunHistoryEntry[]> {
+  const r = await db!.execute({
+    sql: `SELECT
+            tr.id,
+            tr.status,
+            tr.started_at,
+            tr.finished_at,
+            (SELECT COUNT(*) FROM run_steps rs WHERE rs.run_id = tr.id AND rs.project_id = tr.project_id) AS step_count
+          FROM trail_runs tr
+          WHERE tr.project_id = ? AND tr.trail_id = ?
+          ORDER BY tr.started_at DESC
+          LIMIT ?`,
+    args: [projectId, trailId, limit],
+  })
+  return r.rows.map((row: any) => ({
+    runId: row.id,
+    status: row.status as TrailRunHistoryEntry["status"],
+    startedAt: Number(row.started_at),
+    durationMs: row.finished_at != null ? Number(row.finished_at) - Number(row.started_at) : null,
+    stepCount: Number(row.step_count),
+  }))
+}
+
 import type { Finding, FindingKind, FindingStatus } from "./trails-types"
 
 function rowToFinding(r: any): Finding {
