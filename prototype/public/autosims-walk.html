@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script>(function(){try{var t=localStorage.getItem('klav-theme');if(t==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();</script>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Walk · AutoSims · Klavity</title>
+<link rel="stylesheet" href="/fonts/fonts.css"/>
+<link rel="stylesheet" href="/tokens.css"/>
+<link rel="stylesheet" href="/vendor/klv-view.css"/>
+<style>
+:root{--ink:#f5f3ee;--ink-2:#ffffff;--ink-3:#efeae0;--paper:#19140f;--paper-dim:#574f45;--paper-faint:#8a8076;--indigo:#6366f1;--indigo-deep:#4f46e5;--amber:#d98324;--rose:#db2777;--green:#0f9d6b;--line:rgba(25,20,15,.12);
+--display:'Fraunces',serif;--body:'Hanken Grotesk',system-ui,sans-serif;--mono:'JetBrains Mono',monospace;
+--mi-ease:cubic-bezier(.2,.7,.3,1);--mi-dur:.15s}
+[data-theme="dark"]{--ink:#0c0a08;--ink-2:#15110d;--ink-3:#1e1813;--paper:#f3ece1;--paper-dim:#b3a896;--paper-faint:#776c5d;--indigo:#8b8bf5;--indigo-deep:#6366f1;--amber:#e8a24a;--rose:#e8849a;--green:#9fd6a0;--line:rgba(243,236,225,.11)}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--ink);color:var(--paper);font-family:var(--body);min-height:100vh}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;background:radial-gradient(80% 50% at 50% -5%,rgba(139,139,245,.08),transparent 60%)}
+a{color:inherit;text-decoration:none}
+.bar{position:sticky;top:0;z-index:10;backdrop-filter:blur(12px);background:var(--ink-2);border-bottom:1px solid var(--line)}
+.bar-in{max-width:1280px;margin:0 auto;padding:0 24px;height:64px;display:flex;align-items:center;gap:14px}
+.brand{display:flex;align-items:center;gap:10px;font-family:var(--display);font-weight:600;font-size:20px;letter-spacing:-.02em}
+.nav{margin-left:8px;display:flex;gap:4px}
+.nav a{font-size:13px;color:var(--paper-faint);padding:6px 11px;border-radius:9px}
+.nav a:hover{color:var(--paper-dim)}.nav a.on{color:var(--paper);background:var(--ink-3)}
+.right{margin-left:auto;display:flex;align-items:center;gap:14px}
+.who{font-size:13px;color:var(--paper-dim)}
+.lo{font-size:13px;color:var(--paper-faint);cursor:pointer;background:none;border:none;font-family:var(--body)}.lo:hover{color:var(--paper-dim)}
+
+.wrap{max-width:1280px;margin:0 auto;padding:28px 24px}
+
+/* breadcrumb */
+.breadcrumb{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--paper-faint);margin-bottom:20px;flex-wrap:wrap}
+.breadcrumb a{color:var(--paper-faint)}.breadcrumb a:hover{color:var(--paper-dim)}
+.breadcrumb .sep{color:var(--line)}
+
+/* walk header */
+.whead{display:flex;align-items:flex-start;gap:16px;margin-bottom:24px;flex-wrap:wrap}
+.whead-body{flex:1;min-width:0}
+.whead h1{font-family:var(--display);font-weight:450;font-size:28px;letter-spacing:-.02em;margin-bottom:4px;line-height:1.2}
+.whead .wmeta{font-family:var(--mono);font-size:12px;color:var(--paper-faint);display:flex;gap:14px;flex-wrap:wrap;margin-top:6px}
+.whead-acts{display:flex;gap:8px;align-items:center;flex-shrink:0}
+
+.pill{font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;padding:5px 11px;border-radius:20px;flex-shrink:0}
+.pill.green{background:rgba(15,157,107,.16);color:var(--green)}
+.pill.amber{background:rgba(217,131,36,.18);color:var(--amber)}
+.pill.red{background:rgba(219,39,119,.16);color:var(--rose)}
+.pill.running,.pill.skip{background:var(--ink-3);color:var(--paper-faint)}
+
+.btn{font-family:var(--body);font-weight:600;font-size:13px;padding:8px 14px;border-radius:9px;border:1px solid var(--line);background:var(--ink-2);color:var(--paper);cursor:pointer;transition:border-color var(--mi-dur) var(--mi-ease),transform var(--mi-dur) var(--mi-ease)}
+.btn:hover{border-color:var(--indigo)}
+.btn:active{transform:scale(.97)}
+.btn-sm{font-size:12px;padding:5px 11px}
+
+/* two-column layout */
+.layout{display:grid;grid-template-columns:260px minmax(0,1fr);gap:22px;align-items:start}
+@media(max-width:900px){.layout{grid-template-columns:minmax(0,1fr)}}
+
+/* steps sidebar */
+.sidebar{background:var(--ink-2);border:1px solid var(--line);border-radius:16px;padding:18px;position:sticky;top:82px;max-height:calc(100vh - 100px);overflow-y:auto}
+.sidebar h2{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:14px}
+.step-list{display:flex;flex-direction:column;gap:6px}
+.step-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:10px;cursor:pointer;transition:background var(--mi-dur) var(--mi-ease)}
+.step-item:hover{background:var(--ink-3)}
+.step-item.on{background:var(--ink-3);outline:1px solid var(--indigo)}
+.step-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:var(--paper-faint)}
+.step-dot.green{background:var(--green)}.step-dot.amber{background:var(--amber)}.step-dot.red{background:var(--rose)}
+.step-txt{font-family:var(--mono);font-size:11px;color:var(--paper-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.step-idx{font-family:var(--mono);font-size:10px;color:var(--paper-faint);flex-shrink:0}
+
+/* main content */
+.main{}
+
+/* replay area */
+.replay-section{background:var(--ink-2);border:1px solid var(--line);border-radius:18px;padding:20px;margin-bottom:22px}
+.replay-section h2{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.chapters{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+.chapters .ch{font-family:var(--mono);font-size:10px;padding:5px 11px;border-radius:8px;border:1px solid var(--line);background:transparent;color:var(--paper-faint);cursor:pointer;transition:border-color var(--mi-dur) var(--mi-ease),color var(--mi-dur) var(--mi-ease),background var(--mi-dur) var(--mi-ease)}
+.chapters .ch.on{color:var(--paper);border-color:var(--indigo);background:var(--ink-3)}
+#playerHost{border-radius:12px;overflow:hidden;min-height:240px;width:100%}
+.rnote{font-family:var(--mono);font-size:12px;color:var(--paper-faint);margin-top:10px}
+
+/* no-replay placeholder */
+.no-replay{text-align:center;padding:48px 24px;color:var(--paper-faint)}
+.no-replay svg{margin-bottom:14px;opacity:.5}
+.no-replay p{font-size:14px;line-height:1.5}
+
+/* step detail */
+.step-detail{background:var(--ink-2);border:1px solid var(--line);border-radius:16px;padding:20px}
+.step-detail h2{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:14px}
+.step-card{background:var(--ink);border:1px solid var(--line);border-radius:12px;padding:14px}
+.step-card + .step-card{margin-top:10px}
+.step-card .sr{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.step-card .si{font-family:var(--mono);font-size:10px;color:var(--paper-faint)}
+.step-card .sv{font-family:var(--mono);font-size:10px}
+.step-card .sv.green{color:var(--green)}.step-card .sv.amber{color:var(--amber)}.step-card .sv.red{color:var(--rose)}
+.step-card .sconf{font-family:var(--mono);font-size:10px;color:var(--paper-faint);margin-left:auto}
+.step-card .srat{font-size:13.5px;line-height:1.5;color:var(--paper-dim)}
+.step-card .srat:not(:first-child){margin-top:8px}
+.step-card .sdiff{font-family:var(--mono);font-size:11px;color:var(--paper-faint);background:var(--ink-3);padding:7px 10px;border-radius:8px;margin-top:8px;overflow-x:auto}
+</style>
+<script src="/icons.generated.js"></script>
+</head>
+<body>
+<div class="bar"><div class="bar-in">
+  <a class="brand" href="/dashboard"><img src="/favicon.svg" width="28" height="28" alt="Klavity" style="border-radius:8px;display:block"/>Klavity</a>
+  <nav class="nav">
+    <a href="/dashboard">Dashboard</a>
+    <a href="/autosims" class="on">AutoSims</a>
+  </nav>
+  <div class="right">
+    <span class="who" id="who"></span>
+    <button class="lo" id="logout">Log out</button>
+  </div>
+</div></div>
+
+<div class="wrap">
+  <div class="breadcrumb" id="breadcrumb">
+    <a href="/autosims">AutoSims</a>
+    <span class="sep">/</span>
+    <a href="/autosims/walks" id="bcWalks">All Walks</a>
+    <span class="sep">/</span>
+    <span id="bcCurrent">…</span>
+  </div>
+
+  <div class="whead" id="whead">
+    <div class="whead-body">
+      <h1 id="walkTitle">Loading…</h1>
+      <div class="wmeta" id="walkMeta"></div>
+    </div>
+    <div class="whead-acts" id="wheadActs"></div>
+  </div>
+
+  <div class="layout">
+    <!-- Left: steps sidebar -->
+    <div class="sidebar" id="sidebar">
+      <h2>Steps</h2>
+      <div class="step-list" id="stepList"><div style="font-size:13px;color:var(--paper-faint)">Loading…</div></div>
+    </div>
+
+    <!-- Right: replay + step detail -->
+    <div class="main">
+      <div class="replay-section" id="replaySection">
+        <h2 id="replayH2">Session Replay</h2>
+        <div id="replayBody">
+          <div style="font-size:13px;color:var(--paper-faint);padding:24px 0;text-align:center">Loading…</div>
+        </div>
+      </div>
+
+      <div class="step-detail" id="stepDetail" style="display:none">
+        <h2 id="stepDetailH2">Step Detail</h2>
+        <div id="stepDetailBody"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function $(id){return document.getElementById(id)}
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,c=({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]||c)}
+function projParam(){try{return new URLSearchParams(location.search).get("project")}catch(e){return null}}
+function projQ(){var p=projParam();return p?"?project="+encodeURIComponent(p):""}
+
+// Walk ID from path: /autosims/walk/:id
+var walkId = location.pathname.replace(/^\/autosims\/walk\//,"").split("?")[0]
+
+$("logout").onclick = async function(){ await fetch("/api/auth/logout",{method:"POST"}); location.href="/" }
+
+// ── rrweb lazy loader (same fix as trails.html: bypass broken rrweb-player v2 Svelte wrapper) ──
+var _rrwebReady = null
+function ensureRrweb(){
+  if(_rrwebReady) return _rrwebReady
+  _rrwebReady = new Promise(function(resolve,reject){
+    if(window.rrweb && window.rrweb.Replayer){resolve();return}
+    var s=document.createElement("script");s.src="/vendor/klv-buffer.min.js"
+    s.onload=function(){resolve()};s.onerror=function(){reject(new Error("rrweb load failed"))}
+    document.head.appendChild(s)
+  })
+  return _rrwebReady
+}
+
+var replayState = { segments:[], steps:[], player:null, activeChapter:-1 }
+
+function destroyPlayer(){
+  try{if(replayState.player){
+    if(typeof replayState.player.pause==="function") replayState.player.pause()
+    if(typeof replayState.player.$destroy==="function") replayState.player.$destroy()
+  }}catch(e){}
+  replayState.player=null
+  var h=$("playerHost");if(h) h.innerHTML=""
+}
+
+function playChapter(i){
+  var seg=replayState.segments[i];if(!seg) return
+  destroyPlayer()
+  replayState.activeChapter=i
+  // highlight tab
+  document.querySelectorAll(".ch").forEach(function(t,idx){t.classList.toggle("on",idx===i)})
+  var events=(seg.events||[]).slice()
+  if(events.length<2){$("rnote").textContent="Chapter "+(i+1)+": too few frames recorded.";return}
+  try{
+    var Replayer=window.rrweb && window.rrweb.Replayer
+    if(!Replayer) throw new Error("rrweb.Replayer not available")
+    var host=$("playerHost")
+    var replayer=new Replayer(events,{root:host,skipInactive:true,showWarning:false,showDebug:false,mouseTail:true})
+    replayState.player=replayer
+    replayer.play()
+    $("rnote").textContent="Chapter "+(i+1)+" of "+replayState.segments.length+" · "+(seg.url||"")
+  }catch(e){
+    $("rnote").textContent="Could not play this chapter."
+  }
+}
+
+async function loadReplay(){
+  var pid=projParam()
+  var qs=pid?"?project="+encodeURIComponent(pid):""
+  try { await ensureRrweb() } catch(e) { /* non-fatal */ }
+  var r
+  try{r=await fetch("/api/trails/walks/"+encodeURIComponent(walkId)+"/replay"+qs)}
+  catch(e){showNoReplay("Network error loading replay.");return}
+  if(r.status===404){showNoReplay("No replay was recorded for this Walk.");return}
+  if(!r.ok){showNoReplay("Could not load replay.");return}
+  var d=await r.json()
+  replayState.segments=d.segments||[]
+  if(!replayState.segments.length){showNoReplay("No segments in replay data.");return}
+
+  // Build chapter tabs
+  var rb=$("replayBody")
+  var chapHTML='<div class="chapters" id="replayChapters">'
+  replayState.segments.forEach(function(seg,i){
+    var name=String(seg.url||"").split("/").pop()||("page "+(i+1))
+    chapHTML+='<button class="ch" data-ci="'+i+'">'+(i+1)+'. '+esc(name)+'</button>'
+  })
+  chapHTML+='</div><div id="playerHost"></div><div class="rnote" id="rnote"></div>'
+  rb.innerHTML=chapHTML
+  document.querySelectorAll("button[data-ci]").forEach(function(btn){
+    btn.onclick=function(){playChapter(parseInt(btn.getAttribute("data-ci"),10))}
+  })
+
+  // Find first failing chapter (amber/red step → seek to that chapter)
+  var firstBadSeg=0
+  if(replayState.steps && replayState.steps.length){
+    var badStep=replayState.steps.find(function(s){var v=String(s.verdict);return v==="amber"||v==="red"})
+    if(badStep){
+      // Find the last segment whose step idx <= badStep.idx
+      for(var i=0;i<replayState.segments.length;i++){if(replayState.segments[i].idx<=badStep.idx) firstBadSeg=i}
+    }
+  }
+  playChapter(firstBadSeg)
+}
+
+function showNoReplay(msg){
+  $("replayBody").innerHTML='<div class="no-replay">'
+    +window.kicon("monitor-x",{size:32})
+    +'<p>'+esc(msg)+'</p></div>'
+}
+
+// ── Walk data ──
+var walkData=null
+
+async function load(){
+  var pid=projParam()
+  var qs=pid?"?project="+encodeURIComponent(pid):""
+
+  // Load session info for nav
+  try{
+    var sr=await fetch("/api/dashboard"+qs)
+    if(sr.status===401){location.href="/login";return}
+    var sd=await sr.json()
+    $("who").textContent=sd.email||""
+    // Breadcrumb: carry project param
+    if(pid){
+      $("bcWalks").href="/autosims/walks?project="+encodeURIComponent(pid)
+    }
+  }catch(e){}
+
+  // Load walk detail
+  var r
+  try{r=await fetch("/api/trails/walks/"+encodeURIComponent(walkId)+qs)}
+  catch(e){$("walkTitle").textContent="Network error loading walk.";return}
+  if(r.status===401){location.href="/login";return}
+  if(!r.ok){$("walkTitle").textContent="Walk not found.";return}
+
+  var d=await r.json()
+  walkData=d
+  var walk=d.walk||{}
+  var trail=d.trail
+  var steps=d.steps||[]
+
+  // Title
+  document.title=(trail?trail.name:"Walk")+" · AutoSims · Klavity"
+  $("walkTitle").textContent=trail?trail.name:walk.trailId
+  $("bcCurrent").textContent=walkId.slice(0,12)+"…"
+
+  // Meta
+  var v=String(walk.status||"running")
+  var when=walk.startedAt?new Date(walk.startedAt).toLocaleString():""
+  var dur=""
+  if(walk.startedAt && walk.finishedAt){
+    var secs=Math.round((walk.finishedAt-walk.startedAt)/1000)
+    dur=secs<60?secs+"s":Math.round(secs/60)+"m "+secs%60+"s"
+  }
+  $("walkMeta").innerHTML='<span>ID: '+esc(walkId)+'</span>'
+    +(when?'<span>'+esc(when)+'</span>':"")
+    +(dur?'<span>'+esc(dur)+'</span>':"")
+    +(walk.llmCalls?'<span>'+esc(walk.llmCalls)+' LLM calls</span>':"")
+    +(trail&&trail.baseUrl?'<span><a href="'+esc(trail.baseUrl)+'" target="_blank" rel="noopener" style="color:var(--indigo)">'+esc(trail.baseUrl)+'</a></span>':"")
+
+  // Verdict pill + actions
+  var actsEl=$("wheadActs")
+  actsEl.innerHTML='<span class="pill '+esc(v)+'">'+esc(v)+'</span>'
+    +'<a class="btn btn-sm" href="/api/trails/walks/'+esc(walkId)+'/report.pdf'+esc(qs)+'" target="_blank" rel="noopener">'
+    +window.kicon('file-text',{size:12})+' PDF</a>'
+
+  // Steps sidebar
+  replayState.steps=steps
+  renderSteps(steps)
+
+  // Replay
+  if(d.hasReplay){
+    loadReplay()
+  } else {
+    showNoReplay("No replay was recorded for this Walk.")
+  }
+}
+
+function renderSteps(steps){
+  var el=$("stepList")
+  if(!steps||!steps.length){el.innerHTML='<div style="font-size:13px;color:var(--paper-faint)">No steps recorded.</div>';return}
+  el.innerHTML=""
+  steps.forEach(function(s){
+    var v=String(s.verdict||"skip")
+    var item=document.createElement("div")
+    item.className="step-item"
+    item.innerHTML='<span class="step-idx">#'+esc(s.idx)+'</span>'
+      +'<span class="step-dot '+esc(v)+'"></span>'
+      +'<span class="step-txt">'+esc(v)+'</span>'
+    item.onclick=function(){
+      document.querySelectorAll(".step-item").forEach(function(x){x.classList.remove("on")})
+      item.classList.add("on")
+      showStepDetail(s)
+    }
+    el.appendChild(item)
+  })
+}
+
+function showStepDetail(s){
+  var d=$("stepDetail"), b=$("stepDetailBody"), h=$("stepDetailH2")
+  d.style.display=""
+  h.textContent="Step #"+s.idx+" — "+String(s.verdict||"skip")
+  var ev=s.evidence||{}
+  var rationale=ev.rationale||""
+  var fromSel=ev.fromSelector, toSel=ev.toSelector
+  var html='<div class="step-card">'
+    +'<div class="sr"><span class="si">Step #'+esc(s.idx)+'</span>'
+    +'<span class="sv '+esc(String(s.verdict||"skip"))+'">'+esc(s.verdict||"skip")+'</span>'
+    +(s.confidence!=null?'<span class="sconf">conf '+esc(s.confidence)+'</span>':"")
+    +'</div>'
+  if(rationale) html+='<div class="srat">'+esc(rationale)+'</div>'
+  if(fromSel||toSel) html+='<div class="sdiff">'+esc(fromSel||"(none)")+' → '+esc(toSel||"(none)")+'</div>'
+  html+='</div>'
+  b.innerHTML=html
+  d.scrollIntoView({behavior:"smooth",block:"nearest"})
+}
+
+load()
+</script>
+</body>
+</html>
