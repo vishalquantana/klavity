@@ -1,6 +1,6 @@
 // Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
 import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim } from "./lib/db"
 import { issueKeyFor, chooseDedup } from "./lib/dedup"
 import { classifySimObservation } from "./lib/sim-bug-classify"
 import { getConnector, listConnectorTypes, type TicketPayload, type TicketAttachment } from "./lib/connectors/index"
@@ -2745,6 +2745,60 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         }
       } catch { /* DB error — serve onboarding.html rather than crashing */ }
       return file(SITE + "/onboarding.html")
+    }
+
+    // ── CI API (KLA-90) — machine-to-machine, project-scoped bearer tokens (kci_*). ──
+    // Token issuance: POST /api/ci/token       (session-gated; returns kci_* bound to a project)
+    // Walk trigger:   POST /api/ci/trails/:id/trigger?project=:id  (CI-bearer-gated)
+    // Verdict poll:   GET  /api/ci/runs/:runId?project=:id         (CI-bearer-gated)
+    if (path === "/api/ci/token" || path.startsWith("/api/ci/trails/") || path.startsWith("/api/ci/runs/")) {
+
+      // POST /api/ci/token — session-gated; issue a kci_* token bound to a project.
+      if (req.method === "POST" && path === "/api/ci/token") {
+        const me = await sessionEmail(req)
+        if (!me) return json({ error: "Unauthorized" }, 401)
+        const body = await req.json().catch(() => ({}))
+        const projectId = String(body.project || "").trim()
+        if (!projectId) return json({ error: "project required" }, 400)
+        const access = await projectAccess(me, projectId)
+        if (!access) return json({ error: "Forbidden" }, 403)
+        const ciToken = await issueCIToken(me, projectId)
+        return json({ token: ciToken, project: projectId }, 201)
+      }
+
+      // CI bearer auth: extract + validate a kci_* token, return its bound project.
+      const ciRaw = (req.headers.get("authorization") || "").match(/^Bearer\s+(kci_\S+)$/i)?.[1] ?? ""
+      if (!ciRaw) return json({ error: "Unauthorized" }, 401)
+      const ciInfo = await getExtensionTokenInfo(ciRaw)
+      if (!ciInfo || !ciInfo.projectId) return json({ error: "Unauthorized" }, 401)
+      const ciProject = ciInfo.projectId
+      const requestedProject = url.searchParams.get("project") || ""
+      if (ciProject !== requestedProject) return json({ error: "Forbidden" }, 403)
+
+      // POST /api/ci/trails/:trailId/trigger — trigger a walk, return runId immediately.
+      const ciTriggerMatch = path.match(/^\/api\/ci\/trails\/([^/]+)\/trigger$/)
+      if (req.method === "POST" && ciTriggerMatch) {
+        const trailId = ciTriggerMatch[1]
+        try {
+          const { runId } = await runWalkNow(ciProject, trailId)
+          return json({ runId }, 202)
+        } catch (e: any) {
+          if (e instanceof WalkBusyError) return json({ error: "A walk is already running" }, 409)
+          if (String(e?.message || e) === "trail not found") return json({ error: "Not found" }, 404)
+          if (String(e?.message || e) === "trail is paused") return json({ error: "Trail is paused" }, 409)
+          return json(oops(e, "ci-trigger"), 500)
+        }
+      }
+
+      // GET /api/ci/runs/:runId — poll walk status/verdict.
+      const ciRunMatch = path.match(/^\/api\/ci\/runs\/([^/]+)$/)
+      if (req.method === "GET" && ciRunMatch) {
+        const walk = await getWalk(ciProject, ciRunMatch[1])
+        if (!walk) return json({ error: "Not found" }, 404)
+        return json({ runId: walk.id, status: walk.status, startedAt: walk.startedAt, finishedAt: walk.finishedAt })
+      }
+
+      return json({ error: "Not found" }, 404)
     }
 
     // ── Expectations graduation endpoints (Layer E, Task 6) — project-scoped, authed. ──
