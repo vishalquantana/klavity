@@ -23,6 +23,8 @@ const { crystallize } = await import("./trails-crystallize")
 const { walkTrail } = await import("./trails-runner")
 const { listFindings, setTrailStatus, getTrail } = await import("./trails")
 
+const RUN_BROWSER = !!process.env.KLAV_E2E
+
 const fixtureUrl = (name: string) =>
   pathToFileURL(resolve(import.meta.dir, "../test-fixtures", name)).href
 
@@ -65,7 +67,7 @@ function ambiguousTrajectory() {
   }
 }
 
-test("a draft Trail's RED walk records run steps but files NO findings", async () => {
+test.if(RUN_BROWSER)("a draft Trail's RED walk records run steps but files NO findings", async () => {
   const P = "proj_draft_gate_a"
   const { trailId } = await crystallize(P, ambiguousTrajectory())
   await setTrailStatus(P, trailId, "draft")
@@ -79,7 +81,7 @@ test("a draft Trail's RED walk records run steps but files NO findings", async (
   expect((await listFindings(P)).length).toBe(0)
 }, 30000)
 
-test("the same RED walk on an ACTIVE trail records the finding", async () => {
+test.if(RUN_BROWSER)("the same RED walk on an ACTIVE trail records the finding", async () => {
   const P = "proj_draft_gate_b"
   const { trailId } = await crystallize(P, ambiguousTrajectory())
   await setTrailStatus(P, trailId, "active")
@@ -89,7 +91,7 @@ test("the same RED walk on an ACTIVE trail records the finding", async () => {
   expect((await listFindings(P)).length).toBeGreaterThan(0)
 }, 30000)
 
-test("explicit suppressFindings:true suppresses findings even on an ACTIVE trail", async () => {
+test.if(RUN_BROWSER)("explicit suppressFindings:true suppresses findings even on an ACTIVE trail", async () => {
   const P = "proj_draft_gate_c"
   const { trailId } = await crystallize(P, ambiguousTrajectory())
   await setTrailStatus(P, trailId, "active")

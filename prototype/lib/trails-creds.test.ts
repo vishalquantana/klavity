@@ -26,6 +26,8 @@ const T = await import("./trails")
 
 const P = "proj_creds_test"
 
+const RUN_BROWSER = !!process.env.KLAV_E2E
+
 const fixtureUrl = (name: string) =>
   pathToFileURL(resolve(import.meta.dir, "../test-fixtures", name)).href
 
@@ -102,7 +104,7 @@ test("resolveCredRefs {{cred:admin:otp}} throws for password-shape account", asy
 
 // ── runner-level e2e guard ────────────────────────────────────────────────────
 
-test("walk resolves cred at fill time; placeholder (not secret) in DB + codegen", async () => {
+test.if(RUN_BROWSER)("walk resolves cred at fill time; placeholder (not secret) in DB + codegen", async () => {
   const traj = {
     name: "login", baseUrl: "file://x", authorKind: "llm" as const,
     steps: [

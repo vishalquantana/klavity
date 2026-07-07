@@ -22,6 +22,8 @@ beforeAll(async () => {
 
 const projectId = "proj_textfirst_test"
 
+const RUN_BROWSER = !!process.env.KLAV_E2E
+
 describe("buildAuthorMessages text-only", () => {
   const base = { objective: "o", pageUrl: "u", mediaType: "image/jpeg", domSnapshot: "s", history: [], credFields: [] }
   test("empty screenshotB64 → no image part, content is a plain string", () => {
@@ -61,7 +63,7 @@ describe("buildAuthorMessages project instructions", () => {
   })
 })
 
-describe("authorTrail textFirst default + escalation", () => {
+describe.if(RUN_BROWSER)("authorTrail textFirst default + escalation", () => {
   const FIXTURE_URL = "data:text/html," + encodeURIComponent(`<html><body><a id="go" href="#x">Go</a></body></html>`)
   const doneModel = (shots: boolean[]): AuthorModel => async (input) => {
     shots.push(input.screenshotB64.length > 0)
@@ -109,7 +111,7 @@ describe("authorTrail textFirst default + escalation", () => {
   }, 60000)
 })
 
-describe("authorTrail loop guard (KLA-129)", () => {
+describe.if(RUN_BROWSER)("authorTrail loop guard (KLA-129)", () => {
   const FIXTURE_EMAIL = "data:text/html," + encodeURIComponent(`<html><body><input id="email"/></body></html>`)
   const FIXTURE_EMAIL_BTN = "data:text/html," + encodeURIComponent(`<html><body><input id="email"/><button id="btn">Submit</button></body></html>`)
 

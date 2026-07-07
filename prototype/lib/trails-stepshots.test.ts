@@ -23,6 +23,8 @@ const { crystallize } = await import("./trails-crystallize")
 const { walkTrail } = await import("./trails-runner")
 const T = await import("./trails")
 
+const RUN_BROWSER = !!process.env.KLAV_E2E
+
 const fixtureUrl = (name: string) =>
   pathToFileURL(resolve(import.meta.dir, "../test-fixtures", name)).href
 
@@ -78,7 +80,7 @@ function makeFakeUploader() {
   return { uploader, calls: () => calls, count: () => n }
 }
 
-test("(shots-1) stepShots:true + fake uploader — every actionable step has screenshotKey in evidence; walk still GREEN", async () => {
+test.if(RUN_BROWSER)("(shots-1) stepShots:true + fake uploader — every actionable step has screenshotKey in evidence; walk still GREEN", async () => {
   const projectId = "proj_shots_1"
   const { trailId } = await crystallize(projectId, checkoutTrajectory())
   const fake = makeFakeUploader()
@@ -113,7 +115,7 @@ test("(shots-1) stepShots:true + fake uploader — every actionable step has scr
   }
 }, 45000)
 
-test("(shots-2) stepShots:false (default) — no screenshotKey in any evidence", async () => {
+test.if(RUN_BROWSER)("(shots-2) stepShots:false (default) — no screenshotKey in any evidence", async () => {
   const projectId = "proj_shots_2"
   const { trailId } = await crystallize(projectId, checkoutTrajectory())
   const fake = makeFakeUploader()
@@ -133,7 +135,7 @@ test("(shots-2) stepShots:false (default) — no screenshotKey in any evidence",
   expect(fake.count()).toBe(0) // never called
 }, 45000)
 
-test("(shots-3) uploader throws — walk continues GREEN, no screenshotKey in evidence (best-effort)", async () => {
+test.if(RUN_BROWSER)("(shots-3) uploader throws — walk continues GREEN, no screenshotKey in evidence (best-effort)", async () => {
   const projectId = "proj_shots_3"
   const { trailId } = await crystallize(projectId, checkoutTrajectory())
 
@@ -157,7 +159,7 @@ test("(shots-3) uploader throws — walk continues GREEN, no screenshotKey in ev
   }
 }, 45000)
 
-test("(shots-4) navigate/wait steps get NO screenshot even with stepShots:true", async () => {
+test.if(RUN_BROWSER)("(shots-4) navigate/wait steps get NO screenshot even with stepShots:true", async () => {
   const projectId = "proj_shots_4"
   const { trailId } = await crystallize(projectId, navigateTrajectory())
   const fake = makeFakeUploader()

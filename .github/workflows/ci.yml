@@ -86,7 +86,10 @@ jobs:
         working-directory: prototype
 
       - name: Run backend tests
-        run: bun test
+        # *.e2e.test.ts files require real Playwright browsers (not installed here).
+        # They are excluded via --path-ignore-patterns; run locally with KLAV_E2E=1.
+        # Browser-using tests in non-e2e files are gated with test.if(!!process.env.KLAV_E2E).
+        run: bun test --path-ignore-patterns '**/*.e2e.test.ts'
         working-directory: prototype
 
   dependency-audit:
