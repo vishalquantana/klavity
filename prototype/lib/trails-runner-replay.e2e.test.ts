@@ -93,3 +93,56 @@ test("replay OFF (default) stores nothing — engine behavior unchanged", async 
   expect(summary.verdict).toBe("green")
   expect(await R.getReplay(projectId, summary.runId)).toBeNull()
 }, 60000)
+
+test("replays do NOT record real input values or credentials (KLA-60)", async () => {
+  const projectId = "proj_replay_masking"
+  const SENTINEL_PASS = "SUPER-SECRET-SENTINEL-PASSWORD-999"
+  const SENTINEL_EMAIL = "super-secret-buyer@test.dev"
+  const base = landingOf("journey")
+  
+  const { trailId } = await crystallize(projectId, {
+    name: "Masking test",
+    intent: "test input masking",
+    baseUrl: base,
+    authorKind: "llm" as const,
+    createdBy: "agent@klavity",
+    steps: [
+      { action: "click" as const, url: base, domHash: "landing",
+        target: { role: "button", accessibleName: "Start", text: "Start", testId: "start-link", resolvedSelector: "#start" } },
+      { action: "type" as const, actionValue: SENTINEL_EMAIL, url: base, domHash: "login",
+        target: { role: "textbox", accessibleName: "Email", testId: "email-input", resolvedSelector: "#email" } },
+      { action: "type" as const, actionValue: "{{cred:admin:password}}", url: base, domHash: "login",
+        target: { role: "textbox", accessibleName: "Password", testId: "password-input", resolvedSelector: "#password" } },
+      { action: "click" as const, url: base, domHash: "login",
+        target: { role: "button", accessibleName: "Sign in", text: "Sign in", testId: "signin-btn", resolvedSelector: "#signin" } },
+    ],
+  })
+
+  const credResolver = async () => SENTINEL_PASS
+
+  const summary = await walkTrail(projectId, trailId, {
+    fixtureUrl: landingOf("journey"),
+    replay: true,
+    credResolver
+  })
+
+  expect(summary.verdict).toBe("green")
+
+  const segs = await R.getReplay(projectId, summary.runId)
+  expect(segs).not.toBeNull()
+
+  const serialized = JSON.stringify(segs)
+  expect(serialized).not.toContain(SENTINEL_PASS)
+  expect(serialized).not.toContain(SENTINEL_EMAIL)
+
+  const row = await reconnectDb("file:" + file).execute({
+    sql: "SELECT segments_gz FROM walk_replays WHERE run_id=?",
+    args: [summary.runId]
+  })
+  expect(row.rows.length).toBe(1)
+  const gz = Buffer.from(String((row.rows[0] as any).segments_gz), "base64")
+  const rawSegmentsJson = Buffer.from(Bun.gunzipSync(gz)).toString()
+  expect(rawSegmentsJson).not.toContain(SENTINEL_PASS)
+  expect(rawSegmentsJson).not.toContain(SENTINEL_EMAIL)
+}, 60000)
+

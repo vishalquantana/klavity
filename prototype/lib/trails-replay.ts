@@ -24,8 +24,21 @@ export interface ReplaySegment {
 }
 
 // ── storage ───────────────────────────────────────────────────────────────────────
-export async function saveReplay(projectId: string, runId: string, segments: ReplaySegment[]): Promise<void> {
-  const json = JSON.stringify(segments)
+export async function saveReplay(projectId: string, runId: string, segments: ReplaySegment[], resolvedCreds?: Set<string>): Promise<void> {
+  let json = JSON.stringify(segments)
+  if (resolvedCreds && resolvedCreds.size > 0) {
+    for (const cred of resolvedCreds) {
+      if (cred && cred.trim().length > 0) {
+        const escapedCred = cred.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+        json = json.replace(new RegExp(escapedCred, "g"), "[REDACTED]")
+        const jsonEscaped = JSON.stringify(cred).slice(1, -1)
+        if (jsonEscaped !== cred) {
+          const escapedJsonCred = jsonEscaped.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+          json = json.replace(new RegExp(escapedJsonCred, "g"), "[REDACTED]")
+        }
+      }
+    }
+  }
   const gz = Buffer.from(Bun.gzipSync(Buffer.from(json))).toString("base64")
   const nEvents = segments.reduce((n, s) => n + (s.events?.length || 0), 0)
   await db!.execute({
@@ -144,7 +157,30 @@ export async function setupReplayCapture(context: BrowserContext): Promise<Repla
           // deadlocks page creation and yields no useful frames. Only record real documents.
           try { if (!location || location.href === 'about:blank' || !document.body) return; } catch(e){ return; }
           if (window.__klavRecording) return; window.__klavRecording = true;
-          rec({ maskAllInputs: true, emit: function(ev){ try{ window.__klavBuf.push(ev); }catch(e){} } });
+          rec({
+            maskAllInputs: true,
+            maskInputOptions: {
+              password: true,
+              email: true,
+              text: true,
+              color: true,
+              date: true,
+              'datetime-local': true,
+              number: true,
+              range: true,
+              search: true,
+              tel: true,
+              time: true,
+              url: true,
+              week: true,
+              textarea: true,
+              select: true
+            },
+            maskInputFn: function(text, element) {
+              return '*'.repeat((text || '').length);
+            },
+            emit: function(ev){ try{ window.__klavBuf.push(ev); }catch(e){} }
+          });
           setInterval(function(){ try{ window.__klavDrain(); }catch(e){} }, 250);
         }
         // Defer to a real document: run on DOMContentLoaded (and immediately if already loaded).
