@@ -522,6 +522,9 @@ export async function applySchema(c: Client) {
   // report-identity gate: how an end-user is identified before a widget ticket is accepted.
   // 'email' (default) = logged-in OR a valid email; 'anonymous' = open; 'login' = Klavity token required.
   await c.execute("ALTER TABLE projects ADD COLUMN widget_report_gate TEXT NOT NULL DEFAULT 'email'").catch((e) => console.warn("projects.widget_report_gate ALTER skipped:", e?.message || e))
+  // KLA-102: per-project instructions.md — freeform guidance the author drops in to shape how
+  // AutoSim trails are authored for that project (test conventions, environment quirks, etc.).
+  await c.execute("ALTER TABLE projects ADD COLUMN instructions_md TEXT").catch((e) => console.warn("projects.instructions_md ALTER skipped:", e?.message || e))
   await c.execute("ALTER TABLE feedback ADD COLUMN contact_email TEXT").catch((e) => console.warn("feedback.contact_email ALTER skipped:", e?.message || e))
   // Source attribution: document.referrer of the embed page (where the visitor came FROM). The embed
   // page itself is already captured as url_host/url_path; this records the upstream traffic source so
@@ -823,6 +826,7 @@ export type ProjectRow = {
   createdAt: number; updatedAt: number
   widgetMode: string; widgetCtaUrl: string | null; widgetNotifyEmail: string | null
   widgetReportGate: string
+  instructionsMd?: string | null
 }
 function rowToProject(x: any): ProjectRow {
   return {
@@ -835,6 +839,7 @@ function rowToProject(x: any): ProjectRow {
     widgetCtaUrl: x.widget_cta_url != null ? String(x.widget_cta_url) : null,
     widgetNotifyEmail: x.widget_notify_email != null ? String(x.widget_notify_email) : null,
     widgetReportGate: ["anonymous", "email", "login"].includes(String(x.widget_report_gate)) ? String(x.widget_report_gate) : "email",
+    instructionsMd: x.instructions_md != null ? String(x.instructions_md) : undefined,
   }
 }
 
