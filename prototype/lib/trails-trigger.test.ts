@@ -1,7 +1,8 @@
 // Plan G Task 3 — runWalkNow trigger unit tests with a STUB walk fn (no browser). Proves: returns a
-// runId immediately + finalizes the verdict in the background; a 2nd concurrent call → WalkBusyError;
-// a walk that throws finalizes RED + releases the slot (crash isolation); unknown trail throws.
-import { test, expect, beforeAll } from "bun:test"
+// runId immediately + finalizes the verdict in the background; a 2nd concurrent call → WalkBusyError
+// when the pool is exhausted (KLA-53: pool+queue); a walk that throws finalizes RED + releases the
+// slot (crash isolation); unknown trail throws.
+import { test, expect, beforeAll, beforeEach } from "bun:test"
 import { tmpdir } from "node:os"; import { join } from "node:path"
 const file = join(tmpdir(), `klav-trigger-${Date.now()}-${Math.random().toString(36).slice(2)}.db`)
 process.env.TURSO_DATABASE_URL = "file:" + file
@@ -10,7 +11,10 @@ const { reconnectDb, applySchema, migrateV2 } = await import("./db")
 beforeAll(async () => { const db = reconnectDb("file:" + file); await applySchema(db); await migrateV2(db) })
 const T = await import("./trails")
 const { runWalkNow } = await import("./trails-trigger")
-const { WalkBusyError, isWalkInFlight, cancelCurrentWalk } = await import("./trails-browser")
+const { WalkBusyError, isWalkInFlight, cancelCurrentWalk, _resetWalkPoolForTest } = await import("./trails-browser")
+
+// Default: concurrency=1, queue=0 so existing WalkBusyError tests behave as before.
+beforeEach(() => { _resetWalkPoolForTest(1, 0) })
 
 async function seedTrail() {
   return T.createTrail("proj_t", { name: "T", baseUrl: "https://app.test/", authorKind: "llm" })
@@ -52,6 +56,32 @@ test("runWalkNow throws on a paused trail", async () => {
   const trail = await seedTrail()
   await T.updateTrail("proj_t", trail, { status: "paused" })
   await expect(runWalkNow("proj_t", trail)).rejects.toThrow("trail is paused")
+})
+
+// KLA-53: pool+queue — queued walk starts once a slot frees
+test("runWalkNow queues a 2nd walk when pool=1 queue=1, resolves runId after slot opens", async () => {
+  _resetWalkPoolForTest(1, 1)
+  const trail = await seedTrail()
+  let releaseFirst!: () => void
+  const gate = new Promise<void>((r) => { releaseFirst = r })
+  const slowWalk = async () => { await gate; return { verdict: "green" as const, llmCalls: 0 } }
+  const fastWalk = async () => ({ verdict: "green" as const, llmCalls: 0 })
+  // Start first walk — occupies the single slot
+  const first = await runWalkNow("proj_t", trail, { walk: slowWalk })
+  expect(first.runId).toMatch(/^walk_/)
+
+  // Start second walk — queues (doesn't throw because queue has room)
+  const secondProm = runWalkNow("proj_t", trail, { walk: fastWalk })
+  // 3rd call should throw — pool+queue both full
+  await expect(runWalkNow("proj_t", trail, { walk: fastWalk })).rejects.toBeInstanceOf(WalkBusyError)
+
+  // Release the first walk → second dequeues and runs
+  releaseFirst()
+  await waitFor(async () => (await T.getWalk("proj_t", first.runId))?.status === "green")
+  const second = await secondProm
+  expect(second.runId).toMatch(/^walk_/)
+  await waitFor(async () => (await T.getWalk("proj_t", second.runId))?.status === "green")
+  expect(isWalkInFlight()).toBe(false)
 })
 
 // KLA-100: cancelCurrentWalk fires the signal that reaches the walk fn
