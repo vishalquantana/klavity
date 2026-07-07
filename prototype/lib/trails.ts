@@ -268,3 +268,18 @@ export async function insertAssertStep(
 export async function deleteTrailStep(projectId: string, stepId: string): Promise<void> {
   await db!.execute({ sql: `DELETE FROM trail_steps WHERE id=? AND project_id=?`, args: [stepId, projectId] })
 }
+
+export type StepPatch = { actionValue?: string | null; checkpoint?: { description: string } | null }
+
+export async function updateTrailStep(projectId: string, stepId: string, patch: StepPatch): Promise<boolean> {
+  const r = await db!.execute({ sql: `SELECT * FROM trail_steps WHERE id=? AND project_id=?`, args: [stepId, projectId] })
+  if (!r.rows.length) return false
+  const row = r.rows[0]
+  const newActionValue = "actionValue" in patch ? (patch.actionValue ?? null) : row.action_value
+  const newCheckpoint = "checkpoint" in patch ? (patch.checkpoint == null ? null : JSON.stringify(patch.checkpoint)) : row.checkpoint_json
+  await db!.execute({
+    sql: `UPDATE trail_steps SET action_value=?, checkpoint_json=? WHERE id=? AND project_id=?`,
+    args: [newActionValue, newCheckpoint, stepId, projectId],
+  })
+  return true
+}

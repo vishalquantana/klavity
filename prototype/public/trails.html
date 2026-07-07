@@ -185,8 +185,10 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 #drBg .dr-body{overflow-y:auto;flex:1;margin:0 -4px;padding:0 4px}
 #drBg .dr-trail-name{font-family:var(--display);font-size:20px;font-weight:500;margin-bottom:2px}
 #drBg .dr-trail-url{font-family:var(--mono);font-size:11px;color:var(--paper-faint);margin-bottom:18px}
+#drBg .dr-hint{font-size:12px;color:var(--paper-faint);margin-bottom:14px}
 #drBg .dr-steps{display:flex;flex-direction:column;gap:8px;margin-bottom:20px}
-.dr-step{display:flex;align-items:flex-start;gap:12px;padding:12px 14px;background:var(--ink);border:1px solid var(--line);border-radius:12px}
+.dr-step{display:flex;align-items:flex-start;gap:12px;padding:12px 14px;background:var(--ink);border:1px solid var(--line);border-radius:12px;transition:border-color .15s}
+.dr-step:hover{border-color:rgba(99,102,241,.35)}
 .dr-step-n{font-family:var(--mono);font-size:10px;color:var(--paper-faint);background:var(--ink-3);border-radius:6px;padding:2px 7px;flex-shrink:0;margin-top:2px}
 .dr-step-body{flex:1;min-width:0}
 .dr-step-action{display:inline-block;font-family:var(--mono);font-size:9px;letter-spacing:.07em;text-transform:uppercase;padding:2px 7px;border-radius:20px;margin-bottom:5px;flex-shrink:0}
@@ -198,6 +200,13 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 .dr-step-action.wait{background:var(--ink-3);color:var(--paper-faint)}
 .dr-step-main{font-size:13px;line-height:1.45;word-break:break-word}
 .dr-step-sub{font-size:11.5px;color:var(--paper-faint);margin-top:3px;word-break:break-word}
+/* editable field inside dr-step */
+.dr-step-edit{font-size:13px;line-height:1.45;width:100%;background:var(--ink-3);border:1px solid var(--line);border-radius:8px;color:var(--paper);font-family:var(--body);padding:5px 8px;outline:none;resize:none;box-sizing:border-box;margin-top:2px;transition:border-color .15s}
+.dr-step-edit:focus{border-color:var(--indigo)}
+.dr-step-del{flex-shrink:0;background:none;border:none;cursor:pointer;color:var(--paper-faint);padding:2px 4px;border-radius:6px;font-size:14px;line-height:1;transition:color .15s,transform var(--mi-dur) var(--mi-ease)}
+.dr-step-del:hover{color:var(--rose);transform:var(--mi-lift)}
+.dr-step-del:active{transform:var(--mi-press)}
+.dr-step-saving{font-size:10px;color:var(--paper-faint);margin-top:3px}
 .dr-foot{display:flex;gap:10px;align-items:center;padding-top:14px;border-top:1px solid var(--line)}
 .dr-err{font-size:13px;color:var(--rose);margin-top:8px}
 </style>
@@ -306,6 +315,7 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
     <div class="dr-body" id="drBody">
       <div class="dr-trail-name" id="drName"></div>
       <div class="dr-trail-url" id="drUrl"></div>
+      <p class="dr-hint">Review the authored steps. Edit any text or URL inline, or delete steps that look wrong, then Activate.</p>
       <div class="dr-steps" id="drSteps"></div>
     </div>
     <div class="dr-foot">
@@ -512,72 +522,184 @@ async function healDiffFor(runId){
 var drState = { trailId: null }
 
 function drStepLabel(action){
-  return { navigate:"navigate", click:"click", type:"type", select:"select", assert:"assert", wait:"wait" }[action] || action
-}
-
-function drStepMain(step){
-  var av = step.actionValue || ""
-  var fp = step.target || {}
-  var name = fp.accessibleName || fp.text || fp.role || fp.testId || fp.domPath || ""
-  if (step.action === "navigate") return av || "(no URL)"
-  if (step.action === "assert") return (step.checkpoint && step.checkpoint.description) ? step.checkpoint.description : "(no checkpoint)"
-  if (step.action === "wait") return av ? "Wait " + av + " ms" : "Wait"
-  if (step.action === "type") return av ? "“" + av + "”" : "(no value)"
-  if (step.action === "select") return av ? "Select “" + av + "”" : "(no value)"
-  return name || av || "(target)"
+  return { navigate:”navigate”, click:”click”, type:”type”, select:”select”, assert:”assert”, wait:”wait” }[action] || action
 }
 
 function drStepSub(step){
   var fp = step.target || {}
-  var name = fp.accessibleName || fp.text || fp.role || fp.testId || ""
-  if (step.action === "navigate") return ""
-  if (step.action === "assert") return ""
-  if (step.action === "wait") return ""
-  if (step.action === "type" || step.action === "select") return name ? "in “" + name + "”" : (fp.domPath ? fp.domPath : "")
-  // click: main is already the name; sub is domPath hint
-  return fp.domPath ? fp.domPath : ""
+  var name = fp.accessibleName || fp.text || fp.role || fp.testId || “”
+  if (step.action === “navigate” || step.action === “assert” || step.action === “wait”) return “”
+  if (step.action === “type” || step.action === “select”) return name ? “in “” + name + “”” : (fp.domPath ? fp.domPath : “”)
+  return fp.domPath ? fp.domPath : “”
+}
+
+// Returns true if this step type's value is editable inline.
+function drStepEditable(action){ return action === “navigate” || action === “type” || action === “select” || action === “assert” || action === “wait” }
+
+// Current editable value for a step (the text shown in the textarea).
+function drStepEditValue(step){
+  if (step.action === “assert”) return (step.checkpoint && step.checkpoint.description) ? step.checkpoint.description : “”
+  return step.actionValue || “”
+}
+
+// Placeholder hint for the editable field.
+function drStepPlaceholder(action){
+  if (action === “navigate”) return “URL”
+  if (action === “type”) return “Text to type”
+  if (action === “select”) return “Option value”
+  if (action === “assert”) return “What to check for”
+  if (action === “wait”) return “Milliseconds”
+  return “”
+}
+
+// Read-only display text for non-editable actions (click).
+function drStepReadonly(step){
+  var fp = step.target || {}
+  var name = fp.accessibleName || fp.text || fp.role || fp.testId || fp.domPath || “”
+  return name || “(target)”
+}
+
+async function drSaveStep(trailId, stepId, action, newVal){
+  var pid = projParam(); var qs = pid ? “?project=” + encodeURIComponent(pid) : “”
+  var patch = action === “assert”
+    ? { checkpoint: { description: newVal } }
+    : { actionValue: newVal }
+  var r = await fetch(“/api/trails/” + encodeURIComponent(trailId) + “/steps/” + encodeURIComponent(stepId) + qs, {
+    method: “PATCH”,
+    headers: { “content-type”: “application/json” },
+    body: JSON.stringify(patch),
+  })
+  return r.ok
+}
+
+async function drDeleteStep(trailId, stepId, cardEl){
+  var pid = projParam(); var qs = pid ? “?project=” + encodeURIComponent(pid) : “”
+  var r = await fetch(“/api/trails/” + encodeURIComponent(trailId) + “/steps/” + encodeURIComponent(stepId) + qs, { method: “DELETE” })
+  if (r.ok){
+    cardEl.style.transition = “opacity .2s”
+    cardEl.style.opacity = “0”
+    setTimeout(function(){ if (cardEl.parentNode) cardEl.parentNode.removeChild(cardEl)
+      // reindex step numbers
+      var cards = $(“drSteps”).querySelectorAll(“.dr-step”)
+      cards.forEach(function(c, i){ var n = c.querySelector(“.dr-step-n”); if(n) n.textContent = String(i+1) })
+    }, 200)
+  } else {
+    // flash the card border red briefly
+    cardEl.style.borderColor = “var(--rose)”
+    setTimeout(function(){ cardEl.style.borderColor = “” }, 900)
+  }
 }
 
 function renderDrSteps(steps){
-  var el = $("drSteps")
+  var el = $(“drSteps”)
   if (!steps || !steps.length){
-    el.innerHTML = '<div style="color:var(--paper-faint);font-size:13px;padding:12px 0">No steps authored yet.</div>'
+    el.innerHTML = '<div style=”color:var(--paper-faint);font-size:13px;padding:12px 0”>No steps authored yet.</div>'
     return
   }
-  el.innerHTML = ""
-  steps.forEach(function(s){
-    var action = String(s.action || "")
-    var main = drStepMain(s)
+  el.innerHTML = “”
+  steps.forEach(function(s, i){
+    var action = String(s.action || “”)
     var sub = drStepSub(s)
-    var card = document.createElement("div")
-    card.className = "dr-step"
-    card.innerHTML = '<span class="dr-step-n">' + esc(String(s.idx + 1)) + '</span>'
-      + '<div class="dr-step-body">'
-      + '<span class="dr-step-action ' + esc(action) + '">' + esc(drStepLabel(action)) + '</span>'
-      + '<div class="dr-step-main">' + esc(main) + '</div>'
-      + (sub ? '<div class="dr-step-sub">' + esc(sub) + '</div>' : "")
-      + '</div>'
+    var editable = drStepEditable(action)
+    var card = document.createElement(“div”)
+    card.className = “dr-step”
+
+    // step number
+    var numSpan = document.createElement(“span”)
+    numSpan.className = “dr-step-n”
+    numSpan.textContent = String(i + 1)
+    card.appendChild(numSpan)
+
+    // body
+    var body = document.createElement(“div”)
+    body.className = “dr-step-body”
+
+    // action badge
+    var badge = document.createElement(“span”)
+    badge.className = “dr-step-action “ + action
+    badge.textContent = drStepLabel(action)
+    body.appendChild(badge)
+
+    if (editable){
+      // inline editable field
+      var textarea = document.createElement(“textarea”)
+      textarea.className = “dr-step-edit”
+      textarea.rows = 1
+      textarea.placeholder = drStepPlaceholder(action)
+      textarea.value = drStepEditValue(s)
+      // auto-size: grow with content
+      textarea.oninput = function(){
+        this.style.height = “auto”
+        this.style.height = (this.scrollHeight) + “px”
+      }
+      // save on blur
+      var statusEl = document.createElement(“div”)
+      statusEl.className = “dr-step-saving”
+      textarea.onblur = function(){
+        var newVal = this.value.trim()
+        var oldVal = drStepEditValue(s)
+        if (newVal === oldVal) return
+        statusEl.textContent = “Saving…”
+        drSaveStep(drState.trailId, s.id, action, newVal).then(function(ok){
+          if (ok){ s.actionValue = (action !== “assert”) ? newVal : s.actionValue; if (action === “assert” && s.checkpoint) s.checkpoint.description = newVal; statusEl.textContent = “Saved” }
+          else statusEl.textContent = “Save failed”
+          setTimeout(function(){ statusEl.textContent = “” }, 1800)
+        })
+      }
+      // allow Enter to blur (commit) on single-line fields
+      if (action !== “assert”){
+        textarea.onkeydown = function(e){ if (e.key === “Enter”){ e.preventDefault(); this.blur() } }
+      }
+      body.appendChild(textarea)
+      body.appendChild(statusEl)
+      // trigger auto-size on initial render
+      setTimeout(function(){ textarea.dispatchEvent(new Event(“input”)) }, 0)
+    } else {
+      // read-only display for click (target can't be simply edited)
+      var mainDiv = document.createElement(“div”)
+      mainDiv.className = “dr-step-main”
+      mainDiv.textContent = drStepReadonly(s)
+      body.appendChild(mainDiv)
+    }
+
+    if (sub){
+      var subDiv = document.createElement(“div”)
+      subDiv.className = “dr-step-sub”
+      subDiv.textContent = sub
+      body.appendChild(subDiv)
+    }
+    card.appendChild(body)
+
+    // delete button
+    var delBtn = document.createElement(“button”)
+    delBtn.className = “dr-step-del”
+    delBtn.title = “Remove this step”
+    delBtn.setAttribute(“aria-label”, “Delete step “ + (i + 1))
+    delBtn.textContent = “×”
+    delBtn.onclick = function(){ drDeleteStep(drState.trailId, s.id, card) }
+    card.appendChild(delBtn)
+
     el.appendChild(card)
   })
 }
 
 async function openDraftReview(trailId){
   drState.trailId = trailId
-  var pid = projParam(); var qs = pid ? "?project=" + encodeURIComponent(pid) : ""
-  $("drName").textContent = "Loading…"
-  $("drUrl").textContent = ""
-  $("drSteps").innerHTML = ""
-  $("drErr").textContent = ""; $("drErr").classList.add("hide")
-  $("drActivate").disabled = false; $("drActivate").textContent = "Activate Trail"
-  $("drBg").classList.add("open")
+  var pid = projParam(); var qs = pid ? “?project=” + encodeURIComponent(pid) : “”
+  $(“drName”).textContent = “Loading…”
+  $(“drUrl”).textContent = “”
+  $(“drSteps”).innerHTML = “”
+  $(“drErr”).textContent = “”; $(“drErr”).classList.add(“hide”)
+  $(“drActivate”).disabled = false; $(“drActivate”).textContent = “Activate Trail”
+  $(“drBg”).classList.add(“open”)
   var r
-  try { r = await fetch("/api/trails/" + encodeURIComponent(trailId) + "/steps" + qs) }
-  catch(e){ $("drName").textContent = "Network error"; return }
-  if (!r.ok){ $("drName").textContent = "Couldn't load steps."; return }
+  try { r = await fetch(“/api/trails/” + encodeURIComponent(trailId) + “/steps” + qs) }
+  catch(e){ $(“drName”).textContent = “Network error”; return }
+  if (!r.ok){ $(“drName”).textContent = “Couldn't load steps.”; return }
   var d = await r.json()
   var trail = d.trail || {}
-  $("drName").textContent = trail.name || "Trail"
-  $("drUrl").textContent = trail.baseUrl || ""
+  $(“drName”).textContent = trail.name || “Trail”
+  $(“drUrl”).textContent = trail.baseUrl || “”
   renderDrSteps(d.steps || [])
 }
 
