@@ -8,6 +8,53 @@
 import type { Fingerprint } from "./trails-types"
 import { KREF_SNAPSHOT_CAP } from "./trails-snapshot"
 import { clickWithTransitionFallback } from "./trails-click"
+// ── Network mocking (KLA-111) ─────────────────────────────────────────────────────────────────────
+// A Trail can declare zero or more mocks. Each mock matches browser requests by URL pattern
+// (exact string, glob-style "*" wildcard, or RegExp). The first matching mock wins.
+//
+// Two actions:
+//   stub  — reply with a canned body + optional status/contentType (default 200 + text/plain).
+//   block — abort the request (like an ad-blocker); the browser sees a network error.
+//
+// Usage:
+//   const page = await handle.newPage()
+//   await page.interceptNetwork([{ url: '**/api/flags', stub: { body: '{"dark":true}', contentType: 'application/json' } }])
+//   await page.goto(url, timeout)
+export type NetworkMockStub = {
+  /** HTTP status code. Default 200. */
+  status?: number
+  /** Response body as a string. Default empty string. */
+  body?: string
+  /** Content-Type header. Default 'text/plain'. */
+  contentType?: string
+}
+/**
+ * Describes a single network interception rule.
+ * Match order: the first rule whose `url` pattern matches a request wins.
+ * `url` accepts an exact URL string, a glob pattern ("**", "*"), or a RegExp.
+ */
+export type NetworkMock =
+  | { url: string | RegExp; stub: NetworkMockStub; block?: never }
+  | { url: string | RegExp; block: true; stub?: never }
+
+/** Return true if `requestUrl` matches `pattern` (string glob or RegExp). */
+export function matchesMock(pattern: string | RegExp, requestUrl: string): boolean {
+  if (pattern instanceof RegExp) return pattern.test(requestUrl)
+  // Build a regex from the glob pattern. Process ** before * to avoid double-substitution:
+  // replace ** with a placeholder first, then * with [^/]*, then restore the placeholder as .*
+  // This prevents ".* " from having its "*" re-replaced by the single-star handler.
+  const DSTAR = "\u0000DSTAR\u0000"
+  const escaped = pattern
+    .replace(/[.+?^${}()|[\]\\]/g, "\\$&") // escape regex special chars (not *)
+    .replace(/\*\*/g, DSTAR)                    // save ** as placeholder
+    .replace(/\*/g, "[^/]*")                     // single * → within-segment glob
+    .replace(new RegExp(DSTAR, "g"), ".*")        // restore ** → any-segment glob
+  // When the pattern starts with ".*" (i.e. started with "**"), it must match from anywhere
+  // in the URL, so we skip the "^" anchor to allow prefix-matching.
+  const anchored = escaped.startsWith(".*") ? escaped + "$" : "^" + escaped + "$"
+  return new RegExp(anchored).test(requestUrl)
+}
+
 
 // ── Page-context evaluate bodies (run in the browser; NO module-scope closures). Shared verbatim by
 //    both drivers — Playwright and Puppeteer both serialize a function to the page identically. ──────
@@ -129,6 +176,13 @@ export interface BrowserPage {
   selectOption(selector: string, value: string, timeoutMs: number): Promise<void>
   assertVisible(selector: string, timeoutMs: number): Promise<void>
   waitMs(ms: number): Promise<void>
+  /**
+   * KLA-111: Install network mocks before navigating. Subsequent requests whose URL matches a mock
+   * rule are either stubbed with a canned response or aborted (blocked). Call before goto() so
+   * mocks are in place for the initial page load. Calling again REPLACES all previously installed
+   * mocks (idempotent: unroutes old handlers then installs fresh ones). No-op when mocks is empty.
+   */
+  interceptNetwork(mocks: NetworkMock[]): Promise<void>
 }
 export interface BrowserHandle {
   newPage(): Promise<BrowserPage>
@@ -152,6 +206,25 @@ class PlaywrightPage implements BrowserPage {
   async selectOption(selector: string, value: string, timeoutMs: number) { await this.page.locator(selector).selectOption(value, { timeout: timeoutMs }) }
   async assertVisible(selector: string, timeoutMs: number) { await this.page.locator(selector).waitFor({ state: "visible", timeout: timeoutMs }) }
   async waitMs(ms: number) { await new Promise((r) => setTimeout(r, ms)) }
+  async interceptNetwork(mocks: NetworkMock[]): Promise<void> {
+    // Remove any previously installed Klavity route handlers before installing fresh ones.
+    await this.page.unroute("**/*").catch(() => {})
+    if (!mocks.length) return
+    await this.page.route("**/*", (route) => {
+      const reqUrl = route.request().url()
+      for (const mock of mocks) {
+        if (!matchesMock(mock.url, reqUrl)) continue
+        if (mock.block) { route.abort("blockedbyclient").catch(() => {}); return }
+        route.fulfill({
+          status: mock.stub.status ?? 200,
+          contentType: mock.stub.contentType ?? "text/plain",
+          body: mock.stub.body ?? "",
+        }).catch(() => {})
+        return
+      }
+      route.continue().catch(() => {})
+    })
+  }
 }
 
 class PlaywrightHandle implements BrowserHandle {
@@ -180,6 +253,28 @@ class PuppeteerPage implements BrowserPage {
   async selectOption(selector: string, value: string, timeoutMs: number) { await this.page.waitForSelector(selector, { timeout: timeoutMs }); await this.page.select(selector, value) }
   async assertVisible(selector: string, timeoutMs: number) { await this.page.waitForSelector(selector, { visible: true, timeout: timeoutMs }) }
   async waitMs(ms: number) { await new Promise((r) => setTimeout(r, ms)) }
+  async interceptNetwork(mocks: NetworkMock[]): Promise<void> {
+    // Puppeteer: enable request interception and handle each request against the mock list.
+    // setRequestInterception(true) is idempotent in Puppeteer; safe to call repeatedly.
+    if (!mocks.length) return
+    await this.page.setRequestInterception(true)
+    // Remove any previously registered Klavity listener to avoid double-handling.
+    this.page.removeAllListeners("request")
+    this.page.on("request", (req: any) => {
+      const reqUrl: string = req.url()
+      for (const mock of mocks) {
+        if (!matchesMock(mock.url, reqUrl)) continue
+        if (mock.block) { req.abort().catch(() => {}); return }
+        req.respond({
+          status: mock.stub.status ?? 200,
+          contentType: mock.stub.contentType ?? "text/plain",
+          body: mock.stub.body ?? "",
+        }).catch(() => {})
+        return
+      }
+      req.continue().catch(() => {})
+    })
+  }
 }
 
 class PuppeteerHandle implements BrowserHandle {
