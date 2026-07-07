@@ -1,48 +1,90 @@
-// Single-slot mutex + prod-safe Chromium args. The 1GB app box can run exactly ONE walk at a time;
-// a second trigger is rejected (never a 2nd browser). Keep this the single seam for where/how
-// browsers launch, so walks can later be moved to a separate worker by editing only this file.
+// Concurrency pool + bounded queue for walk slots. Up to KLAV_WALK_CONCURRENCY (default 3) walks run
+// simultaneously; additional requests queue (up to KLAV_WALK_QUEUE, default 10). When both the pool
+// and queue are exhausted, WalkBusyError is thrown (→ HTTP 409). Per-slot context (AbortController,
+// runId) is propagated via AsyncLocalStorage so callers inside a slot see THEIR walk's signal/runId.
+//
+// NOTE: this is PER-PROCESS. Running >1 worker process would need a DB advisory lock.
+import { AsyncLocalStorage } from "node:async_hooks"
+
 export class WalkBusyError extends Error {
-  constructor() { super("A walk is already running"); this.name = "WalkBusyError" }
+  constructor(msg = "Walk queue is full — try again shortly") { super(msg); this.name = "WalkBusyError" }
 }
 
-// NOTE: this mutex is PER-PROCESS (a module-scoped boolean). It holds the concurrency=1 invariant only
-// while klav.service runs as a SINGLE worker/instance. Running >1 worker/process would give each its own
-// _inFlight and break the invariant (two browsers on the 1GB box) — that would need a DB advisory lock.
-let _inFlight = false
-let _currentRunId: string | null = null
-let _cancelController: AbortController | null = null
+// Per-slot context carried through the async call chain via AsyncLocalStorage.
+interface SlotCtx { ac: AbortController; runId: string | null }
+const _als = new AsyncLocalStorage<SlotCtx>()
 
-export function isWalkInFlight(): boolean { return _inFlight }
-export function currentWalkRunId(): string | null { return _currentRunId }
+// Mutable so tests can reconfigure; initialised from env once at startup.
+let _maxConcurrency = Math.max(1, parseInt(process.env.KLAV_WALK_CONCURRENCY ?? "3", 10) || 3)
+let _maxQueue = Math.max(0, parseInt(process.env.KLAV_WALK_QUEUE ?? "10", 10) || 0)
 
-/** Called from within the slot (after the walk row is created) to register the runId for cancel. */
-export function setCurrentWalkRunId(runId: string): void { _currentRunId = runId }
+let _active = 0
+const _waiters: Array<() => void> = []
+const _activeCtxs = new Set<SlotCtx>()
 
-/** Returns the AbortSignal for the current walk, or null when no walk is running. */
+/** Reset pool limits — for use in tests only. */
+export function _resetWalkPoolForTest(concurrency: number, maxQueue: number): void {
+  _maxConcurrency = concurrency
+  _maxQueue = maxQueue
+  _active = 0
+  _waiters.length = 0
+  _activeCtxs.clear()
+}
+
+export function isWalkInFlight(): boolean { return _active > 0 }
+
+/** runId registered in the CURRENT slot (null outside a slot or before setCurrentWalkRunId). */
+export function currentWalkRunId(): string | null { return _als.getStore()?.runId ?? null }
+
+/** Register the runId for this slot so cancelCurrentWalk can find it. Called inside the slot. */
+export function setCurrentWalkRunId(runId: string): void {
+  const ctx = _als.getStore()
+  if (ctx) ctx.runId = runId
+}
+
+/** AbortSignal for the current slot's walk; null when called outside a slot. */
 export function getCurrentWalkAbortSignal(): AbortSignal | null {
-  return _cancelController ? _cancelController.signal : null
+  return _als.getStore()?.ac.signal ?? null
 }
 
 /**
- * Abort the in-flight walk if its runId matches. Returns true when the signal was fired,
- * false when no walk is running or the runId does not match the current walk.
+ * Abort the walk identified by runId across all active slots.
+ * Returns true when the signal was fired, false when not found.
  */
 export function cancelCurrentWalk(runId: string): boolean {
-  if (!_inFlight || _currentRunId !== runId || !_cancelController) return false
-  _cancelController.abort()
-  return true
+  for (const ctx of _activeCtxs) {
+    if (ctx.runId === runId) { ctx.ac.abort(); return true }
+  }
+  return false
 }
 
-export async function withWalkSlot<T>(fn: () => Promise<T>): Promise<T> {
-  if (_inFlight) throw new WalkBusyError()
-  _inFlight = true
-  _currentRunId = null
-  _cancelController = new AbortController()
-  try { return await fn() } finally {
-    _inFlight = false
-    _currentRunId = null
-    _cancelController = null
+async function _runInSlot<T>(fn: () => Promise<T>, ctx: SlotCtx): Promise<T> {
+  _active++
+  _activeCtxs.add(ctx)
+  try {
+    return await _als.run(ctx, fn)
+  } finally {
+    _active--
+    _activeCtxs.delete(ctx)
+    // Wake the next queued waiter (if any) so it can acquire a now-free slot.
+    const next = _waiters.shift()
+    if (next) next()
   }
+}
+
+/**
+ * Run fn inside a pool slot. Up to _maxConcurrency walk fns execute concurrently.
+ * When all slots are busy, callers wait in an internal queue (up to _maxQueue deep).
+ * Throws WalkBusyError when both the pool and queue are exhausted.
+ */
+export async function withWalkSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (_active < _maxConcurrency) {
+    return _runInSlot(fn, { ac: new AbortController(), runId: null })
+  }
+  if (_waiters.length >= _maxQueue) throw new WalkBusyError()
+  // Queue: wait for a slot notification, then run.
+  await new Promise<void>((resolve) => { _waiters.push(resolve) })
+  return _runInSlot(fn, { ac: new AbortController(), runId: null })
 }
 
 // Low-memory / single-process Chromium flags for the shared 1GB prod box (spec §5.2). Headless, one
