@@ -128,6 +128,10 @@ export interface BrowserPage {
   fill(selector: string, value: string, timeoutMs: number): Promise<void>
   selectOption(selector: string, value: string, timeoutMs: number): Promise<void>
   assertVisible(selector: string, timeoutMs: number): Promise<void>
+  assertTextEquals(selector: string, value: string, timeoutMs: number): Promise<void>
+  assertTextContains(selector: string, text: string, timeoutMs: number): Promise<void>
+  assertUrlMatches(pattern: RegExp | string, timeoutMs: number): Promise<void>
+  assertElementCount(selector: string, expected: number, timeoutMs: number): Promise<void>
   waitMs(ms: number): Promise<void>
 }
 export interface BrowserHandle {
@@ -151,6 +155,40 @@ class PlaywrightPage implements BrowserPage {
   async fill(selector: string, value: string, timeoutMs: number) { await this.page.locator(selector).fill(value, { timeout: timeoutMs }) }
   async selectOption(selector: string, value: string, timeoutMs: number) { await this.page.locator(selector).selectOption(value, { timeout: timeoutMs }) }
   async assertVisible(selector: string, timeoutMs: number) { await this.page.locator(selector).waitFor({ state: "visible", timeout: timeoutMs }) }
+  async assertTextEquals(selector: string, value: string, timeoutMs: number) {
+    const locator = this.page.locator(selector)
+    await locator.waitFor({ state: "visible", timeout: timeoutMs })
+    const text = (await locator.allInnerTexts()).join(" ").trim()
+    if (text !== value) throw new Error(`assertTextEquals: expected "${value}" but got "${text}"`)
+  }
+  async assertTextContains(selector: string, text: string, timeoutMs: number) {
+    const locator = this.page.locator(selector)
+    await locator.waitFor({ state: "visible", timeout: timeoutMs })
+    const elText = (await locator.allInnerTexts()).join(" ").trim()
+    if (!elText.includes(text)) throw new Error(`assertTextContains: "${text}" not found in "${elText}"`)
+  }
+  async assertUrlMatches(pattern: RegExp | string, timeoutMs: number) {
+    const re = pattern instanceof RegExp ? pattern : new RegExp("^" + pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$")
+    const start = Date.now()
+    while (Date.now() - start < timeoutMs) {
+      if (re.test(this.page.url())) return
+      await this.waitMs(100)
+    }
+    throw new Error(`assertUrlMatches: URL "${this.page.url()}" did not match ${pattern}`)
+  }
+  async assertElementCount(selector: string, expected: number, timeoutMs: number) {
+    const locator = this.page.locator(selector)
+    await locator.first().waitFor({ state: "visible", timeout: timeoutMs })
+    let n = await locator.count()
+    if (n === expected) return
+    // Poll a few times in case of async list rendering.
+    for (let i = 0; i < 5; i++) {
+      await this.waitMs(100)
+      n = await locator.count()
+      if (n === expected) return
+    }
+    throw new Error(`assertElementCount: expected ${expected} but found ${n}`)
+  }
   async waitMs(ms: number) { await new Promise((r) => setTimeout(r, ms)) }
 }
 
@@ -179,6 +217,37 @@ class PuppeteerPage implements BrowserPage {
   }
   async selectOption(selector: string, value: string, timeoutMs: number) { await this.page.waitForSelector(selector, { timeout: timeoutMs }); await this.page.select(selector, value) }
   async assertVisible(selector: string, timeoutMs: number) { await this.page.waitForSelector(selector, { visible: true, timeout: timeoutMs }) }
+  async assertTextEquals(selector: string, value: string, timeoutMs: number) {
+    const el = await this.page.waitForSelector(selector, { visible: true, timeout: timeoutMs })
+    if (!el) throw new Error(`assertTextEquals: selector "${selector}" not found`)
+    const text = await el.evaluate((n) => (n.textContent || "").trim())
+    if (text !== value) throw new Error(`assertTextEquals: expected "${value}" but got "${text}"`)
+  }
+  async assertTextContains(selector: string, text: string, timeoutMs: number) {
+    const el = await this.page.waitForSelector(selector, { visible: true, timeout: timeoutMs })
+    if (!el) throw new Error(`assertTextContains: selector "${selector}" not found`)
+    const elText = await el.evaluate((n) => (n.textContent || "").trim())
+    if (!elText.includes(text)) throw new Error(`assertTextContains: "${text}" not found in "${elText}"`)
+  }
+  async assertUrlMatches(pattern: RegExp | string, timeoutMs: number) {
+    const re = pattern instanceof RegExp ? pattern : new RegExp("^" + pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$")
+    const start = Date.now()
+    while (Date.now() - start < timeoutMs) {
+      if (re.test(this.page.url())) return
+      await this.waitMs(100)
+    }
+    throw new Error(`assertUrlMatches: URL "${this.page.url()}" did not match ${pattern}`)
+  }
+  async assertElementCount(selector: string, expected: number, timeoutMs: number) {
+    const start = Date.now()
+    while (Date.now() - start < timeoutMs) {
+      const n = await this.page.evaluate((s: string) => document.querySelectorAll(s).length, selector)
+      if (n === expected) return
+      await this.waitMs(100)
+    }
+    const n = await this.page.evaluate((s: string) => document.querySelectorAll(s).length, selector)
+    throw new Error(`assertElementCount: expected ${expected} but found ${n}`)
+  }
   async waitMs(ms: number) { await new Promise((r) => setTimeout(r, ms)) }
 }
 
