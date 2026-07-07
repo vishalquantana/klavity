@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script>(function(){try{var t=localStorage.getItem('klav-theme');if(t==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();</script>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>All Walks · AutoSims · Klavity</title>
+<link rel="stylesheet" href="/fonts/fonts.css"/>
+<link rel="stylesheet" href="/tokens.css"/>
+<style>
+:root{--ink:#f5f3ee;--ink-2:#ffffff;--ink-3:#efeae0;--paper:#19140f;--paper-dim:#574f45;--paper-faint:#8a8076;--indigo:#6366f1;--indigo-deep:#4f46e5;--amber:#d98324;--rose:#db2777;--green:#0f9d6b;--line:rgba(25,20,15,.12);
+--display:'Fraunces',serif;--body:'Hanken Grotesk',system-ui,sans-serif;--mono:'JetBrains Mono',monospace;
+--mi-ease:cubic-bezier(.2,.7,.3,1);--mi-dur:.15s}
+[data-theme="dark"]{--ink:#0c0a08;--ink-2:#15110d;--ink-3:#1e1813;--paper:#f3ece1;--paper-dim:#b3a896;--paper-faint:#776c5d;--indigo:#8b8bf5;--indigo-deep:#6366f1;--amber:#e8a24a;--rose:#e8849a;--green:#9fd6a0;--line:rgba(243,236,225,.11)}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--ink);color:var(--paper);font-family:var(--body);min-height:100vh}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;background:radial-gradient(80% 50% at 50% -5%,rgba(139,139,245,.08),transparent 60%)}
+a{color:inherit;text-decoration:none}
+.bar{position:sticky;top:0;z-index:10;backdrop-filter:blur(12px);background:var(--ink-2);border-bottom:1px solid var(--line)}
+.bar-in{max-width:1060px;margin:0 auto;padding:0 24px;height:64px;display:flex;align-items:center;gap:14px}
+.brand{display:flex;align-items:center;gap:10px;font-family:var(--display);font-weight:600;font-size:20px;letter-spacing:-.02em}
+.nav{margin-left:8px;display:flex;gap:4px}
+.nav a{font-size:13px;color:var(--paper-faint);padding:6px 11px;border-radius:9px}
+.nav a:hover{color:var(--paper-dim)}.nav a.on{color:var(--paper);background:var(--ink-3)}
+.right{margin-left:auto;display:flex;align-items:center;gap:14px}
+.who{font-size:13px;color:var(--paper-dim)}
+.lo{font-size:13px;color:var(--paper-faint);cursor:pointer;background:none;border:none;font-family:var(--body)}.lo:hover{color:var(--paper-dim)}
+
+.wrap{max-width:1060px;margin:0 auto;padding:34px 24px}
+.head{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;flex-wrap:wrap;margin-bottom:28px}
+h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02em;margin-bottom:4px}
+.lead{color:var(--paper-dim);font-size:15px}
+.switcher{display:flex;align-items:center;gap:8px}
+.sw-lbl{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--paper-faint)}
+.proj-select{appearance:none;background:var(--ink-2);border:1px solid var(--line);border-radius:10px;padding:9px 34px 9px 13px;color:var(--paper);font-family:var(--body);font-weight:600;font-size:14px;cursor:pointer;outline:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center}
+.proj-select:focus{border-color:var(--indigo)}
+
+/* filter row */
+.filters{display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;align-items:center}
+.filter-btn{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;padding:5px 11px;border-radius:20px;border:1px solid var(--line);background:transparent;color:var(--paper-faint);cursor:pointer;transition:border-color var(--mi-dur) var(--mi-ease),color var(--mi-dur) var(--mi-ease),background var(--mi-dur) var(--mi-ease)}
+.filter-btn:hover{color:var(--paper-dim)}
+.filter-btn.on{background:var(--ink-3);color:var(--paper);border-color:var(--indigo)}
+
+/* walk list */
+.walk-list{display:flex;flex-direction:column;gap:10px}
+.walk-row{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;padding:16px 18px;background:var(--ink-2);border:1px solid var(--line);border-radius:14px;transition:border-color var(--mi-dur) var(--mi-ease),transform var(--mi-dur) var(--mi-ease),box-shadow var(--mi-dur) var(--mi-ease)}
+.walk-row:hover{border-color:var(--indigo);transform:translateY(-1px);box-shadow:0 4px 20px rgba(99,102,241,.1)}
+.walk-row a.overlay{position:absolute;inset:0;z-index:0;border-radius:14px}
+.walk-row{position:relative}
+.wr-left{}
+.wr-trail{font-size:14px;font-weight:600;margin-bottom:4px;line-height:1.3}
+.wr-meta{font-family:var(--mono);font-size:11px;color:var(--paper-faint);display:flex;gap:10px;flex-wrap:wrap;margin-top:4px}
+.wr-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.pill{font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;padding:4px 9px;border-radius:20px;flex-shrink:0}
+.pill.green{background:rgba(15,157,107,.16);color:var(--green)}
+.pill.amber{background:rgba(217,131,36,.18);color:var(--amber)}
+.pill.red{background:rgba(219,39,119,.16);color:var(--rose)}
+.pill.running,.pill.skip{background:var(--ink-3);color:var(--paper-faint)}
+
+.view-btn{font-family:var(--mono);font-size:10px;letter-spacing:.04em;padding:5px 11px;border-radius:9px;border:1px solid var(--line);background:transparent;color:var(--paper-dim);cursor:pointer;position:relative;z-index:1;transition:border-color var(--mi-dur) var(--mi-ease),color var(--mi-dur) var(--mi-ease),transform var(--mi-dur) var(--mi-ease)}
+.view-btn:hover{border-color:var(--indigo);color:var(--paper);transform:translateY(-1px)}
+.view-btn:active{transform:scale(.97)}
+
+/* replay badge */
+.replay-badge{font-family:var(--mono);font-size:9px;letter-spacing:.04em;padding:3px 7px;border-radius:6px;background:rgba(99,102,241,.12);color:var(--indigo);border:1px solid rgba(99,102,241,.2);flex-shrink:0}
+
+.empty{text-align:center;padding:60px 24px;color:var(--paper-faint)}
+.empty p{font-size:14px;line-height:1.6;margin-top:12px}
+.empty a{color:var(--indigo)}
+</style>
+<script src="/icons.generated.js"></script>
+</head>
+<body>
+<div class="bar"><div class="bar-in">
+  <a class="brand" href="/dashboard"><img src="/favicon.svg" width="28" height="28" alt="Klavity" style="border-radius:8px;display:block"/>Klavity</a>
+  <nav class="nav">
+    <a href="/dashboard">Dashboard</a>
+    <a href="/autosims" class="on">AutoSims</a>
+  </nav>
+  <div class="right">
+    <span class="who" id="who"></span>
+    <button class="lo" id="logout">Log out</button>
+  </div>
+</div></div>
+
+<div class="wrap">
+  <div class="head">
+    <div>
+      <h1>All Walks</h1>
+      <p class="lead" id="lead">Every AutoSim run, with full replay and step detail.</p>
+    </div>
+    <div class="switcher">
+      <span class="sw-lbl">Project</span>
+      <select class="proj-select" id="projSwitch" disabled><option>—</option></select>
+    </div>
+  </div>
+
+  <div class="filters" id="filters">
+    <button class="filter-btn on" data-filter="all">All</button>
+    <button class="filter-btn" data-filter="green">Green</button>
+    <button class="filter-btn" data-filter="amber">Amber</button>
+    <button class="filter-btn" data-filter="red">Red</button>
+    <button class="filter-btn" data-filter="running">Running</button>
+  </div>
+
+  <div class="walk-list" id="walkList">
+    <div class="empty"><p>Loading walks…</p></div>
+  </div>
+</div>
+
+<script>
+function $(id){return document.getElementById(id)}
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,c=({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]||c)}
+function projParam(){try{return new URLSearchParams(location.search).get("project")}catch(e){return null}}
+
+var state={walks:[],filter:"all",activeId:null,projId:null}
+
+$("logout").onclick=async function(){await fetch("/api/auth/logout",{method:"POST"});location.href="/"}
+
+document.querySelectorAll(".filter-btn").forEach(function(btn){
+  btn.onclick=function(){
+    state.filter=btn.getAttribute("data-filter")
+    document.querySelectorAll(".filter-btn").forEach(function(b){b.classList.remove("on")})
+    btn.classList.add("on")
+    renderList()
+  }
+})
+
+async function load(){
+  var pid=projParam()
+  var qs=pid?"?project="+encodeURIComponent(pid):""
+  var r
+  try{r=await fetch("/api/dashboard"+qs)}
+  catch(e){$("lead").textContent="Network error.";return}
+  if(r.status===401){location.href="/login";return}
+  if(!r.ok){$("lead").textContent="Error loading project.";return}
+  var d=await r.json()
+  $("who").textContent=d.email||""
+  state.projId=d.active?d.active.id:null
+
+  // Switcher
+  var sel=$("projSwitch")
+  var projs=d.projects||[]
+  sel.innerHTML=projs.map(function(p){return'<option value="'+esc(p.id)+'"'+(p.id===(d.active&&d.active.id)?" selected":"")+'>'+esc(p.name)+'</option>'}).join("")
+  sel.disabled=false
+  sel.onchange=function(){
+    var np=sel.value;if(!np) return
+    location.href="/autosims/walks?project="+encodeURIComponent(np)
+  }
+
+  // Walks from dashboard + replay annotation
+  var walks=d.recentWalks||[]
+  state.walks=walks
+  renderList()
+}
+
+function renderList(){
+  var el=$("walkList")
+  var filtered=state.walks.filter(function(w){
+    if(state.filter==="all") return true
+    return String(w.status||"running")===state.filter
+  })
+  if(!filtered.length){
+    el.innerHTML='<div class="empty">'
+      +window.kicon("footprints",{size:32})
+      +'<p>No Walks'+(state.filter!=="all"?" with verdict <strong>"+esc(state.filter)+"</strong>":"")+' yet.'
+      +(state.filter!=="all"?'<br><a href="#" onclick="resetFilter()">Show all</a>':
+        ' <a href="/autosims">Author a Trail</a> to start.')
+      +'</p></div>'
+    return
+  }
+  el.innerHTML=""
+  filtered.forEach(function(w){
+    var v=String(w.status||"running")
+    var when=w.startedAt?new Date(w.startedAt).toLocaleString():""
+    var pid=state.projId
+    var detailHref="/autosims/walk/"+encodeURIComponent(w.id)+(pid?"?project="+encodeURIComponent(pid):"")
+    var row=document.createElement("div")
+    row.className="walk-row"
+    row.innerHTML='<a class="overlay" href="'+esc(detailHref)+'"></a>'
+      +'<div class="wr-left">'
+        +'<div class="wr-trail">'+esc(w.trailId)+'</div>'
+        +'<div class="wr-meta">'
+          +'<span>'+esc(w.id.slice(0,16))+'…</span>'
+          +(when?'<span>'+esc(when)+'</span>':"")
+          +(w.llmCalls!=null?'<span>'+esc(w.llmCalls)+' LLM</span>':"")
+        +'</div>'
+      +'</div>'
+      +'<div class="wr-right">'
+        +(w.hasReplay?'<span class="replay-badge">▶ Replay</span>':"")
+        +'<span class="pill '+esc(v)+'">'+esc(v)+'</span>'
+        +'<a class="view-btn" href="'+esc(detailHref)+'">View →</a>'
+      +'</div>'
+    el.appendChild(row)
+  })
+}
+
+function resetFilter(){
+  state.filter="all"
+  document.querySelectorAll(".filter-btn").forEach(function(b){b.classList.toggle("on",b.getAttribute("data-filter")==="all")})
+  renderList()
+  return false
+}
+
+load()
+</script>
+</body>
+</html>
