@@ -38,7 +38,7 @@ import { getReplay, runsWithReplay } from "./lib/trails-replay"
 import { saveFeedbackReplay, getFeedbackReplay, feedbackIdsWithReplay, pruneOldFeedbackReplays } from "./lib/feedback-replay"
 import { listRunSteps, listTrails, getTrail, getWalk, setTrailStatus, listTrailSteps, insertAssertStep, deleteTrailStep, updateTrailStep, updateTrail } from "./lib/trails"
 import { runWalkNow } from "./lib/trails-trigger"
-import { runAuthorNow, getAuthorSession } from "./lib/trails-author"
+import { runAuthorNow, getAuthorSession, getActiveAuthorSession } from "./lib/trails-author"
 import { WalkBusyError, cancelCurrentWalk } from "./lib/trails-browser"
 import { mintShareToken, resolveShareToken, renderWalkPdf } from "./lib/trails-share"
 import { gatherWalkReport } from "./lib/trails-report"
@@ -2974,6 +2974,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (e instanceof WalkBusyError) return json({ error: "An AutoSim is already running — try again shortly." }, 409)
           return json(oops(e, "trails-author"), 500)
         }
+      }
+      if (req.method === "GET" && path === "/api/trails/author/active") {
+        const s = await getActiveAuthorSession(projectId)
+        return s ? json(s) : json({ error: "No active session" }, 404)
       }
       if (req.method === "GET" && path.startsWith("/api/trails/author/")) {
         const s = await getAuthorSession(projectId, path.slice("/api/trails/author/".length))
