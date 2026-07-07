@@ -149,9 +149,17 @@ async function load(){
     location.href="/autosims/walks?project="+encodeURIComponent(np)
   }
 
-  // Walks from dashboard + replay annotation
-  var walks=d.recentWalks||[]
-  state.walks=walks
+  // Walks from /api/trails/dashboard (recentWalks + hasReplay annotation).
+  // Fetch in parallel with the dashboard call where possible; here we already have the project
+  // switcher rendered so we fire it after we know the project id.
+  var t
+  try{
+    var rt=await fetch("/api/trails/dashboard"+qs)
+    if(rt.status===401){location.href="/login";return}
+    if(!rt.ok){$("lead").textContent="Error loading Walks.";renderList();return}
+    t=await rt.json()
+  }catch(e){$("lead").textContent="Error loading Walks.";renderList();return}
+  state.walks=t.recentWalks||[]
   renderList()
 }
 
