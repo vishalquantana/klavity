@@ -288,3 +288,67 @@ test("GET /shared/walk-report/:token — rate-limited after 30 rapid requests", 
   }
   expect(got429).toBe(true)
 })
+
+test("GET /shared/walk-report/:token & /api/.../report.pdf — returns 429 Retry-After: 5 when PDF is busy (KLA-59)", async () => {
+  const tempPort = 47000 + Math.floor(Math.random() * 1000)
+  const tempProc = Bun.spawn(["bun", "run", "server.ts"], {
+    cwd: import.meta.dir,
+    env: {
+      ...process.env,
+      PORT: String(tempPort),
+      TURSO_DATABASE_URL: "file:" + srvDbFile,
+      TURSO_AUTH_TOKEN: "",
+      KLAV_SECRET: TEST_SECRET,
+      KLAV_BASE_URL: `http://localhost:${tempPort}`,
+      KLAV_TEST_FAKE_PDF: "1",
+      KLAV_TEST_FAKE_PDF_DELAY: "1000",
+    }
+  })
+
+  // Wait for server ready
+  const deadline = Date.now() + 10_000
+  while (Date.now() < deadline) {
+    try {
+      const r = await fetch(`http://localhost:${tempPort}/favicon.svg`).catch(() => null)
+      if (r && r.status < 500) break
+    } catch {}
+    await Bun.sleep(150)
+  }
+
+  // Mint a share token
+  const mintR = await fetch(`http://localhost:${tempPort}/api/trails/walks/${WALK_RUN_ID}/share?project=${pid}`, {
+    method: "POST",
+    headers: { cookie: adminCookie },
+  })
+  const { url: shareUrl } = await mintR.json()
+
+  // 1. Concurrent requests to shared walk-report endpoint
+  const [res1, res2] = await Promise.all([
+    fetch(shareUrl),
+    Bun.sleep(50).then(() => fetch(shareUrl))
+  ])
+
+  expect([res1.status, res2.status]).toContain(200)
+  expect([res1.status, res2.status]).toContain(429)
+
+  const busyRes = res1.status === 429 ? res1 : res2
+  expect(busyRes.headers.get("retry-after")).toBe("5")
+
+  // 2. Concurrent requests to authed download endpoint
+  const pdfUrl = `http://localhost:${tempPort}/api/trails/walks/${WALK_RUN_ID}/report.pdf?project=${pid}`
+  const [authedRes1, authedRes2] = await Promise.all([
+    fetch(pdfUrl, { headers: { cookie: adminCookie } }),
+    Bun.sleep(50).then(() => fetch(pdfUrl, { headers: { cookie: adminCookie } }))
+  ])
+
+  expect([authedRes1.status, authedRes2.status]).toContain(200)
+  expect([authedRes1.status, authedRes2.status]).toContain(429)
+
+  const authedBusyRes = authedRes1.status === 429 ? authedRes1 : authedRes2
+  expect(authedBusyRes.headers.get("retry-after")).toBe("5")
+  const jsonBody = await authedBusyRes.json()
+  expect(jsonBody.error).toBe("PDF generator busy")
+
+  tempProc.kill()
+})
+

@@ -86,11 +86,17 @@ export async function renderWalkPdf(
 
   // Env-flag fake for subprocess route tests — never active without the flag
   if (process.env.KLAV_TEST_FAKE_PDF === "1") {
-    return new TextEncoder().encode("%PDF-fake-for-tests " + runId)
+    const { withPdfSlot } = await import("./trails-browser")
+    return withPdfSlot(async () => {
+      if (process.env.KLAV_TEST_FAKE_PDF_DELAY) {
+        await new Promise((r) => setTimeout(r, parseInt(process.env.KLAV_TEST_FAKE_PDF_DELAY, 10)))
+      }
+      return new TextEncoder().encode("%PDF-fake-for-tests " + runId)
+    })
   }
 
   const { gatherWalkReport, renderWalkReportHtml } = await import("./trails-report")
-  const { withWalkSlot, CHROMIUM_PROD_ARGS } = await import("./trails-browser")
+  const { withPdfSlot, CHROMIUM_PROD_ARGS } = await import("./trails-browser")
   const { chromium } = await import("playwright")
 
   const data = await gatherWalkReport(projectId, runId)
@@ -98,7 +104,7 @@ export async function renderWalkPdf(
 
   const html = renderWalkReportHtml(data, { baseUrl, generatedAt: Date.now() })
 
-  return withWalkSlot(async () => {
+  return withPdfSlot(async () => {
     const deadline = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error("PDF generation timed out (30s)")), 30_000),
     )
