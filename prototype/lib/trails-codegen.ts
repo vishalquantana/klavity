@@ -104,12 +104,30 @@ export function generatePlaywright(
       }
       case "assert": {
         const desc = s.checkpoint?.description ?? ""
+        const kind = (s.checkpoint && s.checkpoint.kind) || "visible"
         if (sel) {
-          body.push(`  await expect(page.locator(${q(sel)})).toBeVisible() // ${desc}`)
+          switch (kind) {
+            case "textEquals":
+              body.push(`  expect(page.locator(${q(sel)}).innerText()).resolves.toBe(${q(s.checkpoint.value ?? "")}) // ${desc}`)
+              break
+            case "textContains":
+              body.push(`  expect(page.locator(${q(sel)}).innerText()).resolves.toContain(${q(s.checkpoint.value ?? "")}) // ${desc}`)
+              break
+            case "elementCount":
+              body.push(`  expect(page.locator(${q(sel)}).count()).resolves.toBe(${s.checkpoint.count ?? 0}) // ${desc}`)
+              break
+            default: // visible or unknown — fall through to the default below.
+              body.push(`  await expect(page.locator(${q(sel)})).toBeVisible() // ${desc}`)
+          }
         } else {
-          // No element to bind to: keep the file runnable, preserve the checkpoint verbatim.
-          body.push(`  // checkpoint: ${desc}`)
-          body.push(`  expect(true).toBeTruthy()`)
+          // No element to bind to: urlMatches asserts page.url(), checkpoint-only is a soft pass.
+          if (kind === "urlMatches" && s.checkpoint?.regex) {
+            const re = s.checkpoint.regex.startsWith("/") ? s.checkpoint.regex.slice(1, -1) : `^${s.checkpoint.regex}$`
+            body.push(`  await expect(page).toHaveURL(new RegExp(${JSON.stringify(re)})) // ${desc}`)
+          } else {
+            body.push(`  // checkpoint: ${desc}`)
+            body.push(`  expect(true).toBeTruthy()`)
+          }
         }
         break
       }
