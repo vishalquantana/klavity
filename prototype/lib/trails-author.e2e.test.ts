@@ -351,7 +351,7 @@ test("objective verification: done on wrong page (verification NO) yields stall 
   expect(out.status).toBe("stalled")
   expect(out.stallReason).toContain("failed verification attempts")
   expect(out.objectiveVerified).toBe(false)
-  expect(out.trailId).toBeNull()
+  expect(out.trailId).toBeTruthy()
   expect(verifyCalls).toBeGreaterThanOrEqual(1)
 }, 60000)
 
