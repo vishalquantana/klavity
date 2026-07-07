@@ -20,7 +20,7 @@ beforeAll(async () => {
 })
 
 const { crystallize } = await import("./trails-crystallize")
-const { walkTrail } = await import("./trails-runner")
+const { walkTrail, createStepShotUploadQueue } = await import("./trails-runner")
 const T = await import("./trails")
 
 const RUN_BROWSER = !!process.env.KLAV_E2E
@@ -193,3 +193,46 @@ test.if(RUN_BROWSER)("(shots-4) navigate/wait steps get NO screenshot even with 
   const actionableCount = runSteps.length - navigateCount - waitCount
   expect(fake.count()).toBeLessThanOrEqual(actionableCount)
 }, 45000)
+
+test("(shots-5) screenshot upload queue starts uploads concurrently instead of serializing steps", async () => {
+  const started: number[] = []
+  const releases: Array<() => void> = []
+  const patched: Array<{ runStepId: string; patch: Record<string, unknown> }> = []
+
+  const uploader = async (bytes: Uint8Array, contentType: string): Promise<{ key: string }> => {
+    expect(contentType).toBe("image/jpeg")
+    const id = bytes[0]
+    started.push(id)
+    await new Promise<void>((resolve) => releases.push(resolve))
+    return { key: `shot_${id}` }
+  }
+
+  const queue = createStepShotUploadQueue(
+    "proj_async_shots",
+    uploader,
+    async (_projectId, runStepId, patch) => { patched.push({ runStepId, patch }) },
+    { concurrency: 2, maxBuffered: 10 },
+  )
+
+  expect(queue.enqueue("rstep_1", new Uint8Array([1]), "image/jpeg")).toBe(true)
+  expect(queue.enqueue("rstep_2", new Uint8Array([2]), "image/jpeg")).toBe(true)
+  expect(queue.enqueue("rstep_3", new Uint8Array([3]), "image/jpeg")).toBe(true)
+
+  expect(started).toEqual([1, 2])
+  expect(patched).toHaveLength(0)
+  expect(queue.pending()).toBe(3)
+
+  releases.shift()!()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(started).toEqual([1, 2, 3])
+
+  while (releases.length) releases.shift()!()
+  await queue.drain()
+
+  expect(patched).toEqual([
+    { runStepId: "rstep_1", patch: { screenshotKey: "shot_1" } },
+    { runStepId: "rstep_2", patch: { screenshotKey: "shot_2" } },
+    { runStepId: "rstep_3", patch: { screenshotKey: "shot_3" } },
+  ])
+  expect(queue.pending()).toBe(0)
+})
