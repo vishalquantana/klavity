@@ -248,6 +248,21 @@ test("GET /api/trails/walks/:runId/replay is 404 when the walk has no replay", a
   expect(r.status).toBe(404)
 })
 
+test("GET /api/trails/walks/:runId/live returns an authenticated SSE live-watch stream", async () => {
+  const r = await api("GET", `/api/trails/walks/${WALK_ID}/live?project=${PROJECT_ID}`, null, MEMBER_SID)
+  expect(r.status).toBe(200)
+  expect(r.headers.get("content-type") || "").toContain("text/event-stream")
+  const reader = r.body!.getReader()
+  const first = await reader.read()
+  await reader.cancel()
+  expect(new TextDecoder().decode(first.value)).toContain("event: hello")
+})
+
+test("GET /api/trails/walks/:runId/live is 401 without a session", async () => {
+  const r = await fetch(`${BASE}/api/trails/walks/${WALK_ID}/live?project=${PROJECT_ID}`)
+  expect(r.status).toBe(401)
+})
+
 test("GET /api/trails/dashboard flags walks that have a replay (hasReplay)", async () => {
   const r = await api("GET", `/api/trails/dashboard?project=${PROJECT_ID}`, null, MEMBER_SID)
   expect(r.status).toBe(200)
@@ -262,6 +277,14 @@ test("the trails page references the rrweb-player replay assets", async () => {
   const html = await r.text()
   expect(html).toContain("rrweb-player")
   expect(html).toContain("/api/trails/walks/")
+})
+
+test("the trails page includes the live-watch view and stream endpoint", async () => {
+  const r = await fetch(`${BASE}/trails`, { headers: { Cookie: `klav_session=${MEMBER_SID}` } })
+  const html = await r.text()
+  expect(html).toContain("Live walk")
+  expect(html).toContain("/live")
+  expect(html).toContain("EventSource")
 })
 
 test("POST /api/trails/:id/walk triggers a walk and returns a runId (authed)", async () => {

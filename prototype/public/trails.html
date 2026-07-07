@@ -162,6 +162,13 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 #playerHost{min-height:200px;border-radius:12px;overflow:hidden}
 .modal .mnote{font-size:12.5px;color:var(--paper-faint);margin-top:10px;font-family:var(--mono)}
 
+/* live-watch modal */
+#liveHost{min-height:260px;border-radius:12px;overflow:hidden;background:var(--ink);border:1px solid var(--line);display:flex;align-items:center;justify-content:center}
+#liveFrame{display:block;max-width:100%;max-height:68vh;width:100%;height:auto;object-fit:contain;background:#050505}
+.live-empty{font-family:var(--mono);font-size:12px;color:var(--paper-faint);padding:28px;text-align:center}
+.live-dot{width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;box-shadow:0 0 0 4px rgba(15,157,107,.12)}
+.live-dot.off{background:var(--paper-faint);box-shadow:none}
+
 /* New Trail modal */
 #ntBg .modal{max-width:600px}
 #ntBg label{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--paper-dim);margin-bottom:12px}
@@ -379,30 +386,16 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
   </div>
 </div>
 
-<!-- KLA-88: Schedule Trail modal -->
-<div class="modal-bg" id="schedBg">
+<!-- Live Walk modal (CDP screencast) -->
+<div class="modal-bg" id="liveBg">
   <div class="modal">
     <div class="mhead">
-      <h3>Schedule Trail</h3>
-      <button class="mclose" id="schedClose" aria-label="Close">&times;</button>
+      <span class="live-dot off" id="liveDot"></span>
+      <h3>Live walk</h3>
+      <button class="mclose" id="liveClose" aria-label="Close">&times;</button>
     </div>
-    <p class="sched-hint">Enter a 5-field <strong>UTC cron expression</strong> (minute hour dom month dow). The scheduler checks every minute and fires a walk when the expression matches.</p>
-    <div class="sched-presets">
-      <button class="sched-preset" data-preset="0 2 * * *">Nightly 2 am</button>
-      <button class="sched-preset" data-preset="0 * * * *">Hourly</button>
-      <button class="sched-preset" data-preset="*/15 * * * *">Every 15 min</button>
-      <button class="sched-preset" data-preset="0 9 * * 1-5">Weekdays 9 am</button>
-      <button class="sched-preset" data-preset="0 0 * * 0">Weekly (Sun)</button>
-    </div>
-    <label>Cron expression (UTC)
-      <input type="text" id="schedExpr" placeholder="e.g. 0 2 * * *" spellcheck="false" autocomplete="off" />
-    </label>
-    <div class="sched-err" id="schedErr"></div>
-    <div class="sched-row">
-      <button class="btn btn-indigo" id="schedSave">Save schedule</button>
-      <button class="btn btn-ghost" id="schedClear">Clear schedule</button>
-      <button class="btn btn-ghost" id="schedCancel">Cancel</button>
-    </div>
+    <div id="liveHost"><div class="live-empty" id="liveEmpty">Waiting for browser frames...</div><img id="liveFrame" alt="Live AutoSim browser frame" style="display:none" /></div>
+    <div class="mnote" id="liveNote">Connecting...</div>
   </div>
 </div>
 
@@ -539,6 +532,68 @@ async function openReplay(runId){
 $("replayClose").onclick = function(){ $("replayBg").classList.remove("open"); destroyPlayer() }
 $("replayBg").onclick = function(e){ if (e.target === $("replayBg")){ $("replayBg").classList.remove("open"); destroyPlayer() } }
 
+// ── Live CDP screencast ─────────────────────────────────────────────────────────
+var liveState = { es: null, runId: null, frames: 0 }
+
+function closeLiveWatch(){
+  if (liveState.es) { try { liveState.es.close() } catch(e){} }
+  liveState.es = null
+  liveState.runId = null
+  $("liveDot").classList.add("off")
+  $("liveBg").classList.remove("open")
+}
+
+function openLiveWatch(runId){
+  if (!runId || !window.EventSource) return
+  if (liveState.es) { try { liveState.es.close() } catch(e){} }
+  liveState.runId = runId
+  liveState.frames = 0
+  $("liveFrame").style.display = "none"
+  $("liveEmpty").style.display = ""
+  $("liveDot").classList.add("off")
+  $("liveNote").textContent = "Connecting..."
+  $("liveBg").classList.add("open")
+  var pid = projParam()
+  var qs = pid ? "?project=" + encodeURIComponent(pid) : ""
+  var es = new EventSource("/api/trails/walks/" + encodeURIComponent(runId) + "/live" + qs)
+  liveState.es = es
+  es.addEventListener("hello", function(){ $("liveNote").textContent = "Connected. Waiting for frames..." })
+  es.addEventListener("status", function(){
+    $("liveDot").classList.remove("off")
+    $("liveNote").textContent = "Live browser connected."
+  })
+  es.addEventListener("frame", function(ev){
+    try {
+      var d = JSON.parse(ev.data || "{}")
+      if (!d.dataUrl) return
+      liveState.frames++
+      $("liveFrame").src = d.dataUrl
+      $("liveFrame").style.display = ""
+      $("liveEmpty").style.display = "none"
+      $("liveDot").classList.remove("off")
+      $("liveNote").textContent = "Live - frame " + liveState.frames
+    } catch(e){}
+  })
+  es.addEventListener("end", function(ev){
+    $("liveDot").classList.add("off")
+    var msg = "Walk finished."
+    try {
+      var d = JSON.parse(ev.data || "{}")
+      if (d.message === "screencast unavailable") msg = "Live stream unavailable."
+    } catch(e){}
+    $("liveNote").textContent = msg
+    try { es.close() } catch(e){}
+    if (liveState.es === es) liveState.es = null
+  })
+  es.onerror = function(){
+    $("liveDot").classList.add("off")
+    if (liveState.frames === 0) $("liveNote").textContent = "Live stream unavailable."
+  }
+}
+
+$("liveClose").onclick = closeLiveWatch
+$("liveBg").onclick = function(e){ if (e.target === $("liveBg")) closeLiveWatch() }
+
 // Latest Walk (any verdict) for a given trail id, from the dashboard's recentWalks (newest-first).
 function latestWalkFor(walks, trailId){
   for (var i=0;i<walks.length;i++){ if (walks[i].trailId === trailId) return walks[i] }
@@ -559,6 +614,7 @@ async function runTrail(trailId, btn, row){
   if (!r.ok){ btn.disabled=false; btn.innerHTML=kicon('play',{size:12})+' Run'; if(msg){ msg.style.color="var(--rose)"; msg.textContent="couldn't start" } return }
   var b = await r.json().catch(function(){return{}})
   var runId = b.runId
+  openLiveWatch(runId)
 
   // Show a Cancel button while polling.
   var cancelBtn = document.createElement("button")
@@ -1078,6 +1134,7 @@ async function render(d){
     row.innerHTML = '<div class="body"><div class="t">'+trailLabel+'</div><div class="d">'+esc(w.id)+' · '+esc(when)+' · '+esc(w.llmCalls||0)+' LLM</div></div>'
       + (w.hasReplay ? '<a class="replay-btn" href="'+esc(detailHref)+'">'+kicon('play',{size:10})+' Replay</a>' : '')
       + '<a class="replay-btn" href="'+esc(detailHref)+'">'+kicon('eye',{size:10})+' View</a>'
+      + (v === "running" ? '<button class="replay-btn" data-live-run="'+esc(w.id)+'">'+kicon('eye',{size:10})+' Live</button>' : '')
       + '<a class="walk-pdf-btn" href="'+esc(pdfHref)+'" target="_blank" rel="noopener">'+kicon('file-text',{size:10})+' PDF</a>'
       + '<button class="walk-share-btn" data-share-run="'+esc(w.id)+'">'+kicon('link',{size:10})+' Share</button>'
       + '<span class="walk-share-msg" data-share-msg="'+esc(w.id)+'"></span>'
@@ -1086,6 +1143,9 @@ async function render(d){
       + (v === "amber" ? ' <span class="muted">— healed but unconfirmed; review findings queue.</span>' : '')
     wEl.appendChild(row)
   }
+  wEl.querySelectorAll("button[data-live-run]").forEach(function(btn){
+    btn.onclick = function(){ openLiveWatch(btn.getAttribute("data-live-run")) }
+  })
   wEl.querySelectorAll("button[data-share-run]").forEach(function(btn){
     btn.onclick = async function(){
       const runId = btn.getAttribute("data-share-run")

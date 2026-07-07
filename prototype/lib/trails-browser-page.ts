@@ -355,6 +355,66 @@ export interface PlaywrightBrowserHandle {
   readonly kind: string
 }
 
+export interface CdpScreencastFrame {
+  dataUrl: string
+  sessionId: number
+  metadata?: Record<string, unknown>
+}
+
+export interface CdpScreencastOptions {
+  format?: "jpeg" | "png"
+  quality?: number
+  maxWidth?: number
+  maxHeight?: number
+  everyNthFrame?: number
+}
+
+/**
+ * Start a best-effort Chrome DevTools Page.startScreencast stream for a Playwright page.
+ * The caller owns persistence/transport; this helper only converts CDP frames to data URLs and
+ * ACKs every frame immediately so Chrome keeps producing the stream.
+ */
+export async function startCdpScreencast(
+  page: import("playwright").Page,
+  onFrame: (frame: CdpScreencastFrame) => void,
+  opts: CdpScreencastOptions = {},
+): Promise<() => Promise<void>> {
+  const session = await page.context().newCDPSession(page)
+  const format = opts.format ?? "jpeg"
+  const handler = (ev: any) => {
+    const sessionId = Number(ev?.sessionId)
+    if (Number.isFinite(sessionId)) {
+      session.send("Page.screencastFrameAck", { sessionId }).catch(() => {})
+    }
+    if (typeof ev?.data !== "string") return
+    onFrame({
+      dataUrl: `data:image/${format};base64,${ev.data}`,
+      sessionId,
+      metadata: ev.metadata,
+    })
+  }
+  session.on("Page.screencastFrame", handler)
+  try {
+    await session.send("Page.enable").catch(() => {})
+    await session.send("Page.startScreencast", {
+      format,
+      quality: opts.quality ?? 45,
+      maxWidth: opts.maxWidth ?? 1024,
+      maxHeight: opts.maxHeight ?? 768,
+      everyNthFrame: opts.everyNthFrame ?? 2,
+    })
+  } catch (e) {
+    try { (session as any).off?.("Page.screencastFrame", handler) } catch {}
+    try { await session.detach() } catch {}
+    throw e
+  }
+  return async () => {
+    try { (session as any).off?.("Page.screencastFrame", handler) } catch {}
+    try { await session.send("Page.stopScreencast") } catch {}
+    try { await session.detach() } catch {}
+  }
+}
+
 export async function acquirePlaywrightBrowser(opts: AcquireOpts = {}): Promise<PlaywrightBrowserHandle> {
   const { chromium } = await import("playwright")
   const cdpBase = process.env.AUTOSIM_CDP_URL
