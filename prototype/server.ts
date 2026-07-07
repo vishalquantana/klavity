@@ -18,6 +18,7 @@ import { createTestAccount, listTestAccounts, getTestAccountById, getTestAccount
 import { planeConfigFromForm, redactPlane, type PlaneStored } from "./lib/connection"
 import { assertSafeUrl } from "./lib/url-guard"
 import { safeFetch } from "./lib/safe-fetch"
+import { screenshotUrl, defaultPreviewPersona } from "./lib/sim-preview"
 import { allow as rlAllow, record as rlRecord, count as rlCount, clear as rlClear } from "./lib/ratelimit"
 import { wrapUntrusted, UNTRUSTED_GUARD } from "./lib/prompt-safety"
 import { notifyNewSignup } from "./lib/signup-alert"
@@ -3851,6 +3852,37 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const data = parseJSON(content)
           return json({ personas: (data.personas || []).slice(0, 3), usage })
         } catch (e: any) { return json(oops(e, "create"), 500) }
+      }
+      // site URL → live headless screenshot → ONE ephemeral Sim reaction. Powers the onboarding
+      // "instant aha": paste your URL, watch a customer react to your real page — no widget install,
+      // no monitored-URL allowlist (unlike /api/sim/review). Ephemeral persona ⇒ no cross-tenant lookup.
+      if (req.method === "POST" && path === "/api/sim/preview") {
+        try {
+          let { url: pvUrl, persona } = await req.json()
+          pvUrl = String(pvUrl || "").trim()
+          if (!pvUrl) return json({ error: "Enter your product's URL." }, 400)
+          if (!/^https?:\/\//i.test(pvUrl)) pvUrl = "https://" + pvUrl
+          const mePv = (await sessionEmail(req)) || (await bearerEmail(req))
+          if (aiDemoLimited(mePv, req, server)) return json({ error: "Too many requests. Please wait and try again." }, 429, { "Retry-After": "3600" })
+          // SSRF preflight: reuse safeFetch's guard (rejects private/loopback + validates each redirect
+          // hop) AND confirm the page is reachable BEFORE we point a real browser at it.
+          try {
+            const pre = await safeFetch(pvUrl, { headers: { "user-agent": "KlavitySimBot/1.0 (+https://klavity.in)" }, signal: AbortSignal.timeout(8000) })
+            if (!pre.ok) return json({ error: `Couldn't reach that page (HTTP ${pre.status}).` }, 400)
+          } catch {
+            return json({ error: "Couldn't reach that URL. Make sure it's a public https page." }, 400)
+          }
+          let shot
+          try {
+            shot = await screenshotUrl(pvUrl)
+          } catch {
+            return json({ error: "Couldn't open that page to preview it. Try a public page." }, 400)
+          }
+          const p = persona && typeof persona === "object" ? persona : defaultPreviewPersona()
+          const { data, usage } = await reactToPage(p, shot.imageB64, shot.mediaType, pvUrl, { email: mePv })
+          const reaction = (data.reactions || [])[0] || null
+          return json({ reaction, personaName: p?.name || null, usage })
+        } catch (e: any) { return json(oops(e, "preview"), 500) }
       }
       // gated AI
       if (req.method === "POST" && path === "/api/extract") {
