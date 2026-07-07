@@ -4,7 +4,7 @@
 // exercised by the live spike (needs network + key), not unit-tested here.
 // acquirePlaywrightBrowser (used by the walker) is also tested here for its local/fallback path.
 import { describe, test, expect, afterAll } from "bun:test"
-import { acquireBrowser, acquirePlaywrightBrowser, type BrowserHandle, type PlaywrightBrowserHandle } from "./trails-browser-page"
+import { acquireBrowser, acquirePlaywrightBrowser, startCdpScreencast, type BrowserHandle, type PlaywrightBrowserHandle } from "./trails-browser-page"
 
 const FIXTURE = "data:text/html," + encodeURIComponent(`<!doctype html><html><body>
   <h1>Sign up</h1>
@@ -96,4 +96,39 @@ describe("acquirePlaywrightBrowser (walker seam)", () => {
     expect(threw).toBe(true)
     delete process.env.AUTOSIM_CDP_URL
   })
+})
+
+test("startCdpScreencast starts, ACKs frames, publishes data URLs, and stops cleanly", async () => {
+  const sent: Array<{ method: string; payload?: any }> = []
+  const handlers: Record<string, (ev: any) => void> = {}
+  const session = {
+    on(event: string, fn: (ev: any) => void) { handlers[event] = fn },
+    off(event: string) { delete handlers[event] },
+    async send(method: string, payload?: any) { sent.push({ method, payload }) },
+    async detach() { sent.push({ method: "detach" }) },
+  }
+  const fakePage = {
+    context() {
+      return { async newCDPSession() { return session } }
+    },
+  }
+  const frames: any[] = []
+
+  const stop = await startCdpScreencast(fakePage as any, (frame) => frames.push(frame), {
+    quality: 30,
+    maxWidth: 640,
+    maxHeight: 360,
+    everyNthFrame: 3,
+  })
+  handlers["Page.screencastFrame"]({ data: "abc", sessionId: 42, metadata: { timestamp: 1 } })
+  await stop()
+
+  expect(sent.some((s) => s.method === "Page.enable")).toBe(true)
+  expect(sent).toContainEqual({
+    method: "Page.startScreencast",
+    payload: { format: "jpeg", quality: 30, maxWidth: 640, maxHeight: 360, everyNthFrame: 3 },
+  })
+  expect(sent).toContainEqual({ method: "Page.screencastFrameAck", payload: { sessionId: 42 } })
+  expect(sent.some((s) => s.method === "Page.stopScreencast")).toBe(true)
+  expect(frames[0].dataUrl).toBe("data:image/jpeg;base64,abc")
 })

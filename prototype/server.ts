@@ -42,6 +42,7 @@ import { runAuthorNow, getAuthorSession, getActiveAuthorSession } from "./lib/tr
 import { WalkBusyError, cancelCurrentWalk } from "./lib/trails-browser"
 import { mintShareToken, resolveShareToken, renderWalkPdf } from "./lib/trails-share"
 import { gatherWalkReport } from "./lib/trails-report"
+import { liveWatchSseResponse } from "./lib/trails-live-watch"
 import { seedDemoTrails } from "./lib/trails-demo-seed"
 import { listExpectations, getExpectation, setExpectationStatus, setExpectationEnforced } from "./lib/expectations-db"
 import { validateAssertionDraft } from "./lib/assertion-spec"
@@ -2910,6 +2911,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         } catch (e) {
           return json(oops(e, "trails-dashboard"), 500)
         }
+      }
+
+      // GET /api/trails/walks/:runId/live — authenticated near-real-time CDP screencast frames.
+      // Project-scoped via getWalk(projectId, runId); the stream is in-memory and only active while
+      // the current server process is driving that walk.
+      const liveMatch = path.match(/^\/api\/trails\/walks\/([^/]+)\/live$/)
+      if (req.method === "GET" && liveMatch) {
+        const runId = liveMatch[1]
+        const walk = await getWalk(projectId, runId)
+        if (!walk) return json({ error: "Walk not found." }, 404)
+        return liveWatchSseResponse(projectId, runId)
       }
 
       // GET /api/trails/walks/:runId/replay — the saved rrweb session-replay segments for a Walk +
