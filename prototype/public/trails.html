@@ -76,6 +76,10 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 .find .ft{font-size:14.5px;font-weight:600;line-height:1.4}
 .find .quote{font-size:13px;color:var(--paper-dim);margin-top:6px;border-left:2px solid var(--line);padding-left:10px;line-height:1.45}
 .find .diff{font-family:var(--mono);font-size:12px;color:var(--paper-faint);margin-top:8px;background:var(--ink-3);padding:7px 10px;border-radius:8px;overflow-x:auto}
+.find .evidence{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11.5px;color:var(--paper-faint);margin-top:8px;padding:6px 9px;background:var(--ink-3);border-radius:8px;border:1px dashed var(--line)}
+.find .evidence img{width:42px;height:28px;object-fit:cover;border-radius:5px;border:1px solid var(--line);cursor:pointer}
+.find .walk-link{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11.5px;color:var(--indigo);margin-top:8px;padding:4px 0;text-decoration:none;border-bottom:1px dashed var(--line-hover)}
+.find .walk-link:hover{border-color:var(--indigo)}
 .find .acts{display:flex;gap:8px;margin-top:12px}
 .btn{font-family:var(--body);font-weight:600;font-size:13px;padding:8px 14px;border-radius:9px;border:none;cursor:pointer;transition:transform .1s}
 .btn:active{transform:translateY(1px)}
@@ -894,12 +898,22 @@ function renderQueue(queue){
     const ev = f.evidence || {}
     const rationale = ev.rationale || f.groundQuote || ""
     const fromSel = ev.fromSelector, toSel = ev.toSelector
+    const shotUrl = ev.screenshotUrl || null
     const card = document.createElement("div")
     card.className = "find"
     let html = '<div class="top"><span class="kind '+esc(f.kind)+'">'+esc(f.kind)+'</span><span class="conf">conf '+esc(f.confidence)+'</span></div>'
     html += '<div class="ft">'+esc(f.title)+'</div>'
     if (rationale) html += '<div class="quote">'+esc(rationale)+'</div>'
     if (fromSel || toSel) html += '<div class="diff">'+esc(fromSel || "(none)")+' &rarr; '+esc(toSel || "(none)")+'</div>'
+    if (shotUrl) {
+      const label = ev.screenshotLabel ? esc(ev.screenshotLabel) : "Screenshot"
+      html += '<div class="evidence"><img src="'+esc(shotUrl)+'" alt="'+esc(label)+'"></div>'
+    } else if (!shotUrl && f.runId) {
+      const pid = projParam()
+      const qs = pid ? "?project="+encodeURIComponent(pid) : ""
+      html += '<a class="walk-link" href="/api/trails/walks/'+esc(f.runId)+'/report.pdf'+qs+'" target="_blank" rel="noopener">'
+        +window.kicon('file-text',{size:12})+' View Walk Report — screenshots for every step</a>'
+    }
     if (f.connectorError) html += '<div class="msg" style="color:var(--rose)">Auto-file failed: '+esc(f.connectorError)+'</div>'
     html += '<div class="acts">'
       + '<button class="btn btn-indigo" data-act="file" data-id="'+esc(f.id)+'">File</button>'
