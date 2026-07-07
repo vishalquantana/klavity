@@ -5,7 +5,7 @@
 // Rationale + cost/perf: docs/bench-autosim-cost.md (Steel section) + the 2026-07-04 spike.
 // The runner (trails-runner.ts) stays on Playwright for now — its heal ladder is deeply coupled to
 // Playwright getByRole/getByText/networkidle; porting it is a separate, larger effort.
-import type { Fingerprint, NetworkMock } from "./trails-types"
+import type { Fingerprint, NetworkMock, TrailViewport } from "./trails-types"
 import { KREF_SNAPSHOT_CAP } from "./trails-snapshot"
 import { clickWithTransitionFallback } from "./trails-click"
 
@@ -144,7 +144,7 @@ export interface BrowserPage {
   mockNetwork(mocks: NetworkMock[]): Promise<void>
 }
 export interface BrowserHandle {
-  newPage(): Promise<BrowserPage>
+  newPage(viewport?: TrailViewport | null): Promise<BrowserPage>
   close(): Promise<void>
   /** "local" | "steel:<region>" — for logging/evidence. */
   readonly kind: string
@@ -223,7 +223,13 @@ class PlaywrightPage implements BrowserPage {
 class PlaywrightHandle implements BrowserHandle {
   readonly kind = "local"
   constructor(private browser: import("playwright").Browser) {}
-  async newPage() { return new PlaywrightPage(await this.browser.newPage()) }
+  async newPage(viewport?: TrailViewport | null) {
+    if (viewport) {
+      const context = await this.browser.newContext(playwrightContextOptionsForTrailViewport(viewport))
+      return new PlaywrightPage(await context.newPage())
+    }
+    return new PlaywrightPage(await this.browser.newPage())
+  }
   async close() { await this.browser.close().catch(() => {}) }
 }
 
@@ -313,7 +319,20 @@ class PuppeteerPage implements BrowserPage {
 class PuppeteerHandle implements BrowserHandle {
   readonly kind: string
   constructor(private browser: any, private release: () => Promise<void>, region: string) { this.kind = "steel:" + region }
-  async newPage() { const pages = await this.browser.pages(); return new PuppeteerPage(pages[0] ?? (await this.browser.newPage())) }
+  async newPage(viewport?: TrailViewport | null) {
+    const pages = await this.browser.pages()
+    const page = pages[0] ?? (await this.browser.newPage())
+    if (viewport) {
+      await page.setViewport({
+        width: viewport.width,
+        height: viewport.height,
+        deviceScaleFactor: viewport.deviceScaleFactor ?? 1,
+        isMobile: !!viewport.isMobile,
+        hasTouch: !!viewport.isMobile,
+      }).catch(() => {})
+    }
+    return new PuppeteerPage(page)
+  }
   async close() { try { await this.browser.disconnect() } catch {} await this.release().catch(() => {}) }
 }
 
@@ -353,6 +372,16 @@ export interface PlaywrightBrowserHandle {
   readonly close: () => Promise<void>
   /** "local" | "cdp-remote" | "steel:<region>" */
   readonly kind: string
+}
+
+export function playwrightContextOptionsForTrailViewport(viewport?: TrailViewport | null): Record<string, unknown> | undefined {
+  if (!viewport) return undefined
+  return {
+    viewport: { width: viewport.width, height: viewport.height },
+    isMobile: !!viewport.isMobile,
+    hasTouch: !!viewport.isMobile,
+    deviceScaleFactor: viewport.deviceScaleFactor ?? 1,
+  }
 }
 
 export interface CdpScreencastFrame {

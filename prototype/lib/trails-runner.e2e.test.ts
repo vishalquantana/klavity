@@ -110,6 +110,32 @@ test("(i.b) run evidence pins the recorded step state, not just selector replay 
   expect(recorded.selector).not.toBe("#mutated-email")
 }, 30000)
 
+test("(i.c) applies the Trail's mobile viewport before navigation", async () => {
+  const projectId = "proj_mobile_viewport"
+  const responsiveFixture = "data:text/html," + encodeURIComponent(`<!doctype html><html><head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      #mobile-only { display:none }
+      @media (max-width: 500px) { #mobile-only { display:block } }
+    </style>
+  </head><body><div id="mobile-only">Mobile checkout</div></body></html>`)
+  const { trailId } = await crystallize(projectId, {
+    name: "Mobile viewport",
+    baseUrl: "https://app.test/",
+    viewport: "mobile",
+    authorKind: "llm" as const,
+    steps: [
+      { action: "assert" as const, checkpoint: { description: "mobile marker visible" }, url: "https://app.test/", domHash: "m1",
+        target: { text: "Mobile checkout", resolvedSelector: "#mobile-only" } },
+    ],
+  })
+
+  const summary = await walkTrail(projectId, trailId, { fixtureUrl: responsiveFixture })
+
+  expect(summary.verdict).toBe("green")
+  expect(summary.steps[0]).toMatchObject({ tier: "cache", verdict: "green" })
+}, 30000)
+
 test("(ii) Tier 1 heals a cosmetic rename by role+accessible-name -> AMBER (healed-but-unconfirmed, never green), zero LLM, healed selector persisted", async () => {
   const projectId = "proj_heal"
   const { trailId, stepIds } = await crystallize(projectId, checkoutTrajectory())
