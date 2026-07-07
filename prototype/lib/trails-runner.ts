@@ -119,6 +119,11 @@ export interface WalkSummary {
   llmCalls: number
   steps: WalkStepSummary[]
   healedCount: number
+  /**
+   * Human-readable reason(s) for a RED verdict. Always non-empty when verdict is 'red', so callers
+   * of `finishWalk` always see WHY the walk ended red — never a silent or blank RED (KLAVITYKLA-48).
+   */
+  reasons: string[]
 }
 
 const CACHE_CONFIDENCE = 1.0
@@ -325,6 +330,9 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
   let walkVerdict: Verdict = "green"
   let healedCount = 0
   let llmCalls = 0
+  // Red-reason ledger (KLAVITYKLA-48): every RED verdict must carry a human-readable reason so the
+  // Walk summary is never silent. Reasons accumulate per-step and are surfaced in `finishWalk` below.
+  const redReasons: string[] = []
   // Plan G hard per-walk deadline: a wall-clock budget checked at the top of each step. Infinity = off.
   const deadline = opts.deadlineMs ? Date.now() + opts.deadlineMs : Infinity
   let deadlineHit = false
@@ -384,6 +392,8 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
       if (healed) healedCount++
       llmCalls += stepLlm
       walkVerdict = worse(walkVerdict, verdict)
+      // KLAVITYKLA-48: every RED must carry a reason — accumulate per-step so the Walk summary is never silent.
+      if (verdict === "red") redReasons.push(`step ${step.idx} (${step.action}${step.target?.accessibleName ? ` "${step.target.accessibleName}"` : ""}): RED`)
 
       if (capture) {
         try {
@@ -420,16 +430,17 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
         console.warn("[trails-replay] saveReplay failed:", String(e))
       }
     }
-    return { runId, verdict: walkVerdict, llmCalls, steps: stepSummaries, healedCount }
+    return { runId, verdict: walkVerdict, llmCalls, steps: stepSummaries, healedCount, reasons: redReasons }
   } catch (e) {
     // Anything thrown (e.g. an unreachable fixtureUrl) must STILL finalize the run — never leave it
     // 'running'. The Walk is RED and the error is recorded in the summary for the trace viewer.
+    const redReasons: string[] = [`walk failed: ${String(e)}`]
     await finishWalk(projectId, runId, {
       status: "red",
       llmCalls,
-      summary: { healedCount, stepCount: steps.length, error: String(e) },
+      summary: { ...redReasons.length ? { reasons: redReasons } : {}, error: String(e) },
     })
-    return { runId, verdict: "red", llmCalls, steps: stepSummaries, healedCount }
+    return { runId, verdict: "red", llmCalls, steps: stepSummaries, healedCount, reasons: redReasons }
   } finally {
     await browser.close()
   }
