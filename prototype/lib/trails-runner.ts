@@ -21,6 +21,7 @@ import { decideFromVision, type VisionResolver, type VisionInput, type VisionRes
 import { setupReplayCapture, saveReplay, type ReplayCapture } from "./trails-replay"
 import { hasCredRef, resolveCredRefs, type CredResolver } from "./trails-creds"
 import { captureKrefSnapshot, stableSelectorFor, structuralPathFor, isKrefSelector } from "./trails-snapshot"
+import { clickWithTransitionFallback } from "./trails-click"
 
 export interface WalkOptions {
   /** Concrete URL to walk against (overrides the trail's baseUrl). file:// or http(s)://. */
@@ -572,7 +573,7 @@ async function runOneStep(
         break
       }
       case "click":
-        await resolved.locator.click({ timeout: ACTION_TIMEOUT })
+        await clickWithTransitionFallback(resolved.locator, ACTION_TIMEOUT)
         break
       case "select":
         await resolved.locator.selectOption(step.actionValue ?? "", { timeout: ACTION_TIMEOUT })
@@ -797,7 +798,7 @@ async function runVisionTier2(
             const val = hasCredRef(raw) ? await (opts.credResolver ?? resolveCredRefs)(projectId, raw) : raw
             await loc.fill(val, { timeout: ACTION_TIMEOUT }); break
           }
-          case "click": await loc.click({ timeout: ACTION_TIMEOUT }); break
+          case "click": await clickWithTransitionFallback(loc, ACTION_TIMEOUT); break
           case "select": await loc.selectOption(step.actionValue ?? "", { timeout: ACTION_TIMEOUT }); break
         }
         // Persist the healed selector so the NEXT walk is Tier 0 again (heal-as-cache-update, §6.4).

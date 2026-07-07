@@ -259,3 +259,28 @@ test("(vi) an ambiguous selector (matches >1 elements) fails RED with reason=amb
   const ctrlSummary = await walkTrail(projectId, ctrl.trailId, { fixtureUrl: fixtureUrl("checkout-mockup-ambiguous.html") })
   expect(ctrlSummary.verdict).toBe("green")
 }, 30000)
+
+test("(vii) inline go(N) wizard transitions are verified and repaired after a no-op headless click", async () => {
+  const projectId = "proj_inline_go"
+  const traj = {
+    name: "Inline go wizard",
+    intent: "click Continue and reach the email step",
+    baseUrl: "https://app.test/",
+    authorKind: "llm" as const,
+    createdBy: "agent@klavity",
+    steps: [
+      { action: "click" as const, url: "https://app.test/", domHash: "wg0",
+        target: { role: "button", accessibleName: "Continue", text: "Continue", resolvedSelector: "#continue" } },
+      { action: "assert" as const, checkpoint: { description: "email step visible after Continue" }, url: "https://app.test/", domHash: "wg1",
+        target: { role: "textbox", accessibleName: "Email", resolvedSelector: "#email" } },
+    ],
+  }
+  const { trailId } = await crystallize(projectId, traj)
+
+  const summary = await walkTrail(projectId, trailId, { fixtureUrl: fixtureUrl("onclick-wizard-trusted-block.html") })
+
+  expect(summary.verdict).toBe("green")
+  expect(summary.steps).toHaveLength(2)
+  expect(summary.steps[0].verdict).toBe("green")
+  expect(summary.steps[1].verdict).toBe("green")
+}, 30000)

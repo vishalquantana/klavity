@@ -7,6 +7,7 @@
 // Playwright getByRole/getByText/networkidle; porting it is a separate, larger effort.
 import type { Fingerprint } from "./trails-types"
 import { KREF_SNAPSHOT_CAP } from "./trails-snapshot"
+import { clickWithTransitionFallback } from "./trails-click"
 
 // ── Page-context evaluate bodies (run in the browser; NO module-scope closures). Shared verbatim by
 //    both drivers — Playwright and Puppeteer both serialize a function to the page identically. ──────
@@ -146,7 +147,7 @@ class PlaywrightPage implements BrowserPage {
   async count(selector: string) { return await this.page.locator(selector).count() }
   async fingerprint(selector: string) { return await this.page.locator(selector).first().evaluate(fingerprintBody) }
   async stableSelector(selector: string) { try { return await this.page.locator(selector).first().evaluate(stableSelectorBody) } catch { return null } }
-  async click(selector: string, timeoutMs: number) { await this.page.locator(selector).click({ timeout: timeoutMs }) }
+  async click(selector: string, timeoutMs: number) { await clickWithTransitionFallback(this.page.locator(selector), timeoutMs) }
   async fill(selector: string, value: string, timeoutMs: number) { await this.page.locator(selector).fill(value, { timeout: timeoutMs }) }
   async selectOption(selector: string, value: string, timeoutMs: number) { await this.page.locator(selector).selectOption(value, { timeout: timeoutMs }) }
   async assertVisible(selector: string, timeoutMs: number) { await this.page.locator(selector).waitFor({ state: "visible", timeout: timeoutMs }) }
