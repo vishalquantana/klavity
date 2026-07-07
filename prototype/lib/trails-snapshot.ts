@@ -7,6 +7,7 @@
 // Persistence points (trajectory resolvedSelector, locator_cache, heal toSelector) must convert
 // via stableSelectorFor() (fallback: fingerprint domPath) before storing anything.
 import type { Page, Locator } from "playwright"
+import type { Fingerprint, TrailStep } from "./trails-types"
 
 export const KREF_SNAPSHOT_CAP = 24_000
 const TRUNCATION_MARKER = "\n…[snapshot truncated]"
@@ -14,6 +15,51 @@ const TRUNCATION_MARKER = "\n…[snapshot truncated]"
 /** True iff s is exactly one stamped kref selector, e.g. `[data-kref="e12"]`. */
 export function isKrefSelector(s: string | null | undefined): boolean {
   return typeof s === "string" && /^\[data-kref="e\d+"\]$/.test(s.trim())
+}
+
+export type RecordedStepState = {
+  stepId: string
+  idx: number
+  action: TrailStep["action"]
+  actionValue: string | null
+  selector: string | null
+  target: Fingerprint | null
+  checkpoint: { description: string } | null
+  pageUrl: string
+}
+
+function dekref(s: string): string {
+  return s.replace(/\[data-kref="(e\d+)"\]/g, "snapshot ref $1")
+}
+
+function safeSelector(selector: string | null | undefined): string | null {
+  return selector ? dekref(selector) : null
+}
+
+function safeFingerprint(fp: Fingerprint | null | undefined): Fingerprint | null {
+  if (!fp) return null
+  return {
+    ...fp,
+    domPath: fp.domPath ? dekref(fp.domPath) : fp.domPath,
+  }
+}
+
+export function recordedStepState(
+  step: Pick<TrailStep, "id" | "idx" | "action" | "actionValue" | "target" | "checkpoint">,
+  selector: string | null | undefined,
+  pageUrl: string,
+  target?: Fingerprint | null,
+): RecordedStepState {
+  return {
+    stepId: step.id,
+    idx: step.idx,
+    action: step.action,
+    actionValue: step.actionValue ?? null,
+    selector: safeSelector(selector),
+    target: safeFingerprint(target === undefined ? step.target : target),
+    checkpoint: step.checkpoint ?? null,
+    pageUrl,
+  }
 }
 
 /**
