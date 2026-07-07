@@ -770,9 +770,16 @@ async function runOneStep(
     throw e
   }
 
+  // KLA-67: adaptive action timeout — honor a per-step override when the Trail author set one,
+  // else derive from the remaining deadline budget. Floor 5s / ceil 15s prevents both instant
+  // timeouts on nearly-exhausted budgets and unbounded hangs on unconstrained walks.
+  const remainingBudget = deadline - Date.now()
+  const actionTimeout = step.timeoutMs != null
+    ? Math.max(0, Math.min(step.timeoutMs, remainingBudget))
+    : Math.max(5000, Math.min(15000, remainingBudget))
+
   // Perform the action (Playwright auto-waits for actionability — the "test DNA" we deliberately keep).
   // Bounded timeout: actionability that never clears is a real break, not a reason to hang.
-  const actionTimeout = Math.max(0, Math.min(5000, deadline - Date.now()))
   try {
     switch (step.action) {
       case "type": {
@@ -785,7 +792,7 @@ async function runOneStep(
         break
       }
       case "click":
-        await clickWithTransitionFallback(resolved.locator, actionTimeout)
+        await clickWithTransitionFallback(resolved.locator, actionTimeout, actionTimeout)
         break
       case "select":
         await resolved.locator.selectOption(step.actionValue ?? "", { timeout: actionTimeout })
@@ -1023,7 +1030,11 @@ async function runVisionTier2(
   // ── heal: confirm intent (role consistency, §6.2), act, AMBER, persist + reviewable diff ──
   if (decision.outcome === "heal" && decision.selector) {
     const loc = page.locator(decision.selector)
-    const ACTION_TIMEOUT = 5000
+    // KLA-67: adaptive timeout mirrors runOneStep — honors per-step override, else budget-derived.
+    const remainingForHeal = deadline - Date.now()
+    const ACTION_TIMEOUT = step.timeoutMs != null
+      ? Math.max(0, Math.min(step.timeoutMs, remainingForHeal))
+      : Math.max(5000, Math.min(15000, remainingForHeal))
     const ok =
       (await uniquelyResolves(loc)) &&
       (await roleConsistent(loc, fp?.role)) &&
@@ -1063,7 +1074,7 @@ async function runVisionTier2(
             }
             await loc.fill(val, { timeout: ACTION_TIMEOUT }); break
           }
-          case "click": await clickWithTransitionFallback(loc, ACTION_TIMEOUT); break
+          case "click": await clickWithTransitionFallback(loc, ACTION_TIMEOUT, ACTION_TIMEOUT); break
           case "select": await loc.selectOption(step.actionValue ?? "", { timeout: ACTION_TIMEOUT }); break
           case "hover": await loc.hover({ timeout: ACTION_TIMEOUT }); break
           case "keyPress": await loc.press(step.actionValue ?? "Enter", { timeout: ACTION_TIMEOUT }); break

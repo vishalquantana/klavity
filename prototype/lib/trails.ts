@@ -82,6 +82,7 @@ function rowToStep(r: any): TrailStep {
     action: r.action as StepAction, actionValue: r.action_value ?? null,
     target: pj<Fingerprint>(r.target_json), checkpoint: pj<{ description: string }>(r.checkpoint_json),
     createdAt: Number(r.created_at),
+    ...(r.timeout_ms != null ? { timeoutMs: Number(r.timeout_ms) } : {}),
   }
 }
 
@@ -94,13 +95,13 @@ async function bumpStepVersion(projectId: string, trailId: string): Promise<void
 
 export async function addTrailStep(
   projectId: string, trailId: string,
-  input: { idx: number; action: StepAction; actionValue?: string; target?: Fingerprint; checkpoint?: { description: string } },
+  input: { idx: number; action: StepAction; actionValue?: string; target?: Fingerprint; checkpoint?: { description: string }; timeoutMs?: number },
 ): Promise<string> {
   const id = uid("tstep_")
   await db!.execute({
-    sql: `INSERT INTO trail_steps (id, trail_id, project_id, idx, action, action_value, target_json, checkpoint_json, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    args: [id, trailId, projectId, input.idx, input.action, input.actionValue ?? null, j(input.target), j(input.checkpoint), Date.now()],
+    sql: `INSERT INTO trail_steps (id, trail_id, project_id, idx, action, action_value, target_json, checkpoint_json, timeout_ms, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [id, trailId, projectId, input.idx, input.action, input.actionValue ?? null, j(input.target), j(input.checkpoint), input.timeoutMs ?? null, Date.now()],
   })
   await bumpStepVersion(projectId, trailId)
   return id

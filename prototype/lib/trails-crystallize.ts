@@ -15,6 +15,8 @@ export interface TrajectoryStep {
   url: string
   /** Hash of the DOM at execution time (cache-key salt). */
   domHash: string
+  /** KLA-67: optional per-step action timeout (ms). Persisted to trail_steps.timeout_ms. */
+  timeoutMs?: number
 }
 
 export interface Trajectory {
@@ -101,6 +103,7 @@ export async function crystallize(projectId: string, traj: Trajectory): Promise<
       actionValue: step.actionValue,
       target: fingerprintOnly(step.target),
       checkpoint: step.checkpoint,
+      timeoutMs: step.timeoutMs,
     })
     stepIds.push(stepId)
 

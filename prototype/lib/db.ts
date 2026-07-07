@@ -624,6 +624,9 @@ export async function applySchema(c: Client) {
     .catch((e: any) => console.warn("findings.content_sig ALTER skipped:", e?.message || e))
   await c.execute("CREATE INDEX IF NOT EXISTS finding_content_sig_idx ON findings(project_id, content_sig) WHERE content_sig IS NOT NULL")
     .catch((e: any) => console.warn("finding_content_sig_idx skipped:", e?.message || e))
+  // KLA-67: per-step action timeout override (ms). NULL = runner uses adaptive default (min 5s, max 15s).
+  await c.execute("ALTER TABLE trail_steps ADD COLUMN timeout_ms INTEGER")
+    .catch((e: any) => console.warn("trail_steps.timeout_ms ALTER skipped:", e?.message || e))
 }
 
 // ── schema_meta helpers ──
