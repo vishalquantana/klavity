@@ -47,7 +47,7 @@ export async function setTrailStatus(projectId: string, id: string, status: Trai
   await db!.execute({ sql: `UPDATE trails SET status=?, updated_at=? WHERE project_id=? AND id=?`, args: [status, Date.now(), projectId, id] })
 }
 
-export type TrailPatch = { name?: string; status?: TrailStatus; schedule?: string | null; viewport?: TrailViewport | string | null }
+export type TrailPatch = { name?: string; status?: TrailStatus; schedule?: string | null; viewport?: TrailViewport | string | null; judgePersonaId?: string | null }
 
 export async function updateTrail(projectId: string, id: string, patch: TrailPatch): Promise<boolean> {
   const r = await db!.execute({ sql: `SELECT id FROM trails WHERE project_id=? AND id=?`, args: [projectId, id] })
@@ -58,6 +58,7 @@ export async function updateTrail(projectId: string, id: string, patch: TrailPat
   if (patch.status != null) { sets.push("status=?"); args.push(patch.status) }
   if ("schedule" in patch) { sets.push("schedule_cron=?"); args.push(patch.schedule ?? null) }
   if ("viewport" in patch) { sets.push("viewport_json=?"); args.push(j(normalizeTrailViewport(patch.viewport))) }
+  if ("judgePersonaId" in patch) { sets.push("judge_persona_id=?"); args.push(patch.judgePersonaId ?? null) }
   if (!sets.length) return true
   sets.push("updated_at=?"); args.push(Date.now())
   args.push(projectId, id)

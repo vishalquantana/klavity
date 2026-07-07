@@ -11,7 +11,7 @@
 import type { Browser, BrowserContext, Page, Locator } from "playwright"
 import { acquirePlaywrightBrowser, playwrightContextOptionsForTrailViewport, startCdpScreencast } from "./trails-browser-page"
 import { uploadScreenshotMeta } from "./s3"
-import type { Fingerprint, Tier, Verdict, TrailStep, NetworkMock } from "./trails-types"
+import type { Fingerprint, Tier, Verdict, TrailStep } from "./trails-types"
 import { expandModuleSteps } from "./trails-modules"
 import {
   getTrail, listTrailSteps, getCacheForStep, upsertLocatorCache,
@@ -25,6 +25,9 @@ import { captureKrefSnapshot, stableSelectorFor, structuralPathFor, isKrefSelect
 import { clickWithTransitionFallback } from "./trails-click"
 import { matchesMock } from "./trails-browser-page"
 import type { NetworkMock } from "./trails-browser-page"
+import { notifyWalkRed } from "./walk-red-alert"
+import { endLiveWatchRun, publishLiveWatchFrame, startLiveWatchRun } from "./trails-live-watch"
+import { WalkEvidenceCollector, type EvidenceOffsets, type WalkEvidenceSummary } from "./trails-walk-evidence"
 
 export interface WalkOptions {
   /** Concrete URL to walk against (overrides the trail's baseUrl). file:// or http(s)://. */
@@ -134,6 +137,11 @@ export interface WalkSummary {
   llmCalls: number
   steps: WalkStepSummary[]
   healedCount: number
+  /**
+   * KLA-74: browser diagnostics captured during the walk. Only present when at least one event
+   * was captured. Surfaced in the walk detail page so failures show WHY (not just that) they failed.
+   */
+  evidence?: WalkEvidenceSummary
   /**
    * Human-readable reason(s) for a RED verdict. Always non-empty when verdict is 'red', so callers
    * of `finishWalk` always see WHY the walk ended red — never a silent or blank RED (KLAVITYKLA-48).
@@ -418,6 +426,9 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
     }
   }
 
+  // KLA-74: hoisted so the catch block can include diagnostics even on walk crash.
+  const evCol = new WalkEvidenceCollector()
+
   try {
     const page: Page = context ? await context.newPage() : await browser.newPage()
     if (opts.liveWatch) {
@@ -436,6 +447,10 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
     // THROWS — it is inside this try, so it finalizes the walk RED via the catch below, never a hang.
     page.setDefaultNavigationTimeout(opTimeout)
     page.setDefaultTimeout(opTimeout)
+
+    // KLA-74: attach evidence collector. Best-effort — a failure here never affects the walk.
+    try { evCol.attach(page) } catch (e) { console.warn("[trails-evidence] attach failed:", String(e)) }
+
     // KLA-111: install network mocks BEFORE the first navigation so the initial page load is intercepted.
     if (opts.networkMocks?.length) {
       await page.route("**/*", (route) => {
@@ -475,7 +490,9 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
         try { await capture.drain(page) } catch (e) { console.warn("[trails-replay] pre-step drain failed:", String(e)) }
       }
 
-      const { tier, verdict, healed, llmCalls: stepLlm } = await runOneStep(projectId, runId, trail.id, page, step, opts, opTimeout)
+      const evBefore = evCol.offsets()
+      const stepStart = Date.now()
+      const { tier, verdict, healed, llmCalls: stepLlm } = await runOneStep(projectId, runId, trail.id, page, step, opts, opTimeout, { col: evCol, before: evBefore, start: stepStart })
       stepSummaries.push({ stepId: step.id, idx: step.idx, tier, verdict, healed })
       if (healed) healedCount++
       llmCalls += stepLlm
@@ -506,10 +523,12 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
       }
     }
 
+    // KLA-74: include browser diagnostics in the walk summary when anything was captured.
+    const evSummary = evCol.hasEvidence() ? evCol.summary() : null
     await finishWalk(projectId, runId, {
       status: walkVerdict,
       llmCalls,
-      summary: { healedCount, stepCount: steps.length, ...(deadlineHit ? { error: "deadline_exceeded" } : cancelledBySignal ? { error: "cancelled" } : {}) },
+      summary: { healedCount, stepCount: steps.length, ...(deadlineHit ? { error: "deadline_exceeded" } : cancelledBySignal ? { error: "cancelled" } : {}), ...(evSummary ? { evidence: evSummary } : {}) },
     })
 
     if (walkVerdict === "red") {
@@ -522,18 +541,19 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
         console.warn("[trails-replay] saveReplay failed:", String(e))
       }
     }
-    return { runId, verdict: walkVerdict, llmCalls, steps: stepSummaries, healedCount, reasons: redReasons }
+    return { runId, verdict: walkVerdict, llmCalls, steps: stepSummaries, healedCount, reasons: redReasons, ...(evSummary ? { evidence: evSummary } : {}) }
   } catch (e) {
     // Anything thrown (e.g. an unreachable fixtureUrl) must STILL finalize the run — never leave it
     // 'running'. The Walk is RED and the error is recorded in the summary for the trace viewer.
     const redReasons: string[] = [`walk failed: ${String(e)}`]
+    const evSummaryCatch = evCol.hasEvidence() ? evCol.summary() : null
     await finishWalk(projectId, runId, {
       status: "red",
       llmCalls,
-      summary: { ...redReasons.length ? { reasons: redReasons } : {}, error: String(e) },
+      summary: { ...redReasons.length ? { reasons: redReasons } : {}, error: String(e), ...(evSummaryCatch ? { evidence: evSummaryCatch } : {}) },
     })
     notifyWalkRed({ trailName: trail.name, trailId, projectId, runId, reasons: redReasons, at: Date.now() }).catch(() => {})
-    return { runId, verdict: "red", llmCalls, steps: stepSummaries, healedCount, reasons: redReasons }
+    return { runId, verdict: "red", llmCalls, steps: stepSummaries, healedCount, reasons: redReasons, ...(evSummaryCatch ? { evidence: evSummaryCatch } : {}) }
   } finally {
     if (stopLiveScreencast) {
       try { await stopLiveScreencast() } catch {}
@@ -545,6 +565,11 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
 
 interface OneStepResult { tier: Tier; verdict: Verdict; healed: boolean; llmCalls: number }
 
+// KLA-74: evidence context threaded into runOneStep + callees so they can inject
+// durationMs + per-step browser events into every addRunStep evidence blob.
+type EvCtx = { col: WalkEvidenceCollector; before: EvidenceOffsets; start: number } | null
+type StepRunFn = (input: Parameters<typeof addRunStep>[1]) => ReturnType<typeof addRunStep>
+
 // Execute a single step. Records exactly one run_step. Never silent-greens a break.
 async function runOneStep(
   projectId: string,
@@ -554,7 +579,19 @@ async function runOneStep(
   step: TrailStep,
   opts: WalkOptions,
   opTimeout: number,
+  evCtx: EvCtx = null,
 ): Promise<OneStepResult> {
+  // KLA-74: wrapper that prepends durationMs + per-step browser events to every addRunStep evidence blob.
+  // Built once here and passed down to runVisionTier2 / fileAmberHeal so all paths are covered.
+  const addStepRun = (input: Parameters<typeof addRunStep>[1]) => {
+    const se = evCtx ? evCtx.col.stepEvidence(evCtx.before, evCtx.start) : { durationMs: 0 }
+    const diagExtra: Record<string, unknown> = { durationMs: se.durationMs }
+    if (se.consoleLogs?.length)     diagExtra.consoleLogs     = se.consoleLogs
+    if (se.pageErrors?.length)      diagExtra.pageErrors      = se.pageErrors
+    if (se.failedRequests?.length)  diagExtra.failedRequests  = se.failedRequests
+    if (se.failedResponses?.length) diagExtra.failedResponses = se.failedResponses
+    return addRunStep(projectId, { ...input, evidence: { ...diagExtra, ...(input.evidence ?? {}) } })
+  }
   const fixtureUrl = opts.fixtureUrl
   const stepPageUrl = page.url()
   const recordedStep = (selector: string | null | undefined, target?: Fingerprint | null) =>
@@ -562,7 +599,7 @@ async function runOneStep(
   // A callModule step that survived expansion (unknown/empty module) → record RED so the author
   // sees it rather than crashing the whole walk with an unhandled action.
   if (step.action === "callModule") {
-    await addRunStep(projectId, {
+    await addStepRun({
       runId, trailId, stepId: step.id, idx: step.idx, tier: "none", verdict: "red", confidence: 0, healed: false,
       evidence: { action: "callModule", error: "module not expanded — module missing or empty", actionValue: step.actionValue },
     })
@@ -573,7 +610,7 @@ async function runOneStep(
     // In Layer C the whole walk is scoped to fixtureUrl; re-navigate to it (origin already loaded).
     // Bound the nav at opTimeout (Plan G) so a live-network navigate step can't hang on the 30s default.
     await page.goto(step.actionValue && /^https?:|^file:/.test(step.actionValue) ? step.actionValue : fixtureUrl, { timeout: opTimeout })
-    await addRunStep(projectId, {
+    await addStepRun({
       runId, trailId, stepId: step.id, idx: step.idx, tier: "none", verdict: "green", confidence: 1, healed: false,
       evidence: { action: "navigate", recordedStep: recordedStep(null, null), resultUrl: page.url() },
     })
@@ -588,7 +625,7 @@ async function runOneStep(
     const minMs = Math.min(Math.max(Number(step.actionValue) || 0, 0), 15_000)
     if (minMs > 0) await page.waitForTimeout(minMs)
     await page.waitForLoadState("networkidle").catch(() => {})
-    await addRunStep(projectId, {
+    await addStepRun({
       runId, trailId, stepId: step.id, idx: step.idx, tier: "none", verdict: "green", confidence: 1, healed: false,
       evidence: { action: "wait", recordedStep: recordedStep(null, null) },
     })
@@ -614,13 +651,13 @@ async function runOneStep(
     } catch {
       const verdict: Verdict = "red"
       const screenshotKey = await maybeShot(page, opts)
-      await addRunStep(projectId, { runId, trailId, stepId: step.id, idx: step.idx, tier: "none", verdict, confidence: 1, diagnosis: "regression", healed: false,
+      await addStepRun({ runId, trailId, stepId: step.id, idx: step.idx, tier: "none", verdict, confidence: 1, diagnosis: "regression", healed: false,
         evidence: { reason: "checkpoint_failed", checkpoint: step.checkpoint?.description ?? null, recordedStep: recordedStep(null, fp), ...(screenshotKey !== undefined ? { screenshotKey } : {}) },
       })
       return { tier: "none", verdict, healed: false, llmCalls: 0 }
     }
     const screenshotKey = await maybeShot(page, opts)
-    await addRunStep(projectId, { runId, trailId, stepId: step.id, idx: step.idx, tier: "none", verdict: "green", confidence: 1, healed: false,
+    await addStepRun({ runId, trailId, stepId: step.id, idx: step.idx, tier: "none", verdict: "green", confidence: 1, healed: false,
       evidence: { checkpoint: step.checkpoint?.description ?? null, recordedStep: recordedStep(null, fp), ...(screenshotKey !== undefined ? { screenshotKey } : {}) },
     })
     return { tier: "none", verdict: "green", healed: false, llmCalls: 0 }
@@ -629,7 +666,7 @@ async function runOneStep(
   // A checkpoint-only assert (no target at all) is a soft pass that keeps the flow runnable (mirrors codegen).
   if (isAssert && !cachedSelector && !fp) {
     const screenshotKey = await maybeShot(page, opts)
-    await addRunStep(projectId, {
+    await addStepRun({
       runId, trailId, stepId: step.id, idx: step.idx, tier: "none", verdict: "green", confidence: 1, healed: false,
       evidence: {
         checkpoint: step.checkpoint?.description ?? null,
@@ -660,7 +697,7 @@ async function runOneStep(
       }
       // PDF task 1: best-effort screenshot to capture the failure state.
       const screenshotKey = await maybeShot(page, opts)
-      await addRunStep(projectId, {
+      await addStepRun({
         runId, trailId, stepId: step.id, idx: step.idx,
         tier: "cache", verdict: "red", confidence: 1, diagnosis: "locator_drift", healed: false,
         evidence: {
@@ -690,13 +727,13 @@ async function runOneStep(
       // whose target could not be deterministically resolved is a checkpoint failure, never a heal
       // and never an amber_heal, regardless of what vision would classify.
       if (opts.vision) {
-        return await runVisionTier2(projectId, runId, trailId, page, step, opts, fp, cachedSelector, isAssert, opTimeout)
+        return await runVisionTier2(projectId, runId, trailId, page, step, opts, fp, cachedSelector, isAssert, opTimeout, addStepRun)
       }
       // No resolver → unchanged Layer C behavior: RED + needs-vision handoff marker (never green).
       const verdict: Verdict = "red"
       // PDF task 1: best-effort screenshot to capture the failure state.
       const screenshotKey = await maybeShot(page, opts)
-      await addRunStep(projectId, {
+      await addStepRun({
         runId, trailId, stepId: step.id, idx: step.idx,
         tier: "vision", verdict, confidence: 0, diagnosis: "locator_drift", healed: false,
         evidence: {
@@ -780,7 +817,7 @@ async function runOneStep(
     const verdict: Verdict = "red"
     // PDF task 1: best-effort screenshot even on action failure (shows the failure state).
     const screenshotKey = await maybeShot(page, opts)
-    await addRunStep(projectId, {
+    await addStepRun({
       runId, trailId, stepId: step.id, idx: step.idx,
       tier: resolved.tier, verdict, confidence: resolved.confidence, diagnosis: isAssert ? "regression" : "interaction_change", healed: false,
       evidence: {
@@ -841,7 +878,7 @@ async function runOneStep(
         ...(screenshotKey !== undefined ? { screenshotKey } : {}),
       }
 
-  await addRunStep(projectId, {
+  await addStepRun({
     runId, trailId, stepId: step.id, idx: step.idx,
     tier: resolved.tier, verdict, confidence: resolved.confidence,
     diagnosis: resolved.healed ? "locator_drift" : undefined, healed: resolved.healed,
@@ -864,6 +901,7 @@ async function runVisionTier2(
   cachedSelector: string | null,
   isAssert: boolean,
   opTimeout: number,
+  addStepRun: StepRunFn = (i) => addRunStep(projectId, i),
 ): Promise<OneStepResult> {
   const gate = opts.confidenceGate ?? 0.9
   const stepPageUrl = page.url()
@@ -884,7 +922,7 @@ async function runVisionTier2(
         dedupKey: `${trailId}:${step.id}:checkpoint-gone`,
       })
     }
-    await addRunStep(projectId, {
+    await addStepRun({
       runId, trailId, stepId: step.id, idx: step.idx,
       tier: "vision", verdict: "red", confidence: 1, diagnosis: "regression", healed: false,
       evidence: { reason: "checkpoint_gone", target: fp, cachedSelector, needsVision: false, checkpoint: step.checkpoint?.description ?? null, recordedStep: recordedStep(cachedSelector, fp) },
@@ -927,7 +965,7 @@ async function runVisionTier2(
     result = await opts.vision!(visionInput, { projectId, weights: opts.visionWeights })
     decision = decideFromVision(result, gate)
   } catch (e) {
-    await addRunStep(projectId, {
+    await addStepRun({
       runId, trailId, stepId: step.id, idx: step.idx,
       tier: "vision", verdict: "red", confidence: 0, diagnosis: "runtime_error", healed: false,
       evidence: { reason: "vision_error", needsVision: true, error: String(e), target: fp, checkpoint: step.checkpoint?.description ?? null, recordedStep: recordedStep(cachedSelector, fp) },
@@ -948,7 +986,7 @@ async function runVisionTier2(
         dedupKey: `${trailId}:${step.id}:gone`,
       })
     }
-    await addRunStep(projectId, {
+    await addStepRun({
       runId, trailId, stepId: step.id, idx: step.idx,
       tier: "vision", verdict: "red", confidence: decision.confidence, diagnosis: "regression", healed: false,
       evidence: { reason: "vision_regression", classification: result.classification, rationale: decision.rationale, target: fp, needsVision: false, checkpoint: step.checkpoint?.description ?? null, recordedStep: recordedStep(cachedSelector, fp) },
@@ -1015,7 +1053,7 @@ async function runVisionTier2(
         // evidence.toSelector: use the stable selector when available; otherwise a descriptive
         // dekref'd form so the run_step evidence is human-readable and never embeds a raw kref.
         const toSelectorEvidence = persistSelector ?? decision.selector.replace(/\[data-kref="(e\d+)"\]/, "snapshot ref $1")
-        await addRunStep(projectId, {
+        await addStepRun({
           runId, trailId, stepId: step.id, idx: step.idx,
           tier: "vision", verdict: "amber", confidence: decision.confidence, diagnosis: "locator_drift", healed: true,
           evidence: {
@@ -1034,7 +1072,7 @@ async function runVisionTier2(
     }
     // Resolver claimed a heal but we could NOT confirm it (no unique match / wrong role / action
     // failed). Treat as unconfirmed → AMBER + queue-only finding; do NOT act, do NOT persist.
-    return await fileAmberHeal(projectId, runId, trailId, step, opts, fp, decision.rationale, decision.confidence, result.classification, stepPageUrl, decision.selector ?? cachedSelector)
+    return await fileAmberHeal(projectId, runId, trailId, step, opts, fp, decision.rationale, decision.confidence, result.classification, stepPageUrl, decision.selector ?? cachedSelector, addStepRun)
   }
 
   // ── amber_low_conf: never act on an unconfirmed target → AMBER + queue-only finding ──
@@ -1047,6 +1085,7 @@ async function fileAmberHeal(
   projectId: string, runId: string, trailId: string, step: TrailStep, opts: WalkOptions,
   fp: Fingerprint | null, rationale: string, confidence: number, classification: string,
   pageUrl: string, selector: string | null | undefined,
+  addStepRun: StepRunFn = (i) => addRunStep(projectId, i),
 ): Promise<OneStepResult> {
   if (!opts.suppressFindings) {
     await recordFinding(projectId, {
@@ -1056,7 +1095,7 @@ async function fileAmberHeal(
       groundQuote: rationale, confidence, dedupKey: `${trailId}:${step.id}:lowconf`,
     })
   }
-  await addRunStep(projectId, {
+  await addStepRun({
     runId, trailId, stepId: step.id, idx: step.idx,
     tier: "vision", verdict: "amber", confidence, diagnosis: "locator_drift", healed: false,
     evidence: {
