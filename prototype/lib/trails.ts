@@ -225,38 +225,32 @@ export async function recordFinding(
   projectId: string,
   input: { runId: string; trailId: string; stepId?: string; kind: FindingKind; title: string; evidence?: Record<string, unknown>; groundQuote?: string; confidence: number; dedupKey: string; status?: FindingStatus },
 ): Promise<{ id: string; deduped: boolean; recurrence: number }> {
-  // Dedup against ANY prior non-new row for this (project, dedupKey): the open states
-  // ('queued','auto_filed','filed') AND 'dismissed'. Including 'dismissed' is the §6 anti-slop guarantee
-  // — a human dismissal permanently suppresses that finding, so a recurrence must collapse onto the
-  // existing dismissed row (bump recurrence, KEEP status='dismissed') and never resurrect to a fresh
-  // queued/auto-fileable row. For open rows we behave as before (bump recurrence, status untouched).
-  const open = await db!.execute({
-    sql: `SELECT id, recurrence FROM findings WHERE project_id=? AND dedup_key=? AND status IN ('queued','auto_filed','filed','dismissed') ORDER BY created_at ASC LIMIT 1`,
-    args: [projectId, input.dedupKey],
-  })
-  if (open.rows.length) {
-    const id = String((open.rows[0] as any).id); const recurrence = Number((open.rows[0] as any).recurrence) + 1
-    // recurrence + updated_at only; status is never changed here, so a dismissed row stays dismissed.
-    await db!.execute({ sql: `UPDATE findings SET recurrence=?, updated_at=? WHERE id=?`, args: [recurrence, Date.now(), id] })
-    // best-effort spine bump for a recurring finding
-    try {
-      const { ingestFinding } = await import("./expectations-ingest")
-      await ingestFinding(db!, { projectId, findingId: id, title: input.title, dedupKey: input.dedupKey, urlPath: null })
-    } catch (e) { console.warn("[expectations] recordFinding dedup ingest skipped:", String(e)) }
-    return { id, deduped: true, recurrence }
-  }
-  const id = uid("find_"); const now = Date.now()
+  // Atomic upsert: INSERT the new finding; if (project_id, dedup_key) already exists (any status —
+  // including 'dismissed', which is the §6 anti-slop guarantee), bump recurrence instead of inserting a
+  // duplicate. Status is intentionally NOT updated so dismissed rows stay dismissed.
+  // The UNIQUE INDEX finding_dedup_uq (added in applySchema migration) makes this a single atomic
+  // statement — concurrent calls cannot both INSERT; the loser always hits ON CONFLICT and bumps.
+  const candidateId = uid("find_"); const now = Date.now()
   await db!.execute({
     sql: `INSERT INTO findings (id, project_id, run_id, step_id, trail_id, kind, title, evidence_json, ground_quote, confidence, dedup_key, recurrence, status, connector_ref, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, NULL, ?, ?)`,
-    args: [id, projectId, input.runId, input.stepId ?? null, input.trailId, input.kind, input.title, j(input.evidence), input.groundQuote ?? null, input.confidence, input.dedupKey, input.status ?? "queued", now, now],
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, NULL, ?, ?)
+          ON CONFLICT(project_id, dedup_key) DO UPDATE SET
+            recurrence = findings.recurrence + 1,
+            updated_at = excluded.updated_at`,
+    args: [candidateId, projectId, input.runId, input.stepId ?? null, input.trailId, input.kind, input.title, j(input.evidence), input.groundQuote ?? null, input.confidence, input.dedupKey, input.status ?? "queued", now, now],
   })
-  // best-effort spine ingest: an AutoSim finding is also a discovery source
+  const row = await db!.execute({
+    sql: `SELECT id, recurrence FROM findings WHERE project_id=? AND dedup_key=?`,
+    args: [projectId, input.dedupKey],
+  })
+  const id = String((row.rows[0] as any).id)
+  const recurrence = Number((row.rows[0] as any).recurrence)
+  const deduped = id !== candidateId
   try {
     const { ingestFinding } = await import("./expectations-ingest")
     await ingestFinding(db!, { projectId, findingId: id, title: input.title, dedupKey: input.dedupKey, urlPath: null })
-  } catch (e) { console.warn("[expectations] recordFinding ingest skipped:", String(e)) }
-  return { id, deduped: false, recurrence: 1 }
+  } catch (e) { console.warn(`[expectations] recordFinding ${deduped ? "dedup " : ""}ingest skipped:`, String(e)) }
+  return { id, deduped, recurrence }
 }
 
 export async function listFindings(

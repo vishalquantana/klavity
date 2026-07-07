@@ -161,6 +161,21 @@ test("recordFinding dedups by dedup_key and bumps recurrence instead of duplicat
   expect(all[0].recurrence).toBe(2)
 })
 
+test("recordFinding dedup is atomic under concurrent calls — no duplicate rows", async () => {
+  const trail = await T.createTrail("proj_A", { name: "Concurrent", baseUrl: "https://app.test/" })
+  const walk = await T.startWalk("proj_A", trail)
+  const [a, b] = await Promise.all([
+    T.recordFinding("proj_A", { runId: walk, trailId: trail, kind: "regression", title: "Race A", confidence: 0.9, dedupKey: "concurrent-race-key" }),
+    T.recordFinding("proj_A", { runId: walk, trailId: trail, kind: "regression", title: "Race B", confidence: 0.9, dedupKey: "concurrent-race-key" }),
+  ])
+  const all = await T.listFindings("proj_A")
+  const matches = all.filter((f) => f.dedupKey === "concurrent-race-key")
+  expect(matches.length).toBe(1) // exactly one row — no duplicate
+  expect(matches[0].recurrence).toBe(2) // both calls recorded
+  expect(a.id).toBe(b.id) // same underlying row
+  expect(a.deduped !== b.deduped).toBe(true) // one was fresh, one was deduped
+})
+
 test("listFindings filters by status; setFindingStatus transitions and records connectorRef", async () => {
   const trail = await T.createTrail("proj_A", { name: "F2", baseUrl: "https://app.test/" })
   const walk = await T.startWalk("proj_A", trail)
