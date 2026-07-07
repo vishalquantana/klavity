@@ -14,6 +14,7 @@ export interface ModalConfig {
   launcherMode?: LauncherMode
   launcherText?: string
   launcherIconColor?: string
+  maskNumbers?: boolean
 }
 
 const HEX = /^#[0-9a-fA-F]{3,8}$/
@@ -79,6 +80,7 @@ export function resolveModalConfig(raw: unknown): ModalConfig & { theme: ModalTh
   if (lt) out.launcherText = lt
   const lic = hex(r.launcherIconColor)
   if (lic) out.launcherIconColor = lic
+  if (r.maskNumbers === true) out.maskNumbers = true
   return out
 }
 
@@ -133,6 +135,7 @@ export function validateModalConfigInput(body: unknown, opts: { isPro: boolean }
   if (lt) config.launcherText = lt
   const lic = hex(body.launcherIconColor)
   if (lic) config.launcherIconColor = lic
+  if ((body as any).maskNumbers === true) config.maskNumbers = true
   if (JSON.stringify(config).length > 2048) return { ok: false, error: 'Config too large.' }
   return { ok: true, config }
 }
