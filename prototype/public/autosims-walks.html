@@ -204,7 +204,7 @@ function renderList(){
         +'</div>'
       +'</div>'
       +'<div class="wr-right">'
-        +(w.hasReplay?'<span class="replay-badge">▶ Replay</span>':"")
+        +(w.hasReplay?'<span class="replay-badge">'+window.kicon("play",{size:12})+' Replay</span>':"")
         +'<span class="pill '+esc(v)+'">'+esc(v)+'</span>'
         +'<a class="view-btn" href="'+esc(detailHref)+'">View →</a>'
       +'</div>'
