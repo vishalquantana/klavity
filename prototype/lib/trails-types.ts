@@ -30,6 +30,12 @@ export interface Fingerprint {
   screenshotKey?: string
 }
 
+/** KLA-93: named environment override for a trail — e.g. staging vs prod. */
+export interface TrailEnvironment {
+  name: string
+  baseUrl: string
+}
+
 export interface Trail {
   id: string; projectId: string; name: string; intent: string; baseUrl: string
   viewport: TrailViewport | null
@@ -41,6 +47,8 @@ export interface Trail {
   /** KLA-73: persona chosen to judge walk results for this Trail. Null = no judge assigned. */
   judgePersonaId: string | null
   objectiveVerified?: boolean | null
+  /** KLA-93: named environments (e.g. staging, prod). Empty = only baseUrl is available. */
+  environments: TrailEnvironment[]
 }
 
 
@@ -94,6 +102,8 @@ export interface Walk {
   id: string; trailId: string; projectId: string; trigger: "manual"
   status: "running" | Verdict; llmCalls: number; trailVersion: number
   summary: Record<string, unknown> | null; startedAt: number; finishedAt: number | null
+  /** KLA-93: name of the environment this walk ran against. Null = default (trail.baseUrl). */
+  environmentName: string | null
 }
 
 export interface RunStep {

@@ -16,6 +16,7 @@ import { expandModuleSteps } from "./trails-modules"
 import {
   getTrail, listTrailSteps, getCacheForStep, upsertLocatorCache,
   startWalk, addRunStep, mergeRunStepEvidence, finishWalk, recordFinding,
+  resolveEnvironmentUrl,
 } from "./trails"
 import { touchWalkHeartbeat } from "./db"
 import { stepCacheKey } from "./trails-crystallize"
@@ -127,6 +128,12 @@ export interface WalkOptions {
    * locator so the element-resolution cost is paid only once. Default 2. Set to 0 to disable.
    */
   stepRetries?: number
+  /**
+   * KLA-93: optional named environment to run against. When set, the runner resolves the
+   * environment's baseUrl from the trail and uses it instead of `fixtureUrl`. The name is also
+   * recorded on the trail_runs row. Absent → use fixtureUrl unchanged (backward-compatible).
+   */
+  environmentName?: string | null
 }
 
 export interface WalkStepSummary {
@@ -469,6 +476,11 @@ async function applyNetworkMocks(page: Page, mocks: NetworkMock[]) {
 export async function walkTrail(projectId: string, trailId: string, opts: WalkOptions): Promise<WalkSummary> {
   const trail = await getTrail(projectId, trailId)
   if (!trail) throw new Error(`trail ${trailId} not found in project ${projectId}`)
+  // KLA-93: if an environment name is given, resolve its baseUrl and use it as the walk URL.
+  // Throws early (before the browser is acquired) when the name is not found on this trail.
+  if (opts.environmentName) {
+    opts = { ...opts, fixtureUrl: resolveEnvironmentUrl(trail, opts.environmentName) }
+  }
   // Draft-gate (AutoSims F1): draft Trails and explicit Verification Walks never file Findings.
   // Evidence (run_steps) is still captured so the author can review what happened.
   opts = { ...opts, suppressFindings: opts.suppressFindings ?? (trail.status === "draft"), _resolvedCreds: new Set<string>() }
@@ -479,7 +491,7 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
 
   // Adopt a pre-created Walk row (Plan G trigger) so run_steps/replay/verdict share the caller's runId;
   // otherwise mint our own as before (every existing caller). No behavior change when runId is absent.
-  const runId = opts.runId ?? (await startWalk(projectId, trailId, "manual"))
+  const runId = opts.runId ?? (await startWalk(projectId, trailId, "manual", opts.environmentName))
 
   // Browser via the seam: local Playwright by default; connectOverCDP → remote (Steel) when
   // AUTOSIM_CDP_URL is set (moves the walk off the 1GB box). bh.close() handles Steel release.

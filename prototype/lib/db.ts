@@ -627,6 +627,12 @@ export async function applySchema(c: Client) {
   // KLA-67: per-step action timeout override (ms). NULL = runner uses adaptive default (min 5s, max 15s).
   await c.execute("ALTER TABLE trail_steps ADD COLUMN timeout_ms INTEGER")
     .catch((e: any) => console.warn("trail_steps.timeout_ms ALTER skipped:", e?.message || e))
+  // KLA-93: per-trail named environments (staging/prod/etc.) stored as JSON array [{name,baseUrl}].
+  await c.execute("ALTER TABLE trails ADD COLUMN environments_json TEXT")
+    .catch((e: any) => console.warn("trails.environments_json ALTER skipped:", e?.message || e))
+  // KLA-93: which named environment a run was executed against. NULL = default (trail.baseUrl).
+  await c.execute("ALTER TABLE trail_runs ADD COLUMN environment_name TEXT")
+    .catch((e: any) => console.warn("trail_runs.environment_name ALTER skipped:", e?.message || e))
 }
 
 // ── schema_meta helpers ──
