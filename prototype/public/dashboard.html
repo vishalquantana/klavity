@@ -3566,13 +3566,14 @@ async function openReplay(feedbackId) {
   var events = (d.events || [])
   if (events.length < 2){ note.textContent = "Too few frames to scrub."; return }
   try {
-    var RRWebPlayer = (window.rrwebPlayer && (window.rrwebPlayer.default || window.rrwebPlayer.Player)) || window.rrwebPlayer
-    __replayState.player = new RRWebPlayer({
+    var PlayerClass = (window.rrwebPlayer && (window.rrwebPlayer.default || window.rrwebPlayer.Player))
+    if (!PlayerClass) throw new Error("rrweb-player not loaded")
+    __replayState.player = new PlayerClass({
       target: document.getElementById("replayPlayerHost"),
       props: { events: events, width: 900, autoPlay: true, showController: true },
     })
     note.textContent = (d.nEvents || events.length) + " events" + (d.trimmed ? " · trimmed to the most recent window" : "") + " · recorded just before the report was filed"
-  } catch(e){ note.textContent = "Could not start the player." }
+  } catch(e){ note.textContent = "Could not start the player: " + (e && e.message ? e.message : "unknown error") }
 }
 
 load()
