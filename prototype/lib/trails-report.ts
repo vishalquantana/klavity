@@ -14,6 +14,8 @@ export interface WalkReportData {
   steps: ReportStep[]
   findings: Finding[]
   projectName?: string
+  /** URL where the rrweb replay segments can be fetched (auth'd or share-token'd). Present only when a replay was captured. */
+  replayUrl?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -23,7 +25,7 @@ export interface WalkReportData {
 export async function gatherWalkReport(
   projectId: string,
   runId: string,
-  opts?: { presign?: (key: string) => string },
+  opts?: { presign?: (key: string) => string; replayUrl?: string },
 ): Promise<WalkReportData | null> {
   const { getWalk, listRunSteps, listFindings, getTrail } = await import("./trails")
 
@@ -60,7 +62,7 @@ export async function gatherWalkReport(
     // ignore — projectName is optional
   }
 
-  return { trail, walk, steps, findings, projectName }
+  return { trail, walk, steps, findings, projectName, replayUrl: opts?.replayUrl }
 }
 
 async function resolveReportScreenshot(
@@ -107,10 +109,10 @@ function esc(s: string | null | undefined): string {
 
 export function renderWalkReportHtml(
   data: WalkReportData,
-  opts: { baseUrl: string; generatedAt: number },
+  opts: { baseUrl: string; generatedAt: number; replayUrl?: string },
 ): string {
   const { trail, walk, steps, findings, projectName } = data
-  const { baseUrl, generatedAt } = opts
+  const { baseUrl, generatedAt, replayUrl } = opts
 
   const base = baseUrl.replace(/\/$/, "")
 
@@ -325,6 +327,16 @@ code{font-family:monospace}
     <td style="padding:6px 16px 6px 0"><span style="color:#9ca3af;font-family:monospace;font-size:11px;text-transform:uppercase;display:block;margin-bottom:2px">Healed</span>${healedCount}</td>
   </tr>
 </table>
+
+${replayUrl ? `
+<!-- Session replay reference -->
+<div style="margin-bottom:24px;padding:12px 16px;background:#f0f0ff;border-radius:10px;border:1px solid #e0e0ff;display:flex;align-items:center;gap:12px">
+  <span style="font-size:18px">▶</span>
+  <div>
+    <div style="font-size:13px;font-weight:600;color:#4338ca;margin-bottom:2px">Session Replay available</div>
+    <a href="${esc(replayUrl)}" style="font-family:monospace;font-size:11px;color:#6366f1;word-break:break-all">${esc(replayUrl)}</a>
+  </div>
+</div>` : ""}
 
 <!-- Step timeline -->
 <h2 style="font-size:18px;font-weight:500;margin-bottom:14px;color:#111">Steps</h2>
