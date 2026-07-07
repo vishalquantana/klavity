@@ -555,6 +555,9 @@ async function render(d){
   $("walksCount").textContent = String(walks.length)
   const wEl = $("walks")
   wEl.innerHTML = walks.length ? "" : '<div class="empty"><div class="em">'+window.kicon('footprints',{size:18})+'</div><p>No Walks yet. Author a Trail and walk it to see verdicts here.</p></div>'
+  // KLAVITYKLA-118: build trailId→name lookup so walk rows show the human trail NAME, not the raw ID.
+  const trailNameFor = {}
+  ;(d.trails || []).forEach(function(t){ trailNameFor[t.id] = t.name })
   for (const w of walks) {
     const v = String(w.status || "running")
     const when = w.startedAt ? new Date(w.startedAt).toLocaleString() : ""
@@ -562,7 +565,8 @@ async function render(d){
     row.className = "walk"
     const pdfHref = '/api/trails/walks/' + encodeURIComponent(w.id) + '/report.pdf' + projQ()
     const detailHref = '/autosims/walk/' + encodeURIComponent(w.id) + projQ()
-    row.innerHTML = '<div class="body"><div class="t">'+esc(w.trailId)+'</div><div class="d">'+esc(w.id)+' · '+esc(when)+' · '+esc(w.llmCalls||0)+' LLM</div></div>'
+    const trailLabel = esc(trailNameFor[w.trailId] || w.trailId)
+    row.innerHTML = '<div class="body"><div class="t">'+trailLabel+'</div><div class="d">'+esc(w.id)+' · '+esc(when)+' · '+esc(w.llmCalls||0)+' LLM</div></div>'
       + (w.hasReplay ? '<a class="replay-btn" href="'+esc(detailHref)+'">'+kicon('play',{size:10})+' Replay</a>' : '')
       + '<a class="replay-btn" href="'+esc(detailHref)+'">'+kicon('eye',{size:10})+' View</a>'
       + '<a class="walk-pdf-btn" href="'+esc(pdfHref)+'" target="_blank" rel="noopener">'+kicon('file-text',{size:10})+' PDF</a>'
