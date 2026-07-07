@@ -244,6 +244,7 @@ function rowToFinding(r: any): Finding {
     id: r.id, projectId: r.project_id, runId: r.run_id, stepId: r.step_id ?? null, trailId: r.trail_id,
     kind: r.kind as FindingKind, title: r.title, evidence: pj<Record<string, unknown>>(r.evidence_json),
     groundQuote: r.ground_quote ?? null, confidence: Number(r.confidence), dedupKey: r.dedup_key,
+    contentSig: r.content_sig ?? null,
     recurrence: Number(r.recurrence), status: r.status as FindingStatus, connectorRef: r.connector_ref ?? null,
     connectorError: r.connector_error ?? null,
     createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
@@ -252,21 +253,48 @@ function rowToFinding(r: any): Finding {
 
 export async function recordFinding(
   projectId: string,
-  input: { runId: string; trailId: string; stepId?: string; kind: FindingKind; title: string; evidence?: Record<string, unknown>; groundQuote?: string; confidence: number; dedupKey: string; status?: FindingStatus },
+  input: { runId: string; trailId: string; stepId?: string; kind: FindingKind; title: string; evidence?: Record<string, unknown>; groundQuote?: string; confidence: number; dedupKey: string; contentSig?: string | null; status?: FindingStatus },
 ): Promise<{ id: string; deduped: boolean; recurrence: number }> {
-  // Atomic upsert: INSERT the new finding; if (project_id, dedup_key) already exists (any status —
-  // including 'dismissed', which is the §6 anti-slop guarantee), bump recurrence instead of inserting a
-  // duplicate. Status is intentionally NOT updated so dismissed rows stay dismissed.
-  // The UNIQUE INDEX finding_dedup_uq (added in applySchema migration) makes this a single atomic
-  // statement — concurrent calls cannot both INSERT; the loser always hits ON CONFLICT and bumps.
+  // ── Cross-trail content dedup (KLA-77) ─────────────────────────────────────
+  // If a content sig matches an existing finding in this project (regardless of which Trail or
+  // step produced it), collapse onto that row with a recurrence bump rather than inserting a
+  // duplicate. This catches same-bug-seen-from-two-trails and post-re-crystallization repeats.
+  // The per-step dedupKey fast path below still handles the intra-trail case atomically.
+  if (input.contentSig) {
+    const existing = await db!.execute({
+      sql: `SELECT id, recurrence FROM findings WHERE project_id=? AND content_sig=? LIMIT 1`,
+      args: [projectId, input.contentSig],
+    })
+    if (existing.rows.length) {
+      const row = existing.rows[0] as any
+      const now = Date.now()
+      await db!.execute({
+        sql: `UPDATE findings SET recurrence=recurrence+1, updated_at=? WHERE id=?`,
+        args: [now, String(row.id)],
+      })
+      const id = String(row.id)
+      const recurrence = Number(row.recurrence) + 1
+      try {
+        const { ingestFinding } = await import("./expectations-ingest")
+        await ingestFinding(db!, { projectId, findingId: id, title: input.title, dedupKey: input.dedupKey, urlPath: null })
+      } catch (e) { console.warn(`[expectations] recordFinding content-dedup ingest skipped:`, String(e)) }
+      return { id, deduped: true, recurrence }
+    }
+  }
+
+  // ── Per-step dedup: ATOMIC INSERT ON CONFLICT(project_id, dedup_key) ───────
+  // INSERT the new finding; if (project_id, dedup_key) already exists (any status —
+  // including 'dismissed', which is the §6 anti-slop guarantee), bump recurrence instead of
+  // inserting a duplicate. Status is intentionally NOT updated so dismissed rows stay dismissed.
+  // The UNIQUE INDEX finding_dedup_uq (added in applySchema migration) makes this atomic.
   const candidateId = uid("find_"); const now = Date.now()
   await db!.execute({
-    sql: `INSERT INTO findings (id, project_id, run_id, step_id, trail_id, kind, title, evidence_json, ground_quote, confidence, dedup_key, recurrence, status, connector_ref, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, NULL, ?, ?)
+    sql: `INSERT INTO findings (id, project_id, run_id, step_id, trail_id, kind, title, evidence_json, ground_quote, confidence, dedup_key, content_sig, recurrence, status, connector_ref, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, NULL, ?, ?)
           ON CONFLICT(project_id, dedup_key) DO UPDATE SET
             recurrence = findings.recurrence + 1,
             updated_at = excluded.updated_at`,
-    args: [candidateId, projectId, input.runId, input.stepId ?? null, input.trailId, input.kind, input.title, j(input.evidence), input.groundQuote ?? null, input.confidence, input.dedupKey, input.status ?? "queued", now, now],
+    args: [candidateId, projectId, input.runId, input.stepId ?? null, input.trailId, input.kind, input.title, j(input.evidence), input.groundQuote ?? null, input.confidence, input.dedupKey, input.contentSig ?? null, input.status ?? "queued", now, now],
   })
   const row = await db!.execute({
     sql: `SELECT id, recurrence FROM findings WHERE project_id=? AND dedup_key=?`,
