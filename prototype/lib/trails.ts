@@ -197,6 +197,16 @@ export async function listRunSteps(projectId: string, runId: string): Promise<Ru
   return r.rows.map(rowToRunStep)
 }
 
+export async function countRunSteps(projectId: string, runId: string): Promise<number> {
+  const r = await db!.execute({ sql: `SELECT COUNT(*) as n FROM run_steps WHERE project_id=? AND run_id=?`, args: [projectId, runId] })
+  return Number((r.rows[0] as any)?.n ?? 0)
+}
+
+export async function countTrailSteps(projectId: string, trailId: string): Promise<number> {
+  const r = await db!.execute({ sql: `SELECT COUNT(*) as n FROM trail_steps WHERE project_id=? AND trail_id=?`, args: [projectId, trailId] })
+  return Number((r.rows[0] as any)?.n ?? 0)
+}
+
 export async function listWalks(projectId: string, trailId: string): Promise<Walk[]> {
   const r = await db!.execute({ sql: `SELECT * FROM trail_runs WHERE project_id=? AND trail_id=? ORDER BY started_at DESC`, args: [projectId, trailId] })
   return r.rows.map(rowToWalk)

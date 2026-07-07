@@ -531,13 +531,24 @@ async function runTrail(trailId, btn, row){
   }
   row.insertBefore(cancelBtn, btn)
 
-  // Poll the dashboard until this run leaves 'running' (~1.5s cadence, bounded).
+  // Poll the lightweight /progress endpoint for live step feedback (~1.5s cadence, bounded).
+  // When the walk finishes, do one full dashboard reload to paint the verdict + replay button.
   for (var i=0;i<80;i++){
     await new Promise(function(res){ setTimeout(res, 1500) })
-    var dd = await loadData()
-    if (!dd) continue
-    var w = (dd.recentWalks||[]).find(function(x){ return x.id === runId })
-    if (w && w.status !== "running"){ cancelBtn.remove(); await render(dd); return }
+    var prog = null
+    try {
+      var pr = await fetch("/api/trails/walks/" + encodeURIComponent(runId) + "/progress" + qs)
+      if (pr.ok) prog = await pr.json().catch(function(){ return null })
+    } catch(e) {}
+    if (prog && prog.status !== "running") {
+      cancelBtn.remove()
+      var dd = await loadData()
+      if (dd) await render(dd)
+      return
+    }
+    if (prog && prog.totalSteps > 0) {
+      btn.innerHTML = kicon('loader',{size:12})+' step '+prog.stepsDone+'/'+prog.totalSteps
+    }
   }
   cancelBtn.remove()
   await load() // give up polling; show whatever the dashboard has

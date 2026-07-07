@@ -36,7 +36,7 @@ import { trailsDashboardData } from "./lib/trails-dashboard"
 import { fileFindingById, dismissFinding, realFiler } from "./lib/trails-findings-gate"
 import { getReplay, runsWithReplay } from "./lib/trails-replay"
 import { saveFeedbackReplay, getFeedbackReplay, feedbackIdsWithReplay, pruneOldFeedbackReplays } from "./lib/feedback-replay"
-import { listRunSteps, listTrails, getTrail, getWalk, setTrailStatus, listTrailSteps, insertAssertStep, deleteTrailStep, updateTrailStep, updateTrail } from "./lib/trails"
+import { listRunSteps, listTrails, getTrail, getWalk, setTrailStatus, listTrailSteps, insertAssertStep, deleteTrailStep, updateTrailStep, updateTrail, countRunSteps, countTrailSteps } from "./lib/trails"
 import { runWalkNow } from "./lib/trails-trigger"
 import { runAuthorNow, getAuthorSession, getActiveAuthorSession } from "./lib/trails-author"
 import { WalkBusyError, cancelCurrentWalk } from "./lib/trails-browser"
@@ -2925,6 +2925,25 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           return json({ runId, segments, steps })
         } catch (e) {
           return json(oops(e, "trails-replay"), 500)
+        }
+      }
+
+      // GET /api/trails/walks/:runId/progress — lightweight live progress for an in-flight walk.
+      // Returns { status, stepsDone, totalSteps } using COUNT queries (no evidence blobs loaded).
+      // Polled by the UI every ~1.5s while the walk is running to show "step N/M" feedback.
+      const progressMatch = path.match(/^\/api\/trails\/walks\/([^/]+)\/progress$/)
+      if (req.method === "GET" && progressMatch) {
+        try {
+          const runId = progressMatch[1]
+          const walk = await getWalk(projectId, runId)
+          if (!walk) return json({ error: "Walk not found." }, 404)
+          const [stepsDone, totalSteps] = await Promise.all([
+            countRunSteps(projectId, runId),
+            countTrailSteps(projectId, walk.trailId),
+          ])
+          return json({ status: walk.status, stepsDone, totalSteps })
+        } catch (e) {
+          return json(oops(e, "trails-progress"), 500)
         }
       }
 
