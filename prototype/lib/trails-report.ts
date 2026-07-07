@@ -6,10 +6,12 @@ import type { Trail, Walk, RunStep, Finding } from "./trails-types"
 // Exported types
 // ---------------------------------------------------------------------------
 
+type ReportStep = RunStep & { screenshotUrl?: string; screenshotError?: string }
+
 export interface WalkReportData {
   trail: Trail
   walk: Walk
-  steps: Array<RunStep & { screenshotUrl?: string }>
+  steps: ReportStep[]
   findings: Finding[]
   projectName?: string
 }
@@ -34,31 +36,15 @@ export async function gatherWalkReport(
 
   const rawSteps = await listRunSteps(projectId, runId)
 
-  // Build presigner — only use real presignGet when S3 env exists
-  const presign = opts?.presign ?? ((key: string): string => {
-    try {
-      // Dynamic import so missing env doesn't blow up module load
-      const { presignGet } = require("./s3") as typeof import("./s3")
-      return presignGet(key, 3600)
-    } catch {
-      return ""
-    }
-  })
-
-  const steps: Array<RunStep & { screenshotUrl?: string }> = rawSteps.map((rs) => {
+  const steps: ReportStep[] = await Promise.all(rawSteps.map(async (rs) => {
     const ev = rs.evidence as Record<string, unknown> | null
     const key = ev?.screenshotKey as string | undefined
-    let screenshotUrl: string | undefined
     if (key) {
-      try {
-        const url = presign(key)
-        if (url && url.startsWith("https://")) screenshotUrl = url
-      } catch {
-        // best-effort
-      }
+      const shot = await resolveReportScreenshot(key, opts)
+      return { ...rs, ...shot }
     }
-    return screenshotUrl ? { ...rs, screenshotUrl } : { ...rs }
-  })
+    return { ...rs }
+  }))
 
   // Filter findings to this walk's runId
   const allFindings = await listFindings(projectId)
@@ -75,6 +61,30 @@ export async function gatherWalkReport(
   }
 
   return { trail, walk, steps, findings, projectName }
+}
+
+async function resolveReportScreenshot(
+  key: string,
+  opts?: { presign?: (key: string) => string },
+): Promise<Pick<ReportStep, "screenshotUrl" | "screenshotError">> {
+  try {
+    const url = opts?.presign ? opts.presign(key) : await screenshotDataUrl(key)
+    if (usableScreenshotUrl(url)) return { screenshotUrl: url }
+    return { screenshotError: "Screenshot could not be loaded." }
+  } catch {
+    return { screenshotError: "Screenshot could not be loaded." }
+  }
+}
+
+async function screenshotDataUrl(key: string): Promise<string> {
+  const { getObjectBytes } = await import("./s3")
+  const obj = await getObjectBytes(key)
+  const contentType = obj.contentType && obj.contentType.startsWith("image/") ? obj.contentType : "image/png"
+  return `data:${contentType};base64,${Buffer.from(obj.bytes).toString("base64")}`
+}
+
+function usableScreenshotUrl(url: string): boolean {
+  return url.startsWith("data:image/") || url.startsWith("https://")
 }
 
 // ---------------------------------------------------------------------------
@@ -171,6 +181,7 @@ export function renderWalkReportHtml(
     const fromSel = (ev?.fromSelector ?? null) as string | null
     const toSel = (ev?.toSelector ?? null) as string | null
     const imgUrl = s.screenshotUrl ?? null
+    const imgError = s.screenshotError ?? null
 
     let healDiff = ""
     if (s.healed && fromSel && toSel) {
@@ -183,6 +194,8 @@ export function renderWalkReportHtml(
 
     const screenshotHtml = imgUrl
       ? `<div style="margin-top:10px"><img src="${esc(imgUrl)}" alt="Step ${s.idx + 1} screenshot" style="max-width:100%;border-radius:6px;border:1px solid #e5e7eb" /></div>`
+      : imgError
+        ? `<div style="margin-top:10px;border:1px dashed #d1d5db;border-radius:6px;padding:10px 12px;background:#f9fafb;color:#6b7280;font-size:12px">${esc(imgError)}</div>`
       : ""
 
     const checkpointHtml = checkpoint

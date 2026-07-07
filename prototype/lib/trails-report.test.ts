@@ -124,6 +124,17 @@ test("(render-6) screenshot step renders an <img> tag", () => {
   expect(html).toContain("https://s3.example/shot_1.jpg")
 })
 
+test("(render-6b) screenshot resolution failure renders a visible placeholder", () => {
+  const data = makeData()
+  data.steps = [{
+    ...data.steps[0],
+    screenshotError: "Screenshot could not be loaded.",
+  }]
+  const html = renderWalkReportHtml(data, { baseUrl: "https://test.example", generatedAt: Date.now() })
+  expect(html).not.toContain('<img')
+  expect(html).toContain("Screenshot could not be loaded.")
+})
+
 test("(render-7) step without screenshot has no <img> for that step", () => {
   const data = makeData()
   // step has no screenshotUrl
@@ -310,6 +321,17 @@ test("(gather-4) screenshotUrl only set when evidence.screenshotKey present and 
   expect(stepWithKey!.screenshotUrl).toBe("https://s3.example/shots/key123.jpg?token=abc")
 })
 
+test("(gather-4b) screenshotUrl accepts embedded image data URLs so reports do not depend on presign expiry", async () => {
+  const { runId } = await seedWalk("proj_g4b", { withKey: true })
+  const fakeResolver = (_key: string) => "data:image/jpeg;base64,QUJD"
+  const result = await gatherWalkReport("proj_g4b", runId, { presign: fakeResolver })
+  expect(result).not.toBeNull()
+  const stepWithKey = result!.steps.find((s) => (s.evidence as any)?.screenshotKey)
+  expect(stepWithKey).toBeDefined()
+  expect(stepWithKey!.screenshotUrl).toBe("data:image/jpeg;base64,QUJD")
+  expect(stepWithKey!.screenshotError).toBeUndefined()
+})
+
 test("(gather-5) no screenshotUrl when evidence has no screenshotKey", async () => {
   const { runId } = await seedWalk("proj_g5", { withKey: false })
   const fakePressign = (key: string) => `https://s3.example/${key}`
@@ -326,6 +348,7 @@ test("(gather-6) presign throwing does not break gather — step just has no scr
   expect(result).not.toBeNull()
   for (const s of result!.steps) {
     expect(s.screenshotUrl).toBeUndefined()
+    if ((s.evidence as any)?.screenshotKey) expect(s.screenshotError).toBe("Screenshot could not be loaded.")
   }
 })
 
