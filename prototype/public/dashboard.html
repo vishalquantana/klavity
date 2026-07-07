@@ -1200,6 +1200,11 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           <input type="email" id="kl-notify" placeholder="you@company.com">
         </label>
         <p style="font-size:12px;opacity:.7;margin-top:-4px">Leave blank to keep the existing notify address.</p>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:8px;">
+          <input type="checkbox" id="kl-mask-numbers" style="accent-color:#6366f1;width:14px;height:14px;">
+          <span style="font-size:13px;">Mask numbers in screenshots by default</span>
+        </label>
+        <p style="font-size:12px;opacity:.7;margin-top:-4px">Reporters can always override this per-report.</p>
         </div><!-- /.wp-config -->
         <div class="wp-preview">
           <div class="wp-preview-head">
@@ -3355,7 +3360,7 @@ async function loadAppearance() {
     const lmSel = $("kl-launcher-mode")
     if (lmSel) lmSel.addEventListener("change", syncLauncher)
     // Live preview re-renders as any appearance field changes (before saving).
-    ;["kl-theme","kl-primary","kl-secondary","kl-bg","kl-font","kl-thankyou","kl-mode","kl-cta","kl-launcher-icon-color","kl-launcher-text"].forEach(id => {
+    ;["kl-theme","kl-primary","kl-secondary","kl-bg","kl-font","kl-thankyou","kl-mode","kl-cta","kl-launcher-icon-color","kl-launcher-text","kl-mask-numbers"].forEach(id => {
       const el = $(id); if (el) { el.addEventListener("input", renderWidgetPreview); el.addEventListener("change", renderWidgetPreview) }
     })
     const wpT = $("wp-thanks-toggle"); if (wpT) wpT.addEventListener("change", renderWidgetPreview)
@@ -3380,6 +3385,8 @@ async function loadAppearance() {
       if (ltVal) body.launcherText = ltVal
       const licVal = $("kl-launcher-icon-color") ? $("kl-launcher-icon-color").value : "#5b5bf0"
       if (licVal && licVal !== "#5b5bf0") body.launcherIconColor = licVal
+      const maskChk = $("kl-mask-numbers")
+      if (maskChk) body.maskNumbers = maskChk.checked ? true : undefined
       const notifyVal = $("kl-notify").value.trim()
       if (notifyVal) body.notify_email = notifyVal
       msg.textContent = "Saving…"
@@ -3412,6 +3419,7 @@ async function loadAppearance() {
     if (c.launcherMode && $("kl-launcher-mode")) $("kl-launcher-mode").value = c.launcherMode
     if (c.launcherText && $("kl-launcher-text")) $("kl-launcher-text").value = c.launcherText
     if (c.launcherIconColor && $("kl-launcher-icon-color")) $("kl-launcher-icon-color").value = c.launcherIconColor
+    if ($("kl-mask-numbers")) $("kl-mask-numbers").checked = !!c.maskNumbers
     syncLauncher()
     // Pre-fill lead-gen widget fields (notify email is never returned — left blank)
     const w = d.widget || {}
