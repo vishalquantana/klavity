@@ -80,6 +80,8 @@ export interface TrailStep {
   id: string; trailId: string; projectId: string; idx: number
   action: StepAction; actionValue: string | null
   target: Fingerprint | null; checkpoint: Checkpoint | null; createdAt: number
+  /** KLA-67: optional per-step action timeout (ms). Overrides the runner's adaptive default. */
+  timeoutMs?: number
 }
 
 export interface LocatorCacheRow {

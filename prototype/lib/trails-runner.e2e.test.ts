@@ -371,3 +371,70 @@ test("(viii) inline wizard with unrecognized fn name + trusted-block guard trans
   expect(summary.steps[0].verdict).toBe("green")
   expect(summary.steps[1].verdict).toBe("green")
 }, 30000)
+
+test("(ix) 6s CSS-animated panel transition passes when per-step timeoutMs exceeds the duration (KLA-67)", async () => {
+  const projectId = "proj_kla67_anim"
+  // The fixture uses Web Animations API to delay panel reveal by 6s. Without per-step
+  // timeoutMs the old 5s cap would cause the assert to fail; with timeoutMs=10000 it passes.
+  const traj = {
+    name: "Animated panel",
+    intent: "click Next and reach the name input after a 6s animated reveal",
+    baseUrl: "https://app.test/",
+    authorKind: "llm" as const,
+    createdBy: "agent@klavity",
+    steps: [
+      { action: "click" as const, url: "https://app.test/", domHash: "ap0",
+        // timeoutMs covers the animated settle wait in clickWithTransitionFallback
+        timeoutMs: 10000,
+        target: { role: "button", accessibleName: "Next", text: "Next", resolvedSelector: "#next" } },
+      { action: "assert" as const, url: "https://app.test/", domHash: "ap1",
+        // timeoutMs covers the assert waitFor after the panel appears
+        timeoutMs: 10000,
+        checkpoint: { description: "name input visible after animated reveal" },
+        target: { role: "textbox", accessibleName: "Full name", resolvedSelector: "#name" } },
+    ],
+  }
+  const { trailId } = await crystallize(projectId, traj)
+
+  const summary = await walkTrail(projectId, trailId, { fixtureUrl: fixtureUrl("css-transition-panel.html") })
+
+  expect(summary.verdict).toBe("green")
+  expect(summary.steps).toHaveLength(2)
+  expect(summary.steps[0].verdict).toBe("green")
+  expect(summary.steps[1].verdict).toBe("green")
+}, 20000)
+
+test("(x) hard-broken click (go() does nothing) fails RED fast — no animation delay (KLA-67)", async () => {
+  const projectId = "proj_kla67_broken"
+  // The fixture's go() is a no-op: no Web Animation starts so waitForAnimationSettle exits
+  // immediately (fast path), the fallback fires within ~400ms, and the assert fails fast.
+  // Using timeoutMs:10000 on the click step and timeoutMs:2000 on the assert so we can
+  // verify the broken path finishes well under the click step's full budget.
+  const traj = {
+    name: "Broken panel",
+    intent: "click Next (broken) and try to reach name input",
+    baseUrl: "https://app.test/",
+    authorKind: "llm" as const,
+    createdBy: "agent@klavity",
+    steps: [
+      { action: "click" as const, url: "https://app.test/", domHash: "bp0",
+        timeoutMs: 10000,
+        target: { role: "button", accessibleName: "Next", text: "Next", resolvedSelector: "#next" } },
+      // Short timeout on assert — the panel never appears so it will fail within 2s.
+      { action: "assert" as const, url: "https://app.test/", domHash: "bp1",
+        timeoutMs: 2000,
+        checkpoint: { description: "name input visible" },
+        target: { role: "textbox", accessibleName: "Full name", resolvedSelector: "#name" } },
+    ],
+  }
+  const { trailId } = await crystallize(projectId, traj)
+
+  const start = Date.now()
+  const summary = await walkTrail(projectId, trailId, { fixtureUrl: fixtureUrl("css-transition-broken.html") })
+  const elapsed = Date.now() - start
+
+  expect(summary.verdict).toBe("red")
+  // Click step settles fast (no animations → no long wait), assert times out in 2s.
+  // Total must be well under the click step's 10s budget — proves no spurious animation delay.
+  expect(elapsed).toBeLessThan(6000)
+}, 20000)

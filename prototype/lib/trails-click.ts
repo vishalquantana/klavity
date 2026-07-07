@@ -14,6 +14,26 @@ function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+/**
+ * KLA-67: wait until no CSS transitions or Web Animations are running, or capMs elapses.
+ * Uses document.getAnimations() (includes CSSTransition/CSSAnimation since Chrome 84, which
+ * Playwright targets). A no-op when no animations are detected so broken-click paths exit fast.
+ */
+async function waitForAnimationSettle(page: Page, capMs: number): Promise<void> {
+  if (capMs <= 0) return
+  // Quick synchronous check: if nothing is running, return immediately (broken-click fast path).
+  const hasRunning = await page.evaluate(
+    () => document.getAnimations().some((a) => a.playState === "running"),
+  ).catch(() => false)
+  if (!hasRunning) return
+  // An animation is in progress — wait for all to finish or cap to elapse.
+  await page.waitForFunction(
+    () => !document.getAnimations().some((a) => a.playState === "running"),
+    undefined,
+    { timeout: capMs },
+  ).catch(() => {})
+}
+
 async function readTransitionIntent(locator: Locator): Promise<TransitionIntent | null> {
   return await locator.evaluate((el: Element) => {
     type Intent =
@@ -90,8 +110,17 @@ async function invokeTransitionFallback(page: Page, intent: TransitionIntent): P
  * `go(N)` / `setView(...)` transition handlers; in headless walks those clicks have been observed
  * to complete without the transition taking effect. For those known idempotent transitions, verify
  * the expected state and invoke the same page API as a narrow fallback.
+ *
+ * KLA-67: settleCapMs sets the budget for animation settle after the click. Pass the caller's
+ * actionTimeout so slow CSS-animated panels (e.g. 6s transitions) are waited out rather than
+ * triggering a premature fallback invocation. Defaults to TRANSITION_SETTLE_MS * 10 (2s) for
+ * backward compatibility with callers that don't thread the action timeout through.
  */
-export async function clickWithTransitionFallback(locator: Locator, timeoutMs: number): Promise<void> {
+export async function clickWithTransitionFallback(
+  locator: Locator,
+  timeoutMs: number,
+  settleCapMs = TRANSITION_SETTLE_MS * 10,
+): Promise<void> {
   const target = locator.first()
   const intent = await readTransitionIntent(target).catch(() => null)
 
@@ -100,9 +129,9 @@ export async function clickWithTransitionFallback(locator: Locator, timeoutMs: n
   if (!intent) return
 
   if (intent.kind === "invoke") {
-    // Generic panel-transition fallback. After the click settles, check whether the button is
-    // still visible. If it is, the onclick was swallowed (trusted-event capture guard or similar)
-    // — fire the handler directly, bypassing the DOM event path.
+    // Generic panel-transition fallback (KLA-58). After the click settles, check whether the
+    // button is still visible. If it is, the onclick was swallowed (trusted-event capture guard
+    // or similar) — fire the handler directly, bypassing the DOM event path.
     //
     // isVisible() is a non-blocking snapshot: safe to call on role-based locators whose element
     // may already be hidden (unlike evaluate(), which would hang 30s on a hidden getByRole target).
@@ -120,9 +149,18 @@ export async function clickWithTransitionFallback(locator: Locator, timeoutMs: n
     return
   }
 
+  // KLA-67: adaptive animation settle for known-API transitions (go/chooseGoal/setView).
+  // 1. Brief initial wait to let the transition begin.
   await wait(TRANSITION_SETTLE_MS)
   if (await transitionSatisfied(target.page(), intent).catch(() => false)) return
+  // 2. Wait for running CSS transitions / Web Animations to complete before re-checking.
+  //    If nothing is running (broken click), waitForAnimationSettle exits immediately so
+  //    the fallback fires fast. If a 6s+ transition is in flight, we wait it out.
+  const remaining = Math.max(0, settleCapMs - TRANSITION_SETTLE_MS)
+  await waitForAnimationSettle(target.page(), remaining)
+  if (await transitionSatisfied(target.page(), intent).catch(() => false)) return
 
+  // Transition didn't complete within the cap → invoke the known page API as fallback.
   await invokeTransitionFallback(target.page(), intent)
   await wait(TRANSITION_SETTLE_MS)
 }
