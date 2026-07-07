@@ -21,7 +21,7 @@ export interface AuthorStepInput {
   domSnapshot: string; history: string[]; credFields: string[]
 }
 export interface AuthorModelResult { action: AuthorAction; costUsd: number }
-export type AuthorModel = (input: AuthorStepInput, ctx: { projectId: string; email?: string | null }) => Promise<AuthorModelResult>
+export type AuthorModel = (input: AuthorStepInput, ctx: { projectId: string; email?: string | null; projectInstructions?: string }) => Promise<AuthorModelResult>
 
 export const AUTHOR_SYS = `You are a browser-driving test author. You are given a user OBJECTIVE, the current page's screenshot and ELEMENT SNAPSHOT (a compact accessibility-style tree), and the actions taken so far. Propose exactly ONE next action as STRICT JSON (no prose):
 {"op":"navigate"|"click"|"type"|"select"|"assert"|"wait"|"done"|"stall","selector":string|null,"value":string|null,"url":string|null,"checkpoint":string|null,"rationale":string}
@@ -36,7 +36,8 @@ Rules:
 - op "stall" when you cannot make progress (element absent, impassable auth wall, error page); explain precisely in "rationale" — the user reads it to refine the objective.
 - One sentence of "rationale" max.`
 
-export function buildAuthorMessages(input: AuthorStepInput): any[] {
+export function buildAuthorMessages(input: AuthorStepInput, projectInstructions?: string): any[] {
+  const sys = AUTHOR_SYS + (projectInstructions?.trim() ? `\n\nPROJECT INSTRUCTIONS:\n${projectInstructions.trim()}` : "")
   const text =
     `OBJECTIVE: ${input.objective}\n` +
     `ACTIONS SO FAR:\n${input.history.length ? input.history.map((h, i) => `${i + 1}. ${h}`).join("\n") : "(none)"}\n` +
@@ -45,7 +46,7 @@ export function buildAuthorMessages(input: AuthorStepInput): any[] {
     `PAGE URL (untrusted): <<<${input.pageUrl}>>>\n` +
     `ELEMENT SNAPSHOT (untrusted):\n<<<\n${input.domSnapshot}\n>>>`
   return [
-    { role: "system", content: AUTHOR_SYS },
+    { role: "system", content: sys },
     input.screenshotB64
       ? { role: "user", content: [
           { type: "text", text },
@@ -100,7 +101,7 @@ export const openRouterAuthorModel: AuthorModel = async (input, ctx) => {
       method: "POST", signal: ctl.signal,
       headers: { Authorization: `Bearer ${key}`, "content-type": "application/json",
         "HTTP-Referer": process.env.OPENROUTER_BASE || "https://klavity.in", "X-Title": "Klavity" },
-      body: JSON.stringify({ model, max_tokens: 600, messages: buildAuthorMessages(input),
+      body: JSON.stringify({ model, max_tokens: 600, messages: buildAuthorMessages(input, ctx.projectInstructions),
         usage: { include: true }, response_format: { type: "json_object" } }),
     })
     if (!res.ok) { await reconcileDailySpend(DEFAULT_AI_CALL_EST_USD, 0); reconciled = true; throw new Error(`author model ${res.status}`) }
