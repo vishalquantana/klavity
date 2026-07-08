@@ -39,3 +39,11 @@ test('server.ts exposes ops tenant cost summary endpoint', () => {
   expect(src).toContain('opsTenantCostSummary');
   expect(src).toContain('isOpsAdmin');
 });
+
+test('server.ts exposes ticket comment and timeline endpoints', () => {
+  const src = loadServer();
+  expect(src).toContain('/comments');
+  expect(src).toContain('/timeline');
+  expect(src).toContain('insertTicketComment');
+  expect(src).toContain('ticketActivityTimeline');
+});

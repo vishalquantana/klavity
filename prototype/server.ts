@@ -1,6 +1,6 @@
 // Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
 import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, listTicketsPaginated } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, listTicketsPaginated } from "./lib/db"
 import { issueKeyFor, chooseDedup } from "./lib/dedup"
 import { classifySimObservation } from "./lib/sim-bug-classify"
 import { getConnector, listConnectorTypes, type TicketPayload, type TicketAttachment } from "./lib/connectors/index"
@@ -1467,8 +1467,18 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const newStatus = mapExternalStatus(type, payload)
       if (!newStatus) return json({ ok: true, ignored: "no-status-change" })
 
+      const beforeFeedback = await feedbackById(exportRow.projectId, exportRow.feedbackId).catch(() => null)
       const updated = await updateFeedbackMeta(exportRow.projectId, exportRow.feedbackId, { status: newStatus })
       if (!updated) return json({ ok: true, ignored: "feedback-gone" })
+      if (beforeFeedback?.status !== newStatus) {
+        await insertActivity({
+          projectId: exportRow.projectId,
+          type: "ticket_status_changed",
+          actorEmail: null,
+          feedbackId: exportRow.feedbackId,
+          meta: { from: beforeFeedback?.status ?? null, to: newStatus, source: "connector_webhook", connectorType: type, externalKey },
+        }).catch((e: any) => console.warn("ticket status activity skipped:", e?.message || e))
+      }
       return json({ ok: true, status: newStatus })
     }
 
@@ -3980,12 +3990,15 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
       // ── Ticket management: PATCH /api/feedback/:id and POST /api/feedback/:id/export ──
       // Resolve the feedback's project via feedbackById across accessible projects.
-      const feedbackIdMatch = path.match(/^\/api\/feedback\/([^/]+?)(\/export|\/replay|\/memory)?$/)
+      const feedbackIdMatch = path.match(/^\/api\/feedback\/([^/]+?)(\/export|\/replay|\/memory|\/comments|\/timeline|\/activity)?$/)
       if (feedbackIdMatch) {
         const fid = feedbackIdMatch[1]
-        const isExport = feedbackIdMatch[2] === "/export"
-        const isReplay = feedbackIdMatch[2] === "/replay"
-        const isMemory = feedbackIdMatch[2] === "/memory"
+        const feedbackSubroute = feedbackIdMatch[2] || ""
+        const isExport = feedbackSubroute === "/export"
+        const isReplay = feedbackSubroute === "/replay"
+        const isMemory = feedbackSubroute === "/memory"
+        const isComments = feedbackSubroute === "/comments"
+        const isTimeline = feedbackSubroute === "/timeline" || feedbackSubroute === "/activity"
 
         // Resolve which project this feedback belongs to and check the caller has access.
         let fbRow: any = null
@@ -4008,6 +4021,23 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           return json({ feedbackId: fid, events: replay.events, nEvents: replay.nEvents, trimmed: replay.trimmed, createdAt: replay.createdAt })
         }
 
+        if (req.method === "GET" && isComments) {
+          return json({ feedbackId: fid, comments: await listTicketComments(fid) })
+        }
+
+        if (req.method === "POST" && isComments) {
+          const body = await req.json().catch(() => ({}))
+          const text = String(body.body ?? body.comment ?? "").trim()
+          if (!text) return json({ error: "Comment body is required." }, 400)
+          if (text.length > 5000) return json({ error: "Comment body must be 5000 characters or fewer." }, 400)
+          const comment = await insertTicketComment(fid, me, text)
+          return json({ comment }, 201)
+        }
+
+        if (req.method === "GET" && isTimeline) {
+          return json({ feedbackId: fid, items: await ticketActivityTimeline(fbRow.projectId, fid) })
+        }
+
         // GET /api/feedback/:id/memory — recurring-issue memory: how many times this issue has been
         // seen, when, and who originally filed it (the "cited virtual customer" — a Sim persona or a
         // previous human reporter). Useful for the dashboard to surface "4th occurrence" context.
@@ -4021,7 +4051,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // GET /api/feedback/:id — single enriched report with KLA-2 recurrence-memory fields.
         // Returns the same shape as each ticket in the dashboard /api/dashboard response, plus the
         // full RecurrenceMemory block (recurrenceCount, firstSeen, lastSeen, isRegression).
-        if (req.method === "GET" && !isReplay && !isMemory && !isExport) {
+        if (req.method === "GET" && !feedbackSubroute) {
           const lastSeen = fbRow.lastSeenAt ?? fbRow.createdAt
           const isRegression = fbRow.resolvedAt != null && lastSeen > fbRow.resolvedAt
           const report = {
@@ -4056,7 +4086,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         }
 
         // PATCH /api/feedback/:id — any project member may edit status/assignee/notes/priority
-        if (req.method === "PATCH" && !isExport) {
+        if (req.method === "PATCH" && !feedbackSubroute) {
           const body = await req.json().catch(() => ({}))
           const VALID_STATUS = ["new", "open", "in_progress", "done", "dismissed"]
           if (body.status !== undefined && !VALID_STATUS.includes(body.status)) {
@@ -4073,6 +4103,26 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (body.priority !== undefined) meta.priority = body.priority ?? null
           const updated = await updateFeedbackMeta(fbRow.projectId, fid, meta)
           if (!updated) return json({ error: "Update failed." }, 500)
+          const activityWrites: Promise<any>[] = []
+          if (meta.status !== undefined && meta.status !== fbRow.status) {
+            activityWrites.push(insertActivity({
+              projectId: fbRow.projectId,
+              type: "ticket_status_changed",
+              actorEmail: me,
+              feedbackId: fid,
+              meta: { from: fbRow.status, to: meta.status },
+            }).catch((e: any) => console.warn("ticket status activity skipped:", e?.message || e)))
+          }
+          if (meta.priority !== undefined && meta.priority !== fbRow.priority) {
+            activityWrites.push(insertActivity({
+              projectId: fbRow.projectId,
+              type: "ticket_priority_changed",
+              actorEmail: me,
+              feedbackId: fid,
+              meta: { from: fbRow.priority, to: meta.priority },
+            }).catch((e: any) => console.warn("ticket priority activity skipped:", e?.message || e)))
+          }
+          if (activityWrites.length) await Promise.all(activityWrites)
           return json({ ok: true })
         }
 
