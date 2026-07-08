@@ -84,6 +84,21 @@ EOF
     : >"$tmpd/base.log"; cp "$tmpd/head.log" "$tmpd/base.log" 2>/dev/null || true
   fi
   local n_head n_base
+  # HARD SYNTAX GATE (must run BEFORE the count check): a fatal parse error (unbalanced
+  # brace / "Unexpected end of file") makes tsc bail early and emit FEWER total errors than
+  # the pre-existing baseline noise — so a net-new syntax break can SLIP the count comparison
+  # and ship a file that won't even parse (crash-loops prod at boot). 2026-07-09: exactly this
+  # shipped KLA-145 via a -X theirs merge that dropped a closing brace → prod 502 crash-loop.
+  # Syntax errors are TS1xxx; block on ANY net-new one, regardless of total count.
+  local syn_head syn_base
+  syn_head=$(grep -cE "error TS1[0-9]{3}" "$tmpd/head.log" 2>/dev/null || echo 0)
+  syn_base=$(grep -cE "error TS1[0-9]{3}" "$tmpd/base.log" 2>/dev/null || echo 0)
+  if [ "$syn_head" -gt "$syn_base" ]; then
+    log "!!! INTEGRITY GATE: $b introduced a SYNTAX error (TS1xxx ${syn_base} -> ${syn_head}) — file won't parse, reverting. This can be a -X theirs merge mangle; the branch must rebase onto master."
+    grep -E "error TS1[0-9]{3}" "$tmpd/head.log" 2>/dev/null | head -8 | while IFS= read -r l; do log "  ${l}"; done
+    rm -rf "$tmpd"
+    return 1
+  fi
   n_head=$(grep -c "error TS" "$tmpd/head.log" 2>/dev/null || echo 0)
   n_base=$(grep -c "error TS" "$tmpd/base.log" 2>/dev/null || echo 0)
   if [ "$n_head" -gt "$n_base" ]; then
