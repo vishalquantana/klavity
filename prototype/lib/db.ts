@@ -147,9 +147,17 @@ export async function applySchema(c: Client) {
        screenshot_id TEXT,
        meta_json TEXT,
        created_at INTEGER NOT NULL
-     )`,
+    )`,
     `CREATE INDEX IF NOT EXISTS evt_proj_idx ON activity_events (project_id, created_at)`,
     `CREATE INDEX IF NOT EXISTS evt_actor_idx ON activity_events (project_id, actor_email, created_at)`,
+    `CREATE TABLE IF NOT EXISTS ticket_comments (
+       id TEXT PRIMARY KEY,
+       feedback_id TEXT NOT NULL,
+       author TEXT,
+       body TEXT NOT NULL,
+       created_at INTEGER NOT NULL
+     )`,
+    `CREATE INDEX IF NOT EXISTS ticket_comments_feedback_idx ON ticket_comments (feedback_id, created_at)`,
 
     // ── Sims-dashboard P2 (additive): company → projects → Sims model. ──
     // schema_meta gates the one-time, idempotent v2 migration (see migrateV2).
@@ -1491,6 +1499,85 @@ export async function listActivity(projectId: string, opts: { actorEmail?: strin
     ? await db!.execute({ sql: `SELECT * FROM activity_events WHERE project_id=? AND actor_email=?${typeFilter} ORDER BY created_at DESC LIMIT ?`, args: [projectId, opts.actorEmail, ...typeArgs, limit] })
     : await db!.execute({ sql: `SELECT * FROM activity_events WHERE project_id=?${typeFilter} ORDER BY created_at DESC LIMIT ?`, args: [projectId, ...typeArgs, limit] })
   return r.rows.map(rowToActivity)
+}
+
+export type TicketCommentRow = {
+  id: string; feedbackId: string; author: string | null; body: string; createdAt: number
+}
+function rowToTicketComment(x: any): TicketCommentRow {
+  return {
+    id: String(x.id),
+    feedbackId: String(x.feedback_id),
+    author: x.author != null ? String(x.author) : null,
+    body: String(x.body),
+    createdAt: Number(x.created_at),
+  }
+}
+export async function insertTicketComment(feedbackId: string, author: string | null, body: string): Promise<TicketCommentRow> {
+  const trimmed = String(body || "").trim()
+  if (!trimmed) throw new Error("comment body required")
+  const id = "tc_" + crypto.randomUUID()
+  const createdAt = Date.now()
+  await db!.execute({
+    sql: "INSERT INTO ticket_comments (id,feedback_id,author,body,created_at) VALUES (?,?,?,?,?)",
+    args: [id, feedbackId, author ?? null, trimmed, createdAt],
+  })
+  return { id, feedbackId, author: author ?? null, body: trimmed, createdAt }
+}
+export async function listTicketComments(feedbackId: string): Promise<TicketCommentRow[]> {
+  const r = await db!.execute({
+    sql: "SELECT * FROM ticket_comments WHERE feedback_id=? ORDER BY created_at ASC, id ASC",
+    args: [feedbackId],
+  })
+  return r.rows.map(rowToTicketComment)
+}
+
+export type TicketTimelineItem =
+  | { id: string; kind: "comment"; type: "comment"; author: string | null; body: string; createdAt: number }
+  | { id: string; kind: "activity"; type: string; actorEmail: string | null; meta: any; createdAt: number }
+  | { id: string; kind: "ticket_export"; type: "connector_export"; actorEmail: string | null; meta: any; createdAt: number }
+
+export async function ticketActivityTimeline(projectId: string, feedbackId: string): Promise<TicketTimelineItem[]> {
+  const [comments, activity, exports] = await Promise.all([
+    listTicketComments(feedbackId),
+    db!.execute({
+      sql: "SELECT * FROM activity_events WHERE project_id=? AND feedback_id=? ORDER BY created_at ASC, id ASC",
+      args: [projectId, feedbackId],
+    }),
+    db!.execute({
+      sql: "SELECT * FROM ticket_exports WHERE feedback_id=? ORDER BY created_at ASC, id ASC",
+      args: [feedbackId],
+    }),
+  ])
+  const items: TicketTimelineItem[] = [
+    ...comments.map((c): TicketTimelineItem => ({
+      id: c.id, kind: "comment", type: "comment", author: c.author, body: c.body, createdAt: c.createdAt,
+    })),
+    ...activity.rows.map((r: any): TicketTimelineItem => ({
+      id: String(r.id),
+      kind: "activity",
+      type: String(r.type),
+      actorEmail: r.actor_email != null ? String(r.actor_email) : null,
+      meta: r.meta_json ? safeJsonParse(r.meta_json) : null,
+      createdAt: Number(r.created_at),
+    })),
+    ...exports.rows.map((r: any): TicketTimelineItem => ({
+      id: String(r.id),
+      kind: "ticket_export",
+      type: "connector_export",
+      actorEmail: r.created_by != null ? String(r.created_by) : null,
+      meta: {
+        connectorId: String(r.connector_id),
+        connectorType: String(r.type),
+        externalKey: r.external_key != null ? String(r.external_key) : null,
+        externalUrl: r.external_url != null ? String(r.external_url) : null,
+        status: String(r.status),
+        error: r.error != null ? String(r.error) : null,
+      },
+      createdAt: Number(r.created_at),
+    })),
+  ]
+  return items.sort((a, b) => (a.createdAt - b.createdAt) || a.kind.localeCompare(b.kind) || a.id.localeCompare(b.id))
 }
 
 export type FeedbackRow = {
