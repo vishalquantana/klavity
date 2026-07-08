@@ -565,6 +565,8 @@ export async function applySchema(c: Client) {
     // identity/metadata, persisted as a JSON blob so every widget/SDK/extension report carries it.
     ["client_context_json",   "TEXT"],
     ["annotations_json",      "TEXT"],
+    // KLA-173: explicit source tag so manual tickets are distinguishable from widget/sim reports.
+    ["source",                "TEXT"],
   ]
   for (const [col, def] of feedbackAlters) {
     if (needCol("feedback", col)) {
@@ -1411,6 +1413,7 @@ export type FeedbackInsert = {
   issueKey?: string | null
   clientContext?: any  // captured ReportContext (console/network/env + identity/metadata), G2/G3/G5
   annotations?: any    // structured markup: { w, h, shapes:Shape[], region?, selector? } — re-rendered as the ticket overlay
+  source?: string | null  // KLA-173: 'manual' | 'widget' | null (null → derived from sim_id at read time)
 }
 
 // Triage gate: new feedback is "new" (needs triage) unless it's a high-priority
@@ -1427,8 +1430,8 @@ export async function insertFeedback(f: FeedbackInsert): Promise<string> {
   await db!.execute({
     sql: `INSERT INTO feedback (id,project_id,sim_id,actor_email,url_host,url_path,source_referrer,observation,sentiment,priority,
           screenshot_id,suggested_bug_json,cited_trait_ids_json,source_quote,source_transcript_id,source_date,
-          plane_issue_key,plane_issue_url,issue_key,recurrence_count,recurrence_dates_json,last_seen_at,client_context_json,annotations_json,created_at,status)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          plane_issue_key,plane_issue_url,issue_key,recurrence_count,recurrence_dates_json,last_seen_at,client_context_json,annotations_json,source,created_at,status)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [id, f.projectId, f.simId ?? null, f.actorEmail ?? null, f.urlHost ?? null, f.urlPath ?? null, f.sourceReferrer ?? null,
            f.observation ?? null, f.sentiment ?? null, f.priority ?? null, f.screenshotId ?? null,
            f.suggestedBug != null ? JSON.stringify(f.suggestedBug) : null,
@@ -1437,7 +1440,8 @@ export async function insertFeedback(f: FeedbackInsert): Promise<string> {
            f.planeIssueKey ?? null, f.planeIssueUrl ?? null,
            f.issueKey ?? null, 1, JSON.stringify([now]), now,
            f.clientContext != null ? JSON.stringify(f.clientContext) : null,
-           f.annotations != null ? JSON.stringify(f.annotations) : null, now, status],
+           f.annotations != null ? JSON.stringify(f.annotations) : null,
+           f.source ?? null, now, status],
   })
   return id
 }
@@ -2923,7 +2927,7 @@ export async function listTicketsPaginated(
     statuses?: string[]      // e.g. ["open","in_progress"]; empty = all non-new
     priorities?: string[]    // e.g. ["urgent","high"]
     assignee?: string        // exact email match; empty string = unassigned; omit = all
-    source?: "sim" | "human" // sim = sim_id IS NOT NULL; human = sim_id IS NULL
+    source?: "sim" | "human" | "manual" // sim = sim_id IS NOT NULL; human = sim_id IS NULL and not manual; manual = source='manual'
     page?: number            // 1-indexed, default 1
     limit?: number           // default 50, max 200
   }
@@ -2959,7 +2963,8 @@ export async function listTicketsPaginated(
   }
 
   if (opts.source === "sim") conditions.push("f.sim_id IS NOT NULL")
-  else if (opts.source === "human") conditions.push("f.sim_id IS NULL")
+  else if (opts.source === "manual") conditions.push("f.source='manual'")
+  else if (opts.source === "human") conditions.push("f.sim_id IS NULL AND (f.source IS NULL OR f.source != 'manual')")
 
   const where = "WHERE " + conditions.join(" AND ")
 
@@ -3002,7 +3007,7 @@ export async function listTicketsPaginated(
       recurrenceCount: Number(x.recurrence_count ?? 1),
       createdAt: Number(x.created_at),
       updatedAt: x.updated_at != null ? Number(x.updated_at) : null,
-      source: x.sim_id != null ? "sim" : "human",
+      source: x.sim_id != null ? "sim" : (x.source === "manual" ? "manual" : "human"),
     }
   })
 

@@ -1267,6 +1267,8 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       <div class="kb-toolbar">
       <h2><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20v-9" /> <path d="M14 7a4 4 0 0 1 4 4v3a6 6 0 0 1-12 0v-3a4 4 0 0 1 4-4z" /> <path d="M14.12 3.88 16 2" /> <path d="M21 21a4 4 0 0 0-3.81-4" /> <path d="M21 5a4 4 0 0 1-3.55 3.97" /> <path d="M22 13h-4" /> <path d="M3 21a4 4 0 0 1 3.81-4" /> <path d="M3 5a4 4 0 0 0 3.55 3.97" /> <path d="M6 13H2" /> <path d="m8 2 1.88 1.88" /> <path d="M9 7.13V6a3 3 0 1 1 6 0v1.13" /></svg> Tickets <span class="count" id="ticketKanbanCount"></span></h2>
         <div class="tkt-view-toggle"><button class="tkt-vbtn active" id="tktListBtn" title="List view">&#9776; List</button><button class="tkt-vbtn" id="tktBoardBtn" title="Board view">&#8862; Board</button></div>
+        <!-- KLA-173: manual ticket creation -->
+        <button class="btn btn-indigo btn-sm" id="newTktBtn" type="button" onclick="openNewTicketModal()" style="margin-left:auto">＋ New ticket</button>
         <div class="kb-search"><span class="mag">&#8981;</span><input id="kanbanSearch" placeholder="Search tickets…" autocomplete="off" /></div>
       </div>
       <!-- KLA-169: Shared filter bar (reused by board + list views) -->
@@ -1275,7 +1277,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         <select id="fbStatus" title="Filter by status"><option value="">All statuses</option><option value="open">Open</option><option value="in_progress">In progress</option><option value="done">Done</option><option value="dismissed">Dismissed</option></select>
         <select id="fbPriority" title="Filter by priority"><option value="">All priorities</option><option value="urgent">Urgent</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select>
         <select id="fbAssignee" title="Filter by assignee"><option value="">All assignees</option><option value="__unassigned__">Unassigned</option></select>
-        <select id="fbSource" title="Filter by source"><option value="">All sources</option><option value="sim">Sim / AI</option><option value="human">Human report</option></select>
+        <select id="fbSource" title="Filter by source"><option value="">All sources</option><option value="sim">Sim / AI</option><option value="human">Human report</option><option value="manual">Manual</option></select>
         <button class="tkt-fb-clear hide" id="fbClearBtn" type="button">&#10005; Clear filters</button>
       </div>
       <!-- KLA-169: List view (paginated, server-driven) -->
@@ -3106,6 +3108,64 @@ function closeSingleTicket() {
   renderTicketsView()
 }
 
+// ── KLA-173: New ticket compose modal ─────────────────────────────────────────────────────────────
+function openNewTicketModal() {
+  const bg = document.getElementById("newTktBg"); if (!bg) return
+  const inp = document.getElementById("newTktTitleInp")
+  const body = document.getElementById("newTktBodyInp")
+  const pri = document.getElementById("newTktPriInp")
+  const assignee = document.getElementById("newTktAssigneeInp")
+  const err = document.getElementById("newTktTitleErr")
+  const msg = document.getElementById("newTktMsg")
+  if (inp) inp.value = ""
+  if (body) body.value = ""
+  if (pri) pri.value = "medium"
+  if (assignee) assignee.value = ""
+  if (err) err.textContent = ""
+  if (msg) msg.textContent = ""
+  bg.classList.add("show")
+  setTimeout(() => inp && inp.focus(), 60)
+}
+function closeNewTicketModal() {
+  const bg = document.getElementById("newTktBg"); if (bg) bg.classList.remove("show")
+}
+async function submitNewTicket() {
+  const inp = document.getElementById("newTktTitleInp")
+  const body = document.getElementById("newTktBodyInp")
+  const pri = document.getElementById("newTktPriInp")
+  const assignee = document.getElementById("newTktAssigneeInp")
+  const submitBtn = document.getElementById("newTktSubmit")
+  const err = document.getElementById("newTktTitleErr")
+  const msg = document.getElementById("newTktMsg")
+  const title = inp ? inp.value.trim() : ""
+  if (!title) { if (err) err.textContent = "Title is required."; return }
+  if (err) err.textContent = ""
+  if (msg) msg.textContent = ""
+  const projId = state.active && state.active.id
+  if (!projId) { if (msg) msg.textContent = "No project selected."; return }
+  if (submitBtn) submitBtn.disabled = true
+  const r = await fetch(`/api/projects/${encodeURIComponent(projId)}/tickets`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      title,
+      body: body ? body.value.trim() : "",
+      priority: pri ? pri.value : "medium",
+      assignee: assignee ? assignee.value.trim() : "",
+    })
+  }).catch(() => null)
+  if (submitBtn) submitBtn.disabled = false
+  if (!r || !r.ok) {
+    const d = r ? await r.json().catch(() => ({})) : {}
+    if (msg) msg.textContent = d.error || "Failed to create ticket."
+    return
+  }
+  closeNewTicketModal()
+  // Refresh the tickets list/board so the new ticket appears immediately
+  if (typeof renderTicketsView === "function") renderTicketsView()
+  // Also reload dashboard data so the kanban + overview count updates
+  if (typeof loadDashboard === "function") loadDashboard()
+}
+
 // graft helpers: severity rail class + status pill
 function sevRailClass(sev) { return "sevrail-" + (["urgent","high","medium","low"].includes(sev) ? sev : "none") }
 function statusPillHtml(status) { const s = status || "open"; return `<span class="tkt-pill p-${esc(s)}"><span class="pdot"></span>${STATUS_LABELS[s] || esc(s)}</span>` }
@@ -4845,6 +4905,44 @@ load()
   </div>
 </div>
 
+<!-- KLA-173: New ticket compose modal -->
+<div class="modal-bg" id="newTktBg" role="dialog" aria-modal="true" aria-labelledby="newTktTitle">
+  <div class="modal" style="max-width:540px">
+    <div class="mhead">
+      <h3 id="newTktTitle">New ticket</h3>
+      <button class="mclose" id="newTktClose" aria-label="Close">&times;</button>
+    </div>
+    <label style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--paper-dim);margin-bottom:12px">
+      Title <span style="font-weight:400;color:var(--rose);display:inline" id="newTktTitleErr"></span>
+      <input id="newTktTitleInp" maxlength="500" placeholder="e.g. Checkout fails on iOS Safari" style="background:var(--ink);border:1px solid var(--line);border-radius:9px;color:var(--paper);font-family:var(--body);font-size:14px;padding:9px 12px;outline:none;width:100%;box-sizing:border-box" />
+    </label>
+    <label style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--paper-dim);margin-bottom:12px">
+      Description <span style="font-weight:400;color:var(--paper-faint);font-size:11px">(optional)</span>
+      <textarea id="newTktBodyInp" rows="4" maxlength="5000" placeholder="Steps to reproduce, expected vs actual behaviour…" style="background:var(--ink);border:1px solid var(--line);border-radius:9px;color:var(--paper);font-family:var(--body);font-size:14px;padding:9px 12px;outline:none;width:100%;box-sizing:border-box;resize:vertical"></textarea>
+    </label>
+    <div style="display:flex;gap:10px;margin-bottom:12px">
+      <label style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--paper-dim);flex:1">
+        Priority
+        <select id="newTktPriInp" style="background:var(--ink);border:1px solid var(--line);border-radius:9px;color:var(--paper);font-family:var(--body);font-size:14px;padding:9px 12px;outline:none">
+          <option value="urgent">Urgent</option>
+          <option value="high">High</option>
+          <option value="medium" selected>Medium</option>
+          <option value="low">Low</option>
+        </select>
+      </label>
+      <label style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--paper-dim);flex:1">
+        Assignee <span style="font-weight:400;color:var(--paper-faint);font-size:11px">(optional)</span>
+        <input id="newTktAssigneeInp" placeholder="email or name" maxlength="200" style="background:var(--ink);border:1px solid var(--line);border-radius:9px;color:var(--paper);font-family:var(--body);font-size:14px;padding:9px 12px;outline:none" />
+      </label>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
+      <button class="btn btn-indigo" id="newTktSubmit" type="button">Create ticket</button>
+      <button class="btn btn-ghost" id="newTktCancel" type="button">Cancel</button>
+      <span id="newTktMsg" style="font-size:12px;color:var(--rose)"></span>
+    </div>
+  </div>
+</div>
+
 <!-- Guided Create AutoSim wizard -->
 <div class="modal-bg" id="wizBg">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="wizTitle">
@@ -6109,6 +6207,23 @@ load()
       }
     })
     document.getElementById("ntBg").addEventListener("click",function(e){if(e.target===this)this.classList.remove("show")})
+
+    // KLA-173: new ticket modal wiring
+    const newTktBg = document.getElementById("newTktBg")
+    if (newTktBg) {
+      newTktBg.addEventListener("click", function(e) { if (e.target === this) closeNewTicketModal() })
+      const closeBtn = document.getElementById("newTktClose")
+      if (closeBtn) closeBtn.addEventListener("click", closeNewTicketModal)
+      const cancelBtn = document.getElementById("newTktCancel")
+      if (cancelBtn) cancelBtn.addEventListener("click", closeNewTicketModal)
+      const submitBtn = document.getElementById("newTktSubmit")
+      if (submitBtn) submitBtn.addEventListener("click", submitNewTicket)
+      const titleInp = document.getElementById("newTktTitleInp")
+      if (titleInp) titleInp.addEventListener("keydown", function(e) {
+        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitNewTicket() }
+      })
+    }
+
     // kick off data load
     loadAccounts();load();loadExpectations();reattachActiveAuthorSession()
   }
