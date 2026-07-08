@@ -1454,9 +1454,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // account email, skip rate-limiting and skip sending a real OTP email entirely. AutoSim
         // login Trails use the fixed code 666666 (accepted by /api/auth/verify below), so running
         // many login Trails in succession never exhausts the 5/email/15min request rate limit.
-        if (process.env.KLAV_TEST_OTP && await isTestAccountEmail(e)) {
-          console.warn(`[TEST-OTP-REQUEST] email=${e} is a test account — skipping rate limit + email send (KLAV_TEST_OTP active)`)
-          return json({ ok: true, emailed: false })
+        const testOtpAllow = (process.env.KLAV_TEST_OTP_EMAILS ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean)
+        if (process.env.KLAV_TEST_OTP && (testOtpAllow.includes(e) || await isTestAccountEmail(e))) {
+          console.warn(`[TEST-OTP-REQUEST] email=${e} — test-OTP active: skipping rate limit + email send, advancing client to code entry`)
+          // testOtp:true tells the login page to advance to the code field even though no email was
+          // sent (emailed:false), instead of showing "we couldn't send your code" and dead-ending.
+          return json({ ok: true, emailed: false, testOtp: true })
         }
         // Throttle issuance per email AND per IP (H1): stops OTP/email bombing and shrinks the window
         // an attacker has to brute-force a code. Both must pass.

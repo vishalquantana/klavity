@@ -181,6 +181,13 @@ async function requestCode(btn, msgId, advance) {
       $("devBox").classList.remove("hide"); $("devBox").textContent = "dev code: " + d.devCode
       return true
     }
+    if (d.testOtp) {
+      // Test-OTP mode (KLAV_TEST_OTP): no email is sent — the fixed test code is entered directly.
+      // Advance to the code field so AutoSim login Trails / e2e tests aren't dead-ended.
+      if (advance) { $("sentTo").textContent = email; show("code"); $("code").focus() }
+      else msg(msgId, "Enter your test code to continue.", true)
+      return true
+    }
     if (!d.emailed) {
       // Don't dead-end the user on a code field for an email that will never arrive.
       msg(msgId, "We couldn't send your code right now. Please try again.")
