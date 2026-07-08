@@ -2,7 +2,7 @@
  * AutoSim dogfood runner — walks two real Klavity journeys against prod.
  * Run: bun run prototype/lib/dogfood-autosim.ts
  *
- * Trail 1 (home-assert): navigate to klavity.quantana.top, assert <h1> heading visible.
+ * Trail 1 (home-assert): navigate to klavity.in, assert <h1> heading visible.
  * Trail 2 (home→cta→onboarding): click "Get started" from home, assert email input on /onboarding.
  *
  * Uses a local ephemeral SQLite DB (no Turso key needed).
@@ -24,7 +24,7 @@ const { walkTrail } = await import("./trails-runner")
 const T = await import("./trails")
 
 const PROJECT = "proj_dogfood"
-const BASE = "https://klavity.quantana.top"
+const BASE = "https://klavity.in"
 
 // ── Trail 1: home page heading assert ──────────────────────────────────────
 console.log("\n[Trail 1] Crystallizing home-assert trail…")

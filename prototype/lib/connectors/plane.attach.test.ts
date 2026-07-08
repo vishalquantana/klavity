@@ -9,7 +9,7 @@ const BASE_TICKET = {
   url: "https://app/x",
   simName: "Vamshi",
   createdAt: 1,
-  klavityUrl: "https://klavity.quantana.top/dashboard",
+  klavityUrl: "https://klavity.in/dashboard",
 }
 
 const CFG = {
@@ -23,7 +23,7 @@ const ATTACHMENT: TicketAttachment = {
   filename: "shot.png",
   contentType: "image/png",
   bytes: new Uint8Array([1, 2, 3, 4]),
-  url: "https://klavity.quantana.top/img/abc.hmac",
+  url: "https://klavity.in/img/abc.hmac",
 }
 
 const ISSUE_URL = "https://api.plane.so/api/v1/workspaces/my-workspace/projects/proj-uuid/issues/"

@@ -48,7 +48,7 @@ await rawExec(
   [now]
 )
 await rawExec(
-  `INSERT INTO projects (id, account_id, name, status, review_mode, observability_mode, modal_config_json, widget_mode, widget_cta_url, widget_notify_email, created_at, updated_at) VALUES ('p1', 'a1', 'Test Project', 'active', 'auto', 'named', '{}', 'leadgen', 'https://klavity.quantana.top/onboarding', 'lead@x.com', ?, ?)`,
+  `INSERT INTO projects (id, account_id, name, status, review_mode, observability_mode, modal_config_json, widget_mode, widget_cta_url, widget_notify_email, created_at, updated_at) VALUES ('p1', 'a1', 'Test Project', 'active', 'auto', 'named', '{}', 'leadgen', 'https://klavity.in/onboarding', 'lead@x.com', ?, ?)`,
   [now, now]
 )
 
@@ -100,7 +100,7 @@ afterAll(() => {
 // ── Test 1: anonymous first-party submit persists with null actor ─────────────
 test("anonymous first-party submit persists with null actor", async () => {
   const fd = new FormData()
-  fd.set("description", "anon bug"); fd.set("page_url", "https://klavity.quantana.top/snap"); fd.set("project_id", "p1")
+  fd.set("description", "anon bug"); fd.set("page_url", "https://klavity.in/snap"); fd.set("project_id", "p1")
   const r = await fetch(`${BASE}/api/feedback`, { method: "POST", body: fd, headers: { origin: BASE } })
   expect(r.status).toBe(200)
   const j = await r.json(); expect(j.saved).toBe(true); expect(j.id).toBeTruthy()

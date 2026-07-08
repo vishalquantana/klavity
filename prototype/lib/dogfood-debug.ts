@@ -17,7 +17,7 @@ const { crystallize } = await import("./trails-crystallize")
 const T = await import("./trails")
 
 const PROJECT = "proj_debug"
-const BASE = "https://klavity.quantana.top"
+const BASE = "https://klavity.in"
 
 const ctaTraj = {
   name: "Dogfood · debug",

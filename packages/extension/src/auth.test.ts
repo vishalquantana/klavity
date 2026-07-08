@@ -29,7 +29,7 @@ function makeChrome(opts: { cookie?: string; hasCookies?: boolean } = {}) {
     },
     runtime: {
       lastError: undefined as any,
-      sendMessage: vi.fn((_msg: any, cb: any) => cb({ ok: true, config: { email: 'a@b.com', token: 'ext_x', backendUrl: 'https://klavity.quantana.top', projects: [], syncedAt: 1 } })),
+      sendMessage: vi.fn((_msg: any, cb: any) => cb({ ok: true, config: { email: 'a@b.com', token: 'ext_x', backendUrl: 'https://klavity.in', projects: [], syncedAt: 1 } })),
     },
   }
 }

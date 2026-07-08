@@ -19,7 +19,7 @@ const { walkTrail } = await import("./trails-runner")
 const T = await import("./trails")
 
 const PROJECT = "proj_dogfood"
-const BASE = "https://klavity.quantana.top"
+const BASE = "https://klavity.in"
 
 // Trail 1: same as in dogfood-autosim.ts
 const home = await crystallize(PROJECT, {
@@ -36,7 +36,7 @@ const home = await crystallize(PROJECT, {
   }],
 })
 
-console.log("[Trail 1] walk home-assert on https://klavity.quantana.top/")
+console.log("[Trail 1] walk home-assert on https://klavity.in/")
 const r1 = await walkTrail(PROJECT, home.trailId, {
   fixtureUrl: BASE + "/",
   replay: false,

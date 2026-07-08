@@ -2,7 +2,7 @@
 // This is the one honest exercise of the real OpenRouter model path; tests inject mocks instead.
 //
 //   cd prototype && bun run scripts/smoke-vision.ts                 # SKIPPED without a key
-//   cd prototype && OPENROUTER_API_KEY=<key> OPENROUTER_BASE=https://klavity.quantana.top \
+//   cd prototype && OPENROUTER_API_KEY=<key> OPENROUTER_BASE=https://klavity.in \
 //                   bun run scripts/smoke-vision.ts                 # one real vision call
 import { openRouterVisionResolver } from "../lib/trails-vision"
 

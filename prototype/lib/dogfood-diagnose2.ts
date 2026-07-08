@@ -4,7 +4,7 @@
  */
 import { chromium } from "playwright"
 
-const BASE = "https://klavity.quantana.top"
+const BASE = "https://klavity.in"
 
 const browser = await chromium.launch({ headless: true })
 const page = await browser.newPage()

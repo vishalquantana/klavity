@@ -147,7 +147,7 @@ if (hasPlaneConnector) {
 // ── Step 5: set widget config to leadgen mode ──
 await setWidgetConfig(websiteProject.id, {
   mode: "leadgen",
-  ctaUrl: "https://klavity.quantana.top/onboarding",
+  ctaUrl: "https://klavity.in/onboarding",
   notifyEmail: NOTIFY_EMAIL,
 })
 console.log(`Widget config set: mode=leadgen, notifyEmail=${NOTIFY_EMAIL}`)

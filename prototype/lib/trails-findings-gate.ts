@@ -191,7 +191,7 @@ export function buildTicketFromFinding(finding: Finding, baseUrl: string): Ticke
 export const realFiler: Filer = async (projectId, finding) => {
   const connectors = await listAutoCopyConnectors(projectId)
   if (!connectors.length) return null
-  const baseUrl = process.env.KLAV_BASE_URL || "https://klavity.quantana.top"
+  const baseUrl = process.env.KLAV_BASE_URL || "https://klavity.in"
   const ticket = buildTicketFromFinding(finding, baseUrl)
   const failures: string[] = []
   for (const c of connectors) {
