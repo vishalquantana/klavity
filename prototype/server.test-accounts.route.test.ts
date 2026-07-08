@@ -268,3 +268,29 @@ test("POST with auth_shape=password and no password returns 400", async () => {
   })
   expect(res.status).toBe(400)
 })
+
+test("POST with auth_shape=token: requires token (password parameter); creates and lists correctly", async () => {
+  const res = await fetch(`${BASE}/api/projects/${pid}/test-accounts`, {
+    method: "POST", headers: { cookie: adminCookie, "content-type": "application/json" },
+    body: JSON.stringify({ name: "tok-login", login_email: "token@test.local", auth_shape: "token", password: "some-api-bearer-token" }),
+  })
+  expect(res.status).toBe(201)
+  const { account } = await res.json()
+  expect(account.authShape).toBe("token")
+  expect(JSON.stringify(account)).not.toContain("some-api-bearer-token")
+
+  const listRes = await fetch(`${BASE}/api/projects/${pid}/test-accounts`, { headers: { cookie: adminCookie } })
+  const { accounts } = await listRes.json()
+  const found = accounts.find((a: any) => a.name === "tok-login")
+  expect(found).toBeDefined()
+  expect(found.authShape).toBe("token")
+})
+
+test("POST with auth_shape=token and no token returns 400", async () => {
+  const res = await fetch(`${BASE}/api/projects/${pid}/test-accounts`, {
+    method: "POST", headers: { cookie: adminCookie, "content-type": "application/json" },
+    body: JSON.stringify({ name: "tok-missing", login_email: "x@test.local", auth_shape: "token" }),
+  })
+  expect(res.status).toBe(400)
+})
+

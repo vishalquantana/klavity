@@ -102,7 +102,16 @@ test("resolveCredRefs {{cred:admin:otp}} throws for password-shape account", asy
   delete process.env.KLAV_TEST_OTP
 })
 
+test("resolveCredRefs {{cred:token-acct:token}} and {{cred:token-acct:password}} substitute token", async () => {
+  const P_TOKEN = "proj_creds_token"
+  await createTestAccount(P_TOKEN, { name: "token-acct", loginEmail: "token@test.local", password: "tok-val-123", authShape: "token" })
+  expect(await resolveCredRefs(P_TOKEN, "{{cred:token-acct:email}}")).toBe("token@test.local")
+  expect(await resolveCredRefs(P_TOKEN, "{{cred:token-acct:token}}")).toBe("tok-val-123")
+  expect(await resolveCredRefs(P_TOKEN, "{{cred:token-acct:password}}")).toBe("tok-val-123")
+})
+
 // ── runner-level e2e guard ────────────────────────────────────────────────────
+
 
 test.if(RUN_BROWSER)("walk resolves cred at fill time; placeholder (not secret) in DB + codegen", async () => {
   const traj = {

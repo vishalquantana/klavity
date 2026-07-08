@@ -5,7 +5,7 @@
 import { db } from "./db"
 import { encryptSecret, decryptSecret } from "./crypto"
 
-export type AuthShape = "password" | "otp"
+export type AuthShape = "password" | "otp" | "token"
 
 export interface TestAccount {
   id: string; projectId: string; name: string; loginEmail: string
@@ -16,7 +16,7 @@ export interface TestAccount {
 const row2acc = (r: any): TestAccount => ({
   id: String(r.id), projectId: String(r.project_id), name: String(r.name),
   loginEmail: String(r.login_email),
-  authShape: (r.auth_shape === "otp" ? "otp" : "password") as AuthShape,
+  authShape: (r.auth_shape === "otp" ? "otp" : r.auth_shape === "token" ? "token" : "password") as AuthShape,
   createdBy: r.created_by ? String(r.created_by) : null,
   createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
 })
@@ -24,7 +24,7 @@ const row2acc = (r: any): TestAccount => ({
 export interface CreateTestAccountInput {
   name: string
   loginEmail: string
-  /** Required when authShape is "password". Ignored for "otp". */
+  /** Required when authShape is "password" or "token". Ignored for "otp". */
   password?: string
   authShape?: AuthShape
   createdBy?: string
@@ -38,10 +38,13 @@ export async function createTestAccount(
   if (authShape === "password" && !input.password) {
     throw new Error("password is required for password auth shape")
   }
+  if (authShape === "token" && !input.password) {
+    throw new Error("token is required for token auth shape")
+  }
   const id = "tacc_" + crypto.randomUUID()
   const now = Date.now()
   // OTP accounts store an empty string in password_enc (no secret to encrypt).
-  const enc = authShape === "password" ? await encryptSecret(input.password!) : ""
+  const enc = (authShape === "password" || authShape === "token") ? await encryptSecret(input.password!) : ""
   await db!.execute({
     sql: `INSERT INTO test_accounts (id,project_id,name,login_email,password_enc,auth_shape,created_by,created_at,updated_at)
           VALUES (?,?,?,?,?,?,?,?,?)`,
@@ -71,7 +74,7 @@ export async function getTestAccountByName(projectId: string, name: string): Pro
 export interface TestAccountSecret {
   loginEmail: string
   authShape: AuthShape
-  /** Present for "password" shape only. */
+  /** Present for "password" and "token" shapes. */
   password?: string
   /** Present for "otp" shape only: the fixed test OTP code (requires KLAV_TEST_OTP=1). */
   otpCode?: string
@@ -87,7 +90,7 @@ export async function getTestAccountSecret(
   })
   if (!r.rows.length) return null
   const row: any = r.rows[0]
-  const authShape: AuthShape = row.auth_shape === "otp" ? "otp" : "password"
+  const authShape: AuthShape = (row.auth_shape === "otp" ? "otp" : row.auth_shape === "token" ? "token" : "password") as AuthShape
   if (authShape === "otp") {
     // OTP bypass: the caller must have KLAV_TEST_OTP=1 enabled. We surface the fixed code so the
     // runner can fill the OTP field without accessing live email. Fail-loud if bypass is not active.
