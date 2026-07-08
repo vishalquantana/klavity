@@ -29,8 +29,8 @@
  *   Dev 3      — /api/sim/review backend; each review item includes observations[]
  */
 
-import { createSim, injectSimStyles, type SimProps } from '@klavity/core/sim'
-import { icon } from '@klavity/core/icons'
+import { createSim, injectSimStyles, type SimProps } from '../../core/src/sim'
+import { icon } from '../../core/src/icons'
 
 // ── Public types ──────────────────────────────────────────────────────────────
 

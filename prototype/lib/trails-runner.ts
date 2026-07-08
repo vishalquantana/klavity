@@ -204,6 +204,7 @@ export async function withStepRetry(
   backoffMs: number,
   shouldStop: () => boolean,
   sleep: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms)),
+  isRetryable: (error: unknown) => boolean = () => true,
 ): Promise<unknown | undefined> {
   let lastError: unknown
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -216,9 +217,15 @@ export async function withStepRetry(
       return undefined  // success
     } catch (e) {
       lastError = e
+      if (!isRetryable(e)) break
     }
   }
   return lastError  // undefined only if loop never ran, which can't happen (attempt 0 always runs)
+}
+
+function isRetryableStepError(error: unknown): boolean {
+  const msg = String((error as any)?.message || error)
+  return !msg.includes("transition_regression") && !msg.includes("target_not_visible_after_prior_red")
 }
 
 // Tier-1 candidate confidence varies by signal strength so Layer D's future >=0.9 gate has real
@@ -507,15 +514,17 @@ export function createStepShotUploadQueue(
 // Called once before the initial navigation so all requests (including subresources) are covered.
 async function applyNetworkMocks(page: Page, mocks: NetworkMock[]) {
   for (const mock of mocks) {
-    const pattern = (url: URL) => url.href.includes(mock.url)
-    if (mock.action === "block") {
+    const raw = mock as any
+    const pattern = (url: URL) => matchesMock(mock.url, url.href)
+    if (raw.block || raw.action === "block") {
       await page.route(pattern, (route) => route.abort())
     } else {
+      const stub = raw.stub ?? raw
       await page.route(pattern, (route) => route.fulfill({
-        status: mock.status ?? 200,
-        contentType: mock.contentType ?? "application/json",
-        headers: mock.headers ?? {},
-        body: mock.body ?? "",
+        status: stub.status ?? 200,
+        contentType: stub.contentType ?? "application/json",
+        headers: stub.headers ?? {},
+        body: stub.body ?? "",
       }))
     }
   }
@@ -636,11 +645,14 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
         const reqUrl = route.request().url()
         for (const mock of opts.networkMocks!) {
           if (!matchesMock(mock.url, reqUrl)) continue
-          if (mock.block) { route.abort("blockedbyclient").catch(() => {}); return }
+          const raw = mock as any
+          if (raw.block || raw.action === "block") { route.abort("blockedbyclient").catch(() => {}); return }
+          const stub = raw.stub ?? raw
           route.fulfill({
-            status: mock.stub.status ?? 200,
-            contentType: mock.stub.contentType ?? "text/plain",
-            body: mock.stub.body ?? "",
+            status: stub.status ?? 200,
+            contentType: stub.contentType ?? "text/plain",
+            headers: stub.headers ?? {},
+            body: stub.body ?? "",
           }).catch(() => {})
           return
         }
@@ -676,7 +688,7 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
 
       const evBefore = evCol.offsets()
       const stepStart = Date.now()
-      const { tier, verdict, healed, llmCalls: stepLlm, failureKind } = await runOneStep(projectId, runId, trail.id, page, step, opts, opTimeout, deadline, { col: evCol, before: evBefore, start: stepStart }, shotUploads)
+      const { tier, verdict, healed, llmCalls: stepLlm, failureKind } = await runOneStep(projectId, runId, trail.id, page, step, opts, opTimeout, deadline, { col: evCol, before: evBefore, start: stepStart }, shotUploads, walkVerdict === "red")
       stepSummaries.push({ stepId: step.id, idx: step.idx, tier, verdict, healed, ...(failureKind ? { failureKind } : {}) })
       if (healed) healedCount++
       llmCalls += stepLlm
@@ -847,6 +859,7 @@ async function runOneStep(
   deadline: number,
   evCtx: EvCtx = null,
   shotUploads: StepShotUploadQueue | null = null,
+  priorRed = false,
 ): Promise<OneStepResult> {
   // KLA-61: dynamically adjust page timeouts based on remaining walk deadline
   const currentTimeout = Math.max(0, Math.min(opTimeout, deadline - Date.now()))
@@ -1074,7 +1087,7 @@ async function runOneStep(
   // KLA-68: per-step retry via withStepRetry. On a transient action failure, back off and retry
   // up to opts.stepRetries (default DEFAULT_STEP_RETRIES) additional times before going RED.
   // The resolved locator is reused — element-resolution cost is paid only once per step.
-  const maxRetries = opts.stepRetries ?? DEFAULT_STEP_RETRIES
+  const maxRetries = step.action === "assert" ? 0 : (opts.stepRetries ?? DEFAULT_STEP_RETRIES)
   const lastActionError = await withStepRetry(
     async () => {
       // Perform the action (Playwright auto-waits for actionability — the "test DNA" we deliberately keep).
@@ -1090,6 +1103,9 @@ async function runOneStep(
           break
         }
         case "click":
+          if (priorRed && !(await resolved.locator.isVisible().catch(() => false))) {
+            throw new Error("target_not_visible_after_prior_red")
+          }
           await clickWithTransitionFallback(resolved.locator, actionTimeout, actionTimeout)
           break
         case "select":
@@ -1144,6 +1160,7 @@ async function runOneStep(
     STEP_RETRY_BACKOFF_MS,
     () => Date.now() + STEP_RETRY_BACKOFF_MS >= deadline,
     (ms) => page.waitForTimeout(ms),
+    isRetryableStepError,
   )
 
   if (lastActionError !== undefined) {
@@ -1169,6 +1186,7 @@ async function runOneStep(
       evidence: {
         failureKind: failureKindForExpectationFailure(),
         reason: isAssert ? "checkpoint_failed" : "action_failed",
+        error: String((lastActionError as any)?.message || lastActionError),
         checkpoint: step.checkpoint?.description ?? null,
         recordedStep: recordedStep(resolved.selector, fp),
       },
@@ -1262,7 +1280,9 @@ async function runVisionTier2(
         evidence: tagRedEvidence(failureKindForExpectationFailure(), { reason: "checkpoint_gone", target: fp, pageUrl: opts.fixtureUrl, checkpoint: step.checkpoint?.description ?? null }),
         groundQuote: title, confidence: 1,
         dedupKey: `${trailId}:${step.id}:checkpoint-gone`,
-        contentSig: contentSigFor({ kind: "regression", fp, urlPath: stepPageUrl }),
+        // Checkpoint-gone is a report-critical failure for this recorded assertion. Do not collapse
+        // it across trails by content signature, or a later red walk can lose its run-scoped finding.
+        contentSig: null,
         urlPath: stepPageUrl,
       })
     }
