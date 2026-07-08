@@ -17,7 +17,7 @@ import { chromium } from "playwright"
 import { createClient } from "@libsql/client"
 import { randomBytes, createHash } from "node:crypto"
 
-const BASE = (process.env.SMOKE_BASE_URL || "https://klavity.quantana.top").replace(/\/$/, "")
+const BASE = (process.env.SMOKE_BASE_URL || "https://klavity.in").replace(/\/$/, "")
 const EMAIL = process.env.SMOKE_EMAIL || "vishal@quantana.com.au"
 const HOST = new URL(BASE).hostname
 

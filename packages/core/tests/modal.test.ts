@@ -380,7 +380,7 @@ describe('buildModal success reference + dashboard link', () => {
     showCta: false,
   }
   const FB_ID = 'fb_1a2b3c4d-5e6f-4a81-9203-a4b5c6d7e8f9'
-  const DASH_URL = 'https://klavity.quantana.top/dashboard?project=proj_x#tickets'
+  const DASH_URL = 'https://klavity.in/dashboard?project=proj_x#tickets'
 
   async function submitWith(result: { issueKey: string; issueUrl: string }, success?: any) {
     const ctrl = buildModal('bug', {

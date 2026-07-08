@@ -14,9 +14,9 @@ import { copyFileSync, existsSync, mkdirSync, renameSync, rmdirSync, unlinkSync 
 import { homedir } from "os"
 import { dirname, resolve } from "path"
 
-const BIGIDEA_ORIGIN = "https://bigidea.quantana.top"
+const BIGIDEA_ORIGIN = "https://bigidea.example.com"
 const BIGIDEA_PROJECT_ID = process.env.KLAV_PROJECT_ID || "proj_6d574acf-c927-48c8-b2d8-88364af3ca3a"
-const KLAV_URL = process.env.KLAV_API_ORIGIN || "https://klavity.quantana.top"
+const KLAV_URL = process.env.KLAV_API_ORIGIN || "https://klavity.in"
 const WIDGET_TOKEN_KEY = "klavity_widget_token"
 const RUN_ID = process.env.KLAV_RUN_ID || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 const TARGET_URL = process.env.KLAV_TARGET_URL || `${BIGIDEA_ORIGIN}/?klav_verify=${encodeURIComponent(RUN_ID)}`

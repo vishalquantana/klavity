@@ -106,7 +106,7 @@ export const openRouterVisionResolver: VisionResolver = async (input, ctx) => {
   if (!key) throw new Error("OPENROUTER_API_KEY not set")
   const cap = Number(process.env.OPS_DAILY_CAP_USD || 50)
   if (!(await tryReserveDailySpend(DEFAULT_AI_CALL_EST_USD, cap))) throw new Error("Daily AI budget reached")
-  const base = process.env.OPENROUTER_BASE || "https://klavity.quantana.top"
+  const base = process.env.OPENROUTER_BASE || "https://klavity.in"
   // Apply the weighted model mix (DEFAULT_WEIGHTS), with an optional per-call ctx.weights override
   // for a future per-project read. Previously passed EMPTY weights → always fell back to the single
   // VISION_FALLBACK_MODEL and the mix never applied.

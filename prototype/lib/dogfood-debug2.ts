@@ -19,7 +19,7 @@ const { walkTrail } = await import("./trails-runner")
 const T = await import("./trails")
 
 const PROJECT = "proj_debug2"
-const BASE = "https://klavity.quantana.top"
+const BASE = "https://klavity.in"
 
 // Test 1: simplest possible assert with h1 (proven unique by diagnostic)
 const trail1 = await crystallize(PROJECT, {

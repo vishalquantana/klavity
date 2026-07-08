@@ -57,7 +57,7 @@ Load `packages/extension/dist` as an unpacked extension in Chrome (chrome://exte
 
 ## Sign-in & sims (2026-06)
 
-- [ ] Fresh install while logged into klavity.quantana.top → open popup → silent login → signed-in, sims listed.
+- [ ] Fresh install while logged into klavity.in → open popup → silent login → signed-in, sims listed.
 - [ ] Fresh install while NOT logged in → email + 6-digit code → signed-in, sims listed.
 - [ ] Invalid/expired code → inline error, stays on the code field.
 - [ ] Multi-project account → header picker switches projects → sims update → last choice remembered on reopen.
