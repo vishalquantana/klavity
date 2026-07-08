@@ -499,6 +499,9 @@ details.drawer .drawer-in{padding:0 22px 22px}
 .tacc-add input[type="password"]{letter-spacing:.1em}
 .tacc-hint{font-size:12px;color:var(--paper-faint);margin:0 0 12px}
 .tacc-msg{font-size:12.5px;margin-top:8px;min-height:16px;color:var(--green)}
+.tacc-select{appearance:none;background:var(--ink-2);border:1px solid var(--line);border-radius:10px;padding:8px 30px 8px 11px;color:var(--paper);font-family:var(--body);font-size:13px;outline:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;cursor:pointer}
+.tacc-select:focus{border-color:var(--indigo)}
+.tacc-badge{font-size:10px;padding:2px 6px;border-radius:6px;background:var(--ink-2);color:var(--paper-dim);margin-left:8px;text-transform:uppercase;font-weight:600;letter-spacing:.03em;border:1px solid var(--line)}
 .conn-help a:hover{text-decoration:underline}
 /* two-way status-sync setup panel (G4) — shown for inbound-capable connectors */
 .sync-panel{grid-column:1/-1;margin-top:4px;padding:13px 14px;background:var(--ink-2);border:1px solid var(--line);border-radius:10px}
@@ -1263,7 +1266,15 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     <div class="drawer-in">
       <!-- Admin controls -->
       <div id="taccAdmin" class="hide">
-        <p class="tacc-hint">Stored encrypted. Trails reference them as placeholders only. Password logins only — OTP / SSO comes later.</p>
+        <p class="tacc-hint" style="margin-bottom:12px"><b>How does the AutoSim log into your app?</b> Stored encrypted. Trails reference them as placeholders only.</p>
+        <div style="margin-bottom: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+          <select id="taccAuthShape" class="tacc-select" style="min-width: 240px;">
+            <option value="password">Static password (email + password)</option>
+            <option value="otp">Emailed OTP (one-time passcode / 2FA)</option>
+            <option value="token">API Token (bearer token / API key)</option>
+          </select>
+        </div>
+        <p class="tacc-desc muted" id="taccDesc" style="font-size:12px; margin-top:2px; margin-bottom:12px;">AutoSim will use this static email & password to log in. Reference as <code>{{cred:name:email}}</code> and <code>{{cred:name:password}}</code>.</p>
         <div id="taccList" class="tacc-list"></div>
         <div class="tacc-add">
           <input id="taccName" placeholder="name (e.g. admin)" maxlength="40" />
@@ -3497,26 +3508,60 @@ async function taccRender() {
   }
   var d = await r.json()
   list.innerHTML = (d.accounts || []).map(function(a) {
-    return '<div class="tacc-row"><b>' + esc(a.name) + '</b><span class="tacc-email">' + esc(a.loginEmail) + '</span>'
+    var methodText = a.authShape === "otp" ? "emailed OTP" : a.authShape === "token" ? "api token" : "static password"
+    return '<div class="tacc-row"><b>' + esc(a.name) + '</b><span class="tacc-badge">' + esc(methodText) + '</span><span class="tacc-email">' + esc(a.loginEmail) + '</span>'
       + '<button class="btn btn-ghost btn-sm" data-tacc-del="' + esc(String(a.id)) + '">Delete</button></div>'
   }).join("") || '<div class="muted">No test accounts yet.</div>'
 }
 var _taccWired = false
 function _wireTacc() {
   if (_taccWired) return; _taccWired = true
+
+  function updateTaccForm() {
+    var shape = $("taccAuthShape").value
+    var desc = $("taccDesc")
+    var pw = $("taccPw")
+    var email = $("taccEmail")
+    if (shape === "password") {
+      desc.innerHTML = "AutoSim will use this static email & password to log in. Reference as <code>{{cred:name:email}}</code> and <code>{{cred:name:password}}</code>."
+      pw.classList.remove("hide")
+      pw.placeholder = "Password"
+      email.placeholder = "Login email"
+    } else if (shape === "otp") {
+      desc.innerHTML = "AutoSim will pause for the emailed OTP passcode. Standard OTP uses KLA-104 pause/resume or <code>{{cred:name:otp}}</code>."
+      pw.classList.add("hide")
+      email.placeholder = "Login email"
+    } else if (shape === "token") {
+      desc.innerHTML = "AutoSim will use this API key/Token for authentication. Reference as <code>{{cred:name:token}}</code>."
+      pw.classList.remove("hide")
+      pw.placeholder = "API token"
+      email.placeholder = "Login email / Identifier"
+    }
+  }
+
+  var shapeSel = $("taccAuthShape")
+  if (shapeSel) {
+    shapeSel.addEventListener("change", updateTaccForm)
+    updateTaccForm()
+  }
+
   var addBtn = $("taccAdd")
   if (addBtn) addBtn.addEventListener("click", async function() {
     var msg = $("taccMsg"); if (msg) { msg.textContent = ""; msg.style.color = "var(--green)" }
+    var shape = $("taccAuthShape").value
     var body = {
       name: $("taccName").value.trim(),
       login_email: $("taccEmail").value.trim(),
-      password: $("taccPw").value
+      password: shape === "otp" ? "" : $("taccPw").value,
+      auth_shape: shape
     }
     var pid = curProjId(); if (!pid) return
     var r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/test-accounts",
       { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
     if (r.ok) {
       $("taccName").value = ""; $("taccEmail").value = ""; $("taccPw").value = ""
+      $("taccAuthShape").value = "password"
+      updateTaccForm()
       taccRender()
     } else {
       var err = await r.json().catch(function() { return {} })

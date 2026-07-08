@@ -101,3 +101,25 @@ test("KLAV_TEST_OTP_CODE overrides the default 666666", async () => {
 test("password shape without password throws at creation", async () => {
   await expect(createTestAccount(P2, { name: "no-pw", loginEmail: "x@test.local", authShape: "password" })).rejects.toThrow("password is required")
 })
+
+test("create + get secret for API token shape", async () => {
+  const tokenProj = "proj_tacc_token"
+  const id = await createTestAccount(tokenProj, { name: "api-user", loginEmail: "token@test.local", password: "my-api-token-value", authShape: "token" })
+  expect(id.startsWith("tacc_")).toBe(true)
+  
+  const list = await listTestAccounts(tokenProj)
+  expect(list.length).toBe(1)
+  expect(list[0].authShape).toBe("token")
+  
+  const sec = await getTestAccountSecret(tokenProj, "api-user")
+  expect(sec).toMatchObject({
+    loginEmail: "token@test.local",
+    authShape: "token",
+    password: "my-api-token-value"
+  })
+})
+
+test("token shape without token throws at creation", async () => {
+  await expect(createTestAccount(P2, { name: "no-tok", loginEmail: "x@test.local", authShape: "token" })).rejects.toThrow("token is required")
+})
+

@@ -4,7 +4,7 @@
 // KLA-103: added "otp" field for OTP/passwordless auth shapes (uses KLAV_TEST_OTP bypass).
 import { getTestAccountSecret } from "./test-accounts"
 
-export const CRED_RE = /\{\{cred:([a-z0-9_-]{1,40}):(email|password|otp)\}\}/g
+export const CRED_RE = /\{\{cred:([a-z0-9_-]{1,40}):(email|password|otp|token)\}\}/g
 
 export function hasCredRef(v: string): boolean {
   CRED_RE.lastIndex = 0
@@ -25,9 +25,9 @@ export const resolveCredRefs: CredResolver = async (projectId, value) => {
     let resolved: string
     if (field === "email") {
       resolved = sec.loginEmail
-    } else if (field === "password") {
-      if (sec.authShape !== "password" || sec.password === undefined) {
-        throw new Error(`test account "${name}" does not have a password (auth_shape: ${sec.authShape})`)
+    } else if (field === "password" || field === "token") {
+      if ((sec.authShape !== "password" && sec.authShape !== "token") || sec.password === undefined) {
+        throw new Error(`test account "${name}" does not have a password or token (auth_shape: ${sec.authShape})`)
       }
       resolved = sec.password
     } else {
