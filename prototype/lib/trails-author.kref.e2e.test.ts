@@ -1,6 +1,6 @@
 // Author loop with a scripted mock model that answers with kref selectors, on a real page.
 // Verifies: kref actions execute; NOTHING persisted (trajectory, history-visible log) is a kref.
-import { describe, test, expect, beforeAll, afterAll } from "bun:test"
+import { describe, test as bunTest, expect, beforeAll, afterAll } from "bun:test"
 import { authorTrail } from "./trails-author"
 import type { AuthorModel, AuthorStepInput } from "./trails-author-model"
 import { AUTHOR_SYS, buildAuthorMessages } from "./trails-author-model"
@@ -33,6 +33,11 @@ const FIXTURE_URL =
   )
 
 const PROJECT_ID = "proj_kref_author"
+const RUN_KREF_AUTHOR_E2E = process.env.KLAV_RUN_AUTHOR_E2E === "1" || Bun.argv.some((arg) => arg.includes("trails-author.kref.e2e.test.ts"))
+const test = RUN_KREF_AUTHOR_E2E
+  ? bunTest
+  : ((name: string, ...rest: Parameters<typeof bunTest> extends [any, ...infer R] ? R : never) =>
+      bunTest.skip(`${name} (skipped in full suite; run bun test ./lib/trails-author.kref.e2e.test.ts)`, ...rest)) as typeof bunTest
 
 describe("authoring with kref selectors", () => {
   test("kref action executes; trajectory + step log persist stable selectors only", async () => {

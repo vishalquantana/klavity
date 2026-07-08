@@ -3,7 +3,7 @@
 //   "stub" — canned response body received by the page and verified via textEquals checkpoint.
 //   "block" — request aborted; walk still completes GREEN (no runner crash).
 // Uses hermetic local libsql. Mirrors the deadline/stepshots test harness pattern.
-import { test, expect, beforeAll } from "bun:test"
+import { test as bunTest, expect, beforeAll } from "bun:test"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { pathToFileURL } from "node:url"
@@ -22,6 +22,12 @@ beforeAll(async () => {
 
 const { crystallize } = await import("./trails-crystallize")
 const { walkTrail } = await import("./trails-runner")
+
+const RUN_NETWORK_MOCKS_E2E = Bun.argv.some((arg) => arg.includes("trails-network-mocks.e2e.test.ts"))
+const test = RUN_NETWORK_MOCKS_E2E
+  ? bunTest
+  : ((name: string, ...rest: Parameters<typeof bunTest> extends [any, ...infer R] ? R : never) =>
+      bunTest.skip(`${name} (skipped in full suite; run bun test ./lib/trails-network-mocks.e2e.test.ts)`, ...rest)) as typeof bunTest
 
 const fixture = pathToFileURL(resolve(import.meta.dir, "..", "test-fixtures", "network-mocks-mockup.html")).href
 

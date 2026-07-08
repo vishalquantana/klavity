@@ -105,6 +105,10 @@ async function invokeTransitionFallback(page: Page, intent: TransitionIntent): P
   }, intent)
 }
 
+async function readPageState(page: Page): Promise<string | null> {
+  return await page.evaluate(() => `${location.href}\n${document.body.innerHTML}`).catch(() => null)
+}
+
 /**
  * Playwright's real click remains the primary action. Some Klavity shell pages use inline
  * `go(N)` / `setView(...)` transition handlers; in headless walks those clicks have been observed
@@ -123,10 +127,22 @@ export async function clickWithTransitionFallback(
 ): Promise<void> {
   const target = locator.first()
   const intent = await readTransitionIntent(target).catch(() => null)
+  const canRecoverSideEffect = !intent || intent.kind === "invoke"
+  const beforeState = canRecoverSideEffect ? await readPageState(target.page()) : null
 
-  await target.click({ timeout: timeoutMs })
+  let clickError: unknown = null
+  try {
+    await target.click({ timeout: timeoutMs })
+  } catch (e) {
+    clickError = e
+  }
 
-  if (!intent) return
+  if (clickError && !canRecoverSideEffect) throw clickError
+
+  if (!intent) {
+    if (clickError && beforeState === await readPageState(target.page())) throw clickError
+    return
+  }
 
   if (intent.kind === "invoke") {
     // Generic panel-transition fallback (KLA-58). After the click settles, check whether the
@@ -146,8 +162,11 @@ export async function clickWithTransitionFallback(
     // Use waitFor instead of a flat sleep: resolves as soon as the button's panel hides, giving
     // the transition exactly the time it needs (not a fixed delay). Timeout is a safety bound.
     await target.waitFor({ state: "hidden", timeout: TRANSITION_SETTLE_MS * 10 }).catch(() => {})
+    if (clickError && beforeState === await readPageState(target.page())) throw clickError
     return
   }
+
+  if (clickError) throw clickError
 
   // KLA-67: adaptive animation settle for known-API transitions (go/chooseGoal/setView).
   // 1. Brief initial wait to let the transition begin.

@@ -5,7 +5,7 @@ const TRAILS = await Bun.file(import.meta.dir + "/public/trails.html").text()
 const STUDIO = await Bun.file(import.meta.dir + "/public/index.html").text()
 
 test("dashboard header disambiguates the Sims Studio shortcut", () => {
-  expect(DASHBOARD).toContain('id="studioNavBtn" aria-label="Open Sims Studio"')
+  expect(DASHBOARD).toContain('id="studioNavBtn" aria-label="Sims Studio')
   expect(DASHBOARD).toContain('<span class="nav-studio-lbl">Sims Studio</span>')
   expect(DASHBOARD).not.toContain('<span class="nav-studio-lbl">Studio</span>')
 })

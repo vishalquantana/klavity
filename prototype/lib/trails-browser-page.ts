@@ -5,7 +5,7 @@
 // Rationale + cost/perf: docs/bench-autosim-cost.md (Steel section) + the 2026-07-04 spike.
 // The runner (trails-runner.ts) stays on Playwright for now — its heal ladder is deeply coupled to
 // Playwright getByRole/getByText/networkidle; porting it is a separate, larger effort.
-import type { Fingerprint, NetworkMock, TrailViewport } from "./trails-types"
+import type { Fingerprint, NetworkMock as TrailNetworkMock, TrailViewport } from "./trails-types"
 import { KREF_SNAPSHOT_CAP } from "./trails-snapshot"
 import { clickWithTransitionFallback } from "./trails-click"
 // ── Network mocking (KLA-111) ─────────────────────────────────────────────────────────────────────
@@ -33,13 +33,30 @@ export type NetworkMockStub = {
  * Match order: the first rule whose `url` pattern matches a request wins.
  * `url` accepts an exact URL string, a glob pattern ("**", "*"), or a RegExp.
  */
-export type NetworkMock =
+export type BrowserNetworkMock =
   | { url: string | RegExp; stub: NetworkMockStub; block?: never }
   | { url: string | RegExp; block: true; stub?: never }
+export type NetworkMock = BrowserNetworkMock | TrailNetworkMock
+
+function isBlockedMock(mock: NetworkMock): boolean {
+  return Boolean((mock as any).block) || (mock as any).action === "block"
+}
+
+function stubForMock(mock: NetworkMock): NetworkMockStub {
+  const raw = mock as any
+  return raw.stub ?? {
+    status: raw.status,
+    body: raw.body,
+    contentType: raw.contentType,
+  }
+}
 
 /** Return true if `requestUrl` matches `pattern` (string glob or RegExp). */
 export function matchesMock(pattern: string | RegExp, requestUrl: string): boolean {
   if (pattern instanceof RegExp) return pattern.test(requestUrl)
+  if (!pattern.includes("*") && !/^[a-z][a-z0-9+.-]*:/i.test(pattern)) {
+    return requestUrl.includes(pattern)
+  }
   // Build a regex from the glob pattern. Process ** before * to avoid double-substitution:
   // replace ** with a placeholder first, then * with [^/]*, then restore the placeholder as .*
   // This prevents ".* " from having its "*" re-replaced by the single-star handler.
@@ -269,11 +286,12 @@ class PlaywrightPage implements BrowserPage {
       const reqUrl = route.request().url()
       for (const mock of mocks) {
         if (!matchesMock(mock.url, reqUrl)) continue
-        if (mock.block) { route.abort("blockedbyclient").catch(() => {}); return }
+        if (isBlockedMock(mock)) { route.abort("blockedbyclient").catch(() => {}); return }
+        const stub = stubForMock(mock)
         route.fulfill({
-          status: mock.stub.status ?? 200,
-          contentType: mock.stub.contentType ?? "text/plain",
-          body: mock.stub.body ?? "",
+          status: stub.status ?? 200,
+          contentType: stub.contentType ?? "text/plain",
+          body: stub.body ?? "",
         }).catch(() => {})
         return
       }
