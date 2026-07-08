@@ -183,7 +183,7 @@ test("buildTicketFromFinding embeds grounded evidence + heal diff", () => {
   expect(t.title).toContain("Checkout button gone")
   expect(t.body).toContain("no checkout affordance")
   expect(t.body).toContain("#checkout")
-  expect(t.severity).toBe("high")
+  expect(t.priority).toBe("high")
   expect(t.klavityUrl).toContain("/trails?project=proj_z")
 })
 

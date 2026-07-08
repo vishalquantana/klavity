@@ -12,14 +12,14 @@ const P = `proj_fbf_${RUN}`
 test("listFeedback exposes suggestedBug/sourceQuote/citedTraitIds/sourceDate", async () => {
   await insertFeedback({
     projectId: P, simId: `sim_${RUN}`, observation: "label is wrong",
-    sentiment: "frustrated", severity: "high", screenshotId: `shot_${RUN}`,
-    suggestedBug: { title: "Fix label", body: "the CTA says Submit not Save", severity: "high" },
+    sentiment: "frustrated", priority: "high", screenshotId: `shot_${RUN}`,
+    suggestedBug: { title: "Fix label", body: "the CTA says Submit not Save", priority: "high" },
     citedTraitIds: ["t1"], sourceQuote: "I hate when labels lie", sourceDate: 1750000000000,
   })
   const rows = await listFeedback(P, { limit: 5 })
   expect(rows.length).toBe(1)
   const r = rows[0]
-  expect(r.suggestedBug).toEqual({ title: "Fix label", body: "the CTA says Submit not Save", severity: "high" })
+  expect(r.suggestedBug).toEqual({ title: "Fix label", body: "the CTA says Submit not Save", priority: "high" })
   expect(r.sourceQuote).toBe("I hate when labels lie")
   expect(r.citedTraitIds).toEqual(["t1"])
   expect(r.sourceDate).toBe(1750000000000)

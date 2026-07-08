@@ -200,9 +200,9 @@ async function columnExistsT(c: Client, table: string, col: string): Promise<boo
 
 // PROD-SAFE ADDITIVE MIGRATION: columns added in initDb/applySchema (NOT migrateV2).
 // This test seeds a DB with migrated_v2 ALREADY set and the OLD sim_traits/trait_events shape
-// (no area/issue_type/severity), then runs applySchema() and asserts the columns appear —
+// (no area/issue_type/severity/priority), then runs applySchema() and asserts the columns appear —
 // proving that existing prod DBs (where migrateV2 is a fast no-op) get the new columns.
-test("persona-quality additive columns: migrated_v2 already set → applySchema adds area/issue_type/severity", async () => {
+test("persona-quality additive columns: migrated_v2 already set → applySchema adds area/issue_type/severity/priority", async () => {
   const file = join(tmpdir(), `klav-persona-q-${Date.now()}-${Math.random().toString(36).slice(2)}.db`)
   const c = createClient({ url: "file:" + file })
   try {
@@ -240,9 +240,11 @@ test("persona-quality additive columns: migrated_v2 already set → applySchema 
     expect(await columnExistsT(c, "sim_traits", "area")).toBe(false)
     expect(await columnExistsT(c, "sim_traits", "issue_type")).toBe(false)
     expect(await columnExistsT(c, "sim_traits", "severity")).toBe(false)
+    expect(await columnExistsT(c, "sim_traits", "priority")).toBe(false)
     expect(await columnExistsT(c, "trait_events", "area")).toBe(false)
     expect(await columnExistsT(c, "trait_events", "issue_type")).toBe(false)
     expect(await columnExistsT(c, "trait_events", "severity")).toBe(false)
+    expect(await columnExistsT(c, "trait_events", "priority")).toBe(false)
 
     // Run applySchema (same as what initDb does on every boot).
     await applySchema(c)
@@ -251,9 +253,11 @@ test("persona-quality additive columns: migrated_v2 already set → applySchema 
     expect(await columnExistsT(c, "sim_traits", "area")).toBe(true)
     expect(await columnExistsT(c, "sim_traits", "issue_type")).toBe(true)
     expect(await columnExistsT(c, "sim_traits", "severity")).toBe(true)
+    expect(await columnExistsT(c, "sim_traits", "priority")).toBe(true)
     expect(await columnExistsT(c, "trait_events", "area")).toBe(true)
     expect(await columnExistsT(c, "trait_events", "issue_type")).toBe(true)
     expect(await columnExistsT(c, "trait_events", "severity")).toBe(true)
+    expect(await columnExistsT(c, "trait_events", "priority")).toBe(true)
 
     // Existing rows survive with null in the new columns.
     const trait = (await c.execute("SELECT * FROM sim_traits WHERE id='trait_old1'")).rows[0] as any
@@ -262,6 +266,7 @@ test("persona-quality additive columns: migrated_v2 already set → applySchema 
     expect(trait.area).toBeNull()
     expect(trait.issue_type).toBeNull()
     expect(trait.severity).toBeNull()
+    expect(trait.priority).toBeNull()
 
     const evt = (await c.execute("SELECT * FROM trait_events WHERE id='tev_old1'")).rows[0] as any
     expect(evt).toBeTruthy()
@@ -269,15 +274,18 @@ test("persona-quality additive columns: migrated_v2 already set → applySchema 
     expect(evt.area).toBeNull()
     expect(evt.issue_type).toBeNull()
     expect(evt.severity).toBeNull()
+    expect(evt.priority).toBeNull()
 
     // Idempotent: second applySchema() call must not throw and columns still exist.
     await applySchema(c)
     expect(await columnExistsT(c, "sim_traits", "area")).toBe(true)
     expect(await columnExistsT(c, "sim_traits", "issue_type")).toBe(true)
     expect(await columnExistsT(c, "sim_traits", "severity")).toBe(true)
+    expect(await columnExistsT(c, "sim_traits", "priority")).toBe(true)
     expect(await columnExistsT(c, "trait_events", "area")).toBe(true)
     expect(await columnExistsT(c, "trait_events", "issue_type")).toBe(true)
     expect(await columnExistsT(c, "trait_events", "severity")).toBe(true)
+    expect(await columnExistsT(c, "trait_events", "priority")).toBe(true)
     // Row count still intact after second run.
     expect(await n(c, "SELECT COUNT(*) AS n FROM sim_traits")).toBe(1)
     expect(await n(c, "SELECT COUNT(*) AS n FROM trait_events")).toBe(1)

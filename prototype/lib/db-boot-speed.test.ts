@@ -90,6 +90,7 @@ describe("applySchema — established DB boot speed", () => {
       ["findings",        "connector_error"],
       ["findings",        "content_sig"],
       ["findings",        "severity"],
+      ["findings",        "priority"],
       ["author_sessions", "checkpoint_json"],
       ["author_sessions", "objective_verified"],
       ["walk_share_tokens", "revoked_at"],

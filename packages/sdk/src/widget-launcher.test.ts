@@ -177,7 +177,7 @@ describe("Sim observation tracking", () => {
     SimsLive.onTriage?.({
       text: "The checkout button feels broken and blocks progress.",
       sentiment: "frustrated",
-      severity: "high",
+      priority: "high",
       suggestedBug: { title: "Checkout button blocks progress" },
     }, "Vishal Kumar")
 
@@ -186,7 +186,7 @@ describe("Sim observation tracking", () => {
     const submit = shadow.getElementById("klavity-submit") as HTMLButtonElement
     expect(desc.value).toContain("Sim observation from Vishal Kumar")
     expect(desc.value).toContain("The checkout button feels broken")
-    expect(desc.value).toContain("Severity: high")
+    expect(desc.value).toContain("Priority: high")
     expect(desc.value).toContain("Suggested title: Checkout button blocks progress")
     expect(submit.disabled).toBe(false)
   })

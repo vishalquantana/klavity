@@ -27,7 +27,7 @@ export type Trait = {
   updatedAt: number
   area?: string | null
   issueType?: string | null
-  severity?: string | null
+  priority?: string | null
   // v3: scope = finding altitude (ui|feature|workflow|strategy); portability = durability across
   // products (portable|site-specific). Both null-default so pre-v3 rows/ops degrade gracefully.
   scope?: string | null
@@ -47,7 +47,7 @@ export type ReconcileOp = {
   reason?: string
   area?: string | null
   issueType?: string | null
-  severity?: string | null
+  priority?: string | null
   scope?: string | null
   portability?: string | null
 }
@@ -87,7 +87,7 @@ export type TraitEventRow = {
   createdAt: number
   area?: string | null
   issueType?: string | null
-  severity?: string | null
+  priority?: string | null
   actor?: string | null
 }
 
@@ -223,7 +223,7 @@ export function applyReconcileOps(
     createdAt: now,
     area: o.area ?? null,
     issueType: o.issueType ?? null,
-    severity: o.severity ?? null,
+    priority: o.priority ?? null,
     }
   }
 
@@ -246,7 +246,7 @@ export function applyReconcileOps(
     updatedAt: now,
     area: o.area ?? null,
     issueType: o.issueType ?? null,
-    severity: o.severity ?? null,
+    priority: o.priority ?? null,
     scope: o.scope ?? null,
     portability: o.portability ?? null,
     }
@@ -280,7 +280,7 @@ export function applyReconcileOps(
         targetActive.updatedAt = now
         targetActive.area = o.area ?? null
         targetActive.issueType = o.issueType ?? null
-        targetActive.severity = o.severity ?? null
+        targetActive.priority = o.priority ?? null
         targetActive.scope = o.scope ?? null
         targetActive.portability = o.portability ?? null
         traitWrites.push({ mode: "update", trait: { ...targetActive } })
@@ -301,7 +301,7 @@ export function applyReconcileOps(
         targetActive.updatedAt = now
         targetActive.area = o.area ?? null
         targetActive.issueType = o.issueType ?? null
-        targetActive.severity = o.severity ?? null
+        targetActive.priority = o.priority ?? null
         targetActive.scope = o.scope ?? null
         targetActive.portability = o.portability ?? null
         traitWrites.push({ mode: "update", trait: { ...targetActive } })
@@ -358,7 +358,7 @@ export function applyReconcileOps(
         targetResolved.updatedAt = now
         targetResolved.area = o.area ?? null
         targetResolved.issueType = o.issueType ?? null
-        targetResolved.severity = o.severity ?? null
+        targetResolved.priority = o.priority ?? null
         targetResolved.scope = o.scope ?? null
         targetResolved.portability = o.portability ?? null
         traitWrites.push({ mode: "update", trait: { ...targetResolved } })
@@ -385,7 +385,7 @@ export type InsightCacheItem = {
   strength: number
   area: string | null
   issueType: string | null
-  severity: string | null
+  priority: string | null
   scope: string | null
   portability: string | null
 }
@@ -402,7 +402,7 @@ export function insightsFromTraits(activeTraits: Trait[]): InsightCacheItem[] {
       strength: t.strength,
       area: t.area ?? null,
       issueType: t.issueType ?? null,
-      severity: t.severity ?? null,
+      priority: t.priority ?? null,
       scope: t.scope ?? null,
       portability: t.portability ?? null,
     }))

@@ -13,7 +13,7 @@ await migrateV2(db!)
 const P = `proj_rec_${Date.now()}`
 
 test("a 'new' item is promoted to 'open' when recurrence reaches 3", async () => {
-  const id = await insertFeedback({ projectId: P, observation: "low sev recurring", severity: "low", issueKey: "rk1" })
+  const id = await insertFeedback({ projectId: P, observation: "low sev recurring", priority: "low", issueKey: "rk1" })
   expect((await feedbackById(P, id)).status).toBe("new")
   await bumpFeedbackRecurrence(id, 1)   // count 2, still new
   expect((await feedbackById(P, id)).status).toBe("new")
@@ -22,7 +22,7 @@ test("a 'new' item is promoted to 'open' when recurrence reaches 3", async () =>
 })
 
 test("recurrence never resurrects a dismissed item", async () => {
-  const id = await insertFeedback({ projectId: P, observation: "dismissed recurring", severity: "low", issueKey: "rk2" })
+  const id = await insertFeedback({ projectId: P, observation: "dismissed recurring", priority: "low", issueKey: "rk2" })
   // simulate a triage dismiss
   await db!.execute({ sql: "UPDATE feedback SET status='dismissed' WHERE id=?", args: [id] })
   await bumpFeedbackRecurrence(id, 1)

@@ -77,8 +77,8 @@ function simObservationBugDescription(observation: LiveObservation, simName: str
     "",
     (observation.text || "").trim(),
   ]
-  const severity = String(observation.severity || "").trim()
-  if (severity && severity !== "none") lines.push("", `Severity: ${severity}`)
+  const priority = String(observation.priority || "").trim()
+  if (priority && priority !== "none") lines.push("", `Priority: ${priority}`)
   const title = String(observation.suggestedBug?.title || "").trim()
   if (title) lines.push(`Suggested title: ${title}`)
   return lines.filter((line, idx) => line !== "" || lines[idx - 1] !== "").join("\n").trim()
@@ -853,7 +853,7 @@ async function mount() {
         const liveObs = rawObs.map((r: any) => ({
           text: r.observation ?? r.text ?? '',
           sentiment: r.sentiment,
-          severity: r.severity,
+          priority: r.priority,
           region: r.region,
           suggestedBug: r.suggestedBug,
           targetViewport,

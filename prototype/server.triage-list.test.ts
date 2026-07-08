@@ -7,8 +7,8 @@ await applySchema(db!); await migrateV2(db!)
 const P = `proj_tl_${Date.now()}`
 
 test("listTriageFeedback returns only new items", async () => {
-  await insertFeedback({ projectId: P, severity: "high", observation: "auto accepted" })   // open
-  const n = await insertFeedback({ projectId: P, severity: "low", observation: "needs triage", suggestedBug: { title: "Bug X" } }) // new
+  await insertFeedback({ projectId: P, priority: "high", observation: "auto accepted" })   // open
+  const n = await insertFeedback({ projectId: P, priority: "low", observation: "needs triage", suggestedBug: { title: "Bug X" } }) // new
   const list = await listTriageFeedback(P)
   expect(list.length).toBe(1)
   expect(list[0].id).toBe(n)

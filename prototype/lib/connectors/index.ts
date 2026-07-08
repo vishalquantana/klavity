@@ -24,7 +24,7 @@ export type TicketAttachment = {
 export type TicketPayload = {
   title: string
   body: string
-  severity: string | null
+  priority: string | null
   url: string | null
   simName: string | null
   createdAt: number

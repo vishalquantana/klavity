@@ -14,9 +14,9 @@ const P = `proj_ins_${Date.now()}`
 async function setStatus(id: string, s: string) { await db!.execute({ sql: "UPDATE feedback SET status=? WHERE id=?", args: [s, id] }) }
 
 test("openBySeverity counts only accepted (open/in_progress) bugs; needsTriage counts new", async () => {
-  const a = await insertFeedback({ projectId: P, severity: "high", sentiment: "frustrated", urlPath: "/checkout" }) // born open
-  const b = await insertFeedback({ projectId: P, severity: "low", sentiment: "confused", urlPath: "/settings" })   // born new
-  const c = await insertFeedback({ projectId: P, severity: "medium", urlPath: "/settings" })                       // born new
+  const a = await insertFeedback({ projectId: P, priority: "high", sentiment: "frustrated", urlPath: "/checkout" }) // born open
+  const b = await insertFeedback({ projectId: P, priority: "low", sentiment: "confused", urlPath: "/settings" })   // born new
+  const c = await insertFeedback({ projectId: P, priority: "medium", urlPath: "/settings" })                       // born new
   await setStatus(c, "dismissed")
   const ins = await computeDashboardInsights(P)
   expect(ins.openBySeverity.high).toBe(1)   // a only

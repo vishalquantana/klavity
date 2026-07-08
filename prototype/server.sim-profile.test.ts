@@ -24,10 +24,10 @@ await rawExec(`CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, name TE
 await rawExec(`CREATE TABLE IF NOT EXISTS account_members (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, email TEXT NOT NULL, account_role TEXT NOT NULL DEFAULT 'member', created_at INTEGER NOT NULL, UNIQUE(account_id, email))`)
 await rawExec(`CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, name TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', review_mode TEXT NOT NULL DEFAULT 'auto', review_budget_daily INTEGER, observability_mode TEXT NOT NULL DEFAULT 'named', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
 await rawExec(`CREATE TABLE IF NOT EXISTS project_members (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, email TEXT NOT NULL, project_role TEXT NOT NULL DEFAULT 'member', invited_by TEXT, created_at INTEGER NOT NULL, UNIQUE(project_id, email))`)
-await rawExec(`CREATE TABLE IF NOT EXISTS feedback (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, sim_id TEXT, actor_email TEXT, url_host TEXT, url_path TEXT, observation TEXT, sentiment TEXT, severity TEXT, screenshot_id TEXT, suggested_bug_json TEXT, cited_trait_ids_json TEXT, source_quote TEXT, source_transcript_id TEXT, source_date INTEGER, plane_issue_key TEXT, plane_issue_url TEXT, status TEXT NOT NULL DEFAULT 'open', assignee TEXT, notes TEXT, updated_at INTEGER, created_at INTEGER NOT NULL)`)
+await rawExec(`CREATE TABLE IF NOT EXISTS feedback (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, sim_id TEXT, actor_email TEXT, url_host TEXT, url_path TEXT, observation TEXT, sentiment TEXT, severity TEXT, priority TEXT, screenshot_id TEXT, suggested_bug_json TEXT, cited_trait_ids_json TEXT, source_quote TEXT, source_transcript_id TEXT, source_date INTEGER, plane_issue_key TEXT, plane_issue_url TEXT, status TEXT NOT NULL DEFAULT 'open', assignee TEXT, notes TEXT, updated_at INTEGER, created_at INTEGER NOT NULL)`)
 await rawExec(`CREATE INDEX IF NOT EXISTS fb_sim_idx ON feedback (sim_id, created_at)`)
 await rawExec(`CREATE TABLE IF NOT EXISTS personas (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL, role TEXT, type TEXT NOT NULL DEFAULT 'client', initials TEXT, accent TEXT, summary TEXT, insights_json TEXT, avatar TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
-await rawExec(`CREATE TABLE IF NOT EXISTS sim_traits (id TEXT PRIMARY KEY, sim_id TEXT NOT NULL, project_id TEXT NOT NULL, kind TEXT NOT NULL, text TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', strength INTEGER NOT NULL DEFAULT 1, src_transcript_id TEXT NOT NULL, src_quote TEXT NOT NULL, src_quote_offset INTEGER, src_speaker TEXT, area TEXT, issue_type TEXT, severity TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
+await rawExec(`CREATE TABLE IF NOT EXISTS sim_traits (id TEXT PRIMARY KEY, sim_id TEXT NOT NULL, project_id TEXT NOT NULL, kind TEXT NOT NULL, text TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', strength INTEGER NOT NULL DEFAULT 1, src_transcript_id TEXT NOT NULL, src_quote TEXT NOT NULL, src_quote_offset INTEGER, src_speaker TEXT, area TEXT, issue_type TEXT, severity TEXT, priority TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
 await rawExec(`CREATE TABLE IF NOT EXISTS trait_events (id TEXT PRIMARY KEY, trait_id TEXT NOT NULL, sim_id TEXT NOT NULL, transcript_id TEXT NOT NULL, op TEXT NOT NULL, before_text TEXT, after_text TEXT, quote TEXT NOT NULL, quote_offset INTEGER, speaker TEXT, source_date INTEGER NOT NULL, reason TEXT, created_at INTEGER NOT NULL)`)
 await rawExec(`CREATE TABLE IF NOT EXISTS transcripts (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, title TEXT, raw_text TEXT NOT NULL, source_date INTEGER NOT NULL, speakers_json TEXT, added_by TEXT NOT NULL, created_at INTEGER NOT NULL)`)
 
@@ -65,14 +65,14 @@ await rawExec(`INSERT INTO trait_events (id, trait_id, sim_id, transcript_id, op
 // Feedback the Sim has filed, across triage outcomes
 // in_progress = a human triaged it forward (accepted as a real bug). Use this rather than 'open' so the
 // server's one-time legacy triage backfill (open+low → new) can't reclassify it before the assertion.
-await rawExec(`INSERT INTO feedback (id, project_id, sim_id, observation, severity, suggested_bug_json, status, created_at) VALUES (?,?,?,?,?,?,?,?)`,
+await rawExec(`INSERT INTO feedback (id, project_id, sim_id, observation, priority, suggested_bug_json, status, created_at) VALUES (?,?,?,?,?,?,?,?)`,
   [`fb_conf_${ts}`, PROJECT_ID, SIM_ID, "checkout dead", "low", JSON.stringify({ title: "Checkout CTA dead" }), "in_progress", NOW - 30])
-await rawExec(`INSERT INTO feedback (id, project_id, sim_id, observation, severity, suggested_bug_json, status, created_at) VALUES (?,?,?,?,?,?,?,?)`,
+await rawExec(`INSERT INTO feedback (id, project_id, sim_id, observation, priority, suggested_bug_json, status, created_at) VALUES (?,?,?,?,?,?,?,?)`,
   [`fb_dism_${ts}`, PROJECT_ID, SIM_ID, "colour off", "low", JSON.stringify({ title: "Brand colour off" }), "dismissed", NOW - 20])
-await rawExec(`INSERT INTO feedback (id, project_id, sim_id, observation, severity, suggested_bug_json, status, created_at) VALUES (?,?,?,?,?,?,?,?)`,
+await rawExec(`INSERT INTO feedback (id, project_id, sim_id, observation, priority, suggested_bug_json, status, created_at) VALUES (?,?,?,?,?,?,?,?)`,
   [`fb_pend_${ts}`, PROJECT_ID, SIM_ID, "still queued", "low", JSON.stringify({ title: "Still in queue" }), "new", NOW - 10])
 // Decoy feedback that must NOT show on this Sim's profile
-await rawExec(`INSERT INTO feedback (id, project_id, sim_id, observation, severity, status, created_at) VALUES (?,?,?,?,?,?,?)`,
+await rawExec(`INSERT INTO feedback (id, project_id, sim_id, observation, priority, status, created_at) VALUES (?,?,?,?,?,?,?)`,
   [`fb_other_${ts}`, PROJECT_ID, OTHER_SIM, "other sim bug", "low", "new", NOW - 5])
 
 let serverPort: number

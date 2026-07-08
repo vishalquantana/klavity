@@ -25,14 +25,14 @@ function mkTrait(over: Partial<Trait> & { id: string }): Trait {
     simId: "sim_1", projectId: "proj_1", kind: "pain", text: "t", status: "active",
     strength: 1, srcTranscriptId: "tr_1", srcQuote: "the quote", srcQuoteOffset: 0,
     srcSpeaker: "Sarah", srcVerified: true, createdAt: 0, updatedAt: 0,
-    area: null, issueType: "bug", severity: null, ...over,
+    area: null, issueType: "bug", priority: null, ...over,
   }
 }
 function mkEvent(traitId: string, op: TraitEventRow["op"], sourceDate: number): TraitEventRow {
   return {
     traitId, simId: "sim_1", transcriptId: "tr_1", op, beforeText: null, afterText: null,
     quote: "q", quoteOffset: null, verified: true, speaker: "Sarah", sourceDate,
-    reason: null, createdAt: sourceDate, area: null, issueType: null, severity: null,
+    reason: null, createdAt: sourceDate, area: null, issueType: null, priority: null,
   }
 }
 
@@ -449,23 +449,23 @@ test("applyReconcileOps: reopen on superseded trait also reactivates same id", (
 
 // ── field-carry and snapshot tests ──────────────────────────────────────────
 
-test("applyReconcileOps: area/issueType/severity carried through add/mkTrait", () => {
+test("applyReconcileOps: area/issueType/priority carried through add/mkTrait", () => {
   const ops: ReconcileOp[] = [
-    { op: "add", kind: "pain", text: "Slow label render", quote: "labels take forever", area: "labels", issueType: "performance", severity: "high" },
+    { op: "add", kind: "pain", text: "Slow label render", quote: "labels take forever", area: "labels", issueType: "performance", priority: "high" },
   ]
   const res = applyReconcileOps([], ops, ctx())
   const w = res.traitWrites[0]
   expect(w.trait.area).toBe("labels")
   expect(w.trait.issueType).toBe("performance")
-  expect(w.trait.severity).toBe("high")
+  expect(w.trait.priority).toBe("high")
   // also snapshotted on the create event
   const evt = res.traitEvents[0]
   expect(evt.area).toBe("labels")
   expect(evt.issueType).toBe("performance")
-  expect(evt.severity).toBe("high")
+  expect(evt.priority).toBe("high")
 })
 
-test("applyReconcileOps: absent area/issueType/severity defaults to null", () => {
+test("applyReconcileOps: absent area/issueType/priority defaults to null", () => {
   const ops: ReconcileOp[] = [
     { op: "add", kind: "pain", text: "No fields", quote: "q" },
   ]
@@ -473,76 +473,76 @@ test("applyReconcileOps: absent area/issueType/severity defaults to null", () =>
   const w = res.traitWrites[0]
   expect(w.trait.area).toBeNull()
   expect(w.trait.issueType).toBeNull()
-  expect(w.trait.severity).toBeNull()
+  expect(w.trait.priority).toBeNull()
   const evt = res.traitEvents[0]
   expect(evt.area).toBeNull()
   expect(evt.issueType).toBeNull()
-  expect(evt.severity).toBeNull()
+  expect(evt.priority).toBeNull()
 })
 
-test("applyReconcileOps: reinforce refreshes area/issueType/severity and snapshots on event", () => {
+test("applyReconcileOps: reinforce refreshes area/issueType/priority and snapshots on event", () => {
   const current: Trait[] = [
-    trait({ id: "t_p", kind: "pain", text: "Slow", area: "dashboard", issueType: "performance", severity: "low" }),
+    trait({ id: "t_p", kind: "pain", text: "Slow", area: "dashboard", issueType: "performance", priority: "low" }),
   ]
   const ops: ReconcileOp[] = [
-    { op: "reinforce", kind: "pain", text: "Slow", quote: "still slow", traitId: "t_p", area: "export", issueType: "performance", severity: "high" },
+    { op: "reinforce", kind: "pain", text: "Slow", quote: "still slow", traitId: "t_p", area: "export", issueType: "performance", priority: "high" },
   ]
   const res = applyReconcileOps(current, ops, ctx())
   expect(res.traitWrites[0].trait.area).toBe("export")
-  expect(res.traitWrites[0].trait.severity).toBe("high")
+  expect(res.traitWrites[0].trait.priority).toBe("high")
   const evt = res.traitEvents[0]
   expect(evt.area).toBe("export")
-  expect(evt.severity).toBe("high")
+  expect(evt.priority).toBe("high")
 })
 
 test("applyReconcileOps: supersede snapshots fields on BOTH supersede + create events", () => {
   const current: Trait[] = [
-    trait({ id: "t_old2", kind: "want", text: "Wants CSV", area: "export", issueType: "flow", severity: "medium" }),
+    trait({ id: "t_old2", kind: "want", text: "Wants CSV", area: "export", issueType: "flow", priority: "medium" }),
   ]
   const ops: ReconcileOp[] = [
-    { op: "supersede", kind: "want", text: "Wants Excel", quote: "need Excel", traitId: "t_old2", area: "export", issueType: "performance", severity: "high" },
+    { op: "supersede", kind: "want", text: "Wants Excel", quote: "need Excel", traitId: "t_old2", area: "export", issueType: "performance", priority: "high" },
   ]
   const res = applyReconcileOps(current, ops, ctx())
   expect(res.traitEvents.length).toBe(2)
   for (const evt of res.traitEvents) {
     expect(evt.area).toBe("export")
     expect(evt.issueType).toBe("performance")
-    expect(evt.severity).toBe("high")
+    expect(evt.priority).toBe("high")
   }
 })
 
 test("applyReconcileOps: reopen carries/snapshots fields and refreshes them on the trait", () => {
   const current: Trait[] = [
-    trait({ id: "t_c2", kind: "pain", text: "Crash on export", status: "contradicted", strength: 1, area: "export", issueType: "error-handling", severity: "high" }),
+    trait({ id: "t_c2", kind: "pain", text: "Crash on export", status: "contradicted", strength: 1, area: "export", issueType: "error-handling", priority: "high" }),
   ]
   const ops: ReconcileOp[] = [
-    { op: "reopen", kind: "pain", text: "Crash on export is back", quote: "crashed again", traitId: "t_c2", area: "export", issueType: "error-handling", severity: "high" },
+    { op: "reopen", kind: "pain", text: "Crash on export is back", quote: "crashed again", traitId: "t_c2", area: "export", issueType: "error-handling", priority: "high" },
   ]
   const res = applyReconcileOps(current, ops, ctx())
   const w = res.traitWrites[0]
   expect(w.trait.area).toBe("export")
   expect(w.trait.issueType).toBe("error-handling")
-  expect(w.trait.severity).toBe("high")
+  expect(w.trait.priority).toBe("high")
   const evt = res.traitEvents[0]
   expect(evt.area).toBe("export")
   expect(evt.issueType).toBe("error-handling")
-  expect(evt.severity).toBe("high")
+  expect(evt.priority).toBe("high")
 })
 
-test("insightsFromTraits: copies area/issueType/severity (absent => null)", () => {
+test("insightsFromTraits: copies area/issueType/priority (absent => null)", () => {
   const traits: Trait[] = [
-    trait({ id: "t_i1", kind: "pain", text: "Slow", area: "export", issueType: "performance", severity: "high" }),
+    trait({ id: "t_i1", kind: "pain", text: "Slow", area: "export", issueType: "performance", priority: "high" }),
     trait({ id: "t_i2", kind: "want", text: "Dark mode" }),
   ]
   const insights = insightsFromTraits(traits)
   const i1 = insights.find((i) => i.traitId === "t_i1")!
   expect(i1.area).toBe("export")
   expect(i1.issueType).toBe("performance")
-  expect(i1.severity).toBe("high")
+  expect(i1.priority).toBe("high")
   const i2 = insights.find((i) => i.traitId === "t_i2")!
   expect(i2.area).toBeNull()
   expect(i2.issueType).toBeNull()
-  expect(i2.severity).toBeNull()
+  expect(i2.priority).toBeNull()
 })
 
 // ── C1 guard: rebuildInsightsJson must be a NO-OP (not wipe) when active-trait set is empty but
@@ -603,9 +603,9 @@ test("recurrenceFromEvents: create+reinforce+reinforce (never resolved) → regr
   expect(wouldAttachMemory).toBe(false)
 })
 
-// ── Spec TDD item 2: reopen carries area/issueType/severity onto the emitted event row ────────
+// ── Spec TDD item 2: reopen carries area/issueType/priority onto the emitted event row ────────
 
-test("applyReconcileOps: reopen carries area/issueType/severity onto the emitted event row", () => {
+test("applyReconcileOps: reopen carries area/issueType/priority onto the emitted event row", () => {
   // This test specifically asserts that the reopen op emits an event carrying the typed fields,
   // in addition to reactivating the trait (status=active, strength+1). These are the field-carry
   // assertions called out in TDD item 2.
@@ -616,7 +616,7 @@ test("applyReconcileOps: reopen carries area/issueType/severity onto the emitted
     {
       op: "reopen", kind: "pain", text: "Label truncated again", quote: "label still cut off",
       quoteOffset: 0, speaker: "Sarah", traitId: "t_rc",
-      area: "header-nav", issueType: "label-copy", severity: "high",
+      area: "header-nav", issueType: "label-copy", priority: "high",
     },
   ]
   const res = applyReconcileOps(current, ops, ctx())
@@ -629,14 +629,14 @@ test("applyReconcileOps: reopen carries area/issueType/severity onto the emitted
   expect(w.trait.status).toBe("active")
   expect(w.trait.strength).toBe(2) // 1 → 2
 
-  // The emitted reopen event must carry the typed fields (area/issueType/severity).
+  // The emitted reopen event must carry the typed fields (area/issueType/priority).
   expect(res.traitEvents.length).toBe(1)
   const evt = res.traitEvents[0]
   expect(evt.op).toBe("reopen")
   expect(evt.traitId).toBe("t_rc")
   expect(evt.area).toBe("header-nav")
   expect(evt.issueType).toBe("label-copy")
-  expect(evt.severity).toBe("high")
+  expect(evt.priority).toBe("high")
 })
 
 // ── Regression summary surfacing: create+contradict+reopen → recurrenceFromEvents yields

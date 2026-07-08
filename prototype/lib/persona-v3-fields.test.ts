@@ -106,12 +106,12 @@ test("insertTrait + updateTrait + listTraits: scope/portability persisted and re
     id: "trait_" + randomUUID(), simId: sim, projectId: PROJ, kind: "pain" as const,
     text: "checkout button hidden", status: "active" as const, strength: 1,
     srcTranscriptId: "tr", srcQuote: "q", srcQuoteOffset: null, srcSpeaker: null,
-    createdAt: NOW, updatedAt: NOW, area: "checkout", issueType: "layout", severity: "high",
+    createdAt: NOW, updatedAt: NOW, area: "checkout", issueType: "layout", priority: "high",
     scope: "ui", portability: "site-specific",
   }
   const t2 = {
     ...t1, id: "trait_" + randomUUID(), text: "wants bulk export",
-    scope: null, portability: null, issueType: null, severity: null, area: null,
+    scope: null, portability: null, issueType: null, priority: null, area: null,
   }
   await m.insertTrait(t1)
   await m.insertTrait(t2)
@@ -139,7 +139,7 @@ test("applyReconcileOps writes: scope/portability flow through TraitWrite to sim
     {
       op: "add", kind: "want", text: "role-based approvals",
       quote: "we need managers to sign off", speaker: "Dana",
-      area: "permissions", issueType: "flow", severity: "medium",
+      area: "permissions", issueType: "flow", priority: "medium",
       scope: "workflow", portability: "portable",
     },
   ]
@@ -165,7 +165,7 @@ test("ensureTraitsSeeded: legacy insights' scope/portability seed onto trait row
     name: "Seed Sim", role: "user", type: "client",
     initials: "SS", accent: "#222222", summary: "seed",
     insights: [
-      { kind: "pain", text: "slow dashboard", quote: "it takes forever", scope: "ui", portability: "site-specific", issueType: "performance", severity: "high" },
+      { kind: "pain", text: "slow dashboard", quote: "it takes forever", scope: "ui", portability: "site-specific", issueType: "performance", priority: "high" },
       { kind: "want", text: "SSO login", quote: "we use Okta", scope: "feature", portability: "portable" },
     ],
     avatar: null,

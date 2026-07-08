@@ -64,7 +64,7 @@ await exec(`CREATE TABLE IF NOT EXISTS personas (id TEXT PRIMARY KEY, project_id
 await exec(`CREATE TABLE IF NOT EXISTS expectations (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, dedup_key TEXT NOT NULL, title TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'candidate', source_json TEXT NOT NULL DEFAULT '{}', corroboration_json TEXT NOT NULL DEFAULT '{}', url_path TEXT, issue_type TEXT, cited_trait_ids_json TEXT, enforced_trail_id TEXT, enforced_step_id TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, UNIQUE(project_id, dedup_key))`)
 await exec(`CREATE TABLE IF NOT EXISTS feedback (
   id TEXT PRIMARY KEY, project_id TEXT NOT NULL, sim_id TEXT, actor_email TEXT, url_host TEXT, url_path TEXT,
-  observation TEXT, sentiment TEXT, severity TEXT, screenshot_id TEXT, suggested_bug_json TEXT,
+  observation TEXT, sentiment TEXT, severity TEXT, priority TEXT, screenshot_id TEXT, suggested_bug_json TEXT,
   cited_trait_ids_json TEXT, source_quote TEXT, source_transcript_id TEXT, source_date INTEGER,
   plane_issue_key TEXT, plane_issue_url TEXT, status TEXT NOT NULL DEFAULT 'open', assignee TEXT, notes TEXT,
   issue_key TEXT, recurrence_count INTEGER NOT NULL DEFAULT 1, recurrence_dates_json TEXT,
@@ -85,7 +85,7 @@ await exec(`INSERT INTO project_members VALUES (?, ?, ?, ?, ?, ?)`,
 
 // Ticket that regressed: resolved at RESOLVED_AT, then resurfaced at RESURFACED
 await exec(`INSERT INTO feedback
-  (id, project_id, observation, severity, status, issue_key,
+  (id, project_id, observation, priority, status, issue_key,
    recurrence_count, recurrence_dates_json, last_seen_at, resolved_at, created_at)
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
   FB_REGRESSED, PROJ, "Payment button breaks on submit", "high", "done", ISSUE_KEY,
@@ -94,7 +94,7 @@ await exec(`INSERT INTO feedback
 
 // Fresh single-occurrence ticket — no regression, no recurrence
 await exec(`INSERT INTO feedback
-  (id, project_id, observation, severity, status,
+  (id, project_id, observation, priority, status,
    recurrence_count, recurrence_dates_json, last_seen_at, created_at)
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
   FB_FRESH, PROJ, "Tooltip overlaps button on mobile", "low", "open",

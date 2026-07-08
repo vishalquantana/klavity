@@ -27,7 +27,7 @@ await rawExec(`CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, name TE
 await rawExec(`CREATE TABLE IF NOT EXISTS account_members (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, email TEXT NOT NULL, account_role TEXT NOT NULL DEFAULT 'member', created_at INTEGER NOT NULL, UNIQUE(account_id, email))`)
 await rawExec(`CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, name TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', review_mode TEXT NOT NULL DEFAULT 'auto', review_budget_daily INTEGER, observability_mode TEXT NOT NULL DEFAULT 'named', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
 await rawExec(`CREATE TABLE IF NOT EXISTS project_members (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, email TEXT NOT NULL, project_role TEXT NOT NULL DEFAULT 'member', invited_by TEXT, created_at INTEGER NOT NULL, UNIQUE(project_id, email))`)
-await rawExec(`CREATE TABLE IF NOT EXISTS feedback (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, sim_id TEXT, actor_email TEXT, url_host TEXT, url_path TEXT, observation TEXT, sentiment TEXT, severity TEXT, screenshot_id TEXT, suggested_bug_json TEXT, cited_trait_ids_json TEXT, source_quote TEXT, source_transcript_id TEXT, source_date INTEGER, plane_issue_key TEXT, plane_issue_url TEXT, status TEXT NOT NULL DEFAULT 'open', assignee TEXT, notes TEXT, updated_at INTEGER, created_at INTEGER NOT NULL)`)
+await rawExec(`CREATE TABLE IF NOT EXISTS feedback (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, sim_id TEXT, actor_email TEXT, url_host TEXT, url_path TEXT, observation TEXT, sentiment TEXT, severity TEXT, priority TEXT, screenshot_id TEXT, suggested_bug_json TEXT, cited_trait_ids_json TEXT, source_quote TEXT, source_transcript_id TEXT, source_date INTEGER, plane_issue_key TEXT, plane_issue_url TEXT, status TEXT NOT NULL DEFAULT 'open', assignee TEXT, notes TEXT, updated_at INTEGER, created_at INTEGER NOT NULL)`)
 await rawExec(`CREATE TABLE IF NOT EXISTS connectors (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, type TEXT NOT NULL, name TEXT NOT NULL, config TEXT NOT NULL DEFAULT '{}', auto_copy INTEGER NOT NULL DEFAULT 0, enabled INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL, created_by TEXT)`)
 await rawExec(`CREATE TABLE IF NOT EXISTS ticket_exports (id TEXT PRIMARY KEY, feedback_id TEXT NOT NULL, project_id TEXT NOT NULL, connector_id TEXT NOT NULL, type TEXT NOT NULL, external_key TEXT, external_url TEXT, status TEXT NOT NULL, error TEXT, created_at INTEGER NOT NULL, created_by TEXT)`)
 await rawExec(`CREATE TABLE IF NOT EXISTS personas (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL, role TEXT, type TEXT NOT NULL DEFAULT 'client', initials TEXT, accent TEXT, summary TEXT, insights_json TEXT, avatar TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
@@ -52,10 +52,10 @@ const GH_FID = `fb_gh_${ts}`
 const PLANE_FID = `fb_plane_${ts}`
 const JIRA_FID = `fb_jira_${ts}`
 const LINEAR_FID = `fb_linear_${ts}`
-await rawExec(`INSERT INTO feedback (id, project_id, observation, severity, status, created_at) VALUES (?, ?, ?, ?, ?, ?)`, [GH_FID, PROJECT_ID, "GH-linked bug", "high", "open", NOW])
-await rawExec(`INSERT INTO feedback (id, project_id, observation, severity, status, created_at) VALUES (?, ?, ?, ?, ?, ?)`, [PLANE_FID, PROJECT_ID, "Plane-linked bug", "high", "open", NOW])
-await rawExec(`INSERT INTO feedback (id, project_id, observation, severity, status, created_at) VALUES (?, ?, ?, ?, ?, ?)`, [JIRA_FID, PROJECT_ID, "Jira-linked bug", "high", "open", NOW])
-await rawExec(`INSERT INTO feedback (id, project_id, observation, severity, status, created_at) VALUES (?, ?, ?, ?, ?, ?)`, [LINEAR_FID, PROJECT_ID, "Linear-linked bug", "high", "open", NOW])
+await rawExec(`INSERT INTO feedback (id, project_id, observation, priority, status, created_at) VALUES (?, ?, ?, ?, ?, ?)`, [GH_FID, PROJECT_ID, "GH-linked bug", "high", "open", NOW])
+await rawExec(`INSERT INTO feedback (id, project_id, observation, priority, status, created_at) VALUES (?, ?, ?, ?, ?, ?)`, [PLANE_FID, PROJECT_ID, "Plane-linked bug", "high", "open", NOW])
+await rawExec(`INSERT INTO feedback (id, project_id, observation, priority, status, created_at) VALUES (?, ?, ?, ?, ?, ?)`, [JIRA_FID, PROJECT_ID, "Jira-linked bug", "high", "open", NOW])
+await rawExec(`INSERT INTO feedback (id, project_id, observation, priority, status, created_at) VALUES (?, ?, ?, ?, ?, ?)`, [LINEAR_FID, PROJECT_ID, "Linear-linked bug", "high", "open", NOW])
 
 const GH_SECRET = "gh-webhook-secret-xyz"
 const PLANE_SECRET = "plane-webhook-secret-abc"

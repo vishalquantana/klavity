@@ -50,7 +50,7 @@ await rawExec(`INSERT INTO sessions (id, email, created_at, expires_at) VALUES (
 
 // Seed runs
 await rawExec(`INSERT INTO sim_runs (id, project_id, url, status, sim_ids_json, reactions_json, actor_email, created_at) VALUES (?,?,?,?,?,?,?,?)`,
-  [RUN_ID_1, PROJECT_ID, "http://example.com/login", "done", JSON.stringify(["sim1"]), JSON.stringify([{ simId: "sim1", simName: "Hat 1", observations: [{ text: "Observation 1", sentiment: "frustrated", suggestedBug: { title: "Bug 1", severity: "high" } }] }]), ADMIN_EMAIL, NOW - 2000])
+  [RUN_ID_1, PROJECT_ID, "http://example.com/login", "done", JSON.stringify(["sim1"]), JSON.stringify([{ simId: "sim1", simName: "Hat 1", observations: [{ text: "Observation 1", sentiment: "frustrated", suggestedBug: { title: "Bug 1", priority: "high" } }] }]), ADMIN_EMAIL, NOW - 2000])
 await rawExec(`INSERT INTO sim_runs (id, project_id, url, status, sim_ids_json, error_msg, actor_email, created_at) VALUES (?,?,?,?,?,?,?,?)`,
   [RUN_ID_2, PROJECT_ID, "http://example.com/checkout", "error", JSON.stringify(["sim1"]), "Vision model crashed", ADMIN_EMAIL, NOW - 1000])
 
@@ -117,5 +117,5 @@ test("GET /api/sims/runs/:runId returns a single run", async () => {
   expect(body.run.id).toBe(RUN_ID_1)
   expect(body.run.url).toBe("http://example.com/login")
   expect(body.run.reactions[0].observations[0].text).toBe("Observation 1")
-  expect(body.run.reactions[0].observations[0].suggestedBug.severity).toBe("high")
+  expect(body.run.reactions[0].observations[0].suggestedBug.priority).toBe("high")
 })

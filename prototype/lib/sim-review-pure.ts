@@ -63,7 +63,7 @@ export function parseRegion(raw: any): ObsRegion | null {
 export interface SimObservation {
   observation: string           // the observation text (matches client renderFeedback contract)
   sentiment: string | null      // positive | negative | neutral (or model values: frustrated etc.)
-  severity: string | null       // "high"|"medium"|"low" from bug candidate; null = no bug
+  priority: string | null       // "urgent"|"high"|"medium"|"low" from bug candidate; null = no bug
   quote: string | null          // verbatim source quote from a trait, if cited
   hash: string                  // sha256 slice-16 dedup token — stable within a session
   region: ObsRegion | null      // normalised 0..1 bbox of the targeted element; null = page-level

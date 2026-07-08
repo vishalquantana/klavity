@@ -663,6 +663,15 @@ export async function applySchema(c: Client) {
   // to re-derive it. NULL on legacy rows → callers fall back to severityForKind(kind).
   if (needCol("findings", "severity")) await c.execute("ALTER TABLE findings ADD COLUMN severity TEXT")
     .catch((e: any) => console.warn("findings.severity ALTER skipped:", e?.message || e))
+  // KLA-168: rename severity → priority. Add priority column + backfill from severity.
+  if (needCol("feedback", "priority")) await c.execute("ALTER TABLE feedback ADD COLUMN priority TEXT").catch((e: any) => console.warn("feedback.priority ALTER skipped:", e?.message || e))
+  await c.execute("UPDATE feedback SET priority = severity WHERE priority IS NULL").catch((e: any) => console.warn("feedback.priority backfill skipped:", e?.message || e))
+  if (needCol("sim_traits", "priority")) await c.execute("ALTER TABLE sim_traits ADD COLUMN priority TEXT").catch((e: any) => console.warn("sim_traits.priority ALTER skipped:", e?.message || e))
+  await c.execute("UPDATE sim_traits SET priority = severity WHERE priority IS NULL").catch((e: any) => console.warn("sim_traits.priority backfill skipped:", e?.message || e))
+  if (needCol("trait_events", "priority")) await c.execute("ALTER TABLE trait_events ADD COLUMN priority TEXT").catch((e: any) => console.warn("trait_events.priority ALTER skipped:", e?.message || e))
+  await c.execute("UPDATE trait_events SET priority = severity WHERE priority IS NULL").catch((e: any) => console.warn("trait_events.priority backfill skipped:", e?.message || e))
+  if (needCol("findings", "priority")) await c.execute("ALTER TABLE findings ADD COLUMN priority TEXT").catch((e: any) => console.warn("findings.priority ALTER skipped:", e?.message || e))
+  await c.execute("UPDATE findings SET priority = CASE severity WHEN 'critical' THEN 'urgent' ELSE severity END WHERE priority IS NULL").catch((e: any) => console.warn("findings.priority backfill skipped:", e?.message || e))
 }
 
 // ── schema_meta helpers ──
@@ -814,7 +823,7 @@ export async function backfillTriageV1(c: Client) {
   if (await metaGet(c, "triage_backfill_v1")) return
   await c.execute({
     sql: `UPDATE feedback SET status='new'
-          WHERE status='open' AND COALESCE(severity,'') != 'high' AND recurrence_count < 3`,
+          WHERE status='open' AND COALESCE(priority, severity, '') NOT IN ('high', 'urgent') AND recurrence_count < 3`,
   })
   await metaSet(c, "triage_backfill_v1", String(Date.now()))
 }
@@ -1375,7 +1384,7 @@ export async function screenshotById(id: string): Promise<ScreenshotRow | null> 
 export type FeedbackInsert = {
   projectId: string; simId?: string | null; actorEmail?: string | null
   urlHost?: string | null; urlPath?: string | null; sourceReferrer?: string | null
-  observation?: string | null; sentiment?: string | null; severity?: string | null
+  observation?: string | null; sentiment?: string | null; priority?: string | null
   screenshotId?: string | null; suggestedBug?: any; citedTraitIds?: any
   sourceQuote?: string | null; sourceTranscriptId?: string | null; sourceDate?: number | null
   planeIssueKey?: string | null; planeIssueUrl?: string | null
@@ -1384,24 +1393,24 @@ export type FeedbackInsert = {
   annotations?: any    // structured markup: { w, h, shapes:Shape[], region?, selector? } — re-rendered as the ticket overlay
 }
 
-// Triage gate: new feedback is "new" (needs triage) unless it's a high-severity
+// Triage gate: new feedback is "new" (needs triage) unless it's a high-priority
 // signal, which is auto-accepted straight to an open bug. Recurrence ≥3 promotes
 // a still-"new" item later (see bumpFeedbackRecurrence).
-export function initialFeedbackStatus(severity: string | null | undefined): "new" | "open" {
-  return severity === "high" ? "open" : "new"
+export function initialFeedbackStatus(priority: string | null | undefined): "new" | "open" {
+  return (priority === "urgent" || priority === "high") ? "open" : "new"
 }
 
 export async function insertFeedback(f: FeedbackInsert): Promise<string> {
   const id = "fb_" + crypto.randomUUID()
   const now = Date.now()
-  const status = initialFeedbackStatus(f.severity)
+  const status = initialFeedbackStatus(f.priority)
   await db!.execute({
-    sql: `INSERT INTO feedback (id,project_id,sim_id,actor_email,url_host,url_path,source_referrer,observation,sentiment,severity,
+    sql: `INSERT INTO feedback (id,project_id,sim_id,actor_email,url_host,url_path,source_referrer,observation,sentiment,priority,
           screenshot_id,suggested_bug_json,cited_trait_ids_json,source_quote,source_transcript_id,source_date,
           plane_issue_key,plane_issue_url,issue_key,recurrence_count,recurrence_dates_json,last_seen_at,client_context_json,annotations_json,created_at,status)
           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [id, f.projectId, f.simId ?? null, f.actorEmail ?? null, f.urlHost ?? null, f.urlPath ?? null, f.sourceReferrer ?? null,
-           f.observation ?? null, f.sentiment ?? null, f.severity ?? null, f.screenshotId ?? null,
+           f.observation ?? null, f.sentiment ?? null, f.priority ?? null, f.screenshotId ?? null,
            f.suggestedBug != null ? JSON.stringify(f.suggestedBug) : null,
            f.citedTraitIds != null ? JSON.stringify(f.citedTraitIds) : null,
            f.sourceQuote ?? null, f.sourceTranscriptId ?? null, f.sourceDate ?? null,
@@ -1475,7 +1484,7 @@ export async function listActivity(projectId: string, opts: { actorEmail?: strin
 export type FeedbackRow = {
   id: string; projectId: string; simId: string | null; actorEmail: string | null
   urlHost: string | null; urlPath: string | null; sourceReferrer: string | null; observation: string | null
-  sentiment: string | null; severity: string | null; screenshotId: string | null
+  sentiment: string | null; priority: string | null; screenshotId: string | null
   suggestedBug: any | null; sourceQuote: string | null; citedTraitIds: any | null; sourceDate: number | null
   planeIssueKey: string | null; planeIssueUrl: string | null; annotations: any | null; createdAt: number
 }
@@ -1490,7 +1499,7 @@ function rowToFeedback(x: any): FeedbackRow {
     sourceReferrer: x.source_referrer != null ? String(x.source_referrer) : null,
     observation: x.observation != null ? String(x.observation) : null,
     sentiment: x.sentiment != null ? String(x.sentiment) : null,
-    severity: x.severity != null ? String(x.severity) : null,
+    priority: (x.priority ?? x.severity) != null ? String(x.priority ?? x.severity) : null,
     screenshotId: x.screenshot_id != null ? String(x.screenshot_id) : null,
     suggestedBug: safeJsonParse(x.suggested_bug_json),
     sourceQuote: x.source_quote != null ? String(x.source_quote) : null,
@@ -1532,13 +1541,13 @@ export function triageOutcome(status: string | null | undefined): SimTriageOutco
 
 export type SimFeedbackRow = {
   id: string; title: string; observation: string | null; sentiment: string | null
-  severity: string | null; urlPath: string | null; sourceQuote: string | null
+  priority: string | null; urlPath: string | null; sourceQuote: string | null
   status: string; outcome: SimTriageOutcome; createdAt: number
 }
 // All feedback a given Sim has filed, newest-first (uses fb_sim_idx), each tagged with its triage outcome.
 export async function listFeedbackForSim(projectId: string, simId: string): Promise<SimFeedbackRow[]> {
   const r = await db!.execute({
-    sql: `SELECT id, observation, sentiment, severity, url_path, suggested_bug_json, source_quote, status, created_at
+    sql: `SELECT id, observation, sentiment, COALESCE(priority, severity) AS priority, url_path, suggested_bug_json, source_quote, status, created_at
           FROM feedback WHERE project_id=? AND sim_id=? ORDER BY created_at DESC LIMIT 200`,
     args: [projectId, simId],
   })
@@ -1550,7 +1559,7 @@ export async function listFeedbackForSim(projectId: string, simId: string): Prom
       id: String(x.id), title,
       observation: x.observation != null ? String(x.observation) : null,
       sentiment: x.sentiment != null ? String(x.sentiment) : null,
-      severity: x.severity != null ? String(x.severity) : null,
+      priority: x.priority != null ? String(x.priority) : null,
       urlPath: x.url_path != null ? String(x.url_path) : null,
       sourceQuote: x.source_quote != null ? String(x.source_quote) : null,
       status: String(x.status || "new"),
@@ -1858,7 +1867,7 @@ function rowToTrait(x: any): Trait {
     createdAt: Number(x.created_at), updatedAt: Number(x.updated_at),
     area: x.area != null ? String(x.area) : null,
     issueType: x.issue_type != null ? String(x.issue_type) : null,
-    severity: x.severity != null ? String(x.severity) : null,
+    priority: (x.priority ?? x.severity) != null ? String(x.priority ?? x.severity) : null,
     scope: x.scope != null ? String(x.scope) : null,
     portability: x.portability != null ? String(x.portability) : null,
   }
@@ -1866,13 +1875,13 @@ function rowToTrait(x: any): Trait {
 // Insert a brand-new trait. Accepts a fully-formed Trait (e.g. a TraitWrite{mode:'insert'}.trait).
 export async function insertTrait(t: Trait): Promise<string> {
   await db!.execute({
-    sql: `INSERT INTO sim_traits (id,sim_id,project_id,kind,text,status,strength,src_transcript_id,src_quote,src_quote_offset,src_verified,src_speaker,area,issue_type,severity,scope,portability,created_at,updated_at)
+    sql: `INSERT INTO sim_traits (id,sim_id,project_id,kind,text,status,strength,src_transcript_id,src_quote,src_quote_offset,src_verified,src_speaker,area,issue_type,priority,scope,portability,created_at,updated_at)
           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [t.id, t.simId, t.projectId, t.kind, t.text, t.status, t.strength,
            t.srcTranscriptId, t.srcQuote, t.srcQuoteOffset ?? null,
            t.srcVerified == null ? null : (t.srcVerified ? 1 : 0),
            t.srcSpeaker ?? null,
-           t.area ?? null, t.issueType ?? null, t.severity ?? null,
+           t.area ?? null, t.issueType ?? null, t.priority ?? null,
            t.scope ?? null, t.portability ?? null, t.createdAt, t.updatedAt],
   })
   return t.id
@@ -1880,11 +1889,11 @@ export async function insertTrait(t: Trait): Promise<string> {
 // Update a trait's mutable columns (text/status/strength/provenance/updatedAt + typed fields) — used by reconcile writes.
 export async function updateTrait(t: Trait): Promise<void> {
   await db!.execute({
-    sql: `UPDATE sim_traits SET kind=?,text=?,status=?,strength=?,src_transcript_id=?,src_quote=?,src_quote_offset=?,src_verified=?,src_speaker=?,area=?,issue_type=?,severity=?,scope=?,portability=?,updated_at=? WHERE id=?`,
+    sql: `UPDATE sim_traits SET kind=?,text=?,status=?,strength=?,src_transcript_id=?,src_quote=?,src_quote_offset=?,src_verified=?,src_speaker=?,area=?,issue_type=?,priority=?,scope=?,portability=?,updated_at=? WHERE id=?`,
     args: [t.kind, t.text, t.status, t.strength, t.srcTranscriptId, t.srcQuote,
            t.srcQuoteOffset ?? null, t.srcVerified == null ? null : (t.srcVerified ? 1 : 0),
            t.srcSpeaker ?? null,
-           t.area ?? null, t.issueType ?? null, t.severity ?? null,
+           t.area ?? null, t.issueType ?? null, t.priority ?? null,
            t.scope ?? null, t.portability ?? null, t.updatedAt, t.id],
   })
 }
@@ -1904,12 +1913,12 @@ export async function listTraits(simId: string, opts: { activeOnly?: boolean; pr
 export async function insertTraitEvent(e: TraitEventRow): Promise<string> {
   const id = "tev_" + crypto.randomUUID()
   await db!.execute({
-    sql: `INSERT INTO trait_events (id,trait_id,sim_id,transcript_id,op,before_text,after_text,quote,quote_offset,verified,speaker,source_date,reason,area,issue_type,severity,actor,created_at)
+    sql: `INSERT INTO trait_events (id,trait_id,sim_id,transcript_id,op,before_text,after_text,quote,quote_offset,verified,speaker,source_date,reason,area,issue_type,priority,actor,created_at)
           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [id, e.traitId, e.simId, e.transcriptId, e.op, e.beforeText ?? null, e.afterText ?? null,
            e.quote, e.quoteOffset ?? null, e.verified == null ? null : (e.verified ? 1 : 0),
            e.speaker ?? null, e.sourceDate, e.reason ?? null,
-           e.area ?? null, e.issueType ?? null, e.severity ?? null, e.actor ?? null, e.createdAt],
+           e.area ?? null, e.issueType ?? null, e.priority ?? null, e.actor ?? null, e.createdAt],
   })
   return id
 }
@@ -1931,7 +1940,7 @@ export async function logTraitEdit(args: {
     traitId: trait.id, simId: trait.simId, transcriptId: trait.srcTranscriptId,
     op, beforeText, afterText: trait.text, quote: trait.srcQuote, quoteOffset: trait.srcQuoteOffset ?? null,
     speaker: trait.srcSpeaker ?? null, sourceDate: now, reason: "manual:" + op, actor,
-    area: trait.area ?? null, issueType: trait.issueType ?? null, severity: trait.severity ?? null,
+    area: trait.area ?? null, issueType: trait.issueType ?? null, priority: trait.priority ?? null,
     createdAt: now,
   })
 }
@@ -1967,7 +1976,7 @@ function rowToTraitEvent(x: any): TraitEventRow {
     createdAt: Number(x.created_at),
     area: x.area != null ? String(x.area) : null,
     issueType: x.issue_type != null ? String(x.issue_type) : null,
-    severity: x.severity != null ? String(x.severity) : null,
+    priority: (x.priority ?? x.severity) != null ? String(x.priority ?? x.severity) : null,
     actor: x.actor != null ? String(x.actor) : null,
   }
 }
@@ -1996,13 +2005,13 @@ export type RecentlyResolvedTrait = {
   text: string
   area: string | null
   issueType: string | null
-  severity: string | null
+  priority: string | null
   status: string
   updatedAt: number
 }
 export async function getRecentlyResolvedTraits(simId: string, limit = 20): Promise<RecentlyResolvedTrait[]> {
   const r = await db!.execute({
-    sql: `SELECT id, kind, text, area, issue_type, severity, status, updated_at
+    sql: `SELECT id, kind, text, area, issue_type, COALESCE(priority, severity) AS priority, status, updated_at
           FROM sim_traits WHERE sim_id=? AND status IN ('contradicted','superseded')
           ORDER BY updated_at DESC LIMIT ?`,
     args: [simId, limit],
@@ -2013,7 +2022,7 @@ export async function getRecentlyResolvedTraits(simId: string, limit = 20): Prom
     text: String(x.text),
     area: x.area != null ? String(x.area) : null,
     issueType: x.issue_type != null ? String(x.issue_type) : null,
-    severity: x.severity != null ? String(x.severity) : null,
+    priority: x.priority != null ? String(x.priority) : null,
     status: String(x.status),
     updatedAt: Number(x.updated_at),
   }))
@@ -2077,7 +2086,7 @@ export async function ensureTraitsSeeded(simId: string): Promise<number> {
       // Carry v3 finding-altitude/durability from the cached insight onto the seeded trait row.
       area: ins?.area != null ? String(ins.area) : null,
       issueType: ins?.issueType != null ? String(ins.issueType) : null,
-      severity: ins?.severity != null ? String(ins.severity) : null,
+      priority: (ins?.priority ?? ins?.severity) != null ? String(ins?.priority ?? ins?.severity) : null,
       scope: ins?.scope != null ? String(ins.scope) : null,
       portability: ins?.portability != null ? String(ins.portability) : null,
     }
@@ -2482,7 +2491,7 @@ export async function listAutoCopyConnectors(projectId: string): Promise<Connect
 export async function updateFeedbackMeta(
   projectId: string,
   feedbackId: string,
-  meta: Partial<{ status: string; assignee: string | null; notes: string | null; severity: string | null }>
+  meta: Partial<{ status: string; assignee: string | null; notes: string | null; priority: string | null }>
 ): Promise<boolean> {
   const now = Date.now()
   const sets: string[] = ["updated_at=?"]
@@ -2493,7 +2502,7 @@ export async function updateFeedbackMeta(
   }
   if ("assignee" in meta) { sets.push("assignee=?"); args.push(meta.assignee ?? null) }
   if ("notes" in meta) { sets.push("notes=?"); args.push(meta.notes ?? null) }
-  if ("severity" in meta) { sets.push("severity=?"); args.push(meta.severity ?? null) }
+  if ("priority" in meta) { sets.push("priority=?"); args.push(meta.priority ?? null) }
   args.push(projectId, feedbackId)
   const r = await db!.execute({
     sql: `UPDATE feedback SET ${sets.join(",")} WHERE project_id=? AND id=?`,
@@ -2522,7 +2531,7 @@ export async function feedbackById(projectId: string, id: string): Promise<any |
     pageUrl: x.url_path != null ? String(x.url_path) : null,
     observation: x.observation != null ? String(x.observation) : null,
     sentiment: x.sentiment != null ? String(x.sentiment) : null,
-    severity: x.severity != null ? String(x.severity) : null,
+    priority: (x.priority ?? x.severity) != null ? String(x.priority ?? x.severity) : null,
     screenshotId: x.screenshot_id != null ? String(x.screenshot_id) : null,
     planeIssueKey: x.plane_issue_key != null ? String(x.plane_issue_key) : null,
     planeIssueUrl: x.plane_issue_url != null ? String(x.plane_issue_url) : null,

@@ -4,7 +4,7 @@ import { getConnector, listConnectorTypes } from "./index"
 const TICKET = {
   title: "Bug",
   body: "desc",
-  severity: "high",
+  priority: "high",
   url: "https://app/x",
   simName: "Vamshi",
   createdAt: 1,

@@ -31,7 +31,7 @@ beforeAll(async () => {
 
 // Helper: seed a feedback row for a given project, returns the feedback id.
 async function seedFeedback(projectId: string): Promise<string> {
-  return await insertFeedback({ projectId, observation: "test observation", severity: "low" })
+  return await insertFeedback({ projectId, observation: "test observation", priority: "low" })
 }
 
 // Clean up and re-apply schema before each test to isolate state.

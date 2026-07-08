@@ -120,10 +120,10 @@ const EXTRACT_SYS =
   "- portability: \"portable\" = a durable persona trait/need that would also apply on other products. " +
   "\"site-specific\" = a finding about THIS product.\n" +
   "- For ui scope, name the CONCRETE artifact in the text field. For feature/workflow/strategy, name the capability, flow, or role affected; " +
-  "issueType and severity may be null.\n" +
+  "issueType and priority may be null.\n" +
   "- area: short descriptor of the UI/domain area (e.g. \"checkout-flow\", \"cost-forecasting\", \"onboarding\").\n" +
   "- issueType: EXACTLY ONE of label-copy | layout | performance | flow | error-handling | accessibility | visual, or null if it genuinely does not fit.\n" +
-  "- severity: high | medium | low based on the speaker's expressed impact, or null if unclear.\n" +
+  "- priority: urgent | high | medium | low based on the speaker's expressed impact, or null if unclear.\n" +
   "Capture the OVERALL INTENT behind what people say, even when it spans several turns or is implied - synthesize the product implication, not only the literal words.\n\n" +
   "TONE - sarcasm, irony, and negation: speakers are frequently sarcastic (e.g. \"oh it's REAL intuitive\" meaning the OPPOSITE) " +
   "or use negation (\"it's not that X is slow, it's that Y returns nothing\"). " +
@@ -136,7 +136,7 @@ const EXTRACT_SYS =
   '"core":{"goals":string[],"expertise":string,"temperament":string,"voice":string,"watchFor":string[]},' +
   '"insights":[{"kind":"pain"|"want"|"love","scope":"ui"|"feature"|"workflow"|"strategy","portability":"portable"|"site-specific",' +
   '"text":string,"quote":string,"area":string|null,' +
-  '"issueType":"label-copy"|"layout"|"performance"|"flow"|"error-handling"|"accessibility"|"visual"|null,"severity":"high"|"medium"|"low"|null}]}]}'
+  '"issueType":"label-copy"|"layout"|"performance"|"flow"|"error-handling"|"accessibility"|"visual"|null,"priority":"urgent"|"high"|"medium"|"low"|null}]}]}'
 
 const REACT_SYS =
   "You ARE the given user persona, reviewing a screenshot of a product page as if really using it. " +
@@ -169,7 +169,7 @@ const REACT_SYS =
   '{"reactions":[{"observation":string(<=240 chars, first person),"sentiment":"frustrated"|"confused"|"satisfied"|"delighted"|"neutral",' +
   '"emoji":string,"targetDescription":string,"region":{"x":number,"y":number,"w":number,"h":number}|null,' +
   '"citedTraitIds":string[],' +
-  '"suggestedBug":{"title":string,"body":string,"severity":"high"|"medium"|"low"}|null}]}'
+  '"suggestedBug":{"title":string,"body":string,"priority":"urgent"|"high"|"medium"|"low"}|null}]}'
 
 // RECONCILE: given a Sim's CURRENT traits (each with a stable traitId) + a new transcript, emit the
 // minimal structured op list that evolves the Sim. One LLM call per matched Sim per transcript (§5
@@ -192,7 +192,7 @@ const RECONCILE_SYS =
   "  clearly describes the same issue that was previously resolved.\n\n" +
   "For every op, also set: area (short UI/domain area descriptor), " +
   "issueType (EXACTLY ONE of: label-copy|layout|performance|flow|error-handling|accessibility|visual, or null), " +
-  "severity (high|medium|low based on expressed impact, or null), " +
+  "priority (urgent|high|medium|low based on expressed impact, or null), " +
   "scope (EXACTLY ONE of: ui|feature|workflow|strategy — ui = a granular defect on a specific artifact; " +
   "feature = a missing/requested capability; workflow = a change to a multi-step process, role, or permission; " +
   "strategy = a higher-level product direction), and " +
@@ -203,7 +203,7 @@ const RECONCILE_SYS =
   "Respond with ONLY a JSON object, no prose, in exactly this shape:\n" +
   '{"ops":[{"op":"add"|"reinforce"|"refine"|"contradict"|"supersede"|"reopen","kind":"pain"|"want"|"love",' +
   '"text":string,"quote":string,"speaker":string,"traitId":string|null,"reason":string,' +
-  '"area":string|null,"issueType":"label-copy"|"layout"|"performance"|"flow"|"error-handling"|"accessibility"|"visual"|null,"severity":"high"|"medium"|"low"|null,' +
+  '"area":string|null,"issueType":"label-copy"|"layout"|"performance"|"flow"|"error-handling"|"accessibility"|"visual"|null,"priority":"urgent"|"high"|"medium"|"low"|null,' +
   '"scope":"ui"|"feature"|"workflow"|"strategy"|null,"portability":"portable"|"site-specific"|null}]}'
 
 const ASSERT_SYS =
@@ -318,7 +318,7 @@ function parseJSON(s: string) {
 }
 // Closed enum for issueType — same set used in EXTRACT_SYS and RECONCILE_SYS.
 const ISSUE_TYPE_ENUM = new Set(["label-copy", "layout", "performance", "flow", "error-handling", "accessibility", "visual"])
-const SEVERITY_ENUM = new Set(["high", "medium", "low"])
+const PRIORITY_ENUM = new Set(["urgent", "high", "medium", "low"])
 // v3 insight enums: scope classifies the altitude of a finding; portability marks durability across products.
 const SCOPE_ENUM = new Set(["ui", "feature", "workflow", "strategy"])
 const PORTABILITY_ENUM = new Set(["portable", "site-specific"])
@@ -326,13 +326,14 @@ const PORTABILITY_ENUM = new Set(["portable", "site-specific"])
 // Sanitize the typed fields on an extracted/reconciled insight or op.
 // Returns null for any field absent, not a string, or outside the closed enum.
 // scope and portability are new in v3 — both null-default so old rows/models degrade gracefully.
-function sanitizeTypedFields(o: any): { area: string | null; issueType: string | null; severity: string | null; scope: string | null; portability: string | null } {
+function sanitizeTypedFields(o: any): { area: string | null; issueType: string | null; priority: string | null; scope: string | null; portability: string | null } {
   const area = o.area != null && typeof o.area === "string" && o.area.trim() ? o.area.trim() : null
   const issueType = o.issueType != null && ISSUE_TYPE_ENUM.has(String(o.issueType)) ? String(o.issueType) : null
-  const severity = o.severity != null && SEVERITY_ENUM.has(String(o.severity)) ? String(o.severity) : null
+  const rawPri = o.priority ?? o.severity
+  const priority = rawPri != null && PRIORITY_ENUM.has(String(rawPri)) ? String(rawPri) : null
   const scope = o.scope != null && SCOPE_ENUM.has(String(o.scope)) ? String(o.scope) : null
   const portability = o.portability != null && PORTABILITY_ENUM.has(String(o.portability)) ? String(o.portability) : null
-  return { area, issueType, severity, scope, portability }
+  return { area, issueType, priority, scope, portability }
 }
 
 async function extractPersonas(transcript: string, ctx?: { email?: string | null; projectId?: string | null }) {
@@ -892,7 +893,7 @@ async function feedbackToTicketPayload(fb: any, project: { id: string; name?: st
   return {
     title,
     body,
-    severity: fb.severity ?? null,
+    priority: fb.priority ?? null,
     url: urlVal,
     simName,
     createdAt: fb.createdAt,
@@ -1787,7 +1788,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               const simId = rawSimId && (await listPersonas(projectId)).some((p) => p.id === rawSimId) ? rawSimId : null
               const observation = String(form.get("observation") || "") || description
               const sentiment = String(form.get("sentiment") || "") || null
-              const severity = String(form.get("severity") || "") || null
+              const priority = String(form.get("priority") || "") || null
               let suggestedBug: any = null
               const sbRaw = String(form.get("suggested_bug") || "")
               if (sbRaw) { try { suggestedBug = JSON.parse(sbRaw) } catch { /* keep null */ } }
@@ -1818,7 +1819,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               } else {
                 feedbackId = await insertFeedback({
                   projectId, simId, actorEmail: actor, urlHost, urlPath, sourceReferrer: sourceReferrer || null,
-                  observation, sentiment, severity, screenshotId, suggestedBug,
+                  observation, sentiment, priority, screenshotId, suggestedBug,
                   citedTraitIds: citation.citedTraitIds.length ? citation.citedTraitIds : null,
                   sourceQuote: citation.sourceQuote, sourceTranscriptId: citation.sourceTranscriptId, sourceDate: citation.sourceDate,
                   planeIssueKey: null, planeIssueUrl: null,
@@ -2547,7 +2548,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               actor: e.actor ?? null,
               area: e.area ?? null,
               issueType: e.issueType ?? null,
-              severity: e.severity ?? null,
+              priority: e.priority ?? null,
               // isRegression: true marks a post-resolution reopen/reinforce so the UI can highlight it.
               isRegression: regressionEventKeys.has(`${e.traitId}:${e.createdAt}`),
             }))
@@ -2579,7 +2580,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             srcQuote: String(body.srcQuote || ""), srcQuoteOffset: null,
             srcSpeaker: body.srcSpeaker ? String(body.srcSpeaker) : null,
             area: body.area ? String(body.area) : null, issueType: null,
-            severity: body.severity ? String(body.severity) : null,
+            priority: body.priority ? String(body.priority) : null,
             createdAt: now, updatedAt: now,
           }
           if (!trait.text) return json({ error: "text required" }, 400)
@@ -2615,7 +2616,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           ...current,
           text: body.text != null ? String(body.text).trim() : current.text,
           kind: ["pain", "want", "love"].includes(body.kind) ? body.kind : current.kind,
-          severity: body.severity != null ? String(body.severity) : current.severity,
+          priority: body.priority != null ? String(body.priority) : current.priority,
           area: body.area != null ? String(body.area) : current.area,
           updatedAt: now,
         }
@@ -3837,7 +3838,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             }
             return {
               id: f.id, simName: p?.name ?? null,
-              title: f.observation, severity: f.severity,
+              title: f.observation, priority: f.priority,
               urlPath: f.urlPath, urlHost: f.urlHost, sourceReferrer: f.sourceReferrer,
               planeIssueKey: f.planeIssueKey,
               planeIssueUrl: f.planeIssueUrl, createdAt: f.createdAt,
@@ -4003,7 +4004,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             title: fbRow.observation,
             observation: fbRow.observation,
             sentiment: fbRow.sentiment,
-            severity: fbRow.severity,
+            priority: fbRow.priority,
             status: fbRow.status,
             assignee: fbRow.assignee,
             notes: fbRow.notes,
@@ -4028,22 +4029,22 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           return json({ report })
         }
 
-        // PATCH /api/feedback/:id — any project member may edit status/assignee/notes/severity
+        // PATCH /api/feedback/:id — any project member may edit status/assignee/notes/priority
         if (req.method === "PATCH" && !isExport) {
           const body = await req.json().catch(() => ({}))
           const VALID_STATUS = ["new", "open", "in_progress", "done", "dismissed"]
           if (body.status !== undefined && !VALID_STATUS.includes(body.status)) {
             return json({ error: `status must be one of: ${VALID_STATUS.join(", ")}` }, 400)
           }
-          const VALID_SEV = ["high", "medium", "low"]
-          if (body.severity !== undefined && body.severity !== null && !VALID_SEV.includes(body.severity)) {
-            return json({ error: `severity must be one of: ${VALID_SEV.join(", ")}` }, 400)
+          const VALID_PRI = ["urgent", "high", "medium", "low"]
+          if (body.priority !== undefined && body.priority !== null && !VALID_PRI.includes(body.priority)) {
+            return json({ error: `priority must be one of: ${VALID_PRI.join(", ")}` }, 400)
           }
-          const meta: Partial<{ status: string; assignee: string | null; notes: string | null; severity: string | null }> = {}
+          const meta: Partial<{ status: string; assignee: string | null; notes: string | null; priority: string | null }> = {}
           if (body.status !== undefined) meta.status = body.status
           if (body.assignee !== undefined) meta.assignee = body.assignee ?? null
           if (body.notes !== undefined) meta.notes = body.notes ?? null
-          if (body.severity !== undefined) meta.severity = body.severity ?? null
+          if (body.priority !== undefined) meta.priority = body.priority ?? null
           const updated = await updateFeedbackMeta(fbRow.projectId, fid, meta)
           if (!updated) return json({ error: "Update failed." }, 500)
           return json({ ok: true })
@@ -4198,7 +4199,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const TEST_PAYLOAD: TicketPayload = {
             title: "✅ Klavity connection test",
             body: "This is a test ticket created by Klavity to verify this connector is configured correctly. It's safe to close or delete.",
-            severity: null,
+            priority: null,
             url: null,
             simName: "Klavity",
             createdAt: Date.now(),

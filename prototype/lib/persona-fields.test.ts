@@ -1,4 +1,4 @@
-// Task 3: DB row-mapper + SQL tests for area/issueType/severity fields,
+// Task 3: DB row-mapper + SQL tests for area/issueType/priority fields,
 // listTraitEvents({ traitId }) filter, and getRecentlyResolvedTraits.
 // Hermetic pattern: set TURSO_DATABASE_URL to a local file BEFORE importing ./db.
 import { test, expect, afterAll } from "bun:test"
@@ -57,7 +57,7 @@ function makeTrait(over: Record<string, any>) {
     updatedAt: NOW,
     area: null,
     issueType: null,
-    severity: null,
+    priority: null,
     ...over,
   }
 }
@@ -78,14 +78,14 @@ function makeEvent(traitId: string, over: Record<string, any> = {}) {
     createdAt: NOW,
     area: null,
     issueType: null,
-    severity: null,
+    priority: null,
     ...over,
   }
 }
 
 // -- test 1: insertTrait / listTraits round-trip with typed fields -------------
 
-test("insertTrait + listTraits: area/issueType/severity persisted and returned", async () => {
+test("insertTrait + listTraits: area/issueType/priority persisted and returned", async () => {
   const db = await loadDb()
 
   const id1 = T("t1")
@@ -97,7 +97,7 @@ test("insertTrait + listTraits: area/issueType/severity persisted and returned",
     text: "Label copy is confusing",
     area: "checkout-flow",
     issueType: "label-copy",
-    severity: "medium",
+    priority: "medium",
   })
   await db.insertTrait(t1)
 
@@ -112,17 +112,17 @@ test("insertTrait + listTraits: area/issueType/severity persisted and returned",
   expect(found1).toBeTruthy()
   expect(found1!.area).toBe("checkout-flow")
   expect(found1!.issueType).toBe("label-copy")
-  expect(found1!.severity).toBe("medium")
+  expect(found1!.priority).toBe("medium")
 
   expect(found2).toBeTruthy()
   expect(found2!.area).toBeNull()
   expect(found2!.issueType).toBeNull()
-  expect(found2!.severity).toBeNull()
+  expect(found2!.priority).toBeNull()
 })
 
 // -- test 2: updateTrait round-trip with typed fields -------------------------
 
-test("updateTrait: area/issueType/severity persisted and returned", async () => {
+test("updateTrait: area/issueType/priority persisted and returned", async () => {
   const db = await loadDb()
 
   const idUpd = T("upd")
@@ -134,7 +134,7 @@ test("updateTrait: area/issueType/severity persisted and returned", async () => 
     ...t,
     area: "settings-screen",
     issueType: "layout",
-    severity: "high",
+    priority: "high",
     updatedAt: NOW + 100,
   }
   await db.updateTrait(updated)
@@ -144,12 +144,12 @@ test("updateTrait: area/issueType/severity persisted and returned", async () => 
   expect(found).toBeTruthy()
   expect(found!.area).toBe("settings-screen")
   expect(found!.issueType).toBe("layout")
-  expect(found!.severity).toBe("high")
+  expect(found!.priority).toBe("high")
 })
 
 // -- test 3: insertTraitEvent + listTraitEvents round-trip with typed fields --
 
-test("insertTraitEvent + listTraitEvents: area/issueType/severity persisted and returned", async () => {
+test("insertTraitEvent + listTraitEvents: area/issueType/priority persisted and returned", async () => {
   const db = await loadDb()
 
   const idEvt1 = T("evt1")
@@ -159,7 +159,7 @@ test("insertTraitEvent + listTraitEvents: area/issueType/severity persisted and 
   const e1 = makeEvent(idEvt1, {
     area: "export-modal",
     issueType: "performance",
-    severity: "high",
+    priority: "high",
     createdAt: NOW + 10,
   })
   const e2 = makeEvent(idEvt1, {
@@ -178,13 +178,13 @@ test("insertTraitEvent + listTraitEvents: area/issueType/severity persisted and 
   expect(withFields).toBeTruthy()
   expect(withFields!.area).toBe("export-modal")
   expect(withFields!.issueType).toBe("performance")
-  expect(withFields!.severity).toBe("high")
+  expect(withFields!.priority).toBe("high")
 
   const noFields = forTrait.find((e) => e.op === "reinforce")
   expect(noFields).toBeTruthy()
   expect(noFields!.area).toBeNull()
   expect(noFields!.issueType).toBeNull()
-  expect(noFields!.severity).toBeNull()
+  expect(noFields!.priority).toBeNull()
 })
 
 // -- test 4: listTraitEvents({ traitId }) filter narrows correctly -------------

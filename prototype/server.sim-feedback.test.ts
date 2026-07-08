@@ -21,14 +21,14 @@ test("triageOutcome maps feedback status to confirmed / dismissed / pending", ()
 })
 
 test("listFeedbackForSim returns only this Sim's feedback, newest-first, with outcome + title", async () => {
-  const confirmedId = await insertFeedback({ projectId: P, simId: SIM, severity: "low", observation: "checkout button dead", suggestedBug: { title: "Checkout CTA does nothing" } })
+  const confirmedId = await insertFeedback({ projectId: P, simId: SIM, priority: "low", observation: "checkout button dead", suggestedBug: { title: "Checkout CTA does nothing" } })
   await updateFeedbackMeta(P, confirmedId, { status: "open" }) // triage accepted → confirmed
-  const dismissedId = await insertFeedback({ projectId: P, simId: SIM, severity: "low", observation: "colour too blue", suggestedBug: { title: "Brand colour off" } })
+  const dismissedId = await insertFeedback({ projectId: P, simId: SIM, priority: "low", observation: "colour too blue", suggestedBug: { title: "Brand colour off" } })
   await updateFeedbackMeta(P, dismissedId, { status: "dismissed" }) // triage rejected → dismissed
-  await insertFeedback({ projectId: P, simId: SIM, severity: "low", observation: "pending one", suggestedBug: { title: "Still in queue" } }) // new → pending
+  await insertFeedback({ projectId: P, simId: SIM, priority: "low", observation: "pending one", suggestedBug: { title: "Still in queue" } }) // new → pending
   // Noise that must NOT appear: another Sim, and an anonymous (no-sim) report.
-  await insertFeedback({ projectId: P, simId: OTHER, severity: "low", observation: "other sim" })
-  await insertFeedback({ projectId: P, simId: null, severity: "low", observation: "anonymous snap" })
+  await insertFeedback({ projectId: P, simId: OTHER, priority: "low", observation: "other sim" })
+  await insertFeedback({ projectId: P, simId: null, priority: "low", observation: "anonymous snap" })
 
   const rows = await listFeedbackForSim(P, SIM)
   expect(rows.length).toBe(3)
@@ -42,7 +42,7 @@ test("listFeedbackForSim returns only this Sim's feedback, newest-first, with ou
 })
 
 test("listFeedbackForSim falls back to the observation when there's no suggested-bug title", async () => {
-  const id = await insertFeedback({ projectId: P, simId: SIM, severity: "low", observation: "raw observation only, no LLM bug" })
+  const id = await insertFeedback({ projectId: P, simId: SIM, priority: "low", observation: "raw observation only, no LLM bug" })
   const rows = await listFeedbackForSim(P, SIM)
   const row = rows.find(r => r.id === id)!
   expect(row.title).toContain("raw observation only")

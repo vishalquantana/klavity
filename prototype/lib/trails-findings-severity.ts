@@ -6,17 +6,17 @@
 //   2. recurrence — ≥3 occurrences means the bug is systematic → bump up one level
 //   3. confidence — strong signal (≥0.9) → bump up; weak signal (<0.5) → bump down
 //
-// Level ordering: low < medium < high < critical
-// Caps: cannot go below "low" or above "critical".
+// Level ordering: low < medium < high < urgent
+// Caps: cannot go below "low" or above "urgent".
 //
 // Back-compat: callers that don't store severity yet can still call severityForKind()
 // (still exported from trails-findings-gate.ts) for ticket-time derivation.
 import type { FindingKind } from "./trails-types"
 
-export type FindingSeverity = "critical" | "high" | "medium" | "low"
+export type FindingSeverity = "urgent" | "high" | "medium" | "low"
 
-const LEVELS: FindingSeverity[] = ["low", "medium", "high", "critical"]
-const LEVEL_IDX: Record<FindingSeverity, number> = { low: 0, medium: 1, high: 2, critical: 3 }
+const LEVELS: FindingSeverity[] = ["low", "medium", "high", "urgent"]
+const LEVEL_IDX: Record<FindingSeverity, number> = { low: 0, medium: 1, high: 2, urgent: 3 }
 
 function clamp(idx: number): FindingSeverity {
   return LEVELS[Math.max(0, Math.min(LEVELS.length - 1, idx))]

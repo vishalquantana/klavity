@@ -29,20 +29,20 @@ await rawExec(`CREATE TABLE IF NOT EXISTS account_members (id TEXT PRIMARY KEY, 
 await rawExec(`CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, name TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', review_mode TEXT NOT NULL DEFAULT 'auto', review_budget_daily INTEGER, observability_mode TEXT NOT NULL DEFAULT 'named', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
 await rawExec(`CREATE TABLE IF NOT EXISTS project_members (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, email TEXT NOT NULL, project_role TEXT NOT NULL DEFAULT 'member', invited_by TEXT, created_at INTEGER NOT NULL, UNIQUE(project_id, email))`)
 await rawExec(`CREATE TABLE IF NOT EXISTS personas (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL, role TEXT, type TEXT NOT NULL DEFAULT 'client', initials TEXT, accent TEXT, summary TEXT, insights_json TEXT, avatar TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
-// sim_traits / trait_events — base + additive columns (area/issue_type/severity/actor) inline so inserts work.
+// sim_traits / trait_events — base + additive columns (area/issue_type/severity/priority/actor) inline so inserts work.
 await rawExec(`CREATE TABLE IF NOT EXISTS sim_traits (
    id TEXT PRIMARY KEY, sim_id TEXT NOT NULL, project_id TEXT NOT NULL,
    kind TEXT NOT NULL, text TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active',
    strength INTEGER NOT NULL DEFAULT 1,
    src_transcript_id TEXT NOT NULL, src_quote TEXT NOT NULL, src_quote_offset INTEGER,
-   src_speaker TEXT, area TEXT, issue_type TEXT, severity TEXT,
+   src_speaker TEXT, area TEXT, issue_type TEXT, severity TEXT, priority TEXT,
    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
 await rawExec(`CREATE INDEX IF NOT EXISTS trait_sim_idx ON sim_traits (sim_id, status)`)
 await rawExec(`CREATE TABLE IF NOT EXISTS trait_events (
    id TEXT PRIMARY KEY, trait_id TEXT NOT NULL, sim_id TEXT NOT NULL, transcript_id TEXT NOT NULL,
    op TEXT NOT NULL, before_text TEXT, after_text TEXT, quote TEXT NOT NULL, quote_offset INTEGER,
    speaker TEXT, source_date INTEGER NOT NULL, reason TEXT,
-   area TEXT, issue_type TEXT, severity TEXT, actor TEXT, created_at INTEGER NOT NULL)`)
+   area TEXT, issue_type TEXT, severity TEXT, priority TEXT, actor TEXT, created_at INTEGER NOT NULL)`)
 await rawExec(`CREATE INDEX IF NOT EXISTS trait_evt_idx ON trait_events (trait_id, created_at)`)
 await rawExec(`CREATE TABLE IF NOT EXISTS persona_edits (
    id TEXT PRIMARY KEY, persona_id TEXT NOT NULL, project_id TEXT NOT NULL,
@@ -398,7 +398,7 @@ test("A01: /api/feedback with a cross-tenant sim_id yields no victim citation", 
   form.set("project_id", PROJECT_ID)            // attacker's OWN project
   form.set("sim_id", "sim_victim")              // victim tenant's Sim id
   form.set("cited_trait_ids", JSON.stringify(["trait_victim"]))
-  form.set("suggested_bug", JSON.stringify({ title: "probe", body: "b", severity: "low" }))
+  form.set("suggested_bug", JSON.stringify({ title: "probe", body: "b", priority: "low" }))
   const res = await fetch(`${BASE}/api/feedback`, {
     method: "POST",
     headers: { cookie: "klav_session=" + SID },

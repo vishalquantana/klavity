@@ -54,7 +54,7 @@ async function seed() {
   await rawExec(`CREATE TABLE IF NOT EXISTS expectations (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, dedup_key TEXT NOT NULL, title TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'candidate', source_json TEXT NOT NULL DEFAULT '{}', corroboration_json TEXT NOT NULL DEFAULT '{}', url_path TEXT, issue_type TEXT, cited_trait_ids_json TEXT, enforced_trail_id TEXT, enforced_step_id TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, UNIQUE(project_id, dedup_key))`)
   await rawExec(`CREATE TABLE IF NOT EXISTS feedback (
     id TEXT PRIMARY KEY, project_id TEXT NOT NULL, sim_id TEXT, actor_email TEXT, url_host TEXT, url_path TEXT,
-    observation TEXT, sentiment TEXT, severity TEXT, screenshot_id TEXT, suggested_bug_json TEXT, cited_trait_ids_json TEXT,
+    observation TEXT, sentiment TEXT, severity TEXT, priority TEXT, screenshot_id TEXT, suggested_bug_json TEXT, cited_trait_ids_json TEXT,
     source_quote TEXT, source_transcript_id TEXT, source_date INTEGER, plane_issue_key TEXT, plane_issue_url TEXT,
     status TEXT NOT NULL DEFAULT 'open', assignee TEXT, notes TEXT, issue_key TEXT, recurrence_count INTEGER NOT NULL DEFAULT 1,
     recurrence_dates_json TEXT, last_seen_at INTEGER, resolved_at INTEGER, client_context_json TEXT, annotations_json TEXT,
@@ -76,17 +76,17 @@ async function seed() {
   await rawExec(`INSERT INTO accounts (id, name, owner_email, created_at) VALUES (?, ?, ?, ?)`, [FOREIGN_ACCOUNT_ID, "Foreign", OUTSIDER_EMAIL, NOW])
   await rawExec(`INSERT INTO projects (id, account_id, name, status, review_mode, review_budget_daily, observability_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [FOREIGN_PROJECT_ID, FOREIGN_ACCOUNT_ID, "Foreign Project", "active", "auto", 200, "named", NOW, NOW])
 
-  await rawExec(`INSERT INTO feedback (id, project_id, sim_id, observation, severity, suggested_bug_json, status, issue_key, recurrence_count, recurrence_dates_json, last_seen_at, resolved_at, updated_at, created_at)
+  await rawExec(`INSERT INTO feedback (id, project_id, sim_id, observation, priority, suggested_bug_json, status, issue_key, recurrence_count, recurrence_dates_json, last_seen_at, resolved_at, updated_at, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
     FEEDBACK_ID, PROJECT_ID, SIM_ID, "Checkout submit button stops responding", "high",
     JSON.stringify({ title: "Checkout submit breaks" }), "done", ISSUE_KEY, 3,
     JSON.stringify([FIRST, RESOLVED, RESURFACED]), RESURFACED, RESOLVED, RESOLVED, FIRST,
   ])
-  await rawExec(`INSERT INTO feedback (id, project_id, observation, severity, suggested_bug_json, status, issue_key, recurrence_count, recurrence_dates_json, last_seen_at, created_at)
+  await rawExec(`INSERT INTO feedback (id, project_id, observation, priority, suggested_bug_json, status, issue_key, recurrence_count, recurrence_dates_json, last_seen_at, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
     ONE_OFF_ID, PROJECT_ID, "One-off copy nit", "low", JSON.stringify({ title: "Copy nit" }), "open", null, 1, JSON.stringify([NOW]), NOW, NOW,
   ])
-  await rawExec(`INSERT INTO feedback (id, project_id, observation, severity, suggested_bug_json, status, issue_key, recurrence_count, recurrence_dates_json, last_seen_at, created_at)
+  await rawExec(`INSERT INTO feedback (id, project_id, observation, priority, suggested_bug_json, status, issue_key, recurrence_count, recurrence_dates_json, last_seen_at, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
     FOREIGN_FEEDBACK_ID, FOREIGN_PROJECT_ID, "Foreign recurring issue", "high", JSON.stringify({ title: "Foreign recurring" }), "open", `foreign_${ISSUE_KEY}`, 9, JSON.stringify([FIRST, RESURFACED]), RESURFACED, FIRST,
   ])
