@@ -3253,8 +3253,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         }
       }
 
-      // PATCH /api/trails/:id — rename, pause/resume, or set/clear a cron schedule.
-      // Accepts: { name?: string, status?: "active"|"paused", schedule?: string|null }
+      // PATCH /api/trails/:id — rename, pause/resume, set/clear a cron schedule, or archive.
+      // Accepts: { name?: string, status?: "active"|"paused"|"archived", schedule?: string|null }
       // draft→active promotion is handled by the dedicated /approve endpoint; archived is terminal.
       {
         const mPatchTrail = path.match(/^\/api\/trails\/([^/]+)$/)
@@ -3270,10 +3270,16 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             patch.name = n
           }
           if ("status" in body) {
-            if (body.status !== "active" && body.status !== "paused")
-              return json({ error: "status must be 'active' or 'paused'" }, 400)
-            if (trail.status === "draft") return json({ error: "Use /approve to activate a draft trail" }, 409)
-            if (trail.status === "archived") return json({ error: "Archived trails cannot be changed" }, 409)
+            const allowedStatuses: TrailStatus[] = ["active", "paused", "archived"]
+            if (!allowedStatuses.includes(body.status))
+              return json({ error: "status must be 'active', 'paused' or 'archived'" }, 400)
+            if (trail.status === "draft") {
+              if (body.status === "archived") {
+                // Allow archiving drafts directly — no need to activate first.
+              } else if (body.status !== "active") {
+                return json({ error: "Use /approve to activate a draft trail" }, 409)
+              }
+            }
             patch.status = body.status
           }
           if ("schedule" in body) {
