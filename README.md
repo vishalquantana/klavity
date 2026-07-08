@@ -1,6 +1,6 @@
-# Klavity Snap ⚡
+# Klavity ⚡
 
-> **Right-click any page to file a grounded bug** — screenshot, console and network attached — straight into Jira, Linear, GitHub Issues, or Plane. No browser extension required, no tool to open.
+> **The AI QA loop: report → simulate → auto-test.** Klavity turns real customer-call transcripts into a recurring cast of AI **Sims** that catch bugs the moment a human hits one (**Snap**), walk your live pages in-character to surface issues (**Sims**), and re-test every release with zero-AI, self-healing replay (**AutoSim**) — every finding grounded in real evidence and filed straight into Jira, Linear, GitHub Issues, or Plane.
 
 [![Chrome Web Store](https://img.shields.io/badge/Chrome%20Web%20Store-install-4285F4.svg?logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/klavity-%E2%80%93-ai-bug-reporter/olahjdcgbdjajbfmgnakjlehgjdmaene)
 [![License: FSL-1.1-ALv2](https://img.shields.io/badge/license-FSL--1.1--ALv2-0f9d6b.svg)](LICENSE)
