@@ -28,3 +28,7 @@ test('server.ts exposes /api/sim/review route', () => {
 test('server.ts exposes /api/trails route', () => {
   expect(loadServer()).toContain('/api/trails');
 });
+
+test('server.ts exposes /pricing route', () => {
+  expect(loadServer()).toContain('/pricing');
+});
