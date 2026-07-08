@@ -132,6 +132,28 @@ test("GET /api/feedback/:id/timeline returns 404 for outsiders", async () => {
   expect(r.status).toBe(404)
 })
 
+test("PATCH /api/feedback/:id sets and clears assignee email", async () => {
+  const assign = await req("PATCH", `/api/feedback/${FID}`, { assignee: "Assignee@Test.Local" })
+  expect(assign.status).toBe(200)
+
+  const detail = await req("GET", `/api/feedback/${FID}`)
+  expect(detail.status).toBe(200)
+  expect((await detail.json()).report.assignee).toBe("assignee@test.local")
+
+  const bad = await req("PATCH", `/api/feedback/${FID}`, { assignee: "not-an-email" })
+  expect(bad.status).toBe(400)
+
+  const timeline = await req("GET", `/api/feedback/${FID}/timeline`)
+  expect(timeline.status).toBe(200)
+  const { items } = await timeline.json()
+  expect(items.some((i: any) => i.kind === "activity" && i.type === "ticket_assignee_changed" && i.meta?.to === "assignee@test.local")).toBe(true)
+
+  const clear = await req("PATCH", `/api/feedback/${FID}`, { assignee: null })
+  expect(clear.status).toBe(200)
+  const cleared = await req("GET", `/api/feedback/${FID}`)
+  expect((await cleared.json()).report.assignee).toBeNull()
+})
+
 test("POST /api/feedback/:id/comments rejects empty body", async () => {
   const r = await req("POST", `/api/feedback/${FID}/comments`, { body: "   " })
   expect(r.status).toBe(400)

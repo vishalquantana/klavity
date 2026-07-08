@@ -700,6 +700,13 @@ details.drawer .drawer-in{padding:0 22px 22px}
 .tkt-field input,.tkt-field textarea{background:var(--ink-2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--paper);font-family:var(--body);font-size:13px;outline:none;resize:vertical}
 .tkt-field input:focus,.tkt-field textarea:focus{border-color:var(--indigo)}
 .tkt-field textarea{min-height:60px}
+.tkt-assignee-row{display:flex;align-items:center;gap:6px}
+.tkt-assignee-input{min-width:0;flex:1}
+.tkt-assignee-clear{white-space:nowrap}
+.kb-card-assign{display:flex;align-items:center;gap:6px;margin-top:8px}
+.kb-card-assign .tkt-assignee-input{height:28px;font-size:12px;padding:5px 8px;background:var(--ink-2);border:1px solid var(--line);border-radius:8px;color:var(--paper);outline:none}
+.kb-card-assign .tkt-assignee-input:focus{border-color:var(--indigo)}
+.kb-card-assign .tkt-assignee-save{height:28px;padding:0 8px;border-radius:7px}
 .tkt-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .tkt-badges{display:flex;gap:8px;flex-wrap:wrap;flex:1}
 .exp-badge{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;background:var(--ink-3);border:1px solid var(--line);font-family:var(--mono);font-size:10px;color:var(--paper-faint);text-decoration:none}
@@ -1286,6 +1293,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         <select id="fbSource" title="Filter by source"><option value="">All sources</option><option value="sim">Sim / AI</option><option value="human">Human report</option><option value="manual">Manual</option></select>
         <button class="tkt-fb-clear hide" id="fbClearBtn" type="button">&#10005; Clear filters</button>
       </div>
+      <datalist id="tktAssigneeOptions"></datalist>
       <!-- KLA-169: List view (paginated, server-driven) -->
       <div id="tktListView"></div>
       <div id="ticketsKanban"><div class="sk-card"><span class="sk sk-av"></span><div class="sk-lines"><span class="sk sk-line" style="width:62%"></span><span class="sk sk-line" style="width:40%"></span></div><span class="sk sk-pill"></span></div><div class="sk-card"><span class="sk sk-av"></span><div class="sk-lines"><span class="sk sk-line" style="width:62%"></span><span class="sk sk-line" style="width:40%"></span></div><span class="sk sk-pill"></span></div></div>
@@ -2708,7 +2716,54 @@ function renderMembers(admin) {
     </div>`).join("")
 }
 
-const STATUS_LABELS = { open: "Open", in_progress: "In Progress", done: "Done" }
+const STATUS_LABELS = { new: "New", open: "Open", in_progress: "In Progress", done: "Done", dismissed: "Dismissed" }
+
+function projectMemberEmails() {
+  const fromMembers = (state.members || []).map(m => m.email)
+  const fromTickets = (state.tickets || []).map(t => t.assignee)
+  return [...new Set([...fromMembers, ...fromTickets].filter(Boolean).map(e => String(e).trim().toLowerCase()).filter(Boolean))].sort()
+}
+function refreshAssigneeOptions() {
+  const emails = projectMemberEmails()
+  const dl = document.getElementById("tktAssigneeOptions")
+  if (dl) dl.innerHTML = emails.map(e => `<option value="${esc(e)}"></option>`).join("")
+  const fb = document.getElementById("fbAssignee")
+  if (fb) {
+    const cur = fb.value
+    Array.from(fb.querySelectorAll("option[data-assignee]")).forEach(o => o.remove())
+    emails.forEach(e => {
+      const opt = document.createElement("option")
+      opt.value = e; opt.textContent = e; opt.setAttribute("data-assignee", "1")
+      fb.appendChild(opt)
+    })
+    fb.value = cur
+  }
+}
+function setTicketAssigneeLocal(ticketId, assignee) {
+  ;[state.tickets || [], _tktBoardTickets || []].forEach(list => {
+    const t = list.find(x => String(x.id) === String(ticketId))
+    if (t) t.assignee = assignee || null
+  })
+  refreshAssigneeOptions()
+}
+async function patchTicketAssignee(ticketId, assignee) {
+  const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId), {
+    method: "PATCH", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ assignee: assignee || null })
+  }).catch(() => null)
+  const d = r ? await r.json().catch(() => ({})) : {}
+  if (!r || !r.ok || !d.ok) throw new Error(d.error || "Couldn't assign.")
+  setTicketAssigneeLocal(ticketId, assignee || null)
+  return d
+}
+function assigneePickerHtml(t, compact = false) {
+  const current = t.assignee || ""
+  const placeholder = compact ? "Assign email" : "name@company.com"
+  return `<div class="${compact ? "kb-card-assign" : "tkt-assignee-row"}">
+    <input type="email" list="tktAssigneeOptions" class="assignee-inp tkt-assignee-input" placeholder="${placeholder}" value="${esc(current)}" autocomplete="off" />
+    ${compact ? `<button class="btn btn-ghost btn-sm tkt-assignee-save" type="button">Assign</button>` : `<button class="btn btn-ghost btn-sm tkt-assignee-clear" type="button">Clear</button>`}
+  </div>`
+}
 
 // Build the shared expandable detail panel for a ticket. onChange(field, value) is
 // called after a successful save so each view (overview list / kanban) can refresh
@@ -2787,7 +2842,7 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
       <div class="tkt-fields">
         <div class="tkt-field">
           <label>Assignee</label>
-          <input type="text" class="assignee-inp" placeholder="email or name" value="${esc(t.assignee||"")}" />
+          ${assigneePickerHtml(t, false)}
         </div>
         <div class="tkt-field" style="flex:2;min-width:200px">
           <label>Notes</label>
@@ -2843,12 +2898,23 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
       if (d.ok) {
         const tkt = (state.tickets || []).find(x => x.id === ticketId)
         if (tkt) { tkt.assignee = assignee || null; tkt.notes = notes || null }
+        setTicketAssigneeLocal(ticketId, assignee || null)
         if (onChange) onChange("assignee", assignee || null)
         showTktMsg(detailEl, "Saved.", false)
       } else {
         showTktMsg(detailEl, d.error || "Couldn't save.", true)
       }
     })
+    const clearAssigneeBtn = detailEl.querySelector(".tkt-assignee-clear")
+    if (clearAssigneeBtn) {
+      clearAssigneeBtn.addEventListener("click", ev => {
+        ev.stopPropagation()
+        const inp = detailEl.querySelector(".assignee-inp")
+        if (inp) inp.value = ""
+        const save = detailEl.querySelector(".save-meta-btn")
+        if (save) save.click()
+      })
+    }
 
     // Wire up the G1 session-replay button (only present when t.hasReplay)
     const replayBtn = detailEl.querySelector(".replay-btn")
@@ -2910,6 +2976,7 @@ const TL_ICONS = { comment: "💬", activity: "•", export: "↗" }
 const TL_ACTIVITY_LABELS = {
   ticket_status_changed: (m) => `Status → ${m && m.to ? STATUS_LABELS[m.to] || m.to : ""}`,
   ticket_priority_changed: (m) => `Priority → ${m && m.to ? m.to : ""}`,
+  ticket_assignee_changed: (m) => m && m.to ? `Assigned to ${m.to}` : "Assignment cleared",
   connector_export: (m) => `Exported to ${m && m.connectorType ? m.connectorType : "external tracker"}${m && m.externalKey ? " · " + m.externalKey : ""}`,
 }
 
@@ -3211,13 +3278,7 @@ function tktFilterBarBind() {
   if (listBtn) listBtn.addEventListener("click", () => { _tktView = "list"; listBtn.classList.add("active"); boardBtn && boardBtn.classList.remove("active"); renderTicketsView() })
   if (boardBtn) boardBtn.addEventListener("click", () => { _tktView = "board"; boardBtn.classList.add("active"); listBtn && listBtn.classList.remove("active"); renderTicketsView() })
 
-  // Populate assignee dropdown from state
-  const assignees = [...new Set((state.tickets || []).map(t => t.assignee).filter(Boolean))]
-  if (assignees.length) {
-    assignees.forEach(a => {
-      const opt = document.createElement("option"); opt.value = a; opt.textContent = a; fbAssignee.appendChild(opt)
-    })
-  }
+  refreshAssigneeOptions()
 
   const onFilterChange = () => {
     _tktFilters.status = fbStatus.value
@@ -3489,6 +3550,7 @@ function renderTicketsKanban(boardTickets) {
       else state.tickets.push(t)
     })
   }
+  refreshAssigneeOptions()
   const sourceTickets = Array.isArray(boardTickets) ? boardTickets : (_tktBoardTickets.length ? _tktBoardTickets : (state.tickets || []))
   const tickets = sourceTickets.filter(t => kbMatchesFilter(t) && kbMatchesSearch(t))
   $("ticketKanbanCount").textContent = tickets.length ? tickets.length : ""
@@ -3561,13 +3623,39 @@ function renderTicketsKanban(boardTickets) {
         <button class="copy-ai-icon kb-copy-ai" type="button" aria-label="Copy to AI" title="Copy to AI — paste into Claude / ChatGPT to fix this bug">${kicon('sparkles')}</button>
         <div class="kb-card-t">${kicon('bug')} ${esc(t.title || "Untitled report")}</div>
         <div class="kb-card-d">${sub}</div>
-        <div class="kb-card-meta"></div>`
+        <div class="kb-card-meta"></div>
+        ${assigneePickerHtml(t, true)}`
       renderCard()
 
       // Detail is built for the "Copy to AI" action; the card itself opens the single-ticket view.
       const detailEl = buildTktDetail(t, admin, () => renderCard())
       const cardCopyIcon = cardEl.querySelector(".copy-ai-icon")
       if (cardCopyIcon) cardCopyIcon.addEventListener("click", ev => { ev.stopPropagation(); copyTicketToAI(ticketId, cardCopyIcon, detailEl) })
+      cardEl.querySelectorAll(".kb-card-assign, .kb-card-assign *").forEach(el => {
+        el.addEventListener("click", ev => ev.stopPropagation())
+        el.addEventListener("mousedown", ev => ev.stopPropagation())
+        el.addEventListener("dragstart", ev => ev.stopPropagation())
+      })
+      const assignBtn = cardEl.querySelector(".tkt-assignee-save")
+      const assignInp = cardEl.querySelector(".assignee-inp")
+      if (assignBtn && assignInp) {
+        assignBtn.addEventListener("click", async ev => {
+          ev.stopPropagation()
+          const next = assignInp.value.trim()
+          assignBtn.disabled = true
+          try {
+            await patchTicketAssignee(ticketId, next)
+            t.assignee = next || null
+            renderCard()
+          } catch (e) {
+            assignInp.setCustomValidity(e.message || "Couldn't assign.")
+            assignInp.reportValidity()
+            setTimeout(() => assignInp.setCustomValidity(""), 2000)
+          } finally {
+            assignBtn.disabled = false
+          }
+        })
+      }
 
       cardEl.addEventListener("click", () => openSingleTicket(ticketId))
       list.appendChild(cardEl)
@@ -5039,7 +5127,7 @@ load()
       </label>
       <label style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--paper-dim);flex:1">
         Assignee <span style="font-weight:400;color:var(--paper-faint);font-size:11px">(optional)</span>
-        <input id="newTktAssigneeInp" placeholder="email or name" maxlength="200" style="background:var(--ink);border:1px solid var(--line);border-radius:9px;color:var(--paper);font-family:var(--body);font-size:14px;padding:9px 12px;outline:none" />
+        <input id="newTktAssigneeInp" type="email" list="tktAssigneeOptions" placeholder="name@company.com" maxlength="200" style="background:var(--ink);border:1px solid var(--line);border-radius:9px;color:var(--paper);font-family:var(--body);font-size:14px;padding:9px 12px;outline:none" />
       </label>
     </div>
     <div style="display:flex;align-items:center;gap:10px;margin-top:4px">

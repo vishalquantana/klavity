@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test"
-import { otpEmailHtml } from "./mail.ts"
+import { otpEmailHtml, sendTicketAssignmentEmail } from "./mail.ts"
 
 test("otpEmailHtml renders the code and brand chrome", () => {
   const html = otpEmailHtml("464639")
@@ -21,4 +21,40 @@ test("otpEmailHtml note is deterministic per code and varies across codes", () =
     return m ? m[1] : ""
   }))
   expect(notes.size).toBeGreaterThan(1)
+})
+
+test("sendTicketAssignmentEmail posts a ticket assignment notification", async () => {
+  const oldKey = process.env.SENDGRID_API_KEY
+  const oldFrom = process.env.KLAV_MAIL_FROM
+  const oldFetch = globalThis.fetch
+  const calls: any[] = []
+  process.env.SENDGRID_API_KEY = "sg-test"
+  process.env.KLAV_MAIL_FROM = "bugs@example.com"
+  globalThis.fetch = (async (url: any, init: any) => {
+    calls.push({ url, init })
+    return new Response("", { status: 202 })
+  }) as any
+  try {
+    await sendTicketAssignmentEmail({
+      to: "assignee@example.com",
+      ticketTitle: "Checkout fails",
+      projectName: "Mobile Shop",
+      assignedBy: "owner@example.com",
+      ticketUrl: "https://klavity.test/dashboard?project=p1#tickets",
+    })
+  } finally {
+    globalThis.fetch = oldFetch
+    if (oldKey === undefined) delete process.env.SENDGRID_API_KEY
+    else process.env.SENDGRID_API_KEY = oldKey
+    if (oldFrom === undefined) delete process.env.KLAV_MAIL_FROM
+    else process.env.KLAV_MAIL_FROM = oldFrom
+  }
+
+  expect(calls).toHaveLength(1)
+  const body = JSON.parse(calls[0].init.body)
+  expect(calls[0].url).toBe("https://api.sendgrid.com/v3/mail/send")
+  expect(body.personalizations[0].to[0].email).toBe("assignee@example.com")
+  expect(body.subject).toContain("ticket assigned")
+  expect(body.content[0].value).toContain("Checkout fails")
+  expect(body.content[0].value).toContain("https://klavity.test/dashboard?project=p1#tickets")
 })
