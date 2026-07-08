@@ -558,9 +558,9 @@ const WIDGET_CORS: Record<string, string> = {
 }
 
 // ── Cross-origin widget CORS ──────────────────────────────────────────────────
-// The embeddable widget runs on the CUSTOMER's own domain (e.g. bigidea.quantana.top) and calls
+// The embeddable widget runs on the CUSTOMER's own domain (e.g. bigidea.example.com) and calls
 // these PUBLIC, project-scoped endpoints cross-origin. Without CORS the browser blocks every call,
-// so the widget is dead on every customer site (works only same-origin on klavity.quantana.top).
+// so the widget is dead on every customer site (works only same-origin on klavity.in).
 // These endpoints are public + project_id/widget-token-scoped — NEVER add any authed/admin/dashboard
 // path here. We REFLECT the request Origin (safer than "*", and required if a caller ever sends
 // credentials) and emit it from a single chokepoint (withWidgetCors) so coverage can't be silently
@@ -1116,7 +1116,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     }
 
     // ── Phase-out 301: old domain → new canonical domain ──
-    // Keep /widget.js serving on both hosts so existing embeds don't break.
+    // DELIBERATE BACKWARD-COMPAT: klavity.quantana.top is the legacy domain; keep this redirect
+    // so existing bookmarks, embeds, and API callers on the old domain still work.
+    // Do NOT remove until all known consumers have migrated.
     if (req.headers.get("host") === "klavity.quantana.top" && path !== "/widget.js") {
       const dest = "https://klavity.in" + path + (url.search || "")
       return new Response(null, { status: 301, headers: { location: dest } })

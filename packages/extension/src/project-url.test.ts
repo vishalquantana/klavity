@@ -106,7 +106,7 @@ describe('patternMatchesUrl', () => {
 const makeConfig = (overrides: Partial<KlavConfig['projects'][number]>[] = []): KlavConfig => ({
   email: 'test@example.com',
   token: 'tok',
-  backendUrl: 'https://klavity.quantana.top',
+  backendUrl: 'https://klavity.in',
   syncedAt: 0,
   projects: [
     { id: 'proj-a', name: 'Project A', reviewMode: 'auto', monitoredUrls: ['app.example.com', 'staging.example.com/app*'], ...overrides[0] },

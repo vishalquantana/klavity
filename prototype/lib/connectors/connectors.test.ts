@@ -8,7 +8,7 @@ const TICKET = {
   url: "https://app/x",
   simName: "Vamshi",
   createdAt: 1,
-  klavityUrl: "https://klavity.quantana.top/dashboard",
+  klavityUrl: "https://klavity.in/dashboard",
 }
 
 // ── Registry ──────────────────────────────────────────────────────────────────

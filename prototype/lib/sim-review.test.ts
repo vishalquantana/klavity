@@ -86,7 +86,7 @@ test("splitUrl: path-only fallback when URL is unparseable", () => {
 })
 
 test("splitUrl: root path preserved", () => {
-  const { urlPath } = splitUrl("https://klavity.quantana.top/")
+  const { urlPath } = splitUrl("https://klavity.in/")
   expect(urlPath).toBe("/")
 })
 

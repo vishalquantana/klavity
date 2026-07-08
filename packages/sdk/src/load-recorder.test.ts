@@ -3,12 +3,12 @@ import { resolveRecorderUrl, injectRecorderScript, __resetRecorderLoaderForTests
 
 describe("resolveRecorderUrl", () => {
   it("resolves the vendor path against the cross-origin backend, not the host page", () => {
-    expect(resolveRecorderUrl("https://klavity.quantana.top"))
-      .toBe("https://klavity.quantana.top/vendor/klv-buffer.min.js")
+    expect(resolveRecorderUrl("https://klavity.in"))
+      .toBe("https://klavity.in/vendor/klv-buffer.min.js")
   })
   it("tolerates a trailing slash on backendUrl (no double slash)", () => {
-    expect(resolveRecorderUrl("https://klavity.quantana.top/"))
-      .toBe("https://klavity.quantana.top/vendor/klv-buffer.min.js")
+    expect(resolveRecorderUrl("https://klavity.in/"))
+      .toBe("https://klavity.in/vendor/klv-buffer.min.js")
   })
   it("handles empty backendUrl without throwing", () => {
     expect(resolveRecorderUrl("")).toBe("/vendor/klv-buffer.min.js")

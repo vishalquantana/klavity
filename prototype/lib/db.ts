@@ -1114,7 +1114,7 @@ export async function isAccountPro(accountId: string): Promise<boolean> {
 }
 
 // ── widget-config helpers (leadgen integration task-1) ──
-const DEFAULT_WIDGET_CTA = "https://klavity.quantana.top/onboarding"
+const DEFAULT_WIDGET_CTA = "https://klavity.in/onboarding"
 
 export async function getWidgetConfig(projectId: string): Promise<{ mode: string; ctaUrl: string; reportGate: string } | null> {
   const p = await projectById(projectId)

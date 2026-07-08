@@ -176,7 +176,7 @@ test("public GET /api/projects/:id/config falls back to mode=support for default
   expect(r.status).toBe(200)
   const body = await r.json() as any
   expect(body.widget.mode).toBe("support")
-  expect(body.widget.ctaUrl).toBe("https://klavity.quantana.top/onboarding")
+  expect(body.widget.ctaUrl).toBe("https://klavity.in/onboarding")
 })
 
 test("admin POST /api/projects/:id/config saves appearance AND widget fields together", async () => {

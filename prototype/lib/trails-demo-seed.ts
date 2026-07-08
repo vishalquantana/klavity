@@ -5,7 +5,7 @@
 // lib/trails-journey.e2e.test.ts, pointed at the app-served /trails-demo/* copies.
 //
 // URL convention: every fixture Trail's baseUrl is `${baseUrl}/trails-demo/<variant>/landing.html`.
-// `baseUrl` is the app origin (e.g. https://klavity.quantana.top); the e2e passes a file:// origin
+// `baseUrl` is the app origin (e.g. https://klavity.in); the e2e passes a file:// origin
 // whose /trails-demo/<variant> resolves to the bundled public/trails-demo copies.
 import type { Trajectory } from "./trails-crystallize"
 import { crystallize } from "./trails-crystallize"
@@ -69,7 +69,7 @@ function dogfoodTrajectory(base: string): Trajectory {
 export async function seedDemoTrails(
   projectId: string,
   baseUrl: string,
-  dogfoodUrl = "https://klavity.quantana.top/",
+  dogfoodUrl = "https://klavity.in/",
 ): Promise<{ created: number; trailIds: Record<string, string> }> {
   const origin = baseUrl.replace(/\/+$/, "")
   const fixture = (variant: string) => `${origin}/trails-demo/${variant}/landing.html`

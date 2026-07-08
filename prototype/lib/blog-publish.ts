@@ -114,5 +114,5 @@ export async function publishBlogPost(
 
   if (pushRes.code !== 0) throw new Error("git push failed: " + sanitize(pushRes.stderr))
 
-  return { ok: true, sha, url: `https://klavity.quantana.top/blog/${slug}` }
+  return { ok: true, sha, url: `https://klavity.in/blog/${slug}` }
 }
