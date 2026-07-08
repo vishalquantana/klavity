@@ -50,14 +50,92 @@ breakdown):
 `packages/extension` (MV3), `packages/sdk` (embeddable). The Bun `prototype/` is
 the seed of Phase 2's `services/api`.
 
-## 3. Phase 2 — Klavity Sims (next)
+## 3. Phase 2 — Klavity Sims (live)
 
-Live prototype today (`prototype/`): transcript → named personas → on-page vision
-reaction → suggested bug → filed. Sims Studio lets users extract, edit, and now
-**save Sims to a library** (persistence API). Productionising this into the real
-backend is the Phase 2 critical path.
+Live in production (`prototype/`): transcript → named personas → on-page vision
+reaction → suggested bug → filed. Sims Studio lets users extract, edit, and
+**save Sims to a library** (persistence API). Manual Sim trigger lets Sims analyze
+the page you're actively browsing — live while you build.
 
-## 4. Versioning
+**Shipped capabilities:**
+
+- Transcript → Sim extraction (client/user distinction, persona core: goals/temperament/voice/watchFor).
+- Sims Studio: 3-pane transcript/persona/attribution UI, versioned trait/persona editing.
+- Add-a-Sim modal (describe / from-site / from-call), reusable across onboarding and dashboard.
+- Grounded feedback: verbatim-line quote grounding with tri-state `verified` (anchored/unverified/not-attempted).
+- Suggested-bug dedup: collapse duplicates + bump recurrence counter; no duplicate Plane tickets.
+- Regression detection via `reopen` trait: fires when a previously resolved trait resurfaces (prospective only; legacy-import traits excluded).
+- Right-click "Analyze this page" in extension → routes to Sim creation when 0 Sims exist.
+
+### Note — grounded Sim feedback & suggested-bug dedup
+
+Sim feedback trait quotes (v0.24.0) are grounded in the transcript via a three-pass match strategy: exact string, char-normalized, or fuzzy line-snap. Citations carry a `verified` tri-state (anchored, unverified, not-attempted) plus character offsets; unmatched quotes are retained but flagged. Suggested-bug dedup (v0.24.0) is **prospective only** — it collapses NEW duplicates within an unchanged build and bumps the recurrence counter, but does not retroactively backfill `src_verified` on existing traits or consolidate pre-existing feedback rows.
+
+## 4. Phase 3 — Klavity AutoSim (shipped)
+
+**Goal:** author a user journey once in plain English; the system drives a real browser
+autonomously on every run, heals selector drift silently, and files real bugs only when
+healing exhausts or a hard crash occurs. Zero flakiness, zero maintenance for stable
+paths; transparent surfacing when something truly breaks.
+
+### 4.1 Authoring (Trail creation)
+
+| Capability | Status |
+|---|---|
+| NL objective → LLM-driven Trail authoring (F1) | ✅ Shipped |
+| Draft Trail → verification → human approve | ✅ Shipped |
+| Named environments: target staging or prod per run | ✅ Shipped |
+| Pause-for-secret steps: 2FA / OTP login flows (encrypted at rest, ADR-0001) | ✅ Shipped |
+| Per-trail cron schedule + manual trigger | ✅ Shipped |
+| `kref` element-tree snapshot: 64–93% cheaper per step, eliminates hallucinated selectors | ✅ Shipped |
+| Flash-lite model-mix: simple steps routed to `gemini-3.1-flash-lite` behind `KLAV_AUTHOR_MODEL_MIX` | ✅ Shipped |
+
+### 4.2 Walk runner (autonomous execution)
+
+| Capability | Status |
+|---|---|
+| CDP browser automation via Puppeteer | ✅ Shipped |
+| Role + page-consistent selector healing (heal before filing) | ✅ Shipped |
+| Per-step retry on transient failures | ✅ Shipped |
+| Stall detection with second-opinion reroll | ✅ Shipped |
+| Crash-vs-regression tagging (crash = infra failure, never filed as regression) | ✅ Shipped |
+| Poll-grace past nominal deadline (keeps polling until terminal state, not just deadline) | ✅ Shipped |
+| Bounded rrweb replay buffer (capped to prevent OOM on long runs) | ✅ Shipped |
+| Browser + session cleanup on walk completion/failure | ✅ Shipped |
+| Orphaned-draft cleanup on server restart | ✅ Shipped |
+
+### 4.3 Findings & severity
+
+| Capability | Status |
+|---|---|
+| Finding types: `regression` / `amber_heal` / `visual` | ✅ Shipped |
+| Cross-trail content dedup via `content_sig` (collapse + recurrence bump) | ✅ Shipped |
+| Corroboration with `source` + `urlPath` (findings grounded in page context) | ✅ Shipped |
+| Computed severity: `kind` + `recurrence` (≥3 = +1) + `confidence` (≥0.9 = +1, <0.5 = −1) | ✅ Shipped |
+| Back-compat: legacy rows without severity fall back to `severityForKind(kind)` | ✅ Shipped |
+| Human review queue + precision metric (legit-bug rate = filed / (filed + dismissed)) | ✅ Shipped |
+| Opt-in auto-file to external trackers (Plane/Jira/Linear/GitHub) when `trailsAutofileEnabled` | ✅ Shipped |
+
+### 4.4 Reporting & sharing
+
+| Capability | Status |
+|---|---|
+| Walk detail page with step-level verdicts and evidence | ✅ Shipped |
+| PDF export (`GET /api/trails/walks/:runId/report.pdf`) | ✅ Shipped |
+| rrweb session replay recorded per walk, linked into walk reports | ✅ Shipped |
+| Share tokens: mint, revoke, list active, purge expired/revoked | ✅ Shipped |
+| Per-trail run history (timestamp, status, duration, step count) | ✅ Shipped |
+| Walk trends over time: per-day pass/amber/red counts + pass rate, 30-day window | ✅ Shipped |
+
+### 4.5 What is NOT yet built
+
+- Steel.dev CDP URL for off-box browser stability (`AUTOSIM_CDP_URL` hook exists, wiring pending).
+- CI v1 integration (webhook trigger + exit-code result).
+- F2 recorder (no-code Trail authoring via browser recording).
+- Embeddings-based finding similarity (dedup is content-sig only today).
+- Self-serve onboarding without human Trail approval step.
+
+## 5. Versioning
 
 Klavity Snap follows [Semantic Versioning 2.0.0](https://semver.org/). Because
 this is pre-1.0, the practical rules are:
@@ -77,12 +155,19 @@ this is pre-1.0, the practical rules are:
 on release, rename that heading to the new version + today's date, bump the four
 manifests + this PRD header, then commit and tag `vX.Y.Z`.
 
-## 5. Roadmap / open items
+## 6. Roadmap / open items
 
-- Phase 2: productionise Sims into `services/api` (Bun + Hono).
+**Phase 2 (Sims):**
+- Productionise Sims into `services/api` (Bun + Hono).
 - Sign in with GitHub (OAuth) in extension + web app — reduce sign-up friction.
 - Wire the reusable Sim component (`@klavity/core/sim`) into live surfaces.
-- Phase 3: Klavity AutoSim — self-healing end-to-end testing (shipped; formerly "Klavity OS").
+
+**Phase 3 (AutoSim — next priorities):**
+- Steel.dev off-box browser: `AUTOSIM_CDP_URL` hook exists; wire Steel Launch for stability.
+- CI v1: webhook trigger + exit-code / JSON result for GitHub Actions / CI pipelines.
+- F2 recorder: no-code Trail authoring via browser recording (replaces NL authoring for simple paths).
+- Embeddings-based finding dedup: cross-semantics collapse beyond content-sig equality.
+- Self-serve Trail approval: skip human review gate for low-risk Trails.
 
 ### Note — regression detection is prospective
 
@@ -94,7 +179,3 @@ clean `resolve` event followed by a `reopen` on a connected trait lineage.
 **Legacy-import traits are excluded.** Traits created via `legacy_import` have no
 resolving events in their timeline, so the regression signal cannot fire for them.
 Severity in extracted insights guides (but does not auto-file) bug severity.
-
-### Note — grounded Sim feedback & suggested-bug dedup
-
-Sim feedback trait quotes (v0.24.0) are now grounded in the transcript via a three-pass match strategy: exact string, char-normalized, or fuzzy line-snap. Citations carry a `verified` tri-state (anchored, unverified, not-attempted) plus character offsets; unmatched quotes are retained but flagged. Suggested-bug dedup (v0.24.0) is **prospective only** — it collapses NEW duplicates within an unchanged build and bumps the recurrence counter, but does not retroactively backfill `src_verified` on existing traits or consolidate pre-existing feedback rows.
