@@ -3,7 +3,7 @@
 // Invoked fire-and-forget from trails-runner.ts after finishWalk — a failure here must
 // NEVER affect the walk result or the DB record. Same contract as lib/signup-alert.ts.
 //
-// Enabled by SLACK_SIGNUP_WEBHOOK_URL (reuses the existing signup-alert channel).
+// Enabled by SLACK_ALERT_WEBHOOK_URL or SLACK_SIGNUP_WEBHOOK_URL.
 // KLAV_BASE_URL is used to build a deep-link into the walk-detail page.
 
 import { safeFetch } from "./safe-fetch"
@@ -29,7 +29,7 @@ function field(label: string, value: string) {
 }
 
 export function buildWalkRedSlackPayload(ctx: WalkRedAlertContext, baseUrl?: string) {
-  const walkUrl = baseUrl ? `${baseUrl}/autosims/walk/${ctx.runId}` : null
+  const walkUrl = baseUrl ? `${baseUrl}/autosims/walk/${ctx.runId}?project=${encodeURIComponent(ctx.projectId)}` : null
 
   const reasonSummary = ctx.reasons.length
     ? ctx.reasons.map((r) => `• ${r}`).join("\n")
@@ -59,7 +59,7 @@ export function buildWalkRedSlackPayload(ctx: WalkRedAlertContext, baseUrl?: str
 }
 
 export async function notifyWalkRed(ctx: WalkRedAlertContext): Promise<void> {
-  const webhook = process.env.SLACK_SIGNUP_WEBHOOK_URL
+  const webhook = process.env.SLACK_ALERT_WEBHOOK_URL || process.env.SLACK_SIGNUP_WEBHOOK_URL
   if (!webhook) return
 
   try {
