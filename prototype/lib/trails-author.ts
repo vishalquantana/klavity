@@ -401,12 +401,14 @@ export async function authorTrail(
         }
       }
       const entry: AuthorStepLog = { idx: log.length, op: a.op, selector: a.selector, value: a.value, url: page.url(), rationale: a.rationale, ok: false }
+      let entryDom = dom
+      let persistSelector: string | null = a.selector ?? null
+      let actionFp: any = null
       try {
         // Hoisted to the try-scope: the KLA-129 loop guard (successKey, below) reads persistSelector
         // OUTSIDE the else-block where it was assigned. The loop-recovery change declared it with
         // `let` inside that block, so the drive crashed at runtime with "persistSelector is not
         // defined" (tsc would have caught it; the merge-train doesn't run tsc).
-        let persistSelector: string | null = a.selector ?? null
         if (a.op === "wait") {
           const ms = Math.min(Math.max(Number(a.value) || 1000, 500), 15_000)
           await page.waitMs(ms)
@@ -418,6 +420,7 @@ export async function authorTrail(
           const n = await bounded(page.count(a.selector!), 10_000, "locator.count")
           if (n !== 1) throw new Error(`selector "${a.selector}" matched ${n} elements (need exactly 1)`)
           const fp = await bounded(page.fingerprint(a.selector!), 10_000, "fingerprint capture")
+          actionFp = fp
           // Stabilize the selector BEFORE the action so we never persist a brittle path.
           // kref attrs are ephemeral (renumbered every capture) — MUST replace.
           // Non-kref selectors emitted by the model (e.g. `.submit-btn`) can also be fragile;
@@ -484,9 +487,32 @@ export async function authorTrail(
         const safeSelector = a.selector && isKrefSelector(a.selector) ? dekref(a.selector) : a.selector
         entry.error = safeMsg
         entry.selector = safeSelector
-        misses++
-        history.push(`${a.op}${safeSelector ? " " + safeSelector : ""} — FAILED: ${safeMsg}`)
-        if (misses >= MAX_CONSECUTIVE_MISSES) {
+        let recoveredSideEffect = false
+        if (a.op === "click" && actionFp) {
+          try {
+            const afterDom = await bounded(page.krefSnapshot(), 15_000, "snapshot capture after failed click")
+            const norm = (s: string) => s.replace(/data-kref="e\d+"/g, 'data-kref="??"')
+            const changed = page.url() !== entry.url || sha256hex(norm(afterDom)) !== sha256hex(norm(dom))
+            if (changed) {
+              traj.push({
+                action: OP2ACTION[a.op], actionValue: undefined,
+                target: { ...actionFp, resolvedSelector: persistSelector ?? safeSelector ?? undefined },
+                url: page.url(), domHash: sha256hex(dom),
+              })
+              entry.selector = persistSelector ?? safeSelector
+              entry.error = undefined
+              entry.ok = true
+              misses = 0
+              entryDom = afterDom
+              history.push(`${a.op}${entry.selector ? " " + entry.selector : ""} — ok (page changed after action timeout)`)
+              recoveredSideEffect = true
+            }
+          } catch { /* fall through to normal failed-action handling */ }
+        }
+        if (!recoveredSideEffect) {
+          misses++
+          history.push(`${a.op}${safeSelector ? " " + safeSelector : ""} — FAILED: ${safeMsg}`)
+          if (misses >= MAX_CONSECUTIVE_MISSES) {
           try {
             const b64 = await page.screenshotJpeg(45, 10_000)
             if (b64 && b64.length > 0) {
@@ -498,6 +524,7 @@ export async function authorTrail(
           } catch {}
           entry.krefSnapshot = dom.length > 50000 ? dom.slice(0, 50000) + "\n...[TRUNCATED]" : dom
           log.push(entry); await opts.onStep?.(log); return await stall(`stuck after ${misses} failed attempts; last: ${safeMsg}`, page.url())
+          }
         }
       }
       try {
@@ -511,7 +538,7 @@ export async function authorTrail(
       } catch (err) {
         console.warn("[trails-author] step screenshot upload failed:", String(err))
       }
-      entry.krefSnapshot = dom.length > 50000 ? dom.slice(0, 50000) + "\n...[TRUNCATED]" : dom
+      entry.krefSnapshot = entryDom.length > 50000 ? entryDom.slice(0, 50000) + "\n...[TRUNCATED]" : entryDom
       log.push(entry)
       await opts.onStep?.(log)
       // KLA-57: persist checkpoint after each step so a subsequent stall or crash has a recovery point.
