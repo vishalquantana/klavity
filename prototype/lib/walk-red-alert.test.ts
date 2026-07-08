@@ -32,10 +32,10 @@ describe("buildWalkRedSlackPayload", () => {
     expect(fieldsText).toContain("Order confirmed")
   })
 
-  test("walk report link included when baseUrl provided", () => {
+  test("walk report link included when baseUrl provided and includes project query param", () => {
     const p = buildWalkRedSlackPayload(ctx, "https://klavity.in")
     const fieldsText = JSON.stringify(p.blocks[1].fields)
-    expect(fieldsText).toContain("https://klavity.in/autosims/walk/run_111222")
+    expect(fieldsText).toContain("https://klavity.in/autosims/walk/run_111222?project=proj_xyz789")
   })
 
   test("no walk report link when baseUrl absent", () => {
@@ -71,35 +71,36 @@ describe("buildWalkRedSlackPayload", () => {
 
 describe("notifyWalkRed", () => {
   const origWebhook = process.env.SLACK_SIGNUP_WEBHOOK_URL
+  const origAlertWebhook = process.env.SLACK_ALERT_WEBHOOK_URL
   const origBase = process.env.KLAV_BASE_URL
 
   afterEach(() => {
     if (origWebhook === undefined) delete process.env.SLACK_SIGNUP_WEBHOOK_URL
     else process.env.SLACK_SIGNUP_WEBHOOK_URL = origWebhook
+    if (origAlertWebhook === undefined) delete process.env.SLACK_ALERT_WEBHOOK_URL
+    else process.env.SLACK_ALERT_WEBHOOK_URL = origAlertWebhook
     if (origBase === undefined) delete process.env.KLAV_BASE_URL
     else process.env.KLAV_BASE_URL = origBase
   })
 
-  test("no-op when SLACK_SIGNUP_WEBHOOK_URL is unset", async () => {
+  test("no-op when both SLACK_SIGNUP_WEBHOOK_URL and SLACK_ALERT_WEBHOOK_URL are unset", async () => {
     delete process.env.SLACK_SIGNUP_WEBHOOK_URL
+    delete process.env.SLACK_ALERT_WEBHOOK_URL
     // Should resolve without error
     await expect(notifyWalkRed(ctx)).resolves.toBeUndefined()
   })
 
-  test("posts correct payload to webhook", async () => {
-    const calls: { url: string; opts: RequestInit }[] = []
-
-    process.env.SLACK_SIGNUP_WEBHOOK_URL = "https://hooks.slack.com/services/TEST/WALK/RED"
-    process.env.KLAV_BASE_URL = "https://klavity.in"
-
-    // Monkey-patch safeFetch for this test
-    const mod = await import("./walk-red-alert")
-    const original = (mod as any).__safeFetch
-
-    // We can't easily monkey-patch the imported safeFetch, so just verify it doesn't throw
-    // when the webhook returns ok. We'll test payload structure via buildWalkRedSlackPayload instead.
-    // This is a smoke test for the function not throwing on missing webhook response.
+  test("posts to SLACK_ALERT_WEBHOOK_URL when set", async () => {
     delete process.env.SLACK_SIGNUP_WEBHOOK_URL
+    process.env.SLACK_ALERT_WEBHOOK_URL = "https://hooks.slack.com/services/TEST/WALK/RED_ALERT"
+    process.env.KLAV_BASE_URL = "https://klavity.in"
+    await expect(notifyWalkRed(ctx)).resolves.toBeUndefined()
+  })
+
+  test("posts to SLACK_SIGNUP_WEBHOOK_URL as fallback", async () => {
+    delete process.env.SLACK_ALERT_WEBHOOK_URL
+    process.env.SLACK_SIGNUP_WEBHOOK_URL = "https://hooks.slack.com/services/TEST/WALK/SIGNUP"
+    process.env.KLAV_BASE_URL = "https://klavity.in"
     await expect(notifyWalkRed(ctx)).resolves.toBeUndefined()
   })
 })
