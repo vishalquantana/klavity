@@ -451,15 +451,16 @@ export async function recordFinding(
 
 export async function listFindings(
   projectId: string,
-  opts?: { status?: FindingStatus; limit?: number; offset?: number },
+  opts?: { status?: FindingStatus; runId?: string; limit?: number; offset?: number },
 ): Promise<Finding[]> {
   const limit = Math.min(Math.max(opts?.limit ?? DEFAULT_FINDINGS_LIMIT, 1), MAX_FINDINGS_LIMIT)
   const offset = opts?.offset ?? 0
-  const where = opts?.status ? ` AND status=?` : ""
+  const where: string[] = []
   const args: (string | number)[] = [projectId]
-  if (opts?.status) args.push(opts.status)
+  if (opts?.status) { where.push("status=?"); args.push(opts.status) }
+  if (opts?.runId) { where.push("run_id=?"); args.push(opts.runId) }
   const r = await db!.execute({
-    sql: `SELECT * FROM findings WHERE project_id=?${where} ORDER BY updated_at DESC LIMIT ? OFFSET ?`,
+    sql: `SELECT * FROM findings WHERE project_id=?${where.length ? " AND " + where.join(" AND ") : ""} ORDER BY updated_at DESC LIMIT ? OFFSET ?`,
     args: [...args, limit, offset],
   })
   return r.rows.map(rowToFinding)

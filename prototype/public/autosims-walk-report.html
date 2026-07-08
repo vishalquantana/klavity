@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script>(function(){try{var t=localStorage.getItem('klav-theme');if(t==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();</script>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Shared Walk Report · Klavity</title>
+<link rel="stylesheet" href="/fonts/fonts.css"/>
+<link rel="stylesheet" href="/tokens.css"/>
+<style>
+:root{--ink:#f5f3ee;--ink-2:#ffffff;--ink-3:#efeae0;--paper:#19140f;--paper-dim:#574f45;--paper-faint:#8a8076;--indigo:#6366f1;--amber:#d98324;--rose:#db2777;--green:#0f9d6b;--line:rgba(25,20,15,.12);--display:'Fraunces',serif;--body:'Hanken Grotesk',system-ui,sans-serif;--mono:'JetBrains Mono',monospace}
+[data-theme="dark"]{--ink:#0c0a08;--ink-2:#15110d;--ink-3:#1e1813;--paper:#f3ece1;--paper-dim:#b3a896;--paper-faint:#776c5d;--indigo:#8b8bf5;--amber:#e8a24a;--rose:#e8849a;--green:#9fd6a0;--line:rgba(243,236,225,.11)}
+*{box-sizing:border-box}body{margin:0;background:var(--ink);color:var(--paper);font-family:var(--body);min-height:100vh}a{color:inherit}.bar{position:sticky;top:0;z-index:5;background:var(--ink-2);border-bottom:1px solid var(--line)}.bar-in{max-width:1280px;margin:0 auto;height:64px;padding:0 24px;display:flex;align-items:center;gap:14px}.brand{display:flex;align-items:center;gap:10px;font-family:var(--display);font-size:20px;text-decoration:none}.bar .muted{margin-left:auto;font-size:13px;color:var(--paper-faint)}
+.wrap{max-width:1280px;margin:0 auto;padding:28px 24px}.head{display:flex;gap:16px;align-items:flex-start;margin-bottom:22px}.head-main{flex:1;min-width:0}.head h1{font-family:var(--display);font-weight:450;font-size:30px;letter-spacing:0;margin:0 0 6px}.meta{font-family:var(--mono);font-size:12px;color:var(--paper-faint);display:flex;gap:12px;flex-wrap:wrap}.acts{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.pill{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;padding:5px 11px;border-radius:99px}.pill.green{background:rgba(15,157,107,.16);color:var(--green)}.pill.amber{background:rgba(217,131,36,.18);color:var(--amber)}.pill.red{background:rgba(219,39,119,.16);color:var(--rose)}.pill.running,.pill.skip{background:var(--ink-3);color:var(--paper-faint)}
+.btn{font-family:var(--body);font-weight:650;font-size:13px;border:1px solid var(--line);background:var(--ink-2);color:var(--paper);border-radius:8px;padding:8px 12px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px}.btn:hover{border-color:var(--indigo)}.btn.primary{background:var(--indigo);border-color:var(--indigo);color:white}.btn:disabled{opacity:.55;cursor:not-allowed}
+.grid{display:grid;grid-template-columns:280px minmax(0,1fr);gap:20px;align-items:start}@media(max-width:900px){.grid{grid-template-columns:1fr}.head{flex-direction:column}.acts{width:100%}}
+.panel{background:var(--ink-2);border:1px solid var(--line);border-radius:8px;padding:18px}.panel h2{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--paper-faint);margin:0 0 14px}.sidebar{position:sticky;top:84px;max-height:calc(100vh - 104px);overflow:auto}.step{display:flex;align-items:center;gap:9px;padding:8px 9px;border-radius:8px;font-family:var(--mono);font-size:11px;color:var(--paper-dim)}.step:hover,.step.on{background:var(--ink-3)}.dot{width:8px;height:8px;border-radius:50%;background:var(--paper-faint)}.dot.green{background:var(--green)}.dot.amber{background:var(--amber)}.dot.red{background:var(--rose)}
+.main{display:flex;flex-direction:column;gap:20px}.chapters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}.ch{font-family:var(--mono);font-size:10px;border:1px solid var(--line);background:transparent;color:var(--paper-faint);border-radius:8px;padding:5px 9px;cursor:pointer}.ch.on{background:var(--ink-3);border-color:var(--indigo);color:var(--paper)}#playerHost{min-height:260px;border-radius:8px;overflow:hidden;background:var(--ink)}.note{font-family:var(--mono);font-size:12px;color:var(--paper-faint);margin-top:10px}.live-frame{width:100%;border-radius:8px;border:1px solid var(--line);background:var(--ink);min-height:260px;object-fit:contain}
+.finding{border:1px solid var(--line);border-radius:8px;padding:14px;background:var(--ink);margin-top:10px}.finding .top{display:flex;gap:8px;align-items:center;margin-bottom:8px}.kind{font-family:var(--mono);font-size:10px;text-transform:uppercase;color:var(--indigo)}.status{font-family:var(--mono);font-size:10px;color:var(--paper-faint);margin-left:auto}.ft{font-weight:700;margin-bottom:6px}.quote,.detail{font-size:13px;line-height:1.45;color:var(--paper-dim)}.diff{font-family:var(--mono);font-size:11px;color:var(--paper-faint);background:var(--ink-3);border-radius:8px;padding:7px;margin-top:8px;overflow:auto}.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.msg{font-size:12px;color:var(--paper-faint);margin-top:8px}.empty{color:var(--paper-faint);font-size:14px;padding:16px 0}.bug-form{display:grid;gap:8px}.bug-form input,.bug-form textarea{width:100%;border:1px solid var(--line);border-radius:8px;background:var(--ink);color:var(--paper);font:inherit;padding:9px 10px}.bug-form textarea{min-height:82px;resize:vertical}
+.step-card{border:1px solid var(--line);background:var(--ink);border-radius:8px;padding:14px}.step-card pre{white-space:pre-wrap;word-break:break-word;font-family:var(--mono);font-size:11px;color:var(--paper-faint);margin:10px 0 0}
+</style>
+<script src="/icons.generated.js"></script>
+</head>
+<body>
+<div class="bar"><div class="bar-in">
+  <a class="brand" href="/"><img src="/favicon.svg" width="28" height="28" alt="Klavity" style="border-radius:8px;display:block"/>Klavity</a>
+  <span class="muted">Shared AutoSim walk report</span>
+</div></div>
+<div class="wrap">
+  <div class="head">
+    <div class="head-main">
+      <h1 id="title">Loading…</h1>
+      <div class="meta" id="meta"></div>
+    </div>
+    <div class="acts" id="acts"></div>
+  </div>
+  <div class="grid">
+    <aside class="panel sidebar">
+      <h2>Steps</h2>
+      <div id="steps"><div class="empty">Loading…</div></div>
+    </aside>
+    <main class="main">
+      <section class="panel" id="livePanel" style="display:none">
+        <h2>Live View</h2>
+        <img id="liveFrame" class="live-frame" alt="Live browser frame"/>
+        <div class="note" id="liveNote">Connecting…</div>
+      </section>
+      <section class="panel">
+        <h2>Session Replay</h2>
+        <div id="replay"><div class="empty">Loading…</div></div>
+      </section>
+      <section class="panel">
+        <h2>Findings</h2>
+        <div id="findings"><div class="empty">Loading…</div></div>
+      </section>
+      <section class="panel">
+        <h2>Add A Bug</h2>
+        <form class="bug-form" id="bugForm">
+          <input id="bugTitle" maxlength="160" placeholder="Bug title"/>
+          <textarea id="bugDetail" maxlength="2000" placeholder="What happened?"></textarea>
+          <div class="row"><button class="btn primary" type="submit">Add bug</button><span class="msg" id="bugMsg"></span></div>
+        </form>
+      </section>
+      <section class="panel" id="stepDetail" style="display:none">
+        <h2 id="stepDetailTitle">Step Detail</h2>
+        <div id="stepDetailBody"></div>
+      </section>
+    </main>
+  </div>
+</div>
+<script>
+function $(id){return document.getElementById(id)}
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c})}
+var token=location.pathname.replace(/^\/shared\/walk\//,"").split("/")[0]
+var state={data:null,segments:[],steps:[],player:null}
+function icon(name,size){return window.kicon?window.kicon(name,{size:size||12}):""}
+var rrwebReady=null
+function ensureRrweb(){
+  if(rrwebReady) return rrwebReady
+  rrwebReady=new Promise(function(resolve,reject){
+    if(window.rrweb&&window.rrweb.Replayer){resolve();return}
+    var s=document.createElement("script");s.src="/vendor/klv-buffer.min.js";s.onload=function(){resolve()};s.onerror=function(){reject(new Error("rrweb load failed"))};document.head.appendChild(s)
+  })
+  return rrwebReady
+}
+function destroyPlayer(){try{if(state.player&&typeof state.player.pause==="function")state.player.pause()}catch(e){} state.player=null;var h=$("playerHost");if(h)h.innerHTML=""}
+function playChapter(i){
+  var seg=state.segments[i];if(!seg)return
+  destroyPlayer();document.querySelectorAll(".ch").forEach(function(b,n){b.classList.toggle("on",n===i)})
+  try{
+    var Replayer=window.rrweb&&window.rrweb.Replayer;if(!Replayer)throw new Error("rrweb unavailable")
+    var events=(seg.events||[]).slice();if(events.length<2)throw new Error("too few replay events")
+    state.player=new Replayer(events,{root:$("playerHost"),skipInactive:true,showWarning:false,showDebug:false,mouseTail:true})
+    state.player.play();$("replayNote").textContent="Chapter "+(i+1)+" of "+state.segments.length+" · "+(seg.url||"")
+  }catch(e){$("replayNote").textContent="Could not play this chapter."}
+}
+async function loadReplay(){
+  if(!state.data.hasReplay){$("replay").innerHTML='<div class="empty">No replay was recorded for this walk.</div>';return}
+  try{await ensureRrweb()}catch(e){}
+  var r=await fetch(state.data.replayUrl)
+  if(!r.ok){$("replay").innerHTML='<div class="empty">Replay is not available.</div>';return}
+  var d=await r.json();state.segments=d.segments||[]
+  if(!state.segments.length){$("replay").innerHTML='<div class="empty">Replay has no recorded segments.</div>';return}
+  var html='<div class="chapters">'
+  state.segments.forEach(function(seg,i){html+='<button class="ch" data-ch="'+i+'">'+(i+1)+'. '+esc((seg.url||"page").split("/").pop()||"page")+'</button>'})
+  html+='</div><div id="playerHost"></div><div class="note" id="replayNote"></div>'
+  $("replay").innerHTML=html
+  document.querySelectorAll("[data-ch]").forEach(function(b){b.onclick=function(){playChapter(Number(b.getAttribute("data-ch")))}})
+  playChapter(0)
+}
+function startLive(){
+  var d=state.data;if(!d.liveUrl)return
+  $("livePanel").style.display=""
+  try{
+    var es=new EventSource(d.liveUrl)
+    es.onmessage=function(ev){try{var f=JSON.parse(ev.data);if(f.dataUrl){$("liveFrame").src=f.dataUrl;$("liveNote").textContent="Live"}}catch(e){}}
+    es.addEventListener("end",function(ev){$("liveNote").textContent=(ev.data||"ended");try{es.close()}catch(e){}})
+    es.onerror=function(){$("liveNote").textContent="Live view unavailable."}
+  }catch(e){$("liveNote").textContent="Live view unavailable."}
+}
+function renderSteps(){
+  var steps=state.data.steps||[];state.steps=steps
+  if(!steps.length){$("steps").innerHTML='<div class="empty">No steps recorded.</div>';return}
+  $("steps").innerHTML=""
+  steps.forEach(function(s){
+    var v=String(s.verdict||"skip"), el=document.createElement("div")
+    el.className="step";el.innerHTML='<span>#'+esc(s.idx)+'</span><span class="dot '+esc(v)+'"></span><span>'+esc(v)+'</span>'
+    el.onclick=function(){document.querySelectorAll(".step").forEach(function(x){x.classList.remove("on")});el.classList.add("on");showStep(s)}
+    $("steps").appendChild(el)
+  })
+}
+function showStep(s){
+  $("stepDetail").style.display="";$("stepDetailTitle").textContent="Step #"+s.idx+" · "+(s.verdict||"skip")
+  var ev=s.evidence||{}
+  $("stepDetailBody").innerHTML='<div class="step-card"><div class="detail">'+esc(ev.reason||ev.rationale||ev.checkpoint||"Recorded step evidence")+'</div><pre>'+esc(JSON.stringify(ev,null,2))+'</pre></div>'
+}
+function findingHtml(f){
+  var ev=f.evidence||{}, rationale=ev.rationale||f.groundQuote||ev.detail||"", canAct=f.status==="queued"
+  var html='<div class="finding" data-finding="'+esc(f.id)+'"><div class="top"><span class="kind">'+esc(f.kind)+'</span><span class="status">'+esc(f.status)+'</span></div>'
+    +'<div class="ft">'+esc(f.title)+'</div>'
+  if(rationale)html+='<div class="quote">'+esc(rationale)+'</div>'
+  if(ev.fromSelector||ev.toSelector)html+='<div class="diff">'+esc(ev.fromSelector||"(none)")+' → '+esc(ev.toSelector||"(none)")+'</div>'
+  html+='<div class="row">'
+  if(canAct){html+='<button class="btn primary" data-act="file" data-id="'+esc(f.id)+'">'+icon("send",12)+'Accept</button><button class="btn" data-act="dismiss" data-id="'+esc(f.id)+'">'+icon("x",12)+'Dismiss</button>'}
+  if(f.connectorRef)html+='<span class="msg">Filed: '+esc(f.connectorRef)+'</span>'
+  if(f.connectorError)html+='<span class="msg" style="color:var(--rose)">File failed: '+esc(f.connectorError)+'</span>'
+  html+='</div><div class="msg" data-msg="'+esc(f.id)+'"></div></div>'
+  return html
+}
+function renderFindings(){
+  var findings=state.data.findings||[]
+  $("findings").innerHTML=findings.length?findings.map(findingHtml).join(""):'<div class="empty">No findings for this walk.</div>'
+  document.querySelectorAll("[data-act]").forEach(function(b){b.onclick=function(){actFinding(b.getAttribute("data-act"),b.getAttribute("data-id"),b)}})
+}
+async function actFinding(action,id,btn){
+  var msg=document.querySelector('[data-msg="'+id+'"]');btn.disabled=true;if(msg)msg.textContent=""
+  try{
+    var r=await fetch("/shared/walk/"+encodeURIComponent(token)+"/findings/"+encodeURIComponent(id)+"/"+action,{method:"POST",headers:{"content-type":"application/json"},body:"{}"})
+    var d=await r.json().catch(function(){return {}})
+    if(r.ok&&d.ok){await load();return}
+    if(msg){msg.style.color="var(--rose)";msg.textContent=d.error||"Action failed."}
+  }catch(e){if(msg){msg.style.color="var(--rose)";msg.textContent="Network error."}}finally{btn.disabled=false}
+}
+$("bugForm").onsubmit=async function(ev){
+  ev.preventDefault();var title=$("bugTitle").value.trim(), detail=$("bugDetail").value.trim(), msg=$("bugMsg");msg.textContent=""
+  try{
+    var r=await fetch("/shared/walk/"+encodeURIComponent(token)+"/findings",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({title:title,detail:detail})})
+    var d=await r.json().catch(function(){return {}})
+    if(r.ok&&d.ok){$("bugTitle").value="";$("bugDetail").value="";msg.style.color="var(--green)";msg.textContent="Bug added.";await load();return}
+    msg.style.color="var(--rose)";msg.textContent=d.error||"Could not add bug."
+  }catch(e){msg.style.color="var(--rose)";msg.textContent="Network error."}
+}
+async function load(){
+  var r=await fetch("/shared/walk/"+encodeURIComponent(token)+"/data")
+  if(!r.ok){$("title").textContent="Shared report not found";$("meta").textContent="This link may be expired or revoked.";return}
+  state.data=await r.json()
+  var w=state.data.walk||{}, t=state.data.trail||{}, v=String(w.status||"running")
+  document.title=(t.name||"Walk")+" · Shared Walk Report · Klavity";$("title").textContent=t.name||w.id||"Walk report"
+  var when=w.startedAt?new Date(w.startedAt).toLocaleString():"";$("meta").innerHTML='<span>ID: '+esc(w.id)+'</span>'+(when?'<span>'+esc(when)+'</span>':"")+(w.llmCalls?'<span>'+esc(w.llmCalls)+' LLM calls</span>':"")
+  $("acts").innerHTML='<span class="pill '+esc(v)+'">'+esc(v)+'</span><a class="btn" href="'+esc(state.data.pdfUrl)+'" target="_blank" rel="noopener">'+icon("file-text",12)+'PDF</a>'
+  renderSteps();renderFindings();await loadReplay();if(v==="running")startLive()
+}
+load().catch(function(){$("title").textContent="Could not load shared report"})
+</script>
+</body>
+</html>
