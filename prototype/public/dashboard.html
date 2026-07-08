@@ -5395,14 +5395,10 @@ load()
         if(vv==="red"||vv==="false")vGuidance=" — AutoSim couldn't replay deterministically; review the PDF before activating."
         else if(vv==="amber")vGuidance=" — healed but unconfirmed; check the findings queue after activating."
         box.innerHTML=html+'<div class="nt-done">Walk recorded. Verification: <b class="v-'+esc(s.verificationVerdict||"")+'">'+esc(String(s.verificationVerdict||"?").toUpperCase())+"</b>"+esc(vGuidance)+"</div>"
-          +'<div class="wiz-approve-row"><button class="btn btn-indigo" id="wizApprove" data-trail="'+esc(s.trailId)+'">Activate AutoSim</button>'+pdfLink+"</div>"
+          +'<div class="wiz-approve-row"><button class="btn btn-indigo" id="wizApprove">Review Steps &amp; Activate</button>'+pdfLink+"</div>"
         var ap=document.getElementById("wizApprove")
-        ap.addEventListener("click",async function(){
-          ap.disabled=true;ap.textContent="Activating…"
-          var ar=await fetch("/api/trails/"+encodeURIComponent(ap.dataset.trail)+"/approve"+projQ(),{method:"POST"})
-          if(ar.ok){closeWizard();render(await loadData())}
-          else{ap.disabled=false;ap.textContent="Activate AutoSim"}
-        })
+        // KLA-153: route through Draft Review so the user sees authored steps before activating.
+        ap.addEventListener("click",function(){closeWizard();openDraftReview(s.trailId)})
         return
       }
       var display=humanizeStall(s.stallReason)||s.status
