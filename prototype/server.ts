@@ -40,7 +40,7 @@ import { listRunSteps, listTrails, getTrail, getWalk, setTrailStatus, listTrailS
 import { runWalkNow } from "./lib/trails-trigger"
 import { startTrailScheduler, isValidCron } from "./lib/trails-scheduler"
 import { startCrashReaper } from "./lib/trails-reaper"
-import { runAuthorNow, getAuthorSession, getActiveAuthorSession } from "./lib/trails-author"
+import { runAuthorNow, getAuthorSession, getActiveAuthorSession, listStalledAuthorSessions } from "./lib/trails-author"
 import { WalkBusyError, cancelCurrentWalk, PdfBusyError } from "./lib/trails-browser"
 import { mintShareToken, resolveShareToken, renderWalkPdf, revokeShareToken, listShareTokens } from "./lib/trails-share"
 import { gatherWalkReport } from "./lib/trails-report"
@@ -3359,6 +3359,32 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (req.method === "GET" && path === "/api/trails/author/active") {
         const s = await getActiveAuthorSession(projectId)
         return s ? json(s) : json({ error: "No active session" }, 404)
+      }
+      // GET /api/trails/author/stalled — KLA-152: list recent stalled sessions with a checkpoint or partial draft.
+      if (req.method === "GET" && path === "/api/trails/author/stalled") {
+        const sessions = await listStalledAuthorSessions(projectId)
+        return json({ sessions })
+      }
+      // POST /api/trails/author/:sessionId/resume — KLA-152: resume a stalled session from its checkpoint.
+      {
+        const resumeMatch = path.match(/^\/api\/trails\/author\/([^/]+)\/resume$/)
+        if (req.method === "POST" && resumeMatch) {
+          const priorId = resumeMatch[1]
+          const prior = await getAuthorSession(projectId, priorId)
+          if (!prior) return json({ error: "Session not found" }, 404)
+          if (prior.status !== "stalled") return json({ error: `Session is ${prior.status}, not stalled` }, 409)
+          if (!prior.checkpoint) return json({ error: "Session has no checkpoint to resume from" }, 409)
+          try {
+            const { sessionId } = await runAuthorNow(projectId, {
+              name: prior.name, objective: prior.objective, baseUrl: prior.baseUrl,
+              viewport: null, testAccountName: prior.testAccount ?? undefined, createdBy: meT,
+            }, { resumeSessionId: priorId })
+            return json({ sessionId }, 202)
+          } catch (e) {
+            if (e instanceof WalkBusyError) return json({ error: "An AutoSim is already running — try again shortly." }, 409)
+            return json(oops(e, "trails-author-resume"), 500)
+          }
+        }
       }
       if (req.method === "GET" && path.startsWith("/api/trails/author/")) {
         const s = await getAuthorSession(projectId, path.slice("/api/trails/author/".length))

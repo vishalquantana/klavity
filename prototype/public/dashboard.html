@@ -5248,7 +5248,15 @@ load()
         return
       }
       var display=humanizeStall(s.stallReason)||s.status
+      var stalBtns=""
+      if(s.checkpoint)stalBtns+='<button class="btn btn-indigo" id="ntResume" style="font-size:12px;padding:5px 12px">Resume from checkpoint</button>'
+      if(s.trailId)stalBtns+='<button class="btn btn-ghost" id="ntDraft" style="font-size:12px;padding:5px 12px">Review partial draft</button>'
       box.innerHTML=html+'<div class="nt-stall">Stopped: '+esc(display)+'</div><div class="hint">Refine the objective above and hit Create Trail again.</div>'
+        +(stalBtns?'<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">'+stalBtns+'</div>':"")
+      var ntR=document.getElementById("ntResume")
+      if(ntR){ntR.addEventListener("click",async function(){ntR.disabled=true;ntR.textContent="Resuming…";var rr=await fetch("/api/trails/author/"+encodeURIComponent(sessionId)+"/resume"+projQ(),{method:"POST"});if(!rr.ok){ntR.disabled=false;ntR.textContent="Resume from checkpoint";return};var rd=await rr.json();pollAuthor(rd.sessionId,box)})}
+      var ntD=document.getElementById("ntDraft")
+      if(ntD){ntD.addEventListener("click",function(){openDraftReview(s.trailId)})}
       document.getElementById("ntGo").disabled=false;return
     }
     document.getElementById("ntGo").disabled=false
@@ -5336,10 +5344,17 @@ load()
         return
       }
       var display=humanizeStall(s.stallReason)||s.status
+      var wizStalBtns='<button class="btn btn-ghost" id="wizRetry">← Edit journey</button>'
+      if(s.checkpoint)wizStalBtns+='<button class="btn btn-indigo" id="wizResume" style="font-size:12px;padding:5px 12px">Resume from checkpoint</button>'
+      if(s.trailId)wizStalBtns+='<button class="btn btn-ghost" id="wizDraft" style="font-size:12px;padding:5px 12px">Review partial draft</button>'
       box.innerHTML=html+'<div class="nt-stall">Stopped: '+esc(display)+'</div><div class="hint" style="margin-top:6px">Refine the journey description and try again.</div>'
-        +'<div style="margin-top:12px"><button class="btn btn-ghost" id="wizRetry">← Edit journey</button></div>'
+        +'<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">'+wizStalBtns+'</div>'
       var retry=document.getElementById("wizRetry")
       if(retry){retry.addEventListener("click",function(){document.getElementById("wizNav").style.display="";box.style.display="none";box.innerHTML="";wizStep=3;wizRender();createBtn.disabled=false;createBtn.textContent="Create & Run"})}
+      var wizR=document.getElementById("wizResume")
+      if(wizR){wizR.addEventListener("click",async function(){wizR.disabled=true;wizR.textContent="Resuming…";var rr=await fetch("/api/trails/author/"+encodeURIComponent(sessionId)+"/resume"+projQ(),{method:"POST"});if(!rr.ok){wizR.disabled=false;wizR.textContent="Resume from checkpoint";return};var rd=await rr.json();closeWizard();document.getElementById("ntName").value=s.name||"";document.getElementById("ntUrl").value=s.baseUrl||"";document.getElementById("ntObj").value=s.objective||"";document.getElementById("ntGo").disabled=true;var ntBox=document.getElementById("ntProgress");ntBox.innerHTML='<div class="nt-live">Resuming AutoSim session…</div>';document.getElementById("ntBg").classList.add("show");pollAuthor(rd.sessionId,ntBox)})}
+      var wizDraft=document.getElementById("wizDraft")
+      if(wizDraft){wizDraft.addEventListener("click",function(){closeWizard();openDraftReview(s.trailId)})}
       return
     }
     box.innerHTML='<div class="nt-stall">Timed out — the AutoSim may still be running. Check back shortly.</div>'
