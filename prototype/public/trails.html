@@ -352,6 +352,27 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
   </div>
 </div>
 
+<!-- KLA-88: Schedule modal. This markup was missing — its JS wiring ($("schedClose").onclick …)
+     threw "Cannot set properties of null" and aborted the whole page script, which killed the
+     "+ New Trail" button (its click handler is wired further down). -->
+<div class="modal-bg" id="schedBg">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Schedule this Trail">
+    <div class="mhead">
+      <h3>Schedule Trail</h3>
+      <button class="mclose" id="schedClose" aria-label="Close">&times;</button>
+    </div>
+    <p class="lead">Run this Trail automatically on a schedule. Enter a cron expression, or pick a preset.</p>
+    <label>Cron expression <input id="schedExpr" placeholder="0 9 * * *  — every day at 09:00" /></label>
+    <div class="row" style="flex-wrap:wrap;gap:6px;margin:6px 0">
+      <button type="button" class="btn btn-ghost sched-preset" data-preset="0 * * * *">Hourly</button>
+      <button type="button" class="btn btn-ghost sched-preset" data-preset="0 9 * * *">Daily · 9am</button>
+      <button type="button" class="btn btn-ghost sched-preset" data-preset="0 9 * * 1">Weekly · Mon</button>
+    </div>
+    <div id="schedErr" class="err"></div>
+    <div class="row"><button class="btn btn-indigo" id="schedSave">Save schedule</button><button class="btn btn-ghost" id="schedClear">Clear</button><button class="btn btn-ghost" id="schedCancel">Cancel</button></div>
+  </div>
+</div>
+
 <!-- Draft Review modal — shows the authored steps before the user confirms Activate -->
 <div class="modal-bg" id="drBg">
   <div class="modal" role="dialog" aria-modal="true" aria-label="Review Trail before activating">
