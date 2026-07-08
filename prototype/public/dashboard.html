@@ -349,6 +349,35 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 .kb-chip b{font-weight:700}
 .kb-chip .kb-x{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border:none;border-radius:50%;background:var(--line);color:var(--paper);cursor:pointer;font-size:13px;line-height:1}
 .kb-chip .kb-x:hover{background:var(--rose);color:#fff}
+/* KLA-169: Tickets filter bar selects */
+.tkt-fb{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+.tkt-fb select{appearance:none;-webkit-appearance:none;background:var(--ink-3) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23888' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 8px center;border:1px solid var(--line);border-radius:8px;padding:5px 26px 5px 10px;font-size:12px;color:var(--paper);cursor:pointer;transition:border-color .15s;font-family:inherit}
+.tkt-fb select:hover{border-color:var(--indigo)}
+.tkt-fb select:focus{outline:2px solid var(--indigo);outline-offset:1px}
+.tkt-fb select.active{border-color:var(--indigo);background-color:rgba(99,102,241,.08)}
+.tkt-fb-label{font-size:11px;font-weight:600;color:var(--paper-faint);letter-spacing:.04em;text-transform:uppercase}
+.tkt-fb-clear{font-size:12px;color:var(--indigo);background:none;border:none;cursor:pointer;padding:4px 8px;border-radius:6px;transition:background .12s;margin-left:4px}
+.tkt-fb-clear:hover{background:rgba(99,102,241,.1)}
+/* KLA-169: list view */
+.tkt-view-toggle{display:flex;gap:4px;margin-left:auto}
+.tkt-vbtn{background:var(--ink-3);border:1px solid var(--line);border-radius:7px;padding:5px 10px;font-size:12px;color:var(--paper-dim);cursor:pointer;display:flex;align-items:center;gap:5px;transition:background .12s,border-color .12s,color .12s}
+.tkt-vbtn:hover{border-color:var(--indigo);color:var(--paper)}
+.tkt-vbtn.active{background:rgba(99,102,241,.12);border-color:var(--indigo);color:var(--indigo)}
+.tkt-list{display:flex;flex-direction:column;gap:0}
+.tkt-list-row{display:flex;align-items:center;gap:12px;padding:10px 14px;border-top:1px solid var(--line);cursor:pointer;transition:background .12s,transform .1s}
+.tkt-list-row:first-child{border-top:none}
+.tkt-list-row:hover{background:var(--ink-3);transform:translateX(2px)}
+.tkt-list-row .tl-pri{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.tkt-list-row .tl-title{flex:1;min-width:0;font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tkt-list-row .tl-meta{display:flex;align-items:center;gap:8px;flex-shrink:0;font-size:11.5px;color:var(--paper-faint)}
+.tkt-list-row .tl-src{font-family:var(--mono);font-size:10px;background:var(--ink-3);padding:2px 7px;border-radius:20px;color:var(--paper-dim)}
+.pri-dot-urgent{background:var(--rose)}.pri-dot-high{background:#f97316}.pri-dot-medium{background:var(--amber)}.pri-dot-low{background:var(--paper-faint)}.pri-dot-none{background:var(--line)}
+.tkt-pg{display:flex;align-items:center;gap:10px;margin-top:18px;justify-content:center}
+.tkt-pg-btn{background:var(--ink-3);border:1px solid var(--line);border-radius:8px;padding:6px 16px;font-size:13px;color:var(--paper-dim);cursor:pointer;transition:background .12s,border-color .12s}
+.tkt-pg-btn:hover:not(:disabled){border-color:var(--indigo);color:var(--indigo)}
+.tkt-pg-btn:disabled{opacity:.4;cursor:default}
+.tkt-pg-info{font-size:12px;color:var(--paper-faint);font-family:var(--mono)}
+.tkt-list-empty{padding:32px 0;text-align:center;color:var(--paper-faint);font-size:14px}
 @media(max-width:900px){.kpis{grid-template-columns:1fr 1fr}}
 /* Fix next + hotspots */
 .h-tag{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--paper-faint);background:var(--ink-3);padding:2px 8px;border-radius:20px;text-transform:none;letter-spacing:0;font-weight:400}
@@ -601,6 +630,7 @@ details.drawer .drawer-in{padding:0 22px 22px}
 .kb-card-d{font-size:11px;color:var(--paper-faint);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .kb-card-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px}
 /* graft: severity rail (scannable spine) + status pill + search toolbar */
+.sevrail-urgent{box-shadow:inset 3px 0 0 #dc2626}
 .sevrail-high{box-shadow:inset 3px 0 0 var(--rose)}
 .sevrail-medium{box-shadow:inset 3px 0 0 var(--amber)}
 .sevrail-low{box-shadow:inset 3px 0 0 var(--paper-faint)}
@@ -624,7 +654,7 @@ details.drawer .drawer-in{padding:0 22px 22px}
 .tkt-back:hover{border-color:var(--indigo);color:var(--paper)}
 .single-head{display:flex;gap:14px;margin-bottom:16px;max-width:920px}
 .single-rail{flex:none;width:4px;border-radius:4px;align-self:stretch;background:var(--paper-faint)}
-.single-rail.sv-high{background:var(--rose)}.single-rail.sv-medium{background:var(--amber)}.single-rail.sv-low{background:var(--paper-faint)}
+.single-rail.sv-urgent{background:#dc2626}.single-rail.sv-high{background:var(--rose)}.single-rail.sv-medium{background:var(--amber)}.single-rail.sv-low{background:var(--paper-faint)}
 .single-h-b{flex:1;min-width:0}
 .single-title{font-family:var(--display);font-weight:500;font-size:22px;line-height:1.25;letter-spacing:-.01em}
 .single-meta{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:8px}
@@ -1216,9 +1246,20 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     <div class="card full" data-view="tickets">
       <div class="kb-toolbar">
       <h2><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20v-9" /> <path d="M14 7a4 4 0 0 1 4 4v3a6 6 0 0 1-12 0v-3a4 4 0 0 1 4-4z" /> <path d="M14.12 3.88 16 2" /> <path d="M21 21a4 4 0 0 0-3.81-4" /> <path d="M21 5a4 4 0 0 1-3.55 3.97" /> <path d="M22 13h-4" /> <path d="M3 21a4 4 0 0 1 3.81-4" /> <path d="M3 5a4 4 0 0 0 3.55 3.97" /> <path d="M6 13H2" /> <path d="m8 2 1.88 1.88" /> <path d="M9 7.13V6a3 3 0 1 1 6 0v1.13" /></svg> Tickets <span class="count" id="ticketKanbanCount"></span></h2>
-        <div class="kb-search"><span class="mag">⌕</span><input id="kanbanSearch" placeholder="Search tickets…" autocomplete="off" /></div>
+        <div class="tkt-view-toggle"><button class="tkt-vbtn active" id="tktListBtn" title="List view">&#9776; List</button><button class="tkt-vbtn" id="tktBoardBtn" title="Board view">&#8862; Board</button></div>
+        <div class="kb-search"><span class="mag">&#8981;</span><input id="kanbanSearch" placeholder="Search tickets…" autocomplete="off" /></div>
       </div>
-      <div class="kb-filterbar" id="kbFilterBar"></div>
+      <!-- KLA-169: Shared filter bar (reused by board + list views) -->
+      <div class="tkt-fb" id="tktFilterBar">
+        <span class="tkt-fb-label">Filter</span>
+        <select id="fbStatus" title="Filter by status"><option value="">All statuses</option><option value="open">Open</option><option value="in_progress">In progress</option><option value="done">Done</option><option value="dismissed">Dismissed</option></select>
+        <select id="fbPriority" title="Filter by priority"><option value="">All priorities</option><option value="urgent">Urgent</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select>
+        <select id="fbAssignee" title="Filter by assignee"><option value="">All assignees</option><option value="__unassigned__">Unassigned</option></select>
+        <select id="fbSource" title="Filter by source"><option value="">All sources</option><option value="sim">Sim / AI</option><option value="human">Human report</option></select>
+        <button class="tkt-fb-clear hide" id="fbClearBtn" type="button">&#10005; Clear filters</button>
+      </div>
+      <!-- KLA-169: List view (paginated, server-driven) -->
+      <div id="tktListView"></div>
       <div id="ticketsKanban"><div class="sk-card"><span class="sk sk-av"></span><div class="sk-lines"><span class="sk sk-line" style="width:62%"></span><span class="sk sk-line" style="width:40%"></span></div><span class="sk sk-pill"></span></div><div class="sk-card"><span class="sk sk-av"></span><div class="sk-lines"><span class="sk sk-line" style="width:62%"></span><span class="sk sk-line" style="width:40%"></span></div><span class="sk sk-pill"></span></div></div>
       <div id="ticketSingle" class="hide"></div>
     </div>
@@ -2283,7 +2324,7 @@ function renderFixNext() {
     host.innerHTML = emptyState(kicon('check-circle',{size:32}), "No open issues right now — your Sims are happy.", "")
   } else {
     host.innerHTML = top.map(t => `
-      <div class="fxrow ${sevRailClass(t.severity)}" data-id="${esc(String(t.id))}">
+      <div class="fxrow ${sevRailClass(t.priority)}" data-id="${esc(String(t.id))}">
         <div class="fx-b">
           <div class="fx-t">${esc(t.title || "Untitled report")}${(t.recurrence >= 2) ? `<span class="fx-recur">recurring ×${t.recurrence}</span>` : ""}</div>
           ${t.sourceQuote ? `<div class="fx-q">“${esc(t.sourceQuote)}”</div>` : ""}
@@ -2682,7 +2723,7 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
     // Two-column layout when screenshot exists: shot in col-1, everything else in .tkt-right-body col-2.
     const _isTwoCol = isSingle && !!t.screenshotId
     const _showObs = t.observation && (!isSingle || t.observation.trim() !== (t.title || "").trim())
-    const _showSevChip = !isSingle && !!t.severity
+    const _showSevChip = !isSingle && !!t.priority
     const _showSentiment = !isSingle && !!t.sentiment
     const _showSimChip = !isSingle && !!t.simName
     const _showMetaLine = !isSingle
@@ -2703,7 +2744,7 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
       <div class="tkt-context">
         ${regrBannerHtml(t)}
         ${_showObs ? `<div class="tkt-obs">${esc(t.observation)}</div>` : ""}
-        ${(_showSevChip || _showSentiment || _showSimChip) ? `<div class="tkt-chips">${_showSevChip ? `<span class="chip sev-${esc(t.severity)}">${esc(t.severity)}</span>` : ""}${_showSentiment ? `<span class="chip s-${esc(t.sentiment)}">${esc(t.sentiment)}</span>` : ""}${_showSimChip ? `<span class="chip">${esc(t.simName)}</span>` : ""}</div>` : ""}
+        ${(_showSevChip || _showSentiment || _showSimChip) ? `<div class="tkt-chips">${_showSevChip ? `<span class="chip sev-${esc(t.priority)}">${esc(t.priority)}</span>` : ""}${_showSentiment ? `<span class="chip s-${esc(t.sentiment)}">${esc(t.sentiment)}</span>` : ""}${_showSimChip ? `<span class="chip">${esc(t.simName)}</span>` : ""}</div>` : ""}
         ${_showBug ? `<div class="tkt-bug">${_showBugTitle ? `<div class="tkt-bug-t">${kicon('bug')} ${esc(_bugTitle)}</div>` : ""}${_showBugBody ? `<div class="tkt-bug-b">${esc(_bugBody)}</div>` : ""}</div>` : ""}
         ${t.sourceQuote ? `<div class="tkt-prov">"${esc(t.sourceQuote)}"${t.sourceDate ? ` · raised ${esc(ago(t.sourceDate))}` : ""}</div>` : ""}
         ${_showMetaLine ? `<div class="tkt-meta-line muted">${(t.urlHost || t.urlPath) ? esc((t.urlHost || "") + (t.urlPath || "")) : ""}${((t.urlHost || t.urlPath) && t.createdAt) ? " · " : ""}${t.createdAt ? esc(ago(t.createdAt)) : ""}</div>` : ""}
@@ -2854,7 +2895,7 @@ function renderTickets() {
     const sub = [t.simName ? ("by " + t.simName) : "", t.urlPath ? esc(t.urlPath) : "", ago(t.createdAt)].filter(Boolean).join(" · ")
 
     const rowEl = document.createElement("div")
-    rowEl.className = "row-tkt " + sevRailClass(t.severity)
+    rowEl.className = "row-tkt " + sevRailClass(t.priority)
     rowEl.setAttribute("data-id", ticketId)
     const renderRowTitle = () => {
       const statusPart = `<span style="margin-left:8px">${statusPillHtml(t.status)}</span>`
@@ -2900,10 +2941,10 @@ function openSingleTicket(id) {
   const single = $("ticketSingle"); if (!single) return
   const board = $("ticketsKanban"); const toolbar = document.querySelector(".kb-toolbar")
   const admin = state.active && state.active.role === "admin"
-  const sv = (t.severity === "high" || t.severity === "medium" || t.severity === "low") ? t.severity : "none"
+  const sv = ["urgent","high","medium","low"].includes(t.priority) ? t.priority : "none"
   single.innerHTML = ""
   const back = document.createElement("button")
-  back.className = "tkt-back"; back.type = "button"; back.textContent = "← Back to board"
+  back.className = "tkt-back"; back.type = "button"; back.textContent = _tktView === "board" ? "← Back to board" : "← Back to list"
   back.addEventListener("click", closeSingleTicket)
   single.appendChild(back)
   const head = document.createElement("div"); head.className = "single-head"
@@ -2923,19 +2964,25 @@ function openSingleTicket(id) {
   single.appendChild(detailEl)
   loadTktShot(detailEl, t.annotations)
   if (board) board.classList.add("hide")
+  const listView = document.getElementById("tktListView")
+  if (listView) listView.classList.add("hide")
   if (toolbar) toolbar.classList.add("hide")
   single.classList.remove("hide")
   try { window.scrollTo(0, 0) } catch (e) {}
 }
 function closeSingleTicket() {
-  const single = $("ticketSingle"), board = $("ticketsKanban"), toolbar = document.querySelector(".kb-toolbar")
+  const single = $("ticketSingle"), toolbar = document.querySelector(".kb-toolbar")
   if (single) { single.classList.add("hide"); single.innerHTML = "" }
-  if (board) board.classList.remove("hide")
   if (toolbar) toolbar.classList.remove("hide")
+  // Remove hide from list view before restoring (renderTicketsView will manage visibility)
+  const listView = document.getElementById("tktListView")
+  if (listView) listView.classList.remove("hide")
+  // Restore whichever view was active before drilling into the single-ticket detail
+  renderTicketsView()
 }
 
 // graft helpers: severity rail class + status pill
-function sevRailClass(sev) { return "sevrail-" + ((sev === "high" || sev === "medium" || sev === "low") ? sev : "none") }
+function sevRailClass(sev) { return "sevrail-" + (["urgent","high","medium","low"].includes(sev) ? sev : "none") }
 function statusPillHtml(status) { const s = status || "open"; return `<span class="tkt-pill p-${esc(s)}"><span class="pdot"></span>${STATUS_LABELS[s] || esc(s)}</span>` }
 // KLA-2: Regression-memory badge helpers — gracefully hide when fields absent (Codex read-path not yet merged)
 function recurBadgeHtml(t) {
@@ -2948,6 +2995,183 @@ function regrBannerHtml(t) {
   if (!t.isRegression) return ""
   return `<div class="regr-banner"><span class="regr-ico">↩</span>Regression — came back after resolved</div>`
 }
+// ── KLA-169: Tickets filter bar + list view ──────────────────────────────────────────────────────
+let _tktFilters = { status: "", priority: "", assignee: "", source: "" }
+let _tktListState = { page: 1, totalPages: 1, loading: false }
+let _tktView = "list" // "list" | "board"
+let _tktFbBound = false
+
+function tktFilterBarBind() {
+  if (_tktFbBound) return
+  const fbStatus = document.getElementById("fbStatus")
+  const fbPriority = document.getElementById("fbPriority")
+  const fbAssignee = document.getElementById("fbAssignee")
+  const fbSource = document.getElementById("fbSource")
+  const fbClear = document.getElementById("fbClearBtn")
+  const listBtn = document.getElementById("tktListBtn")
+  const boardBtn = document.getElementById("tktBoardBtn")
+  if (!fbStatus || !fbPriority || !fbAssignee || !fbSource || !fbClear) return
+  _tktFbBound = true
+
+  // View toggle
+  if (listBtn) listBtn.addEventListener("click", () => { _tktView = "list"; listBtn.classList.add("active"); boardBtn && boardBtn.classList.remove("active"); renderTicketsView() })
+  if (boardBtn) boardBtn.addEventListener("click", () => { _tktView = "board"; boardBtn.classList.add("active"); listBtn && listBtn.classList.remove("active"); renderTicketsView() })
+
+  // Populate assignee dropdown from state
+  const assignees = [...new Set((state.tickets || []).map(t => t.assignee).filter(Boolean))]
+  if (assignees.length) {
+    assignees.forEach(a => {
+      const opt = document.createElement("option"); opt.value = a; opt.textContent = a; fbAssignee.appendChild(opt)
+    })
+  }
+
+  const onFilterChange = () => {
+    _tktFilters.status = fbStatus.value
+    _tktFilters.priority = fbPriority.value
+    _tktFilters.assignee = fbAssignee.value
+    _tktFilters.source = fbSource.value
+    // Active state on selects
+    ;[fbStatus, fbPriority, fbAssignee, fbSource].forEach(sel => sel.classList.toggle("active", !!sel.value))
+    // Show/hide clear button
+    const hasFilter = Object.values(_tktFilters).some(v => !!v)
+    fbClear && fbClear.classList.toggle("hide", !hasFilter)
+    _tktListState.page = 1
+    renderTicketsView()
+  }
+
+  fbStatus.addEventListener("change", onFilterChange)
+  fbPriority.addEventListener("change", onFilterChange)
+  fbAssignee.addEventListener("change", onFilterChange)
+  fbSource.addEventListener("change", onFilterChange)
+  fbClear.addEventListener("click", () => {
+    fbStatus.value = ""; fbPriority.value = ""; fbAssignee.value = ""; fbSource.value = ""
+    ;[fbStatus, fbPriority, fbAssignee, fbSource].forEach(sel => sel.classList.remove("active"))
+    fbClear.classList.add("hide")
+    _tktFilters = { status: "", priority: "", assignee: "", source: "" }
+    _tktListState.page = 1
+    renderTicketsView()
+  })
+}
+
+function renderTicketsView() {
+  tktFilterBarBind()
+  if (_tktView === "list") {
+    const board = document.getElementById("ticketsKanban")
+    if (board) board.classList.add("hide")
+    fetchAndRenderTktList()
+  } else {
+    const list = document.getElementById("tktListView")
+    if (list) list.innerHTML = ""
+    const board = document.getElementById("ticketsKanban")
+    if (board) board.classList.remove("hide")
+    renderTicketsKanban()
+  }
+}
+
+async function fetchAndRenderTktList() {
+  const listEl = document.getElementById("tktListView")
+  if (!listEl) return
+  if (_tktListState.loading) return
+  _tktListState.loading = true
+  listEl.innerHTML = '<div class="tkt-list-empty">Loading…</div>'
+
+  const projId = state.active && state.active.id
+  if (!projId) { listEl.innerHTML = '<div class="tkt-list-empty">No project selected.</div>'; _tktListState.loading = false; return }
+
+  const sp = new URLSearchParams()
+  if (_tktFilters.status) sp.set("status", _tktFilters.status)
+  if (_tktFilters.priority) sp.set("priority", _tktFilters.priority)
+  if (_tktFilters.assignee) sp.set("assignee", _tktFilters.assignee === "__unassigned__" ? "" : _tktFilters.assignee)
+  if (_tktFilters.source) sp.set("source", _tktFilters.source)
+  sp.set("page", String(_tktListState.page))
+  sp.set("limit", "50")
+
+  // Also apply search
+  const searchEl = document.getElementById("kanbanSearch")
+  const searchQ = searchEl ? searchEl.value : ""
+
+  try {
+    const res = await fetch(`/api/projects/${encodeURIComponent(projId)}/tickets?${sp.toString()}`)
+    if (!res.ok) throw new Error("HTTP " + res.status)
+    const data = await res.json()
+    _tktListState.totalPages = data.totalPages || 1
+    renderTktList(listEl, data.tickets || [], data.total || 0, searchQ)
+  } catch (e) {
+    listEl.innerHTML = '<div class="tkt-list-empty">Failed to load tickets.</div>'
+  } finally {
+    _tktListState.loading = false
+  }
+}
+
+function priDotClass(pri) {
+  return "pri-dot-" + (["urgent","high","medium","low"].includes(pri) ? pri : "none")
+}
+
+function renderTktList(listEl, tickets, total, searchQ) {
+  const q = (searchQ || "").toLowerCase().trim()
+  const filtered = q ? tickets.filter(t => [t.title, t.observation, t.urlPath, t.simName, t.priority].some(v => String(v || "").toLowerCase().includes(q))) : tickets
+
+  const wrap = document.createElement("div")
+
+  if (!filtered.length) {
+    wrap.innerHTML = '<div class="tkt-list-empty">' + (total === 0 ? "No tickets match these filters." : "No tickets match your search.") + "</div>"
+    listEl.innerHTML = ""; listEl.appendChild(wrap)
+    return
+  }
+
+  // Summary row
+  const summary = document.createElement("div")
+  summary.style.cssText = "font-size:12px;color:var(--paper-faint);margin-bottom:10px;font-family:var(--mono)"
+  summary.textContent = total + " ticket" + (total !== 1 ? "s" : "") + " · page " + _tktListState.page + " of " + _tktListState.totalPages
+  wrap.appendChild(summary)
+
+  const listDiv = document.createElement("div")
+  listDiv.className = "tkt-list"
+
+  filtered.forEach(t => {
+    const row = document.createElement("div")
+    row.className = "tkt-list-row"
+    row.setAttribute("data-id", t.id)
+
+    const pri = t.priority || ""
+    const srcLabel = t.simName ? t.simName : (t.source === "human" ? "Human" : "Report")
+    const sub = [t.urlPath ? esc(t.urlPath) : "", ago(t.createdAt)].filter(Boolean).join(" · ")
+
+    row.innerHTML =
+      '<span class="tl-pri ' + priDotClass(pri) + '" title="Priority: ' + esc(pri || "none") + '"></span>' +
+      '<div class="tl-title">' + esc(t.title || "Untitled report") + '</div>' +
+      '<div class="tl-meta">' +
+        statusPillHtml(t.status) +
+        '<span class="tl-src">' + esc(srcLabel) + '</span>' +
+        '<span>' + sub + '</span>' +
+      '</div>'
+
+    row.addEventListener("click", () => openSingleTicket(t.id))
+    // Inject ticket into state.tickets if not already there (so detail view works)
+    if (state.tickets && !state.tickets.find(x => x.id === t.id)) state.tickets.push(t)
+    listDiv.appendChild(row)
+  })
+  wrap.appendChild(listDiv)
+
+  // Pagination
+  if (_tktListState.totalPages > 1) {
+    const pg = document.createElement("div")
+    pg.className = "tkt-pg"
+    const prev = document.createElement("button")
+    prev.className = "tkt-pg-btn"; prev.textContent = "← Prev"; prev.disabled = _tktListState.page <= 1
+    prev.addEventListener("click", () => { _tktListState.page--; fetchAndRenderTktList() })
+    const info = document.createElement("span")
+    info.className = "tkt-pg-info"; info.textContent = _tktListState.page + " / " + _tktListState.totalPages
+    const next = document.createElement("button")
+    next.className = "tkt-pg-btn"; next.textContent = "Next →"; next.disabled = _tktListState.page >= _tktListState.totalPages
+    next.addEventListener("click", () => { _tktListState.page++; fetchAndRenderTktList() })
+    pg.appendChild(prev); pg.appendChild(info); pg.appendChild(next)
+    wrap.appendChild(pg)
+  }
+
+  listEl.innerHTML = ""; listEl.appendChild(wrap)
+}
+
 let _kanbanSearch = "", _kbSearchBound = false
 // Active card-driven filter on the Tickets board (one at a time, plus the text search). null = none.
 let _kbFilter = null // { type:'open'|'recurring'|'sentiment-neg'|'severity', value?, label }
@@ -2958,19 +3182,24 @@ function kbMatchesFilter(t) {
     case "recurring": return (t.recurrence || 1) >= 3
     case "sentiment-neg": return t.sentiment === "frustrated" || t.sentiment === "confused"
     case "severity": return _kbFilter.value === "low"
-      ? (t.severity === "low" || t.severity === "none" || !t.severity)
-      : t.severity === _kbFilter.value
+      ? (t.priority === "low" || t.priority === "none" || !t.priority)
+      : t.priority === _kbFilter.value
     default: return true
   }
 }
 function kbMatchesSearch(t) {
   const q = _kanbanSearch.trim().toLowerCase()
   if (!q) return true
-  return [t.title, t.observation, t.urlPath, t.simName, t.severity, t.sentiment].some(v => String(v || "").toLowerCase().includes(q))
+  return [t.title, t.observation, t.urlPath, t.simName, t.priority, t.sentiment].some(v => String(v || "").toLowerCase().includes(q))
 }
 // Jump to the Tickets board with a card-driven filter applied (used by the overview KPI cards).
 function goToTicketsFiltered(filter) {
   _kbFilter = filter || null
+  // Card-driven filters apply to the kanban board — switch to board view first
+  _tktView = "board"
+  const listBtn = document.getElementById("tktListBtn"), boardBtn = document.getElementById("tktBoardBtn")
+  if (listBtn) listBtn.classList.remove("active")
+  if (boardBtn) boardBtn.classList.add("active")
   if (window.klavSetView) window.klavSetView("tickets")
   else document.body.setAttribute("data-view", "tickets")
   renderTicketsKanban()
@@ -3027,11 +3256,11 @@ function renderTicketsKanban() {
     items.forEach(t => {
       const ticketId = t.id
       const cardEl = document.createElement("div")
-      cardEl.className = "kb-card " + sevRailClass(t.severity)
+      cardEl.className = "kb-card " + sevRailClass(t.priority)
       cardEl.setAttribute("data-id", ticketId)
       const sub = [t.simName ? ("by " + t.simName) : "", t.urlPath ? esc(t.urlPath) : "", ago(t.createdAt)].filter(Boolean).join(" · ")
       const renderCard = () => {
-        const sevChip = t.severity ? `<span class="chip sev-${esc(t.severity)}">${esc(t.severity)}</span>` : ""
+        const sevChip = t.priority ? `<span class="chip sev-${esc(t.priority)}">${esc(t.priority)}</span>` : ""
         const stChip = `<span class="chip kb-st kb-st-${esc(t.status || "open")}">${STATUS_LABELS[t.status] || esc(t.status || "open")}</span>`
         const assignee = t.assignee ? `<span class="muted" style="font-size:11px">→ ${esc(t.assignee)}</span>` : ""
         cardEl.querySelector(".kb-card-meta").innerHTML = `${stChip}${sevChip}${assignee}${recurBadgeHtml(t)}`
@@ -3170,7 +3399,7 @@ function ticketMarkdown(t) {
   L.push("")
   const meta = []
   if (t.status) meta.push("- **Status:** " + (STATUS_LABELS[t.status] || t.status))
-  if (t.severity) meta.push("- **Severity:** " + t.severity)
+  if (t.priority) meta.push("- **Priority:** " + t.priority)
   if (t.sentiment) meta.push("- **Sentiment:** " + t.sentiment)
   if (t.urlPath) meta.push("- **Where:** `" + t.urlPath + "`")
   if (t.simName) meta.push("- **Reported by:** " + t.simName)
@@ -4121,6 +4350,7 @@ load()
     if(v==='triage'){if(typeof renderTriage==='function')renderTriage();}
     if(v==='recurring'){if(typeof renderRecurringIssues==='function')renderRecurringIssues();}
     if(v==='autosims'){if(typeof window.initTrailsView==='function')window.initTrailsView();}
+    if(v==='tickets'){if(typeof renderTicketsView==='function')renderTicketsView();}
   }
   normalizeSidebar();
   var side=document.querySelector('.side');
