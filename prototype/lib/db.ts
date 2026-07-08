@@ -2828,6 +2828,100 @@ export async function listTriageFeedback(projectId: string): Promise<any[]> {
   })
 }
 
+// Paginated, filterable ticket list for the /tickets view (KLA-169).
+// Returns triaged tickets (status != 'new') with optional filters.
+export async function listTicketsPaginated(
+  projectId: string,
+  opts: {
+    statuses?: string[]      // e.g. ["open","in_progress"]; empty = all non-new
+    priorities?: string[]    // e.g. ["urgent","high"]
+    assignee?: string        // exact email match; empty string = unassigned; omit = all
+    source?: "sim" | "human" // sim = sim_id IS NOT NULL; human = sim_id IS NULL
+    page?: number            // 1-indexed, default 1
+    limit?: number           // default 50, max 200
+  }
+): Promise<{ tickets: any[]; total: number; page: number; totalPages: number }> {
+  const page = Math.max(1, opts.page ?? 1)
+  const limit = Math.min(200, Math.max(1, opts.limit ?? 50))
+  const offset = (page - 1) * limit
+
+  const conditions: string[] = ["f.project_id=?"]
+  const args: any[] = [projectId]
+
+  // Exclude 'new' (un-triaged) by default
+  const statuses = (opts.statuses ?? []).filter(Boolean)
+  if (statuses.length) {
+    conditions.push(`f.status IN (${statuses.map(() => "?").join(",")})`)
+    args.push(...statuses)
+  } else {
+    conditions.push("f.status != 'new'")
+  }
+
+  if (opts.priorities && opts.priorities.length) {
+    conditions.push(`f.priority IN (${opts.priorities.map(() => "?").join(",")})`)
+    args.push(...opts.priorities)
+  }
+
+  if (opts.assignee !== undefined) {
+    if (opts.assignee === "") {
+      conditions.push("(f.assignee IS NULL OR f.assignee='')")
+    } else {
+      conditions.push("f.assignee=?")
+      args.push(opts.assignee)
+    }
+  }
+
+  if (opts.source === "sim") conditions.push("f.sim_id IS NOT NULL")
+  else if (opts.source === "human") conditions.push("f.sim_id IS NULL")
+
+  const where = "WHERE " + conditions.join(" AND ")
+
+  const countRow = await db!.execute({
+    sql: `SELECT COUNT(*) AS n FROM feedback f ${where}`,
+    args,
+  })
+  const total = Number((countRow.rows[0] as any).n ?? 0)
+  const totalPages = Math.max(1, Math.ceil(total / limit))
+
+  const rows = await db!.execute({
+    sql: `SELECT f.*, p.name AS sim_name FROM feedback f
+          LEFT JOIN personas p ON p.id = f.sim_id
+          ${where} ORDER BY f.created_at DESC LIMIT ? OFFSET ?`,
+    args: [...args, limit, offset],
+  })
+
+  const tickets = rows.rows.map((x: any) => {
+    let bug: any = null
+    try { bug = x.suggested_bug_json ? JSON.parse(String(x.suggested_bug_json)) : null } catch { bug = null }
+    return {
+      id: String(x.id),
+      title: String(bug?.title || x.observation || "Untitled report"),
+      observation: x.observation != null ? String(x.observation) : null,
+      sentiment: x.sentiment != null ? String(x.sentiment) : null,
+      priority: (x.priority ?? x.severity) != null ? String(x.priority ?? x.severity) : null,
+      status: x.status != null ? String(x.status) : "open",
+      assignee: x.assignee != null ? String(x.assignee) : null,
+      notes: x.notes != null ? String(x.notes) : null,
+      urlPath: x.url_path != null ? String(x.url_path) : null,
+      urlHost: x.url_host != null ? String(x.url_host) : null,
+      screenshotId: x.screenshot_id != null ? String(x.screenshot_id) : null,
+      suggestedBug: bug,
+      sourceQuote: x.source_quote != null ? String(x.source_quote) : null,
+      simId: x.sim_id != null ? String(x.sim_id) : null,
+      simName: x.sim_name != null ? String(x.sim_name) : null,
+      planeIssueKey: x.plane_issue_key != null ? String(x.plane_issue_key) : null,
+      planeIssueUrl: x.plane_issue_url != null ? String(x.plane_issue_url) : null,
+      recurrence: Number(x.recurrence_count ?? 1),
+      recurrenceCount: Number(x.recurrence_count ?? 1),
+      createdAt: Number(x.created_at),
+      updatedAt: x.updated_at != null ? Number(x.updated_at) : null,
+      source: x.sim_id != null ? "sim" : "human",
+    }
+  })
+
+  return { tickets, total, page, totalPages }
+}
+
 // ── sim_runs — on-demand Sim run records ─────────────────────────────────────
 // One row per manual trigger: captures who ran, what URL, which Sims, and the
 // full reactions payload so the dashboard can show run history.
