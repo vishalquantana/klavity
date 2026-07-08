@@ -312,7 +312,7 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
   <a class="brand" href="/dashboard"><img src="/favicon.svg" width="28" height="28" alt="Klavity" style="border-radius:8px;display:block" />Klavity</a>
   <nav class="nav">
     <a href="/dashboard">Dashboard</a>
-    <a href="/trails" class="on">AutoSims</a>
+    <a href="/autosims" class="on">AutoSims</a>
     <a href="/autosims/walks" id="navWalks">All Walks</a>
   </nav>
   <div class="right">
@@ -325,12 +325,12 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
   <div class="head">
     <div>
       <h1>AutoSims</h1>
-      <p class="lead" id="lead">Your AutoSims walk these Trails — journeys they enforce on every run.</p>
+      <p class="lead" id="lead">Your AutoSims run on a schedule and flag regressions before your users do.</p>
     </div>
     <div class="switcher">
       <span class="sw-lbl">Project</span>
       <select class="proj-select" id="projSwitch" aria-label="Active project"></select>
-      <button class="btn btn-indigo" id="newTrailBtn">+ New Trail</button>
+      <button class="btn btn-indigo" id="newTrailBtn">+ New AutoSim</button>
     </div>
   </div>
 
@@ -345,7 +345,7 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 
   <!-- Trails (each runnable on-demand) -->
   <div class="card" style="margin-bottom:18px">
-    <h2 id="trailsCardHead">Trails <span class="count" id="trailsCount">0</span></h2>
+    <h2 id="trailsCardHead">AutoSims <span class="count" id="trailsCount">0</span></h2>
     <div class="list" id="trails"></div>
   </div>
 
@@ -367,7 +367,7 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
   <div id="expSection">
     <div style="margin-top:22px;margin-bottom:8px;display:flex;align-items:baseline;gap:10px">
       <h2 style="font-family:var(--display);font-weight:450;font-size:22px;letter-spacing:-.02em">Expectations</h2>
-      <span style="color:var(--paper-faint);font-size:14px">Discovered requirements — enforce to crystallise into a Trail assertion</span>
+      <span style="color:var(--paper-faint);font-size:14px">Discovered requirements — enforce to crystallise into an AutoSim step</span>
     </div>
     <div class="exp-board">
       <div class="exp-col">
@@ -388,18 +388,18 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 
 <!-- New Trail authoring modal -->
 <div class="modal-bg" id="ntBg">
-  <div class="modal" role="dialog" aria-modal="true" aria-label="New Trail">
-    <h2>New Trail</h2>
-    <p class="lead">Describe the journey. An AutoSim will drive your site once, then replay it deterministically.</p>
+  <div class="modal" role="dialog" aria-modal="true" aria-label="New AutoSim">
+    <h2>New AutoSim</h2>
+    <p class="lead">Describe the path you want checked. An AutoSim will drive your site once, then replay it deterministically.</p>
     <label>Name <input id="ntName" maxlength="80" placeholder="Login and create a project" /></label>
     <label>Start URL <input id="ntUrl" placeholder="https://yourapp.com" /></label>
     <label>Objective
       <textarea id="ntObj" rows="4" placeholder="Log in, create a project, open it, then delete it and log out."></textarea>
     </label>
-    <p class="hint" id="ntCleanupHint">Tip: end the journey where it started — include the cleanup ("...then delete it") so every run leaves your data tidy.</p>
+    <p class="hint" id="ntCleanupHint">Tip: end where you started — include cleanup steps ("...then delete it") so every run leaves your data tidy.</p>
     <label>Viewport <select id="ntViewport"><option value="desktop">Desktop 1280×720</option><option value="mobile">Mobile 390×844</option></select></label>
     <label>Test account <select id="ntAcc"><option value="">(none — public pages)</option></select></label>
-    <div class="row"><button class="btn btn-indigo" id="ntGo">Create Trail</button><button class="btn btn-ghost" id="ntCancel">Cancel</button></div>
+    <div class="row"><button class="btn btn-indigo" id="ntGo">Create AutoSim</button><button class="btn btn-ghost" id="ntCancel">Cancel</button></div>
     <div id="ntProgress"></div>
   </div>
 </div>
@@ -410,7 +410,7 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
     <div class="wiz-head">
       <div>
         <div class="wiz-eyebrow">New AutoSim</div>
-        <h2 id="wizTitle">Name this journey</h2>
+        <h2 id="wizTitle">Name this AutoSim</h2>
       </div>
       <button class="mclose" id="wizClose" aria-label="Close">&times;</button>
     </div>
@@ -419,7 +419,7 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
       <div class="wiz-connector"></div>
       <div class="wiz-dot" id="wizDot2" title="Step 2: Start URL">2</div>
       <div class="wiz-connector"></div>
-      <div class="wiz-dot" id="wizDot3" title="Step 3: Journey">3</div>
+      <div class="wiz-dot" id="wizDot3" title="Step 3: Objective">3</div>
       <div class="wiz-connector"></div>
       <div class="wiz-dot" id="wizDot4" title="Step 4: Review">4</div>
     </div>
@@ -427,9 +427,9 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 
     <!-- Step 1: Name -->
     <div id="wiz1" class="wiz-panel">
-      <p class="wiz-desc">Give this journey a short, memorable name. You'll see it in your AutoSims list alongside its latest result.</p>
+      <p class="wiz-desc">Give this AutoSim a short, memorable name. You'll see it in your AutoSims list alongside its latest result.</p>
       <label class="wiz-field">
-        Journey name
+        Name
         <input id="wizName" type="text" maxlength="80" placeholder="e.g. User signup and onboarding" autocomplete="off" />
       </label>
       <p class="hint">Examples: "Login flow", "Checkout", "Invite a teammate"</p>
@@ -437,7 +437,7 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 
     <!-- Step 2: Start URL -->
     <div id="wiz2" class="wiz-panel" style="display:none">
-      <p class="wiz-desc">Where should the AutoSim open its browser? Paste the URL of the page where the journey begins.</p>
+      <p class="wiz-desc">Where should the AutoSim open its browser? Paste the URL of the page where the AutoSim starts.</p>
       <label class="wiz-field">
         Start URL
         <input id="wizUrl" type="url" placeholder="https://yourapp.com/login" autocomplete="url" />
@@ -454,14 +454,14 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
         Test account
         <select id="wizAcc"><option value="">(none — public pages)</option></select>
       </label>
-      <p class="hint" id="wizAccHint">Journeys that log in need a test account — the AutoSim fills its credentials at the login step.</p>
+      <p class="hint" id="wizAccHint">AutoSims that log in need a test account — the AutoSim fills credentials at the login step.</p>
     </div>
 
     <!-- Step 3: Objective -->
     <div id="wiz3" class="wiz-panel" style="display:none">
-      <p class="wiz-desc">Describe what the AutoSim should do, step by step — as if you were briefing a new tester. The AI turns this into an automated journey.</p>
+      <p class="wiz-desc">Describe what the AutoSim should do, step by step — as if you were briefing a new tester. The AI turns this into an automated path.</p>
       <label class="wiz-field">
-        Journey description
+        Objective
         <textarea id="wizObj" rows="5" placeholder="e.g. Log in with my email and password. Go to the Projects page. Create a new project called 'Test Run', open it, verify the name appears in the header, then delete it. Log out."></textarea>
       </label>
       <p class="hint">Tip: include cleanup steps ("delete it", "log out") so every run leaves your data tidy.</p>
@@ -469,11 +469,11 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 
     <!-- Step 4: Review + Create -->
     <div id="wiz4" class="wiz-panel" style="display:none">
-      <p class="wiz-desc">Everything look right? Hit <strong>Create &amp; Run</strong> and the AutoSim will drive your site to record the journey live.</p>
+      <p class="wiz-desc">Everything look right? Hit <strong>Create &amp; Run</strong> and the AutoSim will drive your site to record the path live.</p>
       <div class="wiz-review">
         <div class="wiz-rev-row"><span class="wiz-rev-label">Name</span><span class="wiz-rev-val" id="wizRevName"></span></div>
         <div class="wiz-rev-row"><span class="wiz-rev-label">URL</span><span class="wiz-rev-val" id="wizRevUrl"></span></div>
-        <div class="wiz-rev-row wiz-rev-obj"><span class="wiz-rev-label">Journey</span><span class="wiz-rev-val" id="wizRevObj"></span></div>
+        <div class="wiz-rev-row wiz-rev-obj"><span class="wiz-rev-label">Objective</span><span class="wiz-rev-val" id="wizRevObj"></span></div>
         <div class="wiz-rev-row"><span class="wiz-rev-label">Viewport</span><span class="wiz-rev-val" id="wizRevViewport"></span></div>
         <div class="wiz-rev-row"><span class="wiz-rev-label">Account</span><span class="wiz-rev-val" id="wizRevAcc"></span></div>
       </div>
@@ -500,12 +500,12 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
      threw "Cannot set properties of null" and aborted the whole page script, which killed the
      "+ New Trail" button (its click handler is wired further down). -->
 <div class="modal-bg" id="schedBg">
-  <div class="modal" role="dialog" aria-modal="true" aria-label="Schedule this Trail">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Schedule this AutoSim">
     <div class="mhead">
-      <h3>Schedule Trail</h3>
+      <h3>Schedule AutoSim</h3>
       <button class="mclose" id="schedClose" aria-label="Close">&times;</button>
     </div>
-    <p class="lead">Run this Trail automatically on a schedule. Enter a cron expression, or pick a preset.</p>
+    <p class="lead">Run this AutoSim automatically on a schedule. Enter a cron expression, or pick a preset.</p>
     <label>Cron expression <input id="schedExpr" placeholder="0 9 * * *  — every day at 09:00" /></label>
     <div class="row" style="flex-wrap:wrap;gap:6px;margin:6px 0">
       <button type="button" class="btn btn-ghost sched-preset" data-preset="0 * * * *">Hourly</button>
@@ -519,9 +519,9 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 
 <!-- Draft Review modal — shows the authored steps before the user confirms Activate -->
 <div class="modal-bg" id="drBg">
-  <div class="modal" role="dialog" aria-modal="true" aria-label="Review Trail before activating">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Review AutoSim before activating">
     <div class="mhead">
-      <h3>Review Trail</h3>
+      <h3>Review AutoSim</h3>
       <button class="mclose" id="drClose" aria-label="Close">&times;</button>
     </div>
     <div class="dr-body" id="drBody">
@@ -531,7 +531,7 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
       <div class="dr-steps" id="drSteps"></div>
     </div>
     <div class="dr-foot">
-      <button class="btn btn-indigo" id="drActivate">Activate Trail</button>
+      <button class="btn btn-indigo" id="drActivate">Activate AutoSim</button>
       <button class="btn btn-ghost" id="drCancel">Cancel</button>
       <span class="dr-err hide" id="drErr"></span>
     </div>
@@ -1169,15 +1169,15 @@ async function openDraftReview(trailId){
   $("drUrl").textContent = ""
   $("drSteps").innerHTML = ""
   $("drErr").textContent = ""; $("drErr").classList.add("hide")
-  $("drActivate").disabled = false; $("drActivate").textContent = "Activate Trail"
-  openModal("drBg")
+  $("drActivate").disabled = false; $("drActivate").textContent = "Activate AutoSim"
+  $("drBg").classList.add("open")
   var r
   try { r = await fetch("/api/trails/" + encodeURIComponent(trailId) + "/steps" + qs) }
   catch(e){ $("drName").textContent = "Network error"; return }
   if (!r.ok){ $("drName").textContent = "Couldn't load steps."; return }
   var d = await r.json()
   var trail = d.trail || {}
-  $("drName").textContent = trail.name || "Trail"
+  $("drName").textContent = trail.name || "AutoSim"
   $("drUrl").textContent = trail.baseUrl || ""
   renderDrSteps(d.steps || [])
 }
@@ -1203,12 +1203,12 @@ $("drActivate").onclick = async function(){
       var body = await ar.json().catch(function(){ return {} })
       $("drErr").textContent = body.error || "Activation failed."
       $("drErr").classList.remove("hide")
-      $("drActivate").disabled = false; $("drActivate").textContent = "Activate Trail"
+      $("drActivate").disabled = false; $("drActivate").textContent = "Activate AutoSim"
     }
   } catch(e){
     $("drErr").textContent = "Network error."
     $("drErr").classList.remove("hide")
-    $("drActivate").disabled = false; $("drActivate").textContent = "Activate Trail"
+    $("drActivate").disabled = false; $("drActivate").textContent = "Activate AutoSim"
   }
 }
 
@@ -1220,7 +1220,7 @@ function renderTrails(d){
     tEl.innerHTML = '<div class="ob-wrap">'
       + '<div class="ob-primary">'
         + '<div><h3>Create your first AutoSim</h3>'
-        + '<p>Describe the journey you want checked. The wizard will guide you through the site URL, objective, reviewer, and first live run.</p></div>'
+        + '<p>Describe the path you want checked. The wizard will guide you through the site URL, objective, reviewer, and first live run.</p></div>'
         + '<button class="btn btn-indigo" onclick="openWizard()">Create your first AutoSim</button>'
       + '</div>'
       + '<div class="ob-head">How AutoSims work</div>'
@@ -1228,14 +1228,14 @@ function renderTrails(d){
       + '<div class="ob-steps">'
         + '<div class="ob-step">'
           + '<div class="ob-num">Step 1</div>'
-          + '<h3>Define a journey</h3>'
-          + '<p>Describe a critical user path in plain English — login, checkout, invite a teammate. The AI authors the Trail steps from your objective.</p>'
+          + '<h3>Define the path</h3>'
+          + '<p>Describe a critical user path in plain English — login, checkout, invite a teammate. The AI builds the AutoSim steps from your objective.</p>'
           + '<div class="ob-seam"></div>'
         + '</div>'
         + '<div class="ob-step">'
           + '<div class="ob-num">Step 2</div>'
           + '<h3>A Sim walks your site</h3>'
-          + '<p>An AI drives a real browser through the journey. Selector drift? It heals and keeps going. The full session is recorded so you can replay every step.</p>'
+          + '<p>An AI drives a real browser through the path. Selector drift? It heals and keeps going. The full session is recorded so you can replay every step.</p>'
           + '<div class="ob-seam"></div>'
         + '</div>'
         + '<div class="ob-step">'
@@ -1282,7 +1282,7 @@ function renderTrails(d){
         if (w && w.hasReplay) html += '<button class="replay-btn" data-replay="'+esc(w.id)+'">'+kicon('play',{size:12})+' Replay</button>'
       }
       if (!isPaused) html += '<button class="run-btn" data-run="'+esc(t.id)+'">'+kicon('play',{size:12})+' Run</button>'
-      html += '<button class="kebab-btn" data-kebab="'+esc(t.id)+'" aria-label="Trail options">&#8942;</button>'
+      html += '<button class="kebab-btn" data-kebab="'+esc(t.id)+'" aria-label="AutoSim options">&#8942;</button>'
     }
     row.innerHTML = html
     // Kebab dropdown (positioned relative to wrap)
@@ -1387,9 +1387,7 @@ function renderTrails(d){
           if (d2) render(d2)
         } else {
           var d3 = await r.json().catch(function(){return{}})
-          alert(d3.error || "Could not update trail status")
-          btn.disabled = false
-          btn.textContent = originalText
+          alert(d3.error || "Could not update AutoSim status")
         }
       } catch(e) {
         alert("Network error updating status.")
@@ -1513,7 +1511,7 @@ async function loadData(){
 
 async function load(){
   const d = await loadData()
-  if (!d) { $("lead").textContent = "Couldn't load Trails."; return }
+  if (!d) { $("lead").textContent = "Couldn't load AutoSims."; return }
   await render(d)
 }
 
@@ -1546,7 +1544,7 @@ async function render(d){
   const walks = d.recentWalks || []
   $("walksCount").textContent = String(walks.length)
   const wEl = $("walks")
-  wEl.innerHTML = walks.length ? "" : '<div class="empty"><div class="em">'+window.kicon('footprints',{size:18})+'</div><p>No Walks yet. Author a Trail and walk it to see verdicts here.</p></div>'
+  wEl.innerHTML = walks.length ? "" : '<div class="empty"><div class="em">'+window.kicon('footprints',{size:18})+'</div><p>No Walks yet. Create an AutoSim and run it to see verdicts here.</p></div>'
   // KLAVITYKLA-118: build trailId→name lookup so walk rows show the human trail NAME, not the raw ID.
   const trailNameFor = {}
   ;(d.trails || []).forEach(function(t){ trailNameFor[t.id] = t.name })
@@ -1654,7 +1652,7 @@ async function act(kind, id){
 }
 
 $("logout").onclick = async function(){ await fetch("/api/auth/logout", { method:"POST" }); location.href = "/" }
-$("projSwitch").onchange = function(){ const v = $("projSwitch").value; location.href = "/trails?project=" + encodeURIComponent(v) }
+$("projSwitch").onchange = function(){ const v = $("projSwitch").value; location.href = "/autosims?project=" + encodeURIComponent(v) }
 
 // ── Expectations board ────────────────────────────────────────────────────────
 
@@ -1868,9 +1866,9 @@ function humanizeStall(reason){
   if (!reason) return null
   var r = String(reason)
   // Author budget cap hit — the LLM drive ran out of spend before finishing the trail.
-  if (/budget cap/i.test(r)) return "We hit our cost limit while drafting this trail."
+  if (/budget cap/i.test(r)) return "We hit our cost limit while drafting this AutoSim."
   // Drive deadline exceeded — AutoSim took too long on a single authoring run.
-  if (/drive deadline|deadline exceeded/i.test(r)) return "AutoSim ran out of time while working on your trail."
+  if (/drive deadline|deadline exceeded/i.test(r)) return "AutoSim ran out of time while recording."
   // LLM call failed server-side.
   if (/author model error/i.test(r)) return "Something went wrong with AutoSim's reasoning — please try again shortly."
   // Model returned malformed JSON / nonsense replies.
@@ -1886,7 +1884,7 @@ function humanizeStall(reason){
   // Model explicitly stalled with a rationale (e.g. auth wall). Keep user's words; they're usually OK.
   if (/^model stalled$|^stall:$/i.test(r)) return reason || "AutoSim stopped — see details below."
   // Walk-level errors surfaced through the author path (catch-all for failed status).
-  if (/not found/i.test(r) && /trail/i.test(r)) return "We couldn't find that trail in this project."
+  if (/not found/i.test(r) && /trail/i.test(r)) return "We couldn't find that AutoSim in this project."
   // Anything else: pass through unchanged so we never silently swallow an unknown case.
   return reason
 }
@@ -1907,7 +1905,7 @@ async function pollAuthor(sessionId, box){
       if (v === "red" || v === "false") vGuidance = ' <span class="muted">— AutoSim couldn\'t replay deterministically; review the PDF before activating.</span>'
       else if (v === "amber") vGuidance = ' <span class="muted">— healed but unconfirmed; review the findings queue or activate to enable enforcement.</span>'
       box.innerHTML = html +
-        '<div class="nt-done">Trail created (draft). Verification walk: <b class="v-' + esc(s.verificationVerdict || "") + '">' + esc(String(s.verificationVerdict || "?").toUpperCase()) + "</b>" + vGuidance + "</div>" +
+        '<div class="nt-done">AutoSim created (draft). Verification walk: <b class="v-' + esc(s.verificationVerdict || "") + '">' + esc(String(s.verificationVerdict || "?").toUpperCase()) + "</b>" + vGuidance + "</div>" +
         '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px">' +
         '<button class="btn btn-indigo" id="ntApprove" data-trail="' + esc(s.trailId) + '">Looks right - activate</button>' +
         pdfLink +
@@ -1949,7 +1947,7 @@ async function pollAuthor(sessionId, box){
     }
     var display = humanizeStall(s.stallReason) || s.status
     box.innerHTML = html + '<div class="nt-stall">Stopped: ' + esc(display) +
-      '</div><div class="hint">Refine the objective above and hit Create Trail again.</div>'
+      '</div><div class="hint">Refine the objective above and hit Create AutoSim again.</div>'
     document.getElementById("ntGo").disabled = false
     return
   }
@@ -1981,7 +1979,7 @@ function closeWizard() {
 }
 
 function wizRender() {
-  var LABELS = ["Name this journey", "Where does it start?", "Describe the journey", "Ready to go"]
+  var LABELS = ["Name this AutoSim", "Where does it start?", "Describe the objective", "Ready to go"]
   document.getElementById("wizTitle").textContent = LABELS[wizStep - 1]
   document.getElementById("wizStepLabel").textContent = "Step " + wizStep + " of 4"
   document.getElementById("wizStepBar").setAttribute("aria-valuenow", String(wizStep))
@@ -2011,7 +2009,7 @@ function renderWizReview() {
 
 function wizValidate(n) {
   if (n === 1) {
-    if (!document.getElementById("wizName").value.trim()) return "Please enter a name for this journey."
+    if (!document.getElementById("wizName").value.trim()) return "Please enter a name for this AutoSim."
   }
   if (n === 2) {
     var v = document.getElementById("wizUrl").value.trim()
@@ -2046,7 +2044,7 @@ document.getElementById("wizCreate").addEventListener("click", async function() 
   var btn = this; btn.disabled = true; btn.textContent = "Creating…"
   document.getElementById("wizErr").textContent = ""
   var box = document.getElementById("wizProgress")
-  box.style.display = ""; box.innerHTML = '<div class="nt-live">AutoSim is recording your journey…</div>'
+  box.style.display = ""; box.innerHTML = '<div class="nt-live">AutoSim is recording your path…</div>'
   document.getElementById("wizNav").style.display = "none"
 
   var name = document.getElementById("wizName").value.trim()
@@ -2098,7 +2096,7 @@ async function wizPollAuthor(sessionId, box, createBtn) {
       if (v === "red" || v === "false") vGuidance = " — AutoSim couldn’t replay deterministically; review the PDF before activating."
       else if (v === "amber") vGuidance = " — healed but unconfirmed; check the findings queue after activating."
       box.innerHTML = html
-        + '<div class="nt-done">Journey recorded. Verification: <b class="v-' + esc(s.verificationVerdict || "") + '">' + esc(String(s.verificationVerdict || "?").toUpperCase()) + "</b>" + esc(vGuidance) + "</div>"
+        + '<div class="nt-done">Walk recorded. Verification: <b class="v-' + esc(s.verificationVerdict || "") + '">' + esc(String(s.verificationVerdict || "?").toUpperCase()) + "</b>" + esc(vGuidance) + "</div>"
         + '<div class="wiz-approve-row"><button class="btn btn-indigo" id="wizApprove" data-trail="' + esc(s.trailId) + '">Activate AutoSim</button>' + pdfLink + "</div>"
       var ap = document.getElementById("wizApprove")
       ap.addEventListener("click", async function() {
@@ -2112,8 +2110,8 @@ async function wizPollAuthor(sessionId, box, createBtn) {
     var display = humanizeStall(s.stallReason) || s.status
     box.innerHTML = html
       + '<div class="nt-stall">Stopped: ' + esc(display) + "</div>"
-      + '<div class="hint" style="margin-top:6px">Refine the journey description and try again.</div>'
-      + '<div style="margin-top:12px"><button class="btn btn-ghost" id="wizRetry">← Edit journey</button></div>'
+      + '<div class="hint" style="margin-top:6px">Refine the objective and try again.</div>'
+      + '<div style="margin-top:12px"><button class="btn btn-ghost" id="wizRetry">← Edit objective</button></div>'
     var retry = document.getElementById("wizRetry")
     if (retry) {
       retry.addEventListener("click", function() {

@@ -2682,7 +2682,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     const needLogin = () => (req.method === "GET" ? redirect("/login") : json({ error: "Sign in to continue." }, 401))
 
     if (req.method === "GET" && path === "/dashboard") return me ? await dashboardPage() : redirect("/login")
-    if (req.method === "GET" && (path === "/trails" || path === "/autosims")) return me ? file(PUB + "/trails.html") : redirect("/login")
+    if (req.method === "GET" && path === "/trails") {
+      const qs = url.search || ""
+      return new Response(null, { status: 301, headers: { Location: "/autosims" + qs } })
+    }
+    if (req.method === "GET" && path === "/autosims") return me ? file(PUB + "/trails.html") : redirect("/login")
     if (req.method === "GET" && path === "/autosims/walks") return me ? file(PUB + "/autosims-walks.html") : redirect("/login")
     if (req.method === "GET" && /^\/autosims\/walk\/[^/]+$/.test(path)) return me ? file(PUB + "/autosims-walk.html") : redirect("/login")
     if (req.method === "GET" && path === "/sim-runs") return me ? file(PUB + "/sim-runs.html") : redirect("/login")
