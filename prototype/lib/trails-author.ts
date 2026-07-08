@@ -10,7 +10,7 @@ import { walkTrail } from "./trails-runner"
 import { hasCredRef, resolveCredRefs, type CredResolver } from "./trails-creds"
 import { getTestAccountByName } from "./test-accounts"
 import { sha256hex } from "./crypto"
-import { withWalkSlot, withAuthorSlot, CHROMIUM_PROD_ARGS } from "./trails-browser"
+import { withWalkSlot, withAuthorSlot, CHROMIUM_PROD_ARGS, setCurrentAuthorSessionId, getCurrentAuthorAbortSignal } from "./trails-browser"
 import { acquireBrowser, type BrowserHandle } from "./trails-browser-page"
 import { db, projectById, touchAuthorHeartbeat } from "./db"
 import { uploadScreenshotMeta } from "./s3"
@@ -125,6 +125,11 @@ export async function authorTrail(
      * Wired by runAuthorNow to persist checkpoint_json so a stalled run is resumable.
      */
     onCheckpoint?: (cp: AuthorCheckpoint) => void | Promise<void>
+    /**
+     * KLA-151: abort signal to cancel the drive at the next step boundary.
+     * Wired by runAuthorNow via cancelCurrentAuthor / withAuthorSlot.
+     */
+    abortSignal?: AbortSignal
   },
 ): Promise<AuthorOutcome> {
   // Text-first is the DEFAULT (bench 2026-07-04: arm B ~50% cheaper, 6/6 green verdicts vs arm A
@@ -236,6 +241,7 @@ export async function authorTrail(
       // KLA-55: heartbeat — signals the crash-reaper that this session is still alive. Best-effort.
       opts.onHeartbeat?.()
       if (costUsd >= AUTHOR_MAX_COST_USD) return await stall(`authoring budget cap $${AUTHOR_MAX_COST_USD} reached after ${llmCalls} model calls`, page.url())
+      if (opts.abortSignal?.aborted) return await stall("cancelled by user", page.url())
       if (Date.now() > deadlineAt) return await stall(`authoring drive deadline exceeded (${Math.round(driveDeadlineMs / 1000)}s) after ${log.length} steps`, page.url())
       const includeShot = !textFirst || misses > 0
       const screenshotB64 = includeShot
@@ -690,6 +696,8 @@ export async function runAuthorNow(
       return
     }
     resolveStarted(sessionId)
+    // KLA-151: register sessionId so cancelCurrentAuthor can target this specific drive.
+    setCurrentAuthorSessionId(sessionId)
     try {
       const out = await author(projectId, req, {
         model, launchArgs: CHROMIUM_PROD_ARGS,
@@ -699,6 +707,8 @@ export async function runAuthorNow(
         // KLA-57: persist checkpoint after each step and on stall so the run is resumable.
         onCheckpoint: (cp) => updateAuthorSession(projectId, sessionId, { checkpoint: cp }).catch(() => {}),
         checkpoint: resumeCheckpoint,
+        // KLA-151: abort signal wired to the author slot's AbortController.
+        abortSignal: getCurrentAuthorAbortSignal() ?? undefined,
       })
       await updateAuthorSession(projectId, sessionId, {
         status: out.status, steps: out.steps, stallReason: out.stallReason, trailId: out.trailId,

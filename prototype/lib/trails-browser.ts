@@ -36,6 +36,19 @@ const _waiters: Array<() => void> = []
 const _activeCtxs = new Set<SlotCtx>()
 let _authorActive = false
 let _pdfActive = false
+// KLA-151: per-session author cancel mechanism (mirrors cancelCurrentWalk for the author slot).
+let _authorAc: AbortController | null = null
+let _authorSessionId: string | null = null
+
+/** Register the running author session so cancelCurrentAuthor can find it. Called inside the slot. */
+export function setCurrentAuthorSessionId(sid: string): void { _authorSessionId = sid }
+/** AbortSignal for the current author drive; null when no session is running. */
+export function getCurrentAuthorAbortSignal(): AbortSignal | null { return _authorAc?.signal ?? null }
+/** Signal the currently-running author session to stop at the next step boundary. */
+export function cancelCurrentAuthor(sessionId: string): boolean {
+  if (_authorSessionId === sessionId && _authorAc) { _authorAc.abort(); return true }
+  return false
+}
 
 /** Reset pool limits — for use in tests only. */
 export function _resetWalkPoolForTest(concurrency: number, maxQueue: number): void {
@@ -48,6 +61,8 @@ export function _resetWalkPoolForTest(concurrency: number, maxQueue: number): vo
 
 export function _resetAuthorAdmissionForTest(): void {
   _authorActive = false
+  _authorAc = null
+  _authorSessionId = null
 }
 
 export function _resetPdfAdmissionForTest(): void {
@@ -118,10 +133,13 @@ export async function withWalkSlot<T>(fn: () => Promise<T>): Promise<T> {
 export async function withAuthorSlot<T>(fn: () => Promise<T>): Promise<T> {
   if (_authorActive) throw new AuthorBusyError()
   _authorActive = true
+  _authorAc = new AbortController()
   try {
     return await fn()
   } finally {
     _authorActive = false
+    _authorAc = null
+    _authorSessionId = null
   }
 }
 

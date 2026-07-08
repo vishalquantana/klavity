@@ -5223,12 +5223,24 @@ load()
     if(/not found/i.test(r)&&/trail/i.test(r))return"We couldn't find that trail in this project."
     return reason
   }
+  function fmtSec(sec){var m=Math.floor(sec/60),s=sec%60;return m?m+"m"+(s?" "+s+"s":""):s+"s"}
   async function pollAuthor(sessionId,box){
+    var ntFailCount=0
     for(var i=0;i<200;i++){
       await new Promise(function(res){setTimeout(res,2000)})
-      var r=await fetch("/api/trails/author/"+sessionId+projQ());if(!r.ok)continue
+      var r;try{r=await fetch("/api/trails/author/"+sessionId+projQ())}catch(e){ntFailCount++;if(ntFailCount<6){await new Promise(function(res){setTimeout(res,ntFailCount*1000)});continue}break}
+      if(!r.ok){if(r.status===401){location.href="/login";break}ntFailCount++;if(ntFailCount<6)continue;break}
+      ntFailCount=0
       var s=await r.json();var html=(s.steps||[]).map(stepLine).join("")
-      if(s.status==="running"){box.innerHTML=html+'<div class="nt-live">AutoSim is driving...</div>';continue}
+      if(s.status==="running"){
+        var ntElapsed=s.createdAt?fmtSec(Math.floor((Date.now()-s.createdAt)/1000)):"";
+        var ntLimit=s.limitMs?fmtSec(Math.round(s.limitMs/1000)):"";
+        var ntTimeStr=ntElapsed?(ntElapsed+(ntLimit?" / "+ntLimit+" max":"")):"";
+        box.innerHTML=html+'<div class="nt-live">AutoSim is driving…'+(ntTimeStr?' <span class="muted" style="font-size:11px">('+esc(ntTimeStr)+')</span>':'')+'</div>'
+          +'<div style="margin-top:6px"><button class="btn btn-ghost" id="ntCancelRun" style="font-size:11px;padding:3px 10px">Cancel</button></div>'
+        var ntCb=document.getElementById("ntCancelRun");if(ntCb){ntCb.addEventListener("click",async function(){ntCb.disabled=true;ntCb.textContent="Cancelling…";await fetch("/api/trails/author/"+encodeURIComponent(sessionId)+"/cancel"+projQ(),{method:"POST"})})}
+        continue
+      }
       if(s.status==="crystallized"){
         var vRunId=s.verificationRunId||""
         var pdfLink=vRunId?('<a class="walk-pdf-btn" href="'+esc("/api/trails/walks/"+encodeURIComponent(vRunId)+"/report.pdf"+projQ())+'" target="_blank" rel="noopener" style="margin-left:8px">'+kicon("file-text",{size:10})+" PDF</a>"):"";
@@ -5320,11 +5332,22 @@ load()
     return null
   }
   async function wizPollAuthor(sessionId,box,createBtn){
+    var wizFailCount=0
     for(var i=0;i<200;i++){
       await new Promise(function(res){setTimeout(res,2000)})
-      var r=await fetch("/api/trails/author/"+sessionId+projQ());if(!r.ok)continue
+      var r;try{r=await fetch("/api/trails/author/"+sessionId+projQ())}catch(e){wizFailCount++;if(wizFailCount<6){await new Promise(function(res){setTimeout(res,wizFailCount*1000)});continue}break}
+      if(!r.ok){if(r.status===401){location.href="/login";break}wizFailCount++;if(wizFailCount<6)continue;break}
+      wizFailCount=0
       var s=await r.json();var html=(s.steps||[]).map(stepLine).join("")
-      if(s.status==="running"){box.innerHTML=html+'<div class="nt-live">AutoSim is driving…</div>';continue}
+      if(s.status==="running"){
+        var wzElapsed=s.createdAt?fmtSec(Math.floor((Date.now()-s.createdAt)/1000)):"";
+        var wzLimit=s.limitMs?fmtSec(Math.round(s.limitMs/1000)):"";
+        var wzTimeStr=wzElapsed?(wzElapsed+(wzLimit?" / "+wzLimit+" max":"")):"";
+        box.innerHTML=html+'<div class="nt-live">AutoSim is driving…'+(wzTimeStr?' <span class="muted" style="font-size:11px">('+esc(wzTimeStr)+')</span>':'')+'</div>'
+          +'<div style="margin-top:6px"><button class="btn btn-ghost" id="wizCancelRun" style="font-size:11px;padding:3px 10px">Cancel</button></div>'
+        var wzCb=document.getElementById("wizCancelRun");if(wzCb){wzCb.addEventListener("click",async function(){wzCb.disabled=true;wzCb.textContent="Cancelling…";await fetch("/api/trails/author/"+encodeURIComponent(sessionId)+"/cancel"+projQ(),{method:"POST"})})}
+        continue
+      }
       if(s.status==="crystallized"){
         var vRunId=s.verificationRunId||""
         var pdfLink=vRunId?('<a class="walk-pdf-btn" href="'+esc("/api/trails/walks/"+encodeURIComponent(vRunId)+"/report.pdf"+projQ())+'" target="_blank" rel="noopener" style="margin-left:4px">'+kicon("file-text",{size:10})+" PDF</a>"):"";
@@ -5362,13 +5385,13 @@ load()
   async function reattachActiveAuthorSession(){
     try{
       var r=await fetch("/api/trails/author/active"+projQ());if(!r.ok)return
-      var s=await r.json();if(!s||s.status!=="running")return
+      var s=await r.json();if(!s||!s.id)return
       document.getElementById("ntName").value=s.name||""
       document.getElementById("ntUrl").value=s.baseUrl||""
       document.getElementById("ntObj").value=s.objective||""
       document.getElementById("ntGo").disabled=true
       var box=document.getElementById("ntProgress")
-      box.innerHTML='<div class="nt-live">Resuming AutoSim session...</div>'
+      box.innerHTML='<div class="nt-live">Reattaching to running AutoSim…</div>'
       document.getElementById("ntBg").classList.add("show");pollAuthor(s.id,box)
     }catch(e){}
   }
