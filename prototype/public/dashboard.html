@@ -193,14 +193,17 @@ body[data-view="recurring"] [data-view]:not([data-view~="recurring"]){display:no
 #ntBg .row{display:flex;gap:10px;margin-top:16px}
 .hint{font-size:12px;color:var(--paper-faint);margin-bottom:12px}
 #ntProgress{margin-top:12px}
-.nt-step{font-family:var(--mono);font-size:12px;padding:6px 10px;border-radius:8px;margin-bottom:4px;background:var(--ink-3);border:1px solid var(--line)}
+.nt-step{font-family:var(--mono);font-size:12px;padding:6px 10px;border-radius:8px;margin-bottom:4px;background:var(--ink-3);border:1px solid var(--line);overflow:hidden}
 .nt-step.ok{border-color:rgba(15,157,107,.3)}
 .nt-step.err{border-color:rgba(219,39,119,.3)}
 .nt-step .why{color:var(--paper-faint);font-size:11px}
+.nt-step-shot{width:72px;height:48px;object-fit:cover;border-radius:3px;float:right;margin-left:10px;border:1px solid var(--line);cursor:zoom-in}
 .nt-live{font-family:var(--mono);font-size:12px;color:var(--paper-faint);margin-top:6px;animation:blink 1.4s ease infinite}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
 .nt-done{font-family:var(--mono);font-size:13px;color:var(--green);margin-top:8px;padding:8px 10px;background:rgba(15,157,107,.08);border-radius:8px}
 .nt-stall{font-family:var(--mono);font-size:13px;color:var(--rose);margin-top:8px;padding:8px 10px;background:rgba(219,39,119,.08);border-radius:8px}
+.nt-live-view{margin:6px 0 4px;border-radius:6px;overflow:hidden;background:var(--ink-3);border:1px solid var(--line);max-height:220px;display:flex;align-items:center;justify-content:center}
+.nt-live-view img{width:100%;display:block;max-height:220px;object-fit:contain}
 .v-true{color:var(--green)}.v-false{color:var(--rose)}
 #drBg .modal{max-width:660px;max-height:88vh;display:flex;flex-direction:column}
 #drBg .dr-body{overflow-y:auto;flex:1;margin:0 -4px;padding:0 4px}
@@ -5220,10 +5223,26 @@ load()
       ;(d.accounts||[]).forEach(function(a){var o=document.createElement("option");o.value=a.name;o.textContent=a.name+" ("+a.loginEmail+")";sel.appendChild(o)})
     }catch(e){}
   }
-  function stepLine(s){
+  function stepLine(s,sid){
     var cls=s.ok?"ok":"err"
-    return'<div class="nt-step '+cls+'"><b>'+esc(s.op)+"</b> "+esc(s.selector||s.url||"")+'<span class="why">'+esc(s.rationale||"")+(s.error?" — "+esc(s.error):"")+"</span></div>"
+    var shot=sid&&s.screenshotKey?'<img class="nt-step-shot" src="'+esc("/api/trails/author/"+encodeURIComponent(sid)+"/steps/"+encodeURIComponent(String(s.idx))+"/screenshot"+projQ())+'" alt="" loading="lazy" />':"";
+    return'<div class="nt-step '+cls+'">'+shot+'<b>'+esc(s.op)+"</b> "+esc(s.selector||s.url||"")+'<span class="why">'+esc(s.rationale||"")+(s.error?" — "+esc(s.error):"")+"</span></div>"
   }
+  // KLA-150: author live-view SSE management
+  var _ntSse=null;var _ntSseSid=null;
+  function startAuthorLive(sid){
+    if(_ntSse&&_ntSseSid===sid)return;stopAuthorLive()
+    _ntSseSid=sid
+    try{
+      _ntSse=new EventSource("/api/trails/author/"+encodeURIComponent(sid)+"/live"+projQ())
+      _ntSse.addEventListener("frame",function(e){
+        try{var d=JSON.parse(e.data);if(d.dataUrl){var el=document.getElementById("ntLiveFrame");if(el)el.src=d.dataUrl}}catch{}
+      })
+      _ntSse.addEventListener("end",stopAuthorLive)
+      _ntSse.onerror=function(){stopAuthorLive()}
+    }catch(err){_ntSse=null;_ntSseSid=null}
+  }
+  function stopAuthorLive(){if(_ntSse){try{_ntSse.close()}catch{}}_ntSse=null;_ntSseSid=null}
   function humanizeStall(reason){
     if(!reason)return null;var r=String(reason)
     if(/budget cap/i.test(r))return"We hit our cost limit while drafting this trail."
@@ -5247,16 +5266,20 @@ load()
       var r;try{r=await fetch("/api/trails/author/"+sessionId+projQ())}catch(e){ntFailCount++;if(ntFailCount<6){await new Promise(function(res){setTimeout(res,ntFailCount*1000)});continue}break}
       if(!r.ok){if(r.status===401){location.href="/login";break}ntFailCount++;if(ntFailCount<6)continue;break}
       ntFailCount=0
-      var s=await r.json();var html=(s.steps||[]).map(stepLine).join("")
+      var s=await r.json();var html=(s.steps||[]).map(function(st){return stepLine(st,sessionId)}).join("")
       if(s.status==="running"){
         var ntElapsed=s.createdAt?fmtSec(Math.floor((Date.now()-s.createdAt)/1000)):"";
         var ntLimit=s.limitMs?fmtSec(Math.round(s.limitMs/1000)):"";
         var ntTimeStr=ntElapsed?(ntElapsed+(ntLimit?" / "+ntLimit+" max":"")):"";
-        box.innerHTML=html+'<div class="nt-live">AutoSim is driving…'+(ntTimeStr?' <span class="muted" style="font-size:11px">('+esc(ntTimeStr)+')</span>':'')+'</div>'
+        box.innerHTML=html
+          +'<div class="nt-live-view"><img id="ntLiveFrame" alt="Live view" /></div>'
+          +'<div class="nt-live">AutoSim is driving…'+(ntTimeStr?' <span class="muted" style="font-size:11px">('+esc(ntTimeStr)+')</span>':'')+'</div>'
           +'<div style="margin-top:6px"><button class="btn btn-ghost" id="ntCancelRun" style="font-size:11px;padding:3px 10px">Cancel</button></div>'
+        startAuthorLive(sessionId)
         var ntCb=document.getElementById("ntCancelRun");if(ntCb){ntCb.addEventListener("click",async function(){ntCb.disabled=true;ntCb.textContent="Cancelling…";await fetch("/api/trails/author/"+encodeURIComponent(sessionId)+"/cancel"+projQ(),{method:"POST"})})}
         continue
       }
+      stopAuthorLive()
       if(s.status==="crystallized"){
         var vRunId=s.verificationRunId||""
         var pdfLink=vRunId?('<a class="walk-pdf-btn" href="'+esc("/api/trails/walks/"+encodeURIComponent(vRunId)+"/report.pdf"+projQ())+'" target="_blank" rel="noopener" style="margin-left:8px">'+kicon("file-text",{size:10})+" PDF</a>"):"";
@@ -5354,16 +5377,20 @@ load()
       var r;try{r=await fetch("/api/trails/author/"+sessionId+projQ())}catch(e){wizFailCount++;if(wizFailCount<6){await new Promise(function(res){setTimeout(res,wizFailCount*1000)});continue}break}
       if(!r.ok){if(r.status===401){location.href="/login";break}wizFailCount++;if(wizFailCount<6)continue;break}
       wizFailCount=0
-      var s=await r.json();var html=(s.steps||[]).map(stepLine).join("")
+      var s=await r.json();var html=(s.steps||[]).map(function(st){return stepLine(st,sessionId)}).join("")
       if(s.status==="running"){
         var wzElapsed=s.createdAt?fmtSec(Math.floor((Date.now()-s.createdAt)/1000)):"";
         var wzLimit=s.limitMs?fmtSec(Math.round(s.limitMs/1000)):"";
         var wzTimeStr=wzElapsed?(wzElapsed+(wzLimit?" / "+wzLimit+" max":"")):"";
-        box.innerHTML=html+'<div class="nt-live">AutoSim is driving…'+(wzTimeStr?' <span class="muted" style="font-size:11px">('+esc(wzTimeStr)+')</span>':'')+'</div>'
+        box.innerHTML=html
+          +'<div class="nt-live-view"><img id="ntLiveFrame" alt="Live view" /></div>'
+          +'<div class="nt-live">AutoSim is driving…'+(wzTimeStr?' <span class="muted" style="font-size:11px">('+esc(wzTimeStr)+')</span>':'')+'</div>'
           +'<div style="margin-top:6px"><button class="btn btn-ghost" id="wizCancelRun" style="font-size:11px;padding:3px 10px">Cancel</button></div>'
+        startAuthorLive(sessionId)
         var wzCb=document.getElementById("wizCancelRun");if(wzCb){wzCb.addEventListener("click",async function(){wzCb.disabled=true;wzCb.textContent="Cancelling…";await fetch("/api/trails/author/"+encodeURIComponent(sessionId)+"/cancel"+projQ(),{method:"POST"})})}
         continue
       }
+      stopAuthorLive()
       if(s.status==="crystallized"){
         var vRunId=s.verificationRunId||""
         var pdfLink=vRunId?('<a class="walk-pdf-btn" href="'+esc("/api/trails/walks/"+encodeURIComponent(vRunId)+"/report.pdf"+projQ())+'" target="_blank" rel="noopener" style="margin-left:4px">'+kicon("file-text",{size:10})+" PDF</a>"):"";

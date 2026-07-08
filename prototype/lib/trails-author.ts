@@ -11,6 +11,7 @@ import { hasCredRef, resolveCredRefs, type CredResolver } from "./trails-creds"
 import { getTestAccountByName } from "./test-accounts"
 import { sha256hex } from "./crypto"
 import { withWalkSlot, withAuthorSlot, CHROMIUM_PROD_ARGS, setCurrentAuthorSessionId, getCurrentAuthorAbortSignal } from "./trails-browser"
+import { startLiveWatchRun, publishLiveWatchFrame, endLiveWatchRun } from "./trails-live-watch"
 import { acquireBrowser, type BrowserHandle } from "./trails-browser-page"
 import { db, projectById, touchAuthorHeartbeat } from "./db"
 import { uploadScreenshotMeta } from "./s3"
@@ -69,7 +70,7 @@ const SUBMIT_CANDIDATES = [
 const dekref = (s: string) => s.replace(/\[data-kref="(e\d+)"\]/g, "snapshot ref $1")
 
 export interface AuthorRequest { name: string; objective: string; baseUrl: string; viewport?: TrailViewport | string | null; testAccountName?: string; createdBy?: string }
-export interface AuthorStepLog { idx: number; op: string; selector: string | null; value: string | null; url: string; rationale: string; ok: boolean; error?: string }
+export interface AuthorStepLog { idx: number; op: string; selector: string | null; value: string | null; url: string; rationale: string; ok: boolean; error?: string; screenshotKey?: string; krefSnapshot?: string }
 export interface AuthorOutcome {
   status: "crystallized" | "stalled" | "failed"
   trailId: string | null; verificationRunId: string | null
@@ -130,6 +131,11 @@ export async function authorTrail(
      * Wired by runAuthorNow via cancelCurrentAuthor / withAuthorSlot.
      */
     abortSignal?: AbortSignal
+    /**
+     * KLA-150: live screencast callback. Called with a base64-JPEG data URL after each
+     * step screenshot so the UI can show what the AI is seeing in near-real-time.
+     */
+    onLiveFrame?: (dataUrl: string) => void
   },
 ): Promise<AuthorOutcome> {
   // Text-first is the DEFAULT (bench 2026-07-04: arm B ~50% cheaper, 6/6 green verdicts vs arm A
@@ -247,6 +253,8 @@ export async function authorTrail(
       const screenshotB64 = includeShot
         ? await bounded(page.screenshotJpeg(60, 15_000), 20_000, "screenshot")
         : ""
+      // KLA-150: publish live frame so the UI can show what the AI sees before deciding.
+      if (screenshotB64) try { opts.onLiveFrame?.(`data:image/jpeg;base64,${screenshotB64}`) } catch {}
       const dom = await bounded(page.krefSnapshot(), 15_000, "snapshot capture")
       // No-op stagnation guard: if the page URL + DOM hash hasn't changed since the last iteration
       // the previous action had no visible effect (e.g. re-typing the same field value, clicking
@@ -451,6 +459,7 @@ export async function authorTrail(
             try {
               const b64 = await page.screenshotJpeg(45, 10_000)
               if (b64 && b64.length > 0) {
+                try { opts.onLiveFrame?.(`data:image/jpeg;base64,${b64}`) } catch {}
                 const bytes = Buffer.from(b64, "base64")
                 const upload = opts.shotUploader ? await opts.shotUploader(bytes, "image/jpeg") : await uploadScreenshotMeta(bytes, "image/jpeg")
                 entry.screenshotKey = upload.key
@@ -481,6 +490,7 @@ export async function authorTrail(
           try {
             const b64 = await page.screenshotJpeg(45, 10_000)
             if (b64 && b64.length > 0) {
+              try { opts.onLiveFrame?.(`data:image/jpeg;base64,${b64}`) } catch {}
               const bytes = Buffer.from(b64, "base64")
               const upload = opts.shotUploader ? await opts.shotUploader(bytes, "image/jpeg") : await uploadScreenshotMeta(bytes, "image/jpeg")
               entry.screenshotKey = upload.key
@@ -493,6 +503,7 @@ export async function authorTrail(
       try {
         const b64 = await page.screenshotJpeg(45, 10_000)
         if (b64 && b64.length > 0) {
+          try { opts.onLiveFrame?.(`data:image/jpeg;base64,${b64}`) } catch {}
           const bytes = Buffer.from(b64, "base64")
           const upload = opts.shotUploader ? await opts.shotUploader(bytes, "image/jpeg") : await uploadScreenshotMeta(bytes, "image/jpeg")
           entry.screenshotKey = upload.key
@@ -698,6 +709,8 @@ export async function runAuthorNow(
     resolveStarted(sessionId)
     // KLA-151: register sessionId so cancelCurrentAuthor can target this specific drive.
     setCurrentAuthorSessionId(sessionId)
+    // KLA-150: open live-watch channel for author session (reuses the walk live-watch infra).
+    startLiveWatchRun(projectId, sessionId)
     try {
       const out = await author(projectId, req, {
         model, launchArgs: CHROMIUM_PROD_ARGS,
@@ -709,6 +722,8 @@ export async function runAuthorNow(
         checkpoint: resumeCheckpoint,
         // KLA-151: abort signal wired to the author slot's AbortController.
         abortSignal: getCurrentAuthorAbortSignal() ?? undefined,
+        // KLA-150: publish each step screenshot as a live screencast frame.
+        onLiveFrame: (dataUrl) => { try { publishLiveWatchFrame(projectId, sessionId, dataUrl) } catch {} },
       })
       await updateAuthorSession(projectId, sessionId, {
         status: out.status, steps: out.steps, stallReason: out.stallReason, trailId: out.trailId,
@@ -718,6 +733,8 @@ export async function runAuthorNow(
       })
     } catch (e: any) {
       await updateAuthorSession(projectId, sessionId, { status: "failed", stallReason: String(e?.message || e) }).catch(() => {})
+    } finally {
+      endLiveWatchRun(projectId, sessionId)
     }
   }))
 
