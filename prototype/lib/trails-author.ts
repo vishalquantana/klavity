@@ -388,6 +388,11 @@ export async function authorTrail(
       }
       const entry: AuthorStepLog = { idx: log.length, op: a.op, selector: a.selector, value: a.value, url: page.url(), rationale: a.rationale, ok: false }
       try {
+        // Hoisted to the try-scope: the KLA-129 loop guard (successKey, below) reads persistSelector
+        // OUTSIDE the else-block where it was assigned. The loop-recovery change declared it with
+        // `let` inside that block, so the drive crashed at runtime with "persistSelector is not
+        // defined" (tsc would have caught it; the merge-train doesn't run tsc).
+        let persistSelector: string | null = a.selector ?? null
         if (a.op === "wait") {
           const ms = Math.min(Math.max(Number(a.value) || 1000, 500), 15_000)
           await page.waitMs(ms)
@@ -404,7 +409,7 @@ export async function authorTrail(
           // Non-kref selectors emitted by the model (e.g. `.submit-btn`) can also be fragile;
           // prefer id / data-testid / aria-label anchors when stableSelector finds one.
           const stable = await bounded(page.stableSelector(a.selector!), 10_000, "stable selector").catch(() => null)
-          let persistSelector = isKrefSelector(a.selector)
+          persistSelector = isKrefSelector(a.selector)
             ? (stable ?? fp.domPath ?? a.selector!)
             : (stable ?? a.selector!)
           if (a.op === "click") await page.click(a.selector!, ACTION_TIMEOUT)
