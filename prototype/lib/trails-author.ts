@@ -605,6 +605,20 @@ export async function getAuthorSession(projectId: string, id: string): Promise<A
   return rowToAuthorSession(r.rows[0])
 }
 
+/** KLA-152: List recent stalled sessions that have a resumable checkpoint or a partial draft trail. */
+export async function listStalledAuthorSessions(projectId: string, limit = 10): Promise<AuthorSession[]> {
+  const since = Date.now() - 7 * 24 * 3600 * 1000
+  const r = await db!.execute({
+    sql: `SELECT * FROM author_sessions
+          WHERE project_id=? AND status='stalled'
+            AND updated_at >= ?
+            AND (checkpoint_json IS NOT NULL OR trail_id IS NOT NULL)
+          ORDER BY updated_at DESC LIMIT ?`,
+    args: [projectId, since, limit],
+  })
+  return r.rows.map(rowToAuthorSession)
+}
+
 export async function getActiveAuthorSession(projectId: string): Promise<AuthorSession | null> {
   const r = await db!.execute({
     sql: `SELECT * FROM author_sessions WHERE project_id=? AND status='running' ORDER BY created_at DESC LIMIT 1`,
