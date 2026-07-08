@@ -3422,7 +3422,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const replayUrl = replaySet.has(runId) ? BASE + "/api/trails/walks/" + runId + "/replay" : undefined
           const pdfBytes = await renderWalkPdf(projectId, runId, BASE, { replayUrl })
           const shortId = runId.slice(0, 8)
-          return new Response(pdfBytes, {
+          return new Response(pdfBytes as unknown as BodyInit, {
             headers: {
               "content-type": "application/pdf",
               "content-disposition": `attachment; filename="klavity-walk-${shortId}.pdf"`,
@@ -4187,7 +4187,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             const body = await req.json().catch(() => ({}))
             const pro = await isAccountPro(proj.accountId)
             const v = validateModalConfigInput(body, { isPro: pro })
-            if (!v.ok) return json({ error: v.error }, 400)
+            if (!v.ok) return json({ error: (v as { ok: false; error: string }).error }, 400)
             // SERVER-OWNED config keys ride alongside the validated appearance config inside
             // modal_config_json and must survive appearance saves (the validator strips unknown keys):
             //   - screenshots      (per-project screenshot storage config, lib/screenshot-config.ts)
