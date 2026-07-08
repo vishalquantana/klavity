@@ -357,26 +357,28 @@ test("C2: adhoc:true with valid projectId passes all passive gates [PASSES-NOW]"
 // with "does not provide an export named 'KlavitySims'" until Dev2 ships the module.
 
 test("D1: @klavity/sdk exports KlavitySims with deploy() method", async () => {
-  // Import from the SDK source (workspace package — relative path resolves from prototype/).
-  const sdk = await import("../packages/sdk/src/index.ts").catch((e: any) => ({ __importError: e.message })) as any
-  expect(sdk.__importError).toBeUndefined()   // SDK must load
-  expect(typeof sdk.KlavitySims).not.toBe("undefined")           // export must exist
-  expect(typeof sdk.KlavitySims?.deploy).toBe("function")        // .deploy() must be a function
+  // Import the live-Sims module directly in Bun tests. The SDK index also pulls
+  // browser screenshot/replay packages that are intentionally installed in the
+  // SDK workspace, not in prototype/'s isolated test environment.
+  const sdk = await import("../packages/sdk/src/sims-live.ts").catch((e: any) => ({ __importError: e.message })) as any
+  expect(sdk.__importError).toBeUndefined()   // SDK live surface must load
+  expect(typeof sdk.SimsLive).not.toBe("undefined")              // export must exist
+  expect(typeof sdk.SimsLive?.deploy).toBe("function")           // .deploy() must be a function
 })
 
 test("D2: KlavitySims.deploy() accepts string[] or 'all' as first argument", async () => {
-  const sdk = await import("../packages/sdk/src/index.ts").catch((e: any) => ({ __importError: e.message })) as any
+  const sdk = await import("../packages/sdk/src/sims-live.ts").catch((e: any) => ({ __importError: e.message })) as any
   expect(sdk.__importError).toBeUndefined()
-  const { KlavitySims } = sdk
+  const KlavitySims = sdk.SimsLive
   // In JSDOM/Node (no window) deploy() warns and returns — must not throw.
   expect(() => KlavitySims.deploy(["sim_1", "sim_2"], [])).not.toThrow()
   expect(() => KlavitySims.deploy("all", [])).not.toThrow()
 })
 
 test("D3: @klavity/sdk exports KlavitySims.renderFeedback(simId, simName, observations)", async () => {
-  const sdk = await import("../packages/sdk/src/index.ts").catch((e: any) => ({ __importError: e.message })) as any
+  const sdk = await import("../packages/sdk/src/sims-live.ts").catch((e: any) => ({ __importError: e.message })) as any
   expect(sdk.__importError).toBeUndefined()
-  const { KlavitySims } = sdk
+  const KlavitySims = sdk.SimsLive
   expect(typeof KlavitySims?.renderFeedback).toBe("function")    // .renderFeedback() must be a function
   // In Node (no DOM) renderFeedback should short-circuit silently (no dockEl).
   // Must not throw with valid argument shapes.

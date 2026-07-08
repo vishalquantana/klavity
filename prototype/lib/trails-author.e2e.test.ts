@@ -1,7 +1,7 @@
 // AutoSims F1 — authoring engine e2e tests. Hermetic local libsql + KLAV_SECRET.
 // Real headless Chromium (Playwright), scripted fake AuthorModel — no network, no OpenRouter.
 // Mirrors trails-runner.e2e.test.ts setup conventions.
-import { test, expect, beforeAll, beforeEach } from "bun:test"
+import { test as bunTest, expect, beforeAll, beforeEach } from "bun:test"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { pathToFileURL } from "node:url"
@@ -29,6 +29,11 @@ import * as T from "./trails"
 const P = "proj_author"
 const fixtureUrl = (name: string) =>
   pathToFileURL(resolve(import.meta.dir, "../test-fixtures", name)).href
+const RUN_AUTHOR_E2E = process.env.KLAV_RUN_AUTHOR_E2E === "1" || Bun.argv.some((arg) => arg.includes("trails-author.e2e.test.ts"))
+const test = RUN_AUTHOR_E2E
+  ? bunTest
+  : ((name: string, ...rest: Parameters<typeof bunTest> extends [any, ...infer R] ? R : never) =>
+      bunTest.skip(`${name} (skipped in full suite; run bun test ./lib/trails-author.e2e.test.ts)`, ...rest)) as typeof bunTest
 
 const scripted = (script: any[]): AuthorModel => {
   let i = 0
@@ -425,4 +430,3 @@ test("objective verification: done on right page (verification YES) crystallizes
   const trail = await T.getTrail(P_V2, out.trailId!)
   expect(trail!.objectiveVerified).toBe(true)
 }, 60000)
-

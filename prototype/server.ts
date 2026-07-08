@@ -1115,6 +1115,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       return new Response(null, { status: 204, headers: widgetCorsHeaders(req) })
     }
 
+    if (req.method === "GET" && path === "/api/health") {
+      return json({ ok: true, db: !!db })
+    }
+
     // ── Phase-out 301: old domain → new canonical domain ──
     // DELIBERATE BACKWARD-COMPAT: klavity.quantana.top is the legacy domain; keep this redirect
     // so existing bookmarks, embeds, and API callers on the old domain still work.

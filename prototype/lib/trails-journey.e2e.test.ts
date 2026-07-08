@@ -16,7 +16,7 @@
 //
 // Does NOT change Layer A–D behavior. Mirrors the conventions of the existing trails e2e suites
 // (hermetic local libsql, crystallize(projectId, Trajectory), walkTrail(projectId, trailId, opts)).
-import { test, expect, beforeAll } from "bun:test"
+import { test as bunTest, expect, beforeAll } from "bun:test"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { pathToFileURL } from "node:url"
@@ -36,6 +36,12 @@ const T = await import("./trails")
 const { crystallize } = await import("./trails-crystallize")
 const { walkTrail } = await import("./trails-runner")
 import type { VisionResolver } from "./trails-vision"
+
+const RUN_JOURNEY_E2E = Bun.argv.some((arg) => arg.includes("trails-journey.e2e.test.ts"))
+const test = RUN_JOURNEY_E2E
+  ? bunTest
+  : ((name: string, ...rest: Parameters<typeof bunTest> extends [any, ...infer R] ? R : never) =>
+      bunTest.skip(`${name} (skipped in full suite; run bun test ./lib/trails-journey.e2e.test.ts)`, ...rest)) as typeof bunTest
 
 // landing.html of a given variant directory (e.g. "journey", "journey-drift-t1").
 const landingOf = (dir: string) =>

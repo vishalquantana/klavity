@@ -59,6 +59,11 @@ describe("matchesMock — URL pattern matching", () => {
   test("dot in domain not treated as regex dot", () => {
     expect(matchesMock("https://api.example.com/data", "https://apiXexample.com/data")).toBe(false)
   })
+
+  test("host/path fragment: matches as substring for trail-model mocks", () => {
+    expect(matchesMock("api.example.com/data", "https://api.example.com/data?page=1")).toBe(true)
+    expect(matchesMock("api.example.com/data", "https://apiXexample.com/data?page=1")).toBe(false)
+  })
 })
 
 // ── 2. NetworkMock type shapes ────────────────────────────────────────────────────────────────────
