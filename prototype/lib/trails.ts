@@ -224,6 +224,23 @@ export async function startWalk(
   return id
 }
 
+export async function recordSkippedScheduledRun(
+  projectId: string,
+  trailId: string,
+  status: "skipped" | "missed",
+): Promise<string> {
+  const id = uid("walk_")
+  const tv = await db!.execute({ sql: `SELECT step_version FROM trails WHERE project_id=? AND id=?`, args: [projectId, trailId] })
+  const trailVersion = tv.rows.length ? (Number((tv.rows[0] as any).step_version) || 1) : 1
+  const now = Date.now()
+  await db!.execute({
+    sql: `INSERT INTO trail_runs (id, trail_id, project_id, trigger, status, llm_calls, summary_json, trail_version, environment_name, started_at, finished_at)
+          VALUES (?, ?, ?, 'scheduled', ?, 0, NULL, ?, NULL, ?, ?)`,
+    args: [id, trailId, projectId, status, trailVersion, now, now],
+  })
+  return id
+}
+
 export async function addRunStep(
   projectId: string,
   input: { runId: string; trailId: string; stepId: string; idx: number; tier: Tier; verdict: Verdict; confidence?: number; diagnosis?: FailureClass; healed?: boolean; evidence?: Record<string, unknown> },
