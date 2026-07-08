@@ -1,0 +1,104 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to Deduplicate Bug Reports Before Your Backlog Drowns · Klavity</title>
+<meta name="description" content="Duplicate bug reports waste triage time and split the signal across tickets. Here's how to match, merge, and prevent duplicates before your backlog drowns.">
+<link rel="canonical" href="https://klavity.in/blog/how-to-deduplicate-bug-reports">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="How to Deduplicate Bug Reports Before Your Backlog Drowns"><meta property="og:description" content="Duplicate bug reports waste triage time and split the signal across tickets. Here's how to match, merge, and prevent duplicates before your backlog drowns.">
+<meta property="og:url" content="https://klavity.in/blog/how-to-deduplicate-bug-reports"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="How to Deduplicate Bug Reports Before Your Backlog Drowns"><meta name="twitter:description" content="Duplicate bug reports waste triage time and split the signal across tickets. Here's how to match, merge, and prevent duplicates before your backlog drowns."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..900;1,9..144,400..700&family=Hanken+Grotesk:wght@400..800&family=JetBrains+Mono:wght@500;700&display=optional">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..900;1,9..144,400..700&family=Hanken+Grotesk:wght@400..800&family=JetBrains+Mono:wght@500;700&display=optional" media="print" onload="this.media='all'">
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..900;1,9..144,400..700&family=Hanken+Grotesk:wght@400..800&family=JetBrains+Mono:wght@500;700&display=optional"></noscript>
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"How to Deduplicate Bug Reports Before Your Backlog Drowns","description":"Duplicate bug reports waste triage time and split the signal across tickets. Here's how to match, merge, and prevent duplicates before your backlog drowns.","datePublished":"2026-07-08","dateModified":"2026-07-08","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/how-to-deduplicate-bug-reports","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Deduplicate Bug Reports Before Your Backlog Drowns","item":"https://klavity.in/blog/how-to-deduplicate-bug-reports"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/how-to-deduplicate-bug-reports"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Should I close duplicate bugs or link them?","acceptedAnswer":{"@type":"Answer","text":"Link them. Mark the extras as duplicates of a canonical report instead of closing or deleting them, so you keep each reporter's context and can count how many people were affected. That 'also reported by' count is a real priority signal you lose if you just delete."}},{"@type":"Question","name":"How do I know if two bug reports are actually the same bug?","acceptedAnswer":{"@type":"Answer","text":"Compare the error signature (message plus the top stack frame or failing endpoint) and the reproduction path, not the titles. Two tickets with different wording can be the same defect, and two tickets with identical symptoms can have different root causes. Match on what the system did, not on how the reporter described it."}},{"@type":"Question","name":"Is it better to deduplicate at intake or in the backlog?","acceptedAnswer":{"@type":"Answer","text":"At intake. Catching a duplicate before it becomes a ticket costs one search; catching it later costs a triager's time to read, investigate, and merge. Prompting reporters to search similar reports and capturing structured evidence at report time prevents most duplicates from ever entering the queue."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-07-08</div>
+    <h1>How to Deduplicate Bug Reports Before Your Backlog Drowns</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>Deduplicating bug reports means identifying tickets that describe the same underlying defect and collapsing them into one canonical report. Match on the error signature and reproduction path rather than the title, keep the report with the best evidence as canonical, and search before filing to stop duplicates at the source.</div>
+    <div class="prose"><p>Deduplicating bug reports means identifying tickets that describe the same underlying defect and collapsing them into a single canonical report, so each bug is tracked, discussed, and fixed in one place. Do it in three passes: <strong>match</strong> tickets on their error signature and reproduction path rather than their titles, <strong>merge</strong> by keeping the report with the best evidence as canonical and linking the rest to it, and <strong>prevent</strong> new duplicates by searching before you file and capturing structured evidence at report time. The goal isn't a tidy list — it's one clear signal per bug instead of the same defect split across five half-described tickets.</p>
+
+<h2>Why do duplicate bug reports pile up?</h2>
+<p>Duplicates aren't a discipline problem; they're a structural one. The same defect surfaces to different people in different words, and the tracker rewards filing over searching. Three forces drive most of them:</p>
+<ul>
+<li><strong>Symptom, not cause.</strong> Users report what they see — "the export button is greyed out" — while the actual defect is one failed permission check upstream. Ten symptoms, one bug.</li>
+<li><strong>Title-based search fails.</strong> A reporter searching "export broken" won't find a ticket titled "CSV download returns 500," even though they're the same issue. Keyword search matches wording; duplicates share behavior.</li>
+<li><strong>Filing is easier than checking.</strong> When reporting a bug takes thirty seconds and searching the backlog takes five minutes, people file. The incentive quietly manufactures duplicates.</li>
+</ul>
+<p>None of this is fixed by asking people to be more careful. It's fixed by changing what you match on and where you catch the duplicate.</p>
+
+<h2>How to tell if two bug reports are actually duplicates</h2>
+<p>The reliable test is whether both reports would be resolved by the same code change. To decide that quickly, compare the evidence, not the prose:</p>
+<ol>
+<li><strong>Match the error signature.</strong> Line up the error message plus the most specific technical anchor available — the top stack frame, the failing endpoint and status code, or the console error. Two tickets with the same signature are almost always the same bug, regardless of how differently they're titled.</li>
+<li><strong>Match the reproduction path.</strong> If both reports reach the failure through the same sequence of actions on the same screen, that's strong corroboration. Different paths to the same error message sometimes mean two distinct defects that happen to fail loudly in the same spot.</li>
+<li><strong>Check the environment.</strong> Same browser, build, and role narrow it further. A bug that only one report hits on an old build may be a regression the other never saw — related, but not the same ticket.</li>
+</ol>
+<p>Two symptoms that look identical can still have different root causes, and two reports worded completely differently can be one defect. Judging on evidence rather than description is what keeps you from both false merges and missed ones. This is far easier when every report already carries a <a href="/snap">screenshot, console log, and network trace</a> — you're comparing signatures instead of guessing from a one-line summary.</p>
+
+<h2>How to merge duplicate bugs without losing information</h2>
+<p>Merging badly is worse than not merging: you lose a reporter's repro steps, or you bury the ticket the developer was actually working in. Do it so nothing gets dropped:</p>
+<ol>
+<li><strong>Pick the canonical report by evidence, not by age.</strong> Keep the ticket with the clearest reproduction and the richest attachments as the primary, even if it was filed later. The first report is often the thinnest.</li>
+<li><strong>Link, don't delete.</strong> Mark the others as duplicates of the canonical ticket. This preserves each reporter's context and keeps a running count of how many people hit the bug.</li>
+<li><strong>Merge the evidence forward.</strong> If a duplicate contains a repro step, an environment, or a log the canonical ticket lacks, copy it in before you close the link. The best final ticket is often a composite of several reports.</li>
+<li><strong>Notify the linked reporters.</strong> Point everyone at the canonical ticket so status updates land in one thread. This also stops the same people from re-filing when they don't see progress.</li>
+</ol>
+
+<h2>Use duplicate count as a priority signal</h2>
+<p>Duplicates aren't only clutter — they're data. The number of times a bug gets independently reported is one of the cleanest measures of real-world impact you have, because each report is a person who hit the problem and cared enough to say so. Once you're linking duplicates instead of deleting them, that "also reported by" count becomes a priority input alongside severity: a low-severity annoyance reported forty times may deserve attention before a high-severity edge case reported once. Deleting duplicates throws that signal away; linking them turns your noise into a demand meter.</p>
+
+<h2>How to prevent duplicate bug reports</h2>
+<p>Every duplicate you merge is one you'd rather have never filed. Move the dedup work to intake, where it's cheapest:</p>
+<ol>
+<li><strong>Search before filing.</strong> Surface similar existing reports the moment someone starts a new one, matched on evidence rather than title text. If the bug is already tracked, the reporter adds a corroboration instead of a duplicate.</li>
+<li><strong>Standardize the evidence.</strong> When every report captures the same structured fields — error, steps, environment, screenshot — matching duplicates becomes mechanical instead of interpretive. Free-text tickets are duplicate factories precisely because there's nothing consistent to compare.</li>
+<li><strong>Deduplicate automatically at capture.</strong> Tools that fingerprint a report on its error signature and repro path can flag a likely duplicate before it becomes a ticket, so triage starts from a deduplicated queue rather than cleaning one up after the fact.</li>
+</ol>
+<p>This is where structured, in-app bug reporting earns its keep. When a report is filed with <a href="/snap">full technical context attached automatically</a>, the tracker has a real fingerprint to match on — and the fastest duplicate to resolve is the one that's caught before it's ever created. For the triage that remains, our guide on <a href="/blog">running a bug backlog without losing your mind</a> covers what to do with the deduplicated queue.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Match duplicates on error signature and repro path, never on the title</li><li>Keep the best-evidence report as canonical and link the rest as duplicates</li><li>Count 'also reported by' as a priority signal, not noise to delete</li><li>Search before filing and capture structured evidence to stop dupes at the source</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Should I close duplicate bugs or link them?</summary><p>Link them. Mark the extras as duplicates of a canonical report instead of closing or deleting them, so you keep each reporter's context and can count how many people were affected. That 'also reported by' count is a real priority signal you lose if you just delete.</p></details><details><summary>How do I know if two bug reports are actually the same bug?</summary><p>Compare the error signature (message plus the top stack frame or failing endpoint) and the reproduction path, not the titles. Two tickets with different wording can be the same defect, and two tickets with identical symptoms can have different root causes. Match on what the system did, not on how the reporter described it.</p></details><details><summary>Is it better to deduplicate at intake or in the backlog?</summary><p>At intake. Catching a duplicate before it becomes a ticket costs one search; catching it later costs a triager's time to read, investigate, and merge. Prompting reporters to search similar reports and capturing structured evidence at report time prevents most duplicates from ever entering the queue.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
