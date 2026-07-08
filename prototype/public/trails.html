@@ -579,6 +579,20 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 
 <script src="/vendor/klv-view.min.js"></script>
 <script>
+// KLA-147 stopgap: when embedded in dashboard iframe, intercept full-page link navigations
+// and break them out to the top frame so walk-detail pages don't load inside the iframe.
+if (window.top !== window.self) {
+  document.addEventListener('click', function(e) {
+    var a = e.target && e.target.closest ? e.target.closest('a[href]') : null
+    if (!a) return
+    var href = a.getAttribute('href')
+    if (!href || href === '#' || /^javascript/i.test(href)) return
+    if (href.charAt(0) === '/' || /^https?:\/\//i.test(href)) {
+      e.preventDefault()
+      window.top.location.href = href
+    }
+  }, true)
+}
 function $(id){return document.getElementById(id)}
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
 function projParam(){try{return new URLSearchParams(location.search).get("project")}catch(e){return null}}
