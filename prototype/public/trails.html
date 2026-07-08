@@ -334,8 +334,8 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
     </div>
   </div>
 
-  <!-- precision banner (legit-bug rate) -->
-  <div class="banner">
+  <!-- precision banner (legit-bug rate) — KLA-163: hidden until the project has at least one Trail -->
+  <div class="banner" id="precBanner">
     <div>
       <div class="lbl">Precision · legit-bug rate</div>
       <div class="pct" id="precPct">—</div>
@@ -345,11 +345,12 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 
   <!-- Trails (each runnable on-demand) -->
   <div class="card" style="margin-bottom:18px">
-    <h2>Trails <span class="count" id="trailsCount">0</span></h2>
+    <h2 id="trailsCardHead">Trails <span class="count" id="trailsCount">0</span></h2>
     <div class="list" id="trails"></div>
   </div>
 
-  <div class="grid">
+  <!-- KLA-163: walks + review queue hidden until first Trail exists -->
+  <div class="grid" id="walksGrid">
     <!-- Walks -->
     <div class="card">
       <h2>Walks <span class="count" id="walksCount">0</span></h2>
@@ -362,23 +363,25 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
     </div>
   </div>
 
-  <!-- Expectations board (Candidate · Validated · Enforced) -->
-  <div style="margin-top:22px;margin-bottom:8px;display:flex;align-items:baseline;gap:10px">
-    <h2 style="font-family:var(--display);font-weight:450;font-size:22px;letter-spacing:-.02em">Expectations</h2>
-    <span style="color:var(--paper-faint);font-size:14px">Discovered requirements — enforce to crystallise into a Trail assertion</span>
-  </div>
-  <div class="exp-board">
-    <div class="exp-col">
-      <h2>Candidate <span class="count" id="expCandCount">0</span></h2>
-      <div id="expCand"></div>
+  <!-- KLA-163: Expectations board hidden until first Trail exists -->
+  <div id="expSection">
+    <div style="margin-top:22px;margin-bottom:8px;display:flex;align-items:baseline;gap:10px">
+      <h2 style="font-family:var(--display);font-weight:450;font-size:22px;letter-spacing:-.02em">Expectations</h2>
+      <span style="color:var(--paper-faint);font-size:14px">Discovered requirements — enforce to crystallise into a Trail assertion</span>
     </div>
-    <div class="exp-col">
-      <h2>Validated <span class="count" id="expValidCount">0</span></h2>
-      <div id="expValid"></div>
-    </div>
-    <div class="exp-col">
-      <h2>Enforced <span class="count" id="expEnfCount">0</span></h2>
-      <div id="expEnf"></div>
+    <div class="exp-board">
+      <div class="exp-col">
+        <h2>Candidate <span class="count" id="expCandCount">0</span></h2>
+        <div id="expCand"></div>
+      </div>
+      <div class="exp-col">
+        <h2>Validated <span class="count" id="expValidCount">0</span></h2>
+        <div id="expValid"></div>
+      </div>
+      <div class="exp-col">
+        <h2>Enforced <span class="count" id="expEnfCount">0</span></h2>
+        <div id="expEnf"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -1325,6 +1328,14 @@ async function render(d){
   var _pid = projParam()
   if (_pid) $("navWalks").href = "/autosims/walks?project=" + encodeURIComponent(_pid)
   renderTrails(d)
+
+  // KLA-163: gate empty containers — only show banner/walks/expectations once there is at least one Trail
+  var hasTrails = (d.trails || []).length > 0
+  var _show = hasTrails ? "" : "none"
+  $("precBanner").style.display = _show
+  $("trailsCardHead").style.display = _show
+  $("walksGrid").style.display = _show
+  $("expSection").style.display = _show
 
   // precision
   const p = d.precision || {}

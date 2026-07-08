@@ -5,6 +5,7 @@ import { test, expect, beforeAll, afterAll } from "bun:test"
 import { createClient } from "@libsql/client"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { readFileSync } from "node:fs"
 
 // ── Dedicated temp DB ─────────────────────────────────────────────────────────
 const ts = `${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -87,7 +88,34 @@ afterAll(() => {
   rawClient.close()
 })
 
-// ── Tests ─────────────────────────────────────────────────────────────────────
+// ── Static source assertions (KLA-163) ───────────────────────────────────────
+
+const trailsSrc = readFileSync(new URL("../prototype/public/trails.html", import.meta.url), "utf8")
+
+test("trails.html: precision banner has id=precBanner for zero-trail gating", () => {
+  expect(trailsSrc).toContain('id="precBanner"')
+})
+
+test("trails.html: walks+queue grid has id=walksGrid for zero-trail gating", () => {
+  expect(trailsSrc).toContain('id="walksGrid"')
+})
+
+test("trails.html: expectations section wrapped with id=expSection", () => {
+  expect(trailsSrc).toContain('id="expSection"')
+})
+
+test("trails.html: render() gates precBanner, walksGrid, expSection on hasTrails", () => {
+  expect(trailsSrc).toContain("hasTrails")
+  expect(trailsSrc).toContain('$("precBanner").style.display')
+  expect(trailsSrc).toContain('$("walksGrid").style.display')
+  expect(trailsSrc).toContain('$("expSection").style.display')
+})
+
+test("trails.html: Trails card heading has id=trailsCardHead for zero-trail gating", () => {
+  expect(trailsSrc).toContain('id="trailsCardHead"')
+})
+
+// ── Route tests ───────────────────────────────────────────────────────────────
 
 test("GET /autosims serves the AutoSims page for a session; anon redirects to /login", async () => {
   const authed = await fetch(`${base}/autosims`, { headers: { cookie: adminCookie }, redirect: "manual" })
