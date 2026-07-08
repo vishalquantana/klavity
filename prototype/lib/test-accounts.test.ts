@@ -8,7 +8,7 @@ process.env.TURSO_DATABASE_URL = "file:" + file
 delete process.env.TURSO_AUTH_TOKEN
 
 import { reconnectDb, applySchema } from "./db"
-import { createTestAccount, listTestAccounts, getTestAccountByName, getTestAccountSecret, deleteTestAccount, isTestAccountEmail } from "./test-accounts"
+import { createTestAccount, listTestAccounts, getTestAccountByName, getTestAccountSecret, deleteTestAccount, isTestAccountEmail, getTestAccountRefs, rotateTestAccountSecret } from "./test-accounts"
 
 beforeAll(async () => { await applySchema(reconnectDb("file:" + file)) })
 
@@ -121,5 +121,52 @@ test("create + get secret for API token shape", async () => {
 
 test("token shape without token throws at creation", async () => {
   await expect(createTestAccount(P2, { name: "no-tok", loginEmail: "x@test.local", authShape: "token" })).rejects.toThrow("token is required")
+})
+
+// ── KLA-161: getTestAccountRefs + rotateTestAccountSecret ────────────────────
+
+const P3 = "proj_tacc_refs"
+
+test("getTestAccountRefs: returns empty when no trail steps reference the account", async () => {
+  await createTestAccount(P3, { name: "ref-acc", loginEmail: "ref@test.local", password: "pw" })
+  const refs = await getTestAccountRefs(P3, "ref-acc")
+  expect(refs.trailIds).toHaveLength(0)
+  expect(refs.trailNames).toHaveLength(0)
+})
+
+test("getTestAccountRefs: returns trail names when a step contains {{cred:name:…}}", async () => {
+  const { db } = await import("./db")
+  const now = Date.now()
+  // Insert a minimal trail + one step that references the account via cred placeholder
+  await db!.execute({
+    sql: `INSERT INTO trails (id,project_id,name,intent,base_url,created_at,updated_at) VALUES (?,?,?,?,?,?,?)`,
+    args: ["tr_refs_test", P3, "Ref-trail", "", "https://ex.test", now, now],
+  })
+  await db!.execute({
+    sql: `INSERT INTO trail_steps (id,trail_id,project_id,idx,action,action_value,created_at) VALUES (?,?,?,?,?,?,?)`,
+    args: ["ts_refs_test", "tr_refs_test", P3, 0, "type", "{{cred:ref-acc:password}}", now],
+  })
+  const refs = await getTestAccountRefs(P3, "ref-acc")
+  expect(refs.trailNames).toContain("Ref-trail")
+  expect(refs.trailIds).toContain("tr_refs_test")
+})
+
+const P4 = "proj_tacc_rotate"
+
+test("rotateTestAccountSecret: changes the decrypted secret", async () => {
+  const id = await createTestAccount(P4, { name: "rot-acc", loginEmail: "rot@test.local", password: "original-pw" })
+  const before = await getTestAccountSecret(P4, "rot-acc")
+  expect(before?.password).toBe("original-pw")
+
+  const ok = await rotateTestAccountSecret(P4, id, "new-shiny-pw")
+  expect(ok).toBe(true)
+
+  const after = await getTestAccountSecret(P4, "rot-acc")
+  expect(after?.password).toBe("new-shiny-pw")
+})
+
+test("rotateTestAccountSecret: returns false for unknown id", async () => {
+  const ok = await rotateTestAccountSecret(P4, "tacc_nonexistent", "pw")
+  expect(ok).toBe(false)
 })
 
