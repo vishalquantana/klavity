@@ -90,7 +90,12 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 .empty .em{font-size:26px;margin-bottom:8px}
 .empty p{font-size:13.5px;line-height:1.5}
 /* ── AutoSim first-run onboarding ── */
-.ob-wrap{padding:10px 0 24px}
+.ob-wrap{padding:4px 0 24px}
+.ob-primary{display:flex;align-items:center;justify-content:space-between;gap:18px;background:linear-gradient(135deg,rgba(99,102,241,.14),rgba(15,157,107,.08));border:1px solid rgba(99,102,241,.28);border-radius:8px;padding:20px 22px;margin-bottom:20px}
+.ob-primary h3{font-family:var(--display);font-weight:500;font-size:24px;letter-spacing:0;margin-bottom:5px;color:var(--paper)}
+.ob-primary p{font-size:14px;color:var(--paper-dim);line-height:1.5;max-width:58ch}
+.ob-primary .btn{font-size:15px;padding:12px 18px;white-space:nowrap;box-shadow:0 12px 28px rgba(99,102,241,.18)}
+@media(max-width:720px){.ob-primary{align-items:flex-start;flex-direction:column}.ob-primary .btn{width:100%;justify-content:center}}
 .ob-head{font-family:var(--display);font-weight:500;font-size:22px;letter-spacing:-.02em;margin-bottom:6px;color:var(--paper)}
 .ob-sub{font-size:14px;color:var(--paper-dim);line-height:1.5;margin-bottom:22px}
 .ob-steps{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:24px}
@@ -102,7 +107,6 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 .ob-step h3{font-family:var(--display);font-weight:500;font-size:15px;margin-bottom:6px;letter-spacing:-.01em;color:var(--paper)}
 .ob-step p{font-size:12.5px;color:var(--paper-dim);line-height:1.5}
 .ob-seam{height:1px;background:linear-gradient(90deg,var(--indigo),transparent);margin:12px 0 0;opacity:.35}
-.ob-cta{display:flex;justify-content:center}
 .ob-pitch{font-size:12px;color:var(--paper-faint);margin-top:10px;text-align:center;font-style:italic;line-height:1.5}
 .muted{color:var(--paper-faint);font-size:13px}
 .msg{font-size:12.5px;color:var(--green);margin-top:8px;min-height:16px}
@@ -1060,6 +1064,11 @@ function renderTrails(d){
   var tEl = $("trails")
   if (!trails.length) {
     tEl.innerHTML = '<div class="ob-wrap">'
+      + '<div class="ob-primary">'
+        + '<div><h3>Create your first AutoSim</h3>'
+        + '<p>Describe the journey you want checked. The wizard will guide you through the site URL, objective, reviewer, and first live run.</p></div>'
+        + '<button class="btn btn-indigo" onclick="openWizard()">Create your first AutoSim</button>'
+      + '</div>'
       + '<div class="ob-head">How AutoSims work</div>'
       + '<div class="ob-sub">AutoSims drive a real browser through your product — not a recorded script. They heal UI drift silently and only file a bug when something genuinely breaks.</div>'
       + '<div class="ob-steps">'
@@ -1082,7 +1091,6 @@ function renderTrails(d){
           + '<div class="ob-seam"></div>'
         + '</div>'
       + '</div>'
-      + '<div class="ob-cta"><button class="btn btn-indigo" onclick="openWizard()">+ Create your first AutoSim</button></div>'
       + '<p class="ob-pitch">Unlike self-healing Playwright, AutoSims judge the experience — not just whether a selector was found.</p>'
       + '</div>'
     return

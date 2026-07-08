@@ -2185,11 +2185,10 @@ async function loadStudioProjects() {
 }
 loadStudioProjects()
 
-// ===== First-run guided tour (vendored driver.js v1.6.0) =====
-// Mirrors the dashboard's tour. Auto-starts ONCE per browser, and only on a genuinely fresh
-// Studio (zero Sims — the "nothing has happened yet" signal). Always dismissible (Esc / the
-// popover close button / the dimmed overlay). The footprints button in the header (#tourBtn)
-// re-runs it manually any time. Respects prefers-reduced-motion.
+// ===== Guided tour (vendored driver.js v1.6.0) =====
+// Mirrors the dashboard's tour styling, but stays manual. On fresh projects the first useful
+// action is Create Sim, so the tour must not auto-cover those controls. The footprints button
+// in the header (#tourBtn) runs it on demand. Respects prefers-reduced-motion.
 // This lives inside the module so it can read module-scoped state (sims, switchL1Tab, $).
 ;(function () {
   var TOUR_VER = "1" // bump to re-show the tour after a big Studio redesign
@@ -2264,22 +2263,7 @@ loadStudioProjects()
     })
     d.drive()
   }
-  // Auto-start gate — called once after the initial sims load settles.
-  var autoChecked = false
-  window.maybeStartTour = function () {
-    if (autoChecked || running) return
-    autoChecked = true // one auto-start decision per page load
-    try { if (localStorage.getItem(tourKey())) return } catch (e) {}
-    // Genuinely fresh Studio only: no Sims yet.
-    if ((sims || []).length) return
-    // Don't talk over a deep link into a specific Sim, or the onboarding hats hand-off.
-    if (studioSimId()) return
-    try {
-      var p = new URLSearchParams(location.search)
-      if (p.get("starter") === "hats" || location.hash === "#add-transcript") return
-    } catch (e) {}
-    setTimeout(startTour, 500) // let the first paint settle so targets have real geometry
-  }
+  window.maybeStartTour = function () {}
   // Manual re-run: header footprints button.
   var tb = document.getElementById("tourBtn")
   if (tb) tb.addEventListener("click", function () { startTour() })
@@ -2287,7 +2271,7 @@ loadStudioProjects()
 
 renderDevBar()
 if (devEnabled) devLoadSims()
-loadSavedSims().then(function () { if (window.maybeStartTour) window.maybeStartTour() })
+loadSavedSims()
 
 // ── Connect Extension ──
 ;(async function initConnectBtn() {
