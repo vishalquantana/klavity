@@ -703,6 +703,26 @@ details.drawer .drawer-in{padding:0 22px 22px}
 .tkt-err{font-size:12px;color:var(--rose)}
 .tkt-msg{font-size:12px;color:var(--paper-faint)}
 .tkt-gap{margin-top:4px}
+/* ticket activity timeline + comment composer (KLA-171) */
+.tkt-timeline-wrap{margin-top:18px;border-top:1px solid var(--line);padding-top:14px;display:flex;flex-direction:column;gap:10px;max-width:900px}
+.tkt-timeline-hd{font-family:var(--mono);font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--paper-faint)}
+.tkt-tl-list{display:flex;flex-direction:column;gap:0}
+.tkt-tl-item{display:flex;gap:10px;padding:8px 0;position:relative}
+.tkt-tl-item+.tkt-tl-item::before{content:"";position:absolute;left:11px;top:-5px;bottom:calc(100% - 3px);width:1px;background:var(--line)}
+.tkt-tl-dot{width:22px;height:22px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:10px;margin-top:1px}
+.tkt-tl-dot-comment{background:rgba(99,102,241,.18);color:var(--indigo)}
+.tkt-tl-dot-activity{background:var(--ink-3);color:var(--paper-faint)}
+.tkt-tl-dot-export{background:rgba(15,157,107,.14);color:var(--green)}
+.tkt-tl-body{flex:1;min-width:0}
+.tkt-tl-author{font-size:12px;font-weight:600;color:var(--paper-dim)}
+.tkt-tl-text{font-size:13px;margin-top:2px;line-height:1.5;word-break:break-word}
+.tkt-tl-meta{font-size:11px;color:var(--paper-faint);margin-top:2px}
+.tkt-tl-empty{font-size:13px;color:var(--paper-faint);padding:4px 0 2px}
+.tkt-comment-form{display:flex;flex-direction:column;gap:8px;margin-top:4px}
+.tkt-comment-ta{width:100%;background:var(--ink-2);border:1px solid var(--line);border-radius:10px;padding:9px 11px;color:var(--paper);font-family:var(--body);font-size:13px;outline:none;resize:vertical;min-height:56px;box-sizing:border-box;transition:border-color .15s}
+.tkt-comment-ta:focus{border-color:var(--indigo)}
+.tkt-comment-row{display:flex;align-items:center;gap:8px}
+.tkt-comment-msg{font-size:12px}
 
 /* connectors manager */
 .conn-cloud{display:flex;align-items:center;gap:10px;padding:14px 15px;background:var(--ink);border:1px solid var(--line);border-radius:12px;margin-bottom:14px}
@@ -2877,6 +2897,109 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
   return detailEl
 }
 
+// ── KLA-171: Activity timeline + comment composer (single-ticket detail) ────────────────────────
+const TL_ICONS = { comment: "💬", activity: "•", export: "↗" }
+const TL_ACTIVITY_LABELS = {
+  ticket_status_changed: (m) => `Status → ${m && m.to ? STATUS_LABELS[m.to] || m.to : ""}`,
+  ticket_priority_changed: (m) => `Priority → ${m && m.to ? m.to : ""}`,
+  connector_export: (m) => `Exported to ${m && m.connectorType ? m.connectorType : "external tracker"}${m && m.externalKey ? " · " + m.externalKey : ""}`,
+}
+
+function renderTimelineItem(item) {
+  const el = document.createElement("div")
+  el.className = "tkt-tl-item"
+  let dotClass = "tkt-tl-dot-activity"
+  let icon = TL_ICONS.activity
+  let bodyHtml = ""
+
+  if (item.kind === "comment") {
+    dotClass = "tkt-tl-dot-comment"; icon = TL_ICONS.comment
+    const author = item.author ? esc(item.author.split("@")[0]) : "Anonymous"
+    bodyHtml = `<div class="tkt-tl-author">${author}</div>
+      <div class="tkt-tl-text">${esc(item.body)}</div>
+      <div class="tkt-tl-meta">${esc(ago(item.createdAt))}</div>`
+  } else if (item.kind === "ticket_export") {
+    dotClass = "tkt-tl-dot-export"; icon = TL_ICONS.export
+    const label = TL_ACTIVITY_LABELS.connector_export ? TL_ACTIVITY_LABELS.connector_export(item.meta) : "Exported"
+    const actor = item.actorEmail ? esc(item.actorEmail.split("@")[0]) : ""
+    const linkHtml = item.meta && item.meta.externalUrl
+      ? ` <a href="${esc(item.meta.externalUrl)}" target="_blank" rel="noopener" style="color:var(--indigo)">${esc(item.meta.externalKey || "view")} ↗</a>` : ""
+    bodyHtml = `<div class="tkt-tl-text">${esc(label)}${linkHtml}</div>
+      <div class="tkt-tl-meta">${actor ? actor + " · " : ""}${esc(ago(item.createdAt))}</div>`
+  } else {
+    const labelFn = TL_ACTIVITY_LABELS[item.type]
+    const label = labelFn ? labelFn(item.meta) : esc(item.type).replace(/_/g, " ")
+    const actor = item.actorEmail ? esc(item.actorEmail.split("@")[0]) : ""
+    bodyHtml = `<div class="tkt-tl-text">${esc(label)}</div>
+      <div class="tkt-tl-meta">${actor ? actor + " · " : ""}${esc(ago(item.createdAt))}</div>`
+  }
+
+  el.innerHTML = `<div class="tkt-tl-dot ${dotClass}">${icon}</div><div class="tkt-tl-body">${bodyHtml}</div>`
+  return el
+}
+
+function buildTimelineSection(ticketId) {
+  const wrap = document.createElement("div")
+  wrap.className = "tkt-timeline-wrap"
+  wrap.innerHTML = `<div class="tkt-timeline-hd">Activity</div>
+    <div class="tkt-tl-list" id="tl-${esc(ticketId)}"><div class="tkt-tl-empty" style="padding:6px 0">Loading…</div></div>
+    <div class="tkt-comment-form">
+      <textarea class="tkt-comment-ta" placeholder="Leave a comment…" rows="2"></textarea>
+      <div class="tkt-comment-row">
+        <button class="btn btn-indigo btn-sm tkt-comment-submit">Comment</button>
+        <span class="tkt-comment-msg" style="color:var(--paper-faint)"></span>
+      </div>
+    </div>`
+
+  const listEl = wrap.querySelector(`#tl-${CSS.escape(ticketId)}`)
+  const ta = wrap.querySelector(".tkt-comment-ta")
+  const submitBtn = wrap.querySelector(".tkt-comment-submit")
+  const msgEl = wrap.querySelector(".tkt-comment-msg")
+
+  function reloadTimeline() {
+    if (!listEl) return
+    fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/timeline")
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+      .then(d => {
+        const items = d.items || []
+        listEl.innerHTML = ""
+        if (!items.length) {
+          listEl.innerHTML = '<div class="tkt-tl-empty">No activity yet.</div>'
+        } else {
+          items.forEach(item => listEl.appendChild(renderTimelineItem(item)))
+        }
+      })
+      .catch(() => { if (listEl) listEl.innerHTML = '<div class="tkt-tl-empty" style="color:var(--rose)">Failed to load timeline.</div>' })
+  }
+
+  reloadTimeline()
+
+  if (submitBtn && ta) {
+    submitBtn.addEventListener("click", async () => {
+      const text = ta.value.trim()
+      if (!text) return
+      submitBtn.disabled = true
+      if (msgEl) { msgEl.style.color = "var(--paper-faint)"; msgEl.textContent = "Saving…" }
+      const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/comments", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ body: text })
+      }).catch(() => null)
+      submitBtn.disabled = false
+      if (r && r.status === 201) {
+        ta.value = ""
+        if (msgEl) { msgEl.style.color = "var(--green)"; msgEl.textContent = "Comment posted." }
+        setTimeout(() => { if (msgEl) msgEl.textContent = "" }, 2500)
+        reloadTimeline()
+      } else {
+        const d = r ? await r.json().catch(() => ({})) : {}
+        if (msgEl) { msgEl.style.color = "var(--rose)"; msgEl.textContent = d.error || "Failed to post comment." }
+      }
+    })
+  }
+
+  return wrap
+}
+
 // Overview: flat "Recent tickets" list (unchanged behaviour).
 function renderTickets() {
   const tickets = (state.tickets || []).filter(t => t.status !== "new" && t.status !== "dismissed")
@@ -2963,6 +3086,8 @@ function openSingleTicket(id) {
   if (t.screenshotId) detailEl.classList.add("single-has-shot")   // enables the image-left grid
   single.appendChild(detailEl)
   loadTktShot(detailEl, t.annotations)
+  // KLA-171: append activity timeline + comment composer
+  single.appendChild(buildTimelineSection(t.id))
   if (board) board.classList.add("hide")
   const listView = document.getElementById("tktListView")
   if (listView) listView.classList.add("hide")
