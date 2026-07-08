@@ -418,11 +418,9 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
       <div class="wiz-connector"></div>
       <div class="wiz-dot" id="wizDot3" title="Step 3: Journey">3</div>
       <div class="wiz-connector"></div>
-      <div class="wiz-dot" id="wizDot4" title="Step 4: Reviewer">4</div>
-      <div class="wiz-connector"></div>
-      <div class="wiz-dot" id="wizDot5" title="Step 5: Review">5</div>
+      <div class="wiz-dot" id="wizDot4" title="Step 4: Review">4</div>
     </div>
-    <div class="wiz-step-label" id="wizStepLabel">Step 1 of 5</div>
+    <div class="wiz-step-label" id="wizStepLabel">Step 1 of 4</div>
 
     <!-- Step 1: Name -->
     <div id="wiz1" class="wiz-panel">
@@ -466,19 +464,7 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
       <p class="hint">Tip: include cleanup steps ("delete it", "log out") so every run leaves your data tidy.</p>
     </div>
 
-    <!-- Step 4: Reviewer (optional) -->
-    <div id="wiz4" class="wiz-panel" style="display:none">
-      <p class="wiz-desc">A Sim is an AI persona — a virtual user who reviews the journey and flags issues from their perspective. Pick one, or use the default reviewer.</p>
-      <div class="wiz-sim-scroll" id="wizSimList">
-        <label class="wiz-sim-opt">
-          <input type="radio" name="wizSim" value="" checked />
-          <span><span class="wiz-sim-name">Default reviewer</span><span class="wiz-sim-desc">The AutoSim uses its own judgment — good for most flows.</span></span>
-        </label>
-      </div>
-      <p class="hint" style="margin-top:10px">Sims are created in the <a href="/dashboard" style="color:var(--indigo)">Dashboard → Sims tab</a>.</p>
-    </div>
-
-    <!-- Step 5: Review + Create -->
+    <!-- Step 4: Review + Create -->
     <div id="wiz5" class="wiz-panel" style="display:none">
       <p class="wiz-desc">Everything look right? Hit <strong>Create &amp; Run</strong> and the AutoSim will drive your site to record the journey live.</p>
       <div class="wiz-review">
@@ -487,7 +473,6 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
         <div class="wiz-rev-row wiz-rev-obj"><span class="wiz-rev-label">Journey</span><span class="wiz-rev-val" id="wizRevObj"></span></div>
         <div class="wiz-rev-row"><span class="wiz-rev-label">Viewport</span><span class="wiz-rev-val" id="wizRevViewport"></span></div>
         <div class="wiz-rev-row"><span class="wiz-rev-label">Account</span><span class="wiz-rev-val" id="wizRevAcc"></span></div>
-        <div class="wiz-rev-row"><span class="wiz-rev-label">Reviewer</span><span class="wiz-rev-val" id="wizRevSim"></span></div>
       </div>
       <p class="hint" style="margin-top:12px">This usually takes 1–3 minutes. Keep this window open — you'll see every step live.</p>
     </div>
@@ -1772,7 +1757,6 @@ async function pollAuthor(sessionId, box){
 
 // ── Guided Create AutoSim wizard ──────────────────────────────────────────────────────────────────
 var wizStep = 1
-var wizSimsData = []
 
 function openWizard() {
   wizStep = 1
@@ -1784,8 +1768,6 @@ function openWizard() {
   cb.disabled = false; cb.textContent = "Create & Run"
   document.getElementById("wizBg").classList.add("show")
   wizRender()
-  loadWizSims()
-  loadAccounts()
 }
 
 function closeWizard() {
@@ -1793,48 +1775,22 @@ function closeWizard() {
 }
 
 function wizRender() {
-  var LABELS = ["Name this journey", "Where does it start?", "Describe the journey", "Who reviews it?", "Ready to go"]
+  var LABELS = ["Name this journey", "Where does it start?", "Describe the journey", "Ready to go"]
   document.getElementById("wizTitle").textContent = LABELS[wizStep - 1]
-  document.getElementById("wizStepLabel").textContent = "Step " + wizStep + " of 5"
+  document.getElementById("wizStepLabel").textContent = "Step " + wizStep + " of 4"
   document.getElementById("wizStepBar").setAttribute("aria-valuenow", String(wizStep))
-  for (var i = 1; i <= 5; i++) {
+  for (var i = 1; i <= 4; i++) {
     var dot = document.getElementById("wizDot" + i)
     dot.className = "wiz-dot" + (i === wizStep ? " on" : i < wizStep ? " done" : "")
     var panel = document.getElementById("wiz" + i)
     panel.style.display = i === wizStep ? "" : "none"
   }
   document.getElementById("wizBack").style.display = wizStep === 1 ? "none" : ""
-  document.getElementById("wizNext").style.display = wizStep < 5 ? "" : "none"
-  document.getElementById("wizCreate").style.display = wizStep === 5 ? "" : "none"
-  if (wizStep === 4) renderWizSimList()
-  if (wizStep === 5) renderWizReview()
+  document.getElementById("wizNext").style.display = wizStep < 4 ? "" : "none"
+  document.getElementById("wizCreate").style.display = wizStep === 4 ? "" : "none"
+  if (wizStep === 4) renderWizReview()
   var inp = document.querySelector("#wiz" + wizStep + " input, #wiz" + wizStep + " textarea")
   if (inp) setTimeout(function(){ inp.focus() }, 60)
-}
-
-async function loadWizSims() {
-  try {
-    var r = await fetch("/api/personas" + projQ())
-    if (!r.ok) { wizSimsData = []; return }
-    var d = await r.json()
-    wizSimsData = d.personas || []
-    if (wizStep === 4) renderWizSimList()
-  } catch(e) { wizSimsData = [] }
-}
-
-function renderWizSimList() {
-  var el = document.getElementById("wizSimList")
-  var html = '<label class="wiz-sim-opt"><input type="radio" name="wizSim" value="" checked />'
-    + '<span><span class="wiz-sim-name">Default reviewer</span>'
-    + '<span class="wiz-sim-desc">The AutoSim uses its own judgment — good for most flows.</span></span></label>'
-  wizSimsData.forEach(function(s) {
-    var desc = [s.role, s.summary].filter(Boolean).join(" · ").slice(0, 80)
-    html += '<label class="wiz-sim-opt"><input type="radio" name="wizSim" value="' + esc(s.name || s.id) + '" />'
-      + '<span><span class="wiz-sim-name">' + esc(s.name || "Unnamed") + '</span>'
-      + (desc ? '<span class="wiz-sim-desc">' + esc(desc) + '</span>' : "")
-      + '</span></label>'
-  })
-  el.innerHTML = html
 }
 
 function renderWizReview() {
@@ -1845,8 +1801,6 @@ function renderWizReview() {
   document.getElementById("wizRevViewport").textContent = vpSel.options[vpSel.selectedIndex] ? vpSel.options[vpSel.selectedIndex].textContent : "Desktop 1280×720"
   var accSel = document.getElementById("wizAcc")
   document.getElementById("wizRevAcc").textContent = accSel.value ? (accSel.options[accSel.selectedIndex] ? accSel.options[accSel.selectedIndex].textContent : accSel.value) : "None — public pages"
-  var checked = document.querySelector("input[name=\"wizSim\"]:checked")
-  document.getElementById("wizRevSim").textContent = (checked && checked.value) ? checked.value : "Default reviewer"
 }
 
 function wizValidate(n) {
@@ -1890,9 +1844,6 @@ document.getElementById("wizCreate").addEventListener("click", async function() 
   box.style.display = ""; box.innerHTML = '<div class="nt-live">AutoSim is recording your journey…</div>'
   document.getElementById("wizNav").style.display = "none"
 
-  var checked = document.querySelector("input[name=\"wizSim\"]:checked")
-  var simName = (checked && checked.value) ? checked.value : undefined
-
   var name = document.getElementById("wizName").value.trim()
   var objective = document.getElementById("wizObj").value.trim()
   var baseUrl = document.getElementById("wizUrl").value.trim()
@@ -1907,7 +1858,7 @@ document.getElementById("wizCreate").addEventListener("click", async function() 
   document.getElementById("ntViewport").value = viewport
   if (testAccount) document.getElementById("ntAcc").value = testAccount
 
-  var body = { name: name, objective: objective, base_url: baseUrl, viewport: viewport, test_account: testAccount, sim_name: simName }
+  var body = { name: name, objective: objective, base_url: baseUrl, viewport: viewport, test_account: testAccount }
   var r = await fetch("/api/trails/author" + projQ(), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
   if (!r.ok) {
     var e = await r.json().catch(function(){ return {} })
