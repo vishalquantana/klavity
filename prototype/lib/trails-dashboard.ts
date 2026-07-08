@@ -15,12 +15,14 @@ export interface TrailsDashboard {
 }
 
 export async function trailsDashboardData(projectId: string): Promise<TrailsDashboard> {
-  const [trails, recentWalks, queue, precision] = await Promise.all([
+  const [raw, recentWalks, queue, precision] = await Promise.all([
     listTrails(projectId),
     listRecentWalks(projectId, 20),
     listFindings(projectId, { status: "queued", limit: 50 }),
     projectPrecision(projectId),
   ])
+  // Hide archived trails from the main dashboard by default (KLA-160).
+  const trails = raw.filter((t) => t.status !== "archived")
   return { trails, recentWalks, queue, precision }
 }
 
