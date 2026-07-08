@@ -612,17 +612,20 @@ details.drawer .drawer-in{padding:0 22px 22px}
 [data-theme="dark"] .seg button.active{color:#0c0a08}
 .seg button:not(.active):hover{background:var(--ink-3)}
 /* Tickets kanban board */
-.kanban{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;align-items:start}
+.kanban{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;align-items:start}
 .kb-col{background:var(--ink);border:1px solid var(--line);border-radius:14px;padding:10px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.kb-col.drag-over{border-color:var(--indigo);box-shadow:0 0 0 1px var(--indigo-soft)}
 .kb-head{display:flex;align-items:center;gap:8px;padding:2px 4px 6px}
 .kb-head .kb-title{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--paper-faint)}
 .kb-head .kb-n{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--paper-faint);background:var(--ink-3);border-radius:20px;padding:1px 8px}
 .kb-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:var(--paper-faint)}
-.kb-dot-open{background:var(--amber)}.kb-dot-in_progress{background:var(--indigo)}.kb-dot-done{background:var(--green)}
-.kb-list{display:flex;flex-direction:column;gap:8px;min-height:24px}
+.kb-dot-new{background:var(--rose)}.kb-dot-open{background:var(--amber)}.kb-dot-in_progress{background:var(--indigo)}.kb-dot-closed{background:var(--green)}
+.kb-list{display:flex;flex-direction:column;gap:8px;min-height:64px}
 .kb-empty{font-size:12px;text-align:center;padding:8px 0}
 .kb-card{position:relative;background:var(--ink-2);border:1px solid var(--line);border-radius:12px;padding:11px 12px;cursor:pointer;transition:border-color .2s;user-select:none}
 .kb-card:hover{border-color:var(--indigo)}
+.kb-card[draggable="true"]{cursor:grab}
+.kb-card.dragging{opacity:.55;cursor:grabbing}
 .kb-card .kb-copy-ai{position:absolute;top:8px;right:8px;width:24px;height:24px;font-size:12px}
 .kb-card-t{padding-right:28px}
 .kb-card.open{border-color:var(--indigo)}
@@ -642,6 +645,8 @@ details.drawer .drawer-in{padding:0 22px 22px}
 .tkt-pill.p-open{background:rgba(217,131,36,.16);color:var(--amber)}.tkt-pill.p-open .pdot{background:var(--amber)}
 .tkt-pill.p-in_progress{background:rgba(99,102,241,.14);color:var(--indigo)}.tkt-pill.p-in_progress .pdot{background:var(--indigo)}
 .tkt-pill.p-done{background:rgba(15,157,107,.15);color:var(--green)}.tkt-pill.p-done .pdot{background:var(--green)}
+.tkt-pill.p-new{background:rgba(219,39,119,.14);color:var(--rose)}.tkt-pill.p-new .pdot{background:var(--rose)}
+.tkt-pill.p-dismissed{background:rgba(107,114,128,.16);color:var(--paper-faint)}.tkt-pill.p-dismissed .pdot{background:var(--paper-faint)}
 .kb-toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
 .kb-toolbar h2{margin:0;border-bottom:none;padding-bottom:0}
 .kb-search{display:flex;align-items:center;gap:8px;background:var(--ink);border:1px solid var(--line);border-radius:10px;padding:7px 11px;min-width:170px;margin-left:auto}
@@ -684,7 +689,10 @@ details.drawer .drawer-in{padding:0 22px 22px}
 .chip.kb-st-open{background:rgba(217,131,36,.16);color:var(--amber)}
 .chip.kb-st-in_progress{background:rgba(79,70,229,.16);color:var(--indigo)}
 .chip.kb-st-done{background:rgba(15,157,107,.16);color:var(--green)}
+.chip.kb-st-new{background:rgba(219,39,119,.14);color:var(--rose)}
+.chip.kb-st-dismissed{background:rgba(107,114,128,.16);color:var(--paper-faint)}
 .kb-item .tkt-detail{border-radius:12px;border-top:1px solid var(--line);margin-top:8px}
+@media(max-width:1100px){.kanban{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:760px){.kanban{grid-template-columns:1fr}}
 .tkt-fields{display:flex;gap:10px;flex-wrap:wrap}
 .tkt-field{display:flex;flex-direction:column;gap:4px;flex:1;min-width:140px}
@@ -1266,13 +1274,13 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     <div class="card full" data-view="tickets">
       <div class="kb-toolbar">
       <h2><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20v-9" /> <path d="M14 7a4 4 0 0 1 4 4v3a6 6 0 0 1-12 0v-3a4 4 0 0 1 4-4z" /> <path d="M14.12 3.88 16 2" /> <path d="M21 21a4 4 0 0 0-3.81-4" /> <path d="M21 5a4 4 0 0 1-3.55 3.97" /> <path d="M22 13h-4" /> <path d="M3 21a4 4 0 0 1 3.81-4" /> <path d="M3 5a4 4 0 0 0 3.55 3.97" /> <path d="M6 13H2" /> <path d="m8 2 1.88 1.88" /> <path d="M9 7.13V6a3 3 0 1 1 6 0v1.13" /></svg> Tickets <span class="count" id="ticketKanbanCount"></span></h2>
-        <div class="tkt-view-toggle"><button class="tkt-vbtn active" id="tktListBtn" title="List view">&#9776; List</button><button class="tkt-vbtn" id="tktBoardBtn" title="Board view">&#8862; Board</button></div>
+        <div class="tkt-view-toggle"><button class="tkt-vbtn" id="tktListBtn" title="List view">&#9776; List</button><button class="tkt-vbtn active" id="tktBoardBtn" title="Board view">&#8862; Board</button></div>
         <div class="kb-search"><span class="mag">&#8981;</span><input id="kanbanSearch" placeholder="Search tickets…" autocomplete="off" /></div>
       </div>
       <!-- KLA-169: Shared filter bar (reused by board + list views) -->
       <div class="tkt-fb" id="tktFilterBar">
         <span class="tkt-fb-label">Filter</span>
-        <select id="fbStatus" title="Filter by status"><option value="">All statuses</option><option value="open">Open</option><option value="in_progress">In progress</option><option value="done">Done</option><option value="dismissed">Dismissed</option></select>
+        <select id="fbStatus" title="Filter by status"><option value="">All statuses</option><option value="new">New</option><option value="open">Open</option><option value="in_progress">In progress</option><option value="done">Done</option><option value="dismissed">Dismissed</option><option value="closed">Closed</option></select>
         <select id="fbPriority" title="Filter by priority"><option value="">All priorities</option><option value="urgent">Urgent</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select>
         <select id="fbAssignee" title="Filter by assignee"><option value="">All assignees</option><option value="__unassigned__">Unassigned</option></select>
         <select id="fbSource" title="Filter by source"><option value="">All sources</option><option value="sim">Sim / AI</option><option value="human">Human report</option></select>
@@ -3051,9 +3059,10 @@ function renderTickets() {
 
 // Tickets view: kanban board grouped by status.
 const KANBAN_COLS = [
-  { status: "open",        label: "Open" },
-  { status: "in_progress", label: "In Progress" },
-  { status: "done",        label: "Done" },
+  { key: "new",         status: "new",         label: "New",         statuses: ["new"] },
+  { key: "open",        status: "open",        label: "Open",        statuses: ["open"] },
+  { key: "in_progress", status: "in_progress", label: "In Progress", statuses: ["in_progress"] },
+  { key: "closed",      status: "done",        label: "Closed",      statuses: ["done", "dismissed"] },
 ]
 // Single-ticket view — clicking any ticket (kanban card, recent-tickets row, or Fix-next)
 // opens its full detail here instead of expanding inline, and hides the board.
@@ -3123,7 +3132,9 @@ function regrBannerHtml(t) {
 // ── KLA-169: Tickets filter bar + list view ──────────────────────────────────────────────────────
 let _tktFilters = { status: "", priority: "", assignee: "", source: "" }
 let _tktListState = { page: 1, totalPages: 1, loading: false }
-let _tktView = "list" // "list" | "board"
+let _tktBoardState = { loading: false }
+let _tktBoardTickets = []
+let _tktView = "board" // "list" | "board"
 let _tktFbBound = false
 
 function tktFilterBarBind() {
@@ -3189,8 +3200,14 @@ function renderTicketsView() {
     if (list) list.innerHTML = ""
     const board = document.getElementById("ticketsKanban")
     if (board) board.classList.remove("hide")
-    renderTicketsKanban()
+    fetchAndRenderTktBoard()
   }
+}
+
+function ticketStatusParamFor(view) {
+  if (_tktFilters.status === "closed") return "done,dismissed"
+  if (_tktFilters.status) return _tktFilters.status
+  return view === "board" ? "new,open,in_progress,done,dismissed" : ""
 }
 
 async function fetchAndRenderTktList() {
@@ -3204,7 +3221,8 @@ async function fetchAndRenderTktList() {
   if (!projId) { listEl.innerHTML = '<div class="tkt-list-empty">No project selected.</div>'; _tktListState.loading = false; return }
 
   const sp = new URLSearchParams()
-  if (_tktFilters.status) sp.set("status", _tktFilters.status)
+  const statusParam = ticketStatusParamFor("list")
+  if (statusParam) sp.set("status", statusParam)
   if (_tktFilters.priority) sp.set("priority", _tktFilters.priority)
   if (_tktFilters.assignee) sp.set("assignee", _tktFilters.assignee === "__unassigned__" ? "" : _tktFilters.assignee)
   if (_tktFilters.source) sp.set("source", _tktFilters.source)
@@ -3225,6 +3243,37 @@ async function fetchAndRenderTktList() {
     listEl.innerHTML = '<div class="tkt-list-empty">Failed to load tickets.</div>'
   } finally {
     _tktListState.loading = false
+  }
+}
+
+async function fetchAndRenderTktBoard() {
+  const board = document.getElementById("ticketsKanban")
+  if (!board || _tktBoardState.loading) return
+  _tktBoardState.loading = true
+  board.innerHTML = '<div class="tkt-list-empty">Loading…</div>'
+
+  const projId = state.active && state.active.id
+  if (!projId) { board.innerHTML = '<div class="tkt-list-empty">No project selected.</div>'; _tktBoardState.loading = false; return }
+
+  const sp = new URLSearchParams()
+  const statusParam = ticketStatusParamFor("board")
+  if (statusParam) sp.set("status", statusParam)
+  if (_tktFilters.priority) sp.set("priority", _tktFilters.priority)
+  if (_tktFilters.assignee) sp.set("assignee", _tktFilters.assignee === "__unassigned__" ? "" : _tktFilters.assignee)
+  if (_tktFilters.source) sp.set("source", _tktFilters.source)
+  sp.set("page", "1")
+  sp.set("limit", "200")
+
+  try {
+    const res = await fetch(`/api/projects/${encodeURIComponent(projId)}/tickets?${sp.toString()}`)
+    if (!res.ok) throw new Error("HTTP " + res.status)
+    const data = await res.json()
+    _tktBoardTickets = data.tickets || []
+    renderTicketsKanban(_tktBoardTickets)
+  } catch (e) {
+    board.innerHTML = '<div class="tkt-list-empty">Failed to load tickets.</div>'
+  } finally {
+    _tktBoardState.loading = false
   }
 }
 
@@ -3327,51 +3376,99 @@ function goToTicketsFiltered(filter) {
   if (boardBtn) boardBtn.classList.add("active")
   if (window.klavSetView) window.klavSetView("tickets")
   else document.body.setAttribute("data-view", "tickets")
-  renderTicketsKanban()
+  fetchAndRenderTktBoard()
   const board = $("ticketsKanban")
   if (board) board.scrollIntoView({ behavior: "smooth", block: "start" })
 }
-function renderTicketsKanban() {
+function kanbanKeyForStatus(status) {
+  if (status === "new") return "new"
+  if (status === "in_progress") return "in_progress"
+  if (status === "done" || status === "dismissed") return "closed"
+  return "open"
+}
+function ticketStatusLabel(status) {
+  if (status === "dismissed") return "Dismissed"
+  return STATUS_LABELS[status] || status || "Open"
+}
+async function moveTicketColumn(ticketId, fromKey, toKey) {
+  if (!toKey || fromKey === toKey) return
+  const col = KANBAN_COLS.find(c => c.key === toKey)
+  if (!col) return
+  const t = (state.tickets || []).find(x => String(x.id) === String(ticketId))
+  const bt = _tktBoardTickets.find(x => String(x.id) === String(ticketId))
+  const before = t ? t.status : null
+  const boardBefore = bt ? bt.status : null
+  if (t) t.status = col.status
+  if (bt) bt.status = col.status
+  renderTicketsKanban(_tktBoardTickets)
+  try {
+    const r = await fetch(`/api/feedback/${encodeURIComponent(ticketId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: col.status }),
+    })
+    if (!r.ok) throw new Error("HTTP " + r.status)
+    await fetchAndRenderTktBoard()
+  } catch (e) {
+    if (t) t.status = before
+    if (bt) bt.status = boardBefore
+    renderTicketsKanban(_tktBoardTickets)
+  }
+}
+function renderTicketsKanban(boardTickets) {
   const board = $("ticketsKanban")
   if (!board) return
   if (!_kbSearchBound) {
     const si = $("kanbanSearch")
-    if (si) { si.addEventListener("input", () => { _kanbanSearch = si.value; renderTicketsKanban() }); _kbSearchBound = true }
+    if (si) { si.addEventListener("input", () => { _kanbanSearch = si.value; renderTicketsKanban(_tktBoardTickets) }); _kbSearchBound = true }
   }
   const admin = state.active && state.active.role === "admin"
-  const tickets = (state.tickets || []).filter(t => t.status !== "new" && t.status !== "dismissed")
+  if (Array.isArray(boardTickets)) {
+    if (!Array.isArray(state.tickets)) state.tickets = []
+    boardTickets.forEach(t => {
+      const ix = state.tickets.findIndex(x => String(x.id) === String(t.id))
+      if (ix >= 0) state.tickets[ix] = { ...state.tickets[ix], ...t }
+      else state.tickets.push(t)
+    })
+  }
+  const sourceTickets = Array.isArray(boardTickets) ? boardTickets : (_tktBoardTickets.length ? _tktBoardTickets : (state.tickets || []))
+  const tickets = sourceTickets.filter(t => kbMatchesFilter(t) && kbMatchesSearch(t))
   $("ticketKanbanCount").textContent = tickets.length ? tickets.length : ""
   if (!tickets.length) {
-    board.innerHTML = emptyState(kicon('bug',{size:32}), "No tickets filed yet. When a Sim spots a bug, it lands here with a tracker link.", "")
+    board.innerHTML = emptyState(kicon('bug',{size:32}), "No tickets match these filters.", "")
     return
   }
-  if (_kanbanSearch && !tickets.some(t => (t.title || "").toLowerCase().includes(_kanbanSearch.toLowerCase()))) {
-    board.innerHTML = `<div class="kb-noresult">No tickets match "${esc(_kanbanSearch)}".</div>`
-    return
-  }
-  // Group: unknown statuses fall into "open". Exclude new/dismissed (they go through triage first).
-  const known = new Set(KANBAN_COLS.map(c => c.status))
   const groups = {}
-  KANBAN_COLS.forEach(c => { groups[c.status] = [] })
+  KANBAN_COLS.forEach(c => { groups[c.key] = [] })
   tickets.forEach(t => {
-    const st = known.has(t.status) ? t.status : "open"
-    groups[st].push(t)
+    groups[kanbanKeyForStatus(t.status)].push(t)
   })
 
   const boardEl = document.createElement("div")
   boardEl.className = "kanban"
   KANBAN_COLS.forEach(col => {
-    const items = groups[col.status]
+    const items = groups[col.key]
     const colEl = document.createElement("div")
     colEl.className = "kb-col"
     colEl.setAttribute("data-status", col.status)
+    colEl.setAttribute("data-key", col.key)
     const head = document.createElement("div")
     head.className = "kb-head"
-    head.innerHTML = `<span class="kb-dot kb-dot-${col.status}"></span><span class="kb-title">${col.label}</span><span class="kb-n">${items.length}</span>`
+    head.innerHTML = `<span class="kb-dot kb-dot-${col.key}"></span><span class="kb-title">${col.label}</span><span class="kb-n">${items.length}</span>`
     colEl.appendChild(head)
 
     const list = document.createElement("div")
     list.className = "kb-list"
+    list.setAttribute("data-key", col.key)
+    list.addEventListener("dragover", ev => { ev.preventDefault(); colEl.classList.add("drag-over") })
+    list.addEventListener("dragleave", ev => { if (!list.contains(ev.relatedTarget)) colEl.classList.remove("drag-over") })
+    list.addEventListener("drop", ev => {
+      ev.preventDefault()
+      colEl.classList.remove("drag-over")
+      const ticketId = ev.dataTransfer.getData("text/plain")
+      const fromKey = ev.dataTransfer.getData("application/x-klav-ticket-status")
+      moveTicketColumn(ticketId, fromKey, col.key)
+    })
     if (!items.length) {
       const e = document.createElement("div")
       e.className = "kb-empty muted"
@@ -3383,10 +3480,22 @@ function renderTicketsKanban() {
       const cardEl = document.createElement("div")
       cardEl.className = "kb-card " + sevRailClass(t.priority)
       cardEl.setAttribute("data-id", ticketId)
+      cardEl.setAttribute("data-status-key", col.key)
+      cardEl.setAttribute("draggable", "true")
+      cardEl.addEventListener("dragstart", ev => {
+        ev.dataTransfer.effectAllowed = "move"
+        ev.dataTransfer.setData("text/plain", String(ticketId))
+        ev.dataTransfer.setData("application/x-klav-ticket-status", col.key)
+        cardEl.classList.add("dragging")
+      })
+      cardEl.addEventListener("dragend", () => {
+        cardEl.classList.remove("dragging")
+        boardEl.querySelectorAll(".drag-over").forEach(el => el.classList.remove("drag-over"))
+      })
       const sub = [t.simName ? ("by " + t.simName) : "", t.urlPath ? esc(t.urlPath) : "", ago(t.createdAt)].filter(Boolean).join(" · ")
       const renderCard = () => {
         const sevChip = t.priority ? `<span class="chip sev-${esc(t.priority)}">${esc(t.priority)}</span>` : ""
-        const stChip = `<span class="chip kb-st kb-st-${esc(t.status || "open")}">${STATUS_LABELS[t.status] || esc(t.status || "open")}</span>`
+        const stChip = `<span class="chip kb-st kb-st-${esc(t.status || "open")}">${esc(ticketStatusLabel(t.status))}</span>`
         const assignee = t.assignee ? `<span class="muted" style="font-size:11px">→ ${esc(t.assignee)}</span>` : ""
         cardEl.querySelector(".kb-card-meta").innerHTML = `${stChip}${sevChip}${assignee}${recurBadgeHtml(t)}`
       }
