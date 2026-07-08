@@ -41,6 +41,8 @@ typecheck_changed_ts(){
   local pre="$1" tmpd logf failed=0 f
   local changed=()
   while IFS= read -r f; do
+    # skip *.test.* — they import bun:test (unresolvable by tsc; validated by `bun test`, not the type gate)
+    case "$f" in *.test.ts|*.test.tsx|*.test.mts|*.test.cts) continue;; esac
     [ -f "$f" ] && changed+=("$f")
   done < <(git diff --name-only "$pre"..HEAD -- '*.ts' '*.tsx' '*.mts' '*.cts')
   [ "${#changed[@]}" -eq 0 ] && return 0
