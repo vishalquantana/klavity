@@ -3770,8 +3770,12 @@ async function taccRender() {
   var d = await r.json()
   list.innerHTML = (d.accounts || []).map(function(a) {
     var methodText = a.authShape === "otp" ? "emailed OTP" : a.authShape === "token" ? "api token" : "static password"
+    var rotBtn = a.authShape !== "otp"
+      ? '<button class="btn btn-ghost btn-sm" data-tacc-rot="' + esc(String(a.id)) + '" data-tacc-rot-name="' + esc(a.name) + '" title="Rotate secret">Rotate</button>'
+      : ''
     return '<div class="tacc-row"><b>' + esc(a.name) + '</b><span class="tacc-badge">' + esc(methodText) + '</span><span class="tacc-email">' + esc(a.loginEmail) + '</span>'
-      + '<button class="btn btn-ghost btn-sm" data-tacc-del="' + esc(String(a.id)) + '">Delete</button></div>'
+      + rotBtn
+      + '<button class="btn btn-ghost btn-sm" data-tacc-del="' + esc(String(a.id)) + '" data-tacc-del-name="' + esc(a.name) + '">Delete</button></div>'
   }).join("") || '<div class="muted">No test accounts yet.</div>'
 }
 var _taccWired = false
@@ -3789,7 +3793,7 @@ function _wireTacc() {
       pw.placeholder = "Password"
       email.placeholder = "Login email"
     } else if (shape === "otp") {
-      desc.innerHTML = "AutoSim will pause for the emailed OTP passcode. Standard OTP uses KLA-104 pause/resume or <code>{{cred:name:otp}}</code>."
+      desc.innerHTML = "AutoSim types the login email then waits for an OTP from the inbox. On CI, set <code>KLAV_TEST_OTP=1</code> on the server to inject bypass code <code>666666</code> automatically. Reference as <code>{{cred:name:otp}}</code>."
       pw.classList.add("hide")
       email.placeholder = "Login email"
     } else if (shape === "token") {
@@ -3816,6 +3820,14 @@ function _wireTacc() {
       password: shape === "otp" ? "" : $("taccPw").value,
       auth_shape: shape
     }
+    if (!/^[a-z0-9_-]{1,40}$/.test(body.name)) {
+      if (msg) { msg.style.color = "var(--rose)"; msg.textContent = "Name must be 1–40 chars: lowercase letters, digits, _ or -." }
+      return
+    }
+    if (!body.login_email || !body.login_email.includes("@")) {
+      if (msg) { msg.style.color = "var(--rose)"; msg.textContent = "A valid login email is required." }
+      return
+    }
     var pid = curProjId(); if (!pid) return
     var r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/test-accounts",
       { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
@@ -3831,9 +3843,33 @@ function _wireTacc() {
   })
   var listEl = $("taccList")
   if (listEl) listEl.addEventListener("click", async function(e) {
+    var rotBtn = e.target.closest("[data-tacc-rot]")
+    if (rotBtn) {
+      var pid = curProjId(); if (!pid) return
+      var newPw = prompt("Enter new password/token for \"" + (rotBtn.dataset.taccRotName || "this account") + "\":")
+      if (!newPw) return
+      var msg = $("taccMsg"); if (msg) msg.textContent = ""
+      var r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/test-accounts/" + encodeURIComponent(rotBtn.dataset.taccRot),
+        { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ password: newPw }) })
+      if (r.ok) {
+        if (msg) { msg.style.color = "var(--green)"; msg.textContent = "Secret rotated." }
+      } else {
+        var err = await r.json().catch(function() { return {} })
+        if (msg) { msg.style.color = "var(--rose)"; msg.textContent = err.error || "Rotate failed." }
+      }
+      return
+    }
     var b = e.target.closest("[data-tacc-del]"); if (!b) return
+    var accName = b.dataset.taccDelName || "this account"
+    if (!confirm("Delete test account \"" + accName + "\"?\n\nAny AutoSim steps using {{cred:" + accName + ":…}} will fail.")) return
     var pid = curProjId(); if (!pid) return
-    await fetch("/api/projects/" + encodeURIComponent(pid) + "/test-accounts/" + encodeURIComponent(b.dataset.taccDel), { method: "DELETE" })
+    var msg = $("taccMsg"); if (msg) msg.textContent = ""
+    var r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/test-accounts/" + encodeURIComponent(b.dataset.taccDel), { method: "DELETE" })
+    if (!r.ok) {
+      var err = await r.json().catch(function() { return {} })
+      if (msg) { msg.style.color = "var(--rose)"; msg.textContent = err.error || "Delete failed." }
+      return
+    }
     taccRender()
   })
 }
