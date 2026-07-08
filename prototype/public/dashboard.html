@@ -4953,14 +4953,22 @@ load()
         var current=nameEl.textContent||""
         var input=document.createElement("input");input.type="text";input.className="trail-rename-input";input.value=current
         nameEl.replaceWith(input);input.focus();input.select()
+        var isCommitting = false
         async function commit(){
+          if (isCommitting) return
           var newName=input.value.trim()
           if(!newName||newName===current){input.replaceWith(nameEl);return}
+          isCommitting = true
           try{
             var r=await fetch("/api/trails/"+encodeURIComponent(id)+projQ(),{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:newName})})
             if(r.ok){nameEl.textContent=newName;input.replaceWith(nameEl)}
             else{var d=await r.json().catch(function(){return{}});alert(d.error||"Rename failed");input.replaceWith(nameEl)}
-          }catch(e){input.replaceWith(nameEl)}
+          }catch(e){
+            alert("Network error. Rename failed.")
+            input.replaceWith(nameEl)
+          } finally {
+            isCommitting = false
+          }
         }
         input.onblur=commit
         input.onkeydown=function(e){if(e.key==="Enter"){e.preventDefault();commit()}if(e.key==="Escape")input.replaceWith(nameEl)}
@@ -4968,14 +4976,22 @@ load()
     })
     tEl.querySelectorAll("button[data-toggle-pause]").forEach(function(btn){
       btn.onclick=async function(){
+        if (btn.disabled) return
         var id=btn.getAttribute("data-toggle-pause");var wasPaused=btn.getAttribute("data-paused")==="true"
         var menu=document.getElementById("km-"+id);if(menu)menu.classList.remove("open")
         var newStatus=wasPaused?"active":"paused"
+        var originalText = btn.textContent
+        btn.disabled = true
+        btn.textContent = "..."
         try{
           var r=await fetch("/api/trails/"+encodeURIComponent(id)+projQ(),{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({status:newStatus})})
           if(r.ok){var d2=await loadData();if(d2)render(d2)}
-          else{var d3=await r.json().catch(function(){return{}});alert(d3.error||"Could not update trail status")}
-        }catch(e){}
+          else{var d3=await r.json().catch(function(){return{}});alert(d3.error||"Could not update trail status");btn.disabled = false; btn.textContent = originalText}
+        }catch(e){
+          alert("Network error updating status.")
+          btn.disabled = false
+          btn.textContent = originalText
+        }
       }
     })
     tEl.querySelectorAll("button[data-set-schedule]").forEach(function(btn){
@@ -5428,8 +5444,33 @@ load()
     $("schedCancel").onclick=closeSchedModal
     $("schedBg").onclick=function(e){if(e.target===$("schedBg"))closeSchedModal()}
     document.querySelectorAll(".sched-preset").forEach(function(btn){btn.onclick=function(){$("schedExpr").value=btn.getAttribute("data-preset");$("schedErr").textContent=""}})
-    $("schedSave").onclick=async function(){var expr=$("schedExpr").value.trim();if(!expr){$("schedErr").textContent="Enter a cron expression or click Clear to remove the schedule";return}$("schedErr").textContent="";await saveSchedule(expr)}
-    $("schedClear").onclick=async function(){await saveSchedule(null)}
+    $("schedSave").onclick=async function(){
+      if ($("schedSave").disabled) return
+      var expr=$("schedExpr").value.trim()
+      if(!expr){$("schedErr").textContent="Enter a cron expression or click Clear to remove the schedule";return}
+      $("schedErr").textContent=""
+      $("schedSave").disabled = true
+      var originalText = $("schedSave").textContent
+      $("schedSave").textContent = "Saving..."
+      try {
+        await saveSchedule(expr)
+      } finally {
+        $("schedSave").disabled = false
+        $("schedSave").textContent = originalText
+      }
+    }
+    $("schedClear").onclick=async function(){
+      if ($("schedClear").disabled) return
+      $("schedClear").disabled = true
+      var originalText = $("schedClear").textContent
+      $("schedClear").textContent = "Clearing..."
+      try {
+        await saveSchedule(null)
+      } finally {
+        $("schedClear").disabled = false
+        $("schedClear").textContent = originalText
+      }
+    }
     $("schedExpr").onkeydown=function(e){if(e.key==="Enter"){e.preventDefault();$("schedSave").click()}if(e.key==="Escape")closeSchedModal()}
     // wizard
     document.getElementById("wizNext").addEventListener("click",function(){var err=wizValidate(wizStep);var errEl=document.getElementById("wizErr");if(err){errEl.textContent=err;return}errEl.textContent="";wizStep++;wizRender()})
@@ -5448,9 +5489,15 @@ load()
       var baseUrl=document.getElementById("wizUrl").value.trim()
       document.getElementById("ntName").value=name;document.getElementById("ntUrl").value=baseUrl;document.getElementById("ntObj").value=objective
       var body={name:name,objective:objective,base_url:baseUrl,viewport:"desktop",sim_name:simName}
-      var r=await fetch("/api/trails/author"+projQ(),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)})
-      if(!r.ok){var e=await r.json().catch(function(){return{}});box.innerHTML='<div class="nt-stall">'+esc(e.error||r.statusText)+"</div>";document.getElementById("wizNav").style.display="";btn.disabled=false;btn.textContent="Try again";return}
-      var d=await r.json();wizPollAuthor(d.sessionId,box,btn)
+      try {
+        var r=await fetch("/api/trails/author"+projQ(),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)})
+        if(!r.ok){var e=await r.json().catch(function(){return{}});box.innerHTML='<div class="nt-stall">'+esc(e.error||r.statusText)+"</div>";document.getElementById("wizNav").style.display="";btn.disabled=false;btn.textContent="Try again";return}
+        var d=await r.json();wizPollAuthor(d.sessionId,box,btn)
+      } catch(e) {
+        box.innerHTML='<div class="nt-stall">Network error starting AutoSim.</div>'
+        document.getElementById("wizNav").style.display=""
+        btn.disabled=false;btn.textContent="Try again"
+      }
     })
     // new trail button & modal
     document.getElementById("newTrailBtn").addEventListener("click",openWizard)
@@ -5459,9 +5506,14 @@ load()
       var btn=this;btn.disabled=true
       var box=document.getElementById("ntProgress");box.innerHTML=""
       var body={name:document.getElementById("ntName").value.trim(),objective:document.getElementById("ntObj").value.trim(),base_url:document.getElementById("ntUrl").value.trim(),viewport:document.getElementById("ntViewport").value||"desktop",test_account:document.getElementById("ntAcc").value||undefined}
-      var r=await fetch("/api/trails/author"+projQ(),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)})
-      if(!r.ok){var e=await r.json().catch(function(){return{}});box.innerHTML='<div class="nt-stall">'+esc(e.error||r.statusText)+"</div>";btn.disabled=false;return}
-      var d=await r.json();pollAuthor(d.sessionId,box)
+      try {
+        var r=await fetch("/api/trails/author"+projQ(),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)})
+        if(!r.ok){var e=await r.json().catch(function(){return{}});box.innerHTML='<div class="nt-stall">'+esc(e.error||r.statusText)+"</div>";btn.disabled=false;return}
+        var d=await r.json();pollAuthor(d.sessionId,box)
+      } catch(e) {
+        box.innerHTML='<div class="nt-stall">Network error starting AutoSim.</div>'
+        btn.disabled=false
+      }
     })
     document.getElementById("ntBg").addEventListener("click",function(e){if(e.target===this)this.classList.remove("show")})
     // kick off data load
