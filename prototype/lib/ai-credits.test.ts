@@ -4,6 +4,7 @@
 // asserted as deltas over a baseline, and group-by reads are filtered to this run's unique
 // model/project ids — never assume the ai_calls table is empty.
 import { test, expect, beforeAll } from "bun:test"
+import { createClient } from "@libsql/client"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -13,7 +14,7 @@ delete process.env.TURSO_AUTH_TOKEN
 
 const {
   reconnectDb, applySchema, recordAiCall,
-  opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend,
+  opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary,
 } = await import("./db")
 
 // Shared Bun registry → re-point the db singleton at THIS file's DB before our tests run.
@@ -21,11 +22,17 @@ let db: any
 beforeAll(async () => {
   db = reconnectDb("file:" + file)
   await applySchema(db)
+  const now = Date.now()
+  await db.execute({ sql: "INSERT INTO accounts (id,name,owner_email,created_at,domain) VALUES (?,?,?,?,?)", args: [ACCT, "Cost Audit Tenant", OWNER, now, null] })
+  await db.execute({ sql: "INSERT INTO account_members (id,account_id,email,account_role,created_at) VALUES (?,?,?,?,?)", args: [`am_${RUN}`, ACCT, OWNER, "owner", now] })
+  await db.execute({ sql: "INSERT INTO projects (id,account_id,name,status,review_mode,review_budget_daily,observability_mode,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)", args: [P("tenant"), ACCT, "Tenant Project", "active", "auto", 100, "named", now, now] })
 })
 
 const RUN = `${Date.now()}_${Math.random().toString(36).slice(2)}`
 const MODEL = `test-model-${RUN}`
 const P = (s: string) => `proj_${s}_${RUN}`
+const ACCT = `acct_${RUN}`
+const OWNER = `owner_${RUN}@example.com`
 
 test("recordAiCall + opsTotals: sums cost/tokens/count (delta over baseline)", async () => {
   const base = await opsTotals()
@@ -72,4 +79,40 @@ test("recordAiCall: nullable cost/tokens stored as null, ok defaults true", asyn
   expect(row.costUsd).toBeNull()
   expect(row.inputTokens).toBeNull()
   expect(row.ok).toBe(true)
+})
+
+test("recordAiCall attributes calls to tenant and normalized feature", async () => {
+  await recordAiCall({ type: "react", model: MODEL, projectId: P("tenant"), actorEmail: OWNER, costUsd: 0.04 })
+  await recordAiCall({ type: "reheal", feature: "heal", model: MODEL, projectId: P("tenant"), actorEmail: OWNER, costUsd: 0, ok: false })
+  const rows = (await opsRecentCalls(20, 0)).filter(r => r.model === MODEL && r.projectId === P("tenant"))
+  expect(rows.every(r => r.accountId === ACCT)).toBe(true)
+  expect(rows.map(r => r.feature).sort()).toEqual(["heal", "sim-react"])
+})
+
+test("opsTenantCostSummary groups tenant COGS by account/project/feature", async () => {
+  const summary = await opsTenantCostSummary(30)
+  const tenant = summary.tenants.find(t => t.accountId === ACCT)
+  expect(tenant).toBeTruthy()
+  expect(tenant!.calls).toBeGreaterThanOrEqual(2)
+  expect(tenant!.cost).toBeGreaterThanOrEqual(0.04)
+  const features = summary.features.filter(f => f.accountId === ACCT && f.projectId === P("tenant")).map(f => f.feature).sort()
+  expect(features).toContain("heal")
+  expect(features).toContain("sim-react")
+})
+
+test("applySchema migrates established ai_calls table before account_id is queried", async () => {
+  const oldFile = join(tmpdir(), `klav-aicredits-old-${Date.now()}-${Math.random().toString(36).slice(2)}.db`)
+  const c = createClient({ url: "file:" + oldFile })
+  await c.execute(`CREATE TABLE ai_calls (
+    id TEXT PRIMARY KEY, created_at INTEGER NOT NULL, type TEXT NOT NULL, model TEXT NOT NULL,
+    actor_email TEXT, project_id TEXT, input_tokens INTEGER, output_tokens INTEGER,
+    cost_usd REAL, ok INTEGER NOT NULL DEFAULT 1
+  )`)
+  await applySchema(c)
+  const cols = await c.execute("PRAGMA table_info(ai_calls)")
+  const names = cols.rows.map((r: any) => String(r.name))
+  expect(names).toContain("account_id")
+  expect(names).toContain("feature")
+  await c.execute("CREATE INDEX IF NOT EXISTS ai_calls_account_id_smoke ON ai_calls (account_id)")
+  c.close()
 })

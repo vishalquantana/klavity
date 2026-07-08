@@ -232,6 +232,7 @@ export async function applySchema(c: Client) {
     // idempotent. cost_usd comes from OpenRouter's usage.cost (real credit $); null if absent.
     `CREATE TABLE IF NOT EXISTS ai_calls (
        id TEXT PRIMARY KEY, created_at INTEGER NOT NULL, type TEXT NOT NULL, model TEXT NOT NULL,
+       account_id TEXT, feature TEXT,
        actor_email TEXT, project_id TEXT, input_tokens INTEGER, output_tokens INTEGER,
        cost_usd REAL, ok INTEGER NOT NULL DEFAULT 1)`,
     `CREATE INDEX IF NOT EXISTS ai_calls_created_idx ON ai_calls (created_at)`,
@@ -502,6 +503,7 @@ export async function applySchema(c: Client) {
     "sim_traits", "trait_events", "personas",
     "feedback", "projects", "trails", "trail_runs",
     "trail_steps", "walk_share_tokens", "findings", "author_sessions",
+    "ai_calls",
   ]
   const _cols = await loadTableColumns(c, ALTERED_TABLES)
   const needCol = (table: string, col: string) => !(_cols.get(table)?.has(col) ?? false)
@@ -672,6 +674,16 @@ export async function applySchema(c: Client) {
   await c.execute("UPDATE trait_events SET priority = severity WHERE priority IS NULL").catch((e: any) => console.warn("trait_events.priority backfill skipped:", e?.message || e))
   if (needCol("findings", "priority")) await c.execute("ALTER TABLE findings ADD COLUMN priority TEXT").catch((e: any) => console.warn("findings.priority ALTER skipped:", e?.message || e))
   await c.execute("UPDATE findings SET priority = CASE severity WHEN 'critical' THEN 'urgent' ELSE severity END WHERE priority IS NULL").catch((e: any) => console.warn("findings.priority backfill skipped:", e?.message || e))
+  // KLA-145: tenant COGS columns for the AI-call ledger. Keep these before any tenant summary
+  // query/index can reference them, or established DBs boot with "no such column: account_id".
+  if (needCol("ai_calls", "account_id")) await c.execute("ALTER TABLE ai_calls ADD COLUMN account_id TEXT")
+    .catch((e: any) => console.warn("ai_calls.account_id ALTER skipped:", e?.message || e))
+  if (needCol("ai_calls", "feature")) await c.execute("ALTER TABLE ai_calls ADD COLUMN feature TEXT")
+    .catch((e: any) => console.warn("ai_calls.feature ALTER skipped:", e?.message || e))
+  await c.execute("CREATE INDEX IF NOT EXISTS ai_calls_acct_idx ON ai_calls (account_id, created_at)")
+    .catch((e: any) => console.warn("ai_calls_acct_idx skipped:", e?.message || e))
+  await c.execute("CREATE INDEX IF NOT EXISTS ai_calls_feature_idx ON ai_calls (feature, created_at)")
+    .catch((e: any) => console.warn("ai_calls_feature_idx skipped:", e?.message || e))
 }
 
 // ── schema_meta helpers ──
@@ -1631,20 +1643,51 @@ export async function dashboardCounts(projectId: string): Promise<{ feedback: nu
 // ── AI-call ledger (/opsadmin) ── one row per OpenRouter call; reads are global (not project-scoped).
 export type AiCallInsert = {
   type: string; model: string; actorEmail?: string | null; projectId?: string | null
+  accountId?: string | null; feature?: string | null
   inputTokens?: number | null; outputTokens?: number | null; costUsd?: number | null; ok?: boolean
 }
 export type AiCallRow = {
   id: string; createdAt: number; type: string; model: string
-  actorEmail: string | null; projectId: string | null
+  actorEmail: string | null; projectId: string | null; accountId: string | null; feature: string | null
   inputTokens: number | null; outputTokens: number | null; costUsd: number | null; ok: boolean
+}
+
+function aiFeatureFor(type: string, feature?: string | null): string {
+  const raw = String(feature || type || "unknown").trim()
+  if (raw === "react" || raw === "sim-react") return "sim-react"
+  if (raw === "extract") return "extract"
+  if (raw === "author-drive") return "author-drive"
+  if (raw === "heal" || raw === "reheal") return "heal"
+  return raw || "unknown"
+}
+
+async function accountIdForAiCall(projectId?: string | null, accountId?: string | null, actorEmail?: string | null): Promise<string | null> {
+  if (accountId) return accountId
+  try {
+    if (projectId) {
+      const r = await db!.execute({ sql: "SELECT account_id FROM projects WHERE id=?", args: [projectId] })
+      const v = (r.rows[0] as any)?.account_id
+      if (v != null) return String(v)
+    }
+    if (actorEmail) {
+      const r = await db!.execute({ sql: "SELECT account_id FROM account_members WHERE email=? ORDER BY created_at ASC LIMIT 1", args: [actorEmail] })
+      const v = (r.rows[0] as any)?.account_id
+      if (v != null) return String(v)
+    }
+  } catch {
+    return null
+  }
+  return null
 }
 
 export async function recordAiCall(a: AiCallInsert): Promise<void> {
   const id = "ai_" + crypto.randomUUID()
+  const accountId = await accountIdForAiCall(a.projectId, a.accountId, a.actorEmail)
+  const feature = aiFeatureFor(a.type, a.feature)
   await db!.execute({
-    sql: `INSERT INTO ai_calls (id,created_at,type,model,actor_email,project_id,input_tokens,output_tokens,cost_usd,ok)
-          VALUES (?,?,?,?,?,?,?,?,?,?)`,
-    args: [id, Date.now(), a.type, a.model, a.actorEmail ?? null, a.projectId ?? null,
+    sql: `INSERT INTO ai_calls (id,created_at,type,model,account_id,feature,actor_email,project_id,input_tokens,output_tokens,cost_usd,ok)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+    args: [id, Date.now(), a.type, a.model, accountId, feature, a.actorEmail ?? null, a.projectId ?? null,
            a.inputTokens ?? null, a.outputTokens ?? null, a.costUsd ?? null, a.ok === false ? 0 : 1],
   })
 }
@@ -1686,11 +1729,67 @@ export async function opsByTypeModel(): Promise<{ type: string; model: string; c
   return r.rows.map((x: any) => ({ type: String(x.type), model: String(x.model), cost: Number(x.cost), calls: Number(x.calls) }))
 }
 
+export async function opsTenantCostSummary(days = 30): Promise<{
+  days: number
+  tenants: { accountId: string | null; accountName: string | null; cost: number; calls: number; inputTokens: number; outputTokens: number }[]
+  features: { accountId: string | null; accountName: string | null; projectId: string | null; projectName: string | null; feature: string; cost: number; calls: number; inputTokens: number; outputTokens: number }[]
+}> {
+  const clampedDays = Math.max(1, Math.min(366, Math.floor(Number(days) || 30)))
+  const sinceMs = Date.now() - clampedDays * 86400000
+  const tenantSql = `
+    SELECT COALESCE(a.account_id, p.account_id) AS aid, acc.name AS account_name,
+           COALESCE(SUM(a.cost_usd),0) AS cost, COUNT(*) AS calls,
+           COALESCE(SUM(a.input_tokens),0) AS input_tokens,
+           COALESCE(SUM(a.output_tokens),0) AS output_tokens
+    FROM ai_calls a
+    LEFT JOIN projects p ON p.id = a.project_id
+    LEFT JOIN accounts acc ON acc.id = COALESCE(a.account_id, p.account_id)
+    WHERE a.created_at >= ?
+    GROUP BY aid, account_name
+    ORDER BY cost DESC, calls DESC`
+  const featureSql = `
+    SELECT COALESCE(a.account_id, p.account_id) AS aid, acc.name AS account_name,
+           a.project_id AS pid, p.name AS project_name, COALESCE(a.feature, a.type, 'unknown') AS feature,
+           COALESCE(SUM(a.cost_usd),0) AS cost, COUNT(*) AS calls,
+           COALESCE(SUM(a.input_tokens),0) AS input_tokens,
+           COALESCE(SUM(a.output_tokens),0) AS output_tokens
+    FROM ai_calls a
+    LEFT JOIN projects p ON p.id = a.project_id
+    LEFT JOIN accounts acc ON acc.id = COALESCE(a.account_id, p.account_id)
+    WHERE a.created_at >= ?
+    GROUP BY aid, account_name, pid, project_name, feature
+    ORDER BY cost DESC, calls DESC`
+  const [tenantRows, featureRows] = await Promise.all([
+    db!.execute({ sql: tenantSql, args: [sinceMs] }),
+    db!.execute({ sql: featureSql, args: [sinceMs] }),
+  ])
+  return {
+    days: clampedDays,
+    tenants: tenantRows.rows.map((x: any) => ({
+      accountId: x.aid != null ? String(x.aid) : null,
+      accountName: x.account_name != null ? String(x.account_name) : null,
+      cost: Number(x.cost), calls: Number(x.calls),
+      inputTokens: Number(x.input_tokens), outputTokens: Number(x.output_tokens),
+    })),
+    features: featureRows.rows.map((x: any) => ({
+      accountId: x.aid != null ? String(x.aid) : null,
+      accountName: x.account_name != null ? String(x.account_name) : null,
+      projectId: x.pid != null ? String(x.pid) : null,
+      projectName: x.project_name != null ? String(x.project_name) : null,
+      feature: String(x.feature || "unknown"),
+      cost: Number(x.cost), calls: Number(x.calls),
+      inputTokens: Number(x.input_tokens), outputTokens: Number(x.output_tokens),
+    })),
+  }
+}
+
 function rowToAiCall(x: any): AiCallRow {
   return {
     id: String(x.id), createdAt: Number(x.created_at), type: String(x.type), model: String(x.model),
     actorEmail: x.actor_email != null ? String(x.actor_email) : null,
     projectId: x.project_id != null ? String(x.project_id) : null,
+    accountId: x.account_id != null ? String(x.account_id) : null,
+    feature: x.feature != null ? String(x.feature) : aiFeatureFor(String(x.type)),
     inputTokens: x.input_tokens != null ? Number(x.input_tokens) : null,
     outputTokens: x.output_tokens != null ? Number(x.output_tokens) : null,
     costUsd: x.cost_usd != null ? Number(x.cost_usd) : null,
@@ -2678,7 +2777,7 @@ export async function computeDashboardInsights(projectId: string) {
     const now = Date.now()
     const weekAgo = now - 7 * 24 * 60 * 60 * 1000
     const [sevRows, sentRows, hotRows, volRows, recRow, throughputRows, triageRow] = await Promise.all([
-      db.execute({ sql: `SELECT COALESCE(severity,'none') sev, COUNT(*) n FROM feedback WHERE project_id=? AND status IN ('open','in_progress') GROUP BY sev`, args: [projectId] }),
+      db.execute({ sql: `SELECT COALESCE(priority,severity,'none') sev, COUNT(*) n FROM feedback WHERE project_id=? AND status IN ('open','in_progress') GROUP BY sev`, args: [projectId] }),
       db.execute({ sql: `SELECT COALESCE(sentiment,'') s, COUNT(*) n FROM feedback WHERE project_id=? AND status!='dismissed' GROUP BY s`, args: [projectId] }),
       db.execute({ sql: `SELECT COALESCE(NULLIF(url_path,''),'(unknown)') area, COUNT(*) n FROM feedback WHERE project_id=? AND status IN ('open','in_progress') GROUP BY area ORDER BY n DESC LIMIT 6`, args: [projectId] }),
       db.execute({ sql: `SELECT CAST(created_at/86400000 AS INTEGER) d, COUNT(*) n FROM feedback WHERE project_id=? AND created_at>? GROUP BY d`, args: [projectId, weekAgo] }),

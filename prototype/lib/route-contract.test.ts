@@ -32,3 +32,10 @@ test('server.ts exposes /api/trails route', () => {
 test('server.ts exposes /pricing route', () => {
   expect(loadServer()).toContain('/pricing');
 });
+
+test('server.ts exposes ops tenant cost summary endpoint', () => {
+  const src = loadServer();
+  expect(src).toContain('/api/opsadmin/cost-summary');
+  expect(src).toContain('opsTenantCostSummary');
+  expect(src).toContain('isOpsAdmin');
+});

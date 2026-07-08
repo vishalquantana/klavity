@@ -115,25 +115,44 @@ export const openRouterVisionResolver: VisionResolver = async (input, ctx) => {
   const ctl = new AbortController()
   const timer = setTimeout(() => ctl.abort(), 90_000)
   let reconciled = false
+  const recordFailure = async () => {
+    await recordAiCall({
+      type: "reheal", feature: "heal", model, projectId: ctx?.projectId ?? null, actorEmail: ctx?.email ?? null,
+      inputTokens: null, outputTokens: null, costUsd: 0, ok: false,
+    }).catch(() => {})
+  }
   try {
-    const res = await fetch(ENDPOINT, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "content-type": "application/json", "HTTP-Referer": base, "X-Title": "Klavity" },
-      body: JSON.stringify({ model, max_tokens: 600, messages: buildVisionMessages(input), usage: { include: true }, response_format: { type: "json_object" } }),
-      signal: ctl.signal,
-    })
+    let res: Response
+    try {
+      res = await fetch(ENDPOINT, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${key}`, "content-type": "application/json", "HTTP-Referer": base, "X-Title": "Klavity" },
+        body: JSON.stringify({ model, max_tokens: 600, messages: buildVisionMessages(input), usage: { include: true }, response_format: { type: "json_object" } }),
+        signal: ctl.signal,
+      })
+    } catch (e) {
+      await reconcileDailySpend(DEFAULT_AI_CALL_EST_USD, 0)
+      reconciled = true
+      await recordFailure()
+      throw e
+    }
     if (!res.ok) {
       await reconcileDailySpend(DEFAULT_AI_CALL_EST_USD, 0)
       reconciled = true
       // Error-path: still record to ai_calls with ok=false so cost ledger captures every call
       // attempt, not just successes (KLA-123).
-      await recordAiCall({
-        type: "reheal", model, projectId: ctx?.projectId ?? null, actorEmail: ctx?.email ?? null,
-        inputTokens: null, outputTokens: null, costUsd: 0, ok: false,
-      }).catch(() => {})
+      await recordFailure()
       throw new Error(`OpenRouter ${res.status}: ${(await res.text()).slice(0, 200)}`)
     }
-    const data: any = await res.json()
+    let data: any
+    try {
+      data = await res.json()
+    } catch (e) {
+      await reconcileDailySpend(DEFAULT_AI_CALL_EST_USD, 0)
+      reconciled = true
+      await recordFailure()
+      throw e
+    }
     const u = data?.usage || {}
     const cost = typeof u.cost === "number" ? u.cost : 0
     await reconcileDailySpend(DEFAULT_AI_CALL_EST_USD, cost)
@@ -143,7 +162,7 @@ export const openRouterVisionResolver: VisionResolver = async (input, ctx) => {
     // failure can never break the resolver. Both success and error-path calls are now recorded —
     // successes with ok=1, errors with ok=false (KLA-123).
     await recordAiCall({
-      type: "reheal", model, projectId: ctx?.projectId ?? null, actorEmail: ctx?.email ?? null,
+      type: "reheal", feature: "heal", model, projectId: ctx?.projectId ?? null, actorEmail: ctx?.email ?? null,
       inputTokens: typeof u.prompt_tokens === "number" ? u.prompt_tokens : null,
       outputTokens: typeof u.completion_tokens === "number" ? u.completion_tokens : null,
       costUsd: cost || null,
