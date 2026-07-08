@@ -8,12 +8,12 @@ const P = `proj_bf_${Date.now()}`
 
 test("backfill re-triages legacy open rows by the auto-accept rule, idempotently", async () => {
   // Force everything to legacy 'open' first (pre-feature state).
-  const low = await insertFeedback({ projectId: P, severity: "low" })
-  const high = await insertFeedback({ projectId: P, severity: "high" })
-  const rec = await insertFeedback({ projectId: P, severity: "low" })
+  const low = await insertFeedback({ projectId: P, priority: "low" })
+  const high = await insertFeedback({ projectId: P, priority: "high" })
+  const rec = await insertFeedback({ projectId: P, priority: "low" })
   await db!.execute({ sql: "UPDATE feedback SET status='open' WHERE project_id=?", args: [P] })
   await db!.execute({ sql: "UPDATE feedback SET recurrence_count=3 WHERE id=?", args: [rec] })
-  const done = await insertFeedback({ projectId: P, severity: "low" })
+  const done = await insertFeedback({ projectId: P, priority: "low" })
   await db!.execute({ sql: "UPDATE feedback SET status='done' WHERE id=?", args: [done] })
 
   await backfillTriageV1(db!)

@@ -246,7 +246,7 @@ describe("annotation DOM API", () => {
   it("positions a labeled pin above the halo when there is enough space", async () => {
     const { document, showAnnotation } = await loadOverlayWithDom()
 
-    const id = showAnnotation({ x: 200, y: 300, w: 120, h: 30 }, "Broken CTA", { color: "#6366f1", severity: "medium" })
+    const id = showAnnotation({ x: 200, y: 300, w: 120, h: 30 }, "Broken CTA", { color: "#6366f1", priority: "medium" })
     const overlay = document.getElementById("klav-ao-overlay")
     const pin = overlay?.children.find(child => child.className === "klav-ao-pin")
 

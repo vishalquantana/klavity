@@ -177,7 +177,7 @@ export function buildTicketFromFinding(finding: Finding, baseUrl: string): Ticke
   return {
     title: "[Klavity Trails] " + finding.title,
     body: lines.join("\n\n"),
-    severity: finding.severity ?? severityForKind(finding.kind),
+    priority: finding.priority ?? severityForKind(finding.kind),
     url: null,
     simName: null,
     createdAt: finding.createdAt,

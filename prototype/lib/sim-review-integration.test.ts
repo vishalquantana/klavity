@@ -78,7 +78,7 @@ function makeReview(simId: string, simName: string, obs: SimObservation[]): SimR
 }
 
 function makeObs(observation: string, deduped = false, bug: any = null): SimObservation {
-  return { observation, sentiment: "negative", severity: bug?.severity ?? null, quote: null, hash: hashObservation(observation), region: null, suggestedBug: bug, deduped }
+  return { observation, sentiment: "negative", priority: bug?.priority ?? null, quote: null, hash: hashObservation(observation), region: null, suggestedBug: bug, deduped }
 }
 
 test("(b) multi-Sim: one SimReview per Sim in output", () => {
@@ -423,7 +423,7 @@ test('(f) mode filter + summary: only critical obs → summary shows filtered co
       simId: "s1", simName: "Alice", initials: null, accent: null,
       observations: [
         // Only the critical observations survive the mode filter
-        { observation: "Button broken", sentiment: "negative", severity: "medium", quote: null, hash: hashObservation("Button broken"), region: null, suggestedBug: { title: "Bug" }, deduped: false },
+        { observation: "Button broken", sentiment: "negative", priority: "medium", quote: null, hash: hashObservation("Button broken"), region: null, suggestedBug: { title: "Bug" }, deduped: false },
       ],
     },
   ]
@@ -438,8 +438,8 @@ test('(f) mode filter + summary: only positive obs → no bugs in summary', () =
     {
       simId: "s1", simName: "Alice", initials: null, accent: null,
       observations: [
-        { observation: "Checkout flow is smooth", sentiment: "positive", severity: null, quote: null, hash: hashObservation("Checkout flow is smooth"), region: null, suggestedBug: null, deduped: false },
-        { observation: "Page loads fast", sentiment: "positive", severity: null, quote: null, hash: hashObservation("Page loads fast"), region: null, suggestedBug: null, deduped: false },
+        { observation: "Checkout flow is smooth", sentiment: "positive", priority: null, quote: null, hash: hashObservation("Checkout flow is smooth"), region: null, suggestedBug: null, deduped: false },
+        { observation: "Page loads fast", sentiment: "positive", priority: null, quote: null, hash: hashObservation("Page loads fast"), region: null, suggestedBug: null, deduped: false },
       ],
     },
   ]
@@ -531,7 +531,7 @@ test("(g) SimObservation.region field: set from parseRegion result", () => {
   const obsWithRegion: SimObservation = {
     observation: "The buy button is cut off at the bottom",
     sentiment: "frustrated",
-    severity: null,
+    priority: null,
     quote: null,
     hash: hashObservation("The buy button is cut off at the bottom"),
     region,
@@ -549,7 +549,7 @@ test("(g) SimObservation.region: null for page-level observation", () => {
   const obs: SimObservation = {
     observation: "Overall the page feels slow and unresponsive",
     sentiment: "frustrated",
-    severity: null,
+    priority: null,
     quote: null,
     hash: hashObservation("Overall the page feels slow"),
     region: null,
@@ -571,9 +571,9 @@ test("(g) region survives buildSimRunSummary (summary is unaffected)", () => {
   const reviews: SimReview[] = [{
     simId: "s1", simName: "Alice", initials: null, accent: null,
     observations: [
-      { observation: "Header nav is broken", sentiment: "frustrated", severity: "medium", quote: null,
+      { observation: "Header nav is broken", sentiment: "frustrated", priority: "medium", quote: null,
         hash: hashObservation("Header nav is broken"), region, suggestedBug: { title: "Nav bug" }, deduped: false },
-      { observation: "Checkout flow works well", sentiment: "positive", severity: null, quote: null,
+      { observation: "Checkout flow works well", sentiment: "positive", priority: null, quote: null,
         hash: hashObservation("Checkout flow works well"), region: null, suggestedBug: null, deduped: false },
     ],
   }]
@@ -638,13 +638,13 @@ test("(h) observation shape: has 'observation' key (not 'text') matching renderF
   expect("text" in obs).toBe(false)
 })
 
-test("(h) observation shape: has 'severity' key for renderFeedback", () => {
+test("(h) observation shape: has 'priority' key for renderFeedback", () => {
   const obsNoBug = makeObs("A general comment")
-  expect("severity" in obsNoBug).toBe(true)
-  expect(obsNoBug.severity).toBeNull()
+  expect("priority" in obsNoBug).toBe(true)
+  expect(obsNoBug.priority).toBeNull()
 
-  const obsWithBug = makeObs("Button crashes", false, { title: "Bug", severity: "high" })
-  expect(obsWithBug.severity).toBe("high")
+  const obsWithBug = makeObs("Button crashes", false, { title: "Bug", priority: "high" })
+  expect(obsWithBug.priority).toBe("high")
 })
 
 // ── (i) description fallback for zero-trait Sims ─────────────────────────────

@@ -48,7 +48,7 @@ for (const ddl of [
   `CREATE TABLE IF NOT EXISTS personas (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL, role TEXT, type TEXT NOT NULL DEFAULT 'client', initials TEXT, accent TEXT, summary TEXT, insights_json TEXT, avatar TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS feedback (
     id TEXT PRIMARY KEY, project_id TEXT NOT NULL, sim_id TEXT, actor_email TEXT,
-    url_host TEXT, url_path TEXT, observation TEXT, sentiment TEXT, severity TEXT,
+    url_host TEXT, url_path TEXT, observation TEXT, sentiment TEXT, severity TEXT, priority TEXT,
     screenshot_id TEXT, suggested_bug_json TEXT, cited_trait_ids_json TEXT,
     source_quote TEXT, source_transcript_id TEXT, source_date INTEGER,
     plane_issue_key TEXT, plane_issue_url TEXT, status TEXT NOT NULL DEFAULT 'open',

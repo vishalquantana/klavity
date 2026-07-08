@@ -297,7 +297,7 @@ export function startSimsWatch(opts: SimsWatchOptions): SimsWatchController {
         const liveObs = rawObs.map((r: any) => ({
           text: r.observation ?? r.text ?? '',
           sentiment: r.sentiment,
-          severity: r.severity,
+          priority: r.priority,
           region: r.region,
           suggestedBug: r.suggestedBug,
           targetViewport,

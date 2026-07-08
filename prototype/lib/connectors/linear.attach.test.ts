@@ -13,7 +13,7 @@ function ticketWith(attachments?: TicketPayload["attachments"]): TicketPayload {
   return {
     title: "Bug",
     body: "desc with fallback https://klavity.in/img/1.hmac",
-    severity: "high",
+    priority: "high",
     url: "https://app/x",
     simName: "Vamshi",
     createdAt: 1,

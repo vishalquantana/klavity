@@ -267,7 +267,7 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
       if (!bug) {
         const verdict = classifySimObservation(obsText, r?.sentiment)
         if (verdict.flagged) {
-          bug = { title: obsText.slice(0, 90) || "Sim-flagged issue", body: obsText, severity: verdict.severity, simFlagged: true, signals: verdict.signals }
+          bug = { title: obsText.slice(0, 90) || "Sim-flagged issue", body: obsText, priority: verdict.priority, simFlagged: true, signals: verdict.signals }
         }
       }
 
@@ -294,7 +294,7 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
           feedbackId = await insertFeedback({
             projectId, simId: sim.id, actorEmail, urlHost, urlPath,
             observation: obsText || null, sentiment: r?.sentiment ?? null,
-            severity: bug?.severity ?? null, screenshotId, suggestedBug: bug,
+            priority: bug?.priority ?? null, screenshotId, suggestedBug: bug,
             citedTraitIds: citation.citedTraitIds.length ? citation.citedTraitIds : null,
             sourceQuote: citation.sourceQuote, sourceTranscriptId: citation.sourceTranscriptId, sourceDate: citation.sourceDate,
             issueKey: issueKeyForFeedback(projectId, urlPath, citation.issueType, citation.citedTraitIds),
@@ -329,7 +329,7 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
           feedbackId = await insertFeedback({
             projectId, simId: sim.id, actorEmail, urlHost, urlPath,
             observation: obsText || null, sentiment: r?.sentiment ?? null,
-            severity: null, screenshotId, suggestedBug: null,
+            priority: null, screenshotId, suggestedBug: null,
             citedTraitIds: citation.citedTraitIds.length ? citation.citedTraitIds : null,
             sourceQuote: citation.sourceQuote, sourceTranscriptId: citation.sourceTranscriptId, sourceDate: citation.sourceDate,
             issueKey: hash,
@@ -340,7 +340,7 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
       const assembled: SimObservation = {
         observation: obsText,
         sentiment: r?.sentiment ?? null,
-        severity: bug?.severity ?? null,
+        priority: bug?.priority ?? null,
         quote: citation.sourceQuote,
         hash,
         // region: parse model output; accept both "region" (new) and "box" (legacy field name).

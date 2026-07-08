@@ -103,11 +103,21 @@ test("sanitizeInsight: rejects unknown portability, returns null", () => {
   expect(sanitizeInsight({}).portability).toBeNull()
 })
 
-test("sanitizeInsight: existing fields (area, issueType, severity) still work", () => {
-  const r = sanitizeInsight({ area: "checkout", issueType: "layout", severity: "high", scope: "ui", portability: "site-specific" })
+test("sanitizeInsight: priority field works", () => {
+  const r = sanitizeInsight({ area: "checkout", issueType: "layout", priority: "high", scope: "ui", portability: "site-specific" })
   expect(r.area).toBe("checkout")
   expect(r.issueType).toBe("layout")
-  expect(r.severity).toBe("high")
+  expect(r.priority).toBe("high")
   expect(r.scope).toBe("ui")
   expect(r.portability).toBe("site-specific")
+})
+
+test("sanitizeInsight: legacy severity field is backwards-compat (reads as priority)", () => {
+  const r = sanitizeInsight({ area: "checkout", issueType: "layout", severity: "high", scope: "ui", portability: "site-specific" })
+  expect(r.priority).toBe("high")
+})
+
+test("sanitizeInsight: urgent is a valid priority level", () => {
+  const r = sanitizeInsight({ priority: "urgent" })
+  expect(r.priority).toBe("urgent")
 })

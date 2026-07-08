@@ -5,7 +5,7 @@ import type { TicketAttachment } from "./index"
 const BASE_TICKET = {
   title: "Bug",
   body: "desc",
-  severity: "high",
+  priority: "high",
   url: "https://app/x",
   simName: "Vamshi",
   createdAt: 1,

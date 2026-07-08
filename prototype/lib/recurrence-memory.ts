@@ -32,7 +32,7 @@ export type RecurrenceOccurrence = {
 
 export type ProjectRecurringIssue = RecurrenceMemory & {
   title: string | null
-  severity: string | null
+  priority: string | null
 }
 
 /** ordinal(2) → "2nd", ordinal(11) → "11th", ordinal(21) → "21st" */
@@ -118,7 +118,7 @@ export async function listProjectRecurringIssues(
     out.push({
       ...memory,
       title: titleFromRow(first),
-      severity: first.severity != null ? String(first.severity) : null,
+      priority: (first.priority ?? first.severity) != null ? String(first.priority ?? first.severity) : null,
     })
   }
 

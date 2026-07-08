@@ -19,27 +19,27 @@ test("the spec's broken-state phrases all flag", () => {
   for (const c of cases) {
     const v = classifySimObservation(c)
     expect(v.flagged).toBe(true)
-    expect(v.severity === "high" || v.severity === "medium").toBe(true)
+    expect(v.priority === "high" || v.priority === "medium").toBe(true)
     expect(v.signals.length).toBeGreaterThan(0)
   }
 })
 
 // ── Severity tiers: hard breakage = high (auto-accept), softer = medium (triage) ──
 test("hard breakage is high severity", () => {
-  expect(classifySimObservation("the page never loads").severity).toBe("high")
-  expect(classifySimObservation("nothing happens when I click").severity).toBe("high")
-  expect(classifySimObservation("the checkout is broken").severity).toBe("high")
-  expect(classifySimObservation("the app crashed").severity).toBe("high")
-  expect(classifySimObservation("the form is not working").severity).toBe("high")
-  expect(classifySimObservation("I'm stuck on the loading screen").severity).toBe("high")
-  expect(classifySimObservation("got a 404 not found").severity).toBe("high")
+  expect(classifySimObservation("the page never loads").priority).toBe("high")
+  expect(classifySimObservation("nothing happens when I click").priority).toBe("high")
+  expect(classifySimObservation("the checkout is broken").priority).toBe("high")
+  expect(classifySimObservation("the app crashed").priority).toBe("high")
+  expect(classifySimObservation("the form is not working").priority).toBe("high")
+  expect(classifySimObservation("I'm stuck on the loading screen").priority).toBe("high")
+  expect(classifySimObservation("got a 404 not found").priority).toBe("high")
 })
 
 test("empty/loading states are medium severity", () => {
-  expect(classifySimObservation("still loading the results").severity).toBe("medium")
-  expect(classifySimObservation("just empty boxes here").severity).toBe("medium")
-  expect(classifySimObservation("only skeleton screens show").severity).toBe("medium")
-  expect(classifySimObservation("there's a spinner that keeps going").severity).toBe("medium")
+  expect(classifySimObservation("still loading the results").priority).toBe("medium")
+  expect(classifySimObservation("just empty boxes here").priority).toBe("medium")
+  expect(classifySimObservation("only skeleton screens show").priority).toBe("medium")
+  expect(classifySimObservation("there's a spinner that keeps going").priority).toBe("medium")
 })
 
 // ── No false positives on positive / neutral observations ─────────────────────
@@ -56,7 +56,7 @@ test("positive observations do NOT flag", () => {
   for (const c of ok) {
     const v = classifySimObservation(c)
     expect(v.flagged).toBe(false)
-    expect(v.severity).toBeNull()
+    expect(v.priority).toBeNull()
   }
 })
 
@@ -70,7 +70,7 @@ test("negated 'error' does not flag", () => {
 test("hard signal wins even alongside a positive clause", () => {
   const v = classifySimObservation("Homepage looks great, but the cart never loads.")
   expect(v.flagged).toBe(true)
-  expect(v.severity).toBe("high")
+  expect(v.priority).toBe("high")
   expect(v.signals).toContain("never loads")
 })
 

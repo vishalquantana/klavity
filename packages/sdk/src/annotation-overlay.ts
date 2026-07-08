@@ -31,8 +31,10 @@ export interface Rect {
 export interface AnnotationOpts {
   /** Accent colour. Defaults to the Klavity brand purple '#6366f1'. */
   color?: string
-  /** Optional severity badge shown in the pin header. */
+  /** @deprecated Use priority instead. Backwards compat for callers using old severity field. */
   severity?: 'high' | 'medium' | 'low'
+  /** Optional priority badge shown in the pin header. */
+  priority?: 'urgent' | 'high' | 'medium' | 'low'
 }
 
 // ── Pure geometry helpers (no DOM, fully testable) ────────────────────────────
@@ -243,17 +245,18 @@ export function showAnnotation(rect: Rect, label?: string, opts: AnnotationOpts 
     pin.setAttribute('role', 'status')
     pin.setAttribute('aria-label', `Annotation: ${label}`)
 
-    // Header row: label + optional severity badge
+    // Header row: label + optional priority badge
     const hd  = document.createElement('div'); hd.className = 'klav-ao-hd'
     const lbl = document.createElement('span'); lbl.className = 'klav-ao-lbl'
     lbl.style.color = col; lbl.textContent = label
     hd.appendChild(lbl)
 
-    if (opts.severity) {
-      const sc  = opts.severity === 'medium' ? ' sev-m' : opts.severity === 'low' ? ' sev-l' : ''
+    const _pri = opts.priority ?? opts.severity
+    if (_pri) {
+      const sc  = _pri === 'medium' ? ' sev-m' : _pri === 'low' ? ' sev-l' : ''
       const sev = document.createElement('span')
       sev.className   = `klav-ao-sev${sc}`
-      sev.textContent = opts.severity
+      sev.textContent = _pri
       hd.appendChild(sev)
     }
 

@@ -119,8 +119,8 @@ export interface Finding {
   id: string; projectId: string; runId: string; stepId: string | null; trailId: string
   kind: FindingKind; title: string; evidence: Record<string, unknown> | null
   groundQuote: string | null; confidence: number; dedupKey: string; contentSig: string | null; recurrence: number
-  /** KLA-81: computed severity (set at creation time). NULL on legacy rows — use severityForKind(kind) as fallback. */
-  severity: string | null
+  /** KLA-168: computed priority (renamed from severity). NULL on legacy rows — use severityForKind(kind) as fallback. */
+  priority: string | null
   status: FindingStatus; connectorRef: string | null; connectorError: string | null
   createdAt: number; updatedAt: number
 }

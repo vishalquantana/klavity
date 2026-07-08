@@ -15,11 +15,11 @@
 
 export type SimBugVerdict = {
   flagged: boolean
-  severity: "high" | "medium" | null
+  priority: "high" | "medium" | null
   signals: string[]
 }
 
-// STRONG signals — unambiguous breakage. Matching any → high severity (auto-accept to open).
+// STRONG signals — unambiguous breakage. Matching any → high priority (auto-accept to open).
 const HARD: Array<{ re: RegExp; signal: string }> = [
   { re: /\bnever\s+load(?:s|ed|ing)?\b/i,                                            signal: "never loads" },
   { re: /\b(?:won'?t|will not|can'?t|cannot|does(?:n'?t| not)|unable to|fail(?:s|ed)? to)\s+load\b/i, signal: "won’t load" },
@@ -36,7 +36,7 @@ const HARD: Array<{ re: RegExp; signal: string }> = [
   { re: /\b(?:404|500|503)\b|\bnot\s+found\b|\bserver\s+error\b/i,                   signal: "error page" },
 ]
 
-// SOFT signals — empty / loading / blocked states. Matching → medium severity (triage queue),
+// SOFT signals — empty / loading / blocked states. Matching → medium priority (triage queue),
 // UNLESS the observation reads positive (see POSITIVE). Recurrence later promotes these.
 const SOFT: Array<{ re: RegExp; signal: string }> = [
   { re: /\bstill\s+loading\b/i,                                          signal: "still loading" },
@@ -66,7 +66,7 @@ const POS_SENTIMENT = new Set(["happy", "delighted", "satisfied", "pleased", "po
  */
 export function classifySimObservation(observation: unknown, sentiment?: unknown): SimBugVerdict {
   const text = String(observation ?? "").trim()
-  const NONE: SimBugVerdict = { flagged: false, severity: null, signals: [] }
+  const NONE: SimBugVerdict = { flagged: false, priority: null, signals: [] }
   if (!text) return NONE
 
   const sent = String(sentiment ?? "").toLowerCase()
@@ -78,7 +78,7 @@ export function classifySimObservation(observation: unknown, sentiment?: unknown
   // "error" counts as hard unless it's explicitly negated ("no errors", "error-free").
   if (ERROR_RE.test(text) && !ERROR_NEGATED.test(text) && !hard.includes("error")) hard.push("error")
 
-  if (hard.length) return { flagged: true, severity: "high", signals: hard }
+  if (hard.length) return { flagged: true, priority: "high", signals: hard }
 
   const soft: string[] = []
   for (const { re, signal } of SOFT) if (re.test(text) && !soft.includes(signal)) soft.push(signal)
@@ -86,7 +86,7 @@ export function classifySimObservation(observation: unknown, sentiment?: unknown
   // Suppress ambiguous SOFT signals when the observation reads positive (and the Sim isn't
   // explicitly frustrated/confused, which would override a stray positive phrase).
   const positiveContext = !negSent && (POSITIVE.test(text) || posSent)
-  if (soft.length && !positiveContext) return { flagged: true, severity: "medium", signals: soft }
+  if (soft.length && !positiveContext) return { flagged: true, priority: "medium", signals: soft }
 
   return NONE
 }

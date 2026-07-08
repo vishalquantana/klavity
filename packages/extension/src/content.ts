@@ -606,7 +606,7 @@ let klavLastUrl = location.href
 let klavIndicatorEl: HTMLElement | null = null
 // Flattened reactions from the most recent review, kept so the user can Replay them after they
 // auto-dismiss. Each entry is the same shape klavRenderBubble takes.
-let klavLastReactions: Array<{ simName: string; initials: string; accent: string; observation?: string; severity?: string; citation?: any; suggestedBug?: any }> = []
+let klavLastReactions: Array<{ simName: string; initials: string; accent: string; observation?: string; priority?: string; citation?: any; suggestedBug?: any }> = []
 
 // ── Per-route dedup / flood state ────────────────────────────────────────────
 let klavLastSentSig: string | null = null      // sig of last confirmed-sent review
@@ -816,7 +816,7 @@ function klavSafeColor(c: unknown): string {
     ? s : '#A98BD6'
 }
 
-function klavRenderBubble(r: { simName: string; initials: string; accent: string; observation?: string; severity?: string; citation?: any; suggestedBug?: any }) {
+function klavRenderBubble(r: { simName: string; initials: string; accent: string; observation?: string; priority?: string; citation?: any; suggestedBug?: any }) {
   const root = klavGetHost()
   const stack = root.getElementById('klav-stack')!
   const b = document.createElement('div')
@@ -824,7 +824,7 @@ function klavRenderBubble(r: { simName: string; initials: string; accent: string
   b.style.position = 'relative'
   const cite = r.citation?.sourceQuote
     ? `<div class="klav-cite">“${klavEsc(String(r.citation.sourceQuote).slice(0, 90))}”${r.citation.speaker ? ' — ' + klavEsc(r.citation.speaker) : ''}</div>` : ''
-  const sev = r.severity ? `<span class="klav-sev">${klavEsc(r.severity)}</span>` : ''
+  const sev = r.priority ? `<span class="klav-sev">${klavEsc(r.priority)}</span>` : ''
   // Make the payoff legible: every reaction is persisted server-side as a ticket in the dashboard.
   const outcome = r.suggestedBug
     ? `<div class="klav-outcome">${icon('bug', { size: 14 })} Flagged as a bug · saved to your dashboard</div>`
@@ -983,7 +983,7 @@ async function klavRunAdhoc(projectId: string): Promise<void> {
   if (resp?.ok && Array.isArray(body.reviews)) {
     let n = 0
     for (const rv of body.reviews) for (const r of (rv.reactions || [])) {
-      klavRenderBubble({ simName: rv.simName, initials: rv.initials, accent: rv.accent, observation: r.observation, severity: r?.suggestedBug?.severity, citation: r.citation, suggestedBug: r?.suggestedBug }); n++
+      klavRenderBubble({ simName: rv.simName, initials: rv.initials, accent: rv.accent, observation: r.observation, priority: r?.suggestedBug?.priority, citation: r.citation, suggestedBug: r?.suggestedBug }); n++
     }
     if (n === 0) klavNotice('Your Sims had nothing to flag on this page.')
   } else if (body.reason === 'budgetExhausted') {
@@ -1176,7 +1176,7 @@ async function maybeActivate(reason: string) {
       const flat: typeof klavLastReactions = []
       for (const rv of body.reviews) {
         for (const r of (rv.reactions || [])) {
-          const bubble = { simName: rv.simName, initials: rv.initials, accent: rv.accent, observation: r.observation, severity: r?.suggestedBug?.severity, citation: r.citation, suggestedBug: r?.suggestedBug }
+          const bubble = { simName: rv.simName, initials: rv.initials, accent: rv.accent, observation: r.observation, priority: r?.suggestedBug?.priority, citation: r.citation, suggestedBug: r?.suggestedBug }
           flat.push(bubble)
           klavRenderBubble(bubble)
         }

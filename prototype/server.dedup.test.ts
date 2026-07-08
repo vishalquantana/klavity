@@ -65,7 +65,7 @@ async function fileBug(args: {
   projectId: string; urlPath: string; issueType: string | null
   citedTraitIds: string[]; title: string; observation: string
 }): Promise<string> {
-  const suggestedBug = { title: args.title, body: "test bug body", severity: "medium" }
+  const suggestedBug = { title: args.title, body: "test bug body", priority: "medium" }
   const dedupedInto = await findDuplicateFeedback({
     projectId: args.projectId,
     urlPath: args.urlPath,

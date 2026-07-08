@@ -61,7 +61,7 @@ export interface LiveSimDescriptor {
 export interface LiveObservation {
   text: string
   sentiment?: string | null
-  severity?: string | null
+  priority?: string | null
   suggestedBug?: { title?: string } | null
   /** Present when the server identified a specific page element for this observation. */
   region?: ObservationRegion | null
@@ -564,11 +564,11 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r},${g},${b},${alpha})`
 }
 
-/** Concern = bug/severity OR non-positive sentiment; positives/neutral stay off-page. */
+/** Concern = bug/priority OR non-positive sentiment; positives/neutral stay off-page. */
 function isConcernObservation(obs: LiveObservation): boolean {
   if (obs.suggestedBug) return true
-  const severity = String(obs.severity ?? '').trim().toLowerCase()
-  if (severity && severity !== 'none') return true
+  const priority = String(obs.priority ?? '').trim().toLowerCase()
+  if (priority && priority !== 'none') return true
   const sentiment = String(obs.sentiment ?? '').trim().toLowerCase()
   if (!sentiment) return false
   const NON_ACTIONABLE = new Set(['positive','satisfied','delighted','neutral','none'])
@@ -1277,12 +1277,12 @@ function createExpandedChrome(ann: Annotation): void {
 
   hd.appendChild(av); hd.appendChild(nameEl)
 
-  if (obs.severity && obs.severity !== 'none') {
-    const sc = obs.severity === 'medium' ? ' sev-m' : obs.severity === 'low' ? ' sev-l' : ''
+  if (obs.priority && obs.priority !== 'none') {
+    const sc = obs.priority === 'medium' ? ' sev-m' : obs.priority === 'low' ? ' sev-l' : ''
     const sev = document.createElement('span')
     sev.className = `klav-pin-sev${sc}`
-    sev.setAttribute('aria-label', `Severity: ${obs.severity}`)
-    sev.textContent = obs.severity; hd.appendChild(sev)
+    sev.setAttribute('aria-label', `Priority: ${obs.priority}`)
+    sev.textContent = obs.priority; hd.appendChild(sev)
   }
 
   // Observation text — textContent only (LLM output, XSS guard)
@@ -1519,11 +1519,11 @@ function showHuddleBubble(slot: SimSlot, observations: LiveObservation[]): void 
   const tag = document.createElement('div'); tag.className = 'ksl-b-tag'
   tag.style.color = slot.accent; tag.textContent = slot.name
 
-  if (first.severity && first.severity !== 'none') {
-    const sc = first.severity === 'medium' ? ' sev-m' : first.severity === 'low' ? ' sev-l' : ''
+  if (first.priority && first.priority !== 'none') {
+    const sc = first.priority === 'medium' ? ' sev-m' : first.priority === 'low' ? ' sev-l' : ''
     const sev = document.createElement('span')
     sev.className = `ksl-b-sev${sc}`.replace('sev-m','sev-m').replace('sev-l','sev-l')
-    sev.textContent = first.severity; tag.appendChild(sev)
+    sev.textContent = first.priority; tag.appendChild(sev)
   }
 
   const obsEl = document.createElement('div'); obsEl.className = 'ksl-b-obs'
