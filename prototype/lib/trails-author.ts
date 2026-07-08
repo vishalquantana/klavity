@@ -39,6 +39,29 @@ const ACTION_TIMEOUT = 10_000
 // KLA-129: stall if the exact same action (op+selector+value+url) fires this many consecutive
 // times without a different action in between — the model is stuck re-doing the same step.
 const LOOP_STALL_N = 3
+// How many consecutive iterations with NO page-state change (same URL + same DOM hash) before
+// we inject a nudge message asking the model to try a different action. Reset on any real change.
+const NO_OP_NUDGE_AFTER = 1  // nudge on the 2nd no-change iteration
+const NO_OP_AUTO_ADVANCE_AFTER = 2  // attempt auto-click of submit on 3rd no-change iteration
+// Submit-like controls to try for auto-advance, in priority order.
+const SUBMIT_CANDIDATES = [
+  'button[type="submit"]',
+  'input[type="submit"]',
+  'button:has-text("Send me a code")',
+  'button:has-text("Sign in")',
+  'button:has-text("Log in")',
+  'button:has-text("Login")',
+  'button:has-text("Continue")',
+  'button:has-text("Next")',
+  'button:has-text("Submit")',
+  'button:has-text("Verify")',
+  'button:has-text("Confirm")',
+  'button:has-text("Proceed")',
+  'button[data-testid*="submit"]',
+  'button[data-testid*="login"]',
+  'button[data-testid*="sign-in"]',
+  'form button:not([type="button"])',
+]
 
 /** Strip ephemeral kref attribute references from strings before persisting or adding to history.
  *  Conveys which ref failed without embedding the literal data-kref attr (which is stale by the
@@ -140,6 +163,10 @@ export async function authorTrail(
   let costUsd = cp ? cp.costUsd : 0
   let misses = 0
   let lastSuccessKey: string | null = null, consecutiveSuccessKey = 0
+  // No-op stagnation tracking: detects when the page URL + DOM hash doesn't change across
+  // iterations (the previous action had no visible effect). noOpCount resets on any real change.
+  let prevIterDomKey: string | null = null
+  let noOpCount = 0
   const startIdx = cp ? cp.stepIdx : 0
 
   const snapshotCheckpoint = (url: string): AuthorCheckpoint => ({
@@ -215,6 +242,45 @@ export async function authorTrail(
         ? await bounded(page.screenshotJpeg(60, 15_000), 20_000, "screenshot")
         : ""
       const dom = await bounded(page.krefSnapshot(), 15_000, "snapshot capture")
+      // No-op stagnation guard: if the page URL + DOM hash hasn't changed since the last iteration
+      // the previous action had no visible effect (e.g. re-typing the same field value, clicking
+      // something that didn't respond). Inject an escalating nudge so the model tries a different
+      // action rather than fixating on the same no-op step until the stall-reroll gives up.
+      {
+        // Strip kref attribute numbers before hashing — they are renumbered every capture and would
+        // make every iteration look different even when the real page content is identical.
+        const domWithoutKrefs = dom.replace(/data-kref="e\d+"/g, 'data-kref="??"')
+        const iterDomKey = `${page.url()}|${sha256hex(domWithoutKrefs)}`
+        if (prevIterDomKey !== null && iterDomKey === prevIterDomKey && log.length > 0) {
+          noOpCount++
+          if (noOpCount >= NO_OP_AUTO_ADVANCE_AFTER) {
+            // Third+ no-change iteration: try clicking the most likely submit control before
+            // falling back to model guidance. This handles the "stuck on type, never clicks submit"
+            // pattern observed live on the login form (2026-07-08 dogfood session).
+            let autoAdvanced = false
+            for (const sel of SUBMIT_CANDIDATES) {
+              try {
+                const n = await bounded(page.count(sel), 5_000, "auto-advance count")
+                if (n === 1) {
+                  await bounded(page.click(sel, ACTION_TIMEOUT), ACTION_TIMEOUT + 2_000, "auto-advance click")
+                  history.push(`(auto-advance: the page was not changing — clicked the most likely submit control "${sel}" to progress the flow; check the new page state)`)
+                  noOpCount = 0
+                  autoAdvanced = true
+                  break
+                }
+              } catch { /* try next candidate */ }
+            }
+            if (!autoAdvanced) {
+              history.push(`(IMPORTANT: the page has not changed for ${noOpCount} actions in a row — you are stuck. Choose a completely different action, e.g. click the submit, "Send me a code", "Continue", or "Next" button to advance the flow)`)
+            }
+          } else {
+            history.push(`(NOTICE: the previous action did not change the page — it may have had no effect. Choose a DIFFERENT action to progress, e.g. click the form submit or "Send me a code" button instead of re-entering the same field)`)
+          }
+        } else {
+          noOpCount = 0
+        }
+        prevIterDomKey = iterDomKey
+      }
       // KLA-56: retry transient model/API errors (429, 5xx, timeout) with exponential back-off.
       // Fatal errors (budget exhausted, 401/403) stall immediately with a distinct reason.
       // Generic (non-ModelCallError) throws are treated as retryable — one network blip must not
@@ -362,7 +428,10 @@ export async function authorTrail(
         // Loop guard (KLA-129): if the same action fires LOOP_STALL_N consecutive times without a
         // different action in between, the model is stuck re-doing the same step — break out now
         // rather than spinning to AUTHOR_MAX_STEPS and crystallizing a useless trail.
-        const successKey = `${a.op}|${a.selector ?? ""}|${a.value ?? ""}|${a.url ?? ""}`
+        // Use persistSelector (stable, non-kref) + current page URL so kref renumbering across
+        // iterations doesn't defeat this guard — `a.selector` carries ephemeral kref refs that
+        // change every capture even when the targeted element is logically the same.
+        const successKey = `${a.op}|${persistSelector ?? a.selector ?? ""}|${a.value ?? ""}|${page.url()}`
         if (successKey === lastSuccessKey) {
           consecutiveSuccessKey++
           if (consecutiveSuccessKey >= LOOP_STALL_N) {
