@@ -412,7 +412,7 @@ function findingHtml(f,qs){
     +'<div class="ftop"><span class="fkind">'+esc(f.kind)+'</span><span class="fstatus">'+esc(f.status)+'</span></div>'
     +'<div class="ftitle">'+esc(f.title)+'</div>'
   if(rationale)html+='<div class="fquote">'+esc(rationale)+'</div>'
-  if(ev.fromSelector||ev.toSelector)html+='<div class="fdiff">'+esc(ev.fromSelector||"(none)")+' → '+esc(ev.toSelector||"(none)")+'</div>'
+  if(ev.fromSelector||ev.toSelector)html+='<div class="fdiff">'+esc(ev.fromSelector||"(none)")+window.kicon("chevron-right",{size:9})+' '+esc(ev.toSelector||"(none)")+'</div>'
   html+='<div class="frow">'
   if(canAct){
     html+='<button class="btn btn-sm" style="background:var(--indigo);border-color:var(--indigo);color:white" data-fact="file" data-fid="'+esc(f.id)+'" data-fqs="'+esc(qs)+'">'+window.kicon("send",12)+' Accept</button>'
@@ -669,7 +669,7 @@ function showStepDetail(s){
     +'</div>'
   if(action) html+='<div class="srat" style="font-family:var(--mono);font-size:11px;color:var(--paper-faint);margin-bottom:6px">'+esc(action)+'</div>'
   if(rationale) html+='<div class="srat">'+esc(rationale)+'</div>'
-  if(fromSel||toSel) html+='<div class="sdiff">'+esc(fromSel||"(none)")+' → '+esc(toSel||"(none)")+'</div>'
+  if(fromSel||toSel) html+='<div class="sdiff">'+esc(fromSel||"(none)")+window.kicon("chevron-right",{size:9})+' '+esc(toSel||"(none)")+'</div>'
   if(ev.screenshotKey) html+='<img class="sshot" src="/api/trails/walks/'+esc(walkId)+'/steps/'+esc(s.id)+'/screenshot'+esc(qs)+'" alt="Step screenshot" loading="lazy"/>'
   html+='</div>'
   b.innerHTML=html
@@ -678,5 +678,6 @@ function showStepDetail(s){
 
 load()
 </script>
+<script>(function(){document.querySelectorAll('[data-ki]').forEach(function(e){try{e.innerHTML=kicon(e.getAttribute('data-ki'));}catch(x){}})})();</script>
 </body>
 </html>

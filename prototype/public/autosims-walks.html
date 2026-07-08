@@ -139,9 +139,7 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
     <div class="trend-none" id="trendNone" style="display:none">No completed walks in this window yet.</div>
     <div style="overflow-x:auto">
       <table class="trend-tbl" id="trendTbl" style="display:none">
-        <thead><tr>
-          <th>Date</th><th>✓ Green</th><th>◑ Amber</th><th>✗ Red</th><th>Total</th><th>Pass %</th>
-        </tr></thead>
+        <thead id="trendThead"></thead>
         <tbody id="trendTbody"></tbody>
       </table>
     </div>
@@ -161,9 +159,9 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 
   <!-- KLA-158: pagination controls -->
   <div class="pager" id="pager" style="display:none">
-    <button class="pager-btn" id="prevBtn" onclick="goPage(state.page-1)">← Prev</button>
+    <button class="pager-btn" id="prevBtn" onclick="goPage(state.page-1)"><span data-ki="chevron-left"></span> Prev</button>
     <span class="pager-info" id="pagerInfo"></span>
-    <button class="pager-btn" id="nextBtn" onclick="goPage(state.page+1)">Next →</button>
+    <button class="pager-btn" id="nextBtn" onclick="goPage(state.page+1)">Next <span data-ki="chevron-right"></span></button>
   </div>
 </div>
 
@@ -205,6 +203,13 @@ function renderTrend(buckets){
   }
   noneEl.style.display="none"
   tblEl.style.display=""
+
+  // Build header with kicon helpers (replaces static glyphs)
+  $("trendThead").innerHTML='<tr><th>Date</th>'
+    +'<th>'+window.kicon("check",{size:9})+' Green</th>'
+    +'<th>'+window.kicon("circle",{size:9})+' Amber</th>'
+    +'<th>'+window.kicon("x",{size:9})+' Red</th>'
+    +'<th>Total</th><th>Pass %</th></tr>'
 
   // Sparkline — proportional stacked bars (green bottom, amber mid, red top)
   var maxTotal=Math.max.apply(null,buckets.map(function(b){return b.total||0}))||1
@@ -374,7 +379,7 @@ function renderList(){
       +'<div class="wr-right">'
         +(w.hasReplay?'<span class="replay-badge">'+window.kicon("play",{size:12})+' Replay</span>':"")
         +'<span class="pill '+esc(v)+'">'+esc(v)+'</span>'
-        +'<a class="view-btn" href="'+esc(detailHref)+'">View →</a>'
+        +'<a class="view-btn" href="'+esc(detailHref)+'">View '+window.kicon("chevron-right",{size:10})+'</a>'
       +'</div>'
     el.appendChild(row)
   })
@@ -389,5 +394,6 @@ function resetFilter(){
 
 load()
 </script>
+<script>(function(){document.querySelectorAll('[data-ki]').forEach(function(e){try{e.innerHTML=kicon(e.getAttribute('data-ki'));}catch(x){}})})();</script>
 </body>
 </html>
