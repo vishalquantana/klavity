@@ -1,11 +1,11 @@
-# Deploying Klav to `klav.quantana.top` (1 GB Vultr)
+# Deploying Klav to `klavity.in` (1 GB Vultr)
 
 Serves the Bun prototype (the live core-loop demo: `/`, `/home`, `/onboarding`) behind
 Caddy with automatic HTTPS. The box is a stateless proxy to OpenRouter — 1 GB is comfortable.
 
 ## 0. DNS (do this first, it propagates while you set up)
 
-Add an **A record**: `klav.quantana.top → <SERVER_IP>` (proxy off / "DNS only").
+Add an **A record**: `klavity.in → <SERVER_IP>` (proxy off / "DNS only").
 Caddy needs the name to resolve to the box to issue the Let's Encrypt cert.
 
 ## 1. Base box (as root)
@@ -65,7 +65,7 @@ cp /opt/klav/deploy/Caddyfile /etc/caddy/Caddyfile
 systemctl reload caddy
 ```
 
-Visit **https://klav.quantana.top** — Caddy auto-issues the cert on first request.
+Visit **https://klavity.in** — Caddy auto-issues the cert on first request.
 
 ## 7. Lock down the public demo (strongly recommended)
 

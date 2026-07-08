@@ -8,8 +8,8 @@ describe("submitFeedback", () => {
     const fetchMock = vi.fn(async (..._a: any[]) => new Response(JSON.stringify({ id: "fb1", saved: true }), { status: 200 }))
     vi.stubGlobal("fetch", fetchMock)
     const res = await submitFeedback(
-      { backendUrl: "https://klavity.quantana.top", projectId: "p1", firstParty: true, token: "" },
-      { type: "bug", description: "x", pageUrl: "https://klavity.quantana.top/dashboard", screenshots: [] },
+      { backendUrl: "https://klavity.in", projectId: "p1", firstParty: true, token: "" },
+      { type: "bug", description: "x", pageUrl: "https://klavity.in/dashboard", screenshots: [] },
     )
     const [, init] = fetchMock.mock.calls[0]
     expect(init.credentials).toBe("include")
@@ -20,7 +20,7 @@ describe("submitFeedback", () => {
     const fetchMock = vi.fn(async (..._a: any[]) => new Response(JSON.stringify({ id: "fb2", saved: true }), { status: 200 }))
     vi.stubGlobal("fetch", fetchMock)
     await submitFeedback(
-      { backendUrl: "https://klavity.quantana.top", projectId: "p1", firstParty: false, token: "ext_abc" },
+      { backendUrl: "https://klavity.in", projectId: "p1", firstParty: false, token: "ext_abc" },
       { type: "bug", description: "x", pageUrl: "https://app.acme.com/p", screenshots: [] },
     )
     const [, init] = fetchMock.mock.calls[0]
@@ -34,7 +34,7 @@ describe("submitFeedback", () => {
     const fetchMock = vi.fn(async (..._a: any[]) => new Response(JSON.stringify({ id: "fb4", saved: true }), { status: 200 }))
     vi.stubGlobal("fetch", fetchMock)
     await submitFeedback(
-      { backendUrl: "https://klavity.quantana.top", projectId: "p1", firstParty: false, token: "" },
+      { backendUrl: "https://klavity.in", projectId: "p1", firstParty: false, token: "" },
       { type: "bug", description: "checkout dead", pageUrl: "https://customer.example/cart", screenshots: [], reporterEmail: "buyer@test.local" },
     )
     const [, init] = fetchMock.mock.calls[0]
@@ -45,11 +45,11 @@ describe("submitFeedback", () => {
     const fetchMock = vi.fn(async (..._a: any[]) => new Response(JSON.stringify({ id: "fb3", saved: true }), { status: 200 }))
     vi.stubGlobal("fetch", fetchMock)
     await submitFeedback(
-      { backendUrl: "https://klavity.quantana.top", projectId: "p1", firstParty: true, token: "" },
+      { backendUrl: "https://klavity.in", projectId: "p1", firstParty: true, token: "" },
       {
-        type: "bug", description: "x", pageUrl: "https://klavity.quantana.top/d", screenshots: [],
+        type: "bug", description: "x", pageUrl: "https://klavity.in/d", screenshots: [],
         context: {
-          pageUrl: "https://klavity.quantana.top/d", userAgent: "UA/1", screenSize: "1920x1080", viewportSize: "1280x720",
+          pageUrl: "https://klavity.in/d", userAgent: "UA/1", screenSize: "1920x1080", viewportSize: "1280x720",
           consoleErrors: [{ message: "boom", timestamp: 1, level: "error" }],
           networkFailures: [{ url: "https://api/x", status: 500, method: "GET", timestamp: 1, durationMs: 5 }],
           identity: { id: "u1", email: "a@b.com" }, metadata: { plan: "pro" },

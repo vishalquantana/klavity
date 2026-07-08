@@ -66,7 +66,7 @@ afterAll(() => { serverProc?.kill(); rawClient.close() })
 
 test("widget-style submit persists captured context (console + network + env + identity/metadata)", async () => {
   const context = {
-    pageUrl: "https://klavity.quantana.top/snap",
+    pageUrl: "https://klavity.in/snap",
     userAgent: "Mozilla/5.0 TestUA", screenSize: "1920x1080", viewportSize: "1280x720",
     consoleErrors: [
       { message: "a log line", timestamp: 1, level: "log" },
@@ -107,7 +107,7 @@ test("widget-style submit persists captured context (console + network + env + i
 
 test("malformed context field does not break the submission", async () => {
   const fd = new FormData()
-  fd.set("description", "bad ctx"); fd.set("page_url", "https://klavity.quantana.top/x"); fd.set("project_id", "p1")
+  fd.set("description", "bad ctx"); fd.set("page_url", "https://klavity.in/x"); fd.set("project_id", "p1")
   fd.set("context", "{not valid json")
   const r = await fetch(`${BASE}/api/feedback`, { method: "POST", body: fd, headers: { origin: BASE } })
   expect(r.status).toBe(200)

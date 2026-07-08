@@ -12,17 +12,17 @@ const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 function ticketWith(attachments?: TicketPayload["attachments"]): TicketPayload {
   return {
     title: "Bug",
-    body: "desc with fallback https://klavity.quantana.top/img/1.hmac",
+    body: "desc with fallback https://klavity.in/img/1.hmac",
     severity: "high",
     url: "https://app/x",
     simName: "Vamshi",
     createdAt: 1,
-    klavityUrl: "https://klavity.quantana.top/dashboard",
+    klavityUrl: "https://klavity.in/dashboard",
     attachments,
   }
 }
 
-const ATT = { filename: "shot.png", contentType: "image/png", bytes: PNG, url: "https://klavity.quantana.top/img/1.hmac" }
+const ATT = { filename: "shot.png", contentType: "image/png", bytes: PNG, url: "https://klavity.in/img/1.hmac" }
 
 function issueCreateResponse() {
   return new Response(

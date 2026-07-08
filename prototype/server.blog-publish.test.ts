@@ -144,7 +144,7 @@ test("publishBlogPost returns { ok, sha, url } on success", async () => {
   )
   expect(result.ok).toBe(true)
   expect(result.sha).toBe("abc1234def5678")
-  expect(result.url).toBe("https://klavity.quantana.top/blog/success-post")
+  expect(result.url).toBe("https://klavity.in/blog/success-post")
 })
 
 test("publishBlogPost retries push once on non-fast-forward reject", async () => {

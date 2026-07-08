@@ -129,10 +129,10 @@ test("OPTIONS /api/sim/review returns 204 with permissive CORS", async () => {
 })
 
 // ── Cross-origin widget CORS: reflect the request Origin ──────────────────────
-// Regression for the bug where the widget on a customer domain (e.g. bigidea.quantana.top)
+// Regression for the bug where the widget on a customer domain (e.g. bigidea.example.com)
 // got "No Access-Control-Allow-Origin header" on /api/widget/ping (preflight) and
 // /api/projects/:id/config. With an Origin header present we must REFLECT it (not just "*").
-const X_ORIGIN = "https://bigidea.quantana.top"
+const X_ORIGIN = "https://bigidea.example.com"
 
 test("OPTIONS /api/widget/ping preflight reflects the request Origin", async () => {
   const r = await fetch(base + "/api/widget/ping", {

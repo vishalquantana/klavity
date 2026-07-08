@@ -69,7 +69,7 @@ describe("buildSlackPayload", () => {
   const ctx: SignupContext = {
     email: "jane@acme.io", ip: "8.8.8.8",
     userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/120 Safari/537.36",
-    referer: "https://klavity.quantana.top/pricing", at: 1_718_000_000_000,
+    referer: "https://klavity.in/pricing", at: 1_718_000_000_000,
   }
 
   test("includes header, fields, and a fallback text", () => {
@@ -78,7 +78,7 @@ describe("buildSlackPayload", () => {
     expect(p.blocks[0].type).toBe("header")
     const fieldText = JSON.stringify(p.blocks[1].fields)
     expect(fieldText).toContain("Acme")
-    expect(fieldText).toContain("klavity.quantana.top/pricing")
+    expect(fieldText).toContain("klavity.in/pricing")
   })
 
   test("geo proxy/hosting raise risk context flags", () => {

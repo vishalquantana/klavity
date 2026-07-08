@@ -54,10 +54,10 @@ await rawExec(`INSERT INTO projects VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [PRO
 await rawExec(`INSERT INTO project_members VALUES (?, ?, ?, ?, ?, ?)`, ["pm1", PROJECT_ID, MEMBER_EMAIL, "member", null, NOW])
 await rawExec(`INSERT INTO project_members VALUES (?, ?, ?, ?, ?, ?)`, ["pm2", PROJECT_ID_2, MEMBER_EMAIL, "member", null, NOW])
 await rawExec(`INSERT INTO project_members VALUES (?, ?, ?, ?, ?, ?)`, ["pm3", PROJECT_ID_OFF, MEMBER_EMAIL, "member", null, NOW])
-await rawExec(`INSERT INTO monitored_urls VALUES (?, ?, ?, ?, ?)`, ["mu1", PROJECT_ID, "bigidea.quantana.top", 1, NOW])
-await rawExec(`INSERT INTO monitored_urls VALUES (?, ?, ?, ?, ?)`, ["mu2", PROJECT_ID_2, "bigidea.quantana.top", 1, NOW])
+await rawExec(`INSERT INTO monitored_urls VALUES (?, ?, ?, ?, ?)`, ["mu1", PROJECT_ID, "bigidea.example.com", 1, NOW])
+await rawExec(`INSERT INTO monitored_urls VALUES (?, ?, ?, ?, ?)`, ["mu2", PROJECT_ID_2, "bigidea.example.com", 1, NOW])
 await rawExec(`INSERT INTO monitored_urls VALUES (?, ?, ?, ?, ?)`, ["mu3", PROJECT_ID_OFF, "different.example.com", 1, NOW])
-await rawExec(`INSERT INTO monitored_urls VALUES (?, ?, ?, ?, ?)`, ["mu4", PROJECT_ID_PRIVATE, "bigidea.quantana.top", 1, NOW])
+await rawExec(`INSERT INTO monitored_urls VALUES (?, ?, ?, ?, ?)`, ["mu4", PROJECT_ID_PRIVATE, "bigidea.example.com", 1, NOW])
 // other user is NOT a project member
 await rawExec(`INSERT INTO extension_tokens VALUES (?, ?, ?, ?, ?, ?)`, [TOKEN_MEMBER, MEMBER_EMAIL, null, NOW, NOW + 86400000, 0])
 await rawExec(`INSERT INTO extension_tokens VALUES (?, ?, ?, ?, ?, ?)`, [TOKEN_OTHER,  OTHER_EMAIL,  null, NOW, NOW + 86400000, 0])
@@ -98,7 +98,7 @@ afterAll(() => {
   rawClient.close()
 })
 
-const MONITORED_URL = "https://bigidea.quantana.top/dashboard"
+const MONITORED_URL = "https://bigidea.example.com/dashboard"
 const OFF_URL       = "https://totally-different-site.io/page"
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

@@ -101,7 +101,7 @@ test("OPTIONS /api/feedback returns CORS preflight headers", async () => {
 test("POST /api/feedback with a link-local plane_host still saves (non-fatal tracker)", async () => {
   const fd = new FormData()
   fd.set("description", "regression: link-local plane host must not 400")
-  fd.set("page_url", "https://klavity.quantana.top/dashboard")
+  fd.set("page_url", "https://klavity.in/dashboard")
   fd.set("plane_host", "http://169.254.169.254")
   fd.set("plane_workspace", "w")
   fd.set("plane_project_id", "p")

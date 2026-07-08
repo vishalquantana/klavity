@@ -10,7 +10,7 @@ const config: IntegrationConfig = {
   context: { pageUrl: 'https://app.example.com', userAgent: 'Test', screenSize: '1920x1080', viewportSize: '1280x800', consoleErrors: [], networkFailures: [] },
   settings: {
     ...DEFAULT_SETTINGS,
-    backendUrl: 'https://klavity.quantana.top',
+    backendUrl: 'https://klavity.in',
     plane: { token: 'plane_tok', host: 'https://plane.quantana.top', workspace: 'qbuilder', projectId: 'proj_123' },
   },
 }
@@ -26,7 +26,7 @@ describe('backend.submitReport', () => {
 
     const result = await submitReport(config)
     const [url, opts] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
-    expect(url).toBe('https://klavity.quantana.top/api/feedback')
+    expect(url).toBe('https://klavity.in/api/feedback')
     const form = opts.body as FormData
     expect(form.get('type')).toBe('bug')
     expect(form.get('description')).toBe('Export fails silently')
