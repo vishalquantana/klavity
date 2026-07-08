@@ -52,9 +52,221 @@ body[data-view="triage"] [data-view]:not([data-view~="triage"]),
 body[data-view="settings"] [data-view]:not([data-view~="settings"]),
 body[data-view="autosims"] [data-view]:not([data-view~="autosims"]),
 body[data-view="recurring"] [data-view]:not([data-view~="recurring"]){display:none!important}
-/* AutoSims view: embed the /trails page full-bleed inside the shell */
-.autosims-card{padding:0;overflow:hidden}
-#autosimsFrame{display:block;width:100%;height:calc(100vh - 150px);min-height:520px;border:0;background:transparent}
+/* ── AutoSims native view (KLA-147) ─────────────────────────────────────── */
+.autosims-wrap{padding:22px 26px 32px}
+.autosims-wrap h1{font-family:var(--display);font-weight:450;font-size:28px;letter-spacing:-.02em;margin-bottom:4px}
+/* override dashboard .card inside autosims to use border style (matching trails original) */
+.autosims-wrap>.card{background:var(--ink-2);border:1px solid var(--line);border-radius:18px;padding:22px;box-shadow:none}
+.banner{display:flex;align-items:center;gap:20px;background:linear-gradient(135deg,rgba(99,102,241,.12),rgba(139,92,246,.05));border:1px solid rgba(139,139,245,.3);border-radius:18px;padding:22px 24px;margin-bottom:22px}
+.banner .pct{font-family:var(--display);font-weight:500;font-size:42px;line-height:1;letter-spacing:-.02em}
+.banner .lbl{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:6px}
+.banner .sub{color:var(--paper-dim);font-size:14px;max-width:52ch}
+.walk{display:flex;align-items:center;gap:12px;padding:13px 15px;background:var(--ink);border:1px solid var(--line);border-radius:12px}
+.walk .body{flex:1;min-width:0}
+.walk .t{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.walk .d{font-size:12px;color:var(--paper-faint);margin-top:2px;font-family:var(--mono)}
+.pill{font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;padding:4px 9px;border-radius:20px;flex-shrink:0}
+.pill.green{background:rgba(15,157,107,.16);color:var(--green)}
+.pill.amber{background:rgba(217,131,36,.18);color:var(--amber)}
+.pill.red{background:rgba(219,39,119,.16);color:var(--rose)}
+.pill.running,.pill.skip{background:var(--ink-3);color:var(--paper-faint)}
+.pill.pill-draft{background:rgba(139,139,245,.14);color:var(--indigo)}
+.pill.paused{background:rgba(139,139,139,.15);color:var(--paper-faint)}
+.find{padding:15px 16px;background:var(--ink);border:1px solid var(--line);border-radius:14px}
+.find .top{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.find .kind{font-family:var(--mono);font-size:9px;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:20px;background:var(--ink-3);color:var(--paper-faint)}
+.find .kind.regression{background:rgba(219,39,119,.14);color:var(--rose)}
+.find .kind.amber_heal{background:rgba(217,131,36,.16);color:var(--amber)}
+.find .kind.visual{background:rgba(99,102,241,.14);color:var(--indigo)}
+.find .conf{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--paper-faint)}
+.find .ft{font-size:14.5px;font-weight:600;line-height:1.4}
+.find .quote{font-size:13px;color:var(--paper-dim);margin-top:6px;border-left:2px solid var(--line);padding-left:10px;line-height:1.45}
+.find .diff{font-family:var(--mono);font-size:12px;color:var(--paper-faint);margin-top:8px;background:var(--ink-3);padding:7px 10px;border-radius:8px;overflow-x:auto}
+.find .evidence{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11.5px;color:var(--paper-faint);margin-top:8px;padding:6px 9px;background:var(--ink-3);border-radius:8px;border:1px dashed var(--line)}
+.find .evidence img{width:42px;height:28px;object-fit:cover;border-radius:5px;border:1px solid var(--line);cursor:pointer}
+.find .walk-link{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11.5px;color:var(--indigo);margin-top:8px;padding:4px 0;text-decoration:none;border-bottom:1px dashed var(--line)}
+.find .walk-link:hover{border-color:var(--indigo)}
+.find .acts{display:flex;gap:8px;margin-top:12px}
+.ob-wrap{padding:4px 0 24px}
+.ob-primary{display:flex;align-items:center;justify-content:space-between;gap:18px;background:linear-gradient(135deg,rgba(99,102,241,.14),rgba(15,157,107,.08));border:1px solid rgba(99,102,241,.28);border-radius:8px;padding:20px 22px;margin-bottom:20px}
+.ob-primary h3{font-family:var(--display);font-weight:500;font-size:24px;letter-spacing:0;margin-bottom:5px;color:var(--paper)}
+.ob-primary p{font-size:14px;color:var(--paper-dim);line-height:1.5;max-width:58ch}
+.ob-primary .btn{font-size:15px;padding:12px 18px;white-space:nowrap;box-shadow:0 12px 28px rgba(99,102,241,.18)}
+@media(max-width:720px){.ob-primary{align-items:flex-start;flex-direction:column}.ob-primary .btn{width:100%;justify-content:center}}
+.ob-head{font-family:var(--display);font-weight:500;font-size:22px;letter-spacing:-.02em;margin-bottom:6px;color:var(--paper)}
+.ob-sub{font-size:14px;color:var(--paper-dim);line-height:1.5;margin-bottom:22px}
+.ob-steps{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:24px}
+@media(max-width:640px){.ob-steps{grid-template-columns:1fr}}
+.ob-step{background:var(--ink-2);border:1px solid var(--line);border-radius:14px;padding:18px 16px;text-align:left;position:relative;overflow:hidden;transition:border-color var(--mi-dur) var(--mi-ease),transform var(--mi-dur) var(--mi-ease)}
+.ob-step:hover{border-color:var(--indigo);transform:translateY(-2px)}
+.ob-step::after{content:"";position:absolute;top:0;right:0;width:80px;height:80px;background:radial-gradient(circle,rgba(99,102,241,.07),transparent 70%);pointer-events:none}
+.ob-num{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--indigo);margin-bottom:10px;text-transform:uppercase}
+.ob-step h3{font-family:var(--display);font-weight:500;font-size:15px;margin-bottom:6px;letter-spacing:-.01em;color:var(--paper)}
+.ob-step p{font-size:12.5px;color:var(--paper-dim);line-height:1.5}
+.ob-seam{height:1px;background:linear-gradient(90deg,var(--indigo),transparent);margin:12px 0 0;opacity:.35}
+.ob-pitch{font-size:12px;color:var(--paper-faint);margin-top:10px;text-align:center;font-style:italic;line-height:1.5}
+.trail{display:flex;align-items:center;gap:12px;padding:13px 15px;background:var(--ink);border:1px solid var(--line);border-radius:12px}
+.trail .body{flex:1;min-width:0}
+.trail .t{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.trail .d{font-size:12px;color:var(--paper-faint);margin-top:2px;font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.trail .run-btn{flex-shrink:0;font-family:var(--mono);font-size:11px;letter-spacing:.04em;padding:7px 13px;border-radius:9px;border:1px solid var(--line);background:var(--ink-3);color:var(--paper);cursor:pointer;transition:border-color var(--mi-dur) var(--mi-ease)}
+.trail .run-btn:hover:not(:disabled){border-color:var(--indigo)}
+.trail .run-btn:disabled{opacity:.55;cursor:default}
+.trail .cancel-btn{flex-shrink:0;font-family:var(--mono);font-size:11px;letter-spacing:.04em;padding:7px 13px;border-radius:9px;border:1px solid var(--rose);background:transparent;color:var(--rose);cursor:pointer;transition:background var(--mi-dur) var(--mi-ease),transform var(--mi-dur) var(--mi-ease)}
+.trail .cancel-btn:hover:not(:disabled){background:rgba(219,39,119,.1);transform:var(--mi-lift)}
+.trail .cancel-btn:active{transform:var(--mi-press)}
+.trail .cancel-btn:disabled{opacity:.55;cursor:default}
+.trail .heal-diff{font-family:var(--mono);font-size:11px;color:var(--paper-faint);background:var(--ink-3);padding:5px 9px;border-radius:8px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0}
+.trail .run-msg{font-family:var(--mono);font-size:10px;color:var(--amber);flex-shrink:0}
+.walk .replay-btn{flex-shrink:0;font-family:var(--mono);font-size:10px;letter-spacing:.04em;padding:5px 10px;border-radius:9px;border:1px solid var(--line);background:transparent;color:var(--paper-dim);cursor:pointer;transition:transform var(--mi-dur) var(--mi-ease),border-color var(--mi-dur) var(--mi-ease),color var(--mi-dur) var(--mi-ease)}
+.walk .replay-btn:hover{border-color:var(--indigo);color:var(--paper);transform:var(--mi-lift)}
+.walk .replay-btn:active{transform:var(--mi-press)}
+.walk .walk-pdf-btn,.walk .walk-share-btn{flex-shrink:0;font-family:var(--mono);font-size:10px;letter-spacing:.04em;padding:5px 10px;border-radius:9px;border:1px solid var(--line);background:transparent;color:var(--paper-dim);cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:4px;transition:transform var(--mi-dur) var(--mi-ease),border-color var(--mi-dur) var(--mi-ease),color var(--mi-dur) var(--mi-ease)}
+.walk .walk-pdf-btn:hover,.walk .walk-share-btn:hover{border-color:var(--indigo);color:var(--paper);transform:var(--mi-lift)}
+.walk .walk-pdf-btn:active,.walk .walk-share-btn:active{transform:var(--mi-press)}
+.walk .walk-share-msg{font-family:var(--mono);font-size:10px;color:var(--green);flex-shrink:0;min-width:0}
+.exp-board{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:18px}
+@media(max-width:820px){.exp-board{grid-template-columns:minmax(0,1fr)}}
+.exp-col{background:var(--ink-2);border:1px solid var(--line);border-radius:18px;padding:20px}
+.exp-col h2{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.exp-col h2 .count{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--paper-faint);background:var(--ink-3);padding:2px 8px;border-radius:20px}
+.exp-card{background:var(--ink);border:1px solid var(--line);border-radius:12px;padding:13px 14px;margin-bottom:10px}
+.exp-card:last-child{margin-bottom:0}
+.exp-card .ec-title{font-size:14px;font-weight:600;line-height:1.35;margin-bottom:6px}
+.exp-card .ec-badges{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:7px}
+.ec-badge{font-family:var(--mono);font-size:9px;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:20px;flex-shrink:0}
+.ec-badge.snap{background:rgba(99,102,241,.14);color:var(--indigo)}
+.ec-badge.sim{background:rgba(15,157,107,.14);color:var(--green)}
+.ec-badge.recur{background:rgba(217,131,36,.16);color:var(--amber)}
+.ec-badge.enforced-ok{background:rgba(15,157,107,.14);color:var(--green)}
+.exp-card .ec-meta{font-family:var(--mono);font-size:11px;color:var(--paper-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.exp-card .ec-acts{margin-top:10px}
+.exp-card .ec-confirm{margin-top:10px;background:var(--ink-2);border:1px solid var(--line);border-radius:10px;padding:11px 12px}
+.exp-card .ec-confirm .cc-target{font-family:var(--mono);font-size:10px;color:var(--paper-faint);margin-bottom:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.exp-card .ec-confirm textarea{width:100%;background:var(--ink);border:1px solid var(--line);border-radius:8px;color:var(--paper);font-family:var(--body);font-size:13px;padding:8px 10px;resize:vertical;min-height:56px;outline:none}
+.exp-card .ec-confirm textarea:focus{border-color:var(--indigo)}
+.exp-card .ec-confirm .cc-acts{display:flex;gap:7px;margin-top:8px;align-items:center}
+.exp-card .ec-msg{font-family:var(--mono);font-size:11px;color:var(--green);margin-top:6px;min-height:14px}
+.schedule-chip{flex-shrink:0;display:inline-flex;align-items:center;gap:4px;font-family:var(--mono);font-size:9px;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:20px;border:1px solid rgba(99,102,241,.4);color:var(--indigo);background:rgba(99,102,241,.08)}
+.trail.paused{opacity:.65}
+.trail .activate-btn{flex-shrink:0;font-family:var(--mono);font-size:10px;letter-spacing:.04em;padding:5px 10px;border-radius:8px;border:1px solid rgba(99,102,241,.4);background:transparent;color:var(--indigo);cursor:pointer;transition:transform var(--mi-dur) var(--mi-ease)}
+.trail .activate-btn:hover:not(:disabled){background:rgba(99,102,241,.1);transform:var(--mi-lift)}
+.trail .activate-btn:active{transform:var(--mi-press)}
+.trail .kebab-btn{flex-shrink:0;background:none;border:1px solid transparent;border-radius:8px;color:var(--paper-faint);font-size:16px;line-height:1;padding:4px 7px;cursor:pointer;transition:color var(--mi-dur) var(--mi-ease),border-color var(--mi-dur) var(--mi-ease),transform var(--mi-dur) var(--mi-ease)}
+.trail .kebab-btn:hover{color:var(--paper);border-color:var(--line);transform:var(--mi-lift)}
+.trail .kebab-btn:active{transform:var(--mi-press)}
+.trail-menu{position:absolute;z-index:30;min-width:150px;background:var(--ink-2);border:1px solid var(--line);border-radius:12px;padding:6px;box-shadow:0 6px 24px rgba(0,0,0,.28);display:none}
+.trail-menu.open{display:block}
+.trail-menu button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:none;border:none;color:var(--paper);font-family:var(--body);font-size:13px;padding:7px 11px;border-radius:8px;cursor:pointer;transition:background var(--mi-dur) var(--mi-ease)}
+.trail-menu button:hover{background:var(--ink-3)}
+.trail-menu button.danger{color:var(--rose)}
+.trail .trail-rename-input{font-size:14px;font-weight:600;background:var(--ink-3);border:1px solid var(--indigo);border-radius:8px;color:var(--paper);font-family:var(--body);padding:3px 8px;outline:none;min-width:120px;max-width:280px}
+.trail-wrap{position:relative}
+/* Trails modals are body-level so position:fixed covers the full viewport */
+.modal-bg{position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;padding:24px}
+.modal-bg.open,.modal-bg.show{display:flex}
+.modal{background:var(--ink-2);border:1px solid var(--line);border-radius:18px;max-width:1000px;width:100%;max-height:92vh;overflow:auto;padding:20px 22px}
+.modal .mhead{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.modal .mhead h3{font-family:var(--display);font-weight:500;font-size:20px}
+.modal .mclose{margin-left:auto;background:none;border:1px solid var(--line);border-radius:9px;color:var(--paper-dim);font-size:18px;line-height:1;padding:4px 10px;cursor:pointer}
+.modal .mclose:hover{color:var(--paper)}
+.steptl{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+.steptl .sp{font-family:var(--mono);font-size:10px;letter-spacing:.04em;padding:4px 9px;border-radius:8px;border:1px solid var(--line);background:var(--ink-3);color:var(--paper-faint);cursor:pointer}
+.steptl .sp.green{color:var(--green)}.steptl .sp.amber{color:var(--amber);border-color:rgba(217,131,36,.4)}.steptl .sp.red{color:var(--rose);border-color:rgba(219,39,119,.4)}
+.steptl .sp.focus{outline:2px solid var(--indigo);outline-offset:1px}
+.chapters{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.chapters .ch{font-family:var(--mono);font-size:10px;padding:4px 9px;border-radius:8px;border:1px solid var(--line);background:transparent;color:var(--paper-faint);cursor:pointer}
+.chapters .ch.on{color:var(--paper);border-color:var(--indigo);background:var(--ink-3)}
+#playerHost{min-height:200px;border-radius:12px;overflow:hidden}
+.modal .mnote{font-size:12.5px;color:var(--paper-faint);margin-top:10px;font-family:var(--mono)}
+#liveHost{min-height:260px;border-radius:12px;overflow:hidden;background:var(--ink);border:1px solid var(--line);display:flex;align-items:center;justify-content:center}
+#liveFrame{display:block;max-width:100%;max-height:68vh;width:100%;height:auto;object-fit:contain;background:#050505}
+.live-empty{font-family:var(--mono);font-size:12px;color:var(--paper-faint);padding:28px;text-align:center}
+.live-dot{width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;box-shadow:0 0 0 4px rgba(15,157,107,.12)}
+.live-dot.off{background:var(--paper-faint);box-shadow:none}
+#ntBg .modal{max-width:600px}
+#ntBg label{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--paper-dim);margin-bottom:12px}
+#ntBg input,#ntBg textarea,#ntBg select{background:var(--ink);border:1px solid var(--line);border-radius:9px;color:var(--paper);font-family:var(--body);font-size:14px;padding:9px 12px;outline:none;width:100%}
+#ntBg input:focus,#ntBg textarea:focus,#ntBg select:focus{border-color:var(--indigo)}
+#ntBg h2{font-family:var(--display);font-weight:500;font-size:22px;margin-bottom:6px}
+#ntBg .lead{color:var(--paper-dim);font-size:14px;margin-bottom:16px}
+#ntBg .row{display:flex;gap:10px;margin-top:16px}
+.hint{font-size:12px;color:var(--paper-faint);margin-bottom:12px}
+#ntProgress{margin-top:12px}
+.nt-step{font-family:var(--mono);font-size:12px;padding:6px 10px;border-radius:8px;margin-bottom:4px;background:var(--ink-3);border:1px solid var(--line)}
+.nt-step.ok{border-color:rgba(15,157,107,.3)}
+.nt-step.err{border-color:rgba(219,39,119,.3)}
+.nt-step .why{color:var(--paper-faint);font-size:11px}
+.nt-live{font-family:var(--mono);font-size:12px;color:var(--paper-faint);margin-top:6px;animation:blink 1.4s ease infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
+.nt-done{font-family:var(--mono);font-size:13px;color:var(--green);margin-top:8px;padding:8px 10px;background:rgba(15,157,107,.08);border-radius:8px}
+.nt-stall{font-family:var(--mono);font-size:13px;color:var(--rose);margin-top:8px;padding:8px 10px;background:rgba(219,39,119,.08);border-radius:8px}
+.v-true{color:var(--green)}.v-false{color:var(--rose)}
+#drBg .modal{max-width:660px;max-height:88vh;display:flex;flex-direction:column}
+#drBg .dr-body{overflow-y:auto;flex:1;margin:0 -4px;padding:0 4px}
+#drBg .dr-trail-name{font-family:var(--display);font-size:20px;font-weight:500;margin-bottom:2px}
+#drBg .dr-trail-url{font-family:var(--mono);font-size:11px;color:var(--paper-faint);margin-bottom:18px}
+#drBg .dr-hint{font-size:12px;color:var(--paper-faint);margin-bottom:14px}
+#drBg .dr-steps{display:flex;flex-direction:column;gap:8px;margin-bottom:20px}
+.dr-step{display:flex;align-items:flex-start;gap:12px;padding:12px 14px;background:var(--ink);border:1px solid var(--line);border-radius:12px;transition:border-color .15s}
+.dr-step:hover{border-color:rgba(99,102,241,.35)}
+.dr-step-n{font-family:var(--mono);font-size:10px;color:var(--paper-faint);background:var(--ink-3);border-radius:6px;padding:2px 7px;flex-shrink:0;margin-top:2px}
+.dr-step-body{flex:1;min-width:0}
+.dr-step-action{display:inline-block;font-family:var(--mono);font-size:9px;letter-spacing:.07em;text-transform:uppercase;padding:2px 7px;border-radius:20px;margin-bottom:5px;flex-shrink:0}
+.dr-step-action.navigate{background:rgba(99,102,241,.14);color:var(--indigo)}
+.dr-step-action.click{background:rgba(15,157,107,.14);color:var(--green)}
+.dr-step-action.type{background:rgba(217,131,36,.16);color:var(--amber)}
+.dr-step-action.select{background:rgba(217,131,36,.14);color:var(--amber)}
+.dr-step-action.assert{background:rgba(99,102,241,.2);color:var(--indigo)}
+.dr-step-action.wait{background:var(--ink-3);color:var(--paper-faint)}
+.dr-step-main{font-size:13.5px;line-height:1.45;color:var(--paper)}
+.dr-step-sub{font-family:var(--mono);font-size:11px;color:var(--paper-faint);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dr-step-edit{width:100%;background:var(--ink-3);border:1px solid var(--line);border-radius:8px;color:var(--paper);font-family:var(--body);font-size:13px;padding:5px 8px;resize:none;outline:none;transition:border-color .15s}
+.dr-step-edit:focus{border-color:var(--indigo)}
+.dr-step-saving{font-size:10px;color:var(--paper-faint);margin-top:3px;min-height:14px}
+.dr-step-del{flex-shrink:0;background:none;border:none;cursor:pointer;color:var(--paper-faint);padding:2px 4px;border-radius:6px;font-size:14px;line-height:1;transition:color .15s,transform var(--mi-dur) var(--mi-ease)}
+.dr-step-del:hover{color:var(--rose);transform:var(--mi-lift)}
+.dr-step-del:active{transform:var(--mi-press)}
+.dr-foot{display:flex;gap:10px;align-items:center;padding-top:14px;border-top:1px solid var(--line)}
+.dr-err{font-size:13px;color:var(--rose);margin-top:8px}
+.dr-err.hide{display:none}
+.err{font-size:13px;color:var(--rose);margin-top:6px;min-height:16px}
+#schedBg .modal{max-width:520px}
+#schedBg label{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--paper-dim);margin-bottom:10px}
+#schedBg input{background:var(--ink);border:1px solid var(--line);border-radius:9px;color:var(--paper);font-family:var(--mono);font-size:14px;padding:9px 12px;outline:none;width:100%}
+#schedBg input:focus{border-color:var(--indigo)}
+#schedBg .sched-preset{font-family:var(--mono);font-size:11px;padding:4px 10px;border-radius:8px;border:1px solid var(--line);background:var(--ink-3);color:var(--paper-faint);cursor:pointer;transition:border-color var(--mi-dur) var(--mi-ease),color var(--mi-dur) var(--mi-ease)}
+#schedBg .sched-preset:hover{border-color:var(--indigo);color:var(--indigo)}
+#wizBg .modal{max-width:560px;padding:26px 28px}
+.wiz-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:20px}
+.wiz-eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--indigo);margin-bottom:4px}
+.wiz-head h2{font-family:var(--display);font-weight:500;font-size:21px;letter-spacing:-.02em;margin:0}
+.wiz-steps{display:flex;align-items:center;margin-bottom:6px}
+.wiz-dot{width:28px;height:28px;border-radius:50%;border:1.5px solid var(--line);background:var(--ink);color:var(--paper-faint);font-family:var(--mono);font-size:11px;font-weight:600;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:border-color .2s,background .2s,color .2s}
+.wiz-dot.on{border-color:var(--indigo);background:rgba(99,102,241,.12);color:var(--indigo)}
+.wiz-dot.done{border-color:var(--green);background:rgba(15,157,107,.1);color:var(--green)}
+.wiz-connector{flex:1;height:1.5px;background:var(--line)}
+.wiz-step-label{font-family:var(--mono);font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:20px}
+.wiz-desc{font-size:14px;color:var(--paper-dim);line-height:1.55;margin-bottom:18px}
+.wiz-field{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600;color:var(--paper-dim);margin-bottom:10px}
+.wiz-field input,.wiz-field textarea{background:var(--ink);border:1px solid var(--line);border-radius:9px;color:var(--paper);font-family:var(--body);font-size:14px;padding:10px 13px;outline:none;width:100%;resize:vertical}
+.wiz-field input:focus,.wiz-field textarea:focus{border-color:var(--indigo)}
+.wiz-sim-scroll{display:flex;flex-direction:column;gap:8px;max-height:210px;overflow-y:auto;padding:2px 0}
+.wiz-sim-opt{display:flex;align-items:flex-start;gap:11px;padding:11px 13px;background:var(--ink);border:1px solid var(--line);border-radius:12px;cursor:pointer;transition:border-color var(--mi-dur) var(--mi-ease)}
+.wiz-sim-opt:hover{border-color:var(--indigo)}
+.wiz-sim-opt input[type="radio"]{margin-top:3px;accent-color:var(--indigo);flex-shrink:0}
+.wiz-sim-name{font-size:14px;font-weight:600;display:block;line-height:1.3}
+.wiz-sim-desc{font-size:12px;color:var(--paper-faint);display:block;margin-top:2px;line-height:1.4}
+.wiz-review{background:var(--ink);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.wiz-rev-row{display:flex;gap:14px;padding:10px 14px;border-bottom:1px solid var(--line)}
+.wiz-rev-row:last-child{border-bottom:none}
+.wiz-rev-label{font-family:var(--mono);font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--paper-faint);flex-shrink:0;width:72px;padding-top:2px}
+.wiz-rev-val{font-size:13.5px;color:var(--paper);line-height:1.45;word-break:break-word}
+.wiz-rev-obj .wiz-rev-val{font-size:12.5px;color:var(--paper-dim);max-height:90px;overflow-y:auto}
+.wiz-err{font-size:13px;color:var(--rose);min-height:18px;margin-top:8px}
+.wiz-nav{display:flex;align-items:center;gap:10px;margin-top:20px}
+.wiz-approve-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px}
+.wiz-panel{min-height:120px}
 @media(max-width:820px){
   .side{position:static;height:auto;width:100%;flex-direction:row;overflow-x:auto;gap:6px;border-right:none;border-bottom:1px solid var(--line);padding:10px 12px}
   .side .brand{display:none}
@@ -1296,9 +1508,58 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       <div id="recurringList"><div class="sk-card"><span class="sk sk-av"></span><div class="sk-lines"><span class="sk sk-line" style="width:68%"></span><span class="sk sk-line" style="width:44%"></span></div><span class="sk sk-pill"></span></div><div class="sk-card"><span class="sk sk-av"></span><div class="sk-lines"><span class="sk sk-line" style="width:55%"></span><span class="sk sk-line" style="width:38%"></span></div><span class="sk sk-pill"></span></div></div>
     </div>
 
-    <!-- ── AutoSims view — the /trails page embedded in-shell (lazy-loaded on first activation) ── -->
+    <!-- ── AutoSims view — native in-shell (KLA-147: replaced iframe so modals cover full viewport) ── -->
     <div class="card full autosims-card" data-view="autosims">
-      <iframe id="autosimsFrame" title="AutoSims" loading="lazy" referrerpolicy="same-origin"></iframe>
+      <div class="autosims-wrap">
+        <div class="head" style="margin-bottom:24px">
+          <div>
+            <h1>AutoSims</h1>
+            <p id="asLead">Your AutoSims walk these Trails — journeys they enforce on every run.</p>
+          </div>
+          <div>
+            <button class="btn btn-indigo" id="newTrailBtn">+ New Trail</button>
+          </div>
+        </div>
+        <div class="banner">
+          <div>
+            <div class="lbl">Precision · legit-bug rate</div>
+            <div class="pct" id="precPct">—</div>
+          </div>
+          <div class="sub" id="precSub">Once you've filed or dismissed findings, this is the share that were real bugs. A wrong heal is worse than a red test — we never silently pass.</div>
+        </div>
+        <div class="card" style="margin-bottom:18px">
+          <h2>Trails <span class="count" id="trailsCount">0</span></h2>
+          <div class="list" id="trails"></div>
+        </div>
+        <div class="grid">
+          <div class="card">
+            <h2>Walks <span class="count" id="walksCount">0</span></h2>
+            <div class="list" id="walks"></div>
+          </div>
+          <div class="card">
+            <h2>Review queue <span class="count" id="queueCount">0</span></h2>
+            <div class="list" id="queue"></div>
+          </div>
+        </div>
+        <div style="margin-top:22px;margin-bottom:8px;display:flex;align-items:baseline;gap:10px">
+          <h2 style="font-family:var(--display);font-weight:450;font-size:22px;letter-spacing:-.02em">Expectations</h2>
+          <span style="color:var(--paper-faint);font-size:14px">Discovered requirements — enforce to crystallise into a Trail assertion</span>
+        </div>
+        <div class="exp-board">
+          <div class="exp-col">
+            <h2>Candidate <span class="count" id="expCandCount">0</span></h2>
+            <div id="expCand"></div>
+          </div>
+          <div class="exp-col">
+            <h2>Validated <span class="count" id="expValidCount">0</span></h2>
+            <div id="expValid"></div>
+          </div>
+          <div class="exp-col">
+            <h2>Enforced <span class="count" id="expEnfCount">0</span></h2>
+            <div id="expEnf"></div>
+          </div>
+        </div>
+      </div>
     </div>
 
   </div><!-- /.content -->
@@ -3688,16 +3949,7 @@ load()
     window.scrollTo(0,0);
     if(v==='triage'){if(typeof renderTriage==='function')renderTriage();}
     if(v==='recurring'){if(typeof renderRecurringIssues==='function')renderRecurringIssues();}
-    if(v==='autosims'){loadAutosimsFrame();}
-  }
-  // Lazy-load the embedded /trails page the first time AutoSims is opened, carrying the
-  // active project so it shows the SAME project as the shell (?embed=1 hides its own top bar).
-  function loadAutosimsFrame(){
-    var fr=document.getElementById('autosimsFrame');
-    if(!fr||fr.getAttribute('src'))return;
-    var pid='';
-    try{pid=(window.klavCurProjId&&window.klavCurProjId())||new URLSearchParams(location.search).get('project')||'';}catch(e){}
-    fr.setAttribute('src','/trails?embed=1'+(pid?('&project='+encodeURIComponent(pid)):''));
+    if(v==='autosims'){if(typeof window.initTrailsView==='function')window.initTrailsView();}
   }
   normalizeSidebar();
   var side=document.querySelector('.side');
@@ -4046,5 +4298,970 @@ load()
 })();
 </script>
 <script>(function(){document.querySelectorAll('[data-ki]').forEach(function(e){try{e.innerHTML=kicon(e.getAttribute('data-ki'));}catch(x){}})})();</script>
+
+<!-- ═══ AutoSims modals — body-level so position:fixed covers the full viewport (KLA-147) ═══ -->
+
+<!-- New Trail authoring modal -->
+<div class="modal-bg" id="ntBg">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="New Trail">
+    <h2>New Trail</h2>
+    <p class="lead">Describe the journey. An AutoSim will drive your site once, then replay it deterministically.</p>
+    <label>Name <input id="ntName" maxlength="80" placeholder="Login and create a project" /></label>
+    <label>Start URL <input id="ntUrl" placeholder="https://yourapp.com" /></label>
+    <label>Objective
+      <textarea id="ntObj" rows="4" placeholder="Log in, create a project, open it, then delete it and log out."></textarea>
+    </label>
+    <p class="hint" id="ntCleanupHint">Tip: end the journey where it started — include the cleanup so every run leaves your data tidy.</p>
+    <label>Viewport <select id="ntViewport"><option value="desktop">Desktop 1280×720</option><option value="mobile">Mobile 390×844</option></select></label>
+    <label>Test account <select id="ntAcc"><option value="">(none — public pages)</option></select></label>
+    <div class="row"><button class="btn btn-indigo" id="ntGo">Create Trail</button><button class="btn btn-ghost" id="ntCancel">Cancel</button></div>
+    <div id="ntProgress"></div>
+  </div>
+</div>
+
+<!-- Guided Create AutoSim wizard -->
+<div class="modal-bg" id="wizBg">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="wizTitle">
+    <div class="wiz-head">
+      <div>
+        <div class="wiz-eyebrow">New AutoSim</div>
+        <h2 id="wizTitle">Name this journey</h2>
+      </div>
+      <button class="mclose" id="wizClose" aria-label="Close">&times;</button>
+    </div>
+    <div class="wiz-steps" role="progressbar" aria-valuenow="1" aria-valuemin="1" aria-valuemax="5" id="wizStepBar">
+      <div class="wiz-dot on" id="wizDot1" title="Step 1: Name">1</div>
+      <div class="wiz-connector"></div>
+      <div class="wiz-dot" id="wizDot2" title="Step 2: Start URL">2</div>
+      <div class="wiz-connector"></div>
+      <div class="wiz-dot" id="wizDot3" title="Step 3: Journey">3</div>
+      <div class="wiz-connector"></div>
+      <div class="wiz-dot" id="wizDot4" title="Step 4: Reviewer">4</div>
+      <div class="wiz-connector"></div>
+      <div class="wiz-dot" id="wizDot5" title="Step 5: Review">5</div>
+    </div>
+    <div class="wiz-step-label" id="wizStepLabel">Step 1 of 5</div>
+    <div id="wiz1" class="wiz-panel">
+      <p class="wiz-desc">Give this journey a short, memorable name.</p>
+      <label class="wiz-field">Journey name<input id="wizName" type="text" maxlength="80" placeholder="e.g. User signup and onboarding" autocomplete="off" /></label>
+      <p class="hint">Examples: "Login flow", "Checkout", "Invite a teammate"</p>
+    </div>
+    <div id="wiz2" class="wiz-panel" style="display:none">
+      <p class="wiz-desc">Where should the AutoSim open its browser?</p>
+      <label class="wiz-field">Start URL<input id="wizUrl" type="url" placeholder="https://yourapp.com/login" autocomplete="url" /></label>
+      <p class="hint">Use a staging or production URL.</p>
+    </div>
+    <div id="wiz3" class="wiz-panel" style="display:none">
+      <p class="wiz-desc">Describe what the AutoSim should do, step by step.</p>
+      <label class="wiz-field">Journey description<textarea id="wizObj" rows="5" placeholder="e.g. Log in with my email and password. Create a new project called 'Test Run', open it, verify the name appears, then delete it. Log out."></textarea></label>
+      <p class="hint">Tip: include cleanup steps so every run leaves your data tidy.</p>
+    </div>
+    <div id="wiz4" class="wiz-panel" style="display:none">
+      <p class="wiz-desc">A Sim reviews the journey and flags issues. Pick one or use the default.</p>
+      <div class="wiz-sim-scroll" id="wizSimList">
+        <label class="wiz-sim-opt"><input type="radio" name="wizSim" value="" checked /><span><span class="wiz-sim-name">Default reviewer</span><span class="wiz-sim-desc">The AutoSim uses its own judgment — good for most flows.</span></span></label>
+      </div>
+      <p class="hint" style="margin-top:10px">Sims are created in the <a href="#" onclick="setView('sims');return false" style="color:var(--indigo)">Sims tab</a>.</p>
+    </div>
+    <div id="wiz5" class="wiz-panel" style="display:none">
+      <p class="wiz-desc">Everything look right? Hit <strong>Create &amp; Run</strong> and the AutoSim will drive your site live.</p>
+      <div class="wiz-review">
+        <div class="wiz-rev-row"><span class="wiz-rev-label">Name</span><span class="wiz-rev-val" id="wizRevName"></span></div>
+        <div class="wiz-rev-row"><span class="wiz-rev-label">URL</span><span class="wiz-rev-val" id="wizRevUrl"></span></div>
+        <div class="wiz-rev-row wiz-rev-obj"><span class="wiz-rev-label">Journey</span><span class="wiz-rev-val" id="wizRevObj"></span></div>
+        <div class="wiz-rev-row"><span class="wiz-rev-label">Reviewer</span><span class="wiz-rev-val" id="wizRevSim"></span></div>
+      </div>
+    </div>
+    <div id="wizProgress" style="display:none;margin-top:14px"></div>
+    <div class="wiz-err" id="wizErr" role="alert"></div>
+    <div class="wiz-nav" id="wizNav">
+      <button class="btn btn-ghost" id="wizBack" style="display:none">&#8592; Back</button>
+      <span style="flex:1"></span>
+      <button class="btn btn-indigo" id="wizNext">Next &#8594;</button>
+      <button class="btn btn-indigo" id="wizCreate" style="display:none">Create &amp; Run</button>
+    </div>
+  </div>
+</div>
+
+<!-- Schedule modal -->
+<div class="modal-bg" id="schedBg">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Schedule this Trail">
+    <div class="mhead">
+      <h3>Schedule Trail</h3>
+      <button class="mclose" id="schedClose" aria-label="Close">&times;</button>
+    </div>
+    <p class="lead" style="margin-bottom:14px">Run this Trail automatically on a schedule.</p>
+    <label>Cron expression <input id="schedExpr" placeholder="0 9 * * *  — every day at 09:00" /></label>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0">
+      <button type="button" class="btn btn-ghost sched-preset" data-preset="0 * * * *">Hourly</button>
+      <button type="button" class="btn btn-ghost sched-preset" data-preset="0 9 * * *">Daily · 9am</button>
+      <button type="button" class="btn btn-ghost sched-preset" data-preset="0 9 * * 1">Weekly · Mon</button>
+    </div>
+    <div id="schedErr" class="err"></div>
+    <div style="display:flex;gap:10px;margin-top:16px">
+      <button class="btn btn-indigo" id="schedSave">Save schedule</button>
+      <button class="btn btn-ghost" id="schedClear">Clear</button>
+      <button class="btn btn-ghost" id="schedCancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Draft Review modal -->
+<div class="modal-bg" id="drBg">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Review Trail before activating">
+    <div class="mhead">
+      <h3>Review Trail</h3>
+      <button class="mclose" id="drClose" aria-label="Close">&times;</button>
+    </div>
+    <div class="dr-body" id="drBody">
+      <div class="dr-trail-name" id="drName"></div>
+      <div class="dr-trail-url" id="drUrl"></div>
+      <p class="dr-hint">Review the authored steps. Edit any text or URL inline, or delete steps that look wrong, then Activate.</p>
+      <div class="dr-steps" id="drSteps"></div>
+    </div>
+    <div class="dr-foot">
+      <button class="btn btn-indigo" id="drActivate">Activate Trail</button>
+      <button class="btn btn-ghost" id="drCancel">Cancel</button>
+      <span class="dr-err hide" id="drErr"></span>
+    </div>
+  </div>
+</div>
+
+<!-- Walk replay modal (rrweb-player) -->
+<div class="modal-bg" id="replayBg">
+  <div class="modal">
+    <div class="mhead">
+      <h3>Walk replay</h3>
+      <button class="mclose" id="replayClose" aria-label="Close">&times;</button>
+    </div>
+    <div class="steptl" id="replaySteps"></div>
+    <div class="chapters" id="replayChapters"></div>
+    <div id="playerHost"></div>
+    <div class="mnote" id="replayNote"></div>
+  </div>
+</div>
+
+<!-- Live Walk modal (CDP screencast) -->
+<div class="modal-bg" id="liveBg">
+  <div class="modal">
+    <div class="mhead">
+      <span class="live-dot off" id="liveDot"></span>
+      <h3>Live walk</h3>
+      <button class="mclose" id="liveClose" aria-label="Close">&times;</button>
+    </div>
+    <div id="liveHost"><div class="live-empty" id="liveEmpty">Waiting for browser frames...</div><img id="liveFrame" alt="Live AutoSim browser frame" style="display:none" /></div>
+    <div class="mnote" id="liveNote">Connecting...</div>
+  </div>
+</div>
+
+<script src="/vendor/klv-view.min.js"></script>
+<script>
+// ═══ AutoSims native view logic (KLA-147) ═══════════════════════════════════
+// Wrapped in IIFE to avoid name collisions with dashboard globals (load, render, $, esc).
+;(function(){
+  var $=function(id){return document.getElementById(id)}
+  var esc=function(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
+  function projParam(){try{return(window.klavCurProjId&&window.klavCurProjId())||new URLSearchParams(location.search).get("project")||null}catch(e){return null}}
+  function projQ(){var pid=projParam();return pid?"?project="+encodeURIComponent(pid):""}
+
+  // ── Walk replay ──────────────────────────────────────────────────────────
+  var replayState={segments:[],steps:[],player:null,focusStep:null}
+  var _rrwebReady=null
+  function ensureRrweb(){
+    if(_rrwebReady)return _rrwebReady
+    _rrwebReady=new Promise(function(resolve,reject){
+      if(window.rrweb&&window.rrweb.Replayer){resolve();return}
+      var s=document.createElement("script");s.src="/vendor/klv-buffer.min.js"
+      s.onload=function(){resolve()};s.onerror=function(){reject(new Error("Failed to load rrweb bundle"))}
+      document.head.appendChild(s)
+    })
+    return _rrwebReady
+  }
+  function destroyPlayer(){
+    try{if(replayState.player){if(typeof replayState.player.pause==="function")replayState.player.pause();if(typeof replayState.player.$destroy==="function")replayState.player.$destroy()}}catch(e){}
+    replayState.player=null
+    var host=$("playerHost");if(host)host.innerHTML=""
+  }
+  function playSegment(i){
+    var seg=replayState.segments[i];if(!seg)return
+    destroyPlayer()
+    var tabs=$("replayChapters").querySelectorAll(".ch")
+    tabs.forEach(function(t,idx){t.classList.toggle("on",idx===i)})
+    var events=(seg.events||[]).slice()
+    if(events.length<2){$("replayNote").textContent="Chapter "+(i+1)+": too few frames to scrub.";return}
+    try{
+      var Replayer=window.rrweb&&window.rrweb.Replayer
+      if(!Replayer)throw new Error("rrweb.Replayer not available")
+      var host=$("playerHost")
+      var replayer=new Replayer(events,{root:host,skipInactive:true,showWarning:false,showDebug:false,mouseTail:true})
+      replayState.player=replayer;replayer.play()
+      $("replayNote").textContent="Chapter "+(i+1)+" of "+replayState.segments.length+" · "+(seg.url||"")
+    }catch(e){$("replayNote").textContent="Could not start the player for this chapter."}
+  }
+  function chapterForStep(stepIdx){
+    var best=0
+    for(var i=0;i<replayState.segments.length;i++){if(replayState.segments[i].idx<=stepIdx)best=i}
+    return best
+  }
+  function renderReplaySteps(){
+    var el=$("replaySteps");el.innerHTML=""
+    replayState.steps.forEach(function(s){
+      var v=String(s.verdict||"skip")
+      var sp=document.createElement("button")
+      sp.className="sp "+v+(replayState.focusStep!=null&&s.idx===replayState.focusStep?" focus":"")
+      sp.textContent="#"+s.idx+" "+v
+      sp.onclick=function(){playSegment(chapterForStep(s.idx))}
+      el.appendChild(sp)
+    })
+  }
+  function renderChapters(){
+    var el=$("replayChapters");el.innerHTML=""
+    replayState.segments.forEach(function(seg,i){
+      var ch=document.createElement("button");ch.className="ch"
+      var name=String(seg.url||"").split("/").pop()||("page "+(i+1))
+      ch.textContent=(i+1)+". "+name;ch.onclick=function(){playSegment(i)}
+      el.appendChild(ch)
+    })
+  }
+  async function openReplay(runId){
+    var pid=projParam();var qs=pid?"?project="+encodeURIComponent(pid):""
+    $("replayNote").textContent="Loading replay…"
+    $("replaySteps").innerHTML="";$("replayChapters").innerHTML=""
+    destroyPlayer();$("replayBg").classList.add("open")
+    try{await ensureRrweb()}catch(e){}
+    var r
+    try{r=await fetch("/api/trails/walks/"+encodeURIComponent(runId)+"/replay"+qs)}
+    catch(e){$("replayNote").textContent="Network error loading replay.";return}
+    if(r.status===404){$("replayNote").textContent="No replay was recorded for this Walk.";return}
+    if(!r.ok){$("replayNote").textContent="Couldn't load the replay.";return}
+    var d=await r.json()
+    replayState.segments=d.segments||[];replayState.steps=d.steps||[]
+    var firstBad=replayState.steps.find(function(s){var v=String(s.verdict);return v==="amber"||v==="red"})
+    replayState.focusStep=firstBad?firstBad.idx:null
+    renderReplaySteps();renderChapters()
+    playSegment(replayState.focusStep!=null?chapterForStep(replayState.focusStep):0)
+  }
+
+  // ── Live CDP screencast ───────────────────────────────────────────────────
+  var liveState={es:null,runId:null,frames:0}
+  function closeLiveWatch(){
+    if(liveState.es){try{liveState.es.close()}catch(e){}}
+    liveState.es=null;liveState.runId=null
+    $("liveDot").classList.add("off");$("liveBg").classList.remove("open")
+  }
+  function openLiveWatch(runId){
+    if(!runId||!window.EventSource)return
+    if(liveState.es){try{liveState.es.close()}catch(e){}}
+    liveState.runId=runId;liveState.frames=0
+    $("liveFrame").style.display="none";$("liveEmpty").style.display=""
+    $("liveDot").classList.add("off");$("liveNote").textContent="Connecting..."
+    $("liveBg").classList.add("open")
+    var pid=projParam();var qs=pid?"?project="+encodeURIComponent(pid):""
+    var es=new EventSource("/api/trails/walks/"+encodeURIComponent(runId)+"/live"+qs)
+    liveState.es=es
+    es.addEventListener("hello",function(){$("liveNote").textContent="Connected. Waiting for frames..."})
+    es.addEventListener("status",function(){$("liveDot").classList.remove("off");$("liveNote").textContent="Live browser connected."})
+    es.addEventListener("frame",function(ev){
+      try{
+        var d=JSON.parse(ev.data||"{}")
+        if(!d.dataUrl)return
+        liveState.frames++;$("liveFrame").src=d.dataUrl;$("liveFrame").style.display=""
+        $("liveEmpty").style.display="none";$("liveDot").classList.remove("off")
+        $("liveNote").textContent="Live - frame "+liveState.frames
+      }catch(e){}
+    })
+    es.addEventListener("end",function(ev){
+      $("liveDot").classList.add("off")
+      var msg="Walk finished."
+      try{var d=JSON.parse(ev.data||"{}");if(d.message==="screencast unavailable")msg="Live stream unavailable."}catch(e){}
+      $("liveNote").textContent=msg;try{es.close()}catch(e){}
+      if(liveState.es===es)liveState.es=null
+    })
+    es.onerror=function(){$("liveDot").classList.add("off");if(liveState.frames===0)$("liveNote").textContent="Live stream unavailable."}
+  }
+
+  function latestWalkFor(walks,trailId){
+    for(var i=0;i<walks.length;i++){if(walks[i].trailId===trailId)return walks[i]}
+    return null
+  }
+
+  // ── Run Trail on-demand ───────────────────────────────────────────────────
+  async function runTrail(trailId,btn,row){
+    var pid=projParam();var qs=pid?"?project="+encodeURIComponent(pid):""
+    var msg=row.querySelector(".run-msg")
+    btn.disabled=true;btn.innerHTML=kicon("loader",{size:12})+" running…";if(msg)msg.textContent=""
+    var r
+    try{r=await fetch("/api/trails/"+encodeURIComponent(trailId)+"/walk"+qs,{method:"POST",headers:{"content-type":"application/json"},body:"{}"})}
+    catch(e){btn.disabled=false;btn.innerHTML=kicon("play",{size:12})+" Run";if(msg)msg.textContent="network error";return}
+    if(r.status===409){btn.disabled=false;btn.innerHTML=kicon("play",{size:12})+" Run";if(msg){msg.style.color="var(--amber)";msg.textContent="a walk is already running"}return}
+    if(!r.ok){btn.disabled=false;btn.innerHTML=kicon("play",{size:12})+" Run";if(msg){msg.style.color="var(--rose)";msg.textContent="couldn't start"}return}
+    var b=await r.json().catch(function(){return{}})
+    var runId=b.runId;openLiveWatch(runId)
+    var cancelBtn=document.createElement("button");cancelBtn.className="cancel-btn"
+    cancelBtn.innerHTML=kicon("square",{size:12})+" Cancel"
+    cancelBtn.onclick=async function(){
+      cancelBtn.disabled=true;cancelBtn.innerHTML=kicon("loader",{size:12})+" cancelling…"
+      try{await fetch("/api/trails/walks/"+encodeURIComponent(runId)+"/cancel"+qs,{method:"POST",headers:{"content-type":"application/json"},body:"{}"})}catch(e){}
+    }
+    row.insertBefore(cancelBtn,btn)
+    var POLL_GRACE_MS=90000;var gracePhaseStarted=0
+    for(var i=0;;i++){
+      var inGrace=i>=80
+      await new Promise(function(res){setTimeout(res,inGrace?3000:1500)})
+      if(inGrace&&gracePhaseStarted===0)gracePhaseStarted=Date.now()
+      var prog=null
+      try{var pr=await fetch("/api/trails/walks/"+encodeURIComponent(runId)+"/progress"+qs);if(pr.ok)prog=await pr.json().catch(function(){return null})}catch(e){}
+      if(prog&&prog.status!=="running"){cancelBtn.remove();var dd=await loadData();if(dd)await render(dd);return}
+      if(prog&&prog.totalSteps>0)btn.innerHTML=kicon("loader",{size:12})+" step "+prog.stepsDone+"/"+prog.totalSteps
+      if(inGrace&&Date.now()-gracePhaseStarted>POLL_GRACE_MS)break
+    }
+    cancelBtn.remove();await load()
+  }
+
+  async function healDiffFor(runId){
+    var pid=projParam();var qs=pid?"?project="+encodeURIComponent(pid):""
+    try{
+      var r=await fetch("/api/trails/walks/"+encodeURIComponent(runId)+qs)
+      if(!r.ok)return null;var d=await r.json()
+      var step=(d.steps||[]).find(function(s){var e=s.evidence||{};return e.healed&&(e.fromSelector||e.toSelector)})
+      if(!step)return null;var e=step.evidence||{}
+      return{from:e.fromSelector||"(none)",to:e.toSelector||"(none)"}
+    }catch(e){return null}
+  }
+
+  // ── Draft Review modal ────────────────────────────────────────────────────
+  var drState={trailId:null}
+  function drStepLabel(action){return{navigate:"navigate",click:"click",type:"type",select:"select",assert:"assert",wait:"wait"}[action]||action}
+  function drStepSub(step){var fp=step.target||{};var name=fp.accessibleName||fp.text||fp.role||fp.testId||"";if(step.action==="navigate"||step.action==="assert"||step.action==="wait")return "";if(step.action==="type"||step.action==="select")return name?'"'+name+'"':(fp.domPath?fp.domPath:"");return fp.domPath?fp.domPath:""}
+  function drStepEditable(action){return action==="navigate"||action==="type"||action==="select"||action==="assert"||action==="wait"}
+  function drStepEditValue(step){if(step.action==="assert")return(step.checkpoint&&step.checkpoint.description)?step.checkpoint.description:"";return step.actionValue||""}
+  function drStepPlaceholder(action){if(action==="navigate")return "URL";if(action==="type")return "Text to type";if(action==="select")return "Option value";if(action==="assert")return "What to check for";if(action==="wait")return "Milliseconds";return ""}
+  function drStepReadonly(step){var fp=step.target||{};var name=fp.accessibleName||fp.text||fp.role||fp.testId||fp.domPath||"";return name||"(target)"}
+  async function drSaveStep(trailId,stepId,action,newVal){
+    var pid=projParam();var qs=pid?"?project="+encodeURIComponent(pid):""
+    var patch=action==="assert"?{checkpoint:{description:newVal}}:{actionValue:newVal}
+    var r=await fetch("/api/trails/"+encodeURIComponent(trailId)+"/steps/"+encodeURIComponent(stepId)+qs,{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify(patch)})
+    return r.ok
+  }
+  async function drDeleteStep(trailId,stepId,cardEl){
+    var pid=projParam();var qs=pid?"?project="+encodeURIComponent(pid):""
+    var r=await fetch("/api/trails/"+encodeURIComponent(trailId)+"/steps/"+encodeURIComponent(stepId)+qs,{method:"DELETE"})
+    if(r.ok){
+      cardEl.style.transition="opacity .2s";cardEl.style.opacity="0"
+      setTimeout(function(){if(cardEl.parentNode)cardEl.parentNode.removeChild(cardEl)
+        var cards=$("drSteps").querySelectorAll(".dr-step")
+        cards.forEach(function(c,i){var n=c.querySelector(".dr-step-n");if(n)n.textContent=String(i+1)})
+      },200)
+    }else{cardEl.style.borderColor="var(--rose)";setTimeout(function(){cardEl.style.borderColor=""},900)}
+  }
+  function renderDrSteps(steps){
+    var el=$("drSteps")
+    if(!steps||!steps.length){el.innerHTML='<div style="color:var(--paper-faint);font-size:13px;padding:12px 0">No steps authored yet.</div>';return}
+    el.innerHTML=""
+    steps.forEach(function(s,i){
+      var action=String(s.action||"");var sub=drStepSub(s);var editable=drStepEditable(action)
+      var card=document.createElement("div");card.className="dr-step"
+      var numSpan=document.createElement("span");numSpan.className="dr-step-n";numSpan.textContent=String(i+1);card.appendChild(numSpan)
+      var body=document.createElement("div");body.className="dr-step-body"
+      var badge=document.createElement("span");badge.className="dr-step-action "+action;badge.textContent=drStepLabel(action);body.appendChild(badge)
+      if(editable){
+        var textarea=document.createElement("textarea");textarea.className="dr-step-edit";textarea.rows=1
+        textarea.placeholder=drStepPlaceholder(action);textarea.value=drStepEditValue(s)
+        textarea.oninput=function(){this.style.height="auto";this.style.height=(this.scrollHeight)+"px"}
+        var statusEl=document.createElement("div");statusEl.className="dr-step-saving"
+        textarea.onblur=function(){
+          var newVal=this.value.trim();var oldVal=drStepEditValue(s);if(newVal===oldVal)return
+          statusEl.textContent="Saving…"
+          drSaveStep(drState.trailId,s.id,action,newVal).then(function(ok){
+            if(ok){s.actionValue=(action!=="assert")?newVal:s.actionValue;if(action==="assert"&&s.checkpoint)s.checkpoint.description=newVal;statusEl.textContent="Saved"}
+            else statusEl.textContent="Save failed"
+            setTimeout(function(){statusEl.textContent=""},1800)
+          })
+        }
+        if(action!=="assert"){textarea.onkeydown=function(e){if(e.key==="Enter"){e.preventDefault();this.blur()}}}
+        body.appendChild(textarea);body.appendChild(statusEl)
+        setTimeout(function(){textarea.dispatchEvent(new Event("input"))},0)
+      }else{
+        var mainDiv=document.createElement("div");mainDiv.className="dr-step-main";mainDiv.textContent=drStepReadonly(s);body.appendChild(mainDiv)
+      }
+      if(sub){var subDiv=document.createElement("div");subDiv.className="dr-step-sub";subDiv.textContent=sub;body.appendChild(subDiv)}
+      card.appendChild(body)
+      var delBtn=document.createElement("button");delBtn.className="dr-step-del";delBtn.title="Remove this step"
+      delBtn.setAttribute("aria-label","Delete step "+(i+1));delBtn.textContent="×"
+      delBtn.onclick=function(){drDeleteStep(drState.trailId,s.id,card)};card.appendChild(delBtn)
+      el.appendChild(card)
+    })
+  }
+  async function openDraftReview(trailId){
+    drState.trailId=trailId;var pid=projParam();var qs=pid?"?project="+encodeURIComponent(pid):""
+    $("drName").textContent="Loading…";$("drUrl").textContent="";$("drSteps").innerHTML=""
+    $("drErr").textContent="";$("drErr").classList.add("hide")
+    $("drActivate").disabled=false;$("drActivate").textContent="Activate Trail"
+    $("drBg").classList.add("open")
+    var r;try{r=await fetch("/api/trails/"+encodeURIComponent(trailId)+"/steps"+qs)}
+    catch(e){$("drName").textContent="Network error";return}
+    if(!r.ok){$("drName").textContent="Couldn't load steps.";return}
+    var d=await r.json();var trail=d.trail||{}
+    $("drName").textContent=trail.name||"Trail";$("drUrl").textContent=trail.baseUrl||""
+    renderDrSteps(d.steps||[])
+  }
+  function closeDraftReview(){$("drBg").classList.remove("open");drState.trailId=null}
+
+  // ── Trails list ───────────────────────────────────────────────────────────
+  function renderTrails(d){
+    var trails=d.trails||[];$("trailsCount").textContent=String(trails.length)
+    var tEl=$("trails")
+    if(!trails.length){
+      tEl.innerHTML='<div class="ob-wrap">'
+        +'<div class="ob-primary"><div><h3>Create your first AutoSim</h3><p>Describe the journey you want checked. The wizard will guide you through the site URL, objective, reviewer, and first live run.</p></div>'
+        +'<button class="btn btn-indigo" onclick="openWizard()">Create your first AutoSim</button></div>'
+        +'<div class="ob-head">How AutoSims work</div>'
+        +'<div class="ob-sub">AutoSims drive a real browser through your product — not a recorded script. They heal UI drift silently and only file a bug when something genuinely breaks.</div>'
+        +'<div class="ob-steps">'
+        +'<div class="ob-step"><div class="ob-num">Step 1</div><h3>Define a journey</h3><p>Describe a critical user path in plain English. The AI authors the Trail steps from your objective.</p><div class="ob-seam"></div></div>'
+        +'<div class="ob-step"><div class="ob-num">Step 2</div><h3>A Sim walks your site</h3><p>An AI drives a real browser through the journey. Selector drift? It heals and keeps going.</p><div class="ob-seam"></div></div>'
+        +'<div class="ob-step"><div class="ob-num">Step 3</div><h3>Bugs surface — real ones</h3><p>The Sim flags what a real user would hit: broken flows, wrong heals, UX regressions.</p><div class="ob-seam"></div></div>'
+        +'</div><p class="ob-pitch">Unlike self-healing Playwright, AutoSims judge the experience — not just whether a selector was found.</p></div>'
+      return
+    }
+    tEl.innerHTML=""
+    trails.forEach(function(t){
+      var w=latestWalkFor(d.recentWalks||[],t.id)
+      var v=w?String(w.status||""):""
+      var isDraft=t.status==="draft";var isPaused=t.status==="paused"
+      var wrap=document.createElement("div");wrap.className="trail-wrap"
+      var row=document.createElement("div");row.className="trail"+(isPaused?" paused":"")
+      var schedChip=t.schedule?'<span class="schedule-chip">'+kicon("clock",{size:9})+" "+esc(t.schedule)+"</span>":""
+      var vp=t.viewport?((t.viewport.preset?t.viewport.preset+" ":"")+t.viewport.width+"×"+t.viewport.height):"default viewport"
+      var html='<div class="body"><div class="t" data-trail-name-el="'+esc(t.id)+'">'+esc(t.name)+'</div><div class="d">'+esc(t.baseUrl)+" · "+esc(vp)+"</div></div>"
+      html+=schedChip+'<span class="run-msg"></span><span class="heal-diff" data-heal="'+esc(t.id)+'" style="display:none"></span>'
+      if(isDraft){
+        html+='<span class="pill pill-draft">draft</span>'
+        html+='<button class="activate-btn" data-activate="'+esc(t.id)+'">Activate</button>'
+      }else{
+        if(isPaused){html+='<span class="pill paused">paused</span>'}
+        else{
+          if(v){
+            html+='<span class="pill '+esc(v)+'">'+esc(v)+"</span>"
+            if(v==="red")html+=' <span class="muted">— regression or hard failure; check the walk report.</span>'
+            else if(v==="amber")html+=' <span class="muted">— healed but unconfirmed; review findings queue.</span>'
+          }
+          if(w&&w.hasReplay)html+='<button class="replay-btn" data-replay="'+esc(w.id)+'">'+kicon("play",{size:12})+" Replay</button>"
+        }
+        if(!isPaused)html+='<button class="run-btn" data-run="'+esc(t.id)+'">'+kicon("play",{size:12})+" Run</button>"
+        html+='<button class="kebab-btn" data-kebab="'+esc(t.id)+'" aria-label="Trail options">&#8942;</button>'
+      }
+      row.innerHTML=html
+      var menu=document.createElement("div");menu.className="trail-menu";menu.id="km-"+t.id
+      var pauseLabel=isPaused?(kicon("play",{size:12})+" Resume"):(kicon("pause",{size:12})+" Pause")
+      menu.innerHTML='<button data-rename="'+esc(t.id)+'">'+kicon("pencil",{size:12})+" Rename</button>"
+        +'<button data-toggle-pause="'+esc(t.id)+'" data-paused="'+String(isPaused)+'">'+pauseLabel+"</button>"
+        +'<button data-set-schedule="'+esc(t.id)+'" data-schedule="'+esc(t.schedule||"")+'">'+kicon("clock",{size:12})+" Set schedule</button>"
+      wrap.appendChild(row);wrap.appendChild(menu);tEl.appendChild(wrap)
+      if(w&&v==="amber"){
+        healDiffFor(w.id).then(function(diff){
+          if(!diff)return
+          var el=row.querySelector('[data-heal="'+t.id+'"]')
+          if(el){el.style.display="";el.textContent=diff.from+" to "+diff.to}
+        })
+      }
+    })
+    tEl.querySelectorAll("button[data-run]").forEach(function(btn){btn.onclick=function(){runTrail(btn.getAttribute("data-run"),btn,btn.closest(".trail"))}})
+    tEl.querySelectorAll("button[data-replay]").forEach(function(btn){btn.onclick=function(){openReplay(btn.getAttribute("data-replay"))}})
+    tEl.querySelectorAll("button[data-activate]").forEach(function(btn){btn.onclick=function(){openDraftReview(btn.getAttribute("data-activate"))}})
+    tEl.querySelectorAll("button[data-kebab]").forEach(function(btn){
+      btn.onclick=function(e){
+        e.stopPropagation();var id=btn.getAttribute("data-kebab")
+        var menu=document.getElementById("km-"+id);if(!menu)return
+        var isOpen=menu.classList.contains("open")
+        document.querySelectorAll(".trail-menu.open").forEach(function(m){m.classList.remove("open")})
+        if(!isOpen){menu.style.top=(btn.offsetTop+btn.offsetHeight+4)+"px";menu.style.right="0";menu.classList.add("open")}
+      }
+    })
+    tEl.querySelectorAll("button[data-rename]").forEach(function(btn){
+      btn.onclick=async function(){
+        var id=btn.getAttribute("data-rename");var menu=document.getElementById("km-"+id);if(menu)menu.classList.remove("open")
+        var nameEl=tEl.querySelector('[data-trail-name-el="'+id+'"]');if(!nameEl)return
+        var current=nameEl.textContent||""
+        var input=document.createElement("input");input.type="text";input.className="trail-rename-input";input.value=current
+        nameEl.replaceWith(input);input.focus();input.select()
+        async function commit(){
+          var newName=input.value.trim()
+          if(!newName||newName===current){input.replaceWith(nameEl);return}
+          try{
+            var r=await fetch("/api/trails/"+encodeURIComponent(id)+projQ(),{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:newName})})
+            if(r.ok){nameEl.textContent=newName;input.replaceWith(nameEl)}
+            else{var d=await r.json().catch(function(){return{}});alert(d.error||"Rename failed");input.replaceWith(nameEl)}
+          }catch(e){input.replaceWith(nameEl)}
+        }
+        input.onblur=commit
+        input.onkeydown=function(e){if(e.key==="Enter"){e.preventDefault();commit()}if(e.key==="Escape")input.replaceWith(nameEl)}
+      }
+    })
+    tEl.querySelectorAll("button[data-toggle-pause]").forEach(function(btn){
+      btn.onclick=async function(){
+        var id=btn.getAttribute("data-toggle-pause");var wasPaused=btn.getAttribute("data-paused")==="true"
+        var menu=document.getElementById("km-"+id);if(menu)menu.classList.remove("open")
+        var newStatus=wasPaused?"active":"paused"
+        try{
+          var r=await fetch("/api/trails/"+encodeURIComponent(id)+projQ(),{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({status:newStatus})})
+          if(r.ok){var d2=await loadData();if(d2)render(d2)}
+          else{var d3=await r.json().catch(function(){return{}});alert(d3.error||"Could not update trail status")}
+        }catch(e){}
+      }
+    })
+    tEl.querySelectorAll("button[data-set-schedule]").forEach(function(btn){
+      btn.onclick=function(e){
+        e.stopPropagation();var id=btn.getAttribute("data-set-schedule");var current=btn.getAttribute("data-schedule")||""
+        var menu=document.getElementById("km-"+id);if(menu)menu.classList.remove("open")
+        openSchedModal(id,current)
+      }
+    })
+  }
+
+  // ── KLA-88: Schedule modal ────────────────────────────────────────────────
+  var schedState={trailId:null}
+  function openSchedModal(trailId,current){
+    schedState.trailId=trailId;$("schedExpr").value=current||""
+    $("schedErr").textContent="";$("schedBg").classList.add("open");$("schedExpr").focus()
+  }
+  function closeSchedModal(){$("schedBg").classList.remove("open");schedState.trailId=null}
+  async function saveSchedule(expr){
+    var id=schedState.trailId;if(!id)return
+    var pid=projParam();var qs=pid?"?project="+encodeURIComponent(pid):""
+    var body=JSON.stringify({schedule:expr||null});var r
+    try{r=await fetch("/api/trails/"+encodeURIComponent(id)+qs,{method:"PATCH",headers:{"content-type":"application/json"},body})}
+    catch(e){$("schedErr").textContent="Network error";return}
+    if(!r.ok){var d=await r.json().catch(function(){return{}});$("schedErr").textContent=d.error||"Couldn't save schedule";return}
+    closeSchedModal();var d2=await loadData();if(d2)render(d2)
+  }
+
+  // ── Data load & render ────────────────────────────────────────────────────
+  async function loadData(){
+    var pid=projParam()
+    try{
+      var r=await fetch("/api/trails/dashboard"+(pid?"?project="+encodeURIComponent(pid):""))
+      if(r.status===401){location.href="/login";return null}
+      if(!r.ok)return null;return await r.json()
+    }catch(e){return null}
+  }
+  async function load(){
+    var d=await loadData()
+    if(!d){var lEl=$("asLead");if(lEl)lEl.textContent="Couldn't load Trails.";return}
+    await render(d)
+  }
+  async function render(d){
+    var lEl=$("asLead");if(lEl)lEl.textContent="Your AutoSims walk these Trails — journeys they enforce on every run."
+    renderTrails(d)
+    var p=d.precision||{}
+    if(p.precision==null){
+      $("precPct").textContent="—"
+      $("precSub").textContent="No findings filed or dismissed yet. Precision appears once you start reviewing the queue."
+    }else{
+      $("precPct").textContent=Math.round(p.precision*100)+"%"
+      $("precSub").textContent=p.filed+" filed · "+p.dismissed+" dismissed — the share of reviewed findings that were real bugs."
+    }
+    var walks=d.recentWalks||[];$("walksCount").textContent=String(walks.length)
+    var wEl=$("walks")
+    wEl.innerHTML=walks.length?"":"<div class=\"empty\"><div class=\"em\">"+window.kicon("footprints",{size:18})+"</div><p>No Walks yet. Author a Trail and walk it to see verdicts here.</p></div>"
+    var trailNameFor={};(d.trails||[]).forEach(function(t){trailNameFor[t.id]=t.name})
+    for(var _w=0;_w<walks.length;_w++){
+      var w=walks[_w];var v=String(w.status||"running");var when=w.startedAt?new Date(w.startedAt).toLocaleString():""
+      var wRow=document.createElement("div");wRow.className="walk"
+      var pdfHref="/api/trails/walks/"+encodeURIComponent(w.id)+"/report.pdf"+projQ()
+      var detailHref="/autosims/walk/"+encodeURIComponent(w.id)+projQ()
+      var trailLabel=esc(trailNameFor[w.trailId]||w.trailId)
+      wRow.innerHTML='<div class="body"><div class="t">'+trailLabel+"</div><div class=\"d\">"+esc(w.id)+" · "+esc(when)+" · "+esc(w.llmCalls||0)+" LLM</div></div>"
+        +(w.hasReplay?'<a class="replay-btn" href="'+esc(detailHref)+'" target="_top">'+kicon("play",{size:10})+" Replay</a>":"")
+        +'<a class="replay-btn" href="'+esc(detailHref)+'" target="_top">'+kicon("eye",{size:10})+" View</a>"
+        +(v==="running"?'<button class="replay-btn" data-live-run="'+esc(w.id)+'">'+kicon("eye",{size:10})+" Live</button>":"")
+        +'<a class="walk-pdf-btn" href="'+esc(pdfHref)+'" target="_blank" rel="noopener">'+kicon("file-text",{size:10})+" PDF</a>"
+        +'<button class="walk-share-btn" data-share-run="'+esc(w.id)+'">'+kicon("link",{size:10})+" Share</button>"
+        +'<span class="walk-share-msg" data-share-msg="'+esc(w.id)+'"></span>'
+        +(v==="red"?' <span class="muted">— regression or hard failure; check walk report.</span>':"")
+        +'<span class="pill '+esc(v)+'">'+esc(v)+"</span>"
+        +(v==="amber"?' <span class="muted">— healed but unconfirmed; review findings queue.</span>':"")
+      wEl.appendChild(wRow)
+    }
+    wEl.querySelectorAll("button[data-live-run]").forEach(function(btn){btn.onclick=function(){openLiveWatch(btn.getAttribute("data-live-run"))}})
+    wEl.querySelectorAll("button[data-share-run]").forEach(function(btn){
+      btn.onclick=async function(){
+        var runId=btn.getAttribute("data-share-run")
+        var msgEl=wEl.querySelector('[data-share-msg="'+runId+'"]')
+        btn.disabled=true;if(msgEl)msgEl.textContent=""
+        try{
+          var r=await fetch("/api/trails/walks/"+encodeURIComponent(runId)+"/share"+projQ(),{method:"POST"})
+          var d=await r.json().catch(function(){return{}})
+          if(r.ok&&d.url){
+            await navigator.clipboard.writeText(d.url)
+            if(msgEl){msgEl.style.color="var(--green)";msgEl.textContent="Link copied - valid 30 days"}
+            setTimeout(function(){if(msgEl)msgEl.textContent="";btn.disabled=false},4000)
+          }else{if(msgEl){msgEl.style.color="var(--rose)";msgEl.textContent=d.error||"Share failed."}btn.disabled=false}
+        }catch(e){if(msgEl){msgEl.style.color="var(--rose)";msgEl.textContent="Network error."}btn.disabled=false}
+      }
+    })
+    var queue=d.queue||[];$("queueCount").textContent=String(queue.length);renderQueue(queue)
+  }
+  function renderQueue(queue){
+    var qEl=$("queue")
+    qEl.innerHTML=queue.length?"":"<div class=\"empty\"><div class=\"em\">"+window.kicon("check",{size:18})+"</div><p>Queue clear — nothing waiting for review.</p></div>"
+    for(var _q=0;_q<queue.length;_q++){
+      var f=queue[_q];var ev=f.evidence||{}
+      var rationale=ev.rationale||f.groundQuote||""
+      var fromSel=ev.fromSelector;var toSel=ev.toSelector
+      var shotUrl=ev.screenshotUrl||null
+      var card=document.createElement("div");card.className="find"
+      var html='<div class="top"><span class="kind '+esc(f.kind)+'">'+esc(f.kind)+'</span><span class="conf">conf '+esc(f.confidence)+"</span></div>"
+      html+='<div class="ft">'+esc(f.title)+"</div>"
+      if(rationale)html+='<div class="quote">'+esc(rationale)+"</div>"
+      if(fromSel||toSel)html+='<div class="diff">'+esc(fromSel||"(none)")+" &rarr; "+esc(toSel||"(none)")+"</div>"
+      if(shotUrl){var label=ev.screenshotLabel?esc(ev.screenshotLabel):"Screenshot";html+='<div class="evidence"><img src="'+esc(shotUrl)+'" alt="'+esc(label)+'"></div>'}
+      else if(!shotUrl&&f.runId){var qs2=projParam()?"?project="+encodeURIComponent(projParam()):"";html+='<a class="walk-link" href="/api/trails/walks/'+esc(f.runId)+"/report.pdf"+qs2+'" target="_blank" rel="noopener">'+window.kicon("file-text",{size:12})+" View Walk Report — screenshots for every step</a>"}
+      if(f.connectorError)html+='<div class="msg" style="color:var(--rose)">Auto-file failed: '+esc(f.connectorError)+"</div>"
+      html+='<div class="acts"><button class="btn btn-indigo" data-act="file" data-id="'+esc(f.id)+'">File</button><button class="btn btn-ghost" data-act="dismiss" data-id="'+esc(f.id)+'">Dismiss</button></div><div class="msg" data-msg="'+esc(f.id)+'"></div>'
+      card.innerHTML=html;qEl.appendChild(card)
+    }
+    qEl.querySelectorAll("button[data-act]").forEach(function(btn){btn.onclick=function(){act(btn.getAttribute("data-act"),btn.getAttribute("data-id"))}})
+  }
+  async function act(kind,id){
+    var pid=projParam();var qs=pid?"?project="+encodeURIComponent(pid):""
+    var msg=document.querySelector('[data-msg="'+id+'"]')
+    try{
+      var r=await fetch("/api/trails/findings/"+encodeURIComponent(id)+"/"+kind+qs,{method:"POST",headers:{"content-type":"application/json"},body:"{}"})
+      var b=await r.json().catch(function(){return{}})
+      if(r.ok&&b.ok){await load()}
+      else if(msg){msg.style.color="var(--rose)";msg.textContent=b.error||"Action failed."}
+    }catch(e){if(msg){msg.style.color="var(--rose)";msg.textContent="Network error."}}
+  }
+
+  // ── Expectations board ────────────────────────────────────────────────────
+  function renderExpBadges(corroboration){
+    var c=corroboration||{};var html=""
+    if(c.snap)html+='<span class="ec-badge snap">Snap</span>'
+    if(c.sim)html+='<span class="ec-badge sim">Sim</span>'
+    if((c.recurrence||0)>1)html+='<span class="ec-badge recur">×'+esc(c.recurrence)+"</span>"
+    return html
+  }
+  function expCardHtml(exp){
+    var meta=[exp.area,exp.urlPath].filter(Boolean).join(" · ")
+    var badges=renderExpBadges(exp.corroboration)
+    var html='<div class="ec-title">'+esc(exp.title)+"</div>"
+    if(badges)html+='<div class="ec-badges">'+badges+"</div>"
+    if(meta)html+='<div class="ec-meta">'+esc(meta)+"</div>"
+    return html
+  }
+  async function enforceExpectation(expId,card){
+    var pid=projParam();var qs=pid?"?project="+encodeURIComponent(pid):""
+    var btn=card.querySelector("[data-enforce]");var msgEl=card.querySelector(".ec-msg")
+    if(btn){btn.disabled=true;btn.textContent="drafting…"}
+    if(msgEl)msgEl.textContent=""
+    var r;try{r=await fetch("/api/expectations/"+encodeURIComponent(expId)+"/enforce"+qs,{method:"POST",headers:{"content-type":"application/json"},body:"{}"})}
+    catch(e){if(btn){btn.disabled=false;btn.textContent="Enforce"}if(msgEl){msgEl.style.color="var(--rose)";msgEl.textContent="Network error."}return}
+    var b=await r.json().catch(function(){return{}})
+    if(!r.ok){if(btn){btn.disabled=false;btn.textContent="Enforce"}if(msgEl){msgEl.style.color="var(--rose)";msgEl.textContent=b.error||"Enforce failed."}return}
+    var draft=b.draft
+    if(!draft){if(btn){btn.disabled=false;btn.textContent="Enforce"}if(msgEl){msgEl.style.color="var(--amber)";msgEl.textContent="Couldn't draft an assertion."}return}
+    var actsEl=card.querySelector(".ec-acts");if(actsEl)actsEl.style.display="none"
+    if(msgEl)msgEl.textContent=""
+    var confirmEl=document.createElement("div");confirmEl.className="ec-confirm"
+    var target=draft.target?Object.keys(draft.target).map(function(k){return k+":"+draft.target[k]}).join(" · "):""
+    var desc=(draft.checkpoint&&draft.checkpoint.description)?draft.checkpoint.description:(draft.description||"")
+    confirmEl.innerHTML=(target?'<div class="cc-target">Target: '+esc(target)+"</div>":"")
+      +'<textarea rows="3" placeholder="Assertion description…">'+esc(desc)+"</textarea>"
+      +'<div class="cc-acts"><button class="btn btn-indigo" data-confirm-enforce>Confirm</button><button class="btn btn-ghost" data-cancel-enforce>Cancel</button></div>'
+    card.appendChild(confirmEl);var textarea=confirmEl.querySelector("textarea")
+    confirmEl.querySelector("[data-cancel-enforce]").onclick=function(){
+      confirmEl.remove();if(actsEl)actsEl.style.display="";if(msgEl)msgEl.textContent=""
+      if(btn){btn.disabled=false;btn.textContent="Enforce"}
+    }
+    confirmEl.querySelector("[data-confirm-enforce]").onclick=async function(){
+      var confirmBtn=this;confirmBtn.disabled=true;confirmBtn.textContent="saving…"
+      var editedDesc=textarea.value.trim();var finalDraft=Object.assign({},draft)
+      if(finalDraft.checkpoint){finalDraft.checkpoint=Object.assign({},finalDraft.checkpoint,{description:editedDesc})}
+      else{finalDraft.description=editedDesc}
+      var r2;try{r2=await fetch("/api/expectations/"+encodeURIComponent(expId)+"/enforce/confirm"+qs,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({draft:finalDraft})})}
+      catch(e){confirmBtn.disabled=false;confirmBtn.textContent="Confirm";if(msgEl){msgEl.style.color="var(--rose)";msgEl.textContent="Network error."}return}
+      var b2=await r2.json().catch(function(){return{}})
+      if(!r2.ok){confirmBtn.disabled=false;confirmBtn.textContent="Confirm";if(msgEl){msgEl.style.color="var(--rose)";msgEl.textContent=b2.error||"Confirm failed."}return}
+      confirmEl.remove();if(msgEl){msgEl.style.color="var(--green)";msgEl.textContent="Enforced"}
+      setTimeout(loadExpectations,600)
+    }
+  }
+  function renderExpectations(expectations){
+    var cand=[],valid=[],enf=[]
+    ;(expectations||[]).forEach(function(e){
+      if(e.status==="candidate")cand.push(e)
+      else if(e.status==="validated")valid.push(e)
+      else if(e.status==="enforced")enf.push(e)
+    })
+    $("expCandCount").textContent=String(cand.length)
+    $("expValidCount").textContent=String(valid.length)
+    $("expEnfCount").textContent=String(enf.length)
+    function emptyExp(text){return'<div class="empty"><p>'+esc(text)+"</p></div>"}
+    var candEl=$("expCand");candEl.innerHTML=cand.length?"":emptyExp("No candidates yet.")
+    cand.forEach(function(exp){var card=document.createElement("div");card.className="exp-card";card.innerHTML=expCardHtml(exp)+'<div class="ec-msg"></div>';candEl.appendChild(card)})
+    var validEl=$("expValid");validEl.innerHTML=valid.length?"":emptyExp("No validated expectations yet.")
+    valid.forEach(function(exp){
+      var card=document.createElement("div");card.className="exp-card"
+      card.innerHTML=expCardHtml(exp)+'<div class="ec-acts" style="margin-top:10px"><button class="btn btn-indigo" style="font-size:12px;padding:7px 13px" data-enforce="'+esc(exp.id)+'">Enforce</button></div><div class="ec-msg"></div>'
+      validEl.appendChild(card)
+      card.querySelector("[data-enforce]").onclick=function(){enforceExpectation(exp.id,card)}
+    })
+    var enfEl=$("expEnf");enfEl.innerHTML=enf.length?"":emptyExp("Nothing enforced yet.")
+    enf.forEach(function(exp){
+      var card=document.createElement("div");card.className="exp-card"
+      card.innerHTML=expCardHtml(exp)+(exp.enforcedStepId
+        ?'<div class="ec-badges" style="margin-top:8px"><span class="ec-badge enforced-ok">enforced</span><span class="ec-meta" style="margin-left:4px;font-size:10px">'+esc(exp.enforcedStepId)+"</span></div>"
+        :'<div class="ec-badges" style="margin-top:8px"><span class="ec-badge enforced-ok">enforced</span></div>')
+      enfEl.appendChild(card)
+    })
+  }
+  async function loadExpectations(){
+    var pid=projParam();var qs=pid?"?project="+encodeURIComponent(pid):""
+    try{
+      var r=await fetch("/api/expectations"+qs)
+      if(r.status===401){location.href="/login";return}
+      if(!r.ok)return;var d=await r.json();renderExpectations(d.expectations||[])
+    }catch(e){}
+  }
+
+  // ── New Trail & wizard ────────────────────────────────────────────────────
+  async function loadAccounts(){
+    try{
+      var pid2=projParam()||""
+      var r=await fetch("/api/projects/"+pid2+"/test-accounts");if(!r.ok)return
+      var d=await r.json();var sel=$("ntAcc");sel.length=1
+      ;(d.accounts||[]).forEach(function(a){var o=document.createElement("option");o.value=a.name;o.textContent=a.name+" ("+a.loginEmail+")";sel.appendChild(o)})
+    }catch(e){}
+  }
+  function stepLine(s){
+    var cls=s.ok?"ok":"err"
+    return'<div class="nt-step '+cls+'"><b>'+esc(s.op)+"</b> "+esc(s.selector||s.url||"")+'<span class="why">'+esc(s.rationale||"")+(s.error?" — "+esc(s.error):"")+"</span></div>"
+  }
+  function humanizeStall(reason){
+    if(!reason)return null;var r=String(reason)
+    if(/budget cap/i.test(r))return"We hit our cost limit while drafting this trail."
+    if(/drive deadline|deadline exceeded/i.test(r))return"AutoSim ran out of time while working on your trail."
+    if(/author model error/i.test(r))return"Something went wrong with AutoSim's reasoning — please try again shortly."
+    if(/malformed.*reply|invalid.*reply|parse.*error/i.test(r))return"AutoSim got confused by an unexpected response."
+    if(/matched \d+ elements/i.test(r))return"The step we recorded no longer points at exactly one element on the page."
+    if(/selector .+ matched 0 elements/i.test(r))return"We couldn't find that element on the page — it may have changed."
+    if(/stuck after \d+ failed attempts/i.test(r))return"AutoSim kept running into the same problem and gave up."
+    if(/stuck after \d+ malformed model replies/i.test(r))return"AutoSim received several unexpected responses."
+    if(/unknown test account/i.test(r))return"That test account wasn't found — check the name and try again."
+    if(/^model stalled$|^stall:$/i.test(r))return reason||"AutoSim stopped."
+    if(/not found/i.test(r)&&/trail/i.test(r))return"We couldn't find that trail in this project."
+    return reason
+  }
+  async function pollAuthor(sessionId,box){
+    for(var i=0;i<200;i++){
+      await new Promise(function(res){setTimeout(res,2000)})
+      var r=await fetch("/api/trails/author/"+sessionId+projQ());if(!r.ok)continue
+      var s=await r.json();var html=(s.steps||[]).map(stepLine).join("")
+      if(s.status==="running"){box.innerHTML=html+'<div class="nt-live">AutoSim is driving...</div>';continue}
+      if(s.status==="crystallized"){
+        var vRunId=s.verificationRunId||""
+        var pdfLink=vRunId?('<a class="walk-pdf-btn" href="'+esc("/api/trails/walks/"+encodeURIComponent(vRunId)+"/report.pdf"+projQ())+'" target="_blank" rel="noopener" style="margin-left:8px">'+kicon("file-text",{size:10})+" PDF</a>"):"";
+        var vv=String(s.verificationVerdict||"").toLowerCase()
+        var vGuidance=""
+        if(vv==="red"||vv==="false")vGuidance=' <span class="muted">— AutoSim couldn\'t replay deterministically; review the PDF before activating.</span>'
+        else if(vv==="amber")vGuidance=' <span class="muted">— healed but unconfirmed; review the findings queue or activate to enable enforcement.</span>'
+        box.innerHTML=html+'<div class="nt-done">Trail created (draft). Verification walk: <b class="v-'+esc(s.verificationVerdict||"")+'">'+esc(String(s.verificationVerdict||"?").toUpperCase())+"</b>"+vGuidance+"</div>"
+          +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn btn-indigo" id="ntApprove" data-trail="'+esc(s.trailId)+'">Looks right - activate</button>'+pdfLink+"</div>"
+        var ap=document.getElementById("ntApprove")
+        ap.addEventListener("click",async function(){
+          ap.disabled=true;ap.textContent="Activating..."
+          var ar=await fetch("/api/trails/"+encodeURIComponent(ap.dataset.trail)+"/approve"+projQ(),{method:"POST"})
+          if(ar.ok){document.getElementById("ntBg").classList.remove("show");await render(await loadData())}
+          else{ap.disabled=false;ap.textContent="Looks right - activate"}
+        })
+        return
+      }
+      var display=humanizeStall(s.stallReason)||s.status
+      box.innerHTML=html+'<div class="nt-stall">Stopped: '+esc(display)+'</div><div class="hint">Refine the objective above and hit Create Trail again.</div>'
+      document.getElementById("ntGo").disabled=false;return
+    }
+    document.getElementById("ntGo").disabled=false
+    var stallDiv=document.createElement("div");stallDiv.className="nt-stall"
+    stallDiv.textContent="Timed out — the AutoSim may still be running. Reopen this page shortly."
+    box.appendChild(stallDiv)
+  }
+
+  // ── Guided wizard ─────────────────────────────────────────────────────────
+  var wizStep=1;var wizSimsData=[]
+  function openWizard(){
+    wizStep=1
+    document.getElementById("wizErr").textContent=""
+    document.getElementById("wizProgress").style.display="none";document.getElementById("wizProgress").innerHTML=""
+    document.getElementById("wizNav").style.display=""
+    var cb=document.getElementById("wizCreate");cb.disabled=false;cb.textContent="Create & Run"
+    document.getElementById("wizBg").classList.add("show")
+    wizRender();loadWizSims()
+  }
+  function closeWizard(){document.getElementById("wizBg").classList.remove("show")}
+  function wizRender(){
+    var LABELS=["Name this journey","Where does it start?","Describe the journey","Who reviews it?","Ready to go"]
+    document.getElementById("wizTitle").textContent=LABELS[wizStep-1]
+    document.getElementById("wizStepLabel").textContent="Step "+wizStep+" of 5"
+    document.getElementById("wizStepBar").setAttribute("aria-valuenow",String(wizStep))
+    for(var i=1;i<=5;i++){
+      var dot=document.getElementById("wizDot"+i)
+      dot.className="wiz-dot"+(i===wizStep?" on":i<wizStep?" done":"")
+      var panel=document.getElementById("wiz"+i);panel.style.display=i===wizStep?"":"none"
+    }
+    document.getElementById("wizBack").style.display=wizStep===1?"none":""
+    document.getElementById("wizNext").style.display=wizStep<5?"":"none"
+    document.getElementById("wizCreate").style.display=wizStep===5?"":"none"
+    if(wizStep===4)renderWizSimList();if(wizStep===5)renderWizReview()
+    var inp=document.querySelector("#wiz"+wizStep+" input, #wiz"+wizStep+" textarea")
+    if(inp)setTimeout(function(){inp.focus()},60)
+  }
+  async function loadWizSims(){
+    try{var r=await fetch("/api/personas"+projQ());if(!r.ok){wizSimsData=[];return};var d=await r.json();wizSimsData=d.personas||[];if(wizStep===4)renderWizSimList()}catch(e){wizSimsData=[]}
+  }
+  function renderWizSimList(){
+    var el=document.getElementById("wizSimList")
+    var html='<label class="wiz-sim-opt"><input type="radio" name="wizSim" value="" checked /><span><span class="wiz-sim-name">Default reviewer</span><span class="wiz-sim-desc">The AutoSim uses its own judgment — good for most flows.</span></span></label>'
+    wizSimsData.forEach(function(s){
+      var desc=[s.role,s.summary].filter(Boolean).join(" · ").slice(0,80)
+      html+='<label class="wiz-sim-opt"><input type="radio" name="wizSim" value="'+esc(s.name||s.id)+'" /><span><span class="wiz-sim-name">'+esc(s.name||"Unnamed")+"</span>"+(desc?'<span class="wiz-sim-desc">'+esc(desc)+"</span>":"")+"</span></label>"
+    })
+    el.innerHTML=html
+  }
+  function renderWizReview(){
+    document.getElementById("wizRevName").textContent=document.getElementById("wizName").value.trim()||"(untitled)"
+    document.getElementById("wizRevUrl").textContent=document.getElementById("wizUrl").value.trim()
+    document.getElementById("wizRevObj").textContent=document.getElementById("wizObj").value.trim()
+    var checked=document.querySelector("input[name=\"wizSim\"]:checked")
+    document.getElementById("wizRevSim").textContent=(checked&&checked.value)?checked.value:"Default reviewer"
+  }
+  function wizValidate(n){
+    if(n===1&&!document.getElementById("wizName").value.trim())return"Please enter a name for this journey."
+    if(n===2){var v=document.getElementById("wizUrl").value.trim();if(!v)return"Please enter the URL to start from.";if(!/^https?:\/\//i.test(v))return"URL must start with https:// (or http://)"}
+    if(n===3){var v2=document.getElementById("wizObj").value.trim();if(!v2)return"Please describe what the AutoSim should do.";if(v2.length<15)return"Add a bit more detail — a few clear steps work best."}
+    return null
+  }
+  async function wizPollAuthor(sessionId,box,createBtn){
+    for(var i=0;i<200;i++){
+      await new Promise(function(res){setTimeout(res,2000)})
+      var r=await fetch("/api/trails/author/"+sessionId+projQ());if(!r.ok)continue
+      var s=await r.json();var html=(s.steps||[]).map(stepLine).join("")
+      if(s.status==="running"){box.innerHTML=html+'<div class="nt-live">AutoSim is driving…</div>';continue}
+      if(s.status==="crystallized"){
+        var vRunId=s.verificationRunId||""
+        var pdfLink=vRunId?('<a class="walk-pdf-btn" href="'+esc("/api/trails/walks/"+encodeURIComponent(vRunId)+"/report.pdf"+projQ())+'" target="_blank" rel="noopener" style="margin-left:4px">'+kicon("file-text",{size:10})+" PDF</a>"):"";
+        var vv=String(s.verificationVerdict||"").toLowerCase()
+        var vGuidance=""
+        if(vv==="red"||vv==="false")vGuidance=" — AutoSim couldn't replay deterministically; review the PDF before activating."
+        else if(vv==="amber")vGuidance=" — healed but unconfirmed; check the findings queue after activating."
+        box.innerHTML=html+'<div class="nt-done">Journey recorded. Verification: <b class="v-'+esc(s.verificationVerdict||"")+'">'+esc(String(s.verificationVerdict||"?").toUpperCase())+"</b>"+esc(vGuidance)+"</div>"
+          +'<div class="wiz-approve-row"><button class="btn btn-indigo" id="wizApprove" data-trail="'+esc(s.trailId)+'">Activate AutoSim</button>'+pdfLink+"</div>"
+        var ap=document.getElementById("wizApprove")
+        ap.addEventListener("click",async function(){
+          ap.disabled=true;ap.textContent="Activating…"
+          var ar=await fetch("/api/trails/"+encodeURIComponent(ap.dataset.trail)+"/approve"+projQ(),{method:"POST"})
+          if(ar.ok){closeWizard();render(await loadData())}
+          else{ap.disabled=false;ap.textContent="Activate AutoSim"}
+        })
+        return
+      }
+      var display=humanizeStall(s.stallReason)||s.status
+      box.innerHTML=html+'<div class="nt-stall">Stopped: '+esc(display)+'</div><div class="hint" style="margin-top:6px">Refine the journey description and try again.</div>'
+        +'<div style="margin-top:12px"><button class="btn btn-ghost" id="wizRetry">← Edit journey</button></div>'
+      var retry=document.getElementById("wizRetry")
+      if(retry){retry.addEventListener("click",function(){document.getElementById("wizNav").style.display="";box.style.display="none";box.innerHTML="";wizStep=3;wizRender();createBtn.disabled=false;createBtn.textContent="Create & Run"})}
+      return
+    }
+    box.innerHTML='<div class="nt-stall">Timed out — the AutoSim may still be running. Check back shortly.</div>'
+  }
+  async function reattachActiveAuthorSession(){
+    try{
+      var r=await fetch("/api/trails/author/active"+projQ());if(!r.ok)return
+      var s=await r.json();if(!s||s.status!=="running")return
+      document.getElementById("ntName").value=s.name||""
+      document.getElementById("ntUrl").value=s.baseUrl||""
+      document.getElementById("ntObj").value=s.objective||""
+      document.getElementById("ntGo").disabled=true
+      var box=document.getElementById("ntProgress")
+      box.innerHTML='<div class="nt-live">Resuming AutoSim session...</div>'
+      document.getElementById("ntBg").classList.add("show");pollAuthor(s.id,box)
+    }catch(e){}
+  }
+
+  // ── Init: wire up all bindings (called once when autosims view first activates) ──
+  var _inited=false
+  window.initTrailsView=function(){
+    if(_inited)return;_inited=true
+    // close-menu on outside click
+    document.addEventListener("click",function(){document.querySelectorAll(".trail-menu.open").forEach(function(m){m.classList.remove("open")})})
+    // replay modal
+    $("replayClose").onclick=function(){$("replayBg").classList.remove("open");destroyPlayer()}
+    $("replayBg").onclick=function(e){if(e.target===$("replayBg")){$("replayBg").classList.remove("open");destroyPlayer()}}
+    // live watch modal
+    $("liveClose").onclick=closeLiveWatch
+    $("liveBg").onclick=function(e){if(e.target===$("liveBg"))closeLiveWatch()}
+    // draft review modal
+    $("drClose").onclick=closeDraftReview
+    $("drCancel").onclick=closeDraftReview
+    $("drBg").onclick=function(e){if(e.target===$("drBg"))closeDraftReview()}
+    $("drActivate").onclick=async function(){
+      var trailId=drState.trailId;if(!trailId)return
+      var pid=projParam();var qs=pid?"?project="+encodeURIComponent(pid):""
+      $("drActivate").disabled=true;$("drActivate").textContent="Activating…"
+      $("drErr").textContent="";$("drErr").classList.add("hide")
+      try{
+        var ar=await fetch("/api/trails/"+encodeURIComponent(trailId)+"/approve"+qs,{method:"POST"})
+        if(ar.ok){closeDraftReview();await render(await loadData())}
+        else{var body=await ar.json().catch(function(){return{}});$("drErr").textContent=body.error||"Activation failed.";$("drErr").classList.remove("hide");$("drActivate").disabled=false;$("drActivate").textContent="Activate Trail"}
+      }catch(e){$("drErr").textContent="Network error.";$("drErr").classList.remove("hide");$("drActivate").disabled=false;$("drActivate").textContent="Activate Trail"}
+    }
+    // schedule modal
+    $("schedClose").onclick=closeSchedModal
+    $("schedCancel").onclick=closeSchedModal
+    $("schedBg").onclick=function(e){if(e.target===$("schedBg"))closeSchedModal()}
+    document.querySelectorAll(".sched-preset").forEach(function(btn){btn.onclick=function(){$("schedExpr").value=btn.getAttribute("data-preset");$("schedErr").textContent=""}})
+    $("schedSave").onclick=async function(){var expr=$("schedExpr").value.trim();if(!expr){$("schedErr").textContent="Enter a cron expression or click Clear to remove the schedule";return}$("schedErr").textContent="";await saveSchedule(expr)}
+    $("schedClear").onclick=async function(){await saveSchedule(null)}
+    $("schedExpr").onkeydown=function(e){if(e.key==="Enter"){e.preventDefault();$("schedSave").click()}if(e.key==="Escape")closeSchedModal()}
+    // wizard
+    document.getElementById("wizNext").addEventListener("click",function(){var err=wizValidate(wizStep);var errEl=document.getElementById("wizErr");if(err){errEl.textContent=err;return}errEl.textContent="";wizStep++;wizRender()})
+    document.getElementById("wizBack").addEventListener("click",function(){document.getElementById("wizErr").textContent="";if(wizStep>1){wizStep--;wizRender()}})
+    document.getElementById("wizClose").addEventListener("click",closeWizard)
+    document.getElementById("wizBg").addEventListener("click",function(e){if(e.target===this)closeWizard()})
+    document.getElementById("wizCreate").addEventListener("click",async function(){
+      var btn=this;btn.disabled=true;btn.textContent="Creating…"
+      document.getElementById("wizErr").textContent=""
+      var box=document.getElementById("wizProgress");box.style.display="";box.innerHTML='<div class="nt-live">AutoSim is recording your journey…</div>'
+      document.getElementById("wizNav").style.display="none"
+      var checked=document.querySelector("input[name=\"wizSim\"]:checked")
+      var simName=(checked&&checked.value)?checked.value:undefined
+      var name=document.getElementById("wizName").value.trim()
+      var objective=document.getElementById("wizObj").value.trim()
+      var baseUrl=document.getElementById("wizUrl").value.trim()
+      document.getElementById("ntName").value=name;document.getElementById("ntUrl").value=baseUrl;document.getElementById("ntObj").value=objective
+      var body={name:name,objective:objective,base_url:baseUrl,viewport:"desktop",sim_name:simName}
+      var r=await fetch("/api/trails/author"+projQ(),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)})
+      if(!r.ok){var e=await r.json().catch(function(){return{}});box.innerHTML='<div class="nt-stall">'+esc(e.error||r.statusText)+"</div>";document.getElementById("wizNav").style.display="";btn.disabled=false;btn.textContent="Try again";return}
+      var d=await r.json();wizPollAuthor(d.sessionId,box,btn)
+    })
+    // new trail button & modal
+    document.getElementById("newTrailBtn").addEventListener("click",openWizard)
+    document.getElementById("ntCancel").addEventListener("click",function(){document.getElementById("ntBg").classList.remove("show")})
+    document.getElementById("ntGo").addEventListener("click",async function(){
+      var btn=this;btn.disabled=true
+      var box=document.getElementById("ntProgress");box.innerHTML=""
+      var body={name:document.getElementById("ntName").value.trim(),objective:document.getElementById("ntObj").value.trim(),base_url:document.getElementById("ntUrl").value.trim(),viewport:document.getElementById("ntViewport").value||"desktop",test_account:document.getElementById("ntAcc").value||undefined}
+      var r=await fetch("/api/trails/author"+projQ(),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)})
+      if(!r.ok){var e=await r.json().catch(function(){return{}});box.innerHTML='<div class="nt-stall">'+esc(e.error||r.statusText)+"</div>";btn.disabled=false;return}
+      var d=await r.json();pollAuthor(d.sessionId,box)
+    })
+    document.getElementById("ntBg").addEventListener("click",function(e){if(e.target===this)this.classList.remove("show")})
+    // kick off data load
+    loadAccounts();load();loadExpectations();reattachActiveAuthorSession()
+  }
+  // expose openWizard for inline onclick="openWizard()" in onboarding HTML
+  window.openWizard=openWizard
+})();
+</script>
 </body>
 </html>
