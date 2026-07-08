@@ -106,6 +106,49 @@ a{color:inherit;text-decoration:none}
 .step-card .srat{font-size:13.5px;line-height:1.5;color:var(--paper-dim)}
 .step-card .srat:not(:first-child){margin-top:8px}
 .step-card .sdiff{font-family:var(--mono);font-size:11px;color:var(--paper-faint);background:var(--ink-3);padding:7px 10px;border-radius:8px;margin-top:8px;overflow-x:auto}
+.step-card .sshot{max-width:100%;border-radius:8px;margin-top:10px;border:1px solid var(--line);display:block}
+
+/* live view */
+.live-frame{width:100%;border-radius:12px;border:1px solid var(--line);background:var(--ink);min-height:240px;object-fit:contain;display:block}
+.live-note{font-family:var(--mono);font-size:12px;color:var(--paper-faint);margin-top:8px}
+
+/* findings */
+.finding{border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--ink);margin-top:12px}
+.finding .ftop{display:flex;gap:8px;align-items:center;margin-bottom:6px}
+.finding .fkind{font-family:var(--mono);font-size:10px;text-transform:uppercase;color:var(--indigo)}
+.finding .fstatus{font-family:var(--mono);font-size:10px;color:var(--paper-faint);margin-left:auto}
+.finding .ftitle{font-weight:700;margin-bottom:4px}
+.finding .fquote,.finding .fdetail{font-size:13px;line-height:1.45;color:var(--paper-dim)}
+.finding .fdiff{font-family:var(--mono);font-size:11px;color:var(--paper-faint);background:var(--ink-3);border-radius:8px;padding:7px;margin-top:8px;overflow-x:auto}
+.finding .frow{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center}
+.finding .fmsg{font-size:12px;color:var(--paper-faint)}
+
+/* judgment */
+.judgment{background:var(--ink);border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:4px}
+.judgment .jpersona{font-family:var(--mono);font-size:11px;color:var(--paper-faint);margin-bottom:10px}
+.judgment .jnote{font-size:13.5px;line-height:1.5;color:var(--paper-dim);margin-bottom:10px}
+.judgment .jrow{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.judgment .jverdict{font-family:var(--mono);font-size:11px;padding:4px 9px;border-radius:20px;background:var(--ink-3)}
+.judgment .jverdict.valid{background:rgba(15,157,107,.16);color:var(--green)}
+.judgment .jverdict.false_positive{background:rgba(219,39,119,.16);color:var(--rose)}
+.judgment .jverdict.clarify{background:rgba(217,131,36,.18);color:var(--amber)}
+
+/* add-bug form */
+.bug-form{display:grid;gap:8px}
+.bug-form input,.bug-form textarea{width:100%;border:1px solid var(--line);border-radius:9px;background:var(--ink);color:var(--paper);font:inherit;padding:9px 12px;font-size:13px}
+.bug-form textarea{min-height:80px;resize:vertical}
+
+/* section card */
+.section-card{background:var(--ink-2);border:1px solid var(--line);border-radius:16px;padding:20px;margin-bottom:22px}
+.section-card h2{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:14px}
+.empty{color:var(--paper-faint);font-size:14px;padding:8px 0}
+
+/* share dialog overlay */
+.share-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:50;display:flex;align-items:center;justify-content:center}
+.share-box{background:var(--ink-2);border:1px solid var(--line);border-radius:16px;padding:24px;max-width:520px;width:90%;display:flex;flex-direction:column;gap:12px}
+.share-box h3{font-family:var(--display);font-size:20px;font-weight:450;margin:0}
+.share-url{width:100%;border:1px solid var(--line);border-radius:8px;background:var(--ink);color:var(--paper);font-family:var(--mono);font-size:12px;padding:9px 12px;word-break:break-all}
+.share-acts{display:flex;gap:8px}
 </style>
 <script src="/icons.generated.js"></script>
 </head>
@@ -146,13 +189,41 @@ a{color:inherit;text-decoration:none}
       <div class="step-list" id="stepList"><div style="font-size:13px;color:var(--paper-faint)">Loading…</div></div>
     </div>
 
-    <!-- Right: replay + step detail -->
+    <!-- Right: live view + replay + findings + judgment + step detail -->
     <div class="main">
+      <div class="section-card" id="liveSection" style="display:none">
+        <h2>Live View</h2>
+        <img id="liveFrame" class="live-frame" alt="Live browser frame"/>
+        <div class="live-note" id="liveNote">Connecting…</div>
+      </div>
+
       <div class="replay-section" id="replaySection">
         <h2 id="replayH2">Session Replay</h2>
         <div id="replayBody">
           <div style="font-size:13px;color:var(--paper-faint);padding:24px 0;text-align:center">Loading…</div>
         </div>
+      </div>
+
+      <div class="section-card" id="findingsSection">
+        <h2>Findings</h2>
+        <div id="findingsBody"><div class="empty">Loading…</div></div>
+      </div>
+
+      <div class="section-card" id="judgmentSection" style="display:none">
+        <h2>Persona Judgment</h2>
+        <div id="judgmentBody"></div>
+      </div>
+
+      <div class="section-card">
+        <h2>Add a Bug</h2>
+        <form class="bug-form" id="bugForm">
+          <input id="bugTitle" maxlength="160" placeholder="Bug title"/>
+          <textarea id="bugDetail" maxlength="2000" placeholder="What happened? (optional)"></textarea>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="btn btn-sm" type="submit">Add bug</button>
+            <span id="bugMsg" style="font-size:12px;color:var(--paper-faint)"></span>
+          </div>
+        </form>
       </div>
 
       <div class="step-detail" id="stepDetail" style="display:none">
@@ -163,6 +234,18 @@ a{color:inherit;text-decoration:none}
   </div>
 </div>
 
+<div class="share-overlay" id="shareOverlay" style="display:none">
+  <div class="share-box">
+    <h3>Share Walk</h3>
+    <p style="font-size:13px;color:var(--paper-faint);margin:0">This link lets anyone view the walk report for 30 days (no login required).</p>
+    <div class="share-url" id="shareUrl"></div>
+    <div class="share-acts">
+      <button class="btn btn-sm" id="shareCopy">Copy link</button>
+      <button class="btn btn-sm" id="shareClose">Close</button>
+    </div>
+    <div id="shareMsg" style="font-size:12px;color:var(--paper-faint)"></div>
+  </div>
+</div>
 <script>
 function $(id){return document.getElementById(id)}
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]||c})}
@@ -308,6 +391,128 @@ function showNoReplay(msg){
     +'<p>'+esc(msg)+'</p></div>'
 }
 
+// ── Live View SSE (authenticated) ──
+var _liveEs=null
+function startLive(runId,qs){
+  if(_liveEs) return
+  $("liveSection").style.display=""
+  try{
+    _liveEs=new EventSource("/api/trails/walks/"+encodeURIComponent(runId)+"/live"+qs)
+    _liveEs.onmessage=function(ev){try{var f=JSON.parse(ev.data);if(f.dataUrl){$("liveFrame").src=f.dataUrl;$("liveNote").textContent="Live"}}catch(e){}}
+    _liveEs.addEventListener("end",function(ev){$("liveNote").textContent=ev.data||"ended";try{_liveEs.close()}catch(e){}})
+    _liveEs.onerror=function(){$("liveNote").textContent="Live view unavailable."}
+  }catch(e){$("liveNote").textContent="Live view unavailable."}
+}
+
+// ── Findings ──
+function findingHtml(f,qs){
+  var ev=f.evidence||{}, rationale=ev.rationale||f.groundQuote||ev.detail||"", canAct=f.status==="queued"
+  var v=String(f.status||"")
+  var html='<div class="finding" data-finding="'+esc(f.id)+'">'
+    +'<div class="ftop"><span class="fkind">'+esc(f.kind)+'</span><span class="fstatus">'+esc(f.status)+'</span></div>'
+    +'<div class="ftitle">'+esc(f.title)+'</div>'
+  if(rationale)html+='<div class="fquote">'+esc(rationale)+'</div>'
+  if(ev.fromSelector||ev.toSelector)html+='<div class="fdiff">'+esc(ev.fromSelector||"(none)")+' → '+esc(ev.toSelector||"(none)")+'</div>'
+  html+='<div class="frow">'
+  if(canAct){
+    html+='<button class="btn btn-sm" style="background:var(--indigo);border-color:var(--indigo);color:white" data-fact="file" data-fid="'+esc(f.id)+'" data-fqs="'+esc(qs)+'">'+window.kicon("send",12)+' Accept</button>'
+    html+='<button class="btn btn-sm" data-fact="dismiss" data-fid="'+esc(f.id)+'" data-fqs="'+esc(qs)+'">'+window.kicon("x",12)+' Dismiss</button>'
+  }
+  if(f.connectorRef)html+='<span class="fmsg">Filed: '+esc(f.connectorRef)+'</span>'
+  if(f.connectorError)html+='<span class="fmsg" style="color:var(--rose)">File failed: '+esc(f.connectorError)+'</span>'
+  html+='</div><div class="fmsg" data-fmsg="'+esc(f.id)+'"></div>'
+  html+='</div>'
+  return html
+}
+function renderFindings(findings,qs){
+  var el=$("findingsBody")
+  if(!findings||!findings.length){el.innerHTML='<div class="empty">No findings for this walk.</div>';return}
+  el.innerHTML=findings.map(function(f){return findingHtml(f,qs)}).join("")
+  el.querySelectorAll("[data-fact]").forEach(function(b){
+    b.onclick=function(){actFinding(b.getAttribute("data-fact"),b.getAttribute("data-fid"),b,b.getAttribute("data-fqs")||"")}
+  })
+}
+async function actFinding(action,id,btn,qs){
+  var msg=document.querySelector('[data-fmsg="'+id+'"]');btn.disabled=true;if(msg)msg.textContent=""
+  try{
+    var ep="/api/trails/findings/"+encodeURIComponent(id)+(action==="file"?"/file":"/dismiss")
+    var r=await fetch(ep,{method:"POST",headers:{"content-type":"application/json"},body:"{}"})
+    var d=await r.json().catch(function(){return {}})
+    if(r.ok&&d.ok){await load();return}
+    if(msg){msg.style.color="var(--rose)";msg.textContent=d.error||"Action failed."}
+  }catch(e){if(msg){msg.style.color="var(--rose)";msg.textContent="Network error."}}
+  finally{btn.disabled=false}
+}
+
+// ── Judgment ──
+function renderJudgment(j){
+  if(!j){$("judgmentSection").style.display="none";return}
+  $("judgmentSection").style.display=""
+  var verdictMap={}
+  ;(j.verdicts||[]).forEach(function(v){verdictMap[v.findingId]=v})
+  var html='<div class="judgment">'
+    +'<div class="jpersona">Judged by <b>'+esc(j.personaName)+'</b></div>'
+  if(j.overallNote)html+='<div class="jnote">'+esc(j.overallNote)+'</div>'
+  if(j.verdicts&&j.verdicts.length){
+    html+='<div class="jrow">'
+    j.verdicts.forEach(function(v){
+      html+='<span class="jverdict '+esc(v.verdict)+'">'+esc(v.verdict.replace("_"," "))+'</span>'
+    })
+    html+='</div>'
+  }
+  html+='</div>'
+  $("judgmentBody").innerHTML=html
+}
+
+// ── Share ──
+async function handleShare(runId,qs){
+  var overlay=$("shareOverlay"),urlEl=$("shareUrl"),msg=$("shareMsg")
+  overlay.style.display="flex";urlEl.textContent="Generating…";msg.textContent=""
+  try{
+    var r=await fetch("/api/trails/walks/"+encodeURIComponent(runId)+"/share",{method:"POST",headers:{"content-type":"application/json"},body:"{}"})
+    var d=await r.json().catch(function(){return {}})
+    if(r.ok&&d.url){urlEl.textContent=d.url}
+    else{msg.style.color="var(--rose)";msg.textContent=d.error||"Could not create share link.";urlEl.textContent=""}
+  }catch(e){msg.style.color="var(--rose)";msg.textContent="Network error.";urlEl.textContent=""}
+}
+document.addEventListener("DOMContentLoaded",function(){
+  var copyBtn=$("shareCopy"),closeBtn=$("shareClose"),overlay=$("shareOverlay")
+  if(copyBtn)copyBtn.onclick=function(){var t=$("shareUrl").textContent;if(t&&t.startsWith("http")){navigator.clipboard.writeText(t).then(function(){$("shareMsg").style.color="var(--green)";$("shareMsg").textContent="Copied!"}).catch(function(){})}}
+  if(closeBtn)closeBtn.onclick=function(){overlay.style.display="none"}
+  overlay.onclick=function(e){if(e.target===overlay)overlay.style.display="none"}
+})
+
+// ── Cancel ──
+async function handleCancel(runId,qs){
+  if(!confirm("Cancel this walk? It will stop at the next step boundary."))return
+  try{
+    var r=await fetch("/api/trails/walks/"+encodeURIComponent(runId)+"/cancel",{method:"POST",headers:{"content-type":"application/json"},body:"{}"})
+    var d=await r.json().catch(function(){return {}})
+    if(r.ok){await load()}
+    else{alert(d.error||"Cancel failed.")}
+  }catch(e){alert("Network error.")}
+}
+
+// ── Bug form ──
+document.addEventListener("DOMContentLoaded",function(){
+  var form=$("bugForm")
+  if(!form)return
+  form.onsubmit=async function(ev){
+    ev.preventDefault()
+    var pid=projParam(),qs=pid?"?project="+encodeURIComponent(pid):""
+    var title=$("bugTitle").value.trim(),detail=$("bugDetail").value.trim(),msg=$("bugMsg")
+    msg.textContent=""
+    if(!title){msg.style.color="var(--rose)";msg.textContent="Title required.";return}
+    try{
+      var r=await fetch("/api/trails/walks/"+encodeURIComponent(walkId)+"/findings"+qs,
+        {method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({title:title,detail:detail})})
+      var d=await r.json().catch(function(){return {}})
+      if(r.ok&&d.ok){$("bugTitle").value="";$("bugDetail").value="";msg.style.color="var(--green)";msg.textContent="Bug added.";await load();return}
+      msg.style.color="var(--rose)";msg.textContent=d.error||"Could not add bug."
+    }catch(e){msg.style.color="var(--rose)";msg.textContent="Network error."}
+  }
+})
+
 // ── Walk data ──
 var walkData=null
 
@@ -361,13 +566,23 @@ async function load(){
 
   // Verdict pill + actions
   var actsEl=$("wheadActs")
+  var cancelBtn=v==="running"?'<button class="btn btn-sm" id="cancelBtn" style="color:var(--rose)">'+window.kicon("x-circle",{size:12})+' Cancel</button>':''
   actsEl.innerHTML='<span class="pill '+esc(v)+'">'+esc(v)+'</span>'
-    +'<a class="btn btn-sm" href="/api/trails/walks/'+esc(walkId)+'/report.pdf'+esc(qs)+'" target="_blank" rel="noopener">'
-    +window.kicon('file-text',{size:12})+' PDF</a>'
+    +'<a class="btn btn-sm" href="/api/trails/walks/'+esc(walkId)+'/report.pdf'+esc(qs)+'" target="_blank" rel="noopener">'+window.kicon('file-text',{size:12})+' PDF</a>'
+    +'<button class="btn btn-sm" id="shareBtn">'+window.kicon("share-2",{size:12})+' Share</button>'
+    +cancelBtn
+  var shareBtn=$("shareBtn")
+  if(shareBtn) shareBtn.onclick=function(){handleShare(walkId,qs)}
+  var cbtn=$("cancelBtn")
+  if(cbtn) cbtn.onclick=function(){handleCancel(walkId,qs)}
 
   // Steps sidebar
   replayState.steps=steps
   renderSteps(steps)
+
+  // Findings + judgment
+  renderFindings(d.findings||[],qs)
+  renderJudgment(d.judgment||null)
 
   // Replay
   if(d.hasReplay){
@@ -378,9 +593,11 @@ async function load(){
     showNoReplay("No replay was recorded for this Walk.")
   }
 
-  // If still running, poll /progress and reload when a terminal state is reached.
-  // Uses the same grace-window logic as trails.html: 80 fast ticks then 90 s of grace at 3 s.
-  if(v === "running") startRunningPoll(walkId, qs)
+  // Live view + poll when still running
+  if(v === "running"){
+    startLive(walkId,qs)
+    startRunningPoll(walkId, qs)
+  }
 }
 
 // Poll /progress for a running walk until it reaches a terminal state, then reload.
@@ -418,11 +635,14 @@ function renderSteps(steps){
   el.innerHTML=""
   steps.forEach(function(s){
     var v=String(s.verdict||"skip")
+    var ev=s.evidence||{}
+    var label=ev.action||ev.checkpoint||ev.rationale||""
+    var shortLabel=String(label).slice(0,42)||(v)
     var item=document.createElement("div")
     item.className="step-item"
     item.innerHTML='<span class="step-idx">#'+esc(s.idx)+'</span>'
       +'<span class="step-dot '+esc(v)+'"></span>'
-      +'<span class="step-txt">'+esc(v)+'</span>'
+      +'<span class="step-txt" title="'+esc(String(label))+'">'+esc(shortLabel)+'</span>'
     item.onclick=function(){
       document.querySelectorAll(".step-item").forEach(function(x){x.classList.remove("on")})
       item.classList.add("on")
@@ -438,14 +658,19 @@ function showStepDetail(s){
   h.textContent="Step #"+s.idx+" — "+String(s.verdict||"skip")
   var ev=s.evidence||{}
   var rationale=ev.rationale||""
+  var action=ev.action||""
   var fromSel=ev.fromSelector, toSel=ev.toSelector
+  var v=String(s.verdict||"skip")
+  var qs=projParam()?"?project="+encodeURIComponent(projParam()):"";
   var html='<div class="step-card">'
     +'<div class="sr"><span class="si">Step #'+esc(s.idx)+'</span>'
-    +'<span class="sv '+esc(String(s.verdict||"skip"))+'">'+esc(s.verdict||"skip")+'</span>'
+    +'<span class="sv '+esc(v)+'">'+esc(v)+'</span>'
     +(s.confidence!=null?'<span class="sconf">conf '+esc(s.confidence)+'</span>':"")
     +'</div>'
+  if(action) html+='<div class="srat" style="font-family:var(--mono);font-size:11px;color:var(--paper-faint);margin-bottom:6px">'+esc(action)+'</div>'
   if(rationale) html+='<div class="srat">'+esc(rationale)+'</div>'
   if(fromSel||toSel) html+='<div class="sdiff">'+esc(fromSel||"(none)")+' → '+esc(toSel||"(none)")+'</div>'
+  if(ev.screenshotKey) html+='<img class="sshot" src="/api/trails/walks/'+esc(walkId)+'/steps/'+esc(s.id)+'/screenshot'+esc(qs)+'" alt="Step screenshot" loading="lazy"/>'
   html+='</div>'
   b.innerHTML=html
   d.scrollIntoView({behavior:"smooth",block:"nearest"})
