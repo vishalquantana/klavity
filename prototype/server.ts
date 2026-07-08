@@ -36,7 +36,7 @@ import { trailsDashboardData, walkTrends } from "./lib/trails-dashboard"
 import { fileFindingById, dismissFinding, realFiler } from "./lib/trails-findings-gate"
 import { getReplay, runsWithReplay } from "./lib/trails-replay"
 import { saveFeedbackReplay, getFeedbackReplay, feedbackIdsWithReplay, pruneOldFeedbackReplays } from "./lib/feedback-replay"
-import { listRunSteps, listTrails, getTrail, getWalk, setTrailStatus, listTrailSteps, insertAssertStep, deleteTrailStep, updateTrailStep, updateTrail, countRunSteps, countTrailSteps, listTrailRunHistory, listFindings, recordFinding, type TrailPatch, resumeWalk } from "./lib/trails"
+import { listRunSteps, listTrails, getTrail, getWalk, setTrailStatus, listTrailSteps, insertAssertStep, deleteTrailStep, updateTrailStep, updateTrail, countRunSteps, countTrailSteps, listTrailRunHistory, listFindings, recordFinding, type TrailPatch, resumeWalk, listWalksPaged } from "./lib/trails"
 import { runWalkNow } from "./lib/trails-trigger"
 import { startTrailScheduler, isValidCron } from "./lib/trails-scheduler"
 import { startCrashReaper } from "./lib/trails-reaper"
@@ -3034,7 +3034,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
     // ── Klavity OS Trails (Layer E) — project-scoped, authed. Placed before the generic /api/ gate so
     // unauthenticated API calls return a JSON 401 (not a /login redirect), mirroring resolveProject usage.
-    if (path === "/api/trails/dashboard" || path === "/api/trails/trends" || path.startsWith("/api/trails/findings/") || path.startsWith("/api/trails/walks/")
+    if (path === "/api/trails/dashboard" || path === "/api/trails/trends" || path === "/api/trails/walks" || path.startsWith("/api/trails/findings/") || path.startsWith("/api/trails/walks/")
         || path === "/api/trails/author" || path.startsWith("/api/trails/author/")
         || /^\/api\/trails\/[^/]+$/.test(path)
         || /^\/api\/trails\/[^/]+\/(walk|approve|steps|judge-persona)$/.test(path)
@@ -3072,6 +3072,22 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           return json({ buckets })
         } catch (e) {
           return json(oops(e, "trails-trends"), 500)
+        }
+      }
+
+      // GET /api/trails/walks — KLA-158: paginated walk list for the All Walks page.
+      // ?page=N (1-based, default 1) ?limit=M (10–50, default 20). Returns { walks, total, page, limit, pages }.
+      if (req.method === "GET" && path === "/api/trails/walks") {
+        try {
+          const params = new URL(req.url).searchParams
+          const page = Math.max(1, Number(params.get("page") || "1") || 1)
+          const limit = Math.min(50, Math.max(10, Number(params.get("limit") || "20") || 20))
+          const { walks, total } = await listWalksPaged(projectId, page, limit)
+          const haveReplay = await runsWithReplay(projectId, walks.map((w) => w.id))
+          const annotated = walks.map((w) => ({ ...w, hasReplay: haveReplay.has(w.id) }))
+          return json({ walks: annotated, total, page, limit, pages: Math.ceil(total / limit) || 1 })
+        } catch (e) {
+          return json(oops(e, "walks-paged"), 500)
         }
       }
 

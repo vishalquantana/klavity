@@ -45,6 +45,7 @@ const ADMIN_EMAIL = `admin-awd-${ts}@test.local`
 const ADMIN_SID = `sess_awd_admin_${ts}`
 const ACCOUNT_ID = `acct_awd_${ts}`
 const PROJECT_ID = `proj_awd_${ts}`
+const TRAIL_ID = `trail_awd_${ts}`
 const NOW = Date.now()
 
 await rawExec(`INSERT INTO users (email, created_at) VALUES (?, ?)`, [ADMIN_EMAIL, NOW])
@@ -53,6 +54,12 @@ await rawExec(`INSERT INTO account_members (id, account_id, email, account_role,
 await rawExec(`INSERT INTO projects (id, account_id, name, status, review_mode, review_budget_daily, observability_mode, modal_config_json, widget_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [PROJECT_ID, ACCOUNT_ID, "AWD Project", "active", "auto", 200, "named", '{}', "support", NOW, NOW])
 await rawExec(`INSERT INTO project_members (id, project_id, email, project_role, invited_by, created_at) VALUES (?, ?, ?, ?, ?, ?)`, [`pm_awd_${ts}`, PROJECT_ID, ADMIN_EMAIL, "admin", null, NOW])
 await rawExec(`INSERT INTO sessions (id, email, created_at, expires_at) VALUES (?, ?, ?, ?)`, [ADMIN_SID, ADMIN_EMAIL, NOW, NOW + 86400_000])
+await rawExec(`INSERT INTO trails (id, project_id, name, intent, base_url, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [TRAIL_ID, PROJECT_ID, "AWD Trail", "test intent", "https://example.com", "active", NOW, NOW])
+// Seed 15 walks so pagination has data across two pages (default limit=20 → page 1: 10, page 2: 5 when limit=10)
+for (let i = 0; i < 15; i++) {
+  await rawExec(`INSERT INTO trail_runs (id, trail_id, project_id, trigger, status, llm_calls, started_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [`run_awd_${ts}_${i}`, TRAIL_ID, PROJECT_ID, "manual", i % 2 === 0 ? "green" : "amber", i, NOW - i * 1000])
+}
 
 // ── Spawn the server on a random port ─────────────────────────────────────────
 let serverPort: number
@@ -102,17 +109,35 @@ afterAll(() => {
 
 test("autosims-walks.html static: fetches /api/trails/dashboard for walk data", () => {
   const src = readFileSync(new URL("../prototype/public/autosims-walks.html", import.meta.url), "utf8")
-  // Must reference the trails dashboard endpoint
+  // Must reference the trails dashboard endpoint (for trail name lookup)
   expect(src).toContain("/api/trails/dashboard")
 })
 
 test("autosims-walks.html static: does NOT read recentWalks off the /api/dashboard response", () => {
   const src = readFileSync(new URL("../prototype/public/autosims-walks.html", import.meta.url), "utf8")
   // The old buggy pattern: `d.recentWalks` where d is the /api/dashboard response.
-  // After the fix, recentWalks must be read from the trails-dashboard response (a different variable).
-  // We check that any `recentWalks` reference follows a /api/trails/dashboard fetch, not /api/dashboard.
-  // Simplest guard: the string "d.recentWalks" must NOT appear (d = dashboard response in load()).
   expect(src).not.toContain("d.recentWalks")
+})
+
+test("autosims-walks.html static: uses paginated /api/trails/walks endpoint", () => {
+  const src = readFileSync(new URL("../prototype/public/autosims-walks.html", import.meta.url), "utf8")
+  expect(src).toContain("/api/trails/walks")
+  // Pagination controls present
+  expect(src).toContain("prevBtn")
+  expect(src).toContain("nextBtn")
+  expect(src).toContain("pager")
+})
+
+test("autosims-walks.html static: no duplicate /api/trails/dashboard fetch", () => {
+  const src = readFileSync(new URL("../prototype/public/autosims-walks.html", import.meta.url), "utf8")
+  // The old code fetched /api/trails/dashboard twice. Count occurrences — must be exactly one.
+  const count = (src.match(/\/api\/trails\/dashboard/g) || []).length
+  expect(count).toBe(1)
+})
+
+test("autosims-walks.html static: has live refresh (setInterval)", () => {
+  const src = readFileSync(new URL("../prototype/public/autosims-walks.html", import.meta.url), "utf8")
+  expect(src).toContain("setInterval")
 })
 
 // ── Route tests ───────────────────────────────────────────────────────────────
@@ -123,4 +148,38 @@ test("GET /autosims/walks serves the All Walks page for a session; anon redirect
   expect(await authed.text()).toContain("All Walks")
   const anon = await fetch(`${base}/autosims/walks`, { redirect: "manual" })
   expect(anon.status).toBe(302)
+})
+
+test("GET /api/trails/walks returns 401 for unauthenticated requests", async () => {
+  const r = await fetch(`${base}/api/trails/walks?project=${PROJECT_ID}`)
+  expect(r.status).toBe(401)
+})
+
+test("GET /api/trails/walks returns paginated walks with correct shape", async () => {
+  const r = await fetch(`${base}/api/trails/walks?project=${PROJECT_ID}&page=1&limit=20`, {
+    headers: { cookie: adminCookie },
+  })
+  expect(r.status).toBe(200)
+  const d = await r.json()
+  expect(d).toHaveProperty("walks")
+  expect(d).toHaveProperty("total")
+  expect(d).toHaveProperty("page")
+  expect(d).toHaveProperty("pages")
+  expect(Array.isArray(d.walks)).toBe(true)
+  expect(d.total).toBe(15)
+  expect(d.page).toBe(1)
+  expect(d.walks.length).toBe(15) // 15 total, all fit in limit=20
+})
+
+test("GET /api/trails/walks respects limit and offset for page 2", async () => {
+  // Server clamps limit to [10, 50]. With 15 walks and limit=10: page 1 has 10, page 2 has 5.
+  const r = await fetch(`${base}/api/trails/walks?project=${PROJECT_ID}&page=2&limit=10`, {
+    headers: { cookie: adminCookie },
+  })
+  expect(r.status).toBe(200)
+  const d = await r.json()
+  expect(d.page).toBe(2)
+  expect(d.total).toBe(15)
+  expect(d.pages).toBe(2)
+  expect(d.walks.length).toBe(5) // 15 total, 10 on page 1, 5 on page 2
 })

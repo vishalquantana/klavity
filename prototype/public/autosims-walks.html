@@ -94,6 +94,13 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 .trend-tbl td.tc-p{color:var(--indigo)}
 .trend-tbl tr:last-child td{border-top:1px solid var(--line);padding-top:5px}
 .trend-none{font-family:var(--mono);font-size:11px;color:var(--paper-faint);text-align:center;padding:10px 0}
+
+/* ── KLA-158: pagination ─────────────────────────────────────────────────── */
+.pager{display:flex;align-items:center;justify-content:center;gap:12px;margin-top:22px;padding:4px 0}
+.pager-btn{font-family:var(--mono);font-size:11px;letter-spacing:.04em;padding:6px 14px;border-radius:9px;border:1px solid var(--line);background:transparent;color:var(--paper-dim);cursor:pointer;transition:border-color var(--mi-dur) var(--mi-ease),color var(--mi-dur) var(--mi-ease)}
+.pager-btn:hover:not(:disabled){border-color:var(--indigo);color:var(--paper)}
+.pager-btn:disabled{opacity:.35;cursor:default}
+.pager-info{font-family:var(--mono);font-size:11px;color:var(--paper-faint)}
 </style>
 <script src="/icons.generated.js"></script>
 </head>
@@ -151,6 +158,13 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
   <div class="walk-list" id="walkList">
     <div class="empty"><p>Loading walks…</p></div>
   </div>
+
+  <!-- KLA-158: pagination controls -->
+  <div class="pager" id="pager" style="display:none">
+    <button class="pager-btn" id="prevBtn" onclick="goPage(state.page-1)">← Prev</button>
+    <span class="pager-info" id="pagerInfo"></span>
+    <button class="pager-btn" id="nextBtn" onclick="goPage(state.page+1)">Next →</button>
+  </div>
 </div>
 
 <script>
@@ -158,7 +172,10 @@ function $(id){return document.getElementById(id)}
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]||c})}
 function projParam(){try{return new URLSearchParams(location.search).get("project")}catch(e){return null}}
 
-var state={walks:[],filter:"all",activeId:null,projId:null,trailNameFor:{}}
+var PAGE_SIZE=20
+var REFRESH_MS=30000
+var state={walks:[],filter:"all",projId:null,trailNameFor:{},page:1,pages:1,total:0}
+var refreshTimer=null
 
 $("logout").onclick=async function(){await fetch("/api/auth/logout",{method:"POST"});location.href="/"}
 
@@ -220,16 +237,32 @@ function renderTrend(buckets){
   }).join("")
 }
 
+// KLA-158: fetch one page of walks from the paginated endpoint
+async function fetchWalksPage(page){
+  var pid=projParam()
+  var qs=pid?"?project="+encodeURIComponent(pid):""
+  var sep=qs?"&":"?"
+  var r=await fetch("/api/trails/walks"+qs+sep+"page="+page+"&limit="+PAGE_SIZE)
+  if(r.status===401){location.href="/login";return null}
+  if(!r.ok) return null
+  return r.json()
+}
+
 async function load(){
   var pid=projParam()
   var qs=pid?"?project="+encodeURIComponent(pid):""
-  var dash,trails
+  var dash,trails,walksData
   try{
-    var res=await Promise.all([fetch("/api/dashboard"+qs),fetch("/api/trails/dashboard"+qs)])
-    if(res[0].status===401||res[1].status===401){location.href="/login";return}
+    var res=await Promise.all([
+      fetch("/api/dashboard"+qs),
+      fetch("/api/trails/dashboard"+qs),
+      fetch("/api/trails/walks"+qs+(qs?"&":"?")+"page=1&limit="+PAGE_SIZE)
+    ])
+    if(res[0].status===401||res[1].status===401||res[2].status===401){location.href="/login";return}
     if(!res[0].ok){$("lead").textContent="Error loading project.";return}
     dash=await res[0].json()
-    trails=res[1].ok?await res[1].json():{recentWalks:[],trails:[]}
+    trails=res[1].ok?await res[1].json():{trails:[]}
+    walksData=res[2].ok?await res[2].json():{walks:[],total:0,page:1,pages:1,limit:PAGE_SIZE}
   }catch(e){$("lead").textContent="Network error.";return}
   $("who").textContent=dash.email||""
   state.projId=dash.active?dash.active.id:null
@@ -249,16 +282,13 @@ async function load(){
     location.href="/autosims/walks?project="+encodeURIComponent(np)
   }
 
-  // Walks from /api/trails/dashboard (recentWalks + hasReplay annotation).
-  var t
-  try{
-    var rt=await fetch("/api/trails/dashboard"+qs)
-    if(rt.status===401){location.href="/login";return}
-    if(!rt.ok){$("lead").textContent="Error loading Walks.";renderList();return}
-    t=await rt.json()
-  }catch(e){$("lead").textContent="Error loading Walks.";renderList();return}
-  state.walks=t.recentWalks||[]
+  // Apply paginated walk data
+  state.walks=walksData.walks||[]
+  state.total=walksData.total||0
+  state.pages=walksData.pages||1
+  state.page=walksData.page||1
   renderList()
+  renderPager()
 
   // KLA-78: load trend in parallel (non-blocking — trend failure doesn't break walk list)
   var TREND_DAYS=30
@@ -267,6 +297,45 @@ async function load(){
     .then(function(r){return r.ok?r.json():null})
     .then(function(d){if(d)renderTrend(d.buckets)})
     .catch(function(){/* trend is best-effort */})
+
+  // KLA-158: live refresh — auto-reload page 1 every 30s so in-flight walks update
+  if(refreshTimer) clearInterval(refreshTimer)
+  refreshTimer=setInterval(function(){
+    if(state.page===1) fetchWalksPage(1).then(function(d){
+      if(!d) return
+      state.walks=d.walks||[]
+      state.total=d.total||0
+      state.pages=d.pages||1
+      renderList()
+      renderPager()
+    })
+  },REFRESH_MS)
+}
+
+// KLA-158: navigate to a different page
+async function goPage(p){
+  if(p<1||p>state.pages) return
+  var d=await fetchWalksPage(p)
+  if(!d) return
+  state.walks=d.walks||[]
+  state.total=d.total||0
+  state.pages=d.pages||1
+  state.page=d.page||p
+  renderList()
+  renderPager()
+  window.scrollTo(0,0)
+}
+
+function renderPager(){
+  var el=$("pager")
+  if(!el) return
+  if(state.pages<=1&&state.total===0){el.style.display="none";return}
+  el.style.display=""
+  var start=(state.page-1)*PAGE_SIZE+1
+  var end=Math.min(state.page*PAGE_SIZE,state.total)
+  $("pagerInfo").textContent="Showing "+start+"–"+end+" of "+state.total
+  $("prevBtn").disabled=state.page<=1
+  $("nextBtn").disabled=state.page>=state.pages
 }
 
 function renderList(){
