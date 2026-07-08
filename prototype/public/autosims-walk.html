@@ -165,7 +165,7 @@ a{color:inherit;text-decoration:none}
 
 <script>
 function $(id){return document.getElementById(id)}
-function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,c=({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]||c)}
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]||c})}
 function projParam(){try{return new URLSearchParams(location.search).get("project")}catch(e){return null}}
 function projQ(){var p=projParam();return p?"?project="+encodeURIComponent(p):""}
 
