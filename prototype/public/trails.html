@@ -442,6 +442,18 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
         <input id="wizUrl" type="url" placeholder="https://yourapp.com/login" autocomplete="url" />
       </label>
       <p class="hint">Use a staging or production URL — whichever you'd normally test manually.</p>
+      <label class="wiz-field">
+        Viewport
+        <select id="wizViewport">
+          <option value="desktop">Desktop 1280×720</option>
+          <option value="mobile">Mobile 390×844</option>
+        </select>
+      </label>
+      <label class="wiz-field">
+        Test account
+        <select id="wizAcc"><option value="">(none — public pages)</option></select>
+      </label>
+      <p class="hint" id="wizAccHint">Journeys that log in need a test account — the AutoSim fills its credentials at the login step.</p>
     </div>
 
     <!-- Step 3: Objective -->
@@ -473,6 +485,8 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
         <div class="wiz-rev-row"><span class="wiz-rev-label">Name</span><span class="wiz-rev-val" id="wizRevName"></span></div>
         <div class="wiz-rev-row"><span class="wiz-rev-label">URL</span><span class="wiz-rev-val" id="wizRevUrl"></span></div>
         <div class="wiz-rev-row wiz-rev-obj"><span class="wiz-rev-label">Journey</span><span class="wiz-rev-val" id="wizRevObj"></span></div>
+        <div class="wiz-rev-row"><span class="wiz-rev-label">Viewport</span><span class="wiz-rev-val" id="wizRevViewport"></span></div>
+        <div class="wiz-rev-row"><span class="wiz-rev-label">Account</span><span class="wiz-rev-val" id="wizRevAcc"></span></div>
         <div class="wiz-rev-row"><span class="wiz-rev-label">Reviewer</span><span class="wiz-rev-val" id="wizRevSim"></span></div>
       </div>
       <p class="hint" style="margin-top:12px">This usually takes 1–3 minutes. Keep this window open — you'll see every step live.</p>
@@ -1622,10 +1636,16 @@ async function loadAccounts(){
     var r = await fetch("/api/projects/" + pid2 + "/test-accounts")
     if(!r.ok) return
     var d = await r.json()
-    var sel = document.getElementById("ntAcc")
-    sel.length = 1
-    ;(d.accounts || []).forEach(function(a){
-      var o = document.createElement("option"); o.value = a.name; o.textContent = a.name + " (" + a.loginEmail + ")"; sel.appendChild(o)
+    // Fill both the raw modal (ntAcc) and the wizard (wizAcc) selectors, preserving selection.
+    ;["ntAcc", "wizAcc"].forEach(function(id){
+      var sel = document.getElementById(id)
+      if (!sel) return
+      var prev = sel.value
+      sel.length = 1
+      ;(d.accounts || []).forEach(function(a){
+        var o = document.createElement("option"); o.value = a.name; o.textContent = a.name + " (" + a.loginEmail + ")"; sel.appendChild(o)
+      })
+      if (prev) sel.value = prev
     })
   }catch(e){}
 }
@@ -1751,6 +1771,7 @@ function openWizard() {
   document.getElementById("wizBg").classList.add("show")
   wizRender()
   loadWizSims()
+  loadAccounts()
 }
 
 function closeWizard() {
@@ -1806,6 +1827,10 @@ function renderWizReview() {
   document.getElementById("wizRevName").textContent = document.getElementById("wizName").value.trim() || "(untitled)"
   document.getElementById("wizRevUrl").textContent = document.getElementById("wizUrl").value.trim()
   document.getElementById("wizRevObj").textContent = document.getElementById("wizObj").value.trim()
+  var vpSel = document.getElementById("wizViewport")
+  document.getElementById("wizRevViewport").textContent = vpSel.options[vpSel.selectedIndex] ? vpSel.options[vpSel.selectedIndex].textContent : "Desktop 1280×720"
+  var accSel = document.getElementById("wizAcc")
+  document.getElementById("wizRevAcc").textContent = accSel.value ? (accSel.options[accSel.selectedIndex] ? accSel.options[accSel.selectedIndex].textContent : accSel.value) : "None — public pages"
   var checked = document.querySelector("input[name=\"wizSim\"]:checked")
   document.getElementById("wizRevSim").textContent = (checked && checked.value) ? checked.value : "Default reviewer"
 }
@@ -1858,12 +1883,17 @@ document.getElementById("wizCreate").addEventListener("click", async function() 
   var objective = document.getElementById("wizObj").value.trim()
   var baseUrl = document.getElementById("wizUrl").value.trim()
 
+  var viewport = document.getElementById("wizViewport").value || "desktop"
+  var testAccount = document.getElementById("wizAcc").value || undefined
+
   // Mirror into ntBg so reattachActiveAuthorSession can show context if page refreshes
   document.getElementById("ntName").value = name
   document.getElementById("ntUrl").value = baseUrl
   document.getElementById("ntObj").value = objective
+  document.getElementById("ntViewport").value = viewport
+  if (testAccount) document.getElementById("ntAcc").value = testAccount
 
-  var body = { name: name, objective: objective, base_url: baseUrl, viewport: "desktop", sim_name: simName }
+  var body = { name: name, objective: objective, base_url: baseUrl, viewport: viewport, test_account: testAccount, sim_name: simName }
   var r = await fetch("/api/trails/author" + projQ(), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
   if (!r.ok) {
     var e = await r.json().catch(function(){ return {} })
