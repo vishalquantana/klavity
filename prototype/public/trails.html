@@ -1293,6 +1293,7 @@ function renderTrails(d){
     menu.innerHTML = '<button data-rename="'+esc(t.id)+'">'+kicon('pencil',{size:12})+' Rename</button>'
       + '<button data-toggle-pause="'+esc(t.id)+'" data-paused="'+String(isPaused)+'">'+pauseLabel+'</button>'
       + '<button data-set-schedule="'+esc(t.id)+'" data-schedule="'+esc(t.schedule||'')+'">'+kicon('clock',{size:12})+' Set schedule</button>'
+      + '<button data-archive="'+esc(t.id)+'">'+kicon('archive',{size:12})+' Archive</button>'
     wrap.appendChild(row)
     wrap.appendChild(menu)
     tEl.appendChild(wrap)
@@ -1406,6 +1407,26 @@ function renderTrails(d){
       var menu = document.getElementById("km-"+id)
       if (menu) menu.classList.remove("open")
       openSchedModal(id, current)
+    }
+  })
+  // Archive trail (KLA-160)
+  tEl.querySelectorAll("button[data-archive]").forEach(function(btn){
+    btn.onclick = async function(){
+      var id = btn.getAttribute("data-archive")
+      var menu = document.getElementById("km-"+id)
+      if (menu) menu.classList.remove("open")
+      if (!confirm("Archive this trail? It will be hidden from the main list but stays in the database and can be restored by re-activating it later.")) return
+      try {
+        var r = await fetch("/api/trails/"+encodeURIComponent(id)+projQ(), { method:"PATCH", headers:{"Content-Type":"application/json"}, body: JSON.stringify({status: "archived"}) })
+        if (r.ok) {
+          // Reload to reflect state change — archived trails are filtered out of the main list.
+          var d2 = await loadData()
+          if (d2) render(d2)
+        } else {
+          var d3 = await r.json().catch(function(){return{}})
+          alert(d3.error || "Could not archive trail")
+        }
+      } catch(e) { /* ignore */ }
     }
   })
   // Close menus on outside click
