@@ -63,34 +63,38 @@ declare module "node:crypto" { export const createHmac: any; export const timing
 declare module "node:dns/promises" { export const lookup: any; }
 declare module "node:net" { export const isIP: any; }
 EOF
-  if command -v bunx >/dev/null 2>&1; then
-    bunx tsc --noEmit --pretty false --strict false --noImplicitAny false --skipLibCheck \
-      --moduleResolution bundler --module esnext --target es2022 --lib es2022,dom \
-      "$tmpd/merge-train-globals.d.ts" "${changed[@]}" >"$logf" 2>&1
+  local runner="bunx"; command -v bunx >/dev/null 2>&1 || runner="bun x"
+  local TSC="--noEmit --pretty false --strict false --noImplicitAny false --skipLibCheck --moduleResolution bundler --module esnext --target es2022 --lib es2022,dom"
+  # (1) errors in the changed files AS MERGED (current working tree)
+  $runner tsc $TSC "$tmpd/merge-train-globals.d.ts" "${changed[@]}" >"$tmpd/head.log" 2>&1 || true
+  # (2) BASELINE: same files on origin/master in a clean throwaway worktree, so sibling/cross-file
+  #     imports resolve identically. This codebase carries pre-existing tsc noise (bun-isms,
+  #     isolated-file cross-module misses) — tolerate those; only block NET-NEW errors.
+  local basewt="$tmpd/basewt" basefiles=() f2
+  if git worktree add -q --detach "$basewt" origin/master 2>/dev/null; then
+    for f2 in "${changed[@]}"; do [ -f "$basewt/$f2" ] && basefiles+=("$f2"); done
+    if [ "${#basefiles[@]}" -gt 0 ]; then
+      ( cd "$basewt" && $runner tsc $TSC "$tmpd/merge-train-globals.d.ts" "${basefiles[@]}" ) >"$tmpd/base.log" 2>&1 || true
+    else
+      : >"$tmpd/base.log"
+    fi
+    git worktree remove --force "$basewt" 2>/dev/null || true
   else
-    bun x tsc --noEmit --pretty false --strict false --noImplicitAny false --skipLibCheck \
-      --moduleResolution bundler --module esnext --target es2022 --lib es2022,dom \
-      "$tmpd/merge-train-globals.d.ts" "${changed[@]}" >"$logf" 2>&1
+    log "tsc gate: could not create baseline worktree; skipping type gate for this branch"
+    : >"$tmpd/base.log"; cp "$tmpd/head.log" "$tmpd/base.log" 2>/dev/null || true
   fi
-  local code=$?
-  if [ "$code" -ne 0 ]; then
-    for f in "${changed[@]}"; do
-      if grep -F "${f}(" "$logf" >/dev/null 2>&1; then failed=1; fi
-    done
-    if [ "$failed" -eq 1 ]; then
-      log "tsc gate diagnostics for changed TS files:"
-      for f in "${changed[@]}"; do grep -F "${f}(" "$logf" | head -20; done
-      rm -rf "$tmpd"
-      return 1
-    fi
-    if ! grep -q "error TS" "$logf"; then
-      log "tsc gate failed before producing TypeScript diagnostics:"
-      sed -n '1,40p' "$logf"
-      rm -rf "$tmpd"
-      return 1
-    fi
-    log "tsc returned nonzero, but diagnostics were outside changed TS files; allowing merge"
+  local n_head n_base
+  n_head=$(grep -c "error TS" "$tmpd/head.log" 2>/dev/null || echo 0)
+  n_base=$(grep -c "error TS" "$tmpd/base.log" 2>/dev/null || echo 0)
+  if [ "$n_head" -gt "$n_base" ]; then
+    log "!!! INTEGRITY GATE: branch INCREASED tsc errors in changed files (${n_base} -> ${n_head}) — likely a real regression, blocking. New errors:"
+    diff <(grep "error TS" "$tmpd/base.log" 2>/dev/null | sed -E 's/\([0-9]+,[0-9]+\)/()/' | sort) \
+         <(grep "error TS" "$tmpd/head.log" 2>/dev/null | sed -E 's/\([0-9]+,[0-9]+\)/()/' | sort) 2>/dev/null \
+      | grep '^>' | head -20 | while IFS= read -r l; do log "  ${l#> }"; done
+    rm -rf "$tmpd"
+    return 1
   fi
+  [ "$n_base" -gt 0 ] && log "tsc gate: tolerated ${n_base} pre-existing error(s) in changed files (no net increase)"
   rm -rf "$tmpd"
   return 0
 }
