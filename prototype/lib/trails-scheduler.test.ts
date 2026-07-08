@@ -168,3 +168,42 @@ test("listAllScheduledTrails only returns active trails with a schedule", async 
   expect(ids).toContain(id)
   expect(ids).not.toContain(pausedId)
 })
+
+test("localToUtcCron / utcCronToLocal roundtrip and timezone offsets", () => {
+  const { localToUtcCron: toCron, utcCronToLocal: toLocal } = require("./trails-scheduler")
+  
+  // 1. Hourly
+  expect(toCron("hourly", 9, 0, [])).toBe("0 * * * *")
+  expect(toLocal("0 * * * *").frequency).toBe("hourly")
+  
+  // 2. Daily
+  const cronDaily = toCron("daily", 9, 0, [])
+  const localDaily = toLocal(cronDaily)
+  expect(localDaily.frequency).toBe("daily")
+  expect(localDaily.hour).toBe(9)
+  expect(localDaily.minute).toBe(0)
+  
+  // 3. Weekly
+  const cronWeekly = toCron("weekly", 14, 30, [1, 3, 5])
+  const localWeekly = toLocal(cronWeekly)
+  expect(localWeekly.frequency).toBe("weekly")
+  expect(localWeekly.hour).toBe(14)
+  expect(localWeekly.minute).toBe(30)
+  expect(localWeekly.weekdays).toEqual([1, 3, 5])
+})
+
+test("tickScheduler handles WalkBusyError and records a skipped run", async () => {
+  const { _resetWalkPoolForTest } = await import("./trails-browser")
+  // Hold the slot by setting active pool size to 0
+  _resetWalkPoolForTest(0, 0)
+  
+  const now = new Date()
+  const id = await seedScheduledTrail("* * * * *")
+  
+  await tickScheduler(now)
+  
+  const walks = await T.listRecentWalks("proj_s", 10)
+  const schedWalks = walks.filter(w => w.trailId === id && w.trigger === "scheduled")
+  expect(schedWalks.length).toBe(1)
+  expect(schedWalks[0].status).toBe("skipped")
+})
