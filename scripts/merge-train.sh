@@ -37,6 +37,61 @@ WIDGET_BUNDLE="packages/sdk/dist/klavity-widget.iife.js"
 # "feature markers" whose count in $DASH must never DROP across a merge.
 PROTECTED_PATTERNS=('kanbanSearch\|kb-toolbar' 'embedCopy')
 dash_count(){ [ -f "$DASH" ] && grep -c "$1" "$DASH" 2>/dev/null || echo 0; }
+typecheck_changed_ts(){
+  local pre="$1" tmpd logf failed=0 f
+  local changed=()
+  while IFS= read -r f; do
+    [ -f "$f" ] && changed+=("$f")
+  done < <(git diff --name-only "$pre"..HEAD -- '*.ts' '*.tsx' '*.mts' '*.cts')
+  [ "${#changed[@]}" -eq 0 ] && return 0
+  if ! command -v bunx >/dev/null 2>&1 && ! command -v bun >/dev/null 2>&1; then
+    log "tsc gate cannot run: bunx/bun unavailable"
+    return 1
+  fi
+  tmpd="$(mktemp -d 2>/dev/null || mktemp -d -t klav-merge-tsc)"
+  logf="$tmpd/tsc.log"
+  cat > "$tmpd/merge-train-globals.d.ts" <<'EOF'
+declare const process: any;
+declare const Bun: any;
+declare const Buffer: any;
+declare module "bun" { export class S3Client { constructor(...args: any[]) } }
+interface ImportMeta { dir: string; }
+declare module "node:async_hooks" { export class AsyncLocalStorage<T = any> { constructor(); run<R>(store: T, callback: () => R): R; getStore(): T | undefined; } }
+declare module "node:crypto" { export const createHmac: any; export const timingSafeEqual: any; export const randomUUID: any; }
+declare module "node:dns/promises" { export const lookup: any; }
+declare module "node:net" { export const isIP: any; }
+EOF
+  if command -v bunx >/dev/null 2>&1; then
+    bunx tsc --noEmit --pretty false --strict false --noImplicitAny false --skipLibCheck \
+      --moduleResolution bundler --module esnext --target es2022 --lib es2022,dom \
+      "$tmpd/merge-train-globals.d.ts" "${changed[@]}" >"$logf" 2>&1
+  else
+    bun x tsc --noEmit --pretty false --strict false --noImplicitAny false --skipLibCheck \
+      --moduleResolution bundler --module esnext --target es2022 --lib es2022,dom \
+      "$tmpd/merge-train-globals.d.ts" "${changed[@]}" >"$logf" 2>&1
+  fi
+  local code=$?
+  if [ "$code" -ne 0 ]; then
+    for f in "${changed[@]}"; do
+      if grep -F "${f}(" "$logf" >/dev/null 2>&1; then failed=1; fi
+    done
+    if [ "$failed" -eq 1 ]; then
+      log "tsc gate diagnostics for changed TS files:"
+      for f in "${changed[@]}"; do grep -F "${f}(" "$logf" | head -20; done
+      rm -rf "$tmpd"
+      return 1
+    fi
+    if ! grep -q "error TS" "$logf"; then
+      log "tsc gate failed before producing TypeScript diagnostics:"
+      sed -n '1,40p' "$logf"
+      rm -rf "$tmpd"
+      return 1
+    fi
+    log "tsc returned nonzero, but diagnostics were outside changed TS files; allowing merge"
+  fi
+  rm -rf "$tmpd"
+  return 0
+}
 
 changed=0; merged=""
 for b in $(git for-each-ref --format='%(refname:short)' refs/heads/ | grep -E '^feat/'); do
@@ -60,6 +115,11 @@ for b in $(git for-each-ref --format='%(refname:short)' refs/heads/ | grep -E '^
     # 2) committed widget bundle must stay valid JS (a broken bundle ships silently)
     if command -v node >/dev/null && [ -f "$WIDGET_BUNDLE" ] && ! node --check "$WIDGET_BUNDLE" >/dev/null 2>&1; then
       why="$why widget-bundle-syntax"
+    fi
+    # 3) changed TypeScript must pass a tsc --noEmit binding/type pass. If a branch introduces a
+    # scope/name error, revert it before it reaches master.
+    if ! typecheck_changed_ts "$pre"; then
+      why="$why tsc-noEmit"
     fi
     if [ -n "$why" ]; then
       log "!!! INTEGRITY GATE BLOCKED $b — reverting (stale-base regressed:$why). Branch must rebase onto master."
