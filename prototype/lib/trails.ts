@@ -326,6 +326,26 @@ export async function listRecentWalks(projectId: string, limit = 20): Promise<Wa
   return r.rows.map(rowToWalk)
 }
 
+// KLA-158: Paginated walk list for the All Walks page. Returns walks + total count in one round-trip.
+export async function listWalksPaged(
+  projectId: string,
+  page: number,
+  limit: number,
+): Promise<{ walks: Walk[]; total: number }> {
+  const offset = (page - 1) * limit
+  const [r, countR] = await Promise.all([
+    db!.execute({
+      sql: `SELECT * FROM trail_runs WHERE project_id=? ORDER BY started_at DESC LIMIT ? OFFSET ?`,
+      args: [projectId, limit, offset],
+    }),
+    db!.execute({
+      sql: `SELECT COUNT(*) as cnt FROM trail_runs WHERE project_id=?`,
+      args: [projectId],
+    }),
+  ])
+  return { walks: r.rows.map(rowToWalk), total: Number((countR.rows[0] as any).cnt) }
+}
+
 export interface TrailRunHistoryEntry {
   runId: string
   status: "running" | "green" | "amber" | "red"
