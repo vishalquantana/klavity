@@ -1,6 +1,6 @@
 // Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
 import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim } from "./lib/db"
 import { issueKeyFor, chooseDedup } from "./lib/dedup"
 import { classifySimObservation } from "./lib/sim-bug-classify"
 import { getConnector, listConnectorTypes, type TicketPayload, type TicketAttachment } from "./lib/connectors/index"
@@ -218,7 +218,7 @@ const ASSERT_SYS =
 // jsonMode forces structured output — safe for text calls, but Gemini's vision path
 // via OpenRouter often returns empty content under json_object, so leave it OFF for
 // image calls and rely on the prompt + parseJSON's extraction instead.
-async function chat(messages: any[], maxTokens: number, jsonMode = false, ctx?: { type: string; email?: string | null; projectId?: string | null; model?: string }) {
+async function chat(messages: any[], maxTokens: number, jsonMode = false, ctx?: { type: string; feature?: string | null; email?: string | null; projectId?: string | null; model?: string }) {
   const t0 = Date.now()
   const label = ctx?.type || "chat"
   // M5/LLM10: enforce the daily spend cap server-side, ATOMICALLY. The old `opsTodaySpend() >= cap`
@@ -242,6 +242,13 @@ async function chat(messages: any[], maxTokens: number, jsonMode = false, ctx?: 
     }
   }
   const model = ctx?.model ?? pickModel(await getActiveWeights(), MODEL_CHOICE_IDS, MODEL, Math.random())
+  const recordFailure = (reason: string) => {
+    if (!ctx) return
+    void recordAiCall({
+      type: ctx.type, feature: ctx.feature ?? null, model, actorEmail: ctx.email ?? null, projectId: ctx.projectId ?? null,
+      inputTokens: null, outputTokens: null, costUsd: 0, ok: false,
+    }).catch((e: any) => console.error(`recordAiCall failed for ${reason}:`, e?.message || e))
+  }
   const ctl = new AbortController()
   const timer = setTimeout(() => ctl.abort(), 90_000)  // never hang a request forever
   let res: Response
@@ -256,20 +263,34 @@ async function chat(messages: any[], maxTokens: number, jsonMode = false, ctx?: 
     clearTimeout(timer)
     // The call never produced a billable response → release the reservation back to today's budget.
     if (spendReserved) void reconcileDailySpend(spendEst, 0).catch(() => {})
+    recordFailure("fetch")
     const ms = Date.now() - t0
     if (e?.name === "AbortError") { console.error(`AI[${label}] TIMEOUT after ${ms}ms`); throw new Error("The model took too long (>90s). Please try again.") }
     console.error(`AI[${label}] network error after ${ms}ms:`, e?.message || e); throw e
   }
   clearTimeout(timer)
-  if (!res.ok) { if (spendReserved) void reconcileDailySpend(spendEst, 0).catch(() => {}); const body = (await res.text()).slice(0, 300); console.error(`AI[${label}] OpenRouter ${res.status} after ${Date.now() - t0}ms: ${body}`); throw new Error(`OpenRouter ${res.status}: ${body}`) }
-  const data: any = await res.json()
+  if (!res.ok) {
+    if (spendReserved) void reconcileDailySpend(spendEst, 0).catch(() => {})
+    recordFailure("http")
+    const body = (await res.text()).slice(0, 300)
+    console.error(`AI[${label}] OpenRouter ${res.status} after ${Date.now() - t0}ms: ${body}`)
+    throw new Error(`OpenRouter ${res.status}: ${body}`)
+  }
+  let data: any
+  try {
+    data = await res.json()
+  } catch (e: any) {
+    if (spendReserved) void reconcileDailySpend(spendEst, 0).catch(() => {})
+    recordFailure("json")
+    throw e
+  }
   const content: string = data?.choices?.[0]?.message?.content ?? ""
   const u = data?.usage || {}
   console.log(`AI[${label}] ok in ${Date.now() - t0}ms · ${u.prompt_tokens ?? "?"}/${u.completion_tokens ?? "?"} tok · $${u.cost ?? "?"}`)
   // Best-effort credit ledger — FIRE-AND-FORGET so a slow/stuck insert can never hang the response.
   if (ctx) {
     void recordAiCall({
-      type: ctx.type, model, actorEmail: ctx.email ?? null, projectId: ctx.projectId ?? null,
+      type: ctx.type, feature: ctx.feature ?? null, model, actorEmail: ctx.email ?? null, projectId: ctx.projectId ?? null,
       inputTokens: typeof u.prompt_tokens === "number" ? u.prompt_tokens : null,
       outputTokens: typeof u.completion_tokens === "number" ? u.completion_tokens : null,
       costUsd: typeof u.cost === "number" ? u.cost : null,
@@ -366,7 +387,7 @@ async function reactToPage(persona: any, imageB64: string, mediaType: string, pa
       { type: "text", text: "You are this persona:\n" + JSON.stringify(persona, null, 2) + `\n\nReact to this screenshot. The page URL (untrusted) is:\n` + wrapUntrusted(pageUrl || "(unknown URL)") },
       { type: "image_url", image_url: { url: `data:${mediaType};base64,${imageB64}` } },
     ] },
-  ], 2500, false, { type: "react", ...ctx })
+  ], 2500, false, { type: "react", feature: "sim-react", ...ctx })
   return { data: parseJSON(content), usage }
 }
 
@@ -2880,6 +2901,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const modelMix = { choices: MODEL_CHOICES.map(c => ({ id: c.id, label: c.label, price: c.price, weight: Number(weights[c.id]) || 0, pct: pct[c.id] })) }
       const html = renderOpsAdmin({ totals, daily, byProject, byTypeModel, recent, today, cap: OPS_DAILY_CAP_USD, offset, modelMix })
       return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } })
+    }
+    if (req.method === "GET" && path === "/api/opsadmin/cost-summary") {
+      if (!me || !isOpsAdmin(me)) return new Response("Not found", { status: 404 }) // hide route from non-ops
+      const days = Math.max(1, Math.min(366, Number(url.searchParams.get("days") || 30) || 30))
+      return json(await opsTenantCostSummary(days))
     }
     if (req.method === "POST" && path === "/opsadmin/model-mix") {
       if (!me || !isOpsAdmin(me)) return new Response("Not found", { status: 404 }) // hide route from non-ops

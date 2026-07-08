@@ -115,14 +115,37 @@ test("openRouterVisionResolver parses the model reply, reserves/reconciles spend
     expect(MODEL_CHOICE_IDS).toContain(sentModel!)
 
     // recordAiCall is now AWAITED inside the resolver — the row exists with NO sleep/race.
-    const rows = await visiondb.execute({ sql: "SELECT type, model, cost_usd FROM ai_calls WHERE type='reheal'", args: [] })
+    const rows = await visiondb.execute({ sql: "SELECT type, feature, model, cost_usd FROM ai_calls WHERE type='reheal' AND ok=1", args: [] })
     expect(rows.rows.length).toBe(1)
     expect(Number(rows.rows[0].cost_usd)).toBeCloseTo(0.0011)
+    expect(rows.rows[0].feature).toBe("heal")
     // The ledgered model matches the one actually sent to OpenRouter.
     expect(rows.rows[0].model).toBe(sentModel)
 
     const spend = await visiondb.execute("SELECT reserved_usd FROM daily_ai_spend")
     expect(Number(spend.rows[0].reserved_usd)).toBeCloseTo(0.0011)
+  } finally {
+    globalThis.fetch = realFetch
+    if (prevCap === undefined) delete process.env.OPS_DAILY_CAP_USD
+    else process.env.OPS_DAILY_CAP_USD = prevCap
+  }
+})
+
+test("openRouterVisionResolver logs ok=false when provider fetch fails after reservation", async () => {
+  const prevCap = process.env.OPS_DAILY_CAP_USD
+  const realFetch = globalThis.fetch
+  process.env.OPS_DAILY_CAP_USD = "50"
+  globalThis.fetch = mock(async () => {
+    throw new Error("provider offline")
+  }) as any
+  try {
+    await expect(openRouterVisionResolver({ screenshotB64: "QUJD", mediaType: "image/png", domSnapshot: "<div/>", pageUrl: "https://app.test/x", intent: "click sign in", action: "click", target: { role: "button", accessibleName: "Sign in" }, candidateSelectors: [] }, { projectId: "proj_fetch_fail" })).rejects.toThrow("provider offline")
+    const rows = await visiondb.execute({ sql: "SELECT type, feature, ok, cost_usd FROM ai_calls WHERE project_id='proj_fetch_fail' ORDER BY created_at DESC", args: [] })
+    expect(rows.rows.length).toBe(1)
+    expect(rows.rows[0].type).toBe("reheal")
+    expect(rows.rows[0].feature).toBe("heal")
+    expect(Number(rows.rows[0].ok)).toBe(0)
+    expect(Number(rows.rows[0].cost_usd)).toBe(0)
   } finally {
     globalThis.fetch = realFetch
     if (prevCap === undefined) delete process.env.OPS_DAILY_CAP_USD

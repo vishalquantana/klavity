@@ -180,6 +180,12 @@ export const openRouterAuthorModel: AuthorModel = async (input, ctx) => {
   const model = pickModel(weights, MODEL_CHOICE_IDS, AUTHOR_FALLBACK_MODEL, Math.random())
   const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 90_000)
   let reconciled = false
+  const recordFailure = async () => {
+    await recordAiCall({
+      type: "author-drive", feature: "author-drive", model, projectId: ctx.projectId, actorEmail: ctx.email ?? null,
+      inputTokens: null, outputTokens: null, costUsd: 0, ok: false,
+    }).catch(() => {})
+  }
   try {
     let res: Response
     try {
@@ -193,22 +199,31 @@ export const openRouterAuthorModel: AuthorModel = async (input, ctx) => {
     } catch (fetchErr: any) {
       // Network error or AbortController timeout — retryable.
       await reconcileDailySpend(DEFAULT_AI_CALL_EST_USD, 0); reconciled = true
+      await recordFailure()
       throw new ModelCallError(`author model timed out or network error: ${fetchErr?.message || fetchErr}`, true, false, 0)
     }
     if (!res.ok) {
       await reconcileDailySpend(DEFAULT_AI_CALL_EST_USD, 0); reconciled = true
+      await recordFailure()
       // 401/403 = auth failure → fatal. 429/5xx = transient → retryable.
       const retryable = res.status === 429 || res.status >= 500
       const fatal = res.status === 401 || res.status === 403
       throw new ModelCallError(`author model ${res.status}`, retryable && !fatal, false, res.status)
     }
-    const data: any = await res.json()
+    let data: any
+    try {
+      data = await res.json()
+    } catch (e) {
+      await reconcileDailySpend(DEFAULT_AI_CALL_EST_USD, 0); reconciled = true
+      await recordFailure()
+      throw e
+    }
     const u = data?.usage || {}
     const cost = typeof u.cost === "number" ? u.cost : 0
     await reconcileDailySpend(DEFAULT_AI_CALL_EST_USD, cost)
     reconciled = true
     await recordAiCall({
-      type: "author-drive", model, projectId: ctx.projectId, actorEmail: ctx.email ?? null,
+      type: "author-drive", feature: "author-drive", model, projectId: ctx.projectId, actorEmail: ctx.email ?? null,
       inputTokens: typeof u.prompt_tokens === "number" ? u.prompt_tokens : null,
       outputTokens: typeof u.completion_tokens === "number" ? u.completion_tokens : null,
       costUsd: cost || null,
@@ -279,6 +294,12 @@ export const openRouterObjectiveVerifier: ObjectiveVerifier = async (input, ctx)
   const model = pickModel(selectVerifierWeights(modelMixEnabled), MODEL_CHOICE_IDS, AUTHOR_FALLBACK_MODEL, Math.random())
   const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 90_000)
   let reconciled = false
+  const recordFailure = async () => {
+    await recordAiCall({
+      type: "author-drive", feature: "author-drive", model, projectId: ctx.projectId, actorEmail: ctx.email ?? null,
+      inputTokens: null, outputTokens: null, costUsd: 0, ok: false,
+    }).catch(() => {})
+  }
   try {
     let res: Response
     try {
@@ -291,21 +312,30 @@ export const openRouterObjectiveVerifier: ObjectiveVerifier = async (input, ctx)
       })
     } catch (fetchErr: any) {
       await reconcileDailySpend(DEFAULT_AI_CALL_EST_USD, 0); reconciled = true
+      await recordFailure()
       throw new ModelCallError(`verifier model timed out or network error: ${fetchErr?.message || fetchErr}`, true, false, 0)
     }
     if (!res.ok) {
       await reconcileDailySpend(DEFAULT_AI_CALL_EST_USD, 0); reconciled = true
+      await recordFailure()
       const retryable = res.status === 429 || res.status >= 500
       const fatal = res.status === 401 || res.status === 403
       throw new ModelCallError(`verifier model ${res.status}`, retryable && !fatal, false, res.status)
     }
-    const data: any = await res.json()
+    let data: any
+    try {
+      data = await res.json()
+    } catch (e) {
+      await reconcileDailySpend(DEFAULT_AI_CALL_EST_USD, 0); reconciled = true
+      await recordFailure()
+      throw e
+    }
     const u = data?.usage || {}
     const cost = typeof u.cost === "number" ? u.cost : 0
     await reconcileDailySpend(DEFAULT_AI_CALL_EST_USD, cost)
     reconciled = true
     await recordAiCall({
-      type: "author-drive", model, projectId: ctx.projectId, actorEmail: ctx.email ?? null,
+      type: "author-drive", feature: "author-drive", model, projectId: ctx.projectId, actorEmail: ctx.email ?? null,
       inputTokens: typeof u.prompt_tokens === "number" ? u.prompt_tokens : null,
       outputTokens: typeof u.completion_tokens === "number" ? u.completion_tokens : null,
       costUsd: cost || null,
@@ -317,4 +347,3 @@ export const openRouterObjectiveVerifier: ObjectiveVerifier = async (input, ctx)
     if (!reconciled) await reconcileDailySpend(DEFAULT_AI_CALL_EST_USD, 0).catch(() => {})
   }
 }
-
