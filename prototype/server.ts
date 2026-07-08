@@ -40,8 +40,8 @@ import { listRunSteps, listTrails, getTrail, getWalk, setTrailStatus, listTrailS
 import { runWalkNow } from "./lib/trails-trigger"
 import { startTrailScheduler, isValidCron } from "./lib/trails-scheduler"
 import { startCrashReaper } from "./lib/trails-reaper"
-import { runAuthorNow, getAuthorSession, getActiveAuthorSession, listStalledAuthorSessions } from "./lib/trails-author"
-import { WalkBusyError, cancelCurrentWalk, PdfBusyError } from "./lib/trails-browser"
+import { runAuthorNow, getAuthorSession, getActiveAuthorSession, listStalledAuthorSessions, AUTOSIM_DEADLINE_MS_DEFAULT } from "./lib/trails-author"
+import { WalkBusyError, cancelCurrentWalk, cancelCurrentAuthor, PdfBusyError } from "./lib/trails-browser"
 import { mintShareToken, resolveShareToken, renderWalkPdf, revokeShareToken, listShareTokens } from "./lib/trails-share"
 import { gatherWalkReport } from "./lib/trails-report"
 import { liveWatchSseResponse } from "./lib/trails-live-watch"
@@ -3358,12 +3358,24 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       }
       if (req.method === "GET" && path === "/api/trails/author/active") {
         const s = await getActiveAuthorSession(projectId)
-        return s ? json(s) : json({ error: "No active session" }, 404)
+        return s ? json({ ...s, limitMs: AUTOSIM_DEADLINE_MS_DEFAULT }) : json({ error: "No active session" }, 404)
       }
       // GET /api/trails/author/stalled — KLA-152: list recent stalled sessions with a checkpoint or partial draft.
       if (req.method === "GET" && path === "/api/trails/author/stalled") {
         const sessions = await listStalledAuthorSessions(projectId)
         return json({ sessions })
+      }
+      // POST /api/trails/author/:sessionId/cancel — KLA-151: abort the in-flight author drive at the next step boundary.
+      {
+        const authorCancelMatch = path.match(/^\/api\/trails\/author\/([^/]+)\/cancel$/)
+        if (req.method === "POST" && authorCancelMatch) {
+          const sessionId = authorCancelMatch[1]
+          const s = await getAuthorSession(projectId, sessionId)
+          if (!s) return json({ error: "Not found" }, 404)
+          if (s.status !== "running") return json({ error: "Session is not running" }, 409)
+          const signalled = cancelCurrentAuthor(sessionId)
+          return json({ ok: signalled, queued: !signalled })
+        }
       }
       // POST /api/trails/author/:sessionId/resume — KLA-152: resume a stalled session from its checkpoint.
       {
@@ -3388,7 +3400,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       }
       if (req.method === "GET" && path.startsWith("/api/trails/author/")) {
         const s = await getAuthorSession(projectId, path.slice("/api/trails/author/".length))
-        return s ? json(s) : json({ error: "Not found" }, 404)
+        return s ? json({ ...s, limitMs: AUTOSIM_DEADLINE_MS_DEFAULT }) : json({ error: "Not found" }, 404)
       }
 
       // GET /api/trails/:id/steps — return a draft trail's steps so the UI can show a review before Activate.
