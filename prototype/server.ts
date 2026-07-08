@@ -3149,12 +3149,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             listRunSteps(projectId, runId),
           ])
           if (!walk) return json({ error: "Walk not found." }, 404)
-          const [trail, replaySet, judgment] = await Promise.all([
+          const [trail, replaySet, judgment, findings] = await Promise.all([
             getTrail(projectId, walk.trailId),
             runsWithReplay(projectId, [runId]),
             getWalkJudgment(projectId, runId),
+            listFindings(projectId, { runId, limit: 1000 }),
           ])
-          return json({ walk, trail, steps, hasReplay: replaySet.has(runId), judgment: judgment ?? null })
+          return json({ walk, trail, steps, hasReplay: replaySet.has(runId), judgment: judgment ?? null, findings })
         } catch (e) {
           return json(oops(e, "trails-walk-detail"), 500)
         }
@@ -3454,6 +3455,54 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           }
           if (e instanceof WalkBusyError) return json({ error: "AutoSim busy" }, 409)
           return json(oops(e, "trails-report-pdf"), 500)
+        }
+      }
+
+      // POST /api/trails/walks/:runId/findings — KLA-155: owner adds a manual bug/finding to a walk.
+      // Mirrors the shared-token version but uses session auth instead. Project-scoped.
+      const ownerFindingAddMatch = path.match(/^\/api\/trails\/walks\/([^/]+)\/findings$/)
+      if (req.method === "POST" && ownerFindingAddMatch) {
+        const runId = ownerFindingAddMatch[1]
+        try {
+          const walk = await getWalk(projectId, runId)
+          if (!walk) return json({ error: "Walk not found." }, 404)
+          const body = await req.json().catch(() => ({}))
+          const title = String((body as any).title || "").trim().slice(0, 160)
+          const detail = String((body as any).detail || "").trim().slice(0, 2000)
+          if (!title) return json({ error: "title required" }, 400)
+          const id = crypto.randomUUID()
+          const result = await recordFinding(projectId, {
+            runId, trailId: walk.trailId, kind: "regression", title,
+            evidence: { reason: "manual_bug", detail, source: "owner_walk_page" },
+            groundQuote: detail || title, confidence: 0.75,
+            dedupKey: `manual:${runId}:${id}`,
+          })
+          return json({ ok: true, id: result.id })
+        } catch (e) {
+          return json(oops(e, "owner-walk-add-finding"), 500)
+        }
+      }
+
+      // GET /api/trails/walks/:runId/steps/:stepId/screenshot — KLA-155: serve screenshot stored in S3
+      // for a run_step. Project-scoped. Returns the image as binary (Content-Type: image/*).
+      const stepShotMatch = path.match(/^\/api\/trails\/walks\/([^/]+)\/steps\/([^/]+)\/screenshot$/)
+      if (req.method === "GET" && stepShotMatch) {
+        const [, runId, stepId] = stepShotMatch
+        try {
+          const r = await db!.execute({
+            sql: `SELECT evidence_json FROM run_steps WHERE project_id=? AND run_id=? AND id=? LIMIT 1`,
+            args: [projectId, runId, stepId],
+          })
+          if (!r.rows.length) return json({ error: "Step not found" }, 404)
+          const ev: any = JSON.parse(String((r.rows[0] as any).evidence_json || "{}"))
+          const key = ev?.screenshotKey as string | undefined
+          if (!key) return json({ error: "No screenshot for this step" }, 404)
+          const { getObjectBytes } = await import("./lib/s3")
+          const obj = await getObjectBytes(key)
+          const ct = obj.contentType?.startsWith("image/") ? obj.contentType : "image/png"
+          return new Response(obj.bytes, { headers: { "Content-Type": ct, "Cache-Control": "private,max-age=86400" } })
+        } catch (e) {
+          return json(oops(e, "walk-step-screenshot"), 500)
         }
       }
 
