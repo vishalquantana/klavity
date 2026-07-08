@@ -69,7 +69,7 @@ body[data-view="recurring"] [data-view]:not([data-view~="recurring"]){display:no
 .pill.green{background:rgba(15,157,107,.16);color:var(--green)}
 .pill.amber{background:rgba(217,131,36,.18);color:var(--amber)}
 .pill.red{background:rgba(219,39,119,.16);color:var(--rose)}
-.pill.running,.pill.skip{background:var(--ink-3);color:var(--paper-faint)}
+.pill.running,.pill.skip,.pill.skipped,.pill.missed{background:var(--ink-3);color:var(--paper-faint)}
 .pill.pill-draft{background:rgba(139,139,245,.14);color:var(--indigo)}
 .pill.paused{background:rgba(139,139,139,.15);color:var(--paper-faint)}
 .find{padding:15px 16px;background:var(--ink);border:1px solid var(--line);border-radius:14px}
@@ -4562,11 +4562,38 @@ load()
       <button class="mclose" id="schedClose" aria-label="Close">&times;</button>
     </div>
     <p class="lead" style="margin-bottom:14px">Run this AutoSim automatically on a schedule.</p>
-    <label>Cron expression <input id="schedExpr" placeholder="0 9 * * *  — every day at 09:00" /></label>
+    <div class="sched-builder-row" style="margin-bottom:12px; display:flex; gap:10px; flex-wrap:wrap">
+      <div style="flex:1; min-width:120px">
+        <label for="schedFreq" style="display:block; font-size:12px; font-weight:600; color:var(--paper-dim); margin-bottom:4px">Frequency</label>
+        <select id="schedFreq" style="width:100%; padding:8px 12px; background:var(--ink); border:1px solid var(--line); border-radius:9px; color:var(--paper)">
+          <option value="hourly">Hourly</option>
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly</option>
+        </select>
+      </div>
+      <div id="schedTimeCol" style="flex:1; min-width:120px; display:none">
+        <label for="schedTime" style="display:block; font-size:12px; font-weight:600; color:var(--paper-dim); margin-bottom:4px">Time</label>
+        <input type="time" id="schedTime" value="09:00" style="width:100%; padding:8px 12px; background:var(--ink); border:1px solid var(--line); border-radius:9px; color:var(--paper)" />
+      </div>
+    </div>
+    <div id="schedDaysCol" style="margin-bottom:14px; display:none">
+      <label style="display:block; font-size:12px; font-weight:600; color:var(--paper-dim); margin-bottom:6px">Run on days</label>
+      <div style="display:flex; gap:6px; flex-wrap:wrap">
+        <button type="button" class="btn btn-ghost sched-day-btn" data-day="1" style="flex:1; padding:6px; font-size:12px">Mon</button>
+        <button type="button" class="btn btn-ghost sched-day-btn" data-day="2" style="flex:1; padding:6px; font-size:12px">Tue</button>
+        <button type="button" class="btn btn-ghost sched-day-btn" data-day="3" style="flex:1; padding:6px; font-size:12px">Wed</button>
+        <button type="button" class="btn btn-ghost sched-day-btn" data-day="4" style="flex:1; padding:6px; font-size:12px">Thu</button>
+        <button type="button" class="btn btn-ghost sched-day-btn" data-day="5" style="flex:1; padding:6px; font-size:12px">Fri</button>
+        <button type="button" class="btn btn-ghost sched-day-btn" data-day="6" style="flex:1; padding:6px; font-size:12px">Sat</button>
+        <button type="button" class="btn btn-ghost sched-day-btn" data-day="0" style="flex:1; padding:6px; font-size:12px">Sun</button>
+      </div>
+    </div>
+    <div id="schedLocalHint" style="font-size:12px; color:var(--paper-dim); margin-bottom:14px; min-height:18px"></div>
+    <input type="hidden" id="schedExpr" />
     <div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0">
-      <button type="button" class="btn btn-ghost sched-preset" data-preset="0 * * * *">Hourly</button>
-      <button type="button" class="btn btn-ghost sched-preset" data-preset="0 9 * * *">Daily · 9am</button>
-      <button type="button" class="btn btn-ghost sched-preset" data-preset="0 9 * * 1">Weekly · Mon</button>
+      <button type="button" class="btn btn-ghost sched-preset" data-preset="hourly">Hourly</button>
+      <button type="button" class="btn btn-ghost sched-preset" data-preset="daily">Daily · 9am local</button>
+      <button type="button" class="btn btn-ghost sched-preset" data-preset="weekly">Weekly · Mon local</button>
     </div>
     <div id="schedErr" class="err"></div>
     <div style="display:flex;gap:10px;margin-top:16px">
@@ -4902,7 +4929,7 @@ load()
       var isDraft=t.status==="draft";var isPaused=t.status==="paused"
       var wrap=document.createElement("div");wrap.className="trail-wrap"
       var row=document.createElement("div");row.className="trail"+(isPaused?" paused":"")
-      var schedChip=t.schedule?'<span class="schedule-chip">'+kicon("clock",{size:9})+" "+esc(t.schedule)+"</span>":""
+      var schedChip=t.schedule?'<span class="schedule-chip">'+kicon("clock",{size:9})+" "+esc(friendlySchedule(t.schedule))+"</span>":""
       var vp=t.viewport?((t.viewport.preset?t.viewport.preset+" ":"")+t.viewport.width+"×"+t.viewport.height):"default viewport"
       var html='<div class="body"><div class="t" data-trail-name-el="'+esc(t.id)+'">'+esc(t.name)+'</div><div class="d">'+esc(t.baseUrl)+" · "+esc(vp)+"</div></div>"
       html+=schedChip+'<span class="run-msg"></span><span class="heal-diff" data-heal="'+esc(t.id)+'" style="display:none"></span>'
@@ -5002,11 +5029,146 @@ load()
     })
   }
 
-  // ── KLA-88: Schedule modal ────────────────────────────────────────────────
+  // ── KLA-159: Schedule timezone helpers ─────────────────────────────────────────
+  function localToUtcCron(frequency, hour, minute, localDows) {
+    if (frequency === "hourly") return "0 * * * *"
+    if (frequency === "daily") {
+      var d = new Date()
+      d.setHours(hour, minute, 0, 0)
+      return d.getUTCMinutes() + " " + d.getUTCHours() + " * * *"
+    }
+    if (frequency === "weekly") {
+      var utcDows = []
+      var utcHour = 0
+      var utcMin = 0
+      localDows.forEach(function(dow) {
+        var d = new Date()
+        d.setHours(hour, minute, 0, 0)
+        var currentDow = d.getDay()
+        d.setDate(d.getDate() + (dow - currentDow))
+        utcDows.push(d.getUTCDay())
+        utcHour = d.getUTCHours()
+        utcMin = d.getUTCMinutes()
+      })
+      var uniqueUtcDows = utcDows.filter(function(v, i, self) { return self.indexOf(v) === i }).sort(function(a, b) { return a - b })
+      return utcMin + " " + utcHour + " * * " + uniqueUtcDows.join(",")
+    }
+    return ""
+  }
+
+  function utcCronToLocal(cron) {
+    var parts = (cron || "").trim().split(/\s+/)
+    if (parts.length !== 5) {
+      return { frequency: "daily", hour: 9, minute: 0, weekdays: [] }
+    }
+    var minStr = parts[0], hourStr = parts[1], domStr = parts[2], monStr = parts[3], dowStr = parts[4]
+    if (hourStr === "*") {
+      return { frequency: "hourly", hour: 9, minute: 0, weekdays: [] }
+    }
+    var min = parseInt(minStr, 10) || 0
+    var hour = parseInt(hourStr, 10) || 0
+    if (dowStr === "*") {
+      var d = new Date(Date.UTC(2026, 6, 5, hour, min))
+      return { frequency: "daily", hour: d.getHours(), minute: d.getMinutes(), weekdays: [] }
+    }
+    var utcDows = dowStr.split(",").map(function(x) { return parseInt(x, 10) })
+    var localDows = []
+    var localHour = 9
+    var localMin = 0
+    utcDows.forEach(function(dow) {
+      var d = new Date(Date.UTC(2026, 6, 5 + dow, hour, min))
+      localDows.push(d.getDay())
+      localHour = d.getHours()
+      localMin = d.getMinutes()
+    })
+    var uniqueLocalDows = localDows.filter(function(v, i, self) { return self.indexOf(v) === i }).sort(function(a, b) { return a - b })
+    return { frequency: "weekly", hour: localHour, minute: localMin, weekdays: uniqueLocalDows }
+  }
+
+  function friendlySchedule(cron) {
+    if (!cron) return ""
+    var localVals = utcCronToLocal(cron)
+    var pad = function(n) { return n < 10 ? "0" + n : n }
+    var timeStr = pad(localVals.hour) + ":" + pad(localVals.minute)
+    if (localVals.frequency === "hourly") return "Hourly"
+    if (localVals.frequency === "daily") return "Daily · " + timeStr
+    var labels = { 1: "Mon", 2: "Tue", 3: "Wed", 4: "Thu", 5: "Fri", 6: "Sat", 0: "Sun" }
+    var order = [1, 2, 3, 4, 5, 6, 0]
+    var days = []
+    order.forEach(function(d) {
+      if (localVals.weekdays.indexOf(d) !== -1) {
+        days.push(labels[d])
+      }
+    })
+    return "Weekly · " + days.join(",") + " · " + timeStr
+  }
+
+  // ── KLA-88/159: Schedule modal ────────────────────────────────────────────────
   var schedState={trailId:null}
+  var selectedSchedDays = new Set()
+
+  function updateSchedBuilderUI() {
+    var freq = $("schedFreq").value
+    var timeCol = $("schedTimeCol")
+    var daysCol = $("schedDaysCol")
+    if (freq === "hourly") {
+      timeCol.style.display = "none"
+      daysCol.style.display = "none"
+    } else if (freq === "daily") {
+      timeCol.style.display = ""
+      daysCol.style.display = "none"
+    } else if (freq === "weekly") {
+      timeCol.style.display = ""
+      daysCol.style.display = ""
+    }
+    var tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "local time"
+    var hint = ""
+    if (freq === "hourly") {
+      hint = "Runs at minute 0 of every hour (" + tz + ")."
+    } else {
+      var timeVal = $("schedTime").value || "09:00"
+      if (freq === "daily") {
+        hint = "Runs every day at " + timeVal + " (" + tz + ")."
+      } else if (freq === "weekly") {
+        var dayNames = []
+        var order = [1, 2, 3, 4, 5, 6, 0]
+        var labels = { 1: "Mon", 2: "Tue", 3: "Wed", 4: "Thu", 5: "Fri", 6: "Sat", 0: "Sun" }
+        order.forEach(function(d) {
+          if (selectedSchedDays.has(d)) {
+            dayNames.push(labels[d])
+          }
+        })
+        if (dayNames.length === 0) {
+          hint = "Select at least one day to run."
+        } else {
+          hint = "Runs on " + dayNames.join(", ") + " at " + timeVal + " (" + tz + ")."
+        }
+      }
+    }
+    $("schedLocalHint").textContent = hint
+  }
+
   function openSchedModal(trailId,current){
-    schedState.trailId=trailId;$("schedExpr").value=current||""
-    $("schedErr").textContent="";$("schedBg").classList.add("open");$("schedExpr").focus()
+    schedState.trailId=trailId
+    $("schedErr").textContent=""
+    var localVals = utcCronToLocal(current)
+    $("schedFreq").value = localVals.frequency
+    var pad = function(n) { return n < 10 ? "0" + n : n }
+    $("schedTime").value = pad(localVals.hour) + ":" + pad(localVals.minute)
+    selectedSchedDays.clear()
+    document.querySelectorAll(".sched-day-btn").forEach(function(btn) {
+      var day = parseInt(btn.getAttribute("data-day"), 10)
+      if (localVals.weekdays.indexOf(day) !== -1) {
+        selectedSchedDays.add(day)
+        btn.classList.add("btn-indigo")
+        btn.classList.remove("btn-ghost")
+      } else {
+        btn.classList.remove("btn-indigo")
+        btn.classList.add("btn-ghost")
+      }
+    })
+    $("schedBg").classList.add("open")
+    updateSchedBuilderUI()
   }
   function closeSchedModal(){$("schedBg").classList.remove("open");schedState.trailId=null}
   async function saveSchedule(expr){
@@ -5056,14 +5218,16 @@ load()
       var pdfHref="/api/trails/walks/"+encodeURIComponent(w.id)+"/report.pdf"+projQ()
       var detailHref="/autosims/walk/"+encodeURIComponent(w.id)+projQ()
       var trailLabel=esc(trailNameFor[w.trailId]||w.trailId)
-      wRow.innerHTML='<div class="body"><div class="t">'+trailLabel+"</div><div class=\"d\">"+esc(w.id)+" · "+esc(when)+" · "+esc(w.llmCalls||0)+" LLM</div></div>"
-        +(w.hasReplay?'<a class="replay-btn" href="'+esc(detailHref)+'" target="_top">'+kicon("play",{size:10})+" Replay</a>":"")
-        +'<a class="replay-btn" href="'+esc(detailHref)+'" target="_top">'+kicon("eye",{size:10})+" View</a>"
+      wRow.innerHTML='<div class="body"><div class="t">'+trailLabel+"</div><div class=\"d\">"+esc(w.id)+" · "+esc(when)+(v !== "skipped" && v !== "missed" ? ' · '+esc(w.llmCalls||0)+' LLM' : '')+"</div></div>"
+        +(w.hasReplay && v !== "skipped" && v !== "missed" ?'<a class="replay-btn" href="'+esc(detailHref)+'" target="_top">'+kicon("play",{size:10})+" Replay</a>":"")
+        +(v !== "skipped" && v !== "missed" && v !== "running" ?'<a class="replay-btn" href="'+esc(detailHref)+'" target="_top">'+kicon("eye",{size:10})+" View</a>":"")
         +(v==="running"?'<button class="replay-btn" data-live-run="'+esc(w.id)+'">'+kicon("eye",{size:10})+" Live</button>":"")
-        +'<a class="walk-pdf-btn" href="'+esc(pdfHref)+'" target="_blank" rel="noopener">'+kicon("file-text",{size:10})+" PDF</a>"
-        +'<button class="walk-share-btn" data-share-run="'+esc(w.id)+'">'+kicon("link",{size:10})+" Share</button>"
+        +(v !== "skipped" && v !== "missed" ?'<a class="walk-pdf-btn" href="'+esc(pdfHref)+'" target="_blank" rel="noopener">'+kicon("file-text",{size:10})+" PDF</a>":"")
+        +(v !== "skipped" && v !== "missed" ?'<button class="walk-share-btn" data-share-run="'+esc(w.id)+'">'+kicon("link",{size:10})+" Share</button>":"")
         +'<span class="walk-share-msg" data-share-msg="'+esc(w.id)+'"></span>'
         +(v==="red"?' <span class="muted">— regression or hard failure; check walk report.</span>':"")
+        +(v==="skipped"?' <span class="muted">— skipped (another walk was already running).</span>':"")
+        +(v==="missed"?' <span class="muted">— missed / failed to start.</span>':"")
         +'<span class="pill '+esc(v)+'">'+esc(v)+"</span>"
         +(v==="amber"?' <span class="muted">— healed but unconfirmed; review findings queue.</span>':"")
       wEl.appendChild(wRow)
@@ -5466,15 +5630,71 @@ load()
     $("schedClose").onclick=closeSchedModal
     $("schedCancel").onclick=closeSchedModal
     $("schedBg").onclick=function(e){if(e.target===$("schedBg"))closeSchedModal()}
-    document.querySelectorAll(".sched-preset").forEach(function(btn){btn.onclick=function(){$("schedExpr").value=btn.getAttribute("data-preset");$("schedErr").textContent=""}})
-    $("schedSave").onclick=async function(){
+    $("schedFreq").onchange = function() {
+      updateSchedBuilderUI()
+    }
+    $("schedTime").onchange = function() {
+      updateSchedBuilderUI()
+    }
+    document.querySelectorAll(".sched-day-btn").forEach(function(btn) {
+      btn.onclick = function() {
+        var day = parseInt(btn.getAttribute("data-day"), 10)
+        if (selectedSchedDays.has(day)) {
+          selectedSchedDays.delete(day)
+          btn.classList.remove("btn-indigo")
+          btn.classList.add("btn-ghost")
+        } else {
+          selectedSchedDays.add(day)
+          btn.classList.add("btn-indigo")
+          btn.classList.remove("btn-ghost")
+        }
+        updateSchedBuilderUI()
+      }
+    })
+    document.querySelectorAll(".sched-preset").forEach(function(btn){
+      btn.onclick = function(){
+        var preset = btn.getAttribute("data-preset")
+        if (preset === "hourly") {
+          $("schedFreq").value = "hourly"
+        } else if (preset === "daily") {
+          $("schedFreq").value = "daily"
+          $("schedTime").value = "09:00"
+          selectedSchedDays.clear()
+        } else if (preset === "weekly") {
+          $("schedFreq").value = "weekly"
+          $("schedTime").value = "09:00"
+          selectedSchedDays.clear()
+          selectedSchedDays.add(1)
+          document.querySelectorAll(".sched-day-btn").forEach(function(dBtn) {
+            var day = parseInt(dBtn.getAttribute("data-day"), 10)
+            if (day === 1) {
+              dBtn.classList.add("btn-indigo")
+              dBtn.classList.remove("btn-ghost")
+            } else {
+              dBtn.classList.remove("btn-indigo")
+              dBtn.classList.add("btn-ghost")
+            }
+          })
+        }
+        updateSchedBuilderUI()
+      }
+    })
+    $("schedSave").onclick = async function(){
       if ($("schedSave").disabled) return
-      var expr=$("schedExpr").value.trim()
-      if(!expr){$("schedErr").textContent="Enter a cron expression or click Clear to remove the schedule";return}
-      $("schedErr").textContent=""
+      var freq = $("schedFreq").value
+      var timeVal = $("schedTime").value || "09:00"
+      var tParts = timeVal.split(":")
+      var hour = parseInt(tParts[0], 10) || 0
+      var minute = parseInt(tParts[1], 10) || 0
+      if (freq === "weekly" && selectedSchedDays.size === 0) {
+        $("schedErr").textContent = "Please select at least one day for weekly schedule."
+        return
+      }
+      $("schedErr").textContent = ""
       $("schedSave").disabled = true
       var originalText = $("schedSave").textContent
       $("schedSave").textContent = "Saving..."
+      var expr = localToUtcCron(freq, hour, minute, Array.from(selectedSchedDays))
       try {
         await saveSchedule(expr)
       } finally {
@@ -5482,7 +5702,7 @@ load()
         $("schedSave").textContent = originalText
       }
     }
-    $("schedClear").onclick=async function(){
+    $("schedClear").onclick = async function(){
       if ($("schedClear").disabled) return
       $("schedClear").disabled = true
       var originalText = $("schedClear").textContent
@@ -5494,7 +5714,6 @@ load()
         $("schedClear").textContent = originalText
       }
     }
-    $("schedExpr").onkeydown=function(e){if(e.key==="Enter"){e.preventDefault();$("schedSave").click()}if(e.key==="Escape")closeSchedModal()}
     // wizard
     document.getElementById("wizNext").addEventListener("click",function(){var err=wizValidate(wizStep);var errEl=document.getElementById("wizErr");if(err){errEl.textContent=err;return}errEl.textContent="";wizStep++;wizRender()})
     document.getElementById("wizBack").addEventListener("click",function(){document.getElementById("wizErr").textContent="";if(wizStep>1){wizStep--;wizRender()}})
