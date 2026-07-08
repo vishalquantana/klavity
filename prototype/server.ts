@@ -44,7 +44,7 @@ import { runAuthorNow, getAuthorSession, getActiveAuthorSession, listStalledAuth
 import { WalkBusyError, cancelCurrentWalk, cancelCurrentAuthor, PdfBusyError } from "./lib/trails-browser"
 import { mintShareToken, resolveShareToken, renderWalkPdf, revokeShareToken, listShareTokens } from "./lib/trails-share"
 import { gatherWalkReport } from "./lib/trails-report"
-import { liveWatchSseResponse } from "./lib/trails-live-watch"
+import { liveWatchSseResponse, openLiveWatchStream } from "./lib/trails-live-watch"
 import { normalizeTrailViewport } from "./lib/trails-viewport"
 import { seedDemoTrails } from "./lib/trails-demo-seed"
 import { listExpectations, getExpectation, setExpectationStatus, setExpectationEnforced } from "./lib/expectations-db"
@@ -3395,6 +3395,44 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           } catch (e) {
             if (e instanceof WalkBusyError) return json({ error: "An AutoSim is already running — try again shortly." }, 409)
             return json(oops(e, "trails-author-resume"), 500)
+          }
+        }
+      }
+      // GET /api/trails/author/:sessionId/live — KLA-150: SSE live screencast for the authoring drive.
+      {
+        const authorLiveMatch = path.match(/^\/api\/trails\/author\/([^/]+)\/live$/)
+        if (req.method === "GET" && authorLiveMatch) {
+          const sessionId = authorLiveMatch[1]
+          const s = await getAuthorSession(projectId, sessionId)
+          if (!s) return json({ error: "Not found" }, 404)
+          return new Response(openLiveWatchStream(projectId, sessionId), {
+            headers: {
+              "content-type": "text/event-stream; charset=utf-8",
+              "cache-control": "no-cache, no-transform",
+              "connection": "keep-alive",
+              "x-accel-buffering": "no",
+            },
+          })
+        }
+      }
+      // GET /api/trails/author/:sessionId/steps/:stepIdx/screenshot — KLA-150: serve a step screenshot from S3.
+      {
+        const authorStepShotMatch = path.match(/^\/api\/trails\/author\/([^/]+)\/steps\/(\d+)\/screenshot$/)
+        if (req.method === "GET" && authorStepShotMatch) {
+          const [, sessionId, stepIdxStr] = authorStepShotMatch
+          const s = await getAuthorSession(projectId, sessionId)
+          if (!s) return json({ error: "Not found" }, 404)
+          const stepIdx = Number(stepIdxStr)
+          const step = s.steps.find((st) => st.idx === stepIdx)
+          const key = (step as any)?.screenshotKey as string | undefined
+          if (!key) return json({ error: "No screenshot for this step" }, 404)
+          try {
+            const { getObjectBytes } = await import("./lib/s3")
+            const obj = await getObjectBytes(key)
+            const ct = obj.contentType?.startsWith("image/") ? obj.contentType : "image/jpeg"
+            return new Response(obj.bytes, { headers: { "Content-Type": ct, "Cache-Control": "private,max-age=86400" } })
+          } catch (e) {
+            return json(oops(e, "author-step-screenshot"), 500)
           }
         }
       }
