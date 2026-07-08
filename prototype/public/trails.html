@@ -582,6 +582,127 @@ if (window.top !== window.self) {
   }, true)
 }
 function $(id){return document.getElementById(id)}
+
+var activeModals = [];
+function openModal(id) {
+  var modal = $(id);
+  if (!modal) return;
+  modal._previouslyFocused = document.activeElement;
+  if (activeModals.indexOf(id) === -1) {
+    activeModals.push(id);
+  }
+  modal.classList.add("open");
+  modal.classList.add("show");
+  modal.setAttribute("aria-hidden", "false");
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
+  modal.setAttribute("tabindex", "-1");
+  
+  var focusables = modal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+  if (focusables.length > 0) {
+    var first = Array.prototype.find.call(focusables, function(el) {
+      return !el.disabled && el.offsetWidth > 0 && el.offsetHeight > 0;
+    }) || focusables[0];
+    if (first) first.focus();
+  } else {
+    modal.focus();
+  }
+}
+
+function closeModal(id) {
+  var modal = $(id);
+  if (!modal) return;
+  
+  if (id === "replayBg") {
+    if (typeof destroyPlayer === "function") destroyPlayer();
+  } else if (id === "schedBg") {
+    if (typeof schedState !== "undefined") schedState.trailId = null;
+  } else if (id === "drBg") {
+    if (typeof drState !== "undefined") drState.trailId = null;
+  }
+  
+  modal.classList.remove("open");
+  modal.classList.remove("show");
+  modal.setAttribute("aria-hidden", "true");
+  
+  var idx = activeModals.indexOf(id);
+  if (idx !== -1) {
+    activeModals.splice(idx, 1);
+  }
+  
+  if (modal._previouslyFocused && typeof modal._previouslyFocused.focus === "function") {
+    modal._previouslyFocused.focus();
+    modal._previouslyFocused = null;
+  }
+}
+
+document.addEventListener("keydown", function(e) {
+  if (activeModals.length === 0) return;
+  var topId = activeModals[activeModals.length - 1];
+  var modal = $(topId);
+  if (!modal) return;
+
+  if (e.key === "Escape" || e.keyCode === 27) {
+    e.preventDefault();
+    if (topId === "wizBg" && typeof closeWizard === "function") {
+      closeWizard();
+    } else if (topId === "liveBg" && typeof closeLiveWatch === "function") {
+      closeLiveWatch();
+    } else if (topId === "drBg" && typeof closeDraftReview === "function") {
+      closeDraftReview();
+    } else if (topId === "schedBg" && typeof closeSchedModal === "function") {
+      closeSchedModal();
+    } else {
+      closeModal(topId);
+    }
+    return;
+  }
+
+  if (e.key === "Tab" || e.keyCode === 9) {
+    var focusables = modal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+    var visibleFocusables = Array.prototype.filter.call(focusables, function(el) {
+      return !el.disabled && el.offsetWidth > 0 && el.offsetHeight > 0;
+    });
+    if (visibleFocusables.length === 0) {
+      e.preventDefault();
+      return;
+    }
+    var first = visibleFocusables[0];
+    var last = visibleFocusables[visibleFocusables.length - 1];
+
+    if (e.shiftKey) {
+      if (document.activeElement === first) {
+        last.focus();
+        e.preventDefault();
+      }
+    } else {
+      if (document.activeElement === last) {
+        first.focus();
+        e.preventDefault();
+      }
+    }
+  }
+});
+
+document.addEventListener("click", function(e) {
+  if (activeModals.length === 0) return;
+  var topId = activeModals[activeModals.length - 1];
+  var modal = $(topId);
+  if (!modal || e.target !== modal) return;
+  
+  if (topId === "wizBg" && typeof closeWizard === "function") {
+    closeWizard();
+  } else if (topId === "liveBg" && typeof closeLiveWatch === "function") {
+    closeLiveWatch();
+  } else if (topId === "drBg" && typeof closeDraftReview === "function") {
+    closeDraftReview();
+  } else if (topId === "schedBg" && typeof closeSchedModal === "function") {
+    closeSchedModal();
+  } else {
+    closeModal(topId);
+  }
+});
+
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
 function projParam(){try{return new URLSearchParams(location.search).get("project")}catch(e){return null}}
 
@@ -689,7 +810,7 @@ async function openReplay(runId){
   $("replayNote").textContent = "Loading replay…"
   $("replaySteps").innerHTML = ""; $("replayChapters").innerHTML = ""
   destroyPlayer()
-  $("replayBg").classList.add("open")
+  openModal("replayBg")
   // Pre-load the rrweb bundle (klv-buffer.min.js) so window.rrweb.Replayer is available
   // before the first playSegment() call. No-op if already loaded.
   try { await ensureRrweb() } catch(e){ /* non-fatal; playSegment will show an error if missing */ }
@@ -709,8 +830,7 @@ async function openReplay(runId){
   playSegment(replayState.focusStep!=null ? chapterForStep(replayState.focusStep) : 0)
 }
 
-$("replayClose").onclick = function(){ $("replayBg").classList.remove("open"); destroyPlayer() }
-$("replayBg").onclick = function(e){ if (e.target === $("replayBg")){ $("replayBg").classList.remove("open"); destroyPlayer() } }
+$("replayClose").onclick = function(){ closeModal("replayBg") }
 
 // ── Live CDP screencast ─────────────────────────────────────────────────────────
 var liveState = { es: null, runId: null, frames: 0 }
@@ -720,7 +840,7 @@ function closeLiveWatch(){
   liveState.es = null
   liveState.runId = null
   $("liveDot").classList.add("off")
-  $("liveBg").classList.remove("open")
+  closeModal("liveBg")
 }
 
 function openLiveWatch(runId){
@@ -732,7 +852,7 @@ function openLiveWatch(runId){
   $("liveEmpty").style.display = ""
   $("liveDot").classList.add("off")
   $("liveNote").textContent = "Connecting..."
-  $("liveBg").classList.add("open")
+  openModal("liveBg")
   var pid = projParam()
   var qs = pid ? "?project=" + encodeURIComponent(pid) : ""
   var es = new EventSource("/api/trails/walks/" + encodeURIComponent(runId) + "/live" + qs)
@@ -772,7 +892,6 @@ function openLiveWatch(runId){
 }
 
 $("liveClose").onclick = closeLiveWatch
-$("liveBg").onclick = function(e){ if (e.target === $("liveBg")) closeLiveWatch() }
 
 // Latest Walk (any verdict) for a given trail id, from the dashboard's recentWalks (newest-first).
 function latestWalkFor(walks, trailId){
@@ -1030,7 +1149,7 @@ async function openDraftReview(trailId){
   $("drSteps").innerHTML = ""
   $("drErr").textContent = ""; $("drErr").classList.add("hide")
   $("drActivate").disabled = false; $("drActivate").textContent = "Activate Trail"
-  $("drBg").classList.add("open")
+  openModal("drBg")
   var r
   try { r = await fetch("/api/trails/" + encodeURIComponent(trailId) + "/steps" + qs) }
   catch(e){ $("drName").textContent = "Network error"; return }
@@ -1043,13 +1162,11 @@ async function openDraftReview(trailId){
 }
 
 function closeDraftReview(){
-  $("drBg").classList.remove("open")
-  drState.trailId = null
+  closeModal("drBg")
 }
 
 $("drClose").onclick = closeDraftReview
 $("drCancel").onclick = closeDraftReview
-$("drBg").onclick = function(e){ if (e.target === $("drBg")) closeDraftReview() }
 
 $("drActivate").onclick = async function(){
   var trailId = drState.trailId; if (!trailId) return
@@ -1266,14 +1383,13 @@ function openSchedModal(trailId, current){
   schedState.trailId = trailId
   $("schedExpr").value = current || ""
   $("schedErr").textContent = ""
-  $("schedBg").classList.add("open")
+  openModal("schedBg")
   $("schedExpr").focus()
 }
-function closeSchedModal(){ $("schedBg").classList.remove("open"); schedState.trailId = null }
+function closeSchedModal(){ closeModal("schedBg") }
 
 $("schedClose").onclick = closeSchedModal
 $("schedCancel").onclick = closeSchedModal
-$("schedBg").onclick = function(e){ if (e.target === $("schedBg")) closeSchedModal() }
 
 document.querySelectorAll(".sched-preset").forEach(function(btn){
   btn.onclick = function(){ $("schedExpr").value = btn.getAttribute("data-preset"); $("schedErr").textContent = "" }
@@ -1722,7 +1838,7 @@ async function pollAuthor(sessionId, box){
       ap.addEventListener("click", async function(){
         ap.disabled = true; ap.textContent = "Activating..."
         var ar = await fetch("/api/trails/" + encodeURIComponent(ap.dataset.trail) + "/approve" + projQ(), { method: "POST" })
-        if(ar.ok){ document.getElementById("ntBg").classList.remove("show"); await render(await loadData()) }
+        if(ar.ok){ closeModal("ntBg"); await render(await loadData()) }
         else { ap.disabled = false; ap.textContent = "Looks right - activate" }
       })
       if(vRunId){
@@ -1777,12 +1893,12 @@ function openWizard() {
   document.getElementById("wizNav").style.display = ""
   var cb = document.getElementById("wizCreate")
   cb.disabled = false; cb.textContent = "Create & Run"
-  document.getElementById("wizBg").classList.add("show")
+  openModal("wizBg")
   wizRender()
 }
 
 function closeWizard() {
-  document.getElementById("wizBg").classList.remove("show")
+  closeModal("wizBg")
 }
 
 function wizRender() {
@@ -1846,7 +1962,6 @@ document.getElementById("wizBack").addEventListener("click", function() {
 })
 
 document.getElementById("wizClose").addEventListener("click", closeWizard)
-document.getElementById("wizBg").addEventListener("click", function(e) { if (e.target === this) closeWizard() })
 
 document.getElementById("wizCreate").addEventListener("click", async function() {
   var btn = this; btn.disabled = true; btn.textContent = "Creating…"
@@ -1931,7 +2046,7 @@ async function wizPollAuthor(sessionId, box, createBtn) {
 
 // Open wizard instead of raw New Trail modal
 document.getElementById("newTrailBtn").addEventListener("click", openWizard)
-document.getElementById("ntCancel").addEventListener("click", function(){ document.getElementById("ntBg").classList.remove("show") })
+document.getElementById("ntCancel").addEventListener("click", function(){ closeModal("ntBg") })
 document.getElementById("ntGo").addEventListener("click", async function(){
   var btn = this; btn.disabled = true
   var box = document.getElementById("ntProgress"); box.innerHTML = ""
@@ -1959,13 +2074,10 @@ async function reattachActiveAuthorSession(){
     document.getElementById("ntGo").disabled = true
     var box = document.getElementById("ntProgress")
     box.innerHTML = '<div class="nt-live">Resuming AutoSim session...</div>'
-    document.getElementById("ntBg").classList.add("show")
+    openModal("ntBg")
     pollAuthor(s.id, box)
   } catch(e) {}
 }
-
-// Close ntBg on backdrop click
-document.getElementById("ntBg").addEventListener("click", function(e){ if(e.target === this) this.classList.remove("show") })
 
 load()
 loadExpectations()
