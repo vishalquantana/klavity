@@ -8,6 +8,37 @@ REPO="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO" || exit 1
 log(){ echo "[$(date '+%F %T')] [merge-train] $*"; }
 
+# BOOT SMOKE (2026-07-09): the tsc gate catches syntax/type errors but NOT a runtime
+# boot-crash (bad migration, startup exception, import that only fails at run). Two prod
+# outages tonight shipped exactly that (a bad -X theirs merge that PARSED but crash-looped
+# on boot). A bad MASTER defeats prod's health-rollback (it just re-pulls the bad master),
+# so we must catch it HERE, before pushing. Actually start the server, wait for its ready
+# log, confirm it serves 200, then kill it. Known-good master boots in ~4s locally.
+boot_smoke(){
+  command -v bun >/dev/null 2>&1 || { log "boot-smoke: bun unavailable — skipping"; return 0; }
+  local port=9187 lf pid wd i ok=0 code
+  lf="$(mktemp)"
+  pkill -f "PORT=$port bun run server.ts" 2>/dev/null; sleep 1
+  ( cd "$REPO/prototype" && PORT=$port bun run server.ts >"$lf" 2>&1 ) & pid=$!
+  ( sleep 55 && kill -9 "$pid" 2>/dev/null ) & wd=$!
+  for i in $(seq 1 50); do
+    kill -0 "$pid" 2>/dev/null || { log "boot-smoke: process EXITED at ~${i}s (boot crash)"; break; }
+    grep -qE "Klavity app|→ http|listening" "$lf" 2>/dev/null && { ok=1; break; }
+    sleep 1
+  done
+  if [ "$ok" -eq 1 ]; then
+    code=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:$port/" 2>/dev/null || echo 000)
+    [ "$code" = "200" ] || { ok=0; log "boot-smoke: ready but curl / = $code"; }
+  fi
+  kill "$pid" 2>/dev/null; kill "$wd" 2>/dev/null; pkill -f "PORT=$port bun run server.ts" 2>/dev/null; wait "$pid" 2>/dev/null
+  if [ "$ok" -ne 1 ]; then
+    log "!!! BOOT SMOKE FAILED — server did not come up. last log:"
+    tail -12 "$lf" 2>/dev/null | while IFS= read -r l; do log "  $l"; done
+    rm -f "$lf"; return 1
+  fi
+  rm -f "$lf"; log "boot-smoke: server came up (200) ✓"; return 0
+}
+
 git fetch -q origin master 2>/dev/null
 # Self-heal a WEDGED checkout: a 120s-killed mid-merge can leave unmerged files
 # ("cannot checkout master / dashboard.html: needs merge") that froze integration
@@ -168,6 +199,13 @@ done
 git add -A
 pre_push_base=$(git rev-parse 'HEAD@{u}' 2>/dev/null || echo "")
 git commit -q -m "orchestrator: integrate$merged → v$next" 2>/dev/null
+# Final gate before publish: does the integrated tree actually BOOT? If not, do NOT push
+# a crash-looping master (prod's autodeploy can't self-heal from a bad master).
+if ! boot_smoke; then
+  log "!!! NOT PUSHING v$next — integrated set failed boot smoke. Reverting to origin/master; branches stay unmerged (rebase/fix needed):$merged"
+  git reset -q --hard "${pre_push_base:-origin/master}" 2>/dev/null || git reset -q --hard origin/master 2>/dev/null
+  exit 1
+fi
 if git push -q origin master 2>/dev/null; then
   log "pushed v$next ($(git rev-parse --short HEAD)) — integrated:$merged"
   # Slack deploy notification — fail-safe: missing hook file or curl error never blocks the train.
