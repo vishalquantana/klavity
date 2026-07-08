@@ -18,13 +18,27 @@ boot_smoke(){
   command -v bun >/dev/null 2>&1 || { log "boot-smoke: bun unavailable — skipping"; return 0; }
   local port=9187 lf pid wd i ok=0 code
   lf="$(mktemp)"
-  pkill -f "PORT=$port bun run server.ts" 2>/dev/null; sleep 1
-  ( cd "$REPO/prototype" && PORT=$port bun run server.ts >"$lf" 2>&1 ) & pid=$!
-  ( sleep 55 && kill -9 "$pid" 2>/dev/null ) & wd=$!
-  for i in $(seq 1 50); do
-    kill -0 "$pid" 2>/dev/null || { log "boot-smoke: process EXITED at ~${i}s (boot crash)"; break; }
-    grep -qE "Klavity app|→ http|listening" "$lf" 2>/dev/null && { ok=1; break; }
-    sleep 1
+  # Free the port ROBUSTLY before booting: kill by pattern AND by whoever holds the port.
+  # A stray process on this port makes the server EADDRINUSE → a FALSE boot-fail that blocks
+  # EVERY branch (a real bug hit 2026-07-09). lsof catches what the pattern-pkill misses.
+  free_port(){ pkill -f "PORT=$port bun run server.ts" 2>/dev/null; command -v lsof >/dev/null 2>&1 && lsof -ti:"$port" 2>/dev/null | xargs -r kill -9 2>/dev/null; }
+  local attempt
+  for attempt in 1 2; do
+    free_port; sleep 1; ok=0; : >"$lf"
+    ( cd "$REPO/prototype" && PORT=$port bun run server.ts >"$lf" 2>&1 ) & pid=$!
+    ( sleep 55 && kill -9 "$pid" 2>/dev/null ) & wd=$!
+    for i in $(seq 1 50); do
+      kill -0 "$pid" 2>/dev/null || { log "boot-smoke: process EXITED at ~${i}s (attempt $attempt)"; break; }
+      grep -qE "Klavity app|→ http|listening" "$lf" 2>/dev/null && { ok=1; break; }
+      sleep 1
+    done
+    # EADDRINUSE = port conflict, NOT a code problem — retry once with a harder port free.
+    if [ "$ok" -ne 1 ] && grep -q "EADDRINUSE" "$lf" 2>/dev/null && [ "$attempt" -eq 1 ]; then
+      log "boot-smoke: EADDRINUSE on port $port (stray process) — freeing + retrying"
+      kill "$pid" 2>/dev/null; kill "$wd" 2>/dev/null
+      continue
+    fi
+    break
   done
   if [ "$ok" -eq 1 ]; then
     code=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:$port/" 2>/dev/null || echo 000)
@@ -122,16 +136,16 @@ EOF
   # shipped KLA-145 via a -X theirs merge that dropped a closing brace → prod 502 crash-loop.
   # Syntax errors are TS1xxx; block on ANY net-new one, regardless of total count.
   local syn_head syn_base
-  syn_head=$(grep -cE "error TS1[0-9]{3}" "$tmpd/head.log" 2>/dev/null || echo 0)
-  syn_base=$(grep -cE "error TS1[0-9]{3}" "$tmpd/base.log" 2>/dev/null || echo 0)
+  syn_head=$(grep -cE "error TS1[0-9]{3}" "$tmpd/head.log" 2>/dev/null); syn_head=${syn_head:-0}
+  syn_base=$(grep -cE "error TS1[0-9]{3}" "$tmpd/base.log" 2>/dev/null); syn_base=${syn_base:-0}
   if [ "$syn_head" -gt "$syn_base" ]; then
     log "!!! INTEGRITY GATE: $b introduced a SYNTAX error (TS1xxx ${syn_base} -> ${syn_head}) — file won't parse, reverting. This can be a -X theirs merge mangle; the branch must rebase onto master."
     grep -E "error TS1[0-9]{3}" "$tmpd/head.log" 2>/dev/null | head -8 | while IFS= read -r l; do log "  ${l}"; done
     rm -rf "$tmpd"
     return 1
   fi
-  n_head=$(grep -c "error TS" "$tmpd/head.log" 2>/dev/null || echo 0)
-  n_base=$(grep -c "error TS" "$tmpd/base.log" 2>/dev/null || echo 0)
+  n_head=$(grep -c "error TS" "$tmpd/head.log" 2>/dev/null); n_head=${n_head:-0}
+  n_base=$(grep -c "error TS" "$tmpd/base.log" 2>/dev/null); n_base=${n_base:-0}
   if [ "$n_head" -gt "$n_base" ]; then
     log "!!! INTEGRITY GATE: branch INCREASED tsc errors in changed files (${n_base} -> ${n_head}) — likely a real regression, blocking. New errors:"
     diff <(grep "error TS" "$tmpd/base.log" 2>/dev/null | sed -E 's/\([0-9]+,[0-9]+\)/()/' | sort) \
