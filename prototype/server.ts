@@ -36,7 +36,7 @@ import { trailsDashboardData, walkTrends } from "./lib/trails-dashboard"
 import { fileFindingById, dismissFinding, realFiler } from "./lib/trails-findings-gate"
 import { getReplay, runsWithReplay } from "./lib/trails-replay"
 import { saveFeedbackReplay, getFeedbackReplay, feedbackIdsWithReplay, pruneOldFeedbackReplays } from "./lib/feedback-replay"
-import { listRunSteps, listTrails, getTrail, getWalk, setTrailStatus, listTrailSteps, insertAssertStep, deleteTrailStep, updateTrailStep, updateTrail, countRunSteps, countTrailSteps, listTrailRunHistory, type TrailPatch, resumeWalk } from "./lib/trails"
+import { listRunSteps, listTrails, getTrail, getWalk, setTrailStatus, listTrailSteps, insertAssertStep, deleteTrailStep, updateTrailStep, updateTrail, countRunSteps, countTrailSteps, listTrailRunHistory, listFindings, recordFinding, type TrailPatch, resumeWalk } from "./lib/trails"
 import { runWalkNow } from "./lib/trails-trigger"
 import { startTrailScheduler, isValidCron } from "./lib/trails-scheduler"
 import { startCrashReaper } from "./lib/trails-reaper"
@@ -2684,6 +2684,117 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (req.method === "GET" && path === "/autosims/walks") return me ? file(PUB + "/autosims-walks.html") : redirect("/login")
     if (req.method === "GET" && /^\/autosims\/walk\/[^/]+$/.test(path)) return me ? file(PUB + "/autosims-walk.html") : redirect("/login")
     if (req.method === "GET" && path === "/sim-runs") return me ? file(PUB + "/sim-runs.html") : redirect("/login")
+
+    // GET /shared/walk/:token — public interactive AutoSim walk report page.
+    const sharedWalkPageMatch = path.match(/^\/shared\/walk\/([a-f0-9]{64})$/)
+    if (req.method === "GET" && sharedWalkPageMatch) {
+      if (!rlAllow("sharewalkpage:" + clientIp(req, server), 120, 60_000)) return new Response("Rate limited", { status: 429 })
+      const resolved = await resolveShareToken(sharedWalkPageMatch[1])
+      if (!resolved) return new Response("Not found", { status: 404 })
+      return file(PUB + "/autosims-walk-report.html")
+    }
+
+    // GET /shared/walk/:token/data — token-scoped walk metadata, steps, replay availability, and findings.
+    const sharedWalkDataMatch = path.match(/^\/shared\/walk\/([a-f0-9]{64})\/data$/)
+    if (req.method === "GET" && sharedWalkDataMatch) {
+      const rawToken = sharedWalkDataMatch[1]
+      if (!rlAllow("sharewalkdata:" + clientIp(req, server), 120, 60_000)) return new Response("Rate limited", { status: 429 })
+      const resolved = await resolveShareToken(rawToken)
+      if (!resolved) return json({ error: "Not found" }, 404)
+      try {
+        const [walk, steps] = await Promise.all([
+          getWalk(resolved.projectId, resolved.runId),
+          listRunSteps(resolved.projectId, resolved.runId),
+        ])
+        if (!walk) return json({ error: "Not found" }, 404)
+        const [trail, replaySet, findings] = await Promise.all([
+          getTrail(resolved.projectId, walk.trailId),
+          runsWithReplay(resolved.projectId, [resolved.runId]),
+          listFindings(resolved.projectId, { runId: resolved.runId, limit: 1000 }),
+        ])
+        return json({
+          walk,
+          trail,
+          steps,
+          findings,
+          hasReplay: replaySet.has(resolved.runId),
+          replayUrl: replaySet.has(resolved.runId) ? "/shared/walk-replay/" + rawToken : null,
+          liveUrl: walk.status === "running" ? "/shared/walk-live/" + rawToken : null,
+          pdfUrl: "/shared/walk-report/" + rawToken,
+        })
+      } catch (e) {
+        return json(oops(e, "shared-walk-data"), 500)
+      }
+    }
+
+    // GET /shared/walk-live/:token — public token-scoped live CDP screencast for running walks.
+    const sharedWalkLiveMatch = path.match(/^\/shared\/walk-live\/([a-f0-9]{64})$/)
+    if (req.method === "GET" && sharedWalkLiveMatch) {
+      const rawToken = sharedWalkLiveMatch[1]
+      if (!rlAllow("sharewalklive:" + clientIp(req, server), 120, 60_000)) return new Response("Rate limited", { status: 429 })
+      const resolved = await resolveShareToken(rawToken)
+      if (!resolved) return json({ error: "Not found" }, 404)
+      const walk = await getWalk(resolved.projectId, resolved.runId)
+      if (!walk) return json({ error: "Walk not found." }, 404)
+      return liveWatchSseResponse(resolved.projectId, resolved.runId)
+    }
+
+    // POST /shared/walk/:token/findings — add a manual bug/finding to this shared walk.
+    const sharedFindingAddMatch = path.match(/^\/shared\/walk\/([a-f0-9]{64})\/findings$/)
+    if (req.method === "POST" && sharedFindingAddMatch) {
+      const rawToken = sharedFindingAddMatch[1]
+      if (!rlAllow("sharewalkadd:" + clientIp(req, server), 30, 60_000)) return new Response("Rate limited", { status: 429 })
+      const resolved = await resolveShareToken(rawToken)
+      if (!resolved) return json({ error: "Not found" }, 404)
+      try {
+        const walk = await getWalk(resolved.projectId, resolved.runId)
+        if (!walk) return json({ error: "Walk not found." }, 404)
+        const body = await req.json().catch(() => ({}))
+        const title = String(body.title || "").trim().slice(0, 160)
+        const detail = String(body.detail || "").trim().slice(0, 2000)
+        if (!title) return json({ error: "title required" }, 400)
+        const id = crypto.randomUUID()
+        const result = await recordFinding(resolved.projectId, {
+          runId: resolved.runId,
+          trailId: walk.trailId,
+          kind: "regression",
+          title,
+          evidence: { reason: "manual_bug", detail, source: "shared_walk_report" },
+          groundQuote: detail || title,
+          confidence: 0.75,
+          dedupKey: `manual:${resolved.runId}:${id}`,
+        })
+        return json({ ok: true, id: result.id })
+      } catch (e) {
+        return json(oops(e, "shared-walk-add-finding"), 500)
+      }
+    }
+
+    // POST /shared/walk/:token/findings/:id/(file|dismiss) — token-scoped review actions.
+    const sharedFindingActionMatch = path.match(/^\/shared\/walk\/([a-f0-9]{64})\/findings\/([^/]+)\/(file|dismiss)$/)
+    if (req.method === "POST" && sharedFindingActionMatch) {
+      const rawToken = sharedFindingActionMatch[1]
+      const findingId = sharedFindingActionMatch[2]
+      const action = sharedFindingActionMatch[3]
+      if (!rlAllow("sharewalkfinding:" + clientIp(req, server), 60, 60_000)) return new Response("Rate limited", { status: 429 })
+      const resolved = await resolveShareToken(rawToken)
+      if (!resolved) return json({ error: "Not found" }, 404)
+      try {
+        const finding = (await listFindings(resolved.projectId, { runId: resolved.runId, limit: 1000 })).find((f) => f.id === findingId)
+        if (!finding) return json({ ok: false, error: "No such finding." }, 404)
+        if (action === "dismiss") {
+          const ok = await dismissFinding(resolved.projectId, findingId)
+          if (!ok) return json({ ok: false, error: "No such queued finding." }, 404)
+          return json({ ok: true })
+        }
+        const r = await fileFindingById(resolved.projectId, findingId, { filer: realFiler })
+        if (!r.ok) return json({ ok: false, error: "Could not file (no connector or no such finding)." }, 400)
+        return json({ ok: true, connectorRef: r.connectorRef })
+      } catch (e) {
+        return json(oops(e, "shared-walk-finding-action"), 500)
+      }
+    }
+
     // GET /shared/walk-replay/:token — serve the rrweb replay JSON for a valid, unexpired share token.
     // Unauthenticated. Returns { runId, segments, steps } — same shape as the auth'd /replay endpoint.
     // 404 when token is bad/expired OR the walk has no saved replay (capture was off).
@@ -3386,7 +3497,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             ])
             const expiresAt = Date.now() + 30 * 24 * 3600e3
             const replayUrl = replaySet.has(runId) ? BASE + "/shared/walk-replay/" + rawToken : null
-            return json({ url: BASE + "/shared/walk-report/" + rawToken, replayUrl, expiresAt })
+            return json({ url: BASE + "/shared/walk/" + rawToken, pdfUrl: BASE + "/shared/walk-report/" + rawToken, replayUrl, expiresAt })
           } catch (e) {
             return json(oops(e, "trails-share-mint"), 500)
           }
