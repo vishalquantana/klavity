@@ -14,7 +14,7 @@ import { runRetentionSweep } from "./lib/retention"
 import { SCREENSHOTS, resolveScreenshotConfig, mbLabel } from "./lib/screenshot-config"
 import { buildIssueHtml, escapeHtml, sanitizeClientContext, clientContextLines } from "./lib/feedback"
 import { encryptSecret, decryptSecret } from "./lib/crypto"
-import { createTestAccount, listTestAccounts, getTestAccountById, getTestAccountByName, deleteTestAccount, isTestAccountEmail } from "./lib/test-accounts"
+import { createTestAccount, listTestAccounts, getTestAccountById, getTestAccountByName, deleteTestAccount, isTestAccountEmail, getTestAccountRefs, rotateTestAccountSecret } from "./lib/test-accounts"
 import { planeConfigFromForm, redactPlane, type PlaneStored } from "./lib/connection"
 import { assertSafeUrl } from "./lib/url-guard"
 import { safeFetch } from "./lib/safe-fetch"
@@ -4327,7 +4327,31 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (req.method === "DELETE" && sub.startsWith("/test-accounts/")) {
             if (access !== "admin") return json({ error: "Only project admins can manage test accounts." }, 403)
             const accId = sub.slice("/test-accounts/".length)
+            // Look up account first to get its name for the reference check.
+            const acc = await getTestAccountById(pid, accId)
+            if (!acc) return json({ error: "Not found" }, 404)
+            // Block deletion when active Trails reference this account's credentials.
+            const { trailNames } = await getTestAccountRefs(pid, acc.name)
+            if (trailNames.length > 0) {
+              const sample = trailNames.slice(0, 3).join(", ") + (trailNames.length > 3 ? "…" : "")
+              return json({
+                error: `Cannot delete: ${trailNames.length} trail${trailNames.length !== 1 ? "s" : ""} use {{cred:${acc.name}:…}} (${sample}). Remove the references first.`,
+                refs: trailNames,
+              }, 409)
+            }
             const ok = await deleteTestAccount(pid, accId)
+            return ok ? json({ ok: true }) : json({ error: "Not found" }, 404)
+          }
+          if (req.method === "PATCH" && sub.startsWith("/test-accounts/")) {
+            if (access !== "admin") return json({ error: "Only project admins can manage test accounts." }, 403)
+            const accId = sub.slice("/test-accounts/".length)
+            const body = await req.json().catch(() => ({}))
+            const newSecret = body.password !== undefined ? String(body.password) : ""
+            if (!newSecret || newSecret.length > 2000) return json({ error: "password required (max 2000 chars)" }, 400)
+            const acc = await getTestAccountById(pid, accId)
+            if (!acc) return json({ error: "Not found" }, 404)
+            if (acc.authShape === "otp") return json({ error: "OTP accounts have no stored secret to rotate." }, 400)
+            const ok = await rotateTestAccountSecret(pid, accId, newSecret)
             return ok ? json({ ok: true }) : json({ error: "Not found" }, 404)
           }
           return json({ error: "Method not allowed" }, 405)
