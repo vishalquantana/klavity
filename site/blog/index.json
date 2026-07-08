@@ -110,5 +110,12 @@
     "excerpt": "Customer interview transcripts are full of persona signal: goals, blockers, and the words users use. Here's how to turn them into testable personas.",
     "category": "Guides",
     "date": "2026-07-07"
+  },
+  {
+    "slug": "how-to-deduplicate-bug-reports",
+    "title": "How to Deduplicate Bug Reports Before Your Backlog Drowns",
+    "excerpt": "Duplicate bug reports waste triage time and split the signal across tickets. Here's how to match, merge, and prevent duplicates before your backlog drowns.",
+    "category": "Guides",
+    "date": "2026-07-08"
   }
 ]
