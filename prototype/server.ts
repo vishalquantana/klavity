@@ -4200,7 +4200,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return json({ project: { id: created.id, name: created.name, accountId: created.accountId, status: created.status, role: "admin" } }, 201)
       }
       // Project detail + members (projectAccess-gated) and project-scoped invite (R4) + monitored-urls (P3b) + connectors.
-      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/triage|\/recurring|\/replays|\/widget-status|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/test)?|\/test-accounts(?:\/[^/]+)?)?$/)
+      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/triage|\/tickets|\/recurring|\/replays|\/widget-status|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/test)?|\/test-accounts(?:\/[^/]+)?)?$/)
       if (projMatch) {
         const pid = projMatch[1]
         const sub = projMatch[2] || ""
@@ -4574,11 +4574,45 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const priorities = sp.get("priority") ? sp.get("priority")!.split(",").filter(Boolean) : []
           const assignee = sp.has("assignee") ? (sp.get("assignee") ?? "") : undefined
           const rawSource = sp.get("source") ?? ""
-          const source = rawSource === "sim" ? "sim" : rawSource === "human" ? "human" : undefined
+          const source = rawSource === "sim" ? "sim" : rawSource === "manual" ? "manual" : rawSource === "human" ? "human" : undefined
           const page = Math.max(1, Number(sp.get("page") || "1"))
           const limit = Math.min(200, Math.max(1, Number(sp.get("limit") || "50")))
           const result = await listTicketsPaginated(proj.id, { statuses, priorities, assignee, source, page, limit })
           return json(result)
+        }
+
+        // POST /api/projects/:id/tickets — manually create a ticket (KLA-173).
+        // Any project member may create; ticket is immediately open (skips triage queue).
+        if (req.method === "POST" && sub === "/tickets") {
+          const body = await req.json().catch(() => ({}))
+          const title = String(body.title ?? "").trim()
+          if (!title) return json({ error: "Title is required." }, 400)
+          if (title.length > 500) return json({ error: "Title must be 500 characters or fewer." }, 400)
+          const bodyText = String(body.body ?? body.description ?? "").trim()
+          if (bodyText.length > 5000) return json({ error: "Body must be 5000 characters or fewer." }, 400)
+          const VALID_PRI = ["urgent", "high", "medium", "low"]
+          const priority = VALID_PRI.includes(body.priority) ? body.priority : "medium"
+          const assignee = body.assignee ? String(body.assignee).trim().slice(0, 200) : null
+          const observation = bodyText ? `${title}\n\n${bodyText}` : title
+          const id = await insertFeedback({
+            projectId: proj.id,
+            actorEmail: me,
+            observation,
+            priority,
+            assignee: assignee || null,
+            source: "manual",
+          })
+          // Manual tickets start as "open" regardless of priority (override initial "new" status).
+          await updateFeedbackMeta(proj.id, id, { status: "open" })
+          // Emit an activity event so the timeline shows who created it.
+          await insertActivity({
+            projectId: proj.id,
+            type: "ticket_created",
+            actorEmail: me,
+            feedbackId: id,
+            meta: { title, priority, source: "manual" },
+          }).catch((e: any) => console.warn("ticket_created activity skipped:", e?.message || e))
+          return json({ ok: true, ticketId: id }, 201)
         }
 
         // GET /api/projects/:id/recurring — corpus-wide recurring/regression memory for this project.
