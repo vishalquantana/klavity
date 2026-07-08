@@ -278,6 +278,18 @@ body[data-view="recurring"] .grid>.card[data-view~="recurring"]{grid-column:1/-1
 
 /* demo CTA */
 .demo{background:linear-gradient(135deg,rgba(99,102,241,.12),rgba(139,92,246,.05));border-color:rgba(139,139,245,.3)}
+/* ── Sims first-run onboarding ── */
+.sim-ob{padding:8px 0 20px}
+.sim-ob-head{font-family:var(--display);font-weight:500;font-size:20px;letter-spacing:-.02em;margin-bottom:5px;color:var(--paper)}
+.sim-ob-sub{font-size:13.5px;color:var(--paper-dim);line-height:1.55;margin-bottom:18px;max-width:56ch}
+.sim-ob-steps{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px}
+@media(max-width:600px){.sim-ob-steps{grid-template-columns:1fr}}
+.sim-ob-step{background:var(--ink-3);border:1px solid var(--line);border-radius:12px;padding:15px 14px;text-align:left;position:relative;overflow:hidden;transition:border-color .15s ease,transform .15s ease}
+.sim-ob-step:hover{border-color:var(--indigo);transform:translateY(-2px)}
+.sim-ob-num{font-family:var(--mono);font-size:9px;letter-spacing:.1em;color:var(--indigo);margin-bottom:8px;text-transform:uppercase}
+.sim-ob-step h4{font-size:13px;font-weight:600;margin-bottom:5px;color:var(--paper)}
+.sim-ob-step p{font-size:12px;color:var(--paper-dim);line-height:1.5}
+.sim-ob-cta{display:flex;justify-content:center;gap:10px;flex-wrap:wrap}
 .demo h3{font-family:var(--display);font-weight:600;font-size:22px;margin-bottom:6px}
 .demo p{color:var(--paper-dim);font-size:14px;margin-bottom:16px;max-width:46ch}
 
@@ -2189,8 +2201,16 @@ function renderSaying() {
 function renderSims(admin) {
   const sims = state.sims || []
   if (!sims.length) {
-    // A4: Sims empty state → primary action opens the From-your-site flow
-    $("sims").innerHTML = emptyState(kicon('dna',{size:32}), "No Sims yet — paste your product URL and meet the AI customers it suggests.", `<button class="btn btn-indigo btn-sm" onclick="openSimModalSite()">Meet your Sims →</button>`)
+    $("sims").innerHTML = '<div class="sim-ob">'
+      + '<div class="sim-ob-head">What are Sims?</div>'
+      + '<div class="sim-ob-sub">A Sim is an AI persona modelling a real customer — a first-time user, a power user, a sceptical enterprise buyer. Each Sim reviews your product in character and surfaces the issues they would actually hit, not just functional errors.</div>'
+      + '<div class="sim-ob-steps">'
+        + '<div class="sim-ob-step"><div class="sim-ob-num">Step 1</div><h4>Define a persona</h4><p>Describe your customer — goals, frustrations, context. Or paste your site URL and the AI suggests personas that fit.</p></div>'
+        + '<div class="sim-ob-step"><div class="sim-ob-num">Step 2</div><h4>Sims review live</h4><p>Your Sims can react to any page you are browsing right now, via the extension. Observations arrive in real time.</p></div>'
+        + '<div class="sim-ob-step"><div class="sim-ob-num">Step 3</div><h4>File what matters</h4><p>Keep the feedback worth acting on. The rest is dismissed — keeping your tracker signal-only, not noise.</p></div>'
+      + '</div>'
+      + '<div class="sim-ob-cta"><button class="btn btn-indigo btn-sm" onclick="openSimModal()">Create your first Sim</button><button class="btn btn-ghost btn-sm" onclick="openSimModalSite()">Suggest from my site →</button></div>'
+      + '</div>'
     return
   }
   const pid = curProjId()
@@ -2220,8 +2240,16 @@ function renderSimsFeed() {
   const countEl = $("simsCount")
   if (countEl) countEl.textContent = sims.length ? String(sims.length) : ""
   if (!sims.length) {
-    // A4: Sims feed empty state → from-your-site flow
-    el.innerHTML = emptyState(kicon('dna',{size:32}), "No Sims yet — paste your product URL and meet the AI customers it suggests.", `<button class="btn btn-indigo btn-sm" onclick="openSimModalSite()">Meet your Sims →</button>`)
+    el.innerHTML = '<div class="sim-ob">'
+      + '<div class="sim-ob-head">Bring your first Sim to life</div>'
+      + '<div class="sim-ob-sub">Sims are AI personas — each one models a distinct customer type and reviews your product in their own voice. They surface issues a real user would hit, not just whether a button is clickable.</div>'
+      + '<div class="sim-ob-steps">'
+        + '<div class="sim-ob-step"><div class="sim-ob-num">Describe</div><h4>Who is your customer?</h4><p>Name the persona: a sceptical CFO, a first-time user, a mobile-only shopper. Goals, frustrations, and context make the feedback real.</p></div>'
+        + '<div class="sim-ob-step"><div class="sim-ob-num">From your site</div><h4>AI suggests personas</h4><p>Paste your product URL and the AI reads your pages to suggest Sims that match your actual audience — faster than writing from scratch.</p></div>'
+        + '<div class="sim-ob-step"><div class="sim-ob-num">From a call</div><h4>Extract from transcripts</h4><p>Paste a customer interview or support call transcript and the AI extracts a Sim with their real goals and frustrations already filled in.</p></div>'
+      + '</div>'
+      + '<div class="sim-ob-cta"><button class="btn btn-indigo btn-sm" onclick="openSimModal()">Create your first Sim</button><button class="btn btn-ghost btn-sm" onclick="openSimModalSite()">Suggest from my site →</button></div>'
+      + '</div>'
     return
   }
   // Use dedicated per-Sim feedback map from the API (simFeedback) — only Sim-generated observations,
