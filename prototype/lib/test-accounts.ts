@@ -119,6 +119,42 @@ export async function deleteTestAccount(projectId: string, id: string): Promise<
   return Number(r.rowsAffected) > 0
 }
 
+/**
+ * Returns the names of any Trails in this project whose steps reference this test account
+ * via a {{cred:accountName:…}} placeholder. Used to block/warn before deletion.
+ */
+export async function getTestAccountRefs(
+  projectId: string, accountName: string,
+): Promise<{ trailIds: string[]; trailNames: string[] }> {
+  const pattern = `%{{cred:${accountName}:%`
+  const r = await db!.execute({
+    sql: `SELECT DISTINCT t.id, t.name
+          FROM trail_steps ts JOIN trails t ON t.id = ts.trail_id
+          WHERE ts.project_id=? AND ts.action_value LIKE ?`,
+    args: [projectId, pattern],
+  })
+  return {
+    trailIds: r.rows.map((x: any) => String(x.id)),
+    trailNames: r.rows.map((x: any) => String(x.name)),
+  }
+}
+
+/**
+ * Re-encrypt and store a new password/token for a test account.
+ * Only valid for "password" and "token" auth shapes — OTP accounts have no stored secret.
+ * Returns false if the account does not exist or belongs to a different project.
+ */
+export async function rotateTestAccountSecret(
+  projectId: string, id: string, newSecret: string,
+): Promise<boolean> {
+  const enc = await encryptSecret(newSecret)
+  const r = await db!.execute({
+    sql: `UPDATE test_accounts SET password_enc=?, updated_at=? WHERE project_id=? AND id=?`,
+    args: [enc, Date.now(), projectId, id],
+  })
+  return Number(r.rowsAffected) > 0
+}
+
 /** Returns true if the email is registered as a login_email in ANY project's test accounts. */
 export async function isTestAccountEmail(email: string): Promise<boolean> {
   const r = await db!.execute({
