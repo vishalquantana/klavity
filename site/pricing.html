@@ -1,0 +1,757 @@
+<!doctype html>
+<html lang="en">
+<head>
+<script>(function(){try{var t=localStorage.getItem('klav-theme');if(t==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<!-- SEO -->
+<title>Klavity Pricing — monetise AI, not plumbing · Klavity</title>
+<meta name="description" content="All bug-reporting plumbing (widget, console logging, replay, unlimited seats & reports) is free forever. Paid plans scale with Sims and AutoSim guarded flows.">
+<link rel="canonical" href="https://klavity.in/pricing">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="/favicon.svg">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="Klavity Pricing — monetise AI, not plumbing">
+<meta property="og:description" content="All bug-reporting plumbing is free. You only pay for the AI layer: Sims and AutoSim guarded flows.">
+<meta property="og:url" content="https://klavity.in/pricing">
+<meta property="og:image" content="https://klavity.in/favicon.svg">
+
+<!-- Twitter -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Klavity Pricing — monetise AI, not plumbing">
+<meta name="twitter:description" content="All bug-reporting plumbing is free. You only pay for the AI layer: Sims and AutoSim guarded flows.">
+<meta name="twitter:image" content="https://klavity.in/favicon.svg">
+
+<!-- Fonts (exact link from site/index.html) -->
+<link rel="stylesheet" href="/fonts/fonts.css" />
+
+<!-- Shared kit -->
+<link rel="stylesheet" href="/kit.css">
+<script src="/kit.js" defer></script>
+
+<style>
+  /* Extra page-specific styles for pricing page */
+  .pricing-hero {
+    text-align: center;
+    padding: 80px 0 40px;
+  }
+  .pricing-toggle-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    margin: 32px 0 10px;
+    background: var(--ink-3);
+    padding: 4px;
+    border-radius: 30px;
+    border: 1px solid var(--line);
+  }
+  .pricing-toggle-btn {
+    border: none;
+    background: transparent;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-family: var(--body);
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--paper-dim);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+  .pricing-toggle-btn.active {
+    background: var(--ink-2);
+    color: var(--paper);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+  .pricing-toggle-discount {
+    font-family: var(--mono);
+    font-size: 10px;
+    background: rgba(15,157,107,0.12);
+    color: var(--green-text);
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-weight: 600;
+  }
+  
+  /* Pricing Grid */
+  .pricing-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 24px;
+    margin: 40px 0 80px;
+    align-items: stretch;
+  }
+  .pricing-card {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+  .pricing-card.featured {
+    border-color: var(--indigo);
+    box-shadow: 0 18px 40px rgba(99,102,241,0.12);
+  }
+  .pricing-card.featured::before {
+    content: "Most Popular";
+    position: absolute;
+    top: 12px;
+    right: 16px;
+    font-family: var(--mono);
+    font-size: 9px;
+    text-transform: uppercase;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--indigo-text);
+    background: rgba(99,102,241,0.12);
+    padding: 3px 8px;
+    border-radius: 12px;
+  }
+  .plan-name {
+    font-family: var(--display);
+    font-size: 24px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+  .plan-desc {
+    font-size: 14px;
+    color: var(--paper-dim);
+    margin-bottom: 24px;
+    min-height: 40px;
+  }
+  .plan-price-wrap {
+    margin-bottom: 24px;
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+  }
+  .plan-price-currency {
+    font-family: var(--display);
+    font-size: 24px;
+    color: var(--paper-dim);
+  }
+  .plan-price {
+    font-family: var(--display);
+    font-size: 48px;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .plan-price-period {
+    font-size: 14px;
+    color: var(--paper-faint);
+  }
+  .plan-btn {
+    width: 100%;
+    justify-content: center;
+    margin-bottom: 30px;
+  }
+  .plan-features-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--paper-faint);
+    margin-bottom: 12px;
+    font-weight: 700;
+  }
+  .plan-features-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    font-size: 14.5px;
+  }
+  .plan-features-list li {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+  }
+  .plan-features-list li .check-icon {
+    color: var(--green);
+    flex-shrink: 0;
+    margin-top: 3px;
+  }
+  .plan-features-list li .check-none {
+    color: var(--paper-faint);
+    flex-shrink: 0;
+    margin-top: 3px;
+    opacity: 0.5;
+  }
+  .plan-features-list li strong {
+    color: var(--paper);
+  }
+  
+  /* Comparison Table */
+  .comparison-section {
+    margin: 80px 0 100px;
+  }
+  .comparison-title {
+    text-align: center;
+    font-family: var(--display);
+    font-size: 32px;
+    font-weight: 600;
+    margin-bottom: 40px;
+  }
+  .table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    background: var(--ink-2);
+  }
+  table.comp-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 15px;
+    text-align: left;
+    min-width: 650px;
+  }
+  table.comp-table th, table.comp-table td {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--line);
+  }
+  table.comp-table thead th {
+    font-family: var(--display);
+    font-size: 18px;
+    font-weight: 600;
+    background: var(--ink-3);
+    vertical-align: middle;
+  }
+  table.comp-table thead th:first-child {
+    font-family: var(--body);
+    font-size: 14px;
+    color: var(--paper-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 700;
+  }
+  table.comp-table tbody tr:last-child td {
+    border-bottom: none;
+  }
+  table.comp-table tr.group-row td {
+    background: var(--ink-3);
+    font-weight: 700;
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--paper-faint);
+    padding: 10px 20px;
+  }
+  table.comp-table td.feature-name {
+    font-weight: 600;
+    color: var(--paper);
+    width: 25%;
+  }
+  table.comp-table td.feature-val {
+    color: var(--paper-dim);
+    width: 18.75%;
+  }
+  table.comp-table td.feature-val strong {
+    color: var(--paper);
+  }
+  
+  /* Positioning Highlight Section */
+  .positioning-section {
+    background: linear-gradient(135deg, rgba(99,102,241,0.06), rgba(217,131,36,0.06));
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    padding: 32px;
+    margin: 40px 0;
+    display: flex;
+    gap: 24px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .positioning-icon {
+    font-size: 36px;
+    background: var(--ink-2);
+    width: 64px;
+    height: 64px;
+    border-radius: 16px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--line);
+    flex-shrink: 0;
+  }
+  .positioning-content {
+    flex: 1;
+    min-width: 280px;
+  }
+  .positioning-content h3 {
+    font-family: var(--display);
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .positioning-content p {
+    font-size: 14.5px;
+    color: var(--paper-dim);
+    line-height: 1.5;
+  }
+  
+  /* FAQ cards styling */
+  .faq-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-top: 30px;
+  }
+  @media (max-width: 768px) {
+    .faq-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+</head>
+<body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a>
+<div class="topbar"></div>
+
+<!-- ── NAV ─────────────────────────────────────────────────────────────── -->
+<nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><img class="mark" src="/favicon.svg" alt="" width="26" height="26" style="vertical-align:middle;border-radius:7px" /> Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a>
+    <a href="/snap">Snap</a>
+    <a href="/sims">Sims</a>
+    <a href="/autosim">AutoSim</a>
+    <a href="/pricing" aria-current="page" style="color:var(--paper);font-weight:600">Pricing</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta" id="navCta">
+    <a class="btn btn-ghost" href="/login">Log in</a>
+    <a class="btn btn-primary" href="/onboarding">Get started</a>
+  </div>
+</div></nav>
+
+<main id="main">
+
+  <!-- ── HERO ────────────────────────────────────────────────────────────── -->
+  <section class="pricing-hero">
+    <div class="wrap">
+      <p class="eyebrow reveal" style="--d:0s">Transparent, predictable scaling</p>
+      <h1 class="reveal" style="--d:.06s;max-width:22ch;margin:0 auto">Monetise AI, not plumbing.</h1>
+      <p class="reveal" style="--d:.12s;margin:22px auto 0;max-width:60ch;font-size:18px;color:var(--paper-dim)">
+        We believe bug-reporting plumbing should be free. That's why Snap's widget, integrations, All-Walks console capture, and unlimited seats are free forever. You only pay for active Sims and AutoSim guarded flows.
+      </p>
+      
+      <!-- Billing Toggle -->
+      <div class="reveal" style="--d:.18s">
+        <div class="pricing-toggle-wrap">
+          <button class="pricing-toggle-btn active" id="toggleMonthly" type="button">Monthly billing</button>
+          <button class="pricing-toggle-btn" id="toggleAnnual" type="button">Annual billing</button>
+          <span class="pricing-toggle-discount">2 months free</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── PRICING CARDS ───────────────────────────────────────────────────── -->
+  <section class="wrap">
+    <div class="pricing-grid auto-stagger">
+      
+      <!-- Free -->
+      <div class="card pricing-card reveal">
+        <div class="plan-name">Free</div>
+        <div class="plan-desc">For developers trying AI bug finding and maintenance.</div>
+        <div class="plan-price-wrap">
+          <span class="plan-price-currency">$</span>
+          <span class="plan-price" data-price-free>0</span>
+          <span class="plan-price-period">/ month</span>
+        </div>
+        <a class="btn btn-ghost plan-btn" href="/onboarding">Get started for free</a>
+        
+        <div class="plan-features-title">Includes</div>
+        <ul class="plan-features-list">
+          <li>
+            <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span><strong>1</strong> active project</span>
+          </li>
+          <li>
+            <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span><strong>1</strong> active Sim <span style="color:var(--paper-faint)">(25 reactions/mo)</span></span>
+          </li>
+          <li>
+            <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span><strong>1</strong> AutoSim flow <span style="color:var(--paper-faint)">(weekly runs)</span></span>
+          </li>
+          <li>
+            <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span>"Powered by Klavity" badge</span>
+          </li>
+          <li>
+            <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span><strong>Unlimited</strong> seats &amp; reporters</span>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Pro -->
+      <div class="card pricing-card reveal">
+        <div class="plan-name">Pro</div>
+        <div class="plan-desc">For freelancers and small teams seeking continuous automated coverage.</div>
+        <div class="plan-price-wrap">
+          <span class="plan-price-currency">$</span>
+          <span class="plan-price" id="pricePro" data-monthly="29" data-annual="24">29</span>
+          <span class="plan-price-period" id="periodPro">/ month</span>
+        </div>
+        <a class="btn btn-ghost plan-btn" href="/onboarding?plan=pro">Start Pro trial</a>
+        
+        <div class="plan-features-title">Everything in Free, plus</div>
+        <ul class="plan-features-list">
+          <li>
+            <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span><strong>5</strong> active projects</span>
+          </li>
+          <li>
+            <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span><strong>5</strong> active Sims <span style="color:var(--paper-faint)">(500 reactions/mo)</span></span>
+          </li>
+          <li>
+            <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span><strong>5</strong> AutoSim flows <span style="color:var(--paper-faint)">(daily runs)</span></span>
+          </li>
+          <li>
+            <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span>Removable branding</span>
+          </li>
+          <li>
+            <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span>Custom widget themes</span>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Team -->
+      <div class="card pricing-card featured reveal">
+        <div class="plan-name" style="color:var(--indigo-text)">Team</div>
+        <div class="plan-desc">For engineering organizations needing robust, scheduled flow verification.</div>
+        <div class="plan-price-wrap">
+          <span class="plan-price-currency">$</span>
+          <span class="plan-price" id="priceTeam" data-monthly="99" data-annual="82">99</span>
+          <span class="plan-price-period" id="periodTeam">/ month</span>
+        </div>
+        <a class="btn btn-indigo plan-btn" href="/onboarding?plan=team">Start Team trial</a>
+        
+        <div class="plan-features-title">Everything in Pro, plus</div>
+        <ul class="plan-features-list">
+          <li>
+            <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span><strong>Unlimited</strong> active projects</span>
+          </li>
+          <li>
+            <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span><strong>20</strong> active Sims <span style="color:var(--paper-faint)">(2,500 reactions/mo)</span></span>
+          </li>
+          <li>
+            <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span><strong>20</strong> AutoSim flows <span style="color:var(--paper-faint)">(hourly &amp; CI/CD)</span></span>
+          </li>
+          <li>
+            <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span>Google &amp; Microsoft SSO</span>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Scale -->
+      <div class="card pricing-card reveal">
+        <div class="plan-name">Scale</div>
+        <div class="plan-desc">For enterprises requiring custom scale, security controls, and support.</div>
+        <div class="plan-price-wrap">
+          <span class="plan-price" style="font-size:38px">Custom</span>
+        </div>
+        <a class="btn btn-ghost plan-btn" href="mailto:hello@quantana.com.au?subject=Klavity Enterprise Inquiry">Contact sales</a>
+        
+        <div class="plan-features-title">Everything in Team, plus</div>
+        <ul class="plan-features-list">
+          <li>
+            <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span><strong>Custom</strong> Sims and reaction scale</span>
+          </li>
+          <li>
+            <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span><strong>Custom</strong> AutoSim flows <span style="color:var(--paper-faint)">($5/extra flow)</span></span>
+          </li>
+          <li>
+            <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span>SAML &amp; SCIM SSO integration</span>
+          </li>
+          <li>
+            <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span>Audit logs &amp; data masking</span>
+          </li>
+          <li>
+            <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span>Self-host support + SLA</span>
+          </li>
+        </ul>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ── FREE TIER POSITIONING CALLOUT ───────────────────────────────────── -->
+  <section class="wrap reveal">
+    <div class="positioning-section">
+      <div class="positioning-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--indigo)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+      </div>
+      <div class="positioning-content">
+        <h3>Why is the core plumbing free?</h3>
+        <p>
+          Category standards like Marker.io charge up to $199/month just to capture console logs, record screens, and sync bug reports. We believe collaborative bug reporting is basic plumbing. Klavity offers the entire Snap suite—including widgets, extensions, two-way sync, and unlimited reporters—free forever. We only charge for our unique AI agent layers (Sims and AutoSims).
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── COMPARISON TABLE ────────────────────────────────────────────────── -->
+  <section class="wrap comparison-section reveal">
+    <h2 class="comparison-title">Compare plan details</h2>
+    <div class="table-wrap">
+      <table class="comp-table">
+        <thead>
+          <tr>
+            <th>Feature</th>
+            <th>Free</th>
+            <th>Pro</th>
+            <th>Team</th>
+            <th>Scale</th>
+          </tr>
+        </thead>
+        <tbody>
+          
+          <!-- Section: Snap Core Features -->
+          <tr class="group-row">
+            <td colspan="5">Snap Bug Reporting (Core Plumbing)</td>
+          </tr>
+          <tr>
+            <td class="feature-name">Widget &amp; Extension</td>
+            <td class="feature-val">✅ Included</td>
+            <td class="feature-val">✅ Included</td>
+            <td class="feature-val">✅ Included</td>
+            <td class="feature-val">✅ Included</td>
+          </tr>
+          <tr>
+            <td class="feature-name">Integrations (Jira, Linear, Plane, GitHub)</td>
+            <td class="feature-val">✅ Unlimited</td>
+            <td class="feature-val">✅ Unlimited</td>
+            <td class="feature-val">✅ Unlimited</td>
+            <td class="feature-val">✅ Unlimited</td>
+          </tr>
+          <tr>
+            <td class="feature-name">Seats &amp; External Reporters</td>
+            <td class="feature-val"><strong>Unlimited</strong></td>
+            <td class="feature-val"><strong>Unlimited</strong></td>
+            <td class="feature-val"><strong>Unlimited</strong></td>
+            <td class="feature-val"><strong>Unlimited</strong></td>
+          </tr>
+          <tr>
+            <td class="feature-name">Session Replay &amp; Console Capture</td>
+            <td class="feature-val">✅ Included</td>
+            <td class="feature-val">✅ Included</td>
+            <td class="feature-val">✅ Included</td>
+            <td class="feature-val">✅ Included</td>
+          </tr>
+          <tr>
+            <td class="feature-name">Widget Branding</td>
+            <td class="feature-val">"Powered by Klavity"</td>
+            <td class="feature-val">Removable</td>
+            <td class="feature-val">Removable</td>
+            <td class="feature-val">Removable</td>
+          </tr>
+          
+          <!-- Section: AI Features -->
+          <tr class="group-row">
+            <td colspan="5">AI QA Agents &amp; Test Maintenance</td>
+          </tr>
+          <tr>
+            <td class="feature-name">Active Projects</td>
+            <td class="feature-val">1 project</td>
+            <td class="feature-val">5 projects</td>
+            <td class="feature-val"><strong>Unlimited</strong></td>
+            <td class="feature-val"><strong>Unlimited</strong></td>
+          </tr>
+          <tr>
+            <td class="feature-name">Active Sims</td>
+            <td class="feature-val">1 Sim</td>
+            <td class="feature-val">5 Sims</td>
+            <td class="feature-val">20 Sims</td>
+            <td class="feature-val">Custom</td>
+          </tr>
+          <tr>
+            <td class="feature-name">Sim Reaction Allowance</td>
+            <td class="feature-val">25 / month</td>
+            <td class="feature-val">500 / month</td>
+            <td class="feature-val">2,500 / month</td>
+            <td class="feature-val">Custom</td>
+          </tr>
+          <tr>
+            <td class="feature-name">AutoSim Guarded Flows</td>
+            <td class="feature-val">1 flow</td>
+            <td class="feature-val">5 flows</td>
+            <td class="feature-val">20 flows</td>
+            <td class="feature-val">Custom</td>
+          </tr>
+          <tr>
+            <td class="feature-name">AutoSim Execution Cadence</td>
+            <td class="feature-val">Weekly runs</td>
+            <td class="feature-val">Daily runs</td>
+            <td class="feature-val">Hourly / CI / Deploy</td>
+            <td class="feature-val">Custom</td>
+          </tr>
+          
+          <!-- Section: Enterprise & Security -->
+          <tr class="group-row">
+            <td colspan="5">SSO, Security &amp; Hosting</td>
+          </tr>
+          <tr>
+            <td class="feature-name">Single Sign-On (SSO)</td>
+            <td class="feature-val">—</td>
+            <td class="feature-val">—</td>
+            <td class="feature-val">Google &amp; Microsoft</td>
+            <td class="feature-val">SAML / SCIM / OIDC</td>
+          </tr>
+          <tr>
+            <td class="feature-name">Data Masking &amp; PI Filter</td>
+            <td class="feature-val">—</td>
+            <td class="feature-val">—</td>
+            <td class="feature-val">Standard</td>
+            <td class="feature-val">Custom / Custom Rules</td>
+          </tr>
+          <tr>
+            <td class="feature-name">Self-Hosted Support</td>
+            <td class="feature-val">—</td>
+            <td class="feature-val">—</td>
+            <td class="feature-val">—</td>
+            <td class="feature-val">✅ Optional</td>
+          </tr>
+          <tr>
+            <td class="feature-name">Support SLA</td>
+            <td class="feature-val">Best effort</td>
+            <td class="feature-val">Email support</td>
+            <td class="feature-val">Priority support</td>
+            <td class="feature-val">Dedicated TAM &amp; SLA</td>
+          </tr>
+          
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── FAQ SECTION ────────────────────────────────────────────────────── -->
+  <section class="wrap reveal" style="border-top:1px solid var(--line);padding-top:60px;margin-bottom:80px">
+    <p class="tag" style="text-align:center">Common Questions</p>
+    <h2 style="font-family:var(--display);font-weight:460;font-size:32px;text-align:center;margin-bottom:40px">Pricing &amp; Quota FAQ</h2>
+    
+    <div class="faq-grid">
+      <details class="card">
+        <summary style="font-family:var(--display);font-weight:540;font-size:18px;cursor:pointer">What counts as an AutoSim flow?</summary>
+        <p style="color:var(--paper-dim);font-size:15px;margin:10px 0 0">
+          An AutoSim flow (or Trail) is a recorded critical path in your product (such as checkout or user registration) that Klavity tests on a schedule. Maintenance actions like creating, editing, and manually verifying a flow do not count against your limits—only active, scheduled runs do.
+        </p>
+      </details>
+      
+      <details class="card">
+        <summary style="font-family:var(--display);font-weight:540;font-size:18px;cursor:pointer">What happens if we hit our reaction or flow limits?</summary>
+        <p style="color:var(--paper-dim);font-size:15px;margin:10px 0 0">
+          If you exceed your scheduled limits, Klavity degrades test cadences (e.g. daily runs slow down to weekly runs) rather than hard-stopping your tests mid-month. We will never hit you with silent overage billing or bill shock.
+        </p>
+      </details>
+
+      <details class="card">
+        <summary style="font-family:var(--display);font-weight:540;font-size:18px;cursor:pointer">What counts as a Sim reaction?</summary>
+        <p style="color:var(--paper-dim);font-size:15px;margin:10px 0 0">
+          A Sim reaction occurs when one of your active client-persona Sims reviews a page (triggered automatically by URL changes or manual consent) to inspect changes, write notes, or file issues. Extra Sim reactions are kept cheap based on local LLM COGS.
+        </p>
+      </details>
+
+      <details class="card">
+        <summary style="font-family:var(--display);font-weight:540;font-size:18px;cursor:pointer">Can we export our AutoSim flows?</summary>
+        <p style="color:var(--paper-dim);font-size:15px;margin:10px 0 0">
+          Yes. Klavity is open-core and we strongly oppose vendor lock-in. Any AutoSim flow you author can be exported into standard test scripts that you can run on your own Playwright runner anywhere.
+        </p>
+      </details>
+    </div>
+  </section>
+
+</main>
+
+<!-- ── FOOTER ──────────────────────────────────────────────────────────── -->
+<footer class="footer">
+  <div class="wrap">
+    <nav class="foot-in" aria-label="The Klavity arc" style="justify-content:center;gap:10px;margin-bottom:28px;font-family:var(--mono);font-size:13px;flex-wrap:wrap">
+      <a href="/snap" style="color:var(--indigo-text);font-weight:600">Snap</a>
+      <span aria-hidden="true" style="color:var(--paper-faint)">→</span>
+      <a href="/sims" style="color:var(--rose-text);font-weight:600">Sims</a>
+      <span aria-hidden="true" style="color:var(--paper-faint)">→</span>
+      <a href="/autosim" style="color:var(--green-text);font-weight:600">AutoSim</a>
+    </nav>
+  </div>
+  <div class="wrap foot-in">
+    <a class="brand" href="/"><img class="mark" src="/favicon.svg" alt="" width="26" height="26" style="vertical-align:middle;border-radius:7px" /> Klavity</a>
+    <a href="/">Home</a>
+    <a href="/snap">Snap</a>
+    <a href="/sims">Sims</a>
+    <a href="/autosim">AutoSim</a>
+    <a href="/pricing" aria-current="page">Pricing</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+    <a href="/privacy">Privacy</a>
+    <a href="/terms">Terms</a>
+    <span class="sp">© <span data-year>2026</span> Klavity · the user becomes the tester</span>
+  </div>
+</footer>
+
+<script>
+  // Simple monthly/annual pricing toggle logic
+  (function() {
+    var toggleMonthly = document.getElementById('toggleMonthly');
+    var toggleAnnual = document.getElementById('toggleAnnual');
+    var pricePro = document.getElementById('pricePro');
+    var priceTeam = document.getElementById('priceTeam');
+    var periodPro = document.getElementById('periodPro');
+    var periodTeam = document.getElementById('periodTeam');
+
+    if (!toggleMonthly || !toggleAnnual || !pricePro || !priceTeam) return;
+
+    toggleMonthly.addEventListener('click', function() {
+      toggleMonthly.classList.add('active');
+      toggleAnnual.classList.remove('active');
+      
+      pricePro.textContent = pricePro.getAttribute('data-monthly');
+      priceTeam.textContent = priceTeam.getAttribute('data-monthly');
+      periodPro.textContent = '/ month';
+      periodTeam.textContent = '/ month';
+    });
+
+    toggleAnnual.addEventListener('click', function() {
+      toggleAnnual.classList.add('active');
+      toggleMonthly.classList.remove('active');
+      
+      pricePro.textContent = pricePro.getAttribute('data-annual');
+      priceTeam.textContent = priceTeam.getAttribute('data-annual');
+      periodPro.textContent = '/ month, billed annually';
+      periodTeam.textContent = '/ month, billed annually';
+    });
+  })();
+
+  // If a session is already active, swap the logged-out CTAs for a Dashboard link.
+  fetch("/api/me", { credentials: "include" })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (d) {
+      if (d && d.email) {
+        var c = document.getElementById("navCta");
+        if (c) c.innerHTML = '<a class="btn btn-indigo" href="/dashboard">Dashboard →</a>';
+      }
+    })
+    .catch(function () {});
+</script>
+
+<script src="https://klavity.in/widget.js" data-project="proj_5a9b422f-ecb3-4abd-99b2-e48b6dbbaa2c" defer></script>
+</body>
+</html>

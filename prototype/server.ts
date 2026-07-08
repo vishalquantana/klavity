@@ -1161,6 +1161,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (req.method === "GET" && path === "/snap") return file(SITE + "/snap.html")
     if (req.method === "GET" && path === "/sims") return file(SITE + "/sims.html")
     if (req.method === "GET" && path === "/autosim") return file(SITE + "/autosim.html")
+    if (req.method === "GET" && path === "/pricing") return file(SITE + "/pricing.html")
     // ── POST /api/blog/publish — authenticated blog post publish + git push (Plan B path) ──
     // Auth: Authorization: Bearer <BLOG_PUBLISH_TOKEN>. The GH_TOKEN env var is used for the push URL
     // inline (never stored in git config) and must NEVER appear in any log or response body.
