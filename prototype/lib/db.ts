@@ -38,10 +38,15 @@ export async function initDb() {
   if (!(await columnExists(db, "accounts", "domain"))) {
     await db.execute("ALTER TABLE accounts ADD COLUMN domain TEXT").catch((e) => console.warn("accounts.domain ALTER skipped:", e?.message || e))
   }
-  await db!.execute("ALTER TABLE projects ADD COLUMN modal_config_json TEXT DEFAULT '{}'").catch((e: any) => console.warn("projects.modal_config_json ALTER skipped:", e?.message || e))
-  await db!.execute("ALTER TABLE accounts ADD COLUMN plan TEXT NOT NULL DEFAULT 'free'").catch((e: any) => console.warn("accounts.plan ALTER skipped:", e?.message || e))
+  // Batch-check these 3 additive columns before ALTERing (avoids 3 round-trips on established DBs).
+  const _initCols = await loadTableColumns(db, ["projects", "accounts", "test_accounts"])
+  if (!_initCols.get("projects")?.has("modal_config_json"))
+    await db!.execute("ALTER TABLE projects ADD COLUMN modal_config_json TEXT DEFAULT '{}'").catch((e: any) => console.warn("projects.modal_config_json ALTER skipped:", e?.message || e))
+  if (!_initCols.get("accounts")?.has("plan"))
+    await db!.execute("ALTER TABLE accounts ADD COLUMN plan TEXT NOT NULL DEFAULT 'free'").catch((e: any) => console.warn("accounts.plan ALTER skipped:", e?.message || e))
   // KLA-103: add auth_shape to test_accounts for OTP/passwordless support (existing rows get default 'password').
-  await db!.execute("ALTER TABLE test_accounts ADD COLUMN auth_shape TEXT NOT NULL DEFAULT 'password'").catch((e: any) => console.warn("test_accounts.auth_shape ALTER skipped:", e?.message || e))
+  if (!_initCols.get("test_accounts")?.has("auth_shape"))
+    await db!.execute("ALTER TABLE test_accounts ADD COLUMN auth_shape TEXT NOT NULL DEFAULT 'password'").catch((e: any) => console.warn("test_accounts.auth_shape ALTER skipped:", e?.message || e))
   await migrateConnectorsPlane(db)
   await backfillTriageV1(db)
   await backfillTrailStatus(db)
@@ -489,6 +494,18 @@ export async function applySchema(c: Client) {
   ]
   for (const s of stmts) await c.execute(s)
 
+  // ── Load all table column sets in one parallel batch ──────────────────────────────────────────
+  // An established DB has most/all columns already. By reading PRAGMA table_info for all tables
+  // in parallel upfront, we replace ~50 serial ALTER-then-catch round-trips to remote Turso with
+  // one parallel batch + O(1) in-memory Set lookups — cutting boot time from ~40s to <1s.
+  const ALTERED_TABLES = [
+    "sim_traits", "trait_events", "personas",
+    "feedback", "projects", "trails", "trail_runs",
+    "trail_steps", "walk_share_tokens", "findings", "author_sessions",
+  ]
+  const _cols = await loadTableColumns(c, ALTERED_TABLES)
+  const needCol = (table: string, col: string) => !(_cols.get(table)?.has(col) ?? false)
+
   // ── additive (idempotent) columns — added after the P3a tables were deployed, so existing prod
   // DBs need these ALTERed in on every boot (migrateV2 early-returns when migrated_v2 is already
   // set, so these MUST live here, mirroring the accounts.domain pattern in initDb). ──
@@ -517,7 +534,7 @@ export async function applySchema(c: Client) {
     ["personas", "watchfor_json"],
   ]
   for (const [table, col] of newTraitCols) {
-    if (!(await columnExists(c, table, col))) {
+    if (needCol(table, col)) {
       await c.execute(`ALTER TABLE ${table} ADD COLUMN ${col} TEXT`).catch((e) =>
         console.warn(`${table}.${col} ALTER skipped:`, e?.message || e),
       )
@@ -540,7 +557,7 @@ export async function applySchema(c: Client) {
     ["annotations_json",      "TEXT"],
   ]
   for (const [col, def] of feedbackAlters) {
-    if (!(await columnExists(c, "feedback", col))) {
+    if (needCol("feedback", col)) {
       await c.execute(`ALTER TABLE feedback ADD COLUMN ${col} ${def}`).catch((e: any) =>
         console.warn(`feedback.${col} ALTER skipped:`, e?.message || e))
     }
@@ -549,41 +566,39 @@ export async function applySchema(c: Client) {
     .catch((e: any) => console.warn("feedback_issue_idx skipped:", e?.message || e))
 
   // ── widget-config columns (leadgen integration task-1) ──
-  await c.execute("ALTER TABLE projects ADD COLUMN widget_mode TEXT NOT NULL DEFAULT 'support'").catch((e) => console.warn("projects.widget_mode ALTER skipped:", e?.message || e))
-  await c.execute("ALTER TABLE projects ADD COLUMN widget_cta_url TEXT").catch((e) => console.warn("projects.widget_cta_url ALTER skipped:", e?.message || e))
-  await c.execute("ALTER TABLE projects ADD COLUMN widget_notify_email TEXT").catch((e) => console.warn("projects.widget_notify_email ALTER skipped:", e?.message || e))
+  if (needCol("projects", "widget_mode")) await c.execute("ALTER TABLE projects ADD COLUMN widget_mode TEXT NOT NULL DEFAULT 'support'").catch((e) => console.warn("projects.widget_mode ALTER skipped:", e?.message || e))
+  if (needCol("projects", "widget_cta_url")) await c.execute("ALTER TABLE projects ADD COLUMN widget_cta_url TEXT").catch((e) => console.warn("projects.widget_cta_url ALTER skipped:", e?.message || e))
+  if (needCol("projects", "widget_notify_email")) await c.execute("ALTER TABLE projects ADD COLUMN widget_notify_email TEXT").catch((e) => console.warn("projects.widget_notify_email ALTER skipped:", e?.message || e))
   // report-identity gate: how an end-user is identified before a widget ticket is accepted.
   // 'email' (default) = logged-in OR a valid email; 'anonymous' = open; 'login' = Klavity token required.
-  await c.execute("ALTER TABLE projects ADD COLUMN widget_report_gate TEXT NOT NULL DEFAULT 'email'").catch((e) => console.warn("projects.widget_report_gate ALTER skipped:", e?.message || e))
+  if (needCol("projects", "widget_report_gate")) await c.execute("ALTER TABLE projects ADD COLUMN widget_report_gate TEXT NOT NULL DEFAULT 'email'").catch((e) => console.warn("projects.widget_report_gate ALTER skipped:", e?.message || e))
   // KLA-102: per-project instructions.md — freeform guidance the author drops in to shape how
   // AutoSim trails are authored for that project (test conventions, environment quirks, etc.).
-  await c.execute("ALTER TABLE projects ADD COLUMN instructions_md TEXT").catch((e) => console.warn("projects.instructions_md ALTER skipped:", e?.message || e))
-  await c.execute("ALTER TABLE feedback ADD COLUMN contact_email TEXT").catch((e) => console.warn("feedback.contact_email ALTER skipped:", e?.message || e))
+  if (needCol("projects", "instructions_md")) await c.execute("ALTER TABLE projects ADD COLUMN instructions_md TEXT").catch((e) => console.warn("projects.instructions_md ALTER skipped:", e?.message || e))
+  if (needCol("feedback", "contact_email")) await c.execute("ALTER TABLE feedback ADD COLUMN contact_email TEXT").catch((e) => console.warn("feedback.contact_email ALTER skipped:", e?.message || e))
   // Source attribution: document.referrer of the embed page (where the visitor came FROM). The embed
   // page itself is already captured as url_host/url_path; this records the upstream traffic source so
   // we can see which external site each widget interaction/lead originated from.
-  await c.execute("ALTER TABLE feedback ADD COLUMN source_referrer TEXT").catch((e) => console.warn("feedback.source_referrer ALTER skipped:", e?.message || e))
+  if (needCol("feedback", "source_referrer")) await c.execute("ALTER TABLE feedback ADD COLUMN source_referrer TEXT").catch((e) => console.warn("feedback.source_referrer ALTER skipped:", e?.message || e))
   // KLA-94: opt-in auto-file flag. When enabled AND a finding meets the confidence/severity threshold,
   // the walk executor automatically creates a ticket via the project's connector. Default OFF (back-compat).
-  await c.execute("ALTER TABLE projects ADD COLUMN trails_autofile_enabled INTEGER NOT NULL DEFAULT 0").catch((e) => console.warn("projects.trails_autofile_enabled ALTER skipped:", e?.message || e))
+  if (needCol("projects", "trails_autofile_enabled")) await c.execute("ALTER TABLE projects ADD COLUMN trails_autofile_enabled INTEGER NOT NULL DEFAULT 0").catch((e) => console.warn("projects.trails_autofile_enabled ALTER skipped:", e?.message || e))
 
   // KLA-117: optional per-Trail viewport/device config for AutoSim walks.
-  if (!(await columnExists(c, "trails", "viewport_json"))) {
+  if (needCol("trails", "viewport_json"))
     await c.execute("ALTER TABLE trails ADD COLUMN viewport_json TEXT").catch((e) => console.warn("trails.viewport_json ALTER skipped:", e?.message || e))
-  }
 
-  if (!(await columnExists(c, "findings", "connector_error"))) {
+  if (needCol("findings", "connector_error"))
     await c.execute("ALTER TABLE findings ADD COLUMN connector_error TEXT").catch((e: any) =>
       console.warn("findings.connector_error ALTER skipped:", e?.message || e))
-  }
   // KLA-92: Trail step versioning — step_version bumps whenever steps change; trail_version
   // pins the version a Walk ran against so past runs never drift from the steps they executed.
-  await c.execute("ALTER TABLE trails ADD COLUMN step_version INTEGER NOT NULL DEFAULT 1").catch((e) => console.warn("trails.step_version ALTER skipped:", e?.message || e))
-  await c.execute("ALTER TABLE trail_runs ADD COLUMN trail_version INTEGER NOT NULL DEFAULT 1").catch((e) => console.warn("trail_runs.trail_version ALTER skipped:", e?.message || e))
+  if (needCol("trails", "step_version")) await c.execute("ALTER TABLE trails ADD COLUMN step_version INTEGER NOT NULL DEFAULT 1").catch((e) => console.warn("trails.step_version ALTER skipped:", e?.message || e))
+  if (needCol("trail_runs", "trail_version")) await c.execute("ALTER TABLE trail_runs ADD COLUMN trail_version INTEGER NOT NULL DEFAULT 1").catch((e) => console.warn("trail_runs.trail_version ALTER skipped:", e?.message || e))
   // KLA-88: per-Trail cron schedule — schedule_cron stores a 5-field UTC cron expression;
   // scheduled_last_run_at guards against double-fire within the same minute window.
-  await c.execute("ALTER TABLE trails ADD COLUMN schedule_cron TEXT").catch((e) => console.warn("trails.schedule_cron ALTER skipped:", e?.message || e))
-  await c.execute("ALTER TABLE trails ADD COLUMN scheduled_last_run_at INTEGER").catch((e) => console.warn("trails.scheduled_last_run_at ALTER skipped:", e?.message || e))
+  if (needCol("trails", "schedule_cron")) await c.execute("ALTER TABLE trails ADD COLUMN schedule_cron TEXT").catch((e) => console.warn("trails.schedule_cron ALTER skipped:", e?.message || e))
+  if (needCol("trails", "scheduled_last_run_at")) await c.execute("ALTER TABLE trails ADD COLUMN scheduled_last_run_at INTEGER").catch((e) => console.warn("trails.scheduled_last_run_at ALTER skipped:", e?.message || e))
   // KLA-70: dedup-race fix — enforce UNIQUE(project_id, dedup_key) so recordFinding's
   // INSERT ON CONFLICT is atomic. Pre-collapse any legacy duplicates (keep oldest rowid) first.
   await c.execute("DELETE FROM findings WHERE rowid NOT IN (SELECT MIN(rowid) FROM findings GROUP BY project_id, dedup_key)")
@@ -591,7 +606,7 @@ export async function applySchema(c: Client) {
   await c.execute("CREATE UNIQUE INDEX IF NOT EXISTS finding_dedup_uq ON findings(project_id, dedup_key)")
     .catch((e: any) => console.warn("finding_dedup_uq skipped:", e?.message || e))
   // KLA-73: persona-judged walks — which persona judges this Trail's results.
-  await c.execute("ALTER TABLE trails ADD COLUMN judge_persona_id TEXT").catch((e: any) =>
+  if (needCol("trails", "judge_persona_id")) await c.execute("ALTER TABLE trails ADD COLUMN judge_persona_id TEXT").catch((e: any) =>
     console.warn("trails.judge_persona_id ALTER skipped:", e?.message || e))
   // KLA-73: walk_judgments — one row per (run, persona) judgment session.
   await c.execute(`CREATE TABLE IF NOT EXISTS walk_judgments (
@@ -608,45 +623,45 @@ export async function applySchema(c: Client) {
     .catch((e: any) => console.warn("wj_run_idx skipped:", e?.message || e))
   // KLA-55: crash-reaper heartbeat columns — updated by active walks/author drives so the reaper
   // can distinguish a stale-running row from a genuinely-running one even without a restart.
-  await c.execute("ALTER TABLE trail_runs ADD COLUMN last_beat_at INTEGER")
+  if (needCol("trail_runs", "last_beat_at")) await c.execute("ALTER TABLE trail_runs ADD COLUMN last_beat_at INTEGER")
     .catch((e: any) => console.warn("trail_runs.last_beat_at ALTER skipped:", e?.message || e))
-  await c.execute("ALTER TABLE author_sessions ADD COLUMN last_beat_at INTEGER")
+  if (needCol("author_sessions", "last_beat_at")) await c.execute("ALTER TABLE author_sessions ADD COLUMN last_beat_at INTEGER")
     .catch((e: any) => console.warn("author_sessions.last_beat_at ALTER skipped:", e?.message || e))
   // KLA-57: partial-trajectory checkpoint (traj+history+cost+url) persisted after each step so
   // a stalled drive is resumable without discarding accumulated progress.
-  await c.execute("ALTER TABLE author_sessions ADD COLUMN checkpoint_json TEXT")
+  if (needCol("author_sessions", "checkpoint_json")) await c.execute("ALTER TABLE author_sessions ADD COLUMN checkpoint_json TEXT")
     .catch((e: any) => console.warn("author_sessions.checkpoint_json ALTER skipped:", e?.message || e))
   // KLA-57: back-link to the session this one was resumed from (null for fresh starts).
-  await c.execute("ALTER TABLE author_sessions ADD COLUMN resumed_from TEXT")
+  if (needCol("author_sessions", "resumed_from")) await c.execute("ALTER TABLE author_sessions ADD COLUMN resumed_from TEXT")
     .catch((e: any) => console.warn("author_sessions.resumed_from ALTER skipped:", e?.message || e))
-  await c.execute("ALTER TABLE trails ADD COLUMN objective_verified INTEGER")
+  if (needCol("trails", "objective_verified")) await c.execute("ALTER TABLE trails ADD COLUMN objective_verified INTEGER")
     .catch((e: any) => console.warn("trails.objective_verified ALTER skipped:", e?.message || e))
-  await c.execute("ALTER TABLE author_sessions ADD COLUMN objective_verified INTEGER")
+  if (needCol("author_sessions", "objective_verified")) await c.execute("ALTER TABLE author_sessions ADD COLUMN objective_verified INTEGER")
     .catch((e: any) => console.warn("author_sessions.objective_verified ALTER skipped:", e?.message || e))
   // KLA-77: cross-trail finding dedup — content signature column so the same broken element
   // surfaced from two different Trails collapses to ONE finding with a recurrence bump.
-  await c.execute("ALTER TABLE findings ADD COLUMN content_sig TEXT")
+  if (needCol("findings", "content_sig")) await c.execute("ALTER TABLE findings ADD COLUMN content_sig TEXT")
     .catch((e: any) => console.warn("findings.content_sig ALTER skipped:", e?.message || e))
   await c.execute("CREATE INDEX IF NOT EXISTS finding_content_sig_idx ON findings(project_id, content_sig) WHERE content_sig IS NOT NULL")
     .catch((e: any) => console.warn("finding_content_sig_idx skipped:", e?.message || e))
   // KLA-67: per-step action timeout override (ms). NULL = runner uses adaptive default (min 5s, max 15s).
-  await c.execute("ALTER TABLE trail_steps ADD COLUMN timeout_ms INTEGER")
+  if (needCol("trail_steps", "timeout_ms")) await c.execute("ALTER TABLE trail_steps ADD COLUMN timeout_ms INTEGER")
     .catch((e: any) => console.warn("trail_steps.timeout_ms ALTER skipped:", e?.message || e))
   // KLA-93: per-trail named environments (staging/prod/etc.) stored as JSON array [{name,baseUrl}].
-  await c.execute("ALTER TABLE trails ADD COLUMN environments_json TEXT")
+  if (needCol("trails", "environments_json")) await c.execute("ALTER TABLE trails ADD COLUMN environments_json TEXT")
     .catch((e: any) => console.warn("trails.environments_json ALTER skipped:", e?.message || e))
   // KLA-93: which named environment a run was executed against. NULL = default (trail.baseUrl).
-  await c.execute("ALTER TABLE trail_runs ADD COLUMN environment_name TEXT")
+  if (needCol("trail_runs", "environment_name")) await c.execute("ALTER TABLE trail_runs ADD COLUMN environment_name TEXT")
     .catch((e: any) => console.warn("trail_runs.environment_name ALTER skipped:", e?.message || e))
   // KLA-104: pause-for-secret — opaque key stored while a walk is paused; cleared on resume or expiry.
-  await c.execute("ALTER TABLE trail_runs ADD COLUMN paused_secret_key TEXT")
+  if (needCol("trail_runs", "paused_secret_key")) await c.execute("ALTER TABLE trail_runs ADD COLUMN paused_secret_key TEXT")
     .catch((e: any) => console.warn("trail_runs.paused_secret_key ALTER skipped:", e?.message || e))
   // KLA-121: share-token lifecycle — revocation timestamp (NULL = active).
-  await c.execute("ALTER TABLE walk_share_tokens ADD COLUMN revoked_at INTEGER")
+  if (needCol("walk_share_tokens", "revoked_at")) await c.execute("ALTER TABLE walk_share_tokens ADD COLUMN revoked_at INTEGER")
     .catch((e: any) => console.warn("walk_share_tokens.revoked_at ALTER skipped:", e?.message || e))
   // KLA-81: computed severity stored at finding-creation time so ticket-filers + UIs don't have
   // to re-derive it. NULL on legacy rows → callers fall back to severityForKind(kind).
-  await c.execute("ALTER TABLE findings ADD COLUMN severity TEXT")
+  if (needCol("findings", "severity")) await c.execute("ALTER TABLE findings ADD COLUMN severity TEXT")
     .catch((e: any) => console.warn("findings.severity ALTER skipped:", e?.message || e))
 }
 
@@ -911,6 +926,21 @@ async function columnExists(c: Client, table: string, col: string): Promise<bool
     const r = await c.execute(`PRAGMA table_info(${table})`)
     return r.rows.some((x: any) => String(x.name) === col)
   } catch { return false }
+}
+/** Batch-fetch column sets for multiple tables in parallel (one PRAGMA per table, all concurrent).
+ *  Returns a Map<tableName, Set<columnName>>. Unknown/nonexistent tables get an empty Set. */
+export async function loadTableColumns(c: Client, tables: string[]): Promise<Map<string, Set<string>>> {
+  const entries = await Promise.all(
+    tables.map(async (table) => {
+      try {
+        const r = await c.execute(`PRAGMA table_info(${table})`)
+        return [table, new Set(r.rows.map((x: any) => String(x.name)))] as const
+      } catch {
+        return [table, new Set<string>()] as const
+      }
+    }),
+  )
+  return new Map(entries)
 }
 
 // ── OTP ──
