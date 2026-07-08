@@ -39,3 +39,12 @@ test("Dragging a ticket across columns PATCHes feedback status; same-column drag
   expect(html).toContain('fetch(`/api/feedback/${encodeURIComponent(ticketId)}`')
   expect(html).toContain('body: JSON.stringify({ status: col.status })')
 })
+
+test("Tickets board and detail expose a member-backed assignee picker", () => {
+  expect(html).toContain('id="tktAssigneeOptions"')
+  expect(html).toContain("function projectMemberEmails()")
+  expect(html).toContain('list="tktAssigneeOptions"')
+  expect(html).toContain("assigneePickerHtml(t, true)")
+  expect(html).toContain("patchTicketAssignee(ticketId, next)")
+  expect(html).toContain('body: JSON.stringify({ assignee: assignee || null, notes: notes || null })')
+})

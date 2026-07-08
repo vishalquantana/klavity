@@ -131,3 +131,51 @@ export async function sendLeadAlert(to: string, lead: { email: string; descripti
   })
   if (!res.ok) throw new Error(`SendGrid ${res.status}: ${(await res.text()).slice(0, 200)}`)
 }
+
+export type TicketAssignmentEmail = {
+  to: string
+  ticketTitle: string
+  projectName?: string | null
+  assignedBy?: string | null
+  ticketUrl: string
+}
+
+function escMail(s: string): string {
+  return s.replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c] as string))
+}
+
+export async function sendTicketAssignmentEmail(input: TicketAssignmentEmail) {
+  const key = process.env.SENDGRID_API_KEY
+  const from = process.env.KLAV_MAIL_FROM || "klav@quantana.com.au"
+  if (!key) throw new Error("SENDGRID_API_KEY not set")
+  const project = input.projectName ? ` in ${input.projectName}` : ""
+  const actor = input.assignedBy ? ` by ${input.assignedBy}` : ""
+  const subject = `Klavity ticket assigned to you${project}`
+  const text = [
+    `A Klavity ticket was assigned to you${actor}.`,
+    "",
+    input.ticketTitle,
+    "",
+    `Open the ticket: ${input.ticketUrl}`,
+  ].join("\n")
+  const html = `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#1d1d1f;line-height:1.5">
+    <p>A Klavity ticket was assigned to you${escMail(actor)}.</p>
+    <p style="font-size:16px"><b>${escMail(input.ticketTitle)}</b></p>
+    ${input.projectName ? `<p>Project: ${escMail(input.projectName)}</p>` : ""}
+    <p><a href="${escMail(input.ticketUrl)}">Open ticket</a></p>
+  </div>`
+  const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      personalizations: [{ to: [{ email: input.to }] }],
+      from: { email: from, name: "Klavity" },
+      subject,
+      content: [
+        { type: "text/plain", value: text },
+        { type: "text/html", value: html },
+      ],
+    }),
+  })
+  if (!res.ok) throw new Error(`SendGrid ${res.status}: ${(await res.text()).slice(0, 200)}`)
+}

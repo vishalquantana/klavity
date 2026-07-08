@@ -6,7 +6,7 @@ import { classifySimObservation } from "./lib/sim-bug-classify"
 import { getConnector, listConnectorTypes, type TicketPayload, type TicketAttachment } from "./lib/connectors/index"
 import { inboundSupported, verifyGithubSignature, verifyLinearSignature, extractExternalKey, mapExternalStatus } from "./lib/connectors/inbound"
 import { applyReconcileOps, recurrenceFromEvents, pickCitation, type ReconcileOp, type Trait, type TraitEventRow } from "./lib/provenance"
-import { sendOtp, sendLeadAlert } from "./lib/mail"
+import { sendOtp, sendLeadAlert, sendTicketAssignmentEmail } from "./lib/mail"
 import { token, otp, emailAllowed, cookie, clearCookie, parseCookies, isOpsAdmin } from "./lib/auth"
 import { uploadScreenshotMeta, presignGet, deleteObject, getObjectBytes, type UploadedScreenshot } from "./lib/s3"
 import { signImageToken, verifyImageToken } from "./lib/imgsign"
@@ -67,6 +67,17 @@ const REPO_ROOT = import.meta.dir + "/.."
 const SESSION_DAYS = 7
 // Screenshots embedded in external tracker tickets use a PERMANENT signed link (`/img/<id>.<hmac>`,
 // see lib/imgsign.ts) — never expires, revocable, S3 stays private. (Replaces the old 7-day presign.)
+
+function normalizeAssigneeEmail(value: unknown): string | null {
+  if (value === null || value === undefined) return null
+  const email = String(value).trim().toLowerCase()
+  if (!email) return null
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : ""
+}
+
+function ticketDashboardUrl(projectId: string): string {
+  return `${BASE.replace(/\/+$/, "")}/dashboard?project=${encodeURIComponent(projectId)}#tickets`
+}
 
 await initDb()
 
@@ -4098,7 +4109,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           }
           const meta: Partial<{ status: string; assignee: string | null; notes: string | null; priority: string | null }> = {}
           if (body.status !== undefined) meta.status = body.status
-          if (body.assignee !== undefined) meta.assignee = body.assignee ?? null
+          if (body.assignee !== undefined) {
+            const assignee = normalizeAssigneeEmail(body.assignee)
+            if (assignee === "") return json({ error: "assignee must be a valid email address." }, 400)
+            meta.assignee = assignee
+          }
           if (body.notes !== undefined) meta.notes = body.notes ?? null
           if (body.priority !== undefined) meta.priority = body.priority ?? null
           const updated = await updateFeedbackMeta(fbRow.projectId, fid, meta)
@@ -4121,6 +4136,25 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               feedbackId: fid,
               meta: { from: fbRow.priority, to: meta.priority },
             }).catch((e: any) => console.warn("ticket priority activity skipped:", e?.message || e)))
+          }
+          if (meta.assignee !== undefined && meta.assignee !== fbRow.assignee) {
+            activityWrites.push(insertActivity({
+              projectId: fbRow.projectId,
+              type: "ticket_assignee_changed",
+              actorEmail: me,
+              feedbackId: fid,
+              meta: { from: fbRow.assignee, to: meta.assignee },
+            }).catch((e: any) => console.warn("ticket assignee activity skipped:", e?.message || e)))
+            if (meta.assignee && process.env.SENDGRID_API_KEY) {
+              const proj = await projectById(fbRow.projectId).catch(() => null)
+              void sendTicketAssignmentEmail({
+                to: meta.assignee,
+                ticketTitle: String(fbRow.observation || "Untitled ticket"),
+                projectName: proj?.name ?? null,
+                assignedBy: me,
+                ticketUrl: ticketDashboardUrl(fbRow.projectId),
+              }).catch((e: any) => console.warn("ticket assignment email skipped:", e?.message || e))
+            }
           }
           if (activityWrites.length) await Promise.all(activityWrites)
           return json({ ok: true })
@@ -4592,7 +4626,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (bodyText.length > 5000) return json({ error: "Body must be 5000 characters or fewer." }, 400)
           const VALID_PRI = ["urgent", "high", "medium", "low"]
           const priority = VALID_PRI.includes(body.priority) ? body.priority : "medium"
-          const assignee = body.assignee ? String(body.assignee).trim().slice(0, 200) : null
+          const assignee = normalizeAssigneeEmail(body.assignee)
+          if (assignee === "") return json({ error: "assignee must be a valid email address." }, 400)
           const observation = bodyText ? `${title}\n\n${bodyText}` : title
           const id = await insertFeedback({
             projectId: proj.id,
@@ -4612,6 +4647,15 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             feedbackId: id,
             meta: { title, priority, source: "manual" },
           }).catch((e: any) => console.warn("ticket_created activity skipped:", e?.message || e))
+          if (assignee && process.env.SENDGRID_API_KEY) {
+            void sendTicketAssignmentEmail({
+              to: assignee,
+              ticketTitle: title,
+              projectName: proj.name,
+              assignedBy: me,
+              ticketUrl: ticketDashboardUrl(proj.id),
+            }).catch((e: any) => console.warn("ticket assignment email skipped:", e?.message || e))
+          }
           return json({ ok: true, ticketId: id }, 201)
         }
 
