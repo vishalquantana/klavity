@@ -80,7 +80,11 @@ now=$(date +%s)
 DASH="prototype/public/dashboard.html"
 WIDGET_BUNDLE="packages/sdk/dist/klavity-widget.iife.js"
 # "feature markers" whose count in $DASH must never DROP across a merge.
-PROTECTED_PATTERNS=('kanbanSearch\|kb-toolbar' 'embedCopy')
+# Retired kanbanSearch|kb-toolbar 2026-07-09: the Tracker epic (KLA-170+) INTENTIONALLY
+# reworks the tickets/kanban UI in dashboard.html, so a legit refactor drops those marker
+# counts and false-blocked KLA-170 (verified: it boots + works, +137 lines of kanban).
+# embedCopy stays; boot_smoke now covers real breakage.
+PROTECTED_PATTERNS=('embedCopy')
 dash_count(){ [ -f "$DASH" ] && grep -c "$1" "$DASH" 2>/dev/null || echo 0; }
 typecheck_changed_ts(){
   local pre="$1" tmpd logf failed=0 f
