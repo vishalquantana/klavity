@@ -43,11 +43,16 @@ const realWalk: WalkFn = async (projectId, trailId, runId) => {
  * flight rejects with WalkBusyError (→ HTTP 409). An unknown trail throws before any slot is taken.
  */
 export async function runWalkNow(
-  projectId: string, trailId: string, deps?: { walk?: WalkFn },
+  projectId: string,
+  trailId: string,
+  deps?: { walk?: WalkFn; trigger?: "manual" | "scheduled"; environmentName?: string | null },
 ): Promise<{ runId: string }> {
   const trail = await getTrail(projectId, trailId)
   if (!trail) throw new Error("trail not found")
   if (trail.status === "paused") throw new Error("trail is paused")
+
+  const trigger = deps?.trigger ?? "manual"
+  const environmentName = deps?.environmentName ?? null
 
   // A deferred we resolve the instant the Walk row exists, so the caller gets a real runId while the
   // background walk keeps running and HOLDING the slot until it finalizes.
@@ -61,7 +66,7 @@ export async function runWalkNow(
   const slotHeld = withWalkSlot(async () => {
     let runId: string
     try {
-      runId = await startWalk(projectId, trailId)
+      runId = await startWalk(projectId, trailId, trigger, environmentName)
     } catch (e) {
       rejectStart(e)
       return
