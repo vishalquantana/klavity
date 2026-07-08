@@ -1571,7 +1571,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         </div>
         <div class="grid">
           <div class="card">
-            <h2>Walks <span class="count" id="walksCount">0</span></h2>
+            <h2 style="display:flex;align-items:baseline;gap:8px">Walks <span class="count" id="walksCount">0</span><a id="walksViewAll" href="/autosims/walks" style="font-family:var(--mono);font-size:11px;color:var(--indigo);margin-left:auto;letter-spacing:.03em">View all →</a></h2>
             <div class="list" id="walks"></div>
           </div>
           <div class="card">
@@ -4995,6 +4995,7 @@ load()
       $("precSub").textContent=p.filed+" filed · "+p.dismissed+" dismissed — the share of reviewed findings that were real bugs."
     }
     var walks=d.recentWalks||[];$("walksCount").textContent=String(walks.length)
+    var vAll=$("walksViewAll");if(vAll)vAll.href="/autosims/walks"+projQ()
     var wEl=$("walks")
     wEl.innerHTML=walks.length?"":"<div class=\"empty\"><div class=\"em\">"+window.kicon("footprints",{size:18})+"</div><p>No Walks yet. Author a Trail and walk it to see verdicts here.</p></div>"
     var trailNameFor={};(d.trails||[]).forEach(function(t){trailNameFor[t.id]=t.name})
