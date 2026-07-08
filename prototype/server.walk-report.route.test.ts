@@ -122,6 +122,13 @@ async function seedWalk(): Promise<{ runId: string; trailId: string }> {
 }
 
 const { runId: WALK_RUN_ID } = await seedWalk()
+const SEEDED_FINDING_ID = `find_wr_seeded_${ts}`
+await rawExec(
+  `INSERT INTO findings (id, project_id, run_id, trail_id, kind, title, evidence_json, ground_quote, confidence, dedup_key, recurrence, status, created_at, updated_at)
+   SELECT ?, ?, ?, trail_id, 'regression', 'Seeded shared finding', '{"reason":"seeded"}', 'seeded', 0.9, ?, 1, 'queued', ?, ?
+   FROM trail_runs WHERE id=?`,
+  [SEEDED_FINDING_ID, PROJECT_ID, WALK_RUN_ID, `seeded:${ts}`, NOW, NOW, WALK_RUN_ID],
+)
 
 // ── Spawn subprocess server ────────────────────────────────────────────────────
 let serverPort: number
@@ -211,9 +218,93 @@ test("POST /api/trails/walks/:runId/share — mint share token returns URL with 
   expect(r.status).toBe(200)
   const body = await r.json()
   expect(typeof body.url).toBe("string")
-  expect(body.url).toContain("/shared/walk-report/")
+  expect(body.url).toContain("/shared/walk/")
+  expect(typeof body.pdfUrl).toBe("string")
+  expect(body.pdfUrl).toContain("/shared/walk-report/")
   expect(typeof body.expiresAt).toBe("number")
   expect(body.expiresAt).toBeGreaterThan(Date.now())
+})
+
+test("GET /shared/walk/:token — valid token serves public interactive report HTML (no auth required)", async () => {
+  const mintR = await fetch(`${base}/api/trails/walks/${WALK_RUN_ID}/share?project=${pid}`, {
+    method: "POST",
+    headers: { cookie: adminCookie },
+  })
+  const { url: shareUrl } = await mintR.json()
+
+  const r = await fetch(shareUrl)
+  expect(r.status).toBe(200)
+  expect(r.headers.get("content-type")).toContain("text/html")
+  const body = await r.text()
+  expect(body).toContain("Shared AutoSim walk report")
+  expect(body).toContain("/shared/walk/")
+})
+
+test("GET /shared/walk/:token/data — returns walk, steps, and findings without login", async () => {
+  const mintR = await fetch(`${base}/api/trails/walks/${WALK_RUN_ID}/share?project=${pid}`, {
+    method: "POST",
+    headers: { cookie: adminCookie },
+  })
+  const { url: shareUrl } = await mintR.json()
+  const token = shareUrl.split("/").pop()
+
+  const r = await fetch(`${base}/shared/walk/${token}/data`)
+  expect(r.status).toBe(200)
+  const body = await r.json()
+  expect(body.walk.id).toBe(WALK_RUN_ID)
+  expect(body.steps.length).toBeGreaterThan(0)
+  expect(body.findings.some((f: any) => f.id === SEEDED_FINDING_ID)).toBe(true)
+  expect(body.pdfUrl).toContain("/shared/walk-report/")
+})
+
+test("POST /shared/walk/:token/findings — manually adds a queued finding to the shared walk", async () => {
+  const mintR = await fetch(`${base}/api/trails/walks/${WALK_RUN_ID}/share?project=${pid}`, {
+    method: "POST",
+    headers: { cookie: adminCookie },
+  })
+  const { url: shareUrl } = await mintR.json()
+  const token = shareUrl.split("/").pop()
+
+  const r = await fetch(`${base}/shared/walk/${token}/findings`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ title: "Manual shared bug", detail: "Observed from shared report" }),
+  })
+  expect(r.status).toBe(200)
+  const body = await r.json()
+  expect(body.ok).toBe(true)
+
+  const data = await fetch(`${base}/shared/walk/${token}/data`).then((x) => x.json())
+  expect(data.findings.some((f: any) => f.title === "Manual shared bug" && f.status === "queued")).toBe(true)
+})
+
+test("POST /shared/walk/:token/findings/:id/dismiss — dismisses a queued finding through the share token", async () => {
+  const manualId = `find_wr_dismiss_${Date.now()}`
+  await rawExec(
+    `INSERT INTO findings (id, project_id, run_id, trail_id, kind, title, evidence_json, ground_quote, confidence, dedup_key, recurrence, status, created_at, updated_at)
+     SELECT ?, ?, ?, trail_id, 'regression', 'Dismiss me from share', '{}', 'dismiss', 0.8, ?, 1, 'queued', ?, ?
+     FROM trail_runs WHERE id=?`,
+    [manualId, PROJECT_ID, WALK_RUN_ID, `dismiss:${manualId}`, Date.now(), Date.now(), WALK_RUN_ID],
+  )
+  const mintR = await fetch(`${base}/api/trails/walks/${WALK_RUN_ID}/share?project=${pid}`, {
+    method: "POST",
+    headers: { cookie: adminCookie },
+  })
+  const { url: shareUrl } = await mintR.json()
+  const token = shareUrl.split("/").pop()
+
+  const r = await fetch(`${base}/shared/walk/${token}/findings/${manualId}/dismiss`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{}",
+  })
+  expect(r.status).toBe(200)
+  const body = await r.json()
+  expect(body.ok).toBe(true)
+
+  const data = await fetch(`${base}/shared/walk/${token}/data`).then((x) => x.json())
+  const finding = data.findings.find((f: any) => f.id === manualId)
+  expect(finding.status).toBe("dismissed")
 })
 
 test("GET /shared/walk-report/:token — valid token serves inline PDF (no auth required)", async () => {
@@ -222,10 +313,10 @@ test("GET /shared/walk-report/:token — valid token serves inline PDF (no auth 
     method: "POST",
     headers: { cookie: adminCookie },
   })
-  const { url: shareUrl } = await mintR.json()
+  const { pdfUrl } = await mintR.json()
 
   // Access via the share URL without any session cookie
-  const r = await fetch(shareUrl)
+  const r = await fetch(pdfUrl)
   expect(r.status).toBe(200)
   expect(r.headers.get("content-type")).toContain("application/pdf")
   expect(r.headers.get("content-disposition")).toContain("inline")
@@ -275,12 +366,12 @@ test("GET /shared/walk-report/:token — rate-limited after 30 rapid requests", 
     method: "POST",
     headers: { cookie: adminCookie },
   })
-  const { url: shareUrl } = await mintR.json()
+  const { pdfUrl } = await mintR.json()
 
   // Hit the shared URL 31 times rapidly
   let got429 = false
   for (let i = 0; i < 31; i++) {
-    const r = await fetch(shareUrl)
+    const r = await fetch(pdfUrl)
     if (r.status === 429) {
       got429 = true
       break
@@ -320,12 +411,12 @@ test("GET /shared/walk-report/:token & /api/.../report.pdf — returns 429 Retry
     method: "POST",
     headers: { cookie: adminCookie },
   })
-  const { url: shareUrl } = await mintR.json()
+  const { pdfUrl } = await mintR.json()
 
   // 1. Concurrent requests to shared walk-report endpoint
   const [res1, res2] = await Promise.all([
-    fetch(shareUrl),
-    Bun.sleep(50).then(() => fetch(shareUrl))
+    fetch(pdfUrl),
+    Bun.sleep(50).then(() => fetch(pdfUrl))
   ])
 
   expect([res1.status, res2.status]).toContain(200)
@@ -335,10 +426,10 @@ test("GET /shared/walk-report/:token & /api/.../report.pdf — returns 429 Retry
   expect(busyRes.headers.get("retry-after")).toBe("5")
 
   // 2. Concurrent requests to authed download endpoint
-  const pdfUrl = `http://localhost:${tempPort}/api/trails/walks/${WALK_RUN_ID}/report.pdf?project=${pid}`
+  const authedPdfUrl = `http://localhost:${tempPort}/api/trails/walks/${WALK_RUN_ID}/report.pdf?project=${pid}`
   const [authedRes1, authedRes2] = await Promise.all([
-    fetch(pdfUrl, { headers: { cookie: adminCookie } }),
-    Bun.sleep(50).then(() => fetch(pdfUrl, { headers: { cookie: adminCookie } }))
+    fetch(authedPdfUrl, { headers: { cookie: adminCookie } }),
+    Bun.sleep(50).then(() => fetch(authedPdfUrl, { headers: { cookie: adminCookie } }))
   ])
 
   expect([authedRes1.status, authedRes2.status]).toContain(200)
@@ -351,4 +442,3 @@ test("GET /shared/walk-report/:token & /api/.../report.pdf — returns 429 Retry
 
   tempProc.kill()
 })
-
