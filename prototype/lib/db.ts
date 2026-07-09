@@ -7,6 +7,16 @@ const url = process.env.TURSO_DATABASE_URL
 const authToken = process.env.TURSO_AUTH_TOKEN
 export let db: Client | null = url ? createClient({ url, authToken }) : null
 
+const accountBillingColumns: Array<[string, string]> = [
+  ["stripe_customer_id", "TEXT"],
+  ["stripe_subscription_id", "TEXT"],
+  ["billing_status", "TEXT"],
+  ["billing_interval", "TEXT"],
+  ["billing_current_period_end", "INTEGER"],
+  ["billing_cancel_at_period_end", "INTEGER NOT NULL DEFAULT 0"],
+  ["billing_updated_at", "INTEGER"],
+]
+
 // Test-only: re-point the shared client at a specific DB file. All test files run in ONE
 // Bun process with a shared module registry, so `db` is created exactly once at first import
 // (capturing whichever file imported it first). Without this, every DB-backed test file would
@@ -46,6 +56,10 @@ export async function initDb() {
     await db!.execute("ALTER TABLE projects ADD COLUMN autosim_auth_status TEXT NOT NULL DEFAULT 'unregistered'").catch((e: any) => console.warn("projects.autosim_auth_status ALTER skipped:", e?.message || e))
   if (!_initCols.get("accounts")?.has("plan"))
     await db!.execute("ALTER TABLE accounts ADD COLUMN plan TEXT NOT NULL DEFAULT 'free'").catch((e: any) => console.warn("accounts.plan ALTER skipped:", e?.message || e))
+  for (const [col, def] of accountBillingColumns) {
+    if (!_initCols.get("accounts")?.has(col))
+      await db!.execute(`ALTER TABLE accounts ADD COLUMN ${col} ${def}`).catch((e: any) => console.warn(`accounts.${col} ALTER skipped:`, e?.message || e))
+  }
   // KLA-103: add auth_shape to test_accounts for OTP/passwordless support (existing rows get default 'password').
   if (!_initCols.get("test_accounts")?.has("auth_shape"))
     await db!.execute("ALTER TABLE test_accounts ADD COLUMN auth_shape TEXT NOT NULL DEFAULT 'password'").catch((e: any) => console.warn("test_accounts.auth_shape ALTER skipped:", e?.message || e))
@@ -180,7 +194,16 @@ export async function applySchema(c: Client) {
     `CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT)`,
     // COMPANY (was workspaces; accounts.id REUSES old workspace id — no re-login, no integrations rewrite).
     `CREATE TABLE IF NOT EXISTS accounts (
-       id TEXT PRIMARY KEY, name TEXT NOT NULL, owner_email TEXT NOT NULL, domain TEXT, created_at INTEGER NOT NULL)`,
+       id TEXT PRIMARY KEY, name TEXT NOT NULL, owner_email TEXT NOT NULL, domain TEXT,
+       plan TEXT NOT NULL DEFAULT 'free',
+       stripe_customer_id TEXT,
+       stripe_subscription_id TEXT,
+       billing_status TEXT,
+       billing_interval TEXT,
+       billing_current_period_end INTEGER,
+       billing_cancel_at_period_end INTEGER NOT NULL DEFAULT 0,
+       billing_updated_at INTEGER,
+       created_at INTEGER NOT NULL)`,
     `CREATE TABLE IF NOT EXISTS account_members (
        id TEXT PRIMARY KEY, account_id TEXT NOT NULL, email TEXT NOT NULL,
        account_role TEXT NOT NULL,           -- 'owner' | 'admin' | 'member'
@@ -195,6 +218,9 @@ export async function applySchema(c: Client) {
        review_budget_daily INTEGER DEFAULT 200,
        observability_mode TEXT NOT NULL DEFAULT 'named',
        autosim_auth_status TEXT NOT NULL DEFAULT 'unregistered',
+       billing_plan TEXT NOT NULL DEFAULT 'free',
+       billing_status TEXT,
+       billing_updated_at INTEGER,
        created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
     `CREATE INDEX IF NOT EXISTS project_acct_idx ON projects (account_id, created_at)`,
     `CREATE TABLE IF NOT EXISTS project_members (
@@ -575,7 +601,7 @@ export async function applySchema(c: Client) {
   // one parallel batch + O(1) in-memory Set lookups — cutting boot time from ~40s to <1s.
   const ALTERED_TABLES = [
     "sim_traits", "trait_events", "personas",
-    "feedback", "projects", "trails", "trail_runs",
+    "feedback", "projects", "accounts", "trails", "trail_runs",
     "trail_steps", "walk_share_tokens", "findings", "author_sessions",
     "ai_calls",
   ]
@@ -741,6 +767,16 @@ export async function applySchema(c: Client) {
     .catch((e: any) => console.warn("walk_share_tokens.revoked_at ALTER skipped:", e?.message || e))
   if (needCol("projects", "autosim_auth_status")) await c.execute("ALTER TABLE projects ADD COLUMN autosim_auth_status TEXT NOT NULL DEFAULT 'unregistered'")
     .catch((e: any) => console.warn("projects.autosim_auth_status ALTER skipped:", e?.message || e))
+  for (const [col, def] of accountBillingColumns) {
+    if (needCol("accounts", col)) await c.execute(`ALTER TABLE accounts ADD COLUMN ${col} ${def}`)
+      .catch((e: any) => console.warn(`accounts.${col} ALTER skipped:`, e?.message || e))
+  }
+  if (needCol("projects", "billing_plan")) await c.execute("ALTER TABLE projects ADD COLUMN billing_plan TEXT NOT NULL DEFAULT 'free'")
+    .catch((e: any) => console.warn("projects.billing_plan ALTER skipped:", e?.message || e))
+  if (needCol("projects", "billing_status")) await c.execute("ALTER TABLE projects ADD COLUMN billing_status TEXT")
+    .catch((e: any) => console.warn("projects.billing_status ALTER skipped:", e?.message || e))
+  if (needCol("projects", "billing_updated_at")) await c.execute("ALTER TABLE projects ADD COLUMN billing_updated_at INTEGER")
+    .catch((e: any) => console.warn("projects.billing_updated_at ALTER skipped:", e?.message || e))
   // KLA-81: computed severity stored at finding-creation time so ticket-filers + UIs don't have
   // to re-derive it. NULL on legacy rows → callers fall back to severityForKind(kind).
   if (needCol("findings", "severity")) await c.execute("ALTER TABLE findings ADD COLUMN severity TEXT")
@@ -1343,6 +1379,98 @@ export async function isAccountUnlimited(accountId: string): Promise<boolean> {
 }
 export async function setAccountPlan(accountId: string, plan: string): Promise<void> {
   await db!.execute({ sql: "UPDATE accounts SET plan=? WHERE id=?", args: [String(plan || "free"), accountId] })
+  await db!.execute({
+    sql: "UPDATE projects SET billing_plan=?, billing_updated_at=? WHERE account_id=?",
+    args: [String(plan || "free"), Date.now(), accountId],
+  })
+}
+
+export type AccountBillingState = {
+  accountId: string
+  plan: string
+  stripeCustomerId: string | null
+  stripeSubscriptionId: string | null
+  billingStatus: string | null
+  billingInterval: string | null
+  billingCurrentPeriodEnd: number | null
+  billingCancelAtPeriodEnd: boolean
+  billingUpdatedAt: number | null
+}
+
+function rowToAccountBilling(row: any, accountId: string): AccountBillingState {
+  return {
+    accountId,
+    plan: String(row?.plan || "free"),
+    stripeCustomerId: row?.stripe_customer_id != null ? String(row.stripe_customer_id) : null,
+    stripeSubscriptionId: row?.stripe_subscription_id != null ? String(row.stripe_subscription_id) : null,
+    billingStatus: row?.billing_status != null ? String(row.billing_status) : null,
+    billingInterval: row?.billing_interval != null ? String(row.billing_interval) : null,
+    billingCurrentPeriodEnd: row?.billing_current_period_end != null ? Number(row.billing_current_period_end) : null,
+    billingCancelAtPeriodEnd: Number(row?.billing_cancel_at_period_end || 0) === 1,
+    billingUpdatedAt: row?.billing_updated_at != null ? Number(row.billing_updated_at) : null,
+  }
+}
+
+export async function accountBillingState(accountId: string): Promise<AccountBillingState> {
+  const r = await db!.execute({
+    sql: `SELECT plan, stripe_customer_id, stripe_subscription_id, billing_status, billing_interval,
+                 billing_current_period_end, billing_cancel_at_period_end, billing_updated_at
+          FROM accounts WHERE id=?`,
+    args: [accountId],
+  })
+  return rowToAccountBilling(r.rows[0] as any, accountId)
+}
+
+export async function accountIdForStripeCustomer(customerId: string): Promise<string | null> {
+  const r = await db!.execute({ sql: "SELECT id FROM accounts WHERE stripe_customer_id=? LIMIT 1", args: [customerId] })
+  return r.rows.length ? String((r.rows[0] as any).id) : null
+}
+
+export async function accountIdForStripeSubscription(subscriptionId: string): Promise<string | null> {
+  const r = await db!.execute({ sql: "SELECT id FROM accounts WHERE stripe_subscription_id=? LIMIT 1", args: [subscriptionId] })
+  return r.rows.length ? String((r.rows[0] as any).id) : null
+}
+
+export async function updateAccountBillingState(
+  accountId: string,
+  state: {
+    plan: string
+    stripeCustomerId?: string | null
+    stripeSubscriptionId?: string | null
+    billingStatus?: string | null
+    billingInterval?: string | null
+    billingCurrentPeriodEnd?: number | null
+    billingCancelAtPeriodEnd?: boolean
+  },
+): Promise<void> {
+  const now = Date.now()
+  await db!.execute({
+    sql: `UPDATE accounts SET
+            plan=?,
+            stripe_customer_id=COALESCE(?, stripe_customer_id),
+            stripe_subscription_id=?,
+            billing_status=?,
+            billing_interval=?,
+            billing_current_period_end=?,
+            billing_cancel_at_period_end=?,
+            billing_updated_at=?
+          WHERE id=?`,
+    args: [
+      String(state.plan || "free"),
+      state.stripeCustomerId ?? null,
+      state.stripeSubscriptionId ?? null,
+      state.billingStatus ?? null,
+      state.billingInterval ?? null,
+      state.billingCurrentPeriodEnd ?? null,
+      state.billingCancelAtPeriodEnd ? 1 : 0,
+      now,
+      accountId,
+    ],
+  })
+  await db!.execute({
+    sql: "UPDATE projects SET billing_plan=?, billing_status=?, billing_updated_at=? WHERE account_id=?",
+    args: [String(state.plan || "free"), state.billingStatus ?? null, now, accountId],
+  })
 }
 
 // ── widget-config helpers (leadgen integration task-1) ──

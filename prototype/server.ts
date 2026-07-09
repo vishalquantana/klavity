@@ -1,6 +1,6 @@
 // Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
 import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription } from "./lib/db"
 import { issueKeyFor, chooseDedup } from "./lib/dedup"
 import { classifySimObservation } from "./lib/sim-bug-classify"
 import { getConnector, listConnectorTypes, type TicketPayload, type TicketAttachment } from "./lib/connectors/index"
@@ -54,6 +54,7 @@ import { validateAssertionDraft } from "./lib/assertion-spec"
 import { buildRecurrenceMemory, listProjectRecurringIssues } from "./lib/recurrence-memory"
 import { publishBlogPost, SLUG_RE, type PublishInput } from "./lib/blog-publish"
 import { getExtractModel } from "./lib/extract-model"
+import { createStripeCheckoutSession, createStripePortalSession, intervalFromLookupKey, normalizeInterval, planFromLookupKey, quotasForPlan, retrieveStripeSubscription, verifyStripeWebhook } from "./lib/billing"
 
 const KEY = process.env.OPENROUTER_API_KEY
 const MODEL = process.env.KLAV_MODEL || "google/gemini-2.5-flash"
@@ -1037,6 +1038,66 @@ const AUTOSIM_AUTH_CONFIG_WINDOW = 60 * 60 * 1000
 const AUTOSIM_AUTH_CONFIG_PER_IP = 30
 const AUTOSIM_AUTH_CONFIG_PER_TOKEN = 10
 
+const BILLING_WINDOW = 60 * 60 * 1000
+const BILLING_PER_USER = 20
+const BILLING_WEBHOOK_MAX_BYTES = 256 * 1024
+
+function effectivePlanForStripeStatus(plan: string | null, status: string | null): string {
+  const normalized = plan === "pro" || plan === "team" || plan === "scale" ? plan : "free"
+  return status === "active" || status === "trialing" || status === "past_due" ? normalized : "free"
+}
+
+async function accountIdFromStripeSubscriptionObject(sub: any): Promise<string | null> {
+  const metaAccount = sub?.metadata?.account_id ? String(sub.metadata.account_id) : ""
+  if (metaAccount) return metaAccount
+  const subId = sub?.id ? String(sub.id) : ""
+  if (subId) {
+    const bySub = await accountIdForStripeSubscription(subId)
+    if (bySub) return bySub
+  }
+  const customer = sub?.customer ? String(sub.customer) : ""
+  return customer ? accountIdForStripeCustomer(customer) : null
+}
+
+async function applyStripeSubscriptionState(sub: any): Promise<void> {
+  const accountId = await accountIdFromStripeSubscriptionObject(sub)
+  if (!accountId) throw new Error("Stripe subscription is missing account_id metadata")
+  const price = sub?.items?.data?.[0]?.price
+  const planFromPrice = planFromLookupKey(price?.lookup_key) || (sub?.metadata?.plan ? String(sub.metadata.plan) : null)
+  const interval = intervalFromLookupKey(price?.lookup_key) || (price?.recurring?.interval ? normalizeInterval(String(price.recurring.interval)) : null)
+  const status = sub?.status ? String(sub.status) : null
+  await updateAccountBillingState(accountId, {
+    plan: effectivePlanForStripeStatus(planFromPrice, status),
+    stripeCustomerId: sub?.customer ? String(sub.customer) : null,
+    stripeSubscriptionId: sub?.id ? String(sub.id) : null,
+    billingStatus: status,
+    billingInterval: interval,
+    billingCurrentPeriodEnd: sub?.current_period_end ? Number(sub.current_period_end) * 1000 : null,
+    billingCancelAtPeriodEnd: !!sub?.cancel_at_period_end,
+  })
+}
+
+async function applyStripeCheckoutSession(session: any): Promise<void> {
+  const accountId = session?.metadata?.account_id || session?.client_reference_id
+  if (!accountId) throw new Error("Stripe checkout session is missing account_id")
+  const subscriptionId = session?.subscription ? String(session.subscription) : ""
+  if (subscriptionId) {
+    const sub = await retrieveStripeSubscription(subscriptionId)
+    await applyStripeSubscriptionState(sub)
+    return
+  }
+  const plan = session?.metadata?.plan ? String(session.metadata.plan) : "free"
+  await updateAccountBillingState(String(accountId), {
+    plan,
+    stripeCustomerId: session?.customer ? String(session.customer) : null,
+    stripeSubscriptionId: null,
+    billingStatus: "checkout_completed",
+    billingInterval: session?.metadata?.interval ? normalizeInterval(String(session.metadata.interval)) : null,
+    billingCurrentPeriodEnd: null,
+    billingCancelAtPeriodEnd: false,
+  })
+}
+
 // Auto-copy flood cap (M6): max external tickets auto-filed per project per hour.
 const AUTOCOPY_WINDOW = 60 * 60 * 1000
 const AUTOCOPY_PER_PROJECT = 60
@@ -1197,6 +1258,38 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
     if (req.method === "GET" && path === "/api/health") {
       return json({ ok: true, db: !!db })
+    }
+
+    if (req.method === "POST" && path === "/api/billing/webhook") {
+      try {
+        const len = Number(req.headers.get("content-length") || 0)
+        if (Number.isFinite(len) && len > BILLING_WEBHOOK_MAX_BYTES) return json({ error: "payload too large" }, 413)
+        const raw = await req.text()
+        if (raw.length > BILLING_WEBHOOK_MAX_BYTES) return json({ error: "payload too large" }, 413)
+        const event = await verifyStripeWebhook(raw, req.headers.get("stripe-signature"))
+        if (event.type === "checkout.session.completed") await applyStripeCheckoutSession(event.data?.object)
+        else if (event.type === "customer.subscription.created" || event.type === "customer.subscription.updated") {
+          await applyStripeSubscriptionState(event.data?.object)
+        } else if (event.type === "customer.subscription.deleted") {
+          const sub = event.data?.object
+          const accountId = await accountIdFromStripeSubscriptionObject(sub)
+          if (accountId) {
+            await updateAccountBillingState(accountId, {
+              plan: "free",
+              stripeCustomerId: sub?.customer ? String(sub.customer) : null,
+              stripeSubscriptionId: sub?.id ? String(sub.id) : null,
+              billingStatus: sub?.status ? String(sub.status) : "canceled",
+              billingInterval: null,
+              billingCurrentPeriodEnd: sub?.current_period_end ? Number(sub.current_period_end) * 1000 : null,
+              billingCancelAtPeriodEnd: false,
+            })
+          }
+        }
+        return json({ received: true })
+      } catch (err: any) {
+        console.warn("stripe webhook rejected:", err?.message || err)
+        return json({ error: "invalid webhook" }, 400)
+      }
     }
 
     // ── Phase-out 301: old domain → new canonical domain ──
@@ -4122,7 +4215,60 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (req.method === "GET" && path === "/api/account/plan") {
         const ms = await membershipsFor(me); const active = ms[0]
         if (!active) return json({ error: "No account." }, 400)
-        return json({ plan: await accountPlan(active.workspaceId), unlimited: await isAccountUnlimited(active.workspaceId) })
+        const billing = await accountBillingState(active.workspaceId)
+        return json({
+          plan: billing.plan,
+          unlimited: await isAccountUnlimited(active.workspaceId),
+          billing,
+          quotas: quotasForPlan(billing.plan),
+          publishableKey: process.env.STRIPE_PUBLISHABLE_KEY || null,
+        })
+      }
+
+      if (req.method === "POST" && path === "/api/billing/checkout") {
+        const ms = await membershipsFor(me); const active = ms[0]
+        if (!active) return json({ error: "No account." }, 400)
+        if (active.role !== "admin") return json({ error: "Admin only." }, 403)
+        if (!rlAllow(`billing:${me}`, BILLING_PER_USER, BILLING_WINDOW)) return json({ error: "rate limited" }, 429)
+        const parsed = await readJsonLimited(req, 8 * 1024)
+        if (!parsed.ok) return json({ error: parsed.error }, parsed.status)
+        const plan = String(parsed.data?.plan || "")
+        const interval = normalizeInterval(String(parsed.data?.interval || "month"))
+        if (plan === "scale") return json({ error: "Scale is sales-assisted. Contact vishal@quantana.com.au." }, 400)
+        if (plan !== "pro" && plan !== "team") return json({ error: "Choose Pro or Team." }, 400)
+        const billing = await accountBillingState(active.workspaceId)
+        const session = await createStripeCheckoutSession({
+          accountId: active.workspaceId,
+          email: me,
+          plan,
+          interval,
+          customerId: billing.stripeCustomerId,
+          successUrl: `${BASE}/dashboard?billing=success`,
+          cancelUrl: `${BASE}/dashboard?billing=cancelled`,
+        })
+        if (session.customerId && !billing.stripeCustomerId) {
+          await updateAccountBillingState(active.workspaceId, {
+            plan: billing.plan,
+            stripeCustomerId: session.customerId,
+            stripeSubscriptionId: billing.stripeSubscriptionId,
+            billingStatus: billing.billingStatus,
+            billingInterval: billing.billingInterval,
+            billingCurrentPeriodEnd: billing.billingCurrentPeriodEnd,
+            billingCancelAtPeriodEnd: billing.billingCancelAtPeriodEnd,
+          })
+        }
+        return json({ ok: true, url: session.url, sessionId: session.id })
+      }
+
+      if (req.method === "POST" && path === "/api/billing/portal") {
+        const ms = await membershipsFor(me); const active = ms[0]
+        if (!active) return json({ error: "No account." }, 400)
+        if (active.role !== "admin") return json({ error: "Admin only." }, 403)
+        if (!rlAllow(`billing:${me}`, BILLING_PER_USER, BILLING_WINDOW)) return json({ error: "rate limited" }, 429)
+        const billing = await accountBillingState(active.workspaceId)
+        if (!billing.stripeCustomerId) return json({ error: "No Stripe customer yet." }, 400)
+        const session = await createStripePortalSession({ customerId: billing.stripeCustomerId, returnUrl: `${BASE}/dashboard?billing=portal` })
+        return json({ ok: true, url: session.url, sessionId: session.id })
       }
 
       // ── Ticket management: PATCH /api/feedback/:id and POST /api/feedback/:id/export ──
