@@ -1,6 +1,6 @@
 // Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
 import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, listTicketsPaginated } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig } from "./lib/db"
 import { issueKeyFor, chooseDedup } from "./lib/dedup"
 import { classifySimObservation } from "./lib/sim-bug-classify"
 import { getConnector, listConnectorTypes, type TicketPayload, type TicketAttachment } from "./lib/connectors/index"
@@ -672,6 +672,14 @@ function withWidgetCors(req: Request, res: Response): Response {
 function json(body: unknown, status = 200, headers: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } })
 }
+async function readJsonLimited(req: Request, maxBytes: number): Promise<{ ok: true; data: any } | { ok: false; status: number; error: string }> {
+  const len = Number(req.headers.get("content-length") || 0)
+  if (Number.isFinite(len) && len > maxBytes) return { ok: false, status: 413, error: "payload too large" }
+  const raw = await req.text().catch(() => "")
+  if (raw.length > maxBytes) return { ok: false, status: 413, error: "payload too large" }
+  try { return { ok: true, data: raw ? JSON.parse(raw) : {} } }
+  catch { return { ok: false, status: 400, error: "invalid json" } }
+}
 // M4/A10: never echo internal exception text (DB errors, stack traces, upstream bodies) to clients.
 // Log it server-side with a short correlation id; return a generic message + that id so a user can
 // quote it for support without leaking internals.
@@ -1023,6 +1031,11 @@ const TRANSCRIPT_MAX_CHARS = 100_000   // ~25k tokens; reject larger payloads ou
 const TRANSCRIPT_WINDOW = 60 * 60 * 1000
 const TRANSCRIPT_PER_USER = 30         // transcript submissions per user / hour
 const TRANSCRIPT_PER_PROJECT = 60      // per project / hour
+
+const AUTOSIM_AUTH_CONFIG_MAX_BODY = 16 * 1024
+const AUTOSIM_AUTH_CONFIG_WINDOW = 60 * 60 * 1000
+const AUTOSIM_AUTH_CONFIG_PER_IP = 30
+const AUTOSIM_AUTH_CONFIG_PER_TOKEN = 10
 
 // Auto-copy flood cap (M6): max external tickets auto-filed per project per hour.
 const AUTOCOPY_WINDOW = 60 * 60 * 1000
@@ -1525,6 +1538,52 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         }).catch((e: any) => console.warn("ticket status activity skipped:", e?.message || e))
       }
       return json({ ok: true, status: newStatus })
+    }
+
+    // ── AutoSim Auth AT3: write-only auth config registration via AT2 setup token. ──
+    // AT2 should call createAutosimAuthSetupToken(projectId, actor) when it renders the setup prompt
+    // and hand the raw token to this route. Only the hash is stored; successful registration consumes it.
+    if (req.method === "POST" && path === "/api/autosim/auth-config") {
+      try {
+        if (!db) return json({ error: "Auth setup is not configured on this server." }, 500)
+        const ip = clientIp(req, server)
+        if (!rlAllow(`autosim-auth-config:ip:${ip}`, AUTOSIM_AUTH_CONFIG_PER_IP, AUTOSIM_AUTH_CONFIG_WINDOW)) {
+          return json({ error: "rate limited" }, 429, { "Retry-After": "3600" })
+        }
+        const setupToken = (req.headers.get("authorization") || "").match(/^Bearer\s+(.+)$/i)?.[1]?.trim() || ""
+        if (!setupToken) return json({ error: "setup token required" }, 401)
+        if (!rlAllow(`autosim-auth-config:tok:${setupToken.slice(-16)}`, AUTOSIM_AUTH_CONFIG_PER_TOKEN, AUTOSIM_AUTH_CONFIG_WINDOW)) {
+          return json({ error: "rate limited" }, 429, { "Retry-After": "3600" })
+        }
+
+        const tokenInfo = await resolveAutosimAuthSetupToken(setupToken)
+        if (!tokenInfo) return json({ error: "invalid or expired setup token" }, 401)
+
+        const parsed = await readJsonLimited(req, AUTOSIM_AUTH_CONFIG_MAX_BODY)
+        if (!parsed.ok) return json({ error: parsed.error }, parsed.status)
+        const body = parsed.data
+        const method = String(body.method || "")
+        if (method !== "fixed_otp" && method !== "mint_link") return json({ error: "method must be fixed_otp or mint_link" }, 400)
+        const email = String(body.email || "").trim().toLowerCase()
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || email.length > 200) return json({ error: "Enter a valid email." }, 400)
+        const secret = String(body.secret || "").trim()
+        if (!secret) return json({ error: "secret is required" }, 400)
+        if (secret.length > 4000) return json({ error: "secret too large" }, 413)
+        const notesRaw = body.notes == null ? null : String(body.notes).trim()
+        if (notesRaw && notesRaw.length > 2000) return json({ error: "notes too large" }, 413)
+
+        const registered = await registerAutosimAuthConfig(tokenInfo.projectId, tokenInfo.id, {
+          method,
+          email,
+          secret,
+          notes: notesRaw || null,
+        })
+        if (!registered) return json({ error: "invalid or expired setup token" }, 401)
+        const { probeId } = registered
+        return json({ ok: true, projectId: tokenInfo.projectId, authStatus: "registered", probe: { id: probeId, status: "queued" } }, 201)
+      } catch (err: any) {
+        return json(oops(err, "autosim-auth-config"), 500)
+      }
     }
 
     // ── auth: request OTP ──
