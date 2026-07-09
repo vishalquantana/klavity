@@ -119,6 +119,13 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 <script>
 const $ = (id) => document.getElementById(id)
 let email = ""
+try {
+  const invitedEmail = new URLSearchParams(location.search).get("email")
+  if (invitedEmail && invitedEmail.includes("@")) {
+    $("email").value = invitedEmail
+    email = invitedEmail.trim().toLowerCase()
+  }
+} catch (e) {}
 
 // seamless quote marquee + rotating Sim greeter
 const qt = $("qTrack"); if (qt) qt.innerHTML += qt.innerHTML
