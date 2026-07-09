@@ -215,6 +215,23 @@ export const realFiler: Filer = async (projectId, finding) => {
   const baseTicket = buildTicketFromFinding(finding, baseUrl)
   const attachment = await findingScreenshotAttachment(finding, baseUrl)
   const ticket: TicketPayload = attachment ? { ...baseTicket, attachments: [attachment] } : baseTicket
+
+  if (attachment) {
+    try {
+      const { presignGet } = await import("./s3")
+      // Extract the key from evidence again just for the presign, since attachment.url is auth-gated
+      const ev = (finding.evidence ?? {}) as Record<string, unknown>
+      const screenshotKey = ev.screenshotKey as string | null | undefined
+      if (screenshotKey) {
+        const presignedUrl = presignGet(screenshotKey, 7 * 24 * 3600)
+        ticket.body += `\n\n![Screenshot](${presignedUrl})`
+        // Update the attachment URL to the presigned one so integrations without native upload use it
+        ticket.attachments![0].url = presignedUrl
+      }
+    } catch (err) {
+      console.warn(`[trails-findings] failed to presign screenshot for finding ${finding.id}`, err)
+    }
+  }
   const failures: string[] = []
   for (const c of connectors) {
     const adapter = getConnector(c.type)
