@@ -55,6 +55,7 @@ import { buildRecurrenceMemory, listProjectRecurringIssues } from "./lib/recurre
 import { publishBlogPost, SLUG_RE, type PublishInput } from "./lib/blog-publish"
 import { getExtractModel } from "./lib/extract-model"
 import { createStripeCheckoutSession, createStripePortalSession, intervalFromLookupKey, normalizeInterval, planFromLookupKey, quotasForPlan, retrieveStripeSubscription, verifyStripeWebhook } from "./lib/billing"
+import { runAutosimAuthProbe } from "./lib/autosim-auth-probe"
 
 const KEY = process.env.OPENROUTER_API_KEY
 const MODEL = process.env.KLAV_MODEL || "google/gemini-2.5-flash"
@@ -1673,6 +1674,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         })
         if (!registered) return json({ error: "invalid or expired setup token" }, 401)
         const { probeId } = registered
+        void runAutosimAuthProbe(probeId).catch((e: any) => {
+          console.warn("autosim auth probe failed:", e?.message || e)
+        })
         return json({ ok: true, projectId: tokenInfo.projectId, authStatus: "registered", probe: { id: probeId, status: "queued" } }, 201)
       } catch (err: any) {
         return json(oops(err, "autosim-auth-config"), 500)

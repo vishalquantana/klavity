@@ -10,7 +10,7 @@ const file = join(tmpdir(), `klav-creds-${Date.now()}-${Math.random().toString(3
 process.env.TURSO_DATABASE_URL = "file:" + file
 delete process.env.TURSO_AUTH_TOKEN
 
-const { reconnectDb, applySchema, migrateV2 } = await import("./db")
+const { reconnectDb, applySchema, migrateV2, createAutosimAuthSetupToken, registerAutosimAuthConfig } = await import("./db")
 
 beforeAll(async () => {
   const db = reconnectDb("file:" + file)
@@ -36,6 +36,7 @@ const fixtureUrl = (name: string) =>
 test("hasCredRef detects placeholders", () => {
   expect(hasCredRef("{{cred:admin:password}}")).toBe(true)
   expect(hasCredRef("{{cred:admin:otp}}")).toBe(true)
+  expect(hasCredRef("{{autosim_auth:secret}}")).toBe(true)
   expect(hasCredRef("plain text")).toBe(false)
 })
 
@@ -71,6 +72,20 @@ test("resolveCredRefs :otp throws when KLAV_TEST_OTP is not set", async () => {
 test("unknown account throws; other project cannot resolve", async () => {
   await expect(resolveCredRefs(P, "{{cred:ghost:password}}")).rejects.toThrow("unknown test account")
   await expect(resolveCredRefs("proj_other", "{{cred:admin:password}}")).rejects.toThrow()
+})
+
+test("resolveCredRefs substitutes autosim auth config only at runtime", async () => {
+  const token = await createAutosimAuthSetupToken(P, "vishal@quantana.com.au")
+  const registered = await registerAutosimAuthConfig(P, token.id, {
+    method: "fixed_otp",
+    email: "vishal@quantana.com.au",
+    secret: "otp-secret-321",
+    notes: null,
+  })
+  expect(registered).not.toBeNull()
+  const modelFacing = "email={{autosim_auth:email}} secret={{autosim_auth:secret}}"
+  expect(modelFacing).not.toContain("otp-secret-321")
+  expect(await resolveCredRefs(P, modelFacing)).toBe("email=vishal@quantana.com.au secret=otp-secret-321")
 })
 
 // ── KLA-103: OTP auth shape ───────────────────────────────────────────────────

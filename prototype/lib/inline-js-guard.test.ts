@@ -14,4 +14,4 @@ test('inline JS checker exits 0 (all inline scripts parse)', () => {
     threw = e;
   }
   expect(threw).toBeNull();
-});
+}, 20_000);

@@ -10,7 +10,7 @@ import { walkTrail } from "./trails-runner"
 import { hasCredRef, resolveCredRefs, type CredResolver } from "./trails-creds"
 import { getTestAccountByName } from "./test-accounts"
 import { sha256hex } from "./crypto"
-import { withWalkSlot, withAuthorSlot, CHROMIUM_PROD_ARGS, setCurrentAuthorSessionId, getCurrentAuthorAbortSignal } from "./trails-browser"
+import { withWalkSlot, withAuthorSlot, CHROMIUM_PROD_ARGS, setCurrentAuthorSessionId, getCurrentAuthorAbortSignal, WalkBusyError } from "./trails-browser"
 import { startLiveWatchRun, publishLiveWatchFrame, endLiveWatchRun } from "./trails-live-watch"
 import { acquireBrowser, type BrowserHandle } from "./trails-browser-page"
 import { db, projectById, touchAuthorHeartbeat } from "./db"
@@ -52,6 +52,7 @@ const LOOP_STALL_N = 3
 // we inject a nudge message asking the model to try a different action. Reset on any real change.
 const NO_OP_NUDGE_AFTER = 1  // nudge on the 2nd no-change iteration
 const NO_OP_AUTO_ADVANCE_AFTER = 2  // attempt auto-click of submit on 3rd no-change iteration
+export const NEEDS_AUTH_RESUME_TTL_MS = 7 * 24 * 3600 * 1000
 // Submit-like controls to try for auto-advance, in priority order.
 const SUBMIT_CANDIDATES = [
   'button[type="submit"]',
@@ -157,9 +158,11 @@ export async function authorTrail(
   const textFirst = opts.textFirst ?? process.env.KLAV_AUTHOR_TEXT_FIRST !== "0"
   // KLA-102: per-project instructions injected into the authoring prompt for trail context.
   let projectInstructions: string | undefined
+  let projectAuthStatus = "unregistered"
   try {
     const proj = await projectById(projectId)
-    projectInstructions = proj?.instructionsMd
+    projectInstructions = proj?.instructionsMd ?? undefined
+    projectAuthStatus = String(proj?.autosimAuthStatus || "unregistered")
   } catch { /* best-effort; missing instructions is not fatal */ }
   const viewport = normalizeTrailViewport(req.viewport)
   const credFields: string[] = []
@@ -329,7 +332,7 @@ export async function authorTrail(
       // KLA-69: hoist modelInput + modelCtx out of inner block so the stall-reroll can reuse them.
       const modelInput = { objective: req.objective, pageUrl: page.url(), screenshotB64, mediaType: "image/jpeg", domSnapshot: dom, history, credFields }
       const modelCtx = { projectId, email: req.createdBy ?? null, projectInstructions }
-      let r: { action: AuthorAction; costUsd: number }
+      let r!: { action: AuthorAction; costUsd: number }
       {
         let lastErr: unknown = null
         let succeeded = false
@@ -368,7 +371,7 @@ export async function authorTrail(
       // FUTURE (sim-public-pages-only opt-out): a project could opt its Sims into public-pages-only
       // exploration, in which case an auth gate is an expected boundary — end the run cleanly ("done
       // exploring the public surface") instead of pausing + alerting. Not wired yet; default is pause.
-      if (a.isAuthGate) {
+      if (a.isAuthGate && projectAuthStatus !== "verified") {
         if (opts.onNeedsAuth) await opts.onNeedsAuth(page.url(), a.rationale || "stopped at auth gate")
         return await stall(a.rationale || "stopped at auth gate", page.url(), "needs_auth")
       }
@@ -703,7 +706,7 @@ export async function getAuthorSession(projectId: string, id: string): Promise<A
  * second concurrent drive off the same checkpoint).
  */
 export async function listStalledAuthorSessions(projectId: string, limit = 10): Promise<AuthorSession[]> {
-  const since = Date.now() - 7 * 24 * 3600 * 1000
+  const since = Date.now() - NEEDS_AUTH_RESUME_TTL_MS
   const r = await db!.execute({
     sql: `SELECT * FROM author_sessions
           WHERE project_id=? AND status IN ('stalled','needs_auth')
@@ -715,28 +718,30 @@ export async function listStalledAuthorSessions(projectId: string, limit = 10): 
   return r.rows.map(rowToAuthorSession)
 }
 
+export async function listNeedsAuthSessionsForAutoResume(projectId: string, limit = 5, nowMs = Date.now()): Promise<AuthorSession[]> {
+  const since = nowMs - NEEDS_AUTH_RESUME_TTL_MS
+  const r = await db!.execute({
+    sql: `SELECT s.* FROM author_sessions s
+          WHERE s.project_id=? AND s.status='needs_auth'
+            AND s.updated_at >= ?
+            AND s.checkpoint_json IS NOT NULL
+            AND NOT EXISTS (
+              SELECT 1 FROM author_sessions child
+              WHERE child.project_id=s.project_id AND child.resumed_from=s.id
+            )
+          ORDER BY s.updated_at ASC LIMIT ?`,
+    args: [projectId, since, limit],
+  })
+  return r.rows.map(rowToAuthorSession)
+}
+
 export async function getActiveAuthorSession(projectId: string): Promise<AuthorSession | null> {
   const r = await db!.execute({
     sql: `SELECT * FROM author_sessions WHERE project_id=? AND status='running' ORDER BY created_at DESC LIMIT 1`,
     args: [projectId],
   })
   if (!r.rows.length) return null
-  const row: any = r.rows[0]
-  let steps: AuthorStepLog[] = []
-  try { steps = JSON.parse(String(row.steps_json || "[]")) } catch {}
-  return {
-    id: String(row.id), projectId: String(row.project_id), name: String(row.name), objective: String(row.objective),
-    baseUrl: String(row.base_url), testAccount: row.test_account ? String(row.test_account) : null,
-    status: String(row.status) as AuthorSession["status"], steps,
-    stallReason: row.stall_reason ? String(row.stall_reason) : null,
-    trailId: row.trail_id ? String(row.trail_id) : null,
-    verificationRunId: row.verification_run_id ? String(row.verification_run_id) : null,
-    verificationVerdict: row.verification_verdict ? String(row.verification_verdict) : null,
-    llmCalls: Number(row.llm_calls), costUsd: Number(row.cost_usd),
-    createdBy: row.created_by ? String(row.created_by) : null,
-    createdAt: Number(row.created_at), updatedAt: Number(row.updated_at),
-    objectiveVerified: row.objective_verified == null ? null : !!row.objective_verified,
-  }
+  return rowToAuthorSession(r.rows[0])
 }
 
 /**
@@ -845,4 +850,45 @@ export async function runAuthorNow(
 
   const sessionId = await started
   return { sessionId }
+}
+
+export type AutoResumeNeedsAuthResult = {
+  eligible: number
+  resumed: Array<{ fromSessionId: string; sessionId: string }>
+  skipped: Array<{ sessionId: string; reason: string }>
+  errors: Array<{ sessionId: string; error: string }>
+}
+
+export async function autoResumeNeedsAuthSessions(
+  projectId: string,
+  opts: {
+    limit?: number
+    nowMs?: number
+    runner?: typeof runAuthorNow
+  } = {},
+): Promise<AutoResumeNeedsAuthResult> {
+  const sessions = await listNeedsAuthSessionsForAutoResume(projectId, opts.limit ?? 5, opts.nowMs ?? Date.now())
+  const runner = opts.runner ?? runAuthorNow
+  const result: AutoResumeNeedsAuthResult = { eligible: sessions.length, resumed: [], skipped: [], errors: [] }
+  for (const prior of sessions) {
+    if (!prior.checkpoint) {
+      result.skipped.push({ sessionId: prior.id, reason: "missing checkpoint" })
+      continue
+    }
+    try {
+      const { sessionId } = await runner(projectId, {
+        name: prior.name,
+        objective: prior.objective,
+        baseUrl: prior.baseUrl,
+        viewport: null,
+        testAccountName: prior.testAccount ?? undefined,
+        createdBy: prior.createdBy ?? undefined,
+      }, { resumeSessionId: prior.id })
+      result.resumed.push({ fromSessionId: prior.id, sessionId })
+    } catch (e: any) {
+      result.errors.push({ sessionId: prior.id, error: String(e?.message || e) })
+      if (e instanceof WalkBusyError) break
+    }
+  }
+  return result
 }
