@@ -20,8 +20,10 @@ await raw.execute("PRAGMA journal_mode=WAL")
 await raw.execute("PRAGMA busy_timeout=5000")
 
 const OWNER = `tkt-detail-${RUN}@test.local`
+const MEMBER = `tkt-detail-member-${RUN}@test.local`
 const OUTSIDE = `tkt-detail-out-${RUN}@test.local`
 const SID = `sess_tktdetail_${RUN}`
+const MEMBER_SID = `sess_tktdetail_member_${RUN}`
 const OUTSIDE_SID = `sess_tktdetail_out_${RUN}`
 const ACCT = `acct_tktdetail_${RUN}`
 const PROJ = `proj_tktdetail_${RUN}`
@@ -63,13 +65,16 @@ beforeAll(async () => {
   }
 
   await exec("INSERT INTO users (email, created_at) VALUES (?, ?)", [OWNER, NOW])
+  await exec("INSERT INTO users (email, created_at) VALUES (?, ?)", [MEMBER, NOW])
   await exec("INSERT INTO users (email, created_at) VALUES (?, ?)", [OUTSIDE, NOW])
   await exec("INSERT INTO sessions (id, email, created_at, expires_at) VALUES (?, ?, ?, ?)", [SID, OWNER, NOW, NOW + 86400_000])
+  await exec("INSERT INTO sessions (id, email, created_at, expires_at) VALUES (?, ?, ?, ?)", [MEMBER_SID, MEMBER, NOW, NOW + 86400_000])
   await exec("INSERT INTO sessions (id, email, created_at, expires_at) VALUES (?, ?, ?, ?)", [OUTSIDE_SID, OUTSIDE, NOW, NOW + 86400_000])
   await exec("INSERT INTO accounts (id, name, owner_email, created_at) VALUES (?, ?, ?, ?)", [ACCT, "Detail Test", OWNER, NOW])
   await exec("INSERT INTO account_members (id, account_id, email, account_role, created_at) VALUES (?, ?, ?, ?, ?)", [`am_${RUN}`, ACCT, OWNER, "owner", NOW])
   await exec("INSERT INTO projects (id, account_id, name, status, review_mode, review_budget_daily, observability_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", [PROJ, ACCT, "Detail Project", "active", "auto", 200, "named", NOW, NOW])
   await exec("INSERT INTO project_members (id, project_id, email, project_role, invited_by, created_at) VALUES (?, ?, ?, ?, ?, ?)", [`pm_${RUN}`, PROJ, OWNER, "admin", null, NOW])
+  await exec("INSERT INTO project_members (id, project_id, email, project_role, invited_by, created_at) VALUES (?, ?, ?, ?, ?, ?)", [`pm_member_${RUN}`, PROJ, MEMBER, "member", null, NOW])
   await exec("INSERT INTO feedback (id, project_id, observation, priority, status, created_at) VALUES (?, ?, ?, ?, ?, ?)", [FID, PROJ, "Payment fails on mobile Safari", "high", "open", NOW])
 })
 
@@ -134,12 +139,12 @@ test("GET /api/feedback/:id/timeline returns 404 for outsiders", async () => {
 })
 
 test("PATCH /api/feedback/:id sets and clears assignee email", async () => {
-  const assign = await req("PATCH", `/api/feedback/${FID}`, { assignee: "Assignee@Test.Local" })
+  const assign = await req("PATCH", `/api/feedback/${FID}`, { assignee: MEMBER.toUpperCase() })
   expect(assign.status).toBe(200)
 
   const detail = await req("GET", `/api/feedback/${FID}`)
   expect(detail.status).toBe(200)
-  expect((await detail.json()).report.assignee).toBe("assignee@test.local")
+  expect((await detail.json()).report.assignee).toBe(MEMBER)
 
   const bad = await req("PATCH", `/api/feedback/${FID}`, { assignee: "not-an-email" })
   expect(bad.status).toBe(400)
@@ -147,7 +152,7 @@ test("PATCH /api/feedback/:id sets and clears assignee email", async () => {
   const timeline = await req("GET", `/api/feedback/${FID}/timeline`)
   expect(timeline.status).toBe(200)
   const { items } = await timeline.json()
-  expect(items.some((i: any) => i.kind === "activity" && i.type === "ticket_assignee_changed" && i.meta?.to === "assignee@test.local")).toBe(true)
+  expect(items.some((i: any) => i.kind === "activity" && i.type === "ticket_assignee_changed" && i.meta?.to === MEMBER)).toBe(true)
 
   const clear = await req("PATCH", `/api/feedback/${FID}`, { assignee: null })
   expect(clear.status).toBe(200)
@@ -155,7 +160,16 @@ test("PATCH /api/feedback/:id sets and clears assignee email", async () => {
   expect((await cleared.json()).report.assignee).toBeNull()
 })
 
-test("assigning a non-member creates invite and login accepts it into the project", async () => {
+test("member can assign an existing project member but not an external email", async () => {
+  const assignMember = await req("PATCH", `/api/feedback/${FID}`, { assignee: OWNER }, MEMBER_SID)
+  expect(assignMember.status).toBe(200)
+
+  const blocked = await req("PATCH", `/api/feedback/${FID}`, { assignee: `blocked-${RUN}@external.example` }, MEMBER_SID)
+  expect(blocked.status).toBe(403)
+  expect((await blocked.json()).error).toContain("Only project admins")
+})
+
+test("admin assigning a non-member creates invite and login accepts it into the project", async () => {
   const invitee = `assigned-${RUN}@external.example`
   const assign = await req("PATCH", `/api/feedback/${FID}`, { assignee: invitee })
   expect(assign.status).toBe(200)

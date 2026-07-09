@@ -20,8 +20,10 @@ await raw.execute("PRAGMA journal_mode=WAL")
 await raw.execute("PRAGMA busy_timeout=5000")
 
 const OWNER = `bulk-owner-${RUN}@test.local`
+const MEMBER = `bulk-member-${RUN}@test.local`
 const OUTSIDER = `bulk-out-${RUN}@test.local`
 const SID_OWNER = `sess_bulk_owner_${RUN}`
+const SID_MEMBER = `sess_bulk_member_${RUN}`
 const SID_OUT = `sess_bulk_out_${RUN}`
 const ACCT = `acct_bulk_${RUN}`
 const PROJ = `proj_bulk_${RUN}`
@@ -66,14 +68,17 @@ beforeAll(async () => {
   }
 
   await exec("INSERT INTO users (email, created_at) VALUES (?, ?)", [OWNER, NOW])
+  await exec("INSERT INTO users (email, created_at) VALUES (?, ?)", [MEMBER, NOW])
   await exec("INSERT INTO users (email, created_at) VALUES (?, ?)", [OUTSIDER, NOW])
   await exec("INSERT INTO sessions (id, email, created_at, expires_at) VALUES (?, ?, ?, ?)", [SID_OWNER, OWNER, NOW, NOW + 86400_000])
+  await exec("INSERT INTO sessions (id, email, created_at, expires_at) VALUES (?, ?, ?, ?)", [SID_MEMBER, MEMBER, NOW, NOW + 86400_000])
   await exec("INSERT INTO sessions (id, email, created_at, expires_at) VALUES (?, ?, ?, ?)", [SID_OUT, OUTSIDER, NOW, NOW + 86400_000])
   await exec("INSERT INTO accounts (id, name, owner_email, created_at) VALUES (?, ?, ?, ?)", [ACCT, "Bulk Test", OWNER, NOW])
   await exec("INSERT INTO account_members (id, account_id, email, account_role, created_at) VALUES (?, ?, ?, ?, ?)", [`am_bulk_${RUN}`, ACCT, OWNER, "owner", NOW])
   await exec("INSERT INTO projects (id, account_id, name, status, review_mode, review_budget_daily, observability_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", [PROJ, ACCT, "Bulk Project", "active", "auto", 200, "named", NOW, NOW])
   await exec("INSERT INTO projects (id, account_id, name, status, review_mode, review_budget_daily, observability_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", [OTHER_PROJ, ACCT, "Other Project", "active", "auto", 200, "named", NOW, NOW])
   await exec("INSERT INTO project_members (id, project_id, email, project_role, invited_by, created_at) VALUES (?, ?, ?, ?, ?, ?)", [`pm_bulk_${RUN}`, PROJ, OWNER, "admin", null, NOW])
+  await exec("INSERT INTO project_members (id, project_id, email, project_role, invited_by, created_at) VALUES (?, ?, ?, ?, ?, ?)", [`pm_bulk_member_${RUN}`, PROJ, MEMBER, "member", null, NOW])
   await exec("INSERT INTO feedback (id, project_id, observation, priority, status, created_at) VALUES (?, ?, ?, ?, ?, ?)", [FID_A, PROJ, "First bulk ticket", "high", "open", NOW])
   await exec("INSERT INTO feedback (id, project_id, observation, priority, status, created_at) VALUES (?, ?, ?, ?, ?, ?)", [FID_B, PROJ, "Second bulk ticket", "medium", "open", NOW])
   await exec("INSERT INTO feedback (id, project_id, observation, priority, status, created_at) VALUES (?, ?, ?, ?, ?, ?)", [FID_FOREIGN, OTHER_PROJ, "Foreign ticket", "urgent", "open", NOW])
@@ -163,4 +168,16 @@ test("PATCH /api/projects/:id/tickets/bulk validates assignee and access", async
     status: "open",
   }, SID_OUT)
   expect(outsider.status).toBe(403)
+
+  const memberExternal = await req("PATCH", `/api/projects/${PROJ}/tickets/bulk`, {
+    ticketIds: [FID_A],
+    assignee: `bulk-blocked-${RUN}@external.example`,
+  }, SID_MEMBER)
+  expect(memberExternal.status).toBe(403)
+
+  const memberToMember = await req("PATCH", `/api/projects/${PROJ}/tickets/bulk`, {
+    ticketIds: [FID_A],
+    assignee: OWNER,
+  }, SID_MEMBER)
+  expect(memberToMember.status).toBe(200)
 })

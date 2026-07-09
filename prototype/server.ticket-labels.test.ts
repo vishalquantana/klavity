@@ -27,7 +27,10 @@ const SID_MEMBER = `sess_lblmember_${RUN}`
 const SID_OUT = `sess_lblout_${RUN}`
 const ACCT = `acct_lbl_${RUN}`
 const PROJ = `proj_lbl_${RUN}`
+const OTHER_PROJ = `proj_lbl_other_${RUN}`
 const FID = `fb_lbl_${RUN}`
+const OTHER_FID = `fb_lbl_other_${RUN}`
+const OTHER_LABEL = `lbl_other_${RUN}`
 const NOW = Date.now()
 
 let proc: ReturnType<typeof Bun.spawn>
@@ -72,9 +75,13 @@ beforeAll(async () => {
   await exec("INSERT INTO accounts (id, name, owner_email, created_at) VALUES (?, ?, ?, ?)", [ACCT, "Label Test", OWNER, NOW])
   await exec("INSERT INTO account_members (id, account_id, email, account_role, created_at) VALUES (?, ?, ?, ?, ?)", [`am_own_${RUN}`, ACCT, OWNER, "owner", NOW])
   await exec("INSERT INTO projects (id, account_id, name, status, review_mode, review_budget_daily, observability_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", [PROJ, ACCT, "Label Project", "active", "auto", 200, "named", NOW, NOW])
+  await exec("INSERT INTO projects (id, account_id, name, status, review_mode, review_budget_daily, observability_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", [OTHER_PROJ, ACCT, "Other Label Project", "active", "auto", 200, "named", NOW, NOW])
   await exec("INSERT INTO project_members (id, project_id, email, project_role, invited_by, created_at) VALUES (?, ?, ?, ?, ?, ?)", [`pm_own_${RUN}`, PROJ, OWNER, "admin", null, NOW])
   await exec("INSERT INTO project_members (id, project_id, email, project_role, invited_by, created_at) VALUES (?, ?, ?, ?, ?, ?)", [`pm_mem_${RUN}`, PROJ, MEMBER, "member", null, NOW])
   await exec("INSERT INTO feedback (id, project_id, observation, priority, status, created_at) VALUES (?, ?, ?, ?, ?, ?)", [FID, PROJ, "Payment fails on checkout", "high", "open", NOW])
+  await exec("INSERT INTO feedback (id, project_id, observation, priority, status, created_at) VALUES (?, ?, ?, ?, ?, ?)", [OTHER_FID, OTHER_PROJ, "Other project ticket", "medium", "open", NOW])
+  await exec("INSERT INTO labels (id, project_id, name, color, created_at) VALUES (?, ?, ?, ?, ?)", [OTHER_LABEL, OTHER_PROJ, "Other", "#22c55e", NOW])
+  await exec("INSERT INTO ticket_labels (label_id, feedback_id, created_at) VALUES (?, ?, ?)", [OTHER_LABEL, OTHER_FID, NOW])
 })
 
 afterAll(() => {
@@ -209,6 +216,17 @@ test("DELETE /api/projects/:id/labels/:lid also removes ticket_labels rows", asy
   const r2 = await req("GET", `/api/feedback/${FID}/labels`)
   const d2 = await r2.json()
   expect(d2.labels.some((l: any) => l.id === createdLabelId)).toBe(false)
+})
+
+test("DELETE /api/projects/:id/labels/:lid rejects foreign labels without deleting their associations", async () => {
+  const r = await req("DELETE", `/api/projects/${PROJ}/labels/${OTHER_LABEL}`)
+  expect(r.status).toBe(404)
+
+  const label = await raw.execute({ sql: "SELECT id FROM labels WHERE id=? AND project_id=?", args: [OTHER_LABEL, OTHER_PROJ] })
+  expect(label.rows).toHaveLength(1)
+
+  const association = await raw.execute({ sql: "SELECT label_id, feedback_id FROM ticket_labels WHERE label_id=? AND feedback_id=?", args: [OTHER_LABEL, OTHER_FID] })
+  expect(association.rows).toHaveLength(1)
 })
 
 test("outsider cannot read project labels", async () => {

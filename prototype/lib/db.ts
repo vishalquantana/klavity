@@ -3624,11 +3624,13 @@ export async function updateLabel(projectId: string, labelId: string, name: stri
 }
 
 export async function deleteLabel(projectId: string, labelId: string): Promise<boolean> {
-  await db!.execute({ sql: "DELETE FROM ticket_labels WHERE label_id=?", args: [labelId] })
-  const r = await db!.execute({
-    sql: "DELETE FROM labels WHERE id=? AND project_id=?",
+  const owned = await db!.execute({
+    sql: "SELECT 1 FROM labels WHERE id=? AND project_id=? LIMIT 1",
     args: [labelId, projectId],
   })
+  if (!owned.rows.length) return false
+  await db!.execute({ sql: "DELETE FROM ticket_labels WHERE label_id=?", args: [labelId] })
+  const r = await db!.execute({ sql: "DELETE FROM labels WHERE id=? AND project_id=?", args: [labelId, projectId] })
   return Number(r.rowsAffected) > 0
 }
 
