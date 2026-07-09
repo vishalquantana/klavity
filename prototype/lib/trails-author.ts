@@ -22,6 +22,13 @@ import type { StepAction, TrailViewport } from "./trails-types"
 import { normalizeTrailViewport } from "./trails-viewport"
 import { configuredVisionResolver, type VisionResolver } from "./trails-vision"
 import { notifyAutosimNeedsAuth } from "./autosim-auth-alert"
+import {
+  loadAutosimAuthConfig,
+  autosimAuthCredFields,
+  withAutosimAuthCreds,
+  establishAutosimSession,
+  type DecryptedAutosimAuthConfig,
+} from "./autosim-auth-exec"
 
 const AUTOSIM_MAX_STEPS_DEFAULT = 40
 const AUTOSIM_MAX_COST_USD_DEFAULT = 0.15
@@ -154,7 +161,6 @@ export async function authorTrail(
     const proj = await projectById(projectId)
     projectInstructions = proj?.instructionsMd
   } catch { /* best-effort; missing instructions is not fatal */ }
-  const credResolver = opts.credResolver ?? resolveCredRefs
   const viewport = normalizeTrailViewport(req.viewport)
   const credFields: string[] = []
   if (req.testAccountName) {
@@ -165,6 +171,14 @@ export async function authorTrail(
     // in the fixed code (666666) without triggering a real OTP email or hitting the rate limit.
     if (process.env.KLAV_TEST_OTP) credFields.push(`{{cred:${acc.name}:otp}}`)
   }
+  // KLA-184 (AT6): perform the project's REGISTERED auth method at run start so the walk continues
+  // authenticated instead of pausing at the login gate (KLA-179). Decrypt-at-execution ONLY —
+  // fixed_otp exposes email+otp placeholders for the drive model to fill (secrets resolved at
+  // fill-time, never in the LLM payload); mint_link is established directly below via the browser.
+  let autosimAuth: DecryptedAutosimAuthConfig | null = null
+  try { autosimAuth = await loadAutosimAuthConfig(projectId) } catch { autosimAuth = null }
+  if (autosimAuth) credFields.push(...autosimAuthCredFields(autosimAuth))
+  const credResolver = withAutosimAuthCreds(opts.credResolver ?? resolveCredRefs, autosimAuth)
   const sleepMs = opts.sleepMs ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
   // KLA-57: pre-populate drive state from checkpoint on resume; fresh start otherwise.
   const cp = opts.checkpoint
@@ -238,6 +252,13 @@ export async function authorTrail(
   }
   try {
     const page = await handle!.newPage(viewport)
+    // KLA-184 (AT6): mint_link branch — establish the session cookie by hitting the signed mint link
+    // BEFORE the first recorded navigation, then leave that token-bearing URL immediately (below) so
+    // it never lands in the trajectory/history/LLM payload (ADR-0001). Re-run on resume too: a fresh
+    // browser has no cookie, so the checkpoint URL would otherwise bounce back to the login gate.
+    if (autosimAuth?.method === "mint_link") {
+      await establishAutosimSession(page, autosimAuth, req.baseUrl)
+    }
     if (cp) {
       // KLA-57: resume — navigate to where the prior drive stalled. The traj/history are already
       // pre-populated from the checkpoint; we skip re-recording the initial navigate step.

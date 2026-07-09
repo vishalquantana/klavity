@@ -1343,6 +1343,41 @@ export async function registerAutosimAuthConfig(
   return { probeId }
 }
 
+/** Ciphertext-bearing row of a project's registered AutoSim auth method (AT3). */
+export type AutosimAuthConfigRow = {
+  projectId: string
+  method: AutosimAuthMethod
+  email: string
+  secretEnc: string
+  notes: string | null
+  createdAt: number
+  updatedAt: number
+}
+
+/**
+ * KLA-184 (AT6): read a project's registered auth method for execution. Returns the ENCRYPTED
+ * secret verbatim — decryption is the caller's responsibility and must happen at execution time
+ * only (see lib/autosim-auth-exec.ts, ADR-0001). Returns null when no method is registered.
+ */
+export async function getAutosimAuthConfigRaw(projectId: string): Promise<AutosimAuthConfigRow | null> {
+  const r = await db!.execute({
+    sql: `SELECT project_id, method, email, secret_enc, notes, created_at, updated_at
+          FROM autosim_auth_configs WHERE project_id=?`,
+    args: [projectId],
+  })
+  if (!r.rows.length) return null
+  const row: any = r.rows[0]
+  return {
+    projectId: String(row.project_id),
+    method: String(row.method) as AutosimAuthMethod,
+    email: String(row.email),
+    secretEnc: String(row.secret_enc),
+    notes: row.notes == null ? null : String(row.notes),
+    createdAt: Number(row.created_at),
+    updatedAt: Number(row.updated_at),
+  }
+}
+
 // Rename a project (name only). Used by the signup onboarding to name the auto-created Default Project
 // without spawning a duplicate. Caller must enforce projectAccess('admin'). Returns the updated row.
 export async function renameProject(projectId: string, name: string): Promise<ProjectRow | null> {
