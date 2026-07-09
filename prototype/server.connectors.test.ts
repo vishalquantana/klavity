@@ -270,7 +270,7 @@ test("PATCH /api/feedback/:id rejects invalid status → 400", async () => {
 test("PATCH /api/feedback/:id updates status/assignee/notes for member", async () => {
   const r = await api("PATCH", `/api/feedback/${FID}`, {
     status: "in_progress",
-    assignee: "dev@test.local",
+    assignee: ADMIN_EMAIL,
     notes: "Working on it",
   }, MEMBER_SID)
   expect(r.status).toBe(200)

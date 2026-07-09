@@ -173,3 +173,33 @@ test("signed Stripe webhook updates account and project plan state", async () =>
   const project = await raw.execute({ sql: "SELECT billing_plan, billing_status FROM projects WHERE id=?", args: [PROJECT] })
   expect(project.rows[0]).toMatchObject({ billing_plan: "team", billing_status: "active" })
 })
+
+test("past_due Stripe webhook records status but does not grant paid entitlements", async () => {
+  const event = {
+    id: "evt_test_past_due",
+    type: "customer.subscription.updated",
+    data: {
+      object: {
+        id: "sub_test_123",
+        customer: "cus_test_123",
+        status: "past_due",
+        current_period_end: 2000000000,
+        cancel_at_period_end: false,
+        metadata: { account_id: ACCOUNT, plan: "team", interval: "year" },
+        items: { data: [{ price: { lookup_key: "klavity_team_annual_990", recurring: { interval: "year" } } }] },
+      },
+    },
+  }
+  const rawBody = JSON.stringify(event)
+  const r = await fetch(`${BASE}/api/billing/webhook`, {
+    method: "POST",
+    headers: { "stripe-signature": await stripeSig(rawBody, WEBHOOK_SECRET), "content-type": "application/json" },
+    body: rawBody,
+  })
+  expect(r.status).toBe(200)
+
+  const acct = await raw.execute({ sql: "SELECT plan, billing_status FROM accounts WHERE id=?", args: [ACCOUNT] })
+  expect(acct.rows[0]).toMatchObject({ plan: "free", billing_status: "past_due" })
+  const project = await raw.execute({ sql: "SELECT billing_plan, billing_status FROM projects WHERE id=?", args: [PROJECT] })
+  expect(project.rows[0]).toMatchObject({ billing_plan: "free", billing_status: "past_due" })
+})

@@ -79,6 +79,12 @@ function normalizeAssigneeEmail(value: unknown): string | null {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : ""
 }
 
+async function canAssignTicketTo(projectId: string, actorAccess: "admin" | "member" | null, assignee: string | null): Promise<boolean> {
+  if (!assignee) return true
+  if (actorAccess === "admin") return true
+  return !!(await projectAccess(assignee, projectId).catch(() => null))
+}
+
 function ticketDashboardUrl(projectId: string): string {
   return `${BASE.replace(/\/+$/, "")}/dashboard?project=${encodeURIComponent(projectId)}#tickets`
 }
@@ -1045,7 +1051,7 @@ const BILLING_WEBHOOK_MAX_BYTES = 256 * 1024
 
 function effectivePlanForStripeStatus(plan: string | null, status: string | null): string {
   const normalized = plan === "pro" || plan === "team" || plan === "scale" ? plan : "free"
-  return status === "active" || status === "trialing" || status === "past_due" ? normalized : "free"
+  return status === "active" || status === "trialing" ? normalized : "free"
 }
 
 async function accountIdFromStripeSubscriptionObject(sub: any): Promise<string | null> {
@@ -4394,6 +4400,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (body.assignee !== undefined) {
             const assignee = normalizeAssigneeEmail(body.assignee)
             if (assignee === "") return json({ error: "assignee must be a valid email address." }, 400)
+            if (!(await canAssignTicketTo(fbRow.projectId, fbAccess, assignee))) {
+              return json({ error: "Only project admins can assign tickets to non-members." }, 403)
+            }
             meta.assignee = assignee
           }
           if (body.notes !== undefined) meta.notes = body.notes ?? null
@@ -4955,6 +4964,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const priority = VALID_PRI.includes(body.priority) ? body.priority : "medium"
           const assignee = normalizeAssigneeEmail(body.assignee)
           if (assignee === "") return json({ error: "assignee must be a valid email address." }, 400)
+          if (!(await canAssignTicketTo(proj.id, access, assignee))) {
+            return json({ error: "Only project admins can assign tickets to non-members." }, 403)
+          }
           const observation = bodyText ? `${title}\n\n${bodyText}` : title
           const id = await insertFeedback({
             projectId: proj.id,
@@ -5031,8 +5043,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
           const assigneeVal = hasAssignee ? normalizeAssigneeEmail(body.assignee) : undefined
           if (hasAssignee && assigneeVal === "") return json({ error: "assignee must be a valid email address or null." }, 400)
+          if (hasAssignee && !(await canAssignTicketTo(proj.id, access, assigneeVal ?? null))) {
+            return json({ error: "Only project admins can assign tickets to non-members." }, 403)
+          }
 
           let updated = 0
+          const failures: Array<{ ticketId: string; operation: string; error: string }> = []
           for (const tid of ticketIds) {
             const row = await feedbackById(proj.id, tid).catch(() => null)
             if (!row) continue  // skip tickets not in this project
@@ -5042,6 +5058,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             if (hasAssignee) meta.assignee = assigneeVal ?? null
             if (Object.keys(meta).length) {
               const changed = await updateFeedbackMeta(proj.id, tid, meta).catch(() => false)
+              if (!changed) {
+                failures.push({ ticketId: tid, operation: "metadata", error: "Update failed." })
+                continue
+              }
               const activityWrites: Promise<any>[] = []
               if (changed && hasStatus && meta.status !== row.status) {
                 activityWrites.push(insertActivity({
@@ -5082,11 +5102,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               }
               if (activityWrites.length) await Promise.all(activityWrites)
             }
-            if (labelToAdd) await attachLabel(labelToAdd, tid).catch(() => null)
-            if (labelToRemove) await detachLabel(labelToRemove, tid).catch(() => null)
+            if (labelToAdd) {
+              try { await attachLabel(labelToAdd, tid) }
+              catch (e: any) { failures.push({ ticketId: tid, operation: "addLabel", error: String(e?.message || e) }) }
+            }
+            if (labelToRemove) {
+              try { await detachLabel(labelToRemove, tid) }
+              catch (e: any) { failures.push({ ticketId: tid, operation: "removeLabel", error: String(e?.message || e) }) }
+            }
             updated++
           }
-          return json({ ok: true, updated })
+          return json({ ok: failures.length === 0, updated, failures }, failures.length ? 207 : 200)
         }
 
         // ── KLA-174: Label management endpoints ────────────────────────────────────────────────────
@@ -5124,7 +5150,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           }
           if (req.method === "DELETE") {
             if (access !== "admin") return json({ error: "Only project admins can delete labels." }, 403)
-            await deleteLabel(proj.id, lid)
+            const ok = await deleteLabel(proj.id, lid)
+            if (!ok) return json({ error: "Label not found." }, 404)
             return json({ ok: true })
           }
         }
