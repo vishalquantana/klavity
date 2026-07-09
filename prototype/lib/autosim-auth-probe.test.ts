@@ -25,6 +25,7 @@ import {
   type AuthorCheckpoint,
 } from "./trails-author"
 import { redactedAutosimAuthConfig, runAutosimAuthProbe } from "./autosim-auth-probe"
+import { mintAutosimAuthLinkToken } from "./autosim-auth-exec"
 
 const ACCOUNT = "acct_autosim_probe"
 const PROJECT_GREEN = "proj_autosim_probe_green"
@@ -105,6 +106,23 @@ test("red auth probe stores a redacted failure and does not auto-resume", async 
   expect(probe?.error).not.toContain("SECRET-FAIL")
   const project = await db!.execute({ sql: "SELECT autosim_auth_status FROM projects WHERE id=?", args: [PROJECT_RED] })
   expect((project.rows[0] as any).autosim_auth_status).toBe("registered")
+})
+
+test("mint_link auth probe validates signed token expiry without consuming replay state", async () => {
+  const okProject = "proj_autosim_probe_mint_ok"
+  const badProject = "proj_autosim_probe_mint_bad"
+  const now = Date.now()
+  await db!.execute({ sql: "INSERT INTO projects (id, account_id, name, status, review_mode, review_budget_daily, observability_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", args: [okProject, ACCOUNT, "Mint OK", "active", "auto", 200, "named", now, now] })
+  await db!.execute({ sql: "INSERT INTO projects (id, account_id, name, status, review_mode, review_budget_daily, observability_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", args: [badProject, ACCOUNT, "Mint Bad", "active", "auto", 200, "named", now, now] })
+
+  const goodProbe = await register(okProject, "mint_link", await mintAutosimAuthLinkToken(okProject))
+  const good = await runAutosimAuthProbe(goodProbe, { resume: async () => ({ eligible: 0, resumed: [], skipped: [], errors: [] }) })
+  expect(good.ok).toBe(true)
+
+  const expiredProbe = await register(badProject, "mint_link", await mintAutosimAuthLinkToken(badProject, -1))
+  const expired = await runAutosimAuthProbe(expiredProbe, { resume: async () => { throw new Error("should not resume") } })
+  expect(expired.ok).toBe(false)
+  expect(expired.error).toMatch(/expired/)
 })
 
 test("auto-resume only adopts recent needs_auth checkpoints once", async () => {

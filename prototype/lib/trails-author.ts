@@ -626,19 +626,21 @@ export async function authorTrail(
 export interface AuthorSession {
   id: string; projectId: string; name: string; objective: string; baseUrl: string
   testAccount: string | null
-  status: "running" | "crystallized" | "stalled" | "failed" | "needs_auth"
+  status: "running" | "crystallized" | "stalled" | "failed" | "needs_auth" | "resuming"
   steps: AuthorStepLog[]; stallReason: string | null; trailId: string | null
   verificationRunId: string | null; verificationVerdict: string | null
   llmCalls: number; costUsd: number; createdBy: string | null; createdAt: number; updatedAt: number
   /** KLA-57: session this was resumed from, if any. */
   resumedFrom: string | null
+  /** Session currently claiming this paused/stalled checkpoint for resume, if any. */
+  resumedBy: string | null
   /** KLA-57: latest drive-state checkpoint (traj+history+cost+url). Null until first step. */
   checkpoint: AuthorCheckpoint | null
   objectiveVerified: boolean | null
 }
 
-export async function createAuthorSession(projectId: string, req: AuthorRequest, resumedFrom?: string | null): Promise<string> {
-  const id = "auth_" + crypto.randomUUID()
+export async function createAuthorSession(projectId: string, req: AuthorRequest, resumedFrom?: string | null, idOverride?: string): Promise<string> {
+  const id = idOverride ?? "auth_" + crypto.randomUUID()
   const now = Date.now()
   await db!.execute({
     sql: `INSERT INTO author_sessions (id,project_id,name,objective,base_url,test_account,status,created_by,resumed_from,created_at,updated_at,objective_verified)
@@ -681,6 +683,7 @@ function rowToAuthorSession(row: any): AuthorSession {
     createdBy: row.created_by ? String(row.created_by) : null,
     createdAt: Number(row.created_at), updatedAt: Number(row.updated_at),
     resumedFrom: row.resumed_from ? String(row.resumed_from) : null,
+    resumedBy: row.resumed_by ? String(row.resumed_by) : null,
     checkpoint,
     objectiveVerified: row.objective_verified == null ? null : !!row.objective_verified,
   }
@@ -728,6 +731,7 @@ export async function listNeedsAuthSessionsForAutoResume(projectId: string, limi
             AND NOT EXISTS (
               SELECT 1 FROM author_sessions child
               WHERE child.project_id=s.project_id AND child.resumed_from=s.id
+                AND child.status IN ('running','stalled','needs_auth','crystallized','resuming')
             )
           ORDER BY s.updated_at ASC LIMIT ?`,
     args: [projectId, since, limit],
@@ -742,6 +746,49 @@ export async function getActiveAuthorSession(projectId: string): Promise<AuthorS
   })
   if (!r.rows.length) return null
   return rowToAuthorSession(r.rows[0])
+}
+
+function resumeEligibilityError(prior: AuthorSession | null, now = Date.now()): string | null {
+  if (!prior) return "resume session not found"
+  if (prior.status !== "stalled" && prior.status !== "needs_auth") return "resume session is not paused"
+  if (now - prior.updatedAt > NEEDS_AUTH_RESUME_TTL_MS) return "resume session is too old"
+  if (!prior.checkpoint) return "resume session has no checkpoint"
+  if (prior.resumedBy) return "resume session is already being resumed"
+  return null
+}
+
+async function claimAuthorResumeSession(projectId: string, priorId: string, childId: string, now = Date.now()): Promise<AuthorSession> {
+  const prior = await getAuthorSession(projectId, priorId)
+  const invalid = resumeEligibilityError(prior, now)
+  if (invalid) throw new Error(invalid)
+  const since = now - NEEDS_AUTH_RESUME_TTL_MS
+  const r = await db!.execute({
+    sql: `UPDATE author_sessions
+          SET status='resuming', resumed_by=?, updated_at=?
+          WHERE project_id=? AND id=?
+            AND status IN ('stalled','needs_auth')
+            AND updated_at >= ?
+            AND checkpoint_json IS NOT NULL
+            AND resumed_by IS NULL
+            AND NOT EXISTS (
+              SELECT 1 FROM author_sessions child
+              WHERE child.project_id=?
+                AND child.resumed_from=?
+                AND child.status IN ('running','stalled','needs_auth','crystallized','resuming')
+            )`,
+    args: [childId, now, projectId, priorId, since, projectId, priorId],
+  })
+  if (Number(r.rowsAffected || 0) <= 0) throw new Error("resume session is already claimed")
+  return prior!
+}
+
+async function releaseAuthorResumeClaim(projectId: string, priorId: string, childId: string, status: AuthorSession["status"]): Promise<void> {
+  if (status !== "stalled" && status !== "needs_auth") return
+  await db!.execute({
+    sql: `UPDATE author_sessions SET status=?, resumed_by=NULL, updated_at=?
+          WHERE project_id=? AND id=? AND status='resuming' AND resumed_by=?`,
+    args: [status, Date.now(), projectId, priorId, childId],
+  }).catch(() => {})
 }
 
 /**
@@ -764,14 +811,8 @@ export async function runAuthorNow(
   const model = deps?.model ?? openRouterAuthorModel
   const author = deps?.author ?? authorTrail
 
-  // KLA-57: load checkpoint from the session being resumed (if any).
-  let resumeCheckpoint: AuthorCheckpoint | undefined
   const resumeSessionId = deps?.resumeSessionId
-  if (resumeSessionId) {
-    const prior = await getAuthorSession(projectId, resumeSessionId)
-    if (prior?.checkpoint) resumeCheckpoint = prior.checkpoint
-    // If no checkpoint exists (e.g. crashed at step 0), fall through to a clean start.
-  }
+  const childSessionId = "auth_" + crypto.randomUUID()
 
   // Deferred: resolve to sessionId once the DB row exists, reject on slot-busy or session-create error.
   let resolveStarted!: (sessionId: string) => void
@@ -783,10 +824,18 @@ export async function runAuthorNow(
   // the promise runs the whole authoring drive + verification walk in the background; we only await
   // `started` (resolved as soon as the session row exists).
   const slotHeld = withAuthorSlot(() => withWalkSlot(async () => {
-    let sessionId: string
+    let sessionId: string = childSessionId
+    let resumeCheckpoint: AuthorCheckpoint | undefined
+    let claimedPrior: { id: string; status: AuthorSession["status"] } | null = null
     try {
-      sessionId = await createAuthorSession(projectId, req, resumeSessionId ?? null)
+      if (resumeSessionId) {
+        const prior = await claimAuthorResumeSession(projectId, resumeSessionId, childSessionId)
+        resumeCheckpoint = prior.checkpoint!
+        claimedPrior = { id: prior.id, status: prior.status }
+      }
+      sessionId = await createAuthorSession(projectId, req, resumeSessionId ?? null, childSessionId)
     } catch (e) {
+      if (claimedPrior) await releaseAuthorResumeClaim(projectId, claimedPrior.id, childSessionId, claimedPrior.status)
       rejectStart(e)
       return
     }

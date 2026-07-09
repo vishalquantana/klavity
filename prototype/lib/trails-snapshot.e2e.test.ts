@@ -41,7 +41,7 @@ describe("captureKrefSnapshot", () => {
   test("includes roles, accessible names, disabled state; excludes hidden/script/style", async () => {
     const snap = await captureKrefSnapshot(page)
     expect(snap).toContain(`link "Pricing"`)
-    expect(snap).toContain(`textbox "you@example.com"`)
+    expect(snap).toContain(`textbox "Email"`)
     expect(snap).toContain(`textbox "Password"`)
     expect(snap).toMatch(/button "Sign in" \{disabled\} \[ref=e\d+\]/)
     expect(snap).not.toContain("Hidden link")
@@ -70,6 +70,27 @@ describe("captureKrefSnapshot", () => {
     expect(snap).toContain("[snapshot truncated]")
     await p2.close()
     expect(KREF_SNAPSHOT_CAP).toBe(24_000)
+  })
+  test("does not leak values from unlabeled password or OTP inputs", async () => {
+    const secret = "KnownSecret-123456"
+    const otp = "909090"
+    const p2 = await (await browser.newContext()).newPage()
+    await p2.setContent(`<body>
+      <input id="pw" type="password" />
+      <input id="otp" autocomplete="one-time-code" />
+      <textarea id="notes"></textarea>
+      <select id="sel"><option value="secret-option">Secret option text</option></select>
+    </body>`)
+    await p2.locator("#pw").fill(secret)
+    await p2.locator("#otp").fill(otp)
+    await p2.locator("#notes").fill("textarea-secret")
+    const snap = await captureKrefSnapshot(p2)
+    expect(snap).toContain('textbox ""')
+    expect(snap).not.toContain(secret)
+    expect(snap).not.toContain(otp)
+    expect(snap).not.toContain("textarea-secret")
+    expect(snap).not.toContain("Secret option text")
+    await p2.close()
   })
 })
 

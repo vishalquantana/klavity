@@ -100,11 +100,26 @@ export async function captureKrefSnapshot(page: Page, cap = KREF_SNAPSHOT_CAP): 
       if (t === "img" && el.getAttribute("alt")) return "img"
       return null
     }
+    const labelFor = (el: Element): string => {
+      const id = el.getAttribute("id")
+      if (id) {
+        const label = document.querySelector(`label[for="${CSS.escape(id)}"]`)
+        const text = (label?.textContent || "").trim()
+        if (text) return text
+      }
+      const wrapping = el.closest("label")
+      return (wrapping?.textContent || "").trim()
+    }
+    const isFormControl = (el: Element): boolean => {
+      const t = el.tagName.toLowerCase()
+      return t === "input" || t === "textarea" || t === "select"
+    }
     const nameOf = (el: Element): string => {
-      const cand =
-        el.getAttribute("aria-label") || el.getAttribute("placeholder") ||
-        (el as HTMLImageElement).alt || (el.textContent || "").trim() ||
-        el.getAttribute("name") || el.getAttribute("title") || (el as HTMLInputElement).value || ""
+      const cand = isFormControl(el)
+        ? labelFor(el) || el.getAttribute("aria-label") || el.getAttribute("placeholder") ||
+          el.getAttribute("name") || el.getAttribute("title") || ""
+        : el.getAttribute("aria-label") || (el as HTMLImageElement).alt || (el.textContent || "").trim() ||
+          el.getAttribute("name") || el.getAttribute("title") || ""
       return cand.replace(/\s+/g, " ").slice(0, 80)
     }
     const walk = (el: Element, depth: number) => {

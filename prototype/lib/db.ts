@@ -561,7 +561,7 @@ export async function applySchema(c: Client) {
        verification_run_id TEXT, verification_verdict TEXT,
        llm_calls INTEGER NOT NULL DEFAULT 0, cost_usd REAL NOT NULL DEFAULT 0,
        created_by TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
-       objective_verified INTEGER)`,
+       objective_verified INTEGER, resumed_by TEXT)`,
     `CREATE INDEX IF NOT EXISTS author_sess_proj_idx ON author_sessions (project_id, created_at)`,
     // ── One-time guarded migrations (C1 etc.) use this table instead of schema_meta so the
     // migration namespace is separate from runtime KV. ──
@@ -743,6 +743,8 @@ export async function applySchema(c: Client) {
   // KLA-57: back-link to the session this one was resumed from (null for fresh starts).
   if (needCol("author_sessions", "resumed_from")) await c.execute("ALTER TABLE author_sessions ADD COLUMN resumed_from TEXT")
     .catch((e: any) => console.warn("author_sessions.resumed_from ALTER skipped:", e?.message || e))
+  if (needCol("author_sessions", "resumed_by")) await c.execute("ALTER TABLE author_sessions ADD COLUMN resumed_by TEXT")
+    .catch((e: any) => console.warn("author_sessions.resumed_by ALTER skipped:", e?.message || e))
   if (needCol("trails", "objective_verified")) await c.execute("ALTER TABLE trails ADD COLUMN objective_verified INTEGER")
     .catch((e: any) => console.warn("trails.objective_verified ALTER skipped:", e?.message || e))
   if (needCol("author_sessions", "objective_verified")) await c.execute("ALTER TABLE author_sessions ADD COLUMN objective_verified INTEGER")
@@ -1344,6 +1346,15 @@ export async function registerAutosimAuthConfig(
   tokenId: string,
   input: { method: AutosimAuthMethod; email: string; secret: string; notes?: string | null },
 ): Promise<{ probeId: string } | null> {
+  if (input.method === "mint_link") {
+    const s = input.secret.trim()
+    if (/^https?:\/\//i.test(s)) throw new Error("mint_link secret must be an opaque token or same-origin /test-login path")
+    if (s.startsWith("/")) {
+      let pathname = ""
+      try { pathname = new URL(s, "https://example.invalid").pathname } catch {}
+      if (pathname !== "/test-login") throw new Error("mint_link path must be /test-login")
+    }
+  }
   const now = Date.now()
   const secretEnc = await encryptSecret(input.secret)
   const consumed = await db!.execute({

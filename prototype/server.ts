@@ -1669,6 +1669,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const secret = String(body.secret || "").trim()
         if (!secret) return json({ error: "secret is required" }, 400)
         if (secret.length > 4000) return json({ error: "secret too large" }, 413)
+        if (method === "mint_link") {
+          if (/^https?:\/\//i.test(secret)) return json({ error: "mint_link secret must be an opaque token or same-origin /test-login path, not an absolute URL" }, 400)
+          if (secret.startsWith("/")) {
+            let mintPath = ""
+            try { mintPath = new URL(secret, "https://example.invalid").pathname } catch {}
+            if (mintPath !== "/test-login") return json({ error: "mint_link path must be /test-login" }, 400)
+          }
+        }
         const notesRaw = body.notes == null ? null : String(body.notes).trim()
         if (notesRaw && notesRaw.length > 2000) return json({ error: "notes too large" }, 413)
 

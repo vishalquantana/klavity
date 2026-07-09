@@ -61,6 +61,7 @@ test("mint_link prompt: requires strong secret + constant-time compare", () => {
   const out = generateAuthPrompt({ method: "mint_link", testEmail: EMAIL, setupToken: TOKEN, projectName: PROJECT })
   expect(out).toMatch(/strong.secret.*256.bit|high-entropy/i)
   expect(out).toMatch(/constant.time.compare|timingSafeEqual/i)
+  expect(out).toMatch(/exp.*jti.*audience|jti.*audience.*HMAC/i)
 })
 
 test("mint_link prompt: session mints for the allowlisted Sim email", () => {
@@ -74,6 +75,8 @@ test("mint_link prompt: includes acceptance checks", () => {
   expect(out).toMatch(/acceptance checks?/i)
   // Specifically asserts that tampered tokens fail constant-time verification with 401.
   expect(out).toMatch(/tamper.*token|constant.time/i)
+  expect(out).toMatch(/amlt_|same-origin path/i)
+  expect(out).toMatch(/Never paste an absolute URL/i)
 })
 
 // ── shared requirements (both variants) ─────────────────────────────────────

@@ -107,11 +107,26 @@ function krefSnapshotBody(): string {
     if (t === "img" && el.getAttribute("alt")) return "img"
     return null
   }
+  const labelFor = (el: Element): string => {
+    const id = el.getAttribute("id")
+    if (id) {
+      const label = document.querySelector(`label[for="${CSS.escape(id)}"]`)
+      const text = (label?.textContent || "").trim()
+      if (text) return text
+    }
+    const wrapping = el.closest("label")
+    return (wrapping?.textContent || "").trim()
+  }
+  const isFormControl = (el: Element): boolean => {
+    const t = el.tagName.toLowerCase()
+    return t === "input" || t === "textarea" || t === "select"
+  }
   const nameOf = (el: Element): string => {
-    const cand =
-      el.getAttribute("aria-label") || el.getAttribute("placeholder") ||
-      (el as HTMLImageElement).alt || (el.textContent || "").trim() ||
-      el.getAttribute("name") || el.getAttribute("title") || (el as HTMLInputElement).value || ""
+    const cand = isFormControl(el)
+      ? labelFor(el) || el.getAttribute("aria-label") || el.getAttribute("placeholder") ||
+        el.getAttribute("name") || el.getAttribute("title") || ""
+      : el.getAttribute("aria-label") || (el as HTMLImageElement).alt || (el.textContent || "").trim() ||
+        el.getAttribute("name") || el.getAttribute("title") || ""
     return cand.replace(/\s+/g, " ").slice(0, 80)
   }
   const walk = (el: Element, depth: number) => {
@@ -189,7 +204,7 @@ export interface BrowserPage {
   fingerprint(selector: string): Promise<Fingerprint>
   stableSelector(selector: string): Promise<string | null>
   click(selector: string, timeoutMs: number): Promise<void>
-  fill(selector: string, value: string, timeoutMs: number): Promise<void>
+  fill(selector: string, value: string, timeoutMs: number, sensitive?: boolean): Promise<void>
   selectOption(selector: string, value: string, timeoutMs: number): Promise<void>
   hover(selector: string, timeoutMs: number): Promise<void>
   keyPress(selector: string, key: string, timeoutMs: number): Promise<void>
@@ -237,7 +252,11 @@ class PlaywrightPage implements BrowserPage {
   async fingerprint(selector: string) { return await this.page.locator(selector).first().evaluate(fingerprintBody) }
   async stableSelector(selector: string) { try { return await this.page.locator(selector).first().evaluate(stableSelectorBody) } catch { return null } }
   async click(selector: string, timeoutMs: number) { await clickWithTransitionFallback(this.page.locator(selector), timeoutMs) }
-  async fill(selector: string, value: string, timeoutMs: number) { await this.page.locator(selector).fill(value, { timeout: timeoutMs }) }
+  async fill(selector: string, value: string, timeoutMs: number, sensitive = false) {
+    const loc = this.page.locator(selector)
+    await loc.fill(value, { timeout: timeoutMs })
+    if (sensitive) await loc.first().evaluate((el) => el.setAttribute("data-autosim-sensitive", "1")).catch(() => {})
+  }
   async selectOption(selector: string, value: string, timeoutMs: number) { await this.page.locator(selector).selectOption(value, { timeout: timeoutMs }) }
   async hover(selector: string, timeoutMs: number) { await this.page.locator(selector).hover({ timeout: timeoutMs }) }
   async keyPress(selector: string, key: string, timeoutMs: number) { await this.page.locator(selector).press(key, { timeout: timeoutMs }) }
@@ -340,10 +359,11 @@ class PuppeteerPage implements BrowserPage {
   async fingerprint(selector: string) { return await this.page.$eval(selector, fingerprintBody) }
   async stableSelector(selector: string) { try { return await this.page.$eval(selector, stableSelectorBody) } catch { return null } }
   async click(selector: string, timeoutMs: number) { await this.page.waitForSelector(selector, { visible: true, timeout: timeoutMs }); await this.page.click(selector) }
-  async fill(selector: string, value: string, timeoutMs: number) {
+  async fill(selector: string, value: string, timeoutMs: number, sensitive = false) {
     const el = await this.page.waitForSelector(selector, { visible: true, timeout: timeoutMs })
     await el.click({ clickCount: 3 }).catch(() => {}) // select existing text so type() replaces it (mirrors fill)
     await el.type(value)
+    if (sensitive) await el.evaluate((node: Element) => node.setAttribute("data-autosim-sensitive", "1")).catch(() => {})
   }
   async selectOption(selector: string, value: string, timeoutMs: number) { await this.page.waitForSelector(selector, { timeout: timeoutMs }); await this.page.select(selector, value) }
   async hover(selector: string, timeoutMs: number) { await this.page.waitForSelector(selector, { visible: true, timeout: timeoutMs }); await this.page.hover(selector) }
