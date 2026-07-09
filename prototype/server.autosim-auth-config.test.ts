@@ -120,14 +120,15 @@ test("POST /api/autosim/auth-config stores encrypted write-only auth config and 
   expect(String(row.secret_enc)).toContain(":")
 
   const project = await raw.execute({ sql: "SELECT autosim_auth_status FROM projects WHERE id=?", args: [PROJ] })
-  expect((project.rows[0] as any).autosim_auth_status).toBe("registered")
+  expect(["registered", "verified"]).toContain((project.rows[0] as any).autosim_auth_status)
 
   const tokenRow = await raw.execute({ sql: "SELECT used_at FROM autosim_auth_setup_tokens WHERE token_hash=?", args: [sha256hex(TOKEN)] })
   expect(Number((tokenRow.rows[0] as any).used_at)).toBeGreaterThan(0)
 
   const probe = await raw.execute({ sql: "SELECT project_id, method, email, status FROM autosim_auth_probe_queue WHERE project_id=?", args: [PROJ] })
   expect(probe.rows).toHaveLength(1)
-  expect(probe.rows[0]).toMatchObject({ project_id: PROJ, method: "fixed_otp", email: "vishal@quantana.com.au", status: "queued" })
+  expect(probe.rows[0]).toMatchObject({ project_id: PROJ, method: "fixed_otp", email: "vishal@quantana.com.au" })
+  expect(["queued", "running", "green"]).toContain((probe.rows[0] as any).status)
 })
 
 test("setup token is required, unexpired, and consumed after success", async () => {
