@@ -21,6 +21,7 @@ import { isKrefSelector } from "./trails-snapshot"
 import type { StepAction, TrailViewport } from "./trails-types"
 import { normalizeTrailViewport } from "./trails-viewport"
 import { configuredVisionResolver, type VisionResolver } from "./trails-vision"
+import { notifyAutosimNeedsAuth } from "./autosim-auth-alert"
 
 const AUTOSIM_MAX_STEPS_DEFAULT = 40
 const AUTOSIM_MAX_COST_USD_DEFAULT = 0.15
@@ -72,7 +73,7 @@ const dekref = (s: string) => s.replace(/\[data-kref="(e\d+)"\]/g, "snapshot ref
 export interface AuthorRequest { name: string; objective: string; baseUrl: string; viewport?: TrailViewport | string | null; testAccountName?: string; createdBy?: string }
 export interface AuthorStepLog { idx: number; op: string; selector: string | null; value: string | null; url: string; rationale: string; ok: boolean; error?: string; screenshotKey?: string; krefSnapshot?: string }
 export interface AuthorOutcome {
-  status: "crystallized" | "stalled" | "failed"
+  status: "crystallized" | "stalled" | "failed" | "needs_auth"
   trailId: string | null; verificationRunId: string | null
   verificationVerdict: "green" | "amber" | "red" | null
   steps: AuthorStepLog[]; stallReason: string | null; llmCalls: number; costUsd: number
@@ -136,6 +137,11 @@ export async function authorTrail(
      * step screenshot so the UI can show what the AI is seeing in near-real-time.
      */
     onLiveFrame?: (dataUrl: string) => void
+    /**
+     * KLA-179: called when the driver encounters an auth gate, before suspending.
+     * Used to fire a throttled founder-style email + Slack alert.
+     */
+    onNeedsAuth?: (url: string, rationale: string) => void | Promise<void>
   },
 ): Promise<AuthorOutcome> {
   // Text-first is the DEFAULT (bench 2026-07-04: arm B ~50% cheaper, 6/6 green verdicts vs arm A
@@ -207,7 +213,7 @@ export async function authorTrail(
     handle = null
     await h.close().catch(() => {})
   }
-  const stall = async (why: string, currentUrl?: string): Promise<AuthorOutcome> => {
+  const stall = async (why: string, currentUrl?: string, finalStatus: "stalled" | "needs_auth" = "stalled"): Promise<AuthorOutcome> => {
     // KLA-57: persist checkpoint before closing so the session is resumable.
     if (opts.onCheckpoint) {
       try { await opts.onCheckpoint(snapshotCheckpoint(currentUrl ?? req.baseUrl)) } catch {}
@@ -228,7 +234,7 @@ export async function authorTrail(
       } catch { /* best-effort; a crystallize failure must never re-throw from stall */ }
     }
     await closeHandle()
-    return { status: "stalled", trailId: partialTrailId, verificationRunId: null, verificationVerdict: null, steps: log, stallReason: why, llmCalls, costUsd, objectiveVerified }
+    return { status: finalStatus, trailId: partialTrailId, verificationRunId: null, verificationVerdict: null, steps: log, stallReason: why, llmCalls, costUsd, objectiveVerified }
   }
   try {
     const page = await handle!.newPage(viewport)
@@ -333,6 +339,18 @@ export async function authorTrail(
       llmCalls++; costUsd += r.costUsd || 0
       // KLA-69: `let` so the stall second-opinion block can replace the action with a reroll result.
       let a = r.action
+      // KLA-179: the model classifies the current page as an auth gate (login form / OTP prompt /
+      // OAuth-only wall) as one extra field on the action it already returns — no extra LLM call.
+      // When there's no verified auth method to get past it, we PAUSE (not fail): suspend in the
+      // resumable `needs_auth` state (stall() persists the checkpoint = step position + trajectory +
+      // url + cost, so a later /autosims resume continues from here) and fire a throttled alert.
+      // FUTURE (sim-public-pages-only opt-out): a project could opt its Sims into public-pages-only
+      // exploration, in which case an auth gate is an expected boundary — end the run cleanly ("done
+      // exploring the public surface") instead of pausing + alerting. Not wired yet; default is pause.
+      if (a.isAuthGate) {
+        if (opts.onNeedsAuth) await opts.onNeedsAuth(page.url(), a.rationale || "stopped at auth gate")
+        return await stall(a.rationale || "stopped at auth gate", page.url(), "needs_auth")
+      }
       if (a.op === "stall" && a.parseError) {
         // KLAVITYKLA-48 #1: a malformed reply is a bad ROLL, not a dead end — one garbage JSON
         // response was killing otherwise-good multi-step attempts. Treat it exactly like a failed
@@ -583,7 +601,8 @@ export async function authorTrail(
 // ── author sessions (poll surface for the UI) ────────────────────────────────────────────────
 export interface AuthorSession {
   id: string; projectId: string; name: string; objective: string; baseUrl: string
-  testAccount: string | null; status: "running" | "crystallized" | "stalled" | "failed"
+  testAccount: string | null
+  status: "running" | "crystallized" | "stalled" | "failed" | "needs_auth"
   steps: AuthorStepLog[]; stallReason: string | null; trailId: string | null
   verificationRunId: string | null; verificationVerdict: string | null
   llmCalls: number; costUsd: number; createdBy: string | null; createdAt: number; updatedAt: number
@@ -649,12 +668,24 @@ export async function getAuthorSession(projectId: string, id: string): Promise<A
   return rowToAuthorSession(r.rows[0])
 }
 
-/** KLA-152: List recent stalled sessions that have a resumable checkpoint or a partial draft trail. */
+/**
+ * KLA-152: List recent resumable sessions that have a checkpoint or a partial draft trail.
+ * KLA-179: `needs_auth` (paused at an auth gate) is resumable too — surface it alongside `stalled`
+ * so the AT2 router (/autosims) can offer "give it a key and resume".
+ *
+ * NOTE (KLA-179 zombie-resume guard / pause-TTL): resumability here is bounded by a 7-day recency
+ * window — an abandoned `needs_auth` session ages out of this list and is NOT swept by the stale
+ * reaper (which only touches status='running'; see sweepStaleAuthorSessions in db.ts), so a paused
+ * Sim never gets falsely marked 'failed'. FUTURE: a dedicated pause-TTL should transition very old
+ * `needs_auth` rows to an explicit 'expired' state (rather than leaving them paused forever), and a
+ * resume must guard against double-resume (a session already resumed_from-linked should not spawn a
+ * second concurrent drive off the same checkpoint).
+ */
 export async function listStalledAuthorSessions(projectId: string, limit = 10): Promise<AuthorSession[]> {
   const since = Date.now() - 7 * 24 * 3600 * 1000
   const r = await db!.execute({
     sql: `SELECT * FROM author_sessions
-          WHERE project_id=? AND status='stalled'
+          WHERE project_id=? AND status IN ('stalled','needs_auth')
             AND updated_at >= ?
             AND (checkpoint_json IS NOT NULL OR trail_id IS NOT NULL)
           ORDER BY updated_at DESC LIMIT ?`,
@@ -751,6 +782,26 @@ export async function runAuthorNow(
         abortSignal: getCurrentAuthorAbortSignal() ?? undefined,
         // KLA-150: publish each step screenshot as a live screencast frame.
         onLiveFrame: (dataUrl) => { try { publishLiveWatchFrame(projectId, sessionId, dataUrl) } catch {} },
+        // KLA-179: the driver hit an auth gate with no verified auth method — the outcome will be
+        // `needs_auth` (paused, resumable). Fire the throttled founder-style "give it a key" alert.
+        // Best-effort: a notification failure must never affect the run or its persisted status.
+        onNeedsAuth: async (url, rationale) => {
+          try {
+            const proj = await projectById(projectId)
+            await notifyAutosimNeedsAuth({
+              projectId,
+              projectName: proj?.name ?? req.name,
+              accountId: proj?.accountId ?? "",
+              sessionId,
+              pageUrl: url,
+              rationale,
+              baseUrl: process.env.KLAV_BASE_URL || "",
+              at: Date.now(),
+            })
+          } catch (e: any) {
+            console.error("autosim needs_auth alert (non-fatal):", e?.message || e)
+          }
+        },
       })
       await updateAuthorSession(projectId, sessionId, {
         status: out.status, steps: out.steps, stallReason: out.stallReason, trailId: out.trailId,

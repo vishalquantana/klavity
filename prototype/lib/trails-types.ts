@@ -101,8 +101,8 @@ export interface LocatorCacheRow {
 
 export interface Walk {
   id: string; trailId: string; projectId: string; trigger: "manual"
-  /** running = in progress; paused = waiting for a secret via POST /resume; finished verdicts below */
-  status: "running" | "paused" | Verdict; llmCalls: number; trailVersion: number
+  /** running = in progress; paused = waiting for a secret via POST /resume; needs_auth = stopped at auth gate; finished verdicts below */
+  status: "running" | "paused" | "needs_auth" | Verdict; llmCalls: number; trailVersion: number
   summary: Record<string, unknown> | null; startedAt: number; finishedAt: number | null
   /** KLA-93: name of the environment this walk ran against. Null = default (trail.baseUrl). */
   environmentName: string | null
