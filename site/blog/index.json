@@ -117,5 +117,12 @@
     "excerpt": "Duplicate bug reports waste triage time and split the signal across tickets. Here's how to match, merge, and prevent duplicates before your backlog drowns.",
     "category": "Guides",
     "date": "2026-07-08"
+  },
+  {
+    "slug": "turn-voice-of-customer-data-into-product-decisions",
+    "title": "How to Turn Voice-of-Customer Data Into Product Decisions",
+    "excerpt": "Voice-of-customer data only helps if it changes what you build. Here's how to code raw feedback, weight it by impact, and ship the decision.",
+    "category": "Insights",
+    "date": "2026-07-09"
   }
 ]
