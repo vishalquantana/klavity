@@ -4832,7 +4832,46 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             if (hasPriority) meta.priority = body.priority ?? null
             if (hasAssignee) meta.assignee = assigneeVal ?? null
             if (Object.keys(meta).length) {
-              await updateFeedbackMeta(proj.id, tid, meta).catch(() => null)
+              const changed = await updateFeedbackMeta(proj.id, tid, meta).catch(() => false)
+              const activityWrites: Promise<any>[] = []
+              if (changed && hasStatus && meta.status !== row.status) {
+                activityWrites.push(insertActivity({
+                  projectId: proj.id,
+                  type: "ticket_status_changed",
+                  actorEmail: me,
+                  feedbackId: tid,
+                  meta: { from: row.status, to: meta.status },
+                }).catch((e: any) => console.warn("bulk ticket status activity skipped:", e?.message || e)))
+              }
+              if (changed && hasPriority && meta.priority !== row.priority) {
+                activityWrites.push(insertActivity({
+                  projectId: proj.id,
+                  type: "ticket_priority_changed",
+                  actorEmail: me,
+                  feedbackId: tid,
+                  meta: { from: row.priority, to: meta.priority },
+                }).catch((e: any) => console.warn("bulk ticket priority activity skipped:", e?.message || e)))
+              }
+              if (changed && hasAssignee && meta.assignee !== row.assignee) {
+                activityWrites.push(insertActivity({
+                  projectId: proj.id,
+                  type: "ticket_assignee_changed",
+                  actorEmail: me,
+                  feedbackId: tid,
+                  meta: { from: row.assignee, to: meta.assignee },
+                }).catch((e: any) => console.warn("bulk ticket assignee activity skipped:", e?.message || e)))
+                if (meta.assignee) {
+                  await notifyTicketAssignee({
+                    projectId: proj.id,
+                    feedbackId: tid,
+                    assignee: meta.assignee,
+                    ticketTitle: String(row.observation || "Untitled ticket"),
+                    projectName: proj.name,
+                    assignedBy: me,
+                  })
+                }
+              }
+              if (activityWrites.length) await Promise.all(activityWrites)
             }
             if (labelToAdd) await attachLabel(labelToAdd, tid).catch(() => null)
             if (labelToRemove) await detachLabel(labelToRemove, tid).catch(() => null)
