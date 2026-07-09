@@ -3609,6 +3609,11 @@ function buildBulkBar(listEl, projId) {
     `<span class="bulk-sep"></span>` +
     `<span class="bulk-lbl">Priority:</span>` +
     `<select class="bulk-sel" id="bulkPriority"><option value="">— change —</option><option value="urgent">Urgent</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select>` +
+    `<span class="bulk-sep"></span>` +
+    `<span class="bulk-lbl">Assignee:</span>` +
+    `<input class="bulk-inp" id="bulkAssignee" type="email" list="tktAssigneeOptions" placeholder="name@company.com" autocomplete="off" />` +
+    `<button class="btn btn-ghost btn-sm" id="bulkAssign" type="button" style="font-size:12px">Assign</button>` +
+    `<button class="btn btn-ghost btn-sm" id="bulkClearAssignee" type="button" style="font-size:12px">Clear assignee</button>` +
     (labels.length ? (
       `<span class="bulk-sep"></span>` +
       `<span class="bulk-lbl">Label:</span>` +
@@ -3640,6 +3645,16 @@ function buildBulkBar(listEl, projId) {
   bar.querySelector("#bulkPriority").addEventListener("change", async e => {
     if (!e.target.value) return; await doAction({ priority: e.target.value })
   })
+  bar.querySelector("#bulkAssign").addEventListener("click", async () => {
+    const inp = bar.querySelector("#bulkAssignee")
+    const assignee = inp ? inp.value.trim() : ""
+    if (!assignee || (inp && !inp.checkValidity())) {
+      if (inp) inp.reportValidity()
+      return
+    }
+    await doAction({ assignee })
+  })
+  bar.querySelector("#bulkClearAssignee").addEventListener("click", () => doAction({ assignee: null }))
   if (labels.length) {
     bar.querySelector("#bulkAddLabel").addEventListener("change", async e => {
       if (!e.target.value) return; await doAction({ addLabelId: e.target.value })
