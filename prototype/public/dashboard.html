@@ -1644,11 +1644,32 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     </div>
   </details>
 
-  <!-- CI Triggers (AutoSims Run on Deploy) -->
   <details class="drawer" id="planDrawer" data-view="settings">
-    <summary><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg> Plan &amp; access <span class="muted" style="font-size:11px;text-transform:none;letter-spacing:0">Current tier + redeem a partner code</span> <span class="caret">›</span></summary>
+    <summary><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg> Plan &amp; billing <span class="muted" style="font-size:11px;text-transform:none;letter-spacing:0">Stripe checkout + customer portal</span> <span class="caret">›</span></summary>
     <div class="drawer-in">
-      <p class="tacc-hint" style="margin-bottom:12px">Current plan: <b id="planLabel">…</b></p>
+      <p class="tacc-hint" style="margin-bottom:12px">Current plan: <b id="planLabel">…</b> <span id="billingStatusLabel" class="muted" style="font-size:12px"></span></p>
+      <div id="billingQuotaNote" class="muted" style="font-size:12px;margin-bottom:12px"></div>
+      <div id="billingPlans" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:14px">
+        <div style="border:1px solid rgba(243,236,225,.14);border-radius:8px;padding:12px">
+          <div style="font-weight:700">Pro</div>
+          <div class="muted" style="font-size:12px;margin:4px 0 10px">$29/mo · $290/yr</div>
+          <button class="btn btn-indigo btn-sm billingCheckout" data-plan="pro" data-interval="month">Monthly</button>
+          <button class="btn btn-sm billingCheckout" data-plan="pro" data-interval="year">Annual</button>
+        </div>
+        <div style="border:1px solid rgba(243,236,225,.14);border-radius:8px;padding:12px">
+          <div style="font-weight:700">Team</div>
+          <div class="muted" style="font-size:12px;margin:4px 0 10px">$99/mo · $990/yr</div>
+          <button class="btn btn-indigo btn-sm billingCheckout" data-plan="team" data-interval="month">Monthly</button>
+          <button class="btn btn-sm billingCheckout" data-plan="team" data-interval="year">Annual</button>
+        </div>
+        <div style="border:1px solid rgba(243,236,225,.14);border-radius:8px;padding:12px">
+          <div style="font-weight:700">Scale</div>
+          <div class="muted" style="font-size:12px;margin:4px 0 10px">Sales-assisted, custom terms</div>
+          <a class="btn btn-sm" href="mailto:vishal@quantana.com.au?subject=Klavity%20Scale%20plan">Contact sales</a>
+        </div>
+      </div>
+      <button id="billingPortalBtn" class="btn btn-sm" style="margin-bottom:12px;display:none">Manage billing</button>
+      <p id="billingMsg" class="muted" style="font-size:12px;margin-bottom:12px"></p>
       <div id="redeemArea">
         <div class="flbl" style="margin-bottom:8px;font-weight:600">Partner / internal access code</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
@@ -5006,16 +5027,51 @@ _wireCi()
 ;(function _wirePlan(){
   var pretty = { free:"Free", pro:"Pro", team:"Team", scale:"Scale", partner:"Partner · Unlimited" }
   var lbl = $("planLabel"), area = $("redeemArea"), btn = $("redeemBtn"), inp = $("redeemCode"), msg = $("redeemMsg")
+  var statusLbl = $("billingStatusLabel"), quotaNote = $("billingQuotaNote"), billingMsg = $("billingMsg"), portalBtn = $("billingPortalBtn")
   if (!lbl) return
+  function quotaText(q){
+    if (!q || !q.quotas) return ""
+    var lim = q.quotas
+    var projects = lim.projects == null ? "unlimited projects" : lim.projects + " project" + (lim.projects === 1 ? "" : "s")
+    var sims = lim.sims == null ? "unlimited Sims" : lim.sims + " Sims"
+    var flows = lim.autosimFlows == null ? "unlimited AutoSim flows" : lim.autosimFlows + " AutoSim flows"
+    return projects + " · " + sims + " · " + flows + " · enforcement " + (q.enforcement ? "on" : "off")
+  }
   async function refresh(){
     try {
       var r = await fetch("/api/account/plan"); if (!r.ok) return
       var d = await r.json()
       lbl.textContent = pretty[d.plan] || d.plan || "Free"
+      if (statusLbl) statusLbl.textContent = d.billing && d.billing.billingStatus ? "(" + d.billing.billingStatus + ")" : ""
+      if (quotaNote) quotaNote.textContent = quotaText(d.quotas)
+      if (portalBtn) portalBtn.style.display = d.billing && d.billing.stripeCustomerId ? "" : "none"
       if (d.unlimited && area) { area.innerHTML = '<p class="muted" style="font-size:13px">✓ Unlimited access is active on this account.</p>' }
     } catch(e){}
   }
   refresh()
+  document.querySelectorAll(".billingCheckout").forEach(function(b){
+    b.addEventListener("click", async function(){
+      var plan = b.getAttribute("data-plan"), interval = b.getAttribute("data-interval")
+      b.disabled = true; if (billingMsg) billingMsg.textContent = "Opening Stripe checkout..."
+      try {
+        var r = await fetch("/api/billing/checkout", { method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({ plan: plan, interval: interval }) })
+        var d = await r.json().catch(function(){ return {} })
+        if (r.ok && d.url) location.href = d.url
+        else if (billingMsg) { billingMsg.style.color = "var(--rose)"; billingMsg.textContent = d.error || "Checkout failed." }
+      } catch(e) { if (billingMsg) { billingMsg.style.color = "var(--rose)"; billingMsg.textContent = "Network error." } }
+      finally { b.disabled = false }
+    })
+  })
+  portalBtn && (portalBtn.onclick = async function(){
+    portalBtn.disabled = true; if (billingMsg) billingMsg.textContent = "Opening billing portal..."
+    try {
+      var r = await fetch("/api/billing/portal", { method:"POST" })
+      var d = await r.json().catch(function(){ return {} })
+      if (r.ok && d.url) location.href = d.url
+      else if (billingMsg) { billingMsg.style.color = "var(--rose)"; billingMsg.textContent = d.error || "Portal unavailable." }
+    } catch(e) { if (billingMsg) { billingMsg.style.color = "var(--rose)"; billingMsg.textContent = "Network error." } }
+    finally { portalBtn.disabled = false }
+  })
   btn && (btn.onclick = async function(){
     var code = ((inp && inp.value) || "").trim()
     if (!code) { if(msg){ msg.style.color="var(--rose)"; msg.textContent="Enter a code." } return }
