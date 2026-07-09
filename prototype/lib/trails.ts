@@ -322,6 +322,17 @@ export async function listRunSteps(projectId: string, runId: string): Promise<Ru
   return r.rows.map(rowToRunStep)
 }
 
+// Returns the evidence blob for the first run_step matching (projectId, runId, stepId).
+// Used by realFiler to look up a step's screenshotKey for ticket attachments.
+export async function getRunStepEvidence(projectId: string, runId: string, stepId: string): Promise<Record<string, unknown> | null> {
+  const r = await db!.execute({
+    sql: `SELECT evidence_json FROM run_steps WHERE project_id=? AND run_id=? AND step_id=? ORDER BY idx DESC LIMIT 1`,
+    args: [projectId, runId, stepId],
+  })
+  if (!r.rows.length) return null
+  try { return JSON.parse(String((r.rows[0] as any).evidence_json || "{}")) } catch { return null }
+}
+
 export async function countRunSteps(projectId: string, runId: string): Promise<number> {
   const r = await db!.execute({ sql: `SELECT COUNT(*) as n FROM run_steps WHERE project_id=? AND run_id=?`, args: [projectId, runId] })
   return Number((r.rows[0] as any)?.n ?? 0)
