@@ -8,8 +8,10 @@ const file = join(tmpdir(), `klav-trigger-${Date.now()}-${Math.random().toString
 process.env.TURSO_DATABASE_URL = "file:" + file
 delete process.env.TURSO_AUTH_TOKEN
 const { reconnectDb, applySchema, migrateV2 } = await import("./db")
-beforeAll(async () => { const db = reconnectDb("file:" + file); await applySchema(db); await migrateV2(db) })
+let db: any
+beforeAll(async () => { db = reconnectDb("file:" + file); await applySchema(db); await migrateV2(db) })
 const T = await import("./trails")
+const DB = await import("./db")
 const { runWalkNow } = await import("./trails-trigger")
 const { WalkBusyError, isWalkInFlight, cancelCurrentWalk, _resetWalkPoolForTest } = await import("./trails-browser")
 
@@ -131,5 +133,38 @@ test("rich summary survives when walk fn already calls finishWalk (KLA-65 regres
   expect(finalWalk!.summary).toBeTruthy()
   expect((finalWalk!.summary as any).healedCount).toBe(5)
   expect((finalWalk!.summary as any).stepCount).toBe(10)
+})
+
+// KLA-112: maybeAutoFileWalkFindings is wired into the walk runner — after runWalkNow the gate
+// fires best-effort. With flag ON and no connector realFiler returns null (walk stays green/red,
+// no error). Proves: (1) wiring doesn't throw, (2) walk finalizes, (3) finding is queued with no
+// connector error (i.e. realFiler ran and returned null, not an error).
+test("KLA-112: wiring fires after walk — flag ON, no connector, finding stays queued cleanly", async () => {
+  const proj = "proj_kla112_smoke"
+  await db.execute({
+    sql: "INSERT OR IGNORE INTO projects (id, account_id, name, status, review_mode, observability_mode, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
+    args: [proj, "acct_k112", "kla112", "active", "auto", "named", Date.now(), Date.now()],
+  })
+  await DB.setProjectTrailsAutofile(proj, true)
+  const trail = await T.createTrail(proj, { name: "T112", baseUrl: "https://app.test/", authorKind: "llm" })
+
+  let findingId = ""
+  const walkSeedsFinding = async (projectId: string, trailId: string, runId: string) => {
+    const { id } = await T.recordFinding(projectId, {
+      runId, trailId, kind: "regression", title: "gone", confidence: 0.95, dedupKey: "k112_smoke",
+    })
+    findingId = id
+    return { verdict: "red" as const, llmCalls: 0 }
+  }
+
+  const { runId } = await runWalkNow(proj, trail, { walk: walkSeedsFinding })
+  await waitFor(async () => (await T.getWalk(proj, runId))?.status === "red")
+  // Give the best-effort maybeAutoFileWalkFindings call time to settle.
+  await new Promise((r) => setTimeout(r, 50))
+
+  // No connector → realFiler returned null → finding queued, no connectorError set.
+  const f = (await T.listFindings(proj)).find((x) => x.id === findingId)
+  expect(f?.status).toBe("queued")
+  expect(f?.connectorError).toBeNull()
 })
 

@@ -13,6 +13,7 @@ import { getTrail, startWalk, finishWalk, getWalk } from "./trails"
 import { walkTrail } from "./trails-runner"
 import type { Verdict } from "./trails-types"
 import { configuredVisionResolver } from "./trails-vision"
+import { maybeAutoFileWalkFindings } from "./trails-findings-gate"
 
 export type WalkFn = (projectId: string, trailId: string, runId: string) => Promise<{ verdict: Verdict; llmCalls: number; summary?: Record<string, unknown> }>
 
@@ -80,6 +81,10 @@ export async function runWalkNow(
       if (!currentWalk || currentWalk.status === "running") {
         await finishWalk(projectId, runId, { status: verdict, llmCalls, ...(summary ? { summary } : {}) })
       }
+      // KLA-112: auto-file eligible findings best-effort; never propagates into the slot.
+      maybeAutoFileWalkFindings(projectId, runId).catch(
+        (e) => console.warn(`[trails-findings-gate] maybeAutoFileWalkFindings error for ${runId}: ${String(e?.message ?? e)}`),
+      )
     } catch (e: any) {
       // Crash isolation: a walk throw finalizes the run RED + releases the slot, never propagates.
       const currentWalk = await getWalk(projectId, runId).catch(() => null)

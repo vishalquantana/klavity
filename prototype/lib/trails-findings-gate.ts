@@ -13,9 +13,9 @@
 //     auto-copy decrypt loop in server.ts (getConnector(type).createIssue + decryptSecret per secret field).
 
 import type { Finding } from "./trails-types"
-import { listFindings, setFindingConnectorError, setFindingStatus } from "./trails"
+import { listFindings, setFindingConnectorError, setFindingStatus, getRunStepEvidence } from "./trails"
 import { listAutoCopyConnectors, projectById } from "./db"
-import { getConnector, type TicketPayload } from "./connectors/index"
+import { getConnector, type TicketPayload, type TicketAttachment } from "./connectors/index"
 import { decryptSecret } from "./crypto"
 
 export const AUTO_FILE_THRESHOLD = 0.9
@@ -185,6 +185,26 @@ export function buildTicketFromFinding(finding: Finding, baseUrl: string): Ticke
   }
 }
 
+// Best-effort: look up the step screenshot for the finding and return a TicketAttachment.
+// Returns null when: finding has no stepId, step has no screenshotKey, S3 is absent, or anything throws.
+async function findingScreenshotAttachment(finding: Finding, baseUrl: string): Promise<TicketAttachment | null> {
+  if (!finding.stepId) return null
+  try {
+    const ev = await getRunStepEvidence(finding.projectId, finding.runId, finding.stepId)
+    const key = ev?.screenshotKey as string | undefined
+    if (!key) return null
+    const { getObjectBytes } = await import("./s3")
+    const obj = await getObjectBytes(key)
+    const ct = (obj.contentType?.startsWith("image/") ? obj.contentType : "image/jpeg") as string
+    const ext = ct === "image/png" ? "png" : "jpg"
+    // The step screenshot URL is auth-gated; it serves as a contextual fallback in ticket bodies.
+    const url = `${baseUrl}/api/trails/walks/${finding.runId}/steps/${finding.stepId}/screenshot`
+    return { filename: `finding-${finding.id}.${ext}`, contentType: ct, bytes: obj.bytes, url }
+  } catch {
+    return null
+  }
+}
+
 // Production filer: pick the project's first auto-copy connector, decrypt its secret fields exactly as
 // the server's auto-copy hook does, call the adapter's createIssue, and return "<type>:<externalKey>".
 // Returns null if the project has no auto-copy connector. NEVER called in CI against a real network.
@@ -192,7 +212,9 @@ export const realFiler: Filer = async (projectId, finding) => {
   const connectors = await listAutoCopyConnectors(projectId)
   if (!connectors.length) return null
   const baseUrl = process.env.KLAV_BASE_URL || "https://klavity.in"
-  const ticket = buildTicketFromFinding(finding, baseUrl)
+  const baseTicket = buildTicketFromFinding(finding, baseUrl)
+  const attachment = await findingScreenshotAttachment(finding, baseUrl)
+  const ticket: TicketPayload = attachment ? { ...baseTicket, attachments: [attachment] } : baseTicket
   const failures: string[] = []
   for (const c of connectors) {
     const adapter = getConnector(c.type)
