@@ -48,7 +48,8 @@ import { liveWatchSseResponse, openLiveWatchStream } from "./lib/trails-live-wat
 import { normalizeTrailViewport } from "./lib/trails-viewport"
 import { seedDemoTrails } from "./lib/trails-demo-seed"
 import { listExpectations, getExpectation, setExpectationStatus, setExpectationEnforced } from "./lib/expectations-db"
-import { createLabel, listLabels, updateLabel, deleteLabel, attachLabel, detachLabel, labelsForFeedback, labelsForFeedbackBatch } from "./lib/db"
+import { createLabel, listLabels, updateLabel, deleteLabel, attachLabel, detachLabel, labelsForFeedback, labelsForFeedbackBatch, setSuggestedLabels, getSuggestedLabels } from "./lib/db"
+import { suggestLabelsForFeedback } from "./lib/label-suggest"
 import { validateAssertionDraft } from "./lib/assertion-spec"
 import { buildRecurrenceMemory, listProjectRecurringIssues } from "./lib/recurrence-memory"
 import { publishBlogPost, SLUG_RE, type PublishInput } from "./lib/blog-publish"
@@ -1940,6 +1941,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
               // ── auto-copy hook (shared with the Sim review path) ──
               if (feedbackId && !dedupedInto) autoCopyFeedback(feedbackId, projectId, actor)
+
+              // KLA-175: AI label suggestion — fire-and-forget, never blocks the response.
+              if (feedbackId && !dedupedInto) {
+                const suggestText = (suggestedBug?.title ? `${suggestedBug.title}\n${observation || ""}` : observation || "").slice(0, 2000)
+                void suggestLabelsForFeedback({ feedbackId, projectId, text: suggestText })
+                  .catch((err: any) => console.warn("[label-suggest] non-fatal:", err?.message || err))
+              }
 
               // ── founder notifications (P0 retention loop): email to account owner/admins
               // (throttled: max 1/project/10min, DB-backed state) + optional per-project Slack
@@ -4038,7 +4046,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
       // ── Ticket management: PATCH /api/feedback/:id and POST /api/feedback/:id/export ──
       // Resolve the feedback's project via feedbackById across accessible projects.
-      const feedbackIdMatch = path.match(/^\/api\/feedback\/([^/]+?)(\/export|\/replay|\/memory|\/comments|\/timeline|\/activity|\/labels(?:\/([^/]+))?)?$/)
+      const feedbackIdMatch = path.match(/^\/api\/feedback\/([^/]+?)(\/export|\/replay|\/memory|\/comments|\/timeline|\/activity|\/labels(?:\/([^/]+))?|\/suggest-labels)?$/)
       if (feedbackIdMatch) {
         const fid = feedbackIdMatch[1]
         const feedbackSubroute = feedbackIdMatch[2]?.replace(/\/labels\/[^/]+$/, "/labels") || ""
@@ -4049,6 +4057,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const isComments = feedbackSubroute === "/comments"
         const isTimeline = feedbackSubroute === "/timeline" || feedbackSubroute === "/activity"
         const isLabels = feedbackSubroute === "/labels"
+        const isSuggestLabels = feedbackSubroute === "/suggest-labels"
 
         // Resolve which project this feedback belongs to and check the caller has access.
         let fbRow: any = null
@@ -4132,6 +4141,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             lastSeen,
             isRegression,
             labels: await labelsForFeedback(fid),
+            // KLA-175: ghost chips — AI-suggested labels not yet attached
+            suggestedLabels: await getSuggestedLabels(fid, fbRow.projectId),
           }
           return json({ report })
         }
@@ -4268,6 +4279,24 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (req.method === "DELETE" && isLabels && labelIdParam) {
           await detachLabel(labelIdParam, fid)
           return json({ ok: true })
+        }
+
+        // GET /api/feedback/:id/suggest-labels — KLA-175: return AI-suggested labels (ghost chips).
+        // Returns cached suggestions; if none exist yet, triggers generation synchronously.
+        if (req.method === "GET" && isSuggestLabels) {
+          let suggestions = await getSuggestedLabels(fid, fbRow.projectId)
+          if (!suggestions.length) {
+            const text = (fbRow.suggestedBug?.title
+              ? `${fbRow.suggestedBug.title}\n${fbRow.observation || ""}`
+              : fbRow.observation || ""
+            ).slice(0, 2000)
+            await suggestLabelsForFeedback({ feedbackId: fid, projectId: fbRow.projectId, text })
+              .catch((e: any) => console.warn("[suggest-labels] on-demand (non-fatal):", e?.message || e))
+            suggestions = await getSuggestedLabels(fid, fbRow.projectId)
+          }
+          // Filter out already-attached labels so ghost chips never duplicate real chips
+          const attached = new Set((await labelsForFeedback(fid)).map(l => l.id))
+          return json({ suggestions: suggestions.filter(l => !attached.has(l.id)) })
         }
 
         return json({ error: "Not found" }, 404)

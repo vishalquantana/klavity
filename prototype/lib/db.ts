@@ -598,6 +598,8 @@ export async function applySchema(c: Client) {
     ["annotations_json",      "TEXT"],
     // KLA-173: explicit source tag so manual tickets are distinguishable from widget/sim reports.
     ["source",                "TEXT"],
+    // KLA-175: AI-suggested label IDs (JSON array of label IDs), stored on capture for ghost-chip display.
+    ["suggested_label_ids_json", "TEXT"],
   ]
   for (const [col, def] of feedbackAlters) {
     if (needCol("feedback", col)) {
@@ -3282,4 +3284,28 @@ export async function labelsForFeedbackBatch(feedbackIds: string[]): Promise<Rec
     out[fid].push({ id: String(x.id), projectId: String(x.project_id), name: String(x.name), color: String(x.color), createdAt: Number(x.created_at) })
   }
   return out
+}
+
+// KLA-175: persist AI-suggested label IDs for a feedback row (ghost chips).
+export async function setSuggestedLabels(feedbackId: string, labelIds: string[]): Promise<void> {
+  await db!.execute({
+    sql: "UPDATE feedback SET suggested_label_ids_json=? WHERE id=?",
+    args: [JSON.stringify(labelIds), feedbackId],
+  })
+}
+
+// KLA-175: return the suggested LabelRows for a feedback item (resolves IDs → full rows).
+export async function getSuggestedLabels(feedbackId: string, projectId: string): Promise<LabelRow[]> {
+  const r = await db!.execute({
+    sql: "SELECT suggested_label_ids_json FROM feedback WHERE id=? AND project_id=?",
+    args: [feedbackId, projectId],
+  })
+  const row = r.rows[0] as any
+  if (!row) return []
+  let ids: string[] = []
+  try { ids = JSON.parse(String(row.suggested_label_ids_json || "[]")) } catch { return [] }
+  if (!Array.isArray(ids) || !ids.length) return []
+  const all = await listLabels(projectId)
+  const idSet = new Set(ids)
+  return all.filter(l => idSet.has(l.id))
 }
