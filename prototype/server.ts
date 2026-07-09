@@ -1,12 +1,12 @@
 // Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
 import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, listTicketsPaginated } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, listTicketsPaginated } from "./lib/db"
 import { issueKeyFor, chooseDedup } from "./lib/dedup"
 import { classifySimObservation } from "./lib/sim-bug-classify"
 import { getConnector, listConnectorTypes, type TicketPayload, type TicketAttachment } from "./lib/connectors/index"
 import { inboundSupported, verifyGithubSignature, verifyLinearSignature, extractExternalKey, mapExternalStatus } from "./lib/connectors/inbound"
 import { applyReconcileOps, recurrenceFromEvents, pickCitation, type ReconcileOp, type Trait, type TraitEventRow } from "./lib/provenance"
-import { sendOtp, sendLeadAlert, sendTicketAssignmentEmail } from "./lib/mail"
+import { sendOtp, sendLeadAlert, sendTicketAssignmentEmail, sendTicketAssignmentInviteEmail } from "./lib/mail"
 import { token, otp, emailAllowed, cookie, clearCookie, parseCookies, isOpsAdmin } from "./lib/auth"
 import { uploadScreenshotMeta, presignGet, deleteObject, getObjectBytes, type UploadedScreenshot } from "./lib/s3"
 import { signImageToken, verifyImageToken } from "./lib/imgsign"
@@ -78,6 +78,38 @@ function normalizeAssigneeEmail(value: unknown): string | null {
 
 function ticketDashboardUrl(projectId: string): string {
   return `${BASE.replace(/\/+$/, "")}/dashboard?project=${encodeURIComponent(projectId)}#tickets`
+}
+
+function ticketInviteUrl(projectId: string, email: string): string {
+  return `${BASE.replace(/\/+$/, "")}/login?email=${encodeURIComponent(email)}&project=${encodeURIComponent(projectId)}#tickets`
+}
+
+async function notifyTicketAssignee(input: { projectId: string; feedbackId: string; assignee: string; ticketTitle: string; projectName?: string | null; assignedBy?: string | null }) {
+  if (!input.assignee) return
+  const access = await projectAccess(input.assignee, input.projectId).catch(() => null)
+  if (!access) {
+    await upsertTicketAssignmentInvite(input.projectId, input.assignee, input.assignedBy ?? null, input.feedbackId)
+    if (process.env.SENDGRID_API_KEY) {
+      void sendTicketAssignmentInviteEmail({
+        to: input.assignee,
+        ticketTitle: input.ticketTitle,
+        projectName: input.projectName ?? null,
+        assignedBy: input.assignedBy ?? null,
+        ticketUrl: ticketDashboardUrl(input.projectId),
+        joinUrl: ticketInviteUrl(input.projectId, input.assignee),
+      }).catch((e: any) => console.warn("ticket assignment invite email skipped:", e?.message || e))
+    }
+    return
+  }
+  if (process.env.SENDGRID_API_KEY) {
+    void sendTicketAssignmentEmail({
+      to: input.assignee,
+      ticketTitle: input.ticketTitle,
+      projectName: input.projectName ?? null,
+      assignedBy: input.assignedBy ?? null,
+      ticketUrl: ticketDashboardUrl(input.projectId),
+    }).catch((e: any) => console.warn("ticket assignment email skipped:", e?.message || e))
+  }
 }
 
 await initDb()
@@ -1518,7 +1550,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (!rlAllow(`otpreq:e:${e}`, OTP_REQ_PER_EMAIL, OTP_REQ_WINDOW) || !rlAllow(`otpreq:ip:${reqIp}`, OTP_REQ_PER_IP, OTP_REQ_WINDOW))
           return json({ error: "Too many code requests. Please wait a few minutes and try again." }, 429, { "Retry-After": "900" })
         const invited = await hasAnyMembership(e)
-        if (!emailAllowed(e) && !invited) return json({ error: "This email isn't on the access list. Ask an admin to invite you." }, 403)
+        const pendingAssignmentInvite = invited ? false : await hasPendingTicketAssignmentInvite(e)
+        if (!emailAllowed(e) && !invited && !pendingAssignmentInvite) return json({ error: "This email isn't on the access list. Ask an admin to invite you." }, 403)
         const code = otp()
         await createOtp(e, code, Date.now() + 10 * 60 * 1000)
         let emailed = false
@@ -1582,10 +1615,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           void notifyNewSignup({ email: e, ip: vIp, userAgent: sUa, referer: sRef, at: Date.now() })
             .catch((err: any) => console.error("signup slack alert (non-fatal):", err?.message || err))
         }
-        await ensureAccount(e)
+        const acceptedAssignmentInvites = await acceptPendingTicketAssignmentInvites(e)
+        if (!acceptedAssignmentInvites.length) await ensureAccount(e)
         const sid = token()
         await createSession(sid, e, Date.now() + SESSION_DAYS * 86400 * 1000)
-        const dest = wasNew ? "/onboarding" : "/dashboard"
+        const dest = acceptedAssignmentInvites.length
+          ? `/dashboard?project=${encodeURIComponent(acceptedAssignmentInvites[0].projectId)}#tickets`
+          : wasNew ? "/onboarding" : "/dashboard"
         return json({ ok: true, redirect: dest, token: sid }, 200, { "Set-Cookie": cookie("klav_session", sid, SESSION_DAYS * 86400, SECURE) })
       } catch (err: any) { return json(oops(err, "auth"), 500) }
     }
@@ -4149,15 +4185,16 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               feedbackId: fid,
               meta: { from: fbRow.assignee, to: meta.assignee },
             }).catch((e: any) => console.warn("ticket assignee activity skipped:", e?.message || e)))
-            if (meta.assignee && process.env.SENDGRID_API_KEY) {
+            if (meta.assignee) {
               const proj = await projectById(fbRow.projectId).catch(() => null)
-              void sendTicketAssignmentEmail({
-                to: meta.assignee,
+              await notifyTicketAssignee({
+                projectId: fbRow.projectId,
+                feedbackId: fid,
+                assignee: meta.assignee,
                 ticketTitle: String(fbRow.observation || "Untitled ticket"),
                 projectName: proj?.name ?? null,
                 assignedBy: me,
-                ticketUrl: ticketDashboardUrl(fbRow.projectId),
-              }).catch((e: any) => console.warn("ticket assignment email skipped:", e?.message || e))
+              })
             }
           }
           if (activityWrites.length) await Promise.all(activityWrites)
@@ -4677,14 +4714,15 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             feedbackId: id,
             meta: { title, priority, source: "manual" },
           }).catch((e: any) => console.warn("ticket_created activity skipped:", e?.message || e))
-          if (assignee && process.env.SENDGRID_API_KEY) {
-            void sendTicketAssignmentEmail({
-              to: assignee,
+          if (assignee) {
+            await notifyTicketAssignee({
+              projectId: proj.id,
+              feedbackId: id,
+              assignee,
               ticketTitle: title,
               projectName: proj.name,
               assignedBy: me,
-              ticketUrl: ticketDashboardUrl(proj.id),
-            }).catch((e: any) => console.warn("ticket assignment email skipped:", e?.message || e))
+            })
           }
           return json({ ok: true, ticketId: id }, 201)
         }

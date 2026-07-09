@@ -48,6 +48,7 @@ beforeAll(async () => {
       KLAV_SECRET: SECRET,
       KLAV_BASE_URL: BASE,
       KLAV_ALLOWED_DOMAINS: "test.local",
+      KLAV_DEV_SHOW_OTP: "1",
       SENDGRID_API_KEY: "",
       KLAV_MAIL_FROM: "",
     },
@@ -152,6 +153,48 @@ test("PATCH /api/feedback/:id sets and clears assignee email", async () => {
   expect(clear.status).toBe(200)
   const cleared = await req("GET", `/api/feedback/${FID}`)
   expect((await cleared.json()).report.assignee).toBeNull()
+})
+
+test("assigning a non-member creates invite and login accepts it into the project", async () => {
+  const invitee = `assigned-${RUN}@external.example`
+  const assign = await req("PATCH", `/api/feedback/${FID}`, { assignee: invitee })
+  expect(assign.status).toBe(200)
+
+  const inv = await raw.execute({
+    sql: "SELECT project_id, email, feedback_id, status FROM ticket_assignment_invites WHERE project_id=? AND email=?",
+    args: [PROJ, invitee],
+  })
+  expect(inv.rows).toHaveLength(1)
+  expect((inv.rows[0] as any).status).toBe("pending")
+  expect((inv.rows[0] as any).feedback_id).toBe(FID)
+
+  const requestCode = await req("POST", "/api/auth/request", { email: invitee })
+  expect(requestCode.status).toBe(200)
+  const requestBody = await requestCode.json()
+  expect(requestBody.devCode).toMatch(/^\d{6}$/)
+
+  const verify = await req("POST", "/api/auth/verify", { email: invitee, code: requestBody.devCode })
+  expect(verify.status).toBe(200)
+  const verifyBody = await verify.json()
+  expect(verifyBody.redirect).toBe(`/dashboard?project=${encodeURIComponent(PROJ)}#tickets`)
+
+  const member = await raw.execute({
+    sql: "SELECT project_role FROM project_members WHERE project_id=? AND email=?",
+    args: [PROJ, invitee],
+  })
+  expect(member.rows).toHaveLength(1)
+  expect((member.rows[0] as any).project_role).toBe("member")
+
+  const accepted = await raw.execute({
+    sql: "SELECT status, accepted_at FROM ticket_assignment_invites WHERE project_id=? AND email=?",
+    args: [PROJ, invitee],
+  })
+  expect((accepted.rows[0] as any).status).toBe("accepted")
+  expect(Number((accepted.rows[0] as any).accepted_at)).toBeGreaterThan(0)
+
+  const readAsInvitee = await req("GET", `/api/feedback/${FID}`, undefined, verifyBody.token)
+  expect(readAsInvitee.status).toBe(200)
+  expect((await readAsInvitee.json()).report.assignee).toBe(invitee)
 })
 
 test("POST /api/feedback/:id/comments rejects empty body", async () => {

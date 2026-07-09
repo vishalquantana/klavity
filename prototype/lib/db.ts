@@ -158,6 +158,20 @@ export async function applySchema(c: Client) {
        created_at INTEGER NOT NULL
      )`,
     `CREATE INDEX IF NOT EXISTS ticket_comments_feedback_idx ON ticket_comments (feedback_id, created_at)`,
+    `CREATE TABLE IF NOT EXISTS ticket_assignment_invites (
+       id TEXT PRIMARY KEY,
+       project_id TEXT NOT NULL,
+       email TEXT NOT NULL,
+       invited_by TEXT,
+       feedback_id TEXT,
+       status TEXT NOT NULL DEFAULT 'pending',
+       created_at INTEGER NOT NULL,
+       last_sent_at INTEGER,
+       accepted_at INTEGER,
+       UNIQUE(project_id, email)
+     )`,
+    `CREATE INDEX IF NOT EXISTS ticket_assignment_invites_email_idx ON ticket_assignment_invites (email, status)`,
+    `CREATE INDEX IF NOT EXISTS ticket_assignment_invites_project_idx ON ticket_assignment_invites (project_id, status)`,
 
     // ── Sims-dashboard P2 (additive): company → projects → Sims model. ──
     // schema_meta gates the one-time, idempotent v2 migration (see migrateV2).
@@ -1276,6 +1290,84 @@ export async function addProjectMember(projectId: string, accountId: string, ema
   const now = Date.now()
   await db!.execute({ sql: "INSERT OR IGNORE INTO account_members (id,account_id,email,account_role,created_at) VALUES (?,?,?,?,?)", args: ["am_" + accountId + "_" + email, accountId, email, "member", now] })
   await db!.execute({ sql: "INSERT INTO project_members (id,project_id,email,project_role,invited_by,created_at) VALUES (?,?,?,?,?,?) ON CONFLICT(project_id,email) DO NOTHING", args: ["pm_" + projectId + "_" + email, projectId, email, projectRole === "admin" ? "admin" : "member", invitedBy ?? null, now] })
+}
+
+export type TicketAssignmentInvite = {
+  id: string
+  projectId: string
+  email: string
+  invitedBy: string | null
+  feedbackId: string | null
+  status: string
+  createdAt: number
+  lastSentAt: number | null
+  acceptedAt: number | null
+}
+
+function rowToTicketAssignmentInvite(x: any): TicketAssignmentInvite {
+  return {
+    id: String(x.id),
+    projectId: String(x.project_id),
+    email: String(x.email),
+    invitedBy: x.invited_by != null ? String(x.invited_by) : null,
+    feedbackId: x.feedback_id != null ? String(x.feedback_id) : null,
+    status: String(x.status),
+    createdAt: Number(x.created_at),
+    lastSentAt: x.last_sent_at != null ? Number(x.last_sent_at) : null,
+    acceptedAt: x.accepted_at != null ? Number(x.accepted_at) : null,
+  }
+}
+
+export async function upsertTicketAssignmentInvite(projectId: string, email: string, invitedBy: string | null, feedbackId: string | null): Promise<TicketAssignmentInvite> {
+  const now = Date.now()
+  const normalizedEmail = email.trim().toLowerCase()
+  await db!.execute({
+    sql: `INSERT INTO ticket_assignment_invites (id,project_id,email,invited_by,feedback_id,status,created_at,last_sent_at)
+          VALUES (?,?,?,?,?,'pending',?,?)
+          ON CONFLICT(project_id,email) DO UPDATE SET
+            invited_by=excluded.invited_by,
+            feedback_id=excluded.feedback_id,
+            status='pending',
+            last_sent_at=excluded.last_sent_at`,
+    args: ["tai_" + crypto.randomUUID(), projectId, normalizedEmail, invitedBy, feedbackId, now, now],
+  })
+  const r = await db!.execute({
+    sql: "SELECT * FROM ticket_assignment_invites WHERE project_id=? AND email=?",
+    args: [projectId, normalizedEmail],
+  })
+  return rowToTicketAssignmentInvite(r.rows[0])
+}
+
+export async function hasPendingTicketAssignmentInvite(email: string): Promise<boolean> {
+  const r = await db!.execute({
+    sql: "SELECT 1 FROM ticket_assignment_invites WHERE email=? AND status='pending' LIMIT 1",
+    args: [email.trim().toLowerCase()],
+  })
+  return r.rows.length > 0
+}
+
+export async function acceptPendingTicketAssignmentInvites(email: string): Promise<Array<{ projectId: string; projectName: string; feedbackId: string | null }>> {
+  const normalizedEmail = email.trim().toLowerCase()
+  const r = await db!.execute({
+    sql: `SELECT i.project_id, i.feedback_id, i.invited_by, p.account_id, p.name
+          FROM ticket_assignment_invites i
+          JOIN projects p ON p.id=i.project_id
+          WHERE i.email=? AND i.status='pending'
+          ORDER BY i.created_at ASC`,
+    args: [normalizedEmail],
+  })
+  const accepted: Array<{ projectId: string; projectName: string; feedbackId: string | null }> = []
+  const now = Date.now()
+  for (const row of r.rows as any[]) {
+    const projectId = String(row.project_id)
+    await addProjectMember(projectId, String(row.account_id), normalizedEmail, "member", row.invited_by != null ? String(row.invited_by) : "assignment-invite")
+    await db!.execute({
+      sql: "UPDATE ticket_assignment_invites SET status='accepted', accepted_at=? WHERE project_id=? AND email=? AND status='pending'",
+      args: [now, projectId, normalizedEmail],
+    })
+    accepted.push({ projectId, projectName: String(row.name), feedbackId: row.feedback_id != null ? String(row.feedback_id) : null })
+  }
+  return accepted
 }
 
 // ── legacy shims (kept so any un-migrated callsite still compiles/behaves) ──
