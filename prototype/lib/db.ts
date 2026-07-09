@@ -1204,16 +1204,20 @@ export async function setProjectModalConfig(projectId: string, config: Record<st
 
 // Paid/partner plans that unlock Pro-gated features. 'partner' = unlimited internal/partner access.
 const PRO_PLANS = new Set(["pro", "team", "scale", "partner"])
+
+export function planIsPro(plan: string): boolean { return PRO_PLANS.has(plan) }
+export function planIsUnlimited(plan: string): boolean { return plan === 'partner' || plan === 'scale' }
+
 export async function accountPlan(accountId: string): Promise<string> {
   const r = await db!.execute({ sql: "SELECT plan FROM accounts WHERE id=?", args: [accountId] })
   return r.rows.length ? String((r.rows[0] as any).plan || "free") : "free"
 }
 export async function isAccountPro(accountId: string): Promise<boolean> {
-  return PRO_PLANS.has(await accountPlan(accountId))
+  return planIsPro(await accountPlan(accountId))
 }
 // 'partner' is the unlimited tier — use for any usage/quota gate that should be fully bypassed.
 export async function isAccountUnlimited(accountId: string): Promise<boolean> {
-  const p = await accountPlan(accountId); return p === "partner" || p === "scale"
+  return planIsUnlimited(await accountPlan(accountId))
 }
 export async function setAccountPlan(accountId: string, plan: string): Promise<void> {
   await db!.execute({ sql: "UPDATE accounts SET plan=? WHERE id=?", args: [String(plan || "free"), accountId] })
