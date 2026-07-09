@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Give your Sims a key · AutoSims · Klavity</title>
+<meta name="description" content="Tell AutoSim how people log into your app. Password, OTP/magic link, or Google/SSO — then give your Sims the keys they need to walk real user journeys." />
+<style>
+  :root {
+    --ink: #f5f3ee;
+    --ink-2: #fffdf8;
+    --ink-3: #efeae0;
+    --paper: #19140f;
+    --paper-dim: #574f45;
+    --paper-faint: #6b6055;
+    --green: #0f9d6b;
+    --green-text: #047857;
+    --indigo: #6366f1;
+    --indigo-deep: #4f46e5;
+    --amber: #d98324;
+    --rose: #db2777;
+    --line: rgba(25, 20, 15, .12);
+    --body: 'Hanken Grotesk', system-ui, sans-serif;
+    --display: 'Fraunces', serif;
+    --mono: 'JetBrains Mono', monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--ink);
+    color: var(--paper);
+    font-family: var(--body);
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  .wrap {
+    max-width: 820px;
+    margin: 0 auto;
+    padding: 48px 24px 72px;
+  }
+
+  /* ── header / title ─────────────────────────────────────────────── */
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--paper-faint);
+    margin-bottom: 12px;
+  }
+
+  h1 {
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: clamp(28px, 4vw, 38px);
+    letter-spacing: -.02em;
+    margin-bottom: 8px;
+  }
+
+  .lead {
+    color: var(--paper-dim);
+    font-size: 15px;
+    max-width: 60ch;
+    margin-bottom: 32px;
+  }
+
+  /* ── auth status chip (per-project) ─────────────────────────────── */
+  .auth-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    background: var(--ink-3);
+    color: var(--paper-faint);
+    margin-bottom: 28px;
+  }
+
+  .auth-status[data-state="none"] {
+    background: rgba(139, 139, 139, .14);
+    color: var(--paper-faint);
+  }
+
+  .auth-status[data-state="registered"] {
+    background: rgba(217, 131, 36, .15);
+    color: var(--amber);
+  }
+
+  .auth-status[data-state="verified"] {
+    background: rgba(15, 157, 107, .14);
+    color: var(--green-text);
+  }
+
+  /* ── question row ───────────────────────────────────────────────── */
+  .question {
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 22px;
+    letter-spacing: -.01em;
+    margin-bottom: 24px;
+  }
+
+  /* ── three branches card grid ───────────────────────────────────── */
+  .branches {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+    margin-bottom: 40px;
+  }
+
+  @media (min-width: 720px) {
+    .branches { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
+
+  .branch {
+    background: var(--ink-2);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .branch-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .branch-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--paper-faint);
+  }
+
+  .branch-body h2 {
+    font-size: 17px;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+
+  .branch-body p {
+    font-size: 13.5px;
+    color: var(--paper-dim);
+    line-height: 1.55;
+  }
+
+  /* ── password branch: inline creds form slot ────────────────────── */
+  #passwordCredsForm {
+    background: var(--ink-3);
+    border-radius: 12px;
+    padding: 16px;
+    margin-top: 4px;
+  }
+
+  .creds-empty {
+    text-align: center;
+    padding: 18px 14px;
+    color: var(--paper-faint);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  /* ── OTP branch: agent prompt + copy button ─────────────────────── */
+  #otpPromptSlot {
+    background: var(--ink);
+    border: 1px dashed var(--line);
+    border-radius: 10px;
+    padding: 14px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--paper-dim);
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+    position: relative;
+  }
+
+  .copy-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--body);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 7px 13px;
+    border-radius: 9px;
+    background: linear-gradient(135deg, rgba(99, 102, 241, .18), rgba(99, 102, 241, .06));
+    color: var(--indigo);
+    border: none;
+    cursor: pointer;
+    transition: transform .1s ease;
+  }
+
+  .copy-btn:hover { transform: translateY(-1px); }
+  .copy-btn:active { transform: translateY(0); }
+
+  /* ── Google/SSO branch note ─────────────────────────────────────── */
+  #googleSsoNote {
+    background: rgba(219, 39, 119, .08);
+    border-left: 3px solid var(--rose);
+    border-radius: 10px;
+    padding: 14px 16px;
+    font-size: 13.5px;
+    color: var(--paper-dim);
+    line-height: 1.55;
+  }
+
+  /* ── paused runs / waiting-for-key section ──────────────────────── */
+  .waiting {
+    background: var(--ink-2);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 22px;
+  }
+
+  .waiting-head {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+
+  .waiting-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--paper-faint);
+  }
+
+  .waiting-count {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--paper-faint);
+    background: var(--ink-3);
+    padding: 2px 9px;
+    border-radius: 20px;
+  }
+
+  .run-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 15px;
+    background: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    margin-bottom: 10px;
+  }
+
+  .run-row:last-child { margin-bottom: 0; }
+
+  .run-body { flex: 1; min-width: 0; }
+
+  .run-name {
+    font-size: 14.5px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .run-meta {
+    font-size: 12px;
+    color: var(--paper-faint);
+    margin-top: 3px;
+    font-family: var(--mono);
+  }
+
+  .pill-waiting {
+    flex-shrink: 0;
+    background: rgba(217, 131, 36, .15);
+    color: var(--amber);
+    font-family: var(--mono);
+    font-size: 9.5px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    padding: 5px 10px;
+    border-radius: 20px;
+  }
+
+  .promise {
+    margin-top: 16px;
+    padding: 14px 16px;
+    background: rgba(15, 157, 107, .08);
+    border-radius: 10px;
+    font-size: 13.5px;
+    color: var(--paper-dim);
+    line-height: 1.55;
+  }
+
+  /* ── responsive tweaks ──────────────────────────────────────────── */
+  @media (max-width: 600px) {
+    .wrap { padding: 32px 18px 56px; }
+    .branch { padding: 18px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- Eyebrow + title -->
+  <p class="eyebrow">AutoSims · auth router</p>
+  <h1>Give your Sims a key</h1>
+  <p class="lead">Tell AutoSim how people log into your app so the autonomous actor can walk real user journeys — including authenticated ones.</p>
+
+  <!-- Per-project auth status chip -->
+  <div id="auth-status-chip" class="auth-status" data-state="none" role="status" aria-live="polite">
+    <span class="dot" aria-hidden="true"></span>
+    <span class="label">Auth: none</span>
+  </div>
+
+  <!-- The one question -->
+  <h2 class="question">How do people log into your app?</h2>
+
+  <!-- Three branches -->
+  <section class="branches" aria-label="Login methods">
+
+    <!-- (1) Password — inline Test Account creds form reusing the existing encrypted Test Accounts. -->
+    <article class="branch" id="passwordBranch">
+      <div class="branch-head">
+        <span class="branch-title">1</span>
+        <span class="branch-title">Password</span>
+      </div>
+      <div class="branch-body">
+        <h2>Password login</h2>
+        <p>Your app uses email + password. AutoSim will reuse your existing encrypted Test Accounts — no extra plumbing needed.</p>
+      </div>
+      <!-- Inline creds form slot wired to the existing test_accounts table (encrypted at rest). -->
+      <div id="passwordCredsForm" role="form" aria-label="Test account credentials">
+        <div class="creds-empty">No Test Accounts yet. Create one on the Trails dashboard, then pick it here.</div>
+      </div>
+    </article>
+
+    <!-- (2) OTP / magic link — ready-to-paste agent prompt + copy button -->
+    <article class="branch" id="otpBranch">
+      <div class="branch-head">
+        <span class="branch-title">2</span>
+        <span class="branch-title">OTP or magic link</span>
+      </div>
+      <div class="branch-body">
+        <h2>One-time code or magic link</h2>
+        <p>Paste the prompt AutoSim will send to your agent. The agent reads the inbox and fills the OTP / clicks the link on behalf of the Sim.</p>
+      </div>
+      <!-- Stub: real text lands here once the user pastes their prompt template. -->
+      <div id="otpPromptSlot" aria-label="Agent prompt preview">
+        &lt;stub — paste your agent prompt template here&gt;
+      </div>
+      <button type="button" class="copy-btn" data-copy-target="otpPromptSlot" aria-label="Copy agent prompt to clipboard">
+        Copy
+      </button>
+    </article>
+
+    <!-- (3) Google / SSO only — honest note that login UX is not simmed -->
+    <article class="branch" id="googleSsoBranch">
+      <div class="branch-head">
+        <span class="branch-title">3</span>
+        <span class="branch-title">Google / SSO only</span>
+      </div>
+      <div class="branch-body">
+        <h2>Google, Okta, or other SSO</h2>
+        <p>Your app is locked behind an identity provider. AutoSim can still walk the journey once — but the login UX itself will not be simmed.</p>
+      </div>
+      <!-- Honest disclosure: this branch's prompt variant tells the agent to skip the IdP flow. -->
+      <div id="googleSsoNote" role="note">
+        <strong>Note:</strong> When your app is SSO-only, AutoSim will use a pre-authenticated session for the walk. The login UX itself (IdP redirect, MFA, etc.) will not be simmed — but every page after sign-in will be, including any post-login onboarding or consent screens.
+      </div>
+    </article>
+
+  </section>
+
+  <!-- Paused runs waiting for a key -->
+  <section class="waiting" aria-label="Paused walks">
+    <div class="waiting-head">
+      <span class="waiting-title">Walking on hold</span>
+      <span id="waitingCount" class="waiting-count" aria-live="polite">0 trails paused</span>
+    </div>
+
+    <!-- Sample row (populated by the dashboard at runtime; markup shown here as structure) -->
+    <div class="run-row" data-run-id="" role="listitem">
+      <div class="run-body">
+        <div class="run-name">&lt;trail name&gt;</div>
+        <div class="run-meta">paused · waiting for auth</div>
+      </div>
+      <span class="pill-waiting" aria-label="Status: waiting for a key">Waiting for a key</span>
+    </div>
+
+    <!-- Auto-resume promise -->
+    <div class="promise" role="status">
+      Once you tell us how people log in, the paused walks will resume automatically — no manual trigger needed.
+    </div>
+  </section>
+
+</div>
+
+<!-- Minimal inline wiring for the copy button stub (real app wires this into clipboard API). -->
+<script>
+(function () {
+  var btn = document.querySelector('[data-copy-target]');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    var slot = document.getElementById(btn.getAttribute('data-copy-target'));
+    if (!slot) return;
+    var text = slot.textContent || '';
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(text).catch(function () {});
+    }
+  });
+
+  // Stub: when the dashboard hydrates, it sets data-state on #authStatusChip to one of
+  // "none" | "registered" | "verified" and updates .label inside. No JS required for tests.
+})();
+</script>
+</body>
+</html>
