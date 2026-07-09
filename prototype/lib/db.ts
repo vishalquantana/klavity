@@ -1,7 +1,7 @@
 // Turso / libSQL access: users, email-OTP login, sessions, accounts, projects, memberships.
 import { createClient, type Client } from "@libsql/client"
 import { insightsFromTraits, type Trait, type TraitKind, type TraitStatus, type TraitEventRow } from "./provenance"
-import { sha256hex } from "./crypto"
+import { encryptSecret, sha256hex } from "./crypto"
 
 const url = process.env.TURSO_DATABASE_URL
 const authToken = process.env.TURSO_AUTH_TOKEN
@@ -42,6 +42,8 @@ export async function initDb() {
   const _initCols = await loadTableColumns(db, ["projects", "accounts", "test_accounts"])
   if (!_initCols.get("projects")?.has("modal_config_json"))
     await db!.execute("ALTER TABLE projects ADD COLUMN modal_config_json TEXT DEFAULT '{}'").catch((e: any) => console.warn("projects.modal_config_json ALTER skipped:", e?.message || e))
+  if (!_initCols.get("projects")?.has("autosim_auth_status"))
+    await db!.execute("ALTER TABLE projects ADD COLUMN autosim_auth_status TEXT NOT NULL DEFAULT 'unregistered'").catch((e: any) => console.warn("projects.autosim_auth_status ALTER skipped:", e?.message || e))
   if (!_initCols.get("accounts")?.has("plan"))
     await db!.execute("ALTER TABLE accounts ADD COLUMN plan TEXT NOT NULL DEFAULT 'free'").catch((e: any) => console.warn("accounts.plan ALTER skipped:", e?.message || e))
   // KLA-103: add auth_shape to test_accounts for OTP/passwordless support (existing rows get default 'password').
@@ -192,6 +194,7 @@ export async function applySchema(c: Client) {
        review_mode TEXT NOT NULL DEFAULT 'auto',
        review_budget_daily INTEGER DEFAULT 200,
        observability_mode TEXT NOT NULL DEFAULT 'named',
+       autosim_auth_status TEXT NOT NULL DEFAULT 'unregistered',
        created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
     `CREATE INDEX IF NOT EXISTS project_acct_idx ON projects (account_id, created_at)`,
     `CREATE TABLE IF NOT EXISTS project_members (
@@ -429,6 +432,38 @@ export async function applySchema(c: Client) {
        created_by TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
        UNIQUE(project_id, name))`,
     `CREATE INDEX IF NOT EXISTS test_acc_proj_idx ON test_accounts (project_id)`,
+    // ── AutoSim auth setup (AT3): short-lived write-only setup token + encrypted login config. ──
+    `CREATE TABLE IF NOT EXISTS autosim_auth_setup_tokens (
+       id TEXT PRIMARY KEY,
+       project_id TEXT NOT NULL,
+       token_hash TEXT NOT NULL UNIQUE,
+       created_by TEXT,
+       created_at INTEGER NOT NULL,
+       expires_at INTEGER NOT NULL,
+       revoked_at INTEGER,
+       used_at INTEGER
+     )`,
+    `CREATE INDEX IF NOT EXISTS autosim_auth_setup_token_hash_idx ON autosim_auth_setup_tokens (token_hash)`,
+    `CREATE INDEX IF NOT EXISTS autosim_auth_setup_project_idx ON autosim_auth_setup_tokens (project_id, expires_at)`,
+    `CREATE TABLE IF NOT EXISTS autosim_auth_configs (
+       project_id TEXT PRIMARY KEY,
+       method TEXT NOT NULL,
+       email TEXT NOT NULL,
+       secret_enc TEXT NOT NULL,
+       notes TEXT,
+       created_at INTEGER NOT NULL,
+       updated_at INTEGER NOT NULL
+     )`,
+    `CREATE TABLE IF NOT EXISTS autosim_auth_probe_queue (
+       id TEXT PRIMARY KEY,
+       project_id TEXT NOT NULL,
+       method TEXT NOT NULL,
+       email TEXT NOT NULL,
+       status TEXT NOT NULL DEFAULT 'queued',
+       created_at INTEGER NOT NULL,
+       updated_at INTEGER NOT NULL
+     )`,
+    `CREATE INDEX IF NOT EXISTS autosim_auth_probe_project_idx ON autosim_auth_probe_queue (project_id, status, created_at)`,
     // ── G1 session replay: rrweb DOM-event recording attached to a bug report (free vs Marker's $149). ──
     // events_gz = base64(gzip(JSON.stringify(events))); trimmed=1 when the buffer was capped oldest-first.
     `CREATE TABLE IF NOT EXISTS feedback_replays (
@@ -704,6 +739,8 @@ export async function applySchema(c: Client) {
   // KLA-121: share-token lifecycle — revocation timestamp (NULL = active).
   if (needCol("walk_share_tokens", "revoked_at")) await c.execute("ALTER TABLE walk_share_tokens ADD COLUMN revoked_at INTEGER")
     .catch((e: any) => console.warn("walk_share_tokens.revoked_at ALTER skipped:", e?.message || e))
+  if (needCol("projects", "autosim_auth_status")) await c.execute("ALTER TABLE projects ADD COLUMN autosim_auth_status TEXT NOT NULL DEFAULT 'unregistered'")
+    .catch((e: any) => console.warn("projects.autosim_auth_status ALTER skipped:", e?.message || e))
   // KLA-81: computed severity stored at finding-creation time so ticket-filers + UIs don't have
   // to re-derive it. NULL on legacy rows → callers fall back to severityForKind(kind).
   if (needCol("findings", "severity")) await c.execute("ALTER TABLE findings ADD COLUMN severity TEXT")
@@ -1079,6 +1116,7 @@ export type Membership = { workspaceId: string; role: string; name: string }
 export type ProjectRow = {
   id: string; accountId: string; name: string; status: string
   reviewMode: string; reviewBudgetDaily: number | null; observabilityMode: string
+  autosimAuthStatus: string
   createdAt: number; updatedAt: number
   widgetMode: string; widgetCtaUrl: string | null; widgetNotifyEmail: string | null
   widgetReportGate: string
@@ -1091,6 +1129,7 @@ function rowToProject(x: any): ProjectRow {
     status: String(x.status || "active"), reviewMode: String(x.review_mode || "auto"),
     reviewBudgetDaily: x.review_budget_daily != null ? Number(x.review_budget_daily) : null,
     observabilityMode: String(x.observability_mode || "named"),
+    autosimAuthStatus: String(x.autosim_auth_status || "unregistered"),
     createdAt: Number(x.created_at), updatedAt: Number(x.updated_at),
     widgetMode: String(x.widget_mode || "support"),
     widgetCtaUrl: x.widget_cta_url != null ? String(x.widget_cta_url) : null,
@@ -1183,6 +1222,89 @@ export async function createProject(accountId: string, name: string): Promise<Pr
   })
   const p = await projectById(id)
   return p!
+}
+
+export type AutosimAuthMethod = "fixed_otp" | "mint_link"
+export type AutosimAuthSetupToken = { id: string; projectId: string; token: string; expiresAt: number }
+export type AutosimAuthSetupTokenInfo = { id: string; projectId: string; expiresAt: number }
+
+function randomHex(bytes = 32): string {
+  const buf = crypto.getRandomValues(new Uint8Array(bytes))
+  return Array.from(buf, (b) => b.toString(16).padStart(2, "0")).join("")
+}
+
+export async function createAutosimAuthSetupToken(
+  projectId: string,
+  createdBy: string | null = null,
+  ttlMs = 7 * 24 * 60 * 60 * 1000,
+): Promise<AutosimAuthSetupToken> {
+  const token = "aset_" + randomHex(32)
+  const now = Date.now()
+  const expiresAt = now + ttlMs
+  const id = "aset_" + crypto.randomUUID()
+  await db!.execute({
+    sql: `INSERT INTO autosim_auth_setup_tokens
+            (id, project_id, token_hash, created_by, created_at, expires_at, revoked_at, used_at)
+          VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)`,
+    args: [id, projectId, sha256hex(token), createdBy, now, expiresAt],
+  })
+  return { id, projectId, token, expiresAt }
+}
+
+export async function resolveAutosimAuthSetupToken(token: string): Promise<AutosimAuthSetupTokenInfo | null> {
+  if (!token || !token.startsWith("aset_")) return null
+  const r = await db!.execute({
+    sql: `SELECT id, project_id, expires_at
+          FROM autosim_auth_setup_tokens
+          WHERE token_hash=? AND revoked_at IS NULL AND used_at IS NULL AND expires_at>?`,
+    args: [sha256hex(token), Date.now()],
+  })
+  if (!r.rows.length) return null
+  const row: any = r.rows[0]
+  return { id: String(row.id), projectId: String(row.project_id), expiresAt: Number(row.expires_at) }
+}
+
+export async function revokeAutosimAuthSetupToken(projectId: string, tokenId: string): Promise<boolean> {
+  const r = await db!.execute({
+    sql: `UPDATE autosim_auth_setup_tokens SET revoked_at=?
+          WHERE id=? AND project_id=? AND revoked_at IS NULL AND used_at IS NULL`,
+    args: [Date.now(), tokenId, projectId],
+  })
+  return Number(r.rowsAffected || 0) > 0
+}
+
+export async function registerAutosimAuthConfig(
+  projectId: string,
+  tokenId: string,
+  input: { method: AutosimAuthMethod; email: string; secret: string; notes?: string | null },
+): Promise<{ probeId: string } | null> {
+  const now = Date.now()
+  const secretEnc = await encryptSecret(input.secret)
+  const consumed = await db!.execute({
+    sql: `UPDATE autosim_auth_setup_tokens SET used_at=?
+          WHERE id=? AND project_id=? AND revoked_at IS NULL AND used_at IS NULL AND expires_at>?`,
+    args: [now, tokenId, projectId, now],
+  })
+  if (Number(consumed.rowsAffected || 0) <= 0) return null
+  await db!.execute({
+    sql: `INSERT INTO autosim_auth_configs (project_id, method, email, secret_enc, notes, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(project_id) DO UPDATE SET
+            method=excluded.method,
+            email=excluded.email,
+            secret_enc=excluded.secret_enc,
+            notes=excluded.notes,
+            updated_at=excluded.updated_at`,
+    args: [projectId, input.method, input.email, secretEnc, input.notes ?? null, now, now],
+  })
+  await db!.execute({ sql: "UPDATE projects SET autosim_auth_status='registered', updated_at=? WHERE id=?", args: [now, projectId] })
+  const probeId = "aatp_" + crypto.randomUUID()
+  await db!.execute({
+    sql: `INSERT INTO autosim_auth_probe_queue (id, project_id, method, email, status, created_at, updated_at)
+          VALUES (?, ?, ?, ?, 'queued', ?, ?)`,
+    args: [probeId, projectId, input.method, input.email, now, now],
+  })
+  return { probeId }
 }
 
 // Rename a project (name only). Used by the signup onboarding to name the auto-created Default Project
