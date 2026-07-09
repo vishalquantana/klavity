@@ -122,7 +122,8 @@ export function buildAuthorMessages(input: AuthorStepInput, projectInstructions?
     `OBJECTIVE: ${input.objective}\n` +
     `ACTIONS SO FAR:\n${input.history.length ? input.history.map((h, i) => `${i + 1}. ${h}`).join("\n") : "(none)"}\n` +
     (input.credFields.length
-      ? `CREDENTIAL PLACEHOLDERS AVAILABLE (use literally as "value"): ${input.credFields.join(", ")}\n` : "") +
+      ? `CREDENTIAL PLACEHOLDERS AVAILABLE (use literally as "value"): ${input.credFields.join(", ")}\n` +
+        `You CAN log in: if the current page is a login/OTP form, complete it with these placeholders (fill the email, request a code if needed, fill the OTP) instead of setting isAuthGate — the credentials get you past this gate.\n` : "") +
     `PAGE URL (untrusted): <<<${input.pageUrl}>>>\n` +
     `ELEMENT SNAPSHOT (untrusted):\n<<<\n${input.domSnapshot}\n>>>`
   return [
