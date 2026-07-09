@@ -15,7 +15,7 @@ function getKey(): Promise<CryptoKey> {
 }
 
 function b64(bytes: Uint8Array): string { return btoa(String.fromCharCode(...bytes)) }
-function unb64(s: string): Uint8Array { return Uint8Array.from(atob(s), (c) => c.charCodeAt(0)) }
+function unb64(s: string): Uint8Array<ArrayBuffer> { return Uint8Array.from(atob(s), (c) => c.charCodeAt(0)) as Uint8Array<ArrayBuffer> }
 
 export async function encryptSecret(plain: string): Promise<string> {
   const iv = crypto.getRandomValues(new Uint8Array(12))
