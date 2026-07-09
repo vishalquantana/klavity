@@ -744,6 +744,12 @@ details.drawer .drawer-in{padding:0 22px 22px}
 .lbl-chips{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
 .lbl-chip-rm{background:none;border:none;cursor:pointer;padding:0 0 0 2px;line-height:1;opacity:.6;font-size:11px}
 .lbl-chip-rm:hover{opacity:1}
+/* KLA-175: AI-suggested ghost chips */
+.lbl-ghost-chips{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.lbl-chip-ghost{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;line-height:1.5;border:1px dashed;white-space:nowrap;cursor:pointer;background:none;opacity:.65;transition:opacity .15s,transform .1s}
+.lbl-chip-ghost:hover{opacity:1;transform:scale(1.04)}
+.lbl-chip-ghost:active{transform:scale(.97)}
+.lbl-ghost-label{font-size:10px;color:var(--paper-faint);align-self:center;white-space:nowrap}
 .tkt-lbl-row{margin-top:8px;display:flex;flex-direction:column;gap:6px}
 .tkt-lbl-row label{font-size:11px;color:var(--paper-faint)}
 .tkt-lbl-controls{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
@@ -2898,6 +2904,7 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
           <div class="lbl-chips tkt-lbl-chips"></div>
           <select class="lbl-add-sel tkt-lbl-sel"><option value="">+ Add label…</option></select>
         </div>
+        <div class="lbl-ghost-chips tkt-lbl-ghost-chips"></div>
       </div>
       <div class="tkt-actions">
         <div class="tkt-badges">${badgesHtml}</div>
@@ -3019,6 +3026,7 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
     const lblRow = detailEl.querySelector(".tkt-lbl-row")
     const lblChipsEl = detailEl.querySelector(".tkt-lbl-chips")
     const lblSel = detailEl.querySelector(".tkt-lbl-sel")
+    const ghostChipsEl = detailEl.querySelector(".tkt-lbl-ghost-chips")
     if (lblRow && lblChipsEl && lblSel) {
       const ticketLabels = (t.labels || []).slice()
       const renderLblChips = () => {
@@ -3037,6 +3045,7 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
             const tkt = (state.tickets || []).find(x => x.id === ticketId)
             if (tkt) tkt.labels = ticketLabels.slice()
             renderLblChips()
+            renderGhostChips()
           })
         })
       }
@@ -3048,6 +3057,39 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
           available.map(l => `<option value="${esc(l.id)}">${esc(l.name)}</option>`).join("")
         lblSel.style.display = available.length ? "" : "none"
       }
+
+      // KLA-175: ghost chips — AI-suggested labels; one-click to accept
+      let suggestedLabels = []
+      const renderGhostChips = () => {
+        if (!ghostChipsEl) return
+        const notAttached = suggestedLabels.filter(s => !ticketLabels.find(l => l.id === s.id))
+        if (!notAttached.length) { ghostChipsEl.innerHTML = ""; return }
+        ghostChipsEl.innerHTML =
+          `<span class="lbl-ghost-label">AI suggests:</span>` +
+          notAttached.map(l =>
+            `<button class="lbl-chip-ghost" data-lid="${esc(l.id)}" style="color:${esc(l.color)};border-color:${esc(l.color)}88" title="AI suggested — click to accept">+ ${esc(l.name)}</button>`
+          ).join("")
+        ghostChipsEl.querySelectorAll(".lbl-chip-ghost").forEach(chip => {
+          chip.addEventListener("click", async ev => {
+            ev.stopPropagation()
+            const lid = chip.getAttribute("data-lid")
+            const label = suggestedLabels.find(l => l.id === lid)
+            if (!label) return
+            await fetch(`/api/feedback/${encodeURIComponent(ticketId)}/labels`, {
+              method: "POST", headers: { "content-type": "application/json" },
+              body: JSON.stringify({ labelId: lid })
+            }).catch(() => null)
+            if (!ticketLabels.find(l => l.id === lid)) ticketLabels.push(label)
+            suggestedLabels = suggestedLabels.filter(l => l.id !== lid)
+            const tkt = (state.tickets || []).find(x => x.id === ticketId)
+            if (tkt) tkt.labels = ticketLabels.slice()
+            renderLblChips()
+            populateSel()
+            renderGhostChips()
+          })
+        })
+      }
+
       renderLblChips()
       populateSel()
       lblSel.addEventListener("change", async ev => {
@@ -3066,7 +3108,19 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
         if (tkt) tkt.labels = ticketLabels.slice()
         renderLblChips()
         populateSel()
+        renderGhostChips()
       })
+
+      // Fetch AI suggestions async (non-blocking); renders ghost chips when ready
+      fetch(`/api/feedback/${encodeURIComponent(ticketId)}/suggest-labels`)
+        .then(r => r.ok ? r.json() : null)
+        .then(d => {
+          if (d && Array.isArray(d.suggestions) && d.suggestions.length) {
+            suggestedLabels = d.suggestions
+            renderGhostChips()
+          }
+        })
+        .catch(() => null)
     }
 
     // Prevent detail interactions from collapsing the parent row/card
