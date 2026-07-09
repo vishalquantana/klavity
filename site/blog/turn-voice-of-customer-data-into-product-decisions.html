@@ -1,0 +1,104 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to Turn Voice-of-Customer Data Into Product Decisions · Klavity</title>
+<meta name="description" content="Voice-of-customer data only helps if it changes what you build. Here's how to code raw feedback, weight it by impact, and ship the decision.">
+<link rel="canonical" href="https://klavity.in/blog/turn-voice-of-customer-data-into-product-decisions">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="How to Turn Voice-of-Customer Data Into Product Decisions"><meta property="og:description" content="Voice-of-customer data only helps if it changes what you build. Here's how to code raw feedback, weight it by impact, and ship the decision.">
+<meta property="og:url" content="https://klavity.in/blog/turn-voice-of-customer-data-into-product-decisions"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="How to Turn Voice-of-Customer Data Into Product Decisions"><meta name="twitter:description" content="Voice-of-customer data only helps if it changes what you build. Here's how to code raw feedback, weight it by impact, and ship the decision."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..900;1,9..144,400..700&family=Hanken+Grotesk:wght@400..800&family=JetBrains+Mono:wght@500;700&display=optional">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..900;1,9..144,400..700&family=Hanken+Grotesk:wght@400..800&family=JetBrains+Mono:wght@500;700&display=optional" media="print" onload="this.media='all'">
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..900;1,9..144,400..700&family=Hanken+Grotesk:wght@400..800&family=JetBrains+Mono:wght@500;700&display=optional"></noscript>
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"How to Turn Voice-of-Customer Data Into Product Decisions","description":"Voice-of-customer data only helps if it changes what you build. Here's how to code raw feedback, weight it by impact, and ship the decision.","datePublished":"2026-07-09","dateModified":"2026-07-09","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/turn-voice-of-customer-data-into-product-decisions","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Turn Voice-of-Customer Data Into Product Decisions","item":"https://klavity.in/blog/turn-voice-of-customer-data-into-product-decisions"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/turn-voice-of-customer-data-into-product-decisions"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is voice-of-customer data?","acceptedAnswer":{"@type":"Answer","text":"Voice-of-customer (VoC) data is any first-hand signal about what customers experience, need, or struggle with: support tickets, sales-call notes, interview transcripts, NPS comments, churn-survey answers, in-app feedback, and public reviews. It is qualitative evidence of real behavior, not aggregated opinion."}},{"@type":"Question","name":"Should you build what customers ask for?","acceptedAnswer":{"@type":"Answer","text":"Not directly. Customers are reliable narrators of their problems and unreliable designers of solutions. Extract the underlying job or blocker behind each request, then decide the fix yourself. A dozen customers asking for an 'export button' may actually be describing the same reporting gap that a different feature solves better."}},{"@type":"Question","name":"How many interviews do you need before deciding?","acceptedAnswer":{"@type":"Answer","text":"Fewer than most teams assume for qualitative problems. When new interviews stop surfacing new problem themes — you keep hearing the same jobs and blockers — you have reached saturation for that segment and can decide. Keep going if you are still learning something new each session."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Insights · 2026-07-09</div>
+    <h1>How to Turn Voice-of-Customer Data Into Product Decisions</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>Turn voice-of-customer data into product decisions by separating three layers: the observation (what the customer literally said), the problem (the underlying job or blocker), and the request (their proposed fix). Build the roadmap on problems, not requests — because customers are experts on their pain and rarely on the solution.</div>
+    <div class="prose"><p>To turn voice-of-customer data into product decisions, separate every piece of feedback into three layers: the <strong>observation</strong> (what the customer literally said), the <strong>problem</strong> (the underlying job or blocker), and the <strong>request</strong> (the fix they proposed). Build your roadmap on the problems, weight them by how many customers hit them and how badly, and decide the solution yourself. Customers are experts on their own pain and rarely on the right fix &mdash; so treating requests as votes is the fastest way to build the wrong thing well.</p>
+
+<h2>What counts as voice-of-customer data?</h2>
+<p>Voice-of-customer (VoC) data is any first-hand signal about what a customer experiences, needs, or struggles with. The mistake most teams make is treating one source as the whole picture. In practice you are pulling from at least six streams, each with a different bias:</p>
+<ul>
+<li><strong>Support tickets</strong> &mdash; skewed toward things that are broken now, rarely toward things that are merely mediocre.</li>
+<li><strong>Sales and churn calls</strong> &mdash; skewed toward deal-blockers and the reasons people leave, which are strategically loud but not always frequent.</li>
+<li><strong>Interview transcripts</strong> &mdash; the richest source of <em>why</em>, but slow to collect and easy to over-index on a handful of articulate users.</li>
+<li><strong>NPS and survey comments</strong> &mdash; broad but shallow; good for spotting themes, weak on causation.</li>
+<li><strong>In-app feedback and reviews</strong> &mdash; high volume, high noise, and biased toward the extremes of delight and rage.</li>
+</ul>
+<p>No single stream is trustworthy alone. A decision earns confidence when the same problem shows up across sources that have <em>different</em> biases &mdash; a churn call, three support tickets, and an interview all pointing at the same blocker is a far stronger signal than fifty upvotes on one feature request.</p>
+
+<h2>How do you code raw feedback into something decidable?</h2>
+<p>Raw quotes are unusable as-is. The step that makes VoC actionable is <strong>coding</strong>: tagging each item so patterns become countable. Do it in this order.</p>
+<ol>
+<li><strong>Capture the verbatim.</strong> Keep the customer's exact words attached to every item. The moment you paraphrase into a Jira title, you lose the nuance you will need later to sanity-check the decision.</li>
+<li><strong>Split observation from problem from request.</strong> "I want a bulk-export button" is a request. The observation is "I copy rows into a spreadsheet every Monday." The problem is "I can't get my weekly numbers out of your tool." Only the problem belongs on the roadmap.</li>
+<li><strong>Tag the job.</strong> Group problems by the job the customer is trying to do ("report to my manager," "onboard a teammate"), not by the screen they were on. Jobs are stable; screens change.</li>
+<li><strong>Record reach and severity.</strong> For each problem, note how many distinct customers (and which segments) hit it, and how much it hurt &mdash; a workaround-able annoyance versus a reason they nearly left.</li>
+</ol>
+<p>After coding, a hundred scattered quotes collapse into a dozen named problems you can actually count and compare. That collapse is the entire point &mdash; you cannot prioritize what you have not made countable.</p>
+
+<h2>How do you prioritize which problems to act on?</h2>
+<p>Loudness is not priority. The customer who emails your CEO is one data point, not a mandate. Rank coded problems on three axes and resist letting any single loud voice override the count:</p>
+<ul>
+<li><strong>Reach</strong> &mdash; how many customers, weighted toward the segments you have chosen to serve. A problem that hits 40% of your target segment beats one that hits 5%, even if the 5% complained louder.</li>
+<li><strong>Severity</strong> &mdash; how much it blocks the underlying job. Distinguish "annoying" from "caused them to evaluate a competitor."</li>
+<li><strong>Strategic fit</strong> &mdash; whether solving it moves you toward where the product is going. Some real, painful problems belong to a customer you have decided not to serve, and the honest decision is to say no.</li>
+</ul>
+<p>The output is not a ranked feature list &mdash; it is a ranked <em>problem</em> list. You still owe the design work of choosing the fix, and often the best fix solves three coded problems at once in a way no single customer requested.</p>
+
+<h2>How do you keep the decision traceable?</h2>
+<p>A roadmap item nobody can question is a roadmap item nobody can trust. Every prioritized problem should link back to the raw verbatims that justify it, so anyone &mdash; an engineer, a skeptical exec, your future self &mdash; can read the actual quotes and check the reasoning. This traceability does two things: it kills the "I heard from a customer that&hellip;" arguments that have no evidence behind them, and it lets you notice when a decision was built on three quotes from the same unusual account.</p>
+<p>Traceability also makes the loop <em>continuous</em>. VoC is not a quarterly research project you run and shelve; new tickets, calls, and reviews arrive every day. Teams that treat it as a standing pipeline &mdash; feedback in, coded, re-ranked &mdash; catch emerging problems while they are cheap to fix. Teams that batch it into an annual survey learn about the problem the quarter after it cost them the renewal.</p>
+
+<h2>Where AI personas fit</h2>
+<p>The slow part of this whole process is coding transcripts and calls by hand, then keeping the analysis current as new feedback lands. This is where AI helps &mdash; not by replacing the judgment of what to build, but by doing the mechanical collapse from raw quotes to coded problems at a speed a human team can't match.</p>
+<p>Klavity <a href="/sims">Sims</a> builds AI personas directly from your real customer calls and interviews, then has those personas review your product and surface the jobs and blockers your customers actually described &mdash; turning the raw voice-of-customer stream into problems you can prioritize. It pairs naturally with a good <a href="/blog/turn-customer-interview-transcripts-into-personas">transcript-to-persona workflow</a>: the transcripts define who your customers are, and the coded problems define what to build for them. You still make the call. The tooling just makes sure the call is grounded in what customers really said, not in whoever emailed most recently.</p>
+<p>Want the raw material to be trustworthy in the first place? The same discipline that improves bug reports &mdash; capturing exact evidence instead of paraphrase &mdash; applies to feedback. See how QA and real users <a href="/blog">surface different problems</a>, and why you need both streams to decide well.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Code every piece of feedback into observation, problem, and request</li><li>Prioritize by reach x severity x strategic fit, not by loudest voice</li><li>Trace each roadmap item back to the raw quotes that justify it</li><li>Re-run the loop continuously, not once a quarter</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What is voice-of-customer data?</summary><p>Voice-of-customer (VoC) data is any first-hand signal about what customers experience, need, or struggle with: support tickets, sales-call notes, interview transcripts, NPS comments, churn-survey answers, in-app feedback, and public reviews. It is qualitative evidence of real behavior, not aggregated opinion.</p></details><details><summary>Should you build what customers ask for?</summary><p>Not directly. Customers are reliable narrators of their problems and unreliable designers of solutions. Extract the underlying job or blocker behind each request, then decide the fix yourself. A dozen customers asking for an 'export button' may actually be describing the same reporting gap that a different feature solves better.</p></details><details><summary>How many interviews do you need before deciding?</summary><p>Fewer than most teams assume for qualitative problems. When new interviews stop surfacing new problem themes — you keep hearing the same jobs and blockers — you have reached saturation for that segment and can decide. Keep going if you are still learning something new each session.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
