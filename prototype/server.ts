@@ -4327,7 +4327,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return json({ project: { id: created.id, name: created.name, accountId: created.accountId, status: created.status, role: "admin" } }, 201)
       }
       // Project detail + members (projectAccess-gated) and project-scoped invite (R4) + monitored-urls (P3b) + connectors.
-      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/triage|\/tickets|\/recurring|\/replays|\/widget-status|\/labels(?:\/[^/]+)?|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/test)?|\/test-accounts(?:\/[^/]+)?)?$/)
+      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/triage|\/tickets(?:\/bulk)?|\/recurring|\/replays|\/widget-status|\/labels(?:\/[^/]+)?|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/test)?|\/test-accounts(?:\/[^/]+)?)?$/)
       if (projMatch) {
         const pid = projMatch[1]
         const sub = projMatch[2] || ""
@@ -4754,6 +4754,69 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             })
           }
           return json({ ok: true, ticketId: id }, 201)
+        }
+
+        // PATCH /api/projects/:id/tickets/bulk — KLA-178: apply one action to multiple tickets at once.
+        // Body: { ticketIds: string[], status?, priority?, assignee?, addLabelId?, removeLabelId? }
+        // Any member may change status/priority/assignee/labels; up to 200 tickets per call.
+        if (req.method === "PATCH" && sub === "/tickets/bulk") {
+          const body = await req.json().catch(() => ({}))
+          const ticketIds: string[] = Array.isArray(body.ticketIds) ? body.ticketIds.slice(0, 200).map(String) : []
+          if (!ticketIds.length) return json({ error: "ticketIds must be a non-empty array." }, 400)
+
+          const VALID_STATUS = ["new", "open", "in_progress", "done", "dismissed"]
+          const VALID_PRI = ["urgent", "high", "medium", "low"]
+
+          const hasStatus = body.status !== undefined
+          const hasPriority = body.priority !== undefined
+          const hasAssignee = body.assignee !== undefined
+          const hasAddLabel = body.addLabelId !== undefined
+          const hasRemoveLabel = body.removeLabelId !== undefined
+
+          if (!hasStatus && !hasPriority && !hasAssignee && !hasAddLabel && !hasRemoveLabel) {
+            return json({ error: "Specify at least one of: status, priority, assignee, addLabelId, removeLabelId." }, 400)
+          }
+          if (hasStatus && !VALID_STATUS.includes(body.status)) {
+            return json({ error: `status must be one of: ${VALID_STATUS.join(", ")}` }, 400)
+          }
+          if (hasPriority && body.priority !== null && !VALID_PRI.includes(body.priority)) {
+            return json({ error: `priority must be one of: ${VALID_PRI.join(", ")}` }, 400)
+          }
+
+          let labelToAdd: string | null = null
+          let labelToRemove: string | null = null
+          if (hasAddLabel || hasRemoveLabel) {
+            const projectLabels = await listLabels(proj.id)
+            const labelIds = new Set(projectLabels.map(l => l.id))
+            if (hasAddLabel) {
+              if (!labelIds.has(String(body.addLabelId))) return json({ error: "addLabelId not found in this project." }, 404)
+              labelToAdd = String(body.addLabelId)
+            }
+            if (hasRemoveLabel) {
+              if (!labelIds.has(String(body.removeLabelId))) return json({ error: "removeLabelId not found in this project." }, 404)
+              labelToRemove = String(body.removeLabelId)
+            }
+          }
+
+          const assigneeVal = hasAssignee ? normalizeAssigneeEmail(body.assignee) : undefined
+          if (hasAssignee && assigneeVal === "") return json({ error: "assignee must be a valid email address or null." }, 400)
+
+          let updated = 0
+          for (const tid of ticketIds) {
+            const row = await feedbackById(proj.id, tid).catch(() => null)
+            if (!row) continue  // skip tickets not in this project
+            const meta: Partial<{ status: string; priority: string | null; assignee: string | null }> = {}
+            if (hasStatus) meta.status = body.status
+            if (hasPriority) meta.priority = body.priority ?? null
+            if (hasAssignee) meta.assignee = assigneeVal ?? null
+            if (Object.keys(meta).length) {
+              await updateFeedbackMeta(proj.id, tid, meta).catch(() => null)
+            }
+            if (labelToAdd) await attachLabel(labelToAdd, tid).catch(() => null)
+            if (labelToRemove) await detachLabel(labelToRemove, tid).catch(() => null)
+            updated++
+          }
+          return json({ ok: true, updated })
         }
 
         // ── KLA-174: Label management endpoints ────────────────────────────────────────────────────
