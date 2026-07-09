@@ -6,7 +6,7 @@ import {
   type AutosimAuthMethod,
 } from "./db"
 import { decryptSecret } from "./crypto"
-import { safeFetch } from "./safe-fetch"
+import { validateAutosimMintToken } from "./autosim-auth-exec"
 import { autoResumeNeedsAuthSessions, type AutoResumeNeedsAuthResult } from "./trails-author"
 
 export type AutosimAuthProbeConfig = {
@@ -46,16 +46,6 @@ function redactSecret(message: unknown, secret?: string | null): string {
   return out.slice(0, 1000)
 }
 
-async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Response> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-  try {
-    return await safeFetch(url, { method: "GET", signal: controller.signal })
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
 export const defaultAutosimAuthVerifier: AutosimAuthVerifier = async (config) => {
   const secret = config.secret.trim()
   if (!secret) return { ok: false, error: "auth secret is empty" }
@@ -63,14 +53,28 @@ export const defaultAutosimAuthVerifier: AutosimAuthVerifier = async (config) =>
     if (secret.length < 4 || secret.length > 128) return { ok: false, error: "fixed OTP secret has an invalid length" }
     return { ok: true }
   }
+  if (/^https?:\/\//i.test(secret)) {
+    return { ok: false, error: "mint_link secret must be an opaque token or same-origin /test-login path" }
+  }
+  if (secret.startsWith("/")) {
+    let url: URL | null = null
+    try { url = new URL(secret, "https://example.invalid") } catch {}
+    const pathname = url?.pathname ?? ""
+    if (pathname !== "/test-login") return { ok: false, error: "mint_link path must be /test-login" }
+    const token = url?.searchParams.get("token") || ""
+    try {
+      await validateAutosimMintToken(token, config.projectId)
+    } catch (e: any) {
+      return { ok: false, error: redactSecret(e, secret) }
+    }
+    return { ok: true }
+  }
   try {
-    const res = await fetchWithTimeout(secret, 15_000)
-    await res.body?.cancel().catch(() => {})
-    if (res.status >= 200 && res.status < 400) return { ok: true }
-    return { ok: false, error: `mint link returned HTTP ${res.status}` }
+    await validateAutosimMintToken(secret, config.projectId)
   } catch (e: any) {
     return { ok: false, error: redactSecret(e, secret) }
   }
+  return { ok: true }
 }
 
 export async function runAutosimAuthProbe(

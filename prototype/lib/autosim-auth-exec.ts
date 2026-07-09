@@ -22,6 +22,7 @@ import { hasCredRef, type CredResolver } from "./trails-creds"
 export const AUTOSIM_AUTH_CRED_ACCOUNT = "autosim-auth"
 
 export type DecryptedAutosimAuthConfig = {
+  projectId: string
   method: AutosimAuthMethod
   email: string
   secret: string
@@ -45,7 +46,7 @@ export async function loadAutosimAuthConfig(projectId: string): Promise<Decrypte
     return null
   }
   if (!secret) return null
-  return { method: row.method, email: row.email, secret, notes: row.notes }
+  return { projectId: row.projectId, method: row.method, email: row.email, secret, notes: row.notes }
 }
 
 /**
@@ -85,17 +86,26 @@ export function withAutosimAuthCreds(base: CredResolver, cfg: DecryptedAutosimAu
 }
 
 /**
- * Build the absolute session-mint URL from the stored secret. The secret may be:
- *   - a full absolute URL (https://app.example.com/test-login?token=…) → used as-is
- *   - a path+query (/test-login?token=…) → resolved against the walk's baseUrl origin
- *   - a bare token → GET <baseUrl origin>/test-login?token=<token>
+ * Build the absolute session-mint URL from the stored secret. The secret may be either:
+ *   - a same-origin path+query (/test-login?token=…)
+ *   - an opaque signed token, resolved as GET <baseUrl origin>/test-login?token=<token>
+ *
+ * Absolute URLs are deliberately rejected: the browser is server-side, so accepting arbitrary
+ * origins here is SSRF. The resolved origin must be public unless tests explicitly opt in.
  */
 export function autosimMintUrl(secret: string, baseUrl: string): string {
   const s = secret.trim()
-  if (/^https?:\/\//i.test(s)) return s
-  const origin = new URL(baseUrl).origin
-  if (s.startsWith("/")) return origin + s
-  return `${origin}/test-login?token=${encodeURIComponent(s)}`
+  if (!s) throw new Error("mint link secret is empty")
+  if (/^https?:\/\//i.test(s)) throw new Error("mint_link must be an opaque token or same-origin /test-login path, not an absolute URL")
+  const base = new URL(baseUrl)
+  assertPublicMintOrigin(base)
+  const url = s.startsWith("/")
+    ? new URL(s, base.origin)
+    : new URL(`/test-login?token=${encodeURIComponent(s)}`, base.origin)
+  if (url.origin !== base.origin) throw new Error("mint_link must resolve to the base URL origin")
+  if (url.pathname !== "/test-login") throw new Error("mint_link path must be /test-login")
+  if (!url.searchParams.get("token")) throw new Error("mint_link token is missing")
+  return url.toString()
 }
 
 /** Minimal page surface the driver already exposes; keeps this module browser-agnostic + testable. */
@@ -103,9 +113,129 @@ export interface MintablePage {
   goto(url: string, timeoutMs?: number): Promise<unknown>
   waitMs(ms: number): Promise<unknown>
   url(): string
+  krefSnapshot?(capChars?: number): Promise<string>
 }
 
 export type EstablishResult = { established: boolean; method: AutosimAuthMethod | null }
+
+type MintTokenPayload = {
+  v: 1
+  exp: number
+  jti: string
+  aud: string
+}
+
+const MINT_TOKEN_PREFIX = "amlt_"
+const usedMintJtis = new Map<string, number>()
+const b64url = (bytes: Uint8Array): string =>
+  btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "")
+const unb64url = (s: string): Uint8Array => {
+  const padded = s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (s.length % 4)) % 4)
+  return Uint8Array.from(atob(padded), (c) => c.charCodeAt(0))
+}
+
+function timingSafeEqual(a: string, b: string): boolean {
+  const aa = unb64url(a)
+  const bb = unb64url(b)
+  if (aa.length !== bb.length) return false
+  let diff = 0
+  for (let i = 0; i < aa.length; i++) diff |= aa[i] ^ bb[i]
+  return diff === 0
+}
+
+async function mintKey(): Promise<CryptoKey> {
+  const raw = process.env.KLAV_SECRET
+  if (!raw) throw new Error("KLAV_SECRET is not set")
+  const bytes = Uint8Array.from(atob(raw), (c) => c.charCodeAt(0))
+  if (bytes.length < 32) throw new Error("KLAV_SECRET must decode to at least 32 bytes")
+  return crypto.subtle.importKey("raw", bytes, { name: "HMAC", hash: "SHA-256" }, false, ["sign"])
+}
+
+async function signMintPayload(payloadB64: string): Promise<string> {
+  const mac = new Uint8Array(await crypto.subtle.sign("HMAC", await mintKey(), new TextEncoder().encode(payloadB64)))
+  return b64url(mac)
+}
+
+export async function mintAutosimAuthLinkToken(projectId: string, ttlMs = 5 * 60 * 1000, now = Date.now()): Promise<string> {
+  const payload: MintTokenPayload = {
+    v: 1,
+    exp: now + ttlMs,
+    jti: crypto.randomUUID(),
+    aud: projectId,
+  }
+  const payloadB64 = b64url(new TextEncoder().encode(JSON.stringify(payload)))
+  return `${MINT_TOKEN_PREFIX}${payloadB64}.${await signMintPayload(payloadB64)}`
+}
+
+export async function validateAutosimMintToken(token: string, projectId: string, now = Date.now()): Promise<MintTokenPayload> {
+  if (!token.startsWith(MINT_TOKEN_PREFIX)) throw new Error("mint_link token has an invalid format")
+  const rest = token.slice(MINT_TOKEN_PREFIX.length)
+  const [payloadB64, sig] = rest.split(".")
+  if (!payloadB64 || !sig) throw new Error("mint_link token has an invalid format")
+  const expected = await signMintPayload(payloadB64)
+  if (!timingSafeEqual(sig, expected)) throw new Error("mint_link token signature is invalid")
+  let payload: MintTokenPayload
+  try {
+    payload = JSON.parse(new TextDecoder().decode(unb64url(payloadB64)))
+  } catch {
+    throw new Error("mint_link token payload is invalid")
+  }
+  if (payload.v !== 1 || !payload.jti || !payload.aud || !Number.isFinite(payload.exp)) {
+    throw new Error("mint_link token payload is invalid")
+  }
+  if (payload.aud !== projectId) throw new Error("mint_link token audience mismatch")
+  if (payload.exp <= now) throw new Error("mint_link token expired")
+  return payload
+}
+
+async function consumeAutosimMintToken(token: string, projectId: string, now = Date.now()): Promise<MintTokenPayload> {
+  const payload = await validateAutosimMintToken(token, projectId, now)
+  for (const [jti, exp] of usedMintJtis) if (exp <= now) usedMintJtis.delete(jti)
+  if (usedMintJtis.has(payload.jti)) throw new Error("mint_link token replayed")
+  usedMintJtis.set(payload.jti, payload.exp)
+  return payload
+}
+
+function assertPublicMintOrigin(base: URL): void {
+  if (process.env.KLAV_ALLOW_PRIVATE_MINT_LINKS === "1") return
+  const host = base.hostname.toLowerCase().replace(/^\[|\]$/g, "")
+  if (
+    host === "localhost" ||
+    host === "::1" ||
+    host.startsWith("127.") ||
+    host.startsWith("10.") ||
+    host.startsWith("169.254.") ||
+    host.startsWith("192.168.") ||
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(host) ||
+    /^f[cd][0-9a-f]{2}:/i.test(host) ||
+    /^fe80:/i.test(host)
+  ) {
+    throw new Error("mint_link base URL must not use a private, loopback, or link-local origin")
+  }
+}
+
+function looksLikeAuthGate(snapshot: string): boolean {
+  const s = snapshot.toLowerCase()
+  return /\b(password|otp|one[- ]?time|verification code|sign in|log in|login)\b/.test(s)
+}
+
+async function verifySessionEstablished(page: MintablePage, baseUrl: string): Promise<boolean> {
+  const afterMint = page.url()
+  try {
+    if (new URL(afterMint).pathname === "/test-login") return false
+  } catch {}
+  await page.goto(baseUrl, 20_000)
+  await page.waitMs(250)
+  if (typeof page.krefSnapshot === "function") {
+    const snap = await page.krefSnapshot(4_000).catch(() => "")
+    if (snap && looksLikeAuthGate(snap)) return false
+  }
+  return true
+}
+
+export function _resetAutosimMintReplayForTests(): void {
+  usedMintJtis.clear()
+}
 
 /**
  * mint_link branch: navigate to the signed mint link to establish the session cookie, give the app
@@ -121,9 +251,11 @@ export async function establishAutosimSession(
   if (!cfg || cfg.method !== "mint_link") return { established: false, method: cfg?.method ?? null }
   try {
     const url = autosimMintUrl(cfg.secret, baseUrl)
+    const token = new URL(url).searchParams.get("token") || ""
+    await consumeAutosimMintToken(token, cfg.projectId)
     await page.goto(url, 20_000)
     await page.waitMs(500)
-    return { established: true, method: "mint_link" }
+    return { established: await verifySessionEstablished(page, baseUrl), method: "mint_link" }
   } catch (e: any) {
     console.warn(`[autosim-auth] mint-link session establishment failed: ${e?.message || e}`)
     return { established: false, method: "mint_link" }

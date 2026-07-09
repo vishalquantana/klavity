@@ -14,7 +14,8 @@ beforeAll(async () => { const db = reconnectDb("file:" + file); await applySchem
 
 import type { AuthorModel } from "./trails-author-model"
 import type { AuthorCheckpoint } from "./trails-author"
-const { authorTrail, createAuthorSession, updateAuthorSession, getAuthorSession } = await import("./trails-author")
+const { authorTrail, createAuthorSession, updateAuthorSession, getAuthorSession, runAuthorNow, NEEDS_AUTH_RESUME_TTL_MS } = await import("./trails-author")
+const { _resetAuthorAdmissionForTest, _resetWalkPoolForTest } = await import("./trails-browser")
 
 // authorTrail tests launch a real browser — only run when KLAV_E2E=1
 const RUN_BROWSER = !!process.env.KLAV_E2E
@@ -213,4 +214,95 @@ test("fresh session has resumedFrom=null", async () => {
   const sessionId = await createAuthorSession("proj_rf2", { name: "fresh", objective: "test", baseUrl: FIXTURE_URL })
   const sess = await getAuthorSession("proj_rf2", sessionId)
   expect(sess!.resumedFrom).toBeNull()
+})
+
+test("runAuthorNow rejects stale resume checkpoints", async () => {
+  _resetWalkPoolForTest(1, 0)
+  _resetAuthorAdmissionForTest()
+  const proj = "proj_resume_stale"
+  const priorId = await createAuthorSession(proj, { name: "old", objective: "test", baseUrl: FIXTURE_URL })
+  const cp: AuthorCheckpoint = {
+    traj: [{ action: "navigate", actionValue: FIXTURE_URL, url: FIXTURE_URL, domHash: "stale" }],
+    history: ["navigate"],
+    stepIdx: 1,
+    llmCalls: 1,
+    costUsd: 0.01,
+    lastUrl: FIXTURE_URL,
+  }
+  await updateAuthorSession(proj, priorId, { checkpoint: cp, status: "needs_auth", stallReason: "auth gate" })
+  await (await import("./db")).db!.execute({
+    sql: "UPDATE author_sessions SET updated_at=? WHERE project_id=? AND id=?",
+    args: [Date.now() - NEEDS_AUTH_RESUME_TTL_MS - 10_000, proj, priorId],
+  })
+
+  await expect(runAuthorNow(
+    proj,
+    { name: "new", objective: "test", baseUrl: FIXTURE_URL },
+    { author: async () => { throw new Error("should not run") }, model: doneModel(), resumeSessionId: priorId },
+  )).rejects.toThrow(/too old/)
+})
+
+test("runAuthorNow rejects a second resume from the same checkpoint", async () => {
+  _resetWalkPoolForTest(1, 0)
+  _resetAuthorAdmissionForTest()
+  const proj = "proj_resume_double"
+  const priorId = await createAuthorSession(proj, { name: "paused", objective: "test", baseUrl: FIXTURE_URL })
+  const cp: AuthorCheckpoint = {
+    traj: [{ action: "navigate", actionValue: FIXTURE_URL, url: FIXTURE_URL, domHash: "double" }],
+    history: ["navigate"],
+    stepIdx: 1,
+    llmCalls: 1,
+    costUsd: 0.01,
+    lastUrl: FIXTURE_URL,
+  }
+  await updateAuthorSession(proj, priorId, { checkpoint: cp, status: "stalled", stallReason: "paused" })
+  const existingChild = await createAuthorSession(proj, { name: "child", objective: "test", baseUrl: FIXTURE_URL }, priorId)
+  expect((await getAuthorSession(proj, existingChild))!.status).toBe("running")
+
+  await expect(runAuthorNow(
+    proj,
+    { name: "new", objective: "test", baseUrl: FIXTURE_URL },
+    { author: async () => { throw new Error("should not run") }, model: doneModel(), resumeSessionId: priorId },
+  )).rejects.toThrow(/already claimed/)
+})
+
+test("runAuthorNow atomically marks a claimed prior session as resuming", async () => {
+  _resetWalkPoolForTest(1, 0)
+  _resetAuthorAdmissionForTest()
+  const proj = "proj_resume_claim"
+  const priorId = await createAuthorSession(proj, { name: "paused", objective: "test", baseUrl: FIXTURE_URL })
+  const cp: AuthorCheckpoint = {
+    traj: [{ action: "navigate", actionValue: FIXTURE_URL, url: FIXTURE_URL, domHash: "claim" }],
+    history: ["navigate"],
+    stepIdx: 1,
+    llmCalls: 1,
+    costUsd: 0.01,
+    lastUrl: FIXTURE_URL,
+  }
+  await updateAuthorSession(proj, priorId, { checkpoint: cp, status: "needs_auth", stallReason: "auth gate" })
+  const out = await runAuthorNow(
+    proj,
+    { name: "new", objective: "test", baseUrl: FIXTURE_URL },
+    {
+      model: doneModel(),
+      resumeSessionId: priorId,
+      author: async (_projectId, _req, opts) => {
+        expect(opts.checkpoint?.lastUrl).toBe(FIXTURE_URL)
+        return {
+          status: "stalled",
+          trailId: null,
+          verificationRunId: null,
+          verificationVerdict: null,
+          steps: [],
+          stallReason: "done",
+          llmCalls: 0,
+          costUsd: 0,
+        }
+      },
+    },
+  )
+  const prior = await getAuthorSession(proj, priorId)
+  expect(prior!.status).toBe("resuming")
+  expect(prior!.resumedBy).toBe(out.sessionId)
+  expect((await getAuthorSession(proj, out.sessionId))!.resumedFrom).toBe(priorId)
 })

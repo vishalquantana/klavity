@@ -28,6 +28,7 @@ const NOW = Date.now()
 const TOKEN = `aset_${RUN}_valid`
 const OVERSIZE_TOKEN = `aset_${RUN}_oversize`
 const EXPIRED_TOKEN = `aset_${RUN}_expired`
+const MINT_TOKEN = `aset_${RUN}_mint`
 
 let proc: ReturnType<typeof Bun.spawn>
 let BASE = ""
@@ -79,6 +80,7 @@ beforeAll(async () => {
   await seedSetupToken(TOKEN)
   await seedSetupToken(OVERSIZE_TOKEN)
   await seedSetupToken(EXPIRED_TOKEN, NOW - 1000)
+  await seedSetupToken(MINT_TOKEN)
 })
 
 afterAll(() => {
@@ -147,4 +149,15 @@ test("POST /api/autosim/auth-config validates method/email and caps request size
   const huge = JSON.stringify({ method: "mint_link", email: "vishal@quantana.com.au", secret: "x", notes: "n".repeat(20_000) })
   const tooLarge = await postAuthConfig(OVERSIZE_TOKEN, huge, { "Content-Length": String(huge.length) })
   expect(tooLarge.status).toBe(413)
+})
+
+test("POST /api/autosim/auth-config rejects absolute mint links before storing", async () => {
+  const r = await postAuthConfig(MINT_TOKEN, {
+    method: "mint_link",
+    email: "vishal@quantana.com.au",
+    secret: "https://169.254.169.254/test-login?token=x",
+  })
+  expect(r.status).toBe(400)
+  const body = await r.json()
+  expect(body.error).toMatch(/absolute URL/)
 })

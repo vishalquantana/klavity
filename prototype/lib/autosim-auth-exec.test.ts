@@ -20,7 +20,9 @@ import {
   autosimMintUrl,
   establishAutosimSession,
   loadAutosimAuthConfig,
+  mintAutosimAuthLinkToken,
   withAutosimAuthCreds,
+  _resetAutosimMintReplayForTests,
   type DecryptedAutosimAuthConfig,
   type MintablePage,
 } from "./autosim-auth-exec"
@@ -48,7 +50,7 @@ beforeAll(async () => {
     })
   }
   await registerMethod(PROJECT, "fixed_otp", "vishal@quantana.com.au", "424242")
-  await registerMethod(PROJECT_MINT, "mint_link", "vishal@quantana.com.au", "signed-token-abc")
+  await registerMethod(PROJECT_MINT, "mint_link", "vishal@quantana.com.au", await mintAutosimAuthLinkToken(PROJECT_MINT))
 })
 
 test("loadAutosimAuthConfig decrypts the stored secret at execution time (round-trip)", async () => {
@@ -67,18 +69,18 @@ test("loadAutosimAuthConfig returns null for an unregistered project", async () 
 })
 
 test("autosimAuthCredFields exposes email+otp placeholders for fixed_otp, none for mint_link", () => {
-  const otpCfg: DecryptedAutosimAuthConfig = { method: "fixed_otp", email: "a@b.co", secret: "424242", notes: null }
+  const otpCfg: DecryptedAutosimAuthConfig = { projectId: PROJECT, method: "fixed_otp", email: "a@b.co", secret: "424242", notes: null }
   expect(autosimAuthCredFields(otpCfg)).toEqual([
     `{{cred:${AUTOSIM_AUTH_CRED_ACCOUNT}:email}}`,
     `{{cred:${AUTOSIM_AUTH_CRED_ACCOUNT}:otp}}`,
   ])
-  const mintCfg: DecryptedAutosimAuthConfig = { method: "mint_link", email: "a@b.co", secret: "tok", notes: null }
+  const mintCfg: DecryptedAutosimAuthConfig = { projectId: PROJECT_MINT, method: "mint_link", email: "a@b.co", secret: "tok", notes: null }
   expect(autosimAuthCredFields(mintCfg)).toEqual([])
   expect(autosimAuthCredFields(null)).toEqual([])
 })
 
 test("withAutosimAuthCreds resolves autosim-auth placeholders and delegates the rest", async () => {
-  const cfg: DecryptedAutosimAuthConfig = { method: "fixed_otp", email: "login@example.com", secret: "424242", notes: null }
+  const cfg: DecryptedAutosimAuthConfig = { projectId: PROJECT, method: "fixed_otp", email: "login@example.com", secret: "424242", notes: null }
   let delegated = ""
   const base = async (_p: string, v: string) => { delegated = v; return v.replaceAll("{{cred:admin:password}}", "pw-1") }
   const resolver = withAutosimAuthCreds(base, cfg)
@@ -97,7 +99,7 @@ test("withAutosimAuthCreds resolves autosim-auth placeholders and delegates the 
 })
 
 test("withAutosimAuthCreds does NOT resolve otp for mint_link method", async () => {
-  const cfg: DecryptedAutosimAuthConfig = { method: "mint_link", email: "m@example.com", secret: "tok", notes: null }
+  const cfg: DecryptedAutosimAuthConfig = { projectId: PROJECT_MINT, method: "mint_link", email: "m@example.com", secret: "tok", notes: null }
   const base = async (_p: string, v: string) => v
   const resolver = withAutosimAuthCreds(base, cfg)
   // email still resolves; otp placeholder is left untouched (mint_link fills no form).
@@ -110,35 +112,55 @@ test("withAutosimAuthCreds returns the base resolver unchanged when no method is
   expect(withAutosimAuthCreds(base, null)).toBe(base)
 })
 
-test("autosimMintUrl builds an absolute mint URL from token, path, or full-URL secrets", () => {
+test("autosimMintUrl builds a same-origin /test-login URL from token or path secrets", async () => {
+  const token = await mintAutosimAuthLinkToken(PROJECT_MINT)
+  expect(autosimMintUrl(token, "https://app.example.com/dash")).toBe(`https://app.example.com/test-login?token=${encodeURIComponent(token)}`)
+  expect(autosimMintUrl(`/test-login?token=${encodeURIComponent(token)}`, "https://app.example.com/dash")).toBe(`https://app.example.com/test-login?token=${encodeURIComponent(token)}`)
+})
+
+test("autosimMintUrl rejects absolute URLs, non-test-login paths, and private origins", async () => {
+  const token = await mintAutosimAuthLinkToken(PROJECT_MINT)
+  expect(() => autosimMintUrl("https://auth.example.com/test-login?token=x", "https://app.example.com")).toThrow(/absolute URL/)
+  expect(() => autosimMintUrl(`/magic?token=${encodeURIComponent(token)}`, "https://app.example.com/dash")).toThrow(/\/test-login/)
+  expect(() => autosimMintUrl(token, "http://127.0.0.1:3000/dash")).toThrow(/private/)
+})
+
+test("autosimMintUrl can allow private origins under the explicit test flag", async () => {
+  const token = await mintAutosimAuthLinkToken(PROJECT_MINT)
+  process.env.KLAV_ALLOW_PRIVATE_MINT_LINKS = "1"
   expect(autosimMintUrl("tok-123", "https://app.example.com/dash")).toBe("https://app.example.com/test-login?token=tok-123")
-  expect(autosimMintUrl("/magic?token=tok-123", "https://app.example.com/dash")).toBe("https://app.example.com/magic?token=tok-123")
-  expect(autosimMintUrl("https://auth.example.com/x?token=tok", "https://app.example.com")).toBe("https://auth.example.com/x?token=tok")
-  // token with URL-unsafe chars gets encoded
-  expect(autosimMintUrl("a b+c", "https://app.example.com")).toBe("https://app.example.com/test-login?token=a%20b%2Bc")
+  expect(autosimMintUrl(token, "http://127.0.0.1:3000/dash")).toBe(`http://127.0.0.1:3000/test-login?token=${encodeURIComponent(token)}`)
+  delete process.env.KLAV_ALLOW_PRIVATE_MINT_LINKS
 })
 
 function fakePage(): MintablePage & { visited: string[]; waited: number[] } {
   const visited: string[] = []
   const waited: number[] = []
+  let current = "about:blank"
   return {
     visited,
     waited,
-    async goto(url: string) { visited.push(url) },
+    async goto(url: string) {
+      visited.push(url)
+      const u = new URL(url)
+      current = u.pathname === "/test-login" ? `${u.origin}/dashboard` : url
+    },
     async waitMs(ms: number) { waited.push(ms) },
-    url() { return visited[visited.length - 1] ?? "about:blank" },
+    url() { return current },
   }
 }
 
 test("establishAutosimSession hits the mint link for mint_link and no-ops otherwise", async () => {
-  const mintCfg: DecryptedAutosimAuthConfig = { method: "mint_link", email: "m@example.com", secret: "signed-abc", notes: null }
+  _resetAutosimMintReplayForTests()
+  const token = await mintAutosimAuthLinkToken(PROJECT_MINT)
+  const mintCfg: DecryptedAutosimAuthConfig = { projectId: PROJECT_MINT, method: "mint_link", email: "m@example.com", secret: token, notes: null }
   const p1 = fakePage()
   const r1 = await establishAutosimSession(p1, mintCfg, "https://app.example.com/dash")
   expect(r1).toEqual({ established: true, method: "mint_link" })
-  expect(p1.visited).toEqual(["https://app.example.com/test-login?token=signed-abc"])
-  expect(p1.waited.length).toBe(1)
+  expect(p1.visited).toEqual([`https://app.example.com/test-login?token=${encodeURIComponent(token)}`, "https://app.example.com/dash"])
+  expect(p1.waited.length).toBe(2)
 
-  const otpCfg: DecryptedAutosimAuthConfig = { method: "fixed_otp", email: "m@example.com", secret: "424242", notes: null }
+  const otpCfg: DecryptedAutosimAuthConfig = { projectId: PROJECT, method: "fixed_otp", email: "m@example.com", secret: "424242", notes: null }
   const p2 = fakePage()
   const r2 = await establishAutosimSession(p2, otpCfg, "https://app.example.com/dash")
   expect(r2.established).toBe(false)
@@ -151,12 +173,40 @@ test("establishAutosimSession hits the mint link for mint_link and no-ops otherw
 })
 
 test("establishAutosimSession swallows navigation failures (walk falls back to pausing at the gate)", async () => {
-  const cfg: DecryptedAutosimAuthConfig = { method: "mint_link", email: "m@example.com", secret: "tok", notes: null }
+  _resetAutosimMintReplayForTests()
+  const cfg: DecryptedAutosimAuthConfig = { projectId: PROJECT_MINT, method: "mint_link", email: "m@example.com", secret: await mintAutosimAuthLinkToken(PROJECT_MINT), notes: null }
   const page: MintablePage = {
     async goto() { throw new Error("net::ERR_CONNECTION_REFUSED") },
     async waitMs() {},
     url() { return "about:blank" },
   }
   const res = await establishAutosimSession(page, cfg, "https://app.example.com")
+  expect(res).toEqual({ established: false, method: "mint_link" })
+})
+
+test("establishAutosimSession rejects expired mint tokens and replay", async () => {
+  _resetAutosimMintReplayForTests()
+  const expired = await mintAutosimAuthLinkToken(PROJECT_MINT, -1)
+  const expiredRes = await establishAutosimSession(fakePage(), { projectId: PROJECT_MINT, method: "mint_link", email: "m@example.com", secret: expired, notes: null }, "https://app.example.com")
+  expect(expiredRes).toEqual({ established: false, method: "mint_link" })
+
+  const token = await mintAutosimAuthLinkToken(PROJECT_MINT)
+  const cfg: DecryptedAutosimAuthConfig = { projectId: PROJECT_MINT, method: "mint_link", email: "m@example.com", secret: token, notes: null }
+  expect((await establishAutosimSession(fakePage(), cfg, "https://app.example.com")).established).toBe(true)
+  expect((await establishAutosimSession(fakePage(), cfg, "https://app.example.com")).established).toBe(false)
+})
+
+test("establishAutosimSession returns false when the mint route does not establish a session", async () => {
+  _resetAutosimMintReplayForTests()
+  const token = await mintAutosimAuthLinkToken(PROJECT_MINT)
+  const page = {
+    visited: [] as string[],
+    waited: [] as number[],
+    async goto(url: string) { this.visited.push(url) },
+    async waitMs(ms: number) { this.waited.push(ms) },
+    url() { return this.visited[this.visited.length - 1] ?? "about:blank" },
+    async krefSnapshot() { return 'textbox "Password" [ref=e1]' },
+  }
+  const res = await establishAutosimSession(page, { projectId: PROJECT_MINT, method: "mint_link", email: "m@example.com", secret: token, notes: null }, "https://app.example.com")
   expect(res).toEqual({ established: false, method: "mint_link" })
 })

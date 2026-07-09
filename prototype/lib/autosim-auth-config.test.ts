@@ -48,7 +48,7 @@ test("registerAutosimAuthConfig encrypts secret, marks project registered, consu
   const registered = await registerAutosimAuthConfig(PROJECT, tokenId, {
     method: "mint_link",
     email: OWNER,
-    secret: "https://example.com/mint?token=secret",
+    secret: "opaque-mint-token",
     notes: "mint link flow",
   })
   expect(registered).not.toBeNull()
