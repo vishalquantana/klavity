@@ -378,6 +378,21 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 .tkt-pg-btn:disabled{opacity:.4;cursor:default}
 .tkt-pg-info{font-size:12px;color:var(--paper-faint);font-family:var(--mono)}
 .tkt-list-empty{padding:32px 0;text-align:center;color:var(--paper-faint);font-size:14px}
+/* KLA-178: list multi-select + bulk toolbar */
+.tl-cb{width:15px;height:15px;flex-shrink:0;cursor:pointer;accent-color:var(--indigo)}
+.tkt-list-hdr{display:flex;align-items:center;gap:10px;padding:6px 14px 8px;font-size:11.5px;color:var(--paper-faint);border-bottom:1px solid var(--line)}
+.tkt-list-hdr .tl-cb-all{accent-color:var(--indigo);cursor:pointer}
+.tkt-list-row.tl-selected{background:rgba(99,102,241,.07)}
+.tkt-list-row.tl-selected:hover{background:rgba(99,102,241,.12)}
+.bulk-bar{display:none;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 14px;background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.25);border-radius:10px;margin-bottom:10px;font-size:13px}
+.bulk-bar.show{display:flex}
+.bulk-count{font-weight:700;color:var(--indigo);white-space:nowrap}
+.bulk-sep{width:1px;height:18px;background:var(--line);flex-shrink:0}
+.bulk-sel{appearance:none;background:var(--ink-2);border:1px solid var(--line);border-radius:7px;padding:5px 22px 5px 8px;color:var(--paper);font-size:12px;font-family:var(--body);cursor:pointer;outline:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 5px center}
+.bulk-sel:focus{border-color:var(--indigo)}
+.bulk-inp{background:var(--ink-2);border:1px solid var(--line);border-radius:7px;padding:5px 8px;color:var(--paper);font-size:12px;font-family:var(--body);width:160px;outline:none}
+.bulk-inp:focus{border-color:var(--indigo)}
+.bulk-lbl{font-size:11.5px;color:var(--paper-faint);white-space:nowrap}
 @media(max-width:900px){.kpis{grid-template-columns:1fr 1fr}}
 /* Fix next + hotspots */
 .h-tag{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--paper-faint);background:var(--ink-3);padding:2px 8px;border-radius:20px;text-transform:none;letter-spacing:0;font-weight:400}
@@ -3419,6 +3434,8 @@ let _tktBoardState = { loading: false }
 let _tktBoardTickets = []
 let _tktView = "board" // "list" | "board"
 let _tktFbBound = false
+// KLA-178: multi-select set for bulk actions in list view
+let _bulkSelected = new Set()
 
 function tktFilterBarBind() {
   if (_tktFbBound) return
@@ -3449,6 +3466,7 @@ function tktFilterBarBind() {
     const hasFilter = Object.values(_tktFilters).some(v => !!v)
     fbClear && fbClear.classList.toggle("hide", !hasFilter)
     _tktListState.page = 1
+    _bulkSelected.clear()  // filter change clears selection
     renderTicketsView()
   }
 
@@ -3558,11 +3576,74 @@ function priDotClass(pri) {
   return "pri-dot-" + (["urgent","high","medium","low"].includes(pri) ? pri : "none")
 }
 
+// KLA-178: build the bulk-action toolbar HTML and wire its handlers
+function buildBulkBar(listEl, projId) {
+  const bar = document.createElement("div")
+  bar.className = "bulk-bar" + (_bulkSelected.size ? " show" : "")
+  bar.id = "tktBulkBar"
+
+  const labels = state._labels || []
+  const labelOpts = labels.map(l => `<option value="${esc(l.id)}">${esc(l.name)}</option>`).join("")
+
+  bar.innerHTML =
+    `<span class="bulk-count">${_bulkSelected.size} selected</span>` +
+    `<button class="btn btn-ghost btn-sm" id="bulkClear" type="button" style="padding:4px 8px;font-size:11px">✕ Clear</button>` +
+    `<span class="bulk-sep"></span>` +
+    `<span class="bulk-lbl">Status:</span>` +
+    `<select class="bulk-sel" id="bulkStatus"><option value="">— change —</option><option value="new">New</option><option value="open">Open</option><option value="in_progress">In progress</option><option value="done">Done</option><option value="dismissed">Dismissed</option></select>` +
+    `<span class="bulk-sep"></span>` +
+    `<span class="bulk-lbl">Priority:</span>` +
+    `<select class="bulk-sel" id="bulkPriority"><option value="">— change —</option><option value="urgent">Urgent</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select>` +
+    (labels.length ? (
+      `<span class="bulk-sep"></span>` +
+      `<span class="bulk-lbl">Label:</span>` +
+      `<select class="bulk-sel" id="bulkAddLabel"><option value="">+ add…</option>${labelOpts}</select>` +
+      `<select class="bulk-sel" id="bulkRemoveLabel"><option value="">− remove…</option>${labelOpts}</select>`
+    ) : "") +
+    `<span class="bulk-sep"></span>` +
+    `<button class="btn btn-ghost btn-sm" id="bulkClose" type="button" style="font-size:12px">Close all</button>`
+
+  const doAction = async (body) => {
+    body.ticketIds = [..._bulkSelected]
+    const r = await fetch(`/api/projects/${encodeURIComponent(projId)}/tickets/bulk`, {
+      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body)
+    }).catch(() => null)
+    if (!r || !r.ok) return
+    _bulkSelected.clear()
+    fetchAndRenderTktList()
+  }
+
+  bar.querySelector("#bulkClear").addEventListener("click", () => {
+    _bulkSelected.clear()
+    listEl.querySelectorAll(".tkt-list-row").forEach(r => { r.classList.remove("tl-selected"); const cb = r.querySelector(".tl-cb"); if (cb) cb.checked = false })
+    const all = listEl.querySelector(".tl-cb-all"); if (all) { all.checked = false; all.indeterminate = false }
+    const b = listEl.querySelector("#tktBulkBar"); if (b) b.classList.remove("show")
+  })
+  bar.querySelector("#bulkStatus").addEventListener("change", async e => {
+    if (!e.target.value) return; await doAction({ status: e.target.value })
+  })
+  bar.querySelector("#bulkPriority").addEventListener("change", async e => {
+    if (!e.target.value) return; await doAction({ priority: e.target.value })
+  })
+  if (labels.length) {
+    bar.querySelector("#bulkAddLabel").addEventListener("change", async e => {
+      if (!e.target.value) return; await doAction({ addLabelId: e.target.value })
+    })
+    bar.querySelector("#bulkRemoveLabel").addEventListener("change", async e => {
+      if (!e.target.value) return; await doAction({ removeLabelId: e.target.value })
+    })
+  }
+  bar.querySelector("#bulkClose").addEventListener("click", () => doAction({ status: "done" }))
+
+  return bar
+}
+
 function renderTktList(listEl, tickets, total, searchQ) {
   const q = (searchQ || "").toLowerCase().trim()
   const filtered = q ? tickets.filter(t => [t.title, t.observation, t.urlPath, t.simName, t.priority].some(v => String(v || "").toLowerCase().includes(q))) : tickets
 
   const wrap = document.createElement("div")
+  const projId = state.active && state.active.id
 
   if (!filtered.length) {
     wrap.innerHTML = '<div class="tkt-list-empty">' + (total === 0 ? "No tickets match these filters." : "No tickets match your search.") + "</div>"
@@ -3570,26 +3651,67 @@ function renderTktList(listEl, tickets, total, searchQ) {
     return
   }
 
-  // Summary row
-  const summary = document.createElement("div")
-  summary.style.cssText = "font-size:12px;color:var(--paper-faint);margin-bottom:10px;font-family:var(--mono)"
-  summary.textContent = total + " ticket" + (total !== 1 ? "s" : "") + " · page " + _tktListState.page + " of " + _tktListState.totalPages
-  wrap.appendChild(summary)
+  // KLA-178: bulk toolbar (always rendered; shown when selection > 0)
+  wrap.appendChild(buildBulkBar(listEl, projId))
+
+  // Header row with select-all checkbox + summary
+  const hdr = document.createElement("div")
+  hdr.className = "tkt-list-hdr"
+  const allIds = filtered.map(t => t.id)
+  const allChecked = allIds.length > 0 && allIds.every(id => _bulkSelected.has(id))
+  const someChecked = allIds.some(id => _bulkSelected.has(id))
+  const cbAll = document.createElement("input")
+  cbAll.type = "checkbox"; cbAll.className = "tl-cb-all"; cbAll.title = "Select all on this page"
+  cbAll.checked = allChecked; cbAll.indeterminate = !allChecked && someChecked
+  cbAll.addEventListener("change", e => {
+    if (e.target.checked) allIds.forEach(id => _bulkSelected.add(id))
+    else allIds.forEach(id => _bulkSelected.delete(id))
+    wrap.querySelectorAll(".tkt-list-row").forEach(r => {
+      const id = r.getAttribute("data-id"); const cb = r.querySelector(".tl-cb")
+      const sel = _bulkSelected.has(id); r.classList.toggle("tl-selected", sel); if (cb) cb.checked = sel
+    })
+    const bar = wrap.querySelector("#tktBulkBar")
+    if (bar) { bar.classList.toggle("show", _bulkSelected.size > 0); const cnt = bar.querySelector(".bulk-count"); if (cnt) cnt.textContent = _bulkSelected.size + " selected" }
+  })
+  const hdrLabel = document.createElement("span")
+  hdrLabel.style.cssText = "font-size:12px;color:var(--paper-faint);font-family:var(--mono)"
+  hdrLabel.textContent = total + " ticket" + (total !== 1 ? "s" : "") + " · page " + _tktListState.page + " of " + _tktListState.totalPages
+  hdr.appendChild(cbAll); hdr.appendChild(hdrLabel)
+  wrap.appendChild(hdr)
 
   const listDiv = document.createElement("div")
   listDiv.className = "tkt-list"
 
   filtered.forEach(t => {
     const row = document.createElement("div")
-    row.className = "tkt-list-row"
+    row.className = "tkt-list-row" + (_bulkSelected.has(t.id) ? " tl-selected" : "")
     row.setAttribute("data-id", t.id)
+
+    // Checkbox
+    const cb = document.createElement("input")
+    cb.type = "checkbox"; cb.className = "tl-cb"; cb.checked = _bulkSelected.has(t.id)
+    cb.addEventListener("click", e => e.stopPropagation())
+    cb.addEventListener("change", e => {
+      if (e.target.checked) _bulkSelected.add(t.id); else _bulkSelected.delete(t.id)
+      row.classList.toggle("tl-selected", e.target.checked)
+      // Update select-all state
+      const allNow = allIds.every(id => _bulkSelected.has(id))
+      const someNow = allIds.some(id => _bulkSelected.has(id))
+      cbAll.checked = allNow; cbAll.indeterminate = !allNow && someNow
+      // Update bulk bar
+      const bar = wrap.querySelector("#tktBulkBar")
+      if (bar) { bar.classList.toggle("show", _bulkSelected.size > 0); const cnt = bar.querySelector(".bulk-count"); if (cnt) cnt.textContent = _bulkSelected.size + " selected" }
+    })
+    row.appendChild(cb)
 
     const pri = t.priority || ""
     const srcLabel = t.simName ? t.simName : (t.source === "human" ? "Human" : "Report")
     const sub = [t.urlPath ? esc(t.urlPath) : "", ago(t.createdAt)].filter(Boolean).join(" · ")
 
     const lblChipsHtml = (t.labels || []).map(l => `<span class="lbl-chip" style="background:${esc(l.color)}22;color:${esc(l.color)};border-color:${esc(l.color)}44">${esc(l.name)}</span>`).join("")
-    row.innerHTML =
+    const rowInner = document.createElement("span")
+    rowInner.style.cssText = "display:contents"
+    rowInner.innerHTML =
       '<span class="tl-pri ' + priDotClass(pri) + '" title="Priority: ' + esc(pri || "none") + '"></span>' +
       '<div class="tl-title">' + esc(t.title || "Untitled report") + (lblChipsHtml ? ' <span class="lbl-chips" style="margin-left:6px">'+lblChipsHtml+'</span>' : '') + '</div>' +
       '<div class="tl-meta">' +
@@ -3597,6 +3719,7 @@ function renderTktList(listEl, tickets, total, searchQ) {
         '<span class="tl-src">' + esc(srcLabel) + '</span>' +
         '<span>' + sub + '</span>' +
       '</div>'
+    row.appendChild(rowInner)
 
     row.addEventListener("click", () => openSingleTicket(t.id))
     // Inject ticket into state.tickets if not already there (so detail view works)
@@ -3611,12 +3734,12 @@ function renderTktList(listEl, tickets, total, searchQ) {
     pg.className = "tkt-pg"
     const prev = document.createElement("button")
     prev.className = "tkt-pg-btn"; prev.textContent = "← Prev"; prev.disabled = _tktListState.page <= 1
-    prev.addEventListener("click", () => { _tktListState.page--; fetchAndRenderTktList() })
+    prev.addEventListener("click", () => { _bulkSelected.clear(); _tktListState.page--; fetchAndRenderTktList() })
     const info = document.createElement("span")
     info.className = "tkt-pg-info"; info.textContent = _tktListState.page + " / " + _tktListState.totalPages
     const next = document.createElement("button")
     next.className = "tkt-pg-btn"; next.textContent = "Next →"; next.disabled = _tktListState.page >= _tktListState.totalPages
-    next.addEventListener("click", () => { _tktListState.page++; fetchAndRenderTktList() })
+    next.addEventListener("click", () => { _bulkSelected.clear(); _tktListState.page++; fetchAndRenderTktList() })
     pg.appendChild(prev); pg.appendChild(info); pg.appendChild(next)
     wrap.appendChild(pg)
   }
