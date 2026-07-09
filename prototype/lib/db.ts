@@ -486,8 +486,11 @@ export async function applySchema(c: Client) {
        method TEXT NOT NULL,
        email TEXT NOT NULL,
        status TEXT NOT NULL DEFAULT 'queued',
+       error TEXT,
+       resume_summary_json TEXT,
        created_at INTEGER NOT NULL,
-       updated_at INTEGER NOT NULL
+       updated_at INTEGER NOT NULL,
+       finished_at INTEGER
      )`,
     `CREATE INDEX IF NOT EXISTS autosim_auth_probe_project_idx ON autosim_auth_probe_queue (project_id, status, created_at)`,
     // ── G1 session replay: rrweb DOM-event recording attached to a bug report (free vs Marker's $149). ──
@@ -603,7 +606,7 @@ export async function applySchema(c: Client) {
     "sim_traits", "trait_events", "personas",
     "feedback", "projects", "accounts", "trails", "trail_runs",
     "trail_steps", "walk_share_tokens", "findings", "author_sessions",
-    "ai_calls",
+    "ai_calls", "autosim_auth_probe_queue",
   ]
   const _cols = await loadTableColumns(c, ALTERED_TABLES)
   const needCol = (table: string, col: string) => !(_cols.get(table)?.has(col) ?? false)
@@ -767,6 +770,12 @@ export async function applySchema(c: Client) {
     .catch((e: any) => console.warn("walk_share_tokens.revoked_at ALTER skipped:", e?.message || e))
   if (needCol("projects", "autosim_auth_status")) await c.execute("ALTER TABLE projects ADD COLUMN autosim_auth_status TEXT NOT NULL DEFAULT 'unregistered'")
     .catch((e: any) => console.warn("projects.autosim_auth_status ALTER skipped:", e?.message || e))
+  if (needCol("autosim_auth_probe_queue", "error")) await c.execute("ALTER TABLE autosim_auth_probe_queue ADD COLUMN error TEXT")
+    .catch((e: any) => console.warn("autosim_auth_probe_queue.error ALTER skipped:", e?.message || e))
+  if (needCol("autosim_auth_probe_queue", "resume_summary_json")) await c.execute("ALTER TABLE autosim_auth_probe_queue ADD COLUMN resume_summary_json TEXT")
+    .catch((e: any) => console.warn("autosim_auth_probe_queue.resume_summary_json ALTER skipped:", e?.message || e))
+  if (needCol("autosim_auth_probe_queue", "finished_at")) await c.execute("ALTER TABLE autosim_auth_probe_queue ADD COLUMN finished_at INTEGER")
+    .catch((e: any) => console.warn("autosim_auth_probe_queue.finished_at ALTER skipped:", e?.message || e))
   for (const [col, def] of accountBillingColumns) {
     if (needCol("accounts", col)) await c.execute(`ALTER TABLE accounts ADD COLUMN ${col} ${def}`)
       .catch((e: any) => console.warn(`accounts.${col} ALTER skipped:`, e?.message || e))
@@ -1263,6 +1272,27 @@ export async function createProject(accountId: string, name: string): Promise<Pr
 export type AutosimAuthMethod = "fixed_otp" | "mint_link"
 export type AutosimAuthSetupToken = { id: string; projectId: string; token: string; expiresAt: number }
 export type AutosimAuthSetupTokenInfo = { id: string; projectId: string; expiresAt: number }
+export type AutosimAuthConfigEncrypted = {
+  projectId: string
+  method: AutosimAuthMethod
+  email: string
+  secretEnc: string
+  notes: string | null
+  createdAt: number
+  updatedAt: number
+}
+export type AutosimAuthProbeRow = {
+  id: string
+  projectId: string
+  method: AutosimAuthMethod
+  email: string
+  status: string
+  error: string | null
+  resumeSummary: unknown | null
+  createdAt: number
+  updatedAt: number
+  finishedAt: number | null
+}
 
 function randomHex(bytes = 32): string {
   const buf = crypto.getRandomValues(new Uint8Array(bytes))
@@ -1343,30 +1373,10 @@ export async function registerAutosimAuthConfig(
   return { probeId }
 }
 
-/** Ciphertext-bearing row of a project's registered AutoSim auth method (AT3). */
-export type AutosimAuthConfigRow = {
-  projectId: string
-  method: AutosimAuthMethod
-  email: string
-  secretEnc: string
-  notes: string | null
-  createdAt: number
-  updatedAt: number
-}
+/** Backward-compat alias — autosim-auth-exec.ts (AT6) uses this name; probe-verify uses AutosimAuthConfigEncrypted. */
+export type AutosimAuthConfigRow = AutosimAuthConfigEncrypted
 
-/**
- * KLA-184 (AT6): read a project's registered auth method for execution. Returns the ENCRYPTED
- * secret verbatim — decryption is the caller's responsibility and must happen at execution time
- * only (see lib/autosim-auth-exec.ts, ADR-0001). Returns null when no method is registered.
- */
-export async function getAutosimAuthConfigRaw(projectId: string): Promise<AutosimAuthConfigRow | null> {
-  const r = await db!.execute({
-    sql: `SELECT project_id, method, email, secret_enc, notes, created_at, updated_at
-          FROM autosim_auth_configs WHERE project_id=?`,
-    args: [projectId],
-  })
-  if (!r.rows.length) return null
-  const row: any = r.rows[0]
+function rowToAutosimAuthConfig(row: any): AutosimAuthConfigEncrypted {
   return {
     projectId: String(row.project_id),
     method: String(row.method) as AutosimAuthMethod,
@@ -1375,6 +1385,84 @@ export async function getAutosimAuthConfigRaw(projectId: string): Promise<Autosi
     notes: row.notes == null ? null : String(row.notes),
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
+  }
+}
+
+function rowToAutosimAuthProbe(row: any): AutosimAuthProbeRow {
+  let resumeSummary: unknown | null = null
+  try { if (row.resume_summary_json) resumeSummary = JSON.parse(String(row.resume_summary_json)) } catch {}
+  return {
+    id: String(row.id),
+    projectId: String(row.project_id),
+    method: String(row.method) as AutosimAuthMethod,
+    email: String(row.email),
+    status: String(row.status),
+    error: row.error == null ? null : String(row.error),
+    resumeSummary,
+    createdAt: Number(row.created_at),
+    updatedAt: Number(row.updated_at),
+    finishedAt: row.finished_at == null ? null : Number(row.finished_at),
+  }
+}
+
+export async function getAutosimAuthConfigEncrypted(projectId: string): Promise<AutosimAuthConfigEncrypted | null> {
+  const r = await db!.execute({
+    sql: `SELECT project_id, method, email, secret_enc, notes, created_at, updated_at
+          FROM autosim_auth_configs WHERE project_id=?`,
+    args: [projectId],
+  })
+  if (!r.rows.length) return null
+  return rowToAutosimAuthConfig(r.rows[0])
+}
+
+/** Alias — AT6 (autosim-auth-exec.ts) imports this name. */
+export const getAutosimAuthConfigRaw = getAutosimAuthConfigEncrypted
+
+export async function getAutosimAuthProbe(probeId: string): Promise<AutosimAuthProbeRow | null> {
+  const r = await db!.execute({ sql: `SELECT * FROM autosim_auth_probe_queue WHERE id=?`, args: [probeId] })
+  if (!r.rows.length) return null
+  return rowToAutosimAuthProbe(r.rows[0])
+}
+
+export async function markAutosimAuthProbeRunning(probeId: string): Promise<AutosimAuthProbeRow | null> {
+  const now = Date.now()
+  const updated = await db!.execute({
+    sql: `UPDATE autosim_auth_probe_queue
+          SET status='running', updated_at=?, error=NULL, resume_summary_json=NULL, finished_at=NULL
+          WHERE id=? AND status IN ('queued','red','failed')`,
+    args: [now, probeId],
+  })
+  if (Number(updated.rowsAffected || 0) <= 0) return getAutosimAuthProbe(probeId)
+  return getAutosimAuthProbe(probeId)
+}
+
+export async function finishAutosimAuthProbe(input: {
+  probeId: string
+  projectId: string
+  ok: boolean
+  error?: string | null
+  resumeSummary?: unknown
+}): Promise<void> {
+  const now = Date.now()
+  const status = input.ok ? "green" : "red"
+  await db!.execute({
+    sql: `UPDATE autosim_auth_probe_queue
+          SET status=?, error=?, resume_summary_json=?, updated_at=?, finished_at=?
+          WHERE id=? AND project_id=?`,
+    args: [
+      status,
+      input.error ?? null,
+      input.resumeSummary === undefined ? null : JSON.stringify(input.resumeSummary),
+      now,
+      now,
+      input.probeId,
+      input.projectId,
+    ],
+  })
+  if (input.ok) {
+    await db!.execute({ sql: "UPDATE projects SET autosim_auth_status='verified', updated_at=? WHERE id=?", args: [now, input.projectId] })
+  } else {
+    await db!.execute({ sql: "UPDATE projects SET autosim_auth_status='registered', updated_at=? WHERE id=? AND autosim_auth_status!='verified'", args: [now, input.projectId] })
   }
 }
 
