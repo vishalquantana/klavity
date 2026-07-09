@@ -739,6 +739,33 @@ details.drawer .drawer-in{padding:0 22px 22px}
 .tkt-comment-row{display:flex;align-items:center;gap:8px}
 .tkt-comment-msg{font-size:12px}
 
+/* KLA-174: ticket label chips */
+.lbl-chip{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;line-height:1.5;border:1px solid transparent;white-space:nowrap;cursor:default}
+.lbl-chips{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.lbl-chip-rm{background:none;border:none;cursor:pointer;padding:0 0 0 2px;line-height:1;opacity:.6;font-size:11px}
+.lbl-chip-rm:hover{opacity:1}
+.tkt-lbl-row{margin-top:8px;display:flex;flex-direction:column;gap:6px}
+.tkt-lbl-row label{font-size:11px;color:var(--paper-faint)}
+.tkt-lbl-controls{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.lbl-add-sel{appearance:none;background:var(--ink-2);border:1px solid var(--line);border-radius:8px;padding:5px 26px 5px 9px;color:var(--paper);font-family:var(--body);font-size:12px;outline:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 6px center}
+.lbl-add-sel:focus{border-color:var(--indigo)}
+/* manage-labels modal */
+#manageLabelsBg{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .15s}
+#manageLabelsBg.show{opacity:1;pointer-events:auto}
+#manageLabelsModal{background:var(--ink);border:1px solid var(--line);border-radius:16px;padding:28px 28px 20px;min-width:340px;max-width:480px;width:100%;max-height:80vh;overflow-y:auto;display:flex;flex-direction:column;gap:14px}
+#manageLabelsModal h3{margin:0;font-size:16px}
+.ml-list{display:flex;flex-direction:column;gap:8px}
+.ml-row{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--ink-2);border-radius:10px;border:1px solid var(--line)}
+.ml-swatch{width:16px;height:16px;border-radius:50%;flex-shrink:0}
+.ml-name{flex:1;font-size:13px}
+.ml-edit-inp{flex:1;background:var(--ink);border:1px solid var(--indigo);border-radius:6px;padding:4px 8px;color:var(--paper);font-family:var(--body);font-size:13px;outline:none}
+.ml-color-inp{width:30px;height:24px;border:none;padding:0;cursor:pointer;background:none}
+.ml-del-btn{background:none;border:none;color:var(--rose);cursor:pointer;font-size:16px;padding:0 2px;opacity:.7}
+.ml-del-btn:hover{opacity:1}
+.ml-add-form{display:flex;gap:8px;margin-top:4px;align-items:center}
+.ml-new-inp{flex:1;background:var(--ink-2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--paper);font-family:var(--body);font-size:13px;outline:none}
+.ml-new-inp:focus{border-color:var(--indigo)}
+.ml-color-pick{width:34px;height:34px;border:1px solid var(--line);border-radius:8px;padding:2px;cursor:pointer;background:none}
 /* connectors manager */
 .conn-cloud{display:flex;align-items:center;gap:10px;padding:14px 15px;background:var(--ink);border:1px solid var(--line);border-radius:12px;margin-bottom:14px}
 .conn-cloud .pause-l{flex:1}
@@ -1283,7 +1310,22 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       <h2><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20v-9" /> <path d="M14 7a4 4 0 0 1 4 4v3a6 6 0 0 1-12 0v-3a4 4 0 0 1 4-4z" /> <path d="M14.12 3.88 16 2" /> <path d="M21 21a4 4 0 0 0-3.81-4" /> <path d="M21 5a4 4 0 0 1-3.55 3.97" /> <path d="M22 13h-4" /> <path d="M3 21a4 4 0 0 1 3.81-4" /> <path d="M3 5a4 4 0 0 0 3.55 3.97" /> <path d="M6 13H2" /> <path d="m8 2 1.88 1.88" /> <path d="M9 7.13V6a3 3 0 1 1 6 0v1.13" /></svg> Tickets <span class="count" id="ticketKanbanCount"></span></h2>
         <div class="tkt-view-toggle"><button class="tkt-vbtn" id="tktListBtn" title="List view">&#9776; List</button><button class="tkt-vbtn active" id="tktBoardBtn" title="Board view">&#8862; Board</button></div>
         <div class="kb-search"><span class="mag">&#8981;</span><input id="kanbanSearch" placeholder="Search tickets…" autocomplete="off" /></div>
+        <button class="btn btn-ghost btn-sm" id="manageLabelsBtn" type="button" title="Manage ticket labels" style="display:none">🏷 Labels</button>
       </div>
+    <!-- Manage Labels modal (KLA-174) -->
+    <div id="manageLabelsBg">
+      <div id="manageLabelsModal">
+        <h3>Manage Labels</h3>
+        <div class="ml-list" id="mlList"></div>
+        <div class="ml-add-form">
+          <input class="ml-new-inp" id="mlNewName" placeholder="Label name…" maxlength="100" autocomplete="off" />
+          <input type="color" class="ml-color-pick" id="mlNewColor" value="#6366f1" title="Pick color" />
+          <button class="btn btn-sm" id="mlAddBtn" type="button">Add</button>
+        </div>
+        <div style="font-size:12px;color:var(--rose);min-height:16px" id="mlErr"></div>
+        <div style="margin-top:4px;text-align:right"><button class="btn btn-ghost btn-sm" id="mlCloseBtn" type="button">Close</button></div>
+      </div>
+    </div>
       <!-- KLA-169: Shared filter bar (reused by board + list views) -->
       <div class="tkt-fb" id="tktFilterBar">
         <span class="tkt-fb-label">Filter</span>
@@ -2131,6 +2173,7 @@ function render(fromCache) {
   if (!fromCache) {
     loadConnectors(admin)
     loadAppearance()
+    loadLabels(admin)
     if (admin) { loadLive(); loadObs(); taccRender(); if (typeof ciRender === "function") ciRender() }
   }
 
@@ -2849,6 +2892,13 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
           <textarea class="notes-ta" placeholder="management notes…">${esc(t.notes||"")}</textarea>
         </div>
       </div>
+      <div class="tkt-lbl-row" id="tkt-lbl-${esc(ticketId)}">
+        <label>Labels</label>
+        <div class="tkt-lbl-controls">
+          <div class="lbl-chips tkt-lbl-chips"></div>
+          <select class="lbl-add-sel tkt-lbl-sel"><option value="">+ Add label…</option></select>
+        </div>
+      </div>
       <div class="tkt-actions">
         <div class="tkt-badges">${badgesHtml}</div>
         ${t.hasReplay ? `<button class="btn btn-ghost btn-sm replay-btn" type="button">${kicon('play')} Session replay</button>` : ""}
@@ -2962,6 +3012,60 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
         } else {
           showTktMsg(detailEl, d.error || "Export failed.", true)
         }
+      })
+    }
+
+    // KLA-174: wire up label row
+    const lblRow = detailEl.querySelector(".tkt-lbl-row")
+    const lblChipsEl = detailEl.querySelector(".tkt-lbl-chips")
+    const lblSel = detailEl.querySelector(".tkt-lbl-sel")
+    if (lblRow && lblChipsEl && lblSel) {
+      const ticketLabels = (t.labels || []).slice()
+      const renderLblChips = () => {
+        lblChipsEl.innerHTML = ticketLabels.map(l =>
+          `<span class="lbl-chip" style="background:${esc(l.color)}22;color:${esc(l.color)};border-color:${esc(l.color)}44">
+            ${esc(l.name)}<button class="lbl-chip-rm" data-lid="${esc(l.id)}" title="Remove label" type="button">✕</button>
+          </span>`
+        ).join("")
+        lblChipsEl.querySelectorAll(".lbl-chip-rm").forEach(btn => {
+          btn.addEventListener("click", async ev => {
+            ev.stopPropagation()
+            const lid = btn.getAttribute("data-lid")
+            await fetch(`/api/feedback/${encodeURIComponent(ticketId)}/labels/${encodeURIComponent(lid)}`, { method: "DELETE" }).catch(() => null)
+            const idx = ticketLabels.findIndex(l => l.id === lid)
+            if (idx >= 0) ticketLabels.splice(idx, 1)
+            const tkt = (state.tickets || []).find(x => x.id === ticketId)
+            if (tkt) tkt.labels = ticketLabels.slice()
+            renderLblChips()
+          })
+        })
+      }
+      const populateSel = () => {
+        const projectLabels = state._labels || []
+        const attached = new Set(ticketLabels.map(l => l.id))
+        const available = projectLabels.filter(l => !attached.has(l.id))
+        lblSel.innerHTML = '<option value="">+ Add label…</option>' +
+          available.map(l => `<option value="${esc(l.id)}">${esc(l.name)}</option>`).join("")
+        lblSel.style.display = available.length ? "" : "none"
+      }
+      renderLblChips()
+      populateSel()
+      lblSel.addEventListener("change", async ev => {
+        ev.stopPropagation()
+        const lid = lblSel.value
+        if (!lid) return
+        lblSel.value = ""
+        const label = (state._labels || []).find(l => l.id === lid)
+        if (!label) return
+        await fetch(`/api/feedback/${encodeURIComponent(ticketId)}/labels`, {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ labelId: lid })
+        }).catch(() => null)
+        if (!ticketLabels.find(l => l.id === lid)) ticketLabels.push(label)
+        const tkt = (state.tickets || []).find(x => x.id === ticketId)
+        if (tkt) tkt.labels = ticketLabels.slice()
+        renderLblChips()
+        populateSel()
       })
     }
 
@@ -3430,9 +3534,10 @@ function renderTktList(listEl, tickets, total, searchQ) {
     const srcLabel = t.simName ? t.simName : (t.source === "human" ? "Human" : "Report")
     const sub = [t.urlPath ? esc(t.urlPath) : "", ago(t.createdAt)].filter(Boolean).join(" · ")
 
+    const lblChipsHtml = (t.labels || []).map(l => `<span class="lbl-chip" style="background:${esc(l.color)}22;color:${esc(l.color)};border-color:${esc(l.color)}44">${esc(l.name)}</span>`).join("")
     row.innerHTML =
       '<span class="tl-pri ' + priDotClass(pri) + '" title="Priority: ' + esc(pri || "none") + '"></span>' +
-      '<div class="tl-title">' + esc(t.title || "Untitled report") + '</div>' +
+      '<div class="tl-title">' + esc(t.title || "Untitled report") + (lblChipsHtml ? ' <span class="lbl-chips" style="margin-left:6px">'+lblChipsHtml+'</span>' : '') + '</div>' +
       '<div class="tl-meta">' +
         statusPillHtml(t.status) +
         '<span class="tl-src">' + esc(srcLabel) + '</span>' +
@@ -3617,7 +3722,8 @@ function renderTicketsKanban(boardTickets) {
         const sevChip = t.priority ? `<span class="chip sev-${esc(t.priority)}">${esc(t.priority)}</span>` : ""
         const stChip = `<span class="chip kb-st kb-st-${esc(t.status || "open")}">${esc(ticketStatusLabel(t.status))}</span>`
         const assignee = t.assignee ? `<span class="muted" style="font-size:11px">→ ${esc(t.assignee)}</span>` : ""
-        cardEl.querySelector(".kb-card-meta").innerHTML = `${stChip}${sevChip}${assignee}${recurBadgeHtml(t)}`
+        const lblHtml = (t.labels || []).map(l => `<span class="lbl-chip" style="background:${esc(l.color)}22;color:${esc(l.color)};border-color:${esc(l.color)}44">${esc(l.name)}</span>`).join("")
+        cardEl.querySelector(".kb-card-meta").innerHTML = `${stChip}${sevChip}${assignee}${recurBadgeHtml(t)}${lblHtml ? '<span class="lbl-chips" style="margin-left:auto">'+lblHtml+'</span>' : ""}`
       }
       cardEl.innerHTML = `
         <button class="copy-ai-icon kb-copy-ai" type="button" aria-label="Copy to AI" title="Copy to AI — paste into Claude / ChatGPT to fix this bug">${kicon('sparkles')}</button>
@@ -4204,6 +4310,76 @@ $("connSaveNew") && ($("connSaveNew").onclick = async () => {
   } else {
     msg.style.color = "var(--rose)"; msg.textContent = d.error || (connEditId ? "Couldn't update connector." : "Couldn't add connector.")
   }
+})
+
+// ── KLA-174: Ticket Labels ─────────────────────────────────────────────────────────────────────────
+async function loadLabels(admin) {
+  const projId = curProjId(); if (!projId) return
+  const r = await fetch(`/api/projects/${encodeURIComponent(projId)}/labels`).catch(() => null)
+  if (!r || !r.ok) return
+  const d = await r.json().catch(() => ({}))
+  state._labels = d.labels || []
+  const btn = document.getElementById("manageLabelsBtn")
+  if (btn) btn.style.display = admin ? "" : "none"
+}
+
+let _mlBound = false
+function openManageLabels() {
+  const bg = document.getElementById("manageLabelsBg"); if (!bg) return
+  renderMlList()
+  bg.classList.add("show")
+  if (!_mlBound) {
+    _mlBound = true
+    document.getElementById("mlCloseBtn").addEventListener("click", () => bg.classList.remove("show"))
+    bg.addEventListener("click", ev => { if (ev.target === bg) bg.classList.remove("show") })
+    document.getElementById("mlAddBtn").addEventListener("click", async () => {
+      const name = document.getElementById("mlNewName").value.trim()
+      const color = document.getElementById("mlNewColor").value
+      const err = document.getElementById("mlErr")
+      if (!name) { err.textContent = "Name is required."; return }
+      err.textContent = ""
+      const projId = curProjId(); if (!projId) return
+      const r = await fetch(`/api/projects/${encodeURIComponent(projId)}/labels`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name, color })
+      }).catch(() => null)
+      const d = r ? await r.json().catch(() => ({})) : {}
+      if (!r || !r.ok) { err.textContent = d.error || "Couldn't create label."; return }
+      if (!state._labels) state._labels = []
+      state._labels.push(d.label)
+      document.getElementById("mlNewName").value = ""
+      renderMlList()
+    })
+  }
+}
+
+function renderMlList() {
+  const list = document.getElementById("mlList"); if (!list) return
+  const labels = state._labels || []
+  if (!labels.length) { list.innerHTML = '<div class="muted" style="font-size:13px;padding:4px 2px">No labels yet. Add one below.</div>'; return }
+  list.innerHTML = ""
+  labels.forEach(l => {
+    const row = document.createElement("div"); row.className = "ml-row"
+    row.innerHTML = `<span class="ml-swatch" style="background:${esc(l.color)}"></span>
+      <span class="ml-name" data-lid="${esc(l.id)}">${esc(l.name)}</span>
+      <button class="ml-del-btn" data-lid="${esc(l.id)}" title="Delete label" type="button">✕</button>`
+    row.querySelector(".ml-del-btn").addEventListener("click", async ev => {
+      ev.stopPropagation()
+      const lid = l.id
+      const projId = curProjId(); if (!projId) return
+      const r = await fetch(`/api/projects/${encodeURIComponent(projId)}/labels/${encodeURIComponent(lid)}`, { method: "DELETE" }).catch(() => null)
+      if (!r || !r.ok) { document.getElementById("mlErr").textContent = "Couldn't delete label."; return }
+      state._labels = (state._labels || []).filter(x => x.id !== lid)
+      ;(state.tickets || []).forEach(t => { if (t.labels) t.labels = t.labels.filter(x => x.id !== lid) })
+      renderMlList()
+    })
+    list.appendChild(row)
+  })
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  const btn = document.getElementById("manageLabelsBtn")
+  if (btn) btn.addEventListener("click", () => openManageLabels())
 })
 
 // ── Widget-preview theming. PREVIEW_THEMES / previewLuminance / the custom-colour derivation are a

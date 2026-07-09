@@ -48,6 +48,7 @@ import { liveWatchSseResponse, openLiveWatchStream } from "./lib/trails-live-wat
 import { normalizeTrailViewport } from "./lib/trails-viewport"
 import { seedDemoTrails } from "./lib/trails-demo-seed"
 import { listExpectations, getExpectation, setExpectationStatus, setExpectationEnforced } from "./lib/expectations-db"
+import { createLabel, listLabels, updateLabel, deleteLabel, attachLabel, detachLabel, labelsForFeedback, labelsForFeedbackBatch } from "./lib/db"
 import { validateAssertionDraft } from "./lib/assertion-spec"
 import { buildRecurrenceMemory, listProjectRecurringIssues } from "./lib/recurrence-memory"
 import { publishBlogPost, SLUG_RE, type PublishInput } from "./lib/blog-publish"
@@ -4001,15 +4002,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
       // ── Ticket management: PATCH /api/feedback/:id and POST /api/feedback/:id/export ──
       // Resolve the feedback's project via feedbackById across accessible projects.
-      const feedbackIdMatch = path.match(/^\/api\/feedback\/([^/]+?)(\/export|\/replay|\/memory|\/comments|\/timeline|\/activity)?$/)
+      const feedbackIdMatch = path.match(/^\/api\/feedback\/([^/]+?)(\/export|\/replay|\/memory|\/comments|\/timeline|\/activity|\/labels(?:\/([^/]+))?)?$/)
       if (feedbackIdMatch) {
         const fid = feedbackIdMatch[1]
-        const feedbackSubroute = feedbackIdMatch[2] || ""
+        const feedbackSubroute = feedbackIdMatch[2]?.replace(/\/labels\/[^/]+$/, "/labels") || ""
+        const labelIdParam = feedbackIdMatch[3] || null
         const isExport = feedbackSubroute === "/export"
         const isReplay = feedbackSubroute === "/replay"
         const isMemory = feedbackSubroute === "/memory"
         const isComments = feedbackSubroute === "/comments"
         const isTimeline = feedbackSubroute === "/timeline" || feedbackSubroute === "/activity"
+        const isLabels = feedbackSubroute === "/labels"
 
         // Resolve which project this feedback belongs to and check the caller has access.
         let fbRow: any = null
@@ -4092,6 +4095,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             firstSeen: fbRow.createdAt,
             lastSeen,
             isRegression,
+            labels: await labelsForFeedback(fid),
           }
           return json({ report })
         }
@@ -4206,6 +4210,29 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           return json({ ok: true, export: exportResult })
         }
 
+        // GET /api/feedback/:id/labels — list labels on this ticket
+        if (req.method === "GET" && isLabels && !labelIdParam) {
+          return json({ labels: await labelsForFeedback(fid) })
+        }
+
+        // POST /api/feedback/:id/labels — attach label to ticket { labelId }
+        if (req.method === "POST" && isLabels && !labelIdParam) {
+          const body = await req.json().catch(() => ({}))
+          const labelId = String(body.labelId || "").trim()
+          if (!labelId) return json({ error: "labelId is required." }, 400)
+          // Verify label belongs to this project
+          const projectLabels = await listLabels(fbRow.projectId)
+          if (!projectLabels.find(l => l.id === labelId)) return json({ error: "Label not found in this project." }, 404)
+          await attachLabel(labelId, fid)
+          return json({ ok: true })
+        }
+
+        // DELETE /api/feedback/:id/labels/:labelId — detach label from ticket
+        if (req.method === "DELETE" && isLabels && labelIdParam) {
+          await detachLabel(labelIdParam, fid)
+          return json({ ok: true })
+        }
+
         return json({ error: "Not found" }, 404)
       }
 
@@ -4234,7 +4261,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return json({ project: { id: created.id, name: created.name, accountId: created.accountId, status: created.status, role: "admin" } }, 201)
       }
       // Project detail + members (projectAccess-gated) and project-scoped invite (R4) + monitored-urls (P3b) + connectors.
-      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/triage|\/tickets|\/recurring|\/replays|\/widget-status|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/test)?|\/test-accounts(?:\/[^/]+)?)?$/)
+      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/triage|\/tickets|\/recurring|\/replays|\/widget-status|\/labels(?:\/[^/]+)?|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/test)?|\/test-accounts(?:\/[^/]+)?)?$/)
       if (projMatch) {
         const pid = projMatch[1]
         const sub = projMatch[2] || ""
@@ -4612,6 +4639,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const page = Math.max(1, Number(sp.get("page") || "1"))
           const limit = Math.min(200, Math.max(1, Number(sp.get("limit") || "50")))
           const result = await listTicketsPaginated(proj.id, { statuses, priorities, assignee, source, page, limit })
+          const ticketIds = result.tickets.map((t: any) => t.id)
+          const labelsMap = await labelsForFeedbackBatch(ticketIds)
+          result.tickets = result.tickets.map((t: any) => ({ ...t, labels: labelsMap[t.id] || [] }))
           return json(result)
         }
 
@@ -4657,6 +4687,46 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             }).catch((e: any) => console.warn("ticket assignment email skipped:", e?.message || e))
           }
           return json({ ok: true, ticketId: id }, 201)
+        }
+
+        // ── KLA-174: Label management endpoints ────────────────────────────────────────────────────
+        // GET /api/projects/:id/labels — list all labels for this project (any member)
+        if (req.method === "GET" && sub === "/labels") {
+          return json({ labels: await listLabels(proj.id) })
+        }
+
+        // POST /api/projects/:id/labels — create label (admin only) { name, color? }
+        if (req.method === "POST" && sub === "/labels") {
+          if (access !== "admin") return json({ error: "Only project admins can create labels." }, 403)
+          const body = await req.json().catch(() => ({}))
+          const name = String(body.name ?? "").trim()
+          if (!name) return json({ error: "name is required." }, 400)
+          if (name.length > 100) return json({ error: "name must be 100 characters or fewer." }, 400)
+          const color = /^#[0-9a-fA-F]{6}$/.test(String(body.color ?? "")) ? String(body.color) : "#6366f1"
+          const label = await createLabel(proj.id, name, color)
+          return json({ label }, 201)
+        }
+
+        // PATCH /api/projects/:id/labels/:lid — update label (admin only) { name?, color? }
+        const labelSubMatch = sub.match(/^\/labels\/([^/]+)$/)
+        if (labelSubMatch) {
+          const lid = labelSubMatch[1]
+          if (req.method === "PATCH") {
+            if (access !== "admin") return json({ error: "Only project admins can update labels." }, 403)
+            const body = await req.json().catch(() => ({}))
+            const name = String(body.name ?? "").trim()
+            if (!name) return json({ error: "name is required." }, 400)
+            if (name.length > 100) return json({ error: "name must be 100 characters or fewer." }, 400)
+            const color = /^#[0-9a-fA-F]{6}$/.test(String(body.color ?? "")) ? String(body.color) : "#6366f1"
+            const ok = await updateLabel(proj.id, lid, name, color)
+            if (!ok) return json({ error: "Label not found." }, 404)
+            return json({ ok: true })
+          }
+          if (req.method === "DELETE") {
+            if (access !== "admin") return json({ error: "Only project admins can delete labels." }, 403)
+            await deleteLabel(proj.id, lid)
+            return json({ ok: true })
+          }
         }
 
         // GET /api/projects/:id/recurring — corpus-wide recurring/regression memory for this project.

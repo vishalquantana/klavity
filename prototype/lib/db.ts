@@ -500,6 +500,23 @@ export async function applySchema(c: Client) {
        created_at INTEGER NOT NULL
      )`,
     `CREATE INDEX IF NOT EXISTS wst_token_hash_idx ON walk_share_tokens (token_hash)`,
+    // ── KLA-174: Flat per-project ticket labels ──────────────────────────────────────────────────
+    `CREATE TABLE IF NOT EXISTS labels (
+       id TEXT PRIMARY KEY,
+       project_id TEXT NOT NULL,
+       name TEXT NOT NULL,
+       color TEXT NOT NULL DEFAULT '#6366f1',
+       created_at INTEGER NOT NULL,
+       UNIQUE(project_id, name)
+     )`,
+    `CREATE INDEX IF NOT EXISTS labels_proj_idx ON labels (project_id)`,
+    `CREATE TABLE IF NOT EXISTS ticket_labels (
+       label_id TEXT NOT NULL,
+       feedback_id TEXT NOT NULL,
+       created_at INTEGER NOT NULL,
+       PRIMARY KEY (label_id, feedback_id)
+     )`,
+    `CREATE INDEX IF NOT EXISTS ticket_labels_feedback_idx ON ticket_labels (feedback_id)`,
   ]
   for (const s of stmts) await c.execute(s)
 
@@ -3087,4 +3104,90 @@ export async function listSimRuns(projectId: string, limit = 20): Promise<SimRun
     args: [projectId, limit],
   })
   return r.rows.map(rowToSimRun)
+}
+
+// ── KLA-174: Flat per-project ticket labels ──────────────────────────────────
+
+export type LabelRow = { id: string; projectId: string; name: string; color: string; createdAt: number }
+
+function rowToLabel(x: any): LabelRow {
+  return { id: String(x.id), projectId: String(x.project_id), name: String(x.name), color: String(x.color), createdAt: Number(x.created_at) }
+}
+
+export async function createLabel(projectId: string, name: string, color: string): Promise<LabelRow> {
+  const id = "lbl_" + crypto.randomUUID()
+  const now = Date.now()
+  await db!.execute({
+    sql: "INSERT INTO labels (id, project_id, name, color, created_at) VALUES (?,?,?,?,?)",
+    args: [id, projectId, name.trim(), color, now],
+  })
+  return { id, projectId, name: name.trim(), color, createdAt: now }
+}
+
+export async function listLabels(projectId: string): Promise<LabelRow[]> {
+  const r = await db!.execute({
+    sql: "SELECT * FROM labels WHERE project_id=? ORDER BY name ASC",
+    args: [projectId],
+  })
+  return r.rows.map(rowToLabel)
+}
+
+export async function updateLabel(projectId: string, labelId: string, name: string, color: string): Promise<boolean> {
+  const r = await db!.execute({
+    sql: "UPDATE labels SET name=?, color=? WHERE id=? AND project_id=?",
+    args: [name.trim(), color, labelId, projectId],
+  })
+  return Number(r.rowsAffected) > 0
+}
+
+export async function deleteLabel(projectId: string, labelId: string): Promise<boolean> {
+  await db!.execute({ sql: "DELETE FROM ticket_labels WHERE label_id=?", args: [labelId] })
+  const r = await db!.execute({
+    sql: "DELETE FROM labels WHERE id=? AND project_id=?",
+    args: [labelId, projectId],
+  })
+  return Number(r.rowsAffected) > 0
+}
+
+export async function attachLabel(labelId: string, feedbackId: string): Promise<void> {
+  await db!.execute({
+    sql: "INSERT OR IGNORE INTO ticket_labels (label_id, feedback_id, created_at) VALUES (?,?,?)",
+    args: [labelId, feedbackId, Date.now()],
+  })
+}
+
+export async function detachLabel(labelId: string, feedbackId: string): Promise<void> {
+  await db!.execute({
+    sql: "DELETE FROM ticket_labels WHERE label_id=? AND feedback_id=?",
+    args: [labelId, feedbackId],
+  })
+}
+
+export async function labelsForFeedback(feedbackId: string): Promise<LabelRow[]> {
+  const r = await db!.execute({
+    sql: `SELECT l.* FROM labels l
+          JOIN ticket_labels tl ON tl.label_id = l.id
+          WHERE tl.feedback_id=? ORDER BY l.name ASC`,
+    args: [feedbackId],
+  })
+  return r.rows.map(rowToLabel)
+}
+
+// Batch: returns map feedbackId → LabelRow[]
+export async function labelsForFeedbackBatch(feedbackIds: string[]): Promise<Record<string, LabelRow[]>> {
+  if (!feedbackIds.length) return {}
+  const placeholders = feedbackIds.map(() => "?").join(",")
+  const r = await db!.execute({
+    sql: `SELECT tl.feedback_id, l.id, l.project_id, l.name, l.color, l.created_at
+          FROM ticket_labels tl JOIN labels l ON l.id = tl.label_id
+          WHERE tl.feedback_id IN (${placeholders}) ORDER BY l.name ASC`,
+    args: feedbackIds,
+  })
+  const out: Record<string, LabelRow[]> = {}
+  for (const x of r.rows as any[]) {
+    const fid = String(x.feedback_id)
+    if (!out[fid]) out[fid] = []
+    out[fid].push({ id: String(x.id), projectId: String(x.project_id), name: String(x.name), color: String(x.color), createdAt: Number(x.created_at) })
+  }
+  return out
 }
