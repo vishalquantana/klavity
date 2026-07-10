@@ -124,5 +124,12 @@
     "excerpt": "Voice-of-customer data only helps if it changes what you build. Here's how to code raw feedback, weight it by impact, and ship the decision.",
     "category": "Insights",
     "date": "2026-07-09"
+  },
+  {
+    "slug": "exploratory-testing-vs-scripted-testing",
+    "title": "Exploratory Testing vs. Scripted Testing: When to Use Each",
+    "excerpt": "Exploratory testing discovers the unknown; scripted testing verifies the known. Here's what each catches, when to use which, and how to combine them.",
+    "category": "Compare",
+    "date": "2026-07-10"
   }
 ]
