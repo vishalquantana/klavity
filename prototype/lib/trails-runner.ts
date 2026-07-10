@@ -9,7 +9,7 @@
 //
 // Project-scoped: projectId is the first arg of every persisted call and every query.
 import type { Browser, BrowserContext, Page, Locator } from "playwright"
-import { acquirePlaywrightBrowser, playwrightContextOptionsForTrailViewport, startCdpScreencast } from "./trails-browser-page"
+import { acquirePlaywrightBrowser, playwrightContextOptionsForTrailViewport, startCdpScreencast, BrowserLaunchError, type PlaywrightBrowserHandle } from "./trails-browser-page"
 import { uploadScreenshotMeta } from "./s3"
 import type { FailureKind, Fingerprint, Tier, Verdict, TrailStep } from "./trails-types"
 import { expandModuleSteps } from "./trails-modules"
@@ -557,7 +557,26 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
 
   // Browser via the seam: local Playwright by default; connectOverCDP → remote (Steel) when
   // AUTOSIM_CDP_URL is set (moves the walk off the 1GB box). bh.close() handles Steel release.
-  const bh = await acquirePlaywrightBrowser({ headless: opts.headless, launchArgs: opts.launchArgs })
+  //
+  // KLA — INSTANT-RED FIX: browser acquisition happens BEFORE the walk try/finally below, so a launch
+  // failure (Chromium missing/OOM on the 1GB box, or an unreachable remote CDP) used to escape walkTrail
+  // entirely and be finalized by runWalkNow's generic catch with NO failureKind — indistinguishable from
+  // a real regression, and with an empty walk report. Catch it here: the run row already exists, so we
+  // finalize it RED as a CRASH (infra), with the actionable BrowserLaunchError message surfaced verbatim.
+  let bh: PlaywrightBrowserHandle
+  try {
+    bh = await acquirePlaywrightBrowser({ headless: opts.headless, launchArgs: opts.launchArgs })
+  } catch (e) {
+    const msg = e instanceof BrowserLaunchError ? e.message : `Could not start the walk browser: ${String((e as any)?.message ?? e)}`
+    const reasons = [msg]
+    await finishWalk(projectId, runId, {
+      status: "red",
+      llmCalls: 0,
+      summary: { reasons, failureKind: "crash", error: msg, browserUnavailable: true },
+    }).catch(() => {})
+    notifyWalkRed({ trailName: trail.name, trailId, projectId, runId, reasons, at: Date.now() }).catch(() => {})
+    return { runId, verdict: "red", llmCalls: 0, steps: [], healedCount: 0, reasons, failureKind: "crash" }
+  }
   const browser: Browser = bh.browser
   const stepSummaries: WalkStepSummary[] = []
   let walkVerdict: Verdict = "green"

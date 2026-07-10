@@ -3662,8 +3662,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         }
       }
       if (req.method === "GET" && path === "/api/trails/author/active") {
+        // "No active session" is a NORMAL empty result, not a not-found error: the dashboard polls this
+        // on every load, so a 404 spammed the console/network tab (reported as a bug) even though the
+        // clients treat it as "nothing running". Return 200 with a null session; the clients already
+        // guard on `!s || s.status !== "running"`, so { active: null } is a compatible payload.
         const s = await getActiveAuthorSession(projectId)
-        return s ? json({ ...s, limitMs: AUTOSIM_DEADLINE_MS_DEFAULT }) : json({ error: "No active session" }, 404)
+        return s
+          ? json({ ...s, active: true, limitMs: AUTOSIM_DEADLINE_MS_DEFAULT })
+          : json({ active: null })
       }
       // GET /api/trails/author/stalled — KLA-152: list recent stalled sessions with a checkpoint or partial draft.
       if (req.method === "GET" && path === "/api/trails/author/stalled") {

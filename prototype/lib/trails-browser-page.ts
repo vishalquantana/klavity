@@ -457,6 +457,53 @@ function mergeLocalChromiumArgs(args?: string[]): string[] {
   return Array.from(new Set(args ?? []))
 }
 
+/**
+ * Raised when the walk browser cannot be started at all (local Chromium missing/OOM, or a remote CDP
+ * endpoint refused). This is an INFRASTRUCTURE failure, NOT a trail regression: the walk never ran, so
+ * there are no steps to inspect. Callers finalize the run RED with failureKind "crash" and surface this
+ * message verbatim so the walk report explains WHY (and, on prod, what to configure) instead of showing
+ * a misleading "regression or hard failure" with an empty report.
+ */
+export class BrowserLaunchError extends Error {
+  constructor(message: string, readonly cause?: unknown) {
+    super(message)
+    this.name = "BrowserLaunchError"
+  }
+}
+
+const REMOTE_HINT =
+  "To move the browser off the box, set AUTOSIM_CDP_URL (+ STEEL_API_KEY for Steel.dev) so walks run on a remote browser."
+
+/**
+ * Launch a local Playwright Chromium with the same resilience the post-deploy smoke script relies on:
+ * headless:true defaults to the `chrome-headless-shell` build, which may NOT be installed on the prod
+ * box (only the full `chromium` binary is). If the default launch fails, retry once with an explicit
+ * executablePath (the full chromium that `playwright install chromium` provides). Only if BOTH fail do
+ * we raise BrowserLaunchError with an actionable message — this is what turned into an instant, opaque
+ * RED "hard failure" before (the throw escaped walkTrail's try, so no failureKind / report was written).
+ */
+export async function launchLocalChromium(
+  chromium: typeof import("playwright").chromium,
+  opts: AcquireOpts,
+): Promise<import("playwright").Browser> {
+  const headless = opts.headless ?? true
+  const args = mergeLocalChromiumArgs(opts.launchArgs)
+  try {
+    return await chromium.launch({ headless, args })
+  } catch (first) {
+    // Fallback: force the full chromium binary in case chrome-headless-shell is not installed.
+    try {
+      return await chromium.launch({ headless, args, executablePath: chromium.executablePath() })
+    } catch (second) {
+      throw new BrowserLaunchError(
+        `Could not start a local browser for the walk (${String((first as any)?.message ?? first)}). ` +
+        `Install Playwright's Chromium on the host (\`bunx playwright install chromium\`), or run walks remotely. ${REMOTE_HINT}`,
+        second,
+      )
+    }
+  }
+}
+
 function localBrowserWatchdogMs(opts: AcquireOpts): number {
   const envMs = Number(process.env.AUTOSIM_BROWSER_WATCHDOG_MS)
   if (opts.watchdogMs != null) return opts.watchdogMs
@@ -475,7 +522,7 @@ export async function acquireBrowser(opts: AcquireOpts = {}): Promise<BrowserHan
   const cdpBase = process.env.AUTOSIM_CDP_URL
   if (cdpBase) return await connectRemotePuppeteer(cdpBase, opts)
   const { chromium } = await import("playwright")
-  const browser = await chromium.launch({ headless: opts.headless ?? true, args: mergeLocalChromiumArgs(opts.launchArgs) })
+  const browser = await launchLocalChromium(chromium, opts)
   return new PlaywrightHandle(browser, localBrowserWatchdogMs(opts))
 }
 
@@ -573,7 +620,7 @@ export async function acquirePlaywrightBrowser(opts: AcquireOpts = {}): Promise<
   const { chromium } = await import("playwright")
   const cdpBase = process.env.AUTOSIM_CDP_URL
   if (!cdpBase) {
-    const browser = await chromium.launch({ headless: opts.headless ?? true, args: mergeLocalChromiumArgs(opts.launchArgs) })
+    const browser = await launchLocalChromium(chromium, opts)
     let watchdog: ReturnType<typeof setTimeout> | null = null
     const watchdogMs = localBrowserWatchdogMs(opts)
     if (watchdogMs > 0) {
@@ -607,7 +654,9 @@ export async function acquirePlaywrightBrowser(opts: AcquireOpts = {}): Promise<
       browser = await chromium.connectOverCDP(`${cdpBase}?apiKey=${key}&sessionId=${session.id}`)
     } catch (e) {
       await release().catch(() => {})
-      throw e
+      throw new BrowserLaunchError(
+        `Could not connect to the Steel remote browser at ${cdpBase} (${String((e as any)?.message ?? e)}). Check AUTOSIM_CDP_URL / STEEL_API_KEY.`, e,
+      )
     }
     return {
       browser,
@@ -615,7 +664,14 @@ export async function acquirePlaywrightBrowser(opts: AcquireOpts = {}): Promise<
       kind: "steel:" + (session.region ?? "remote"),
     }
   }
-  const browser = await chromium.connectOverCDP(cdpBase)
+  let browser: import("playwright").Browser
+  try {
+    browser = await chromium.connectOverCDP(cdpBase)
+  } catch (e) {
+    throw new BrowserLaunchError(
+      `Could not connect to the remote browser at AUTOSIM_CDP_URL (${String((e as any)?.message ?? e)}). Check the CDP endpoint is reachable from the host.`, e,
+    )
+  }
   return { browser, close: () => safeClose(browser.close()), kind: "cdp-remote" }
 }
 
