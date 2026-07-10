@@ -89,7 +89,9 @@ export async function runWalkNow(
       // Crash isolation: a walk throw finalizes the run RED + releases the slot, never propagates.
       const currentWalk = await getWalk(projectId, runId).catch(() => null)
       if (!currentWalk || currentWalk.status === "running") {
-        await finishWalk(projectId, runId, { status: "red", llmCalls: 0, summary: { error: String(e?.message || e) } }).catch(() => {})
+        // Any throw that escapes the walk itself (e.g. an infra/browser failure that got past the
+        // walk's own guards) is a CRASH, not a trail regression — tag it so the report is honest.
+        await finishWalk(projectId, runId, { status: "red", llmCalls: 0, summary: { failureKind: "crash", error: String(e?.message || e) } }).catch(() => {})
       }
     }
   })

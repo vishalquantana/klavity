@@ -244,7 +244,7 @@ test("GET session is project-scoped (IDOR)", async () => {
   expect(foreign.status).toBe(404)
 })
 
-test("GET /api/trails/author/active: 404 when none running; 200 with running session; project-scoped", async () => {
+test("GET /api/trails/author/active: 200 { active:null } when none running; 200 with running session; project-scoped", async () => {
   // Seed a running author_session row directly (no OPENROUTER key — any POST would fail quickly)
   const sessionTs = Date.now()
   const activeSid = `auth_active_test_${ts}`
@@ -260,17 +260,20 @@ test("GET /api/trails/author/active: 404 when none running; 200 with running ses
   expect(body.id).toBe(activeSid)
   expect(body.status).toBe("running")
   expect(body.name).toBe("Active Session")
+  expect(body.active).toBe(true)
 
-  // Other project does NOT see it
+  // Other project does NOT see it → 200 with active:null (NOT a 404, which spammed the console).
   const r2 = await fetch(`${base}/api/trails/author/active?project=${otherPid}`, { headers: { cookie: otherCookie } })
-  expect(r2.status).toBe(404)
+  expect(r2.status).toBe(200)
+  expect((await r2.json()).active).toBeNull()
 
   // Unauth → 401
   const r3 = await fetch(`${base}/api/trails/author/active?project=${pid}`)
   expect(r3.status).toBe(401)
 
-  // Mark ALL running sessions for this project non-running → back to 404
+  // Mark ALL running sessions for this project non-running → still 200, active:null.
   await rawExec(`UPDATE author_sessions SET status='stalled' WHERE project_id=? AND status='running'`, [PROJECT_ID])
   const r4 = await fetch(`${base}/api/trails/author/active?project=${pid}`, { headers: { cookie: adminCookie } })
-  expect(r4.status).toBe(404)
+  expect(r4.status).toBe(200)
+  expect((await r4.json()).active).toBeNull()
 })

@@ -4,7 +4,7 @@
 // exercised by the live spike (needs network + key), not unit-tested here.
 // acquirePlaywrightBrowser (used by the walker) is also tested here for its local/fallback path.
 import { describe, test, expect, afterAll } from "bun:test"
-import { acquireBrowser, acquirePlaywrightBrowser, playwrightContextOptionsForTrailViewport, startCdpScreencast, safeClose, type BrowserHandle, type PlaywrightBrowserHandle } from "./trails-browser-page"
+import { acquireBrowser, acquirePlaywrightBrowser, launchLocalChromium, BrowserLaunchError, playwrightContextOptionsForTrailViewport, startCdpScreencast, safeClose, type BrowserHandle, type PlaywrightBrowserHandle } from "./trails-browser-page"
 
 // Real-browser tests only run when KLAV_E2E=1 (browsers installed). CI default suite is hermetic.
 const RUN_BROWSER = !!process.env.KLAV_E2E
@@ -110,6 +110,53 @@ describe.if(RUN_BROWSER)("acquirePlaywrightBrowser (walker seam)", () => {
     try { await acquirePlaywrightBrowser({ headless: true }) } catch { threw = true }
     expect(threw).toBe(true)
     delete process.env.AUTOSIM_CDP_URL
+  })
+})
+
+// ── launchLocalChromium: headless-shell → full-chromium fallback + actionable error (hermetic) ──
+// These use a fake `chromium` so they run WITHOUT a real browser (the instant-RED prod bug is a
+// launch failure — we must be able to reproduce the failure classification without Chromium).
+describe("launchLocalChromium fallback + BrowserLaunchError", () => {
+  test("first launch succeeds → returns that browser, no fallback", async () => {
+    let calls = 0
+    const fakeBrowser = { id: "b1" } as any
+    const chromium = {
+      async launch() { calls++; return fakeBrowser },
+      executablePath() { return "/nope" },
+    } as any
+    const b = await launchLocalChromium(chromium, { headless: true })
+    expect(b).toBe(fakeBrowser)
+    expect(calls).toBe(1)
+  })
+
+  test("first launch fails (headless-shell missing) → retries with executablePath and succeeds", async () => {
+    let calls = 0
+    const fakeBrowser = { id: "b2" } as any
+    const chromium = {
+      async launch(o: any) {
+        calls++
+        if (!o?.executablePath) throw new Error("Executable doesn't exist: chrome-headless-shell")
+        return fakeBrowser
+      },
+      executablePath() { return "/full/chromium" },
+    } as any
+    const b = await launchLocalChromium(chromium, { headless: true })
+    expect(b).toBe(fakeBrowser)
+    expect(calls).toBe(2)
+  })
+
+  test("both launches fail → BrowserLaunchError with actionable message (install / AUTOSIM_CDP_URL)", async () => {
+    const chromium = {
+      async launch() { throw new Error("spawn ENOMEM") },
+      executablePath() { return "/full/chromium" },
+    } as any
+    let err: unknown
+    try { await launchLocalChromium(chromium, { headless: true }) } catch (e) { err = e }
+    expect(err).toBeInstanceOf(BrowserLaunchError)
+    const msg = String((err as Error).message)
+    expect(msg).toContain("Could not start a local browser")
+    expect(msg).toContain("playwright install chromium")
+    expect(msg).toContain("AUTOSIM_CDP_URL")
   })
 })
 

@@ -50,6 +50,20 @@ test("a walk that throws finalizes the run red and releases the slot (crash isol
   expect(isWalkInFlight()).toBe(false)
 })
 
+// Instant-RED bug: a browser-acquire failure that escapes the walk is an INFRA crash, not a trail
+// regression. The trigger's fallback finalize must tag failureKind "crash" so the walk report is honest.
+test("a walk throw finalizes RED tagged failureKind=crash (browser/infra, not regression)", async () => {
+  const trail = await seedTrail()
+  const { runId } = await runWalkNow("proj_t", trail, {
+    walk: async () => { throw new Error("Could not start a local browser for the walk (spawn ENOMEM)") },
+  })
+  await waitFor(async () => (await T.getWalk("proj_t", runId))?.status === "red")
+  const walk = await T.getWalk("proj_t", runId)
+  expect((walk?.summary as any)?.failureKind).toBe("crash")
+  expect((walk?.summary as any)?.error).toContain("Could not start a local browser")
+  expect(isWalkInFlight()).toBe(false)
+})
+
 test("runWalkNow throws on an unknown trail", async () => {
   await expect(runWalkNow("proj_t", "trl_nope")).rejects.toThrow()
 })
