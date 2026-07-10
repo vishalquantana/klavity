@@ -352,6 +352,20 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .ss-id-meta{margin-top:11px;font-family:var(--mono);font-size:10.5px;color:var(--paper-faint);letter-spacing:.02em}
 .ss-id-edit input,.ss-id-edit textarea{width:100%;font-family:var(--body);color:var(--paper);background:var(--ink-3);border:1px solid var(--line);border-radius:9px;padding:7px 10px;outline:none;margin-bottom:7px}
 .ss-id-edit input:focus,.ss-id-edit textarea:focus{border-color:var(--indigo-soft)}
+/* simClass selector in Studio editor */
+.ss-simclass-row{display:flex;align-items:center;gap:8px;margin-bottom:9px;flex-wrap:wrap}
+.ss-simclass-lbl{font-size:11px;color:var(--paper-faint);font-weight:600;letter-spacing:.04em;flex:none}
+.ss-simclass-btns{display:flex;gap:5px}
+.ss-scbtn{font-family:var(--body);font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:4px 10px;border-radius:7px;border:1px solid var(--line);background:transparent;color:var(--paper-faint);cursor:pointer;transition:color .13s,border-color .13s,background .13s,transform .13s}
+.ss-scbtn:hover{transform:translateY(-1px)}
+.ss-scbtn:active{transform:scale(.97)}
+.ss-scbtn.on.user{color:#0f9d6b;border-color:rgba(15,157,107,.4);background:rgba(15,157,107,.1)}
+.ss-scbtn.on.client{color:var(--indigo);border-color:rgba(99,102,241,.4);background:rgba(99,102,241,.1)}
+.ss-simclass-hint{font-size:10px;color:var(--paper-faint);line-height:1.4;margin-top:1px;width:100%}
+/* simClass badge in read view */
+.ss-simclass-badge{display:inline-flex;align-items:center;font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:2px 7px;border-radius:6px;border:1px solid var(--line);font-family:var(--body)}
+.ss-simclass-badge.user{color:#0f9d6b;border-color:rgba(15,157,107,.32);background:rgba(15,157,107,.07)}
+.ss-simclass-badge.client{color:var(--indigo);border-color:rgba(99,102,241,.35);background:rgba(99,102,241,.07)}
 
 .ss-traits-wrap{margin-top:26px;display:flex;flex-direction:column;gap:22px}
 .ss-tgroup-head{display:flex;align-items:center;gap:9px;margin-bottom:10px}
@@ -690,7 +704,8 @@ async function loadSavedSims() {
     const savedIds = new Set(d.personas.map(p => p.id))
     sims = [
       ...d.personas.map(p => ({ _id: p.id, _saved: true, name: p.name, role: p.role,
-        type: p.type, initials: p.initials, accent: p.accent, summary: p.summary,
+        type: p.type, simClass: p.simClass || null, side: p.side || null,
+        initials: p.initials, accent: p.accent, summary: p.summary,
         insights: p.insights, avatar: p.avatar || undefined })),
       ...sims.filter(s => !s._id || !savedIds.has(s._id)),
     ]
@@ -1264,7 +1279,16 @@ async function renderPersonaDetail(sim) {
   else renderInspector(null)
 }
 
+// Resolve simClass for display: prefer explicit simClass, fall back to legacy type shim, default "user".
+function ssSimClass(sim) {
+  if (sim.simClass === "client" || sim.simClass === "user") return sim.simClass
+  // Legacy shim: type="client" → client class; type="internal" → user class
+  if (sim.type === "client") return "client"
+  return "user"
+}
+
 function ssPersonaHeaderHtml(sim) {
+  const cls = ssSimClass(sim)
   if (ssPersonaEditing) {
     // Only show the global toggle when the Sim belongs to this project (not a sibling global).
     // Sibling globals show isGlobal=true but their projectId != the current project, so
@@ -1277,6 +1301,14 @@ function ssPersonaHeaderHtml(sim) {
         <input id="ssEditName" value="${esc(sim.name || "")}" placeholder="Name" />
         <input id="ssEditRole" value="${esc(sim.role || "")}" placeholder="Role" />
         <textarea id="ssEditSummary" rows="3" placeholder="Summary">${esc(sim.summary || "")}</textarea>
+        <div class="ss-simclass-row">
+          <span class="ss-simclass-lbl">Sim type</span>
+          <div class="ss-simclass-btns">
+            <button type="button" class="ss-scbtn user${cls === "user" ? " on" : ""}" id="ssScUser">User</button>
+            <button type="button" class="ss-scbtn client${cls === "client" ? " on" : ""}" id="ssScClient">Client</button>
+          </div>
+          <span class="ss-simclass-hint" id="ssScHint">${cls === "client" ? "Judges outcomes &amp; business results — feedback at feature/workflow/strategy altitude." : "Operates the product hands-on — reacts to UI &amp; interaction friction."}</span>
+        </div>
         ${globalToggle}
         <div class="ss-mini-row">
           <button class="ss-mini-btn primary" id="ssPersonaSave">Save</button>
@@ -1289,13 +1321,16 @@ function ssPersonaHeaderHtml(sim) {
   const dateStr = (sim.updatedAt || sim.updated_at) ? fmtDate(sim.updatedAt || sim.updated_at) : ""
   const metaParts = [tc + " trait" + (tc === 1 ? "" : "s"), dateStr ? ("updated " + dateStr) : ""].filter(Boolean)
   const globalBadge = sim.isGlobal ? '<span class="sim-global-badge" title="Available in all your projects">Global</span>' : ""
+  const clsLabel = cls === "client" ? "Client" : "User"
+  const clsTip = cls === "client" ? "Judges outcomes &amp; strategy — not individual buttons" : "Operates the product hands-on — reacts to UI &amp; interaction"
+  const classBadge = `<span class="ss-simclass-badge ${cls}" title="${clsTip}">${clsLabel}</span>`
   return `<div class="ss-id-card">
       <div class="ss-av" style="background:${esc(sim.accent || "#6366f1")}">${avatarInner({ avatar: sim.avatar, initials: sim.initials, name: sim.name })}</div>
       <div class="ss-id-main">
         <div class="ss-id-name">${esc(sim.name || "")}${globalBadge}</div>
         <div class="ss-id-role-line">
           <span class="ss-id-role">${esc(sim.role || "")}</span>
-          ${sim.type ? `<span class="ss-chip">${esc(sim.type)}</span>` : ""}
+          ${classBadge}
         </div>
         ${sim.summary ? `<div class="ss-id-summary">${esc(sim.summary)}</div>` : ""}
         <div class="ss-id-meta">${esc(metaParts.join(" · "))}</div>
@@ -1311,6 +1346,22 @@ function ssWirePersonaHeader(sim) {
   if (saveBtn) saveBtn.onclick = () => ssSavePersona(sim)
   const cancelBtn = $("ssPersonaCancel")
   if (cancelBtn) cancelBtn.onclick = () => { ssPersonaEditing = false; renderPersonaDetail(sim) }
+  // simClass toggle buttons in edit mode
+  const scUser = $("ssScUser"), scClient = $("ssScClient"), scHint = $("ssScHint")
+  function setSimClass(cls) {
+    if (!scUser || !scClient) return
+    scUser.classList.toggle("on", cls === "user")
+    scClient.classList.toggle("on", cls === "client")
+    if (scHint) scHint.innerHTML = cls === "client"
+      ? "Judges outcomes &amp; business results — feedback at feature/workflow/strategy altitude."
+      : "Operates the product hands-on — reacts to UI &amp; interaction friction."
+    // Store chosen class on the save button so ssSavePersona can read it
+    if (saveBtn) saveBtn.dataset.simclass = cls
+  }
+  if (scUser) scUser.onclick = () => setSimClass("user")
+  if (scClient) scClient.onclick = () => setSimClass("client")
+  // Pre-seed the dataset with current class so ssSavePersona can read it even without a click
+  if (saveBtn) saveBtn.dataset.simclass = ssSimClass(sim)
 }
 
 // Render the trait cards grouped PAIN/WANT/LOVE into #ssTraitsWrap.
@@ -1380,9 +1431,13 @@ async function ssSavePersona(sim) {
   const isGlobal = globalToggleEl ? globalToggleEl.checked : undefined
   const id = sim._id || sim.id
   const saveBtn = $("ssPersonaSave"); if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = "Saving…" }
+  // Read the simClass chosen in the picker; fall back to the sim's current class.
+  const chosenSimClass = (saveBtn && (saveBtn.dataset.simclass === "user" || saveBtn.dataset.simclass === "client"))
+    ? saveBtn.dataset.simclass : ssSimClass(sim)
   try {
     const body = {
       name, role, summary, type: sim.type || "client",
+      simClass: chosenSimClass, side: sim.side || null,
       initials: sim.initials || name.slice(0, 2).toUpperCase(),
       accent: sim.accent || "#6366f1", insights: sim.insights || [],
       avatar: sim.avatar || null,
@@ -1394,10 +1449,10 @@ async function ssSavePersona(sim) {
     })
     if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.error || "save failed") }
     // Update the in-memory sim + global sims array, exit edit mode, re-render.
-    sim.name = name; sim.role = role; sim.summary = summary
+    sim.name = name; sim.role = role; sim.summary = summary; sim.simClass = chosenSimClass
     if (typeof isGlobal === "boolean") sim.isGlobal = isGlobal
     const arrSim = sims.find(s => (s._id || s.id) === id)
-    if (arrSim) { arrSim.name = name; arrSim.role = role; arrSim.summary = summary; if (typeof isGlobal === "boolean") arrSim.isGlobal = isGlobal }
+    if (arrSim) { arrSim.name = name; arrSim.role = role; arrSim.summary = summary; arrSim.simClass = chosenSimClass; if (typeof isGlobal === "boolean") arrSim.isGlobal = isGlobal }
     ssPersonaEditing = false
     renderStudio(sim)
   } catch (e) {

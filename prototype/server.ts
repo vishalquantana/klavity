@@ -387,8 +387,7 @@ async function extractPersonas(transcript: string, ctx?: { email?: string | null
   // 5+ speakers and many insights were hitting the 4 000-token ceiling → truncated JSON → 500.
   const { content, usage } = await chat([{ role: "system", content: EXTRACT_SYS + UNTRUSTED_GUARD }, { role: "user", content: "TRANSCRIPT:\n" + wrapUntrusted(transcript) }], EXTRACT_MAX_OUTPUT_TOKENS, false, { type: "extract", model: getExtractModel(), ...ctx })
   const data = parseJSON(content)
-  // Sanitize typed fields on each insight; pass-through unknown persona keys (simClass/side/core)
-  // without persisting them — persistence is a separate follow-up (new DB columns + migration).
+  // Sanitize typed fields on each insight. simClass/side/core are now persisted via upsertPersona.
   if (Array.isArray(data?.personas)) {
     for (const p of data.personas) {
       // Backward-compat shim: v3 drops the old `type` field in favour of simClass+side.
@@ -5235,12 +5234,22 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const { brief } = await req.json()
           if (!brief || String(brief).trim().length < 4) return json({ error: "Describe your user in a sentence." }, 400)
           if (String(brief).length > AI_DEMO_MAX_CHARS) return json({ error: "Brief too long." }, 413)
+          // simClass: "user" = operates the product hands-on (UI/interaction focus); "client" = judges outcomes/business results.
+          // Default described Sims to "user" unless the brief clearly indicates an outcome-judging stakeholder (exec, buyer, decision-maker).
           const sys = "Create ONE believable user persona (a \"Sim\") from the user's brief. Invent a plausible first+last name and a role. " +
-            "Respond with ONLY a JSON object, no prose: {\"persona\":{\"name\":string,\"role\":string,\"type\":\"client\"|\"internal\",\"initials\":string(2 uppercase letters),\"accent\":string(hex colour like #6366f1),\"summary\":string,\"insights\":[{\"kind\":\"pain\"|\"want\"|\"love\",\"text\":string,\"quote\":string}]}} with exactly 3 insights; each quote is a short first-person line this persona might actually say."
+            "Classify on two axes: simClass (\"user\" = actually OPERATES the product hands-on, feedback skews UI/interaction; " +
+            "\"client\" = evaluates OVERALL outcomes and business results, feedback skews feature/workflow/strategy — only assign \"client\" when the brief clearly describes an executive, buyer, or outcome-judging stakeholder) " +
+            "and side (\"external\" = customer/partner outside the team; \"internal\" = on the product/company team). " +
+            "Respond with ONLY a JSON object, no prose: {\"persona\":{\"name\":string,\"role\":string,\"simClass\":\"user\"|\"client\",\"side\":\"external\"|\"internal\",\"initials\":string(2 uppercase letters),\"accent\":string(hex colour like #6366f1),\"summary\":string,\"insights\":[{\"kind\":\"pain\"|\"want\"|\"love\",\"text\":string,\"quote\":string}]}} with exactly 3 insights; each quote is a short first-person line this persona might actually say."
           const meB = (await sessionEmail(req)) || (await bearerEmail(req))
           if (aiDemoLimited(meB, req, server)) return json({ error: "Too many requests. Please wait and try again." }, 429, { "Retry-After": "3600" })
           const { content, usage } = await chat([{ role: "system", content: sys }, { role: "user", content: "Brief: " + brief }], 1200, true, { type: "persona", email: meB })
           const data = parseJSON(content)
+          // Ensure simClass is always set: default to "user" for described Sims when the model omits it.
+          if (data.persona) {
+            if (!SIM_CLASS_ENUM.has(String(data.persona.simClass))) data.persona.simClass = "user"
+            if (!SIDE_ENUM.has(String(data.persona.side))) data.persona.side = "external"
+          }
           return json({ persona: data.persona, usage })
         } catch (e: any) { return json(oops(e, "create"), 500) }
       }
@@ -5272,11 +5281,22 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             .trim()
             .slice(0, AI_DEMO_MAX_CHARS)
           if (text.length < 40) return json({ error: "That page didn't have enough text to read." }, 400)
+          // simClass: "user" = operates the product hands-on; "client" = judges outcomes/business results.
+          // Site-inferred Sims default to "user" unless the page clearly targets exec/buyer audiences.
           const sys = "From the text of a product's public web page, infer 2-3 DISTINCT believable user personas (\"Sims\") who would use or evaluate it, grounded in what the page actually says (audience, pricing, features). Invent plausible first+last names and roles. " +
-            "Respond with ONLY a JSON object, no prose: {\"personas\":[{\"name\":string,\"role\":string,\"type\":\"client\"|\"internal\",\"initials\":string(2 uppercase letters),\"accent\":string(hex colour like #6366f1),\"summary\":string,\"insights\":[{\"kind\":\"pain\"|\"want\"|\"love\",\"text\":string,\"quote\":string}]}]} with 2-3 personas, each with exactly 3 insights; each quote is a short first-person line that persona might say."
+            "Classify each on two axes: simClass (\"user\" = actually OPERATES the product hands-on, feedback skews UI/interaction; " +
+            "\"client\" = evaluates OVERALL outcomes and business results, feedback skews feature/workflow/strategy — only assign \"client\" when the persona clearly describes an executive, buyer, or outcome-judging stakeholder) " +
+            "and side (\"external\" = customer/partner outside the team; \"internal\" = on the product/company team). " +
+            "Respond with ONLY a JSON object, no prose: {\"personas\":[{\"name\":string,\"role\":string,\"simClass\":\"user\"|\"client\",\"side\":\"external\"|\"internal\",\"initials\":string(2 uppercase letters),\"accent\":string(hex colour like #6366f1),\"summary\":string,\"insights\":[{\"kind\":\"pain\"|\"want\"|\"love\",\"text\":string,\"quote\":string}]}]} with 2-3 personas, each with exactly 3 insights; each quote is a short first-person line that persona might say."
           const { content, usage } = await chat([{ role: "system", content: sys }, { role: "user", content: "Page URL: " + siteUrl + "\n\nPage text:\n" + text }], 1600, true, { type: "persona", email: meS })
           const data = parseJSON(content)
-          return json({ personas: (data.personas || []).slice(0, 3), usage })
+          // Ensure simClass/side are always set on each persona: default to "user"/"external" for site-inferred Sims.
+          const personas = (data.personas || []).slice(0, 3).map((p: any) => {
+            if (!SIM_CLASS_ENUM.has(String(p?.simClass))) p.simClass = "user"
+            if (!SIDE_ENUM.has(String(p?.side))) p.side = "external"
+            return p
+          })
+          return json({ personas, usage })
         } catch (e: any) { return json(oops(e, "create"), 500) }
       }
       // site URL → live headless screenshot → ONE ephemeral Sim reaction. Powers the onboarding
