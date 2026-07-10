@@ -6926,5 +6926,40 @@ load()
   window.openWizard=openWizard
 })();
 </script>
+<script>
+// Global error reporter — forwards uncaught JS errors and unhandled promise rejections
+// to /api/client-error so backend can page via Slack. Fire-and-forget; never throws.
+(function(){
+  var MAX_PER_MIN=4;
+  var sent=0;
+  var resetAt=0;
+  function canSend(){
+    var now=Date.now();
+    if(now>=resetAt){sent=0;resetAt=now+60000;}
+    if(sent>=MAX_PER_MIN)return false;
+    sent++;
+    return true;
+  }
+  function send(msg,stack,url){
+    if(!canSend())return;
+    try{
+      var body=JSON.stringify({message:String(msg||"").slice(0,500),stack:stack?String(stack).slice(0,1500):undefined,url:String(url||location.href).slice(0,300)});
+      if(navigator.sendBeacon){
+        var blob=new Blob([body],{type:"application/json"});
+        navigator.sendBeacon("/api/client-error",blob);
+      } else {
+        fetch("/api/client-error",{method:"POST",headers:{"content-type":"application/json"},body:body,keepalive:true}).catch(function(){});
+      }
+    } catch(e){}
+  }
+  window.addEventListener("error",function(e){
+    send(e.message,e.error&&e.error.stack,e.filename);
+  });
+  window.addEventListener("unhandledrejection",function(e){
+    var r=e.reason;
+    send(r&&r.message?r.message:String(r),r&&r.stack,location.href);
+  });
+})();
+</script>
 </body>
 </html>
