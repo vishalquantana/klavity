@@ -527,6 +527,34 @@ body[data-view="recurring"] .grid>.card[data-view~="recurring"]{grid-column:1/-1
 .sf-triage:hover{text-decoration:underline}
 .sf-none{padding:11px 15px;font-size:13px;color:var(--paper-faint);font-style:italic}
 
+/* ── URL-preview panel (Sims tab) ────────────────────────────────────────── */
+.sup-card{padding:18px 20px}
+.sup-hd{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;margin-bottom:10px}
+.sup-hd svg{flex-shrink:0;opacity:.8}
+.sup-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.sup-row input[type=url],.sup-row input[type=text]{flex:1 1 260px;min-width:0;background:var(--ink);border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:13.5px;color:var(--paper);font-family:var(--body);outline:none;transition:border-color .15s}
+.sup-row input:focus{border-color:var(--indigo);box-shadow:0 0 0 3px color-mix(in srgb,var(--indigo) 18%,transparent)}
+#supRunBtn{white-space:nowrap}
+.sup-msg{font-size:12.5px;margin-top:8px;min-height:16px;color:var(--paper-faint)}
+.sup-spinner{display:none;align-items:center;gap:10px;margin-top:12px;padding:10px 0;color:var(--paper-faint);font-size:13px}
+.sup-spinner.show{display:flex}
+.sup-spin{width:18px;height:18px;border:2.5px solid var(--line);border-top-color:var(--indigo);border-radius:50%;animation:spin .75s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+.sup-results{margin-top:14px;display:flex;flex-direction:column;gap:10px}
+.sup-sim-block{border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.sup-sim-hd{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--ink)}
+.sup-sim-hd .name{font-size:13.5px;font-weight:600}
+.sup-sim-hd .role{font-size:11.5px;color:var(--paper-faint)}
+.sup-obs-list{border-top:1px solid var(--line)}
+.sup-ob{padding:10px 14px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:4px}
+.sup-ob:last-child{border-bottom:none}
+.sup-ob-text{font-size:13.5px;line-height:1.5;color:var(--paper)}
+.sup-ob-meta{font-size:11px;color:var(--paper-faint);font-family:var(--mono);display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.sup-saved{font-size:12px;color:var(--green);margin-top:6px;display:none}
+.sup-saved.show{display:block}
+.sup-note{font-size:12px;color:var(--paper-faint);margin-top:10px;line-height:1.5}
+.sup-none{padding:10px 14px;font-size:13px;color:var(--paper-faint);font-style:italic}
+
 /* tickets + activity rows */
 .list{display:flex;flex-direction:column;gap:10px}
 .row-act{display:flex;align-items:center;gap:12px;padding:13px 15px;background:var(--ink);border:1px solid var(--line);border-radius:12px;transition:border-color .2s}
@@ -1428,6 +1456,25 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       <h2 style="display:flex;align-items:center;gap:10px"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 16 1.5 1.5" /> <path d="m14 8-1.5-1.5" /> <path d="M15 2c-1.798 1.998-2.518 3.995-2.807 5.993" /> <path d="m16.5 10.5 1 1" /> <path d="m17 6-2.891-2.891" /> <path d="M2 15c6.667-6 13.333 0 20-6" /> <path d="m20 9 .891.891" /> <path d="M3.109 14.109 4 15" /> <path d="m6.5 12.5 1 1" /> <path d="m7 18 2.891 2.891" /> <path d="M9 22c1.798-1.998 2.518-3.995 2.807-5.993" /></svg> Your Sims <span class="count" id="simsCount"></span>
         <button class="btn btn-indigo btn-sm hide" id="newSimBtn" style="margin-left:auto" onclick="openSimModal()">＋ New Sim</button></h2>
       <div id="simsFeed"><div class="sk-card"><span class="sk sk-av"></span><div class="sk-lines"><span class="sk sk-line" style="width:62%"></span><span class="sk sk-line" style="width:40%"></span></div><span class="sk sk-pill"></span></div><div class="sk-card"><span class="sk sk-av"></span><div class="sk-lines"><span class="sk sk-line" style="width:62%"></span><span class="sk sk-line" style="width:40%"></span></div><span class="sk sk-pill"></span></div></div>
+    </div>
+
+    <!-- Sims tab: paste-URL preview — run the project's real Sims on any public URL, results persisted -->
+    <div class="card full sup-card" id="simUrlPreviewCard" data-view="sims">
+      <div class="sup-hd">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        Preview a URL with your Sims
+      </div>
+      <div class="sup-row">
+        <input id="supUrlInput" type="url" placeholder="https://your-product.com/pricing" autocomplete="off" spellcheck="false" />
+        <button id="supRunBtn" class="btn btn-indigo btn-sm" onclick="runSimUrlPreview()">Run Sims</button>
+      </div>
+      <div id="supMsg" class="sup-msg"></div>
+      <div id="supSpinner" class="sup-spinner">
+        <div class="sup-spin"></div>
+        <span id="supSpinMsg">Your Sims are opening the page…</span>
+      </div>
+      <div id="supResults" class="sup-results"></div>
+      <div id="supSaved" class="sup-saved">Reactions saved — see them in <a href="#triage" onclick="setView('triage')" style="color:var(--indigo)">New reports</a>.</div>
     </div>
 
     <!-- Sims tab: compact, dismissible live-trigger guidance — kept for onboarding, no longer the hero -->
@@ -2852,6 +2899,97 @@ function renderSimsFeed() {
     </div>`
   }).join("")
 }
+
+// ── URL preview with real Sims ───────────────────────────────────────────────
+// Calls POST /api/sim/preview with projectId (authenticated branch) so the project's
+// real Sims run on the pasted URL and reactions are persisted to the feedback table.
+async function runSimUrlPreview() {
+  const pid = curProjId()
+  if (!pid) { $("supMsg").textContent = "Select a project first."; return }
+  const urlInput = /** @type {HTMLInputElement} */ (document.getElementById("supUrlInput"))
+  let pvUrl = (urlInput?.value || "").trim()
+  if (!pvUrl) { $("supMsg").textContent = "Enter a URL first."; urlInput?.focus(); return }
+  if (!/^https?:\/\//i.test(pvUrl)) pvUrl = "https://" + pvUrl
+
+  const runBtn = document.getElementById("supRunBtn")
+  const spinner = $("supSpinner")
+  const spinMsg = document.getElementById("supSpinMsg")
+  const resultsEl = $("supResults")
+  const savedEl = $("supSaved")
+  const msgEl = $("supMsg")
+
+  // Reset state
+  msgEl.textContent = ""
+  resultsEl.innerHTML = ""
+  savedEl.classList.remove("show")
+  spinner.classList.add("show")
+  if (spinMsg) spinMsg.textContent = `Your Sims are opening ${pvUrl}…`
+  if (runBtn) runBtn.disabled = true
+
+  try {
+    const res = await fetch("/api/sim/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ url: pvUrl, projectId: pid }),
+    })
+    const data = await res.json()
+    spinner.classList.remove("show")
+    if (runBtn) runBtn.disabled = false
+
+    if (!res.ok || data.error) {
+      msgEl.textContent = data.error || "Something went wrong. Try a public page."
+      return
+    }
+
+    const reviews = Array.isArray(data.reviews) ? data.reviews : []
+    if (!reviews.length) {
+      resultsEl.innerHTML = '<div class="sup-none">Your Sims reviewed the page but had no new observations. Try a different page or add more Sims.</div>'
+      return
+    }
+
+    // Render each Sim's observations
+    resultsEl.innerHTML = reviews.map(rv => {
+      const sims = state.sims || []
+      const sim = sims.find(s => s.id === rv.simId) || {}
+      const accent = safeAccent(rv.accent || sim.accent, col(rv.simName || ""))
+      const inits = esc(rv.initials || sim.initials || initials(rv.simName || "?"))
+      const observations = Array.isArray(rv.observations) ? rv.observations : []
+      const obsHtml = observations.map(o => {
+        const sentimentChip = o.sentiment ? `<span class="chip s-${esc(normSentiment(o.sentiment))}">${esc(o.sentiment)}</span>` : ""
+        const priorityChip = o.priority ? `<span class="chip sev-${esc(o.priority)}">${esc(o.priority)}</span>` : ""
+        const chips = [sentimentChip, priorityChip].filter(Boolean).join("")
+        return `<div class="sup-ob">
+          ${chips ? `<div class="sup-ob-meta">${chips}</div>` : ""}
+          <div class="sup-ob-text">${esc(o.observation)}</div>
+        </div>`
+      }).join("")
+      return `<div class="sup-sim-block">
+        <div class="sup-sim-hd">
+          <div class="av" style="background:${accent}">${inits}</div>
+          <div>
+            <div class="name">${esc(rv.simName || "Sim")}</div>
+            <div class="role">${observations.length} observation${observations.length === 1 ? "" : "s"}</div>
+          </div>
+        </div>
+        <div class="sup-obs-list">${obsHtml}</div>
+      </div>`
+    }).join("")
+
+    if (data.persisted) {
+      savedEl.classList.add("show")
+    }
+  } catch (e) {
+    spinner.classList.remove("show")
+    if (runBtn) runBtn.disabled = false
+    $("supMsg").textContent = "Network error — check your connection and try again."
+  }
+}
+// Allow pressing Enter in the URL input to trigger the run
+document.addEventListener("DOMContentLoaded", function() {
+  const inp = document.getElementById("supUrlInput")
+  if (inp) inp.addEventListener("keydown", function(e) { if (e.key === "Enter") runSimUrlPreview() })
+})
 
 function renderMembers(admin) {
   const members = state.members || []
