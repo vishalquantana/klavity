@@ -338,7 +338,11 @@ async function renderSims(s: KlavitySettings, projectId: string | null = null) {
       const r = await fetch(`${base}/api/personas${q}`, { headers: { Authorization: `Bearer ${token}` } })
       if (r.ok) {
         const d = await r.json()
-        if (Array.isArray(d.personas) && d.personas.length) {
+        // A successful response is authoritative for the selected project — trust it even when
+        // EMPTY. Previously this only updated on a non-empty list, so switching to a project with
+        // zero (or fewer) Sims kept showing the PREVIOUS project's cached Sims. Only a network
+        // failure (the catch below) should preserve the stale cache.
+        if (Array.isArray(d.personas)) {
           const enabledMap = new Map(sims.map((x) => [x.id, x.enabled]))
           sims = d.personas.map((p: any) => ({
             id: p.id, name: p.name, role: p.role || '', accent: p.accent || '#6366f1',
