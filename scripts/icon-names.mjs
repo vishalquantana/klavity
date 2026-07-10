@@ -24,4 +24,6 @@ export const ICON_NAMES = [
   'bell', 'refresh-cw', 'bot', 'star',
   // P0 fix: chevron-left caused white-screen throw on /sim/:id — added with fail-soft guard
   'chevron-left', 'chevron-right',
+  // B4 fix: clock used by schedule-chip in AutoSims view; loader used by run/cancel spinners
+  'clock', 'loader',
 ];
