@@ -5299,17 +5299,42 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           return json({ personas, usage })
         } catch (e: any) { return json(oops(e, "create"), 500) }
       }
-      // site URL → live headless screenshot → ONE ephemeral Sim reaction. Powers the onboarding
-      // "instant aha": paste your URL, watch a customer react to your real page — no widget install,
-      // no monitored-URL allowlist (unlike /api/sim/review). Ephemeral persona ⇒ no cross-tenant lookup.
+      // site URL → live headless screenshot → Sim reactions.
+      //
+      // TWO BRANCHES:
+      //
+      // AUTHENTICATED + projectId branch ("URL preview with real Sims"):
+      //   When a signed-in caller supplies a projectId they own, this runs the project's Sims through
+      //   the SAME pipeline as /api/sim/review (runSimReviews), persists reactions to the feedback table
+      //   (tagged adhoc=true, source=url-preview), inserts a sim_runs record, and returns all reviews.
+      //   Results appear in the dashboard "New reports" exactly like extension-triggered reviews.
+      //   Auth: cookie OR Bearer. Access check: resolveProject. Rate-limited per-user (aiDemoLimited).
+      //
+      // EPHEMERAL (unauthenticated or no projectId) branch ("onboarding aha"):
+      //   ONE ephemeral persona reacts to the URL; nothing is persisted; no cross-tenant lookup.
+      //   Powers site/onboarding.html — kept UNCHANGED.
       if (req.method === "POST" && path === "/api/sim/preview") {
         try {
-          let { url: pvUrl, persona } = await req.json()
+          let { url: pvUrl, persona, projectId: pvProjectId } = await req.json()
           pvUrl = String(pvUrl || "").trim()
           if (!pvUrl) return json({ error: "Enter your product's URL." }, 400)
           if (!/^https?:\/\//i.test(pvUrl)) pvUrl = "https://" + pvUrl
           const mePv = (await sessionEmail(req)) || (await bearerEmail(req))
           if (aiDemoLimited(mePv, req, server)) return json({ error: "Too many requests. Please wait and try again." }, 429, { "Retry-After": "3600" })
+
+          // ── AUTHENTICATED branch: resolve project + Sims BEFORE SSRF/screenshot ─────
+          // Access check and Sims-presence check come FIRST so auth failures never burn
+          // SSRF quota or a browser slot. SSRF and screenshotUrl run only if gates pass.
+          let pvProj: { id: string; access: "admin" | "member" } | null = null
+          let projectSims: any[] = []
+          if (mePv && pvProjectId) {
+            const pvProjId = String(pvProjectId).trim()
+            pvProj = await resolveProject(mePv, pvProjId)
+            if (!pvProj) return json({ error: "No accessible project found." }, 403)
+            projectSims = await listPersonas(pvProj.id)
+            if (!projectSims.length) return json({ error: "This project has no Sims yet. Add a Sim first." }, 400)
+          }
+
           // SSRF preflight: reuse safeFetch's guard (rejects private/loopback + validates each redirect
           // hop) AND confirm the page is reachable BEFORE we point a real browser at it.
           try {
@@ -5318,12 +5343,71 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           } catch {
             return json({ error: "Couldn't reach that URL. Make sure it's a public https page." }, 400)
           }
-          let shot
+          let shot: { imageB64: string; mediaType: "image/jpeg" }
           try {
             shot = await screenshotUrl(pvUrl)
           } catch {
             return json({ error: "Couldn't open that page to preview it. Try a public page." }, 400)
           }
+
+          // ── AUTHENTICATED branch: run real Sims, persist results ─────────────
+          if (pvProj && mePv && projectSims.length) {
+            const authenticatedProjectId = pvProj.id
+            const { urlHost, urlPath } = splitUrl(pvUrl)
+
+            // Store the screenshot (non-fatal if S3 not configured).
+            let screenshotId: string
+            try {
+              const shotBytes = Buffer.from(shot.imageB64, "base64")
+              const expiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000
+              const upload = await uploadScreenshotMeta(shotBytes, shot.mediaType, "private")
+              screenshotId = await insertScreenshot({
+                projectId: authenticatedProjectId, s3Key: upload.key, bucket: upload.bucket,
+                contentType: upload.contentType, acl: "private",
+                bytes: shotBytes.byteLength,
+                ownerEmail: mePv, expiresAt,
+              })
+            } catch (e: any) {
+              console.warn("[sim-preview] screenshot storage skipped (no S3):", e?.message || e)
+              screenshotId = "no-s3-" + Date.now().toString(36)
+            }
+
+            // Run all Sims through the SAME pipeline as /api/sim/review.
+            // adhoc=true: bypass seenHashes + near-dup dedup so all current Sim reactions surface.
+            const seenKeys = projectSims.map((s) => `urlprev:${s.id}:${urlPath || "/"}`)
+            const reviews = await runSimReviews({
+              projectId: authenticatedProjectId, urlPath, urlHost, pageUrl: pvUrl,
+              imageB64: shot.imageB64, mediaType: shot.mediaType,
+              targetSims: projectSims,
+              actorEmail: mePv, screenshotId,
+              seenKeys, seenHashes: new Set(), sessionId: undefined,
+              mode: "all", adhoc: true,
+              reactFn: (sim, b64, mt, pu) => reactToPage(sim, b64, mt, pu, { email: mePv, projectId: authenticatedProjectId }),
+              resolveCitationsFn: resolveCitations,
+              autoCopy: autoCopyFeedback,
+              markSeen: () => {},  // no seen-key bookkeeping for one-shot URL previews
+              db: db ?? null,
+            })
+
+            // Persist a sim_runs record for the dashboard run history.
+            if (db) {
+              try {
+                await insertSimRun({
+                  projectId: authenticatedProjectId, url: pvUrl,
+                  simIds: null,  // null = all Sims
+                  screenshotId, reactions: reviews,
+                  actorEmail: mePv, status: "done", finishedAt: Date.now(),
+                })
+              } catch (e: any) { console.warn("[sim-preview] sim_runs insert skipped:", e?.message || e) }
+            }
+
+            const { simCount, totalObservations } = buildSimRunSummary(reviews)
+            console.log(`[sim-preview] authed project=${authenticatedProjectId} url=${pvUrl} sims=${simCount} observations=${totalObservations}`)
+            return json({ ok: true, projectId: authenticatedProjectId, reviews, screenshotId, simCount, totalObservations, persisted: true })
+          }
+
+          // ── EPHEMERAL branch: one persona, nothing persisted ─────────────────
+          // Kept UNCHANGED — powers onboarding.html "instant aha".
           const p = persona && typeof persona === "object" ? persona : defaultPreviewPersona()
           const { data, usage } = await reactToPage(p, shot.imageB64, shot.mediaType, pvUrl, { email: mePv })
           const reaction = (data.reactions || [])[0] || null
