@@ -54,6 +54,7 @@ import { validateAssertionDraft } from "./lib/assertion-spec"
 import { buildRecurrenceMemory, listProjectRecurringIssues } from "./lib/recurrence-memory"
 import { publishBlogPost, SLUG_RE, type PublishInput } from "./lib/blog-publish"
 import { getExtractModel } from "./lib/extract-model"
+import { parseJSON } from "./lib/parse-json"
 import { createStripeCheckoutSession, createStripePortalSession, intervalFromLookupKey, normalizeInterval, planFromLookupKey, quotasForPlan, retrieveStripeSubscription, verifyStripeWebhook } from "./lib/billing"
 import { runAutosimAuthProbe } from "./lib/autosim-auth-probe"
 
@@ -357,39 +358,8 @@ async function chat(messages: any[], maxTokens: number, jsonMode = false, ctx?: 
   }
   return { content, usage: { input_tokens: u.prompt_tokens, output_tokens: u.completion_tokens } }
 }
-function parseJSON(s: string) {
-  // Strip thinking-model traces (<think>…</think>) and ALL markdown code fences (models put
-  // them anywhere, not just line-anchored). Greedy {…} extraction breaks on thinking traces, so
-  // tags go first.
-  const tag = "think"
-  const open = new RegExp("<" + tag + "[^>]*>[\\s\\S]*?<\\/" + tag + ">", "gi")
-  const cleaned = s
-    .replace(open, "")
-    .replace(/```(?:json)?/gi, "")
-    .replace(/```/g, "")
-    .trim()
-  const tryParse = (str: string): { ok: true; val: any } | { ok: false } => {
-    try { return { ok: true, val: JSON.parse(str) } } catch { return { ok: false } }
-  }
-  // 1) straight parse.
-  let r = tryParse(cleaned); if (r.ok) return r.val
-  // 2) extract the outermost JSON object OR array (some prompts return a top-level array).
-  const obj = cleaned.match(/\{[\s\S]*\}/)
-  const arr = cleaned.match(/\[[\s\S]*\]/)
-  const candidate = obj && (!arr || obj.index! <= arr.index!) ? obj[0] : (arr ? arr[0] : cleaned)
-  r = tryParse(candidate); if (r.ok) return r.val
-  // 3) repair the common LLM JSON glitches that throw "Property name must be a string literal":
-  //    smart quotes, trailing commas before } or ], AND unquoted bare property names
-  //    (e.g. {reactions:[...]}). Then retry.
-  const repaired = candidate
-    .replace(/[“”]/g, '"')
-    .replace(/[‘’]/g, "'")
-    .replace(/,\s*([}\]])/g, "$1")
-    .replace(/([{,]\s*)([A-Za-z_$][\w$]*)(\s*:)/g, '$1"$2"$3')
-  r = tryParse(repaired); if (r.ok) return r.val
-  console.error("parseJSON: unrecoverable model output:", JSON.stringify(s.slice(0, 500)))
-  throw new Error("Model did not return valid JSON")
-}
+// parseJSON is imported from ./lib/parse-json (extracted for unit-testability).
+// All callers below use the imported function; behaviour is identical.
 // Closed enum for issueType — same set used in EXTRACT_SYS and RECONCILE_SYS.
 const ISSUE_TYPE_ENUM = new Set(["label-copy", "layout", "performance", "flow", "error-handling", "accessibility", "visual"])
 const PRIORITY_ENUM = new Set(["urgent", "high", "medium", "low"])
@@ -412,7 +382,9 @@ function sanitizeTypedFields(o: any): { area: string | null; issueType: string |
 
 async function extractPersonas(transcript: string, ctx?: { email?: string | null; projectId?: string | null }) {
   // H4/LLM01: the transcript is untrusted — delimit it and tell the model to treat it as data.
-  const { content, usage } = await chat([{ role: "system", content: EXTRACT_SYS + UNTRUSTED_GUARD }, { role: "user", content: "TRANSCRIPT:\n" + wrapUntrusted(transcript) }], 4000, false, { type: "extract", model: getExtractModel(), ...ctx })
+  // EXTRACT_MAX_OUTPUT_TOKENS (16 000) replaces the old hard-coded 4 000. Long transcripts with
+  // 5+ speakers and many insights were hitting the 4 000-token ceiling → truncated JSON → 500.
+  const { content, usage } = await chat([{ role: "system", content: EXTRACT_SYS + UNTRUSTED_GUARD }, { role: "user", content: "TRANSCRIPT:\n" + wrapUntrusted(transcript) }], EXTRACT_MAX_OUTPUT_TOKENS, false, { type: "extract", model: getExtractModel(), ...ctx })
   const data = parseJSON(content)
   // Sanitize typed fields on each insight; pass-through unknown persona keys (simClass/side/core)
   // without persisting them — persistence is a separate follow-up (new DB columns + migration).
@@ -1185,6 +1157,11 @@ const AI_DEMO_MAX_CHARS = 100_000      // brief / site-text char cap
 // (gemini-2.5-flash, ~1M-token context) handles this comfortably, and the per-user hourly throttle +
 // daily $ cap already bound abuse, so give transcripts a much larger ceiling than a one-line brief.
 const EXTRACT_TRANSCRIPT_MAX_CHARS = 300_000  // ~75k tokens — fits ~2–3 hour meeting transcripts
+// Output budget for persona extraction. 4 000 was enough for a 2-persona transcript but truncated
+// larger calls (5+ speakers, many insights) → incomplete JSON → 500. gemini-2.5-flash supports up
+// to 65 536 output tokens, so 16 000 gives ample headroom for the richest transcripts while keeping
+// cost ~4× lower than the ceiling. React/reconcile calls use their own (smaller) budgets.
+const EXTRACT_MAX_OUTPUT_TOKENS = 16_000
 const AI_DEMO_MAX_IMG_B64 = 12_000_000 // ~9 MB decoded — cap the react screenshot payload
 // Throttle key for an AI demo call: prefer the authed email, else the abuse-safe client IP.
 function aiDemoLimited(meEmail: string | null, req: Request, server: any): boolean {
@@ -5311,7 +5288,22 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (aiDemoLimited(meE, req, server)) return json({ error: "Too many requests. Please wait and try again." }, 429, { "Retry-After": "3600" })
           const { data, usage } = await extractPersonas(transcript, { email: meE })
           return json({ personas: data.personas || [], usage })
-        } catch (e: any) { return json(oops(e, "extract"), 500) }
+        } catch (e: any) {
+          // Surface a more actionable message for the two most common failure modes:
+          //   • model timeout  → tell user to try a shorter transcript
+          //   • JSON parse err → tell user the model response was garbled (include trace id)
+          const msg: string = (e as any)?.message || ""
+          const isTimeout = msg.toLowerCase().includes("too long") || msg.toLowerCase().includes("timeout")
+          const isParseErr = msg.includes("valid JSON")
+          const oopsResult = oops(e, "extract")
+          if (isTimeout) {
+            return json({ ...oopsResult, error: `The AI took too long on this transcript — try a shorter excerpt (ref: ${oopsResult.id}).` }, 500)
+          }
+          if (isParseErr) {
+            return json({ ...oopsResult, error: `The AI returned an unreadable response — please try again (ref: ${oopsResult.id}).` }, 500)
+          }
+          return json(oopsResult, 500)
+        }
       }
       if (req.method === "POST" && path === "/api/react") {
         try {
