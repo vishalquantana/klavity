@@ -545,8 +545,15 @@ body[data-view="recurring"] .grid>.card[data-view~="recurring"]{grid-column:1/-1
 .sim-ob-sub{font-size:13.5px;color:var(--paper-dim);line-height:1.55;margin-bottom:18px;max-width:56ch}
 .sim-ob-steps{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px}
 @media(max-width:600px){.sim-ob-steps{grid-template-columns:1fr}}
-.sim-ob-step{background:var(--ink-3);border:1px solid var(--line);border-radius:12px;padding:15px 14px;text-align:left;position:relative;overflow:hidden;transition:border-color .15s ease,transform .15s ease}
+.sim-ob-step{background:var(--ink-3);border:1px solid var(--line);border-radius:12px;padding:15px 14px;text-align:left;position:relative;overflow:hidden;transition:border-color .15s ease,transform .15s ease,box-shadow .15s ease}
 .sim-ob-step:hover{border-color:var(--indigo);transform:translateY(-2px)}
+/* .is-action: the card is a real button (opens the Add-a-Sim modal on its tab) — give it full click affordance */
+.sim-ob-step.is-action{cursor:pointer}
+.sim-ob-step.is-action:hover{box-shadow:0 6px 18px -8px rgba(99,102,241,.4)}
+.sim-ob-step.is-action:active{transform:translateY(0) scale(.985)}
+.sim-ob-step.is-action:focus-visible{outline:2px solid var(--indigo);outline-offset:2px;border-color:var(--indigo)}
+.sim-ob-step.is-action::after{content:"→";position:absolute;top:12px;right:13px;font-size:14px;color:var(--indigo);opacity:0;transform:translateX(-4px);transition:opacity .15s ease,transform .15s ease}
+.sim-ob-step.is-action:hover::after,.sim-ob-step.is-action:focus-visible::after{opacity:1;transform:translateX(0)}
 .sim-ob-num{font-family:var(--mono);font-size:9px;letter-spacing:.1em;color:var(--indigo);margin-bottom:8px;text-transform:uppercase}
 .sim-ob-step h4{font-size:13px;font-weight:600;margin-bottom:5px;color:var(--paper)}
 .sim-ob-step p{font-size:12px;color:var(--paper-dim);line-height:1.5}
@@ -2745,9 +2752,9 @@ function renderSimsFeed() {
       + '<div class="sim-ob-head">Bring your first Sim to life</div>'
       + '<div class="sim-ob-sub">Sims are AI personas — each one models a distinct customer type and reviews your product in their own voice. They surface issues a real user would hit, not just whether a button is clickable.</div>'
       + '<div class="sim-ob-steps">'
-        + '<div class="sim-ob-step"><div class="sim-ob-num">Describe</div><h4>Who is your customer?</h4><p>Name the persona: a sceptical CFO, a first-time user, a mobile-only shopper. Goals, frustrations, and context make the feedback real.</p></div>'
-        + '<div class="sim-ob-step"><div class="sim-ob-num">From your site</div><h4>AI suggests personas</h4><p>Paste your product URL and the AI reads your pages to suggest Sims that match your actual audience — faster than writing from scratch.</p></div>'
-        + '<div class="sim-ob-step"><div class="sim-ob-num">From a call</div><h4>Extract from transcripts</h4><p>Paste a customer interview or support call transcript and the AI extracts a Sim with their real goals and frustrations already filled in.</p></div>'
+        + '<div class="sim-ob-step is-action" role="button" tabindex="0" onclick="openSimModal()" aria-label="Describe your customer to create a Sim"><div class="sim-ob-num">Describe</div><h4>Who is your customer?</h4><p>Name the persona: a sceptical CFO, a first-time user, a mobile-only shopper. Goals, frustrations, and context make the feedback real.</p></div>'
+        + '<div class="sim-ob-step is-action" role="button" tabindex="0" onclick="openSimModalSite()" aria-label="Suggest Sims from your site"><div class="sim-ob-num">From your site</div><h4>AI suggests personas</h4><p>Paste your product URL and the AI reads your pages to suggest Sims that match your actual audience — faster than writing from scratch.</p></div>'
+        + '<div class="sim-ob-step is-action" role="button" tabindex="0" onclick="openSimModalCall()" aria-label="Extract a Sim from a call transcript"><div class="sim-ob-num">From a call</div><h4>Extract from transcripts</h4><p>Paste a customer interview or support call transcript and the AI extracts a Sim with their real goals and frustrations already filled in.</p></div>'
       + '</div>'
       + '<div class="sim-ob-cta"><button class="btn btn-indigo btn-sm" onclick="openSimModal()">Create your first Sim</button><button class="btn btn-ghost btn-sm" onclick="openSimModalSite()">Suggest from my site →</button></div>'
       + '</div>'
@@ -5445,6 +5452,23 @@ load()
       if(siteBtn) siteBtn.click()
     }, 60)
   }
+  // opener that pre-selects the "From a call" tab — used by the clickable empty-state card
+  window.openSimModalCall = function(){
+    window.openSimModal()
+    setTimeout(function(){
+      var callBtn = document.querySelector('.sm-seg button[data-pane="call"]')
+      if(callBtn) callBtn.click()
+    }, 60)
+  }
+  // Keyboard support for the clickable onboarding cards (role="button"): Enter/Space activates.
+  // Delegated on document so it survives the empty state's innerHTML re-renders.
+  document.addEventListener('keydown', function(e){
+    if(e.key!=='Enter' && e.key!==' ' && e.key!=='Spacebar') return
+    var t=e.target
+    if(t && t.classList && t.classList.contains('sim-ob-step') && t.classList.contains('is-action')){
+      e.preventDefault(); t.click()
+    }
+  })
 })();
 </script>
 <script>

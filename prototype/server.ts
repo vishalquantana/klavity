@@ -1180,7 +1180,11 @@ const FEEDBACK_ANON_PER_PROJECT = 200
 // had no per-user throttle or input cap (only the daily $ cap). Bound them per user/hour + size.
 const AI_DEMO_WINDOW = 60 * 60 * 1000
 const AI_DEMO_PER_USER = 40            // LLM demo calls per user / hour
-const AI_DEMO_MAX_CHARS = 100_000      // transcript/brief char cap
+const AI_DEMO_MAX_CHARS = 100_000      // brief / site-text char cap
+// Transcripts are whole call recordings — a 1-hour meeting is easily >100k chars. The extract model
+// (gemini-2.5-flash, ~1M-token context) handles this comfortably, and the per-user hourly throttle +
+// daily $ cap already bound abuse, so give transcripts a much larger ceiling than a one-line brief.
+const EXTRACT_TRANSCRIPT_MAX_CHARS = 300_000  // ~75k tokens — fits ~2–3 hour meeting transcripts
 const AI_DEMO_MAX_IMG_B64 = 12_000_000 // ~9 MB decoded — cap the react screenshot payload
 // Throttle key for an AI demo call: prefer the authed email, else the abuse-safe client IP.
 function aiDemoLimited(meEmail: string | null, req: Request, server: any): boolean {
@@ -5287,7 +5291,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         try {
           const { transcript } = await req.json()
           if (!transcript || transcript.trim().length < 20) return json({ error: "Transcript too short" }, 400)
-          if (String(transcript).length > AI_DEMO_MAX_CHARS) return json({ error: "Transcript too large." }, 413)
+          if (String(transcript).length > EXTRACT_TRANSCRIPT_MAX_CHARS) return json({ error: `Transcript too large (max ${EXTRACT_TRANSCRIPT_MAX_CHARS.toLocaleString()} characters). Paste the most relevant part of the call.` }, 413)
           const meE = (await sessionEmail(req)) || (await bearerEmail(req))
           if (aiDemoLimited(meE, req, server)) return json({ error: "Too many requests. Please wait and try again." }, 429, { "Retry-After": "3600" })
           const { data, usage } = await extractPersonas(transcript, { email: meE })
