@@ -109,9 +109,14 @@ body[data-view="recurring"] [data-view]:not([data-view~="recurring"]){display:no
 .trail .body{flex:1;min-width:0}
 .trail .t{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .trail .d{font-size:12px;color:var(--paper-faint);margin-top:2px;font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.trail .run-btn{flex-shrink:0;font-family:var(--mono);font-size:11px;letter-spacing:.04em;padding:7px 13px;border-radius:9px;border:1px solid var(--line);background:var(--ink-3);color:var(--paper);cursor:pointer;transition:border-color var(--mi-dur) var(--mi-ease)}
-.trail .run-btn:hover:not(:disabled){border-color:var(--indigo)}
+.trail .run-btn{flex-shrink:0;font-family:var(--mono);font-size:11px;letter-spacing:.04em;padding:7px 13px;border-radius:9px;border:1px solid var(--line);background:var(--ink-3);color:var(--paper);cursor:pointer;transition:border-color var(--mi-dur) var(--mi-ease),transform var(--mi-dur) var(--mi-ease)}
+.trail .run-btn:hover:not(:disabled){border-color:var(--indigo);transform:var(--mi-lift)}
+.trail .run-btn:active:not(:disabled){transform:var(--mi-press)}
 .trail .run-btn:disabled{opacity:.55;cursor:default}
+/* B6 fix: replay-btn in .trail context was unstyled (plain square border); match run-btn pill */
+.trail .replay-btn{flex-shrink:0;font-family:var(--mono);font-size:11px;letter-spacing:.04em;padding:7px 13px;border-radius:9px;border:1px solid var(--indigo);background:transparent;color:var(--indigo);cursor:pointer;transition:background var(--mi-dur) var(--mi-ease),transform var(--mi-dur) var(--mi-ease),border-color var(--mi-dur) var(--mi-ease)}
+.trail .replay-btn:hover{background:rgba(99,102,241,.1);border-color:var(--indigo-deep);transform:var(--mi-lift)}
+.trail .replay-btn:active{transform:var(--mi-press)}
 .trail .cancel-btn{flex-shrink:0;font-family:var(--mono);font-size:11px;letter-spacing:.04em;padding:7px 13px;border-radius:9px;border:1px solid var(--rose);background:transparent;color:var(--rose);cursor:pointer;transition:background var(--mi-dur) var(--mi-ease),transform var(--mi-dur) var(--mi-ease)}
 .trail .cancel-btn:hover:not(:disabled){background:rgba(219,39,119,.1);transform:var(--mi-lift)}
 .trail .cancel-btn:active{transform:var(--mi-press)}
@@ -181,7 +186,12 @@ body[data-view="recurring"] [data-view]:not([data-view~="recurring"]){display:no
 .modal .mnote{font-size:12.5px;color:var(--paper-faint);margin-top:10px;font-family:var(--mono)}
 #liveHost{min-height:260px;border-radius:12px;overflow:hidden;background:var(--ink);border:1px solid var(--line);display:flex;align-items:center;justify-content:center}
 #liveFrame{display:block;max-width:100%;max-height:68vh;width:100%;height:auto;object-fit:contain;background:#050505}
-.live-empty{font-family:var(--mono);font-size:12px;color:var(--paper-faint);padding:28px;text-align:center}
+.live-empty{font-family:var(--mono);font-size:12px;color:var(--paper-faint);padding:28px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px}
+/* B8: spinner, hint + elapsed timer for Live Walk waiting state */
+@keyframes klav-spin{to{transform:rotate(360deg)}}
+.live-spinner{display:inline-block;width:22px;height:22px;border:2px solid var(--line);border-top-color:var(--indigo);border-radius:50%;animation:klav-spin .9s linear infinite;flex-shrink:0}
+.live-hint{font-size:11px;color:var(--paper-faint);opacity:.7}
+.live-elapsed{font-size:11px;color:var(--paper-faint);font-variant-numeric:tabular-nums;min-height:1em}
 .live-dot{width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;box-shadow:0 0 0 4px rgba(15,157,107,.12)}
 .live-dot.off{background:var(--paper-faint);box-shadow:none}
 #ntBg .modal{max-width:600px}
@@ -2586,6 +2596,10 @@ function sparkline(vals) {
 const curProjId = () => (state && state.active ? state.active.id : null)
 window.klavCurProjId = curProjId // exposed for the AutoSims iframe loader (separate script scope)
 const projPath = (suffix) => "/api/projects/" + encodeURIComponent(curProjId()) + suffix
+// B1 fix: projParam was only defined inside the AutoSims IIFE but is called from
+// the outer CI/CD section (ciRender, updateCiSnippets, _wireCi). Expose it globally
+// as a thin wrapper over curProjId so those callers find it at runtime.
+function projParam(){try{return curProjId()||new URLSearchParams(location.search).get("project")||null}catch(e){return null}}
 
 // ── Pause toggle + monitored URLs (R5) ──
 async function loadLive() {
@@ -6086,7 +6100,15 @@ load()
       <h3>Live walk</h3>
       <button class="mclose" id="liveClose" aria-label="Close">&times;</button>
     </div>
-    <div id="liveHost"><div class="live-empty" id="liveEmpty">Waiting for browser frames...</div><img id="liveFrame" alt="Live AutoSim browser frame" style="display:none" /></div>
+    <div id="liveHost">
+      <div class="live-empty" id="liveEmpty">
+        <span class="live-spinner" id="liveSpinner" aria-hidden="true"></span>
+        <span>Waiting for browser frames&hellip;</span>
+        <span class="live-hint">usually 10&ndash;30s to warm up a browser</span>
+        <span class="live-elapsed" id="liveElapsed"></span>
+      </div>
+      <img id="liveFrame" alt="Live AutoSim browser frame" style="display:none" />
+    </div>
     <div class="mnote" id="liveNote">Connecting...</div>
   </div>
 </div>
@@ -6131,6 +6153,12 @@ load()
       if(!Replayer)throw new Error("rrweb.Replayer not available")
       var host=$("playerHost")
       var replayer=new Replayer(events,{root:host,skipInactive:true,showWarning:false,showDebug:false,mouseTail:true})
+      // B2 fix: rrweb creates an internal iframe with sandbox="allow-same-origin" only.
+      // Without allow-scripts the player's own injected handlers inside the iframe are
+      // blocked, causing a blank frame.  We keep allow-same-origin for same-origin cookie
+      // access and add allow-scripts so the player can initialize.  We do NOT add
+      // allow-top-navigation / allow-forms / allow-popups to limit the attack surface.
+      try{var _rf=host.querySelector("iframe");if(_rf&&_rf.sandbox&&!_rf.sandbox.contains("allow-scripts")){_rf.setAttribute("sandbox",_rf.getAttribute("sandbox")+" allow-scripts")}}catch(_){}
       replayState.player=replayer;replayer.play()
       $("replayNote").textContent="Chapter "+(i+1)+" of "+replayState.segments.length+" · "+(seg.url||"")
     }catch(e){$("replayNote").textContent="Could not start the player for this chapter."}
@@ -6180,19 +6208,32 @@ load()
   }
 
   // ── Live CDP screencast ───────────────────────────────────────────────────
-  var liveState={es:null,runId:null,frames:0}
+  var liveState={es:null,runId:null,frames:0,elapsedTick:null,startedAt:0}
+  function _stopElapsedTick(){if(liveState.elapsedTick){clearInterval(liveState.elapsedTick);liveState.elapsedTick=null}var el=$("liveElapsed");if(el)el.textContent=""}
+  function _startElapsedTick(){
+    liveState.startedAt=Date.now()
+    liveState.elapsedTick=setInterval(function(){
+      var el=$("liveElapsed");if(!el)return
+      var sec=Math.floor((Date.now()-liveState.startedAt)/1000)
+      el.textContent=sec+"s elapsed"
+    },1000)
+  }
   function closeLiveWatch(){
     if(liveState.es){try{liveState.es.close()}catch(e){}}
     liveState.es=null;liveState.runId=null
+    _stopElapsedTick()
     $("liveDot").classList.add("off");$("liveBg").classList.remove("open")
   }
   function openLiveWatch(runId){
     if(!runId||!window.EventSource)return
     if(liveState.es){try{liveState.es.close()}catch(e){}}
+    _stopElapsedTick()
     liveState.runId=runId;liveState.frames=0
     $("liveFrame").style.display="none";$("liveEmpty").style.display=""
     $("liveDot").classList.add("off");$("liveNote").textContent="Connecting..."
     $("liveBg").classList.add("open")
+    // B8: start elapsed counter immediately so user sees it's alive
+    _startElapsedTick()
     var pid=projParam();var qs=pid?"?project="+encodeURIComponent(pid):""
     var es=new EventSource("/api/trails/walks/"+encodeURIComponent(runId)+"/live"+qs)
     liveState.es=es
@@ -6202,6 +6243,8 @@ load()
       try{
         var d=JSON.parse(ev.data||"{}")
         if(!d.dataUrl)return
+        // First frame arrived — stop the waiting state
+        if(liveState.frames===0){_stopElapsedTick()}
         liveState.frames++;$("liveFrame").src=d.dataUrl;$("liveFrame").style.display=""
         $("liveEmpty").style.display="none";$("liveDot").classList.remove("off")
         $("liveNote").textContent="Live - frame "+liveState.frames
@@ -6209,12 +6252,13 @@ load()
     })
     es.addEventListener("end",function(ev){
       $("liveDot").classList.add("off")
+      _stopElapsedTick()
       var msg="Walk finished."
       try{var d=JSON.parse(ev.data||"{}");if(d.message==="screencast unavailable")msg="Live stream unavailable."}catch(e){}
       $("liveNote").textContent=msg;try{es.close()}catch(e){}
       if(liveState.es===es)liveState.es=null
     })
-    es.onerror=function(){$("liveDot").classList.add("off");if(liveState.frames===0)$("liveNote").textContent="Live stream unavailable."}
+    es.onerror=function(){$("liveDot").classList.add("off");_stopElapsedTick();if(liveState.frames===0)$("liveNote").textContent="Live stream unavailable."}
   }
 
   function latestWalkFor(walks,trailId){
