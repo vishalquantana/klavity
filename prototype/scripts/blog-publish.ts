@@ -63,10 +63,7 @@ function head(meta: BlogMeta, jsonld: object[]): string {
 <meta property="og:title" content="${esc(meta.title)}"><meta property="og:description" content="${esc(meta.excerpt)}">
 <meta property="og:url" content="${url}"><meta property="og:image" content="${BASE}/favicon.svg">
 <meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${esc(meta.title)}"><meta name="twitter:description" content="${esc(meta.excerpt)}"><meta name="twitter:image" content="${BASE}/favicon.svg">
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..900;1,9..144,400..700&family=Hanken+Grotesk:wght@400..800&family=JetBrains+Mono:wght@500;700&display=optional">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..900;1,9..144,400..700&family=Hanken+Grotesk:wght@400..800&family=JetBrains+Mono:wght@500;700&display=optional" media="print" onload="this.media='all'">
-<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..900;1,9..144,400..700&family=Hanken+Grotesk:wght@400..800&family=JetBrains+Mono:wght@500;700&display=optional"></noscript>
+<link rel="stylesheet" href="/fonts/fonts.css">
 <link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
 <style>
 .post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
