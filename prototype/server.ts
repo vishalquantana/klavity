@@ -1,6 +1,6 @@
 // Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
 import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription } from "./lib/db"
 import { issueKeyFor, chooseDedup } from "./lib/dedup"
 import { classifySimObservation } from "./lib/sim-bug-classify"
 import { getConnector, listConnectorTypes, type TicketPayload, type TicketAttachment } from "./lib/connectors/index"
@@ -2223,7 +2223,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const wid = proj2.id
 
       if (req.method === "GET" && path === "/api/personas") {
-        const personas = await listPersonas(wid)
+        // Use listPersonasForProject to include global Sims from sibling projects in the same account.
+        // Each persona in the response carries isGlobal:true/false so the UI can badge globals.
+        const personas = await listPersonasForProject(wid)
         return wjson({ personas })
       }
       if (req.method === "POST" && path === "/api/personas") {
@@ -2266,9 +2268,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (req.method === "PUT") {
           try {
             const body = await req.json()
+            // Access control (C2): PUT is edit-only — the persona MUST belong to the caller's OWN project
+            // (not just appear via global union). Only the home project can mutate a persona's fields.
+            // listPersonas (project-scoped, no union) is the right check here.
             const before = (await listPersonas(wid)).find(p => p.id === pid)
-            // Access control (C2): PUT is edit-only. If this persona id isn't in the caller's project,
-            // refuse — upsertPersona's ON CONFLICT(id) would otherwise overwrite another tenant's persona.
             if (!before) return wjson({ error: "Not found" }, 404)
             const now = Date.now()
             const v3 = v3PersonaFields(body)
@@ -2289,23 +2292,29 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               avatar: body.avatar ? String(body.avatar) : null,
               simClass, side, core,
             })
+            // Global Sims v1: if the body carries `isGlobal`, toggle the flag on the home-project row.
+            // Only home-project owners can set this (already guarded above by listPersonas(wid) check).
+            if (typeof body.isGlobal === "boolean") {
+              await setPersonaGlobal(pid, wid, body.isGlobal)
+            }
             // Version each changed identity field in the append-only persona_edits audit.
-            if (before) {
-              const fields: Array<[string, string | null, string | null]> = [
-                ["name", before.name, String(body.name ?? "")],
-                ["role", before.role, String(body.role ?? "")],
-                ["summary", before.summary, String(body.summary ?? "")],
-                ["type", before.type, String(body.type ?? "")],
-                ["accent", before.accent, String(body.accent ?? "")],
-              ]
-              for (const [field, b, a] of fields) {
-                if ((b ?? "") !== (a ?? "")) await insertPersonaEdit({ personaId: pid, projectId: wid, field, beforeVal: b, afterVal: a, actor: me2, createdAt: now })
-              }
+            const fields: Array<[string, string | null, string | null]> = [
+              ["name", before.name, String(body.name ?? "")],
+              ["role", before.role, String(body.role ?? "")],
+              ["summary", before.summary, String(body.summary ?? "")],
+              ["type", before.type, String(body.type ?? "")],
+              ["accent", before.accent, String(body.accent ?? "")],
+            ]
+            for (const [field, b, a] of fields) {
+              if ((b ?? "") !== (a ?? "")) await insertPersonaEdit({ personaId: pid, projectId: wid, field, beforeVal: b, afterVal: a, actor: me2, createdAt: now })
             }
             return wjson({ ok: true })
           } catch (e: any) { return wjson(oops(e, "persona"), 500) }
         }
         if (req.method === "DELETE") {
+          // DELETE: only the home-project can delete. listPersonas is project-scoped (no global union).
+          const ownPersona = (await listPersonas(wid)).some(p => p.id === pid)
+          if (!ownPersona) return wjson({ error: "Not found" }, 404)
           await deletePersona(pid, wid)
           return wjson({ ok: true })
         }
