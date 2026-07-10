@@ -340,7 +340,12 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .ss-id-card{background:var(--ink-2);border:1px solid var(--line);border-radius:16px;box-shadow:0 10px 30px rgba(25,20,15,.05);padding:20px 22px;display:flex;gap:18px;align-items:flex-start}
 .ss-id-card .ss-av{width:54px;height:54px;font-size:19px}
 .ss-id-main{flex:1;min-width:0}
-.ss-id-name{font-family:var(--display);font-size:27px;font-weight:520;letter-spacing:-.02em;line-height:1.1}
+.ss-id-name{font-family:var(--display);font-size:27px;font-weight:520;letter-spacing:-.02em;line-height:1.1;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+/* Global Sim badge — mirrors dashboard.html .sim-global-badge */
+.sim-global-badge{display:inline-flex;align-items:center;font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--indigo);background:rgba(99,102,241,.12);border:1px solid rgba(99,102,241,.3);border-radius:5px;padding:2px 6px;flex-shrink:0;font-family:var(--body)}
+/* Global toggle in editor */
+.sim-global-toggle{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12px;color:var(--paper-faint);cursor:pointer;user-select:none}
+.sim-global-toggle input[type=checkbox]{accent-color:var(--indigo);width:14px;height:14px;cursor:pointer}
 .ss-id-role-line{display:flex;align-items:center;gap:9px;margin-top:5px;flex-wrap:wrap}
 .ss-id-role{font-size:13.5px;color:var(--paper-dim)}
 .ss-id-summary{margin-top:13px;font-size:14.5px;color:var(--paper-dim);max-width:54ch;line-height:1.55}
@@ -1261,12 +1266,18 @@ async function renderPersonaDetail(sim) {
 
 function ssPersonaHeaderHtml(sim) {
   if (ssPersonaEditing) {
+    // Only show the global toggle when the Sim belongs to this project (not a sibling global).
+    // Sibling globals show isGlobal=true but their projectId != the current project, so
+    // the PUT will be rejected. We hide the toggle in that case to avoid misleading UI.
+    const isHomeSim = !sim.isGlobal || (sim.projectId === (typeof curProjId === "function" ? curProjId() : ""))
+    const globalToggle = isHomeSim ? `<label class="sim-global-toggle"><input type="checkbox" id="ssGlobalToggle"${sim.isGlobal ? " checked" : ""} /><span>Make available in all my projects</span></label>` : ""
     return `<div class="ss-id-card ss-id-edit">
       <div class="ss-av" style="background:${esc(sim.accent || "#6366f1")}">${avatarInner({ avatar: sim.avatar, initials: sim.initials, name: sim.name })}</div>
       <div class="ss-id-main">
         <input id="ssEditName" value="${esc(sim.name || "")}" placeholder="Name" />
         <input id="ssEditRole" value="${esc(sim.role || "")}" placeholder="Role" />
         <textarea id="ssEditSummary" rows="3" placeholder="Summary">${esc(sim.summary || "")}</textarea>
+        ${globalToggle}
         <div class="ss-mini-row">
           <button class="ss-mini-btn primary" id="ssPersonaSave">Save</button>
           <button class="ss-mini-btn ghost" id="ssPersonaCancel">Cancel</button>
@@ -1277,10 +1288,11 @@ function ssPersonaHeaderHtml(sim) {
   const tc = ssTraits.length || (typeof sim.traitCount === "number" ? sim.traitCount : 0)
   const dateStr = (sim.updatedAt || sim.updated_at) ? fmtDate(sim.updatedAt || sim.updated_at) : ""
   const metaParts = [tc + " trait" + (tc === 1 ? "" : "s"), dateStr ? ("updated " + dateStr) : ""].filter(Boolean)
+  const globalBadge = sim.isGlobal ? '<span class="sim-global-badge" title="Available in all your projects">Global</span>' : ""
   return `<div class="ss-id-card">
       <div class="ss-av" style="background:${esc(sim.accent || "#6366f1")}">${avatarInner({ avatar: sim.avatar, initials: sim.initials, name: sim.name })}</div>
       <div class="ss-id-main">
-        <div class="ss-id-name">${esc(sim.name || "")}</div>
+        <div class="ss-id-name">${esc(sim.name || "")}${globalBadge}</div>
         <div class="ss-id-role-line">
           <span class="ss-id-role">${esc(sim.role || "")}</span>
           ${sim.type ? `<span class="ss-chip">${esc(sim.type)}</span>` : ""}
@@ -1361,23 +1373,31 @@ async function ssSavePersona(sim) {
   const name = nameEl.value.trim() || sim.name
   const role = roleEl ? roleEl.value.trim() : sim.role
   const summary = sumEl ? sumEl.value.trim() : sim.summary
+  // Global toggle: only include isGlobal in the PUT body when the checkbox is rendered
+  // (i.e. for home-project Sims). If the checkbox isn't present, omit the key entirely
+  // so we don't accidentally clear the flag on sibling-visible globals.
+  const globalToggleEl = $("ssGlobalToggle")
+  const isGlobal = globalToggleEl ? globalToggleEl.checked : undefined
   const id = sim._id || sim.id
   const saveBtn = $("ssPersonaSave"); if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = "Saving…" }
   try {
+    const body = {
+      name, role, summary, type: sim.type || "client",
+      initials: sim.initials || name.slice(0, 2).toUpperCase(),
+      accent: sim.accent || "#6366f1", insights: sim.insights || [],
+      avatar: sim.avatar || null,
+    }
+    if (typeof isGlobal === "boolean") Object.assign(body, { isGlobal })
     const r = await fetch(pq(`/api/personas/${encodeURIComponent(id)}`), {
       method: "PUT", headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        name, role, summary, type: sim.type || "client",
-        initials: sim.initials || name.slice(0, 2).toUpperCase(),
-        accent: sim.accent || "#6366f1", insights: sim.insights || [],
-        avatar: sim.avatar || null,
-      }),
+      body: JSON.stringify(body),
     })
     if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.error || "save failed") }
     // Update the in-memory sim + global sims array, exit edit mode, re-render.
     sim.name = name; sim.role = role; sim.summary = summary
+    if (typeof isGlobal === "boolean") sim.isGlobal = isGlobal
     const arrSim = sims.find(s => (s._id || s.id) === id)
-    if (arrSim) { arrSim.name = name; arrSim.role = role; arrSim.summary = summary }
+    if (arrSim) { arrSim.name = name; arrSim.role = role; arrSim.summary = summary; if (typeof isGlobal === "boolean") arrSim.isGlobal = isGlobal }
     ssPersonaEditing = false
     renderStudio(sim)
   } catch (e) {

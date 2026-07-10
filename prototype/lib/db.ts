@@ -645,6 +645,13 @@ export async function applySchema(c: Client) {
       )
     }
   }
+  // Global Sims v1 (KLA-global): is_global=1 marks a Sim as available across all sibling projects
+  // in the same account. INTEGER NOT NULL DEFAULT 0 so existing rows default to project-scoped
+  // without any data migration. Must be done outside the TEXT-only newTraitCols loop.
+  if (needCol("personas", "is_global")) {
+    await c.execute("ALTER TABLE personas ADD COLUMN is_global INTEGER NOT NULL DEFAULT 0")
+      .catch((e: any) => console.warn("personas.is_global ALTER skipped:", e?.message || e))
+  }
   // Additive idempotent ALTERs for new feedback management columns.
   const feedbackAlters: [string, string][] = [
     ["status",     "TEXT NOT NULL DEFAULT 'open'"],
@@ -1816,6 +1823,9 @@ export type PersonaRow = {
   createdAt: number; updatedAt: number; traitCount?: number
   // v3 two-axis classification + portable core. Optional so pre-v3 rows/callers keep working.
   simClass?: string | null; side?: string | null; core?: PersonaCore | null
+  // Global Sims v1: is_global=1 means this Sim is available across all projects in the same account.
+  // isGlobal=true on a row returned for a sibling project means it came from another project.
+  isGlobal?: boolean
 }
 // Parse a JSON string-array column defensively (bad/absent JSON → []).
 function parseStrArray(raw: any): string[] {
@@ -1842,6 +1852,7 @@ function rowToPersona(x: any): PersonaRow {
     traitCount: x.trait_count != null ? Number(x.trait_count) : undefined,
     simClass, side,
     core: hasCore ? { goals, expertise, temperament, voice, watchFor } : null,
+    isGlobal: !!x.is_global,
   }
 }
 export async function listPersonas(projectId: string): Promise<PersonaRow[]> {
@@ -1863,6 +1874,87 @@ export async function listPersonas(projectId: string): Promise<PersonaRow[]> {
     if (seen.has(key)) return false
     seen.set(key, true)
     return true
+  })
+}
+
+// ── Global Sims v1: list personas for a project INCLUDING global Sims from sibling projects. ──
+// Ownership / tenant safety: a global Sim is ONLY surfaced in projects that share the SAME account_id
+// as the Sim's home project. The query joins via the projects table on account_id — so a global Sim
+// can never leak to a different account even if the caller somehow knows another project's id.
+//
+// Dedup policy (explicit, to avoid ambiguity):
+//   1. The home project sees the Sim as a normal row (isGlobal=true on the row, but it's "home").
+//   2. Sibling projects see global Sims tagged isGlobal=true.
+//   3. If a sibling already has its OWN Sim with the same normalized name+role, we prefer the
+//      project's own Sim and SKIP the global — "local wins". This prevents a global "Power User"
+//      from shadowing a project-specific "Power User" that has different traits.
+//   4. In the home project itself the global Sim appears once (same as any own Sim; the read-side
+//      dedup below handles any DB duplicates).
+//
+// The function resolves the account_id for `projectId` in one round-trip (projectById is cached-ish
+// by the in-memory SQLite file), then does a UNION ALL query: own rows + sibling global rows.
+export async function listPersonasForProject(projectId: string): Promise<PersonaRow[]> {
+  // Step 1: resolve the account this project belongs to (needed for tenant-safe global lookup).
+  const projRow = await db!.execute({ sql: "SELECT account_id FROM projects WHERE id=?", args: [projectId] })
+  if (!projRow.rows.length) {
+    // Unknown project → fall back to project-scoped list (safe: returns nothing if project is unknown).
+    return listPersonas(projectId)
+  }
+  const accountId = String((projRow.rows[0] as any).account_id)
+
+  // Step 2: UNION own personas + global personas from sibling projects in the same account.
+  // 'is_own' distinguishes them so we can apply the local-wins rule before returning.
+  // Sibling globals: home project_id != this project, same account, is_global=1.
+  // Trait count subquery is the same as listPersonas; NULLs on the sibling globals are fine
+  // since they show trait_count=0 (traits stay project-scoped in v1).
+  const r = await db!.execute({
+    sql: `SELECT p.*, 1 AS is_own,
+               (SELECT COUNT(*) FROM sim_traits t WHERE t.sim_id=p.id AND t.status='active') AS trait_count
+          FROM personas p
+          WHERE p.project_id=?
+          UNION ALL
+          SELECT p.*, 0 AS is_own,
+               (SELECT COUNT(*) FROM sim_traits t WHERE t.sim_id=p.id AND t.status='active') AS trait_count
+          FROM personas p
+          JOIN projects pr ON pr.id = p.project_id
+          WHERE p.is_global=1
+            AND pr.account_id=?
+            AND p.project_id != ?
+          ORDER BY is_own DESC, created_at ASC`,
+    args: [projectId, accountId, projectId],
+  })
+
+  // Step 3: Convert rows + apply local-wins dedup.
+  // We process own rows first (is_own=1, ORDER BY is_own DESC), so the seen map gets populated
+  // by own rows before any global rows are considered. This naturally implements "local wins":
+  // a sibling global with the same normalized name+role is filtered out if the project already
+  // has its own Sim with that identity.
+  const seen = new Map<string, boolean>()
+  const result: PersonaRow[] = []
+  for (const x of r.rows) {
+    const row = rowToPersona(x)
+    // If this came from a sibling project (is_own=0), mark it as global in the response.
+    // Own global Sims (is_global=1 AND is_own=1) also carry isGlobal=true — correct, since the
+    // flag reflects the DB column, not whether it's "from elsewhere".
+    const isOwn = !!(x as any).is_own
+    if (!isOwn) row.isGlobal = true  // sibling global: surface the tag regardless of DB value
+
+    // Dedup key: normalize name+role. Own rows win via insertion order (own rows come first).
+    const key = String(row.name || "").trim().toLowerCase().replace(/\s+/g, " ") +
+                "\x00" +
+                String(row.role || "").trim().toLowerCase().replace(/\s+/g, " ")
+    if (seen.has(key)) continue
+    seen.set(key, true)
+    result.push(row)
+  }
+  return result
+}
+
+// Set or clear the is_global flag on a persona. Caller must verify ownership before calling.
+export async function setPersonaGlobal(id: string, projectId: string, isGlobal: boolean): Promise<void> {
+  await db!.execute({
+    sql: "UPDATE personas SET is_global=?, updated_at=? WHERE id=? AND project_id=?",
+    args: [isGlobal ? 1 : 0, Date.now(), id, projectId],
   })
 }
 export async function upsertPersona(id: string, projectId: string, data: Omit<PersonaRow, 'id' | 'projectId' | 'createdAt' | 'updatedAt'>) {
