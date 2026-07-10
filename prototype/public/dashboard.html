@@ -1075,6 +1075,18 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .sm-kind.client{color:var(--indigo);border-color:rgba(99,102,241,.35);background:rgba(99,102,241,.07)}
 .sm-kind.user{color:var(--green);border-color:rgba(15,157,107,.32);background:rgba(15,157,107,.07)}
 .sm-side{font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;padding:3px 6px;border-radius:6px;border:1px solid var(--line);color:var(--paper-faint)}
+/* simClass picker — small inline button-group that lets user flip User/Client before saving */
+.sm-class-pick{display:flex;gap:4px;align-items:center;margin-top:8px}
+.sm-class-pick-lbl{font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--paper-faint);flex:none}
+.sm-class-btn{font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border-radius:6px;border:1px solid var(--line);background:transparent;color:var(--paper-faint);cursor:pointer;transition:color .13s,border-color .13s,background .13s,transform .13s}
+.sm-class-btn:hover{transform:translateY(-1px)}
+.sm-class-btn:active{transform:scale(.97)}
+.sm-class-btn.on.user{color:var(--green);border-color:rgba(15,157,107,.4);background:rgba(15,157,107,.1)}
+.sm-class-btn.on.client{color:var(--indigo);border-color:rgba(99,102,241,.4);background:rgba(99,102,241,.1)}
+/* simClass badge tooltip — pure CSS, no library needed */
+.sm-kind{position:relative}
+.sm-kind[data-tip]:hover::after{content:attr(data-tip);position:absolute;top:calc(100% + 6px);left:50%;transform:translateX(-50%);white-space:nowrap;background:#1a1a2e;color:var(--paper);font-family:var(--body);font-size:11px;letter-spacing:0;text-transform:none;padding:5px 9px;border-radius:7px;border:1px solid var(--line);z-index:200;pointer-events:none;line-height:1.4;box-shadow:0 4px 14px -4px rgba(0,0,0,.5)}
+.sm-kind[data-tip]:hover::before{content:'';position:absolute;top:calc(100% + 1px);left:50%;transform:translateX(-50%);border:5px solid transparent;border-bottom-color:#1a1a2e;z-index:201;pointer-events:none}
 .sm-core{background:var(--ink-3);border:1px solid var(--line);border-radius:11px;padding:10px 12px;margin-bottom:12px;display:flex;flex-direction:column;gap:7px}
 .sm-core-row{display:flex;align-items:flex-start;gap:8px;font-size:12px;line-height:1.45}
 .sm-core-ic{flex:none;width:20px;height:20px;border-radius:6px;display:grid;place-items:center;background:rgba(99,102,241,.1);color:var(--indigo)}
@@ -5382,13 +5394,16 @@ load()
     const row=(icon,label,val)=>val?`<div class="sm-core-row"><span class="sm-core-ic">${kicon(icon,{label:label,size:13})}</span><span class="sm-core-lb">${esc(label)}</span><span class="sm-core-vl">${esc(val)}</span></div>`:"";
     const watchRow=watch.length?`<div class="sm-core-row"><span class="sm-core-ic">${kicon("eye",{label:"watches for",size:13})}</span><span class="sm-core-lb">watches</span><span class="sm-core-vl"><span class="sm-watch">${watch.map(w=>`<span class="sm-tag lens">${esc(w)}</span>`).join("")}</span></span></div>`:"";
     const coreHtml=(goals||core.temperament||core.voice||watch.length)?`<div class="sm-core">${row("star","goals",goals)}${row("sun","mood",core.temperament)}${row("mic","voice",core.voice)}${watchRow}</div>`:"";
-    return `<div class="sm-sim" data-idx="${idx}">
+    const clientTip="Judges outcomes &amp; strategy — not individual buttons";
+    const userTip="Operates the product hands-on — reacts to UI &amp; interaction";
+    return `<div class="sm-sim" data-idx="${idx}" data-simclass="${cls}">
       <div class="sm-sim-top"><div class="sm-av" style="background:${acc}">${esc(s.initials||inits(s.name))}</div>
         <div><div class="sm-nm">${esc(s.name||"Sim")}</div><div class="sm-rl">${esc(s.role||"")}</div></div>
-        <span class="sm-badges"><span class="sm-kind ${cls}">${cls==="client"?"client":"user"}</span><span class="sm-side">${esc(side)}</span></span></div>
+        <span class="sm-badges"><span class="sm-kind ${cls}" data-tip="${cls==="client"?clientTip:userTip}">${cls==="client"?"Client":"User"}</span><span class="sm-side">${esc(side)}</span></span></div>
       ${s.summary?`<div class="sm-sum">${esc(s.summary)}</div>`:""}
       ${coreHtml}
       <div class="sm-ins">${ins}</div>
+      <div class="sm-class-pick"><span class="sm-class-pick-lbl">Type:</span><button class="sm-class-btn user${cls==="user"?" on":""}" data-class-pick="${idx}" data-class="user" title="User — operates the product hands-on; reacts to UI &amp; interaction">User</button><button class="sm-class-btn client${cls==="client"?" on":""}" data-class-pick="${idx}" data-class="client" title="Client — judges outcomes &amp; strategy, not individual buttons">Client</button></div>
       <div class="sm-foot"><button class="btn btn-indigo btn-sm" data-add="${idx}">＋ Add ${first}</button>
         <button class="btn btn-ghost btn-sm" data-skip="${idx}">Skip</button><span class="grow"></span></div></div>`;
   }
@@ -5469,9 +5484,12 @@ load()
 
   async function saveSim(s,cardEl,btn,opts){
     const orig=btn?btn.textContent:""; if(btn){ btn.disabled=true; btn.textContent="Adding…"; }
+    // Read the chosen simClass from the card's data-simclass attribute (may have been flipped by the picker);
+    // fall back to the AI-returned simClass on the Sim object.
+    const chosenClass=(cardEl&&cardEl.dataset.simclass)||(simClassOf(s));
     try{
       await postJSON("/api/personas"+projQ(),{ name:s.name, role:s.role, type:s.type,
-        simClass:simClassOf(s), side:sideOf(s), core:s.core||null,
+        simClass:chosenClass, side:sideOf(s), core:s.core||null,
         initials:s.initials||inits(s.name), accent:safeAccent(s.accent,col(s.name||"x")), summary:s.summary||"",
         insights:(Array.isArray(s.insights)?s.insights:[]).map(i=>({ ...i, scope:i.scope||null, portability:i.portability||null })) });
       simAdded=true;
@@ -5481,8 +5499,28 @@ load()
     }catch(e){ if(btn){ btn.disabled=false; btn.textContent=orig; } fail(e.message); }
   }
 
-  // delegate clicks inside the result list (Add / Skip / Add all)
+  // delegate clicks inside the result list (Add / Skip / Add all / simClass picker)
   out.addEventListener("click",(e)=>{
+    // simClass picker: flip User/Client on the card before saving
+    const pick=e.target.closest("[data-class-pick]");
+    if(pick){
+      const card=pick.closest(".sm-sim");
+      const chosen=pick.dataset.class; // "user" or "client"
+      if(!card||!chosen) return;
+      card.dataset.simclass=chosen;
+      // Update button active states
+      card.querySelectorAll("[data-class-pick]").forEach(b=>{
+        b.classList.toggle("on",b.dataset.class===chosen);
+      });
+      // Update the badge text + colour + tooltip
+      const badge=card.querySelector(".sm-kind");
+      if(badge){
+        badge.className="sm-kind "+chosen;
+        badge.textContent=chosen==="client"?"Client":"User";
+        badge.dataset.tip=chosen==="client"?"Judges outcomes & strategy — not individual buttons":"Operates the product hands-on — reacts to UI & interaction";
+      }
+      return;
+    }
     const add=e.target.closest("[data-add]"), skip=e.target.closest("[data-skip]"), all=e.target.closest("#smAddAll");
     if(add){ const i=+add.dataset.add; const card=add.closest(".sm-sim"); saveSim(lastSims[i],card,add); }
     else if(skip){ const card=skip.closest(".sm-sim"); card.classList.add("added"); card.querySelectorAll("button").forEach(b=>b.disabled=true); }
