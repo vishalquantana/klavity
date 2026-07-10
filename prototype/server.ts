@@ -2229,10 +2229,25 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (req.method === "POST" && path === "/api/personas") {
         try {
           const body = await req.json()
+          const incomingName = String(body.name || "Unnamed")
+          const incomingRole = String(body.role || "")
+          // Dedup guard: if a persona with the same normalized name (+ role) already exists in this
+          // project, return the existing one instead of creating a duplicate. This prevents the
+          // Add-a-Sim flow and repeated extract/site-suggest "Add" clicks from creating N identical rows.
+          // Normalization mirrors normName() used in matchPersonaToSim (trim + lowercase + collapse spaces).
+          const normIncomingName = incomingName.trim().toLowerCase().replace(/\s+/g, " ")
+          const normIncomingRole = incomingRole.trim().toLowerCase().replace(/\s+/g, " ")
+          const existing = await listPersonas(wid)
+          const dupe = existing.find(p =>
+            p.name.trim().toLowerCase().replace(/\s+/g, " ") === normIncomingName &&
+            p.role.trim().toLowerCase().replace(/\s+/g, " ") === normIncomingRole
+          )
+          if (dupe) return wjson({ persona: dupe, existing: true }, 200)
+
           const id = "sim_" + crypto.randomUUID()
           const v3 = v3PersonaFields(body)
           await upsertPersona(id, wid, {
-            name: String(body.name || "Unnamed"), role: String(body.role || ""),
+            name: incomingName, role: incomingRole,
             type: v3.type,
             initials: String(body.initials || "").slice(0, 2).toUpperCase(),
             accent: normAccent(body.accent),
