@@ -1,9 +1,10 @@
 // Weekly social carousel renderer — agent-curated WeeklyNewsData → brand-styled
 // HTML slides → PNG buffers (Playwright/chromium @2× DPR). Render-only; posting is
-// a separate, deferred step. Pure + deterministic (no network except web fonts).
+// a separate, deferred step. Pure + deterministic (no network).
 //
 // Brand: Klavity. Dark social variant of the marketing palette (kit.css).
 import { chromium, type BrowserContext } from "playwright"
+import { join } from "node:path"
 
 export interface NewsItem {
   headline: string   // what happened — factual, one line, SOURCED (no hallucinated news)
@@ -39,7 +40,17 @@ export function esc(s: string): string {
 // The open "( )" Klavity mark, stroked in cream — same paths as the site logo.
 const MARK = `<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="${CREAM}" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg>`
 
-const FONTS = `@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..900;1,9..144,400..700&family=Hanken+Grotesk:wght@400..800&family=JetBrains+Mono:wght@500;700&display=swap');`
+// Self-hosted woff2 font declarations — avoids any external network fetch in Playwright.
+// Paths are resolved as file:// URLs so chromium.launch() can load them without a server.
+const FONTS_DIR = join(import.meta.dir, "..", "..", "..", "site", "fonts")
+const f = (name: string) => `file://${FONTS_DIR}/${name}`
+const FONTS = `
+@font-face{font-family:'Fraunces';font-style:normal;font-weight:300 900;font-display:swap;src:url('${f("fraunces-300-900-normal-latin.woff2")}') format('woff2')}
+@font-face{font-family:'Fraunces';font-style:italic;font-weight:300 700;font-display:swap;src:url('${f("fraunces-300-700-italic-latin.woff2")}') format('woff2')}
+@font-face{font-family:'Hanken Grotesk';font-style:normal;font-weight:300 800;font-display:swap;src:url('${f("hanken-grotesk-300-800-normal-latin.woff2")}') format('woff2')}
+@font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:400;font-display:swap;src:url('${f("jetbrains-mono-400-normal-latin.woff2")}') format('woff2')}
+@font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:500 700;font-display:swap;src:url('${f("jetbrains-mono-700-normal-latin.woff2")}') format('woff2')}
+`
 
 const shell = (body: string, accent = ACCENTS[0]) => `<!doctype html><html><head><meta charset="utf-8"><style>
 ${FONTS}
