@@ -1850,7 +1850,20 @@ export async function listPersonas(projectId: string): Promise<PersonaRow[]> {
           FROM personas p WHERE p.project_id=? ORDER BY p.created_at ASC`,
     args: [projectId],
   })
-  return r.rows.map(rowToPersona)
+  const all = r.rows.map(rowToPersona)
+  // Defensive read-side dedup: collapse exact name+role duplicates (case/space-insensitive),
+  // keeping the earliest-created row. Fixes already-duplicated projects (e.g. Charantra) without
+  // a data migration. Prevention happens at write time in POST /api/personas, but this is a
+  // belt-and-suspenders guard that makes the list always clean regardless of DB state.
+  const seen = new Map<string, boolean>()
+  return all.filter(p => {
+    const key = String(p.name || "").trim().toLowerCase().replace(/\s+/g, " ") +
+                "\x00" +
+                String(p.role || "").trim().toLowerCase().replace(/\s+/g, " ")
+    if (seen.has(key)) return false
+    seen.set(key, true)
+    return true
+  })
 }
 export async function upsertPersona(id: string, projectId: string, data: Omit<PersonaRow, 'id' | 'projectId' | 'createdAt' | 'updatedAt'>) {
   const now = Date.now()
