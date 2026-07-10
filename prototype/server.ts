@@ -23,6 +23,7 @@ import { allow as rlAllow, record as rlRecord, count as rlCount, clear as rlClea
 import { wrapUntrusted, UNTRUSTED_GUARD } from "./lib/prompt-safety"
 import { notifyNewSignup } from "./lib/signup-alert"
 import { notifyNewReport } from "./lib/report-alert"
+import { reportError } from "./lib/error-alert"
 import { validateModalConfigInput, resolveModalConfig } from "../packages/core/src/modal-theme"
 import { MODEL_CHOICES, MODEL_CHOICE_IDS, DEFAULT_WEIGHTS, pickModel, parseWeightsForm, weightsToPct } from "./lib/models"
 import { AsyncLocalStorage } from "node:async_hooks"
@@ -665,7 +666,9 @@ async function readJsonLimited(req: Request, maxBytes: number): Promise<{ ok: tr
 // quote it for support without leaking internals.
 function oops(e: unknown, label: string): { error: string; id: string } {
   const id = crypto.randomUUID().slice(0, 8)
-  console.error(`[${label} ${id}]`, (e as any)?.message || e)
+  const message = (e as any)?.message || String(e) || "unknown error"
+  console.error(`[${label} ${id}]`, message)
+  void reportError({ where: "backend", message, traceId: id, route: label, stack: (e as any)?.stack })
   return { error: "Something went wrong. Please try again.", id }
 }
 // Widget-scoped json: always attaches WIDGET_CORS so every response (success AND error) is
@@ -1487,6 +1490,26 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         } catch (e: any) { console.error("lead alert (non-fatal):", e?.message || e) }
       })().catch(() => {})
       return wjson({ ok: true })
+    }
+
+    // ── client-error relay: browser posts uncaught JS errors here; we forward to Slack ──
+    // Anonymous, no auth required. Rate-limited per-IP (5/min) and body-size-capped.
+    // Keeps sensitive internals off the client — we only accept a small structured payload.
+    if (req.method === "POST" && path === "/api/client-error") {
+      const CLIENT_ERROR_MAX_BODY = 4_096  // 4 KB — small structured payload only
+      const ip = clientIp(req, server)
+      if (!rlAllow(`clierr:ip:${ip}`, 5, 60_000)) return json({ error: "rate limited" }, 429)
+      const parsed = await readJsonLimited(req, CLIENT_ERROR_MAX_BODY)
+      if (!parsed.ok) return json({ error: parsed.error }, parsed.status)
+      const b = parsed.data as Record<string, unknown>
+      const message = String(b.message || "").trim().slice(0, 500)
+      if (!message) return json({ error: "message required" }, 400)
+      const url = String(b.url || "").trim().slice(0, 300)
+      const stack = b.stack ? String(b.stack).slice(0, 1_500) : undefined
+      const traceId = b.traceId ? String(b.traceId).slice(0, 40) : undefined
+      // fire-and-forget — never blocks the browser
+      void reportError({ where: "frontend", message, route: url || undefined, traceId, stack })
+      return json({ ok: true })
     }
 
     // ── widget heartbeat (TASK #5): the embedded /widget.js pings this once on load so the dashboard can
