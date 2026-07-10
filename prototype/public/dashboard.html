@@ -1082,6 +1082,24 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .sm-call-actions{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:2px}
 .sm-file{cursor:pointer;display:inline-flex;align-items:center;gap:6px}
 @media(max-width:540px){.sm-field{flex-direction:column}.sm-seg button .e{display:none}.sm-modal{padding:24px 18px}.sm-core-lb{width:64px}}
+/* Post-add success panel — shown inside the Add-a-Sim modal after at least one Sim is saved */
+.sm-success{display:none;animation:smfade .32s ease;margin-top:16px}
+.sm-success.show{display:block}
+.sm-success-hd{text-align:center;margin-bottom:16px}
+.sm-success-hd p{font-size:13px;color:var(--paper-dim);margin:0}
+.sm-success-hd strong{display:block;font-family:var(--display);font-weight:580;font-size:17px;letter-spacing:-.01em;margin-bottom:4px;color:var(--paper)}
+.sm-next-steps{display:grid;gap:9px}
+.sm-next-step{display:flex;align-items:flex-start;gap:13px;background:var(--ink);border:1px solid var(--line);border-radius:14px;padding:14px 15px;text-decoration:none;color:inherit;cursor:pointer;transition:border-color .15s,transform .15s,box-shadow .15s;width:100%;text-align:left;font-family:inherit;font-size:inherit}
+.sm-next-step:hover{border-color:var(--indigo);transform:translateY(-1px);box-shadow:0 4px 18px -6px rgba(99,102,241,.22)}
+.sm-next-step:active{transform:scale(.97)}
+.sm-next-step-ic{width:36px;height:36px;border-radius:10px;background:rgba(99,102,241,.12);color:var(--indigo);display:grid;place-items:center;flex:none}
+.sm-next-step.is-primary .sm-next-step-ic{background:var(--indigo);color:#fff}
+.sm-next-step-body{flex:1;min-width:0}
+.sm-next-step-t{font-weight:600;font-size:13.5px;color:var(--paper);line-height:1.2;margin-bottom:3px}
+.sm-next-step-d{font-size:12px;color:var(--paper-dim);line-height:1.45}
+.sm-next-step-arr{color:var(--paper-faint);font-size:16px;align-self:center;flex:none;transition:transform .15s}
+.sm-next-step:hover .sm-next-step-arr{transform:translateX(3px);color:var(--indigo)}
+.sm-success-foot{display:flex;justify-content:center;margin-top:14px}
 /* Report-widget embed + live preview + extension card (Settings → Report widget appearance) */
 .wp-embed{margin:4px 0 14px}
 .wp-embed-label{font-size:12px;font-weight:600;opacity:.7;margin-bottom:6px}
@@ -5284,6 +5302,45 @@ load()
       <p class="sm-note lft">Most realistic — Sims quote the call. Drop in a <b>.txt</b>, <b>.vtt</b> or <b>.srt</b> transcript, or paste it. Names &amp; quotes stay private to this project.</p>
     </div>
     <div class="sm-out" id="smOut"></div>
+    <!-- Post-add success panel: shown after at least one Sim is saved; guides user to activate their Sims -->
+    <div class="sm-success" id="smSuccess" role="status" aria-live="polite">
+      <div class="sm-success-hd">
+        <strong id="smSuccessTitle">Your Sim is ready — now put it to work</strong>
+        <p>Pick how you want to see your Sim react to your product:</p>
+      </div>
+      <div class="sm-next-steps">
+        <!-- Primary: Chrome extension — see live reactions while browsing -->
+        <a class="sm-next-step is-primary" href="https://chromewebstore.google.com/detail/olahjdcgbdjajbfmgnakjlehgjdmaene" target="_blank" rel="noopener" id="smNextExt">
+          <div class="sm-next-step-ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z" /></svg></div>
+          <div class="sm-next-step-body">
+            <div class="sm-next-step-t">Use in the Chrome extension</div>
+            <div class="sm-next-step-d">See a Sim react on any page you're browsing — right-click or open the extension and ask for a live review.</div>
+          </div>
+          <span class="sm-next-step-arr" aria-hidden="true">→</span>
+        </a>
+        <!-- Install the widget — embed on your site -->
+        <button class="sm-next-step" type="button" id="smNextWidget">
+          <div class="sm-next-step-ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div>
+          <div class="sm-next-step-body">
+            <div class="sm-next-step-t">Install the widget on your site</div>
+            <div class="sm-next-step-d">One script tag — your visitors can file reports and your Sims react to the live page. Copy the embed snippet from Settings.</div>
+          </div>
+          <span class="sm-next-step-arr" aria-hidden="true">→</span>
+        </button>
+        <!-- Start an AutoSim — autonomous walk -->
+        <button class="sm-next-step" type="button" id="smNextAutosim">
+          <div class="sm-next-step-ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3a2 2 0 0 0-2 2"/><path d="M19 3a2 2 0 0 1 2 2"/><path d="M21 19a2 2 0 0 1-2 2"/><path d="M5 21a2 2 0 0 1-2-2"/><path d="M9 3h1"/><path d="M9 21h1"/><path d="M14 3h1"/><path d="M14 21h1"/><path d="M3 9v1"/><path d="M21 9v1"/><path d="M3 14v1"/><path d="M21 14v1"/></svg></div>
+          <div class="sm-next-step-body">
+            <div class="sm-next-step-t">Start an AutoSim</div>
+            <div class="sm-next-step-d">Describe a critical user path in plain English — Klavity runs it on every deploy and your Sim files what breaks.</div>
+          </div>
+          <span class="sm-next-step-arr" aria-hidden="true">→</span>
+        </button>
+      </div>
+      <div class="sm-success-foot">
+        <button class="btn btn-ghost btn-sm" id="smSuccessBack" type="button">Add another Sim</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -5363,7 +5420,49 @@ load()
     try{ const d=await postJSON("/api/extract",{transcript:v}); showSims(d.personas||[]); }
     catch(e){ fail(e.message+(e.traceId&&!e.message.includes("ref:")?" (ref: "+e.traceId+".)":"")); }
   }
-  async function saveSim(s,cardEl,btn){
+  // ── Post-add success panel ──
+  const successEl=$("smSuccess");
+  function showSuccessPanel(addedName,addedCount){
+    // Update heading to reflect single vs. multiple
+    const title=$("smSuccessTitle");
+    if(title){
+      if(addedCount&&addedCount>1) title.textContent="Your Sims are ready — now put them to work";
+      else title.textContent=(addedName?""+addedName+" is ready":"Your Sim is ready")+" — now put them to work";
+    }
+    // Hide the result cards while keeping them in the DOM (so close() still triggers load())
+    out.style.display="none";
+    successEl.classList.add("show");
+  }
+  function hideSuccessPanel(){
+    successEl.classList.remove("show");
+    out.style.display="";
+  }
+
+  // Widget button: close modal then navigate to Settings → appearance drawer
+  $("smNextWidget").onclick=function(){
+    close();
+    if(typeof setView==="function") setView("settings");
+    setTimeout(function(){
+      var d=$("appearanceDrawer");
+      if(d){ d.setAttribute("open",""); d.scrollIntoView({behavior:"smooth",block:"start"}); }
+    },120);
+  };
+  // AutoSim button: close modal then navigate to AutoSims view
+  $("smNextAutosim").onclick=function(){
+    close();
+    if(typeof setView==="function") setView("autosims");
+    if(typeof window.initTrailsView==="function") window.initTrailsView();
+  };
+  // "Add another Sim" back button: hide success panel, reset to create state
+  $("smSuccessBack").onclick=function(){
+    hideSuccessPanel();
+    // Re-fire the currently active tab to reset inputs/results
+    var activePane=ov.querySelector(".sm-seg button.on");
+    if(activePane) activePane.click(); else out.innerHTML="";
+    setTimeout(function(){ var f=$("smBrief"); if(f&&ov.classList.contains("show")) f.focus(); },60);
+  };
+
+  async function saveSim(s,cardEl,btn,opts){
     const orig=btn?btn.textContent:""; if(btn){ btn.disabled=true; btn.textContent="Adding…"; }
     try{
       await postJSON("/api/personas"+projQ(),{ name:s.name, role:s.role, type:s.type,
@@ -5372,6 +5471,8 @@ load()
         insights:(Array.isArray(s.insights)?s.insights:[]).map(i=>({ ...i, scope:i.scope||null, portability:i.portability||null })) });
       simAdded=true;
       if(cardEl){ cardEl.classList.add("added"); cardEl.querySelectorAll("button").forEach(b=>b.disabled=true); if(btn) btn.textContent="Added"; } // emoji-ok
+      // Show the success panel unless caller will do it (e.g. "Add all" batches and shows once at end)
+      if(!opts||!opts.defer) showSuccessPanel(s.name,1);
     }catch(e){ if(btn){ btn.disabled=false; btn.textContent=orig; } fail(e.message); }
   }
 
@@ -5380,14 +5481,22 @@ load()
     const add=e.target.closest("[data-add]"), skip=e.target.closest("[data-skip]"), all=e.target.closest("#smAddAll");
     if(add){ const i=+add.dataset.add; const card=add.closest(".sm-sim"); saveSim(lastSims[i],card,add); }
     else if(skip){ const card=skip.closest(".sm-sim"); card.classList.add("added"); card.querySelectorAll("button").forEach(b=>b.disabled=true); }
-    else if(all){ out.querySelectorAll("[data-add]").forEach(b=>{ if(!b.disabled) b.click(); }); }
+    else if(all){
+      // Collect all pending add buttons, fire them all (deferred mode), then show success panel once
+      const btns=Array.from(out.querySelectorAll("[data-add]")).filter(b=>!b.disabled);
+      if(!btns.length) return;
+      const count=btns.length;
+      Promise.all(btns.map(b=>{ const i=+b.dataset.add; const card=b.closest(".sm-sim"); return saveSim(lastSims[i],card,b,{defer:true}); }))
+        .then(()=>showSuccessPanel(null,count))
+        .catch(()=>{}); // individual errors already surface via fail()
+    }
   });
 
-  // segmented switcher
+  // segmented switcher — also hides success panel if user switches tabs after adding
   ov.querySelectorAll(".sm-seg button").forEach(b=>b.addEventListener("click",()=>{
     ov.querySelectorAll(".sm-seg button").forEach(x=>x.classList.remove("on")); b.classList.add("on");
     ov.querySelectorAll(".sm-pane").forEach(p=>p.classList.toggle("on",p.dataset.pane===b.dataset.pane));
-    out.innerHTML="";
+    out.innerHTML=""; hideSuccessPanel();
   }));
   // example chips
   $("smChips").innerHTML=EXAMPLES.map(x=>`<button class="sm-chip">${esc(x)}</button>`).join("");
@@ -5419,7 +5528,7 @@ load()
   $("smBrief").addEventListener("keydown",(e)=>{ if(e.key==="Enter"){ e.preventDefault(); genBrief(); } });
   $("smUrl").addEventListener("keydown",(e)=>{ if(e.key==="Enter"){ e.preventDefault(); genSite(); } });
 
-  function close(){ ov.classList.remove("show"); document.body.style.overflow=""; if(simAdded){ simAdded=false; load(); } }
+  function close(){ ov.classList.remove("show"); document.body.style.overflow=""; hideSuccessPanel(); if(simAdded){ simAdded=false; load(); } }
   $("simClose").onclick=close;
   ov.addEventListener("mousedown",(e)=>{ if(e.target===ov) close(); });
   document.addEventListener("keydown",(e)=>{ if(e.key==="Escape"&&ov.classList.contains("show")) close(); });
@@ -5428,7 +5537,8 @@ load()
   window.openSimModal=function(){
     const first=!(state&&state.sims&&state.sims.length);
     $("simHd").textContent=first?"Bring your first Sim to life":"Add a Sim";
-    out.innerHTML=""; $("smBrief").value=""; $("smUrl").value=""; $("smTx").value="";
+    out.innerHTML=""; out.style.display=""; $("smBrief").value=""; $("smUrl").value=""; $("smTx").value="";
+    hideSuccessPanel();
     ov.querySelector('.sm-seg button[data-pane="describe"]').click();
     ov.classList.add("show"); document.body.style.overflow="hidden"; setTimeout(()=>$("smBrief").focus(),60);
   };
