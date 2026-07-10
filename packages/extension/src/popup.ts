@@ -183,17 +183,49 @@ async function renderSignedIn() {
   })
 
   // Quick report buttons
+  // On customer domains not in host_permissions, executeScript throws. Request an optional
+  // host permission first (popup button click is inside a user gesture, so this is allowed).
   async function openModal(type: 'bug' | 'feature') {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
     if (!tab?.id) return
-    chrome.tabs.sendMessage(tab.id, { kind: 'OPEN_MODAL', reportType: type }).catch(() => {
+    const tabId = tab.id
+    const msg = { kind: 'OPEN_MODAL', reportType: type }
+
+    // Helper: inject then retry send.
+    const tryInjectAndSend = async (): Promise<boolean> => {
       const cs = chrome.runtime.getManifest().content_scripts?.[0]
-      if (cs?.js?.length) {
-        chrome.scripting.executeScript({ target: { tabId: tab.id! }, files: cs.js }).then(() => {
-          setTimeout(() => chrome.tabs.sendMessage(tab.id!, { kind: 'OPEN_MODAL', reportType: type }).catch(() => {}), 300)
-        }).catch(() => {})
+      if (!cs?.js?.length) return false
+      try {
+        if (cs.css?.length) await chrome.scripting.insertCSS({ target: { tabId }, files: cs.css })
+        await chrome.scripting.executeScript({ target: { tabId }, files: cs.js })
+      } catch { return false }
+      for (let i = 0; i < 12; i++) {
+        await new Promise((r) => setTimeout(r, 120))
+        try { await chrome.tabs.sendMessage(tabId, msg); return true } catch { /* waking */ }
       }
-    })
+      return false
+    }
+
+    // Direct send (content script already active).
+    try { await chrome.tabs.sendMessage(tabId, msg); window.close(); return } catch { /* not loaded */ }
+
+    // Try injection without extra permission (already-granted or localhost).
+    if (await tryInjectAndSend()) { window.close(); return }
+
+    // Request optional host permission for this origin.
+    if (tab.url && !/^(chrome|chrome-extension|about|data|blob|file|moz-extension):/.test(tab.url)
+        && !/chromewebstore\.google\.com|chrome\.google\.com\/webstore/.test(tab.url)) {
+      let origin: string
+      try { origin = new URL(tab.url).origin } catch { window.close(); return }
+      const alreadyGranted = await chrome.permissions.contains({ origins: [`${origin}/*`] }).catch(() => false)
+      if (!alreadyGranted) {
+        const granted = await chrome.permissions.request({ origins: [`${origin}/*`] }).catch(() => false)
+        if (!granted) { window.close(); return }
+        chrome.runtime.sendMessage({ kind: 'KLAV_RECONCILE_SCRIPTS' }).catch(() => {})
+      }
+      if (await tryInjectAndSend()) { window.close(); return }
+    }
+
     window.close()
   }
   $('btn-bug').addEventListener('click', () => openModal('bug'))
@@ -261,24 +293,72 @@ async function renderSignedIn() {
       const review = { kind: 'KLAV_ADHOC_REVIEW', projectId }
       // Reach the content script; if it isn't loaded on this tab yet, inject it then retry while the
       // crxjs loader imports the module (async). Surface any failure instead of a silent no-op.
-      try {
-        await chrome.tabs.sendMessage(tabId, review)
-      } catch {
+      //
+      // On customer domains that aren't in host_permissions, executeScript throws even with
+      // activeTab in MV3 (crxjs module workers bypass activeTab's implicit grant). We request
+      // an optional host permission for this origin first — the popup runs inside a user
+      // gesture (action click), so chrome.permissions.request is allowed here.
+      const tryInjectAndSend = async (): Promise<boolean> => {
         const cs = chrome.runtime.getManifest().content_scripts?.[0]
-        if (!cs?.js?.length) { showAnalyzeMsg("Can't run on this page."); analyzeBtn.disabled = false; return }
+        if (!cs?.js?.length) return false
         try {
           await chrome.scripting.executeScript({ target: { tabId }, files: cs.js })
         } catch {
-          showAnalyzeMsg("Can't run on this page — your browser blocks Klavity here."); analyzeBtn.disabled = false; return
+          return false
         }
         let delivered = false
         for (let i = 0; i < 4 && !delivered; i++) {
           await new Promise((r) => setTimeout(r, 250))
           try { await chrome.tabs.sendMessage(tabId, review); delivered = true } catch { /* module still waking — retry */ }
         }
-        if (!delivered) { showAnalyzeMsg('Reload the page, then try again.'); analyzeBtn.disabled = false; return }
+        return delivered
       }
-      window.close()
+
+      try {
+        await chrome.tabs.sendMessage(tabId, review)
+        window.close()
+        return
+      } catch { /* content script not yet loaded on this tab — try injection below */ }
+
+      // First try injection without a permission request (works on already-granted origins
+      // and on localhost which is in host_permissions).
+      if (await tryInjectAndSend()) { window.close(); return }
+
+      // Injection failed — most likely a customer domain not yet granted. Request the
+      // optional host permission for this origin (user gesture is still live here because
+      // we're inside the onclick handler synchronous call chain via await).
+      let origin: string
+      try {
+        origin = new URL(activeTab.url!).origin
+      } catch {
+        showAnalyzeMsg("Can't run on this page — unable to determine page origin.")
+        analyzeBtn.disabled = false
+        return
+      }
+
+      const alreadyGranted = await chrome.permissions.contains({ origins: [`${origin}/*`] }).catch(() => false)
+      if (!alreadyGranted) {
+        let granted: boolean
+        try {
+          granted = await chrome.permissions.request({ origins: [`${origin}/*`] })
+        } catch {
+          granted = false
+        }
+        if (!granted) {
+          showAnalyzeMsg("Permission denied — allow Klavity to run on this site to analyse it.")
+          analyzeBtn.disabled = false
+          return
+        }
+        // Permission freshly granted: trigger dynamic script reconciliation in the background
+        // so passive auto-review also works going forward on this origin.
+        chrome.runtime.sendMessage({ kind: 'KLAV_RECONCILE_SCRIPTS' }).catch(() => {})
+      }
+
+      // Retry injection now that the host permission is granted.
+      if (await tryInjectAndSend()) { window.close(); return }
+
+      showAnalyzeMsg("Reload the page, then try again.")
+      analyzeBtn.disabled = false
     }
   }
 
@@ -408,8 +488,8 @@ async function renderRecent() {
     row.className = 'recent-row'
     row.title = item.issueUrl
     const isBug = item.type === 'bug'
-    const bugIcon = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="color:${isBug ? '#E94F37' : '#a78bfa'}"><path d="m8 2 1.88 1.88M14.12 3.88 16 2M9 7.13v-1a3.003 3.003 0 1 1 6 0v1M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6Z"/></svg>`
-    const featIcon = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="color:#a78bfa"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.1V18h6v-1.2c0-.8.4-1.6 1-2.1A7 7 0 0 0 12 2Z"/></svg>`
+    const bugIcon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="color:${isBug ? '#E94F37' : '#a78bfa'}"><path d="m8 2 1.88 1.88M14.12 3.88 16 2M9 7.13v-1a3.003 3.003 0 1 1 6 0v1M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6Z"/></svg>`
+    const featIcon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="color:#a78bfa"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.1V18h6v-1.2c0-.8.4-1.6 1-2.1A7 7 0 0 0 12 2Z"/></svg>`
     row.innerHTML = `
       <div class="recent-icon ${isBug ? 'bug' : 'feat'}">${isBug ? bugIcon : featIcon}</div>
       <div class="recent-desc"><div class="recent-text">${item.desc}</div><div class="recent-meta">${timeAgo(item.ts)}</div></div>
