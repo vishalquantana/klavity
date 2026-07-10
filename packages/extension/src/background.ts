@@ -223,8 +223,8 @@ function setupContextMenus(): Promise<void> {
 }
 
 chrome.contextMenus?.onClicked.addListener((info, tab) => {
-  if (info.menuItemId === 'klavity-bug' && tab?.id) void openModal(tab.id, 'bug')
-  else if (info.menuItemId === 'klavity-feature' && tab?.id) void openModal(tab.id, 'feature')
+  if (info.menuItemId === 'klavity-bug' && tab?.id) void openModal(tab.id, 'bug', tab)
+  else if (info.menuItemId === 'klavity-feature' && tab?.id) void openModal(tab.id, 'feature', tab)
   else if (info.menuItemId === 'klavity-analyze') void runAnalyze(tab)
   else if (info.menuItemId === 'klavity-tracker') {
     getSettings().then((settings) => { const url = getTrackerUrl(settings); if (url) chrome.tabs.create({ url }) })
@@ -268,8 +268,49 @@ async function projectSimCount(config: KlavConfig, pid: string): Promise<number>
   }
 }
 
+// Show a Chrome notification or badge to let the user know about a background action failure.
+// Used in right-click paths where no popup is open to surface an error message.
+function notifyUser(title: string, message: string): void {
+  if (chrome.notifications?.create) {
+    chrome.notifications.create({
+      type: 'basic',
+      iconUrl: 'icons/icon48.png',
+      title,
+      message,
+    })
+  } else {
+    // Fallback: set the action badge for a few seconds.
+    chrome.action?.setBadgeText?.({ text: '!' })
+    chrome.action?.setBadgeBackgroundColor?.({ color: '#E94F37' })
+    setTimeout(() => chrome.action?.setBadgeText?.({ text: '' }), 4000)
+  }
+}
+
+// Request an optional host permission for a tab URL. Returns true if already granted or
+// newly granted. The contextMenus.onClicked callback IS a user gesture in MV3, so
+// chrome.permissions.request() is allowed there.
+async function ensureHostPermission(url: string): Promise<boolean> {
+  let origin: string
+  try { origin = new URL(url).origin } catch { return false }
+  if (!origin || origin === 'null') return false
+  const pattern = `${origin}/*`
+  if (await chrome.permissions.contains({ origins: [pattern] }).catch(() => false)) return true
+  try {
+    const granted = await chrome.permissions.request({ origins: [pattern] })
+    if (granted) {
+      // Reconcile dynamic scripts so passive monitoring also kicks in on this origin.
+      void reconcileDynamicScripts()
+    }
+    return granted
+  } catch {
+    return false
+  }
+}
+
 // "Analyze this page" (context menu): with 0 Sims, send the user to create one; otherwise run the
 // on-demand review in the tab — injecting the content module first if it isn't loaded there yet.
+// On customer domains not in host_permissions, request the optional permission first (the
+// contextMenus.onClicked handler is a user gesture, so the request is allowed). Never silent-fail.
 async function runAnalyze(tab?: chrome.tabs.Tab): Promise<void> {
   if (!tab?.id) return
   const config = await getConfig()
@@ -284,16 +325,50 @@ async function runAnalyze(tab?: chrome.tabs.Tab): Promise<void> {
     return
   }
   const tabId = tab.id
+  const tabUrl = tab.url || ''
   const msg = { kind: 'KLAV_ADHOC_REVIEW', projectId: pid }
-  chrome.tabs.sendMessage(tabId, msg).catch(() => {
+
+  // Helper: inject content script and retry sending the message.
+  const injectAndSend = async (): Promise<boolean> => {
     const cs = chrome.runtime.getManifest().content_scripts?.[0]
-    if (cs?.js?.length) {
-      chrome.scripting
-        .executeScript({ target: { tabId }, files: cs.js })
-        .then(() => setTimeout(() => { void chrome.tabs.sendMessage(tabId, msg).catch(() => {}) }, 300))
-        .catch(() => {})
+    if (!cs?.js?.length) return false
+    try {
+      await chrome.scripting.executeScript({ target: { tabId }, files: cs.js })
+    } catch {
+      return false
     }
-  })
+    // crxjs module worker wakes async — poll briefly.
+    for (let i = 0; i < 4; i++) {
+      await new Promise((r) => setTimeout(r, 250))
+      try { await chrome.tabs.sendMessage(tabId, msg); return true } catch { /* waking */ }
+    }
+    return false
+  }
+
+  // Try direct send first (content script already active).
+  try {
+    await chrome.tabs.sendMessage(tabId, msg)
+    return
+  } catch { /* not loaded yet */ }
+
+  // Try injection without additional permission (covers already-granted origins + localhost).
+  if (await injectAndSend()) return
+
+  // Injection failed — likely a customer domain. Request optional host permission.
+  if (tabUrl && !/^(chrome|chrome-extension|about|data|blob|file|moz-extension):/.test(tabUrl)
+      && !/chromewebstore\.google\.com|chrome\.google\.com\/webstore/.test(tabUrl)) {
+    const granted = await ensureHostPermission(tabUrl)
+    if (!granted) {
+      notifyUser('Klavity – permission needed', 'Click "Allow" in the permission prompt to analyse this site with Sims.')
+      return
+    }
+    // Retry injection with the freshly-granted permission.
+    if (await injectAndSend()) return
+    notifyUser('Klavity – reload required', 'Reload the page and try Analyse with Sims again.')
+    return
+  }
+
+  notifyUser('Klavity – can\'t run here', 'Analyse with Sims doesn\'t work on this type of page.')
 }
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -332,27 +407,52 @@ function safeSend(tabId: number, msg: ContentMessage): Promise<boolean> {
   })
 }
 
-// Open the report modal in a tab. If the content script isn't there yet (the tab
+// Open the report modal in a tab. If the content script isn’t there yet (the tab
 // was open before the extension loaded/updated — an MV3 gotcha), inject it and retry.
-async function openModal(tabId: number, reportType: ReportType) {
+// On customer domains, requests optional host permission first (contextMenus.onClicked
+// is a user gesture). Shows a notification instead of silently failing.
+async function openModal(tabId: number, reportType: ReportType, tab?: chrome.tabs.Tab) {
   const msg = { kind: 'OPEN_MODAL', reportType } satisfies ContentMessage
   if (await safeSend(tabId, msg)) return
 
   const cs = chrome.runtime.getManifest().content_scripts?.[0]
-  try {
-    if (cs?.css?.length) await chrome.scripting.insertCSS({ target: { tabId }, files: cs.css })
-    if (cs?.js?.length) await chrome.scripting.executeScript({ target: { tabId }, files: cs.js })
-  } catch (e) {
-    console.warn('[Klavity] can’t inject into this page (restricted page like chrome:// or the Web Store?):', e)
+
+  const tryInject = async (): Promise<boolean> => {
+    try {
+      if (cs?.css?.length) await chrome.scripting.insertCSS({ target: { tabId }, files: cs.css })
+      if (cs?.js?.length) await chrome.scripting.executeScript({ target: { tabId }, files: cs.js })
+    } catch {
+      return false
+    }
+    // crxjs registers the content-script listener asynchronously (loader → dynamic
+    // import), so the first message can race it — retry briefly until it answers.
+    for (let i = 0; i < 12; i++) {
+      await new Promise((r) => setTimeout(r, 120))
+      if (await safeSend(tabId, msg)) return true
+    }
+    return false
+  }
+
+  // Try injection without extra permission first (covers already-granted origins and localhost).
+  if (await tryInject()) return
+
+  // Injection failed — try requesting optional host permission for this origin.
+  const tabUrl = tab?.url || ''
+  if (tabUrl && !/^(chrome|chrome-extension|about|data|blob|file|moz-extension):/.test(tabUrl)
+      && !/chromewebstore\.google\.com|chrome\.google\.com\/webstore/.test(tabUrl)) {
+    const granted = await ensureHostPermission(tabUrl)
+    if (!granted) {
+      notifyUser('Klavity - permission needed', 'Click "Allow" to use Klavity on this site.')
+      return
+    }
+    // Retry injection with freshly granted permission.
+    if (await tryInject()) return
+    notifyUser('Klavity - reload required', 'Reload the page and try again.')
     return
   }
-  // crxjs registers the content-script listener asynchronously (loader → dynamic
-  // import), so the first message can race it — retry briefly until it answers.
-  for (let i = 0; i < 12; i++) {
-    await new Promise((r) => setTimeout(r, 120))
-    if (await safeSend(tabId, msg)) return
-  }
-  console.warn('[Klavity] content script did not respond after injection')
+
+  console.warn('[Klavity] can\'t inject into this page (restricted page like chrome:// or the Web Store?)')
+  notifyUser('Klavity - can\'t run here', 'Klavity doesn\'t work on this type of page.')
 }
 
 chrome.runtime.onMessage.addListener((msg: BackgroundMessage, sender, sendResponse) => {
