@@ -3360,6 +3360,7 @@ export async function feedbackById(projectId: string, id: string): Promise<any |
     recurrenceDatesJson: x.recurrence_dates_json != null ? String(x.recurrence_dates_json) : null,
     lastSeenAt: x.last_seen_at != null ? Number(x.last_seen_at) : null,
     clientContext: x.client_context_json != null ? safeJsonParse(x.client_context_json) : null,
+    contactEmail: x.contact_email != null ? String(x.contact_email) : null,
   }
 }
 
