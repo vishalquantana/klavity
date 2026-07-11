@@ -78,6 +78,22 @@ const SUBMIT_CANDIDATES = [
  *  next model call anyway since every iteration re-captures and renumbers refs). */
 const dekref = (s: string) => s.replace(/\[data-kref="(e\d+)"\]/g, "snapshot ref $1")
 
+function isAnalysisObjective(objective: string): boolean {
+  return /\b(analy[sz]e|analysis|audit|review|inspect|evaluate|assess|suggest(?:[-\s_]+improvements?)?|recommend(?:ations?)?|improvements?)\b/i
+    .test(objective)
+}
+
+function onlyInitialNavigate(traj: TrajectoryStep[]): boolean {
+  return traj.length === 1 && traj[0]?.action === "navigate"
+}
+
+function analysisCheckpointDescription(objective: string): string {
+  const trimmed = objective.replace(/\s+/g, " ").trim()
+  return trimmed
+    ? `Analysis objective completed: ${trimmed.slice(0, 220)}`
+    : "Analysis objective completed"
+}
+
 export interface AuthorRequest { name: string; objective: string; baseUrl: string; viewport?: TrailViewport | string | null; testAccountName?: string; createdBy?: string }
 export interface AuthorStepLog { idx: number; op: string; selector: string | null; value: string | null; url: string; rationale: string; ok: boolean; error?: string; screenshotKey?: string; krefSnapshot?: string }
 export interface AuthorOutcome {
@@ -433,6 +449,25 @@ export async function authorTrail(
         }
 
         if (verifyResult.achieved) {
+          if (onlyInitialNavigate(traj) && isAnalysisObjective(req.objective)) {
+            const checkpoint = { description: analysisCheckpointDescription(req.objective) }
+            traj.push({ action: "assert", checkpoint, url: page.url(), domHash: sha256hex(dom) })
+            const entry: AuthorStepLog = {
+              idx: log.length,
+              op: "assert",
+              selector: null,
+              value: null,
+              url: page.url(),
+              rationale: checkpoint.description,
+              ok: true,
+              krefSnapshot: dom.length > 50000 ? dom.slice(0, 50000) + "\n...[TRUNCATED]" : dom,
+            }
+            log.push(entry)
+            await opts.onStep?.(log)
+            if (opts.onCheckpoint) {
+              try { await opts.onCheckpoint(snapshotCheckpoint(page.url())) } catch {}
+            }
+          }
           objectiveVerified = true
           break
         } else {
