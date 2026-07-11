@@ -19,6 +19,7 @@ import {
   resolveEnvironmentUrl, pauseWalk, resumeWalk, getWalk,
 } from "./trails"
 import { touchWalkHeartbeat, db, incrementUsageMeter } from "./db"
+import { checkQuotaForProject } from "./quota"
 import { stepCacheKey } from "./trails-crystallize"
 import { decideFromVision, type VisionResolver, type VisionInput, type VisionResult, type VisionDecision } from "./trails-vision"
 import { setupReplayCapture, saveReplay, type ReplayCapture } from "./trails-replay"
@@ -781,11 +782,15 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
     return { runId, verdict: "red", llmCalls, steps: stepSummaries, healedCount, reasons: redReasons, failureKind: failureKindForThrownError(e), ...(evSummaryCatch ? { evidence: evSummaryCatch } : {}) }
   } finally {
     // Usage meter (KLAVITYKLA-305): one 'autosim_walk' event per completed AutoSim/Trail walk
-    // (any verdict). MEASUREMENT ONLY — fire-and-forget, never awaited, never blocks the walk; no
-    // quota/enforcement here (KLA-306/307). Reached whether the walk ran green, red, or threw, so it
-    // matches "guarded AutoSim flows" 1:1. A browser-launch failure returns early above (before this
-    // try), which is correct — no walk actually ran, so nothing to meter.
+    // (any verdict). MEASUREMENT ONLY — fire-and-forget, never awaited, never blocks the walk.
+    // Reached whether the walk ran green, red, or threw, so it matches "guarded AutoSim flows" 1:1.
+    // A browser-launch failure returns early above (before this try), so nothing is metered there.
     void incrementUsageMeter({ metric: "autosim_walk", projectId })
+    // Quota signal (KLAVITYKLA-306): read-only degrade check — non-blocking, ship-dark.
+    // When KLAV_ENFORCE_QUOTA is off (default) this always returns allow=true and has no effect.
+    void checkQuotaForProject(projectId, "autosim_walk").then((q) => {
+      if (q.degraded) console.warn(`[quota] autosim_walk degraded for project ${projectId}: ${q.reason}`)
+    }).catch(() => {})
     if (stopLiveScreencast) {
       try { await stopLiveScreencast() } catch {}
     }

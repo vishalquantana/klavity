@@ -2535,6 +2535,18 @@ export async function getAccountUsageMap(
   return out
 }
 
+// Resolve the account that owns a given project. Used by quota.ts and any other module that
+// has a projectId but needs an accountId. Returns null if the project is not found.
+export async function accountIdForProject(projectId: string): Promise<string | null> {
+  try {
+    const r = await db!.execute({ sql: "SELECT account_id FROM projects WHERE id=?", args: [projectId] })
+    const v = (r.rows[0] as any)?.account_id
+    return v != null ? String(v) : null
+  } catch {
+    return null
+  }
+}
+
 export async function recordAiCall(a: AiCallInsert): Promise<void> {
   const id = "ai_" + crypto.randomUUID()
   const accountId = await accountIdForAiCall(a.projectId, a.accountId, a.actorEmail)

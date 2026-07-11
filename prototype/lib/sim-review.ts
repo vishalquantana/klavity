@@ -12,6 +12,7 @@
 //      client knows "this was already filed by Alice 3 days ago."
 import type { Client } from "@libsql/client"
 import { insertFeedback, bumpFeedbackRecurrence, findFeedbackByIssueKey, listRecentFeedbackForDedup, insertActivity, listTraits, listTraitEvents, incrementUsageMeter } from "./db"
+import { checkQuotaForProject } from "./quota"
 import { issueKeyFor, chooseDedup } from "./dedup"
 import { classifySimObservation } from "./sim-bug-classify"
 import { recurrenceFromEvents, type Trait, type TraitEventRow } from "./provenance"
@@ -392,10 +393,16 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
 
     // Usage meter (KLAVITYKLA-305): count each Sim that actually ran its review (produced reactions)
     // as one billable 'sim_review' event. MEASUREMENT ONLY — fire-and-forget, never awaited, never
-    // blocks the review; no quota/enforcement here (KLA-306/307). Skipped Sims (ceiling/error → null)
-    // never reach this branch, so we only meter real work.
+    // blocks the review. Skipped Sims (ceiling/error → null) never reach this branch, so we only
+    // meter real work.
     if (rawReactions.length > 0) {
       void incrementUsageMeter({ metric: "sim_review", projectId, actorEmail })
+      // Quota signal (KLAVITYKLA-306): read-only degrade check — non-blocking, ship-dark.
+      // When KLAV_ENFORCE_QUOTA is off (default) this always returns allow=true and has no effect.
+      // When the flag is on, the degraded flag is available for the caller to act on.
+      void checkQuotaForProject(projectId, "sim_review").then((q) => {
+        if (q.degraded) console.warn(`[quota] sim_review degraded for project ${projectId}: ${q.reason}`)
+      }).catch(() => {})
     }
 
     // Only include the Sim in output if it has at least one new observation.
