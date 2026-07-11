@@ -2427,7 +2427,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (!projW) return json({ error: "No access to this project." }, 403)
       const origin = String(body.origin || "")
       if (!(await originAllowedForProject(projW.id, origin))) {
-        return json({ error: "This origin is not on the project's watch list." }, 403)
+        // Tell an ADMIN caller they can self-serve add this origin from the connect popup (matches the
+        // existing admin-only POST /monitored-urls gate), instead of dead-ending them on a bare 403.
+        let host = ""
+        try { host = new URL(origin).host.toLowerCase() } catch { /* non-URL origin → no add offer */ }
+        return json({
+          error: "This origin is not on the project's watch list.",
+          code: "origin_not_allowed",
+          canAdd: projW.access === "admin" && !!host,
+          host,
+          projectId: projW.id,
+        }, 403)
       }
       const widgetToken = await issueExtensionToken(meW, projW.id, SESSION_DAYS * 24 * 60 * 60 * 1000)
       return json({ token: widgetToken })
