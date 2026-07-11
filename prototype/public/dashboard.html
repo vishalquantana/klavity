@@ -2588,20 +2588,29 @@ function renderChecklist() {
   if (!el) return
   const hasSims = (state.sims || []).length > 0
   const counts = state.counts || {}
-  // "See a Sim react" = personas have been fetched (sims exist) OR at least one reaction observation exists
-  const hasReaction = hasSims || (state.saying || []).some(s => s.source === 'feedback' || s.simName)
+  // KLAVITYKLA-301 step 1: "See a Sim react" ticks only when a real Sim reaction/feedback row
+  // exists (sim_id IS NOT NULL feedback). The server exposes this as state.hasSimReaction.
+  // Fall back to the old heuristic for backwards-compat (e.g. old server without the field).
+  const hasReaction = state.hasSimReaction != null
+    ? !!state.hasSimReaction
+    : (state.saying || []).some(s => s.source === 'feedback')
   // "File first finding" = any human (non-Sim) feedback has been triaged as a bug ticket
   const hasHumanReport = (state.tickets || []).some(t => !t.simName)
   // "Connect" = widget heartbeat or any feedback flowing OR extension used
   const widgetSeen = !!(state.widgetStatus && state.widgetStatus.lastSeen)
   const connected = widgetSeen || (counts.feedback || 0) > 0 || hasSims
-  // "Add real Sim from call" = at least one Sim from transcript source
-  const hasSims_fromCall = hasSims // best approximation without extra API field
+  // KLAVITYKLA-301 step 4: "Add real Sim from call" ticks only when a transcript-sourced Sim
+  // exists. The server exposes this as state.hasTranscriptSim. Null = old server → keep unticked
+  // for safety (never false-tick from described/from-site Sims).
+  const hasSims_fromCall = state.hasTranscriptSim != null
+    ? !!state.hasTranscriptSim
+    : false
   // "AutoSim journey" = any trails exist
   const hasTrails = (state.trails || []).length > 0
 
   let dismissed = false
-  try { dismissed = sessionStorage.getItem("klavChecklistDismissed") === "1" } catch (e) {}
+  // KLAVITYKLA-301: read from localStorage so dismissal persists across sessions.
+  try { dismissed = localStorage.getItem("klavChecklistDismissed") === "1" } catch (e) {}
   // All 5 done = hide automatically (celebrate, then hide)
   const allDone = hasReaction && hasHumanReport && connected && hasSims_fromCall && hasTrails
   el.classList.toggle("hide", allDone || dismissed)
@@ -2713,7 +2722,8 @@ $("embedCopyAI") && ($("embedCopyAI").onclick = () => {
   klavCopy(cspFixPrompt(pid), $("embedCopyAI"), "Copied for AI \u2713")
 })
 $("checklistDismiss") && ($("checklistDismiss").onclick = () => {
-  try { sessionStorage.setItem("klavChecklistDismissed", "1") } catch (e) {}
+  // KLAVITYKLA-301: persist dismissal durably so checklist stays gone across sessions.
+  try { localStorage.setItem("klavChecklistDismissed", "1") } catch (e) {}
   const el = $("checklist"); if (el) el.classList.add("hide")
 })
 // ── Snap view: populate snippet + wire copy/detect buttons ──
@@ -5986,6 +5996,10 @@ load()
         <button class="btn btn-ghost btn-sm" data-skip="${idx}">Skip</button><span class="grow"></span></div></div>`;
   }
   let lastSims=[];
+  // KLAVITYKLA-301: track which Add-a-Sim tab produced the current Sims so saveSim can stamp source.
+  // Maps pane name → simSource value sent to POST /api/personas.
+  const PANE_TO_SOURCE = { describe: 'describe', site: 'from-site', call: 'transcript' };
+  let lastSimSource = 'describe'; // default to the first tab
   function showSims(arr){
     lastSims=arr||[];
     if(!lastSims.length){ out.innerHTML=`<div class="sm-err">No Sims came back — try rephrasing.</div>`; return; }
@@ -6005,16 +6019,20 @@ load()
   async function genBrief(){
     const v=$("smBrief").value.trim(); if(v.length<4){ fail("Describe your user in a sentence."); return; }
     think("Imagining your Sim…");
+    // KLAVITYKLA-301: stamp which modal tab generated these Sims so saveSim can send source to server
+    lastSimSource=PANE_TO_SOURCE["describe"]||"describe";
     try{ const d=await postJSON("/api/persona/brief",{brief:v}); showSims(d.persona?[d.persona]:[]); }catch(e){ fail(e.message); }
   }
   async function genSite(){
     const v=$("smUrl").value.trim(); if(!v){ fail("Enter your product’s URL."); return; }
     think("Reading "+v+"…");
+    lastSimSource=PANE_TO_SOURCE["site"]||"from-site";
     try{ const d=await postJSON("/api/persona/site",{url:v}); showSims(d.personas||[]); }catch(e){ fail(e.message); }
   }
   async function genCall(){
     const v=$("smTx").value.trim(); if(v.length<20){ fail("Paste a bit more of the call (a few lines)."); return; }
     think("Reading the call, pulling out who’s who…");
+    lastSimSource=PANE_TO_SOURCE["call"]||"transcript";
     try{ const d=await postJSON("/api/extract",{transcript:v}); showSims(d.personas||[]); }
     catch(e){ fail(e.message+(e.traceId&&!e.message.includes("ref:")?" (ref: "+e.traceId+".)":"")); }
   }
@@ -6066,10 +6084,12 @@ load()
     // fall back to the AI-returned simClass on the Sim object.
     const chosenClass=(cardEl&&cardEl.dataset.simclass)||(simClassOf(s));
     try{
+      // KLAVITYKLA-301: pass simSource so the server can stamp which Add-a-Sim path created this Sim.
       await postJSON("/api/personas"+projQ(),{ name:s.name, role:s.role, type:s.type,
         simClass:chosenClass, side:sideOf(s), core:s.core||null,
         initials:s.initials||inits(s.name), accent:safeAccent(s.accent,col(s.name||"x")), summary:s.summary||"",
-        insights:(Array.isArray(s.insights)?s.insights:[]).map(i=>({ ...i, scope:i.scope||null, portability:i.portability||null })) });
+        insights:(Array.isArray(s.insights)?s.insights:[]).map(i=>({ ...i, scope:i.scope||null, portability:i.portability||null })),
+        simSource:lastSimSource||null });
       simAdded=true;
       if(cardEl){ cardEl.classList.add("added"); cardEl.querySelectorAll("button").forEach(b=>b.disabled=true); if(btn) btn.textContent="Added"; } // emoji-ok
       // Show the success panel unless caller will do it (e.g. "Add all" batches and shows once at end)
@@ -6117,6 +6137,8 @@ load()
   ov.querySelectorAll(".sm-seg button").forEach(b=>b.addEventListener("click",()=>{
     ov.querySelectorAll(".sm-seg button").forEach(x=>x.classList.remove("on")); b.classList.add("on");
     ov.querySelectorAll(".sm-pane").forEach(p=>p.classList.toggle("on",p.dataset.pane===b.dataset.pane));
+    // KLAVITYKLA-301: keep lastSimSource in sync with the active tab
+    lastSimSource=PANE_TO_SOURCE[b.dataset.pane]||"describe";
     out.innerHTML=""; hideSuccessPanel();
   }));
   // example chips

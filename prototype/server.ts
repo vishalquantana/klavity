@@ -2262,6 +2262,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
           const id = "sim_" + crypto.randomUUID()
           const v3 = v3PersonaFields(body)
+          // KLAVITYKLA-301: stamp the creation path so the checklist can tick honestly.
+          // The client sends simSource: 'describe' | 'from-site' | 'transcript' depending on
+          // which Add-a-Sim modal tab was active. Unknown/missing → null (legacy back-compat).
+          const SIM_SOURCE_VALID = new Set(["describe", "from-site", "transcript"])
+          const simSource = SIM_SOURCE_VALID.has(String(body.simSource || "")) ? String(body.simSource) : null
           await upsertPersona(id, wid, {
             name: incomingName, role: incomingRole,
             type: v3.type,
@@ -2271,6 +2276,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             insights: Array.isArray(body.insights) ? body.insights : [],
             avatar: body.avatar ? String(body.avatar) : null,
             simClass: v3.simClass, side: v3.side, core: v3.core,
+            simSource,
           })
           const [saved] = (await listPersonas(wid)).filter(p => p.id === id)
           return wjson({ persona: saved }, 201)
@@ -4255,8 +4261,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const widgetStatus = widgetPing ? { host: widgetPing.host, lastSeen: widgetPing.lastSeen } : null
           // KLAVITYKLA-299: stamp the resolved project in a cookie so the server can restore
           // the user's selection on the next bare /api/dashboard call (no ?project= param).
+          // KLAVITYKLA-301: honest checklist signals.
+          // hasTranscriptSim: at least one Sim with simSource='transcript' exists (step 4).
+          // hasSimReaction: at least one sim_id IS NOT NULL feedback row exists (step 1).
+          const hasTranscriptSim = personas.some(p => p.simSource === "transcript")
+          const hasSimReaction = simObservations.length > 0
           return json(
-            { email: me, projects, active: activeOut, members, sims, saying, simFeedback, tickets, activity, counts, insights, widgetStatus },
+            { email: me, projects, active: activeOut, members, sims, saying, simFeedback, tickets, activity, counts, insights, widgetStatus, hasTranscriptSim, hasSimReaction },
             200,
             { "Set-Cookie": projectCookie(projectId, SECURE) },
           )
