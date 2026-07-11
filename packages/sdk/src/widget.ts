@@ -43,6 +43,7 @@ function currentScript(): HTMLScriptElement {
 
 function getToken(): string { try { return localStorage.getItem(TOKEN_KEY) || "" } catch { return "" } }
 function setToken(t: string) { try { localStorage.setItem(TOKEN_KEY, t) } catch {} }
+function clearToken() { try { localStorage.removeItem(TOKEN_KEY) } catch {} }
 
 // ── Dev-tools capture (G2) + custom metadata (G5) ──
 // Shared full-fidelity capture buffers, plus site-owner identity/metadata that can be set either via
@@ -785,6 +786,15 @@ async function mount() {
   // Deploy the named Sims (or "all") + boot the watch engine + fire an IMMEDIATE review.
   // Uses the anonymous /api/widget/sims endpoint so this works on client sites with no admin auth.
   async function deployAndWatch(simIds: string[] | 'all') {
+    // AUTH GATE: /api/sim/review hard-requires an authenticated caller (session cookie OR bearer token).
+    // On a cross-origin customer site the klavity.in session cookie isn't sent, so reviews only work with a
+    // widget token. Without one the Sims would deploy and float but every review 401s silently — so run the
+    // connect handshake FIRST and only deploy once we hold a real token. (First-party pages use the cookie.)
+    if (!firstParty && !getToken()) {
+      banner("Connect to Klavity so your Sims can review this page…")
+      const token = await openConnect()
+      if (!token) { banner("Sims need a Klavity connection to review this page. Deploy again to connect."); return }
+    }
     _simsWatchCtrl?.stop()
     _simsWatchCtrl = null
     let sims: Array<{ id: string; name: string; initials?: string; accent?: string }> = []
@@ -840,6 +850,13 @@ async function mount() {
       const res = await fetchWithTimeout(cfg.backendUrl + '/api/sim/review', {
         method: 'POST', headers, credentials: 'include', body: JSON.stringify(body),
       }, SIM_REVIEW_FETCH_TIMEOUT_MS)
+      // 401 on a cross-origin site means our widget token is missing/expired. Drop it and prompt a
+      // reconnect instead of leaving the Sims floating but silent (the original "sims do nothing" bug).
+      if (res.status === 401 && !firstParty) {
+        clearToken()
+        banner("Your Klavity connection expired — deploy Sims again to reconnect.")
+        return
+      }
       if (!res.ok) return
       const data = await res.json().catch(() => ({}))
       const networkMs = benchNow() - networkStart
@@ -876,19 +893,38 @@ async function mount() {
     } catch { /* non-fatal: boot review is best-effort */ }
   }
 
-  function openConnect() {
+  // Opens the Klavity connect popup and resolves with the minted widget token, or "" if the user
+  // closed/cancelled the popup or it timed out. Awaitable so callers that require auth (Sims review)
+  // can gate on a real token instead of silently 401ing. Fire-and-forget callers (report login gate)
+  // still work — the token is stored via setToken() the moment it arrives.
+  function openConnect(): Promise<string> {
     const u = cfg.backendUrl + "/widget-connect?project=" + encodeURIComponent(cfg.projectId)
       + "&origin=" + encodeURIComponent(location.origin)
     const w = window.open(u, "klavity-connect", "width=380,height=460")
-    const onMsg = (ev: MessageEvent) => {
-      if (ev.origin !== cfg.backendUrl) return
-      if (ev.data && ev.data.type === "klavity-widget-token" && ev.data.token) {
-        setToken(ev.data.token)
+    return new Promise<string>((resolve) => {
+      let settled = false
+      const finish = (token: string) => {
+        if (settled) return
+        settled = true
         window.removeEventListener("message", onMsg)
-        try { w && w.close() } catch {}
+        clearInterval(poll)
+        clearTimeout(timer)
+        resolve(token)
       }
-    }
-    window.addEventListener("message", onMsg)
+      const onMsg = (ev: MessageEvent) => {
+        if (ev.origin !== cfg.backendUrl) return
+        if (ev.data && ev.data.type === "klavity-widget-token" && ev.data.token) {
+          setToken(ev.data.token)
+          try { w && w.close() } catch {}
+          finish(ev.data.token)
+        }
+      }
+      window.addEventListener("message", onMsg)
+      // User closed the popup without connecting → resolve with whatever token we have (usually "").
+      const poll = setInterval(() => { if (w && w.closed) finish(getToken()) }, 500)
+      // Safety: never leave an awaiting caller hanging if the popup gets stuck.
+      const timer = setTimeout(() => finish(getToken()), 3 * 60_000)
+    })
   }
 
   // Boot — SINGLE primary CTA. The floating launcher always shows "Report a bug". The Sims-review dock
