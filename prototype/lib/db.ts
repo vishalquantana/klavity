@@ -295,6 +295,14 @@ export async function applySchema(c: Client) {
     // Distinct from ai_calls (the after-the-fact audit ledger): this is the pre-flight cap gate.
     `CREATE TABLE IF NOT EXISTS daily_ai_spend (
        day TEXT PRIMARY KEY, reserved_usd REAL NOT NULL DEFAULT 0)`,
+    `CREATE TABLE IF NOT EXISTS error_tickets (
+       signature TEXT PRIMARY KEY,
+       ticket_key TEXT,
+       ticket_url TEXT,
+       count INTEGER NOT NULL DEFAULT 1,
+       first_seen INTEGER NOT NULL,
+       last_seen INTEGER NOT NULL
+     )`,
 
     // ── Cloud tickets + connectors (Task 1, additive). ──
     // CONNECTORS — per-project external destinations (webhook/plane/github/jira/linear).
