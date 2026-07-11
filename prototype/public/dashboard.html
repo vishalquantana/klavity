@@ -1908,6 +1908,27 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     </div>
   </details>
 
+  <!-- ── KLAVITYKLA-248: AutoSims regression filing settings ── -->
+  <details class="drawer hide" id="trailsAutofileDrawer" data-view="settings">
+    <summary><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16"/><path d="m6 16 6-12 6 12"/><path d="M8 12h8"/></svg> AutoSim Filing <span class="muted" style="font-size:11px;text-transform:none;letter-spacing:0">Auto-file regressions to your tracker</span> <span class="caret">›</span></summary>
+    <div class="drawer-in">
+      <div id="trailsAutofileAdmin" class="hide">
+        <p class="tacc-hint" style="margin-bottom:12px">Control which AutoSim findings are automatically filed as tickets to your connected tracker.</p>
+        <div style="background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.25);border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:13px;">
+          <b style="color:#a78bfa">Guard-caught regressions always auto-file.</b>
+          <span class="muted"> When a checkpoint disappears (high-confidence, deterministic regression), a ticket is created automatically — no opt-in needed. These are human-confirmed at guard-creation time.</span>
+        </div>
+        <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;margin-bottom:4px;">
+          <input type="checkbox" id="trailsAutofileToggle" style="margin-top:3px;accent-color:#6366f1;width:16px;height:16px;flex-shrink:0;" />
+          <span style="font-size:13px;"><b>Auto-file subjective Sim findings too</b> — guard-caught regressions always auto-file<br><span class="muted" style="font-size:12px;">When enabled, lower-confidence discoveries (visual diffs, amber heals) also go straight to your tracker without a human review step.</span></span>
+        </label>
+        <button class="btn btn-indigo btn-sm" id="trailsAutofileSaveBtn" style="margin-top:12px;">Save</button>
+        <p id="trailsAutofileMsg" class="muted" style="font-size:12px;margin-top:8px;"></p>
+      </div>
+      <div id="trailsAutofileUser" class="hide muted">Only admins can manage AutoSim filing settings.</div>
+    </div>
+  </details>
+
   <details class="drawer hide" id="ciDrawer" data-view="settings">
     <summary><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 16 4-4-4-4" /><path d="m6 8-4 4 4 4" /><path d="m14.5 4-5 16" /></svg> CI/CD Triggers <span class="muted" style="font-size:11px;text-transform:none;letter-spacing:0">Run AutoSims on every deploy</span> <span class="caret">›</span></summary>
     <div class="drawer-in">
@@ -2562,6 +2583,11 @@ function render(fromCache) {
   $("ciAdmin").classList.toggle("hide", !admin)
   $("ciUser").classList.toggle("hide", admin)
 
+  // AutoSim Filing drawer: admin-only (KLAVITYKLA-248)
+  $("trailsAutofileDrawer").classList.toggle("hide", false)
+  $("trailsAutofileAdmin").classList.toggle("hide", !admin)
+  $("trailsAutofileUser").classList.toggle("hide", admin)
+
   // P3b admin-only: live-Sims config (monitored URLs + pause) and named observability.
   $("liveDrawer").classList.toggle("hide", !admin)
   $("obsDrawer").classList.toggle("hide", !admin)
@@ -2571,7 +2597,7 @@ function render(fromCache) {
     loadConnectors(admin)
     loadAppearance()
     loadLabels(admin)
-    if (admin) { loadLive(); loadObs(); taccRender(); if (typeof ciRender === "function") ciRender() }
+    if (admin) { loadLive(); loadObs(); taccRender(); if (typeof ciRender === "function") ciRender(); loadTrailsAutofile() }
   }
 
   // Deep link: extension's "Analyze this page" with 0 Sims (and any ?create-sim=1) lands here.
@@ -5655,6 +5681,41 @@ function _wireCi() {
   }
 }
 _wireCi()
+
+// ── KLAVITYKLA-248: Trails subjective auto-file toggle ──────────────────────────────
+async function loadTrailsAutofile() {
+  var pid = projParam(); if (!pid) return
+  var toggle = $("trailsAutofileToggle"), saveBtn = $("trailsAutofileSaveBtn"), msg = $("trailsAutofileMsg")
+  if (!toggle || !saveBtn) return
+  try {
+    var r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/trails-autofile")
+    if (!r.ok) return
+    var d = await r.json()
+    toggle.checked = !!d.trailsAutofileEnabled
+  } catch(e) {}
+  saveBtn.onclick = async function() {
+    msg.textContent = "Saving…"
+    saveBtn.disabled = true
+    try {
+      var r2 = await fetch("/api/projects/" + encodeURIComponent(pid) + "/trails-autofile", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ enabled: toggle.checked })
+      })
+      if (r2.ok) {
+        msg.textContent = "Saved."
+        setTimeout(function() { msg.textContent = "" }, 2500)
+      } else {
+        var e2 = await r2.json().catch(function(){ return {} })
+        msg.textContent = (e2 && e2.error) || "Error saving."
+      }
+    } catch(e) {
+      msg.textContent = "Network error."
+    } finally {
+      saveBtn.disabled = false
+    }
+  }
+}
 
 // Plan & partner-code redemption (Settings → Plan & access).
 ;(function _wirePlan(){

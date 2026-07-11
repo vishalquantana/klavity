@@ -1,6 +1,6 @@
 // Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
 import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, listInboxForProjects } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, listInboxForProjects, setProjectTrailsAutofile } from "./lib/db"
 import { issueKeyFor, chooseDedup, humanReportIssueKeyFor } from "./lib/dedup"
 import { classifySimObservation } from "./lib/sim-bug-classify"
 import { getConnector, listConnectorTypes, type TicketPayload, type TicketAttachment } from "./lib/connectors/index"
@@ -4863,7 +4863,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return json({ project: { id: created.id, name: created.name, accountId: created.accountId, status: created.status, siteUrl: created.siteUrl, role: "admin" } }, 201)
       }
       // Project detail + members (projectAccess-gated) and project-scoped invite (R4) + monitored-urls (P3b) + connectors.
-      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/triage|\/tickets(?:\/bulk)?|\/recurring|\/replays|\/widget-status|\/share-token|\/labels(?:\/[^/]+)?|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/test)?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send)?$/)
+      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/triage|\/tickets(?:\/bulk)?|\/recurring|\/replays|\/widget-status|\/share-token|\/labels(?:\/[^/]+)?|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/test)?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send|\/trails-autofile)?$/)
       if (projMatch) {
         const pid = projMatch[1]
         const sub = projMatch[2] || ""
@@ -5772,6 +5772,26 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const updated = await renameProject(pid, name)
           return json({ project: { id: updated!.id, name: updated!.name, accountId: updated!.accountId, status: updated!.status, role: access } })
         }
+
+        // ── KLAVITYKLA-248: Trails subjective auto-file toggle ────────────────────────────────────
+        // GET  /api/projects/:id/trails-autofile — returns { trailsAutofileEnabled: boolean }
+        // POST /api/projects/:id/trails-autofile — { enabled: boolean } — set the per-project flag.
+        //   Admin-only write. Guard-caught regressions (kind=regression && confidence>=0.9) always
+        //   auto-file regardless of this flag; this setting controls only subjective findings.
+        if (sub === "/trails-autofile") {
+          if (req.method === "GET") {
+            return json({ trailsAutofileEnabled: !!proj.trailsAutofileEnabled })
+          }
+          if (req.method === "POST") {
+            if (access !== "admin") return json({ error: "Only project admins can change auto-file settings." }, 403)
+            const body = await req.json().catch(() => ({}))
+            if (typeof body.enabled !== "boolean") return json({ error: "enabled (boolean) is required." }, 400)
+            await setProjectTrailsAutofile(pid, body.enabled)
+            return json({ ok: true, trailsAutofileEnabled: body.enabled })
+          }
+          return json({ error: "Method not allowed" }, 405)
+        }
+
         return json({ error: "Not found" }, 404)
       }
       // brief → one persona (no transcript needed)

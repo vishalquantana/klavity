@@ -192,14 +192,15 @@ test("realFiler returns null when the project has no auto-copy connector", async
   expect(r).toBeNull()
 })
 
-// ── KLA-94: opt-in auto-file gate ─────────────────────────────────────────────
+// ── KLAVITYKLA-248: guard-caught regressions auto-file by default; flag gates only subjective findings ──
 
 const DB = await import("./db")
 
-test("maybeAutoFileWalkFindings: flag OFF leaves high-confidence finding queued", async () => {
+// (a) A confidence-1 regression finding auto-files even when trailsAutofileEnabled is FALSE.
+test("maybeAutoFileWalkFindings: flag OFF — guard-caught (high-confidence) regression auto-files anyway", async () => {
   const proj = "proj_autofile_off"
-  // Project row created implicitly by startWalk (project need not pre-exist in the projects table
-  // for startWalk — but trailsAutofileEnabled defaults to 0 for any row that does exist).
+  // Project row created implicitly by startWalk (trailsAutofileEnabled defaults to 0 for any row
+  // that does exist — guard-caught regressions must bypass this gate).
   const walk = await T.startWalk(proj, "trl_af_off")
   const f = await T.recordFinding(proj, {
     runId: walk, trailId: "trl_af_off",
@@ -208,15 +209,84 @@ test("maybeAutoFileWalkFindings: flag OFF leaves high-confidence finding queued"
   let filerCalls = 0
   const filer = async () => { filerCalls++; return { connectorRef: "plane:PROJ-9" } }
   const res = await G.maybeAutoFileWalkFindings(proj, walk, filer)
-  // Flag OFF → immediate return, filer never called.
-  expect(res.autoFiled).toHaveLength(0)
-  expect(res.queued).toHaveLength(0)
-  expect(filerCalls).toBe(0)
-  // Finding remains queued.
+  // Guard-caught regression → auto-files regardless of the flag.
+  expect(res.autoFiled).toContain(f.id)
+  expect(filerCalls).toBe(1)
   const after = (await T.listFindings(proj)).find((x) => x.id === f.id)
+  expect(after?.status).toBe("auto_filed")
+  expect(after?.connectorRef).toBe("plane:PROJ-9")
+})
+
+// (b) A subjective/low-confidence finding does NOT auto-file when the flag is false,
+//     but DOES when the flag is true (flag gates only the subjective class).
+test("maybeAutoFileWalkFindings: flag OFF — subjective (low-confidence) finding stays queued", async () => {
+  const proj = "proj_subjective_off"
+  await db.execute({ sql: "INSERT OR IGNORE INTO projects (id, account_id, name, status, review_mode, observability_mode, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)", args: [proj, "acct_sub", "subjective-test", "active", "auto", "named", Date.now(), Date.now()] })
+  // Ensure flag is OFF (default).
+  await DB.setProjectTrailsAutofile(proj, false)
+
+  const walk = await T.startWalk(proj, "trl_sub_off")
+  const subjective = await T.recordFinding(proj, {
+    runId: walk, trailId: "trl_sub_off",
+    kind: "amber_heal", title: "layout shifted", confidence: 0.7, dedupKey: "sub_off_1",
+  })
+  let filerCalls = 0
+  const filer = async () => { filerCalls++; return { connectorRef: "plane:PROJ-SUB" } }
+  const res = await G.maybeAutoFileWalkFindings(proj, walk, filer)
+  // No guard-caught regressions in this walk → fast-path, filer not called.
+  expect(res.autoFiled).toHaveLength(0)
+  expect(filerCalls).toBe(0)
+  const after = (await T.listFindings(proj)).find((x) => x.id === subjective.id)
   expect(after?.status).toBe("queued")
 })
 
+test("maybeAutoFileWalkFindings: flag ON — subjective finding also eligible for auto-file via processWalkFindings", async () => {
+  // When the flag is ON, all findings go through processWalkFindings (gate applies the same
+  // decideFindingAction threshold). This test ensures the full pipeline runs; a high-confidence
+  // regression is auto-filed, a subjective finding stays queued per decideFindingAction.
+  const proj = "proj_subjective_on"
+  await db.execute({ sql: "INSERT OR IGNORE INTO projects (id, account_id, name, status, review_mode, observability_mode, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)", args: [proj, "acct_sub2", "subjective-on-test", "active", "auto", "named", Date.now(), Date.now()] })
+  await DB.setProjectTrailsAutofile(proj, true)
+
+  const walk = await T.startWalk(proj, "trl_sub_on")
+  const reg = await T.recordFinding(proj, {
+    runId: walk, trailId: "trl_sub_on",
+    kind: "regression", title: "checkout gone", confidence: 0.95, dedupKey: "sub_on_reg",
+  })
+  const sub = await T.recordFinding(proj, {
+    runId: walk, trailId: "trl_sub_on",
+    kind: "amber_heal", title: "layout shifted", confidence: 0.7, dedupKey: "sub_on_sub",
+  })
+  const filer = async () => ({ connectorRef: "plane:PROJ-ON" })
+  const res = await G.maybeAutoFileWalkFindings(proj, walk, filer)
+  expect(res.autoFiled).toContain(reg.id)
+  expect(res.queued).toContain(sub.id)
+  const afterReg = (await T.listFindings(proj)).find((x) => x.id === reg.id)
+  const afterSub = (await T.listFindings(proj)).find((x) => x.id === sub.id)
+  expect(afterReg?.status).toBe("auto_filed")
+  expect(afterSub?.status).toBe("queued")
+})
+
+// (c) The existing confidence threshold still holds — a below-threshold regression does NOT auto-file.
+test("maybeAutoFileWalkFindings: below-threshold regression stays queued even when flag is ON", async () => {
+  const proj = "proj_autofile_threshold"
+  await db.execute({ sql: "INSERT OR IGNORE INTO projects (id, account_id, name, status, review_mode, observability_mode, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)", args: [proj, "acct_thr", "threshold-test", "active", "auto", "named", Date.now(), Date.now()] })
+  await DB.setProjectTrailsAutofile(proj, true)
+
+  const walk = await T.startWalk(proj, "trl_thr")
+  const low = await T.recordFinding(proj, {
+    runId: walk, trailId: "trl_thr",
+    kind: "regression", title: "low conf", confidence: 0.5, dedupKey: "thr_low_1",
+  })
+  const filer = async () => ({ connectorRef: "plane:PROJ-THR" })
+  const res = await G.maybeAutoFileWalkFindings(proj, walk, filer)
+  expect(res.autoFiled).toHaveLength(0)
+  expect(res.queued).toContain(low.id)
+  const after = (await T.listFindings(proj)).find((x) => x.id === low.id)
+  expect(after?.status).toBe("queued")
+})
+
+// Legacy test kept for back-compat: flag ON auto-files high-confidence regression, leaves low queued.
 test("maybeAutoFileWalkFindings: flag ON auto-files high-confidence regression, leaves low-confidence queued", async () => {
   const proj = "proj_autofile_on"
   // Enable the flag for this project by inserting and then enabling.
