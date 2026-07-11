@@ -59,6 +59,8 @@ import { getExtractModel } from "./lib/extract-model"
 import { parseJSON } from "./lib/parse-json"
 import { createStripeCheckoutSession, createStripePortalSession, intervalFromLookupKey, normalizeInterval, planFromLookupKey, quotasForPlan, retrieveStripeSubscription, verifyStripeWebhook } from "./lib/billing"
 import { runAutosimAuthProbe } from "./lib/autosim-auth-probe"
+import { sendTrustReport, WEEK_MS as TRUST_REPORT_WEEK_MS, type TrustReportDeps } from "./lib/trust-report"
+import { sendReportAlertEmail } from "./lib/mail"
 
 const KEY = process.env.OPENROUTER_API_KEY
 const MODEL = process.env.KLAV_MODEL || "google/gemini-2.5-flash"
@@ -4719,7 +4721,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return json({ project: { id: created.id, name: created.name, accountId: created.accountId, status: created.status, siteUrl: created.siteUrl, role: "admin" } }, 201)
       }
       // Project detail + members (projectAccess-gated) and project-scoped invite (R4) + monitored-urls (P3b) + connectors.
-      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/triage|\/tickets(?:\/bulk)?|\/recurring|\/replays|\/widget-status|\/labels(?:\/[^/]+)?|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/test)?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?)?$/)
+      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/triage|\/tickets(?:\/bulk)?|\/recurring|\/replays|\/widget-status|\/labels(?:\/[^/]+)?|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/test)?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/trust-report\/send)?$/)
       if (projMatch) {
         const pid = projMatch[1]
         const sub = projMatch[2] || ""
@@ -4986,6 +4988,43 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             // (CORS-open) config GET earlier in this file never returns it: resolveModalConfig strips it.
             ...(access === "admin" ? { slackWebhookUrl: typeof curCfg.slack_webhook_url === "string" ? curCfg.slack_webhook_url : null } : {}),
           })
+        }
+
+        // ── Trust Report digest (KLAVITYKLA-203): POST /api/projects/:id/trust-report/send ──
+        // Generates and emails the branded weekly Trust Report to the project owner + admins.
+        // Admin-only. Optional body: { window_start?: number, window_end?: number } — if omitted,
+        // defaults to the past 7 days (epoch ms). Safe for ad-hoc "send now" + cron use.
+        // Schedule note: call this from a weekly cron / setInterval targeting each active project.
+        if (req.method === "POST" && sub === "/trust-report/send") {
+          if (access !== "admin") return json({ error: "Only project admins can send Trust Reports." }, 403)
+          if (!process.env.SENDGRID_API_KEY) return json({ error: "Email delivery not configured (SENDGRID_API_KEY missing)." }, 503)
+          const body = await req.json().catch(() => ({}))
+          const nowMs = Date.now()
+          const windowEnd = typeof body.window_end === "number" && body.window_end > 0 ? body.window_end : nowMs
+          const windowStart = typeof body.window_start === "number" && body.window_start > 0 ? body.window_start : windowEnd - TRUST_REPORT_WEEK_MS
+          if (windowStart >= windowEnd) return json({ error: "window_start must be before window_end." }, 400)
+          const trustDeps: TrustReportDeps = {
+            db: db!,
+            sendEmail: sendReportAlertEmail,
+          }
+          try {
+            const result = await sendTrustReport(trustDeps, pid, proj.accountId, windowStart, windowEnd)
+            return json({
+              ok: true,
+              sent: result.sent,
+              to: result.to,
+              isQuietWeek: result.data.isQuietWeek,
+              counts: {
+                snapReports: result.data.snapReportsTotal,
+                regressions: result.data.regressionsTotal,
+                simFindings: result.data.simFindingsTotal,
+                recurringIssues: result.data.recurringIssuesTotal,
+              },
+            })
+          } catch (err: any) {
+            console.error("trust-report send error:", err)
+            return json({ error: "Failed to send Trust Report: " + String(err?.message || err) }, 500)
+          }
         }
 
         // ── AutoSims F1: named Test Accounts (ADR-0001). Secret write-only; never returned. ──
