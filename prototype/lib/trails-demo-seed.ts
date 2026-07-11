@@ -81,7 +81,9 @@ export async function seedDemoTrails(
     { name: NAME_DOGFOOD, traj: dogfoodTrajectory(dogfoodUrl) },
   ]
 
-  const existing = new Map((await listTrails(projectId)).map((t) => [t.name, t.id]))
+  // Use { includeDemo: true } so the idempotency check can see previously-seeded demo trails
+  // (which are invisible to real-user listing queries by default).
+  const existing = new Map((await listTrails(projectId, { includeDemo: true })).map((t) => [t.name, t.id]))
   const trailIds: Record<string, string> = {}
   let created = 0
   for (const { name, traj } of specs) {

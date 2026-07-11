@@ -53,8 +53,21 @@ export async function getTrail(projectId: string, id: string): Promise<Trail | n
   return r.rows.length ? rowToTrail(r.rows[0]) : null
 }
 
-export async function listTrails(projectId: string): Promise<Trail[]> {
-  const r = await db!.execute({ sql: `SELECT * FROM trails WHERE project_id=? ORDER BY created_at DESC`, args: [projectId] })
+/** The special creator tag used to mark seeded demo/dogfood trails. */
+export const DEMO_TRAIL_CREATOR = "demo@klavity"
+
+/**
+ * List trails for a project.
+ * By default demo trails (created_by = DEMO_TRAIL_CREATOR) are excluded so they never
+ * surface in real users' listings. Pass `{ includeDemo: true }` only from seed/admin code.
+ */
+export async function listTrails(projectId: string, opts: { includeDemo?: boolean } = {}): Promise<Trail[]> {
+  const { includeDemo = false } = opts
+  const sql = includeDemo
+    ? `SELECT * FROM trails WHERE project_id=? ORDER BY created_at DESC`
+    : `SELECT * FROM trails WHERE project_id=? AND (created_by IS NULL OR created_by != ?) ORDER BY created_at DESC`
+  const args = includeDemo ? [projectId] : [projectId, DEMO_TRAIL_CREATOR]
+  const r = await db!.execute({ sql, args })
   return r.rows.map(rowToTrail)
 }
 
@@ -98,7 +111,12 @@ export async function updateTrail(projectId: string, id: string, patch: TrailPat
 }
 
 export async function listAllScheduledTrails(): Promise<Trail[]> {
-  const r = await db!.execute({ sql: `SELECT * FROM trails WHERE schedule_cron IS NOT NULL AND status='active'`, args: [] })
+  // Demo trails are excluded: they are seeded for internal fixture/dogfood use only and must not
+  // run on a production cron schedule visible to real accounts.
+  const r = await db!.execute({
+    sql: `SELECT * FROM trails WHERE schedule_cron IS NOT NULL AND status='active' AND (created_by IS NULL OR created_by != ?)`,
+    args: [DEMO_TRAIL_CREATOR],
+  })
   return r.rows.map(rowToTrail)
 }
 
