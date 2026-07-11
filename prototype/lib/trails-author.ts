@@ -924,7 +924,7 @@ export async function runAuthorNow(
     } finally {
       endLiveWatchRun(projectId, sessionId)
     }
-  }))
+  }, projectId)) // KLA-266: key the walk queue by project for per-project fairness
 
   // Surface a synchronous WalkBusyError (or a createAuthorSession failure) to the caller; otherwise
   // resolve as soon as the session row exists. The background `slotHeld` keeps running; swallow its
