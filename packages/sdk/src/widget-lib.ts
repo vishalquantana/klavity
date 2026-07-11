@@ -1,4 +1,5 @@
 import type { ReportContext, ReportIdentity } from "@klavity/core"
+import { buildFeedbackFormData } from '../../core/src/integrations/backend'
 import { icon } from '@klavity/core/icons'
 
 export function parseScriptConfig(scriptEl: { dataset: Record<string, string | undefined>, src: string }): { projectId: string, backendUrl: string, identity?: ReportIdentity, metadata?: Record<string, string> } {
@@ -127,25 +128,26 @@ export async function compressScreenshot(dataUrl: string, opts: { maxWidth?: num
 }
 
 export function buildFeedbackForm(input: { type?: string; description: string; pageUrl: string; referrer?: string; projectId: string; screenshots: string[]; context?: ReportContext; replayEvents?: unknown[]; annotations?: any }): FormData {
-  const fd = new FormData()
-  // Send the report type (bug/feature) as its own field so the server can route it correctly.
-  // The extension path (backend.ts submitReport) always sends `type`; this makes the widget
-  // match that parity. Defaults to "bug" when omitted (legacy callers without the field).
-  fd.set("type", input.type ?? "bug")
-  fd.set("description", input.description)
-  fd.set("page_url", input.pageUrl)
+  // Use the shared serializer (packages/core/integrations/backend) for all common fields so that
+  // extension + widget stay in parity by construction — a new shared field added in buildFeedbackFormData
+  // appears in BOTH paths automatically (prevents drift like KLAVITYKLA-208).
+  const fd = buildFeedbackFormData({
+    type: input.type,
+    description: input.description,
+    pageUrl: input.pageUrl,
+    context: input.context,
+    projectId: input.projectId,
+    replayEvents: input.replayEvents,
+  })
+  // ── Widget-only fields ────────────────────────────────────────────────────
   // Source attribution: where the visitor came from (document.referrer of the embed page), when present.
+  // Extension has no page referrer concept, so this stays widget-only by design.
   if (input.referrer) fd.set("referrer", input.referrer)
-  fd.set("project_id", input.projectId)
-  // G2/G5: attach the captured dev-tools context (console + network + env + identity/metadata) so the
-  // no-install widget report carries the SAME technical context as the extension/SDK paths.
-  if (input.context) fd.set("context", JSON.stringify(input.context))
+  // Screenshots: widget receives data URLs (html-to-image), so we convert inline.
+  // Extension path fetches blobs via fetch(dataUrl) in submitReport instead.
   for (const s of input.screenshots) fd.append("screenshots", dataUrlToBlob(s), "screenshot.png")
-  // G1 session replay: attach the rolling rrweb buffer as a JSON array. Only when there are events to
-  // send (an empty/unplayable buffer is omitted so the server stores nothing).
-  if (input.replayEvents && input.replayEvents.length) fd.set("replay_events", JSON.stringify(input.replayEvents))
   // Annotation overlay (KLAVITYKLA-1): structured markup { w, h, shapes } for the clean screenshot, so the
-  // ticket re-renders a toggleable/zoomable highlight instead of baking the drawing into the image.
+  // ticket can re-render a toggleable/zoomable highlight. Extension draws nothing, widget-only.
   if (input.annotations && Array.isArray(input.annotations.shapes) && input.annotations.shapes.length) fd.set("annotations_json", JSON.stringify(input.annotations))
   return fd
 }
