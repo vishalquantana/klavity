@@ -54,6 +54,18 @@ describe("buildFeedbackForm", () => {
     expect(shot).toBeInstanceOf(Blob)
     expect((shot as File).type).toBe("image/png")
   })
+  it("includes the type field for bug and feature (KLAVITYKLA-208 parity fix)", () => {
+    // The server reads form.get("type") to differentiate bug vs feature.
+    // Without this field the server always treats widget reports as bugs.
+    const fdBug = buildFeedbackForm({ type: "bug", description: "crash", pageUrl: "https://x/y", projectId: "p1", screenshots: [] })
+    expect(fdBug.get("type")).toBe("bug")
+    const fdFeat = buildFeedbackForm({ type: "feature", description: "dark mode", pageUrl: "https://x/y", projectId: "p1", screenshots: [] })
+    expect(fdFeat.get("type")).toBe("feature")
+  })
+  it("defaults type to 'bug' when omitted (legacy callers)", () => {
+    const fd = buildFeedbackForm({ description: "crash", pageUrl: "https://x/y", projectId: "p1", screenshots: [] })
+    expect(fd.get("type")).toBe("bug")
+  })
   it("attaches replay_events as a JSON array when present", () => {
     const events = [{ type: 4, timestamp: 1 }, { type: 2, timestamp: 2 }, { type: 3, timestamp: 3 }]
     const fd = buildFeedbackForm({ description: "bug", pageUrl: "https://x/y", projectId: "p1", screenshots: [], replayEvents: events })

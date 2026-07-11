@@ -126,8 +126,12 @@ export async function compressScreenshot(dataUrl: string, opts: { maxWidth?: num
   }
 }
 
-export function buildFeedbackForm(input: { description: string; pageUrl: string; referrer?: string; projectId: string; screenshots: string[]; context?: ReportContext; replayEvents?: unknown[]; annotations?: any }): FormData {
+export function buildFeedbackForm(input: { type?: string; description: string; pageUrl: string; referrer?: string; projectId: string; screenshots: string[]; context?: ReportContext; replayEvents?: unknown[]; annotations?: any }): FormData {
   const fd = new FormData()
+  // Send the report type (bug/feature) as its own field so the server can route it correctly.
+  // The extension path (backend.ts submitReport) always sends `type`; this makes the widget
+  // match that parity. Defaults to "bug" when omitted (legacy callers without the field).
+  fd.set("type", input.type ?? "bug")
   fd.set("description", input.description)
   fd.set("page_url", input.pageUrl)
   // Source attribution: where the visitor came from (document.referrer of the embed page), when present.

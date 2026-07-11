@@ -41,6 +41,26 @@ describe("submitFeedback", () => {
     expect((init.body as FormData).get("reporter_email")).toBe("buyer@test.local")
   })
 
+  it("sends the report type as its own form field (parity with extension backend.ts)", async () => {
+    // Regression guard for KLAVITYKLA-208: the widget must send `type` as a separate FormData
+    // field (matching extension/backend.ts), not just embed it in the description prefix.
+    // The server reads form.get("type") to route bug vs feature — without this field, every
+    // widget report is treated as a bug regardless of the Bug/Feature toggle selection.
+    for (const t of ["bug", "feature"] as const) {
+      const fetchMock = vi.fn(async (..._a: any[]) => new Response(JSON.stringify({ id: "fb5", saved: true }), { status: 200 }))
+      vi.stubGlobal("fetch", fetchMock)
+      await submitFeedback(
+        { backendUrl: "https://klavity.in", projectId: "p1", firstParty: true, token: "" },
+        { type: t, description: "checkout broken", pageUrl: "https://klavity.in/d", screenshots: [] },
+      )
+      const [, init] = fetchMock.mock.calls[0]
+      const fd = init.body as FormData
+      expect(fd.get("type")).toBe(t)
+      // The description prefix should still be there as-is (existing format).
+      expect((fd.get("description") as string).startsWith(`[${t}]`)).toBe(true)
+    }
+  })
+
   it("attaches the captured dev-tools context to the /api/feedback payload (G2/G5)", async () => {
     const fetchMock = vi.fn(async (..._a: any[]) => new Response(JSON.stringify({ id: "fb3", saved: true }), { status: 200 }))
     vi.stubGlobal("fetch", fetchMock)
