@@ -265,3 +265,64 @@ test("Walk.trailVersion and Trail.stepVersion are present in JSON (API shape)", 
   const w = await T.getWalk("proj_V", walkId)
   expect(typeof w?.trailVersion).toBe("number")
 })
+
+// ── KLA-244: all 5 checkpoint kinds persist (write → read round-trip) ──
+// The guards spine has 5 checkpoint kinds; previously only "visible" survived insertAssertStep
+// (which flattened every graduated expectation to kind:"visible", dropping value/regex/count).
+
+test("KLA-244: all 5 checkpoint kinds round-trip through addTrailStep → listTrailSteps", async () => {
+  const trail = await T.createTrail("proj_CP", { name: "Checkpoints", baseUrl: "https://cp.test/" })
+  const kinds = [
+    { idx: 0, checkpoint: { kind: "visible" as const, description: "banner visible" } },
+    { idx: 1, checkpoint: { kind: "textEquals" as const, description: "price exact", value: "$49.00" } },
+    { idx: 2, checkpoint: { kind: "textContains" as const, description: "success msg", value: "successfully" } },
+    { idx: 3, checkpoint: { kind: "urlMatches" as const, description: "on dashboard", regex: "^https://cp\\.test/dashboard" } },
+    { idx: 4, checkpoint: { kind: "elementCount" as const, description: "3 cart items", count: 3 } },
+  ]
+  for (const k of kinds) await T.addTrailStep("proj_CP", trail, { idx: k.idx, action: "assert", target: { selector: "#x" }, checkpoint: k.checkpoint })
+  const steps = await T.listTrailSteps("proj_CP", trail)
+  expect(steps.map((s) => s.checkpoint?.kind)).toEqual(["visible", "textEquals", "textContains", "urlMatches", "elementCount"])
+  expect(steps[1].checkpoint?.value).toBe("$49.00")
+  expect(steps[2].checkpoint?.value).toBe("successfully")
+  expect(steps[3].checkpoint?.regex).toBe("^https://cp\\.test/dashboard")
+  expect(steps[4].checkpoint?.count).toBe(3)
+  expect(steps.map((s) => s.checkpoint?.description)).toEqual([
+    "banner visible", "price exact", "success msg", "on dashboard", "3 cart items",
+  ])
+})
+
+test("KLA-244: insertAssertStep persists a full checkpoint of every kind (not just visible)", async () => {
+  const trail = await T.createTrail("proj_CP", { name: "Graduated", baseUrl: "https://cp.test/" })
+  await T.addTrailStep("proj_CP", trail, { idx: 0, action: "navigate", actionValue: "https://cp.test/" })
+
+  // Graduate one expectation of each non-visible kind, in place after step 0.
+  await T.insertAssertStep("proj_CP", trail, 0, { selector: "#count" }, { kind: "elementCount", description: "5 rows", count: 5 })
+  await T.insertAssertStep("proj_CP", trail, 0, { selector: "#url" }, { kind: "urlMatches", description: "landed", regex: "/done$" })
+  await T.insertAssertStep("proj_CP", trail, 0, { selector: "#msg" }, { kind: "textContains", description: "toast", value: "saved" })
+  await T.insertAssertStep("proj_CP", trail, 0, { selector: "#total" }, { kind: "textEquals", description: "total", value: "$7.00" })
+
+  const steps = await T.listTrailSteps("proj_CP", trail)
+  const asserts = steps.filter((s) => s.action === "assert")
+  const byDesc = Object.fromEntries(asserts.map((s) => [s.checkpoint?.description, s.checkpoint]))
+  expect(byDesc["5 rows"]).toMatchObject({ kind: "elementCount", count: 5 })
+  expect(byDesc["landed"]).toMatchObject({ kind: "urlMatches", regex: "/done$" })
+  expect(byDesc["toast"]).toMatchObject({ kind: "textContains", value: "saved" })
+  expect(byDesc["total"]).toMatchObject({ kind: "textEquals", value: "$7.00" })
+})
+
+test("KLA-244: insertAssertStep still accepts a bare description (backward compat → visible)", async () => {
+  const trail = await T.createTrail("proj_CP", { name: "Legacy", baseUrl: "https://cp.test/" })
+  await T.addTrailStep("proj_CP", trail, { idx: 0, action: "navigate", actionValue: "https://cp.test/" })
+  await T.insertAssertStep("proj_CP", trail, 0, { selector: "#ok" }, "dashboard visible")
+  const step = (await T.listTrailSteps("proj_CP", trail)).find((s) => s.action === "assert")
+  expect(step?.checkpoint?.kind).toBe("visible")
+  expect(step?.checkpoint?.description).toBe("dashboard visible")
+})
+
+test("KLA-244: updateTrailStep can change a checkpoint's kind + payload (round-trips)", async () => {
+  const trail = await T.createTrail("proj_CP", { name: "Edit", baseUrl: "https://cp.test/" })
+  const step = await T.addTrailStep("proj_CP", trail, { idx: 0, action: "assert", target: { selector: "#x" }, checkpoint: { kind: "visible", description: "shown" } })
+  await T.updateTrailStep("proj_CP", step, { checkpoint: { kind: "elementCount", description: "exactly two", count: 2 } })
+  const got = (await T.listTrailSteps("proj_CP", trail))[0]
+  expect(got.checkpoint).toMatchObject({ kind: "elementCount", description: "exactly two", count: 2 })
+})

@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test"
-import { validateAssertionDraft } from "./assertion-spec"
+import { validateAssertionDraft, normalizeCheckpointInput } from "./assertion-spec"
 
 test("accepts a visible-assert with a target", () => {
   const d = validateAssertionDraft({ trailId: "trl_1", afterStepIdx: 2, action: "assert",
@@ -98,4 +98,27 @@ test("rejects unknown checkpoint kind for urlMatches", () => {
   const d = validateAssertionDraft({ trailId: "t", afterStepIdx: 0, action: "assert",
     target: {}, checkpoint: { kind: "elementCount" as any, description: "x", regex: "/foo/" } })
   expect(d).toBeNull()
+})
+
+// ── KLA-244: normalizeCheckpointInput — shared validator preserves all 5 kinds' payloads ──
+
+test("normalizeCheckpointInput keeps each kind's payload", () => {
+  expect(normalizeCheckpointInput({ kind: "visible", description: "shown" })).toEqual({ kind: "visible", description: "shown" })
+  expect(normalizeCheckpointInput({ kind: "textEquals", description: "d", value: "v" })).toMatchObject({ kind: "textEquals", value: "v" })
+  expect(normalizeCheckpointInput({ kind: "textContains", description: "d", value: "part" })).toMatchObject({ kind: "textContains", value: "part" })
+  expect(normalizeCheckpointInput({ kind: "urlMatches", description: "d", regex: "/ok$" })).toMatchObject({ kind: "urlMatches", regex: "/ok$" })
+  expect(normalizeCheckpointInput({ kind: "elementCount", description: "d", count: 4 })).toMatchObject({ kind: "elementCount", count: 4 })
+})
+
+test("normalizeCheckpointInput defaults a missing kind to visible (bare description)", () => {
+  expect(normalizeCheckpointInput({ description: "dashboard visible" })).toEqual({ kind: "visible", description: "dashboard visible" })
+})
+
+test("normalizeCheckpointInput rejects malformed checkpoints", () => {
+  expect(normalizeCheckpointInput(null)).toBeNull()
+  expect(normalizeCheckpointInput({ kind: "visible", description: "  " })).toBeNull()
+  expect(normalizeCheckpointInput({ kind: "textEquals", description: "d" })).toBeNull() // missing value
+  expect(normalizeCheckpointInput({ kind: "urlMatches", description: "d", regex: "[invalid" })).toBeNull()
+  expect(normalizeCheckpointInput({ kind: "elementCount", description: "d", count: -1 })).toBeNull()
+  expect(normalizeCheckpointInput({ kind: "bogus", description: "d" })).toBeNull()
 })

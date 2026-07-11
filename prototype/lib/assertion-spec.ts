@@ -29,19 +29,36 @@ export function validateAssertionDraft(x: unknown): AssertionDraft | null {
     if (!t || typeof t !== "object") return null
     for (const k of ["role", "name", "text", "selector"] as const) if (typeof t[k] === "string" && t[k]) target[k] = t[k]
   }
-  const description = String(o.checkpoint.description ?? "").slice(0, 240)
+  // Description presence + kind-specific payload validation live in normalizeCheckpointInput,
+  // shared with the draft step-edit route so all 5 kinds round-trip identically.
+  const cp = normalizeCheckpointInput(o.checkpoint)
+  if (!cp) return null
+  return { trailId: o.trailId, afterStepIdx: o.afterStepIdx, action: "assert", target, checkpoint: cp }
+}
+
+/**
+ * Validate + normalize a raw checkpoint object into a persisted Checkpoint carrying its full
+ * kind-specific payload. Shared by validateAssertionDraft (expectation graduation) and the
+ * draft step-edit route (KLA-244) so all 5 kinds round-trip through the DB, not just "visible".
+ * Returns null when the checkpoint is malformed. A checkpoint with no kind defaults to "visible".
+ */
+export function normalizeCheckpointInput(x: unknown): AssertionDraft["checkpoint"] | null {
+  if (!x || typeof x !== "object") return null
+  const o = x as any
+  const kind: CheckpointKind = o.kind == null ? "visible" : o.kind
+  if (!VALID_KINDS.includes(kind)) return null
+  const description = String(o.description ?? "").slice(0, 240)
   if (!description.trim()) return null
-  // Kind-specific field checks.
   if (kind === "textEquals" || kind === "textContains") {
-    if (typeof o.checkpoint.value !== "string" || !o.checkpoint.value) return null
+    if (typeof o.value !== "string" || !o.value) return null
   } else if (kind === "urlMatches") {
-    if (typeof o.checkpoint.regex !== "string" || !o.checkpoint.regex) return null
+    if (typeof o.regex !== "string" || !o.regex) return null
   } else if (kind === "elementCount") {
-    if (typeof o.checkpoint.count !== "number" || !Number.isInteger(o.checkpoint.count) || o.checkpoint.count < 0) return null
+    if (typeof o.count !== "number" || !Number.isInteger(o.count) || o.count < 0) return null
   }
   const cp: AssertionDraft["checkpoint"] = { kind, description }
-  if ((cp.kind === "textEquals" || cp.kind === "textContains") && typeof o.checkpoint.value === "string") cp.value = o.checkpoint.value.slice(0, 240)
-  if (cp.kind === "urlMatches" && typeof o.checkpoint.regex === "string") { cp.regex = o.checkpoint.regex; try { new RegExp(cp.regex) } catch { return null } }
-  if (cp.kind === "elementCount" && typeof o.checkpoint.count === "number") cp.count = Math.floor(o.checkpoint.count)
-  return { trailId: o.trailId, afterStepIdx: o.afterStepIdx, action: "assert", target, checkpoint: cp }
+  if ((kind === "textEquals" || kind === "textContains") && typeof o.value === "string") cp.value = o.value.slice(0, 240)
+  if (kind === "urlMatches" && typeof o.regex === "string") { cp.regex = o.regex; try { new RegExp(cp.regex) } catch { return null } }
+  if (kind === "elementCount" && typeof o.count === "number") cp.count = Math.floor(o.count)
+  return cp
 }
