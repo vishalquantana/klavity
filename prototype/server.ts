@@ -9,7 +9,7 @@ import { deriveHealth } from "./lib/connectors/health"
 import { applyReconcileOps, recurrenceFromEvents, pickCitation, type ReconcileOp, type Trait, type TraitEventRow } from "./lib/provenance"
 import { sendOtp, sendLeadAlert, sendTicketAssignmentEmail, sendTicketAssignmentInviteEmail } from "./lib/mail"
 import { notifyReporterOnFix } from "./lib/fixed-notification"
-import { token, otp, emailAllowed, cookie, clearCookie, parseCookies, isOpsAdmin } from "./lib/auth"
+import { token, otp, emailAllowed, cookie, clearCookie, parseCookies, isOpsAdmin, projectCookie } from "./lib/auth"
 import { uploadScreenshotMeta, presignGet, deleteObject, getObjectBytes, type UploadedScreenshot } from "./lib/s3"
 import { signImageToken, verifyImageToken } from "./lib/imgsign"
 import { runRetentionSweep } from "./lib/retention"
@@ -4122,7 +4122,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             // No project yet — return an empty-but-valid shape so the UI renders skeleton/empty states.
             return json({ email: me, projects: [], active: null, members: [], sims: [], saying: [], tickets: [], activity: [], counts: { feedback: 0, tickets: 0, activity: 0 } })
           }
-          const requested = url.searchParams.get("project")
+          // KLAVITYKLA-299: when no ?project= param is present, fall back to the klav_proj cookie
+          // (set on a previous successful load) so the user's selection persists across reloads.
+          // Explicit ?project= always wins; cookie is only consulted when the param is absent.
+          const paramProject = url.searchParams.get("project")
+          const cookieProject = !paramProject
+            ? decodeURIComponent(parseCookies(req.headers.get("cookie"))["klav_proj"] || "") || null
+            : null
+          const requested = paramProject || cookieProject
           const resolved = await resolveProject(me, requested)
           if (!resolved) return json({ error: "No access to this project." }, 403)
           const projectId = resolved.id
@@ -4296,7 +4303,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             latestWidgetPing(projectId),
           ])
           const widgetStatus = widgetPing ? { host: widgetPing.host, lastSeen: widgetPing.lastSeen } : null
-          return json({ email: me, projects, active: activeOut, members, sims, saying, simFeedback, tickets, activity, counts, insights, widgetStatus })
+          // KLAVITYKLA-299: stamp the resolved project in a cookie so the server can restore
+          // the user's selection on the next bare /api/dashboard call (no ?project= param).
+          return json(
+            { email: me, projects, active: activeOut, members, sims, saying, simFeedback, tickets, activity, counts, insights, widgetStatus },
+            200,
+            { "Set-Cookie": projectCookie(projectId, SECURE) },
+          )
         } catch (e: any) {
           return json(oops(e, "dashboard"), 500)
         }
