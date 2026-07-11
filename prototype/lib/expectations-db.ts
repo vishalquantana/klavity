@@ -17,6 +17,10 @@ export type ExpectationRow = {
   id: string; projectId: string; title: string; area: string | null; urlPath: string | null
   status: ExpStatus; sourceRefs: SourceRef[]; corroboration: Corroboration
   dedupKey: string; enforcedStepId: string | null; createdAt: number; updatedAt: number
+  /** KLA-243: number of times this enforced guard has caught a regression */
+  savesCount: number
+  /** KLA-242: feedback ticket id this guard was created from via "Guard this fix" */
+  sourceTicketId: string | null
 }
 
 function rowTo(x: any): ExpectationRow {
@@ -26,6 +30,8 @@ function rowTo(x: any): ExpectationRow {
     corroboration: JSON.parse(x.corroboration_json || "{}"),
     dedupKey: x.dedup_key, enforcedStepId: x.enforced_step_id ?? null,
     createdAt: Number(x.created_at), updatedAt: Number(x.updated_at),
+    savesCount: Number(x.saves_count ?? 0),
+    sourceTicketId: x.source_ticket_id ?? null,
   }
 }
 
@@ -43,6 +49,8 @@ export async function listExpectations(c: Client, projectId: string, status?: Ex
 
 export async function upsertExpectation(c: Client, input: {
   projectId: string; title: string; area?: string | null; urlPath?: string | null; dedupKey: string; source: SourceRef
+  /** KLA-242: feedback ticket id when created via "Guard this fix" */
+  sourceTicketId?: string | null
 }): Promise<ExpectationRow> {
   const now = Date.now()
   // 1) exact dedup_key match in-project
@@ -66,9 +74,15 @@ export async function upsertExpectation(c: Client, input: {
     })
     const refs = deduped.length > SOURCE_REFS_MAX ? deduped.slice(-SOURCE_REFS_MAX) : deduped
     const status = nextStatus(existing.status, corr)
+    // KLA-242: back-fill source_ticket_id if provided and not already set.
+    const ticketColUpdate = (input.sourceTicketId && !existing.sourceTicketId)
+      ? ", source_ticket_id=?" : ""
+    const updateArgs: (string | number)[] = [JSON.stringify(corr), JSON.stringify(refs), status, now]
+    if (input.sourceTicketId && !existing.sourceTicketId) updateArgs.push(input.sourceTicketId)
+    updateArgs.push(existing.id)
     await c.execute({
-      sql: "UPDATE expectations SET corroboration_json=?, source_refs_json=?, status=?, updated_at=? WHERE id=?",
-      args: [JSON.stringify(corr), JSON.stringify(refs), status, now, existing.id],
+      sql: `UPDATE expectations SET corroboration_json=?, source_refs_json=?, status=?, updated_at=?${ticketColUpdate} WHERE id=?`,
+      args: updateArgs,
     })
     return (await getExpectation(c, existing.id))!
   }
@@ -76,10 +90,11 @@ export async function upsertExpectation(c: Client, input: {
   const corr = mergeSource({ snap: false, sim: false, recurrence: 0 }, input.source.kind)
   const status = nextStatus("candidate", corr)
   await c.execute({
-    sql: `INSERT INTO expectations (id,project_id,title,area,url_path,status,source_refs_json,corroboration_json,dedup_key,enforced_step_id,created_at,updated_at)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+    sql: `INSERT INTO expectations (id,project_id,title,area,url_path,status,source_refs_json,corroboration_json,dedup_key,enforced_step_id,source_ticket_id,created_at,updated_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [id, input.projectId, input.title, input.area ?? null, input.urlPath ?? null, status,
-           JSON.stringify([input.source]), JSON.stringify(corr), input.dedupKey, null, now, now],
+           JSON.stringify([input.source]), JSON.stringify(corr), input.dedupKey, null,
+           input.sourceTicketId ?? null, now, now],
   })
   return (await getExpectation(c, id))!
 }
@@ -90,4 +105,43 @@ export async function setExpectationStatus(c: Client, id: string, status: ExpSta
 
 export async function setExpectationEnforced(c: Client, id: string, enforcedStepId: string): Promise<void> {
   await c.execute({ sql: "UPDATE expectations SET status='enforced', enforced_step_id=?, updated_at=? WHERE id=?", args: [enforcedStepId, Date.now(), id] })
+}
+
+/**
+ * KLA-243: Increment the saves_count for an expectation when a guard catches a regression.
+ * Called by recordFinding when a finding is linked to an enforced expectation.
+ */
+export async function incrementExpectationSaves(c: Client, id: string): Promise<void> {
+  await c.execute({ sql: "UPDATE expectations SET saves_count=saves_count+1, updated_at=? WHERE id=?", args: [Date.now(), id] })
+}
+
+/**
+ * KLA-242: "Guard this fix" — create or upsert an expectation from a resolved ticket.
+ * The ticket's title becomes the guard description; status is immediately "validated"
+ * (human has confirmed the fix, so it's ready to enforce).
+ * Returns the expectation row.
+ */
+export async function upsertExpectationFromTicket(c: Client, args: {
+  projectId: string
+  feedbackId: string
+  title: string
+  urlPath?: string | null
+  area?: string | null
+}): Promise<ExpectationRow> {
+  const dedupKey = "ticket:" + args.feedbackId
+  const exp = await upsertExpectation(c, {
+    projectId: args.projectId,
+    title: args.title.slice(0, 200),
+    area: args.area ?? null,
+    urlPath: args.urlPath ?? null,
+    dedupKey,
+    source: { kind: "snap", id: args.feedbackId },
+    sourceTicketId: args.feedbackId,
+  })
+  // Ensure it's at least "validated" so it's ready to enforce immediately.
+  if (exp.status === "candidate") {
+    await setExpectationStatus(c, exp.id, "validated")
+    return (await getExpectation(c, exp.id))!
+  }
+  return exp
 }
