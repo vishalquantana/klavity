@@ -274,7 +274,7 @@ export async function applySchema(c: Client) {
        project_id TEXT NOT NULL, day TEXT NOT NULL, count INTEGER NOT NULL DEFAULT 0,
        PRIMARY KEY (project_id, day))`,
     // EXTENSION TOKENS — dedicated narrow-scope Bearer (R5 security pre-req): bound to email (+optional
-    // project), replaces reusing the raw 7-day session id. resolveBearer accepts these alongside sessions.
+    // project), replaces reusing the raw session id. resolveBearer accepts these alongside sessions.
     `CREATE TABLE IF NOT EXISTS extension_tokens (
        token TEXT PRIMARY KEY, email TEXT NOT NULL, project_id TEXT,
        created_at INTEGER NOT NULL, expires_at INTEGER, revoked INTEGER NOT NULL DEFAULT 0)`,
