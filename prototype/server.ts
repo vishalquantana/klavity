@@ -2560,8 +2560,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const { urlHost, urlPath } = splitUrl(pageUrl)
 
         // (e) dedupe is computed across the Sims we'd review; if ALL are already-seen we short-circuit.
-        // Resolve target Sims first (project Sims, or the caller-supplied subset) so we can key dedupe.
-        const projectSims = await listPersonas(projectId)
+        // Use listPersonasForProject (not listPersonas) so global Sims from sibling projects in the
+        // same account are included in reviews — they surface via the UNION query in listPersonasForProject.
+        // listPersonas is project-scoped only and silently excludes global Sims, causing them to never
+        // react to a project's pages even though they're listed in that project's UI (KLAVITYKLA-257).
+        const projectSims = await listPersonasForProject(projectId)
         const targetSims = reqSimIds.length ? projectSims.filter((p) => reqSimIds.includes(p.id)) : projectSims
 
         const seenKeys = targetSims.map((s) => reviewDedupeKey(s.id, urlPath || "", domSig))
