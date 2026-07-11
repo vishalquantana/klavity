@@ -102,17 +102,39 @@ export async function processWalkFindings(
   return { autoFiled, queued }
 }
 
-// KLA-94: opt-in auto-file gate. Checks the per-project flag; if OFF, returns immediately (all findings
-// stay queued — preserving the human-review default). If ON, delegates to processWalkFindings with the
-// production connector (or an injected filer for tests). Never throws — failures are recorded on the
-// finding row by processWalkFindings and this function is always called best-effort from walkTrail.
+// KLAVITYKLA-248: split auto-file gate.
+//
+// Guard-caught regressions (kind==='regression' && confidence >= AUTO_FILE_THRESHOLD) are
+// deterministic and were human-confirmed at guard-creation time — they ALWAYS auto-file regardless
+// of the per-project `trailsAutofileEnabled` opt-in flag.
+//
+// The opt-in flag now controls SUBJECTIVE findings (non-regression kinds, or regressions below the
+// confidence threshold). When the flag is OFF, those stay queued for human review; when ON, they go
+// through the same gate and can also auto-file. Label for the UI: "Auto-file subjective Sim findings
+// too — guard-caught regressions always auto-file".
+//
+// Never throws — failures are recorded on the finding row by processWalkFindings.
 export async function maybeAutoFileWalkFindings(
   projectId: string,
   runId: string,
   filer: Filer = realFiler,
 ): Promise<{ autoFiled: string[]; queued: string[] }> {
   const proj = await projectById(projectId)
-  if (!proj?.trailsAutofileEnabled) return { autoFiled: [], queued: [] }
+  const subjectiveEnabled = !!proj?.trailsAutofileEnabled
+
+  if (subjectiveEnabled) {
+    // Flag ON: all finding kinds are eligible for auto-file (subject to the threshold).
+    return processWalkFindings(projectId, runId, { filer })
+  }
+
+  // Flag OFF: only auto-file guard-caught regressions (the deterministic, confidence-1 class).
+  // processWalkFindings already applies decideFindingAction per finding; by calling it here we auto-file
+  // the high-confidence regression findings and leave the subjective ones queued for human review.
+  // Fast-path: skip the filer entirely if there are no auto-fileable findings for this run.
+  const queued = (await listFindings(projectId)).filter((f) => f.runId === runId && f.status === "queued")
+  const hasGuardCaught = queued.some((f) => decideFindingAction(f) === "auto_file")
+  if (!hasGuardCaught) return { autoFiled: [], queued: [] }
+
   return processWalkFindings(projectId, runId, { filer })
 }
 
