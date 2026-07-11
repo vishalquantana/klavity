@@ -924,6 +924,11 @@ details.drawer .drawer-in{padding:0 22px 22px}
 .tacc-select:focus{border-color:var(--indigo)}
 .tacc-badge{font-size:10px;padding:2px 6px;border-radius:6px;background:var(--ink-2);color:var(--paper-dim);margin-left:8px;text-transform:uppercase;font-weight:600;letter-spacing:.03em;border:1px solid var(--line)}
 .conn-help a:hover{text-decoration:underline}
+/* connector health status dot (KLAVITYKLA-280) */
+.conn-health-dot{flex-shrink:0;width:8px;height:8px;border-radius:50%;background:var(--paper-faint)}
+.conn-health-dot[data-health="healthy"]{background:var(--green);box-shadow:0 0 0 2px rgba(16,185,129,.18)}
+.conn-health-dot[data-health="stale"]{background:var(--amber)}
+.conn-health-dot[data-health="erroring"]{background:var(--rose)}
 /* two-way status-sync setup panel (G4) — shown for inbound-capable connectors */
 .sync-panel{grid-column:1/-1;margin-top:4px;padding:13px 14px;background:var(--ink-2);border:1px solid var(--line);border-radius:10px}
 .sync-panel .sync-h{font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:6px;margin-bottom:4px}
@@ -4714,7 +4719,10 @@ function renderConnectors(admin) {
       row.className = "conn-row"
       const acOn = c.autoCopy && c.enabled
       const enOn = c.enabled
+      const hStatus = (c.health && c.health.status) || "never-connected"
+      const hLabel = { healthy: "Healthy", stale: "Stale — no recent activity", erroring: "Erroring", "never-connected": "Never connected" }[hStatus] || hStatus
       row.innerHTML = `<div class="conn-row-head">
+        <span title="${esc(hLabel)}" class="conn-health-dot" data-health="${esc(hStatus)}"></span>
         <span class="conn-name">${esc(c.name)}</span>
         <span class="conn-type">${esc(c.type)}</span>
         <button class="tog${enOn?" on":""}" title="${enOn?"Disable":"Enable"}" data-cid="${esc(c.id)}" data-field="enabled" data-val="${enOn?1:0}">${enOn?"enabled":"disabled"}</button>
