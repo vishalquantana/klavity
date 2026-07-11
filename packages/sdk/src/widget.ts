@@ -910,6 +910,7 @@ export async function submitFeedback(
   // parallel; each falls back to its original on failure.
   const screenshots = await Promise.all(payload.screenshots.map((s) => compressScreenshot(s)))
   const fd = buildFeedbackForm({
+    type: payload.type,
     description: `[${payload.type}] ${payload.description}`,
     pageUrl: payload.pageUrl,
     referrer: payload.referrer,
