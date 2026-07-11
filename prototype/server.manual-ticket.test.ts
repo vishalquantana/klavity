@@ -152,3 +152,20 @@ test("source=manual filter excludes sim and widget tickets", async () => {
   // The directly-inserted row (source=NULL) should NOT appear in manual filter
   expect(tickets.every((t: any) => t.source === "manual")).toBe(true)
 })
+
+test("bulk resolving a reported ticket with contact_email succeeds and marks it done", async () => {
+  const fbId = `fb_notify_bulk_${RUN}`
+  await raw.execute({
+    sql: "INSERT INTO feedback (id,project_id,observation,priority,status,contact_email,created_at) VALUES (?,?,?,?,?,?,?)",
+    args: [fbId, PROJ, "Reporter-visible bug", "medium", "open", "reporter@example.com", NOW + 2],
+  })
+  const r = await req("PATCH", `/api/projects/${PROJ}/tickets/bulk`, {
+    ticketIds: [fbId],
+    status: "done",
+  })
+  expect(r.status).toBe(200)
+  const d = await r.json()
+  expect(d.updated).toBe(1)
+  const row = await raw.execute({ sql: "SELECT status FROM feedback WHERE id=?", args: [fbId] })
+  expect(String((row.rows[0] as any).status)).toBe("done")
+})

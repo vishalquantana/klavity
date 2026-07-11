@@ -3385,6 +3385,7 @@ export async function feedbackById(projectId: string, id: string): Promise<any |
     lastSeenAt: x.last_seen_at != null ? Number(x.last_seen_at) : null,
     clientContext: x.client_context_json != null ? safeJsonParse(x.client_context_json) : null,
     contactEmail: x.contact_email != null ? String(x.contact_email) : null,
+    seqNum: x.seq_num != null ? Number(x.seq_num) : null,
   }
 }
 
