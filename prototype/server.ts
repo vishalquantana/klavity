@@ -5431,9 +5431,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const assignee = sp.has("assignee") ? (sp.get("assignee") ?? "") : undefined
           const rawSource = sp.get("source") ?? ""
           const source = rawSource === "sim" ? "sim" : rawSource === "manual" ? "manual" : rawSource === "human" ? "human" : undefined
+          const label = sp.get("label")?.trim() || undefined
+          // `q` performs project-scoped, paginated server-side text search. Keep the bound
+          // modest to avoid unexpectedly expensive broad LIKE queries.
+          const search = (sp.get("q") ?? "").trim().slice(0, 500) || undefined
           const page = Math.max(1, Number(sp.get("page") || "1"))
           const limit = Math.min(200, Math.max(1, Number(sp.get("limit") || "50")))
-          const result = await listTicketsPaginated(proj.id, { statuses, priorities, assignee, source, page, limit })
+          const result = await listTicketsPaginated(proj.id, { statuses, priorities, assignee, source, label, search, page, limit })
           const ticketIds = result.tickets.map((t: any) => t.id)
           const labelsMap = await labelsForFeedbackBatch(ticketIds)
           result.tickets = result.tickets.map((t: any) => ({ ...t, labels: labelsMap[t.id] || [] }))

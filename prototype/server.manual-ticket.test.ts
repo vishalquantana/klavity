@@ -153,6 +153,28 @@ test("source=manual filter excludes sim and widget tickets", async () => {
   expect(tickets.every((t: any) => t.source === "manual")).toBe(true)
 })
 
+test("GET /tickets q searches server-side, paginates, and excludes another project", async () => {
+  const needle = `needle-${RUN}`
+  await req("POST", `/api/projects/${PROJ}/tickets`, { title: `First ${needle}`, body: "A matching description" })
+  await req("POST", `/api/projects/${PROJ}/tickets`, { title: "Second match", body: `Description contains ${needle}` })
+  const otherProject = `proj_other_${RUN}`
+  await exec("INSERT INTO projects (id,account_id,name,status,review_mode,review_budget_daily,observability_mode,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)", [otherProject, ACCT, "Other project", "active", "auto", 200, "named", NOW, NOW])
+  await exec("INSERT INTO feedback (id,project_id,observation,priority,status,created_at) VALUES (?,?,?,?,?,?)", [`fb_other_${RUN}`, otherProject, `Private ${needle}`, "medium", "open", NOW])
+
+  const first = await req("GET", `/api/projects/${PROJ}/tickets?q=${encodeURIComponent(needle)}&limit=1&page=1`)
+  expect(first.status).toBe(200)
+  const firstData = await first.json()
+  expect(firstData.total).toBe(2)
+  expect(firstData.totalPages).toBe(2)
+  expect(firstData.tickets).toHaveLength(1)
+
+  const second = await req("GET", `/api/projects/${PROJ}/tickets?q=${encodeURIComponent(needle)}&limit=1&page=2`)
+  expect(second.status).toBe(200)
+  const secondData = await second.json()
+  expect(secondData.tickets).toHaveLength(1)
+  expect([...firstData.tickets, ...secondData.tickets].some((t: any) => t.id === `fb_other_${RUN}`)).toBe(false)
+})
+
 test("bulk resolving a reported ticket with contact_email succeeds and marks it done", async () => {
   const fbId = `fb_notify_bulk_${RUN}`
   await raw.execute({
