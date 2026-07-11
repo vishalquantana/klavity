@@ -295,6 +295,21 @@ export async function applySchema(c: Client) {
     // Distinct from ai_calls (the after-the-fact audit ledger): this is the pre-flight cap gate.
     `CREATE TABLE IF NOT EXISTS daily_ai_spend (
        day TEXT PRIMARY KEY, reserved_usd REAL NOT NULL DEFAULT 0)`,
+    // USAGE METERS (KLAVITYKLA-305) — billable value-metric counters. MEASUREMENT ONLY: this ledger
+    // COUNTS the billable events (meter = Sims + guarded AutoSim flows) per account, per billing
+    // period (UTC month 'YYYY-MM'), per metric type (e.g. 'sim_review', 'autosim_walk'). It never
+    // enforces, blocks, or charges — quota checks / Stripe live in KLA-306/307. One row per
+    // (account_id, project_id, period, metric); `count` is incremented atomically via upsert by the
+    // fire-and-forget incrementUsageMeter helper so a meter write NEVER blocks the metered action.
+    // project_id is stored ('' when unknown) so we can report per-project usage without a join.
+    `CREATE TABLE IF NOT EXISTS usage_meters (
+       account_id TEXT NOT NULL, project_id TEXT NOT NULL DEFAULT '',
+       period TEXT NOT NULL, metric TEXT NOT NULL,
+       count INTEGER NOT NULL DEFAULT 0,
+       first_at INTEGER NOT NULL, last_at INTEGER NOT NULL,
+       PRIMARY KEY (account_id, project_id, period, metric))`,
+    `CREATE INDEX IF NOT EXISTS usage_meters_acct_period_idx ON usage_meters (account_id, period)`,
+    `CREATE INDEX IF NOT EXISTS usage_meters_metric_idx ON usage_meters (metric, period)`,
     `CREATE TABLE IF NOT EXISTS error_tickets (
        signature TEXT PRIMARY KEY,
        ticket_key TEXT,
@@ -803,6 +818,9 @@ export async function applySchema(c: Client) {
     .catch((e: any) => console.warn("projects.billing_status ALTER skipped:", e?.message || e))
   if (needCol("projects", "billing_updated_at")) await c.execute("ALTER TABLE projects ADD COLUMN billing_updated_at INTEGER")
     .catch((e: any) => console.warn("projects.billing_updated_at ALTER skipped:", e?.message || e))
+  // KLA-292: client site URL — the primary URL of the client's product, set at project creation.
+  if (needCol("projects", "site_url")) await c.execute("ALTER TABLE projects ADD COLUMN site_url TEXT")
+    .catch((e: any) => console.warn("projects.site_url ALTER skipped:", e?.message || e))
   // KLA-81: computed severity stored at finding-creation time so ticket-filers + UIs don't have
   // to re-derive it. NULL on legacy rows → callers fall back to severityForKind(kind).
   if (needCol("findings", "severity")) await c.execute("ALTER TABLE findings ADD COLUMN severity TEXT")
@@ -1199,6 +1217,7 @@ export type ProjectRow = {
   widgetReportGate: string
   instructionsMd?: string | null
   trailsAutofileEnabled: boolean
+  siteUrl: string | null
 }
 function rowToProject(x: any): ProjectRow {
   return {
@@ -1214,6 +1233,7 @@ function rowToProject(x: any): ProjectRow {
     widgetReportGate: ["anonymous", "email", "login"].includes(String(x.widget_report_gate)) ? String(x.widget_report_gate) : "email",
     instructionsMd: x.instructions_md != null ? String(x.instructions_md) : undefined,
     trailsAutofileEnabled: !!x.trails_autofile_enabled,
+    siteUrl: x.site_url != null ? String(x.site_url) : null,
   }
 }
 
@@ -1289,13 +1309,13 @@ export async function listProjects(email: string): Promise<ProjectRow[]> {
   return r.rows.map(rowToProject)
 }
 
-export async function createProject(accountId: string, name: string): Promise<ProjectRow> {
+export async function createProject(accountId: string, name: string, siteUrl?: string | null): Promise<ProjectRow> {
   const id = "proj_" + crypto.randomUUID()
   const now = Date.now()
   await db!.execute({
-    sql: `INSERT INTO projects (id,account_id,name,status,review_mode,review_budget_daily,observability_mode,created_at,updated_at)
-          VALUES (?,?,?,?,?,?,?,?,?)`,
-    args: [id, accountId, name, "active", "auto", 200, "named", now, now],
+    sql: `INSERT INTO projects (id,account_id,name,status,review_mode,review_budget_daily,observability_mode,site_url,created_at,updated_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    args: [id, accountId, name, "active", "auto", 200, "named", siteUrl ?? null, now, now],
   })
   const p = await projectById(id)
   return p!
@@ -2417,6 +2437,83 @@ async function accountIdForAiCall(projectId?: string | null, accountId?: string 
     return null
   }
   return null
+}
+
+// ── Usage meters (KLAVITYKLA-305) ──────────────────────────────────────────────────────────────
+// Billable value-metric counters. MEASUREMENT ONLY — count usage; never enforce/block/charge here
+// (that is KLA-306/307). The billing meter = Sims + guarded AutoSim flows, so callers record the
+// events 'sim_review' (one per Sim review run) and 'autosim_walk' (one per AutoSim/Trail walk).
+
+// Billing period = UTC calendar month, 'YYYY-MM'. One stable string per account per month.
+export function usagePeriod(atMs: number = Date.now()): string {
+  return new Date(atMs).toISOString().slice(0, 7)
+}
+
+export type UsageMeterMetric = "sim_review" | "autosim_walk"
+
+export type UsageMeterInc = {
+  metric: UsageMeterMetric | string
+  accountId?: string | null
+  projectId?: string | null
+  actorEmail?: string | null
+  by?: number
+  atMs?: number
+}
+
+// Fire-and-forget: increment a usage counter for the metered event. Resolves the owning account
+// from projectId/actorEmail (same resolver as the AI-call ledger) and upserts the period+metric
+// row atomically. NEVER throws — a metering failure must not break the metered action, so callers
+// invoke this WITHOUT awaiting (or with a .catch). No-op when no account can be resolved.
+export async function incrementUsageMeter(inc: UsageMeterInc): Promise<void> {
+  try {
+    const accountId = await accountIdForAiCall(inc.projectId, inc.accountId, inc.actorEmail)
+    if (!accountId) return // nothing to attribute usage to — skip (measurement is best-effort)
+    const at = inc.atMs ?? Date.now()
+    const period = usagePeriod(at)
+    const by = Number.isFinite(inc.by) ? Math.max(1, Math.trunc(inc.by as number)) : 1
+    const projectId = inc.projectId ? String(inc.projectId) : ""
+    await db!.execute({
+      sql: `INSERT INTO usage_meters (account_id, project_id, period, metric, count, first_at, last_at)
+            VALUES (?,?,?,?,?,?,?)
+            ON CONFLICT(account_id, project_id, period, metric)
+            DO UPDATE SET count = count + excluded.count, last_at = excluded.last_at`,
+      args: [accountId, projectId, period, String(inc.metric), by, at, at],
+    })
+  } catch (e: any) {
+    // Best-effort: log and swallow. A meter write must never bubble into the metered code path.
+    console.warn("[usage-meter] increment skipped:", e?.message || e)
+  }
+}
+
+export type UsageMeterTotal = { metric: string; count: number }
+
+// Read current-period (default: this UTC month) usage totals for an account, summed across all
+// projects, one entry per metric. Read-only; safe to call anywhere. Optionally scope to one project.
+export async function getAccountUsage(
+  accountId: string,
+  opts: { period?: string; projectId?: string } = {},
+): Promise<UsageMeterTotal[]> {
+  const period = opts.period ?? usagePeriod()
+  const where = ["account_id = ?", "period = ?"]
+  const args: any[] = [accountId, period]
+  if (opts.projectId != null) { where.push("project_id = ?"); args.push(String(opts.projectId)) }
+  const r = await db!.execute({
+    sql: `SELECT metric, COALESCE(SUM(count),0) AS n FROM usage_meters
+          WHERE ${where.join(" AND ")} GROUP BY metric ORDER BY metric`,
+    args,
+  })
+  return r.rows.map((x: any) => ({ metric: String(x.metric), count: Number(x.n) }))
+}
+
+// Convenience: current-period usage as a metric→count map (metrics with zero usage are absent).
+export async function getAccountUsageMap(
+  accountId: string,
+  opts: { period?: string; projectId?: string } = {},
+): Promise<Record<string, number>> {
+  const rows = await getAccountUsage(accountId, opts)
+  const out: Record<string, number> = {}
+  for (const r of rows) out[r.metric] = r.count
+  return out
 }
 
 export async function recordAiCall(a: AiCallInsert): Promise<void> {
