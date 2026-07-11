@@ -8,7 +8,7 @@
 //  - POST /api/client-error: validates, rate-limits, size-caps, and forwards
 
 import { expect, test, describe, beforeEach, afterEach, mock, spyOn } from "bun:test"
-import { reportError, _resetDedup } from "./error-alert"
+import { reportError, _resetDedup, _isNonProdEnv } from "./error-alert"
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -20,6 +20,123 @@ function makeFetchSpy(ok = true, status = 200) {
   })
   return { fetchSpy, calls }
 }
+
+// ── environment gate ─────────────────────────────────────────────────────────
+// reportError must be a total no-op in test/CI/dev envs — no fetch, no auto-ticket.
+describe("reportError — environment gate", () => {
+  const FAKE_WEBHOOK = "https://hooks.slack.com/services/T00/B00/fake"
+  const ENV_VARS = ["KLAV_ENV", "NODE_ENV"] as const
+  type EnvKey = typeof ENV_VARS[number]
+  let savedEnv: Record<EnvKey, string | undefined>
+  let origFetch: typeof globalThis.fetch
+
+  beforeEach(() => {
+    _resetDedup()
+    savedEnv = Object.fromEntries(ENV_VARS.map((k) => [k, process.env[k]])) as Record<EnvKey, string | undefined>
+    origFetch = globalThis.fetch
+    process.env.SLACK_ERROR_WEBHOOK_URL = FAKE_WEBHOOK
+  })
+
+  afterEach(() => {
+    for (const k of ENV_VARS) {
+      if (savedEnv[k] !== undefined) process.env[k] = savedEnv[k]!
+      else delete process.env[k]
+    }
+    globalThis.fetch = origFetch
+    delete process.env.SLACK_ERROR_WEBHOOK_URL
+  })
+
+  const NON_PROD = ["test", "ci", "development", "dev", "TEST", "CI", "Development"] as const
+
+  for (const env of NON_PROD) {
+    test(`full no-op when NODE_ENV=${env} (no fetch, resolves undefined)`, async () => {
+      delete process.env.KLAV_ENV
+      process.env.NODE_ENV = env
+      const calls: boolean[] = []
+      globalThis.fetch = mock(async () => { calls.push(true); return { ok: true, status: 200 } as Response })
+      const result = await reportError({ where: "backend", message: "test boom" })
+      expect(result).toBeUndefined()
+      expect(calls).toHaveLength(0)
+    })
+  }
+
+  test("full no-op when KLAV_ENV=test (overrides NODE_ENV)", async () => {
+    process.env.KLAV_ENV = "test"
+    process.env.NODE_ENV = "production"  // NODE_ENV says prod, but KLAV_ENV wins
+    const calls: boolean[] = []
+    globalThis.fetch = mock(async () => { calls.push(true); return { ok: true, status: 200 } as Response })
+    await reportError({ where: "backend", message: "should not fire" })
+    expect(calls).toHaveLength(0)
+  })
+
+  test("full no-op when KLAV_ENV=ci", async () => {
+    process.env.KLAV_ENV = "ci"
+    delete process.env.NODE_ENV
+    const calls: boolean[] = []
+    globalThis.fetch = mock(async () => { calls.push(true); return { ok: true, status: 200 } as Response })
+    await reportError({ where: "backend", message: "ci bomb" })
+    expect(calls).toHaveLength(0)
+  })
+
+  test("FIRES when env is unset (real prod — NODE_ENV not set)", async () => {
+    delete process.env.KLAV_ENV
+    delete process.env.NODE_ENV
+    const calls: boolean[] = []
+    globalThis.fetch = mock(async () => { calls.push(true); return { ok: true, status: 200 } as Response })
+    await reportError({ where: "backend", message: "real prod error" })
+    expect(calls).toHaveLength(1)
+  })
+
+  test("FIRES when NODE_ENV=production", async () => {
+    delete process.env.KLAV_ENV
+    process.env.NODE_ENV = "production"
+    const calls: boolean[] = []
+    globalThis.fetch = mock(async () => { calls.push(true); return { ok: true, status: 200 } as Response })
+    await reportError({ where: "backend", message: "prod error" })
+    expect(calls).toHaveLength(1)
+  })
+
+  test("FIRES when NODE_ENV=staging (not in denylist)", async () => {
+    delete process.env.KLAV_ENV
+    process.env.NODE_ENV = "staging"
+    const calls: boolean[] = []
+    globalThis.fetch = mock(async () => { calls.push(true); return { ok: true, status: 200 } as Response })
+    await reportError({ where: "backend", message: "staging error" })
+    expect(calls).toHaveLength(1)
+  })
+
+  // _isNonProdEnv helper
+  describe("_isNonProdEnv()", () => {
+    test("returns true for test", () => {
+      delete process.env.KLAV_ENV; process.env.NODE_ENV = "test"
+      expect(_isNonProdEnv()).toBe(true)
+    })
+    test("returns true for ci", () => {
+      delete process.env.KLAV_ENV; process.env.NODE_ENV = "ci"
+      expect(_isNonProdEnv()).toBe(true)
+    })
+    test("returns true for development", () => {
+      delete process.env.KLAV_ENV; process.env.NODE_ENV = "development"
+      expect(_isNonProdEnv()).toBe(true)
+    })
+    test("returns true for dev", () => {
+      delete process.env.KLAV_ENV; process.env.NODE_ENV = "dev"
+      expect(_isNonProdEnv()).toBe(true)
+    })
+    test("returns false when env unset (real prod)", () => {
+      delete process.env.KLAV_ENV; delete process.env.NODE_ENV
+      expect(_isNonProdEnv()).toBe(false)
+    })
+    test("returns false for production", () => {
+      delete process.env.KLAV_ENV; process.env.NODE_ENV = "production"
+      expect(_isNonProdEnv()).toBe(false)
+    })
+    test("KLAV_ENV takes precedence over NODE_ENV", () => {
+      process.env.KLAV_ENV = "test"; process.env.NODE_ENV = "production"
+      expect(_isNonProdEnv()).toBe(true)
+    })
+  })
+})
 
 // ── reportError — no-op without env var ──────────────────────────────────────
 describe("reportError — no env var", () => {
@@ -55,21 +172,35 @@ describe("reportError — no env var", () => {
 })
 
 // ── reportError — posts when env var set ─────────────────────────────────────
+// These tests simulate production-like behaviour (no NODE_ENV/KLAV_ENV set).
+// bun test sets NODE_ENV=test by default; we must clear it so the env gate
+// does not suppress the alerts we're testing here.
 describe("reportError — with env var set", () => {
   const FAKE_WEBHOOK = "https://hooks.slack.com/services/T00/B00/fake"
-  let origEnv: string | undefined
+  let origWebhook: string | undefined
+  let origKlavEnv: string | undefined
+  let origNodeEnv: string | undefined
   let origFetch: typeof globalThis.fetch
 
   beforeEach(() => {
     _resetDedup()
-    origEnv = process.env.SLACK_ERROR_WEBHOOK_URL
+    origWebhook = process.env.SLACK_ERROR_WEBHOOK_URL
+    origKlavEnv = process.env.KLAV_ENV
+    origNodeEnv = process.env.NODE_ENV
     process.env.SLACK_ERROR_WEBHOOK_URL = FAKE_WEBHOOK
+    // Clear env-gate vars so these tests exercise the production code path.
+    delete process.env.KLAV_ENV
+    delete process.env.NODE_ENV
     origFetch = globalThis.fetch
   })
 
   afterEach(() => {
-    if (origEnv !== undefined) process.env.SLACK_ERROR_WEBHOOK_URL = origEnv
+    if (origWebhook !== undefined) process.env.SLACK_ERROR_WEBHOOK_URL = origWebhook
     else delete process.env.SLACK_ERROR_WEBHOOK_URL
+    if (origKlavEnv !== undefined) process.env.KLAV_ENV = origKlavEnv
+    else delete process.env.KLAV_ENV
+    if (origNodeEnv !== undefined) process.env.NODE_ENV = origNodeEnv
+    else delete process.env.NODE_ENV
     globalThis.fetch = origFetch
   })
 

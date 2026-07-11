@@ -1,4 +1,4 @@
-import { expect, test, describe, afterEach } from "bun:test"
+import { expect, test, describe, beforeEach, afterEach } from "bun:test"
 import { buildWalkRedSlackPayload, notifyWalkRed, isInfraFailure, type WalkRedAlertContext } from "./walk-red-alert"
 
 const ctx: WalkRedAlertContext = {
@@ -160,6 +160,82 @@ describe("notifyWalkRed — regression routing", () => {
     process.env.SLACK_SIGNUP_WEBHOOK_URL = "https://hooks.slack.com/services/TEST/SIGNUP/ONLY"
     delete process.env.SLACK_ALERT_WEBHOOK_URL
     delete process.env.SLACK_ERROR_WEBHOOK_URL
+    await expect(notifyWalkRed(ctx)).resolves.toBeUndefined()
+  })
+})
+
+// ── environment gate ─────────────────────────────────────────────────────────
+describe("notifyWalkRed — environment gate (no-op in test/CI/dev)", () => {
+  const FAKE_ALERT = "https://hooks.slack.com/services/T00/B00/alert"
+  const FAKE_ERROR = "https://hooks.slack.com/services/T00/B00/error"
+  const ENV_VARS = ["KLAV_ENV", "NODE_ENV"] as const
+  type EnvKey = typeof ENV_VARS[number]
+  let savedEnv: Record<EnvKey, string | undefined>
+  let savedAlert: string | undefined
+  let savedError: string | undefined
+  let origFetch: typeof globalThis.fetch
+
+  beforeEach(() => {
+    savedEnv = Object.fromEntries(ENV_VARS.map((k) => [k, process.env[k]])) as Record<EnvKey, string | undefined>
+    savedAlert = process.env.SLACK_ALERT_WEBHOOK_URL
+    savedError = process.env.SLACK_ERROR_WEBHOOK_URL
+    origFetch = globalThis.fetch
+    // set webhooks so the only gate is env
+    process.env.SLACK_ALERT_WEBHOOK_URL = FAKE_ALERT
+    process.env.SLACK_ERROR_WEBHOOK_URL = FAKE_ERROR
+  })
+
+  afterEach(() => {
+    for (const k of ENV_VARS) {
+      if (savedEnv[k] !== undefined) process.env[k] = savedEnv[k]!
+      else delete process.env[k]
+    }
+    if (savedAlert !== undefined) process.env.SLACK_ALERT_WEBHOOK_URL = savedAlert
+    else delete process.env.SLACK_ALERT_WEBHOOK_URL
+    if (savedError !== undefined) process.env.SLACK_ERROR_WEBHOOK_URL = savedError
+    else delete process.env.SLACK_ERROR_WEBHOOK_URL
+    globalThis.fetch = origFetch
+  })
+
+  test("no-op (no fetch) for regression walk when NODE_ENV=test", async () => {
+    delete process.env.KLAV_ENV
+    process.env.NODE_ENV = "test"
+    const calls: boolean[] = []
+    globalThis.fetch = async () => { calls.push(true); return { ok: true, status: 200 } as Response }
+    await notifyWalkRed(ctx)
+    expect(calls).toHaveLength(0)
+  })
+
+  test("no-op (no fetch) for regression walk when NODE_ENV=ci", async () => {
+    delete process.env.KLAV_ENV
+    process.env.NODE_ENV = "ci"
+    const calls: boolean[] = []
+    globalThis.fetch = async () => { calls.push(true); return { ok: true, status: 200 } as Response }
+    await notifyWalkRed(ctx)
+    expect(calls).toHaveLength(0)
+  })
+
+  test("no-op (no fetch) for infra walk when NODE_ENV=test", async () => {
+    delete process.env.KLAV_ENV
+    process.env.NODE_ENV = "test"
+    const calls: boolean[] = []
+    globalThis.fetch = async () => { calls.push(true); return { ok: true, status: 200 } as Response }
+    await notifyWalkRed({ ...ctx, failureKind: "crash", browserUnavailable: true })
+    expect(calls).toHaveLength(0)
+  })
+
+  test("no-op when KLAV_ENV=test (overrides NODE_ENV)", async () => {
+    process.env.KLAV_ENV = "test"
+    process.env.NODE_ENV = "production"
+    const calls: boolean[] = []
+    globalThis.fetch = async () => { calls.push(true); return { ok: true, status: 200 } as Response }
+    await notifyWalkRed(ctx)
+    expect(calls).toHaveLength(0)
+  })
+
+  test("resolves undefined and does not throw in test env", async () => {
+    delete process.env.KLAV_ENV
+    process.env.NODE_ENV = "test"
     await expect(notifyWalkRed(ctx)).resolves.toBeUndefined()
   })
 })
