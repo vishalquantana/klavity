@@ -1,8 +1,8 @@
 import { test, expect, beforeEach } from "bun:test"
 import { withWalkSlot, withAuthorSlot, withPdfSlot, isWalkInFlight, WalkBusyError, AuthorBusyError, PdfBusyError, CHROMIUM_PROD_ARGS, cancelCurrentWalk, setCurrentWalkRunId, getCurrentWalkAbortSignal, currentWalkRunId, _resetWalkPoolForTest, _resetAuthorAdmissionForTest, _resetPdfAdmissionForTest } from "./trails-browser"
 
-// Isolate pool state between tests.
-beforeEach(() => { _resetWalkPoolForTest(3, 10); _resetAuthorAdmissionForTest(); _resetPdfAdmissionForTest() })
+// Isolate pool state between tests. Use a very short PDF timeout so timeout tests run fast.
+beforeEach(() => { _resetWalkPoolForTest(3, 10); _resetAuthorAdmissionForTest(); _resetPdfAdmissionForTest(5000) })
 
 test("withWalkSlot runs the fn and clears the slot after", async () => {
   expect(isWalkInFlight()).toBe(false)
@@ -180,15 +180,35 @@ test("currentWalkRunId is scoped to the slot's async context", async () => {
   expect(currentWalkRunId()).toBe(null) // AsyncLocalStorage: null outside the slot context
 })
 
-test("withPdfSlot rejects a concurrent PDF rendering session", async () => {
+test("withPdfSlot serializes concurrent PDF renders (second waits for first)", async () => {
+  // KLAVITYKLA-207: concurrent PDF renders queue rather than 409-fail immediately.
+  let release!: () => void
+  const gate = new Promise<void>((r) => { release = r })
+  const order: string[] = []
+  const first = withPdfSlot(async () => { await gate; order.push("first"); return "first" })
+  await Promise.resolve()
+  // Second call queues behind the first — does NOT throw immediately.
+  const second = withPdfSlot(async () => { order.push("second"); return "second" })
+  release()
+  expect(await first).toBe("first")
+  expect(await second).toBe("second")
+  // Execution order must be sequential: first completes before second starts.
+  expect(order).toEqual(["first", "second"])
+  // Slot should be free after both complete.
+  expect(await withPdfSlot(async () => "after")).toBe("after")
+})
+
+test("withPdfSlot throws PdfBusyError when the queue wait times out", async () => {
+  // Override timeout to 50ms so the test runs in <200ms.
+  _resetPdfAdmissionForTest(50)
   let release!: () => void
   const gate = new Promise<void>((r) => { release = r })
   const first = withPdfSlot(async () => { await gate; return "first" })
   await Promise.resolve()
-  await expect(withPdfSlot(async () => "second")).rejects.toBeInstanceOf(PdfBusyError)
+  // Second call will time out after 50ms because first never releases during that window.
+  await expect(withPdfSlot(async () => "timed-out")).rejects.toBeInstanceOf(PdfBusyError)
   release()
   expect(await first).toBe("first")
-  expect(await withPdfSlot(async () => "after")).toBe("after")
 })
 
 test("a PDF render can run concurrently while a walk holds the walk slot", async () => {
