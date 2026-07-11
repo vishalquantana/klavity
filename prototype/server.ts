@@ -1,10 +1,11 @@
 // Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
 import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch } from "./lib/db"
 import { issueKeyFor, chooseDedup, humanReportIssueKeyFor } from "./lib/dedup"
 import { classifySimObservation } from "./lib/sim-bug-classify"
 import { getConnector, listConnectorTypes, type TicketPayload, type TicketAttachment } from "./lib/connectors/index"
 import { inboundSupported, verifyGithubSignature, verifyLinearSignature, extractExternalKey, mapExternalStatus } from "./lib/connectors/inbound"
+import { deriveHealth } from "./lib/connectors/health"
 import { applyReconcileOps, recurrenceFromEvents, pickCitation, type ReconcileOp, type Trait, type TraitEventRow } from "./lib/provenance"
 import { sendOtp, sendLeadAlert, sendTicketAssignmentEmail, sendTicketAssignmentInviteEmail } from "./lib/mail"
 import { notifyReporterOnFix } from "./lib/fixed-notification"
@@ -984,7 +985,9 @@ function redactConnectorConfig(type: string, config: Record<string, string>): Re
 }
 
 // Format a connector row for a client response (always redacted).
+// Also derives + attaches connector health from the heartbeat fields stored in config.
 function connectorToClient(c: any): Record<string, any> {
+  const health = deriveHealth(c.config || {})
   return {
     id: c.id,
     type: c.type,
@@ -993,6 +996,13 @@ function connectorToClient(c: any): Record<string, any> {
     enabled: c.enabled,
     config: redactConnectorConfig(c.type, c.config),
     createdAt: c.createdAt,
+    health: {
+      status: health.status,
+      lastOutboundAt: health.lastOutboundAt,
+      lastInboundAt: health.lastInboundAt,
+      lastErrorAt: health.lastErrorAt,
+      lastError: health.lastError,
+    },
   }
 }
 
@@ -1148,6 +1158,9 @@ function autoCopyFeedback(feedbackId: string, projectId: string, actor: string |
             type: c.type, externalKey: result.externalKey, externalUrl: result.externalUrl,
             status: "ok", error: null, createdBy: actor,
           })
+          // Record successful outbound heartbeat (fire-and-forget, non-fatal).
+          touchConnectorHeartbeat(c.id, { kind: "outbound", success: true })
+            .catch((e: any) => console.warn("heartbeat record failed (non-fatal):", e?.message || e))
           // Plane is the primary tracker (feedback.plane_issue_*). Backfill it so /dashboard shows
           // the row as filed — this is the bit that was missing for connector auto-copy.
           if (c.type === "plane" && !trackerWritten) {
@@ -1162,6 +1175,9 @@ function autoCopyFeedback(feedbackId: string, projectId: string, actor: string |
             type: c.type, externalKey: null, externalUrl: null,
             status: "failed", error: e?.message || "auto-copy failed", createdBy: actor,
           })
+          // Record failed outbound heartbeat (fire-and-forget, non-fatal).
+          touchConnectorHeartbeat(c.id, { kind: "outbound", success: false, error: e?.message || "auto-copy failed" })
+            .catch((err: any) => console.warn("heartbeat record failed (non-fatal):", err?.message || err))
         }
       }
     } catch (err: any) {
@@ -1657,6 +1673,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const beforeFeedback = await feedbackById(exportRow.projectId, exportRow.feedbackId).catch(() => null)
       const updated = await updateFeedbackMeta(exportRow.projectId, exportRow.feedbackId, { status: newStatus })
       if (!updated) return json({ ok: true, ignored: "feedback-gone" })
+      // Record successful inbound heartbeat (fire-and-forget, non-fatal).
+      touchConnectorHeartbeat(exportRow.connectorId, { kind: "inbound", success: true })
+        .catch((e: any) => console.warn("heartbeat record failed (non-fatal):", e?.message || e))
       if (beforeFeedback?.status !== newStatus) {
         await insertActivity({
           projectId: exportRow.projectId,
@@ -4626,6 +4645,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               type: connector.type, externalKey: result.externalKey, externalUrl: result.externalUrl,
               status: "ok", error: null, createdBy: me,
             })
+            // Record successful outbound heartbeat (fire-and-forget, non-fatal).
+            touchConnectorHeartbeat(connectorId, { kind: "outbound", success: true })
+              .catch((e: any) => console.warn("heartbeat record failed (non-fatal):", e?.message || e))
             exportResult = { type: connector.type, externalKey: result.externalKey, externalUrl: result.externalUrl, status: "ok", error: null }
           } catch (e: any) {
             // A10: log the raw error server-side (with a correlation id) and store it on the export row,
@@ -4636,6 +4658,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               type: connector.type, externalKey: null, externalUrl: null,
               status: "failed", error: (e as any)?.message || "Export failed", createdBy: me,
             })
+            // Record failed outbound heartbeat (fire-and-forget, non-fatal).
+            touchConnectorHeartbeat(connectorId, { kind: "outbound", success: false, error: (e as any)?.message || "Export failed" })
+              .catch((err: any) => console.warn("heartbeat record failed (non-fatal):", err?.message || err))
             exportResult = { type: connector.type, externalKey: null, externalUrl: null, status: "failed", error: `${o.error} (ref ${o.id})` }
           }
           return json({ ok: true, export: exportResult })
