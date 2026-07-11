@@ -24,8 +24,9 @@ import {
   updateAuthorSession,
   type AuthorCheckpoint,
 } from "./trails-author"
-import { redactedAutosimAuthConfig, runAutosimAuthProbe } from "./autosim-auth-probe"
+import { redactedAutosimAuthConfig, runAutosimAuthProbe, defaultAutosimAuthVerifier, type AutosimAuthProbeConfig, type ProbeBrowserFactory } from "./autosim-auth-probe"
 import { mintAutosimAuthLinkToken } from "./autosim-auth-exec"
+import type { BrowserHandle, BrowserPage } from "./trails-browser-page"
 
 const ACCOUNT = "acct_autosim_probe"
 const PROJECT_GREEN = "proj_autosim_probe_green"
@@ -33,6 +34,51 @@ const PROJECT_RED = "proj_autosim_probe_red"
 const PROJECT_RESUME = "proj_autosim_probe_resume"
 const OWNER = "vishal@quantana.com.au"
 const FIXTURE_URL = "https://example.com/login"
+
+// ── Fake browser infrastructure for hermetic mint_link drive tests ────────────────────────────────
+
+/**
+ * Minimal fake BrowserPage that simulates the drive navigation outcome.
+ *
+ * @param landedUrl   The URL the page "redirected to" after the mint navigation (simulates post-login redirect).
+ * @param showAuthGate If true the krefSnapshot returns a login-wall string, triggering drive-failed.
+ */
+function makeFakePage(landedUrl: string, showAuthGate: boolean): BrowserPage {
+  let currentUrl = "https://example.com/before"
+  return {
+    url: () => currentUrl,
+    goto: async (u: string) => { currentUrl = landedUrl },
+    waitMs: async () => {},
+    krefSnapshot: async () => showAuthGate ? 'button "Sign in" [ref=e1]' : 'button "Dashboard" [ref=e1]',
+    screenshotJpeg: async () => "",
+    count: async () => 0,
+    fingerprint: async () => ({ domPath: "" }),
+    stableSelector: async () => null,
+    click: async () => {},
+    fill: async () => {},
+    selectOption: async () => {},
+    hover: async () => {},
+    keyPress: async () => {},
+    clearField: async () => {},
+    assertVisible: async () => {},
+    assertTextEquals: async () => {},
+    assertTextContains: async () => {},
+    assertUrlMatches: async () => {},
+    assertElementCount: async () => {},
+    interceptNetwork: async () => {},
+  }
+}
+
+/** Fake BrowserHandle wrapping a FakeBrowserPage. Tracks whether close() was called. */
+function makeFakeHandle(landedUrl: string, showAuthGate: boolean): BrowserHandle & { closed: boolean } {
+  const handle = {
+    kind: "fake",
+    closed: false,
+    newPage: async () => makeFakePage(landedUrl, showAuthGate),
+    close: async () => { handle.closed = true },
+  }
+  return handle
+}
 
 const checkpoint: AuthorCheckpoint = {
   traj: [{ action: "navigate", actionValue: FIXTURE_URL, url: FIXTURE_URL, domHash: "h" }],
@@ -112,15 +158,26 @@ test("mint_link auth probe validates signed token expiry without consuming repla
   const okProject = "proj_autosim_probe_mint_ok"
   const badProject = "proj_autosim_probe_mint_bad"
   const now = Date.now()
-  await db!.execute({ sql: "INSERT INTO projects (id, account_id, name, status, review_mode, review_budget_daily, observability_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", args: [okProject, ACCOUNT, "Mint OK", "active", "auto", 200, "named", now, now] })
-  await db!.execute({ sql: "INSERT INTO projects (id, account_id, name, status, review_mode, review_budget_daily, observability_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", args: [badProject, ACCOUNT, "Mint Bad", "active", "auto", 200, "named", now, now] })
+  await db!.execute({ sql: "INSERT INTO projects (id, account_id, name, status, review_mode, review_budget_daily, observability_mode, site_url, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", args: [okProject, ACCOUNT, "Mint OK", "active", "auto", 200, "named", "https://app.example.com", now, now] })
+  await db!.execute({ sql: "INSERT INTO projects (id, account_id, name, status, review_mode, review_budget_daily, observability_mode, site_url, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", args: [badProject, ACCOUNT, "Mint Bad", "active", "auto", 200, "named", "https://app.example.com", now, now] })
+
+  // Inject a browser factory that simulates a successful authenticated drive so the test remains
+  // hermetic (no real browser required). The intent of THIS test is format/signature validation;
+  // the browser-drive behavior is covered by the dedicated injectable-factory tests below.
+  const successFactory: ProbeBrowserFactory = async () => makeFakeHandle("https://app.example.com/dashboard", false)
 
   const goodProbe = await register(okProject, "mint_link", await mintAutosimAuthLinkToken(okProject))
-  const good = await runAutosimAuthProbe(goodProbe, { resume: async () => ({ eligible: 0, resumed: [], skipped: [], errors: [] }) })
+  const good = await runAutosimAuthProbe(goodProbe, {
+    browserFactory: successFactory,
+    resume: async () => ({ eligible: 0, resumed: [], skipped: [], errors: [] }),
+  })
   expect(good.ok).toBe(true)
 
   const expiredProbe = await register(badProject, "mint_link", await mintAutosimAuthLinkToken(badProject, -1))
-  const expired = await runAutosimAuthProbe(expiredProbe, { resume: async () => { throw new Error("should not resume") } })
+  const expired = await runAutosimAuthProbe(expiredProbe, {
+    browserFactory: successFactory,
+    resume: async () => { throw new Error("should not resume") },
+  })
   expect(expired.ok).toBe(false)
   expect(expired.error).toMatch(/expired/)
 })
@@ -155,4 +212,102 @@ test("auto-resume only adopts recent needs_auth checkpoints once", async () => {
   })
   expect(resumed.resumed).toEqual([{ fromSessionId: recent, sessionId: "auth_new_resume" }])
   expect(await getAuthorSession(PROJECT_RESUME, recent)).not.toBeNull()
+})
+
+// ── Injectable-factory tests (hermetic, no real browser or network) ───────────────────────────────
+// These tests exercise the three meaningful outcomes of the mint_link probe drive path:
+//   (a) bad token format → fails fast, no browser opened
+//   (b) drive never reaches authed state → NOT verified (failureKind:"drive-failed")
+//   (c) drive reaches authed signal → verified
+
+test("(a) mint_link bad token format → fails fast without opening a browser", async () => {
+  let browserOpened = false
+  const factory: ProbeBrowserFactory = async () => {
+    browserOpened = true
+    return makeFakeHandle("https://app.example.com/dashboard", false)
+  }
+
+  const config: AutosimAuthProbeConfig = {
+    projectId: "proj_irrelevant",
+    method: "mint_link",
+    email: OWNER,
+    secret: "not-a-valid-token",
+    notes: null,
+  }
+
+  const result = await defaultAutosimAuthVerifier(config, factory)
+
+  expect(result.ok).toBe(false)
+  expect(result.failureKind).toBe("bad-format")
+  expect(result.error).toBeTruthy()
+  // Browser must NOT have been opened — format check is the fast pre-check
+  expect(browserOpened).toBe(false)
+})
+
+test("(b) mint_link drive stays on /test-login → NOT verified with drive-failed reason", async () => {
+  // The fake page URL after navigation stays on /test-login, indicating the session was not established.
+  const factory: ProbeBrowserFactory = async (baseUrl) => {
+    expect(baseUrl).toBeTruthy() // base URL must have been resolved
+    // Simulate: app redirected back to /test-login (session mint rejected)
+    return makeFakeHandle("https://klavity.example.com/test-login", false)
+  }
+
+  const driveProject = "proj_mint_drive_fail"
+  const now = Date.now()
+  await db!.execute({
+    sql: "INSERT INTO projects (id, account_id, name, status, review_mode, review_budget_daily, observability_mode, site_url, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    args: [driveProject, ACCOUNT, "Drive Fail", "active", "auto", 200, "named", "https://klavity.example.com", now, now],
+  })
+
+  const token = await mintAutosimAuthLinkToken(driveProject)
+  const config: AutosimAuthProbeConfig = {
+    projectId: driveProject,
+    method: "mint_link",
+    email: OWNER,
+    secret: token,
+    notes: null,
+  }
+
+  const result = await defaultAutosimAuthVerifier(config, factory)
+
+  expect(result.ok).toBe(false)
+  expect(result.failureKind).toBe("drive-failed")
+  expect(result.error).toMatch(/test-login|session was not established/)
+})
+
+test("(c) mint_link drive reaches authenticated state → verified", async () => {
+  // The fake page URL after navigation is /dashboard (post-login redirect), and krefSnapshot
+  // does not show a login wall. The probe must return verified:true.
+  let browserClosed = false
+  const factory: ProbeBrowserFactory = async (baseUrl) => {
+    expect(baseUrl).toBeTruthy()
+    const handle = makeFakeHandle("https://klavity.example.com/dashboard", false)
+    const origClose = handle.close.bind(handle)
+    handle.close = async () => { browserClosed = true; await origClose() }
+    return handle
+  }
+
+  const authProject = "proj_mint_drive_success"
+  const now = Date.now()
+  await db!.execute({
+    sql: "INSERT INTO projects (id, account_id, name, status, review_mode, review_budget_daily, observability_mode, site_url, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    args: [authProject, ACCOUNT, "Drive Success", "active", "auto", 200, "named", "https://klavity.example.com", now, now],
+  })
+
+  const token = await mintAutosimAuthLinkToken(authProject)
+  const config: AutosimAuthProbeConfig = {
+    projectId: authProject,
+    method: "mint_link",
+    email: OWNER,
+    secret: token,
+    notes: null,
+  }
+
+  const result = await defaultAutosimAuthVerifier(config, factory)
+
+  expect(result.ok).toBe(true)
+  expect(result.error).toBeNull()
+  expect(result.failureKind).toBeUndefined()
+  // Browser must have been cleanly closed after the drive
+  expect(browserClosed).toBe(true)
 })
