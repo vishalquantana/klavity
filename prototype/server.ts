@@ -76,7 +76,7 @@ const OPS_DAILY_CAP_USD = Number(process.env.OPS_DAILY_CAP_USD || 50)
 const SITE = import.meta.dir + "/../site"
 const PUB = import.meta.dir + "/public"
 const REPO_ROOT = import.meta.dir + "/.."
-const SESSION_DAYS = 7
+const SESSION_DAYS = 90 // 90-day sessions — matches projectCookie precedent in lib/auth.ts
 // Screenshots embedded in external tracker tickets use a PERMANENT signed link (`/img/<id>.<hmac>`,
 // see lib/imgsign.ts) — never expires, revocable, S3 stays private. (Replaces the old 7-day presign.)
 
@@ -4322,7 +4322,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // Returns the current session ID as a Bearer token — the extension uses this to sync sims.
       if (req.method === "GET" && path === "/api/extension-token") {
         // M2: mint a dedicated, revocable ext_ token bound to the session's user instead of handing the
-        // raw 7-day session id to the extension. A leaked ext_ token is narrow-scope and revocable; a
+        // raw session id to the extension. A leaked ext_ token is narrow-scope and revocable; a
         // leaked session id is full account access.
         const sid = parseCookies(req.headers.get("cookie"))["klav_session"]
         if (!sid) return json({ error: "No session." }, 401)
