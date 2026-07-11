@@ -52,10 +52,13 @@ const GH_FID = `fb_gh_${ts}`
 const PLANE_FID = `fb_plane_${ts}`
 const JIRA_FID = `fb_jira_${ts}`
 const LINEAR_FID = `fb_linear_${ts}`
+// notify-on-fix: a feedback with contact_email so the fixed-notification path is exercised.
+const NOTIFY_FID = `fb_notify_${ts}`
 await rawExec(`INSERT INTO feedback (id, project_id, observation, priority, status, created_at) VALUES (?, ?, ?, ?, ?, ?)`, [GH_FID, PROJECT_ID, "GH-linked bug", "high", "open", NOW])
 await rawExec(`INSERT INTO feedback (id, project_id, observation, priority, status, created_at) VALUES (?, ?, ?, ?, ?, ?)`, [PLANE_FID, PROJECT_ID, "Plane-linked bug", "high", "open", NOW])
 await rawExec(`INSERT INTO feedback (id, project_id, observation, priority, status, created_at) VALUES (?, ?, ?, ?, ?, ?)`, [JIRA_FID, PROJECT_ID, "Jira-linked bug", "high", "open", NOW])
 await rawExec(`INSERT INTO feedback (id, project_id, observation, priority, status, created_at) VALUES (?, ?, ?, ?, ?, ?)`, [LINEAR_FID, PROJECT_ID, "Linear-linked bug", "high", "open", NOW])
+await rawExec(`INSERT INTO feedback (id, project_id, observation, priority, status, created_at) VALUES (?, ?, ?, ?, ?, ?)`, [NOTIFY_FID, PROJECT_ID, "Notify bug", "high", "open", NOW])
 
 const GH_SECRET = "gh-webhook-secret-xyz"
 const PLANE_SECRET = "plane-webhook-secret-abc"
@@ -146,6 +149,13 @@ beforeAll(async () => {
   const linearConn = (await linearRes.json()).connector
   await rawExec(`INSERT INTO ticket_exports (id, feedback_id, project_id, connector_id, type, external_key, external_url, status, error, created_at, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
     [`exp_linear_${ts}`, LINEAR_FID, PROJECT_ID, linearConn.id, "linear", "ENG-42", "https://linear.app/x/issue/ENG-42", "ok", null, NOW, ADMIN_EMAIL])
+
+  // notify-on-fix: reuse the GitHub connector; wire NOTIFY_FID to a distinct issue number.
+  // The server's applySchema will have added contact_email by now — set it directly.
+  await rawExec(`ALTER TABLE feedback ADD COLUMN IF NOT EXISTS contact_email TEXT`).catch(() => {/* already added by applySchema */})
+  await rawExec(`UPDATE feedback SET contact_email=? WHERE id=?`, ["reporter@test.local", NOTIFY_FID])
+  await rawExec(`INSERT INTO ticket_exports (id, feedback_id, project_id, connector_id, type, external_key, external_url, status, error, created_at, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    [`exp_notify_${ts}`, NOTIFY_FID, PROJECT_ID, ghConn.id, "github", "#777", "https://gh/issues/777", "ok", null, NOW, ADMIN_EMAIL])
 })
 
 afterAll(() => { serverProc?.kill(); rawClient.close() })
@@ -386,4 +396,37 @@ test("oversized body is rejected (413)", async () => {
     body: big,
   })
   expect(r.status).toBe(413)
+})
+
+// ── notify-on-fix: inbound done with contact_email ────────────────────────────
+
+test("github webhook: closing a ticket with contact_email triggers notify-on-fix path (status=done, 200)", async () => {
+  // Reset to open first.
+  await rawClient.execute({ sql: "UPDATE feedback SET status='open' WHERE id=?", args: [NOTIFY_FID] })
+
+  const payload = JSON.stringify({ action: "closed", issue: { number: 777, state: "closed" } })
+  const sig = await ghSign(GH_SECRET, payload)
+  const r = await fetch(`${BASE}/api/connectors/github/webhook`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Hub-Signature-256": sig, "X-GitHub-Event": "issues" },
+    body: payload,
+  })
+  expect(r.status).toBe(200)
+  // Status must be updated to done — notify-on-fix fires fire-and-forget (no SendGrid in tests).
+  expect(await feedbackStatus(NOTIFY_FID)).toBe("done")
+  // contact_email must still be set (not erased by the webhook handler).
+  const row = await rawClient.execute({ sql: "SELECT contact_email FROM feedback WHERE id=?", args: [NOTIFY_FID] })
+  expect(String((row.rows[0] as any).contact_email)).toBe("reporter@test.local")
+})
+
+test("github webhook: reopening a notify ticket clears done → open (no notify-on-fix fired)", async () => {
+  const payload = JSON.stringify({ action: "reopened", issue: { number: 777, state: "open" } })
+  const sig = await ghSign(GH_SECRET, payload)
+  const r = await fetch(`${BASE}/api/connectors/github/webhook`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Hub-Signature-256": sig },
+    body: payload,
+  })
+  expect(r.status).toBe(200)
+  expect(await feedbackStatus(NOTIFY_FID)).toBe("open")
 })

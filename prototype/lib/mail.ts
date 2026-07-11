@@ -132,6 +132,46 @@ export async function sendLeadAlert(to: string, lead: { email: string; descripti
   if (!res.ok) throw new Error(`SendGrid ${res.status}: ${(await res.text()).slice(0, 200)}`)
 }
 
+// notify-on-fix: sent to the bug reporter (contact_email) when their ticket is marked done/fixed
+// (either by an inbound connector webhook or a manual status change).
+export async function sendFixedNotification(
+  to: string,
+  ticket: { title: string; projectName: string; ticketUrl: string },
+) {
+  const key = process.env.SENDGRID_API_KEY
+  const from = process.env.KLAV_MAIL_FROM || "klav@quantana.com.au"
+  if (!key) throw new Error("SENDGRID_API_KEY not set")
+  const esc = (s: string) => s.replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c] as string))
+  const subject = `Fixed: ${ticket.title}`
+  const text = [
+    `Your bug report on ${ticket.projectName} has been marked as fixed.`,
+    "",
+    `"${ticket.title}"`,
+    "",
+    `View the ticket: ${ticket.ticketUrl}`,
+  ].join("\n")
+  const f = "font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif"
+  const html = `<div style="${f};color:#1d1d24;max-width:560px">
+  <p style="margin:0 0 12px;font-size:15px">Your bug report on <b>${esc(ticket.projectName)}</b> has been marked as fixed.</p>
+  <div style="border:1px solid #e6e4ff;background:#f7f6ff;border-radius:10px;padding:14px 16px;margin:0 0 16px">
+    <p style="margin:0;font-size:14px;color:#3f3a52">${esc(ticket.title)}</p>
+  </div>
+  <p style="margin:16px 0 0"><a href="${esc(ticket.ticketUrl)}" style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:10px 18px;border-radius:8px">View ticket</a></p>
+  <p style="margin:18px 0 0;font-size:11px;color:#b6b3c0">Sent by Klavity when a bug you reported is resolved.</p>
+</div>`
+  const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      personalizations: [{ to: [{ email: to }] }],
+      from: { email: from, name: "Klavity" },
+      subject,
+      content: [{ type: "text/plain", value: text }, { type: "text/html", value: html }],
+    }),
+  })
+  if (!res.ok) throw new Error(`SendGrid ${res.status}: ${(await res.text()).slice(0, 200)}`)
+}
+
 export type TicketAssignmentEmail = {
   to: string
   ticketTitle: string

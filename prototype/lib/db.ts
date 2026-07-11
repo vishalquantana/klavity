@@ -3383,8 +3383,7 @@ export async function feedbackById(projectId: string, id: string): Promise<any |
     recurrenceDatesJson: x.recurrence_dates_json != null ? String(x.recurrence_dates_json) : null,
     lastSeenAt: x.last_seen_at != null ? Number(x.last_seen_at) : null,
     clientContext: x.client_context_json != null ? safeJsonParse(x.client_context_json) : null,
-    // KLA-200: human-readable sequential number
-    seqNum: x.seq_num != null ? Number(x.seq_num) : null,
+    contactEmail: x.contact_email != null ? String(x.contact_email) : null,
   }
 }
 
