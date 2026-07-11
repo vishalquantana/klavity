@@ -37,6 +37,13 @@ export function cookie(name: string, val: string, maxAge: number, secure: boolea
 export function clearCookie(name: string, secure: boolean): string {
   return `${name}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure ? "; Secure" : ""}`
 }
+// KLAVITYKLA-299: non-HttpOnly cookie for the user's last-selected project.
+// Not HttpOnly so the client JS can also read it for same-tab consistency; the
+// server reads it as a fallback when no ?project= param is supplied.
+// Max-Age = 90 days (matches typical session lifetime expectation).
+export function projectCookie(projectId: string, secure: boolean): string {
+  return `klav_proj=${encodeURIComponent(projectId)}; Path=/; SameSite=Lax; Max-Age=${90 * 86400}${secure ? "; Secure" : ""}`
+}
 export function parseCookies(header: string | null): Record<string, string> {
   const out: Record<string, string> = {}
   ;(header || "").split(";").forEach((p) => {
