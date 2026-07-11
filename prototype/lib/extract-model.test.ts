@@ -26,54 +26,72 @@ test("getExtractModel uses any arbitrary model string from env", () => {
 })
 
 // ── EXTRACT_SYS v3 content assertions ────────────────────────────────────────
-// Read the server source as raw text and assert key clauses are present.
-// Strings are matched against the escaped form as they appear in the TS source file.
+// The canonical EXTRACT_SYS prompt now lives in lib/extract-pipeline.ts (single
+// source of truth for both /api/extract and /api/transcripts). Read the pipeline
+// source for the source-level assertions; also import the live constant to verify
+// the actual runtime string.
 
-const serverSrc = await Bun.file(new URL("../server.ts", import.meta.url)).text()
+import { EXTRACT_SYS } from "./extract-pipeline"
+const pipelineSrc = await Bun.file(new URL("./extract-pipeline.ts", import.meta.url)).text()
 
 test("EXTRACT_SYS v3: contains simClass classification clause", () => {
-  expect(serverSrc).toContain("simClass")
-  // TS source has escaped quotes: \"client\"
-  expect(serverSrc).toContain("evaluates OVERALL outcomes")
-  expect(serverSrc).toContain("actually OPERATES the product")
+  expect(EXTRACT_SYS).toContain("simClass")
+  expect(EXTRACT_SYS).toContain("evaluates OVERALL outcomes")
+  expect(EXTRACT_SYS).toContain("actually OPERATES the product")
 })
 
 test("EXTRACT_SYS v3: contains scope enum clause (ui|feature|workflow|strategy)", () => {
-  expect(serverSrc).toContain("scope: ui | feature | workflow | strategy")
+  expect(EXTRACT_SYS).toContain("scope: ui | feature | workflow | strategy")
 })
 
 test("EXTRACT_SYS v3: contains portability clause", () => {
-  expect(serverSrc).toContain("portability")
-  expect(serverSrc).toContain("portable")
-  expect(serverSrc).toContain("site-specific")
+  expect(EXTRACT_SYS).toContain("portability")
+  expect(EXTRACT_SYS).toContain("portable")
+  expect(EXTRACT_SYS).toContain("site-specific")
 })
 
 test("EXTRACT_SYS v3: contains sarcasm/negation TONE clause", () => {
-  expect(serverSrc).toContain("TONE - sarcasm, irony, and negation")
-  expect(serverSrc).toContain("Do NOT emit a love insight for clearly sarcastic praise")
-  expect(serverSrc).toContain("Resolve negation to the actual complaint")
+  expect(EXTRACT_SYS).toContain("TONE - sarcasm, irony, and negation")
+  expect(EXTRACT_SYS).toContain("Do NOT emit a love insight for clearly sarcastic praise")
+  expect(EXTRACT_SYS).toContain("Resolve negation to the actual complaint")
 })
 
 test("EXTRACT_SYS v3: contains portable CORE fields (watchFor, temperament, goals)", () => {
-  expect(serverSrc).toContain("watchFor")
-  expect(serverSrc).toContain("temperament")
-  expect(serverSrc).toContain("jobs-to-be-done")
+  expect(EXTRACT_SYS).toContain("watchFor")
+  expect(EXTRACT_SYS).toContain("temperament")
+  expect(EXTRACT_SYS).toContain("jobs-to-be-done")
 })
 
-// ── sanitizeTypedFields new enum declarations ─────────────────────────────────
+// ── sanitizeInsight enum declarations in extract-sanitize.ts ────────────────���
+// SCOPE_ENUM and PORTABILITY_ENUM now live in lib/extract-sanitize.ts.
 
-test("server.ts declares SCOPE_ENUM with all four v3 values", () => {
-  expect(serverSrc).toContain("SCOPE_ENUM")
-  expect(serverSrc).toContain('"ui"')
-  expect(serverSrc).toContain('"feature"')
-  expect(serverSrc).toContain('"workflow"')
-  expect(serverSrc).toContain('"strategy"')
+const sanitizeSrc = await Bun.file(new URL("./extract-sanitize.ts", import.meta.url)).text()
+
+test("extract-sanitize.ts declares SCOPE_ENUM with all four v3 values", () => {
+  expect(sanitizeSrc).toContain("SCOPE_ENUM")
+  expect(sanitizeSrc).toContain('"ui"')
+  expect(sanitizeSrc).toContain('"feature"')
+  expect(sanitizeSrc).toContain('"workflow"')
+  expect(sanitizeSrc).toContain('"strategy"')
 })
 
-test("server.ts declares PORTABILITY_ENUM with portable and site-specific", () => {
-  expect(serverSrc).toContain("PORTABILITY_ENUM")
-  expect(serverSrc).toContain('"portable"')
-  expect(serverSrc).toContain('"site-specific"')
+test("extract-sanitize.ts declares PORTABILITY_ENUM with portable and site-specific", () => {
+  expect(sanitizeSrc).toContain("PORTABILITY_ENUM")
+  expect(sanitizeSrc).toContain('"portable"')
+  expect(sanitizeSrc).toContain('"site-specific"')
+})
+
+// Smoke check: server.ts still references EXTRACT_SYS_PROMPT (the import alias) so
+// both entry points go through the shared pipeline.
+const serverSrc = await Bun.file(new URL("../server.ts", import.meta.url)).text()
+
+test("server.ts imports EXTRACT_SYS from lib/extract-pipeline (unified prompt)", () => {
+  expect(serverSrc).toContain("EXTRACT_SYS_PROMPT")
+  expect(serverSrc).toContain("extract-pipeline")
+})
+
+test("server.ts uses normalizeExtractedPersonas for both entry points", () => {
+  expect(serverSrc).toContain("normalizeExtractedPersonas")
 })
 
 // ── sanitizeTypedFields runtime behaviour ────────────────────────────────────
