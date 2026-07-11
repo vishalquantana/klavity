@@ -42,6 +42,40 @@ test('onboarding.html keeps code input id', () => {
   expect(loadSite('../site/onboarding.html')).toContain('id="code"');
 });
 
+// ── KLAVITYKLA-291: persist aha personas ─────────────────────────────────────
+// Verify that the onboarding.html JS stashes aha personas and persists them
+// after sign-in — checked by scanning the source for the key symbols.
+
+test('onboarding.html stashes aha personas in window._ahaPersonas after uhShowPersonas', () => {
+  const src = loadSite('onboarding.html')
+  expect(src).toContain('window._ahaPersonas = personas')
+})
+
+test('onboarding.html defines persistAhaPersonas function', () => {
+  const src = loadSite('onboarding.html')
+  expect(src).toContain('async function persistAhaPersonas(')
+})
+
+test('onboarding.html calls persistAhaPersonas inside applyProjectName', () => {
+  const src = loadSite('onboarding.html')
+  // Both must appear; the call must come AFTER function definition
+  const defIdx = src.indexOf('async function persistAhaPersonas(')
+  const callIdx = src.indexOf('persistAhaPersonas()')
+  expect(defIdx).toBeGreaterThanOrEqual(0)
+  expect(callIdx).toBeGreaterThan(defIdx)
+})
+
+test('onboarding.html persistAhaPersonas posts to /api/personas with project param', () => {
+  const src = loadSite('onboarding.html')
+  // Must POST to /api/personas with the project query param
+  expect(src).toContain('/api/personas?project=')
+})
+
+test('onboarding.html persistAhaPersonas consumes _ahaPersonas once to prevent double-persist', () => {
+  const src = loadSite('onboarding.html')
+  expect(src).toContain('window._ahaPersonas = null')
+})
+
 test('dashboard.html keeps data-go=overview', () => {
   expect(loadPublic('../public/dashboard.html')).toContain('data-go="overview"');
 });

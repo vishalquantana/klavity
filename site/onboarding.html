@@ -591,6 +591,8 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     if(typeof window.klavPreviewReact === 'function'){
       try{ window.klavPreviewReact(url, personas) }catch(e){}
     }
+    // Stash for persist-after-sign-in (KLAVITYKLA-291): applyProjectName() will read this.
+    window._ahaPersonas = personas
   }
 
   window.uhFetch = async function(){
@@ -773,6 +775,22 @@ async function verifyCode(){
   finally { btn.disabled = false; btn.textContent = 'Verify & create →' }
 }
 
+// Persist aha personas (generated in the hero URL step) into the newly-created project.
+// Called fire-and-forget after projectId is resolved. Best-effort — never blocks the flow.
+// Uses the POST /api/personas dedup guard so re-running onboarding never creates duplicates.
+async function persistAhaPersonas(){
+  const ps = window._ahaPersonas
+  if (!projectId || !ps || !ps.length) return
+  window._ahaPersonas = null // consume once; prevent double-persist
+  for (var i = 0; i < ps.length; i++) {
+    try {
+      await jsonFetch('/api/personas?project=' + encodeURIComponent(projectId), {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(ps[i])
+      })
+    } catch(e) { /* best-effort per-persona */ }
+  }
+}
+
 // Find the user's default project and rename it to the chosen name (best-effort — never blocks the flow).
 async function applyProjectName(){
   const name = $('projectName').value.trim()
@@ -781,6 +799,7 @@ async function applyProjectName(){
     if (!ok || !data.projects || !data.projects.length) return
     projectId = (data.projects.filter(p => p.role === 'admin').pop() || data.projects[0]).id
     renderWidgetSnippet()
+    persistAhaPersonas().catch(function(){}) // fire-and-forget: persists aha personas into the new project
     if (name) {
       await jsonFetch('/api/projects/' + encodeURIComponent(projectId) + '/rename', {
         method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ name })
