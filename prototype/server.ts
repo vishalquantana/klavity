@@ -39,7 +39,7 @@ import { trailsDashboardData, walkTrends } from "./lib/trails-dashboard"
 import { fileFindingById, dismissFinding, realFiler } from "./lib/trails-findings-gate"
 import { getReplay, runsWithReplay } from "./lib/trails-replay"
 import { saveFeedbackReplay, getFeedbackReplay, feedbackIdsWithReplay, pruneOldFeedbackReplays } from "./lib/feedback-replay"
-import { listRunSteps, listTrails, getTrail, getWalk, setTrailStatus, listTrailSteps, insertAssertStep, deleteTrailStep, updateTrailStep, updateTrail, countRunSteps, countTrailSteps, listTrailRunHistory, listFindings, recordFinding, getWalkJudgment, type TrailPatch, resumeWalk, listWalksPaged } from "./lib/trails"
+import { listRunSteps, listTrails, getTrail, getWalk, setTrailStatus, listTrailSteps, insertAssertStep, deleteTrailStep, updateTrailStep, updateTrail, countRunSteps, countTrailSteps, listTrailRunHistory, listFindings, recordFinding, getWalkJudgment, type TrailPatch, type StepPatch, resumeWalk, listWalksPaged } from "./lib/trails"
 import { runWalkNow } from "./lib/trails-trigger"
 import { startTrailScheduler, isValidCron } from "./lib/trails-scheduler"
 import { startCrashReaper } from "./lib/trails-reaper"
@@ -53,7 +53,7 @@ import { seedDemoTrails } from "./lib/trails-demo-seed"
 import { listExpectations, getExpectation, setExpectationStatus, setExpectationEnforced } from "./lib/expectations-db"
 import { createLabel, listLabels, updateLabel, deleteLabel, attachLabel, detachLabel, labelsForFeedback, labelsForFeedbackBatch, setSuggestedLabels, getSuggestedLabels } from "./lib/db"
 import { suggestLabelsForFeedback } from "./lib/label-suggest"
-import { validateAssertionDraft } from "./lib/assertion-spec"
+import { validateAssertionDraft, normalizeCheckpointInput } from "./lib/assertion-spec"
 import { buildRecurrenceMemory, listProjectRecurringIssues } from "./lib/recurrence-memory"
 import { publishBlogPost, SLUG_RE, type PublishInput } from "./lib/blog-publish"
 import { getExtractModel } from "./lib/extract-model"
@@ -3432,7 +3432,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (!draft) return json({ error: "invalid draft" }, 400)
         const trail = await getTrail(projE.id, draft.trailId)
         if (!trail) return json({ error: "trail not found" }, 422)
-        const stepId = await insertAssertStep(projE.id, draft.trailId, draft.afterStepIdx, draft.target, draft.checkpoint.description)
+        const stepId = await insertAssertStep(projE.id, draft.trailId, draft.afterStepIdx, draft.target, draft.checkpoint)
         await setExpectationEnforced(db!, id, stepId)
         return json({ stepId })
       }
@@ -3883,7 +3883,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         }
       }
 
-      // PATCH /api/trails/:id/steps/:stepId — edit a draft trail step's actionValue or checkpoint description.
+      // PATCH /api/trails/:id/steps/:stepId — edit a draft trail step's actionValue or checkpoint.
+      // KLA-244: the checkpoint accepts all 5 kinds (visible / textEquals / textContains /
+      // urlMatches / elementCount) so an edited guard round-trips its full assertion, not just
+      // a description. A bare {description} stays valid (persisted as a "visible" checkpoint).
       {
         const mPatch = path.match(/^\/api\/trails\/([^/]+)\/steps\/([^/]+)$/)
         if (req.method === "PATCH" && mPatch) {
@@ -3892,12 +3895,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (trail.status !== "draft") return json({ error: "Trail is not a draft" }, 409)
           const body = await req.json().catch(() => null)
           if (!body || typeof body !== "object") return json({ error: "Invalid body" }, 400)
-          const patch: { actionValue?: string | null; checkpoint?: { description: string } | null } = {}
+          const patch: StepPatch = {}
           if ("actionValue" in body) patch.actionValue = typeof body.actionValue === "string" ? body.actionValue : (body.actionValue == null ? null : undefined)
           if ("checkpoint" in body) {
-            if (body.checkpoint == null) patch.checkpoint = null
-            else if (typeof body.checkpoint === "object" && typeof (body.checkpoint as any).description === "string") patch.checkpoint = { description: (body.checkpoint as any).description }
-            else return json({ error: "checkpoint must be null or {description}" }, 400)
+            const cpIn = (body as any).checkpoint
+            if (cpIn == null) patch.checkpoint = null
+            else if (typeof cpIn === "object" && typeof cpIn.description === "string") {
+              const cp = normalizeCheckpointInput(cpIn)
+              if (!cp) return json({ error: "invalid checkpoint" }, 400)
+              patch.checkpoint = cp
+            }
+            else return json({ error: "checkpoint must be null or a checkpoint object with a description" }, 400)
           }
           if (Object.keys(patch).length === 0) return json({ error: "Nothing to patch" }, 400)
           const updated = await updateTrailStep(projectId, mPatch[2], patch)

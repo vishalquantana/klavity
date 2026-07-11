@@ -1,5 +1,5 @@
 import { db } from "./db"
-import type { Trail, TrailEnvironment, TrailStep, TrailStatus, StepAction, Fingerprint, TrailViewport } from "./trails-types"
+import type { Trail, TrailEnvironment, TrailStep, TrailStatus, StepAction, Fingerprint, TrailViewport, Checkpoint } from "./trails-types"
 import { computeFindingSeverity } from "./trails-findings-severity"
 import { normalizeTrailViewport, parseTrailViewportJson } from "./trails-viewport"
 
@@ -128,7 +128,7 @@ function rowToStep(r: any): TrailStep {
   return {
     id: r.id, trailId: r.trail_id, projectId: r.project_id, idx: Number(r.idx),
     action: r.action as StepAction, actionValue: r.action_value ?? null,
-    target: pj<Fingerprint>(r.target_json), checkpoint: pj<{ description: string }>(r.checkpoint_json),
+    target: pj<Fingerprint>(r.target_json), checkpoint: pj<Checkpoint>(r.checkpoint_json),
     createdAt: Number(r.created_at),
     ...(r.timeout_ms != null ? { timeoutMs: Number(r.timeout_ms) } : {}),
   }
@@ -143,7 +143,7 @@ async function bumpStepVersion(projectId: string, trailId: string): Promise<void
 
 export async function addTrailStep(
   projectId: string, trailId: string,
-  input: { idx: number; action: StepAction; actionValue?: string; target?: Fingerprint; checkpoint?: { description: string }; timeoutMs?: number },
+  input: { idx: number; action: StepAction; actionValue?: string; target?: Fingerprint; checkpoint?: Checkpoint; timeoutMs?: number },
 ): Promise<string> {
   const id = uid("tstep_")
   await db!.execute({
@@ -569,13 +569,20 @@ export async function setFindingConnectorError(projectId: string, id: string, er
 // Insert an assert-type trail step at afterStepIdx+1. Returns the new "ts_"-prefixed step id.
 // Used by the enforce/confirm graduation endpoint to crystallize a validated expectation into a
 // deterministic Playwright assertion in an existing Trail.
+// `checkpoint` accepts either the full Checkpoint (any of the 5 kinds — visible / textEquals /
+// textContains / urlMatches / elementCount) or, for backward compatibility with older callers,
+// a bare description string (persisted as a "visible" checkpoint). KLA-244: all 5 kinds now
+// round-trip through checkpoint_json instead of being flattened to "visible".
 export async function insertAssertStep(
   projectId: string,
   trailId: string,
   afterStepIdx: number,
   target: Record<string, string>,
-  description: string,
+  checkpoint: Checkpoint | string,
 ): Promise<string> {
+  const cp: Checkpoint = typeof checkpoint === "string"
+    ? { kind: "visible", description: checkpoint }
+    : { kind: "visible", ...checkpoint }
   const id = "ts_" + crypto.randomUUID()
   await db!.execute({
     sql: `UPDATE trail_steps SET idx = idx + 1 WHERE project_id=? AND trail_id=? AND idx >= ?`,
@@ -585,7 +592,7 @@ export async function insertAssertStep(
     sql: `INSERT INTO trail_steps (id, trail_id, project_id, idx, action, action_value, target_json, checkpoint_json, created_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [id, trailId, projectId, afterStepIdx + 1, "assert", null,
-           JSON.stringify(target), JSON.stringify({ kind: "visible", description }), Date.now()],
+           JSON.stringify(target), JSON.stringify(cp), Date.now()],
   })
   await bumpStepVersion(projectId, trailId)
   return id
@@ -597,7 +604,7 @@ export async function deleteTrailStep(projectId: string, stepId: string): Promis
   if (r.rows.length) await bumpStepVersion(projectId, String((r.rows[0] as any).trail_id))
 }
 
-export type StepPatch = { actionValue?: string | null; checkpoint?: { description: string } | null }
+export type StepPatch = { actionValue?: string | null; checkpoint?: Checkpoint | null }
 
 export async function updateTrailStep(projectId: string, stepId: string, patch: StepPatch): Promise<boolean> {
   const r = await db!.execute({ sql: `SELECT * FROM trail_steps WHERE id=? AND project_id=?`, args: [stepId, projectId] })
