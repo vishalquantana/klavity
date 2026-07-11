@@ -637,6 +637,29 @@ export async function applySchema(c: Client) {
      )`,
     `CREATE INDEX IF NOT EXISTS psm_proj_status_idx ON pending_sim_matches (project_id, status, created_at)`,
     `CREATE INDEX IF NOT EXISTS psm_transcript_idx ON pending_sim_matches (transcript_id)`,
+    // ── KLA-254: Scheduled Sim reviews — one row per per-project review schedule.
+    // frequency: 'daily' | 'weekly' (v1 simple cadence — use cron for advanced scheduling).
+    // target_url: the URL to screenshot + review on each tick.
+    // sim_ids_json: JSON array of persona IDs to run, or NULL = all project Sims.
+    // next_run_at: epoch ms of the next due tick; updated by the runner after each fire.
+    // last_run_at: epoch ms of the last successful fire (NULL = never run).
+    // enabled: 0 = paused, 1 = active.
+    // created_by: email of the user who created the schedule.
+    `CREATE TABLE IF NOT EXISTS sim_review_schedules (
+       id TEXT PRIMARY KEY,
+       project_id TEXT NOT NULL,
+       target_url TEXT NOT NULL,
+       frequency TEXT NOT NULL DEFAULT 'daily',   -- daily | weekly
+       sim_ids_json TEXT,                          -- NULL = all project Sims
+       enabled INTEGER NOT NULL DEFAULT 1,
+       next_run_at INTEGER NOT NULL,
+       last_run_at INTEGER,
+       created_by TEXT NOT NULL,
+       created_at INTEGER NOT NULL,
+       updated_at INTEGER NOT NULL
+     )`,
+    `CREATE INDEX IF NOT EXISTS srs_proj_idx ON sim_review_schedules (project_id, enabled, next_run_at)`,
+    `CREATE INDEX IF NOT EXISTS srs_due_idx ON sim_review_schedules (enabled, next_run_at)`,
   ]
   for (const s of stmts) await c.execute(s)
 
@@ -4098,6 +4121,129 @@ export async function rejectPendingSimMatch(projectId: string, id: string, resol
     sql: `UPDATE pending_sim_matches SET status='rejected', chosen_sim_id=NULL, resolved_by=?, updated_at=?
           WHERE id=? AND project_id=? AND status='pending'`,
     args: [resolvedBy, now, id, projectId],
+  })
+  return (r.rowsAffected ?? 0) > 0
+}
+
+// ── KLA-254: sim_review_schedules — per-project recurring Sim review schedules ─────────────
+// frequency: 'daily' | 'weekly'. next_run_at is advanced by the runner after each fire.
+
+export type SimReviewScheduleFrequency = "daily" | "weekly"
+
+export type SimReviewScheduleRow = {
+  id: string
+  projectId: string
+  targetUrl: string
+  frequency: SimReviewScheduleFrequency
+  simIds: string[] | null   // null = all project Sims
+  enabled: boolean
+  nextRunAt: number
+  lastRunAt: number | null
+  createdBy: string
+  createdAt: number
+  updatedAt: number
+}
+
+function rowToSimReviewSchedule(x: any): SimReviewScheduleRow {
+  let simIds: string[] | null = null
+  try { simIds = x.sim_ids_json ? JSON.parse(String(x.sim_ids_json)) : null } catch { simIds = null }
+  return {
+    id: String(x.id),
+    projectId: String(x.project_id),
+    targetUrl: String(x.target_url),
+    frequency: (String(x.frequency || "daily")) as SimReviewScheduleFrequency,
+    simIds,
+    enabled: Number(x.enabled) !== 0,
+    nextRunAt: Number(x.next_run_at),
+    lastRunAt: x.last_run_at != null ? Number(x.last_run_at) : null,
+    createdBy: String(x.created_by),
+    createdAt: Number(x.created_at),
+    updatedAt: Number(x.updated_at),
+  }
+}
+
+/** Compute next_run_at from a base timestamp and a frequency. */
+export function nextRunAfter(baseMs: number, frequency: SimReviewScheduleFrequency): number {
+  const ONE_DAY_MS = 24 * 60 * 60 * 1000
+  const ONE_WEEK_MS = 7 * ONE_DAY_MS
+  return baseMs + (frequency === "weekly" ? ONE_WEEK_MS : ONE_DAY_MS)
+}
+
+export async function createSimReviewSchedule(input: {
+  projectId: string
+  targetUrl: string
+  frequency: SimReviewScheduleFrequency
+  simIds?: string[] | null
+  createdBy: string
+  firstRunAt?: number
+}): Promise<SimReviewScheduleRow> {
+  const id = "srs_" + crypto.randomUUID()
+  const now = Date.now()
+  const nextRunAt = input.firstRunAt ?? now   // default: due immediately (first run ASAP)
+  await db!.execute({
+    sql: `INSERT INTO sim_review_schedules
+            (id, project_id, target_url, frequency, sim_ids_json, enabled, next_run_at, last_run_at, created_by, created_at, updated_at)
+          VALUES (?,?,?,?,?,1,?,NULL,?,?,?)`,
+    args: [
+      id, input.projectId, input.targetUrl, input.frequency,
+      input.simIds != null ? JSON.stringify(input.simIds) : null,
+      nextRunAt, input.createdBy, now, now,
+    ],
+  })
+  return {
+    id, projectId: input.projectId, targetUrl: input.targetUrl, frequency: input.frequency,
+    simIds: input.simIds ?? null, enabled: true, nextRunAt, lastRunAt: null,
+    createdBy: input.createdBy, createdAt: now, updatedAt: now,
+  }
+}
+
+export async function listSimReviewSchedules(projectId: string): Promise<SimReviewScheduleRow[]> {
+  const r = await db!.execute({
+    sql: "SELECT * FROM sim_review_schedules WHERE project_id=? ORDER BY created_at DESC",
+    args: [projectId],
+  })
+  return r.rows.map(rowToSimReviewSchedule)
+}
+
+/** Fetch all enabled schedules whose next_run_at <= nowMs (across ALL projects). */
+export async function listDueSimReviewSchedules(nowMs: number): Promise<SimReviewScheduleRow[]> {
+  const r = await db!.execute({
+    sql: "SELECT * FROM sim_review_schedules WHERE enabled=1 AND next_run_at<=? ORDER BY next_run_at ASC",
+    args: [nowMs],
+  })
+  return r.rows.map(rowToSimReviewSchedule)
+}
+
+export async function getSimReviewSchedule(projectId: string, id: string): Promise<SimReviewScheduleRow | null> {
+  const r = await db!.execute({
+    sql: "SELECT * FROM sim_review_schedules WHERE id=? AND project_id=?",
+    args: [id, projectId],
+  })
+  return r.rows.length ? rowToSimReviewSchedule(r.rows[0]) : null
+}
+
+/** Advance next_run_at + record last_run_at after a successful fire. */
+export async function touchSimReviewScheduleRan(id: string, ranAt: number, frequency: SimReviewScheduleFrequency): Promise<void> {
+  const now = Date.now()
+  await db!.execute({
+    sql: `UPDATE sim_review_schedules SET last_run_at=?, next_run_at=?, updated_at=? WHERE id=?`,
+    args: [ranAt, nextRunAfter(ranAt, frequency), now, id],
+  })
+}
+
+export async function setSimReviewScheduleEnabled(projectId: string, id: string, enabled: boolean): Promise<boolean> {
+  const now = Date.now()
+  const r = await db!.execute({
+    sql: "UPDATE sim_review_schedules SET enabled=?, updated_at=? WHERE id=? AND project_id=?",
+    args: [enabled ? 1 : 0, now, id, projectId],
+  })
+  return (r.rowsAffected ?? 0) > 0
+}
+
+export async function deleteSimReviewSchedule(projectId: string, id: string): Promise<boolean> {
+  const r = await db!.execute({
+    sql: "DELETE FROM sim_review_schedules WHERE id=? AND project_id=?",
+    args: [id, projectId],
   })
   return (r.rowsAffected ?? 0) > 0
 }
