@@ -356,11 +356,11 @@ test("GET /api/dashboard tickets include status, assignee, exports", async () =>
   expect(Array.isArray(ticket.exports)).toBe(true)
 })
 
-// ── Auto-copy hook fires exactly once (regression for the Plane double-file bug) ─
-// A local receiver counts the webhook POSTs the server subprocess sends. Filing one
-// feedback with a single auto_copy connector must produce exactly ONE export — if the
-// hook ever fires twice (or a legacy path double-files), hits/rows would be 2.
-test("auto-copy fires exactly once when filing feedback (no double-export)", async () => {
+// ── Auto-copy hook fires exactly once on triage-accept (regression for the Plane double-file bug) ─
+// KLA-282: auto-copy is now TRIAGE-GATED. Raw submit must NOT trigger it; only PATCH status→open does.
+// A local receiver counts the webhook POSTs the server subprocess sends. Triage-accepting one
+// feedback with a single auto_copy connector must produce exactly ONE export row.
+test("auto-copy fires exactly once on triage-accept (no double-export, not on raw submit)", async () => {
   let hits = 0
   const recv = Bun.serve({
     port: 0,
@@ -375,7 +375,7 @@ test("auto-copy fires exactly once when filing feedback (no double-export)", asy
     expect(cr.status).toBe(201)
     const cid = (await cr.json()).connector.id
 
-    // File a feedback → triggers the fire-and-forget auto-copy hook in POST /api/feedback.
+    // File a feedback — must NOT trigger auto-copy (triage-gated).
     const fd = new FormData()
     fd.set("description", `auto-copy regression ${ts}`)
     fd.set("project_id", PROJECT_ID)
@@ -385,11 +385,23 @@ test("auto-copy fires exactly once when filing feedback (no double-export)", asy
       body: fd,
     })
     expect(fr.ok).toBe(true)
+    const submitBody = await fr.json()
+    const fid = submitBody.id
 
-    // Wait for the fire-and-forget export row to land (≤3s).
+    // Immediately after submit: no export rows yet (raw submit is not the trigger).
+    await new Promise((r) => setTimeout(r, 500))
+    const earlyRows = (await rawClient.execute({ sql: "SELECT status FROM ticket_exports WHERE connector_id=?", args: [cid] })).rows
+    expect(earlyRows.length).toBe(0)
+    expect(hits).toBe(0)
+
+    // Triage-accept: PATCH status → open.
+    const pr = await api("PATCH", `/api/feedback/${fid}`, { status: "open" }, ADMIN_SID)
+    expect(pr.status).toBe(200)
+
+    // Wait for the fire-and-forget export row to land (≤4s).
     const rows = async () =>
       (await rawClient.execute({ sql: "SELECT status FROM ticket_exports WHERE connector_id=?", args: [cid] })).rows
-    for (let i = 0; i < 60 && (await rows()).length === 0; i++) await new Promise((r) => setTimeout(r, 50))
+    for (let i = 0; i < 80 && (await rows()).length === 0; i++) await new Promise((r) => setTimeout(r, 50))
     // Give any erroneous SECOND fire a chance to surface, then assert EXACTLY one.
     await new Promise((r) => setTimeout(r, 300))
     const landed = await rows()
@@ -399,14 +411,15 @@ test("auto-copy fires exactly once when filing feedback (no double-export)", asy
   } finally {
     recv.stop(true)
   }
-}, 10000)
+}, 14000)
 
 // ── Auto-copy to PLANE writes plane_issue_key/url back onto the feedback row ─────
 // Regression for the pipeline bug: connector auto-copy created the Plane issue + a ticket_exports
 // row, but never called updateFeedbackTracker, so feedback.plane_issue_key stayed NULL and the
-// dashboard never showed the report as filed. A fake Plane API returns {id, sequence_id}; after
-// filing feedback we assert (a) a ticket_exports ok row and (b) the row's plane_issue_key/url are set.
-test("auto-copy to Plane backfills feedback.plane_issue_key + plane_issue_url", async () => {
+// dashboard never showed the report as filed. KLA-282: auto-copy now fires on triage-accept
+// (PATCH status→open), not on raw submit. A fake Plane API returns {id, sequence_id}; after
+// triage-accepting the feedback we assert (a) a ticket_exports ok row and (b) plane_issue_key/url.
+test("auto-copy to Plane backfills feedback.plane_issue_key + plane_issue_url (triage-gated)", async () => {
   let hits = 0
   const plane = Bun.serve({
     port: 0,
@@ -424,7 +437,7 @@ test("auto-copy to Plane backfills feedback.plane_issue_key + plane_issue_url", 
     expect(cr.status).toBe(201)
     const cid = (await cr.json()).connector.id
 
-    // File a feedback → triggers the fire-and-forget auto-copy hook.
+    // File a feedback — must NOT trigger copy yet (triage-gated).
     const fd = new FormData()
     fd.set("description", `plane writeback ${ts}`)
     fd.set("project_id", PROJECT_ID)
@@ -434,11 +447,21 @@ test("auto-copy to Plane backfills feedback.plane_issue_key + plane_issue_url", 
       body: fd,
     })
     expect(fr.ok).toBe(true)
+    const submitBody = await fr.json()
+    const fid = submitBody.id
 
-    // Wait for the export row to land (≤4s).
+    // Verify no copy yet (raw submit must not trigger).
+    await new Promise((r) => setTimeout(r, 400))
+    expect(hits).toBe(0)
+
+    // Triage-accept: PATCH status → open. This is the trigger.
+    const pr = await api("PATCH", `/api/feedback/${fid}`, { status: "open" }, ADMIN_SID)
+    expect(pr.status).toBe(200)
+
+    // Wait for the export row to land (≤5s).
     const exRows = async () =>
       (await rawClient.execute({ sql: "SELECT status, external_key, feedback_id FROM ticket_exports WHERE connector_id=?", args: [cid] })).rows
-    for (let i = 0; i < 80 && (await exRows()).length === 0; i++) await new Promise((r) => setTimeout(r, 50))
+    for (let i = 0; i < 100 && (await exRows()).length === 0; i++) await new Promise((r) => setTimeout(r, 50))
     const landed = await exRows()
     expect(landed.length).toBe(1)
     expect(String(landed[0].status)).toBe("ok")
@@ -446,7 +469,6 @@ test("auto-copy to Plane backfills feedback.plane_issue_key + plane_issue_url", 
     expect(hits).toBe(1)
 
     // THE FIX: the feedback row now carries the Plane key/url (was NULL before).
-    const fid = String(landed[0].feedback_id)
     let fb: any
     for (let i = 0; i < 40; i++) {
       fb = (await rawClient.execute({ sql: "SELECT plane_issue_key, plane_issue_url FROM feedback WHERE id=?", args: [fid] })).rows[0]
@@ -458,4 +480,4 @@ test("auto-copy to Plane backfills feedback.plane_issue_key + plane_issue_url", 
   } finally {
     plane.stop(true)
   }
-}, 12000)
+}, 15000)
