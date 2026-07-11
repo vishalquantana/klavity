@@ -60,8 +60,9 @@ import { getExtractModel } from "./lib/extract-model"
 import { parseJSON } from "./lib/parse-json"
 import { createStripeCheckoutSession, createStripePortalSession, intervalFromLookupKey, normalizeInterval, planFromLookupKey, quotasForPlan, retrieveStripeSubscription, verifyStripeWebhook } from "./lib/billing"
 import { runAutosimAuthProbe } from "./lib/autosim-auth-probe"
-import { createAutosimAuthSetupToken, getAutosimAuthConfigEncrypted, getAutosimAuthProbe } from "./lib/db"
-import { generateAuthPrompt } from "./lib/autosim-auth-prompt"
+import { mintProjectShareToken, revokeProjectShareToken, resolveProjectShareToken, gatherProjectStatusData } from "./lib/project-status-portal"
+import { runDueSchedules, buildProductionDeps } from "./lib/sim-review-schedule"
+import { createSimReviewSchedule, listSimReviewSchedules, getSimReviewSchedule, deleteSimReviewSchedule, setSimReviewScheduleEnabled, type SimReviewScheduleFrequency } from "./lib/db"
 
 const KEY = process.env.OPENROUTER_API_KEY
 const MODEL = process.env.KLAV_MODEL || "google/gemini-2.5-flash"
@@ -5856,6 +5857,112 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           return json({ reaction, personaName: p?.name || null, usage })
         } catch (e: any) { return json(oops(e, "preview"), 500) }
       }
+
+      // ── KLA-254: Scheduled Sim reviews ─────────────────────────────────────────────────────────
+      //
+      // POST /api/projects/:projectId/sim-review-schedules
+      //   Body: { targetUrl, frequency: "daily"|"weekly", simIds?: string[], firstRunAt?: number }
+      //   Creates a schedule. Auth: cookie or Bearer; access-checks project ownership.
+      //
+      // GET  /api/projects/:projectId/sim-review-schedules
+      //   Lists all schedules for the project.
+      //
+      // DELETE /api/projects/:projectId/sim-review-schedules/:id
+      //   Deletes a schedule.
+      //
+      // PATCH /api/projects/:projectId/sim-review-schedules/:id
+      //   Body: { enabled: boolean }  — pause/resume a schedule.
+      //
+      // POST /api/sim-review-schedules/tick
+      //   Runs all due schedules immediately. Callable by an external cron, the trail
+      //   scheduler loop, or integration tests. Returns { ran: ScheduleRunResult[] }.
+      //   Auth: same cookie/Bearer as the caller; validates the user has access to
+      //   at least one project (prevents open invocation). For production wiring via
+      //   OS cron, protect this with a shared secret via X-Tick-Secret header.
+      //
+      // Implementation: POST + GET on /api/projects/:id/sim-review-schedules
+      const srsMatch = path.match(/^\/api\/projects\/([^/]+)\/sim-review-schedules(?:\/([^/]+))?$/)
+      if (srsMatch) {
+        const srsProjectId = srsMatch[1]
+        const srsScheduleId = srsMatch[2] ?? null
+        try {
+          const meSrs = (await sessionEmail(req)) || (await bearerEmail(req))
+          if (!meSrs) return json({ error: "Login required." }, 401)
+          const srsProj = await resolveProject(meSrs, srsProjectId)
+          if (!srsProj) return json({ error: "No accessible project found." }, 403)
+
+          if (req.method === "GET" && !srsScheduleId) {
+            const schedules = await listSimReviewSchedules(srsProj.id)
+            return json({ schedules })
+          }
+
+          if (req.method === "POST" && !srsScheduleId) {
+            const body = await req.json()
+            const targetUrl = String(body?.targetUrl || "").trim()
+            if (!targetUrl || !/^https?:\/\//i.test(targetUrl)) return json({ error: "targetUrl must be a valid https URL." }, 400)
+            const frequency: SimReviewScheduleFrequency = body?.frequency === "weekly" ? "weekly" : "daily"
+            const simIds: string[] | null = Array.isArray(body?.simIds) && body.simIds.length
+              ? body.simIds.map(String)
+              : null
+            const firstRunAt: number | undefined = typeof body?.firstRunAt === "number" ? body.firstRunAt : undefined
+            const schedule = await createSimReviewSchedule({
+              projectId: srsProj.id, targetUrl, frequency, simIds,
+              createdBy: meSrs, firstRunAt,
+            })
+            return json({ schedule }, 201)
+          }
+
+          if (req.method === "DELETE" && srsScheduleId) {
+            const deleted = await deleteSimReviewSchedule(srsProj.id, srsScheduleId)
+            if (!deleted) return json({ error: "Schedule not found." }, 404)
+            return json({ ok: true })
+          }
+
+          if (req.method === "PATCH" && srsScheduleId) {
+            const body = await req.json()
+            const existing = await getSimReviewSchedule(srsProj.id, srsScheduleId)
+            if (!existing) return json({ error: "Schedule not found." }, 404)
+            if (typeof body?.enabled === "boolean") {
+              await setSimReviewScheduleEnabled(srsProj.id, srsScheduleId, body.enabled)
+            }
+            const updated = await getSimReviewSchedule(srsProj.id, srsScheduleId)
+            return json({ schedule: updated })
+          }
+
+          return json({ error: "Method not allowed." }, 405)
+        } catch (e: any) { return json(oops(e, "sim-review-schedules"), 500) }
+      }
+
+      // POST /api/sim-review-schedules/tick — run all due schedules
+      if (req.method === "POST" && path === "/api/sim-review-schedules/tick") {
+        try {
+          const meTick = (await sessionEmail(req)) || (await bearerEmail(req))
+          if (!meTick) return json({ error: "Login required." }, 401)
+          // Caller must have at least one project — a light anti-abuse guard.
+          const tickProjects = await listProjects(meTick)
+          if (!tickProjects.length) return json({ error: "No projects found for this account." }, 403)
+
+          const storeScreenshot = async (bytes: Buffer, mediaType: string, projectId: string) => {
+            const expiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000
+            const upload = await uploadScreenshotMeta(bytes, mediaType, "private")
+            return insertScreenshot({
+              projectId, s3Key: upload.key, bucket: upload.bucket,
+              contentType: upload.contentType, acl: "private",
+              bytes: bytes.byteLength, ownerEmail: meTick, expiresAt,
+            })
+          }
+
+          const deps = buildProductionDeps(
+            (sim, b64, mt, pu) => reactToPage(sim, b64, mt, pu, { email: meTick }),
+            resolveCitations,
+            db ?? null,
+            storeScreenshot,
+          )
+          const ran = await runDueSchedules(deps)
+          return json({ ok: true, ran })
+        } catch (e: any) { return json(oops(e, "sim-review-schedules-tick"), 500) }
+      }
+
       // gated AI
       if (req.method === "POST" && path === "/api/extract") {
         try {
