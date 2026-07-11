@@ -333,15 +333,6 @@ async function mount() {
   // 'full': icon + "Report a bug" (default); 'custom': icon + admin-defined text.
   const reportBtn = document.createElement("button")
   reportBtn.className = "kl-launcher-btn"
-  if (launcherMode === 'icon') {
-    reportBtn.innerHTML = icon('bug')
-    reportBtn.style.cssText = `position:relative;border:0;border-radius:50%;padding:10px;background:${launcherIconColor};color:#fff;font-weight:600;font-size:13px;cursor:pointer;box-shadow:0 8px 24px rgba(91,91,240,.32);display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;pointer-events:auto`
-  } else {
-    const label = launcherMode === 'custom' ? launcherText : 'Report a bug'
-    reportBtn.innerHTML = `${icon('bug')} ${label}`
-    reportBtn.style.cssText = `position:relative;border:0;border-radius:999px;padding:10px 16px;background:${launcherIconColor};color:#fff;font-weight:600;font-size:13px;cursor:pointer;box-shadow:0 8px 24px rgba(91,91,240,.32);display:inline-flex;align-items:center;gap:7px;pointer-events:auto`
-  }
-  if (launcherMode === 'hidden') reportDock.style.display = "none"
   reportBtn.title = "Klavity is active on this page — right-click anywhere or click here to report"
   // ── Active/monitoring indicator: a small live green dot on the launcher so it's obvious Klavity is on. ──
   if (!root.getElementById("klavity-launcher-anim")) {
@@ -356,15 +347,47 @@ async function mount() {
       "@media (prefers-reduced-motion: reduce){.kl-active-dot{animation:none}.kl-launcher-btn{transition:none!important;transform:none!important;}}"
     root.appendChild(a)
   }
+  // The green "active" dot + red issue badge are children of the launcher button (absolutely
+  // positioned relative to it). paintLauncher() overwrites reportBtn.innerHTML, so we keep these
+  // as JS-owned nodes and re-append them after every repaint (see paintLauncher()).
   const activeDot = document.createElement("span")
   activeDot.className = "kl-active-dot"
   activeDot.setAttribute("aria-hidden", "true")
-  reportBtn.appendChild(activeDot)
   const issueBadge = document.createElement("span")
   issueBadge.className = "kl-issue-badge"
   issueBadge.setAttribute("aria-hidden", "true")
-  reportBtn.appendChild(issueBadge)
   _issueBadge = issueBadge
+
+  // Mobile watcher: on narrow/phone viewports, 'full' and 'custom' launchers collapse to icon-only
+  // (same 44×44 bug circle as 'icon' mode) while desktop keeps the full label. Live/responsive via
+  // matchMedia + a 'change' listener so rotation/resize re-renders. Guard matchMedia for non-DOM envs.
+  const mq: MediaQueryList = window.matchMedia
+    ? window.matchMedia('(max-width: 480px)')
+    : ({ matches: false, addEventListener() {}, removeEventListener() {} } as any)
+
+  // Paint the launcher's look (innerHTML + inline styles) from the *effective* mode. Called once at
+  // init and again on every matchMedia 'change'. Because innerHTML is overwritten each time, the
+  // green active-dot and issue-badge nodes are re-appended afterwards so they survive the repaint.
+  function paintLauncher() {
+    if (launcherMode === 'hidden') { reportDock.style.display = "none"; return }
+    reportDock.style.display = ""
+    // Effective mode: full/custom collapse to icon-only on mobile; icon stays icon.
+    const collapse = (launcherMode === 'full' || launcherMode === 'custom') && mq.matches
+    const effective = collapse ? 'icon' : launcherMode
+    if (effective === 'icon') {
+      reportBtn.innerHTML = icon('bug')
+      reportBtn.style.cssText = `position:relative;border:0;border-radius:50%;padding:10px;background:${launcherIconColor};color:#fff;font-weight:600;font-size:13px;cursor:pointer;box-shadow:0 8px 24px rgba(91,91,240,.32);display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;pointer-events:auto`
+    } else {
+      const label = launcherMode === 'custom' ? launcherText : 'Report a bug'
+      reportBtn.innerHTML = `${icon('bug')} ${label}`
+      reportBtn.style.cssText = `position:relative;border:0;border-radius:999px;padding:10px 16px;background:${launcherIconColor};color:#fff;font-weight:600;font-size:13px;cursor:pointer;box-shadow:0 8px 24px rgba(91,91,240,.32);display:inline-flex;align-items:center;gap:7px;pointer-events:auto`
+    }
+    // Re-attach the JS-owned indicator nodes wiped by the innerHTML overwrite.
+    reportBtn.appendChild(activeDot)
+    reportBtn.appendChild(issueBadge)
+  }
+  paintLauncher()
+  mq.addEventListener('change', paintLauncher)
   function openReport(type: "bug" | "feature" = "bug", opts?: { initialShot?: string; initialDescription?: string }) {
     if (composer && (composer.shadowRoot.host as HTMLElement | null)?.isConnected) return
     const identified = firstParty || !!getToken()  // already known to Klavity (own page session, or signed-in widget)
