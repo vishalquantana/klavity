@@ -448,6 +448,9 @@ body[data-view="recurring"] .grid>.card[data-view~="recurring"]{grid-column:1/-1
 .ri-count{font-family:var(--mono);font-size:10px;letter-spacing:.05em;padding:3px 9px;border-radius:20px;background:rgba(99,102,241,.12);color:var(--indigo)}
 .ri-meta{font-size:12px;color:var(--paper-faint);line-height:1.5}
 .ri-summary{font-size:12.5px;color:var(--paper-dim);font-style:italic;border-left:2px solid var(--line);padding-left:10px}
+.ri-ticket-link{font-family:var(--mono);font-size:10px;letter-spacing:.04em;padding:3px 8px;border-radius:20px;background:var(--ink-3);color:var(--paper-faint);text-decoration:none;display:inline-flex;align-items:center;gap:4px;transition:background var(--mi-dur) ease,color var(--mi-dur) ease,transform var(--mi-press-dur)}
+.ri-ticket-link:hover{background:rgba(99,102,241,.12);color:var(--indigo)}
+.ri-ticket-link:active{transform:scale(.97)}
 .ri-section-desc{font-size:13px;color:var(--paper-faint);margin:-10px 0 16px;line-height:1.5;max-width:620px}
 
 .card h2{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
@@ -2236,6 +2239,12 @@ function renderTriageItems(items) {
       await fetch("/api/feedback/" + encodeURIComponent(id), { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) }).catch(() => {})
       await refreshAll()
       renderTriage()
+    }
+    row.querySelector(".tg-accept").addEventListener("click", () => patch({ status: "open", priority: row.querySelector(".tg-pri").value }))
+    row.querySelector(".tg-dismiss").addEventListener("click", () => patch({ status: "dismissed" }))
+  })
+  loadTriageShots(host)
+}
 
 // ── Recurring Issues view — lazy-loaded when the tab is first activated ──
 let _recurringLoaded = false
@@ -2260,8 +2269,8 @@ async function renderRecurringIssues() {
       return
     }
     el.innerHTML = items.map(item => {
-      const sev = item.severity
-      const sevChip = sev ? `<span class="chip sev-${esc(sev)}">${esc(sev)}</span>` : ""
+      const pri = item.priority
+      const priChip = pri ? `<span class="chip sev-${esc(pri)}">${esc(pri)}</span>` : ""
       const regChip = item.regressed
         ? `<span class="ri-regression">${kicon('triangle-alert',{size:11})} Regression</span>`
         : ""
@@ -2277,10 +2286,13 @@ async function renderRecurringIssues() {
       if (item.regressed && item.resolvedAt) metaParts.push("resolved " + ago(item.resolvedAt) + " → resurfaced")
       if (item.citedSimName) metaParts.push("filed by " + esc(item.citedSimName))
       if (item.expectationStatus && item.expectationStatus !== "candidate") metaParts.push("expectation: " + esc(item.expectationStatus))
+      const ticketLink = item.feedbackId
+        ? `<a class="ri-ticket-link" href="#tickets" onclick="event.preventDefault();var nv=document.querySelector('.side .nv[data-go=\\'tickets\\']');if(nv)nv.click()" title="Open tickets view">${kicon('external-link',{size:11})} view ticket</a>`
+        : ""
       return `<div class="ri-item">
         <div class="ri-head">
           <div class="ri-title">${title}</div>
-          <div class="ri-chips">${regChip}${countChip}${sevChip}</div>
+          <div class="ri-chips">${regChip}${countChip}${priChip}${ticketLink}</div>
         </div>
         ${metaParts.length ? `<div class="ri-meta">${metaParts.join(" · ")}</div>` : ""}
         ${item.summary ? `<div class="ri-summary">${esc(item.summary)}</div>` : ""}
@@ -2289,13 +2301,6 @@ async function renderRecurringIssues() {
   } catch(e) {
     const el2 = $("recurringList"); if (el2) el2.innerHTML = `<div class="empty"><p>Couldn't load recurring issues.</p></div>`
   }
-}
-
-    }
-    row.querySelector(".tg-accept").addEventListener("click", () => patch({ status: "open", priority: row.querySelector(".tg-pri").value }))
-    row.querySelector(".tg-dismiss").addEventListener("click", () => patch({ status: "dismissed" }))
-  })
-  loadTriageShots(host)
 }
 // Lazy-load each thumbnail via the same short-lived signed link the Tickets view uses; click opens full size.
 function loadTriageShots(host) {
