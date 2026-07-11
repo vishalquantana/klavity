@@ -80,3 +80,4 @@ describe("buildFeedbackForm", () => {
     expect(fd2.get("replay_events")).toBeNull()
   })
 })
+
