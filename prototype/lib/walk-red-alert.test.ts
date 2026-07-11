@@ -103,4 +103,11 @@ describe("notifyWalkRed", () => {
     process.env.KLAV_BASE_URL = "https://klavity.in"
     await expect(notifyWalkRed(ctx)).resolves.toBeUndefined()
   })
+
+  test("no-op and no throw when KLAV_BASE_URL is legacy klavity.quantana.top and no webhook set", async () => {
+    delete process.env.SLACK_ALERT_WEBHOOK_URL
+    delete process.env.SLACK_SIGNUP_WEBHOOK_URL
+    process.env.KLAV_BASE_URL = "https://klavity.quantana.top"
+    await expect(notifyWalkRed(ctx)).resolves.toBeUndefined()
+  })
 })
