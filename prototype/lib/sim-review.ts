@@ -172,14 +172,21 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
     let simWithMemory: any = sim
     let citePre: { traits: Trait[]; eventsByTrait: Map<string, TraitEventRow[]> } | undefined
     try {
-      const allSimEvents: TraitEventRow[] = await listTraitEvents(sim.id, { projectId })
+      // Global Sims (is_global=1) are home-project-scoped for traits in v1: their traits and
+      // trait_events belong to their home project (sim.projectId), NOT the currently reviewed
+      // project (projectId). Using projectId for a global Sim from a sibling project would
+      // return zero traits (all filtered out), silently stripping the Sim's persona memory and
+      // producing empty/description-only reactions. Use sim.projectId as the trait scope so the
+      // Sim brings its full trait history regardless of which project it's reviewing. (KLAVITYKLA-257)
+      const traitScopeProjectId: string = sim.projectId ?? projectId
+      const allSimEvents: TraitEventRow[] = await listTraitEvents(sim.id, { projectId: traitScopeProjectId })
       const eventsByTrait = new Map<string, TraitEventRow[]>()
       for (const e of allSimEvents) {
         const arr = eventsByTrait.get(e.traitId) ?? []
         arr.push(e)
         eventsByTrait.set(e.traitId, arr)
       }
-      citePre = { traits: await listTraits(sim.id, { projectId }), eventsByTrait }
+      citePre = { traits: await listTraits(sim.id, { projectId: traitScopeProjectId }), eventsByTrait }
       const insights = Array.isArray(sim.insights) ? sim.insights : []
       const insightsWithMemory = insights.map((ins: any) => {
         const traitId = ins.traitId
