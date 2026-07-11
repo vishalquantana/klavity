@@ -114,6 +114,7 @@ body[data-view="recurring"] [data-view]:not([data-view~="recurring"]){display:no
 .pill.running,.pill.skip,.pill.skipped,.pill.missed{background:var(--ink-3);color:var(--paper-faint)}
 .pill.pill-draft{background:rgba(139,139,245,.14);color:var(--indigo)}
 .pill.paused{background:rgba(139,139,139,.15);color:var(--paper-faint)}
+.pill.needs_auth{background:rgba(217,131,36,.18);color:var(--amber)}
 .find{padding:15px 16px;background:var(--ink);border:1px solid var(--line);border-radius:14px}
 .find .top{display:flex;align-items:center;gap:10px;margin-bottom:8px}
 .find .kind{font-family:var(--mono);font-size:9px;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:20px;background:var(--ink-3);color:var(--paper-faint)}
@@ -1954,6 +1955,11 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           <div class="hb-stat hb-s-green" id="hbStatGreen" style="display:none"><span class="hb-n" id="hbGreen">0</span><span class="hb-k">Green</span></div>
           <div class="hb-stat" id="hbStatDraft" style="display:none"><span class="hb-n" id="hbDraft">0</span><span class="hb-k">Draft</span></div>
           <div class="hb-meta" id="hbMeta"></div>
+        </div>
+        <!-- AT2 needs-auth callout: shown when any recent walk is needs_auth (KLAVITYKLA-267) -->
+        <div id="needsAuthCallout" style="display:none;padding:12px 16px;background:rgba(217,131,36,.12);border:1px solid rgba(217,131,36,.3);border-radius:12px;margin-bottom:14px;display:none;align-items:center;gap:12px">
+          <span style="font-size:13.5px;color:#a15f00;flex:1"><b>Your Sims are waiting at the door.</b> One or more walks hit a login screen and paused. Give your Sims a key so they can keep exploring.</span>
+          <a id="needsAuthLink" href="/autosims/auth" style="flex-shrink:0;background:#d98324;color:#fff;font-size:12px;font-weight:700;padding:7px 14px;border-radius:9px;text-decoration:none;white-space:nowrap">Give it a key</a>
         </div>
         <!-- Precision banner: only shown when real precision data exists (not the dead '—' state) -->
         <div class="banner" id="precBanner" style="display:none">
@@ -7101,6 +7107,14 @@ load()
     }
     var walks=d.recentWalks||[];$("walksCount").textContent=String(walks.length)
     var vAll=$("walksViewAll");if(vAll)vAll.href="/autosims/walks"+projQ()
+    // AT2 needs-auth callout: show when any recent walk has needs_auth status (KLAVITYKLA-267)
+    var nacEl=$("needsAuthCallout")
+    if(nacEl){
+      var hasNeedsAuth=(walks||[]).some(function(w){return String(w.status||"")==="needs_auth"})
+      nacEl.style.display=hasNeedsAuth?"flex":"none"
+      var nacLink=$("needsAuthLink")
+      if(nacLink)nacLink.href="/autosims/auth"+projQ()
+    }
     var wEl=$("walks")
     wEl.innerHTML=walks.length?"":"<div class=\"empty\"><div class=\"em\">"+window.kicon("footprints",{size:18})+"</div><p>No Walks yet. Create an AutoSim and run it to see verdicts here.</p></div>"
     var trailNameFor={};(d.trails||[]).forEach(function(t){trailNameFor[t.id]=t.name})
@@ -7120,8 +7134,10 @@ load()
         +(v==="red"?' <span class="muted">— regression or hard failure; check walk report.</span>':"")
         +(v==="skipped"?' <span class="muted">— skipped (another walk was already running).</span>':"")
         +(v==="missed"?' <span class="muted">— missed / failed to start.</span>':"")
+        +(v==="needs_auth"?' <a class="replay-btn" href="'+esc('/autosims/auth'+projQ())+'">'+kicon("lock",{size:10})+" Give it a key</a>":'')
         +'<span class="pill '+esc(v)+'">'+esc(v)+"</span>"
         +(v==="amber"?' <span class="muted">— healed but unconfirmed; review findings queue.</span>':"")
+        +(v==="needs_auth"?' <span class="muted">— paused at an auth gate; give your Sim a key to resume.</span>':"")
       wEl.appendChild(wRow)
     }
     wEl.querySelectorAll("button[data-live-run]").forEach(function(btn){btn.onclick=function(){openLiveWatch(btn.getAttribute("data-live-run"))}})
