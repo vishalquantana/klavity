@@ -65,6 +65,8 @@ import { runAutosimAuthProbe } from "./lib/autosim-auth-probe"
 import { mintProjectShareToken, revokeProjectShareToken, resolveProjectShareToken, gatherProjectStatusData } from "./lib/project-status-portal"
 import { runDueSchedules, buildProductionDeps } from "./lib/sim-review-schedule"
 import { createSimReviewSchedule, listSimReviewSchedules, getSimReviewSchedule, deleteSimReviewSchedule, setSimReviewScheduleEnabled, type SimReviewScheduleFrequency } from "./lib/db"
+import { startSimsDigestScheduler, sendSimsDigest, type SimsDigestDeps, DAY_MS as SIMS_DIGEST_DAY_MS } from "./lib/sims-digest"
+import { sendReportAlertEmail } from "./lib/mail"
 
 const KEY = process.env.OPENROUTER_API_KEY
 const MODEL = process.env.KLAV_MODEL || "google/gemini-2.5-flash"
@@ -4769,7 +4771,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return json({ project: { id: created.id, name: created.name, accountId: created.accountId, status: created.status, siteUrl: created.siteUrl, role: "admin" } }, 201)
       }
       // Project detail + members (projectAccess-gated) and project-scoped invite (R4) + monitored-urls (P3b) + connectors.
-      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/triage|\/tickets(?:\/bulk)?|\/recurring|\/replays|\/widget-status|\/share-token|\/labels(?:\/[^/]+)?|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/test)?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send)?$/)
+      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/triage|\/tickets(?:\/bulk)?|\/recurring|\/replays|\/widget-status|\/share-token|\/labels(?:\/[^/]+)?|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/test)?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send)?$/)
       if (projMatch) {
         const pid = projMatch[1]
         const sub = projMatch[2] || ""
@@ -5096,6 +5098,48 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           } catch (err: any) {
             console.error("trust-report send error:", err)
             return json({ error: "Failed to send Trust Report: " + String(err?.message || err) }, 500)
+          }
+        }
+
+        // ── Daily Sims digest (KLAVITYKLA-261): POST /api/projects/:id/sims-digest/send ──
+        // Generates and emails/Slacks the daily Sims digest to the project owner + admins.
+        // Admin-only. Optional body: { window_start?: number, window_end?: number } — if omitted,
+        // defaults to the past 24 h. force_quiet: true sends even on a quiet day (for testing).
+        if (req.method === "POST" && sub === "/sims-digest/send") {
+          if (access !== "admin") return json({ error: "Only project admins can send the Sims digest." }, 403)
+          if (!process.env.SENDGRID_API_KEY) return json({ error: "Email delivery not configured (SENDGRID_API_KEY missing)." }, 503)
+          const body = await req.json().catch(() => ({}))
+          const nowMs = Date.now()
+          const windowEnd = typeof body.window_end === "number" && body.window_end > 0 ? body.window_end : nowMs
+          const windowStart = typeof body.window_start === "number" && body.window_start > 0 ? body.window_start : windowEnd - SIMS_DIGEST_DAY_MS
+          if (windowStart >= windowEnd) return json({ error: "window_start must be before window_end." }, 400)
+          const digestDeps: SimsDigestDeps = { db: db!, sendEmail: sendReportAlertEmail }
+          try {
+            const result = await sendSimsDigest(
+              digestDeps,
+              pid,
+              proj.accountId,
+              windowStart,
+              windowEnd,
+              { skipIfQuiet: body.force_quiet !== true },
+            )
+            return json({
+              ok: true,
+              sent: result.sent,
+              to: result.to,
+              slackSent: result.slackSent,
+              isQuietDay: result.data.isQuietDay,
+              counts: {
+                reviewSessions: result.data.reviewSessionsTotal,
+                pagesReviewed: result.data.pagesReviewedTotal,
+                issuesFound: result.data.issuesFoundTotal,
+                recurringIssues: result.data.recurringIssuesTotal,
+                regressionsReconfirmed: result.data.regressionsReconfirmedTotal,
+              },
+            })
+          } catch (err: any) {
+            console.error("sims-digest send error:", err)
+            return json({ error: "Failed to send Sims digest: " + String(err?.message || err) }, 500)
           }
         }
 
@@ -6052,4 +6096,6 @@ if (db && process.env.NODE_ENV !== "test") {
   startTrailScheduler()
   // KLA-55: crash reaper — sweeps stale-heartbeat walks/sessions every 60s.
   startCrashReaper(db!)
+  // KLAVITYKLA-261: daily Sims digest — ticks every hour, sends per-project digest.
+  startSimsDigestScheduler({ db: db!, sendEmail: sendReportAlertEmail })
 }
