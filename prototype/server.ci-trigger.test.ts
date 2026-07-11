@@ -31,6 +31,10 @@ await rawExec(`CREATE TABLE IF NOT EXISTS run_steps (id TEXT PRIMARY KEY, run_id
 await rawExec(`CREATE TABLE IF NOT EXISTS walk_replays (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, project_id TEXT NOT NULL, segments_gz TEXT NOT NULL, n_segments INTEGER, n_events INTEGER, created_at INTEGER NOT NULL)`)
 await rawExec(`CREATE TABLE IF NOT EXISTS extension_tokens (token TEXT PRIMARY KEY, email TEXT NOT NULL, project_id TEXT, created_at INTEGER NOT NULL, expires_at INTEGER, revoked INTEGER NOT NULL DEFAULT 0)`)
 await rawExec(`CREATE INDEX IF NOT EXISTS ext_tok_email_idx ON extension_tokens (email)`)
+// walk_share_tokens — needed by mintShareToken (called from enriched CI run response).
+// revoked_at column is required by listShareTokens / resolveShareToken.
+await rawExec(`CREATE TABLE IF NOT EXISTS walk_share_tokens (id TEXT PRIMARY KEY, token_hash TEXT NOT NULL, run_id TEXT NOT NULL, project_id TEXT NOT NULL, created_by TEXT, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL, revoked_at INTEGER)`)
+await rawExec(`CREATE INDEX IF NOT EXISTS wst_token_hash_idx ON walk_share_tokens (token_hash)`)
 
 // ── Fixtures ──
 const ADMIN_EMAIL = `admin-ci-${ts}@test.local`
@@ -52,6 +56,11 @@ await rawExec(`INSERT INTO sessions (id, email, created_at, expires_at) VALUES (
 await rawExec(`INSERT INTO trails (id, project_id, name, intent, base_url, author_kind, status, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [TRAIL_ID, PROJECT_ID, "CI smoke", "", "https://unreachable.ci.test/", "human", "active", ADMIN_EMAIL, NOW, NOW])
 // A pre-finished green walk for poll tests.
 await rawExec(`INSERT INTO trail_runs (id, trail_id, project_id, trigger, status, llm_calls, summary_json, started_at, finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [FINISHED_WALK_ID, TRAIL_ID, PROJECT_ID, "ci", "green", 0, null, NOW, NOW + 5000])
+// A pre-finished red (failed) walk + finding for enriched-response tests.
+const FAILED_WALK_ID = `walk_ci_red_${ts}`
+const FAILED_FINDING_ID = `find_ci_${ts}`
+await rawExec(`INSERT INTO trail_runs (id, trail_id, project_id, trigger, status, llm_calls, summary_json, started_at, finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [FAILED_WALK_ID, TRAIL_ID, PROJECT_ID, "ci", "red", 2, JSON.stringify({ failureKind: "regression" }), NOW, NOW + 8000])
+await rawExec(`INSERT INTO findings (id, project_id, run_id, step_id, trail_id, kind, title, evidence_json, ground_quote, confidence, dedup_key, recurrence, status, connector_ref, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [FAILED_FINDING_ID, PROJECT_ID, FAILED_WALK_ID, null, TRAIL_ID, "regression", "Login button unresponsive", null, "The login button did not respond to click", 0.9, `ci:${ts}:login`, 1, "queued", null, NOW, NOW])
 
 // ── Second project B (IDOR target — ADMIN_EMAIL is NOT a member) ──
 const ACCOUNT_B_ID = `acct_ci_b_${ts}`
@@ -225,5 +234,86 @@ test("GET /api/ci/runs/:runId — 404 IDOR: can't read project B's walk", async 
     headers: { Authorization: bearer(sharedCIToken) },
   })
   // WALK_B_ID lives in PROJECT_B_ID; sharedCIToken is bound to PROJECT_ID only.
+  expect(r.status).toBe(404)
+})
+
+// ── KLAVITYKLA-219: enriched CI run response ──────────────────────────────────────────────────────
+
+test("GET /api/ci/runs/:runId — enriched response includes verdict/reportUrl/shareUrl for green walk", async () => {
+  const r = await fetch(`${BASE}/api/ci/runs/${FINISHED_WALK_ID}?project=${PROJECT_ID}`, {
+    headers: { Authorization: bearer(sharedCIToken) },
+  })
+  expect(r.status).toBe(200)
+  const b = await r.json() as any
+  // Back-compat fields still present.
+  expect(b.runId).toBe(FINISHED_WALK_ID)
+  expect(b.status).toBe("green")
+  expect(typeof b.startedAt).toBe("number")
+  expect(typeof b.finishedAt).toBe("number")
+  // Enriched: verdict mirrors status for terminal runs.
+  expect(b.verdict).toBe("green")
+  // Passing walk has no failingStep.
+  expect(b.failingStep).toBeNull()
+  // reportUrl is an absolute URL pointing at the PDF endpoint.
+  expect(typeof b.reportUrl).toBe("string")
+  expect(b.reportUrl).toMatch(/\/api\/trails\/walks\//)
+  expect(b.reportUrl).toContain(FINISHED_WALK_ID)
+  // shareUrl is an absolute URL pointing at the public share page.
+  expect(typeof b.shareUrl).toBe("string")
+  expect(b.shareUrl).toMatch(/\/shared\/walk\/[a-f0-9]{64}$/)
+})
+
+test("GET /api/ci/runs/:runId — enriched response includes failingStep for red walk", async () => {
+  const r = await fetch(`${BASE}/api/ci/runs/${FAILED_WALK_ID}?project=${PROJECT_ID}`, {
+    headers: { Authorization: bearer(sharedCIToken) },
+  })
+  expect(r.status).toBe(200)
+  const b = await r.json() as any
+  expect(b.runId).toBe(FAILED_WALK_ID)
+  expect(b.status).toBe("red")
+  expect(b.verdict).toBe("red")
+  // failingStep is populated from the run's first finding.
+  expect(b.failingStep).not.toBeNull()
+  expect(typeof b.failingStep.title).toBe("string")
+  expect(b.failingStep.title).toBe("Login button unresponsive")
+  expect(typeof b.failingStep.summary).toBe("string")
+  expect(b.failingStep.summary).toBe("The login button did not respond to click")
+  // reportUrl and shareUrl still present on failed runs.
+  expect(typeof b.reportUrl).toBe("string")
+  expect(b.reportUrl).toContain(FAILED_WALK_ID)
+  expect(typeof b.shareUrl).toBe("string")
+  expect(b.shareUrl).toMatch(/\/shared\/walk\/[a-f0-9]{64}$/)
+})
+
+test("GET /api/ci/runs/:runId — verdict null for still-running walk", async () => {
+  // Insert a running walk directly via the raw DB client.
+  const runningWalkId = `walk_ci_running_${ts}`
+  await rawExec(
+    `INSERT INTO trail_runs (id, trail_id, project_id, trigger, status, llm_calls, summary_json, started_at, finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [runningWalkId, TRAIL_ID, PROJECT_ID, "ci", "running", 0, null, Date.now(), null],
+  )
+  const r = await fetch(`${BASE}/api/ci/runs/${runningWalkId}?project=${PROJECT_ID}`, {
+    headers: { Authorization: bearer(sharedCIToken) },
+  })
+  expect(r.status).toBe(200)
+  const b = await r.json() as any
+  expect(b.status).toBe("running")
+  // verdict is null while the walk has not reached a terminal state.
+  expect(b.verdict).toBeNull()
+  expect(b.failingStep).toBeNull()
+})
+
+test("GET /api/ci/runs/:runId — IDOR: enriched endpoint still blocks project B token", async () => {
+  // sharedCIToken is bound to PROJECT_ID; WALK_B_ID belongs to PROJECT_B_ID.
+  const r = await fetch(`${BASE}/api/ci/runs/${WALK_B_ID}?project=${PROJECT_ID}`, {
+    headers: { Authorization: bearer(sharedCIToken) },
+  })
+  expect(r.status).toBe(404)
+})
+
+test("GET /api/ci/runs/:runId — 404 for unknown run still returns 404 (not 500)", async () => {
+  const r = await fetch(`${BASE}/api/ci/runs/walk_no_such_run_ever?project=${PROJECT_ID}`, {
+    headers: { Authorization: bearer(sharedCIToken) },
+  })
   expect(r.status).toBe(404)
 })

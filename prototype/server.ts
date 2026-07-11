@@ -3316,12 +3316,62 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         }
       }
 
-      // GET /api/ci/runs/:runId — poll walk status/verdict.
+      // GET /api/ci/runs/:runId — poll walk status/verdict (KLAVITYKLA-219: enriched response).
+      // Returns verdict, failingStep (first finding for red runs), reportUrl, and shareUrl in
+      // addition to the existing runId/status/startedAt/finishedAt fields for back-compat.
       const ciRunMatch = path.match(/^\/api\/ci\/runs\/([^/]+)$/)
       if (req.method === "GET" && ciRunMatch) {
-        const walk = await getWalk(ciProject, ciRunMatch[1])
+        const runId = ciRunMatch[1]
+        const walk = await getWalk(ciProject, runId)
         if (!walk) return json({ error: "Not found" }, 404)
-        return json({ runId: walk.id, status: walk.status, startedAt: walk.startedAt, finishedAt: walk.finishedAt })
+
+        // verdict — the terminal status when finished; null while running/paused/needs_auth.
+        const TERMINAL_VERDICTS = new Set(["green", "amber", "red", "skip"])
+        const verdict: string | null = TERMINAL_VERDICTS.has(walk.status) ? walk.status : null
+
+        // failingStep — first finding for this run when the verdict is red (or amber).
+        // Null for passing/in-progress runs. Derived from the findings table (same source the
+        // walk report and dashboard replay use to surface issues).
+        let failingStep: { title: string; summary: string } | null = null
+        if (verdict === "red" || verdict === "amber") {
+          try {
+            const findings = await listFindings(ciProject, { runId, limit: 1 })
+            if (findings.length > 0) {
+              const f = findings[0]
+              failingStep = {
+                title: f.title,
+                summary: f.groundQuote ?? f.title,
+              }
+            }
+          } catch { /* findings are best-effort — don't fail the response */ }
+        }
+
+        // reportUrl — authenticated PDF download for this walk (requires CI token in the header).
+        const reportUrl = `${BASE}/api/trails/walks/${runId}/report.pdf`
+
+        // shareUrl — public, token-scoped walk report page. walk_share_tokens stores only the
+        // SHA-256 hash of each token — the raw bytes are never persisted — so we can't reconstruct
+        // a URL from an existing token. Mint a fresh one on every CI poll (30-day TTL, matching the
+        // standard walk-share window). Old tokens remain valid and are not revoked.
+        // TODO(KLAVITYKLA-219): the Settings CI drawer in dashboard.html should display the enriched
+        //   fields (verdict, shareUrl, failingStep) returned here. Add a "last run summary" row in
+        //   the CI section that fetches GET /api/ci/runs/:id and renders them inline.
+        let shareUrl: string | null = null
+        try {
+          const freshToken = await mintShareToken(ciProject, runId, /* createdBy */ undefined)
+          shareUrl = `${BASE}/shared/walk/${freshToken}`
+        } catch { /* share URL is best-effort; don't fail the whole response */ }
+
+        return json({
+          runId: walk.id,
+          status: walk.status,
+          startedAt: walk.startedAt,
+          finishedAt: walk.finishedAt,
+          verdict,
+          failingStep,
+          reportUrl,
+          shareUrl,
+        })
       }
 
       return json({ error: "Not found" }, 404)
