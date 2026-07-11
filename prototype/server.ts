@@ -60,6 +60,7 @@ import { getExtractModel } from "./lib/extract-model"
 import { parseJSON } from "./lib/parse-json"
 import { createStripeCheckoutSession, createStripePortalSession, intervalFromLookupKey, normalizeInterval, planFromLookupKey, quotasForPlan, retrieveStripeSubscription, verifyStripeWebhook } from "./lib/billing"
 import { runAutosimAuthProbe } from "./lib/autosim-auth-probe"
+import { mintProjectShareToken, revokeProjectShareToken, resolveProjectShareToken, gatherProjectStatusData } from "./lib/project-status-portal"
 
 const KEY = process.env.OPENROUTER_API_KEY
 const MODEL = process.env.KLAV_MODEL || "google/gemini-2.5-flash"
@@ -3225,6 +3226,42 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       }
     }
 
+    // ── Client Status Portal (KLAVITYKLA-205) ────────────────────────────────────────────────────
+    // GET /shared/project/:token       — serve the read-only project status HTML (no auth)
+    // GET /shared/project/:token/data  — return JSON portal data (no auth)
+    // Token format: 64-char lowercase hex (32 random bytes); 404 on bad/unknown token.
+    // Rate-limited per source IP; noindex + no-store headers; no PII or cross-project data.
+    const sharedProjectPageMatch = path.match(/^\/shared\/project\/([a-f0-9]{64})$/)
+    if (req.method === "GET" && sharedProjectPageMatch) {
+      if (!rlAllow("shareproj:page:" + clientIp(req, server), 120, 60_000)) return new Response("Rate limited", { status: 429 })
+      const projectId = await resolveProjectShareToken(sharedProjectPageMatch[1])
+      if (!projectId) return new Response("Not found", { status: 404 })
+      const f = Bun.file(PUB + "/project-status.html")
+      if (!(await f.exists())) return new Response("Not found", { status: 404 })
+      return new Response(f, {
+        headers: {
+          "content-type": "text/html; charset=utf-8",
+          "x-robots-tag": "noindex, nofollow",
+          "cache-control": "no-store",
+        },
+      })
+    }
+
+    const sharedProjectDataMatch = path.match(/^\/shared\/project\/([a-f0-9]{64})\/data$/)
+    if (req.method === "GET" && sharedProjectDataMatch) {
+      if (!rlAllow("shareproj:data:" + clientIp(req, server), 120, 60_000)) return new Response("Rate limited", { status: 429 })
+      const projectId = await resolveProjectShareToken(sharedProjectDataMatch[1])
+      if (!projectId) return json({ error: "Not found" }, 404)
+      try {
+        const data = await gatherProjectStatusData(projectId)
+        if (!data) return json({ error: "Not found" }, 404)
+        return json(data, 200, { "cache-control": "no-store", "x-robots-tag": "noindex, nofollow" })
+      } catch (e) {
+        return json(oops(e, "shared-project-data"), 500)
+      }
+    }
+    // ── End Client Status Portal public routes ────────────────────────────────────────────────────
+
     // Plan G — served demo fixtures the seeded demo Trails walk against (public, non-sensitive HTML).
     // Sanitized: reject path traversal; serve only from PUB/trails-demo. No auth (a Walk hits these
     // unauthenticated, same-origin) — the files are bundled static fixtures, never user data.
@@ -4744,7 +4781,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return json({ project: { id: created.id, name: created.name, accountId: created.accountId, status: created.status, siteUrl: created.siteUrl, role: "admin" } }, 201)
       }
       // Project detail + members (projectAccess-gated) and project-scoped invite (R4) + monitored-urls (P3b) + connectors.
-      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/triage|\/tickets(?:\/bulk)?|\/recurring|\/replays|\/widget-status|\/labels(?:\/[^/]+)?|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/test)?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?)?$/)
+      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/triage|\/tickets(?:\/bulk)?|\/recurring|\/replays|\/widget-status|\/labels(?:\/[^/]+)?|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/test)?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/share-token)?$/)
       if (projMatch) {
         const pid = projMatch[1]
         const sub = projMatch[2] || ""
@@ -4767,6 +4804,30 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const deleted = await pruneOldFeedbackReplays(pid, maxAgeMs)
           return json({ ok: true, deleted })
         }
+
+        // ── Client Status Portal share-token management (KLAVITYKLA-205) ──────────────────────────
+        // GET    /api/projects/:pid/share-token — returns { hasToken, shareUrl } (admin only)
+        // POST   /api/projects/:pid/share-token — generate (or regenerate) the token; returns { shareUrl, token }
+        // DELETE /api/projects/:pid/share-token — revoke the token
+        if (sub === "/share-token") {
+          if (access !== "admin") return json({ error: "Only project admins can manage the client status portal link." }, 403)
+          if (req.method === "GET") {
+            const { hasProjectShareToken: hasTok } = await import("./lib/project-status-portal")
+            const has = await hasTok(pid)
+            return json({ hasToken: has, shareUrl: null })
+          }
+          if (req.method === "POST") {
+            const rawToken = await mintProjectShareToken(pid)
+            const shareUrl = `${BASE}/shared/project/${rawToken}`
+            return json({ ok: true, shareUrl, token: rawToken }, 201)
+          }
+          if (req.method === "DELETE") {
+            const wasRevoked = await revokeProjectShareToken(pid)
+            return json({ ok: true, revoked: wasRevoked })
+          }
+          return json({ error: "Method not allowed" }, 405)
+        }
+        // ── End share-token management ────────────────────────────────────────────────────────────
 
         // Monitored URLs (R5 allowlist) — admin-only manage; project-scoped via projectAccess.
         if (sub.startsWith("/monitored-urls")) {
