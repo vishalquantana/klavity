@@ -10,6 +10,11 @@
 // This replaces the old single global FIFO waiter list (the "global browser slot") where one project's
 // burst of walks would sit ahead of every other project in one shared queue and serialize globally.
 //
+// PDF rendering (withPdfSlot / KLAVITYKLA-207): PDF reports use a SEPARATE single-slot serializing
+// queue that is FULLY INDEPENDENT of the walk pool. PDF requests never contend with walk/author/CI
+// browser capacity. Concurrent PDFs serialize (FIFO) rather than 409ing immediately; requests that
+// wait longer than PDF_QUEUE_TIMEOUT_MS throw PdfBusyError so a stuck render never hangs forever.
+//
 // NOTE: this is PER-PROCESS (in-memory). The runner is a single long-lived process, so in-memory queue
 // state is correct + simplest. Running >1 worker process would need a DB advisory lock / persisted queue.
 import { AsyncLocalStorage } from "node:async_hooks"
@@ -61,10 +66,17 @@ const _rrOrder: string[] = []
 // projects that only joined the rotation after it started running. null = start from the front.
 let _lastServedKey: string | null = null
 let _authorActive = false
-let _pdfActive = false
 // KLA-151: per-session author cancel mechanism (mirrors cancelCurrentWalk for the author slot).
 let _authorAc: AbortController | null = null
 let _authorSessionId: string | null = null
+
+// ── PDF serializing queue (KLAVITYKLA-207) ───────────────────────────────────────────────────────
+// INDEPENDENT of the walk pool. PDF renders queue behind each other but never contend with walk/
+// author/CI capacity. Requesters wait up to PDF_QUEUE_TIMEOUT_MS before PdfBusyError is thrown.
+// Configurable for tests via _resetPdfAdmissionForTest().
+let _pdfRunning = false
+let _pdfTimeoutMs = Math.max(1000, parseInt(process.env.KLAV_PDF_QUEUE_TIMEOUT_MS ?? "60000", 10) || 60000)
+const _pdfWaiters: Array<{ resolve: () => void; reject: (e: Error) => void }> = []
 
 /** Register the running author session so cancelCurrentAuthor can find it. Called inside the slot. */
 export function setCurrentAuthorSessionId(sid: string): void { _authorSessionId = sid }
@@ -109,8 +121,18 @@ export function _resetAuthorAdmissionForTest(): void {
   _authorSessionId = null
 }
 
-export function _resetPdfAdmissionForTest(): void {
-  _pdfActive = false
+/**
+ * Reset PDF queue state for tests. Optionally override the queue timeout (milliseconds).
+ * Rejects any outstanding waiters so tests start clean.
+ */
+export function _resetPdfAdmissionForTest(timeoutMs?: number): void {
+  _pdfRunning = false
+  if (timeoutMs !== undefined) _pdfTimeoutMs = Math.max(1, timeoutMs)
+  // Drain any leftover waiters from previous test so they don't bleed across.
+  while (_pdfWaiters.length > 0) {
+    const w = _pdfWaiters.shift()!
+    w.reject(new PdfBusyError("PDF queue reset (test cleanup)"))
+  }
 }
 
 export function isWalkInFlight(): boolean { return _active > 0 }
@@ -255,13 +277,63 @@ export async function withAuthorSlot<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
+/**
+ * Run fn inside the PDF rendering slot. The PDF slot is FULLY INDEPENDENT of the walk/author/CI
+ * concurrency pool — a PDF render never contends with an active walk and vice versa (KLAVITYKLA-207).
+ *
+ * Concurrency model: only ONE PDF render executes at a time (Chromium + A4 layout is heavy and
+ * serialising is cheaper than spinning up two browsers simultaneously on the 1GB box). Additional
+ * callers queue in FIFO order and are admitted as soon as the current render finishes. Callers that
+ * wait longer than KLAV_PDF_QUEUE_TIMEOUT_MS (default 60s) receive PdfBusyError — this bounds the
+ * wait so a stuck render can't make every subsequent request hang indefinitely.
+ *
+ * Steel/CDP compatibility: PDF renders use chromium.launch() (Playwright local) rather than
+ * acquireBrowser (Puppeteer/CDP path used by walk/author). This is intentional — the PDF HTML page
+ * is pre-built server-side and doesn't need the kref/element-tree machinery, so a fresh local
+ * Chromium context is the simplest compatible path regardless of AUTOSIM_CDP_URL.
+ */
 export async function withPdfSlot<T>(fn: () => Promise<T>): Promise<T> {
-  if (_pdfActive) throw new PdfBusyError()
-  _pdfActive = true
+  if (!_pdfRunning) {
+    // Fast path: no current render — acquire immediately.
+    _pdfRunning = true
+    try {
+      return await fn()
+    } finally {
+      _pdfRunning = false
+      _pdfDispatch()
+    }
+  }
+  // Queue path: wait for the slot to free up, subject to timeout.
+  await new Promise<void>((resolve, reject) => {
+    let settled = false
+    const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      // Remove from queue so a later dispatch doesn't wake a timed-out waiter.
+      const idx = _pdfWaiters.findIndex((w) => w.resolve === resolve)
+      if (idx >= 0) _pdfWaiters.splice(idx, 1)
+      reject(new PdfBusyError(`PDF render queue timed out after ${_pdfTimeoutMs}ms — try again shortly`))
+    }, _pdfTimeoutMs)
+    _pdfWaiters.push({
+      resolve: () => { if (!settled) { settled = true; clearTimeout(timer); resolve() } },
+      reject,
+    })
+  })
+  // Slot handed to us by _pdfDispatch — run and release.
   try {
     return await fn()
   } finally {
-    _pdfActive = false
+    _pdfRunning = false
+    _pdfDispatch()
+  }
+}
+
+/** Wake the next PDF waiter. Called whenever _pdfRunning transitions to false. */
+function _pdfDispatch(): void {
+  const next = _pdfWaiters.shift()
+  if (next) {
+    _pdfRunning = true
+    next.resolve()
   }
 }
 

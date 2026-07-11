@@ -3165,13 +3165,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           },
         })
       } catch (e: any) {
+        // PdfBusyError: PDF queue timed out (KLAVITYKLA-207 — queue-backed, never from walk slot).
         if (e instanceof PdfBusyError) {
           return new Response("PDF generator busy", {
             status: 429,
             headers: { "retry-after": "5" },
           })
         }
-        if (e instanceof WalkBusyError) return new Response("AutoSim busy", { status: 409 })
         return new Response("Internal error", { status: 500 })
       }
     }
@@ -3962,13 +3962,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             },
           })
         } catch (e: any) {
+          // PdfBusyError: PDF queue timed out (KLAVITYKLA-207 — queue-backed, never from walk slot).
           if (e instanceof PdfBusyError) {
             return new Response(JSON.stringify({ error: "PDF generator busy" }), {
               status: 429,
               headers: { "content-type": "application/json", "retry-after": "5" },
             })
           }
-          if (e instanceof WalkBusyError) return json({ error: "AutoSim busy" }, 409)
           return json(oops(e, "trails-report-pdf"), 500)
         }
       }
