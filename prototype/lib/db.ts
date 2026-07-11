@@ -661,7 +661,15 @@ export async function applySchema(c: Client) {
     `CREATE INDEX IF NOT EXISTS srs_proj_idx ON sim_review_schedules (project_id, enabled, next_run_at)`,
     `CREATE INDEX IF NOT EXISTS srs_due_idx ON sim_review_schedules (enabled, next_run_at)`,
   ]
-  for (const s of stmts) await c.execute(s)
+  // Boot-time fix: run the whole static CREATE TABLE/INDEX block as ONE batched round-trip instead
+  // of ~150 sequential `await c.execute(s)` calls. Against REMOTE Turso those 150 round-trips cost
+  // ~25-30s of the ~34s boot (site 502s the whole time on every deploy). `stmts` is a pure static
+  // array of `CREATE … IF NOT EXISTS` strings with NO bound args and NO runtime introspection, so
+  // batching is order-preserving and side-effect-identical — the statements run in array order
+  // inside one write transaction. Works on remote Turso AND file:/:memory: (tests) — sqlite3, http
+  // and ws clients all implement Client.batch(stmts, mode). Conditional needCol/ALTER migrations
+  // below are intentionally NOT batched (they depend on per-DB column introspection).
+  await c.batch(stmts, "write")
 
   // ── Load all table column sets in one parallel batch ──────────────────────────────────────────
   // An established DB has most/all columns already. By reading PRAGMA table_info for all tables
