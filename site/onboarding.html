@@ -149,11 +149,11 @@ input.code{font-family:var(--mono);font-size:24px;letter-spacing:.5em;text-align
 .uh-catch b{color:var(--paper)}
 .uh-catch .uh-sentiment{display:inline-flex;align-items:center;gap:5px;margin-left:4px;font-family:var(--mono);font-size:10.5px;font-weight:600;background:rgba(219,39,119,.14);color:var(--rose);padding:3px 9px;border-radius:20px}
 
-/* goal chooser (welcome) — now secondary under an expandable ── */
-.more-ways{max-width:620px;margin:28px auto 0;border-top:1px solid var(--line);padding-top:24px}
-.more-ways .mw-toggle{background:none;border:none;color:var(--paper-faint);font-family:var(--body);font-size:13.5px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;padding:0;transition:color .15s}
-.more-ways .mw-toggle:hover{color:var(--indigo)}
-.more-ways .mw-body{margin-top:14px}
+/* goal chooser (welcome) — two first-class paths, always visible ── */
+.more-ways{max-width:700px;margin:28px auto 0;border-top:1px solid var(--line);padding-top:24px}
+/* mw-toggle is kept for fallback / JS resize but hidden by default — paths shown immediately */
+.more-ways .mw-toggle{display:none}
+.more-ways .mw-body{margin-top:0}
 .goalpick{margin:0;max-width:none}
 .goalpick .glabel{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:16px}
 .goaltiles{display:grid;grid-template-columns:1fr 1fr;gap:14px;text-align:left}
@@ -315,10 +315,10 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           </div>
         </div>
 
-        <!-- ── A2: Single primary action — URL → Meet your Sims ── -->
+        <!-- ── A2: Two first-class paths — Snap (report widget) and Sims (AI personas) ── -->
         <div class="url-hero" id="urlHeroSection">
-          <h2>Meet your <em>Sims.</em></h2>
-          <p class="uh-sub">Paste your product URL — we read your public page and suggest 2–3 AI customers grounded in your real content. No transcript, no install.</p>
+          <h2>Start with <em>Sims</em> or the report widget.</h2>
+          <p class="uh-sub">Paste your product URL to generate AI personas from your pages — or scroll down to install the one-click bug-report widget on your live site.</p>
           <div class="url-field">
             <input id="uhUrl" type="url" placeholder="yourproduct.com" autocomplete="url" aria-label="Your product URL" />
             <button class="btn btn-indigo" id="uhGo" onclick="uhFetch()">Meet your Sims →</button>
@@ -328,30 +328,28 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           <div id="uhResult"></div>
         </div>
 
-        <!-- ── Secondary: more ways (Snap / Describe / From-a-call) — not three equal choices ── -->
+        <!-- ── Two first-class setup paths: Snap (report widget) + Sims (AI review) ── -->
         <div class="more-ways" id="moreWaysSection">
-          <button type="button" class="mw-toggle" id="mwToggle" aria-expanded="false" onclick="toggleMoreWays()">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
-            More ways to set up
-          </button>
-          <div class="mw-body hide" id="mwBody">
-            <div class="goalpick" role="group" aria-label="Other setup paths">
-              <div class="glabel">Other starting points</div>
+          <!-- mw-toggle kept in DOM for JS compat but hidden via CSS -->
+          <button type="button" class="mw-toggle" id="mwToggle" aria-expanded="true" onclick="toggleMoreWays()">Choose your starting point</button>
+          <div class="mw-body" id="mwBody">
+            <div class="goalpick" role="group" aria-label="Choose your starting point">
+              <div class="glabel">How do you want to start?</div>
               <div class="goaltiles">
                 <button type="button" class="goaltile snap" id="goalSnap" aria-pressed="false" onclick="chooseGoal('snap')">
                   <span class="gic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 9l5 12 1.8-5.2L21 14Z" /><path d="M7.2 2.2 8 5.1" /><path d="m5.1 7.2-2.9-.8" /><path d="M14 4.1 12 6" /><path d="m6 12-1.9 2" /></svg></span>
                   <span class="gtag">Snap · live site</span>
                   <h3>Catch bugs from real visitors</h3>
-                  <p>A one-click bug reporter on your live site. Add one snippet and start collecting clean, detailed tickets today.</p>
+                  <p>One snippet on your site — visitors report bugs with a single click. No AI setup, no extension. Start collecting clean tickets in 2 minutes.</p>
                 </button>
                 <button type="button" class="goaltile sims" id="goalSims" aria-pressed="false" onclick="chooseGoal('sims')">
                   <span class="gic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg></span>
-                  <span class="gtag">Sims · from a call</span>
-                  <h3>Build Sims from a customer call</h3>
-                  <p>Upload a sales or support transcript and we extract AI personas grounded in your customers' actual words.</p>
+                  <span class="gtag">Sims · AI review</span>
+                  <h3>AI personas that review your product</h3>
+                  <p>Paste your URL above (or a call transcript) — we build AI customers who surface issues before real users hit them.</p>
                 </button>
               </div>
-              <p class="gnote">Either path ends with a working project — you can add the other any time.</p>
+              <p class="gnote">Either path takes 2 minutes and creates a full project. You can add the other any time.</p>
             </div>
           </div>
         </div>
@@ -624,11 +622,12 @@ window.scrollToUrlField = function(){
   if(el){ el.scrollIntoView({behavior:'smooth',block:'center'}); setTimeout(function(){ var i=document.getElementById('uhUrl'); if(i) i.focus() },400) }
 }
 window.toggleMoreWays = function(){
+  // The "more ways" section is always open (no-op collapse). Toggle is kept for JS compat.
   var body=document.getElementById('mwBody'), toggle=document.getElementById('mwToggle')
   if(!body||!toggle) return
-  var open=!body.classList.contains('hide')
-  body.classList.toggle('hide',open)
-  toggle.setAttribute('aria-expanded',String(!open))
+  // Remove 'hide' class if somehow present (it no longer should be added at init)
+  body.classList.remove('hide')
+  toggle.setAttribute('aria-expanded','true')
 }
 </script>
 <script>
