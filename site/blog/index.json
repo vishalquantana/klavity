@@ -131,5 +131,12 @@
     "excerpt": "Exploratory testing discovers the unknown; scripted testing verifies the known. Here's what each catches, when to use which, and how to combine them.",
     "category": "Compare",
     "date": "2026-07-10"
+  },
+  {
+    "slug": "what-is-ai-bug-reporting",
+    "title": "What Is AI Bug Reporting? Definition and How It Works",
+    "excerpt": "AI bug reporting uses AI to turn a rough report into a complete, reproducible ticket — capturing steps, environment, and evidence automatically.",
+    "category": "Learn",
+    "date": "2026-07-11"
   }
 ]
