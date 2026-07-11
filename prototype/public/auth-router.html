@@ -25,6 +25,16 @@
     --mono: 'JetBrains Mono', monospace;
   }
 
+  [data-theme="dark"] {
+    --ink: #141210;
+    --ink-2: #1c1915;
+    --ink-3: #242018;
+    --paper: #f0ece4;
+    --paper-dim: #b8b0a0;
+    --paper-faint: #7a7060;
+    --line: rgba(255, 255, 255, .10);
+  }
+
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
   body {
@@ -40,6 +50,21 @@
     margin: 0 auto;
     padding: 48px 24px 72px;
   }
+
+  /* ── nav back ─────────────────────────────────────────────────── */
+  .nav-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--paper-faint);
+    text-decoration: none;
+    letter-spacing: .05em;
+    margin-bottom: 24px;
+    transition: color .15s ease;
+  }
+  .nav-back:hover { color: var(--indigo); }
 
   /* ── header / title ─────────────────────────────────────────────── */
   .eyebrow {
@@ -97,6 +122,15 @@
     color: var(--green-text);
   }
 
+  .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: .8;
+    flex-shrink: 0;
+  }
+
   /* ── question row ───────────────────────────────────────────────── */
   .question {
     font-family: var(--display);
@@ -120,12 +154,32 @@
 
   .branch {
     background: var(--ink-2);
-    border: 1px solid var(--line);
+    border: 2px solid var(--line);
     border-radius: 16px;
     padding: 22px;
     display: flex;
     flex-direction: column;
     gap: 14px;
+    cursor: pointer;
+    transition: border-color .15s ease, box-shadow .15s ease, transform .1s ease;
+  }
+
+  .branch:hover {
+    border-color: rgba(99,102,241,.35);
+    box-shadow: 0 4px 18px rgba(99,102,241,.08);
+    transform: translateY(-1px);
+  }
+  .branch:active { transform: translateY(0); }
+
+  .branch.selected {
+    border-color: var(--indigo);
+    box-shadow: 0 0 0 3px rgba(99,102,241,.12);
+  }
+
+  .branch.disabled {
+    opacity: .55;
+    cursor: default;
+    pointer-events: none;
   }
 
   .branch-head {
@@ -143,6 +197,17 @@
     color: var(--paper-faint);
   }
 
+  .branch-recommend {
+    font-family: var(--mono);
+    font-size: 9.5px;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    background: rgba(99,102,241,.12);
+    color: var(--indigo);
+    padding: 3px 8px;
+    border-radius: 20px;
+  }
+
   .branch-body h2 {
     font-size: 17px;
     font-weight: 600;
@@ -152,6 +217,32 @@
   .branch-body p {
     font-size: 13.5px;
     color: var(--paper-dim);
+    line-height: 1.55;
+  }
+
+  /* ── wizard panel (hidden until a branch is selected) ──────────── */
+  .wizard {
+    background: var(--ink-2);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 26px;
+    margin-bottom: 32px;
+    display: none;
+  }
+  .wizard.open { display: block; }
+
+  .wizard h3 {
+    font-family: var(--display);
+    font-weight: 450;
+    font-size: 20px;
+    letter-spacing: -.01em;
+    margin-bottom: 6px;
+  }
+
+  .wizard-sub {
+    font-size: 13.5px;
+    color: var(--paper-dim);
+    margin-bottom: 20px;
     line-height: 1.55;
   }
 
@@ -171,7 +262,49 @@
     line-height: 1.5;
   }
 
-  /* ── OTP branch: agent prompt + copy button ─────────────────────── */
+  .creds-empty a {
+    color: var(--indigo);
+    text-decoration: none;
+  }
+  .creds-empty a:hover { text-decoration: underline; }
+
+  /* ── OTP/mint branch: step sequence ─────────────────────────────── */
+  .step-list { list-style: none; counter-reset: steps; }
+  .step-item { counter-increment: steps; display: flex; gap: 14px; margin-bottom: 18px; }
+  .step-item:last-child { margin-bottom: 0; }
+  .step-num {
+    flex-shrink: 0;
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    background: var(--ink-3);
+    border: 1px solid var(--line);
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--paper-faint);
+    margin-top: 2px;
+  }
+  .step-item.done .step-num {
+    background: rgba(15,157,107,.15);
+    border-color: var(--green);
+    color: var(--green-text);
+  }
+  .step-content { flex: 1; min-width: 0; }
+  .step-label {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 5px;
+  }
+  .step-desc {
+    font-size: 13px;
+    color: var(--paper-dim);
+    line-height: 1.5;
+  }
+
+  /* ── OTP branch: agent prompt slot ─────────────────────────────── */
   #otpPromptSlot {
     background: var(--ink);
     border: 1px dashed var(--line);
@@ -183,10 +316,14 @@
     line-height: 1.6;
     white-space: pre-wrap;
     word-break: break-word;
-    position: relative;
+    max-height: 320px;
+    overflow-y: auto;
+    margin-top: 10px;
   }
 
-  .copy-btn {
+  .prompt-actions { display: flex; gap: 10px; align-items: center; margin-top: 10px; }
+
+  .copy-btn, .btn-sm {
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -199,11 +336,57 @@
     color: var(--indigo);
     border: none;
     cursor: pointer;
-    transition: transform .1s ease;
+    transition: transform .1s ease, opacity .1s ease;
+    text-decoration: none;
   }
+  .copy-btn:hover, .btn-sm:hover { transform: translateY(-1px); }
+  .copy-btn:active, .btn-sm:active { transform: translateY(0); }
+  .copy-btn:disabled, .btn-sm:disabled { opacity: .5; cursor: default; transform: none; }
 
-  .copy-btn:hover { transform: translateY(-1px); }
-  .copy-btn:active { transform: translateY(0); }
+  .btn-primary {
+    background: var(--indigo-deep);
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    font-family: var(--body);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 10px 20px;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: transform .1s ease, opacity .15s ease;
+  }
+  .btn-primary:hover { transform: translateY(-1px); }
+  .btn-primary:active { transform: translateY(0); }
+  .btn-primary:disabled { opacity: .5; cursor: default; transform: none; }
+
+  /* ── probe status banner ─────────────────────────────────────────── */
+  .probe-banner {
+    margin-top: 20px;
+    padding: 14px 16px;
+    border-radius: 10px;
+    font-size: 13.5px;
+    line-height: 1.55;
+    display: none;
+  }
+  .probe-banner.waiting {
+    display: block;
+    background: rgba(217,131,36,.10);
+    color: var(--amber);
+  }
+  .probe-banner.green {
+    display: block;
+    background: rgba(15,157,107,.10);
+    color: var(--green-text);
+  }
+  .probe-banner.red {
+    display: block;
+    background: rgba(219,39,119,.08);
+    color: var(--rose);
+  }
+  .probe-banner b { display: block; margin-bottom: 3px; font-size: 14px; }
 
   /* ── Google/SSO branch note ─────────────────────────────────────── */
   #googleSsoNote {
@@ -250,6 +433,8 @@
     border-radius: 20px;
   }
 
+  #waitingList { min-height: 32px; }
+
   .run-row {
     display: flex;
     align-items: center;
@@ -260,7 +445,6 @@
     border-radius: 12px;
     margin-bottom: 10px;
   }
-
   .run-row:last-child { margin-bottom: 0; }
 
   .run-body { flex: 1; min-width: 0; }
@@ -292,6 +476,13 @@
     border-radius: 20px;
   }
 
+  .empty-paused {
+    text-align: center;
+    padding: 14px;
+    color: var(--paper-faint);
+    font-size: 13px;
+  }
+
   .promise {
     margin-top: 16px;
     padding: 14px 16px;
@@ -302,25 +493,43 @@
     line-height: 1.55;
   }
 
+  .promise.hide { display: none; }
+
+  /* ── error / loading states ─────────────────────────────────────── */
+  .status-bar {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--paper-faint);
+    margin-bottom: 18px;
+    min-height: 18px;
+  }
+
   /* ── responsive tweaks ──────────────────────────────────────────── */
   @media (max-width: 600px) {
     .wrap { padding: 32px 18px 56px; }
     .branch { padding: 18px; }
+    .wizard { padding: 20px; }
   }
 </style>
 </head>
 <body>
 <div class="wrap">
 
+  <!-- Back link to AutoSims -->
+  <a href="/autosims" class="nav-back" id="backLink">&#8592; AutoSims</a>
+
   <!-- Eyebrow + title -->
-  <p class="eyebrow">AutoSims · auth router</p>
+  <p class="eyebrow">AutoSims · auth setup</p>
   <h1>Give your Sims a key</h1>
-  <p class="lead">Tell AutoSim how people log into your app so the autonomous actor can walk real user journeys — including authenticated ones.</p>
+  <p class="lead">Tell AutoSim how people log into your app so it can walk real, authenticated user journeys — not just the public surface.</p>
+
+  <!-- Status bar (loading / errors) -->
+  <div class="status-bar" id="statusBar">Loading auth status&hellip;</div>
 
   <!-- Per-project auth status chip -->
   <div id="auth-status-chip" class="auth-status" data-state="none" role="status" aria-live="polite">
     <span class="dot" aria-hidden="true"></span>
-    <span class="label">Auth: none</span>
+    <span class="label" id="authStatusLabel">Auth: none</span>
   </div>
 
   <!-- The one question -->
@@ -330,98 +539,390 @@
   <section class="branches" aria-label="Login methods">
 
     <!-- (1) Password — inline Test Account creds form reusing the existing encrypted Test Accounts. -->
-    <article class="branch" id="passwordBranch">
+    <article class="branch" id="passwordBranch" role="button" tabindex="0" aria-label="Select: Password login">
       <div class="branch-head">
-        <span class="branch-title">1</span>
         <span class="branch-title">Password</span>
       </div>
       <div class="branch-body">
         <h2>Password login</h2>
-        <p>Your app uses email + password. AutoSim will reuse your existing encrypted Test Accounts — no extra plumbing needed.</p>
-      </div>
-      <!-- Inline creds form slot wired to the existing test_accounts table (encrypted at rest). -->
-      <div id="passwordCredsForm" role="form" aria-label="Test account credentials">
-        <div class="creds-empty">No Test Accounts yet. Create one on the Trails dashboard, then pick it here.</div>
+        <p>Your app uses email + password. AutoSim reuses your existing encrypted Test Accounts — no extra plumbing needed.</p>
       </div>
     </article>
 
     <!-- (2) OTP / magic link — ready-to-paste agent prompt + copy button -->
-    <article class="branch" id="otpBranch">
+    <article class="branch" id="otpBranch" role="button" tabindex="0" aria-label="Select: OTP or magic link">
       <div class="branch-head">
-        <span class="branch-title">2</span>
         <span class="branch-title">OTP or magic link</span>
+        <span class="branch-recommend" id="otpRecommend" style="display:none">Recommended</span>
       </div>
       <div class="branch-body">
         <h2>One-time code or magic link</h2>
-        <p>Paste the prompt AutoSim will send to your agent. The agent reads the inbox and fills the OTP / clicks the link on behalf of the Sim.</p>
+        <p>Add a tiny test bypass to your OTP or magic-link flow — Klavity pastes the instructions for you.</p>
       </div>
-      <!-- Stub: real text lands here once the user pastes their prompt template. -->
-      <div id="otpPromptSlot" aria-label="Agent prompt preview">
-        &lt;stub — paste your agent prompt template here&gt;
-      </div>
-      <button type="button" class="copy-btn" data-copy-target="otpPromptSlot" aria-label="Copy agent prompt to clipboard">
-        Copy
-      </button>
     </article>
 
     <!-- (3) Google / SSO only — honest note that login UX is not simmed -->
-    <article class="branch" id="googleSsoBranch">
+    <article class="branch" id="googleSsoBranch" role="button" tabindex="0" aria-label="Select: Google or SSO-only">
       <div class="branch-head">
-        <span class="branch-title">3</span>
         <span class="branch-title">Google / SSO only</span>
       </div>
       <div class="branch-body">
         <h2>Google, Okta, or other SSO</h2>
-        <p>Your app is locked behind an identity provider. AutoSim can still walk the journey once — but the login UX itself will not be simmed.</p>
-      </div>
-      <!-- Honest disclosure: this branch's prompt variant tells the agent to skip the IdP flow. -->
-      <div id="googleSsoNote" role="note">
-        <strong>Note:</strong> When your app is SSO-only, AutoSim will use a pre-authenticated session for the walk. The login UX itself (IdP redirect, MFA, etc.) will not be simmed — but every page after sign-in will be, including any post-login onboarding or consent screens.
+        <p>Your app is locked behind an identity provider. AutoSim walks everything after sign-in — the IdP flow itself will not be simmed.</p>
       </div>
     </article>
 
   </section>
 
-  <!-- Paused runs waiting for a key -->
-  <section class="waiting" aria-label="Paused walks">
-    <div class="waiting-head">
-      <span class="waiting-title">Walking on hold</span>
-      <span id="waitingCount" class="waiting-count" aria-live="polite">0 trails paused</span>
-    </div>
+  <!-- ── Wizard panel (shown when a branch is selected) ──────────────────────── -->
+  <div class="wizard" id="wizard" aria-live="polite">
 
-    <!-- Sample row (populated by the dashboard at runtime; markup shown here as structure) -->
-    <div class="run-row" data-run-id="" role="listitem">
-      <div class="run-body">
-        <div class="run-name">&lt;trail name&gt;</div>
-        <div class="run-meta">paused · waiting for auth</div>
+    <!-- Password branch panel -->
+    <div id="passwordPanel" style="display:none">
+      <h3>Password login</h3>
+      <p class="wizard-sub">AutoSim will use the credentials stored in your project's Test Accounts. Create a test account below, then reference it in your AutoSim as <code>{{cred:name:email}}</code> / <code>{{cred:name:password}}</code>.</p>
+      <!-- Inline creds form slot wired to the existing test_accounts table (encrypted at rest). -->
+      <div id="passwordCredsForm" role="form" aria-label="Test account credentials">
+        <div class="creds-empty">No Test Accounts yet. <a id="testAccountsLink" href="/app?project=&amp;tab=settings#taccDrawer">Add a Test Account in Settings</a>, then come back here to verify AutoSim can log in.</div>
       </div>
-      <span class="pill-waiting" aria-label="Status: waiting for a key">Waiting for a key</span>
     </div>
 
-    <!-- Auto-resume promise -->
-    <div class="promise" role="status">
-      Once you tell us how people log in, the paused walks will resume automatically — no manual trigger needed.
+    <!-- OTP / mint-link branch panel -->
+    <div id="otpPanel" style="display:none">
+      <h3>One-time code or magic link</h3>
+      <p class="wizard-sub" id="otpSubtext">Paste the generated prompt into your coding agent (Cursor, Claude Code, Codex). The agent adds a guarded test bypass — Klavity will verify it works before resuming your paused walks.</p>
+
+      <ol class="step-list">
+        <li class="step-item" id="stepPickMethod">
+          <span class="step-num">1</span>
+          <div class="step-content">
+            <div class="step-label">Choose your auth method</div>
+            <div class="step-desc">
+              <button class="btn-sm" id="btnFixedOtp" style="margin-right:8px;margin-bottom:8px">OTP bypass (fixed test code)</button>
+              <button class="btn-sm" id="btnMintLink">Mint-link (session cookie via <code>/test-login</code>)</button>
+            </div>
+          </div>
+        </li>
+        <li class="step-item" id="stepGetPrompt">
+          <span class="step-num">2</span>
+          <div class="step-content">
+            <div class="step-label">Copy the agent prompt</div>
+            <div class="step-desc">Paste this into your coding agent. The agent will add the bypass to your app and run the registration curl at the end.</div>
+            <div id="otpPromptSlot" aria-label="Agent prompt" aria-live="polite">&lt;Select a method above to generate the prompt&gt;</div>
+            <div class="prompt-actions">
+              <button type="button" class="copy-btn" id="copyPromptBtn" data-copy-target="otpPromptSlot" aria-label="Copy agent prompt to clipboard" disabled>Copy prompt</button>
+              <span id="copyConfirm" style="font-size:12px;color:var(--green-text);display:none">Copied!</span>
+            </div>
+          </div>
+        </li>
+        <li class="step-item" id="stepVerify">
+          <span class="step-num">3</span>
+          <div class="step-content">
+            <div class="step-label">Klavity verifies the bypass</div>
+            <div class="step-desc">After your agent applies the patch and runs the registration curl, Klavity probes your auth flow to confirm it works.</div>
+            <!-- Probe result banner — injected by JS -->
+            <div class="probe-banner" id="probeBanner" role="status" aria-live="polite"></div>
+          </div>
+        </li>
+        <li class="step-item" id="stepResume">
+          <span class="step-num">4</span>
+          <div class="step-content">
+            <div class="step-label">Paused walks resume automatically</div>
+            <div class="step-desc">Once verification passes, any walks that hit an auth gate will pick up where they left off. Nothing to trigger.</div>
+          </div>
+        </li>
+      </ol>
+    </div>
+
+    <!-- Google/SSO panel -->
+    <div id="googlePanel" style="display:none">
+      <h3>Google, Okta, or other SSO</h3>
+      <p class="wizard-sub">AutoSim uses a pre-authenticated session for your app. The IdP redirect and MFA flow are skipped — everything on the other side of sign-in is still fully explored.</p>
+      <div id="googleSsoNote" role="note">
+        <strong>What this means:</strong> When your app is SSO-only, AutoSim will use a pre-authenticated session for the walk. The login UX itself (IdP redirect, MFA, etc.) will not be simmed — but every page after sign-in will be, including any post-login onboarding or consent screens.
+        <br><br>
+        To enable this, contact Klavity support or set up a Test Account in Settings with a pre-authenticated session token.
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Paused runs waiting for a key -->
+  <section class="waiting" aria-label="Paused walks waiting for an auth key" id="waitingSection">
+    <div class="waiting-head">
+      <span class="waiting-title">Waiting for a key</span>
+      <span id="waitingCount" class="waiting-count" aria-live="polite">0 walks paused</span>
+    </div>
+    <div id="waitingList" role="list"></div>
+    <!-- Auto-resume promise — shown when there are paused sessions -->
+    <div class="promise hide" id="resumePromise" role="status">
+      Once you tell us how people log in and we verify it, the paused walks will resume automatically — no manual trigger needed.
     </div>
   </section>
 
 </div>
 
-<!-- Minimal inline wiring for the copy button stub (real app wires this into clipboard API). -->
 <script>
 (function () {
-  var btn = document.querySelector('[data-copy-target]');
-  if (!btn) return;
-  btn.addEventListener('click', function () {
-    var slot = document.getElementById(btn.getAttribute('data-copy-target'));
-    if (!slot) return;
-    var text = slot.textContent || '';
-    if (typeof navigator !== 'undefined' && navigator.clipboard) {
-      navigator.clipboard.writeText(text).catch(function () {});
-    }
-  });
+  var pid = (new URLSearchParams(location.search)).get('project') || ''
 
-  // Stub: when the dashboard hydrates, it sets data-state on #authStatusChip to one of
-  // "none" | "registered" | "verified" and updates .label inside. No JS required for tests.
+  // ── Helpers ──────────────────────────────────────────────────────────────────
+  function esc(s) {
+    return String(s || '').replace(/[&<>"]/g, function (c) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]
+    })
+  }
+
+  function ago(ts) {
+    if (!ts) return ''
+    var s = Math.max(0, Math.floor((Date.now() - Number(ts)) / 1000))
+    if (s < 60) return s + 's ago'
+    var m = Math.floor(s / 60)
+    if (m < 60) return m + 'm ago'
+    var h = Math.floor(m / 60)
+    if (h < 24) return h + 'h ago'
+    return Math.floor(h / 24) + 'd ago'
+  }
+
+  function el(id) { return document.getElementById(id) }
+
+  function projQ() { return pid ? '?project=' + encodeURIComponent(pid) : '' }
+
+  // Keep back-link and test-accounts link project-scoped.
+  el('backLink').href = '/autosims' + projQ()
+  if (pid) {
+    var tal = el('testAccountsLink')
+    if (tal) tal.href = '/app?project=' + encodeURIComponent(pid) + '&tab=settings#taccDrawer'
+  }
+
+  // ── Auth status chip ─────────────────────────────────────────────────────────
+  function setChip(state, label) {
+    var chip = el('auth-status-chip')
+    chip.setAttribute('data-state', state || 'none')
+    el('authStatusLabel').textContent = label || ('Auth: ' + (state || 'none'))
+  }
+
+  // ── Status bar ───────────────────────────────────────────────────────────────
+  function setStatus(msg) { el('statusBar').textContent = msg || '' }
+
+  // ── Branch selection ─────────────────────────────────────────────────────────
+  var selectedBranch = null
+
+  function selectBranch(name) {
+    selectedBranch = name
+    ;['passwordBranch', 'otpBranch', 'googleSsoBranch'].forEach(function (id) {
+      var b = el(id)
+      if (id === name + 'Branch') b.classList.add('selected')
+      else b.classList.remove('selected')
+    })
+    ;['passwordPanel', 'otpPanel', 'googlePanel'].forEach(function (id) {
+      el(id).style.display = id === name + 'Panel' ? '' : 'none'
+    })
+    el('wizard').classList.add('open')
+  }
+
+  el('passwordBranch').addEventListener('click', function () { selectBranch('password') })
+  el('passwordBranch').addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') selectBranch('password') })
+  el('otpBranch').addEventListener('click', function () { selectBranch('otp') })
+  el('otpBranch').addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') selectBranch('otp') })
+  el('googleSsoBranch').addEventListener('click', function () { selectBranch('google') })
+  el('googleSsoBranch').addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') selectBranch('google') })
+
+  // ── OTP method buttons: fixed_otp vs mint_link ───────────────────────────────
+  var currentMethod = null
+  var probeInterval = null
+
+  function setOtpMethod(method) {
+    currentMethod = method
+    el('btnFixedOtp').style.fontWeight = method === 'fixed_otp' ? '800' : '600'
+    el('btnMintLink').style.fontWeight = method === 'mint_link' ? '800' : '600'
+    el('otpPromptSlot').textContent = 'Generating prompt…'
+    el('copyPromptBtn').disabled = true
+
+    if (!pid) {
+      el('otpPromptSlot').textContent = 'No project selected. Open this page from the AutoSims dashboard.'
+      return
+    }
+    fetch('/api/projects/' + encodeURIComponent(pid) + '/autosim-auth/setup-token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ method: method }),
+    })
+      .then(function (r) { return r.json() })
+      .then(function (d) {
+        if (d.error) {
+          el('otpPromptSlot').textContent = 'Error: ' + d.error
+          return
+        }
+        el('otpPromptSlot').textContent = d.prompt || '(no prompt returned)'
+        el('copyPromptBtn').disabled = false
+        // After the agent applies the diff + runs the curl, the probe will appear in the status.
+        // Start polling for probe result every 5s.
+        startProbePoll()
+      })
+      .catch(function (e) {
+        el('otpPromptSlot').textContent = 'Network error: ' + e.message
+      })
+  }
+
+  el('btnFixedOtp').addEventListener('click', function () { setOtpMethod('fixed_otp') })
+  el('btnMintLink').addEventListener('click', function () { setOtpMethod('mint_link') })
+
+  // ── Copy button ──────────────────────────────────────────────────────────────
+  el('copyPromptBtn').addEventListener('click', function () {
+    var slot = el('otpPromptSlot')
+    var text = slot.textContent || ''
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(function () {
+        el('copyConfirm').style.display = ''
+        setTimeout(function () { el('copyConfirm').style.display = 'none' }, 2000)
+      }).catch(function () {})
+    }
+  })
+
+  // ── Probe polling ────────────────────────────────────────────────────────────
+  function showProbeBanner(state, message) {
+    var banner = el('probeBanner')
+    banner.className = 'probe-banner ' + (state || 'waiting')
+    var titles = { waiting: 'Verifying…', green: 'Verified — your Sims have a key', red: 'Verification failed' }
+    banner.innerHTML = '<b>' + esc(titles[state] || 'Checking…') + '</b>' + esc(message || '')
+    banner.style.display = ''
+  }
+
+  function startProbePoll() {
+    if (probeInterval) clearInterval(probeInterval)
+    showProbeBanner('waiting', 'Waiting for your agent to register the auth config…')
+    probeInterval = setInterval(function () {
+      if (!pid) return
+      fetch('/api/projects/' + encodeURIComponent(pid) + '/autosim-auth', { credentials: 'include' })
+        .then(function (r) { return r.json() })
+        .then(function (d) {
+          var probe = d.latestProbe
+          if (!probe) return
+          if (probe.status === 'green') {
+            clearInterval(probeInterval)
+            showProbeBanner('green', 'Auth method is live. Paused walks will resume automatically.')
+            setChip('verified', 'Auth: verified')
+            loadPausedSessions()
+            // Mark step 3 done
+            el('stepVerify').classList.add('done')
+            el('stepResume').classList.add('done')
+          } else if (probe.status === 'red') {
+            clearInterval(probeInterval)
+            var errMsg = probe.error ? ' Error: ' + probe.error : ''
+            showProbeBanner('red', 'The bypass did not verify.' + errMsg + ' Fix the issue and re-paste the prompt.')
+          }
+        })
+        .catch(function () {})
+    }, 5000)
+  }
+
+  // ── Load auth status + paused sessions ──────────────────────────────────────
+  function loadStatus() {
+    if (!pid) {
+      setStatus('No project selected.')
+      setChip('none', 'Auth: no project selected')
+      return
+    }
+    fetch('/api/projects/' + encodeURIComponent(pid) + '/autosim-auth', { credentials: 'include' })
+      .then(function (r) {
+        if (r.status === 401) { location.href = '/login'; return null }
+        return r.json()
+      })
+      .then(function (d) {
+        if (!d) return
+        setStatus('')
+        var stateMap = { unregistered: 'none', registered: 'registered', verified: 'verified' }
+        var labelMap = {
+          unregistered: 'Auth: not set up',
+          registered: 'Auth: registered — verifying',
+          verified: 'Auth: verified',
+        }
+        var state = stateMap[d.authStatus] || 'none'
+        setChip(state, labelMap[d.authStatus] || 'Auth: ' + d.authStatus)
+
+        // If already registered or verified, surface the OTP wizard with probe status.
+        if (d.authStatus === 'registered' || d.authStatus === 'verified') {
+          if (!selectedBranch) selectBranch('otp')
+          if (d.latestProbe) {
+            if (d.latestProbe.status === 'green') {
+              showProbeBanner('green', 'Auth method is live. Paused walks will resume automatically.')
+              el('stepVerify').classList.add('done')
+              el('stepResume').classList.add('done')
+            } else if (d.latestProbe.status === 'red') {
+              showProbeBanner('red', (d.latestProbe.error || 'Verification failed.') + ' Fix and re-paste the prompt.')
+            } else {
+              showProbeBanner('waiting', 'Verification in progress…')
+              startProbePoll()
+            }
+          }
+        }
+
+        // Recommend OTP branch when auth is not set up (most common need)
+        if (!d.authStatus || d.authStatus === 'unregistered') {
+          el('otpRecommend').style.display = ''
+        }
+
+        renderPausedSessions(d.pausedSessions || [], d.pausedCount || 0)
+      })
+      .catch(function (e) {
+        setStatus('Could not load auth status: ' + e.message)
+      })
+  }
+
+  function loadPausedSessions() {
+    if (!pid) return
+    fetch('/api/projects/' + encodeURIComponent(pid) + '/autosim-auth', { credentials: 'include' })
+      .then(function (r) { return r.json() })
+      .then(function (d) {
+        if (d && d.pausedSessions) renderPausedSessions(d.pausedSessions, d.pausedCount || 0)
+      })
+      .catch(function () {})
+  }
+
+  function renderPausedSessions(sessions, total) {
+    var countEl = el('waitingCount')
+    var listEl = el('waitingList')
+    var promise = el('resumePromise')
+
+    countEl.textContent = (total || 0) + ' walk' + ((total || 0) !== 1 ? 's' : '') + ' paused'
+
+    if (!sessions || !sessions.length) {
+      listEl.innerHTML = '<div class="empty-paused">No walks are currently waiting for an auth key.</div>'
+      promise.classList.add('hide')
+      return
+    }
+
+    var html = ''
+    for (var i = 0; i < sessions.length; i++) {
+      var s = sessions[i]
+      var href = '/autosims' + projQ()
+      html += '<div class="run-row" data-run-id="' + esc(s.id) + '" role="listitem">'
+        + '<div class="run-body">'
+        + '<div class="run-name">' + esc(s.name || s.id) + '</div>'
+        + '<div class="run-meta">paused &middot; ' + esc(s.baseUrl || '') + (s.updatedAt ? ' &middot; ' + esc(ago(s.updatedAt)) : '') + '</div>'
+        + '</div>'
+        + '<span class="pill-waiting" aria-label="Status: waiting for a key">Waiting for a key</span>'
+        + '</div>'
+    }
+    if (total > sessions.length) {
+      html += '<div style="font-size:12px;color:var(--paper-faint);text-align:center;padding:8px">+ ' + (total - sessions.length) + ' more on the <a href="' + esc(href) + '" style="color:var(--indigo)">AutoSims page</a></div>'
+    }
+    listEl.innerHTML = html
+    promise.classList.remove('hide')
+  }
+
+  // ── Auto-select branch when already configured ───────────────────────────────
+  // On load: fetch status, then render. Branch selection and probe status are shown
+  // reactively, so the UI state always matches the server.
+  loadStatus()
+
+  // Apply theme from parent shell if available (mirrors dashboard.html approach)
+  try {
+    var stored = localStorage.getItem('klav-theme')
+    if (stored === 'dark') document.documentElement.setAttribute('data-theme', 'dark')
+  } catch (e) {}
 })();
 </script>
 </body>
