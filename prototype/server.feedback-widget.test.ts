@@ -12,6 +12,8 @@ const srvDbFile = join(tmpdir(), `klav-fw-${ts}.db`)
 
 // 32-byte AES-GCM key for this test run (all-42 bytes, matches connectors test pattern)
 const TEST_SECRET = Buffer.from(new Uint8Array(32).fill(42)).toString("base64")
+const PROJECT_ID = `proj_feedback_widget_${ts}`
+const NOW = Date.now()
 
 // Seed via raw client — never import shared db module (avoids module-singleton contamination).
 const rawClient = createClient({ url: "file:" + srvDbFile })
@@ -40,6 +42,8 @@ await rawExec(`CREATE TABLE IF NOT EXISTS sim_traits (id TEXT PRIMARY KEY, sim_i
 await rawExec(`CREATE INDEX IF NOT EXISTS idx_fb_proj ON feedback(project_id)`)
 await rawExec(`CREATE INDEX IF NOT EXISTS idx_connectors_project ON connectors(project_id)`)
 await rawExec(`CREATE INDEX IF NOT EXISTS idx_texports_feedback ON ticket_exports(feedback_id)`)
+await rawExec(`INSERT OR IGNORE INTO accounts (id, name, owner_email, created_at) VALUES (?,?,?,?)`, ["acct_feedback_widget", "Feedback Widget", "owner@test.local", NOW])
+await rawExec(`INSERT OR IGNORE INTO projects (id, account_id, name, created_at, updated_at) VALUES (?,?,?,?,?)`, [PROJECT_ID, "acct_feedback_widget", "Feedback Widget Project", NOW, NOW])
 
 // ── Spawn the server on a random port ─────────────────────────────────────────
 let serverPort: number
@@ -127,4 +131,36 @@ test("POST /api/feedback success response carries CORS headers", async () => {
   expect(r.headers.get("access-control-allow-origin")).toBe("*")
   const j = await r.json()
   expect(j.saved).toBe(true)
+})
+
+test("POST /api/feedback dedups repeated human reports and acknowledges known issue", async () => {
+  const submit = async (description: string) => {
+    const fd = new FormData()
+    fd.set("project_id", PROJECT_ID)
+    fd.set("description", description)
+    fd.set("page_url", "https://example.com/checkout?order=123")
+    const r = await fetch(`${BASE}/api/feedback`, {
+      method: "POST",
+      headers: { Origin: BASE },
+      body: fd,
+    })
+    expect(r.status).toBe(200)
+    return r.json()
+  }
+
+  const first = await submit("Checkout order 123 fails with a red payment error")
+  expect(first.saved).toBe(true)
+  expect(String(first.id).startsWith("fb_")).toBe(true)
+  expect(first.known).toBeUndefined()
+
+  const second = await submit("Checkout order 987 fails with a red payment error")
+  expect(second.saved).toBe(true)
+  expect(second.id).toBe(first.id)
+  expect(second.known).toBe(true)
+  expect(second.deduped).toBe(true)
+
+  const count = await rawClient.execute({ sql: "SELECT COUNT(*) AS n FROM feedback WHERE project_id=?", args: [PROJECT_ID] })
+  expect(Number((count.rows[0] as any).n)).toBe(1)
+  const row = await rawClient.execute({ sql: "SELECT recurrence_count FROM feedback WHERE id=?", args: [first.id] })
+  expect(Number((row.rows[0] as any).recurrence_count)).toBe(2)
 })

@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test"
-import { normalizeUrlPath, issueKeyFor, lexicalSim, chooseDedup } from "./dedup"
+import { normalizeUrlPath, issueKeyFor, lexicalSim, chooseDedup, humanReportIssueKeyFor, normalizeReportText } from "./dedup"
 
 test("normalizeUrlPath strips query/hash + trailing slash", () => {
   expect(normalizeUrlPath("/checkout/?step=2#pay")).toBe("/checkout")
@@ -28,4 +28,20 @@ test("chooseDedup: exact match wins; else semantic ≥ threshold; else null", ()
   const recent = [{ id: "fb2", title: "Export button is hidden", observation: "" }]
   expect(chooseDedup({ title: "Export button is hidden", observation: "" }, null, recent, 0.82)).toBe("fb2")
   expect(chooseDedup({ title: "Onboarding wizard crashes", observation: "" }, null, recent, 0.82)).toBeNull()
+})
+
+test("humanReportIssueKeyFor normalizes volatile ids, numbers, and timestamps", () => {
+  expect(normalizeReportText("Checkout order 123 failed at 2026-07-11T10:11:12Z")).toBe("checkout order <num> failed at <timestamp>")
+  const a = humanReportIssueKeyFor({
+    projectId: "p1",
+    urlPath: "/checkout?step=pay",
+    text: "Checkout order 123 failed for user 550e8400-e29b-41d4-a716-446655440000 at 2026-07-11T10:11:12Z",
+  })
+  const b = humanReportIssueKeyFor({
+    projectId: "p1",
+    urlPath: "/checkout",
+    text: "checkout order 987 failed for user 550e8400-e29b-41d4-a716-446655440111 at 2026-07-12T00:00:00Z",
+  })
+  expect(a).toBe(b)
+  expect(a).not.toBe(humanReportIssueKeyFor({ projectId: "p2", urlPath: "/checkout", text: "checkout order 987 failed for user x at 2026-07-12" }))
 })
