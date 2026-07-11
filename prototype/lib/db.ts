@@ -603,6 +603,25 @@ export async function applySchema(c: Client) {
        PRIMARY KEY (label_id, feedback_id)
      )`,
     `CREATE INDEX IF NOT EXISTS ticket_labels_feedback_idx ON ticket_labels (feedback_id)`,
+    // ── KLA-255: needsConfirm queue — fuzzy/ambiguous persona→Sim match results that need human
+    // confirmation before the transcript reconcile is applied. One row per persona extracted from
+    // a transcript that matched fuzzily. status: 'pending' | 'confirmed' | 'rejected'.
+    // candidates_json = JSON array of { simId, name, role }. On confirm, chosen_sim_id records
+    // which candidate the human picked (used to trigger reconcile). No FK constraints (additive).
+    `CREATE TABLE IF NOT EXISTS pending_sim_matches (
+       id TEXT PRIMARY KEY,
+       project_id TEXT NOT NULL,
+       transcript_id TEXT NOT NULL,
+       persona_name TEXT NOT NULL,
+       candidates_json TEXT NOT NULL,
+       status TEXT NOT NULL DEFAULT 'pending',
+       chosen_sim_id TEXT,
+       resolved_by TEXT,
+       created_at INTEGER NOT NULL,
+       updated_at INTEGER NOT NULL
+     )`,
+    `CREATE INDEX IF NOT EXISTS psm_proj_status_idx ON pending_sim_matches (project_id, status, created_at)`,
+    `CREATE INDEX IF NOT EXISTS psm_transcript_idx ON pending_sim_matches (transcript_id)`,
   ]
   for (const s of stmts) await c.execute(s)
 
@@ -3854,4 +3873,95 @@ export async function getSuggestedLabels(feedbackId: string, projectId: string):
   const all = await listLabels(projectId)
   const idSet = new Set(ids)
   return all.filter(l => idSet.has(l.id))
+}
+
+// ── KLA-255: needsConfirm queue — pending_sim_matches CRUD ──────────────────
+
+export type PendingSimMatch = {
+  id: string
+  projectId: string
+  transcriptId: string
+  personaName: string
+  candidates: { simId: string; name: string; role: string }[]
+  status: "pending" | "confirmed" | "rejected"
+  chosenSimId: string | null
+  resolvedBy: string | null
+  createdAt: number
+  updatedAt: number
+}
+
+function rowToPendingSimMatch(x: any): PendingSimMatch {
+  let candidates: { simId: string; name: string; role: string }[] = []
+  try { candidates = JSON.parse(String(x.candidates_json || "[]")) } catch { candidates = [] }
+  return {
+    id: String(x.id),
+    projectId: String(x.project_id),
+    transcriptId: String(x.transcript_id),
+    personaName: String(x.persona_name),
+    candidates,
+    status: (String(x.status || "pending")) as PendingSimMatch["status"],
+    chosenSimId: x.chosen_sim_id != null ? String(x.chosen_sim_id) : null,
+    resolvedBy: x.resolved_by != null ? String(x.resolved_by) : null,
+    createdAt: Number(x.created_at),
+    updatedAt: Number(x.updated_at),
+  }
+}
+
+// Insert one pending match item. Returns the generated id.
+export async function insertPendingSimMatch(args: {
+  projectId: string
+  transcriptId: string
+  personaName: string
+  candidates: { simId: string; name: string; role: string }[]
+}): Promise<string> {
+  const id = "psm_" + crypto.randomUUID()
+  const now = Date.now()
+  await db!.execute({
+    sql: `INSERT INTO pending_sim_matches (id, project_id, transcript_id, persona_name, candidates_json, status, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)`,
+    args: [id, args.projectId, args.transcriptId, args.personaName, JSON.stringify(args.candidates), now, now],
+  })
+  return id
+}
+
+// List pending (or all) sim matches for a project, newest first.
+export async function listPendingSimMatches(projectId: string, opts?: { status?: string }): Promise<PendingSimMatch[]> {
+  const status = opts?.status ?? "pending"
+  const r = await db!.execute({
+    sql: `SELECT * FROM pending_sim_matches WHERE project_id=? AND status=? ORDER BY created_at DESC`,
+    args: [projectId, status],
+  })
+  return r.rows.map(rowToPendingSimMatch)
+}
+
+// Get one match by id, scoped to project (tenant safety).
+export async function getPendingSimMatch(projectId: string, id: string): Promise<PendingSimMatch | null> {
+  const r = await db!.execute({
+    sql: `SELECT * FROM pending_sim_matches WHERE id=? AND project_id=?`,
+    args: [id, projectId],
+  })
+  if (!r.rows.length) return null
+  return rowToPendingSimMatch(r.rows[0])
+}
+
+// Confirm: record chosen simId, set status = 'confirmed'.
+export async function confirmPendingSimMatch(projectId: string, id: string, chosenSimId: string, resolvedBy: string): Promise<boolean> {
+  const now = Date.now()
+  const r = await db!.execute({
+    sql: `UPDATE pending_sim_matches SET status='confirmed', chosen_sim_id=?, resolved_by=?, updated_at=?
+          WHERE id=? AND project_id=? AND status='pending'`,
+    args: [chosenSimId, resolvedBy, now, id, projectId],
+  })
+  return (r.rowsAffected ?? 0) > 0
+}
+
+// Reject: set status = 'rejected', clear any chosen_sim_id.
+export async function rejectPendingSimMatch(projectId: string, id: string, resolvedBy: string): Promise<boolean> {
+  const now = Date.now()
+  const r = await db!.execute({
+    sql: `UPDATE pending_sim_matches SET status='rejected', chosen_sim_id=NULL, resolved_by=?, updated_at=?
+          WHERE id=? AND project_id=? AND status='pending'`,
+    args: [resolvedBy, now, id, projectId],
+  })
+  return (r.rowsAffected ?? 0) > 0
 }

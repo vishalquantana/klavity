@@ -1,6 +1,6 @@
 // Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
 import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch } from "./lib/db"
 import { issueKeyFor, chooseDedup, humanReportIssueKeyFor } from "./lib/dedup"
 import { classifySimObservation } from "./lib/sim-bug-classify"
 import { getConnector, listConnectorTypes, type TicketPayload, type TicketAttachment } from "./lib/connectors/index"
@@ -2775,6 +2775,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // de-dup matched Sims (two extracted personas could both map to one Sim — reconcile it once).
         const matchedSimIds = [...new Set(matched.map((m) => m.simId))]
 
+        // KLA-255: persist needsConfirm items so they appear in the confirmation queue.
+        // Fire-and-forget (non-fatal) — the response still carries them for immediate UI use.
+        for (const nc of needsConfirm) {
+          insertPendingSimMatch({
+            projectId,
+            transcriptId,
+            personaName: nc.name,
+            candidates: nc.candidates,
+          }).catch((e: any) => console.warn("insertPendingSimMatch failed (non-fatal):", e?.message || e))
+        }
+
         // 4) AI CALL #2 (per matched Sim, gated): reconcileSim → applyReconcileOps → persist + audit + cache.
         let opsApplied = 0
         const reconcileUsages: any[] = []
@@ -4686,7 +4697,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return json({ project: { id: created.id, name: created.name, accountId: created.accountId, status: created.status, role: "admin" } }, 201)
       }
       // Project detail + members (projectAccess-gated) and project-scoped invite (R4) + monitored-urls (P3b) + connectors.
-      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/triage|\/tickets(?:\/bulk)?|\/recurring|\/replays|\/widget-status|\/labels(?:\/[^/]+)?|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/test)?|\/test-accounts(?:\/[^/]+)?)?$/)
+      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/triage|\/tickets(?:\/bulk)?|\/recurring|\/replays|\/widget-status|\/labels(?:\/[^/]+)?|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/test)?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?)?$/)
       if (projMatch) {
         const pid = projMatch[1]
         const sub = projMatch[2] || ""
@@ -5051,6 +5062,84 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (req.method === "GET" && sub === "/triage") {
           const triage = await listTriageFeedback(proj.id)
           return json({ triage })
+        }
+
+        // ── KLA-255: needsConfirm / pending sim-match queue ───────────────────────────────────────
+        // GET  /api/projects/:id/sim-matches          — list pending items (any project member)
+        // POST /api/projects/:id/sim-matches/:mid/confirm — pick a candidate, trigger reconcile
+        // POST /api/projects/:id/sim-matches/:mid/reject  — discard (any project member)
+
+        if (sub === "/sim-matches" && req.method === "GET") {
+          const matches = await listPendingSimMatches(proj.id, { status: "pending" })
+          return json({ matches })
+        }
+
+        {
+          const smConfirm = sub.match(/^\/sim-matches\/([^/]+)\/confirm$/)
+          if (smConfirm && req.method === "POST") {
+            const matchId = smConfirm[1]
+            const body = await req.json().catch(() => ({}))
+            const chosenSimId = String(body.simId ?? "").trim()
+            if (!chosenSimId) return json({ error: "simId is required." }, 400)
+            const matchRow = await getPendingSimMatch(proj.id, matchId)
+            if (!matchRow) return json({ error: "Not found." }, 404)
+            if (matchRow.status !== "pending") return json({ error: "Already resolved." }, 409)
+            // Validate that chosenSimId is one of the candidates (not an arbitrary id injection).
+            const validCandidateIds = new Set(matchRow.candidates.map((c) => c.simId))
+            if (!validCandidateIds.has(chosenSimId)) return json({ error: "chosenSimId must be one of the listed candidates." }, 400)
+            // Mark confirmed.
+            const ok = await confirmPendingSimMatch(proj.id, matchId, chosenSimId, me)
+            if (!ok) return json({ error: "Update failed." }, 500)
+            // Trigger reconcile for the chosen Sim + originating transcript (same logic as the
+            // auto-matched path in POST /api/transcripts, but on-demand via this confirmation).
+            const tr = await transcriptById(proj.id, matchRow.transcriptId)
+            if (tr) {
+              // Fire-and-forget: non-fatal if the reconcile itself fails (the match is already confirmed).
+              ;(async () => {
+                try {
+                  const sourceDate = tr.sourceDate ?? Date.now()
+                  const transcriptId = tr.id
+                  await ensureTraitsSeeded(chosenSimId)
+                  const current = await listTraits(chosenSimId, { activeOnly: true })
+                  const recentlyResolved = await getRecentlyResolvedTraits(chosenSimId)
+                  const { ops, usage } = await reconcileSim(current, tr.rawText, { email: me, projectId: proj.id, recentlyResolved })
+                  const reopenIds = new Set(ops.filter((o: any) => o.op === "reopen" && o.traitId).map((o: any) => o.traitId!))
+                  let traitsForApply = current
+                  if (reopenIds.size > 0) {
+                    const allTraits = await listTraits(chosenSimId)
+                    const resolvedTargets = allTraits.filter((t) => reopenIds.has(t.id) && t.status !== "active")
+                    traitsForApply = [...current, ...resolvedTargets]
+                  }
+                  const res = applyReconcileOps(traitsForApply, ops, { simId: chosenSimId, projectId: proj.id, transcriptId, sourceDate, rawText: tr.rawText })
+                  for (const w of res.traitWrites) {
+                    if (w.mode === "insert") await insertTrait(w.trait)
+                    else await updateTrait(w.trait)
+                  }
+                  for (const e of res.traitEvents) await insertTraitEvent(e)
+                  await markReconcileRun(chosenSimId, transcriptId)
+                  await rebuildInsightsJson(chosenSimId)
+                  await insertActivity({ projectId: proj.id, type: "sim_evolved", actorEmail: me, simId: chosenSimId, meta: { transcriptId, ops: res.traitWrites.length, via: "sim_match_confirm" } })
+                  void recordAiCall({ type: "reconcile", model: "unknown", accountId: proj.accountId, feature: "sim_match_confirm", actorEmail: me, projectId: proj.id, inputTokens: usage?.input_tokens ?? 0, outputTokens: usage?.output_tokens ?? 0, costUsd: null })
+                } catch (err: any) {
+                  console.warn("sim_match_confirm reconcile failed (non-fatal):", err?.message || err)
+                }
+              })()
+            }
+            return json({ ok: true, matchId, chosenSimId })
+          }
+        }
+
+        {
+          const smReject = sub.match(/^\/sim-matches\/([^/]+)\/reject$/)
+          if (smReject && req.method === "POST") {
+            const matchId = smReject[1]
+            const matchRow = await getPendingSimMatch(proj.id, matchId)
+            if (!matchRow) return json({ error: "Not found." }, 404)
+            if (matchRow.status !== "pending") return json({ error: "Already resolved." }, 409)
+            const ok = await rejectPendingSimMatch(proj.id, matchId, me)
+            if (!ok) return json({ error: "Update failed." }, 500)
+            return json({ ok: true, matchId })
+          }
         }
 
         // GET /api/projects/:id/tickets — paginated, filterable ticket list (any project member, KLA-169)
