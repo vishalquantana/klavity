@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test"
-import { otpEmailHtml, sendTicketAssignmentEmail, sendTicketAssignmentInviteEmail } from "./mail.ts"
+import { otpEmailHtml, sendTicketAssignmentEmail, sendTicketAssignmentInviteEmail, sendFixedNotification } from "./mail.ts"
 
 test("otpEmailHtml renders the code and brand chrome", () => {
   const html = otpEmailHtml("464639")
@@ -57,6 +57,59 @@ test("sendTicketAssignmentEmail posts a ticket assignment notification", async (
   expect(body.subject).toContain("ticket assigned")
   expect(body.content[0].value).toContain("Checkout fails")
   expect(body.content[0].value).toContain("https://klavity.test/dashboard?project=p1#tickets")
+})
+
+test("sendFixedNotification sends a 'your bug is fixed' email to the reporter", async () => {
+  const oldKey = process.env.SENDGRID_API_KEY
+  const oldFrom = process.env.KLAV_MAIL_FROM
+  const oldFetch = globalThis.fetch
+  const calls: any[] = []
+  process.env.SENDGRID_API_KEY = "sg-test"
+  process.env.KLAV_MAIL_FROM = "bugs@example.com"
+  globalThis.fetch = (async (url: any, init: any) => {
+    calls.push({ url, init })
+    return new Response("", { status: 202 })
+  }) as any
+  try {
+    await sendFixedNotification("reporter@example.com", {
+      title: "Checkout crashes on mobile",
+      projectName: "Acme Store",
+      ticketUrl: "https://klavity.in/dashboard?project=proj_1#tickets",
+    })
+  } finally {
+    globalThis.fetch = oldFetch
+    if (oldKey === undefined) delete process.env.SENDGRID_API_KEY
+    else process.env.SENDGRID_API_KEY = oldKey
+    if (oldFrom === undefined) delete process.env.KLAV_MAIL_FROM
+    else process.env.KLAV_MAIL_FROM = oldFrom
+  }
+
+  expect(calls).toHaveLength(1)
+  const body = JSON.parse(calls[0].init.body)
+  expect(calls[0].url).toBe("https://api.sendgrid.com/v3/mail/send")
+  expect(body.personalizations[0].to[0].email).toBe("reporter@example.com")
+  expect(body.from.email).toBe("bugs@example.com")
+  expect(body.subject).toContain("Fixed:")
+  expect(body.subject).toContain("Checkout crashes on mobile")
+  // Both text + html content channels carry the key info.
+  const text = body.content.find((c: any) => c.type === "text/plain")?.value ?? ""
+  const html = body.content.find((c: any) => c.type === "text/html")?.value ?? ""
+  expect(text).toContain("Acme Store")
+  expect(text).toContain("https://klavity.in/dashboard?project=proj_1#tickets")
+  expect(html).toContain("Acme Store")
+  expect(html).toContain("https://klavity.in/dashboard?project=proj_1#tickets")
+  expect(html).toContain("Checkout crashes on mobile")
+})
+
+test("sendFixedNotification throws when SENDGRID_API_KEY is absent", async () => {
+  const oldKey = process.env.SENDGRID_API_KEY
+  delete process.env.SENDGRID_API_KEY
+  try {
+    await expect(sendFixedNotification("r@x.com", { title: "bug", projectName: "P", ticketUrl: "https://t" }))
+      .rejects.toThrow("SENDGRID_API_KEY not set")
+  } finally {
+    if (oldKey !== undefined) process.env.SENDGRID_API_KEY = oldKey
+  }
 })
 
 test("sendTicketAssignmentInviteEmail posts a join-and-view invitation", async () => {

@@ -6,7 +6,7 @@ import { classifySimObservation } from "./lib/sim-bug-classify"
 import { getConnector, listConnectorTypes, type TicketPayload, type TicketAttachment } from "./lib/connectors/index"
 import { inboundSupported, verifyGithubSignature, verifyLinearSignature, extractExternalKey, mapExternalStatus } from "./lib/connectors/inbound"
 import { applyReconcileOps, recurrenceFromEvents, pickCitation, type ReconcileOp, type Trait, type TraitEventRow } from "./lib/provenance"
-import { sendOtp, sendLeadAlert, sendTicketAssignmentEmail, sendTicketAssignmentInviteEmail } from "./lib/mail"
+import { sendOtp, sendLeadAlert, sendTicketAssignmentEmail, sendTicketAssignmentInviteEmail, sendFixedNotification } from "./lib/mail"
 import { token, otp, emailAllowed, cookie, clearCookie, parseCookies, isOpsAdmin } from "./lib/auth"
 import { uploadScreenshotMeta, presignGet, deleteObject, getObjectBytes, type UploadedScreenshot } from "./lib/s3"
 import { signImageToken, verifyImageToken } from "./lib/imgsign"
@@ -1640,6 +1640,16 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           feedbackId: exportRow.feedbackId,
           meta: { from: beforeFeedback?.status ?? null, to: newStatus, source: "connector_webhook", connectorType: type, externalKey },
         }).catch((e: any) => console.warn("ticket status activity skipped:", e?.message || e))
+        // notify-on-fix: if this inbound event closed the ticket, email the reporter (contact_email).
+        // Fire-and-forget — a notification failure must never affect the webhook response.
+        if (newStatus === "done" && beforeFeedback?.contactEmail) {
+          const proj = await projectById(exportRow.projectId).catch(() => null)
+          void sendFixedNotification(beforeFeedback.contactEmail, {
+            title: String(beforeFeedback.observation || "Bug report"),
+            projectName: proj?.name ?? "your project",
+            ticketUrl: `${BASE}/dashboard?project=${encodeURIComponent(exportRow.projectId)}#tickets`,
+          }).catch((e: any) => console.error("notify-on-fix inbound (non-fatal):", e?.message || e))
+        }
       }
       return json({ ok: true, status: newStatus })
     }
@@ -4493,6 +4503,15 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             }
           }
           if (activityWrites.length) await Promise.all(activityWrites)
+          // notify-on-fix: if this patch marked the ticket done, email the reporter (contact_email).
+          if (meta.status === "done" && fbRow.status !== "done" && fbRow.contactEmail) {
+            const proj = await projectById(fbRow.projectId).catch(() => null)
+            void sendFixedNotification(fbRow.contactEmail, {
+              title: String(fbRow.observation || "Bug report"),
+              projectName: proj?.name ?? "your project",
+              ticketUrl: `${BASE}/dashboard?project=${encodeURIComponent(fbRow.projectId)}#tickets`,
+            }).catch((e: any) => console.error("notify-on-fix patch (non-fatal):", e?.message || e))
+          }
           return json({ ok: true })
         }
 
