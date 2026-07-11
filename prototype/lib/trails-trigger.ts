@@ -94,7 +94,7 @@ export async function runWalkNow(
         await finishWalk(projectId, runId, { status: "red", llmCalls: 0, summary: { failureKind: "crash", error: String(e?.message || e) } }).catch(() => {})
       }
     }
-  })
+  }, projectId) // KLA-266: key the walk queue by project for per-project fairness
 
   // Surface a synchronous WalkBusyError (or a startWalk failure) to the caller; otherwise resolve as
   // soon as the run row exists. The background `slotHeld` keeps running; swallow its settle so a
