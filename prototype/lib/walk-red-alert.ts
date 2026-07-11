@@ -1,13 +1,22 @@
-// Slack alert when an AutoSim walk finishes RED (regression).
+// Slack alert when an AutoSim walk finishes RED.
 //
 // Invoked fire-and-forget from trails-runner.ts after finishWalk — a failure here must
 // NEVER affect the walk result or the DB record. Same contract as lib/signup-alert.ts.
 //
-// Enabled by SLACK_ALERT_WEBHOOK_URL or SLACK_SIGNUP_WEBHOOK_URL.
+// TWO kinds of RED, routed to DIFFERENT channels (KLAVITYKLA-195 fix):
+//   • INFRASTRUCTURE failure (failureKind "crash" OR browserUnavailable) — the walk never really ran
+//     (e.g. the Steel/remote browser could not be reached). This is NOT a product regression, so it
+//     must NOT say "regression detected" and must NOT go to the regression/signup channel. Routed to
+//     SLACK_ERROR_WEBHOOK_URL (via error-alert.reportError) and labelled a connection/infra failure.
+//   • GENUINE regression (real RED, not crash/browserUnavailable) — routed to SLACK_ALERT_WEBHOOK_URL.
+//     If SLACK_ALERT_WEBHOOK_URL is unset it falls back to SLACK_ERROR_WEBHOOK_URL — NEVER the signup
+//     channel (walk alerts must never pollute signup). Signup alerts (lib/signup-alert.ts) are separate.
+//
 // KLAV_BASE_URL is used to build a deep-link into the walk-detail page.
 
 import { safeFetch } from "./safe-fetch"
 import { formatIST } from "./signup-alert"
+import { reportError } from "./error-alert"
 
 export interface WalkRedAlertContext {
   trailName: string
@@ -18,6 +27,15 @@ export interface WalkRedAlertContext {
   reasons: string[]
   /** epoch ms when the walk finished */
   at: number
+  /** "crash" = infra/hard failure; "regression" = genuine expectation failure. */
+  failureKind?: "crash" | "regression"
+  /** true when the browser could not be started/reached at all (infra). Implies infra routing. */
+  browserUnavailable?: boolean
+}
+
+/** An infra failure is a crash OR an unavailable browser — never a real product regression. */
+export function isInfraFailure(ctx: Pick<WalkRedAlertContext, "failureKind" | "browserUnavailable">): boolean {
+  return ctx.failureKind === "crash" || ctx.browserUnavailable === true
 }
 
 function truncate(s: string, n: number): string {
@@ -30,15 +48,21 @@ function field(label: string, value: string) {
 
 export function buildWalkRedSlackPayload(ctx: WalkRedAlertContext, baseUrl?: string) {
   const walkUrl = baseUrl ? `${baseUrl}/autosims/walk/${ctx.runId}?project=${encodeURIComponent(ctx.projectId)}` : null
+  const infra = isInfraFailure(ctx)
 
   const reasonSummary = ctx.reasons.length
     ? ctx.reasons.map((r) => `• ${r}`).join("\n")
     : "No reason recorded"
 
+  // Label honestly: an infra/connection failure is NOT a regression.
+  const verdict = infra ? "🔌 RED — connection / infrastructure failure" : "🔴 RED — regression detected"
+  const findingsLabel = infra ? "Cause" : "Findings"
+  const headerText = infra ? "🔌 AutoSim: walk RED (infra failure)" : "🔴 AutoSim: RED walk detected"
+
   const fields = [
     field("Trail", truncate(ctx.trailName, 80)),
-    field("Verdict", "🔴 RED — regression detected"),
-    field("Findings", truncate(reasonSummary, 300)),
+    field("Verdict", verdict),
+    field(findingsLabel, truncate(reasonSummary, 300)),
     field("Time", formatIST(ctx.at)),
   ]
   if (walkUrl) {
@@ -46,9 +70,11 @@ export function buildWalkRedSlackPayload(ctx: WalkRedAlertContext, baseUrl?: str
   }
 
   return {
-    text: `🔴 AutoSim walk RED: "${ctx.trailName}"`,
+    text: infra
+      ? `🔌 AutoSim walk RED (infra): "${ctx.trailName}"`
+      : `🔴 AutoSim walk RED: "${ctx.trailName}"`,
     blocks: [
-      { type: "header", text: { type: "plain_text", text: "🔴 AutoSim: RED walk detected", emoji: true } },
+      { type: "header", text: { type: "plain_text", text: headerText, emoji: true } },
       { type: "section", fields },
       {
         type: "context",
@@ -59,11 +85,30 @@ export function buildWalkRedSlackPayload(ctx: WalkRedAlertContext, baseUrl?: str
 }
 
 export async function notifyWalkRed(ctx: WalkRedAlertContext): Promise<void> {
-  const webhook = process.env.SLACK_ALERT_WEBHOOK_URL || process.env.SLACK_SIGNUP_WEBHOOK_URL
+  const baseUrl = (process.env.KLAV_BASE_URL || "").replace("klavity.quantana.top", "klavity.in") || undefined
+
+  // INFRA failure → SLACK_ERROR_WEBHOOK_URL via reportError. Labelled a backend/connection failure,
+  // NOT a regression, and NEVER the signup channel. reportError is a no-op when the error webhook
+  // is unset (open-core safe default).
+  if (isInfraFailure(ctx)) {
+    const reason = ctx.reasons.length ? ctx.reasons.join(" | ") : "browser/infra unavailable"
+    const walkUrl = baseUrl ? `${baseUrl}/autosims/walk/${ctx.runId}?project=${encodeURIComponent(ctx.projectId)}` : undefined
+    await reportError({
+      where: "backend",
+      message: `AutoSim walk infra failure — "${ctx.trailName}": ${truncate(reason, 300)}`,
+      route: walkUrl,
+      projectId: ctx.projectId,
+      traceId: ctx.runId,
+    }).catch((err: any) => console.error("walk-red-alert (infra, non-fatal):", err?.message || err))
+    return
+  }
+
+  // GENUINE regression → SLACK_ALERT_WEBHOOK_URL, falling back to SLACK_ERROR_WEBHOOK_URL.
+  // The signup webhook is intentionally NOT a fallback here — walk alerts must never hit signup.
+  const webhook = process.env.SLACK_ALERT_WEBHOOK_URL || process.env.SLACK_ERROR_WEBHOOK_URL
   if (!webhook) return
 
   try {
-    const baseUrl = (process.env.KLAV_BASE_URL || "").replace("klavity.quantana.top", "klavity.in") || undefined
     const payload = buildWalkRedSlackPayload(ctx, baseUrl)
     const res = await safeFetch(
       webhook,

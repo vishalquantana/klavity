@@ -1,5 +1,5 @@
-import { expect, test, describe, beforeEach, afterEach } from "bun:test"
-import { buildWalkRedSlackPayload, notifyWalkRed, type WalkRedAlertContext } from "./walk-red-alert"
+import { expect, test, describe, afterEach } from "bun:test"
+import { buildWalkRedSlackPayload, notifyWalkRed, isInfraFailure, type WalkRedAlertContext } from "./walk-red-alert"
 
 const ctx: WalkRedAlertContext = {
   trailName: "Checkout flow",
@@ -10,14 +10,31 @@ const ctx: WalkRedAlertContext = {
   at: 1_718_000_000_000,
 }
 
-describe("buildWalkRedSlackPayload", () => {
-  test("fallback text contains trail name", () => {
+describe("isInfraFailure", () => {
+  test("crash failureKind is infra", () => {
+    expect(isInfraFailure({ failureKind: "crash" })).toBe(true)
+  })
+  test("browserUnavailable is infra", () => {
+    expect(isInfraFailure({ browserUnavailable: true })).toBe(true)
+  })
+  test("regression failureKind is NOT infra", () => {
+    expect(isInfraFailure({ failureKind: "regression" })).toBe(false)
+  })
+  test("no flags is NOT infra (genuine regression)", () => {
+    expect(isInfraFailure({})).toBe(false)
+  })
+})
+
+describe("buildWalkRedSlackPayload — regression (genuine RED)", () => {
+  test("fallback text contains trail name and 'regression'", () => {
     const p = buildWalkRedSlackPayload(ctx)
     expect(p.text).toContain("Checkout flow")
     expect(p.text).toContain("RED")
+    const fieldsText = JSON.stringify(p.blocks[1].fields)
+    expect(fieldsText).toContain("regression detected")
   })
 
-  test("header block type is header", () => {
+  test("header block type is header and mentions RED", () => {
     const p = buildWalkRedSlackPayload(ctx)
     expect(p.blocks[0].type).toBe("header")
     expect(p.blocks[0].text.text).toContain("RED")
@@ -30,6 +47,7 @@ describe("buildWalkRedSlackPayload", () => {
     expect(fieldsText).toContain("RED")
     expect(fieldsText).toContain("Add to cart")
     expect(fieldsText).toContain("Order confirmed")
+    expect(fieldsText).toContain("Findings")
   })
 
   test("walk report link included when baseUrl provided and includes project query param", () => {
@@ -69,45 +87,114 @@ describe("buildWalkRedSlackPayload", () => {
   })
 })
 
-describe("notifyWalkRed", () => {
-  const origWebhook = process.env.SLACK_SIGNUP_WEBHOOK_URL
-  const origAlertWebhook = process.env.SLACK_ALERT_WEBHOOK_URL
+describe("buildWalkRedSlackPayload — infra (crash / browserUnavailable)", () => {
+  const infraCtx: WalkRedAlertContext = {
+    ...ctx,
+    reasons: ["Could not connect to the Steel remote browser at wss://connect.steel.dev (Timeout 30000ms exceeded)."],
+    failureKind: "crash",
+    browserUnavailable: true,
+  }
+
+  test("labels as infra/connection failure, NOT regression", () => {
+    const p = buildWalkRedSlackPayload(infraCtx)
+    const fieldsText = JSON.stringify(p.blocks[1].fields)
+    expect(fieldsText).toContain("infrastructure failure")
+    expect(fieldsText).not.toContain("regression detected")
+    expect(fieldsText).toContain("Cause")
+  })
+
+  test("header mentions infra failure", () => {
+    const p = buildWalkRedSlackPayload(infraCtx)
+    expect(p.blocks[0].text.text).toContain("infra")
+    expect(p.text).toContain("infra")
+  })
+
+  test("browserUnavailable alone (no failureKind) is treated as infra", () => {
+    const p = buildWalkRedSlackPayload({ ...ctx, browserUnavailable: true })
+    const fieldsText = JSON.stringify(p.blocks[1].fields)
+    expect(fieldsText).toContain("infrastructure failure")
+  })
+})
+
+describe("notifyWalkRed — regression routing", () => {
+  const origSignup = process.env.SLACK_SIGNUP_WEBHOOK_URL
+  const origAlert = process.env.SLACK_ALERT_WEBHOOK_URL
+  const origError = process.env.SLACK_ERROR_WEBHOOK_URL
   const origBase = process.env.KLAV_BASE_URL
 
   afterEach(() => {
-    if (origWebhook === undefined) delete process.env.SLACK_SIGNUP_WEBHOOK_URL
-    else process.env.SLACK_SIGNUP_WEBHOOK_URL = origWebhook
-    if (origAlertWebhook === undefined) delete process.env.SLACK_ALERT_WEBHOOK_URL
-    else process.env.SLACK_ALERT_WEBHOOK_URL = origAlertWebhook
-    if (origBase === undefined) delete process.env.KLAV_BASE_URL
-    else process.env.KLAV_BASE_URL = origBase
+    for (const [k, v] of [
+      ["SLACK_SIGNUP_WEBHOOK_URL", origSignup],
+      ["SLACK_ALERT_WEBHOOK_URL", origAlert],
+      ["SLACK_ERROR_WEBHOOK_URL", origError],
+      ["KLAV_BASE_URL", origBase],
+    ] as const) {
+      if (v === undefined) delete process.env[k]
+      else process.env[k] = v
+    }
   })
 
-  test("no-op when both SLACK_SIGNUP_WEBHOOK_URL and SLACK_ALERT_WEBHOOK_URL are unset", async () => {
+  test("no-op when neither SLACK_ALERT_WEBHOOK_URL nor SLACK_ERROR_WEBHOOK_URL is set", async () => {
     delete process.env.SLACK_SIGNUP_WEBHOOK_URL
     delete process.env.SLACK_ALERT_WEBHOOK_URL
-    // Should resolve without error
+    delete process.env.SLACK_ERROR_WEBHOOK_URL
     await expect(notifyWalkRed(ctx)).resolves.toBeUndefined()
   })
 
-  test("posts to SLACK_ALERT_WEBHOOK_URL when set", async () => {
+  test("posts to SLACK_ALERT_WEBHOOK_URL when set (regression)", async () => {
     delete process.env.SLACK_SIGNUP_WEBHOOK_URL
     process.env.SLACK_ALERT_WEBHOOK_URL = "https://hooks.slack.com/services/TEST/WALK/RED_ALERT"
     process.env.KLAV_BASE_URL = "https://klavity.in"
     await expect(notifyWalkRed(ctx)).resolves.toBeUndefined()
   })
 
-  test("posts to SLACK_SIGNUP_WEBHOOK_URL as fallback", async () => {
+  test("falls back to SLACK_ERROR_WEBHOOK_URL (never signup) when alert unset", async () => {
+    // Even if the signup webhook is set, a walk regression must NOT go there.
+    process.env.SLACK_SIGNUP_WEBHOOK_URL = "https://hooks.slack.com/services/TEST/SIGNUP/CHANNEL"
     delete process.env.SLACK_ALERT_WEBHOOK_URL
-    process.env.SLACK_SIGNUP_WEBHOOK_URL = "https://hooks.slack.com/services/TEST/WALK/SIGNUP"
-    process.env.KLAV_BASE_URL = "https://klavity.in"
+    process.env.SLACK_ERROR_WEBHOOK_URL = "https://hooks.slack.com/services/TEST/ERROR/CHANNEL"
     await expect(notifyWalkRed(ctx)).resolves.toBeUndefined()
   })
 
-  test("no-op and no throw when KLAV_BASE_URL is legacy klavity.quantana.top and no webhook set", async () => {
+  test("no-op when only signup webhook is set (regression never pollutes signup)", async () => {
+    process.env.SLACK_SIGNUP_WEBHOOK_URL = "https://hooks.slack.com/services/TEST/SIGNUP/ONLY"
     delete process.env.SLACK_ALERT_WEBHOOK_URL
-    delete process.env.SLACK_SIGNUP_WEBHOOK_URL
-    process.env.KLAV_BASE_URL = "https://klavity.quantana.top"
+    delete process.env.SLACK_ERROR_WEBHOOK_URL
     await expect(notifyWalkRed(ctx)).resolves.toBeUndefined()
+  })
+})
+
+describe("notifyWalkRed — infra routing", () => {
+  const origSignup = process.env.SLACK_SIGNUP_WEBHOOK_URL
+  const origAlert = process.env.SLACK_ALERT_WEBHOOK_URL
+  const origError = process.env.SLACK_ERROR_WEBHOOK_URL
+
+  afterEach(() => {
+    for (const [k, v] of [
+      ["SLACK_SIGNUP_WEBHOOK_URL", origSignup],
+      ["SLACK_ALERT_WEBHOOK_URL", origAlert],
+      ["SLACK_ERROR_WEBHOOK_URL", origError],
+    ] as const) {
+      if (v === undefined) delete process.env[k]
+      else process.env[k] = v
+    }
+  })
+
+  test("infra failure routes to SLACK_ERROR_WEBHOOK_URL (not alert, not signup)", async () => {
+    process.env.SLACK_SIGNUP_WEBHOOK_URL = "https://hooks.slack.com/services/TEST/SIGNUP/CHANNEL"
+    process.env.SLACK_ALERT_WEBHOOK_URL = "https://hooks.slack.com/services/TEST/ALERT/CHANNEL"
+    process.env.SLACK_ERROR_WEBHOOK_URL = "https://hooks.slack.com/services/TEST/ERROR/CHANNEL"
+    await expect(
+      notifyWalkRed({ ...ctx, failureKind: "crash", browserUnavailable: true }),
+    ).resolves.toBeUndefined()
+  })
+
+  test("infra failure is a no-op when SLACK_ERROR_WEBHOOK_URL unset (never falls to alert/signup)", async () => {
+    process.env.SLACK_SIGNUP_WEBHOOK_URL = "https://hooks.slack.com/services/TEST/SIGNUP/CHANNEL"
+    process.env.SLACK_ALERT_WEBHOOK_URL = "https://hooks.slack.com/services/TEST/ALERT/CHANNEL"
+    delete process.env.SLACK_ERROR_WEBHOOK_URL
+    await expect(
+      notifyWalkRed({ ...ctx, browserUnavailable: true }),
+    ).resolves.toBeUndefined()
   })
 })
