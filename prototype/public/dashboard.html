@@ -80,6 +80,25 @@ body[data-view="recurring"] [data-view]:not([data-view~="recurring"]){display:no
 .autosims-wrap h1{font-family:var(--display);font-weight:450;font-size:28px;letter-spacing:-.02em;margin-bottom:4px}
 /* override dashboard .card inside autosims to use border style (matching trails original) */
 .autosims-wrap>.card{background:var(--ink-2);border:1px solid var(--line);border-radius:18px;padding:22px;box-shadow:none}
+/* ── Health board strip (KLA-268) ────────────────────────────────────────── */
+.health-board{display:flex;align-items:center;gap:14px;padding:16px 20px;border-radius:18px;border:1px solid var(--line);margin-bottom:22px;background:var(--ink-2);flex-wrap:wrap}
+.health-board.hb-red{border-color:rgba(219,39,119,.4);background:rgba(219,39,119,.07)}
+.health-board.hb-amber{border-color:rgba(217,131,36,.35);background:rgba(217,131,36,.07)}
+.health-board.hb-green{border-color:rgba(15,157,107,.35);background:rgba(15,157,107,.06)}
+.hb-headline{font-family:var(--display);font-weight:550;font-size:18px;letter-spacing:-.02em;flex:1;min-width:120px}
+.hb-headline.hb-red{color:var(--rose)}
+.hb-headline.hb-amber{color:var(--amber)}
+.hb-headline.hb-green{color:var(--green)}
+.hb-stat{display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 14px;border-radius:12px;background:var(--ink);border:1px solid var(--line);min-width:56px}
+.hb-stat .hb-n{font-family:var(--display);font-weight:600;font-size:22px;line-height:1;letter-spacing:-.02em}
+.hb-stat .hb-k{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--paper-faint);margin-top:3px}
+.hb-stat.hb-s-red .hb-n{color:var(--rose)}
+.hb-stat.hb-s-red{border-color:rgba(219,39,119,.3);background:rgba(219,39,119,.08)}
+.hb-stat.hb-s-amber .hb-n{color:var(--amber)}
+.hb-stat.hb-s-amber{border-color:rgba(217,131,36,.28);background:rgba(217,131,36,.07)}
+.hb-stat.hb-s-green .hb-n{color:var(--green)}
+.hb-stat.hb-s-green{border-color:rgba(15,157,107,.3);background:rgba(15,157,107,.06)}
+.hb-meta{font-family:var(--mono);font-size:11px;color:var(--paper-faint);margin-left:auto;text-align:right;white-space:nowrap}
 .banner{display:flex;align-items:center;gap:20px;background:linear-gradient(135deg,rgba(99,102,241,.12),rgba(139,92,246,.05));border:1px solid rgba(139,139,245,.3);border-radius:18px;padding:22px 24px;margin-bottom:22px}
 .banner .pct{font-family:var(--display);font-weight:500;font-size:42px;line-height:1;letter-spacing:-.02em}
 .banner .lbl{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:6px}
@@ -1922,12 +1941,22 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
             <button class="btn btn-indigo" id="newTrailBtn">+ New AutoSim</button>
           </div>
         </div>
-        <div class="banner">
+        <!-- Health board strip (KLA-268): replaces dead precision banner; precision shown only when real data exists -->
+        <div class="health-board" id="healthBoard">
+          <div class="hb-headline" id="hbHeadline">Loading…</div>
+          <div class="hb-stat hb-s-red" id="hbStatRed" style="display:none"><span class="hb-n" id="hbRed">0</span><span class="hb-k">Red</span></div>
+          <div class="hb-stat hb-s-amber" id="hbStatAmber" style="display:none"><span class="hb-n" id="hbAmber">0</span><span class="hb-k">Amber</span></div>
+          <div class="hb-stat hb-s-green" id="hbStatGreen" style="display:none"><span class="hb-n" id="hbGreen">0</span><span class="hb-k">Green</span></div>
+          <div class="hb-stat" id="hbStatDraft" style="display:none"><span class="hb-n" id="hbDraft">0</span><span class="hb-k">Draft</span></div>
+          <div class="hb-meta" id="hbMeta"></div>
+        </div>
+        <!-- Precision banner: only shown when real precision data exists (not the dead '—' state) -->
+        <div class="banner" id="precBanner" style="display:none">
           <div>
             <div class="lbl">Precision · legit-bug rate</div>
             <div class="pct" id="precPct">—</div>
           </div>
-          <div class="sub" id="precSub">Once you've filed or dismissed findings, this is the share that were real bugs. A wrong heal is worse than a red test — we never silently pass.</div>
+          <div class="sub" id="precSub"></div>
         </div>
         <div class="card" style="margin-bottom:18px">
           <h2>AutoSims <span class="count" id="trailsCount">0</span></h2>
@@ -6969,15 +6998,80 @@ load()
     if(!d){var lEl=$("asLead");if(lEl)lEl.textContent="Couldn't load AutoSims.";return}
     await render(d)
   }
+  // ── Health board helpers (KLA-268) ─────────────────────────────────────────
+  function buildHealthSummary(trails, recentWalks){
+    // For each active trail, find its latest walk verdict; draft/paused trails counted separately.
+    var counts={red:0,amber:0,green:0,draft:0,noWalk:0}
+    var latestCheckedAt=0
+    var walkIndex={}
+    ;(recentWalks||[]).forEach(function(w){if(!walkIndex[w.trailId])walkIndex[w.trailId]=w})
+    ;(trails||[]).forEach(function(t){
+      if(t.status==="draft"){counts.draft++;return}
+      if(t.status==="paused"){return} // paused = intentionally quiet; exclude from health signal
+      var w=walkIndex[t.id]
+      if(!w){counts.noWalk++;return}
+      var v=String(w.status||"")
+      if(v==="red")counts.red++
+      else if(v==="amber")counts.amber++
+      else if(v==="green")counts.green++
+      // running/skip/missed/needs_auth → count towards noWalk (no verdict yet)
+      else counts.noWalk++
+      if(w.startedAt&&Number(w.startedAt)>latestCheckedAt)latestCheckedAt=Number(w.startedAt)
+    })
+    return{counts:counts,latestCheckedAt:latestCheckedAt}
+  }
+  function renderHealthBoard(d){
+    var trails=d.trails||[];var walks=d.recentWalks||[]
+    var hs=buildHealthSummary(trails,walks)
+    var c=hs.counts
+    var board=$("healthBoard");if(!board)return
+    // Determine dominant state for styling
+    var domClass=c.red>0?"hb-red":c.amber>0?"hb-amber":c.green>0?"hb-green":""
+    board.className="health-board"+(domClass?" "+domClass:"")
+    // Headline
+    var hl=$("hbHeadline");if(hl){
+      var active=c.red+c.amber+c.green
+      if(!trails.length){
+        hl.className="hb-headline";hl.textContent="No AutoSims yet"
+      }else if(active===0&&c.draft>0){
+        hl.className="hb-headline";hl.textContent=c.draft+" AutoSim"+(c.draft!==1?"s":"")+" in draft"
+      }else if(c.red>0){
+        hl.className="hb-headline hb-red";hl.textContent=c.red+" flow"+(c.red!==1?"s":"")+" failing"+(c.amber>0?" · "+c.amber+" unconfirmed":"")
+      }else if(c.amber>0){
+        hl.className="hb-headline hb-amber";hl.textContent=c.amber+" flow"+(c.amber!==1?"s":"")+" need attention"
+      }else if(c.green>0){
+        hl.className="hb-headline hb-green";hl.textContent=c.green===active?"All guards green":"Guards green"+(c.noWalk>0?" · "+c.noWalk+" not yet run":"")
+      }else{
+        hl.className="hb-headline";hl.textContent="No walks yet"
+      }
+    }
+    // State counters — only show non-zero buckets
+    var showStat=function(statId,valId,n){var s=$(statId);var v=$(valId);if(!s||!v)return;s.style.display=n>0?"":"none";v.textContent=String(n)}
+    showStat("hbStatRed","hbRed",c.red)
+    showStat("hbStatAmber","hbAmber",c.amber)
+    showStat("hbStatGreen","hbGreen",c.green)
+    showStat("hbStatDraft","hbDraft",c.draft)
+    // Meta: last deploy-checked timestamp
+    var metaEl=$("hbMeta");if(metaEl){
+      if(hs.latestCheckedAt>0){
+        metaEl.textContent="last checked "+ago(hs.latestCheckedAt)
+      }else{
+        metaEl.textContent=""
+      }
+    }
+  }
   async function render(d){
     var lEl=$("asLead");if(lEl)lEl.textContent="Your AutoSims run on a schedule and flag regressions before your users do."
     renderTrails(d)
+    renderHealthBoard(d)
     if(typeof ciRender==="function")ciRender()
     var p=d.precision||{}
+    var precBanner=$("precBanner")
     if(p.precision==null){
-      $("precPct").textContent="—"
-      $("precSub").textContent="No findings filed or dismissed yet. Precision appears once you start reviewing the queue."
+      // Don't show the dead '—' state; precision banner stays hidden until real data exists
+      if(precBanner)precBanner.style.display="none"
     }else{
+      if(precBanner)precBanner.style.display=""
       $("precPct").textContent=Math.round(p.precision*100)+"%"
       $("precSub").textContent=p.filed+" filed · "+p.dismissed+" dismissed — the share of reviewed findings that were real bugs."
     }
