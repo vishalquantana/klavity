@@ -293,6 +293,24 @@
     line-height: 1.5;
   }
   
+  /* Coming-soon tag — used inline next to features that are not yet available */
+  .cs-tag {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    background: rgba(217,131,36,0.12);
+    color: var(--amber, #d98324);
+    border: 1px solid rgba(217,131,36,0.25);
+    padding: 1px 6px;
+    border-radius: 10px;
+    vertical-align: middle;
+    margin-left: 4px;
+    white-space: nowrap;
+  }
+
   /* FAQ cards styling */
   .faq-grid {
     display: grid;
@@ -417,7 +435,7 @@
           </li>
           <li>
             <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-            <span>Removable branding</span>
+            <span>Removable branding <span class="cs-tag">Coming soon</span></span>
           </li>
           <li>
             <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
@@ -453,7 +471,7 @@
           </li>
           <li>
             <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-            <span>Google &amp; Microsoft SSO</span>
+            <span>Google &amp; Microsoft SSO <span class="cs-tag">Coming soon</span></span>
           </li>
         </ul>
       </div>
@@ -479,11 +497,11 @@
           </li>
           <li>
             <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-            <span>SAML &amp; SCIM SSO integration</span>
+            <span>SAML &amp; SCIM SSO integration <span class="cs-tag">Coming soon</span></span>
           </li>
           <li>
             <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-            <span>Audit logs &amp; data masking</span>
+            <span>Audit logs &amp; data masking <span class="cs-tag">Coming soon</span></span>
           </li>
           <li>
             <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
@@ -561,9 +579,9 @@
           <tr>
             <td class="feature-name">Widget Branding</td>
             <td class="feature-val">"Powered by Klavity"</td>
-            <td class="feature-val">Removable</td>
-            <td class="feature-val">Removable</td>
-            <td class="feature-val">Removable</td>
+            <td class="feature-val">Removable <span class="cs-tag">Coming soon</span></td>
+            <td class="feature-val">Removable <span class="cs-tag">Coming soon</span></td>
+            <td class="feature-val">Removable <span class="cs-tag">Coming soon</span></td>
           </tr>
           
           <!-- Section: AI Features -->
@@ -614,15 +632,15 @@
             <td class="feature-name">Single Sign-On (SSO)</td>
             <td class="feature-val">—</td>
             <td class="feature-val">—</td>
-            <td class="feature-val">Google &amp; Microsoft</td>
-            <td class="feature-val">SAML / SCIM / OIDC</td>
+            <td class="feature-val">Google &amp; Microsoft <span class="cs-tag">Coming soon</span></td>
+            <td class="feature-val">SAML / SCIM / OIDC <span class="cs-tag">Coming soon</span></td>
           </tr>
           <tr>
             <td class="feature-name">Data Masking &amp; PI Filter</td>
             <td class="feature-val">—</td>
             <td class="feature-val">—</td>
-            <td class="feature-val">Standard</td>
-            <td class="feature-val">Custom / Custom Rules</td>
+            <td class="feature-val">Standard <span class="cs-tag">Coming soon</span></td>
+            <td class="feature-val">Custom / Custom Rules <span class="cs-tag">Coming soon</span></td>
           </tr>
           <tr>
             <td class="feature-name">Self-Hosted Support</td>
@@ -660,7 +678,7 @@
       <details class="card">
         <summary style="font-family:var(--display);font-weight:540;font-size:18px;cursor:pointer">What happens if we hit our reaction or flow limits?</summary>
         <p style="color:var(--paper-dim);font-size:15px;margin:10px 0 0">
-          If you exceed your scheduled limits, Klavity degrades test cadences (e.g. daily runs slow down to weekly runs) rather than hard-stopping your tests mid-month. We will never hit you with silent overage billing or bill shock.
+          Quota enforcement is not yet active — we are shipping enforcement gently and will announce before any hard limits go live. When it does land, our intent is to degrade cadence gracefully (e.g. daily runs slow to weekly) rather than hard-stop, and we will never silently bill overages.
         </p>
       </details>
 
@@ -674,7 +692,7 @@
       <details class="card">
         <summary style="font-family:var(--display);font-weight:540;font-size:18px;cursor:pointer">Can we export our AutoSim flows?</summary>
         <p style="color:var(--paper-dim);font-size:15px;margin:10px 0 0">
-          Yes. Klavity is open-core and we strongly oppose vendor lock-in. Any AutoSim flow you author can be exported into standard test scripts that you can run on your own Playwright runner anywhere.
+          Klavity is open-core and we strongly oppose vendor lock-in. AutoSim flows are stored as structured steps in an open schema. One-click export to standard Playwright test scripts is on the roadmap — contact us if this is a blocker.
         </p>
       </details>
     </div>
