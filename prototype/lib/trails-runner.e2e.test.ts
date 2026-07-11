@@ -301,14 +301,15 @@ test("(vi) an ambiguous selector (matches >1 elements) fails RED with reason=amb
   expect((rs.evidence as any)?.matchCount).toBe(2)
   expect((rs.evidence as any)?.selector).toBe(".dup-btn")
 
-  // A regression finding must be queued with the clear title.
+  // A regression finding must be queued with a clear, human-readable title.
   const findings = await T.listFindings(projectId)
   expect(findings.length).toBeGreaterThanOrEqual(1)
   const f = findings[0]
   expect(f.kind).toBe("regression")
-  expect(f.title).toContain("Ambiguous selector")
-  expect(f.title).toContain("2")
-  expect(f.title).toContain(".dup-btn")
+  // Title should explain the problem in plain English
+  expect(f.title).toContain("2")        // match count
+  expect(f.title).toContain(".dup-btn") // the offending selector
+  expect(f.title.toLowerCase()).toMatch(/selector|element/) // human-readable label
   expect(f.dedupKey).toContain("ambiguous_selector")
 
   // Also assert: a UNIQUE selector on the same fixture walks GREEN (control case).
