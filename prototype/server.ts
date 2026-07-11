@@ -50,7 +50,7 @@ import { gatherWalkReport } from "./lib/trails-report"
 import { liveWatchSseResponse, openLiveWatchStream } from "./lib/trails-live-watch"
 import { normalizeTrailViewport } from "./lib/trails-viewport"
 import { seedDemoTrails } from "./lib/trails-demo-seed"
-import { listExpectations, getExpectation, setExpectationStatus, setExpectationEnforced } from "./lib/expectations-db"
+import { listExpectations, getExpectation, setExpectationStatus, setExpectationEnforced, upsertExpectationFromTicket } from "./lib/expectations-db"
 import { createLabel, listLabels, updateLabel, deleteLabel, attachLabel, detachLabel, labelsForFeedback, labelsForFeedbackBatch, setSuggestedLabels, getSuggestedLabels } from "./lib/db"
 import { suggestLabelsForFeedback } from "./lib/label-suggest"
 import { validateAssertionDraft, normalizeCheckpointInput } from "./lib/assertion-spec"
@@ -4477,6 +4477,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const isTimeline = feedbackSubroute === "/timeline" || feedbackSubroute === "/activity"
         const isLabels = feedbackSubroute === "/labels"
         const isSuggestLabels = feedbackSubroute === "/suggest-labels"
+        const isGuard = feedbackSubroute === "/guard"
 
         // Resolve which project this feedback belongs to and check the caller has access.
         let fbRow: any = null
@@ -4657,6 +4658,26 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             autoCopyFeedback(fid, fbRow.projectId, me, effectivePriority)
           }
           return json({ ok: true })
+        }
+
+        // POST /api/feedback/:id/guard — KLA-242 "Guard this fix".
+        // Any project member can call this on a resolved ticket (status=done).
+        // Creates or upserts an expectation from the ticket and marks it validated,
+        // ready to be enforced as an AutoSim assert step.
+        // Returns { expectationId, status } — callers use this to deep-link to the guards board.
+        if (req.method === "POST" && isGuard) {
+          const ticketTitle = String(fbRow.observation || fbRow.suggestedBug?.title || "").trim()
+          if (!ticketTitle) return json({ error: "Ticket has no title to guard." }, 422)
+          if (fbRow.status !== "done" && fbRow.status !== "dismissed") {
+            return json({ error: "Only resolved (done) tickets can be guarded." }, 409)
+          }
+          const exp = await upsertExpectationFromTicket(db!, {
+            projectId: fbRow.projectId,
+            feedbackId: fid,
+            title: ticketTitle,
+            urlPath: fbRow.urlPath ?? null,
+          })
+          return json({ ok: true, expectationId: exp.id, status: exp.status })
         }
 
         // POST /api/feedback/:id/export — admin only

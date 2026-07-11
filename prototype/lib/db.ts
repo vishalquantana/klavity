@@ -648,7 +648,7 @@ export async function applySchema(c: Client) {
     "sim_traits", "trait_events", "personas",
     "feedback", "projects", "accounts", "trails", "trail_runs",
     "trail_steps", "walk_share_tokens", "findings", "author_sessions",
-    "ai_calls", "autosim_auth_probe_queue",
+    "ai_calls", "autosim_auth_probe_queue", "expectations",
   ]
   const _cols = await loadTableColumns(c, ALTERED_TABLES)
   const needCol = (table: string, col: string) => !(_cols.get(table)?.has(col) ?? false)
@@ -878,6 +878,20 @@ export async function applySchema(c: Client) {
     .catch((e: any) => console.warn("ai_calls_acct_idx skipped:", e?.message || e))
   await c.execute("CREATE INDEX IF NOT EXISTS ai_calls_feature_idx ON ai_calls (feature, created_at)")
     .catch((e: any) => console.warn("ai_calls_feature_idx skipped:", e?.message || e))
+  // KLA-243: finding↔expectation linkage — which expectation a finding is associated with.
+  // NULL on legacy rows (pre-linkage). Set by recordFinding when ingestFinding returns an exp id.
+  if (needCol("findings", "expectation_id")) await c.execute("ALTER TABLE findings ADD COLUMN expectation_id TEXT")
+    .catch((e: any) => console.warn("findings.expectation_id ALTER skipped:", e?.message || e))
+  await c.execute("CREATE INDEX IF NOT EXISTS finding_exp_idx ON findings(project_id, expectation_id) WHERE expectation_id IS NOT NULL")
+    .catch((e: any) => console.warn("finding_exp_idx skipped:", e?.message || e))
+  // KLA-243: saves_count — how many times this guard has caught a regression (an enforced
+  // expectation that triggered a finding). Surfaces as the "saves" counter in the guards UI.
+  if (needCol("expectations", "saves_count")) await c.execute("ALTER TABLE expectations ADD COLUMN saves_count INTEGER NOT NULL DEFAULT 0")
+    .catch((e: any) => console.warn("expectations.saves_count ALTER skipped:", e?.message || e))
+  // KLA-242: source_ticket_id — the resolved feedback ticket this expectation was created from
+  // via "Guard this fix". NULL for expectations discovered by the normal spine ingest path.
+  if (needCol("expectations", "source_ticket_id")) await c.execute("ALTER TABLE expectations ADD COLUMN source_ticket_id TEXT")
+    .catch((e: any) => console.warn("expectations.source_ticket_id ALTER skipped:", e?.message || e))
 }
 
 // ── schema_meta helpers ──
