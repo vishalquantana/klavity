@@ -9,6 +9,7 @@
 // Never hardcode the webhook URL in committed code.
 
 import { safeFetch } from "./safe-fetch"
+import { queueAutoTicketError } from "./error-autoticket"
 
 export interface ErrorInfo {
   where: "backend" | "frontend"
@@ -91,6 +92,8 @@ function buildErrorPayload(info: ErrorInfo) {
 
 // ── main export ──────────────────────────────────────────────────────────────
 export async function reportError(info: ErrorInfo): Promise<void> {
+  queueAutoTicketError(info)
+
   const webhook = process.env.SLACK_ERROR_WEBHOOK_URL
   if (!webhook) return // disabled — safe default for open-core
 
