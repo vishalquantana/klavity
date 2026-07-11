@@ -574,7 +574,7 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
       llmCalls: 0,
       summary: { reasons, failureKind: "crash", error: msg, browserUnavailable: true },
     }).catch(() => {})
-    notifyWalkRed({ trailName: trail.name, trailId, projectId, runId, reasons, at: Date.now() }).catch(() => {})
+    notifyWalkRed({ trailName: trail.name, trailId, projectId, runId, reasons, at: Date.now(), failureKind: "crash", browserUnavailable: true }).catch(() => {})
     return { runId, verdict: "red", llmCalls: 0, steps: [], healedCount: 0, reasons, failureKind: "crash" }
   }
   const browser: Browser = bh.browser
@@ -753,7 +753,7 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
     })
 
     if (walkVerdict === "red") {
-      notifyWalkRed({ trailName: trail.name, trailId, projectId, runId, reasons: redReasons, at: Date.now() }).catch(() => {})
+      notifyWalkRed({ trailName: trail.name, trailId, projectId, runId, reasons: redReasons, at: Date.now(), failureKind: walkFailureKind ?? undefined }).catch(() => {})
     }
 
     // KLA-94: opt-in auto-file. Runs after finishWalk so the walk is already settled. Best-effort:
@@ -777,7 +777,7 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
       llmCalls,
       summary: { ...redReasons.length ? { reasons: redReasons } : {}, failureKind: failureKindForThrownError(e), error: String(e), ...(evSummaryCatch ? { evidence: evSummaryCatch } : {}) },
     })
-    notifyWalkRed({ trailName: trail.name, trailId, projectId, runId, reasons: redReasons, at: Date.now() }).catch(() => {})
+    notifyWalkRed({ trailName: trail.name, trailId, projectId, runId, reasons: redReasons, at: Date.now(), failureKind: failureKindForThrownError(e) }).catch(() => {})
     return { runId, verdict: "red", llmCalls, steps: stepSummaries, healedCount, reasons: redReasons, failureKind: failureKindForThrownError(e), ...(evSummaryCatch ? { evidence: evSummaryCatch } : {}) }
   } finally {
     if (stopLiveScreencast) {

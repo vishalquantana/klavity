@@ -4,7 +4,7 @@
 // exercised by the live spike (needs network + key), not unit-tested here.
 // acquirePlaywrightBrowser (used by the walker) is also tested here for its local/fallback path.
 import { describe, test, expect, afterAll } from "bun:test"
-import { acquireBrowser, acquirePlaywrightBrowser, launchLocalChromium, BrowserLaunchError, playwrightContextOptionsForTrailViewport, startCdpScreencast, safeClose, type BrowserHandle, type PlaywrightBrowserHandle } from "./trails-browser-page"
+import { acquireBrowser, acquirePlaywrightBrowser, createSteelSession, launchLocalChromium, BrowserLaunchError, playwrightContextOptionsForTrailViewport, startCdpScreencast, safeClose, type BrowserHandle, type PlaywrightBrowserHandle } from "./trails-browser-page"
 
 // Real-browser tests only run when KLAV_E2E=1 (browsers installed). CI default suite is hermetic.
 const RUN_BROWSER = !!process.env.KLAV_E2E
@@ -215,12 +215,76 @@ test("safeClose: resolves without throwing even if the wrapped promise rejects",
   // no throw — close errors are silenced, caller just proceeds
 })
 
+// ── createSteelSession: region + websocketUrl handling (hermetic, mocked fetch) ────────────────────
+describe("createSteelSession", () => {
+  const realFetch = globalThis.fetch
+  const origRegion = process.env.STEEL_REGION
+  const origApiUrl = process.env.STEEL_API_URL
+
+  function mockCreate(sessionBody: Record<string, unknown>, captured?: { body?: string }) {
+    globalThis.fetch = (async (url: string, opts?: any) => {
+      if (typeof url === "string" && url.includes("/v1/sessions") && opts?.method === "POST" && !url.includes("/release")) {
+        if (captured) captured.body = opts?.body
+        return { ok: true, json: async () => sessionBody } as any
+      }
+      if (typeof url === "string" && url.includes("/release")) return { ok: true } as any
+      return realFetch(url as any, opts as any)
+    }) as typeof fetch
+  }
+
+  afterAll(() => {
+    globalThis.fetch = realFetch
+    if (origRegion === undefined) delete process.env.STEEL_REGION; else process.env.STEEL_REGION = origRegion
+    if (origApiUrl === undefined) delete process.env.STEEL_API_URL; else process.env.STEEL_API_URL = origApiUrl
+  })
+
+  test("prefers API-provided websocketUrl (region-correct) and appends apiKey", async () => {
+    delete process.env.STEEL_REGION
+    mockCreate({ id: "s1", region: "lax", websocketUrl: "wss://lax.connect.steel.dev/session/s1" })
+    const s = await createSteelSession("wss://connect.steel.dev", "KEY123")
+    expect(s.id).toBe("s1")
+    expect(s.region).toBe("lax")
+    expect(s.connectUrl).toBe("wss://lax.connect.steel.dev/session/s1?apiKey=KEY123")
+    globalThis.fetch = realFetch
+  })
+
+  test("falls back to assembled cdpBase?apiKey&sessionId when websocketUrl absent", async () => {
+    delete process.env.STEEL_REGION
+    mockCreate({ id: "s2", region: "iad" })
+    const s = await createSteelSession("wss://connect.steel.dev", "KEY123")
+    expect(s.connectUrl).toBe("wss://connect.steel.dev?apiKey=KEY123&sessionId=s2")
+    expect(s.region).toBe("iad")
+    globalThis.fetch = realFetch
+  })
+
+  test("sends STEEL_REGION in the create body", async () => {
+    process.env.STEEL_REGION = "lax"
+    const captured: { body?: string } = {}
+    mockCreate({ id: "s3", region: "lax" }, captured)
+    await createSteelSession("wss://connect.steel.dev", "KEY123")
+    expect(captured.body).toContain("lax")
+    expect(JSON.parse(captured.body!)).toEqual({ region: "lax" })
+    globalThis.fetch = realFetch
+    delete process.env.STEEL_REGION
+  })
+
+  test("throws BrowserLaunchError on non-ok session create", async () => {
+    delete process.env.STEEL_REGION
+    globalThis.fetch = (async () => ({ ok: false, status: 401, statusText: "Unauthorized", text: async () => "bad key" })) as any
+    let err: unknown
+    try { await createSteelSession("wss://connect.steel.dev", "BADKEY") } catch (e) { err = e }
+    expect(err).toBeInstanceOf(BrowserLaunchError)
+    expect(String((err as Error).message)).toContain("Steel session create failed")
+    globalThis.fetch = realFetch
+  })
+})
+
 test("acquireBrowser Steel path: releases session when connectOverCDP fails", async () => {
   let released = false
   const realFetch = globalThis.fetch
   globalThis.fetch = (async (url: string, opts?: any) => {
     if (typeof url === "string" && url.includes("/v1/sessions") && opts?.method === "POST" && !url.includes("/release")) {
-      return { json: async () => ({ id: "sess_leak_test", region: "us-test" }) } as any
+      return { ok: true, json: async () => ({ id: "sess_leak_test", region: "us-test" }) } as any
     }
     if (typeof url === "string" && url.includes("/v1/sessions/sess_leak_test/release")) {
       released = true

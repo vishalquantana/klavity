@@ -2,9 +2,11 @@
 //   • Playwright (default) — local chromium.launch, keeps Playwright's auto-wait/actionability.
 //   • Puppeteer-over-CDP — connects to a remote browser (Steel.dev) when AUTOSIM_CDP_URL is set;
 //     re-adds actionability explicitly (waitForSelector visible) since Puppeteer has no Locator.
-// Rationale + cost/perf: docs/bench-autosim-cost.md (Steel section) + the 2026-07-04 spike.
-// The runner (trails-runner.ts) stays on Playwright for now — its heal ladder is deeply coupled to
-// Playwright getByRole/getByText/networkidle; porting it is a separate, larger effort.
+// Rationale + cost/perf: docs/steel-remote-browser.md (Steel section) + the 2026-07-04 spike.
+// The runner (trails-runner.ts) keeps a native Playwright Browser (its heal ladder is deeply coupled
+// to Playwright getByRole/getByText/networkidle), but its REMOTE/Steel connect now bridges through
+// puppeteer-core: Playwright's connectOverCDP HANGS against Steel, so puppeteer connects first and
+// hands Playwright the resolved devtools endpoint. See acquirePlaywrightBrowser + createSteelSession.
 import type { Fingerprint, NetworkMock as TrailNetworkMock, TrailViewport } from "./trails-types"
 import { KREF_SNAPSHOT_CAP } from "./trails-snapshot"
 import { clickWithTransitionFallback } from "./trails-click"
@@ -474,6 +476,60 @@ export class BrowserLaunchError extends Error {
 const REMOTE_HINT =
   "To move the browser off the box, set AUTOSIM_CDP_URL (+ STEEL_API_KEY for Steel.dev) so walks run on a remote browser."
 
+// ── Steel session helpers (shared by the authoring drive and the walk runner) ─────────────────────
+// Steel exposes a per-session CDP WebSocket. The POST /v1/sessions response returns a `websocketUrl`
+// that ALREADY routes to the session's region (multi-region: lax / iad). We connect to THAT url +
+// &apiKey=…, rather than re-assembling `${cdpBase}?apiKey=&sessionId=` by hand, so a session created
+// in a non-default region is reachable. If the response omits websocketUrl (older/self-hosted Steel),
+// we fall back to the assembled base?apiKey=&sessionId= form. STEEL_REGION picks the region on create.
+//
+// IMPORTANT (KLAVITYKLA-195 / 278): Playwright's chromium.connectOverCDP() HANGS against Steel's
+// connect proxy (it never finishes CDP target discovery over the proxy — a known Playwright bug where
+// the WebSocket opens but connectOverCDP times out). puppeteer-core's raw-CDP puppeteer.connect()
+// works. So the runner's remote path connects with puppeteer FIRST, reads the resolved per-browser
+// devtools endpoint (`ws://…/devtools/browser/<id>`, which Playwright can attach to directly WITHOUT
+// its broken discovery step), then hands that resolved endpoint to Playwright.
+
+export interface SteelSession {
+  id: string
+  region: string
+  /** The exact ws endpoint to connect to (websocketUrl from the API + apiKey), or null to assemble. */
+  connectUrl: string
+  release: () => Promise<void>
+}
+
+/** Steel CDP connect timeout (ms). Small so an unreachable/hung endpoint fails fast (never 30s+). */
+const STEEL_CONNECT_TIMEOUT_MS = Number(process.env.STEEL_CONNECT_TIMEOUT_MS) || 20_000
+
+/**
+ * Create a Steel session (honoring STEEL_REGION), returning the resolved connect URL + a release fn.
+ * Prefers the API-provided `websocketUrl` (region-correct); falls back to `${cdpBase}?apiKey&sessionId`.
+ */
+export async function createSteelSession(cdpBase: string, key: string): Promise<SteelSession> {
+  const apiUrl = process.env.STEEL_API_URL ?? "https://api.steel.dev"
+  const region = process.env.STEEL_REGION // e.g. "lax" (Los Angeles) or "iad" (Washington DC)
+  const body = JSON.stringify(region ? { region } : {})
+  const res = await fetch(`${apiUrl}/v1/sessions`, {
+    method: "POST", headers: { "Steel-Api-Key": key, "Content-Type": "application/json" }, body,
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => "")
+    throw new BrowserLaunchError(
+      `Steel session create failed (${res.status} ${res.statusText}) at ${apiUrl}/v1/sessions${text ? `: ${text.slice(0, 200)}` : ""}. Check STEEL_API_KEY / STEEL_REGION.`,
+    )
+  }
+  const session: any = await res.json()
+  const release = async () => {
+    await fetch(`${apiUrl}/v1/sessions/${session.id}/release`, { method: "POST", headers: { "Steel-Api-Key": key } }).catch(() => {})
+  }
+  // Prefer the region-correct websocketUrl the API returns; append apiKey if not already present.
+  const apiWs: string | undefined = session.websocketUrl || session.webSocketUrl
+  const connectUrl = apiWs
+    ? (apiWs.includes("apiKey=") ? apiWs : `${apiWs}${apiWs.includes("?") ? "&" : "?"}apiKey=${key}`)
+    : `${cdpBase}?apiKey=${key}&sessionId=${session.id}`
+  return { id: session.id, region: session.region ?? region ?? "remote", connectUrl, release }
+}
+
 /**
  * Launch a local Playwright Chromium with the same resilience the post-deploy smoke script relies on:
  * headless:true defaults to the `chrome-headless-shell` build, which may NOT be installed on the prod
@@ -531,9 +587,11 @@ export async function acquireBrowser(opts: AcquireOpts = {}): Promise<BrowserHan
  * Used by trails-runner (walk engine), which depends on Playwright's BrowserContext / Page /
  * Locator / addInitScript APIs that the Puppeteer shim does not provide.
  *
- * Remote path: chromium.connectOverCDP(). The 2026-07-04 spike found this hung FROM a Mac over
- * transcontinental Steel (~940ms RTT); from a co-located prod box the RTT is ~50–150ms and the
- * connection is stable. AUTOSIM_CDP_URL unset → local chromium.launch() (the tested default).
+ * Remote path (KLAVITYKLA-195 / 278): Playwright's connectOverCDP() HANGS against Steel's connect
+ * proxy (WS opens but target discovery never completes → 30s timeout), even from the co-located box.
+ * Fix: connect with puppeteer-core FIRST (raw CDP — works), read the resolved devtools browser ws
+ * endpoint, then hand THAT to Playwright's connectOverCDP (skips its broken discovery). Self-hosted
+ * CDP (no key) connects directly. AUTOSIM_CDP_URL unset → local chromium.launch() (tested default).
  *
  * Session lifecycle: caller gets a `close()` that both disconnects the browser AND releases any
  * Steel session, so runners only need to call `bh.close()` in their `finally` block.
@@ -642,31 +700,56 @@ export async function acquirePlaywrightBrowser(opts: AcquireOpts = {}): Promise<
   }
   const key = process.env.STEEL_API_KEY
   if (key) {
-    const apiUrl = process.env.STEEL_API_URL ?? "https://api.steel.dev"
-    const session: any = await (await fetch(`${apiUrl}/v1/sessions`, {
-      method: "POST", headers: { "Steel-Api-Key": key, "Content-Type": "application/json" }, body: "{}",
-    })).json()
-    const release = async () => {
-      await fetch(`${apiUrl}/v1/sessions/${session.id}/release`, { method: "POST", headers: { "Steel-Api-Key": key } }).catch(() => {})
+    // KLAVITYKLA-195 / 278: Playwright's connectOverCDP() HANGS against Steel's connect proxy (the WS
+    // opens but target discovery never completes → "Timeout 30000ms exceeded"). Fix: connect with
+    // puppeteer-core FIRST (its raw-CDP connect works against Steel — validated by the 2026-07-04
+    // spike), read the resolved per-browser devtools endpoint, then attach Playwright to THAT resolved
+    // ws://…/devtools/browser/<id> — which Playwright can do directly, skipping its broken discovery.
+    const session = await createSteelSession(cdpBase, key)
+    const { default: puppeteer } = await import("puppeteer-core") // lazy: local path never loads it
+    let pptr: any
+    let resolvedWs: string
+    try {
+      pptr = await puppeteer.connect({ browserWSEndpoint: session.connectUrl, defaultViewport: null })
+      resolvedWs = pptr.wsEndpoint() // ws://HOST:PORT/devtools/browser/<id> — Playwright attaches to this
+    } catch (e) {
+      try { await pptr?.disconnect?.() } catch {}
+      await session.release().catch(() => {})
+      throw new BrowserLaunchError(
+        `Could not connect to the Steel remote browser at ${cdpBase} (${String((e as any)?.message ?? e)}). Check AUTOSIM_CDP_URL / STEEL_API_KEY / STEEL_REGION.`, e,
+      )
     }
     let browser: import("playwright").Browser
     try {
-      browser = await chromium.connectOverCDP(`${cdpBase}?apiKey=${key}&sessionId=${session.id}`)
+      browser = await chromium.connectOverCDP(resolvedWs, { timeout: STEEL_CONNECT_TIMEOUT_MS })
     } catch (e) {
-      await release().catch(() => {})
-      throw new BrowserLaunchError(
-        `Could not connect to the Steel remote browser at ${cdpBase} (${String((e as any)?.message ?? e)}). Check AUTOSIM_CDP_URL / STEEL_API_KEY.`, e,
-      )
+      // Fall back to the puppeteer-provided endpoint via the Steel connect url if the resolved raw
+      // endpoint is not directly reachable (e.g. an internal host behind the proxy).
+      try {
+        browser = await chromium.connectOverCDP(session.connectUrl, { timeout: STEEL_CONNECT_TIMEOUT_MS })
+      } catch (e2) {
+        try { await pptr?.disconnect?.() } catch {}
+        await session.release().catch(() => {})
+        throw new BrowserLaunchError(
+          `Connected to Steel via puppeteer but Playwright could not attach (${String((e as any)?.message ?? e)}). ` +
+          `Check AUTOSIM_CDP_URL / STEEL_API_KEY / STEEL_REGION and that the resolved CDP endpoint is reachable.`, e2,
+        )
+      }
     }
+    // Puppeteer only resolved the endpoint; Playwright now owns the browser. Disconnect puppeteer so it
+    // isn't a second CDP client holding the connection (best-effort; it never closes the remote browser).
+    try { await pptr?.disconnect?.() } catch {}
     return {
       browser,
-      close: async () => { await safeClose(browser.close()); await safeClose(release()) },
-      kind: "steel:" + (session.region ?? "remote"),
+      close: async () => { await safeClose(browser.close()); await safeClose(session.release()) },
+      kind: "steel:" + session.region,
     }
   }
+  // Self-hosted CDP endpoint (no Steel key): connect directly. Bounded so an unreachable endpoint
+  // fails fast with an actionable BrowserLaunchError instead of Playwright's silent 30s hang.
   let browser: import("playwright").Browser
   try {
-    browser = await chromium.connectOverCDP(cdpBase)
+    browser = await chromium.connectOverCDP(cdpBase, { timeout: STEEL_CONNECT_TIMEOUT_MS })
   } catch (e) {
     throw new BrowserLaunchError(
       `Could not connect to the remote browser at AUTOSIM_CDP_URL (${String((e as any)?.message ?? e)}). Check the CDP endpoint is reachable from the host.`, e,
@@ -679,19 +762,17 @@ async function connectRemotePuppeteer(cdpBase: string, _opts: AcquireOpts): Prom
   const { default: puppeteer } = await import("puppeteer-core") // lazy: prod (flag off) never loads it
   const key = process.env.STEEL_API_KEY
   if (key) {
-    const apiUrl = process.env.STEEL_API_URL ?? "https://api.steel.dev"
-    const session: any = await (await fetch(`${apiUrl}/v1/sessions`, {
-      method: "POST", headers: { "Steel-Api-Key": key, "Content-Type": "application/json" }, body: "{}",
-    })).json()
-    const release = async () => { await fetch(`${apiUrl}/v1/sessions/${session.id}/release`, { method: "POST", headers: { "Steel-Api-Key": key } }).catch(() => {}) }
+    const session = await createSteelSession(cdpBase, key)
     let browser: any
     try {
-      browser = await puppeteer.connect({ browserWSEndpoint: `${cdpBase}?apiKey=${key}&sessionId=${session.id}`, defaultViewport: null })
+      browser = await puppeteer.connect({ browserWSEndpoint: session.connectUrl, defaultViewport: null })
     } catch (e) {
-      await release().catch(() => {})
-      throw e
+      await session.release().catch(() => {})
+      throw new BrowserLaunchError(
+        `Could not connect to the Steel remote browser at ${cdpBase} (${String((e as any)?.message ?? e)}). Check AUTOSIM_CDP_URL / STEEL_API_KEY / STEEL_REGION.`, e,
+      )
     }
-    return new PuppeteerHandle(browser, release, session.region ?? "remote")
+    return new PuppeteerHandle(browser, session.release, session.region)
   }
   const browser = await puppeteer.connect({ browserWSEndpoint: cdpBase, defaultViewport: null })
   return new PuppeteerHandle(browser, async () => {}, "remote")
