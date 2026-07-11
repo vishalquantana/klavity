@@ -110,7 +110,25 @@ function launcherButton(): HTMLButtonElement {
   return btn
 }
 
+// jsdom does not implement window.matchMedia, but the launcher now calls it
+// (mobile icon-only collapse via '(max-width: 480px)'). Stub it with a chosen
+// `matches` value so tests can simulate phone (true) vs desktop (false) viewports.
+function stubMatchMedia(matches: boolean) {
+  vi.stubGlobal("matchMedia", (q: string) => ({
+    matches,
+    media: q,
+    onchange: null,
+    addEventListener() {},
+    removeEventListener() {},
+    addListener() {},
+    removeListener() {},
+    dispatchEvent() { return false },
+  }))
+}
+
 beforeEach(() => {
+  // Default to desktop viewport so the existing launcher tests keep passing.
+  stubMatchMedia(false)
   // Wipe any host created by a previous mount() so each test starts clean.
   document.body.innerHTML = ""
   const storage = new Map<string, string>()
@@ -388,5 +406,54 @@ describe("launcherIconColor", () => {
     await mountWith({ launcherMode: "icon", launcherIconColor: "not-a-hex" })
     const btn = launcherButton()
     expect(btn.style.backgroundColor).toBe("rgb(91, 91, 240)")
+  })
+})
+
+// ── 6. Mobile viewport collapses 'full'/'custom' launchers to icon-only ────────
+// On narrow phones (matchMedia '(max-width: 480px)' → matches:true), full/custom
+// launchers render as the same 44×44 bug circle as 'icon' mode, dropping the label —
+// while desktop keeps the full pill + label.
+
+describe("mobile icon-only launcher", () => {
+  it("collapses a 'full' launcher to icon-only (no label) on a phone viewport", async () => {
+    stubMatchMedia(true) // narrow / phone
+    await mountWith({ launcherMode: "full" })
+    const btn = launcherButton()
+    expect(btn.textContent?.trim()).toBe("")     // label dropped
+    expect(btn.innerHTML).toContain("<svg")       // bug icon still present
+    expect(btn.style.borderRadius).toBe("50%")   // circle, not pill
+    expect(btn.style.width).toBe("44px")
+  })
+
+  it("keeps the 'Report a bug' label on a desktop viewport for 'full'", async () => {
+    stubMatchMedia(false) // wide / desktop
+    await mountWith({ launcherMode: "full" })
+    const btn = launcherButton()
+    expect(btn.textContent).toContain("Report a bug")
+    expect(btn.style.borderRadius).toBe("999px")
+  })
+
+  it("collapses a 'custom' launcher to icon-only (no custom text) on a phone viewport", async () => {
+    stubMatchMedia(true)
+    await mountWith({ launcherMode: "custom", launcherText: "Found a glitch?" })
+    const btn = launcherButton()
+    expect(btn.textContent).not.toContain("Found a glitch?")
+    expect(btn.style.borderRadius).toBe("50%")
+    expect(btn.style.width).toBe("44px")
+  })
+
+  it("keeps the custom label on a desktop viewport for 'custom'", async () => {
+    stubMatchMedia(false)
+    await mountWith({ launcherMode: "custom", launcherText: "Found a glitch?" })
+    const btn = launcherButton()
+    expect(btn.textContent).toContain("Found a glitch?")
+    expect(btn.style.borderRadius).toBe("999px")
+  })
+
+  it("still shows the green active dot on a phone viewport (survives repaint)", async () => {
+    stubMatchMedia(true)
+    await mountWith({ launcherMode: "full" })
+    const btn = launcherButton()
+    expect(btn.querySelector(".kl-active-dot")).toBeTruthy()
   })
 })
