@@ -3764,6 +3764,87 @@ export async function listTriageFeedback(projectId: string): Promise<any[]> {
   })
 }
 
+// ── KLAVITYKLA-201: Cross-project inbox ──────────────────────────────────────
+// Returns per-project new-report counts + top items + regression counts for
+// every project in `projectIds`.  Designed to be called once with all IDs the
+// caller is authorised to see (auth is enforced by the caller — listProjects).
+// We do one query per data type rather than N-per-project to keep this O(1) at
+// the DB level regardless of project count.
+export async function listInboxForProjects(
+  projectIds: string[],
+  opts?: { windowMs?: number; topN?: number },
+): Promise<{
+  projectId: string
+  newReportCount: number
+  regressionCount: number
+  topReports: Array<{ id: string; title: string; priority: string | null; createdAt: number; seqNum: number | null }>
+}[]> {
+  if (!projectIds.length) return []
+  const windowMs = opts?.windowMs ?? 48 * 3600 * 1000   // 48-hour default window
+  const topN = Math.min(opts?.topN ?? 5, 10)
+  const since = Date.now() - windowMs
+  const ph = projectIds.map(() => "?").join(",")
+
+  // 1. Count new reports per project in the time window
+  const countR = await db!.execute({
+    sql: `SELECT project_id, COUNT(*) AS cnt FROM feedback
+          WHERE project_id IN (${ph}) AND status='new' AND created_at >= ?
+          GROUP BY project_id`,
+    args: [...projectIds, since],
+  })
+  const newCounts: Record<string, number> = {}
+  for (const row of countR.rows) {
+    newCounts[String((row as any).project_id)] = Number((row as any).cnt)
+  }
+
+  // 2. Count regression findings per project in the time window
+  const regR = await db!.execute({
+    sql: `SELECT project_id, COUNT(*) AS cnt FROM findings
+          WHERE project_id IN (${ph}) AND kind='regression' AND created_at >= ?
+          GROUP BY project_id`,
+    args: [...projectIds, since],
+  })
+  const regCounts: Record<string, number> = {}
+  for (const row of regR.rows) {
+    regCounts[String((row as any).project_id)] = Number((row as any).cnt)
+  }
+
+  // 3. Top N new reports per project (window-filtered, ordered newest first)
+  // We use a window-function approach: rank per project, take top N.
+  // libSQL/SQLite supports ROW_NUMBER() so we use it.
+  const topR = await db!.execute({
+    sql: `SELECT id, project_id, suggested_bug_json, observation, priority, severity, created_at, seq_num
+          FROM (
+            SELECT *, ROW_NUMBER() OVER (PARTITION BY project_id ORDER BY created_at DESC) AS rn
+            FROM feedback
+            WHERE project_id IN (${ph}) AND status='new' AND created_at >= ?
+          ) WHERE rn <= ?`,
+    args: [...projectIds, since, topN],
+  })
+  const topMap: Record<string, Array<{ id: string; title: string; priority: string | null; createdAt: number; seqNum: number | null }>> = {}
+  for (const x of topR.rows) {
+    const pid = String((x as any).project_id)
+    let bug: any = null
+    try { bug = (x as any).suggested_bug_json ? JSON.parse(String((x as any).suggested_bug_json)) : null } catch { bug = null }
+    const title = String(bug?.title || (x as any).observation || "Untitled report")
+    if (!topMap[pid]) topMap[pid] = []
+    topMap[pid].push({
+      id: String((x as any).id),
+      title,
+      priority: (x as any).priority ?? (x as any).severity != null ? String((x as any).priority ?? (x as any).severity) : null,
+      createdAt: Number((x as any).created_at),
+      seqNum: (x as any).seq_num != null ? Number((x as any).seq_num) : null,
+    })
+  }
+
+  return projectIds.map((pid) => ({
+    projectId: pid,
+    newReportCount: newCounts[pid] ?? 0,
+    regressionCount: regCounts[pid] ?? 0,
+    topReports: topMap[pid] ?? [],
+  }))
+}
+
 // Paginated, filterable ticket list for the /tickets view (KLA-169).
 // Returns triaged tickets (status != 'new') with optional filters.
 export async function listTicketsPaginated(
