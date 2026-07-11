@@ -1,6 +1,6 @@
 // Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
 import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, feedbackByPublicToken, getFeedbackPublicToken } from "./lib/db"
 import { issueKeyFor, chooseDedup } from "./lib/dedup"
 import { classifySimObservation } from "./lib/sim-bug-classify"
 import { getConnector, listConnectorTypes, type TicketPayload, type TicketAttachment } from "./lib/connectors/index"
@@ -700,6 +700,260 @@ async function dashboardPage(): Promise<Response> {
 }
 function redirect(loc: string, headers: Record<string, string> = {}) { return new Response(null, { status: 302, headers: { Location: loc, ...headers } }) }
 function fmtUsd(n: number): string { return "$" + (Number(n) || 0).toFixed(4) }
+
+// ── Public report status page renderer (GET /r/:token) ────────────────────────────────────────────
+// Self-contained HTML; matches Klavity visual language (calm palette, serif headings).
+// Derives a human-readable status timeline from the feedback status column.
+function renderPublicReportPage(report: import("./lib/db").PublicReportStatus): string {
+  const h = escapeHtml
+
+  // ── Status timeline derivation ──
+  // Steps: Received → Triaged → In progress → Fixed/Closed
+  // Derive step states from the status field.
+  const statusSteps: { label: string; done: boolean; active: boolean }[] = (() => {
+    const s = report.status
+    const received = true
+    const triaged = s !== "new"
+    const inProgress = s === "open" || s === "in_progress"
+    const done = s === "done" || s === "closed" || s === "resolved"
+    if (done) {
+      return [
+        { label: "Received", done: true, active: false },
+        { label: "Triaged", done: true, active: false },
+        { label: "In progress", done: true, active: false },
+        { label: s === "done" ? "Fixed" : "Closed", done: true, active: true },
+      ]
+    }
+    if (inProgress) {
+      return [
+        { label: "Received", done: true, active: false },
+        { label: "Triaged", done: true, active: false },
+        { label: "In progress", done: false, active: true },
+        { label: "Fixed / Closed", done: false, active: false },
+      ]
+    }
+    if (triaged) {
+      return [
+        { label: "Received", done: true, active: false },
+        { label: "Triaged", done: false, active: true },
+        { label: "In progress", done: false, active: false },
+        { label: "Fixed / Closed", done: false, active: false },
+      ]
+    }
+    // "new" — just received
+    return [
+      { label: "Received", done: false, active: true },
+      { label: "Triaged", done: false, active: false },
+      { label: "In progress", done: false, active: false },
+      { label: "Fixed / Closed", done: false, active: false },
+    ]
+  })()
+
+  const timelineHtml = statusSteps.map((step, i) => {
+    const cls = step.done ? "step-done" : step.active ? "step-active" : "step-pending"
+    const icon = step.done ? "✓" : step.active ? "●" : "○"
+    const connector = i < statusSteps.length - 1 ? `<div class="step-connector${step.done ? " done" : ""}"></div>` : ""
+    return `<div class="step ${cls}"><div class="step-icon">${icon}</div><div class="step-label">${h(step.label)}</div></div>${connector}`
+  }).join("")
+
+  const submittedDate = new Date(report.createdAt).toLocaleDateString("en-US", {
+    year: "numeric", month: "long", day: "numeric",
+  })
+
+  const priorityBadge = report.priority
+    ? `<span class="badge badge-priority badge-${h(report.priority)}">${h(report.priority)}</span>`
+    : ""
+
+  const trackerLink = report.planeIssueKey
+    ? `<p class="tracker-ref">Tracking reference: <strong>${h(report.planeIssueKey)}</strong></p>`
+    : ""
+
+  const pageLocation = (report.urlHost || report.urlPath)
+    ? `<p class="page-ref">Reported on: <code>${h([report.urlHost, report.urlPath].filter(Boolean).join(""))}</code></p>`
+    : ""
+
+  const observationHtml = report.observation && report.observation !== report.title
+    ? `<div class="observation"><p>${h(report.observation)}</p></div>`
+    : ""
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Report status – Klavity</title>
+<meta name="robots" content="noindex, nofollow">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f8f7f5;
+    color: #1a1a2e;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem 1rem;
+  }
+  .card {
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.04);
+    padding: 2.5rem 2rem;
+    max-width: 600px;
+    width: 100%;
+  }
+  .logo {
+    display: flex; align-items: center; gap: 0.5rem;
+    margin-bottom: 2rem;
+    color: #6366f1;
+    font-size: 1.125rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  .logo svg { width: 24px; height: 24px; }
+  h1 {
+    font-size: 1.375rem;
+    font-weight: 700;
+    line-height: 1.3;
+    color: #111827;
+    margin-bottom: 0.5rem;
+    font-family: Georgia, "Times New Roman", serif;
+    letter-spacing: -0.01em;
+  }
+  .meta {
+    font-size: 0.8125rem;
+    color: #6b7280;
+    margin-bottom: 1.5rem;
+    display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center;
+  }
+  .badge {
+    display: inline-block;
+    padding: 0.125rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: capitalize;
+  }
+  .badge-priority { background: #f3f4f6; color: #374151; }
+  .badge-urgent { background: #fef2f2; color: #dc2626; }
+  .badge-high { background: #fff7ed; color: #c2410c; }
+  .badge-medium { background: #fffbeb; color: #b45309; }
+  .badge-low { background: #f0fdf4; color: #16a34a; }
+  .observation {
+    background: #f9fafb;
+    border-left: 3px solid #e5e7eb;
+    border-radius: 0 6px 6px 0;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1.5rem;
+    font-size: 0.9375rem;
+    color: #374151;
+    line-height: 1.6;
+  }
+  .page-ref, .tracker-ref {
+    font-size: 0.8125rem;
+    color: #6b7280;
+    margin-bottom: 0.5rem;
+  }
+  .page-ref code {
+    background: #f3f4f6;
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+    font-size: 0.875em;
+    color: #374151;
+  }
+  /* ── Timeline ── */
+  .timeline {
+    margin: 2rem 0 1rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 0;
+  }
+  .step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+    min-width: 0;
+  }
+  .step-icon {
+    width: 28px; height: 28px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+    font-size: 0.875rem;
+    font-weight: 700;
+    border: 2px solid #e5e7eb;
+    background: #fff;
+    color: #9ca3af;
+    flex-shrink: 0;
+  }
+  .step-label {
+    font-size: 0.6875rem;
+    color: #9ca3af;
+    margin-top: 0.375rem;
+    text-align: center;
+    font-weight: 500;
+    line-height: 1.3;
+  }
+  .step-connector {
+    height: 2px;
+    background: #e5e7eb;
+    flex: 1;
+    margin-top: 13px;
+    min-width: 8px;
+  }
+  .step-connector.done { background: #6366f1; }
+  .step-done .step-icon { background: #6366f1; border-color: #6366f1; color: #fff; }
+  .step-done .step-label { color: #6366f1; }
+  .step-active .step-icon { background: #eff6ff; border-color: #6366f1; color: #6366f1; }
+  .step-active .step-label { color: #4f46e5; font-weight: 700; }
+  .recurrence-note {
+    font-size: 0.8125rem;
+    color: #6b7280;
+    background: #fffbeb;
+    border-radius: 6px;
+    padding: 0.5rem 0.75rem;
+    margin-top: 1.25rem;
+  }
+  .footer {
+    margin-top: 3rem;
+    font-size: 0.75rem;
+    color: #9ca3af;
+    text-align: center;
+  }
+  .footer a { color: #6366f1; text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>
+    </svg>
+    Klavity
+  </div>
+
+  <h1>${h(report.title)}</h1>
+  <div class="meta">
+    <span>Submitted ${h(submittedDate)}</span>
+    ${priorityBadge}
+  </div>
+
+  ${observationHtml}
+  ${pageLocation}
+  ${trackerLink}
+
+  <div class="timeline">
+    ${timelineHtml}
+  </div>
+
+  ${report.recurrenceCount > 1 ? `<p class="recurrence-note">This issue has been reported ${report.recurrenceCount} times. The team is aware of the pattern.</p>` : ""}
+</div>
+<p class="footer">Powered by <a href="https://klavity.in" target="_blank" rel="noopener noreferrer">Klavity</a></p>
+</body>
+</html>`
+}
+
 function renderOpsAdmin(d: {
   totals: { totalCost: number; totalInputTokens: number; totalOutputTokens: number; callCount: number }
   daily: { day: string; cost: number; calls: number }[]
@@ -2155,7 +2409,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const issueUrl = (!anonActor && feedbackId && dashBase)
             ? `${dashBase}/dashboard${linkProject ? `?project=${encodeURIComponent(linkProject)}` : ""}#tickets`
             : ""
-          return wjson({ id: feedbackId ?? "", saved: true, ...(issueUrl ? { issue_url: issueUrl } : {}), ...(recurrenceMem ? { recurrence: recurrenceMem } : {}) })
+          // KLA-214: public status URL — every reporter (including anonymous widget reporters) gets a
+          // tokenized link to check their report's status without logging in. Best-effort: if we can't
+          // read the token back (backfill race), the field is simply omitted — never blocks the response.
+          let statusUrl: string | undefined
+          if (feedbackId && dashBase) {
+            try {
+              const pubTok = await getFeedbackPublicToken(feedbackId)
+              if (pubTok) statusUrl = `${dashBase}/r/${pubTok}`
+            } catch { /* non-fatal — status_url omitted */ }
+          }
+          return wjson({ id: feedbackId ?? "", saved: true, ...(issueUrl ? { issue_url: issueUrl } : {}), ...(statusUrl ? { status_url: statusUrl } : {}), ...(recurrenceMem ? { recurrence: recurrenceMem } : {}) })
         }
 
         // R8: append the Sim citation line to the issue body when this feedback cites a trait.
@@ -3139,6 +3403,26 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           })
         }
         if (e instanceof WalkBusyError) return new Response("AutoSim busy", { status: 409 })
+        return new Response("Internal error", { status: 500 })
+      }
+    }
+
+    // ── GET /r/:token — Public (unauthenticated) report status page. ────────────────────────────────
+    // Reporters get this link after submitting via widget/extension. No login required.
+    // Security: token is a 32-byte (64-char hex) cryptographically random value — not enumerable.
+    // Rate-limited per IP. 404 on bad/unknown token (never reveals project context).
+    // No PII leak: page shows only what the reporter themselves submitted.
+    const publicReportMatch = path.match(/^\/r\/([0-9a-f]{64})$/)
+    if (req.method === "GET" && publicReportMatch) {
+      const tok = publicReportMatch[1]
+      if (!rlAllow("pubstatus:" + clientIp(req, server), 60, 60_000)) return new Response("Rate limited", { status: 429 })
+      try {
+        const report = await feedbackByPublicToken(tok)
+        if (!report) return new Response("Not found", { status: 404 })
+        return new Response(renderPublicReportPage(report), {
+          headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+        })
+      } catch (e) {
         return new Response("Internal error", { status: 500 })
       }
     }
