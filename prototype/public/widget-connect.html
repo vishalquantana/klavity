@@ -45,16 +45,22 @@ const err = (m) => { $("err").textContent = m || ""; if (m) $("ok").textContent 
 const ok = (m) => { $("ok").textContent = m || ""; if (m) $("err").textContent = "" }
 async function jf(url, opts){ const r = await fetch(url, opts); let d={}; try{d=await r.json()}catch(e){} return {ok:r.ok,status:r.status,data:d} }
 
-// Send (or resend) a sign-in code for the given email. Returns true on success.
+// Send (or resend) a sign-in code for the given email. Returns the response data
+// ({ emailed, testOtp, ... }) on success, or null on failure. Callers inspect the flags:
+//   testOtp:true  → KLAV_TEST_OTP mode, no email sent, fixed test code entered directly
+//   emailed:false → the code could not be sent (don't dead-end the user on a code field)
 async function requestCode(email){
   const r = await jf("/api/auth/request", { method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({ email }) })
-  if (!r.ok){ err(r.data.error || "Could not send a code."); return false }
-  return true
+  if (!r.ok){ err(r.data.error || "Could not send a code."); return null }
+  return r.data || {}
 }
 
-// Reveal the code step for an email; remembers which address the code went to.
-function showCodeStep(email){
-  $("sub").textContent = "Enter the code we sent to " + email + "."
+// Reveal the code step for an email. In test-OTP mode no email is sent, so say so rather than
+// claiming "we sent a code to …" (which left testers waiting for an email that never arrives).
+function showCodeStep(email, testOtp){
+  $("sub").textContent = testOtp
+    ? "Test mode — no email sent. Enter your test sign-in code to continue."
+    : "Enter the code we sent to " + email + "."
   $("emailStep").classList.add("hide"); $("codeStep").classList.remove("hide")
   $("code").value = ""; $("code").focus()
 }
@@ -91,15 +97,20 @@ $("sendBtn").onclick = async () => {
   const probe = await jf("/api/widget/token", { method:"POST", headers:{"content-type":"application/json"},
     body: JSON.stringify({ projectId, origin: targetOrigin }) })
   if (probe.ok){ if (window.opener && targetOrigin) window.opener.postMessage({type:"klavity-widget-token",token:probe.data.token,projectId}, targetOrigin); $("sub").textContent="Connected — you can close this window."; $("emailStep").classList.add("hide"); setTimeout(()=>window.close(),600); return }
-  if (!(await requestCode(email))) return
-  showCodeStep(email); startResendCooldown()
+  const data = await requestCode(email)
+  if (!data) return
+  // Genuine send failure (not test-OTP) — don't strand the user on a code field.
+  if (!data.testOtp && data.emailed === false) return err("We couldn't send your code right now. Please try again.")
+  showCodeStep(email, !!data.testOtp); startResendCooldown()
 }
 $("resendBtn").onclick = async () => {
   if ($("resendBtn").disabled) return
   err(""); const email = $("email").value.trim().toLowerCase()
   if (!email.includes("@")) return err("Enter a valid email.")
-  if (!(await requestCode(email))) return
-  ok("New code sent to " + email + "."); startResendCooldown()
+  const data = await requestCode(email)
+  if (!data) return
+  if (!data.testOtp && data.emailed === false) return err("We couldn't send your code right now. Please try again.")
+  ok(data.testOtp ? "Test mode — enter your test sign-in code." : "New code sent to " + email + "."); startResendCooldown()
 }
 $("changeBtn").onclick = () => {
   err(""); ok(""); clearInterval(resendTimer)
