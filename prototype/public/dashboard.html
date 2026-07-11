@@ -1543,6 +1543,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         <span class="tkt-fb-label">Filter</span>
         <select id="fbStatus" title="Filter by status"><option value="">All statuses</option><option value="new">New</option><option value="open">Open</option><option value="in_progress">In progress</option><option value="done">Done</option><option value="dismissed">Dismissed</option><option value="closed">Closed</option></select>
         <select id="fbPriority" title="Filter by priority"><option value="">All priorities</option><option value="urgent">Urgent</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select>
+        <select id="fbLabel" title="Filter by label"><option value="">All labels</option></select>
         <select id="fbAssignee" title="Filter by assignee"><option value="">All assignees</option><option value="__unassigned__">Unassigned</option></select>
         <select id="fbSource" title="Filter by source"><option value="">All sources</option><option value="sim">Sim / AI</option><option value="human">Human report</option><option value="manual">Manual</option></select>
         <button class="tkt-fb-clear hide" id="fbClearBtn" type="button">&#10005; Clear filters</button>
@@ -4012,7 +4013,7 @@ function dupAckHtml(t, opts) {
   return `<div class="dup-ack" role="status" aria-label="Known issue, reported ${n} times"><span class="dup-ico">${kicon('refresh-cw',{size:14})}</span><span>Known issue &mdash; ${timesLabel.toLowerCase()}</span>${detail}</div>`
 }
 // ── KLA-169: Tickets filter bar + list view ──────────────────────────────────────────────────────
-let _tktFilters = { status: "", priority: "", assignee: "", source: "" }
+let _tktFilters = { status: "", priority: "", label: "", assignee: "", source: "", search: "" }
 let _tktListState = { page: 1, totalPages: 1, loading: false }
 let _tktBoardState = { loading: false }
 let _tktBoardTickets = []
@@ -4021,49 +4022,92 @@ let _tktFbBound = false
 // KLA-178: multi-select set for bulk actions in list view
 let _bulkSelected = new Set()
 
+function syncTicketFiltersToUrl() {
+  try {
+    const u = new URL(location.href)
+    const params = { status: _tktFilters.status, priority: _tktFilters.priority, label: _tktFilters.label, assignee: _tktFilters.assignee, source: _tktFilters.source, q: _tktFilters.search }
+    Object.entries(params).forEach(([key, value]) => value ? u.searchParams.set(key, value) : u.searchParams.delete(key))
+    u.searchParams.delete("page")
+    history.replaceState(null, "", u.toString())
+  } catch (e) {}
+}
+
+function loadTicketFiltersFromUrl() {
+  try {
+    const sp = new URL(location.href).searchParams
+    ;["status", "priority", "label", "assignee", "source", "q"].forEach(key => {
+      const filterKey = key === "q" ? "search" : key
+      _tktFilters[filterKey] = sp.get(key) || ""
+    })
+  } catch (e) {}
+}
+
+function refreshTicketLabelOptions() {
+  const fbLabel = document.getElementById("fbLabel")
+  if (!fbLabel) return
+  const selected = _tktFilters.label
+  fbLabel.innerHTML = '<option value="">All labels</option>' + (state._labels || []).map(l => `<option value="${esc(l.id)}">${esc(l.name)}</option>`).join("")
+  fbLabel.value = selected
+}
+
 function tktFilterBarBind() {
   if (_tktFbBound) return
   const fbStatus = document.getElementById("fbStatus")
   const fbPriority = document.getElementById("fbPriority")
+  const fbLabel = document.getElementById("fbLabel")
   const fbAssignee = document.getElementById("fbAssignee")
   const fbSource = document.getElementById("fbSource")
   const fbClear = document.getElementById("fbClearBtn")
   const listBtn = document.getElementById("tktListBtn")
   const boardBtn = document.getElementById("tktBoardBtn")
-  if (!fbStatus || !fbPriority || !fbAssignee || !fbSource || !fbClear) return
+  if (!fbStatus || !fbPriority || !fbLabel || !fbAssignee || !fbSource || !fbClear) return
   _tktFbBound = true
+
+  loadTicketFiltersFromUrl()
+  fbStatus.value = _tktFilters.status; fbPriority.value = _tktFilters.priority
+  fbAssignee.value = _tktFilters.assignee; fbSource.value = _tktFilters.source
+  const searchEl = document.getElementById("kanbanSearch")
+  if (searchEl) searchEl.value = _tktFilters.search
+  ;[fbStatus, fbPriority, fbLabel, fbAssignee, fbSource].forEach(sel => sel.classList.toggle("active", !!sel.value))
+  fbClear.classList.toggle("hide", !Object.values(_tktFilters).some(v => !!v))
 
   // View toggle
   if (listBtn) listBtn.addEventListener("click", () => { _tktView = "list"; listBtn.classList.add("active"); boardBtn && boardBtn.classList.remove("active"); renderTicketsView() })
   if (boardBtn) boardBtn.addEventListener("click", () => { _tktView = "board"; boardBtn.classList.add("active"); listBtn && listBtn.classList.remove("active"); renderTicketsView() })
 
   refreshAssigneeOptions()
+  refreshTicketLabelOptions()
 
   const onFilterChange = () => {
     _tktFilters.status = fbStatus.value
     _tktFilters.priority = fbPriority.value
+    _tktFilters.label = fbLabel.value
     _tktFilters.assignee = fbAssignee.value
     _tktFilters.source = fbSource.value
     // Active state on selects
-    ;[fbStatus, fbPriority, fbAssignee, fbSource].forEach(sel => sel.classList.toggle("active", !!sel.value))
+    ;[fbStatus, fbPriority, fbLabel, fbAssignee, fbSource].forEach(sel => sel.classList.toggle("active", !!sel.value))
     // Show/hide clear button
     const hasFilter = Object.values(_tktFilters).some(v => !!v)
     fbClear && fbClear.classList.toggle("hide", !hasFilter)
     _tktListState.page = 1
     _bulkSelected.clear()  // filter change clears selection
+    syncTicketFiltersToUrl()
     renderTicketsView()
   }
 
   fbStatus.addEventListener("change", onFilterChange)
   fbPriority.addEventListener("change", onFilterChange)
+  fbLabel.addEventListener("change", onFilterChange)
   fbAssignee.addEventListener("change", onFilterChange)
   fbSource.addEventListener("change", onFilterChange)
   fbClear.addEventListener("click", () => {
-    fbStatus.value = ""; fbPriority.value = ""; fbAssignee.value = ""; fbSource.value = ""
-    ;[fbStatus, fbPriority, fbAssignee, fbSource].forEach(sel => sel.classList.remove("active"))
+    fbStatus.value = ""; fbPriority.value = ""; fbLabel.value = ""; fbAssignee.value = ""; fbSource.value = ""
+    ;[fbStatus, fbPriority, fbLabel, fbAssignee, fbSource].forEach(sel => sel.classList.remove("active"))
     fbClear.classList.add("hide")
-    _tktFilters = { status: "", priority: "", assignee: "", source: "" }
+    _tktFilters = { status: "", priority: "", label: "", assignee: "", source: "", search: "" }
+    if (searchEl) searchEl.value = ""
     _tktListState.page = 1
+    syncTicketFiltersToUrl()
     renderTicketsView()
   })
 }
@@ -4089,6 +4133,20 @@ function ticketStatusParamFor(view) {
   return view === "board" ? "new,open,in_progress,done,dismissed" : ""
 }
 
+function ticketQueryParams(view, page, limit) {
+  const sp = new URLSearchParams()
+  const statusParam = ticketStatusParamFor(view)
+  if (statusParam) sp.set("status", statusParam)
+  if (_tktFilters.priority) sp.set("priority", _tktFilters.priority)
+  if (_tktFilters.label) sp.set("label", _tktFilters.label)
+  if (_tktFilters.assignee) sp.set("assignee", _tktFilters.assignee === "__unassigned__" ? "" : _tktFilters.assignee)
+  if (_tktFilters.source) sp.set("source", _tktFilters.source)
+  if (_tktFilters.search) sp.set("q", _tktFilters.search)
+  sp.set("page", String(page))
+  sp.set("limit", String(limit))
+  return sp
+}
+
 async function fetchAndRenderTktList() {
   const listEl = document.getElementById("tktListView")
   if (!listEl) return
@@ -4099,25 +4157,14 @@ async function fetchAndRenderTktList() {
   const projId = state.active && state.active.id
   if (!projId) { listEl.innerHTML = '<div class="tkt-list-empty">No project selected.</div>'; _tktListState.loading = false; return }
 
-  const sp = new URLSearchParams()
-  const statusParam = ticketStatusParamFor("list")
-  if (statusParam) sp.set("status", statusParam)
-  if (_tktFilters.priority) sp.set("priority", _tktFilters.priority)
-  if (_tktFilters.assignee) sp.set("assignee", _tktFilters.assignee === "__unassigned__" ? "" : _tktFilters.assignee)
-  if (_tktFilters.source) sp.set("source", _tktFilters.source)
-  sp.set("page", String(_tktListState.page))
-  sp.set("limit", "50")
-
-  // Also apply search
-  const searchEl = document.getElementById("kanbanSearch")
-  const searchQ = searchEl ? searchEl.value : ""
+  const sp = ticketQueryParams("list", _tktListState.page, 50)
 
   try {
     const res = await fetch(`/api/projects/${encodeURIComponent(projId)}/tickets?${sp.toString()}`)
     if (!res.ok) throw new Error("HTTP " + res.status)
     const data = await res.json()
     _tktListState.totalPages = data.totalPages || 1
-    renderTktList(listEl, data.tickets || [], data.total || 0, searchQ)
+    renderTktList(listEl, data.tickets || [], data.total || 0)
   } catch (e) {
     listEl.innerHTML = '<div class="tkt-list-empty">Failed to load tickets.</div>'
   } finally {
@@ -4134,14 +4181,7 @@ async function fetchAndRenderTktBoard() {
   const projId = state.active && state.active.id
   if (!projId) { board.innerHTML = '<div class="tkt-list-empty">No project selected.</div>'; _tktBoardState.loading = false; return }
 
-  const sp = new URLSearchParams()
-  const statusParam = ticketStatusParamFor("board")
-  if (statusParam) sp.set("status", statusParam)
-  if (_tktFilters.priority) sp.set("priority", _tktFilters.priority)
-  if (_tktFilters.assignee) sp.set("assignee", _tktFilters.assignee === "__unassigned__" ? "" : _tktFilters.assignee)
-  if (_tktFilters.source) sp.set("source", _tktFilters.source)
-  sp.set("page", "1")
-  sp.set("limit", "200")
+  const sp = ticketQueryParams("board", 1, 200)
 
   try {
     const res = await fetch(`/api/projects/${encodeURIComponent(projId)}/tickets?${sp.toString()}`)
@@ -4237,9 +4277,8 @@ function buildBulkBar(listEl, projId) {
   return bar
 }
 
-function renderTktList(listEl, tickets, total, searchQ) {
-  const q = (searchQ || "").toLowerCase().trim()
-  const filtered = q ? tickets.filter(t => [t.title, t.observation, t.urlPath, t.simName, t.priority].some(v => String(v || "").toLowerCase().includes(q))) : tickets
+function renderTktList(listEl, tickets, total) {
+  const filtered = tickets
 
   const wrap = document.createElement("div")
   const projId = state.active && state.active.id
@@ -4347,7 +4386,7 @@ function renderTktList(listEl, tickets, total, searchQ) {
   listEl.innerHTML = ""; listEl.appendChild(wrap)
 }
 
-let _kanbanSearch = "", _kbSearchBound = false
+let _kbSearchBound = false, _tktSearchTimer = null
 // Active card-driven filter on the Tickets board (one at a time, plus the text search). null = none.
 let _kbFilter = null // { type:'open'|'recurring'|'sentiment-neg'|'severity', value?, label }
 function kbMatchesFilter(t) {
@@ -4361,11 +4400,6 @@ function kbMatchesFilter(t) {
       : t.priority === _kbFilter.value
     default: return true
   }
-}
-function kbMatchesSearch(t) {
-  const q = _kanbanSearch.trim().toLowerCase()
-  if (!q) return true
-  return [t.title, t.observation, t.urlPath, t.simName, t.priority, t.sentiment].some(v => String(v || "").toLowerCase().includes(q))
 }
 // Jump to the Tickets board with a card-driven filter applied (used by the overview KPI cards).
 function goToTicketsFiltered(filter) {
@@ -4421,7 +4455,16 @@ function renderTicketsKanban(boardTickets) {
   if (!board) return
   if (!_kbSearchBound) {
     const si = $("kanbanSearch")
-    if (si) { si.addEventListener("input", () => { _kanbanSearch = si.value; renderTicketsKanban(_tktBoardTickets) }); _kbSearchBound = true }
+    if (si) {
+      si.addEventListener("input", () => {
+        _tktFilters.search = si.value.trim()
+        _tktListState.page = 1
+        syncTicketFiltersToUrl()
+        clearTimeout(_tktSearchTimer)
+        _tktSearchTimer = setTimeout(() => renderTicketsView(), 180)
+      })
+      _kbSearchBound = true
+    }
   }
   const admin = state.active && state.active.role === "admin"
   if (Array.isArray(boardTickets)) {
@@ -4434,7 +4477,9 @@ function renderTicketsKanban(boardTickets) {
   }
   refreshAssigneeOptions()
   const sourceTickets = Array.isArray(boardTickets) ? boardTickets : (_tktBoardTickets.length ? _tktBoardTickets : (state.tickets || []))
-  const tickets = sourceTickets.filter(t => kbMatchesFilter(t) && kbMatchesSearch(t))
+  // Text filtering is already performed by the paginated, project-scoped API. Do not apply
+  // a second client-side predicate here or description-only matches can disappear from the board.
+  const tickets = sourceTickets.filter(t => kbMatchesFilter(t))
   $("ticketKanbanCount").textContent = tickets.length ? tickets.length : ""
   if (!tickets.length) {
     board.innerHTML = emptyState(kicon('bug',{size:32}), "No tickets match these filters.", "")
@@ -5099,6 +5144,7 @@ async function loadLabels(admin) {
   if (!r || !r.ok) return
   const d = await r.json().catch(() => ({}))
   state._labels = d.labels || []
+  refreshTicketLabelOptions()
   const btn = document.getElementById("manageLabelsBtn")
   if (btn) btn.style.display = admin ? "" : "none"
 }
@@ -5127,6 +5173,7 @@ function openManageLabels() {
       if (!r || !r.ok) { err.textContent = d.error || "Couldn't create label."; return }
       if (!state._labels) state._labels = []
       state._labels.push(d.label)
+      refreshTicketLabelOptions()
       document.getElementById("mlNewName").value = ""
       renderMlList()
     })
@@ -5150,6 +5197,7 @@ function renderMlList() {
       const r = await fetch(`/api/projects/${encodeURIComponent(projId)}/labels/${encodeURIComponent(lid)}`, { method: "DELETE" }).catch(() => null)
       if (!r || !r.ok) { document.getElementById("mlErr").textContent = "Couldn't delete label."; return }
       state._labels = (state._labels || []).filter(x => x.id !== lid)
+      refreshTicketLabelOptions()
       ;(state.tickets || []).forEach(t => { if (t.labels) t.labels = t.labels.filter(x => x.id !== lid) })
       renderMlList()
     })
