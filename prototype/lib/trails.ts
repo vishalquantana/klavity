@@ -474,7 +474,11 @@ export async function recordFinding(
       const id = String(row.id)
       try {
         const { ingestFinding } = await import("./expectations-ingest")
-        await ingestFinding(db!, { projectId, findingId: id, title: input.title, dedupKey: input.dedupKey, urlPath: input.urlPath ?? null })
+        const expId = await ingestFinding(db!, { projectId, findingId: id, title: input.title, dedupKey: input.dedupKey, urlPath: input.urlPath ?? null })
+        // KLA-243: link finding → expectation if not already set.
+        if (expId) {
+          await db!.execute({ sql: `UPDATE findings SET expectation_id=? WHERE id=? AND expectation_id IS NULL`, args: [expId, id] })
+        }
       } catch (e) { console.warn(`[expectations] recordFinding content-dedup ingest skipped:`, String(e)) }
       return { id, deduped: true, recurrence }
     }
@@ -510,7 +514,11 @@ export async function recordFinding(
   }
   try {
     const { ingestFinding } = await import("./expectations-ingest")
-    await ingestFinding(db!, { projectId, findingId: id, title: input.title, dedupKey: input.dedupKey, urlPath: input.urlPath ?? null })
+    const expId = await ingestFinding(db!, { projectId, findingId: id, title: input.title, dedupKey: input.dedupKey, urlPath: input.urlPath ?? null })
+    // KLA-243: link finding → expectation if not already set.
+    if (expId) {
+      await db!.execute({ sql: `UPDATE findings SET expectation_id=? WHERE id=? AND expectation_id IS NULL`, args: [expId, id] })
+    }
   } catch (e) { console.warn(`[expectations] recordFinding ${deduped ? "dedup " : ""}ingest skipped:`, String(e)) }
   return { id, deduped, recurrence }
 }

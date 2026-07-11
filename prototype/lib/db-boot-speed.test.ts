@@ -91,6 +91,9 @@ describe("applySchema — established DB boot speed", () => {
       ["findings",        "content_sig"],
       ["findings",        "severity"],
       ["findings",        "priority"],
+      ["findings",        "expectation_id"],    // KLA-243: finding↔expectation linkage
+      ["expectations",    "saves_count"],        // KLA-243: guard-caught regression counter
+      ["expectations",    "source_ticket_id"],   // KLA-242: guard-this-fix ticket back-link
       ["author_sessions", "checkpoint_json"],
       ["author_sessions", "objective_verified"],
       ["walk_share_tokens", "revoked_at"],

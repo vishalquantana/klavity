@@ -3394,6 +3394,7 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
         ${t.hasReplay ? `<button class="btn btn-ghost btn-sm replay-btn" type="button">${kicon('play')} Session replay</button>` : ""}
         <button class="btn btn-ghost btn-sm copy-claude-btn" type="button" title="Copy a detailed prompt to paste into Claude / ChatGPT / any AI coding agent">${kicon('sparkles')} Copy to AI</button>
         <button class="btn btn-ghost btn-sm save-meta-btn">Save</button>
+        ${curStatus === "done" ? `<button class="btn btn-ghost btn-sm guard-fix-btn" type="button" title="Turn this fix into an enforceable guard that catches regressions">${kicon('shield')} Guard this fix</button>` : ""}
       </div>
       <div class="tkt-gap tkt-copy">${copySelect}</div>
       <div class="tkt-err hide tkt-err-el"></div>
@@ -3498,6 +3499,35 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
     const copyClaudeBtn = detailEl.querySelector(".copy-claude-btn")
     if (copyClaudeBtn) {
       copyClaudeBtn.addEventListener("click", ev => { ev.stopPropagation(); copyTicketToAI(ticketId, copyClaudeBtn, detailEl) })
+    }
+
+    // KLA-242: Wire up "Guard this fix" — creates an expectation from the resolved ticket.
+    // The button only renders when status === "done" (see _bodyHtml above).
+    const guardFixBtn = detailEl.querySelector(".guard-fix-btn")
+    if (guardFixBtn) {
+      guardFixBtn.addEventListener("click", async (ev) => {
+        ev.stopPropagation()
+        guardFixBtn.disabled = true
+        guardFixBtn.textContent = "Guarding…"
+        const pid = projParam()
+        const qs = pid ? "?project=" + encodeURIComponent(pid) : ""
+        const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/guard" + qs, {
+          method: "POST", headers: { "content-type": "application/json" }, body: "{}"
+        }).catch(() => null)
+        const d = r ? await r.json().catch(() => ({})) : {}
+        if (r && r.ok && d.ok) {
+          guardFixBtn.disabled = false
+          guardFixBtn.innerHTML = kicon('shield') + " Guarded"
+          guardFixBtn.classList.add("btn-indigo")
+          showTktMsg(detailEl, "Guard created — visible on the Expectations board.", false)
+          // Refresh the expectations board so the new guard appears immediately.
+          if (typeof loadExpectations === "function") loadExpectations()
+        } else {
+          guardFixBtn.disabled = false
+          guardFixBtn.innerHTML = kicon('shield') + " Guard this fix"
+          showTktMsg(detailEl, d.error || "Could not create guard.", true)
+        }
+      })
     }
 
     // Wire up copy-to button
@@ -7173,7 +7203,14 @@ load()
     var html='<div class="ec-title">'+esc(exp.title)+"</div>"
     if(badges)html+='<div class="ec-badges">'+badges+"</div>"
     if(meta)html+='<div class="ec-meta">'+esc(meta)+"</div>"
+    // KLA-242: show "from ticket" badge when guard was created via "Guard this fix"
+    if(exp.sourceTicketId)html+='<div class="ec-meta" style="margin-top:4px">'+kicon('ticket',{size:11})+' from closed ticket</div>'
     return html
+  }
+  // KLA-243: saves badge html for enforced cards
+  function savesBadgeHtml(savesCount){
+    if(!savesCount)return''
+    return'<span class="ec-badge" style="background:rgba(99,102,241,.14);color:var(--indigo)" title="Times this guard caught a regression">'+esc(String(savesCount))+' save'+(savesCount===1?'':'s')+'</span>'
   }
   async function enforceExpectation(expId,card){
     var pid=projParam();var qs=pid?"?project="+encodeURIComponent(pid):""
@@ -7228,6 +7265,7 @@ load()
     var validEl=$("expValid");validEl.innerHTML=valid.length?"":emptyExp("No validated expectations yet.")
     valid.forEach(function(exp){
       var card=document.createElement("div");card.className="exp-card"
+      // KLA-242: for guards from "Guard this fix" show Enforce button and from-ticket chip
       card.innerHTML=expCardHtml(exp)+'<div class="ec-acts" style="margin-top:10px"><button class="btn btn-indigo" style="font-size:12px;padding:7px 13px" data-enforce="'+esc(exp.id)+'">Enforce</button></div><div class="ec-msg"></div>'
       validEl.appendChild(card)
       card.querySelector("[data-enforce]").onclick=function(){enforceExpectation(exp.id,card)}
@@ -7235,9 +7273,11 @@ load()
     var enfEl=$("expEnf");enfEl.innerHTML=enf.length?"":emptyExp("Nothing enforced yet.")
     enf.forEach(function(exp){
       var card=document.createElement("div");card.className="exp-card"
+      // KLA-243: show saves counter (how many times this guard caught a regression) next to enforced badge
+      var savesBadge=savesBadgeHtml(exp.savesCount||0)
       card.innerHTML=expCardHtml(exp)+(exp.enforcedStepId
-        ?'<div class="ec-badges" style="margin-top:8px"><span class="ec-badge enforced-ok">enforced</span><span class="ec-meta" style="margin-left:4px;font-size:10px">'+esc(exp.enforcedStepId)+"</span></div>"
-        :'<div class="ec-badges" style="margin-top:8px"><span class="ec-badge enforced-ok">enforced</span></div>')
+        ?'<div class="ec-badges" style="margin-top:8px"><span class="ec-badge enforced-ok">enforced</span>'+savesBadge+'<span class="ec-meta" style="margin-left:4px;font-size:10px">'+esc(exp.enforcedStepId)+"</span></div>"
+        :'<div class="ec-badges" style="margin-top:8px"><span class="ec-badge enforced-ok">enforced</span>'+savesBadge+"</div>")
       enfEl.appendChild(card)
     })
   }

@@ -8,7 +8,9 @@ test("expectations table exists with expected columns", async () => {
   await applySchema(c)
   const cols = await c.execute("PRAGMA table_info(expectations)")
   const names = cols.rows.map((r: any) => r.name).sort()
+  // KLA-242: source_ticket_id — ticket this guard was created from
+  // KLA-243: saves_count — number of times this guard caught a regression
   expect(names).toEqual(
-    ["area","corroboration_json","created_at","dedup_key","enforced_step_id","id","project_id","source_refs_json","status","title","updated_at","url_path"].sort()
+    ["area","corroboration_json","created_at","dedup_key","enforced_step_id","id","project_id","saves_count","source_refs_json","source_ticket_id","status","title","updated_at","url_path"].sort()
   )
 })
