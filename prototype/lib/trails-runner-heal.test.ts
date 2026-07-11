@@ -5,6 +5,9 @@
 //   (A) different-role candidate rejected  — text signal finds <h1> for a button fp → ElementGone
 //   (B) cross-page candidate rejected      — page navigated away → ElementGone
 //   (C) same-role same-page accepted       — drifted selector, correct role on correct page → healed
+//
+// Browser tests are gated on KLAV_E2E=1 (browsers installed). CI skips them cleanly — add
+// `bunx playwright install chromium` to the CI workflow to run them in CI too.
 import { test, expect, beforeAll, afterAll } from "bun:test"
 import { chromium, type Browser } from "playwright"
 import { resolve } from "node:path"
@@ -13,18 +16,26 @@ import { pathToFileURL } from "node:url"
 import { resolveTarget, ElementGone } from "./trails-runner"
 import type { Fingerprint } from "./trails-types"
 
+const RUN_BROWSER = !!process.env.KLAV_E2E
+
 const fixture = (name: string) => pathToFileURL(resolve(import.meta.dir, "../test-fixtures", name)).href
 
 let browser: Browser
-beforeAll(async () => { browser = await chromium.launch({ headless: true }) })
-afterAll(async () => { await browser.close() })
+beforeAll(async () => {
+  if (!RUN_BROWSER) return
+  browser = await chromium.launch({ headless: true })
+})
+afterAll(async () => {
+  if (!RUN_BROWSER) return
+  await browser.close()
+})
 
 // ── (A) Different-role candidate rejected ────────────────────────────────────────────────────────
 // The fingerprint describes a <button>, but the page now has <h1>Submit Order</h1> with the same
 // text. Tier-1 text signal must reject it because roleConsistent("heading", "button") → false.
 // Signal 1 (role+name) also won't find a button, so we fall through to text, which rejects too.
 // Result: all signals fail → ElementGone.
-test("(A) KLA-71: Tier-1 text signal rejects a different-role candidate (h1 for button fp)", async () => {
+test.if(RUN_BROWSER)("(A) KLA-71: Tier-1 text signal rejects a different-role candidate (h1 for button fp)", async () => {
   const ctx = await browser.newContext()
   const page = await ctx.newPage()
   await page.goto(fixture("heal-wrong-role.html"))
@@ -45,7 +56,7 @@ test("(A) KLA-71: Tier-1 text signal rejects a different-role candidate (h1 for 
 // ── (B) Cross-page candidate rejected ────────────────────────────────────────────────────────────
 // The fingerprint was crystallized on page A. The page has since navigated to page B (which also
 // has the same button). resolveTarget must reject because page.url() ≠ expectedUrl.
-test("(B) KLA-71: cross-page candidate rejected when page has navigated away", async () => {
+test.if(RUN_BROWSER)("(B) KLA-71: cross-page candidate rejected when page has navigated away", async () => {
   const ctx = await browser.newContext()
   const page = await ctx.newPage()
 
@@ -72,7 +83,7 @@ test("(B) KLA-71: cross-page candidate rejected when page has navigated away", a
 // The fingerprint describes a button whose cached selector has drifted (old id changed).
 // The page now has <button data-testid="submit-btn">Submit Order</button>. Tier-1 must
 // heal successfully via testid or role+name signal because role and page both match.
-test("(C) KLA-71: same-role same-page candidate accepted (selector drifted, role intact)", async () => {
+test.if(RUN_BROWSER)("(C) KLA-71: same-role same-page candidate accepted (selector drifted, role intact)", async () => {
   const ctx = await browser.newContext()
   const page = await ctx.newPage()
   await page.goto(fixture("heal-correct.html"))
