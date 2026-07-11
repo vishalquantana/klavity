@@ -1,4 +1,4 @@
-import type { Connector, TicketPayload, ExportResult } from "./index"
+import type { Connector, TicketPayload, ExportResult, CommentSyncResult } from "./index"
 import { safeFetch } from "../safe-fetch"
 
 export const planeConnector: Connector = {
@@ -107,5 +107,80 @@ export const planeConnector: Connector = {
     const externalKey = seqId ?? id
 
     return { externalKey, externalUrl }
+  },
+
+  // addComment: POST a comment on the Plane issue identified by externalIssueRef.
+  //
+  // externalIssueRef is the externalKey stored by createIssue: sequence_id (e.g. "42") if
+  // available, otherwise the issue UUID. Plane's comment API requires the issue UUID, not the
+  // sequence_id, so we resolve the issue first when the ref looks like a sequence number.
+  //
+  // Plane comment API (best-known endpoint — VERIFY against your Plane version):
+  //   POST {host}/api/v1/workspaces/{workspace}/projects/{project_id}/issues/{issue_id}/comments/
+  //   Headers: X-API-Key: {token}, Content-Type: application/json
+  //   Body:    { "comment_html": "<p>text</p>" }   or   { "comment_stripped": "text" }
+  //
+  // NOTE: Plane's public REST comment API shape is version-dependent. We use comment_html here
+  // because it is present in documented Plane Community + Cloud; comment_stripped is a safe
+  // fallback the caller can add if needed. The entire call is best-effort (swallows errors
+  // and returns { ok: false, error }) so it never blocks the Klavity comment-save path.
+  async addComment(
+    externalIssueRef: string,
+    commentText: string,
+    meta: { authorEmail?: string | null; klavityCommentId?: string },
+    cfg: Record<string, string>,
+  ): Promise<CommentSyncResult> {
+    try {
+      const host = cfg.host?.replace(/\/$/, "") || "https://api.plane.so"
+      const { workspace, project_id, token } = cfg
+      if (!workspace || !project_id || !token) {
+        return { ok: false, error: "plane addComment: missing workspace/project_id/token in config" }
+      }
+
+      // externalIssueRef may be a sequence_id string (e.g. "42") or a UUID. The comment
+      // endpoint requires the UUID, so if the ref looks like a pure integer (sequence_id) we
+      // must resolve the UUID via the issues list filtered by sequence_id. If resolution fails,
+      // fall back to using the ref directly (it may already be a UUID from createIssue when
+      // sequence_id was null).
+      let issueId = externalIssueRef
+      if (/^\d+$/.test(externalIssueRef)) {
+        try {
+          // SSRF guard: host is user-supplied → safeFetch validates before sending the token.
+          const listRes = await safeFetch(
+            `${host}/api/v1/workspaces/${workspace}/projects/${project_id}/issues/?sequence_id=${externalIssueRef}`,
+            { method: "GET", headers: { "X-API-Key": token } },
+            { allowLoopbackInTest: true },
+          )
+          if (listRes.ok) {
+            const data = await listRes.json()
+            // Response may be { results: [{id, ...}] } or an array.
+            const results = Array.isArray(data) ? data : (data?.results ?? [])
+            if (results.length > 0 && results[0].id) issueId = String(results[0].id)
+          }
+        } catch { /* resolution failed: fall through and try with the ref as-is */ }
+      }
+
+      const commentUrl = `${host}/api/v1/workspaces/${workspace}/projects/${project_id}/issues/${issueId}/comments/`
+      const res = await safeFetch(
+        commentUrl,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-API-Key": token },
+          body: JSON.stringify({ comment_html: `<p>${commentText}</p>` }),
+        },
+        { allowLoopbackInTest: true },
+      )
+
+      if (!res.ok) {
+        const text = (await res.text().catch(() => "")).slice(0, 200)
+        return { ok: false, error: `plane comment POST HTTP ${res.status}: ${text}` }
+      }
+
+      const json = await res.json().catch(() => null)
+      const externalCommentId = json?.id ? String(json.id) : null
+      return { ok: true, externalCommentId }
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    }
   },
 }
