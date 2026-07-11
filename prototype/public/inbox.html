@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script>(function(){try{var t=localStorage.getItem('klav-theme');if(t==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();</script>
+<meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Inbox · Klavity</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<link rel="icon" href="/favicon.ico" sizes="any" />
+<link rel="stylesheet" href="/fonts/fonts.css" />
+<script src="/icons.generated.js"></script>
+<style>
+/* ── Design tokens (mirrors dashboard.html) ─────────────────────────────── */
+:root{
+  --ink:#f5f3ee;--ink-2:#ffffff;--ink-3:#efeae0;
+  --paper:#19140f;--paper-dim:#574f45;--paper-faint:#706560;
+  --indigo:#6366f1;--indigo-deep:#4f46e5;--amber:#d98324;--rose:#db2777;--green:#0f9d6b;
+  --line:rgba(25,20,15,.12);--shadow-border:0 0 0 1px var(--line);
+  --mi-dur:.15s;--mi-ease:ease;
+  --display:'Fraunces',serif;--body:'Hanken Grotesk',system-ui,sans-serif;--mono:'JetBrains Mono',monospace;
+}
+[data-theme="dark"]{
+  --ink:#0c0a08;--ink-2:#15110d;--ink-3:#1e1813;
+  --paper:#f3ece1;--paper-dim:#b3a896;--paper-faint:#9b8f7e;
+  --indigo:#8b8bf5;--indigo-deep:#6366f1;--amber:#e8a24a;--rose:#e8849a;--green:#9fd6a0;
+  --line:rgba(243,236,225,.11);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+body{background:var(--ink);color:var(--paper);font-family:var(--body);min-height:100vh}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;background:radial-gradient(80% 50% at 50% -5%,rgba(139,139,245,.08),transparent 60%)}
+a{color:inherit;text-decoration:none}
+
+/* ── Top bar ─────────────────────────────────────────────────────────────── */
+.bar{position:sticky;top:0;z-index:10;backdrop-filter:blur(12px);background:var(--ink-2);border-bottom:1px solid var(--line)}
+.bar-in{max-width:900px;margin:0 auto;padding:0 24px;height:56px;display:flex;align-items:center;gap:14px}
+.brand{display:flex;align-items:center;gap:8px;font-family:var(--display);font-weight:600;font-size:19px;letter-spacing:-.02em;color:var(--paper)}
+.spark{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;font-size:14px;color:#fff;background:linear-gradient(135deg,var(--indigo-deep),#a78bfa)}
+.bar-sep{width:1px;height:18px;background:var(--line)}
+.bar-title{font-size:14px;font-weight:600;color:var(--paper-dim)}
+.bar-right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.bar-back{font-size:13px;color:var(--paper-faint);display:flex;align-items:center;gap:4px;cursor:pointer;background:none;border:none;font-family:var(--body);padding:6px 10px;border-radius:8px;transition:background var(--mi-dur) var(--mi-ease),color var(--mi-dur) var(--mi-ease)}
+.bar-back:hover{background:var(--ink-3);color:var(--paper)}
+.bar-who{font-size:13px;color:var(--paper-dim)}
+.lo{font-size:13px;color:var(--paper-faint);cursor:pointer;background:none;border:none;font-family:var(--body);transition:color var(--mi-dur) var(--mi-ease)}.lo:hover{color:var(--paper-dim)}
+.theme-btn{width:32px;height:32px;border-radius:8px;background:none;border:none;cursor:pointer;color:var(--paper-faint);display:grid;place-items:center;transition:background var(--mi-dur) var(--mi-ease),color var(--mi-dur) var(--mi-ease)}
+.theme-btn:hover{background:var(--ink-3);color:var(--paper)}
+
+/* ── Page body ───────────────────────────────────────────────────────────── */
+.page{max-width:900px;margin:0 auto;padding:32px 24px 80px}
+.page-head{margin-bottom:28px}
+.page-head h1{font-family:var(--display);font-weight:450;font-size:30px;letter-spacing:-.025em;margin-bottom:4px}
+.page-head p{font-size:14px;color:var(--paper-dim);line-height:1.5}
+.window-row{display:flex;align-items:center;gap:8px;margin-top:14px}
+.window-label{font-size:13px;color:var(--paper-faint)}
+.window-select{font-size:12px;padding:5px 10px;border-radius:9px;border:1px solid var(--line);background:var(--ink-2);color:var(--paper);font-family:var(--body);cursor:pointer;transition:border-color var(--mi-dur) var(--mi-ease)}
+.window-select:focus{outline:none;border-color:var(--indigo)}
+
+/* ── Summary banner ──────────────────────────────────────────────────────── */
+.summary-banner{display:flex;align-items:center;gap:16px;padding:16px 20px;border-radius:16px;border:1px solid var(--line);background:var(--ink-2);margin-bottom:24px;flex-wrap:wrap}
+.sb-stat{display:flex;flex-direction:column;align-items:flex-start;gap:2px}
+.sb-n{font-family:var(--display);font-weight:600;font-size:28px;line-height:1;letter-spacing:-.03em}
+.sb-k{font-size:11px;color:var(--paper-faint);font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em}
+.sb-stat.s-red .sb-n{color:var(--rose)}
+.sb-stat.s-amber .sb-n{color:var(--amber)}
+.sb-stat.s-green .sb-n{color:var(--green)}
+.sb-div{width:1px;height:36px;background:var(--line)}
+.sb-window{margin-left:auto;font-size:12px;color:var(--paper-faint)}
+
+/* ── Loading / empty ─────────────────────────────────────────────────────── */
+.loading{display:flex;align-items:center;gap:10px;padding:32px 0;color:var(--paper-faint);font-size:14px}
+.spin{width:18px;height:18px;border:2px solid var(--line);border-top-color:var(--indigo);border-radius:50%;animation:spin .7s linear infinite;flex-none}
+@keyframes spin{to{transform:rotate(360deg)}}
+.all-clear{text-align:center;padding:60px 20px}
+.all-clear .em{font-size:36px;margin-bottom:12px}
+.all-clear h3{font-family:var(--display);font-weight:450;font-size:20px;letter-spacing:-.01em;margin-bottom:6px}
+.all-clear p{font-size:14px;color:var(--paper-dim);line-height:1.5}
+.err-msg{padding:24px;background:rgba(219,39,119,.08);border:1px solid rgba(219,39,119,.3);border-radius:14px;font-size:14px;color:var(--rose)}
+
+/* ── Project row ─────────────────────────────────────────────────────────── */
+.proj-card{background:var(--ink-2);border:1px solid var(--line);border-radius:16px;margin-bottom:14px;overflow:hidden;transition:border-color var(--mi-dur) var(--mi-ease)}
+.proj-card:hover{border-color:var(--paper-faint)}
+.proj-header{padding:16px 20px;display:flex;align-items:center;gap:14px;cursor:pointer;transition:background var(--mi-dur) var(--mi-ease)}
+.proj-header:hover{background:var(--ink-3)}
+.proj-name{font-size:15px;font-weight:600;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.proj-badges{display:flex;gap:8px;flex-shrink:0}
+.badge{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;padding:4px 9px;border-radius:20px;font-weight:600;white-space:nowrap}
+.badge-new{background:rgba(99,102,241,.12);color:var(--indigo);border:1px solid rgba(99,102,241,.2)}
+.badge-reg{background:rgba(219,39,119,.1);color:var(--rose);border:1px solid rgba(219,39,119,.2)}
+.badge-clear{background:rgba(15,157,107,.1);color:var(--green);border:1px solid rgba(15,157,107,.2)}
+.proj-arrow{font-size:16px;color:var(--paper-faint);transition:transform var(--mi-dur) var(--mi-ease),color var(--mi-dur) var(--mi-ease);flex-none}
+.proj-card.open .proj-arrow{transform:rotate(90deg);color:var(--indigo)}
+.proj-body{display:none;padding:0 20px 16px;border-top:1px solid var(--line)}
+.proj-card.open .proj-body{display:block}
+
+/* ── Report rows ─────────────────────────────────────────────────────────── */
+.rpt-list{margin-top:10px}
+.rpt-row{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
+.rpt-row:last-child{border-bottom:none}
+.rpt-seq{font-family:var(--mono);font-size:11px;color:var(--paper-faint);background:var(--ink-3);border-radius:5px;padding:2px 6px;flex-none;margin-top:1px}
+.rpt-title{flex:1;min-width:0;font-size:13px;line-height:1.45}
+.rpt-pri{font-family:var(--mono);font-size:10px;padding:2px 7px;border-radius:5px;flex-none}
+.pri-high,.pri-urgent{background:rgba(219,39,119,.12);color:var(--rose)}
+.pri-medium{background:rgba(217,131,36,.12);color:var(--amber)}
+.pri-low{background:var(--ink-3);color:var(--paper-faint)}
+.proj-actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:6px;font-family:var(--body);font-size:13px;font-weight:600;padding:8px 14px;border-radius:10px;border:1px solid var(--line);background:var(--ink-3);color:var(--paper);cursor:pointer;transition:transform var(--mi-dur) var(--mi-ease),background var(--mi-dur) var(--mi-ease),border-color var(--mi-dur) var(--mi-ease),box-shadow var(--mi-dur) var(--mi-ease);will-change:transform}
+.btn:hover{transform:scale(1.02);background:var(--ink-2);border-color:var(--paper-faint);box-shadow:0 2px 8px rgba(25,20,15,.08)}
+.btn:active{transform:scale(.97)}
+.btn-indigo{background:linear-gradient(135deg,var(--indigo),var(--indigo-deep));border-color:transparent;color:#fff}
+[data-theme="dark"] .btn-indigo{color:#0c0a08}
+.btn-indigo:hover{filter:brightness(1.07);box-shadow:0 4px 14px rgba(99,102,241,.3)}
+.more-link{font-size:12px;color:var(--indigo);margin-top:8px;display:inline-block}
+.more-link:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+
+<!-- ── Top bar ──────────────────────────────────────────────────────────── -->
+<div class="bar" role="banner">
+  <div class="bar-in">
+    <a class="brand" href="/dashboard" aria-label="Klavity — back to dashboard">
+      <span class="spark" aria-hidden="true">K</span>Klavity
+    </a>
+    <div class="bar-sep" aria-hidden="true"></div>
+    <span class="bar-title">Inbox</span>
+    <div class="bar-right">
+      <button class="theme-btn" id="themeToggle" type="button" aria-label="Toggle dark mode">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg>
+      </button>
+      <span class="bar-who" id="barWho"></span>
+      <button class="lo" id="barLogout" type="button">Log out</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Main page ─────────────────────────────────────────────────────────── -->
+<main class="page" role="main">
+  <div class="page-head">
+    <h1>Cross-project inbox</h1>
+    <p>New reports and regressions across all your projects — the morning screen.</p>
+    <div class="window-row">
+      <span class="window-label">Time window:</span>
+      <select class="window-select" id="windowSelect" aria-label="Time window">
+        <option value="24">Last 24 hours</option>
+        <option value="48" selected>Last 48 hours</option>
+        <option value="72">Last 72 hours</option>
+        <option value="168">Last 7 days</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Loading state -->
+  <div class="loading" id="loadingEl" role="status" aria-live="polite">
+    <div class="spin" aria-hidden="true"></div>
+    Loading inbox&hellip;
+  </div>
+
+  <!-- Error state -->
+  <div class="err-msg hide" id="errEl" role="alert" aria-live="assertive"></div>
+
+  <!-- Summary banner -->
+  <div class="summary-banner hide" id="summaryBanner" aria-label="Inbox summary">
+    <div class="sb-stat" id="sbNew">
+      <span class="sb-n" id="sbNewN">0</span>
+      <span class="sb-k">New reports</span>
+    </div>
+    <div class="sb-div" aria-hidden="true"></div>
+    <div class="sb-stat" id="sbReg">
+      <span class="sb-n" id="sbRegN">0</span>
+      <span class="sb-k">Regressions</span>
+    </div>
+    <div class="sb-div" aria-hidden="true"></div>
+    <div class="sb-stat">
+      <span class="sb-n" id="sbProj">0</span>
+      <span class="sb-k">Projects</span>
+    </div>
+    <span class="sb-window" id="sbWindow"></span>
+  </div>
+
+  <!-- All-clear state -->
+  <div class="all-clear hide" id="allClearEl" role="status">
+    <div class="em" aria-hidden="true">
+      <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--green)" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+    </div>
+    <h3>All clear</h3>
+    <p id="allClearMsg">No new reports or regressions across your projects in the selected window.</p>
+  </div>
+
+  <!-- Project cards -->
+  <div id="projectList" role="list" aria-label="Project inbox items"></div>
+</main>
+
+<script>
+/* ── Helpers ───────────────────────────────────────────────────────────── */
+function $(id) { return document.getElementById(id) }
+function esc(s) {
+  return String(s ?? "")
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;").replace(/'/g,"&#39;")
+}
+function ago(ts) {
+  const d = Date.now() - ts
+  if (d < 60_000) return "just now"
+  if (d < 3_600_000) return Math.round(d/60_000)+"m ago"
+  if (d < 86_400_000) return Math.round(d/3_600_000)+"h ago"
+  return Math.round(d/86_400_000)+"d ago"
+}
+function hide(el) { el && el.classList.add("hide") }
+function show(el) { el && el.classList.remove("hide") }
+
+/* ── Theme toggle (mirrors dashboard) ──────────────────────────────────── */
+$("themeToggle").onclick = () => {
+  const dark = document.documentElement.getAttribute("data-theme") === "dark"
+  document.documentElement.setAttribute("data-theme", dark ? "" : "dark")
+  try { localStorage.setItem("klav-theme", dark ? "" : "dark") } catch {}
+}
+
+/* ── Auth: fetch /api/me or derive from server (simple: fetch /api/dashboard) */
+async function loadWho() {
+  try {
+    const r = await fetch("/api/projects")
+    if (r.status === 401) { window.location.href = "/login"; return }
+    // Just show a login-check marker; we'll display email from /api/inbox response if included
+    $("barWho").textContent = ""
+  } catch {}
+}
+
+/* ── Logout ─────────────────────────────────────────────────────────────── */
+$("barLogout").onclick = async () => {
+  await fetch("/api/logout", { method: "POST" }).catch(() => {})
+  window.location.href = "/login"
+}
+
+/* ── Render ─────────────────────────────────────────────────────────────── */
+function renderPriBadge(pri) {
+  if (!pri) return ""
+  const cls = { high: "pri-high", urgent: "pri-urgent", medium: "pri-medium", low: "pri-low" }[pri] || "pri-low"
+  return `<span class="rpt-pri ${esc(cls)}">${esc(pri)}</span>`
+}
+
+function renderProjectCard(p) {
+  const hasNew = p.newReportCount > 0
+  const hasReg = p.regressionCount > 0
+  const isActive = hasNew || hasReg
+
+  let badgesHtml = ""
+  if (hasNew) badgesHtml += `<span class="badge badge-new">${esc(p.newReportCount)} new</span>`
+  if (hasReg) badgesHtml += `<span class="badge badge-reg">${esc(p.regressionCount)} regression${p.regressionCount !== 1 ? "s" : ""}</span>`
+  if (!isActive) badgesHtml += `<span class="badge badge-clear">All clear</span>`
+
+  let reportsHtml = ""
+  if (p.topReports && p.topReports.length > 0) {
+    reportsHtml = `<div class="rpt-list" role="list" aria-label="Top new reports">`
+    for (const r of p.topReports) {
+      const seq = r.seqNum != null ? `<span class="rpt-seq">#${esc(r.seqNum)}</span>` : ""
+      reportsHtml += `<div class="rpt-row" role="listitem">
+        ${seq}
+        <span class="rpt-title">${esc(r.title)}</span>
+        ${renderPriBadge(r.priority)}
+        <span style="font-size:11px;color:var(--paper-faint);flex-none;margin-top:1px">${esc(ago(r.createdAt))}</span>
+      </div>`
+    }
+    reportsHtml += `</div>`
+    if (p.newReportCount > p.topReports.length) {
+      const more = p.newReportCount - p.topReports.length
+      reportsHtml += `<a class="more-link" href="/dashboard?project=${esc(p.projectId)}&view=triage">+${esc(more)} more in triage &rarr;</a>`
+    }
+  }
+
+  const triageUrl = `/dashboard?project=${esc(p.projectId)}&view=triage`
+  const dashUrl = `/dashboard?project=${esc(p.projectId)}`
+
+  return `<div class="proj-card${isActive ? " open" : ""}" data-project="${esc(p.projectId)}" role="listitem">
+    <div class="proj-header" tabindex="0" role="button" aria-expanded="${isActive ? "true" : "false"}" aria-controls="pb-${esc(p.projectId)}">
+      <span class="proj-name">${esc(p.projectName)}</span>
+      <span class="proj-badges">${badgesHtml}</span>
+      <span class="proj-arrow" aria-hidden="true">&#8250;</span>
+    </div>
+    <div class="proj-body" id="pb-${esc(p.projectId)}">
+      ${reportsHtml || `<p style="font-size:13px;color:var(--paper-faint);padding:10px 0">No new reports in this window.</p>`}
+      <div class="proj-actions">
+        ${hasNew ? `<a class="btn btn-indigo" href="${esc(triageUrl)}">Triage new reports &rarr;</a>` : ""}
+        <a class="btn" href="${esc(dashUrl)}">Open dashboard</a>
+      </div>
+    </div>
+  </div>`
+}
+
+function renderInbox(data) {
+  const { projects, totalNew, totalReg, windowHours } = data
+  const projectCount = (projects || []).length
+
+  // Summary banner
+  show($("summaryBanner"))
+  $("sbNewN").textContent = totalNew
+  $("sbRegN").textContent = totalReg
+  $("sbProj").textContent = projectCount
+
+  // Colour-code summary stats
+  const sbNew = $("sbNew")
+  sbNew.className = "sb-stat" + (totalNew > 0 ? " s-amber" : " s-green")
+  const sbReg = $("sbReg")
+  sbReg.className = "sb-stat" + (totalReg > 0 ? " s-red" : " s-green")
+
+  const wLabel = windowHours <= 24 ? "last 24 h" : windowHours <= 48 ? "last 48 h" : windowHours <= 72 ? "last 72 h" : "last 7 days"
+  $("sbWindow").textContent = wLabel
+
+  if (totalNew === 0 && totalReg === 0) {
+    show($("allClearEl"))
+    $("allClearMsg").textContent = `No new reports or regressions across ${projectCount} project${projectCount !== 1 ? "s" : ""} in the ${wLabel}.`
+    hide($("projectList"))
+    return
+  }
+
+  hide($("allClearEl"))
+  show($("projectList"))
+
+  // Sort: projects with activity first (descending by total signals), then alphabetical
+  const sorted = [...projects].sort((a, b) => {
+    const aScore = a.newReportCount + a.regressionCount
+    const bScore = b.newReportCount + b.regressionCount
+    if (bScore !== aScore) return bScore - aScore
+    return (a.projectName || "").localeCompare(b.projectName || "")
+  })
+
+  $("projectList").innerHTML = sorted.map(renderProjectCard).join("")
+
+  // Wire accordion toggles
+  $("projectList").querySelectorAll(".proj-header").forEach(header => {
+    const card = header.closest(".proj-card")
+    const toggle = () => {
+      const open = card.classList.toggle("open")
+      header.setAttribute("aria-expanded", open ? "true" : "false")
+    }
+    header.addEventListener("click", toggle)
+    header.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle() }
+    })
+  })
+}
+
+/* ── Fetch ──────────────────────────────────────────────────────────────── */
+async function loadInbox(windowHours) {
+  hide($("errEl"))
+  hide($("summaryBanner"))
+  hide($("allClearEl"))
+  hide($("projectList"))
+  show($("loadingEl"))
+
+  try {
+    const r = await fetch(`/api/inbox?window=${encodeURIComponent(windowHours)}`)
+    if (r.status === 401) { window.location.href = "/login"; return }
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}))
+      throw new Error(d.error || `Server returned ${r.status}`)
+    }
+    const data = await r.json()
+    hide($("loadingEl"))
+    renderInbox(data)
+  } catch (e) {
+    hide($("loadingEl"))
+    show($("errEl"))
+    $("errEl").textContent = "Could not load inbox: " + (e.message || "unknown error")
+  }
+}
+
+/* ── Window selector ────────────────────────────────────────────────────── */
+$("windowSelect").addEventListener("change", () => {
+  const hours = Number($("windowSelect").value) || 48
+  loadInbox(hours)
+})
+
+/* ── Boot ───────────────────────────────────────────────────────────────── */
+loadWho()
+loadInbox(48)
+</script>
+</body>
+</html>

@@ -370,6 +370,15 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 .newproj{display:flex;align-items:center;gap:8px;margin-top:10px}
 .newproj input{background:var(--ink-2);border:1px solid var(--line);border-radius:10px;padding:9px 12px;color:var(--paper);font-family:var(--body);font-size:14px;outline:none;min-width:200px;transition:border-color var(--mi-dur) var(--mi-ease), box-shadow var(--mi-dur) var(--mi-ease)}
 .newproj input:focus{border-color:var(--indigo);box-shadow:0 0 0 3px color-mix(in srgb,var(--indigo) 18%,transparent)}
+/* KLAVITYKLA-201: "+ New project" icon button adjacent to project switcher (replaces __new__ select option) */
+.proj-new-btn{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;border:1px solid var(--line);background:transparent;color:var(--paper-faint);cursor:pointer;font-size:16px;flex-none;transition:background var(--mi-dur) var(--mi-ease),color var(--mi-dur) var(--mi-ease),border-color var(--mi-dur) var(--mi-ease),transform var(--mi-dur) var(--mi-ease);will-change:transform;font-family:var(--body)}
+.proj-new-btn:hover{background:var(--ink-3);color:var(--paper);border-color:var(--paper-faint);transform:scale(1.06)}
+.proj-new-btn:active{transform:scale(0.94)}
+/* KLAVITYKLA-201: Inbox link in the navbar */
+.nav-inbox{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:9px;border:1px solid var(--line);background:transparent;color:var(--paper-dim);font-family:var(--body);font-size:13px;font-weight:600;text-decoration:none;transition:background var(--mi-dur) var(--mi-ease),color var(--mi-dur) var(--mi-ease),border-color var(--mi-dur) var(--mi-ease),transform var(--mi-dur) var(--mi-ease);will-change:transform}
+.nav-inbox:hover{background:var(--ink-3);color:var(--paper);border-color:var(--paper-faint);transform:translateY(-1px) scale(1.02)}
+.nav-inbox:active{transform:scale(0.97)}
+@media(max-width:620px){.nav-inbox .nav-inbox-lbl{display:none}.nav-inbox{padding:7px 10px}}
 
 /* metrics row — the "dashboard feel": at-a-glance counts up top */
 .stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px;margin-bottom:32px}
@@ -1318,12 +1327,19 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   <button type="button" class="nav-snap mi" id="snapNavBtn" aria-label="Install the report widget on your site (Snap)" title="Add the Klavity report widget to your site" onclick="if(typeof setView==='function')setView('snap')"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg><span class="nav-snap-lbl">Report widget</span></button>
   <!-- Studio shortcut — primary action always visible in the navbar regardless of active tab -->
   <a class="nav-studio mi" href="/app" id="studioNavBtn" aria-label="Sims Studio (edit your Sims — not for creating AutoSims)" title="Sims Studio — edit your Sims"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.524.888l-1.267 5.54a.5.5 0 0 0 .595.595l5.54-1.267a2 2 0 0 0 .888-.524z" /><path d="m15.5 5.5 3 3" /></svg><span class="nav-studio-lbl">Sims Studio</span></a>
+  <!-- KLAVITYKLA-201: Inbox link — cross-project morning screen -->
+  <a class="nav-inbox mi" href="/inbox" id="inboxNavBtn" aria-label="Cross-project inbox — morning screen" title="Cross-project inbox"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg><span class="nav-inbox-lbl">Inbox</span></a>
   <!-- Project picker in the navbar itself (KLAVITYKLA-14/25). #projSwitcher and #newProj
        are a swap-pair; JS toggles by ID. -->
+  <!-- KLAVITYKLA-201: The "__new__" magic option has been removed from the <select> to prevent
+       accidental project creation via keyboard arrow / scroll. A dedicated + button (#projNewBtn)
+       is shown for admins instead — explicit click required. -->
   <div class="proj-pick" id="projPick">
     <div class="switcher" id="projSwitcher">
       <span class="sw-lbl">Project</span>
       <select class="proj-select" id="projSwitch" aria-label="Active project"></select>
+      <!-- Admin-only "+" button: explicit click, no accidental keyboard trigger -->
+      <button class="proj-new-btn hide" id="projNewBtn" type="button" aria-label="New project" title="Create a new project">＋</button>
     </div>
     <!-- KLA-292: new project inline form moved to #npBg modal -->
   </div>
@@ -2988,16 +3004,23 @@ function renderSwitcher() {
   const projects = state.projects || []
   const activeId = state.active ? state.active.id : null
   const isAdmin = state.active && state.active.role === "admin"
-  let opts = projects.map(p => `<option value="${esc(p.id)}"${p.id===activeId?" selected":""}>${esc(p.name)}</option>`).join("")
-  if (isAdmin) opts += `<option value="__new__">＋ New project…</option>`
+  // KLAVITYKLA-201: "__new__" removed from the <select> to prevent accidental project
+  // creation via keyboard arrow-key or scroll. A dedicated "#projNewBtn" button is shown
+  // for admins — requires an explicit click.
+  const opts = projects.map(p => `<option value="${esc(p.id)}"${p.id===activeId?" selected":""}>${esc(p.name)}</option>`).join("")
   sel.innerHTML = opts || `<option>—</option>`
-  // Always enabled: switch between projects, or create a new one (admins).
+  // Always enabled: switch between projects by selecting in the dropdown.
   sel.disabled = false
   sel.onchange = () => {
     const pid = sel.value
-    if (pid === "__new__") { sel.value = activeId || ""; openNewProject(); return }
     if (!pid || pid === activeId) return
     location.href = "/dashboard?project=" + encodeURIComponent(pid)
+  }
+  // Show/hide the "+ New project" button for admins only
+  const newBtn = $("projNewBtn")
+  if (newBtn) {
+    newBtn.classList.toggle("hide", !isAdmin)
+    newBtn.onclick = () => openNewProject()
   }
 }
 // KLA-292: new client project modal
