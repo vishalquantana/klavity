@@ -6,7 +6,8 @@ import { classifySimObservation } from "./lib/sim-bug-classify"
 import { getConnector, listConnectorTypes, type TicketPayload, type TicketAttachment } from "./lib/connectors/index"
 import { inboundSupported, verifyGithubSignature, verifyLinearSignature, extractExternalKey, mapExternalStatus } from "./lib/connectors/inbound"
 import { applyReconcileOps, recurrenceFromEvents, pickCitation, type ReconcileOp, type Trait, type TraitEventRow } from "./lib/provenance"
-import { sendOtp, sendLeadAlert, sendTicketAssignmentEmail, sendTicketAssignmentInviteEmail, sendFixedNotification } from "./lib/mail"
+import { sendOtp, sendLeadAlert, sendTicketAssignmentEmail, sendTicketAssignmentInviteEmail } from "./lib/mail"
+import { notifyReporterOnFix } from "./lib/fixed-notification"
 import { token, otp, emailAllowed, cookie, clearCookie, parseCookies, isOpsAdmin } from "./lib/auth"
 import { uploadScreenshotMeta, presignGet, deleteObject, getObjectBytes, type UploadedScreenshot } from "./lib/s3"
 import { signImageToken, verifyImageToken } from "./lib/imgsign"
@@ -1640,16 +1641,15 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           feedbackId: exportRow.feedbackId,
           meta: { from: beforeFeedback?.status ?? null, to: newStatus, source: "connector_webhook", connectorType: type, externalKey },
         }).catch((e: any) => console.warn("ticket status activity skipped:", e?.message || e))
-        // notify-on-fix: if this inbound event closed the ticket, email the reporter (contact_email).
-        // Fire-and-forget — a notification failure must never affect the webhook response.
-        if (newStatus === "done" && beforeFeedback?.contactEmail) {
-          const proj = await projectById(exportRow.projectId).catch(() => null)
-          void sendFixedNotification(beforeFeedback.contactEmail, {
-            title: String(beforeFeedback.observation || "Bug report"),
-            projectName: proj?.name ?? "your project",
-            ticketUrl: `${BASE}/dashboard?project=${encodeURIComponent(exportRow.projectId)}#tickets`,
-          }).catch((e: any) => console.error("notify-on-fix inbound (non-fatal):", e?.message || e))
-        }
+        const proj = beforeFeedback?.contactEmail ? await projectById(exportRow.projectId).catch(() => null) : null
+        void notifyReporterOnFix({
+          contactEmail: beforeFeedback?.contactEmail ?? null,
+          previousStatus: beforeFeedback?.status ?? null,
+          nextStatus: newStatus,
+          title: String(beforeFeedback?.observation || "Bug report"),
+          projectName: proj?.name ?? "your project",
+          ticketUrl: ticketDashboardUrl(exportRow.projectId),
+        })
       }
       return json({ ok: true, status: newStatus })
     }
@@ -4517,14 +4517,16 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             }
           }
           if (activityWrites.length) await Promise.all(activityWrites)
-          // notify-on-fix: if this patch marked the ticket done, email the reporter (contact_email).
-          if (meta.status === "done" && fbRow.status !== "done" && fbRow.contactEmail) {
-            const proj = await projectById(fbRow.projectId).catch(() => null)
-            void sendFixedNotification(fbRow.contactEmail, {
+          if (meta.status !== undefined && meta.status !== fbRow.status) {
+            const proj = fbRow.contactEmail ? await projectById(fbRow.projectId).catch(() => null) : null
+            void notifyReporterOnFix({
+              contactEmail: fbRow.contactEmail,
+              previousStatus: fbRow.status,
+              nextStatus: meta.status,
               title: String(fbRow.observation || "Bug report"),
               projectName: proj?.name ?? "your project",
-              ticketUrl: `${BASE}/dashboard?project=${encodeURIComponent(fbRow.projectId)}#tickets`,
-            }).catch((e: any) => console.error("notify-on-fix patch (non-fatal):", e?.message || e))
+              ticketUrl: ticketDashboardUrl(fbRow.projectId),
+            })
           }
           return json({ ok: true })
         }
@@ -5178,6 +5180,16 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                 }
               }
               if (activityWrites.length) await Promise.all(activityWrites)
+              if (changed && hasStatus && meta.status !== row.status) {
+                void notifyReporterOnFix({
+                  contactEmail: row.contactEmail,
+                  previousStatus: row.status,
+                  nextStatus: meta.status,
+                  title: String(row.observation || "Bug report"),
+                  projectName: proj.name,
+                  ticketUrl: ticketDashboardUrl(proj.id),
+                })
+              }
             }
             if (labelToAdd) {
               try { await attachLabel(labelToAdd, tid) }
