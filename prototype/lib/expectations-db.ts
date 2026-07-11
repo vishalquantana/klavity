@@ -3,6 +3,16 @@ import type { Client } from "@libsql/client"
 import { mergeSource, nextStatus, matchExpectation,
   type SourceRef, type Corroboration, type ExpStatus } from "./expectations"
 
+/**
+ * Maximum number of source refs stored per expectation row.
+ * Each call to upsertExpectation appends a SourceRef to source_refs_json; without
+ * a bound the JSON blob grows indefinitely as a popular issue is repeatedly ingested
+ * (e.g. every continuous Sim-review firing on the same expectation).
+ * We keep the MOST RECENT SOURCE_REFS_MAX refs after deduplicating by source id, so
+ * the column stays O(1) in size while preserving the most useful attribution data.
+ */
+export const SOURCE_REFS_MAX = 50
+
 export type ExpectationRow = {
   id: string; projectId: string; title: string; area: string | null; urlPath: string | null
   status: ExpStatus; sourceRefs: SourceRef[]; corroboration: Corroboration
@@ -46,7 +56,15 @@ export async function upsertExpectation(c: Client, input: {
   }
   if (existing) {
     const corr = mergeSource(existing.corroboration, input.source.kind)
-    const refs = [...existing.sourceRefs, input.source]
+    // Append the new source ref, deduplicate by id (exact same feedback never stored twice),
+    // then cap to SOURCE_REFS_MAX most-recent entries to prevent unbounded JSON blob growth.
+    const seenIds = new Set<string>()
+    const deduped = [...existing.sourceRefs, input.source].filter((r) => {
+      if (seenIds.has(r.id)) return false
+      seenIds.add(r.id)
+      return true
+    })
+    const refs = deduped.length > SOURCE_REFS_MAX ? deduped.slice(-SOURCE_REFS_MAX) : deduped
     const status = nextStatus(existing.status, corr)
     await c.execute({
       sql: "UPDATE expectations SET corroboration_json=?, source_refs_json=?, status=?, updated_at=? WHERE id=?",
