@@ -1422,6 +1422,12 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       <h2 style="display:flex;align-items:center;gap:8px"><span data-ki="bell"></span> New reports <span class="h-tag">accept as a bug or dismiss</span></h2>
       <div class="tg-filters" id="triageFilters"></div>
       <div id="triageList"><div class="sk-card"><span class="sk sk-av"></span><div class="sk-lines"><span class="sk sk-line" style="width:62%"></span><span class="sk sk-line" style="width:40%"></span></div><span class="sk sk-pill"></span></div></div>
+      <!-- KLA-255: Pending Sim Matches — fuzzy/ambiguous persona matches from transcript ingestion -->
+      <div id="simMatchSection" class="hide" style="margin-top:22px;padding-top:18px;border-top:1px solid var(--line,#e6e6ec)">
+        <h3 style="font-size:14px;font-weight:700;margin:0 0 4px;display:flex;align-items:center;gap:8px"><span data-ki="user-check" style="opacity:.7"></span> Pending Sim matches <span id="simMatchCount" class="count" style="margin-left:2px"></span></h3>
+        <p style="font-size:12.5px;color:var(--paper-faint);margin:0 0 12px">Transcript personas that fuzzy-matched a Sim — confirm which Sim to link, or reject to discard.</p>
+        <div id="simMatchList"></div>
+      </div>
     </div>
 
     <!-- Tickets kanban board -->
@@ -2216,6 +2222,8 @@ async function renderTriage() {
     (d) => { _triageItems = (d && d.triage) || []; renderTriageItems(_triageItems) },
     "triageList",
   )
+  // KLA-255: also render pending sim-match confirmations in the same triage card.
+  renderSimMatches()
 }
 function renderTriageItems(items) {
   const host = $("triageList"); if (!host) return
@@ -2245,6 +2253,56 @@ function renderTriageItems(items) {
     row.querySelector(".tg-dismiss").addEventListener("click", () => patch({ status: "dismissed" }))
   })
   loadTriageShots(host)
+}
+
+// ── KLA-255: Pending Sim Matches queue ───────────────────────────────────────
+async function renderSimMatches() {
+  const pid = curProjId(); if (!pid) return
+  const section = $("simMatchSection"); const listEl = $("simMatchList"); const cntEl = $("simMatchCount")
+  if (!section || !listEl) return
+  try {
+    const r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/sim-matches")
+    if (!r.ok) return
+    const d = await r.json()
+    const items = Array.isArray(d.matches) ? d.matches : []
+    if (!items.length) { section.classList.add("hide"); return }
+    section.classList.remove("hide")
+    if (cntEl) cntEl.textContent = String(items.length)
+    listEl.innerHTML = items.map(m => {
+      const cands = Array.isArray(m.candidates) ? m.candidates : []
+      const opts = cands.map(c => `<option value="${esc(c.simId)}">${esc(c.name)}${c.role ? " — " + esc(c.role) : ""}</option>`).join("")
+      return `<div class="tg-row" data-smid="${esc(String(m.id))}">
+        <div class="tg-b">
+          <div class="fx-t">${kicon("user",{size:14})} Persona: <b>${esc(m.personaName)}</b></div>
+          <div class="fx-m" style="margin-top:4px"><span class="muted">From transcript</span> <span class="mono" style="font-size:11px">${esc(m.transcriptId)}</span></div>
+        </div>
+        <div class="tg-actions" style="align-items:center;gap:8px">
+          <label style="font-size:12px;color:var(--paper-faint)">Link to:</label>
+          <select class="tg-pri sm-select" style="min-width:170px">${opts}</select>
+          <button class="btn btn-indigo btn-sm sm-confirm" type="button">Confirm</button>
+          <button class="btn btn-ghost btn-sm sm-reject" type="button">Reject</button>
+        </div>
+      </div>`
+    }).join("")
+    listEl.querySelectorAll(".tg-row[data-smid]").forEach(row => {
+      const mid = row.getAttribute("data-smid")
+      const sel = row.querySelector(".sm-select")
+      row.querySelector(".sm-confirm").addEventListener("click", async () => {
+        const simId = sel ? sel.value : ""
+        if (!simId) return
+        const btn = row.querySelector(".sm-confirm"); if (btn) btn.disabled = true
+        await fetch("/api/projects/" + encodeURIComponent(pid) + "/sim-matches/" + encodeURIComponent(mid) + "/confirm",
+          { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ simId }) }).catch(() => {})
+        renderSimMatches()
+      })
+      row.querySelector(".sm-reject").addEventListener("click", async () => {
+        const btn = row.querySelector(".sm-reject"); if (btn) btn.disabled = true
+        await fetch("/api/projects/" + encodeURIComponent(pid) + "/sim-matches/" + encodeURIComponent(mid) + "/reject",
+          { method: "POST" }).catch(() => {})
+        renderSimMatches()
+      })
+    })
+  } catch (e) { /* non-fatal */ }
 }
 
 // ── Recurring Issues view — lazy-loaded when the tab is first activated ──
