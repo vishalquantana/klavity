@@ -3440,6 +3440,33 @@ export async function listAutoCopyConnectors(projectId: string): Promise<Connect
   return r.rows.map(rowToConnector)
 }
 
+// Persist a heartbeat event into the connector's existing config JSON column.
+// No schema migration needed — heartbeat fields are stored as "_last_*" keys inside config.
+// Fire-and-forget: callers should void this call; a DB failure is non-fatal.
+// `event.kind`    — "outbound" (we pushed a ticket) or "inbound" (we received a webhook)
+// `event.success` — true = record last_outbound_at or last_inbound_at; false = record last_error
+// `event.error`   — error message on failure (ignored when success=true)
+export async function touchConnectorHeartbeat(
+  connectorId: string,
+  event: { kind: "outbound" | "inbound"; success: boolean; error?: string },
+): Promise<void> {
+  // Inline import to avoid a circular dependency chain: db.ts → connectors/ → db.ts.
+  // Using a dynamic import here so the module graph stays acyclic at compile time.
+  const { applyHeartbeat } = await import("./connectors/health")
+  const r = await db!.execute({
+    sql: "SELECT config FROM connectors WHERE id=?",
+    args: [connectorId],
+  })
+  if (!r.rows.length) return
+  let existing: Record<string, string> = {}
+  try { existing = JSON.parse(String((r.rows[0] as any).config || "{}")) } catch { existing = {} }
+  const updated = applyHeartbeat(existing, event)
+  await db!.execute({
+    sql: "UPDATE connectors SET config=? WHERE id=?",
+    args: [JSON.stringify(updated), connectorId],
+  })
+}
+
 // Update feedback management columns. Always sets updated_at. Returns true if a row was updated
 // (i.e. the feedback belongs to the given project), false if no rows matched (cross-project guard).
 export async function updateFeedbackMeta(
