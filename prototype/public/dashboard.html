@@ -2203,13 +2203,23 @@ async function load() {
     if (cached) { state = cached; render(true) }   // fromCache: skip network sub-loaders until fresh confirms the project
   }
   // SWR step 2 — revalidate in the background (progress bar visible).
+  // KLAVITYKLA-299: use dashTargetProjId() (URL param || localStorage last) so the user's
+  // chosen project sticks across reloads/navigation, not just when ?project= is in the URL.
   let data
   kbar.start()
   try {
-    const pid = activeProjectParam()
+    const pid = dashTargetProjId()
     const r = await fetchWithTimeout("/api/dashboard" + (pid ? "?project=" + encodeURIComponent(pid) : ""))
     if (r.status === 401) { location.href = "/login"; return }
     data = await r.json()
+    // If the stored project id is stale/inaccessible, clear it and retry without a project param
+    // so the server falls back to the user's first accessible project rather than erroring out.
+    if (data && data.error && pid && pid !== activeProjectParam()) {
+      try { localStorage.removeItem(DASH_LAST_KEY) } catch (e) {}
+      const r2 = await fetchWithTimeout("/api/dashboard")
+      if (r2.status === 401) { location.href = "/login"; return }
+      data = await r2.json()
+    }
   } catch (e) { data = null }
   finally { kbar.done() }
   if (!data || data.error) {
@@ -2229,6 +2239,11 @@ async function load() {
   if (data.active && data.active.id) {
     swrWrite(dashCacheKey(data.active.id), data)
     try { localStorage.setItem(DASH_LAST_KEY, data.active.id) } catch (e) {}
+    // KLAVITYKLA-299: silently update the URL so it reflects the active project even when
+    // the user landed on /dashboard without a ?project= param (bookmarkable; back/forward safe).
+    if (!activeProjectParam()) {
+      try { history.replaceState(null, "", "/dashboard?project=" + encodeURIComponent(data.active.id)) } catch (e) {}
+    }
   }
 }
 
@@ -2247,7 +2262,8 @@ async function refreshAll() {
   let data
   kbar.start()
   try {
-    const pid = activeProjectParam()
+    // KLAVITYKLA-299: use dashTargetProjId() so the stored project id is honoured, not just the URL param.
+    const pid = dashTargetProjId()
     const r = await fetchWithTimeout("/api/dashboard" + (pid ? "?project=" + encodeURIComponent(pid) : ""))
     if (r.status === 401) { location.href = "/login"; return }
     if (!r.ok) return
