@@ -915,6 +915,11 @@ export async function applySchema(c: Client) {
   // via "Guard this fix". NULL for expectations discovered by the normal spine ingest path.
   if (needCol("expectations", "source_ticket_id")) await c.execute("ALTER TABLE expectations ADD COLUMN source_ticket_id TEXT")
     .catch((e: any) => console.warn("expectations.source_ticket_id ALTER skipped:", e?.message || e))
+  // KLAVITYKLA-301: sim_source — records which Add-a-Sim path created this Sim so the first-run
+  // checklist can tick honestly. Values: 'describe' | 'from-site' | 'transcript'. NULL on legacy
+  // rows = unknown origin; these are NOT treated as transcript Sims (step 4 stays unticked).
+  if (needCol("personas", "sim_source")) await c.execute("ALTER TABLE personas ADD COLUMN sim_source TEXT")
+    .catch((e: any) => console.warn("personas.sim_source ALTER skipped:", e?.message || e))
 }
 
 // ── schema_meta helpers ──
@@ -1925,6 +1930,8 @@ export type PersonaRow = {
   // Global Sims v1: is_global=1 means this Sim is available across all projects in the same account.
   // isGlobal=true on a row returned for a sibling project means it came from another project.
   isGlobal?: boolean
+  // KLAVITYKLA-301: which Add-a-Sim path created this Sim. NULL = legacy/unknown.
+  simSource?: string | null
 }
 // Parse a JSON string-array column defensively (bad/absent JSON → []).
 function parseStrArray(raw: any): string[] {
@@ -1952,6 +1959,7 @@ function rowToPersona(x: any): PersonaRow {
     simClass, side,
     core: hasCore ? { goals, expertise, temperament, voice, watchFor } : null,
     isGlobal: !!x.is_global,
+    simSource: x.sim_source != null ? String(x.sim_source) : null,
   }
 }
 export async function listPersonas(projectId: string): Promise<PersonaRow[]> {
@@ -2060,8 +2068,8 @@ export async function upsertPersona(id: string, projectId: string, data: Omit<Pe
   const now = Date.now()
   const core = data.core ?? null
   await db!.execute({
-    sql: `INSERT INTO personas (id,project_id,name,role,type,initials,accent,summary,insights_json,avatar,sim_class,side,goals_json,expertise,temperament,voice,watchfor_json,created_at,updated_at)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    sql: `INSERT INTO personas (id,project_id,name,role,type,initials,accent,summary,insights_json,avatar,sim_class,side,goals_json,expertise,temperament,voice,watchfor_json,sim_source,created_at,updated_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
           ON CONFLICT(id) DO UPDATE SET name=excluded.name,role=excluded.role,type=excluded.type,
           initials=excluded.initials,accent=excluded.accent,summary=excluded.summary,
           insights_json=excluded.insights_json,avatar=excluded.avatar,
@@ -2074,6 +2082,7 @@ export async function upsertPersona(id: string, projectId: string, data: Omit<Pe
            core ? JSON.stringify(core.goals ?? []) : null,
            core?.expertise ?? null, core?.temperament ?? null, core?.voice ?? null,
            core ? JSON.stringify(core.watchFor ?? []) : null,
+           data.simSource ?? null,
            now, now],
   })
 }
