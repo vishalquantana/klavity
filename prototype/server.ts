@@ -1,7 +1,7 @@
 // Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
 import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
 import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription } from "./lib/db"
-import { issueKeyFor, chooseDedup } from "./lib/dedup"
+import { issueKeyFor, chooseDedup, humanReportIssueKeyFor } from "./lib/dedup"
 import { classifySimObservation } from "./lib/sim-bug-classify"
 import { getConnector, listConnectorTypes, type TicketPayload, type TicketAttachment } from "./lib/connectors/index"
 import { inboundSupported, verifyGithubSignature, verifyLinearSignature, extractExternalKey, mapExternalStatus } from "./lib/connectors/inbound"
@@ -560,12 +560,12 @@ async function resolveCitations(simId: string | null, citedTraitIds: any, projec
 // Decide whether a suggested bug duplicates an existing project report. Returns the existing
 // feedback id to collapse into, or null to insert fresh. Pure decision over DB lookups.
 async function findDuplicateFeedback(args: {
-  projectId: string; urlPath: string | null; issueType: string | null
-  citedTraitIds: string[]; title: string; observation: string
+  projectId: string; urlPath: string | null; issueType?: string | null
+  citedTraitIds?: string[]; title: string; observation: string; issueKey?: string | null
 }): Promise<string | null> {
-  const issueKey = issueKeyFor({
+  const issueKey = args.issueKey ?? issueKeyFor({
     projectId: args.projectId, urlPath: args.urlPath ?? "/",
-    issueType: args.issueType, citedTraitIds: args.citedTraitIds,
+    issueType: args.issueType ?? null, citedTraitIds: args.citedTraitIds ?? [],
   })
   const exact = await findFeedbackByIssueKey(args.projectId, issueKey)
   const recent = exact ? [] : await listRecentFeedbackForDedup(args.projectId, 50)
@@ -2002,6 +2002,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         let feedbackId: string | null = null
         let citation: Awaited<ReturnType<typeof resolveCitations>> | null = null
         let recurrenceMem: any = null // populated on dedup hits so callers know the issue recurred
+        let knownDuplicate = false
         if (db) {
           try {
             // Actor: Bearer (extension) or cookie session (studio). Resolve to a real project
@@ -2066,16 +2067,25 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               citation = await resolveCitations(simId, citedRaw, projectId)
 
               let dedupedInto: string | null = null
+              const newIssueKey = suggestedBug
+                ? issueKeyForFeedback(projectId, urlPath, citation.issueType, citation.citedTraitIds)
+                : humanReportIssueKeyFor({ projectId, urlPath: urlPath ?? "/", text: observation })
               if (suggestedBug) {
                 dedupedInto = await findDuplicateFeedback({
                   projectId, urlPath, issueType: citation.issueType,
                   citedTraitIds: citation.citedTraitIds,
                   title: String(suggestedBug?.title || ""), observation,
                 })
+              } else {
+                dedupedInto = await findDuplicateFeedback({
+                  projectId, urlPath, title: observation.slice(0, 120), observation,
+                  issueKey: newIssueKey,
+                })
               }
               if (dedupedInto) {
                 await bumpFeedbackRecurrence(dedupedInto, Date.now())
                 feedbackId = dedupedInto
+                knownDuplicate = true
                 // Build recurrence memory so callers know this is a recurring issue and who originally
                 // filed it (the "cited virtual customer" — a Sim persona or a previous human reporter).
                 try { recurrenceMem = await buildRecurrenceMemory(db!, dedupedInto, projectId) }
@@ -2087,7 +2097,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   citedTraitIds: citation.citedTraitIds.length ? citation.citedTraitIds : null,
                   sourceQuote: citation.sourceQuote, sourceTranscriptId: citation.sourceTranscriptId, sourceDate: citation.sourceDate,
                   planeIssueKey: null, planeIssueUrl: null,
-                  issueKey: suggestedBug ? issueKeyForFeedback(projectId, urlPath, citation.issueType, citation.citedTraitIds) : null,
+                  issueKey: newIssueKey,
                   clientContext, annotations,
                 })
               }
@@ -2165,7 +2175,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const issueUrl = (!anonActor && feedbackId && dashBase)
             ? `${dashBase}/dashboard${linkProject ? `?project=${encodeURIComponent(linkProject)}` : ""}#tickets`
             : ""
-          return wjson({ id: feedbackId ?? "", saved: true, ...(issueUrl ? { issue_url: issueUrl } : {}), ...(recurrenceMem ? { recurrence: recurrenceMem } : {}) })
+          return wjson({ id: feedbackId ?? "", saved: true, ...(knownDuplicate ? { known: true, deduped: true } : {}), ...(issueUrl ? { issue_url: issueUrl } : {}), ...(recurrenceMem ? { recurrence: recurrenceMem } : {}) })
+        }
+        if (knownDuplicate) {
+          return wjson({ id: feedbackId ?? "", saved: true, known: true, deduped: true, ...(recurrenceMem ? { recurrence: recurrenceMem } : {}) })
         }
 
         // R8: append the Sim citation line to the issue body when this feedback cites a trait.
@@ -2181,7 +2194,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         try { await assertSafeUrl(planeHost) }
         catch (e: any) {
           console.warn("tracker host rejected (non-fatal):", e?.message || e)
-          return wjson({ id: feedbackId ?? "", saved: true })
+          return wjson({ id: feedbackId ?? "", saved: true, ...(knownDuplicate ? { known: true, deduped: true } : {}), ...(recurrenceMem ? { recurrence: recurrenceMem } : {}) })
         }
         // Use safeFetch so redirects are validated per-hop too (a public host that 3xx-redirects to an
         // internal/loopback target would otherwise bypass the one-shot assertSafeUrl above). The same
@@ -2196,9 +2209,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           }, { allowLoopbackInTest: true })
         } catch (fetchErr: any) {
           console.error("Plane fetch failed (non-fatal):", fetchErr?.message || fetchErr)
-          return wjson({ id: feedbackId ?? "", saved: true })
+          return wjson({ id: feedbackId ?? "", saved: true, ...(knownDuplicate ? { known: true, deduped: true } : {}), ...(recurrenceMem ? { recurrence: recurrenceMem } : {}) })
         }
-        if (!res.ok) { console.error(`Plane API error ${res.status}: ${(await res.text()).slice(0, 300)}`); return wjson({ id: feedbackId ?? "", saved: true }) }
+        if (!res.ok) { console.error(`Plane API error ${res.status}: ${(await res.text()).slice(0, 300)}`); return wjson({ id: feedbackId ?? "", saved: true, ...(knownDuplicate ? { known: true, deduped: true } : {}), ...(recurrenceMem ? { recurrence: recurrenceMem } : {}) }) }
 
         const data: any = await res.json()
         const webBase = planeHost === "https://api.plane.so" ? "https://app.plane.so" : planeHost
@@ -2217,6 +2230,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // Omit jira_key when Plane gives no sequence_id, so the extension's `?? id` fallback fires.
           ...(seq ? { jira_key: seq } : {}),
           issue_url: issueUrl,
+          ...(knownDuplicate ? { known: true, deduped: true } : {}),
           ...(recurrenceMem ? { recurrence: recurrenceMem } : {}),
         })
       } catch (e: any) {
