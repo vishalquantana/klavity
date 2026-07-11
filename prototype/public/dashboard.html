@@ -1204,6 +1204,15 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .tg-row .tg-b{flex:1;min-width:0}
 .tg-actions{display:flex;gap:8px;align-items:center;flex-shrink:0}
 .tg-sev{font-size:12px;padding:4px 6px}
+.tg-pri{font-size:12px;padding:4px 6px;border-radius:7px;border:1px solid var(--line);background:var(--ink-2);color:var(--paper);cursor:pointer;transition:border-color var(--mi-dur) var(--mi-ease)}
+.tg-pri:hover{border-color:var(--indigo)}
+/* KLA-200: human-readable sequential ticket number badge */
+.tkt-seq{font-family:var(--mono);font-size:11px;color:var(--paper-faint);background:var(--ink-3);border-radius:5px;padding:1px 5px;margin-right:4px;font-weight:500;letter-spacing:-.3px}
+/* KLA-199: priority picker in ticket detail — matches the status seg-btn style */
+.tkt-pri-row{margin-top:0}
+.tkt-pri-sel{font-family:var(--body);font-size:13px;padding:6px 10px;border-radius:9px;border:1px solid var(--line);background:var(--ink-2);color:var(--paper);cursor:pointer;min-width:110px;transition:border-color var(--mi-dur) var(--mi-ease),box-shadow var(--mi-dur) var(--mi-ease)}
+.tkt-pri-sel:hover{border-color:var(--indigo)}
+.tkt-pri-sel:focus{outline:none;border-color:var(--indigo);box-shadow:0 0 0 3px rgba(99,102,241,.15)}
 /* triage filter chips + screenshot thumbnail (feat/triage-screenshot-filter) */
 .tg-filters{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 14px}
 .tg-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:20px;border:1px solid var(--line);background:var(--ink);color:var(--paper-dim);font-family:var(--body);font-weight:600;font-size:12.5px;cursor:pointer;transition:border-color .15s,color .15s,background .15s}
@@ -2148,6 +2157,34 @@ async function refreshAll() {
     swrWrite(dashCacheKey(data.active.id), data)
     try { localStorage.setItem(DASH_LAST_KEY, data.active.id) } catch (e) {}
   }
+  // KLA-200: open deep-linked ticket if present in ?ticket= param, after data has loaded
+  maybeOpenDeepLinkTicket()
+}
+
+// KLA-200: if the URL contains ?ticket=<id>, switch to the Tickets view and open that ticket's detail.
+function maybeOpenDeepLinkTicket() {
+  try {
+    const ticketId = new URLSearchParams(location.search).get("ticket")
+    if (!ticketId) return
+    // Find the ticket in loaded state; if the list hasn't loaded the individual ticket yet, try fetching it
+    const t = (state.tickets || []).find(x => String(x.id) === String(ticketId))
+    if (t) {
+      openSingleTicket(ticketId)
+    } else {
+      // Ticket not in state.tickets (may be loaded via separate /api/projects/:id/tickets call)
+      // Fetch it and inject into state so openSingleTicket can find it
+      const pid = state.active && state.active.id
+      if (!pid) return
+      fetch("/api/feedback/" + encodeURIComponent(ticketId), { credentials: "include" })
+        .then(r => r.ok ? r.json() : null).then(d => {
+          if (!d || !d.report) return
+          const report = d.report
+          if (!state.tickets) state.tickets = []
+          if (!state.tickets.find(x => x.id === report.id)) state.tickets.push(report)
+          openSingleTicket(ticketId)
+        }).catch(() => {})
+    }
+  } catch (e) {}
 }
 
 // Triage view: paint the last-cached queue for this project INSTANTLY (SWR + top
@@ -2180,15 +2217,15 @@ function renderTriageItems(items) {
   const host = $("triageList"); if (!host) return
   if (!items.length) { host.innerHTML = emptyState(kicon('check-circle',{size:32}), "No new reports — you're all caught up.", ""); return }
   host.innerHTML = items.map(t => `
-    <div class="tg-row ${sevRailClass(t.severity)}" data-id="${esc(String(t.id))}">
+    <div class="tg-row ${sevRailClass(t.priority)}" data-id="${esc(String(t.id))}">
       ${t.screenshotId ? `<div class="tg-shot" data-shot="${esc(String(t.screenshotId))}" title="Open screenshot"><div class="tg-shot-ph">${kicon('image',{size:16})}</div></div>` : ""}
       <div class="tg-b">
-        <div class="fx-t">${esc(t.title || "Untitled report")}${(t.recurrence >= 2) ? `<span class="fx-recur">recurring ×${t.recurrence}</span>` : ""}</div>
+        <div class="fx-t">${t.seqNum ? `<span class="tkt-seq">#${t.seqNum}</span> ` : ""}${esc(t.title || "Untitled report")}${(t.recurrence >= 2) ? `<span class="fx-recur">recurring ×${t.recurrence}</span>` : ""}</div>
         ${t.sourceQuote ? `<div class="fx-q">"${esc(t.sourceQuote)}"</div>` : (t.observation ? `<div class="fx-q">${esc(t.observation)}</div>` : "")}
         <div class="fx-m">${t.urlPath ? `<span class="fx-area">${esc(t.urlPath)}</span>` : ""}${t.sentiment ? `<span class="chip s-${esc(t.sentiment)}">${esc(t.sentiment)}</span>` : ""}${t.simName ? `<span>${kicon('bot',{size:14})} ${esc(t.simName)}</span>` : ""}${t.createdAt ? `<span class="muted">${esc(ago(t.createdAt))}</span>` : ""}</div>
       </div>
       <div class="tg-actions">
-        <select class="tg-sev">${["high","medium","low"].map(s => `<option value="${s}"${s===(t.severity||"low")?" selected":""}>${s}</option>`).join("")}</select>
+        <select class="tg-pri">${["urgent","high","medium","low"].map(s => `<option value="${s}"${s===(t.priority||"medium")?" selected":""}>${s}</option>`).join("")}</select>
         <button class="btn btn-indigo btn-sm tg-accept" type="button">Accept as bug</button>
         <button class="btn btn-ghost btn-sm tg-dismiss" type="button">Dismiss</button>
       </div>
@@ -2255,7 +2292,7 @@ async function renderRecurringIssues() {
 }
 
     }
-    row.querySelector(".tg-accept").addEventListener("click", () => patch({ status: "open", severity: row.querySelector(".tg-sev").value }))
+    row.querySelector(".tg-accept").addEventListener("click", () => patch({ status: "open", priority: row.querySelector(".tg-pri").value }))
     row.querySelector(".tg-dismiss").addEventListener("click", () => patch({ status: "dismissed" }))
   })
   loadTriageShots(host)
@@ -3135,10 +3172,19 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
         ${t.sourceReferrer ? `<div class="tkt-meta-line muted">Referred from: ${esc(t.sourceReferrer)}</div>` : ""}
         ${!_isTwoCol ? _shotHtml : ""}
       </div>` : (!_isTwoCol ? _shotHtml : "")
+    // KLA-199: priority picker — persists via PATCH, updates state + rail + sev chip in-place
+    const curPri = t.priority || ""
+    const priOpts = ["urgent","high","medium","low"].map(p =>
+      `<option value="${p}"${p===curPri?" selected":""}>${p}</option>`
+    ).join("")
     const _bodyHtml = `
       <div class="tkt-status-row">
         <span class="tkt-status-lbl">Status</span>
         <div class="seg">${segBtns}</div>
+      </div>
+      <div class="tkt-status-row tkt-pri-row">
+        <span class="tkt-status-lbl">Priority</span>
+        <select class="tkt-pri-sel seg-like">${priOpts}</select>
       </div>
       <div class="tkt-fields">
         <div class="tkt-field">
@@ -3193,6 +3239,38 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
         }
       })
     })
+
+    // KLA-199: Wire up priority picker — auto-saves on change, updates state + rail + chip in-place
+    const priSelEl = detailEl.querySelector(".tkt-pri-sel")
+    if (priSelEl) {
+      priSelEl.addEventListener("change", async (ev) => {
+        ev.stopPropagation()
+        const newPri = priSelEl.value || null
+        const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId), {
+          method: "PATCH", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ priority: newPri })
+        }).catch(() => null)
+        const d = r ? await r.json().catch(() => ({})) : {}
+        if (d.ok) {
+          const tkt = (state.tickets || []).find(x => x.id === ticketId)
+          if (tkt) tkt.priority = newPri
+          // Update the severity rail class on the detail's parent card / row
+          const parentRow = detailEl.closest(".row-tkt, .kb-card, #ticketSingle")
+          if (parentRow) {
+            parentRow.className = parentRow.className.replace(/\bsv-\w+/g, "").replace(/\s+/g, " ").trim()
+            const railCls = sevRailClass(newPri)
+            if (railCls) parentRow.classList.add(...railCls.split(" ").filter(Boolean))
+          }
+          // Refresh sev chip in tkt-chips if present
+          const chipEl = detailEl.querySelector(".chip[class*='sev-']")
+          if (chipEl && newPri) { chipEl.className = "chip sev-" + newPri; chipEl.textContent = newPri }
+          if (onChange) onChange("priority", newPri)
+          showTktMsg(detailEl, "Priority saved.", false)
+        } else {
+          showTktMsg(detailEl, d.error || "Couldn't save priority.", true)
+        }
+      })
+    }
 
     // Wire up save-meta (assignee + notes)
     detailEl.querySelector(".save-meta-btn").addEventListener("click", async (ev) => {
@@ -3560,7 +3638,7 @@ function openSingleTicket(id) {
   const renderHead = () => {
     head.innerHTML = `<span class="single-rail sv-${sv}"></span>
       <div class="single-h-b">
-        <div class="single-title">${esc(t.title || "Untitled report")}</div>
+        <div class="single-title">${t.seqNum ? `<span class="tkt-seq">#${t.seqNum}</span> ` : ""}${esc(t.title || "Untitled report")}</div>
         <div class="single-meta">${(t.recurrence >= 2) ? `<span class="fx-recur">recurring ×${t.recurrence}</span>` : ""}${recurBadgeHtml(t)}<span class="muted" style="font-family:var(--mono);font-size:11px">${t.simName ? (kicon('bot',{size:11}) + " " + esc(t.simName) + " · ") : ""}${t.urlPath ? (esc(t.urlPath) + " · ") : ""}${esc(ago(t.createdAt))}</span></div>
         ${regrBannerHtml(t)}
       </div>`
@@ -3579,6 +3657,12 @@ function openSingleTicket(id) {
   if (listView) listView.classList.add("hide")
   if (toolbar) toolbar.classList.add("hide")
   single.classList.remove("hide")
+  // KLA-200: push deep-link URL so this ticket can be shared / bookmarked
+  try {
+    const u = new URL(location.href)
+    u.searchParams.set("ticket", String(id))
+    history.pushState(null, "", u.toString())
+  } catch (e) {}
   try { window.scrollTo(0, 0) } catch (e) {}
 }
 function closeSingleTicket() {
@@ -3588,6 +3672,12 @@ function closeSingleTicket() {
   // Remove hide from list view before restoring (renderTicketsView will manage visibility)
   const listView = document.getElementById("tktListView")
   if (listView) listView.classList.remove("hide")
+  // KLA-200: remove deep-link param when closing
+  try {
+    const u = new URL(location.href)
+    u.searchParams.delete("ticket")
+    history.replaceState(null, "", u.toString())
+  } catch (e) {}
   // Restore whichever view was active before drilling into the single-ticket detail
   renderTicketsView()
 }
@@ -3965,7 +4055,7 @@ function renderTktList(listEl, tickets, total, searchQ) {
     rowInner.style.cssText = "display:contents"
     rowInner.innerHTML =
       '<span class="tl-pri ' + priDotClass(pri) + '" title="Priority: ' + esc(pri || "none") + '"></span>' +
-      '<div class="tl-title">' + esc(t.title || "Untitled report") + (lblChipsHtml ? ' <span class="lbl-chips" style="margin-left:6px">'+lblChipsHtml+'</span>' : '') + '</div>' +
+      '<div class="tl-title">' + (t.seqNum ? '<span class="tkt-seq">#' + t.seqNum + '</span> ' : '') + esc(t.title || "Untitled report") + (lblChipsHtml ? ' <span class="lbl-chips" style="margin-left:6px">'+lblChipsHtml+'</span>' : '') + '</div>' +
       '<div class="tl-meta">' +
         statusPillHtml(t.status) +
         '<span class="tl-src">' + esc(srcLabel) + '</span>' +
@@ -4156,7 +4246,7 @@ function renderTicketsKanban(boardTickets) {
       }
       cardEl.innerHTML = `
         <button class="copy-ai-icon kb-copy-ai" type="button" aria-label="Copy to AI" title="Copy to AI — paste into Claude / ChatGPT to fix this bug">${kicon('sparkles')}</button>
-        <div class="kb-card-t">${kicon('bug')} ${esc(t.title || "Untitled report")}</div>
+        <div class="kb-card-t">${kicon('bug')} ${t.seqNum ? `<span class="tkt-seq">#${t.seqNum}</span> ` : ""}${esc(t.title || "Untitled report")}</div>
         <div class="kb-card-d">${sub}</div>
         <div class="kb-card-meta"></div>
         ${assigneePickerHtml(t, true)}`

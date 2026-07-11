@@ -4422,6 +4422,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             labels: await labelsForFeedback(fid),
             // KLA-175: ghost chips — AI-suggested labels not yet attached
             suggestedLabels: await getSuggestedLabels(fid, fbRow.projectId),
+            // KLA-200: human-readable sequential number
+            seqNum: fbRow.seqNum ?? null,
           }
           return json({ report })
         }
