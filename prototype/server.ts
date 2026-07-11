@@ -43,7 +43,7 @@ import { listRunSteps, listTrails, getTrail, getWalk, setTrailStatus, listTrailS
 import { runWalkNow } from "./lib/trails-trigger"
 import { startTrailScheduler, isValidCron } from "./lib/trails-scheduler"
 import { startCrashReaper } from "./lib/trails-reaper"
-import { runAuthorNow, getAuthorSession, getActiveAuthorSession, listStalledAuthorSessions, AUTOSIM_DEADLINE_MS_DEFAULT } from "./lib/trails-author"
+import { runAuthorNow, getAuthorSession, getActiveAuthorSession, listStalledAuthorSessions, listNeedsAuthSessionsForAutoResume, AUTOSIM_DEADLINE_MS_DEFAULT } from "./lib/trails-author"
 import { WalkBusyError, cancelCurrentWalk, cancelCurrentAuthor, PdfBusyError } from "./lib/trails-browser"
 import { mintShareToken, resolveShareToken, renderWalkPdf, revokeShareToken, listShareTokens } from "./lib/trails-share"
 import { gatherWalkReport } from "./lib/trails-report"
@@ -60,6 +60,8 @@ import { getExtractModel } from "./lib/extract-model"
 import { parseJSON } from "./lib/parse-json"
 import { createStripeCheckoutSession, createStripePortalSession, intervalFromLookupKey, normalizeInterval, planFromLookupKey, quotasForPlan, retrieveStripeSubscription, verifyStripeWebhook } from "./lib/billing"
 import { runAutosimAuthProbe } from "./lib/autosim-auth-probe"
+import { createAutosimAuthSetupToken, getAutosimAuthConfigEncrypted, getAutosimAuthProbe } from "./lib/db"
+import { generateAuthPrompt } from "./lib/autosim-auth-prompt"
 
 const KEY = process.env.OPENROUTER_API_KEY
 const MODEL = process.env.KLAV_MODEL || "google/gemini-2.5-flash"
@@ -3062,6 +3064,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (req.method === "GET" && path === "/autosims") return me ? file(PUB + "/trails.html") : redirect("/login")
     if (req.method === "GET" && path === "/autosims/walks") return me ? file(PUB + "/autosims-walks.html") : redirect("/login")
     if (req.method === "GET" && /^\/autosims\/walk\/[^/]+$/.test(path)) return me ? file(PUB + "/autosims-walk.html") : redirect("/login")
+    // AT2 auth setup router — "Give your Sims a key" (KLAVITYKLA-267)
+    if (req.method === "GET" && path === "/autosims/auth") return me ? file(PUB + "/auth-router.html") : redirect("/login")
     if (req.method === "GET" && path === "/sim-runs") return me ? file(PUB + "/sim-runs.html") : redirect("/login")
 
     // GET /shared/walk/:token — public interactive AutoSim walk report page.
@@ -4744,7 +4748,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return json({ project: { id: created.id, name: created.name, accountId: created.accountId, status: created.status, siteUrl: created.siteUrl, role: "admin" } }, 201)
       }
       // Project detail + members (projectAccess-gated) and project-scoped invite (R4) + monitored-urls (P3b) + connectors.
-      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/triage|\/tickets(?:\/bulk)?|\/recurring|\/replays|\/widget-status|\/labels(?:\/[^/]+)?|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/test)?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?)?$/)
+      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/triage|\/tickets(?:\/bulk)?|\/recurring|\/replays|\/widget-status|\/labels(?:\/[^/]+)?|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/test)?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send)?$/)
       if (projMatch) {
         const pid = projMatch[1]
         const sub = projMatch[2] || ""
@@ -5066,6 +5070,96 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             const ok = await rotateTestAccountSecret(pid, accId, newSecret)
             return ok ? json({ ok: true }) : json({ error: "Not found" }, 404)
           }
+          return json({ error: "Method not allowed" }, 405)
+        }
+
+        // ── AutoSim Auth AT2 router endpoints (KLAVITYKLA-267) ──────────────────────────
+        // GET  /api/projects/:id/autosim-auth       → current auth status + paused session count
+        // POST /api/projects/:id/autosim-auth/setup-token → issue a fresh aset_ token + agent prompt
+        if (sub === "/autosim-auth" || sub === "/autosim-auth/setup-token") {
+          // GET /api/projects/:id/autosim-auth — read-only status panel for the AT2 router screen.
+          // Returns: authStatus (unregistered/registered/verified), method, email (masked), pausedCount,
+          // latestProbe (id, status, error, finishedAt) so the UI knows whether probe passed/failed.
+          if (req.method === "GET" && sub === "/autosim-auth") {
+            try {
+              const cfg = await getAutosimAuthConfigEncrypted(pid)
+              const pausedSessions = await listNeedsAuthSessionsForAutoResume(pid, 20)
+              const pausedCount = pausedSessions.length
+              // Latest probe: look at the probe queue for the project (most recent).
+              let latestProbe: { id: string; status: string; error: string | null; finishedAt: number | null } | null = null
+              if (cfg) {
+                // We don't store a "latest probe ID" on the project row, so find it from the db directly.
+                const probeRows = await db!.execute({
+                  sql: `SELECT id, status, error, finished_at FROM autosim_auth_probe_queue
+                        WHERE project_id=? ORDER BY created_at DESC LIMIT 1`,
+                  args: [pid],
+                })
+                if (probeRows.rows.length) {
+                  const pr = probeRows.rows[0] as any
+                  latestProbe = {
+                    id: String(pr.id),
+                    status: String(pr.status),
+                    error: pr.error ? String(pr.error) : null,
+                    finishedAt: pr.finished_at ? Number(pr.finished_at) : null,
+                  }
+                }
+              }
+              const maskedEmail = cfg ? cfg.email.replace(/^(.{1,3}).*@/, (_, p) => p + "***@") : null
+              return json({
+                authStatus: proj.autosimAuthStatus,
+                method: cfg?.method ?? null,
+                email: maskedEmail,
+                pausedCount,
+                pausedSessions: pausedSessions.slice(0, 5).map((s) => ({
+                  id: s.id,
+                  name: s.name,
+                  baseUrl: s.baseUrl,
+                  updatedAt: s.updatedAt,
+                })),
+                latestProbe,
+              })
+            } catch (e: any) {
+              return json(oops(e, "autosim-auth-status"), 500)
+            }
+          }
+
+          // POST /api/projects/:id/autosim-auth/setup-token (admin only)
+          // Issues a fresh aset_ setup token (7-day TTL) for the AT2 router UI and returns
+          // the ready-to-paste agent prompt for the chosen method. The dashboard calls this
+          // when the user picks a method (fixed_otp or mint_link) in the router wizard.
+          // Rate-limited: same bucket as the config-write endpoint.
+          if (req.method === "POST" && sub === "/autosim-auth/setup-token") {
+            if (access !== "admin") return json({ error: "Only project admins can configure AutoSim auth." }, 403)
+            try {
+              const body = await req.json().catch(() => ({}))
+              const method = String(body.method || "")
+              if (method !== "fixed_otp" && method !== "mint_link") {
+                return json({ error: "method must be fixed_otp or mint_link" }, 400)
+              }
+              const ip = clientIp(req, server)
+              if (!rlAllow(`autosim-setup-tok:ip:${ip}`, 20, 60 * 60 * 1000)) {
+                return json({ error: "rate limited" }, 429, { "Retry-After": "3600" })
+              }
+              const issued = await createAutosimAuthSetupToken(pid, me)
+              const testEmail = me // The Sim will log in using the founder's own test email.
+              const prompt = generateAuthPrompt({
+                method,
+                testEmail,
+                setupToken: issued.token,
+                projectName: proj.name,
+              })
+              return json({
+                ok: true,
+                setupToken: issued.token,
+                tokenId: issued.id,
+                expiresAt: issued.expiresAt,
+                prompt,
+              }, 201)
+            } catch (e: any) {
+              return json(oops(e, "autosim-auth-setup-token"), 500)
+            }
+          }
+
           return json({ error: "Method not allowed" }, 405)
         }
 
