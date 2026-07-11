@@ -58,7 +58,9 @@ import { buildRecurrenceMemory, listProjectRecurringIssues } from "./lib/recurre
 import { publishBlogPost, SLUG_RE, type PublishInput } from "./lib/blog-publish"
 import { getExtractModel } from "./lib/extract-model"
 import { parseJSON } from "./lib/parse-json"
+import { EXTRACT_SYS as EXTRACT_SYS_PROMPT, normalizeExtractedPersonas } from "./lib/extract-pipeline"
 import { createStripeCheckoutSession, createStripePortalSession, intervalFromLookupKey, normalizeInterval, planFromLookupKey, quotasForPlan, retrieveStripeSubscription, verifyStripeWebhook } from "./lib/billing"
+import { sanitizeInsight } from "./lib/extract-sanitize"
 import { runAutosimAuthProbe } from "./lib/autosim-auth-probe"
 import { mintProjectShareToken, revokeProjectShareToken, resolveProjectShareToken, gatherProjectStatusData } from "./lib/project-status-portal"
 import { runDueSchedules, buildProductionDeps } from "./lib/sim-review-schedule"
@@ -159,45 +161,10 @@ if (db && process.env.TRAILS_DEMO_PROJECT_ID) {
 }
 
 // ── AI (OpenRouter) ──
-// EXTRACT_SYS v3 — verbatim from /tmp/EXTRACT_SYS_v3.md
-const EXTRACT_SYS =
-  "You are an expert qualitative UX researcher building reusable user personas (\"Sims\") from interview/call transcripts. " +
-  "Identify each distinct HUMAN speaker who is a user, customer, or stakeholder. For each produce a persona. " +
-  "Skip a pure facilitator/interviewer who reveals no preferences of their own. Be faithful to what people actually said.\n\n" +
-  "Classify each persona on two axes:\n" +
-  "- simClass: \"client\" = evaluates OVERALL outcomes (whether the product delivers the business result; feedback skews feature/workflow/strategy). " +
-  "\"user\" = actually OPERATES the product (feedback skews UI and interaction).\n" +
-  "- side: \"external\" = a customer/partner outside the team. \"internal\" = on the product/company team.\n\n" +
-  "Give each persona a portable CORE that travels to any product/site:\n" +
-  "- goals: 1-4 jobs-to-be-done the person is trying to accomplish.\n" +
-  "- expertise: their domain/product savvy (e.g. \"expert (finance) - intermediate (product)\").\n" +
-  "- temperament: how they behave - patience, tone, what sets them off.\n" +
-  "- voice: a short first-person phrasing sample, in their own words.\n" +
-  "- watchFor: 2-5 things this persona scrutinizes on ANY page/product (the lens they react through, independent of this product).\n\n" +
-  "Each insight is typed pain | want | love and MUST be anchored to a short verbatim quote from the transcript. Also set:\n" +
-  "- scope: ui | feature | workflow | strategy. ui = a granular defect on a specific artifact (name the exact button/label/screen). " +
-  "feature = a missing or requested capability. workflow = a change to a multi-step process, role, or permission model. " +
-  "strategy = a higher-level product direction.\n" +
-  "- portability: \"portable\" = a durable persona trait/need that would also apply on other products. " +
-  "\"site-specific\" = a finding about THIS product.\n" +
-  "- For ui scope, name the CONCRETE artifact in the text field. For feature/workflow/strategy, name the capability, flow, or role affected; " +
-  "issueType and priority may be null.\n" +
-  "- area: short descriptor of the UI/domain area (e.g. \"checkout-flow\", \"cost-forecasting\", \"onboarding\").\n" +
-  "- issueType: EXACTLY ONE of label-copy | layout | performance | flow | error-handling | accessibility | visual, or null if it genuinely does not fit.\n" +
-  "- priority: urgent | high | medium | low based on the speaker's expressed impact, or null if unclear.\n" +
-  "Capture the OVERALL INTENT behind what people say, even when it spans several turns or is implied - synthesize the product implication, not only the literal words.\n\n" +
-  "TONE - sarcasm, irony, and negation: speakers are frequently sarcastic (e.g. \"oh it's REAL intuitive\" meaning the OPPOSITE) " +
-  "or use negation (\"it's not that X is slow, it's that Y returns nothing\"). " +
-  "Infer the speaker's TRUE sentiment from context and consequences, not surface words. " +
-  "Do NOT emit a love insight for clearly sarcastic praise - classify it as the real pain. " +
-  "Resolve negation to the actual complaint. When genuine tone is ambiguous, prefer to omit rather than mis-sign.\n\n" +
-  "Respond with ONLY a JSON object, no prose, in exactly this shape:\n" +
-  '{"personas":[{"name":string,"role":string,"simClass":"client"|"user","side":"external"|"internal","initials":string(2 uppercase letters),' +
-  '"accent":string(hex colour like #6366f1),"summary":string,' +
-  '"core":{"goals":string[],"expertise":string,"temperament":string,"voice":string,"watchFor":string[]},' +
-  '"insights":[{"kind":"pain"|"want"|"love","scope":"ui"|"feature"|"workflow"|"strategy","portability":"portable"|"site-specific",' +
-  '"text":string,"quote":string,"area":string|null,' +
-  '"issueType":"label-copy"|"layout"|"performance"|"flow"|"error-handling"|"accessibility"|"visual"|null,"priority":"urgent"|"high"|"medium"|"low"|null}]}]}'
+// EXTRACT_SYS is now the canonical prompt from lib/extract-pipeline (single source of truth
+// for both /api/extract and /api/transcripts). Alias it locally so all existing callsites
+// below that reference EXTRACT_SYS continue to work unchanged.
+const EXTRACT_SYS = EXTRACT_SYS_PROMPT
 
 const REACT_SYS =
   "You ARE the given user persona, reviewing a screenshot of a product page as if really using it. " +
@@ -367,25 +334,10 @@ async function chat(messages: any[], maxTokens: number, jsonMode = false, ctx?: 
 }
 // parseJSON is imported from ./lib/parse-json (extracted for unit-testability).
 // All callers below use the imported function; behaviour is identical.
-// Closed enum for issueType — same set used in EXTRACT_SYS and RECONCILE_SYS.
-const ISSUE_TYPE_ENUM = new Set(["label-copy", "layout", "performance", "flow", "error-handling", "accessibility", "visual"])
-const PRIORITY_ENUM = new Set(["urgent", "high", "medium", "low"])
-// v3 insight enums: scope classifies the altitude of a finding; portability marks durability across products.
-const SCOPE_ENUM = new Set(["ui", "feature", "workflow", "strategy"])
-const PORTABILITY_ENUM = new Set(["portable", "site-specific"])
-
-// Sanitize the typed fields on an extracted/reconciled insight or op.
-// Returns null for any field absent, not a string, or outside the closed enum.
-// scope and portability are new in v3 — both null-default so old rows/models degrade gracefully.
-function sanitizeTypedFields(o: any): { area: string | null; issueType: string | null; priority: string | null; scope: string | null; portability: string | null } {
-  const area = o.area != null && typeof o.area === "string" && o.area.trim() ? o.area.trim() : null
-  const issueType = o.issueType != null && ISSUE_TYPE_ENUM.has(String(o.issueType)) ? String(o.issueType) : null
-  const rawPri = o.priority ?? o.severity
-  const priority = rawPri != null && PRIORITY_ENUM.has(String(rawPri)) ? String(rawPri) : null
-  const scope = o.scope != null && SCOPE_ENUM.has(String(o.scope)) ? String(o.scope) : null
-  const portability = o.portability != null && PORTABILITY_ENUM.has(String(o.portability)) ? String(o.portability) : null
-  return { area, issueType, priority, scope, portability }
-}
+// sanitizeTypedFields: alias for sanitizeInsight (imported from lib/extract-sanitize).
+// Both names are kept so existing callsites in reconcileSim continue to work without
+// touching every call site — the logic is now the single source of truth in extract-sanitize.ts.
+const sanitizeTypedFields = sanitizeInsight
 
 async function extractPersonas(transcript: string, ctx?: { email?: string | null; projectId?: string | null }) {
   // H4/LLM01: the transcript is untrusted — delimit it and tell the model to treat it as data.
@@ -393,20 +345,10 @@ async function extractPersonas(transcript: string, ctx?: { email?: string | null
   // 5+ speakers and many insights were hitting the 4 000-token ceiling → truncated JSON → 500.
   const { content, usage } = await chat([{ role: "system", content: EXTRACT_SYS + UNTRUSTED_GUARD }, { role: "user", content: "TRANSCRIPT:\n" + wrapUntrusted(transcript) }], EXTRACT_MAX_OUTPUT_TOKENS, false, { type: "extract", model: getExtractModel(), ...ctx })
   const data = parseJSON(content)
-  // Sanitize typed fields on each insight. simClass/side/core are now persisted via upsertPersona.
-  if (Array.isArray(data?.personas)) {
-    for (const p of data.personas) {
-      // Backward-compat shim: v3 drops the old `type` field in favour of simClass+side.
-      // Map it so any downstream code still reading persona.type keeps working.
-      // TODO: remove once consumers migrate to simClass/side.
-      if (p.type == null && p.simClass != null) {
-        p.type = p.simClass === "client" ? "client" : "internal"
-      }
-      if (Array.isArray(p?.insights)) {
-        p.insights = p.insights.map((ins: any) => ({ ...ins, ...sanitizeTypedFields(ins) }))
-      }
-    }
-  }
+  // Delegate post-processing to the shared canonical normalizer (lib/extract-pipeline).
+  // This is the SAME logic used by /api/transcripts — both entry points now go through
+  // normalizeExtractedPersonas for: (1) backward-compat .type shim, (2) insight field sanitization.
+  normalizeExtractedPersonas(data)
   return { data, usage }
 }
 async function reactToPage(persona: any, imageB64: string, mediaType: string, pageUrl: string, ctx?: { email?: string | null; projectId?: string | null }) {
