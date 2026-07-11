@@ -11,7 +11,7 @@
 //   3. RECURRING-ISSUE MEMORY (KLA-2): deduped reactions carry a RecurrenceMemory so the
 //      client knows "this was already filed by Alice 3 days ago."
 import type { Client } from "@libsql/client"
-import { insertFeedback, bumpFeedbackRecurrence, findFeedbackByIssueKey, listRecentFeedbackForDedup, insertActivity, listTraits, listTraitEvents } from "./db"
+import { insertFeedback, bumpFeedbackRecurrence, findFeedbackByIssueKey, listRecentFeedbackForDedup, insertActivity, listTraits, listTraitEvents, incrementUsageMeter } from "./db"
 import { issueKeyFor, chooseDedup } from "./dedup"
 import { classifySimObservation } from "./sim-bug-classify"
 import { recurrenceFromEvents, type Trait, type TraitEventRow } from "./provenance"
@@ -389,6 +389,14 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
       })
     }
     markSeen?.(opts.seenKeys[i])
+
+    // Usage meter (KLAVITYKLA-305): count each Sim that actually ran its review (produced reactions)
+    // as one billable 'sim_review' event. MEASUREMENT ONLY — fire-and-forget, never awaited, never
+    // blocks the review; no quota/enforcement here (KLA-306/307). Skipped Sims (ceiling/error → null)
+    // never reach this branch, so we only meter real work.
+    if (rawReactions.length > 0) {
+      void incrementUsageMeter({ metric: "sim_review", projectId, actorEmail })
+    }
 
     // Only include the Sim in output if it has at least one new observation.
     if (finalObservations.length > 0) {

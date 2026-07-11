@@ -18,7 +18,7 @@ import {
   startWalk, addRunStep, mergeRunStepEvidence, finishWalk, recordFinding,
   resolveEnvironmentUrl, pauseWalk, resumeWalk, getWalk,
 } from "./trails"
-import { touchWalkHeartbeat, db } from "./db"
+import { touchWalkHeartbeat, db, incrementUsageMeter } from "./db"
 import { stepCacheKey } from "./trails-crystallize"
 import { decideFromVision, type VisionResolver, type VisionInput, type VisionResult, type VisionDecision } from "./trails-vision"
 import { setupReplayCapture, saveReplay, type ReplayCapture } from "./trails-replay"
@@ -780,6 +780,12 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
     notifyWalkRed({ trailName: trail.name, trailId, projectId, runId, reasons: redReasons, at: Date.now(), failureKind: failureKindForThrownError(e) }).catch(() => {})
     return { runId, verdict: "red", llmCalls, steps: stepSummaries, healedCount, reasons: redReasons, failureKind: failureKindForThrownError(e), ...(evSummaryCatch ? { evidence: evSummaryCatch } : {}) }
   } finally {
+    // Usage meter (KLAVITYKLA-305): one 'autosim_walk' event per completed AutoSim/Trail walk
+    // (any verdict). MEASUREMENT ONLY — fire-and-forget, never awaited, never blocks the walk; no
+    // quota/enforcement here (KLA-306/307). Reached whether the walk ran green, red, or threw, so it
+    // matches "guarded AutoSim flows" 1:1. A browser-launch failure returns early above (before this
+    // try), which is correct — no walk actually ran, so nothing to meter.
+    void incrementUsageMeter({ metric: "autosim_walk", projectId })
     if (stopLiveScreencast) {
       try { await stopLiveScreencast() } catch {}
     }
