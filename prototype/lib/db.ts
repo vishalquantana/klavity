@@ -688,30 +688,6 @@ export async function applySchema(c: Client) {
   }
   await c.execute(`CREATE INDEX IF NOT EXISTS feedback_issue_idx ON feedback (project_id, issue_key)`)
     .catch((e: any) => console.warn("feedback_issue_idx skipped:", e?.message || e))
-  // KLA-214: public_token — unguessable 64-char hex token for /r/:token public status page.
-  // Stored as raw hex (not hashed) because it is already a 32-byte random value — no need for a
-  // separate hash table; the column itself is random enough (birthday-attack resistance: 2^256).
-  // New rows get the token at INSERT; existing rows are backfilled on boot.
-  if (needCol("feedback", "public_token")) {
-    await c.execute("ALTER TABLE feedback ADD COLUMN public_token TEXT")
-      .catch((e: any) => console.warn("feedback.public_token ALTER skipped:", e?.message || e))
-    await c.execute("CREATE UNIQUE INDEX IF NOT EXISTS feedback_public_token_idx ON feedback (public_token) WHERE public_token IS NOT NULL")
-      .catch((e: any) => console.warn("feedback_public_token_idx skipped:", e?.message || e))
-    // Backfill existing rows that lack a public token (best-effort, non-fatal).
-    try {
-      const stale = await c.execute("SELECT id FROM feedback WHERE public_token IS NULL LIMIT 500")
-      for (const row of stale.rows) {
-        const rawBytes = crypto.getRandomValues(new Uint8Array(32))
-        const tok = Array.from(rawBytes).map((b) => b.toString(16).padStart(2, "0")).join("")
-        await c.execute({ sql: "UPDATE feedback SET public_token=? WHERE id=?", args: [tok, String((row as any).id)] })
-          .catch(() => {/* collision on unique idx — skip, row stays null */})
-      }
-    } catch (e: any) { console.warn("feedback.public_token backfill skipped:", e?.message || e) }
-  } else {
-    // Index may not exist yet on DBs that had the column added but the index creation skipped.
-    await c.execute("CREATE UNIQUE INDEX IF NOT EXISTS feedback_public_token_idx ON feedback (public_token) WHERE public_token IS NOT NULL")
-      .catch((e: any) => console.warn("feedback_public_token_idx (late) skipped:", e?.message || e))
-  }
 
   // ── widget-config columns (leadgen integration task-1) ──
   if (needCol("projects", "widget_mode")) await c.execute("ALTER TABLE projects ADD COLUMN widget_mode TEXT NOT NULL DEFAULT 'support'").catch((e) => console.warn("projects.widget_mode ALTER skipped:", e?.message || e))
@@ -2086,22 +2062,15 @@ export function initialFeedbackStatus(priority: string | null | undefined): "new
   return (priority === "urgent" || priority === "high") ? "open" : "new"
 }
 
-// Generate a 32-byte cryptographically-random unguessable hex token for the public /r/ status page.
-function genPublicToken(): string {
-  const rawBytes = crypto.getRandomValues(new Uint8Array(32))
-  return Array.from(rawBytes).map((b) => b.toString(16).padStart(2, "0")).join("")
-}
-
 export async function insertFeedback(f: FeedbackInsert): Promise<string> {
   const id = "fb_" + crypto.randomUUID()
-  const publicToken = genPublicToken()
   const now = Date.now()
   const status = initialFeedbackStatus(f.priority)
   await db!.execute({
     sql: `INSERT INTO feedback (id,project_id,sim_id,actor_email,url_host,url_path,source_referrer,observation,sentiment,priority,
           screenshot_id,suggested_bug_json,cited_trait_ids_json,source_quote,source_transcript_id,source_date,
-          plane_issue_key,plane_issue_url,issue_key,recurrence_count,recurrence_dates_json,last_seen_at,client_context_json,annotations_json,source,created_at,status,public_token)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          plane_issue_key,plane_issue_url,issue_key,recurrence_count,recurrence_dates_json,last_seen_at,client_context_json,annotations_json,source,created_at,status)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [id, f.projectId, f.simId ?? null, f.actorEmail ?? null, f.urlHost ?? null, f.urlPath ?? null, f.sourceReferrer ?? null,
            f.observation ?? null, f.sentiment ?? null, f.priority ?? null, f.screenshotId ?? null,
            f.suggestedBug != null ? JSON.stringify(f.suggestedBug) : null,
@@ -2111,7 +2080,7 @@ export async function insertFeedback(f: FeedbackInsert): Promise<string> {
            f.issueKey ?? null, 1, JSON.stringify([now]), now,
            f.clientContext != null ? JSON.stringify(f.clientContext) : null,
            f.annotations != null ? JSON.stringify(f.annotations) : null,
-           f.source ?? null, now, status, publicToken],
+           f.source ?? null, now, status],
   })
   // KLA-200: assign per-project sequential number immediately after insert
   await db!.execute({
@@ -2122,63 +2091,6 @@ export async function insertFeedback(f: FeedbackInsert): Promise<string> {
     args: [f.projectId, now, now, id, id],
   }).catch((e: any) => console.warn("seq_num assign skipped:", e?.message || e))
   return id
-}
-
-// Resolve a feedback row by its public_token for the /r/:token status page (no auth required).
-// Returns a minimal safe shape — no PII beyond what the reporter submitted, no project internals.
-export type PublicReportStatus = {
-  title: string           // derived from suggestedBug title → observation → "(untitled report)"
-  observation: string | null
-  urlHost: string | null
-  urlPath: string | null
-  createdAt: number
-  updatedAt: number | null
-  status: string          // 'new' | 'open' | 'in_progress' | 'done' | 'closed' etc.
-  planeIssueKey: string | null
-  priority: string | null
-  recurrenceCount: number
-}
-
-export async function feedbackByPublicToken(publicToken: string): Promise<PublicReportStatus | null> {
-  if (!db) return null
-  // Validate token format: exactly 64 lowercase hex chars
-  if (!/^[0-9a-f]{64}$/.test(publicToken)) return null
-  const r = await db.execute({
-    sql: `SELECT observation, suggested_bug_json, url_host, url_path, created_at, updated_at,
-               status, plane_issue_key, priority, recurrence_count
-          FROM feedback WHERE public_token = ?`,
-    args: [publicToken],
-  })
-  if (!r.rows.length) return null
-  const x = r.rows[0] as any
-  let title = "(untitled report)"
-  try {
-    const sb = x.suggested_bug_json ? JSON.parse(String(x.suggested_bug_json)) : null
-    if (sb?.title) title = String(sb.title).slice(0, 200)
-    else if (x.observation) title = String(x.observation).slice(0, 200)
-  } catch { if (x.observation) title = String(x.observation).slice(0, 200) }
-  return {
-    title,
-    observation: x.observation != null ? String(x.observation).slice(0, 2000) : null,
-    urlHost: x.url_host != null ? String(x.url_host) : null,
-    urlPath: x.url_path != null ? String(x.url_path) : null,
-    createdAt: Number(x.created_at),
-    updatedAt: x.updated_at != null ? Number(x.updated_at) : null,
-    status: x.status != null ? String(x.status) : "open",
-    planeIssueKey: x.plane_issue_key != null ? String(x.plane_issue_key) : null,
-    priority: (x.priority) != null ? String(x.priority) : null,
-    recurrenceCount: Number(x.recurrence_count ?? 1),
-  }
-}
-
-// Retrieve the public_token for a known feedback row (to include in submit response).
-// Returns null if not found or token not yet set (legacy backfill in progress).
-export async function getFeedbackPublicToken(feedbackId: string): Promise<string | null> {
-  if (!db) return null
-  const r = await db.execute({ sql: "SELECT public_token FROM feedback WHERE id=?", args: [feedbackId] })
-  if (!r.rows.length) return null
-  const tok = (r.rows[0] as any).public_token
-  return tok != null ? String(tok) : null
 }
 
 // Record the downstream tracker issue on a feedback row after it is filed (tracker is optional/best-effort).
