@@ -168,12 +168,39 @@ test("POST /api/widget/token rejects when not signed in", async () => {
   expect(r.status).toBe(401)
 })
 
-test("POST /api/widget/token rejects an origin not on the allowlist", async () => {
+test("POST /api/widget/token rejects an origin not on the allowlist (and tells an admin they can add it)", async () => {
   const r = await fetch(base + "/api/widget/token", {
     method: "POST", headers: { "content-type": "application/json", cookie: sessionCookie },
     body: JSON.stringify({ projectId, origin: "https://evil.example" }),
   })
   expect(r.status).toBe(403)
+  const j = await r.json()
+  expect(j.code).toBe("origin_not_allowed")
+  expect(j.canAdd).toBe(true)         // session is a project admin
+  expect(j.host).toBe("evil.example")
+})
+
+test("admin can add the current origin then mint a token (self-serve watch-list add)", async () => {
+  const origin = "https://newsite.acme.test"
+  // 1) Not watched yet → 403 with the add affordance.
+  const rejected = await (await fetch(base + "/api/widget/token", {
+    method: "POST", headers: { "content-type": "application/json", cookie: sessionCookie },
+    body: JSON.stringify({ projectId, origin }),
+  })).json()
+  expect(rejected.canAdd).toBe(true)
+  // 2) Admin adds the host via the same admin-gated endpoint the popup calls.
+  const added = await fetch(base + "/api/projects/" + projectId + "/monitored-urls", {
+    method: "POST", headers: { "content-type": "application/json", cookie: sessionCookie },
+    body: JSON.stringify({ urlPattern: rejected.host }),
+  })
+  expect(added.status).toBe(201)
+  // 3) Mint now succeeds for that origin.
+  const minted = await fetch(base + "/api/widget/token", {
+    method: "POST", headers: { "content-type": "application/json", cookie: sessionCookie },
+    body: JSON.stringify({ projectId, origin }),
+  })
+  expect(minted.status).toBe(200)
+  expect((await minted.json()).token).toMatch(/^ext_/)
 })
 
 test("POST /api/widget/token mints a token for a valid session + allowlisted origin", async () => {

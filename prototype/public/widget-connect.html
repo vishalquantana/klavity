@@ -33,6 +33,9 @@
       <button type="button" class="link" id="changeBtn">Change email</button>
     </div>
   </div>
+  <div id="addStep" class="hide">
+    <button id="addBtn">Add this site &amp; connect</button>
+  </div>
   <div class="ok" id="ok"></div>
   <div class="err" id="err"></div>
 </div>
@@ -82,13 +85,36 @@ function startResendCooldown(){
 async function mintAndFinish(){
   const r = await jf("/api/widget/token", { method:"POST", headers:{"content-type":"application/json"},
     body: JSON.stringify({ projectId, origin: targetOrigin }) })
-  if (!r.ok){ err(r.data.error || "Could not connect."); return }
+  if (!r.ok){
+    // Admin on a not-yet-watched site → offer to add it right here instead of dead-ending.
+    if (r.data && r.data.code === "origin_not_allowed" && r.data.canAdd && r.data.host){ showAddOrigin(r.data.host); return }
+    err(r.data.error || "Could not connect."); return
+  }
   if (window.opener && targetOrigin){
     window.opener.postMessage({ type:"klavity-widget-token", token:r.data.token, projectId }, targetOrigin)
   }
   $("sub").textContent = "Connected — you can close this window."
-  $("emailStep").classList.add("hide"); $("codeStep").classList.add("hide")
+  $("emailStep").classList.add("hide"); $("codeStep").classList.add("hide"); $("addStep").classList.add("hide")
   setTimeout(() => window.close(), 600)
+}
+
+// This site isn't on the project's watch list yet. The signed-in admin can add it (host-only pattern,
+// via the same admin-gated endpoint the dashboard uses) and we retry the token mint automatically.
+let pendingHost = ""
+function showAddOrigin(host){
+  pendingHost = host
+  $("sub").textContent = host + " isn't on this project's watch list yet — add it so your Sims can review here?"
+  $("emailStep").classList.add("hide"); $("codeStep").classList.add("hide"); $("addStep").classList.remove("hide")
+  $("addBtn").textContent = "Add " + host + " & connect"
+  $("addBtn").disabled = false
+}
+$("addBtn").onclick = async () => {
+  if (!pendingHost) return
+  err(""); ok("Adding " + pendingHost + "…"); $("addBtn").disabled = true
+  const a = await jf("/api/projects/" + encodeURIComponent(projectId) + "/monitored-urls",
+    { method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({ urlPattern: pendingHost }) })
+  if (!a.ok){ err(a.data.error || "Could not add this site."); $("addBtn").disabled = false; return }
+  ok(""); await mintAndFinish()
 }
 $("sendBtn").onclick = async () => {
   err(""); const email = $("email").value.trim().toLowerCase()
@@ -97,6 +123,8 @@ $("sendBtn").onclick = async () => {
   const probe = await jf("/api/widget/token", { method:"POST", headers:{"content-type":"application/json"},
     body: JSON.stringify({ projectId, origin: targetOrigin }) })
   if (probe.ok){ if (window.opener && targetOrigin) window.opener.postMessage({type:"klavity-widget-token",token:probe.data.token,projectId}, targetOrigin); $("sub").textContent="Connected — you can close this window."; $("emailStep").classList.add("hide"); setTimeout(()=>window.close(),600); return }
+  // Already signed in, but this site isn't watched yet → let an admin add it without an extra OTP round-trip.
+  if (probe.data && probe.data.code === "origin_not_allowed" && probe.data.canAdd && probe.data.host){ showAddOrigin(probe.data.host); return }
   const data = await requestCode(email)
   if (!data) return
   // Genuine send failure (not test-OTP) — don't strand the user on a code field.
@@ -113,9 +141,9 @@ $("resendBtn").onclick = async () => {
   ok(data.testOtp ? "Test mode — enter your test sign-in code." : "New code sent to " + email + "."); startResendCooldown()
 }
 $("changeBtn").onclick = () => {
-  err(""); ok(""); clearInterval(resendTimer)
+  err(""); ok(""); clearInterval(resendTimer); pendingHost = ""
   $("resendBtn").disabled = false; $("resendBtn").textContent = "Resend code"
-  $("codeStep").classList.add("hide"); $("emailStep").classList.remove("hide")
+  $("codeStep").classList.add("hide"); $("addStep").classList.add("hide"); $("emailStep").classList.remove("hide")
   $("sub").textContent = "Sign in to bring your Sims onto this page."
   $("email").focus(); $("email").select()
 }
