@@ -63,7 +63,7 @@ export async function notifyWalkRed(ctx: WalkRedAlertContext): Promise<void> {
   if (!webhook) return
 
   try {
-    const baseUrl = process.env.KLAV_BASE_URL
+    const baseUrl = (process.env.KLAV_BASE_URL || "").replace("klavity.quantana.top", "klavity.in") || undefined
     const payload = buildWalkRedSlackPayload(ctx, baseUrl)
     const res = await safeFetch(
       webhook,
