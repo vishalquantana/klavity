@@ -55,9 +55,9 @@ export function buildWalkRedSlackPayload(ctx: WalkRedAlertContext, baseUrl?: str
     : "No reason recorded"
 
   // Label honestly: an infra/connection failure is NOT a regression.
-  const verdict = infra ? "🔌 RED — connection / infrastructure failure" : "🔴 RED — regression detected"
-  const findingsLabel = infra ? "Cause" : "Findings"
-  const headerText = infra ? "🔌 AutoSim: walk RED (infra failure)" : "🔴 AutoSim: RED walk detected"
+  const verdict = infra ? "🔌 RED — could not reach the browser (infrastructure issue)" : "🔴 RED — one or more steps failed; the app may have a regression"
+  const findingsLabel = infra ? "Cause" : "What failed"
+  const headerText = infra ? "🔌 AutoSim: walk failed (infrastructure issue)" : "🔴 AutoSim: walk failed — steps did not pass"
 
   const fields = [
     field("Trail", truncate(ctx.trailName, 80)),
@@ -71,8 +71,8 @@ export function buildWalkRedSlackPayload(ctx: WalkRedAlertContext, baseUrl?: str
 
   return {
     text: infra
-      ? `🔌 AutoSim walk RED (infra): "${ctx.trailName}"`
-      : `🔴 AutoSim walk RED: "${ctx.trailName}"`,
+      ? `🔌 AutoSim couldn't start the browser for trail "${ctx.trailName}" — infrastructure issue`
+      : `🔴 AutoSim walk failed for trail "${ctx.trailName}" — one or more steps did not pass`,
     blocks: [
       { type: "header", text: { type: "plain_text", text: headerText, emoji: true } },
       { type: "section", fields },

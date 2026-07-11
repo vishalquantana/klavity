@@ -284,6 +284,51 @@ function worseFailureKind(a: FailureKind | null, b: FailureKind): FailureKind {
   return a === "crash" || b === "crash" ? "crash" : "regression"
 }
 
+// ── Human-readable verdict/finding text helpers ──────────────────────────────
+//
+// These produce plain-English descriptions of what AutoSim steps do and what
+// went wrong, so that non-technical users can understand walk results without
+// needing to parse internal action codes or selector strings.
+
+const ACTION_VERB: Record<string, string> = {
+  click:        "clicking",
+  type:         "typing into",
+  select:       "selecting from",
+  assert:       "checking",
+  hover:        "hovering over",
+  keyPress:     "pressing a key on",
+  clearField:   "clearing",
+  navigate:     "navigating to",
+  wait:         "waiting",
+  pauseForSecret: "filling in",
+  callModule:   "running module",
+}
+
+/**
+ * Returns a human-readable step description, e.g.:
+ *   click + "Add to cart"  → 'clicking "Add to cart"'
+ *   assert + "Order confirmed" → 'checking "Order confirmed"'
+ *   navigate (no name)     → 'navigating'
+ */
+export function humanStepDescription(action: string, name?: string | null): string {
+  const verb = ACTION_VERB[action] ?? action
+  return name ? `${verb} "${name}"` : verb
+}
+
+/**
+ * One-line walk-failure reason for a step that went RED. Plain English — no
+ * internal codes, no terse labels like "step 0 (click): RED". Used in the
+ * Walk summary `reasons` array (surfaced in the Slack alert and the walk-detail
+ * page).
+ */
+export function humanRedReason(stepIdx: number, action: string, name?: string | null): string {
+  const desc = humanStepDescription(action, name)
+  if (action === "assert") {
+    return `Step ${stepIdx + 1}: the check "${name ?? "condition"}" failed — the expected state wasn't found on the page.`
+  }
+  return `Step ${stepIdx + 1}: ${desc} — the action could not be completed.`
+}
+
 // A locator "resolves" iff it matches exactly one element. Visibility is checked by the action
 // (Playwright auto-waits for actionability); for assert we require visible explicitly.
 async function uniquelyResolves(loc: Locator): Promise<boolean> {
@@ -715,7 +760,7 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
       walkVerdict = worse(walkVerdict, verdict)
       // KLAVITYKLA-48: every RED must carry a reason — accumulate per-step so the Walk summary is never silent.
       if (verdict === "red") {
-        redReasons.push(`step ${step.idx} (${step.action}${step.target?.accessibleName ? ` "${step.target.accessibleName}"` : ""}): RED`)
+        redReasons.push(humanRedReason(step.idx, step.action, step.target?.accessibleName))
         redFailureKind = worseFailureKind(redFailureKind, failureKind ?? failureKindForExpectationFailure())
       }
 
@@ -1027,7 +1072,7 @@ async function runOneStep(
       // The crystallized selector matched N>1 elements — this is a data-quality problem,
       // not a healer opportunity. Record a deduped 'regression' finding so the author sees
       // exactly which selector to fix, then fail this step RED immediately.
-      const title = `Ambiguous selector matched ${e.matchCount} elements: "${e.selector}"`
+      const title = `Selector matched ${e.matchCount} elements instead of one — AutoSim can't tell which "${e.selector}" to act on. Update the Trail to target a unique element.`
       if (!opts.suppressFindings) {
         await recordFinding(projectId, {
           runId, trailId, stepId: step.id,
@@ -1077,7 +1122,9 @@ async function runOneStep(
       // invisible in reports. Uses step fingerprint + page URL as the dedup key.
       const verdict: Verdict = "red"
       if (!opts.suppressFindings) {
-        const title = `Element not found: ${fp?.accessibleName ?? fp?.text ?? step.action}${step.target?.role ? ` (${step.target.role})` : ""}`
+        const targetName = fp?.accessibleName ?? fp?.text ?? step.action
+        const roleHint = step.target?.role ? ` (${step.target.role})` : ""
+        const title = `Can't find "${targetName}"${roleHint} on the page — the element may have been removed or renamed.`
         await recordFinding(projectId, {
           runId, trailId, stepId: step.id, kind: "regression", title,
           evidence: tagRedEvidence(failureKindForExpectationFailure(), { reason: "element_gone", fingerprint: fp, cachedSelector, action: step.action, pageUrl: stepPageUrl }),
@@ -1198,8 +1245,8 @@ async function runOneStep(
     const verdict: Verdict = "red"
     if (!opts.suppressFindings) {
       const title = isAssert
-        ? `Checkpoint failed: ${step.checkpoint?.description ?? fp?.accessibleName ?? fp?.text ?? "visible"}`
-        : `Action failed: ${step.action}${fp?.accessibleName ? ` on "${fp.accessibleName}"` : ""}`
+        ? `Check failed — "${step.checkpoint?.description ?? fp?.accessibleName ?? fp?.text ?? "expected condition"}" was not met on the page.`
+        : `Could not complete ${humanStepDescription(step.action, fp?.accessibleName)} — the interaction failed after retrying.`
       await recordFinding(projectId, {
         runId, trailId, stepId: step.id, kind: "regression", title,
         evidence: tagRedEvidence(failureKindForExpectationFailure(), { reason: isAssert ? "checkpoint_failed" : "action_failed", action: step.action, selector: resolved.selector, checkpoint: step.checkpoint?.description ?? null, pageUrl: stepPageUrl }),
@@ -1303,7 +1350,8 @@ async function runVisionTier2(
   // checkpoint, so this is a regression (RED), auto-file-eligible — NEVER a heal, NEVER amber_heal,
   // regardless of what the model would classify (moved / low-confidence / restyled). No model call.
   if (isAssert) {
-    const title = `Checkpoint target gone: ${fp?.accessibleName ?? fp?.text ?? step.checkpoint?.description ?? step.action}`
+    const targetLabel = fp?.accessibleName ?? fp?.text ?? step.checkpoint?.description ?? step.action
+    const title = `"${targetLabel}" is no longer on the page — this check can't pass because the element it was looking for has disappeared.`
     if (!opts.suppressFindings) {
       await recordFinding(projectId, {
         runId, trailId, stepId: step.id, kind: "regression", title,
@@ -1372,7 +1420,8 @@ async function runVisionTier2(
 
   // ── regression: do NOT act → RED + grounded, deduped finding (auto-file-eligible kind) ──
   if (decision.outcome === "regression") {
-    const title = `Target gone: ${fp?.accessibleName ?? fp?.text ?? step.action}`
+    const goneName = fp?.accessibleName ?? fp?.text ?? step.action
+    const title = `"${goneName}" no longer exists on the page — AutoSim inspected the page visually and confirmed the element is gone.`
     if (!opts.suppressFindings) {
       await recordFinding(projectId, {
         runId, trailId, stepId: step.id, kind: "regression", title,
@@ -1494,7 +1543,7 @@ async function fileAmberHeal(
   if (!opts.suppressFindings) {
     await recordFinding(projectId, {
       runId, trailId, stepId: step.id, kind: "amber_heal",
-      title: `Low-confidence heal: ${fp?.accessibleName ?? fp?.text ?? step.action}`,
+      title: `AutoSim found a possible match for "${fp?.accessibleName ?? fp?.text ?? step.action}" but wasn't confident enough to act — please review.`,
       evidence: { rationale, target: fp, pageUrl: opts.fixtureUrl, classification },
       groundQuote: rationale, confidence, dedupKey: `${trailId}:${step.id}:lowconf`,
       contentSig: contentSigFor({ kind: "amber_heal", fp, urlPath: pageUrl }),
