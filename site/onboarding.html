@@ -397,8 +397,8 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           <div class="tiles" id="installTiles">
             <div class="tile sel" id="widgetTile" onclick="selectInstall('widget')">
               <div class="ti">&lt;/&gt;</div>
-              <h3>Embed the bug-report widget</h3>
-              <p>One small code snippet on your site — visitors report bugs with a single click, no extension needed.</p>
+              <h3>Add the bug-report widget</h3>
+              <p>One small piece of code on your site — visitors report bugs with a single click, no extension needed.</p>
             </div>
             <div class="tile" id="chromeTile" onclick="selectInstall('extension')">
               <div class="ti"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z" /></svg></div>
@@ -417,13 +417,13 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
             <!-- Live install check: polls /api/projects/:id/widget-status (~3s) and flips green the
                  moment the widget's heartbeat is seen from the founder's site (or the test below). -->
             <div class="wstatus" id="widgetChip" role="status" aria-live="polite">
-              <span class="wdot" aria-hidden="true"></span><span id="widgetChipTxt">Waiting for your site… (paste the snippet, then reload your page)</span>
+              <span class="wdot" aria-hidden="true"></span><span id="widgetChipTxt">Waiting for your site… (paste the code, then reload your page)</span>
             </div>
             <!-- "Try it now": mounts the real widget on THIS page with the founder's project id and
                  opens the composer — the submitted report flows through /api/feedback into their dashboard. -->
             <div style="display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap">
               <button type="button" class="btn btn-ghost" id="tryWidgetBtn" onclick="tryTestReport()">Try it now — send a test report</button>
-              <span style="color:var(--paper-faint);font-size:11.5px;max-width:34ch">This files a real ticket in your project — perfect for checking the loop.</span>
+              <span style="color:var(--paper-faint);font-size:11.5px;max-width:34ch">This creates a real ticket in your project — perfect for seeing how it works.</span>
             </div>
             <!-- Platform install guide -->
             <button type="button" class="plat-toggle" id="platToggle" onclick="togglePlatforms()">Where do I paste this? ↓</button>
