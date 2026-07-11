@@ -16,7 +16,7 @@
 
 import { safeFetch } from "./safe-fetch"
 import { formatIST } from "./signup-alert"
-import { reportError } from "./error-alert"
+import { reportError, _isNonProdEnv } from "./error-alert"
 
 export interface WalkRedAlertContext {
   trailName: string
@@ -85,6 +85,11 @@ export function buildWalkRedSlackPayload(ctx: WalkRedAlertContext, baseUrl?: str
 }
 
 export async function notifyWalkRed(ctx: WalkRedAlertContext): Promise<void> {
+  // Gate: do nothing in test/CI/dev — prevents flooding Slack from test walk runs.
+  // reportError (for infra path) has its own gate, but we also guard the regression
+  // path here so the entire function is a no-op in non-prod envs.
+  if (_isNonProdEnv()) return
+
   const baseUrl = (process.env.KLAV_BASE_URL || "").replace("klavity.quantana.top", "klavity.in") || undefined
 
   // INFRA failure → SLACK_ERROR_WEBHOOK_URL via reportError. Labelled a backend/connection failure,

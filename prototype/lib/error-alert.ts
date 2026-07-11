@@ -90,8 +90,24 @@ function buildErrorPayload(info: ErrorInfo) {
   }
 }
 
+// ── env gate ─────────────────────────────────────────────────────────────────
+// Skip ALL side-effects (Slack + auto-ticketing) when running inside test/CI/dev
+// environments. This is a DENYLIST of known non-prod env names, NOT an allowlist
+// of "production". Real prod on this box does NOT set NODE_ENV (env falls through
+// to "unknown") — those errors MUST still fire. We only suppress the explicit
+// test/ci/dev labels.
+const NON_PROD_ENVS = new Set(["test", "ci", "development", "dev"])
+
+function isNonProdEnv(): boolean {
+  const e = (process.env.KLAV_ENV || process.env.NODE_ENV || "").toLowerCase()
+  return NON_PROD_ENVS.has(e)
+}
+
 // ── main export ──────────────────────────────────────────────────────────────
 export async function reportError(info: ErrorInfo): Promise<void> {
+  // Gate: do nothing in test/CI/dev — prevents flooding Slack + Plane from test suites.
+  if (isNonProdEnv()) return
+
   queueAutoTicketError(info)
 
   const webhook = process.env.SLACK_ERROR_WEBHOOK_URL
@@ -114,4 +130,4 @@ export async function reportError(info: ErrorInfo): Promise<void> {
 
 // ── test helpers (exported for unit tests only) ──────────────────────────────
 export function _resetDedup(): void { dedupMap.clear() }
-export { isDuplicate as _isDuplicate, buildErrorPayload as _buildErrorPayload }
+export { isDuplicate as _isDuplicate, buildErrorPayload as _buildErrorPayload, isNonProdEnv as _isNonProdEnv }
