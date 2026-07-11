@@ -4,34 +4,29 @@
 // isolation holds. Also asserts the meter is measurement-only: incrementUsageMeter never throws
 // and there is no quota check / blocking anywhere in the read/write path.
 //
-// Hermetic + isolation-safe: point the module `db` singleton at a fresh LOCAL libsql file BEFORE
-// importing ./db, reconnect it to OUR file in beforeEach (the singleton is shared across every test
-// file), and give every test its OWN freshly-minted account/project ids so no counter is ever
-// shared between tests — accumulation across tests is structurally impossible.
-import { beforeEach, expect, test } from "bun:test"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
-
-const file = join(tmpdir(), `klav-usage-meters-${Date.now()}-${Math.random().toString(36).slice(2)}.db`)
-process.env.TURSO_DATABASE_URL = "file:" + file
-delete process.env.TURSO_AUTH_TOKEN
-
-const {
-  reconnectDb, applySchema,
+// DB isolation: uses useIsolatedDb() which registers a beforeEach that re-points the shared
+// module `db` singleton at THIS file's own temp SQLite file before every test. This is
+// order-invariant — even if another test file's reconnectDb() ran between our beforeEach and
+// test body, our next beforeEach reclaims the singleton. Each test also mints its own unique
+// account/project ids (via freshTenant/addProject) so no counter is ever shared between tests.
+import { expect, test } from "bun:test"
+import { useIsolatedDb } from "./test-db-isolation"
+import {
   incrementUsageMeter, getAccountUsage, getAccountUsageMap, usagePeriod,
-} = await import("./db")
+} from "./db"
+
+// Wire the isolated DB. useIsolatedDb() also sets process.env.TURSO_DATABASE_URL
+// so that the db module's initial import (if not yet cached) creates a client
+// pointing at OUR file. The beforeEach it registers reconnects + applies schema
+// before every test, guaranteeing singleton ownership for the test body.
+const { getClient } = useIsolatedDb("klav-usage-meters")
 
 let seq = 0
-// IMPORTANT: the imported `db` is a snapshot of the export's value AT IMPORT TIME, not a live view
-// of db.ts's mutable `db` binding. Another test file calling reconnectDb() reassigns the module's
-// live `db` (which incrementUsageMeter/getAccountUsage use internally) WITHOUT changing our stale
-// snapshot. So for our own direct DB writes we MUST use the client returned by reconnectDb — and we
-// reconnect in beforeEach so our writes and the helpers' reads share the same live client + file.
-let client!: Awaited<ReturnType<typeof reconnectDb>>
 
 // Mint a fresh account + one project (+ owner member) for a single test. Unique ids mean counters
 // never overlap between tests, so we don't rely on any cross-test cleanup.
 async function freshTenant(email?: string): Promise<{ accountId: string; projectId: string; email: string }> {
+  const client = getClient()
   const n = ++seq
   const accountId = `acct_um_${n}`
   const projectId = `proj_um_${n}`
@@ -44,19 +39,13 @@ async function freshTenant(email?: string): Promise<{ accountId: string; project
 }
 
 async function addProject(accountId: string): Promise<string> {
+  const client = getClient()
   const n = ++seq
   const projectId = `proj_um_${n}`
   const now = Date.now()
   await client.execute({ sql: "INSERT INTO projects (id, account_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", args: [projectId, accountId, `P${n}`, now, now] })
   return projectId
 }
-
-beforeEach(async () => {
-  // Re-point the module's live `db` singleton (shared across ALL test files) at OUR file and keep the
-  // returned client for our direct writes. Now our writes + the helpers' reads use the same DB.
-  client = reconnectDb("file:" + file)
-  await applySchema(client)
-})
 
 // ── usagePeriod: stable UTC-month string ──────────────────────────────────────────────────────
 test("usagePeriod returns the UTC calendar month as YYYY-MM", () => {
@@ -150,7 +139,7 @@ test("incrementUsageMeter is a no-op when no account can be resolved (never thro
   // Unknown project + no email → nothing to attribute → silently skipped, no row written.
   await incrementUsageMeter({ metric: "sim_review", projectId: "proj_does_not_exist_xyz" })
   await incrementUsageMeter({ metric: "sim_review" })
-  const r = await client.execute("SELECT COUNT(*) AS n FROM usage_meters WHERE project_id='proj_does_not_exist_xyz'")
+  const r = await getClient().execute("SELECT COUNT(*) AS n FROM usage_meters WHERE project_id='proj_does_not_exist_xyz'")
   expect(Number((r.rows[0] as any).n)).toBe(0)
 })
 
