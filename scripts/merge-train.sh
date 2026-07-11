@@ -205,6 +205,22 @@ done
 
 [ "$changed" -eq 0 ] && { log "nothing to integrate"; exit 0; }
 
+# ── Deploy spacing ────────────────────────────────────────────────────────────
+# Prod restarts on every version bump and takes ~34s to boot (Turso schema check),
+# during which the whole site 502s. Pushing two versions back-to-back overlaps those
+# dark windows and flaps prod. So keep successive pushes ≥ MIN_DEPLOY_GAP apart: if we
+# pushed too recently, HOLD this cycle (undo the in-tree merges; branches re-integrate
+# next cycle — idempotent since we reset to origin/master at the top of every run).
+MIN_DEPLOY_GAP=75
+STAMP="$HOME/.config/klav-orchestrator/last-push.epoch"
+last_push=$(cat "$STAMP" 2>/dev/null || echo 0)
+gap=$((now - last_push))
+if [ "$last_push" -gt 0 ] && [ "$gap" -lt "$MIN_DEPLOY_GAP" ]; then
+  log "deploy spacing: last push ${gap}s ago (<${MIN_DEPLOY_GAP}s) — holding this cycle (retry in ~$((MIN_DEPLOY_GAP - gap))s):$merged"
+  git reset -q --hard origin/master 2>/dev/null
+  exit 0
+fi
+
 # Single monotonic version stamp (base patch + 1), forced across all manifests + PRD.
 maj=${base_ver%%.*}; rest=${base_ver#*.}; min=${rest%%.*}; pat=${rest##*.}
 next="$maj.$min.$((pat+1))"
@@ -225,6 +241,7 @@ if ! boot_smoke; then
   exit 1
 fi
 if git push -q origin master 2>/dev/null; then
+  date +%s > "$STAMP" 2>/dev/null   # stamp the deploy so the next push waits MIN_DEPLOY_GAP
   log "pushed v$next ($(git rev-parse --short HEAD)) — integrated:$merged"
   # Slack deploy notification — fail-safe: missing hook file or curl error never blocks the train.
   # Webhook is a SECRET; lives only in ~/.config/klav-orchestrator/slack-deploy-webhook (0600), never in-repo.
