@@ -1418,6 +1418,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         <div class="tkt-view-toggle"><button class="tkt-vbtn" id="tktListBtn" title="List view">&#9776; List</button><button class="tkt-vbtn active" id="tktBoardBtn" title="Board view">&#8862; Board</button></div>
         <div class="kb-search"><span class="mag">&#8981;</span><input id="kanbanSearch" placeholder="Search tickets…" autocomplete="off" /></div>
         <button class="btn btn-ghost btn-sm" id="manageLabelsBtn" type="button" title="Manage ticket labels" style="display:none">🏷 Labels</button>
+        <button class="btn btn-indigo btn-sm" id="newTicketBtn" type="button" title="Create a new ticket">+ New ticket</button>
       </div>
     <!-- Manage Labels modal (KLA-174) -->
     <div id="manageLabelsBg">
@@ -6860,8 +6861,9 @@ load()
   // ── New Trail & wizard ────────────────────────────────────────────────────
   async function loadAccounts(){
     try{
-      var pid2=projParam()||""
-      var r=await fetch("/api/projects/"+pid2+"/test-accounts");if(!r.ok)return
+      var pid2=projParam()
+      if(!pid2)return
+      var r=await fetch("/api/projects/"+encodeURIComponent(pid2)+"/test-accounts");if(!r.ok)return
       var d=await r.json();var sel=$("ntAcc");sel.length=1
       ;(d.accounts||[]).forEach(function(a){var o=document.createElement("option");o.value=a.name;o.textContent=a.name+" ("+a.loginEmail+")";sel.appendChild(o)})
     }catch(e){}
@@ -7237,6 +7239,10 @@ load()
       }
     })
     document.getElementById("ntBg").addEventListener("click",function(e){if(e.target===this)this.classList.remove("show")})
+
+    // KLAVITYKLA-198: wire the "+ New ticket" button in the Tickets toolbar
+    const newTicketBtn = document.getElementById("newTicketBtn")
+    if (newTicketBtn) newTicketBtn.addEventListener("click", openNewTicketModal)
 
     // KLA-173: new ticket modal wiring
     const newTktBg = document.getElementById("newTktBg")
