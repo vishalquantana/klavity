@@ -225,6 +225,59 @@ describe("widget Sims dock consolidation", () => {
     expect(firstVisible.classList.contains("klm-card")).toBe(true)
   })
 
+  // Regression: on a cross-origin customer site with no widget token, deploying Sims must run the
+  // connect handshake FIRST — it must NOT fire a /api/sim/review that would silently 401, leaving the
+  // Sims floating but doing nothing (the reported bug).
+  it("prompts to connect and fires NO review when Sims are deployed cross-origin without a token", async () => {
+    nextWidgetSims = [{ id: "sim_one", name: "Sarah Chen", initials: "SC", accent: "#6366f1" }]
+    const openSpy = vi.fn(() => ({ closed: true, close: vi.fn() }))
+    vi.stubGlobal("open", openSpy)
+
+    await mountWith({ launcherMode: "full" })
+    const fetchFn = globalThis.fetch as unknown as ReturnType<typeof vi.fn>
+    const menu = await openContextMenu()
+
+    const deployCard = Array.from(menu.querySelectorAll(".klm-card")).find(
+      (el) => (el.textContent || "").includes("Deploy all Sims"),
+    ) as HTMLElement | undefined
+    expect(deployCard).toBeTruthy()
+    deployCard!.click()
+
+    // The connect popup is opened (widget-connect handshake mints a bearer token)…
+    await waitUntil(() => openSpy.mock.calls.length > 0)
+    expect(String(openSpy.mock.calls[0][0])).toContain("/widget-connect")
+
+    // …and NO sim review was ever attempted, so there is no silent 401.
+    const reviewCalls = fetchFn.mock.calls.filter((c: unknown[]) => String(c[0]).includes("/api/sim/review"))
+    expect(reviewCalls.length).toBe(0)
+  })
+
+  // With a token already present, deploy proceeds straight to review (no connect popup).
+  it("deploys and reviews directly when a widget token is already present", async () => {
+    localStorage.setItem("klavity_widget_token", "ext_live_token")
+    nextWidgetSims = [{ id: "sim_one", name: "Sarah Chen", initials: "SC", accent: "#6366f1" }]
+    const openSpy = vi.fn(() => ({ closed: true, close: vi.fn() }))
+    vi.stubGlobal("open", openSpy)
+
+    await mountWith({ launcherMode: "full" })
+    const fetchFn = globalThis.fetch as unknown as ReturnType<typeof vi.fn>
+    const menu = await openContextMenu()
+
+    const deployCard = Array.from(menu.querySelectorAll(".klm-card")).find(
+      (el) => (el.textContent || "").includes("Deploy all Sims"),
+    ) as HTMLElement | undefined
+    deployCard!.click()
+
+    // A review fetch is attempted (carrying the bearer token); no connect popup is opened.
+    await waitUntil(() =>
+      (fetchFn.mock.calls as unknown[][]).some((c) => String(c[0]).includes("/api/sim/review")),
+    )
+    expect(openSpy).not.toHaveBeenCalled()
+    const reviewCall = (fetchFn.mock.calls as unknown[][]).find((c) => String(c[0]).includes("/api/sim/review"))!
+    const headers = (reviewCall[1] as RequestInit).headers as Record<string, string>
+    expect(headers.authorization).toBe("Bearer ext_live_token")
+  })
+
   it("renders context-menu Sim chips as circles when Sims are available", async () => {
     nextWidgetSims = [
       { id: "sim_one", name: "Sarah Chen", initials: "SC", accent: "#6366f1" },
