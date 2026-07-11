@@ -1085,13 +1085,29 @@ async function applyStripeCheckoutSession(session: any): Promise<void> {
 const AUTOCOPY_WINDOW = 60 * 60 * 1000
 const AUTOCOPY_PER_PROJECT = 60
 
-// Auto-copy a freshly-filed feedback row to every enabled auto-copy connector on its project.
-// Fire-and-forget: never blocks the response, never throws. SHARED by BOTH feedback sources —
-// manual/widget reports (POST /api/feedback) and Sim-generated observations (the review run) — so
-// observations export too, not only manual reports. On a successful Plane export it also writes
-// plane_issue_key/url back onto the feedback row (this writeback was missing, so exports succeeded
-// but the row stayed plane_issue_key=NULL and the dashboard never showed it as filed).
-function autoCopyFeedback(feedbackId: string, projectId: string, actor: string | null): void {
+// Priority rank: higher number = higher priority. Used for min-priority threshold checks.
+const PRIORITY_RANK: Record<string, number> = { urgent: 4, high: 3, medium: 2, low: 1 }
+
+// Returns true when the feedback's effective priority meets the connector's minimum threshold.
+// If the connector has no `auto_copy_min_priority` config key (or an unrecognised value),
+// EVERY priority passes (backward-compatible: existing connectors copy everything).
+// `effectivePriority` is the priority on the feedback row at the time of triage-accept.
+function priorityMeetsThreshold(effectivePriority: string | null | undefined, connectorConfig: Record<string, string>): boolean {
+  const minKey = connectorConfig["auto_copy_min_priority"]
+  if (!minKey || !(minKey in PRIORITY_RANK)) return true  // no threshold — pass all
+  const feedbackRank = effectivePriority && effectivePriority in PRIORITY_RANK ? PRIORITY_RANK[effectivePriority] : 1
+  return feedbackRank >= PRIORITY_RANK[minKey]
+}
+
+// Auto-copy a triaged/accepted feedback row to every enabled auto-copy connector on its project.
+// TRIAGE-GATED: this function is ONLY called when a report is triage-accepted (status transitions
+// to "open"). It is NOT called on raw submit. Each connector may carry an `auto_copy_min_priority`
+// key in its config JSON; feedback below that threshold is skipped for that connector.
+// Fire-and-forget: never blocks the response, never throws. On a successful Plane export it also
+// writes plane_issue_key/url back onto the feedback row.
+// effectivePriority: caller may pass the priority from the same PATCH request (which may update
+// priority and status together). If omitted, the value is read from the persisted row.
+function autoCopyFeedback(feedbackId: string, projectId: string, actor: string | null, effectivePriority?: string | null): void {
   void (async () => {
     try {
       const connectors = await listAutoCopyConnectors(projectId)
@@ -1104,12 +1120,20 @@ function autoCopyFeedback(feedbackId: string, projectId: string, actor: string |
       // Build the SAME rich payload the manual export uses, once, from the persisted row.
       const fb = await feedbackById(projectId, feedbackId)
       if (!fb) return
+      // Use caller-supplied priority if provided (same-patch update), else fall back to the row.
+      const resolvedPriority = effectivePriority !== undefined ? effectivePriority : fb.priority
       const simName = await resolveSimName(projectId, fb.simId)
       const ticketPayload = await feedbackToTicketPayload(fb, { id: projectId }, simName)
       let trackerWritten = !!fb.planeIssueKey   // don't overwrite a key set manually / by a prior export
       for (const c of connectors) {
         const adapter = getConnector(c.type)
         if (!adapter) continue
+        // Triage-gated priority threshold: skip this connector when feedback priority is below the
+        // connector's configured minimum. A connector with no `auto_copy_min_priority` passes all.
+        if (!priorityMeetsThreshold(resolvedPriority, c.config)) {
+          console.log(`[auto-copy] skipping connector ${c.id} (priority ${resolvedPriority || "null"} below threshold ${c.config["auto_copy_min_priority"]})`)
+          continue
+        }
         // Decrypt secret fields.
         const cfg: Record<string, string> = { ...c.config }
         for (const f of adapter.fields) {
@@ -2133,8 +2157,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                 catch (re: any) { console.warn("feedback replay save (non-fatal):", re?.message || re) }
               }
 
-              // ── auto-copy hook (shared with the Sim review path) ──
-              if (feedbackId && !dedupedInto) autoCopyFeedback(feedbackId, projectId, actor)
+              // Note: auto-copy is TRIAGE-GATED — it fires when a report is accepted (status→open),
+              // NOT on raw submit. See the PATCH /api/feedback/:id handler below.
 
               // KLA-175: AI label suggestion — fire-and-forget, never blocks the response.
               if (feedbackId && !dedupedInto) {
@@ -2161,8 +2185,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           }
         }
 
-        // Always return success. The connector auto-copy hook is fire-and-forget above.
-        // Legacy direct-Plane mode: if the caller provided Plane creds directly (no session),
+        // Always return success. Auto-copy (if enabled) fires on triage-accept (PATCH status→open),
+        // not here. Legacy direct-Plane mode: if the caller provided Plane creds directly (no session),
         // still attempt the Plane push for backward-compat with the extension's direct mode.
         if (!planeConnected) {
           // Success-screen deep link: ONLY authed reporters (extension Bearer / logged-in session)
@@ -2607,7 +2631,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           adhoc,  // bypass seenHashes + near-dup dedup for manual/boot deploys
           reactFn: (sim, b64, mt, pu) => reactToPage(sim, b64, mt, pu, { email: meR, projectId }),
           resolveCitationsFn: resolveCitations,
-          autoCopy: autoCopyFeedback,
+          // autoCopy intentionally omitted: Sim findings are triage-gated. Auto-copy fires on
+          // PATCH /api/feedback/:id when a member accepts (status → open), not on Sim insert.
           markSeen: markReviewSeen,
           db: db ?? null,
         })
@@ -4528,6 +4553,18 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               ticketUrl: ticketDashboardUrl(fbRow.projectId),
             })
           }
+          // ── Triage-gated auto-copy (KLA-282) ─────────────────────────────────────────────────────
+          // Fire auto-copy when a report is triage-ACCEPTED: status transitions to "open" from either
+          // "new" (first triage) or "dismissed" (re-accept after dismissal). This is the point at which
+          // a human has reviewed the report and deemed it actionable. Status transitions from
+          // "in_progress" or "done" back to "open" do NOT re-trigger (those are workflow reversals,
+          // not fresh accepts). The connector's `auto_copy_min_priority` config key gates on priority.
+          // The effective priority may have been updated in the SAME patch — use the merged value.
+          const triageAcceptSources = new Set(["new", "dismissed"])
+          if (meta.status === "open" && triageAcceptSources.has(String(fbRow.status))) {
+            const effectivePriority = meta.priority !== undefined ? meta.priority : fbRow.priority
+            autoCopyFeedback(fid, fbRow.projectId, me, effectivePriority)
+          }
           return json({ ok: true })
         }
 
@@ -5438,7 +5475,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               mode: "all", adhoc: true,
               reactFn: (sim, b64, mt, pu) => reactToPage(sim, b64, mt, pu, { email: mePv, projectId: authenticatedProjectId }),
               resolveCitationsFn: resolveCitations,
-              autoCopy: autoCopyFeedback,
+              // autoCopy intentionally omitted: triage-gated (fires on PATCH status→open, not on insert).
               markSeen: () => {},  // no seen-key bookkeeping for one-shot URL previews
               db: db ?? null,
             })
