@@ -420,6 +420,12 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 .recur-badge{font-family:var(--mono);font-size:9px;color:var(--rose);background:rgba(219,39,119,.1);padding:2px 8px;border-radius:20px;white-space:nowrap;flex-shrink:0}
 .regr-banner{display:flex;align-items:center;gap:7px;background:rgba(219,39,119,.07);border:1px solid rgba(219,39,119,.25);border-radius:9px;padding:8px 12px;font-size:12.5px;font-weight:600;color:var(--rose);margin-bottom:6px}
 .regr-banner .regr-ico{font-size:15px;flex-shrink:0}
+/* KLA-234: duplicate-acknowledgment callout — amber, shown when recurrenceCount≥2 so reporters feel heard */
+.dup-ack{display:flex;align-items:center;gap:7px;background:rgba(217,131,36,.09);border:1px solid rgba(217,131,36,.3);border-radius:9px;padding:8px 12px;font-size:12.5px;font-weight:600;color:var(--amber);margin-bottom:6px;transition:opacity .15s}
+.dup-ack .dup-ico{font-size:15px;flex-shrink:0}
+.dup-ack .dup-detail{font-weight:400;font-size:11.5px;color:var(--paper-faint);margin-left:2px}
+/* inline badge variant for list rows */
+.dup-ack-badge{font-family:var(--mono);font-size:9px;color:var(--amber);background:rgba(217,131,36,.12);border:1px solid rgba(217,131,36,.25);padding:2px 7px;border-radius:20px;white-space:nowrap;flex-shrink:0}
 .fx-m{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:5px;font-size:11.5px;color:var(--paper-faint)}
 .fx-q{font-size:12.5px;color:var(--paper-dim);font-style:italic;margin-top:4px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .fx-m .fx-area{font-family:var(--mono);font-size:10.5px;background:var(--ink-3);padding:1px 7px;border-radius:5px;color:var(--paper-dim)}
@@ -2225,7 +2231,7 @@ function renderTriageItems(items) {
       <div class="tg-b">
         <div class="fx-t">${t.seqNum ? `<span class="tkt-seq">#${t.seqNum}</span> ` : ""}${esc(t.title || "Untitled report")}${(t.recurrence >= 2) ? `<span class="fx-recur">recurring ×${t.recurrence}</span>` : ""}</div>
         ${t.sourceQuote ? `<div class="fx-q">"${esc(t.sourceQuote)}"</div>` : (t.observation ? `<div class="fx-q">${esc(t.observation)}</div>` : "")}
-        <div class="fx-m">${t.urlPath ? `<span class="fx-area">${esc(t.urlPath)}</span>` : ""}${t.sentiment ? `<span class="chip s-${esc(t.sentiment)}">${esc(t.sentiment)}</span>` : ""}${t.simName ? `<span>${kicon('bot',{size:14})} ${esc(t.simName)}</span>` : ""}${t.createdAt ? `<span class="muted">${esc(ago(t.createdAt))}</span>` : ""}</div>
+        <div class="fx-m">${t.urlPath ? `<span class="fx-area">${esc(t.urlPath)}</span>` : ""}${t.sentiment ? `<span class="chip s-${esc(t.sentiment)}">${esc(t.sentiment)}</span>` : ""}${t.simName ? `<span>${kicon('bot',{size:14})} ${esc(t.simName)}</span>` : ""}${dupAckHtml(t, {badge:true})}${t.createdAt ? `<span class="muted">${esc(ago(t.createdAt))}</span>` : ""}</div>
       </div>
       <div class="tg-actions">
         <select class="tg-pri">${["urgent","high","medium","low"].map(s => `<option value="${s}"${s===(t.priority||"medium")?" selected":""}>${s}</option>`).join("")}</select>
@@ -3159,8 +3165,9 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
     const _showBugTitle = !!_bugTitle && !_sameAsSingleTitle(_bugTitle)
     const _showBugBody = !!_bugBody && !_sameAsSingleTitle(_bugBody)
     const _showBug = !!t.suggestedBug && (_showBugTitle || _showBugBody)
+    const _hasDupAck = (t.recurrenceCount || t.recurrence || 1) >= 2
     const _hasContextItems = _showObs || _showBug || !!t.sourceQuote
-      || (_showSevChip || _showSentiment || _showSimChip)
+      || (_showSevChip || _showSentiment || _showSimChip) || _hasDupAck || !!t.isRegression
     const _hasContext = _hasContextItems || (!_isTwoCol && !!t.screenshotId)
 
     const _shotHtml = t.screenshotId
@@ -3168,6 +3175,7 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
       : ""
     const _contextHtml = _hasContext ? `
       <div class="tkt-context">
+        ${dupAckHtml(t)}
         ${regrBannerHtml(t)}
         ${_showObs ? `<div class="tkt-obs">${esc(t.observation)}</div>` : ""}
         ${(_showSevChip || _showSentiment || _showSimChip) ? `<div class="tkt-chips">${_showSevChip ? `<span class="chip sev-${esc(t.priority)}">${esc(t.priority)}</span>` : ""}${_showSentiment ? `<span class="chip s-${esc(t.sentiment)}">${esc(t.sentiment)}</span>` : ""}${_showSimChip ? `<span class="chip">${esc(t.simName)}</span>` : ""}</div>` : ""}
@@ -3759,6 +3767,26 @@ function regrBannerHtml(t) {
   if (!t.isRegression) return ""
   return `<div class="regr-banner"><span class="regr-ico">↩</span>Regression — came back after resolved</div>`
 }
+// KLA-234: Duplicate acknowledgment — "known issue" callout shown when a report has been seen ≥2 times.
+// Uses recurrenceCount (KLA-2 field) with fallback to legacy recurrence.
+// Returns a banner for drawer/detail contexts, or a compact inline badge for list/row contexts.
+function dupAckHtml(t, opts) {
+  const n = t.recurrenceCount || t.recurrence || 1
+  if (n < 2) return ""
+  if (opts && opts.badge) {
+    // Compact inline badge for list rows and triage rows.
+    return `<span class="dup-ack-badge" title="This issue has been reported ${n} times">Known issue ×${n}</span>`
+  }
+  // Full callout banner for detail/context panes.
+  const timesLabel = n === 2 ? "Reported twice" : `Reported ${n} times`
+  let detail = ""
+  if (t.firstSeen && t.lastSeen && t.firstSeen !== t.lastSeen) {
+    detail = `<span class="dup-detail">First seen ${esc(ago(t.firstSeen))} · Last seen ${esc(ago(t.lastSeen))}</span>`
+  } else if (t.firstSeen) {
+    detail = `<span class="dup-detail">First reported ${esc(ago(t.firstSeen))}</span>`
+  }
+  return `<div class="dup-ack" role="status" aria-label="Known issue, reported ${n} times"><span class="dup-ico">${kicon('refresh-cw',{size:14})}</span><span>Known issue &mdash; ${timesLabel.toLowerCase()}</span>${detail}</div>`
+}
 // ── KLA-169: Tickets filter bar + list view ──────────────────────────────────────────────────────
 let _tktFilters = { status: "", priority: "", assignee: "", source: "" }
 let _tktListState = { page: 1, totalPages: 1, loading: false }
@@ -4063,6 +4091,7 @@ function renderTktList(listEl, tickets, total, searchQ) {
       '<div class="tl-title">' + (t.seqNum ? '<span class="tkt-seq">#' + t.seqNum + '</span> ' : '') + esc(t.title || "Untitled report") + (lblChipsHtml ? ' <span class="lbl-chips" style="margin-left:6px">'+lblChipsHtml+'</span>' : '') + '</div>' +
       '<div class="tl-meta">' +
         statusPillHtml(t.status) +
+        dupAckHtml(t, {badge: true}) +
         '<span class="tl-src">' + esc(srcLabel) + '</span>' +
         '<span>' + sub + '</span>' +
       '</div>'

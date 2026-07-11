@@ -260,6 +260,113 @@ test("renderSimsFeed shows actual observation text with a Triage link", () => {
   expect(els.simsCount.textContent).toBe("1")
 })
 
+// =============================================================================
+// KLA-234: dupAckHtml — duplicate-acknowledgment callout
+// =============================================================================
+// Extract the real shipped function (brace-matched) plus its collaborators.
+const dupAckSrc = extractFn(HTML, "function dupAckHtml(")
+const agoStub = `function ago(ts) { return "2 days ago" }`
+const escStub = `function esc(s) { return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;") }`
+const kiconStub = `function kicon(name) { return "<svg data-icon='"+name+"'></svg>" }`
+
+function buildDupAckSandbox() {
+  const factory = new Function(
+    "ago", "esc", "kicon",
+    `${dupAckSrc}\nreturn dupAckHtml;`,
+  )
+  return factory(
+    (ts: number) => "2 days ago",
+    (s: unknown) => String(s).replace(/[&<>"']/g, (ch: string) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch as string])),
+    (_name: string) => "<svg></svg>",
+  )
+}
+
+test("KLA-234 dupAckHtml: returns empty string when recurrenceCount < 2", () => {
+  const dupAckHtml = buildDupAckSandbox()
+  expect(dupAckHtml({ recurrenceCount: 1, recurrence: 1 })).toBe("")
+  expect(dupAckHtml({ recurrenceCount: 0, recurrence: 0 })).toBe("")
+  expect(dupAckHtml({})).toBe("")
+})
+
+test("KLA-234 dupAckHtml: returns empty string for count=1 using legacy recurrence field", () => {
+  const dupAckHtml = buildDupAckSandbox()
+  expect(dupAckHtml({ recurrence: 1 })).toBe("")
+})
+
+test("KLA-234 dupAckHtml: banner mode fires for recurrenceCount=2", () => {
+  const dupAckHtml = buildDupAckSandbox()
+  const html = dupAckHtml({ recurrenceCount: 2, firstSeen: 1700000000000, lastSeen: 1700100000000 })
+  expect(html).toContain("dup-ack")
+  expect(html).toContain("Known issue")
+  expect(html).toContain("reported twice")
+  expect(html).toContain("First seen")
+  expect(html).toContain("Last seen")
+})
+
+test("KLA-234 dupAckHtml: banner mode fires for recurrenceCount=5 with plural label", () => {
+  const dupAckHtml = buildDupAckSandbox()
+  const html = dupAckHtml({ recurrenceCount: 5, firstSeen: 1700000000000, lastSeen: 1700200000000 })
+  expect(html).toContain("reported 5 times")
+})
+
+test("KLA-234 dupAckHtml: badge mode returns compact span for list rows", () => {
+  const dupAckHtml = buildDupAckSandbox()
+  const html = dupAckHtml({ recurrenceCount: 3, recurrence: 3 }, { badge: true })
+  expect(html).toContain("dup-ack-badge")
+  expect(html).toContain("Known issue ×3")
+  // badge mode should NOT contain the full banner wrapper
+  expect(html).not.toContain("dup-ack\"")
+})
+
+test("KLA-234 dupAckHtml: badge mode falls back to legacy recurrence field", () => {
+  const dupAckHtml = buildDupAckSandbox()
+  const html = dupAckHtml({ recurrence: 4 }, { badge: true })
+  expect(html).toContain("Known issue ×4")
+})
+
+test("KLA-234 dupAckHtml: banner omits date detail when firstSeen not present", () => {
+  const dupAckHtml = buildDupAckSandbox()
+  const html = dupAckHtml({ recurrenceCount: 2 })
+  expect(html).toContain("Known issue")
+  expect(html).not.toContain("First seen")
+  expect(html).not.toContain("Last seen")
+})
+
+test("KLA-234 dupAckHtml: banner omits last-seen when firstSeen === lastSeen", () => {
+  const dupAckHtml = buildDupAckSandbox()
+  const ts = 1700000000000
+  const html = dupAckHtml({ recurrenceCount: 2, firstSeen: ts, lastSeen: ts })
+  expect(html).toContain("First reported")
+  expect(html).not.toContain("Last seen")
+})
+
+test("KLA-234 dupAckHtml: uses recurrenceCount over legacy recurrence when both present", () => {
+  const dupAckHtml = buildDupAckSandbox()
+  // recurrenceCount=7 should win; legacy recurrence=2 is ignored
+  const html = dupAckHtml({ recurrenceCount: 7, recurrence: 2 }, { badge: true })
+  expect(html).toContain("×7")
+  expect(html).not.toContain("×2")
+})
+
+test("KLA-234 dupAckHtml: has aria-label for screen readers", () => {
+  const dupAckHtml = buildDupAckSandbox()
+  const html = dupAckHtml({ recurrenceCount: 3 })
+  expect(html).toContain('aria-label=')
+  expect(html).toContain("3 times")
+})
+
+test("KLA-234 buildTktDetail includes dupAckHtml call inside tkt-context", () => {
+  // Guards that the call was not accidentally removed from the context pane.
+  expect(buildTktDetailSrc).toContain("dupAckHtml(t)")
+})
+
+test("KLA-234 _hasDupAck gates context pane for recurring-only tickets", () => {
+  // The guard '_hasDupAck' ensures the tkt-context block renders even when
+  // no observation/bug/quote/chips exist — only recurrenceCount matters.
+  expect(buildTktDetailSrc).toContain("_hasDupAck")
+  expect(buildTktDetailSrc).toContain("|| _hasDupAck")
+})
+
 test("renderSaying never frames unresolved bug reports as A Sim", () => {
   const els: Record<string, any> = {
     saying: { innerHTML: "" },
