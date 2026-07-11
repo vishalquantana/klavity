@@ -870,7 +870,7 @@ export async function runAuthorNow(
               sessionId,
               pageUrl: url,
               rationale,
-              baseUrl: process.env.KLAV_BASE_URL || "",
+              baseUrl: (process.env.KLAV_BASE_URL || "").replace("klavity.quantana.top", "klavity.in"),
               at: Date.now(),
             })
           } catch (e: any) {

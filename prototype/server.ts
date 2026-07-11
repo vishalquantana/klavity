@@ -62,7 +62,8 @@ import { runAutosimAuthProbe } from "./lib/autosim-auth-probe"
 const KEY = process.env.OPENROUTER_API_KEY
 const MODEL = process.env.KLAV_MODEL || "google/gemini-2.5-flash"
 const PORT = Number(process.env.PORT || 4317)
-const BASE = process.env.KLAV_BASE_URL || `http://localhost:${PORT}`
+const BASE = (process.env.KLAV_BASE_URL || `http://localhost:${PORT}`)
+  .replace("klavity.quantana.top", "klavity.in")
 const SECURE = BASE.startsWith("https")
 const DEV_SHOW_OTP = process.env.KLAV_DEV_SHOW_OTP === "1"
 const ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"

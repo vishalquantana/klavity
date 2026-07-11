@@ -211,7 +211,7 @@ async function findingScreenshotAttachment(finding: Finding, baseUrl: string): P
 export const realFiler: Filer = async (projectId, finding) => {
   const connectors = await listAutoCopyConnectors(projectId)
   if (!connectors.length) return null
-  const baseUrl = process.env.KLAV_BASE_URL || "https://klavity.in"
+  const baseUrl = (process.env.KLAV_BASE_URL || "https://klavity.in").replace("klavity.quantana.top", "klavity.in")
   const baseTicket = buildTicketFromFinding(finding, baseUrl)
   const attachment = await findingScreenshotAttachment(finding, baseUrl)
   const ticket: TicketPayload = attachment ? { ...baseTicket, attachments: [attachment] } : baseTicket
