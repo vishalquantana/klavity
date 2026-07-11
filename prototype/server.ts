@@ -5,6 +5,7 @@ import { issueKeyFor, chooseDedup, humanReportIssueKeyFor } from "./lib/dedup"
 import { classifySimObservation } from "./lib/sim-bug-classify"
 import { getConnector, listConnectorTypes, type TicketPayload, type TicketAttachment } from "./lib/connectors/index"
 import { inboundSupported, verifyGithubSignature, verifyLinearSignature, extractExternalKey, mapExternalStatus } from "./lib/connectors/inbound"
+import { pushCommentToLinkedIssues } from "./lib/connectors/comment-sync"
 import { deriveHealth } from "./lib/connectors/health"
 import { applyReconcileOps, recurrenceFromEvents, pickCitation, type ReconcileOp, type Trait, type TraitEventRow } from "./lib/provenance"
 import { sendOtp, sendLeadAlert, sendTicketAssignmentEmail, sendTicketAssignmentInviteEmail } from "./lib/mail"
@@ -4534,6 +4535,23 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (!text) return json({ error: "Comment body is required." }, 400)
           if (text.length > 5000) return json({ error: "Comment body must be 5000 characters or fewer." }, 400)
           const comment = await insertTicketComment(fid, me, text)
+
+          // KLAVITYKLA-290 Phase 1 — outbound comment sync (fire-and-forget).
+          // Push this Klavity-authored comment to every linked external tracker. The push runs
+          // asynchronously and NEVER blocks or throws into this response path — a sync failure
+          // is recorded as an activity event and visible in the timeline.
+          // INBOUND SEAM: source is always "klavity" here (Phase 1). When inbound sync (Phase 2)
+          // is built, comments echoed from the tracker will carry source:"inbound" and will be
+          // skipped by pushCommentToLinkedIssues to prevent loops.
+          pushCommentToLinkedIssues(fbRow.projectId, fid, text, {
+            authorEmail: me,
+            klavityCommentId: comment.id,
+            source: "klavity",
+          }).catch((e) => {
+            // Double-guard: pushCommentToLinkedIssues already catches internally.
+            console.warn("[comment-sync] unexpected top-level error:", e)
+          })
+
           return json({ comment }, 201)
         }
 

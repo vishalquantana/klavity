@@ -1,4 +1,4 @@
-import type { Connector, TicketPayload, ExportResult } from "./index"
+import type { Connector, TicketPayload, ExportResult, CommentSyncResult } from "./index"
 import { safeFetch } from "../safe-fetch"
 
 const LINEAR_API = "https://api.linear.app/graphql"
@@ -139,6 +139,104 @@ export const linearConnector: Connector = {
     return {
       externalKey: issue?.identifier ?? null,
       externalUrl: issue?.url ?? null,
+    }
+  },
+
+  // addComment: create a comment on the Linear issue identified by externalIssueRef.
+  //
+  // externalIssueRef is the externalKey stored by createIssue: the Linear issue identifier,
+  // e.g. "ENG-42". Linear requires the internal issue ID (UUID), not the identifier, for the
+  // commentCreate mutation, so we resolve it first via a query.
+  //
+  // Linear comment API (GraphQL):
+  //   POST https://api.linear.app/graphql
+  //   Headers: Authorization: {api_key}   (no "Bearer" prefix for Linear personal API keys)
+  //            Content-Type: application/json
+  //
+  //   Step 1 — resolve the issue's internal ID from its identifier:
+  //     query($id:String!){ issue(id:$id){ id } }
+  //     variables: { id: "ENG-42" }  (Linear accepts identifier OR UUID as $id)
+  //
+  //   Step 2 — create the comment:
+  //     mutation($issueId:String!,$body:String!){ commentCreate(input:{issueId:$issueId,body:$body}){ comment { id } } }
+  //
+  // NOTE: Linear accepts the human identifier (e.g. "ENG-42") as the $id arg for `issue(id:…)`
+  // so the resolution query is a single round-trip. Verified against Linear GraphQL schema 2024.
+  async addComment(
+    externalIssueRef: string,
+    commentText: string,
+    meta: { authorEmail?: string | null; klavityCommentId?: string },
+    cfg: Record<string, string>,
+  ): Promise<CommentSyncResult> {
+    try {
+      const { api_key } = cfg
+      if (!api_key) {
+        return { ok: false, error: "linear addComment: missing api_key in config" }
+      }
+
+      const headers = {
+        "Authorization": api_key,
+        "Content-Type": "application/json",
+      }
+
+      // Step 1: resolve the issue's internal UUID from the identifier (e.g. "ENG-42").
+      // Linear's issue(id:) field accepts either the identifier or the UUID directly.
+      const resolveRes = await safeFetch(
+        LINEAR_API,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            query: "query($id:String!){ issue(id:$id){ id } }",
+            variables: { id: externalIssueRef },
+          }),
+        },
+        { allowHosts: ["linear.app"] },
+      )
+
+      if (!resolveRes.ok) {
+        const text = (await resolveRes.text().catch(() => "")).slice(0, 200)
+        return { ok: false, error: `linear issue resolve HTTP ${resolveRes.status}: ${text}` }
+      }
+
+      const resolveJson = await resolveRes.json()
+      if (resolveJson.errors?.length) {
+        return { ok: false, error: `linear issue resolve GraphQL: ${resolveJson.errors[0]?.message ?? "unknown"}` }
+      }
+      const issueId: string | undefined = resolveJson?.data?.issue?.id
+      if (!issueId) {
+        return { ok: false, error: `linear addComment: could not resolve issue ID for "${externalIssueRef}"` }
+      }
+
+      // Step 2: create the comment.
+      const commentRes = await safeFetch(
+        LINEAR_API,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            query:
+              "mutation($issueId:String!,$body:String!){ commentCreate(input:{issueId:$issueId,body:$body}){ comment { id } } }",
+            variables: { issueId, body: commentText },
+          }),
+        },
+        { allowHosts: ["linear.app"] },
+      )
+
+      if (!commentRes.ok) {
+        const text = (await commentRes.text().catch(() => "")).slice(0, 200)
+        return { ok: false, error: `linear commentCreate HTTP ${commentRes.status}: ${text}` }
+      }
+
+      const commentJson = await commentRes.json()
+      if (commentJson.errors?.length) {
+        return { ok: false, error: `linear commentCreate GraphQL: ${commentJson.errors[0]?.message ?? "unknown"}` }
+      }
+
+      const externalCommentId = commentJson?.data?.commentCreate?.comment?.id ?? null
+      return { ok: true, externalCommentId: externalCommentId ? String(externalCommentId) : null }
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) }
     }
   },
 }

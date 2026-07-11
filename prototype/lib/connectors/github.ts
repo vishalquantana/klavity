@@ -1,4 +1,4 @@
-import type { Connector, TicketPayload, ExportResult } from "./index"
+import type { Connector, TicketPayload, ExportResult, CommentSyncResult } from "./index"
 import { safeFetch } from "../safe-fetch"
 
 export const githubConnector: Connector = {
@@ -53,6 +53,67 @@ export const githubConnector: Connector = {
     return {
       externalKey: `#${json.number}`,
       externalUrl: json.html_url,
+    }
+  },
+
+  // addComment: POST a comment on the GitHub issue identified by externalIssueRef.
+  //
+  // externalIssueRef is the externalKey stored by createIssue: "#42" (issue number).
+  //
+  // GitHub comment API:
+  //   POST https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}/comments
+  //   Headers: Authorization: Bearer {token}
+  //            Accept: application/vnd.github+json
+  //            User-Agent: Klavity
+  //            Content-Type: application/json
+  //   Body:    { "body": "comment text" }
+  //   Response: { "id": 12345, ... }
+  async addComment(
+    externalIssueRef: string,
+    commentText: string,
+    meta: { authorEmail?: string | null; klavityCommentId?: string },
+    cfg: Record<string, string>,
+  ): Promise<CommentSyncResult> {
+    try {
+      const { owner, repo, token } = cfg
+      if (!owner || !repo || !token) {
+        return { ok: false, error: "github addComment: missing owner/repo/token in config" }
+      }
+
+      // externalIssueRef is "#42" — strip the leading "#" to get the issue number.
+      const issueNumber = externalIssueRef.replace(/^#/, "")
+      if (!issueNumber || !/^\d+$/.test(issueNumber)) {
+        return { ok: false, error: `github addComment: invalid externalIssueRef "${externalIssueRef}"` }
+      }
+
+      const url = `https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}/comments`
+
+      // Host is fixed (api.github.com). safeFetch pins to github.com and validates every redirect.
+      const res = await safeFetch(
+        url,
+        {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${token}`,
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "Klavity",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ body: commentText }),
+        },
+        { allowHosts: ["github.com"] },
+      )
+
+      if (!res.ok) {
+        const text = (await res.text().catch(() => "")).slice(0, 200)
+        return { ok: false, error: `github comment POST HTTP ${res.status}: ${text}` }
+      }
+
+      const json = await res.json().catch(() => null)
+      const externalCommentId = json?.id != null ? String(json.id) : null
+      return { ok: true, externalCommentId }
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) }
     }
   },
 }

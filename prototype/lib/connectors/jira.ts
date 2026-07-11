@@ -1,4 +1,4 @@
-import type { Connector, TicketPayload, ExportResult } from "./index"
+import type { Connector, TicketPayload, ExportResult, CommentSyncResult } from "./index"
 import { safeFetch } from "../safe-fetch"
 
 // Build an Atlassian Document Format (ADF) doc wrapping plain text.
@@ -118,6 +118,60 @@ export const jiraConnector: Connector = {
     return {
       externalKey: key,
       externalUrl: `${host.replace(/\/$/, "")}/browse/${key}`,
+    }
+  },
+
+  // addComment: POST a comment on the Jira issue identified by externalIssueRef.
+  //
+  // externalIssueRef is the externalKey stored by createIssue: the Jira issue key, e.g. "PROJ-42".
+  //
+  // Jira Cloud comment API (REST API v3):
+  //   POST {host}/rest/api/3/issue/{issueKey}/comment
+  //   Headers: Authorization: Basic base64(email:token)
+  //            Content-Type: application/json
+  //            Accept: application/json
+  //   Body:    { "body": <ADF doc> }
+  //   Response: { "id": "10001", ... }
+  async addComment(
+    externalIssueRef: string,
+    commentText: string,
+    meta: { authorEmail?: string | null; klavityCommentId?: string },
+    cfg: Record<string, string>,
+  ): Promise<CommentSyncResult> {
+    try {
+      const { host, email, token } = cfg
+      if (!host || !email || !token) {
+        return { ok: false, error: "jira addComment: missing host/email/token in config" }
+      }
+
+      const url = `${host.replace(/\/$/, "")}/rest/api/3/issue/${externalIssueRef}/comment`
+      const credentials = Buffer.from(`${email}:${token}`).toString("base64")
+
+      // SSRF guard (H3): host is user-supplied → safeFetch validates before sending credentials.
+      const res = await safeFetch(
+        url,
+        {
+          method: "POST",
+          headers: {
+            "Authorization": `Basic ${credentials}`,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+          },
+          body: JSON.stringify({ body: toAdf(commentText) }),
+        },
+        { allowLoopbackInTest: true },
+      )
+
+      if (!res.ok) {
+        const text = (await res.text().catch(() => "")).slice(0, 200)
+        return { ok: false, error: `jira comment POST HTTP ${res.status}: ${text}` }
+      }
+
+      const json = await res.json().catch(() => null)
+      const externalCommentId = json?.id != null ? String(json.id) : null
+      return { ok: true, externalCommentId }
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) }
     }
   },
 }
