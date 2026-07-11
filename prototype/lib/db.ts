@@ -816,6 +816,21 @@ export async function applySchema(c: Client) {
   await c.execute("UPDATE trait_events SET priority = severity WHERE priority IS NULL").catch((e: any) => console.warn("trait_events.priority backfill skipped:", e?.message || e))
   if (needCol("findings", "priority")) await c.execute("ALTER TABLE findings ADD COLUMN priority TEXT").catch((e: any) => console.warn("findings.priority ALTER skipped:", e?.message || e))
   await c.execute("UPDATE findings SET priority = CASE severity WHEN 'critical' THEN 'urgent' ELSE severity END WHERE priority IS NULL").catch((e: any) => console.warn("findings.priority backfill skipped:", e?.message || e))
+  // KLA-200: per-project sequential ticket numbers (human-readable #N).
+  // Additive: add seq_num column (nullable initially), then backfill with a per-project rank
+  // derived from created_at so older rows get lower numbers and the sequence is stable.
+  if (needCol("feedback", "seq_num")) await c.execute("ALTER TABLE feedback ADD COLUMN seq_num INTEGER")
+    .catch((e: any) => console.warn("feedback.seq_num ALTER skipped:", e?.message || e))
+  await c.execute(`
+    UPDATE feedback SET seq_num = (
+      SELECT COUNT(*) FROM feedback f2
+      WHERE f2.project_id = feedback.project_id
+        AND (f2.created_at < feedback.created_at
+          OR (f2.created_at = feedback.created_at AND f2.id <= feedback.id))
+    ) WHERE seq_num IS NULL
+  `).catch((e: any) => console.warn("feedback.seq_num backfill skipped:", e?.message || e))
+  await c.execute("CREATE INDEX IF NOT EXISTS feedback_seq_idx ON feedback (project_id, seq_num)")
+    .catch((e: any) => console.warn("feedback_seq_idx skipped:", e?.message || e))
   // KLA-145: tenant COGS columns for the AI-call ledger. Keep these before any tenant summary
   // query/index can reference them, or established DBs boot with "no such column: account_id".
   if (needCol("ai_calls", "account_id")) await c.execute("ALTER TABLE ai_calls ADD COLUMN account_id TEXT")
@@ -2067,6 +2082,14 @@ export async function insertFeedback(f: FeedbackInsert): Promise<string> {
            f.annotations != null ? JSON.stringify(f.annotations) : null,
            f.source ?? null, now, status],
   })
+  // KLA-200: assign per-project sequential number immediately after insert
+  await db!.execute({
+    sql: `UPDATE feedback SET seq_num = (
+      SELECT COUNT(*) FROM feedback f2
+      WHERE f2.project_id = ? AND (f2.created_at < ? OR (f2.created_at = ? AND f2.id <= ?))
+    ) WHERE id = ? AND seq_num IS NULL`,
+    args: [f.projectId, now, now, id, id],
+  }).catch((e: any) => console.warn("seq_num assign skipped:", e?.message || e))
   return id
 }
 
@@ -3360,6 +3383,8 @@ export async function feedbackById(projectId: string, id: string): Promise<any |
     recurrenceDatesJson: x.recurrence_dates_json != null ? String(x.recurrence_dates_json) : null,
     lastSeenAt: x.last_seen_at != null ? Number(x.last_seen_at) : null,
     clientContext: x.client_context_json != null ? safeJsonParse(x.client_context_json) : null,
+    // KLA-200: human-readable sequential number
+    seqNum: x.seq_num != null ? Number(x.seq_num) : null,
   }
 }
 
@@ -3531,7 +3556,8 @@ export async function listTriageFeedback(projectId: string): Promise<any[]> {
       title: String(bug?.title || x.observation || "Untitled report"),
       observation: x.observation != null ? String(x.observation) : null,
       sentiment: x.sentiment != null ? String(x.sentiment) : null,
-      severity: x.severity != null ? String(x.severity) : null,
+      // KLA-168: use priority (renamed from severity); fall back to severity for legacy rows
+      priority: (x.priority ?? x.severity) != null ? String(x.priority ?? x.severity) : null,
       urlPath: x.url_path != null ? String(x.url_path) : null,
       screenshotId: x.screenshot_id != null ? String(x.screenshot_id) : null,
       suggestedBug: bug,
@@ -3539,6 +3565,8 @@ export async function listTriageFeedback(projectId: string): Promise<any[]> {
       simName: x.sim_name != null ? String(x.sim_name) : null,
       recurrence: Number(x.recurrence_count ?? 1),
       createdAt: Number(x.created_at),
+      // KLA-200: human-readable sequential number
+      seqNum: x.seq_num != null ? Number(x.seq_num) : null,
     }
   })
 }
@@ -3632,6 +3660,8 @@ export async function listTicketsPaginated(
       createdAt: Number(x.created_at),
       updatedAt: x.updated_at != null ? Number(x.updated_at) : null,
       source: x.sim_id != null ? "sim" : (x.source === "manual" ? "manual" : "human"),
+      // KLA-200: human-readable sequential number
+      seqNum: x.seq_num != null ? Number(x.seq_num) : null,
     }
   })
 
