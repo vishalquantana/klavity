@@ -1270,12 +1270,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       <span class="sw-lbl">Project</span>
       <select class="proj-select" id="projSwitch" aria-label="Active project"></select>
     </div>
-    <div class="newproj hide" id="newProj">
-      <input id="newProjName" type="text" placeholder="New project name" maxlength="60" />
-      <button class="btn btn-indigo btn-sm" id="newProjCreate">Create</button>
-      <button class="btn btn-ghost btn-sm" id="newProjCancel">Cancel</button>
-    </div>
-    <div class="msg" id="newProjMsg"></div>
+    <!-- KLA-292: new project inline form moved to #npBg modal -->
   </div>
   <div class="right">
     <!-- Guided tour re-run affordance — small, always available -->
@@ -2807,16 +2802,18 @@ function renderSwitcher() {
     location.href = "/dashboard?project=" + encodeURIComponent(pid)
   }
 }
-function openNewProject() { $("projSwitcher").classList.add("hide"); $("newProj").classList.remove("hide"); $("newProjName").value = ""; $("newProjMsg").textContent = ""; $("newProjName").focus() }
-function closeNewProject() { $("newProj").classList.add("hide"); $("projSwitcher").classList.remove("hide"); $("newProjMsg").textContent = "" }
+// KLA-292: new client project modal
+function openNewProject() { $("npName").value = ""; $("npUrl").value = ""; $("npMsg").textContent = ""; $("npCreate").disabled = false; $("npBg").classList.add("open"); $("npName").focus() }
+function closeNewProject() { $("npBg").classList.remove("open") }
 async function createProject() {
-  const name = $("newProjName").value.trim()
-  if (!name) { $("newProjMsg").style.color = "var(--rose)"; $("newProjMsg").textContent = "Enter a project name."; return }
-  $("newProjCreate").disabled = true
-  const r = await fetch("/api/projects", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name }) })
+  const name = $("npName").value.trim()
+  if (!name) { $("npMsg").style.color = "var(--rose)"; $("npMsg").textContent = "Enter a project name."; return }
+  const siteUrlRaw = $("npUrl").value.trim()
+  $("npCreate").disabled = true
+  const r = await fetch("/api/projects", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, siteUrl: siteUrlRaw || undefined }) })
   const d = await r.json().catch(() => ({}))
-  $("newProjCreate").disabled = false
-  if (d.error || !d.project) { $("newProjMsg").style.color = "var(--rose)"; $("newProjMsg").textContent = d.error || "Couldn't create project."; return }
+  $("npCreate").disabled = false
+  if (d.error || !d.project) { $("npMsg").style.color = "var(--rose)"; $("npMsg").textContent = d.error || "Couldn't create project."; return }
   location.href = "/dashboard?project=" + encodeURIComponent(d.project.id)
 }
 
@@ -5422,9 +5419,11 @@ $("inviteBtn") && ($("inviteBtn").onclick = async () => {
   $("inviteEmail").value = ""; $("inviteMsg").style.color="var(--green)"; $("inviteMsg").textContent = `Invited ${email} — they can sign in now.`
   state.members = d.members; renderMembers(state.active && state.active.role === "admin")
 })
-$("newProjCreate") && ($("newProjCreate").onclick = createProject)
-$("newProjCancel") && ($("newProjCancel").onclick = closeNewProject)
-$("newProjName") && ($("newProjName").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); createProject() } else if (e.key === "Escape") closeNewProject() })
+// KLA-292 new-project modal wiring
+$("npCreate") && ($("npCreate").onclick = createProject)
+$("npName") && ($("npName").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); createProject() } else if (e.key === "Escape") closeNewProject() })
+$("npUrl") && ($("npUrl").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); createProject() } else if (e.key === "Escape") closeNewProject() })
+$("npBg") && ($("npBg").onclick = (e) => { if (e.target === $("npBg")) closeNewProject() })
 $("logout").onclick = async () => { await fetch("/api/auth/logout", { method:"POST" }); location.href = "/" }
 
 // ── G1 session replay viewer (rrweb-player, lazy-loaded vendor asset) ─────────────────
@@ -6011,6 +6010,31 @@ load()
 <script>(function(){document.querySelectorAll('[data-ki]').forEach(function(e){try{e.innerHTML=kicon(e.getAttribute('data-ki'));}catch(x){}})})();</script>
 
 <!-- ═══ AutoSims modals — body-level so position:fixed covers the full viewport (KLA-147) ═══ -->
+
+<!-- KLA-292: New client project modal — name + optional site URL -->
+<div class="modal-bg" id="npBg" role="dialog" aria-modal="true" aria-labelledby="npTitle">
+  <div class="modal" style="max-width:480px">
+    <div class="mhead">
+      <h3 id="npTitle">New client project</h3>
+      <button class="mclose btn btn-ghost btn-sm" onclick="closeNewProject()" aria-label="Cancel">&#x2715;</button>
+    </div>
+    <p class="lead" style="margin-bottom:18px">Give the project a name and optionally paste the client&#8217;s site URL. You can change these at any time.</p>
+    <label style="display:block;margin-bottom:14px">
+      <span style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">Project name <span style="color:var(--rose)">*</span></span>
+      <input id="npName" type="text" maxlength="80" placeholder="e.g. Acme Corp &#x2014; Q3 audit" style="width:100%;box-sizing:border-box" />
+    </label>
+    <label style="display:block;margin-bottom:20px">
+      <span style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">Client site URL <span style="color:var(--paper-faint);font-weight:400">(optional)</span></span>
+      <input id="npUrl" type="url" placeholder="https://client.example.com" style="width:100%;box-sizing:border-box" />
+      <span class="mnote">Used by Sims to suggest personas and by AutoSims as the default start URL.</span>
+    </label>
+    <div class="row" style="gap:10px">
+      <button class="btn btn-indigo" id="npCreate">Create project</button>
+      <button class="btn btn-ghost" onclick="closeNewProject()">Cancel</button>
+    </div>
+    <div id="npMsg" style="margin-top:10px;font-size:13px"></div>
+  </div>
+</div>
 
 <!-- New Trail authoring modal -->
 <div class="modal-bg" id="ntBg">
