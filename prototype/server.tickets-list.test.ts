@@ -63,3 +63,35 @@ test("listTicketsPaginated: source filter sim vs human", async () => {
   const human = await listTicketsPaginated(P5, { source: "human" })
   expect(human.tickets.every(t => t.source === "human")).toBe(true)
 })
+
+test("listTicketsPaginated: server-side search matches title, observation, and description", async () => {
+  const project = `proj_tkl_search_${Date.now()}`
+  const title = await insertFeedback({ projectId: project, observation: "fallback text", suggestedBug: { title: "Checkout timeout", description: "Payment provider did not respond" } })
+  const observation = await insertFeedback({ projectId: project, observation: "The profile avatar is cropped" })
+  const notes = await insertFeedback({ projectId: project, observation: "Unrelated finding" })
+  await Promise.all([title, observation, notes].map(id => updateFeedbackMeta(project, id, { status: "open" })))
+  await db!.execute({ sql: "UPDATE feedback SET notes=? WHERE id=?", args: ["Description mentions Safari only", notes] })
+
+  expect((await listTicketsPaginated(project, { search: "checkout" })).tickets.map(t => t.id)).toEqual([title])
+  expect((await listTicketsPaginated(project, { search: "AVATAR" })).tickets.map(t => t.id)).toEqual([observation])
+  expect((await listTicketsPaginated(project, { search: "safari" })).tickets.map(t => t.id)).toEqual([notes])
+})
+
+test("listTicketsPaginated: search remains tenant-scoped and paginated", async () => {
+  const project = `proj_tkl_search_page_${Date.now()}`
+  const otherProject = `proj_tkl_search_other_${Date.now()}`
+  for (let i = 0; i < 3; i++) {
+    const id = await insertFeedback({ projectId: project, observation: `Shared search term ${i}` })
+    await updateFeedbackMeta(project, id, { status: "open" })
+  }
+  const other = await insertFeedback({ projectId: otherProject, observation: "Shared search term private" })
+  await updateFeedbackMeta(otherProject, other, { status: "open" })
+
+  const firstPage = await listTicketsPaginated(project, { search: "shared search term", limit: 2, page: 1 })
+  const secondPage = await listTicketsPaginated(project, { search: "shared search term", limit: 2, page: 2 })
+  expect(firstPage.total).toBe(3)
+  expect(firstPage.totalPages).toBe(2)
+  expect(firstPage.tickets).toHaveLength(2)
+  expect(secondPage.tickets).toHaveLength(1)
+  expect([...firstPage.tickets, ...secondPage.tickets].some(t => t.id === other)).toBe(false)
+})
