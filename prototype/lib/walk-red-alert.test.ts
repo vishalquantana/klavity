@@ -6,7 +6,10 @@ const ctx: WalkRedAlertContext = {
   trailId: "trail_abc123",
   projectId: "proj_xyz789",
   runId: "run_111222",
-  reasons: ['step 2 (click "Add to cart"): RED', 'step 4 (assert "Order confirmed"): RED'],
+  reasons: [
+    'Step 2: clicking "Add to cart" — the action could not be completed.',
+    'Step 4: the check "Order confirmed" failed — the expected state wasn\'t found on the page.',
+  ],
   at: 1_718_000_000_000,
 }
 
@@ -26,18 +29,20 @@ describe("isInfraFailure", () => {
 })
 
 describe("buildWalkRedSlackPayload — regression (genuine RED)", () => {
-  test("fallback text contains trail name and 'regression'", () => {
+  test("fallback text contains trail name and failure indication", () => {
     const p = buildWalkRedSlackPayload(ctx)
     expect(p.text).toContain("Checkout flow")
-    expect(p.text).toContain("RED")
+    expect(p.text).toContain("failed")
     const fieldsText = JSON.stringify(p.blocks[1].fields)
-    expect(fieldsText).toContain("regression detected")
+    expect(fieldsText).toContain("regression")
   })
 
-  test("header block type is header and mentions RED", () => {
+  test("header block type is header and describes a walk failure", () => {
     const p = buildWalkRedSlackPayload(ctx)
     expect(p.blocks[0].type).toBe("header")
-    expect(p.blocks[0].text.text).toContain("RED")
+    // Header should describe the failure in plain language (contains "failed" or the RED emoji)
+    const headerText: string = p.blocks[0].text.text
+    expect(headerText.toLowerCase()).toMatch(/fail|red/)
   })
 
   test("fields include trail name, verdict, findings, and time", () => {
@@ -47,7 +52,7 @@ describe("buildWalkRedSlackPayload — regression (genuine RED)", () => {
     expect(fieldsText).toContain("RED")
     expect(fieldsText).toContain("Add to cart")
     expect(fieldsText).toContain("Order confirmed")
-    expect(fieldsText).toContain("Findings")
+    expect(fieldsText).toContain("What failed")
   })
 
   test("walk report link included when baseUrl provided and includes project query param", () => {
@@ -73,10 +78,12 @@ describe("buildWalkRedSlackPayload — regression (genuine RED)", () => {
   })
 
   test("single reason rendered correctly", () => {
-    const c2 = { ...ctx, reasons: ['step 1 (navigate): RED'] }
+    const reason = "Step 1: navigating — the action could not be completed."
+    const c2 = { ...ctx, reasons: [reason] }
     const p = buildWalkRedSlackPayload(c2)
     const fieldsText = JSON.stringify(p.blocks[1].fields)
-    expect(fieldsText).toContain("step 1 (navigate): RED")
+    expect(fieldsText).toContain("Step 1")
+    expect(fieldsText).toContain("navigating")
   })
 
   test("empty reasons shows fallback text", () => {
@@ -98,7 +105,7 @@ describe("buildWalkRedSlackPayload — infra (crash / browserUnavailable)", () =
   test("labels as infra/connection failure, NOT regression", () => {
     const p = buildWalkRedSlackPayload(infraCtx)
     const fieldsText = JSON.stringify(p.blocks[1].fields)
-    expect(fieldsText).toContain("infrastructure failure")
+    expect(fieldsText).toContain("infrastructure")
     expect(fieldsText).not.toContain("regression detected")
     expect(fieldsText).toContain("Cause")
   })
@@ -112,7 +119,7 @@ describe("buildWalkRedSlackPayload — infra (crash / browserUnavailable)", () =
   test("browserUnavailable alone (no failureKind) is treated as infra", () => {
     const p = buildWalkRedSlackPayload({ ...ctx, browserUnavailable: true })
     const fieldsText = JSON.stringify(p.blocks[1].fields)
-    expect(fieldsText).toContain("infrastructure failure")
+    expect(fieldsText).toContain("infrastructure")
   })
 })
 
