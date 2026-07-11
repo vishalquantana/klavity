@@ -2331,14 +2331,15 @@ export async function findFeedbackByIssueKey(projectId: string, issueKey: string
 export async function listRecentFeedbackForDedup(projectId: string, limit = 50): Promise<Array<{ id: string; title: string; observation: string }>> {
   const r = await db!.execute({
     sql: `SELECT id, observation, suggested_bug_json FROM feedback
-          WHERE project_id=? AND suggested_bug_json IS NOT NULL
+          WHERE project_id=?
           ORDER BY created_at DESC LIMIT ?`,
     args: [projectId, limit],
   })
   return r.rows.map((x: any) => {
     let title = ""
     try { title = String(JSON.parse(x.suggested_bug_json || "{}")?.title || "") } catch { title = "" }
-    return { id: String(x.id), title, observation: x.observation != null ? String(x.observation) : "" }
+    const observation = x.observation != null ? String(x.observation) : ""
+    return { id: String(x.id), title: title || observation.slice(0, 120), observation }
   })
 }
 

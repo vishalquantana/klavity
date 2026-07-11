@@ -23,8 +23,32 @@ export function issueKeyFor(parts: {
   return createHash("sha256").update(key).digest("hex").slice(0, 32)
 }
 
+export function normalizeReportText(text: string): string {
+  return (text || "")
+    .toLowerCase()
+    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/g, "<uuid>")
+    .replace(/\b\d{4}-\d{2}-\d{2}(?:[t ][\d:.+-]+z?)?\b/g, "<timestamp>")
+    .replace(/\b\d{10,}\b/g, "<id>")
+    .replace(/\b\d+(?:\.\d+)?\b/g, "<num>")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+export function humanReportIssueKeyFor(parts: {
+  projectId: string
+  urlPath: string
+  text: string
+}): string {
+  const key = [
+    parts.projectId,
+    normalizeUrlPath(parts.urlPath),
+    normalizeReportText(parts.text),
+  ].join("|")
+  return "human:" + createHash("sha256").update(key).digest("hex").slice(0, 26)
+}
+
 function trigrams(s: string): Set<string> {
-  const norm = (s || "").toLowerCase().replace(/\s+/g, " ").trim()
+  const norm = normalizeReportText(s)
   const out = new Set<string>()
   if (!norm) return out
   const padded = `  ${norm} `
