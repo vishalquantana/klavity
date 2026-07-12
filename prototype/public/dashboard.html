@@ -514,7 +514,27 @@ body[data-view="recurring"] .grid>.card[data-view~="recurring"]{grid-column:1/-1
 .ri-ticket-link{font-family:var(--mono);font-size:10px;letter-spacing:.04em;padding:3px 8px;border-radius:20px;background:var(--ink-3);color:var(--paper-faint);text-decoration:none;display:inline-flex;align-items:center;gap:4px;transition:background var(--mi-dur) ease,color var(--mi-dur) ease,transform var(--mi-press-dur)}
 .ri-ticket-link:hover{background:rgba(99,102,241,.12);color:var(--indigo)}
 .ri-ticket-link:active{transform:scale(.97)}
+/* B.6: per-row "Guard this" CTA + linked expectation label */
+.ri-guard-link{font-family:var(--mono);font-size:10px;letter-spacing:.04em;padding:3px 8px;border-radius:20px;background:rgba(219,39,119,.10);color:var(--rose);text-decoration:none;display:inline-flex;align-items:center;gap:4px;transition:background var(--mi-dur) ease,transform var(--mi-press-dur)}
+.ri-guard-link:hover{background:rgba(219,39,119,.18)}
+.ri-guard-link:active{transform:scale(.97)}
+.ri-exp-link{color:var(--indigo);text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+.ri-exp-link:hover{color:var(--paper)}
 .ri-section-desc{font-size:13px;color:var(--paper-faint);margin:-10px 0 16px;line-height:1.5;max-width:620px}
+/* ── B.6 unified Regression alarm banner ── */
+#regressionBanner{margin:0 0 18px}
+.rb-card{display:flex;align-items:flex-start;gap:12px;padding:14px 16px;border-radius:14px;background:rgba(219,39,119,.10);border:1px solid rgba(219,39,119,.30)}
+.rb-ico{color:var(--rose);flex-shrink:0;display:inline-flex;margin-top:1px}
+.rb-body{flex:1;min-width:0}
+.rb-title{font-size:14px;font-weight:600;color:var(--paper);line-height:1.4}
+.rb-sub{font-size:12.5px;color:var(--paper-faint);margin-top:3px}
+.rb-more{font-family:var(--mono);font-size:10px;color:var(--rose);background:rgba(219,39,119,.14);padding:1px 7px;border-radius:20px;margin-left:4px}
+.rb-actions{display:flex;align-items:center;gap:8px;flex-shrink:0;flex-wrap:wrap}
+.rb-btn{font-family:var(--body);font-size:12.5px;font-weight:600;padding:7px 12px;border-radius:9px;border:1px solid rgba(219,39,119,.35);background:transparent;color:var(--rose);cursor:pointer;display:inline-flex;align-items:center;gap:5px;transition:background var(--mi-dur) ease,transform var(--mi-press-dur)}
+.rb-btn:hover{background:rgba(219,39,119,.14)}
+.rb-btn:active{transform:scale(.97)}
+.rb-x{background:transparent;border:none;color:var(--paper-faint);cursor:pointer;display:inline-flex;padding:5px;border-radius:8px;transition:color var(--mi-dur) ease,background var(--mi-dur) ease}
+.rb-x:hover{color:var(--paper);background:var(--ink-3)}
 
 .card h2{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
 .card h2 .count{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--paper-faint);background:var(--ink-3);padding:2px 8px;border-radius:20px}
@@ -1439,6 +1459,10 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       <p class="lead" id="lead">Gathering what your Sims have been finding…</p>
     </div>
   </div>
+
+  <!-- B.6 unified Regression alarm banner — populated by renderRegressionBanner() when the shared
+       regression stream carries an un-dismissed event (memory / sim-reopen / guard). -->
+  <div id="regressionBanner" style="display:none"></div>
 
   <!-- First-run checklist (value-ordered, non-gated) — shown until all 5 are done or dismissed -->
   <div class="checklist hide" id="checklist" data-view="overview">
@@ -2392,6 +2416,8 @@ async function refreshAll() {
   }
   // KLA-200: open deep-linked ticket if present in ?ticket= param, after data has loaded
   maybeOpenDeepLinkTicket()
+  // B.6: surface the unified regression alarm banner (best-effort — never blocks the dashboard).
+  if (typeof renderRegressionBanner === "function") renderRegressionBanner()
 }
 
 // KLA-200: if the URL contains ?ticket=<id>, switch to the Tickets view and open that ticket's detail.
@@ -2641,14 +2667,24 @@ async function renderRecurringIssues() {
       if (lastSeen && lastSeen !== firstSeen) metaParts.push("last seen " + lastSeen)
       if (item.regressed && item.resolvedAt) metaParts.push("resolved " + ago(item.resolvedAt) + " → resurfaced")
       if (item.citedSimName) metaParts.push("filed by " + esc(item.citedSimName))
-      if (item.expectationStatus && item.expectationStatus !== "candidate") metaParts.push("expectation: " + esc(item.expectationStatus))
-      const ticketLink = item.feedbackId
-        ? `<a class="ri-ticket-link" href="#tickets" onclick="event.preventDefault();var nv=document.querySelector('.side .nv[data-go=\\'tickets\\']');if(nv)nv.click()" title="Open tickets view">${kicon('external-link',{size:11})} view ticket</a>`
+      // B.6: "expectation: validated" is no longer a dead end — it links to the guard/Expectations board.
+      if (item.expectationStatus && item.expectationStatus !== "candidate") {
+        metaParts.push('expectation: <a class="ri-exp-link" href="#settings" onclick="riGoGuard(event)" title="Open the Expectations board">' + esc(item.expectationStatus) + '</a>')
+      }
+      const fid = item.feedbackId ? String(item.feedbackId) : ""
+      // B.6: rows are actionable — click-through to the ticket, and a "Guard this" that opens the
+      // ticket drawer where the B.1 guard flow lives, pre-scoped to this issue. An issue that is
+      // already enforced (expectation status "enforced") is guarded, so it hides the CTA.
+      const ticketLink = fid
+        ? `<a class="ri-ticket-link" href="#tickets" data-ri-ticket="${esc(fid)}" onclick="riOpenTicket(event)" title="Open this ticket">${kicon('external-link',{size:11})} view ticket</a>`
+        : ""
+      const guardLink = (fid && item.expectationStatus !== "enforced")
+        ? `<a class="ri-guard-link" href="#tickets" data-ri-ticket="${esc(fid)}" onclick="riOpenTicket(event)" title="Turn this into an enforceable guard">${kicon('shield',{size:11})} Guard this</a>`
         : ""
       return `<div class="ri-item">
         <div class="ri-head">
           <div class="ri-title">${title}</div>
-          <div class="ri-chips">${regChip}${countChip}${priChip}${ticketLink}</div>
+          <div class="ri-chips">${regChip}${countChip}${priChip}${ticketLink}${guardLink}</div>
         </div>
         ${metaParts.length ? `<div class="ri-meta">${metaParts.join(" · ")}</div>` : ""}
         ${item.summary ? `<div class="ri-summary">${esc(item.summary)}</div>` : ""}
@@ -2657,6 +2693,75 @@ async function renderRecurringIssues() {
   } catch(e) {
     const el2 = $("recurringList"); if (el2) el2.innerHTML = `<div class="empty"><p>Couldn't load recurring issues.</p></div>`
   }
+}
+// B.6: open a recurring-issue row's ticket drawer (view-ticket + "Guard this" both route here — the
+// B.1 guard flow's "Guard this fix" button lives inside the drawer, pre-scoped to this issue).
+function riOpenTicket(ev) {
+  ev.preventDefault()
+  const fid = ev.currentTarget && ev.currentTarget.getAttribute("data-ri-ticket")
+  if (!fid) return
+  const nv = document.querySelector('.side .nv[data-go="tickets"]'); if (nv) nv.click()
+  const go = () => { if (typeof openSingleTicket === "function") openSingleTicket(fid) }
+  if ((state.tickets || []).find(x => String(x.id) === String(fid))) { go(); return }
+  fetch("/api/feedback/" + encodeURIComponent(fid), { credentials: "include" })
+    .then(r => r.ok ? r.json() : null).then(d => {
+      if (d && d.report) { if (!state.tickets) state.tickets = []; if (!state.tickets.find(x => x.id === d.report.id)) state.tickets.push(d.report) }
+      go()
+    }).catch(go)
+}
+// B.6: the "expectation: validated" label links to the guard/Expectations board (Settings view).
+function riGoGuard(ev) {
+  ev.preventDefault()
+  const nv = document.querySelector('.side .nv[data-go="settings"]'); if (nv) nv.click()
+  if (typeof loadExpectations === "function") loadExpectations()
+}
+
+// ── B.6 unified Regression alarm banner ──────────────────────────────────────────────
+// One red banner across the dashboard when the unified stream carries an un-dismissed regression
+// event (any of the three detectors: memory / sim-reopen / guard). Action buttons: open the ticket,
+// open the guard, or "Guard this" when no guard exists yet. Dismiss acknowledges the event server-side.
+let _regressionBannerLoaded = false
+async function renderRegressionBanner() {
+  const pid = curProjId(); if (!pid) return
+  const host = $("regressionBanner"); if (!host) return
+  try {
+    const r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/regression-events?limit=5")
+    if (!r.ok) { host.innerHTML = ""; host.style.display = "none"; return }
+    const d = await r.json()
+    const events = (d.events || [])
+    _regressionBannerLoaded = true
+    if (!events.length) { host.innerHTML = ""; host.style.display = "none"; return }
+    const e = events[0] // show the most recent; the count communicates the rest
+    const more = events.length > 1 ? ` <span class="rb-more">+${events.length - 1} more</span>` : ""
+    const fixed = e.firstFixedAt ? " · first fixed " + new Date(e.firstFixedAt).toISOString().slice(0,10) : ""
+    const cause = e.source === "guard" ? "an AutoSim guard caught it"
+      : e.source === "sim-reopen" ? "a Sim raised it again after it was resolved"
+      : "reported again after it was fixed"
+    const ticketBtn = e.feedbackId
+      ? `<button class="rb-btn" data-ri-ticket="${esc(String(e.feedbackId))}" onclick="riOpenTicket(event)">${kicon('external-link',{size:12})} Open ticket</button>`
+      : ""
+    const guardBtn = e.feedbackId
+      ? `<button class="rb-btn" data-ri-ticket="${esc(String(e.feedbackId))}" onclick="riOpenTicket(event)">${kicon('shield',{size:12})} ${e.expectationId ? "Open guard" : "Guard this"}</button>`
+      : `<button class="rb-btn" onclick="riGoGuard(event)">${kicon('shield',{size:12})} ${e.expectationId ? "Open guard" : "Guard this"}</button>`
+    host.innerHTML = `<div class="rb-card">
+      <span class="rb-ico">${kicon('triangle-alert',{size:15})}</span>
+      <div class="rb-body">
+        <div class="rb-title">Regression detected: ${esc(e.title || "an issue came back")}${fixed}${more}</div>
+        <div class="rb-sub">Why it fired: ${esc(cause)}.</div>
+      </div>
+      <div class="rb-actions">${ticketBtn}${guardBtn}
+        <button class="rb-x" title="Dismiss" data-reg-ack="${esc(String(e.id))}" onclick="ackRegression(event)">${kicon('x',{size:14})}</button>
+      </div>
+    </div>`
+    host.style.display = ""
+  } catch(e) { const h2 = $("regressionBanner"); if (h2) { h2.innerHTML = ""; h2.style.display = "none" } }
+}
+async function ackRegression(ev) {
+  ev.preventDefault(); ev.stopPropagation()
+  const id = ev.currentTarget && ev.currentTarget.getAttribute("data-reg-ack")
+  const pid = curProjId(); if (!id || !pid) return
+  await fetch("/api/projects/" + encodeURIComponent(pid) + "/regression-events/" + encodeURIComponent(id) + "/ack", { method: "POST" }).catch(() => {})
+  renderRegressionBanner()
 }
 // Lazy-load each thumbnail via the same short-lived signed link the Tickets view uses; click opens full size.
 function loadTriageShots(host) {

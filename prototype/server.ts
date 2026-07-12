@@ -59,6 +59,7 @@ import { createLabel, listLabels, updateLabel, deleteLabel, attachLabel, detachL
 import { suggestLabelsForFeedback } from "./lib/label-suggest"
 import { validateAssertionDraft, normalizeCheckpointInput } from "./lib/assertion-spec"
 import { buildRecurrenceMemory, listProjectRecurringIssues, type RecurrenceMemory } from "./lib/recurrence-memory"
+import { publishRegressionEvent, listRegressionEvents, acknowledgeRegressionEvent } from "./lib/regression-events"
 import { publishBlogPost, SLUG_RE, type PublishInput } from "./lib/blog-publish"
 import { getExtractModel } from "./lib/extract-model"
 import { parseJSON } from "./lib/parse-json"
@@ -2202,6 +2203,19 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                 // filed it (the "cited virtual customer" — a Sim persona or a previous human reporter).
                 try { recurrenceMem = await buildRecurrenceMemory(db!, dedupedInto, projectId) }
                 catch (e: any) { console.warn("[recurrence-memory] build skipped:", e?.message || e) }
+                // B.6 unified regression alarm — MEMORY detector: this repeat deduped back onto a
+                // cluster that was already resolved (resurfaced after a fix). Publish into the shared
+                // regression stream (throttled/deduped per issue) → dashboard banner + Slack/email.
+                if (db && recurrenceMem?.regressed && recurrenceMem.issueKey) {
+                  void publishRegressionEvent({
+                    projectId, issueKey: recurrenceMem.issueKey, source: "memory",
+                    title: recurrenceMem.occurrences?.[0]?.title || observation || "recurring issue",
+                    feedbackId: dedupedInto, expectationId: recurrenceMem.expectationId,
+                    firstFixedAt: recurrenceMem.resolvedAt, at: seenAt,
+                    baseUrl: process.env.KLAV_BASE_URL || "",
+                    evidence: { occurrences: recurrenceMem.count, firstSeenAt: recurrenceMem.firstSeenAt },
+                  }, { db }).catch(() => {})
+                }
               } else {
                 feedbackId = await insertFeedback({
                   projectId, simId, actorEmail: actor, urlHost, urlPath, sourceReferrer: sourceReferrer || null,
@@ -3020,6 +3034,20 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           await rebuildInsightsJson(simId)
           opsApplied += res.traitWrites.length
           await insertActivity({ projectId, type: "sim_evolved", actorEmail: meT, simId, meta: { transcriptId, ops: res.traitWrites.length } })
+          // B.6 unified regression alarm — SIM-REOPEN detector: the reconcile emitted a `reopen` op,
+          // meaning a Sim raised a previously-resolved complaint again. Publish into the shared
+          // regression stream (deduped per issue) → dashboard banner + Slack/email within the hour.
+          if (db && reopenIds.size > 0) {
+            for (const traitId of reopenIds) {
+              const reopened = res.traitWrites.find((w) => w.trait.id === traitId)
+              void publishRegressionEvent({
+                projectId, issueKey: `sim-reopen:${simId}:${traitId}`, source: "sim-reopen",
+                title: (reopened?.trait?.text || "resolved complaint resurfaced").slice(0, 200),
+                feedbackId: null, at: Date.now(), baseUrl: process.env.KLAV_BASE_URL || "",
+                evidence: { simId, traitId, transcriptId },
+              }, { db }).catch(() => {})
+            }
+          }
         }
 
         return json({
@@ -5255,7 +5283,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return json({ project: { id: created.id, name: created.name, accountId: created.accountId, status: created.status, siteUrl: created.siteUrl, role: "admin" } }, 201)
       }
       // Project detail + members (projectAccess-gated) and project-scoped invite (R4) + monitored-urls (P3b) + connectors.
-      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/triage|\/tickets(?:\/bulk)?|\/recurring|\/replays|\/widget-status|\/share-token|\/labels(?:\/[^/]+)?|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/test)?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send|\/trails-autofile)?$/)
+      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/triage|\/tickets(?:\/bulk)?|\/recurring|\/regression-events(?:\/[^/]+\/ack)?|\/replays|\/widget-status|\/share-token|\/labels(?:\/[^/]+)?|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/test)?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send|\/trails-autofile)?$/)
       if (projMatch) {
         const pid = projMatch[1]
         const sub = projMatch[2] || ""
@@ -6152,6 +6180,27 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const limit = Math.min(200, Math.max(1, Number(url.searchParams.get("limit") || "50")))
           const recurring = await listProjectRecurringIssues(db, proj.id, { limit })
           return json({ projectId: proj.id, recurring })
+        }
+
+        // B.6 unified Regression alarm feed — GET /api/projects/:id/regression-events
+        // Recent regression events (all three detectors: memory / sim-reopen / guard) for the
+        // dashboard red banner. Unacknowledged by default; ?all=1 includes dismissed. Project-scoped.
+        if (req.method === "GET" && sub === "/regression-events") {
+          if (!db) return json({ error: "Database unavailable." }, 503)
+          const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit") || "20")))
+          const includeAcknowledged = url.searchParams.get("all") === "1"
+          const events = await listRegressionEvents(db, proj.id, { limit, includeAcknowledged })
+          return json({ projectId: proj.id, events })
+        }
+        // POST /api/projects/:id/regression-events/:eid/ack — dismiss a regression banner. Any member.
+        {
+          const ackMatch = sub.match(/^\/regression-events\/([^/]+)\/ack$/)
+          if (req.method === "POST" && ackMatch) {
+            if (!db) return json({ error: "Database unavailable." }, 503)
+            const ok = await acknowledgeRegressionEvent(db, proj.id, ackMatch[1], Date.now())
+            if (!ok) return json({ error: "Not found." }, 404)
+            return json({ ok: true })
+          }
         }
 
         if (req.method === "GET" && sub === "") {
