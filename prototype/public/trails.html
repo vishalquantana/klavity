@@ -160,6 +160,13 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 .ec-badge.recur{background:rgba(217,131,36,.16);color:var(--amber)}
 .ec-badge.enforced-ok{background:rgba(15,157,107,.14);color:var(--green)}
 .exp-card .ec-meta{font-family:var(--mono);font-size:11px;color:var(--paper-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* B.10: progress hint on Seen-once cards + enriched source chips / grounded quote / Trail reference */
+.exp-card .ec-progress{display:flex;align-items:flex-start;gap:5px;font-size:11px;line-height:1.35;color:var(--amber);margin-top:6px}
+.exp-card .ec-progress svg{flex-shrink:0;margin-top:1px}
+.exp-card .ec-quote{font-size:11px;line-height:1.4;color:var(--paper-faint);font-style:italic;margin-top:7px;border-left:2px solid var(--line);padding-left:8px}
+.exp-card .ec-sources{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px}
+.exp-card .ec-src-chip{display:inline-flex;align-items:center;gap:4px;font-family:var(--mono);font-size:9px;letter-spacing:.05em;text-transform:uppercase;padding:3px 7px;border-radius:20px;background:var(--ink-2);border:1px solid var(--line);color:var(--paper-faint)}
+.exp-card .ec-trail-ref{display:inline-flex;align-items:center;gap:4px;font-family:var(--mono);font-size:9px;letter-spacing:.05em;text-transform:uppercase;padding:3px 8px;border-radius:20px;background:rgba(99,102,241,.1);color:var(--indigo)}
 .exp-card .ec-acts{margin-top:10px}
 /* enforce confirm inline panel */
 .exp-card .ec-confirm{margin-top:10px;background:var(--ink-2);border:1px solid var(--line);border-radius:10px;padding:11px 12px}
@@ -408,26 +415,26 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
     </div>
   </div>
 
-  <!-- KLA-163: Expectations board hidden until first Trail exists -->
+  <!-- B.10 (KLA-250): Guards board — always shown (no longer hidden until the first Trail exists). -->
   <div id="expSection">
     <div style="margin-top:22px;margin-bottom:8px;display:flex;align-items:baseline;gap:10px">
-      <h2 style="font-family:var(--display);font-weight:450;font-size:22px;letter-spacing:-.02em">Expectations</h2>
-      <span style="color:var(--paper-faint);font-size:14px">Recurring issues spotted across reports — promote to add as permanent checks to your AutoSims</span>
+      <h2 style="font-family:var(--display);font-weight:450;font-size:22px;letter-spacing:-.02em">Guards</h2>
+      <span style="color:var(--paper-faint);font-size:14px">Things Klavity re-checks forever because they broke once — from Seen once to Confirmed to a Guarded AutoSim check</span>
     </div>
     <div class="exp-board">
       <div class="exp-col">
-        <h2>Candidate <span class="count" id="expCandCount">0</span></h2>
-        <p class="card-hint" style="margin-top:0">Spotted once — watching for recurrence</p>
+        <h2>Seen once <span class="count" id="expCandCount">0</span></h2>
+        <p class="card-hint" style="margin-top:0">Flagged once — waiting for a second source or more sightings</p>
         <div id="expCand"></div>
       </div>
       <div class="exp-col">
-        <h2>Validated <span class="count" id="expValidCount">0</span></h2>
-        <p class="card-hint" style="margin-top:0">Seen multiple times — ready to add as a check</p>
+        <h2>Confirmed <span class="count" id="expValidCount">0</span></h2>
+        <p class="card-hint" style="margin-top:0">A second source agreed, or it recurred — ready to guard</p>
         <div id="expValid"></div>
       </div>
       <div class="exp-col">
-        <h2>Enforced <span class="count" id="expEnfCount">0</span></h2>
-        <p class="card-hint" style="margin-top:0">Added as an automated assert step in your AutoSims</p>
+        <h2>Guarded <span class="count" id="expEnfCount">0</span></h2>
+        <p class="card-hint" style="margin-top:0">Guarded as an automated check in one of your AutoSims</p>
         <div id="expEnf"></div>
       </div>
       <div class="exp-col">
@@ -1939,7 +1946,10 @@ async function render(d){
   $("precBanner").style.display = _show
   $("trailsCardHead").style.display = _show
   $("walksGrid").style.display = _show
-  $("expSection").style.display = _show
+  // B.10 (KLA-250): the Guards board is NO LONGER hidden until the first Trail exists — a Snap-only
+  // customer accumulates guards from their own reports before they ever record an AutoSim, and must
+  // see them. The board carries its own empty states, so showing it with zero trails is safe.
+  $("expSection").style.display = ""
 
   // precision
   const p = d.precision || {}
@@ -2099,12 +2109,46 @@ function renderExpBadges(corroboration) {
   return html
 }
 
+// B.10: plain-language progress-to-Confirmed hint for a Seen-once card, mirroring
+// lib/expectations.validationProgress ((snap && sim) || recurrence>=3).
+function expProgressHint(corr) {
+  var c = { snap: !!(corr && corr.snap), sim: !!(corr && corr.sim), recurrence: Math.max(0, Number(corr && corr.recurrence || 0)) }
+  var n = 3
+  if ((c.snap && c.sim) || c.recurrence >= n) return null
+  var more = Math.max(1, n - c.recurrence)
+  var sTail = more + " more sighting" + (more === 1 ? "" : "s")
+  if (c.snap !== c.sim) { var missing = c.snap ? "a Sim" : "a human report"; return "needs a second source (" + missing + ") — or " + sTail }
+  return "needs a second source (a human report and a Sim) — or " + sTail
+}
+
+// B.10: enriched source chips + grounded quote from the enriched GET /api/expectations payload.
+function expSourcesHtml(exp) {
+  var srcs = (exp && exp.sources) || []; if (!srcs.length) return ""
+  var quote = "", chips = []
+  srcs.forEach(function(s) {
+    if (!quote && s.groundedQuote) quote = String(s.groundedQuote)
+    var label = s.kind === "report" ? "report" : (s.kind === "sim" ? "Sim" : "finding")
+    var ic = s.kind === "report" ? window.kicon("message-circle", { size: 10 }) : window.kicon("bot", { size: 10 })
+    chips.push('<span class="ec-src-chip" title="' + esc(s.title || label) + '">' + ic + ' ' + esc(label) + '</span>')
+  })
+  var out = ""
+  if (quote) out += '<div class="ec-quote">&ldquo;' + esc(quote.length > 140 ? quote.slice(0, 140) + "…" : quote) + '&rdquo;</div>'
+  if (chips.length) out += '<div class="ec-sources">' + chips.join("") + '</div>'
+  return out
+}
+
 function expCardHtml(exp) {
   var meta = [exp.area, exp.urlPath].filter(Boolean).join(" · ")
   var badges = renderExpBadges(exp.corroboration)
   var html = '<div class="ec-title">'+esc(exp.title)+'</div>'
   if (badges) html += '<div class="ec-badges">'+badges+'</div>'
   if (meta)   html += '<div class="ec-meta">'+esc(meta)+'</div>'
+  // B.10: progress hint on Seen-once (candidate) cards.
+  if (exp.status === "candidate") {
+    var hint = (exp.progress && exp.progress.hint && !exp.progress.ready) ? exp.progress.hint : expProgressHint(exp.corroboration)
+    if (hint) html += '<div class="ec-progress">' + window.kicon("clock", { size: 11 }) + ' ' + esc(hint) + '</div>'
+  }
+  html += expSourcesHtml(exp)
   return html
 }
 
@@ -2255,9 +2299,9 @@ function renderExpectations(expectations) {
     return '<div class="empty"><p>' + esc(text) + '</p></div>'
   }
 
-  // Candidate column
+  // Seen-once column
   var candEl = $("expCand")
-  candEl.innerHTML = cand.length ? "" : emptyExp("No candidates yet.")
+  candEl.innerHTML = cand.length ? "" : emptyExp("Nothing seen yet — issues land here the first time a report or a Sim flags them.")
   cand.forEach(function(exp) {
     var card = document.createElement("div")
     card.className = "exp-card"
@@ -2266,9 +2310,9 @@ function renderExpectations(expectations) {
     candEl.appendChild(card)
   })
 
-  // Validated column — Enforce + Retire (B.9: "keeps history, removes the check").
+  // Confirmed column — Enforce + Retire (B.9: "keeps history, removes the check").
   var validEl = $("expValid")
-  validEl.innerHTML = valid.length ? "" : emptyExp("No validated expectations yet.")
+  validEl.innerHTML = valid.length ? "" : emptyExp("Nothing confirmed yet — an issue moves here once a second source agrees, or it recurs enough.")
   valid.forEach(function(exp) {
     var card = document.createElement("div")
     card.className = "exp-card"; card._exp = exp
@@ -2283,16 +2327,24 @@ function renderExpectations(expectations) {
     card.querySelector("[data-retire]").onclick = function() { retireExpectation(exp.id, card) }
   })
 
-  // Enforced column — Edit-in-place / Un-enforce / Retire (B.9).
+  // Guarded column — Edit-in-place / Un-enforce / Retire (B.9).
   var enfEl = $("expEnf")
-  enfEl.innerHTML = enf.length ? "" : emptyExp("Nothing enforced yet.")
+  enfEl.innerHTML = enf.length ? "" : emptyExp("Nothing guarded yet — confirm an issue, then guard it so an AutoSim catches it if it ever comes back.")
   enf.forEach(function(exp) {
     var card = document.createElement("div")
     card.className = "exp-card"; card._exp = exp
+    // B.10: show the guard's Trail NAME + step POSITION (never the raw ts_ UUID). Falls back to a
+    // plain "guard added" chip when the Trail is unresolved.
+    var lt = exp.linkedTrail
+    var trailLbl = ""
+    if (lt && lt.trailName) {
+      var posTxt = (lt.stepPosition && lt.stepCount) ? (" · step " + lt.stepPosition + " of " + lt.stepCount) : (lt.stepPosition ? (" · step " + lt.stepPosition) : "")
+      trailLbl = '<span class="ec-trail-ref" title="This guard runs as an assert step in this AutoSim">' + window.kicon("map-pin", { size: 11 }) + ' ' + esc(lt.trailName) + posTxt + '</span>'
+    } else if (exp.enforcedStepId) {
+      trailLbl = '<span class="ec-meta" style="margin-left:4px;font-size:10px">guard step added</span>'
+    }
     card.innerHTML = expCardHtml(exp)
-    + (exp.enforcedStepId
-        ? '<div class="ec-badges" style="margin-top:8px"><span class="ec-badge enforced-ok">enforced</span><span class="ec-meta" style="margin-left:4px;font-size:10px">'+esc(exp.enforcedStepId)+'</span></div>'
-        : '<div class="ec-badges" style="margin-top:8px"><span class="ec-badge enforced-ok">enforced</span></div>')
+    + '<div class="ec-badges" style="margin-top:8px"><span class="ec-badge enforced-ok">guarded</span>' + trailLbl + '</div>'
     + '<div class="ec-acts" style="margin-top:10px;display:flex;gap:7px;flex-wrap:wrap">'
     + (exp.enforcedStepId ? '<button class="btn btn-ghost" style="font-size:12px;padding:7px 13px" data-edit-guard>'+window.kicon("pencil",{size:12})+' Edit</button>' : '')
     + '<button class="btn btn-ghost" style="font-size:12px;padding:7px 13px" data-unenforce title="Demote to validated — keeps history, stops the check">Un-enforce</button>'
@@ -2305,7 +2357,7 @@ function renderExpectations(expectations) {
     card.querySelector("[data-retire]").onclick = function() { retireExpectation(exp.id, card) }
   })
 
-  // Retired column (B.9) — cleared guards keep their history; a fresh signal resurrects to Candidate.
+  // Retired column (B.9) — cleared guards keep their history; a fresh signal resurrects to Seen once.
   var retEl = $("expRet")
   retEl.innerHTML = ret.length ? "" : emptyExp("Nothing retired.")
   ret.forEach(function(exp) {
@@ -2313,7 +2365,7 @@ function renderExpectations(expectations) {
     card.className = "exp-card retired"; card._exp = exp
     card.innerHTML = expCardHtml(exp)
     + '<div class="ec-badges" style="margin-top:8px"><span class="ec-badge retired">retired</span></div>'
-    + '<div class="ec-explain">Check removed; history kept. If this issue resurfaces (a fresh Snap or Sim signal), it comes back as a Candidate.</div>'
+    + '<div class="ec-explain">Check removed; history kept. If this issue resurfaces (a fresh report or Sim signal), it comes back to Seen once.</div>'
     + '<div class="ec-msg"></div>'
     retEl.appendChild(card)
   })

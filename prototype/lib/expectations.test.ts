@@ -1,7 +1,7 @@
 // prototype/lib/expectations.test.ts
 import { test, expect } from "bun:test"
 import { mergeSource, shouldValidate, nextStatus, matchExpectation, matchExpectationWithNearMisses, NEAR_MISS_MIN, RECURRENCE_VALIDATE_N,
-  urlPathOf, trailUrlPathScore, pickDefaultTrail } from "./expectations"
+  urlPathOf, trailUrlPathScore, pickDefaultTrail, validationProgress } from "./expectations"
 
 test("mergeSource sets the flag and bumps recurrence", () => {
   const c0 = { snap: false, sim: false, recurrence: 0 }
@@ -15,6 +15,34 @@ test("shouldValidate: cross-source agreement OR recurrence>=N", () => {
   expect(shouldValidate({ snap: true, sim: true, recurrence: 1 })).toBe(true)
   expect(shouldValidate({ snap: true, sim: false, recurrence: 1 })).toBe(false)
   expect(shouldValidate({ snap: false, sim: true, recurrence: RECURRENCE_VALIDATE_N })).toBe(true)
+})
+
+// B.10 (KLA-250): the progress-to-Confirmed hint must be consistent with shouldValidate's inputs.
+test("validationProgress: ready once shouldValidate holds; else the shortest remaining path", () => {
+  // Already qualifies (both sources) → ready, no waiting hint.
+  const both = validationProgress({ snap: true, sim: true, recurrence: 1 })
+  expect(both.ready).toBe(true)
+  expect(shouldValidate({ snap: true, sim: true, recurrence: 1 })).toBe(true)
+
+  // One source (snap only) → needs a Sim as the missing second source.
+  const snapOnly = validationProgress({ snap: true, sim: false, recurrence: 1 })
+  expect(snapOnly.ready).toBe(false)
+  expect(snapOnly.hint).toContain("a Sim")
+
+  // One source (sim only) → needs a human report.
+  const simOnly = validationProgress({ snap: false, sim: true, recurrence: 1 })
+  expect(simOnly.ready).toBe(false)
+  expect(simOnly.hint).toContain("a human report")
+
+  // No source, recurrence 2 → one more sighting reaches N=3.
+  const none2 = validationProgress({ snap: false, sim: false, recurrence: 2 })
+  expect(none2.ready).toBe(false)
+  expect(none2.hint).toContain("1 more sighting")
+  expect(none2.hint).not.toContain("1 more sightings")
+
+  // Recurrence already at N → ready (consistent with shouldValidate).
+  const recN = validationProgress({ snap: false, sim: false, recurrence: RECURRENCE_VALIDATE_N })
+  expect(recN.ready).toBe(true)
 })
 
 test("nextStatus promotes candidate only; enforced is terminal", () => {

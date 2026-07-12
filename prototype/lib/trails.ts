@@ -162,6 +162,16 @@ export async function listTrailSteps(projectId: string, trailId: string): Promis
   return r.rows.map(rowToStep)
 }
 
+/**
+ * B.10 (KLA-250): fetch a single trail step by id (project-scoped). Used by the enriched
+ * GET /api/expectations/:id route to resolve an enforced guard's step → its Trail id + idx, so the
+ * board can show "Trail name · step N of M" instead of a raw ts_ UUID. Returns null when missing.
+ */
+export async function getTrailStepById(projectId: string, stepId: string): Promise<TrailStep | null> {
+  const r = await db!.execute({ sql: `SELECT * FROM trail_steps WHERE project_id=? AND id=?`, args: [projectId, stepId] })
+  return r.rows.length ? rowToStep(r.rows[0]) : null
+}
+
 import type { LocatorCacheRow } from "./trails-types"
 
 function rowToCache(r: any): LocatorCacheRow {
