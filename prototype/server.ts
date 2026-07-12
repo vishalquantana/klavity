@@ -357,10 +357,14 @@ async function extractPersonas(transcript: string, ctx?: { email?: string | null
 async function reactToPage(persona: any, imageB64: string, mediaType: string, pageUrl: string, ctx?: { email?: string | null; projectId?: string | null }) {
   // H4/LLM01: the persona is our own trusted data, but the page URL and the screenshot itself are
   // attacker-influenceable — delimit the URL and instruct the model to ignore instructions in page data.
+  // Current-date awareness: without this the model assumes its training-era "current year" (e.g. 2024)
+  // and wrongly flags valid future-looking dates on the page as errors (a 2026 "Founded Year" reported as
+  // "impossible, it's 2024"). Stamp today's real date at call time so date reasoning is grounded in now.
+  const today = new Date().toISOString().slice(0, 10)
   const { content, usage } = await chat([
     { role: "system", content: REACT_SYS + UNTRUSTED_GUARD },
     { role: "user", content: [
-      { type: "text", text: "You are this persona:\n" + JSON.stringify(persona, null, 2) + `\n\nReact to this screenshot. The page URL (untrusted) is:\n` + wrapUntrusted(pageUrl || "(unknown URL)") },
+      { type: "text", text: `Today's date is ${today}. Treat this as the current date and year when judging whether any dates shown on the page are valid, impossible, or out of range — do NOT assume an earlier year.\n\n` + "You are this persona:\n" + JSON.stringify(persona, null, 2) + `\n\nReact to this screenshot. The page URL (untrusted) is:\n` + wrapUntrusted(pageUrl || "(unknown URL)") },
       { type: "image_url", image_url: { url: `data:${mediaType};base64,${imageB64}` } },
     ] },
   ], 2500, false, { type: "react", feature: "sim-react", ...ctx })
