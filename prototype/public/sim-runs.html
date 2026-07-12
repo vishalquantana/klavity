@@ -366,6 +366,161 @@ h1 {
   color: #9ae6b4;
 }
 
+.obs-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 20px;
+  background: rgba(99,102,241,.14);
+  color: var(--indigo);
+  transition: background 0.12s ease, transform 0.12s ease;
+}
+.obs-link:hover {
+  background: rgba(99,102,241,.24);
+  transform: translateY(-1px);
+}
+
+.run-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+.run-rerun-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--body);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--paper);
+  background: var(--ink-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 7px 13px;
+  cursor: pointer;
+  transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+.run-rerun-btn:hover:not(:disabled) {
+  border-color: var(--indigo);
+  transform: translateY(-1px);
+}
+.run-rerun-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.run-rerun-btn:disabled {
+  opacity: .55;
+  cursor: default;
+}
+.run-rerun-msg {
+  font-size: 12px;
+  color: var(--paper-dim);
+}
+
+.shot-host {
+  margin-bottom: 22px;
+}
+.shot-host:empty {
+  margin-bottom: 0;
+}
+.shot-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--paper-faint);
+  margin-bottom: 8px;
+}
+.shot-frame {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--ink);
+}
+.shot-img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.shot-loading {
+  padding: 26px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--paper-faint);
+}
+
+.diff-host:empty {
+  display: none;
+}
+.diff-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--ink);
+  padding: 16px;
+  margin-bottom: 22px;
+}
+.diff-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+.diff-when {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--paper-faint);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.diff-empty {
+  font-size: 13px;
+  color: var(--paper-faint);
+}
+.diff-group {
+  margin-bottom: 12px;
+}
+.diff-group:last-child {
+  margin-bottom: 0;
+}
+.diff-group-hd {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.diff-group.new .diff-group-hd { color: var(--rose); }
+.diff-group.resolved .diff-group-hd { color: var(--green); }
+.diff-group.changed .diff-group-hd { color: var(--amber); }
+.diff-item {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--paper-dim);
+  padding: 6px 0 6px 10px;
+  border-left: 2px solid var(--line);
+  margin-bottom: 4px;
+}
+.diff-sim {
+  color: var(--paper-faint);
+  font-size: 11.5px;
+  margin-left: 4px;
+}
+
 .empty-state {
   text-align: center;
   padding: 48px 24px;
@@ -437,8 +592,22 @@ const state = {
   projects: [],
   active: null,
   runs: [],
-  selectedRunId: null
+  selectedRunId: null,
+  shotCache: {}
 };
+
+// Observation text/priority helpers — tolerate both the real pipeline shape
+// (observation/priority) and the legacy shape (text/suggestedBug.severity).
+function obsText(o){ return String((o && (o.observation != null ? o.observation : o.text)) || "") }
+function obsPriority(o){
+  if(!o) return null;
+  return o.priority || (o.suggestedBug && (o.suggestedBug.priority || o.suggestedBug.severity)) || null;
+}
+function dashProjQ(){ const p = projParam(); return p ? "?project=" + encodeURIComponent(p) : "" }
+// Deep-link an observation to the feedback row it created / bumped, in New reports.
+function feedbackLink(fid){
+  return "/dashboard" + dashProjQ() + "#triage/" + encodeURIComponent(fid);
+}
 
 $("logout").onclick = async function(){ await fetch("/api/auth/logout", { method:"POST" }); location.href = "/" };
 
@@ -627,14 +796,19 @@ function renderDetails(run) {
           if (obs.sentiment) {
             chipsHtml += `<span class="chip s-${esc(obs.sentiment.toLowerCase())}">${esc(obs.sentiment)}</span>`;
           }
-          if (obs.suggestedBug && obs.suggestedBug.severity) {
-            chipsHtml += `<span class="chip sev-${esc(obs.suggestedBug.severity.toLowerCase())}">${esc(obs.suggestedBug.severity)} severity</span>`;
+          const pri = obsPriority(obs);
+          if (pri) {
+            chipsHtml += `<span class="chip sev-${esc(String(pri).toLowerCase())}">${esc(pri)} priority</span>`;
           }
+          // Deep-link the observation to the feedback row it created / bumped in New reports.
+          const linkHtml = obs.feedbackId
+            ? `<a class="obs-link" href="${esc(feedbackLink(obs.feedbackId))}">${window.kicon('link', {size: 11})} View in New reports</a>`
+            : "";
 
           obsHtml += `
             <div class="observation-item">
-              <div class="observation-text">${esc(obs.text)}</div>
-              ${chipsHtml ? `<div class="observation-chips">${chipsHtml}</div>` : ""}
+              <div class="observation-text">${esc(obsText(obs))}</div>
+              ${(chipsHtml || linkHtml) ? `<div class="observation-chips">${chipsHtml}${linkHtml}</div>` : ""}
             </div>
           `;
         });
@@ -663,6 +837,7 @@ function renderDetails(run) {
     simsHtml = `<div class="empty-state"><p>No Sim reactions or reviews recorded in this run.</p></div>`;
   }
 
+  const rerunnable = run.projectId && run.url;
   host.innerHTML = `
     <div class="details-card">
       <div class="details-header">
@@ -672,12 +847,120 @@ function renderDetails(run) {
           <span>RUN ID: ${esc(run.id)}</span>
           <span>RAN AT: ${esc(dateStr)}</span>
         </div>
+        ${rerunnable ? `<div class="run-actions">
+          <button class="run-rerun-btn" id="rerunBtn" type="button">${window.kicon('rotate-cw', {size: 13})} Re-run this URL</button>
+          <span class="run-rerun-msg" id="rerunMsg"></span>
+        </div>` : ""}
       </div>
+      <div id="shotHost" class="shot-host"></div>
+      <div id="diffHost" class="diff-host"></div>
       <div class="details-body">
         ${simsHtml}
       </div>
     </div>
   `;
+
+  renderScreenshot(run);
+  renderDiff(run);
+
+  const rerunBtn = document.getElementById("rerunBtn");
+  if (rerunBtn) rerunBtn.onclick = () => reRun(run);
+}
+
+// Render the exact screenshot the Sims saw, via the membership-checked signed-URL endpoint.
+async function renderScreenshot(run) {
+  const host = $("shotHost");
+  if (!host) return;
+  const sid = run.screenshotId;
+  // Placeholder ids from S3-less runs ("no-s3-…") never resolve — skip silently.
+  if (!sid || /^no-s3-/.test(sid)) { host.innerHTML = ""; return; }
+  host.innerHTML = `<div class="shot-label">${window.kicon('image', {size: 13})} What the Sims saw</div><div class="shot-frame"><div class="shot-loading">Loading screenshot…</div></div>`;
+  try {
+    let url = state.shotCache[sid];
+    if (!url) {
+      const r = await fetch("/api/screenshots/" + encodeURIComponent(sid));
+      if (!r.ok) { host.innerHTML = ""; return; }
+      const d = await r.json();
+      url = d.url;
+      if (url) state.shotCache[sid] = url;
+    }
+    if (!url) { host.innerHTML = ""; return; }
+    // Only render if this run is still the selected one (avoid races on fast switching).
+    if (state.selectedRunId !== run.id) return;
+    const frame = host.querySelector(".shot-frame");
+    if (frame) frame.innerHTML = `<a href="${esc(url)}" target="_blank" rel="noopener"><img class="shot-img" src="${esc(url)}" alt="Screenshot the Sims reviewed" loading="lazy" /></a>`;
+  } catch (e) {
+    host.innerHTML = "";
+  }
+}
+
+// Same-URL diff: what changed versus the previous run of this URL (JTBD 3.8, Loop B).
+async function renderDiff(run) {
+  const host = $("diffHost");
+  if (!host) return;
+  host.innerHTML = "";
+  if (run.status === "error") return;
+  try {
+    const r = await fetch("/api/sims/runs/" + encodeURIComponent(run.id) + "/diff");
+    if (!r.ok) return;
+    const d = await r.json();
+    if (state.selectedRunId !== run.id) return;
+    const diff = d.diff || {};
+    if (!diff.hasPrevious) {
+      host.innerHTML = `<div class="diff-card"><div class="diff-title">${window.kicon('refresh-cw', {size: 13})} Changes vs previous run</div><div class="diff-empty">First run of this URL — nothing to compare yet.</div></div>`;
+      return;
+    }
+    const nf = diff.newFindings || [], rf = diff.resolvedFindings || [], cr = diff.changedReactions || [];
+    if (!nf.length && !rf.length && !cr.length) {
+      host.innerHTML = `<div class="diff-card"><div class="diff-title">${window.kicon('refresh-cw', {size: 13})} Changes vs previous run</div><div class="diff-empty">No change since the previous run of this URL.</div></div>`;
+      return;
+    }
+    const prevWhen = d.previous ? new Date(d.previous.createdAt).toLocaleString() : "";
+    let body = "";
+    if (nf.length) {
+      body += `<div class="diff-group new"><div class="diff-group-hd">${window.kicon('plus', {size: 12})} New findings (${nf.length})</div>` +
+        nf.map(f => `<div class="diff-item">${esc(f.text || "")}${f.simName ? `<span class="diff-sim">— ${esc(f.simName)}</span>` : ""}${f.feedbackId ? ` <a class="obs-link" href="${esc(feedbackLink(f.feedbackId))}">${window.kicon('link', {size: 10})} report</a>` : ""}</div>`).join("") + `</div>`;
+    }
+    if (rf.length) {
+      body += `<div class="diff-group resolved"><div class="diff-group-hd">${window.kicon('check-circle', {size: 12})} Resolved since last run (${rf.length})</div>` +
+        rf.map(f => `<div class="diff-item">${esc(f.text || "")}${f.simName ? `<span class="diff-sim">— ${esc(f.simName)}</span>` : ""}</div>`).join("") + `</div>`;
+    }
+    if (cr.length) {
+      body += `<div class="diff-group changed"><div class="diff-group-hd">${window.kicon('zap', {size: 12})} Changed reactions (${cr.length})</div>` +
+        cr.map(c => `<div class="diff-item"><b>${esc(c.simName || "Sim")}</b>: ${esc(c.from || "—")} → ${esc(c.to || "—")}</div>`).join("") + `</div>`;
+    }
+    host.innerHTML = `<div class="diff-card"><div class="diff-title">${window.kicon('refresh-cw', {size: 13})} Changes vs previous run${prevWhen ? ` <span class="diff-when">(${esc(prevWhen)})</span>` : ""}</div>${body}</div>`;
+  } catch (e) { /* non-fatal */ }
+}
+
+// Re-run: re-invoke the URL-preview pipeline for the same URL → a NEW sim_runs record.
+async function reRun(run) {
+  const btn = document.getElementById("rerunBtn");
+  const msg = document.getElementById("rerunMsg");
+  if (!run.projectId || !run.url) return;
+  if (btn) btn.disabled = true;
+  if (msg) { msg.style.color = "var(--paper-dim)"; msg.textContent = "Your Sims are re-opening the page…"; }
+  try {
+    const r = await fetch("/api/sim/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ url: run.url, projectId: run.projectId }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.error) {
+      if (msg) { msg.style.color = "var(--rose)"; msg.textContent = d.error || "Re-run failed."; }
+      if (btn) btn.disabled = false;
+      return;
+    }
+    if (msg) { msg.style.color = "var(--green)"; msg.textContent = "Done — new run recorded."; }
+    // Refresh the list and select the newest run (the one we just created).
+    state.selectedRunId = null;
+    await fetchRuns(run.projectId);
+  } catch (e) {
+    if (msg) { msg.style.color = "var(--rose)"; msg.textContent = "Network error during re-run."; }
+    if (btn) btn.disabled = false;
+  }
 }
 
 load();

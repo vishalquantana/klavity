@@ -142,6 +142,103 @@ export function buildSimRunSummary(reviews: SimReview[]): {
   return { simCount: reviews.length, totalObservations, bugCount, dedupedCount, newCount }
 }
 
+// ── Same-URL run diffing (JTBD 3.8 — "why is this broken again") ──────────────
+//
+// Given two runs of the SAME url (current + the previous done run), report what
+// changed so the Loop-B question is answerable at a glance:
+//   • newFindings      — bug-flagged observations in `curr` not present in `prev`
+//   • resolvedFindings — bug-flagged observations in `prev` gone from `curr`
+//   • changedReactions — per-Sim sentiment shifts between the two runs
+// Findings are keyed by observation hash (falls back to normalised text), so the
+// same finding across runs matches even when the model rephrases lightly.
+
+/** Text of an observation across the real (.observation) and legacy (.text) shapes. */
+function obsTextOf(o: any): string {
+  return String((o && (o.observation ?? o.text)) ?? "").trim()
+}
+/** Stable key for a finding across runs: prefer the stored hash, else lowercased text. */
+function obsKeyOf(o: any): string {
+  const h = o && typeof o.hash === "string" ? o.hash : ""
+  return h || obsTextOf(o).toLowerCase()
+}
+/** Only bug-flagged observations count as "findings" (the ones a dev must act on). */
+function isFinding(o: any): boolean {
+  return !!(o && o.suggestedBug)
+}
+
+export interface RunFinding {
+  key: string
+  text: string
+  simName: string | null
+  priority: string | null
+  feedbackId: string | null
+}
+export interface RunReactionChange {
+  simName: string | null
+  from: string | null
+  to: string | null
+}
+export interface SimRunDiff {
+  hasPrevious: boolean
+  newFindings: RunFinding[]
+  resolvedFindings: RunFinding[]
+  changedReactions: RunReactionChange[]
+}
+
+function collectFindings(reviews: any[]): Map<string, RunFinding> {
+  const out = new Map<string, RunFinding>()
+  for (const rev of reviews || []) {
+    for (const o of (rev?.observations || [])) {
+      if (!isFinding(o)) continue
+      const key = obsKeyOf(o)
+      if (!key || out.has(key)) continue
+      out.set(key, {
+        key,
+        text: obsTextOf(o),
+        simName: rev?.simName ?? null,
+        priority: (o?.priority ?? o?.suggestedBug?.priority ?? o?.suggestedBug?.severity) ?? null,
+        feedbackId: typeof o?.feedbackId === "string" ? o.feedbackId : null,
+      })
+    }
+  }
+  return out
+}
+
+/** Dominant sentiment for a Sim in a run (first non-null observation sentiment). */
+function simSentiment(reviews: any[], simName: string | null): string | null {
+  for (const rev of reviews || []) {
+    if ((rev?.simName ?? null) !== simName) continue
+    for (const o of (rev?.observations || [])) {
+      if (o?.sentiment) return String(o.sentiment)
+    }
+  }
+  return null
+}
+
+export function diffSimRuns(currReviews: any[] | null, prevReviews: any[] | null): SimRunDiff {
+  if (!Array.isArray(prevReviews)) {
+    return { hasPrevious: false, newFindings: [], resolvedFindings: [], changedReactions: [] }
+  }
+  const curr = collectFindings(currReviews || [])
+  const prev = collectFindings(prevReviews || [])
+  const newFindings: RunFinding[] = []
+  const resolvedFindings: RunFinding[] = []
+  for (const [key, f] of curr) if (!prev.has(key)) newFindings.push(f)
+  for (const [key, f] of prev) if (!curr.has(key)) resolvedFindings.push(f)
+
+  // Per-Sim sentiment shift across the union of Sims present in either run.
+  const simNames = new Set<string | null>()
+  for (const rev of (currReviews || [])) simNames.add(rev?.simName ?? null)
+  for (const rev of (prevReviews || [])) simNames.add(rev?.simName ?? null)
+  const changedReactions: RunReactionChange[] = []
+  for (const simName of simNames) {
+    const from = simSentiment(prevReviews || [], simName)
+    const to = simSentiment(currReviews || [], simName)
+    if (from !== to) changedReactions.push({ simName, from, to })
+  }
+  return { hasPrevious: true, newFindings, resolvedFindings, changedReactions }
+}
+
 // ── Active review target selection ─────────────────────────────────────────────
 
 /**
