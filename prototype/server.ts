@@ -103,40 +103,53 @@ async function canAssignTicketTo(projectId: string, actorAccess: "admin" | "memb
   return !!(await projectAccess(assignee, projectId).catch(() => null))
 }
 
-function ticketDashboardUrl(projectId: string): string {
-  return `${BASE.replace(/\/+$/, "")}/dashboard?project=${encodeURIComponent(projectId)}#tickets`
+// JTBD 2.15: per-ticket deep link. When a feedbackId is supplied the URL carries ?ticket=<id>,
+// which maybeOpenDeepLinkTicket() honors to open that ticket's detail (matches the JTBD 2.4
+// permalink shape). Without a feedbackId it lands on the tickets board as before.
+function ticketDashboardUrl(projectId: string, feedbackId?: string | null): string {
+  const base = `${BASE.replace(/\/+$/, "")}/dashboard?project=${encodeURIComponent(projectId)}`
+  const withTicket = feedbackId ? `${base}&ticket=${encodeURIComponent(feedbackId)}` : base
+  return `${withTicket}#tickets`
 }
 
-function ticketInviteUrl(projectId: string, email: string): string {
-  return `${BASE.replace(/\/+$/, "")}/login?email=${encodeURIComponent(email)}&project=${encodeURIComponent(projectId)}#tickets`
+// JTBD 2.15: the post-login invite redirect carries the assigned ticket forward so first login
+// lands directly on it. The stored feedbackId is threaded through so the login flow can preserve it.
+function ticketInviteUrl(projectId: string, email: string, feedbackId?: string | null): string {
+  const t = feedbackId ? `&ticket=${encodeURIComponent(feedbackId)}` : ""
+  return `${BASE.replace(/\/+$/, "")}/login?email=${encodeURIComponent(email)}&project=${encodeURIComponent(projectId)}${t}#tickets`
 }
 
-async function notifyTicketAssignee(input: { projectId: string; feedbackId: string; assignee: string; ticketTitle: string; projectName?: string | null; assignedBy?: string | null }) {
-  if (!input.assignee) return
+// Returns whether an assignment notification email was actually dispatched. When SENDGRID_API_KEY
+// is unset the send is skipped (nothing is emailed) and emailSent is false, so the caller can surface
+// a visible "assigned, but no email was sent" warning instead of pretending success (JTBD 2.15).
+async function notifyTicketAssignee(input: { projectId: string; feedbackId: string; assignee: string; ticketTitle: string; projectName?: string | null; assignedBy?: string | null }): Promise<{ emailSent: boolean }> {
+  if (!input.assignee) return { emailSent: false }
+  const canEmail = !!process.env.SENDGRID_API_KEY
   const access = await projectAccess(input.assignee, input.projectId).catch(() => null)
   if (!access) {
     await upsertTicketAssignmentInvite(input.projectId, input.assignee, input.assignedBy ?? null, input.feedbackId)
-    if (process.env.SENDGRID_API_KEY) {
+    if (canEmail) {
       void sendTicketAssignmentInviteEmail({
         to: input.assignee,
         ticketTitle: input.ticketTitle,
         projectName: input.projectName ?? null,
         assignedBy: input.assignedBy ?? null,
-        ticketUrl: ticketDashboardUrl(input.projectId),
-        joinUrl: ticketInviteUrl(input.projectId, input.assignee),
+        ticketUrl: ticketDashboardUrl(input.projectId, input.feedbackId),
+        joinUrl: ticketInviteUrl(input.projectId, input.assignee, input.feedbackId),
       }).catch((e: any) => console.warn("ticket assignment invite email skipped:", e?.message || e))
     }
-    return
+    return { emailSent: canEmail }
   }
-  if (process.env.SENDGRID_API_KEY) {
+  if (canEmail) {
     void sendTicketAssignmentEmail({
       to: input.assignee,
       ticketTitle: input.ticketTitle,
       projectName: input.projectName ?? null,
       assignedBy: input.assignedBy ?? null,
-      ticketUrl: ticketDashboardUrl(input.projectId),
+      ticketUrl: ticketDashboardUrl(input.projectId, input.feedbackId),
     }).catch((e: any) => console.warn("ticket assignment email skipped:", e?.message || e))
   }
+  return { emailSent: canEmail }
 }
 
 await initDb()
@@ -1847,8 +1860,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (!acceptedAssignmentInvites.length) await ensureAccount(e)
         const sid = token()
         await createSession(sid, e, Date.now() + SESSION_DAYS * 86400 * 1000)
-        const dest = acceptedAssignmentInvites.length
-          ? `/dashboard?project=${encodeURIComponent(acceptedAssignmentInvites[0].projectId)}#tickets`
+        // JTBD 2.15: land the new assignee directly on the ticket they were assigned. The invite row
+        // stores the feedbackId; when present we deep-link with ?ticket=<id> (honored by
+        // maybeOpenDeepLinkTicket) so they don't have to re-find the ticket on the board.
+        const firstInvite = acceptedAssignmentInvites[0]
+        const dest = firstInvite
+          ? `/dashboard?project=${encodeURIComponent(firstInvite.projectId)}${firstInvite.feedbackId ? `&ticket=${encodeURIComponent(firstInvite.feedbackId)}` : ""}#tickets`
           : wasNew ? "/onboarding" : "/dashboard"
         return json({ ok: true, redirect: dest, token: sid }, 200, { "Set-Cookie": cookie("klav_session", sid, SESSION_DAYS * 86400, SECURE) })
       } catch (err: any) { return json(oops(err, "auth"), 500) }
@@ -4958,6 +4975,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               meta: { from: fbRow.priority, to: meta.priority },
             }).catch((e: any) => console.warn("ticket priority activity skipped:", e?.message || e)))
           }
+          // JTBD 2.15: track whether the assignment notification email actually went out so the
+          // response can warn the assigning UI when it was silently skipped (SENDGRID_API_KEY unset).
+          let assigneeEmailSent: boolean | null = null
           if (meta.assignee !== undefined && meta.assignee !== fbRow.assignee) {
             activityWrites.push(insertActivity({
               projectId: fbRow.projectId,
@@ -4968,7 +4988,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             }).catch((e: any) => console.warn("ticket assignee activity skipped:", e?.message || e)))
             if (meta.assignee) {
               const proj = await projectById(fbRow.projectId).catch(() => null)
-              await notifyTicketAssignee({
+              const notify = await notifyTicketAssignee({
                 projectId: fbRow.projectId,
                 feedbackId: fid,
                 assignee: meta.assignee,
@@ -4976,6 +4996,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                 projectName: proj?.name ?? null,
                 assignedBy: me,
               })
+              assigneeEmailSent = notify.emailSent
             }
           }
           if (activityWrites.length) await Promise.all(activityWrites)
@@ -5002,7 +5023,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             const effectivePriority = meta.priority !== undefined ? meta.priority : fbRow.priority
             autoCopyFeedback(fid, fbRow.projectId, me, effectivePriority)
           }
-          return json({ ok: true })
+          // JTBD 2.15: expose the notification-email outcome so the UI can warn on a silent skip.
+          return json({ ok: true, ...(assigneeEmailSent === false ? { assigneeEmailSent: false } : {}) })
         }
 
         // POST /api/feedback/:id/guard — KLA-242 "Guard this fix".
@@ -5927,8 +5949,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             feedbackId: id,
             meta: { title, priority, source: "manual" },
           }).catch((e: any) => console.warn("ticket_created activity skipped:", e?.message || e))
+          let createEmailSent: boolean | null = null
           if (assignee) {
-            await notifyTicketAssignee({
+            const notify = await notifyTicketAssignee({
               projectId: proj.id,
               feedbackId: id,
               assignee,
@@ -5936,8 +5959,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               projectName: proj.name,
               assignedBy: me,
             })
+            createEmailSent = notify.emailSent
           }
-          return json({ ok: true, ticketId: id }, 201)
+          // JTBD 2.15: surface a silently-skipped notification email so the UI can warn.
+          return json({ ok: true, ticketId: id, ...(createEmailSent === false ? { assigneeEmailSent: false } : {}) }, 201)
         }
 
         // PATCH /api/projects/:id/tickets/bulk — KLA-178: apply one action to multiple tickets at once.
@@ -5989,6 +6014,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           }
 
           let updated = 0
+          // JTBD 2.15: flip true if any assignment notification email was silently skipped (SendGrid
+          // unconfigured), so the bulk response can warn instead of pretending everyone was emailed.
+          let assigneeEmailSkipped = false
           const failures: Array<{ ticketId: string; operation: string; error: string }> = []
           // JTBD 2.14: per-ticket pre-mutation snapshot of the fields that were changed, so the
           // client can offer an Undo that restores exact prior values (not a blind reverse).
@@ -6040,7 +6068,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   meta: { from: row.assignee, to: meta.assignee },
                 }).catch((e: any) => console.warn("bulk ticket assignee activity skipped:", e?.message || e)))
                 if (meta.assignee) {
-                  await notifyTicketAssignee({
+                  const notify = await notifyTicketAssignee({
                     projectId: proj.id,
                     feedbackId: tid,
                     assignee: meta.assignee,
@@ -6048,6 +6076,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                     projectName: proj.name,
                     assignedBy: me,
                   })
+                  if (!notify.emailSent) assigneeEmailSkipped = true
                 }
               }
               if (activityWrites.length) await Promise.all(activityWrites)
@@ -6072,7 +6101,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             }
             updated++
           }
-          return json({ ok: failures.length === 0, updated, failures, prior }, failures.length ? 207 : 200)
+          return json({ ok: failures.length === 0, updated, failures, prior, ...(assigneeEmailSkipped ? { assigneeEmailSent: false } : {}) }, failures.length ? 207 : 200)
         }
 
         // ── KLA-174: Label management endpoints ────────────────────────────────────────────────────

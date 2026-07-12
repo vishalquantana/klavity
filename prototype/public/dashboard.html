@@ -1350,6 +1350,9 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .tg-toast-fails{margin-top:2px;font-size:12px;color:var(--paper-dim);display:flex;flex-wrap:wrap;gap:6px}
 .tg-toast-fails a{color:var(--rose);text-decoration:none;font-family:var(--mono);font-size:11.5px;border-bottom:1px dotted var(--rose);cursor:pointer}
 .tg-toast-fails a:hover{opacity:.8}
+/* JTBD 2.15: assignment succeeded but the notification email was silently skipped (SendGrid unset). */
+.tg-toast.tg-toast-warn{border-color:var(--amber,#f59e0b)}
+.tg-toast.tg-toast-warn .tg-toast-msg .icon{color:var(--amber,#f59e0b)}
 /* JTBD 2.14: kanban card multi-select — hover-revealed checkbox, stays visible once selected */
 .kb-card-cb{position:absolute;top:8px;left:8px;width:16px;height:16px;margin:0;cursor:pointer;opacity:0;transition:opacity var(--mi-dur) var(--mi-ease);z-index:2}
 .kb-card:hover .kb-card-cb,.kb-card.kb-selected .kb-card-cb,.kb-card-cb:checked{opacity:1}
@@ -3503,6 +3506,8 @@ async function patchTicketAssignee(ticketId, assignee) {
   const d = r ? await r.json().catch(() => ({})) : {}
   if (!r || !r.ok || !d.ok) throw new Error(d.error || "Couldn't assign.")
   setTicketAssigneeLocal(ticketId, assignee || null)
+  // JTBD 2.15: warn when the notification email was silently skipped server-side.
+  if (assignee && d.assigneeEmailSent === false) assignEmailWarnToast("Assigned, but the notification email could not be sent.")
   return d
 }
 function assigneePickerHtml(t, compact = false) {
@@ -3703,7 +3708,9 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
         if (tkt) { tkt.assignee = assignee || null; tkt.notes = notes || null }
         setTicketAssigneeLocal(ticketId, assignee || null)
         if (onChange) onChange("assignee", assignee || null)
-        showTktMsg(detailEl, "Saved.", false)
+        // JTBD 2.15: warn inline when the notification email was silently skipped server-side.
+        if (assignee && d.assigneeEmailSent === false) showTktMsg(detailEl, "Saved, but the notification email could not be sent.", true)
+        else showTktMsg(detailEl, "Saved.", false)
       } else {
         showTktMsg(detailEl, d.error || "Couldn't save.", true)
       }
@@ -4325,11 +4332,14 @@ async function submitNewTicket() {
     })
   }).catch(() => null)
   if (submitBtn) submitBtn.disabled = false
+  const created = r ? await r.json().catch(() => ({})) : {}
   if (!r || !r.ok) {
-    const d = r ? await r.json().catch(() => ({})) : {}
-    if (msg) msg.textContent = d.error || "Failed to create ticket."
+    if (msg) msg.textContent = created.error || "Failed to create ticket."
     return
   }
+  // JTBD 2.15: if the ticket was assigned but the notification email was silently skipped, warn.
+  const assignedEmail = assignee ? assignee.value.trim() : ""
+  if (assignedEmail && created.assigneeEmailSent === false) assignEmailWarnToast("Ticket created and assigned, but the notification email could not be sent.")
   closeNewTicketModal()
   // Refresh the tickets list/board so the new ticket appears immediately
   if (typeof renderTicketsView === "function") renderTicketsView()
@@ -4632,6 +4642,19 @@ function bulkResultToast(count, label, failures, undoFields, projId, prior, onDo
   }))
   _bulkToastTimer = setTimeout(() => { toast.classList.remove("show") }, 9000)
 }
+// JTBD 2.15: when an assignment response reports the notification email was silently skipped
+// (assigneeEmailSent === false — SendGrid unconfigured server-side), show a visible amber warning
+// so nobody assumes the assignee was notified. Reuses the shared .tg-toast surface.
+let _assignWarnTimer = null
+function assignEmailWarnToast(msg) {
+  let toast = $("assignWarnToast")
+  if (!toast) { toast = document.createElement("div"); toast.id = "assignWarnToast"; document.body.appendChild(toast) }
+  toast.className = "tg-toast tg-toast-warn"
+  if (_assignWarnTimer) { clearTimeout(_assignWarnTimer); _assignWarnTimer = null }
+  toast.innerHTML = `<span class="tg-toast-msg">${kicon('triangle-alert',{size:15})} ${esc(msg || "Assigned, but the notification email could not be sent.")}</span>`
+  toast.classList.add("show")
+  _assignWarnTimer = setTimeout(() => { toast.classList.remove("show") }, 9000)
+}
 // Run one bulk mutation over the current selection. onDone re-renders the affected view.
 async function applyBulkAction(projId, body, onDone) {
   const ids = [..._bulkSelected]
@@ -4650,6 +4673,8 @@ async function applyBulkAction(projId, body, onDone) {
   _bulkSelected.clear()
   if (onDone) onDone()
   bulkResultToast(ids.length, label, failures, undoFields, projId, prior, onDone)
+  // JTBD 2.15: a bulk-assign whose notification email(s) were silently skipped gets a visible warning.
+  if (body.assignee && data.assigneeEmailSent === false) assignEmailWarnToast("Assigned, but the notification email could not be sent.")
 }
 
 // KLA-178: build the bulk-action toolbar HTML and wire its handlers
