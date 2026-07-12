@@ -68,15 +68,19 @@ export function lexicalSim(a: string, b: string): number {
 
 // Decide which existing feedback id (if any) this candidate duplicates.
 // Exact key match (looked up by the caller) wins; else best semantic match ≥ threshold.
+// A.10: `excludeIds` are ids an operator manually SPLIT apart from this candidate — they must
+// never be re-collapsed automatically, so they're skipped by both the exact- and lexical-match paths.
 export function chooseDedup(
   cand: { title: string; observation: string },
   exactMatch: { id: string } | null,
   recent: Array<{ id: string; title: string; observation: string }>,
   threshold = 0.82,
+  excludeIds: Set<string> = new Set(),
 ): string | null {
-  if (exactMatch) return exactMatch.id
+  if (exactMatch && !excludeIds.has(exactMatch.id)) return exactMatch.id
   let best: { id: string | null; score: number } = { id: null, score: 0 }
   for (const r of recent) {
+    if (excludeIds.has(r.id)) continue
     const score = Math.max(lexicalSim(cand.title, r.title), lexicalSim(cand.observation, r.observation))
     if (score > best.score) best = { id: r.id, score }
   }

@@ -190,6 +190,22 @@ export async function applySchema(c: Client) {
        created_at INTEGER NOT NULL
      )`,
     `CREATE INDEX IF NOT EXISTS feedback_occ_idx ON feedback_occurrences (feedback_id, seen_at)`,
+    // ── A.10 dedup override memory (additive): records human merge/split decisions so intake
+    // dedup honours the operator instead of re-collapsing (or re-splitting) a pair automatically.
+    // A "split" row records that feedback a and feedback b are DISTINCT issues (never re-merge);
+    // stored order-independently by consulting both (a,b) and (b,a) at intake. Best-effort — a
+    // missing/failed row degrades to the pre-A.10 automatic behaviour, never blocks intake.
+    `CREATE TABLE IF NOT EXISTS dedup_exclusions (
+       id TEXT PRIMARY KEY,
+       project_id TEXT NOT NULL,
+       feedback_a TEXT NOT NULL,
+       feedback_b TEXT NOT NULL,
+       reason TEXT,
+       created_by TEXT,
+       created_at INTEGER NOT NULL,
+       UNIQUE(project_id, feedback_a, feedback_b)
+     )`,
+    `CREATE INDEX IF NOT EXISTS dedup_excl_idx ON dedup_exclusions (project_id)`,
     `CREATE TABLE IF NOT EXISTS ticket_assignment_invites (
        id TEXT PRIMARY KEY,
        project_id TEXT NOT NULL,
@@ -2515,6 +2531,205 @@ export async function listFeedbackOccurrences(feedbackId: string): Promise<Feedb
       createdAt: Number(x.created_at),
     }))
   } catch { return [] }
+}
+
+// ── A.10 dedup override: merge / split controls ──────────────────────────────
+// Human operators can correct the automatic matcher: MERGE two tickets it missed, or SPLIT an
+// occurrence the matcher wrongly buried. Both preserve recurrence counts, dates, per-occurrence
+// evidence and reporter emails so notify-on-fix (A.4) still reaches every reporter, and both keep
+// the expectations-spine link consistent (linkage follows issue_key = expectations.dedup_key).
+
+function parseDates(json: string | null | undefined): number[] {
+  let d: number[] = []
+  try { d = JSON.parse(json || "[]") } catch { d = [] }
+  if (!Array.isArray(d)) d = []
+  return d.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0)
+}
+
+/** Record a manual "these two are DISTINCT issues" decision so intake dedup never re-merges them. */
+export async function addDedupExclusion(
+  projectId: string, feedbackA: string, feedbackB: string,
+  opts: { reason?: string | null; createdBy?: string | null } = {},
+): Promise<void> {
+  // Store both orderings so a lookup keyed on either side hits (matcher order isn't guaranteed).
+  const pairs: [string, string][] = [[feedbackA, feedbackB], [feedbackB, feedbackA]]
+  for (const [a, b] of pairs) {
+    await db!.execute({
+      sql: `INSERT INTO dedup_exclusions (id, project_id, feedback_a, feedback_b, reason, created_by, created_at)
+            VALUES (?,?,?,?,?,?,?)
+            ON CONFLICT(project_id, feedback_a, feedback_b) DO NOTHING`,
+      args: ["dex_" + crypto.randomUUID(), projectId, a, b, opts.reason ?? null, opts.createdBy ?? null, Date.now()],
+    }).catch((e: any) => console.warn("dedup exclusion skipped:", e?.message || e))
+  }
+}
+
+/** The set of feedback ids that must NOT be collapsed into `feedbackId` (manual split decisions). */
+export async function excludedDedupIds(projectId: string, feedbackId: string): Promise<Set<string>> {
+  try {
+    const r = await db!.execute({
+      sql: `SELECT feedback_b FROM dedup_exclusions WHERE project_id=? AND feedback_a=?`,
+      args: [projectId, feedbackId],
+    })
+    return new Set(r.rows.map((x: any) => String(x.feedback_b)))
+  } catch { return new Set() }
+}
+
+export type MergeResult = { survivorId: string; recurrenceCount: number; contactEmails: string[] }
+
+/**
+ * Merge the `mergedId` cluster INTO the `survivorId` cluster. The survivor keeps its id + issue_key
+ * (so future intake dedup lands on it AND the expectation link — dedup_key = survivor.issue_key —
+ * survives). Sums recurrence_count, unions recurrence_dates_json, carries every stored contact/
+ * reporter email across, re-homes both the merged head's own evidence AND its stored occurrences
+ * onto the survivor, then deletes the merged head row. Returns null when either row is missing or
+ * they belong to different projects (defensive — the caller already scoped both to one project).
+ */
+export async function mergeFeedbackClusters(
+  projectId: string, survivorId: string, mergedId: string, actor?: string | null,
+): Promise<MergeResult | null> {
+  if (survivorId === mergedId) return null
+  const survivor = await feedbackById(projectId, survivorId)
+  const merged = await feedbackById(projectId, mergedId)
+  if (!survivor || !merged) return null
+
+  // Combined recurrence count = both cluster counts summed (each ≥1 for the original report).
+  const survCount = Math.max(1, Number(survivor.recurrenceCount ?? 1))
+  const mergedCount = Math.max(1, Number(merged.recurrenceCount ?? 1))
+  const combinedCount = survCount + mergedCount
+
+  // Union the recurrence dates (both heads' created_at + all stored recurrence dates), dedup + sort.
+  const survDates = new Set(parseDates(survivor.recurrenceDatesJson))
+  survDates.add(Number(survivor.createdAt))
+  for (const d of parseDates(merged.recurrenceDatesJson)) survDates.add(d)
+  survDates.add(Number(merged.createdAt))
+  const dates = [...survDates].filter((d) => Number.isFinite(d) && d > 0).sort((a, b) => a - b)
+  const lastSeen = dates.length ? dates[dates.length - 1] : Number(survivor.createdAt)
+
+  // Carry the merged head's OWN report body/screenshot/date across as a survivor occurrence, so its
+  // evidence is not lost when its row is deleted (mirrors the A.8 intake occurrence receipt).
+  await insertFeedbackOccurrence({
+    feedbackId: survivorId, projectId, seenAt: Number(merged.createdAt),
+    observation: merged.observation ?? null,
+    screenshotId: merged.screenshotId ?? null,
+    sourceQuote: null,
+    reporterEmail: merged.contactEmail ?? null,
+  }).catch((e: any) => console.warn("merge head-occurrence skipped:", e?.message || e))
+
+  // Re-home the merged cluster's stored occurrence receipts onto the survivor head.
+  await db!.execute({
+    sql: `UPDATE feedback_occurrences SET feedback_id=? WHERE feedback_id=? AND project_id=?`,
+    args: [survivorId, mergedId, projectId],
+  }).catch((e: any) => console.warn("merge occurrence re-home skipped:", e?.message || e))
+
+  // Persist the summed count + unioned dates onto the survivor.
+  await db!.execute({
+    sql: `UPDATE feedback SET recurrence_count=?, recurrence_dates_json=?, last_seen_at=? WHERE id=? AND project_id=?`,
+    args: [combinedCount, JSON.stringify(dates), lastSeen, survivorId, projectId],
+  })
+
+  // Carry the contact email: keep the survivor's if present, else adopt the merged one. Every distinct
+  // reporter email is preserved on the occurrences above so notify-on-fix (A.4) reaches them all.
+  if (!survivor.contactEmail && merged.contactEmail) {
+    await db!.execute({
+      sql: `UPDATE feedback SET contact_email=? WHERE id=? AND project_id=?`,
+      args: [merged.contactEmail, survivorId, projectId],
+    }).catch((e: any) => console.warn("merge contact carry skipped:", e?.message || e))
+  }
+
+  // Collect the distinct reporter emails now attached to the survivor cluster (for the caller/notify).
+  const survivorAfter = await feedbackById(projectId, survivorId)
+  const occs = await listFeedbackOccurrences(survivorId)
+  const emails = new Set<string>()
+  if (survivorAfter?.contactEmail) emails.add(survivorAfter.contactEmail)
+  if (merged.contactEmail) emails.add(merged.contactEmail)
+  for (const o of occs) if (o.reporterEmail) emails.add(o.reporterEmail)
+
+  // Delete the now-empty merged head row (its evidence lives on as survivor occurrences).
+  await db!.execute({ sql: `DELETE FROM feedback WHERE id=? AND project_id=?`, args: [mergedId, projectId] })
+  // The merged head's issue_key had its own expectation link (dedup_key = merged.issue_key). Re-point
+  // that expectation onto the survivor's key so the spine neither orphans nor double-links.
+  if (merged.issueKey && survivor.issueKey && merged.issueKey !== survivor.issueKey) {
+    // Only repoint if the survivor doesn't already own an expectation on its key (avoid duplicate keys).
+    await db!.execute({
+      sql: `UPDATE expectations SET dedup_key=? WHERE project_id=? AND dedup_key=?
+              AND NOT EXISTS (SELECT 1 FROM expectations e2 WHERE e2.project_id=? AND e2.dedup_key=?)`,
+      args: [survivor.issueKey, projectId, merged.issueKey, projectId, survivor.issueKey],
+    }).catch((e: any) => console.warn("merge expectation repoint skipped:", e?.message || e))
+  }
+
+  return { survivorId, recurrenceCount: combinedCount, contactEmails: [...emails] }
+}
+
+export type SplitResult = { newFeedbackId: string; sourceRecurrenceCount: number }
+
+/**
+ * Split ONE stored occurrence out of the `headId` cluster into its own standalone ticket. The new
+ * ticket carries that occurrence's date + evidence + reporter email; the source cluster's count and
+ * dates decrease accordingly. The new ticket gets a FRESH distinct issue_key ("split:"-prefixed) so
+ * intake dedup's exact-key path can never re-collapse it, and a dedup exclusion pair is recorded so
+ * the lexical fallback won't either. Returns null when the occurrence isn't found under this head.
+ */
+export async function splitOccurrenceToNewTicket(
+  projectId: string, headId: string, occurrenceId: string,
+  opts: { actor?: string | null; issueKey?: string | null } = {},
+): Promise<SplitResult | null> {
+  const actor = opts.actor
+  const head = await feedbackById(projectId, headId)
+  if (!head) return null
+  const occs = await listFeedbackOccurrences(headId)
+  const occ = occs.find((o) => o.id === occurrenceId)
+  if (!occ) return null
+
+  // The split ticket carries the occurrence's own CONTENT issue_key when the caller supplies it (so a
+  // future re-report of the same content routes to THIS standalone ticket, honouring the split, rather
+  // than re-collapsing into the head). Falls back to a synthetic "split:"-key when no content key is
+  // given — still distinct from the head so the exact-match path can never re-merge the pair.
+  const splitKey = opts.issueKey || ("split:" + sha256hex(`${headId}|${occurrenceId}|${occ.seenAt}`).slice(0, 26))
+  const newId = "fb_" + crypto.randomUUID()
+  const now = Date.now()
+  await db!.execute({
+    sql: `INSERT INTO feedback (id,project_id,sim_id,actor_email,url_host,url_path,observation,sentiment,priority,
+          screenshot_id,source_quote,issue_key,recurrence_count,recurrence_dates_json,last_seen_at,source,created_at,status)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    args: [
+      newId, projectId, null, actor ?? null, head.urlHost ?? null, head.urlPath ?? null,
+      occ.observation ?? head.observation ?? null, head.sentiment ?? null, head.priority ?? null,
+      occ.screenshotId ?? null, occ.sourceQuote ?? null, splitKey,
+      1, JSON.stringify([occ.seenAt]), occ.seenAt, "split",
+      occ.seenAt, initialFeedbackStatus(head.priority),
+    ],
+  })
+  // Carry the split occurrence's reporter email onto the new standalone ticket (A.4 notify-on-fix).
+  if (occ.reporterEmail) {
+    await db!.execute({
+      sql: `UPDATE feedback SET contact_email=? WHERE id=? AND project_id=?`,
+      args: [occ.reporterEmail, newId, projectId],
+    }).catch((e: any) => console.warn("split contact carry skipped:", e?.message || e))
+  }
+  await db!.execute({
+    sql: `UPDATE feedback SET seq_num = (
+      SELECT COUNT(*) FROM feedback f2 WHERE f2.project_id = ? AND (f2.created_at < ? OR (f2.created_at = ? AND f2.id <= ?))
+    ) WHERE id = ? AND seq_num IS NULL`,
+    args: [projectId, now, now, newId, newId],
+  }).catch((e: any) => console.warn("split seq_num skipped:", e?.message || e))
+
+  // Remove the occurrence from the source cluster and decrement its recurrence count/dates.
+  await db!.execute({ sql: `DELETE FROM feedback_occurrences WHERE id=? AND feedback_id=?`, args: [occurrenceId, headId] })
+  const remainingCount = Math.max(1, Math.max(1, Number(head.recurrenceCount ?? 1)) - 1)
+  const remainingDates = parseDates(head.recurrenceDatesJson).filter((d) => d !== occ.seenAt)
+  // Never strip the head's own created_at date; keep at least the original occurrence.
+  if (!remainingDates.includes(Number(head.createdAt))) remainingDates.unshift(Number(head.createdAt))
+  const uniqDates = [...new Set(remainingDates)].sort((a, b) => a - b)
+  const lastSeen = uniqDates.length ? uniqDates[uniqDates.length - 1] : Number(head.createdAt)
+  await db!.execute({
+    sql: `UPDATE feedback SET recurrence_count=?, recurrence_dates_json=?, last_seen_at=? WHERE id=? AND project_id=?`,
+    args: [remainingCount, JSON.stringify(uniqDates), lastSeen, headId, projectId],
+  })
+
+  // Record the manual "distinct issues" decision so intake dedup won't lexically re-merge the pair.
+  await addDedupExclusion(projectId, headId, newId, { reason: "manual-split", createdBy: actor ?? null })
+
+  return { newFeedbackId: newId, sourceRecurrenceCount: remainingCount }
 }
 
 // Cheap headline counts for the dashboard (indexed scans).

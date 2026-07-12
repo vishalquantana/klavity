@@ -3887,47 +3887,91 @@ function buildOccurrenceTimeline(ticketId) {
       <span class="tkt-occ-title">Occurrence timeline</span>
       <span class="tkt-occ-count"></span>
       <button class="btn btn-ghost btn-sm tkt-occ-copy" type="button" title="Copy this occurrence timeline for a client conversation">${kicon('clipboard-list')} Copy timeline</button>
+      <button class="btn btn-ghost btn-sm tkt-occ-merge" type="button" title="Merge another ticket into this cluster (fixes a match the matcher missed)">${kicon('link')} Merge a ticket</button>
     </div>
-    <div class="tkt-occ-list"></div>`
+    <div class="tkt-occ-list"></div>
+    <div class="tkt-occ-msg muted" style="font-size:12px"></div>`
   const listEl = wrap.querySelector(".tkt-occ-list")
   const countEl = wrap.querySelector(".tkt-occ-count")
   const copyBtn = wrap.querySelector(".tkt-occ-copy")
+  const mergeBtn = wrap.querySelector(".tkt-occ-merge")
+  const msgEl = wrap.querySelector(".tkt-occ-msg")
 
   const day = ms => { try { return new Date(Number(ms)).toISOString().slice(0, 10) } catch (e) { return "" } }
+  const setMsg = (t, isErr) => { if (msgEl) { msgEl.textContent = t || ""; msgEl.style.color = isErr ? "var(--danger, #c0392b)" : "" } }
 
-  fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/memory")
-    .then(r => r.ok ? r.json() : Promise.reject(r.status))
-    .then(d => {
-      const mem = d && d.memory
-      const occ = (mem && Array.isArray(mem.occurrences) ? mem.occurrences : [])
-        .filter(o => (o.observation || "").trim())
-      if (occ.length < 2) return  // single occurrence: nothing worth a timeline
-      wrap.classList.remove("hide")
-      countEl.textContent = occ.length + " reports"
-      listEl.innerHTML = ""
-      occ.forEach(o => {
-        const item = document.createElement("div")
-        item.className = "tkt-occ-item"
-        const shotHtml = o.screenshotId
-          ? `<div class="tkt-occ-shot" data-shot="${esc(o.screenshotId)}"></div>` : ""
-        item.innerHTML = `
-          <div class="tkt-occ-date">${esc(day(o.seenAt))}${o.isOriginal ? '<div class="tkt-occ-orig">first</div>' : ''}</div>
-          <div class="tkt-occ-body"><div class="tkt-occ-quote">"${esc(String(o.observation).trim())}"</div></div>
-          ${shotHtml}`
-        listEl.appendChild(item)
-        loadOccShot(item)
+  // A.10: split one wrongly-collapsed occurrence out into its own standalone ticket. Only stored
+  // repeat receipts (occurrenceId present, not the original) can be split — the first report IS the head.
+  async function splitOccurrence(occurrenceId, btn) {
+    if (!occurrenceId) return
+    if (btn) { btn.disabled = true }
+    const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/split", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ occurrenceId }), credentials: "include",
+    }).catch(() => null)
+    const d = r ? await r.json().catch(() => ({})) : {}
+    if (r && r.ok && d.ok) { setMsg("Split into its own ticket.", false); load() }
+    else { if (btn) btn.disabled = false; setMsg(d.error || "Could not split occurrence.", true) }
+  }
+
+  // A.10: merge another ticket (by id) into THIS cluster — carries its recurrence count + reporters over.
+  if (mergeBtn) mergeBtn.addEventListener("click", async () => {
+    const mergeId = (window.prompt("Ticket id to merge INTO this cluster:") || "").trim()
+    if (!mergeId) return
+    mergeBtn.disabled = true
+    const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/merge", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ mergeId }), credentials: "include",
+    }).catch(() => null)
+    const d = r ? await r.json().catch(() => ({})) : {}
+    mergeBtn.disabled = false
+    if (r && r.ok && d.ok) { setMsg("Merged. Recurrence count is now " + d.recurrenceCount + ".", false); load() }
+    else { setMsg(d.error || "Could not merge ticket.", true) }
+  })
+
+  function load() {
+    fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/memory")
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+      .then(d => {
+        const mem = d && d.memory
+        const occ = (mem && Array.isArray(mem.occurrences) ? mem.occurrences : [])
+          .filter(o => (o.observation || "").trim())
+        if (occ.length < 2) { wrap.classList.add("hide"); return }  // single occurrence: nothing worth a timeline
+        wrap.classList.remove("hide")
+        countEl.textContent = occ.length + " reports"
+        listEl.innerHTML = ""
+        occ.forEach(o => {
+          const item = document.createElement("div")
+          item.className = "tkt-occ-item"
+          const shotHtml = o.screenshotId
+            ? `<div class="tkt-occ-shot" data-shot="${esc(o.screenshotId)}"></div>` : ""
+          // Only stored repeat receipts (occurrenceId set, not the original) are splittable.
+          const splitHtml = (o.occurrenceId && !o.isOriginal)
+            ? `<button class="btn btn-ghost btn-sm tkt-occ-split" type="button" data-occ="${esc(o.occurrenceId)}" title="This is a different bug — split it into its own ticket">${kicon('scissors')} Split out</button>` : ""
+          item.innerHTML = `
+            <div class="tkt-occ-date">${esc(day(o.seenAt))}${o.isOriginal ? '<div class="tkt-occ-orig">first</div>' : ''}</div>
+            <div class="tkt-occ-body"><div class="tkt-occ-quote">"${esc(String(o.observation).trim())}"</div>${splitHtml}</div>
+            ${shotHtml}`
+          const splitBtn = item.querySelector(".tkt-occ-split")
+          if (splitBtn) splitBtn.addEventListener("click", () => splitOccurrence(splitBtn.getAttribute("data-occ"), splitBtn))
+          listEl.appendChild(item)
+          loadOccShot(item)
+        })
       })
-      // Copy timeline text for client conversations — plain, quotable receipts.
-      copyBtn.addEventListener("click", async () => {
-        const lines = occ.map(o => `• ${day(o.seenAt)}: "${String(o.observation).trim()}"`)
-        const text = `This issue was reported ${occ.length} times:\n${lines.join("\n")}`
-        const ok = await copyText(text)
-        const orig = copyBtn.innerHTML
-        copyBtn.innerHTML = ok ? (kicon('check') + " Copied!") : (kicon('x') + " Copy failed")
-        setTimeout(() => { copyBtn.innerHTML = orig }, 2000)
-      })
-    })
-    .catch(() => { /* 404 = no recurrence memory (single report): leave hidden */ })
+      .catch(() => { /* 404 = no recurrence memory (single report): leave hidden */ })
+  }
+  load()
+
+  // Copy timeline text for client conversations — plain, quotable receipts.
+  copyBtn.addEventListener("click", async () => {
+    const items = [...listEl.querySelectorAll(".tkt-occ-item")]
+    const lines = items.map(it => `• ${it.querySelector(".tkt-occ-date")?.textContent?.replace("first", "").trim()}: ${it.querySelector(".tkt-occ-quote")?.textContent}`)
+    const text = `This issue was reported ${items.length} times:\n${lines.join("\n")}`
+    const ok = await copyText(text)
+    const orig = copyBtn.innerHTML
+    copyBtn.innerHTML = ok ? (kicon('check') + " Copied!") : (kicon('x') + " Copy failed")
+    setTimeout(() => { copyBtn.innerHTML = orig }, 2000)
+  })
 
   return wrap
 }
