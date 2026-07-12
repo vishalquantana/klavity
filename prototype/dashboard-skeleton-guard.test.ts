@@ -35,7 +35,9 @@ const clearStuckSrc = extractFn(HTML, "function clearStuckSkeletons(")
 const renderSimsFeedSrc = extractFn(HTML, "function renderSimsFeed(")
 const renderSayingSrc = extractFn(HTML, "function renderSaying(")
 const buildTktDetailSrc = extractFn(HTML, "function buildTktDetail(")
-const openSingleTicketSrc = extractFn(HTML, "function openSingleTicket(")
+// KLA-206: openSingleTicket is now a thin async wrapper (fetches fresh GET /api/feedback/:id
+// then merges + re-renders); the actual header/detail render moved into _renderSingleTicket.
+const openSingleTicketSrc = extractFn(HTML, "function _renderSingleTicket(")
 
 expect(skeletonHostsSrc).toBeTruthy()
 

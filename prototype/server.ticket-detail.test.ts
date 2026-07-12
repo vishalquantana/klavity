@@ -215,3 +215,46 @@ test("POST /api/feedback/:id/comments rejects empty body", async () => {
   const r = await req("POST", `/api/feedback/${FID}/comments`, { body: "   " })
   expect(r.status).toBe(400)
 })
+
+// ── KLA-206: full detail state machine (dismiss → re-triage) + priority in timeline ──
+// The detail view's status control now exposes New + Dismissed so un-dismissing and
+// re-triaging are one click; a fresh GET must reflect each transition (the UI fetches
+// GET /api/feedback/:id on open rather than reading stale in-memory list state).
+test("PATCH round-trips the full state machine: dismiss → re-triage to New → Open (KLA-206)", async () => {
+  const dismiss = await req("PATCH", `/api/feedback/${FID}`, { status: "dismissed" })
+  expect(dismiss.status).toBe(200)
+  let fresh = await (await req("GET", `/api/feedback/${FID}`)).json()
+  expect(fresh.report.status).toBe("dismissed")
+
+  // Un-dismiss / re-triage back to New (impossible before KLA-206 from detail).
+  const retriage = await req("PATCH", `/api/feedback/${FID}`, { status: "new" })
+  expect(retriage.status).toBe(200)
+  fresh = await (await req("GET", `/api/feedback/${FID}`)).json()
+  expect(fresh.report.status).toBe("new")
+
+  const reopen = await req("PATCH", `/api/feedback/${FID}`, { status: "open" })
+  expect(reopen.status).toBe(200)
+  fresh = await (await req("GET", `/api/feedback/${FID}`)).json()
+  expect(fresh.report.status).toBe("open")
+
+  // Both transitions are recorded in the activity timeline.
+  const { items } = await (await req("GET", `/api/feedback/${FID}/timeline`)).json()
+  expect(items.some((i: any) => i.kind === "activity" && i.type === "ticket_status_changed" && i.meta?.to === "dismissed")).toBe(true)
+  expect(items.some((i: any) => i.kind === "activity" && i.type === "ticket_status_changed" && i.meta?.to === "new")).toBe(true)
+})
+
+test("PATCH priority persists, reflects in a fresh GET, and lands in the timeline (KLA-206)", async () => {
+  const p = await req("PATCH", `/api/feedback/${FID}`, { priority: "urgent" })
+  expect(p.status).toBe(200)
+
+  // Fresh GET reflects the new priority — the same read the detail view performs on open.
+  const fresh = await (await req("GET", `/api/feedback/${FID}`)).json()
+  expect(fresh.report.priority).toBe("urgent")
+
+  const { items } = await (await req("GET", `/api/feedback/${FID}/timeline`)).json()
+  expect(items.some((i: any) => i.kind === "activity" && i.type === "ticket_priority_changed" && i.meta?.to === "urgent")).toBe(true)
+
+  // Invalid priority is rejected.
+  const bad = await req("PATCH", `/api/feedback/${FID}`, { priority: "sky-high" })
+  expect(bad.status).toBe(400)
+})

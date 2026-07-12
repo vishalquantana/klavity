@@ -12,17 +12,57 @@ test("Tickets view defaults to the board and reuses the shared filter bar", () =
   expect(html).toContain('id="ticketsKanban"')
 })
 
-test("Tickets kanban has New, Open, In Progress, and collapsed Closed columns", () => {
+test("Tickets kanban splits Closed into separate Done and Dismissed columns (KLA-206)", () => {
   expect(html).toContain('{ key: "new",')
   expect(html).toContain('label: "New"')
   expect(html).toContain('{ key: "open",')
   expect(html).toContain('label: "Open"')
   expect(html).toContain('{ key: "in_progress",')
   expect(html).toContain('label: "In Progress"')
-  expect(html).toContain('{ key: "closed",')
-  expect(html).toContain('label: "Closed"')
-  expect(html).toContain('statuses: ["done", "dismissed"]')
+  // Done and Dismissed are now distinct columns, each mapping a single status,
+  // so a fixed bug and dismissed noise are visually separate and drag can produce either.
+  expect(html).toContain('{ key: "done",')
+  expect(html).toContain('label: "Done"')
+  expect(html).toContain('statuses: ["done"]')
+  expect(html).toContain('{ key: "dismissed",')
+  expect(html).toContain('label: "Dismissed"')
+  expect(html).toContain('statuses: ["dismissed"]')
+  // The collapsed "closed" column is gone.
+  expect(html).not.toContain('{ key: "closed",')
+  expect(html).not.toContain('label: "Closed",         statuses: ["done", "dismissed"]')
   expect(html).toContain('kanbanKeyForStatus(t.status)')
+})
+
+test("kanbanKeyForStatus routes done and dismissed to distinct keys (KLA-206)", () => {
+  // done maps to the "done" column, dismissed to the "dismissed" column — no shared "closed" key.
+  expect(html).toContain('if (status === "done") return "done"')
+  expect(html).toContain('if (status === "dismissed") return "dismissed"')
+  expect(html).not.toContain('return "closed"')
+  // Grid widened to fit the extra column, and both dots are styled.
+  expect(html).toContain('grid-template-columns:repeat(5,minmax(0,1fr))')
+  expect(html).toContain('.kb-dot-done{')
+  expect(html).toContain('.kb-dot-dismissed{')
+})
+
+test("Ticket detail status control exposes the full state machine incl. New + Dismissed (KLA-206)", () => {
+  // Un-dismissing / re-triaging back to New or Open is one click from detail.
+  expect(html).toContain('const statuses = ["new", "open", "in_progress", "done", "dismissed"]')
+})
+
+test("Opening single-ticket detail fetches fresh state from GET /api/feedback/:id (KLA-206)", () => {
+  // openSingleTicket must GET the ticket and merge onto cached state so stale in-memory
+  // list data (status/priority changed elsewhere) is reflected on open.
+  expect(html).toContain('async function openSingleTicket(id)')
+  expect(html).toContain('_renderSingleTicket(id)')
+  expect(html).toContain('fetch("/api/feedback/" + encodeURIComponent(id))')
+  expect(html).toContain('state.tickets[ix] = { ...state.tickets[ix], ...fresh }')
+})
+
+test("Ticket detail priority editor persists via PATCH and is timeline-tracked (KLA-206)", () => {
+  // Priority is editable from detail and the change is logged to the activity timeline.
+  expect(html).toContain('class="tkt-pri-sel')
+  expect(html).toContain('body: JSON.stringify({ priority: newPri })')
+  expect(html).toContain('ticket_priority_changed:')
 })
 
 test("Tickets kanban fetch includes all board statuses by default and supports Closed filter", () => {
