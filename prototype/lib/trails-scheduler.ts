@@ -50,6 +50,64 @@ export function cronMatches(expr: string, date: Date): boolean {
     && dowMatch
 }
 
+// ── KLA-277 (JTBD 4.13): DST-safe timezone-aware matching ──────────────────────
+//
+// When a Trail stores schedule_tz (an IANA zone e.g. "America/New_York"), schedule_cron is
+// interpreted as LOCAL wall-clock time in that zone. We compute the calendar fields of the
+// current UTC instant AS SEEN IN that zone via Intl.DateTimeFormat, then match the cron against
+// them. Because the wall-clock hour is fixed and the UTC↔local mapping is recomputed on every
+// tick, a "9am local" guard keeps firing at 9am local across a DST transition (the UTC minute it
+// fires at simply shifts by an hour) — no conversion is baked at save time.
+
+/** Break a UTC instant into calendar fields as observed in `tz`. dow: 0=Sunday. */
+export function zonedParts(
+  date: Date,
+  tz: string,
+): { min: number; hour: number; dom: number; mon: number; dow: number } {
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    hour12: false,
+    weekday: "short",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+  })
+  const map: Record<string, string> = {}
+  for (const p of fmt.formatToParts(date)) map[p.type] = p.value
+  let hour = parseInt(map.hour, 10)
+  if (hour === 24) hour = 0 // some engines render midnight as "24" with hour12:false
+  const dowMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
+  return {
+    min: parseInt(map.minute, 10),
+    hour,
+    dom: parseInt(map.day, 10),
+    mon: parseInt(map.month, 10),
+    dow: dowMap[map.weekday] ?? new Date(date).getUTCDay(),
+  }
+}
+
+/**
+ * Returns true when `expr` (interpreted as local wall-clock in `tz`) fires at the given UTC
+ * instant. When `tz` is falsy this delegates to the plain UTC `cronMatches` for backward
+ * compatibility with legacy rows that stored a baked-UTC cron.
+ */
+export function cronMatchesTz(expr: string, date: Date, tz?: string | null): boolean {
+  if (!tz) return cronMatches(expr, date)
+  const parts = expr.trim().split(/\s+/)
+  if (parts.length !== 5) return false
+  const [minF, hourF, domF, monF, dowF] = parts
+  let p: ReturnType<typeof zonedParts>
+  try { p = zonedParts(date, tz) } catch { return cronMatches(expr, date) } // bad tz → safe fallback
+  const dowMatch = matchField(dowF, p.dow) || (dowF !== "*" && p.dow === 0 && matchField(dowF, 7))
+  return matchField(minF, p.min)
+    && matchField(hourF, p.hour)
+    && matchField(domF, p.dom)
+    && matchField(monF, p.mon)
+    && dowMatch
+}
+
 /** Basic syntax check — 5 whitespace-separated fields, each field valid. */
 export function isValidCron(expr: string): boolean {
   if (!expr || typeof expr !== "string") return false
@@ -90,7 +148,9 @@ export async function tickScheduler(now = new Date()): Promise<void> {
     return
   }
   for (const trail of trails) {
-    if (!trail.schedule || !cronMatches(trail.schedule, now)) continue
+    // KLA-277: honor the Trail's stored timezone (DST-safe) when present; legacy rows with no
+    // scheduleTz keep the historical UTC-cron interpretation.
+    if (!trail.schedule || !cronMatchesTz(trail.schedule, now, trail.scheduleTz)) continue
     // Already fired this minute for this trail
     if (trail.scheduledLastRunAt != null && trail.scheduledLastRunAt >= minuteTs) continue
     // Stamp before launching so a concurrent tick (or a fast walk) can't double-fire.
