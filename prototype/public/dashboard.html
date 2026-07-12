@@ -1287,6 +1287,9 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .triage-banner .tb-go{margin-left:auto;font-weight:600;color:var(--indigo,#6366f1)}
 .triage-banner.hide{display:none}
 .tg-row{display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-top:1px solid var(--line,#eee)}
+/* JTBD 3.8: transient highlight when a Sim-run observation deep-links to this row */
+.tg-row.tg-focus{animation:tgFocusPulse 2.4s ease}
+@keyframes tgFocusPulse{0%,100%{background:transparent}12%{background:rgba(99,102,241,.16)}}
 .tg-row .tg-b{flex:1;min-width:0}
 .tg-actions{display:flex;gap:8px;align-items:center;flex-shrink:0}
 .tg-sev{font-size:12px;padding:4px 6px}
@@ -1630,7 +1633,8 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     <!-- Sims tab: each Sim with the feedback they have given (primary Sims view) -->
     <div class="card full sims-hero" data-view="sims">
       <h2 style="display:flex;align-items:center;gap:10px"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 16 1.5 1.5" /> <path d="m14 8-1.5-1.5" /> <path d="M15 2c-1.798 1.998-2.518 3.995-2.807 5.993" /> <path d="m16.5 10.5 1 1" /> <path d="m17 6-2.891-2.891" /> <path d="M2 15c6.667-6 13.333 0 20-6" /> <path d="m20 9 .891.891" /> <path d="M3.109 14.109 4 15" /> <path d="m6.5 12.5 1 1" /> <path d="m7 18 2.891 2.891" /> <path d="M9 22c1.798-1.998 2.518-3.995 2.807-5.993" /></svg> Your Sims <span class="count" id="simsCount"></span>
-        <button class="btn btn-indigo btn-sm hide" id="newSimBtn" style="margin-left:auto" onclick="openSimModal()">＋ New Sim</button></h2>
+        <a class="card-go" id="simRunsLink" style="margin-left:auto" href="/sim-runs" aria-label="View Sim run history">Run history <span class="card-arrow" aria-hidden="true">→</span></a>
+        <button class="btn btn-indigo btn-sm hide" id="newSimBtn" onclick="openSimModal()">＋ New Sim</button></h2>
       <div id="simsFeed"><div class="sk-card"><span class="sk sk-av"></span><div class="sk-lines"><span class="sk sk-line" style="width:62%"></span><span class="sk sk-line" style="width:40%"></span></div><span class="sk sk-pill"></span></div><div class="sk-card"><span class="sk sk-av"></span><div class="sk-lines"><span class="sk sk-line" style="width:62%"></span><span class="sk sk-line" style="width:40%"></span></div><span class="sk sk-pill"></span></div></div>
     </div>
 
@@ -1650,7 +1654,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         <span id="supSpinMsg">Your Sims are opening the page…</span>
       </div>
       <div id="supResults" class="sup-results"></div>
-      <div id="supSaved" class="sup-saved">Reactions saved — see them in <a href="#triage" onclick="setView('triage')" style="color:var(--indigo)">New reports</a>.</div>
+      <div id="supSaved" class="sup-saved">Reactions saved — see them in <a href="#triage" onclick="setView('triage')" style="color:var(--indigo)">New reports</a> or the full <a href="/sim-runs" id="supRunsLink" style="color:var(--indigo)">run history</a>.</div>
     </div>
 
     <!-- Sims tab: compact, dismissible live-trigger guidance — kept for onboarding, no longer the hero -->
@@ -2520,136 +2524,19 @@ function renderTriageItems(items) {
     })
   })
   loadTriageShots(host)
-  renderTriageBulkBar()
-  tgBindKeys()
+  // JTBD 3.8: deep-link from a Sim-run observation → scroll to + highlight its feedback row.
+  if (window._pendingTriageFocus) { focusTriageRow(window._pendingTriageFocus); window._pendingTriageFocus = null }
 }
 
-// Bulk action bar — appears above the list when ≥1 row is selected.
-function renderTriageBulkBar() {
-  let bar = $("tgBulkBar")
-  const n = _tgSelected.size
-  const host = $("triageList")
-  if (!bar) {
-    bar = document.createElement("div")
-    bar.id = "tgBulkBar"; bar.className = "bulk-bar tg-bulk-bar"
-    const card = host ? host.closest(".card") : null
-    if (card && host) card.insertBefore(bar, host)
-  }
-  if (!n) { bar.classList.remove("show"); bar.innerHTML = ""; return }
-  const priOpts = ["urgent","high","medium","low"].map(p => `<option value="${p}"${p==="medium"?" selected":""}>${p}</option>`).join("")
-  bar.innerHTML =
-    `<span class="bulk-count">${n} selected</span>` +
-    `<span class="bulk-sep"></span>` +
-    `<span class="bulk-lbl">Priority:</span>` +
-    `<select class="bulk-sel" id="tgBulkPri">${priOpts}</select>` +
-    `<button class="btn btn-indigo btn-sm" id="tgBulkAccept" type="button">Accept as bugs</button>` +
-    `<button class="btn btn-ghost btn-sm" id="tgBulkDismiss" type="button">Dismiss</button>` +
-    `<span class="bulk-sep"></span>` +
-    `<button class="btn btn-ghost btn-sm" id="tgBulkClear" type="button" style="font-size:12px">Clear</button>`
-  bar.classList.add("show")
-  bar.querySelector("#tgBulkAccept").addEventListener("click", () => {
-    const pri = bar.querySelector("#tgBulkPri").value
-    tgAccept([..._tgSelected], pri)
-  })
-  bar.querySelector("#tgBulkDismiss").addEventListener("click", () => tgDismiss([..._tgSelected]))
-  bar.querySelector("#tgBulkClear").addEventListener("click", () => {
-    _tgSelected.clear()
-    if (host) host.querySelectorAll(".tg-row").forEach(r => { r.classList.remove("tg-selected"); const c = r.querySelector(".tg-cb"); if (c) c.checked = false })
-    renderTriageBulkBar()
-  })
-}
-
-// Inline evidence expand — screenshot, session replay, console/network context, grounding quote.
-function tgToggleExpand(row, t) {
-  const box = row.querySelector(".tg-evidence")
-  const btn = row.querySelector(".tg-expand-btn")
-  if (!box || !btn) return
-  const open = box.classList.contains("hide")
-  box.classList.toggle("hide", !open)
-  btn.setAttribute("aria-expanded", open ? "true" : "false")
-  btn.classList.toggle("open", open)
-  if (open && !box.getAttribute("data-loaded")) {
-    box.setAttribute("data-loaded", "1")
-    box.innerHTML = tgEvidenceHtml(t)
-    const rb = box.querySelector(".tg-ev-replay")
-    if (rb) rb.addEventListener("click", () => { if (typeof openReplay === "function") openReplay(String(t.id)) })
-  }
-}
-function tgEvidenceHtml(t) {
-  const ctx = t.clientContext || {}
-  const parts = []
-  if (t.sourceQuote) parts.push(`<div class="tg-ev-quote">"${esc(t.sourceQuote)}"</div>`)
-  if (t.observation && (!t.sourceQuote || t.observation.trim() !== t.sourceQuote.trim())) parts.push(`<div class="tg-ev-obs">${esc(t.observation)}</div>`)
-  const metaBits = []
-  if (t.urlPath) metaBits.push(`<span>${esc((t.urlHost || "") + t.urlPath)}</span>`)
-  if (ctx.userAgent) metaBits.push(`<span>${esc(ctx.userAgent)}</span>`)
-  if (ctx.viewportSize) metaBits.push(`<span>${kicon('monitor',{size:12})} ${esc(ctx.viewportSize)}</span>`)
-  if (metaBits.length) parts.push(`<div class="tg-ev-meta">${metaBits.join("")}</div>`)
-  // Replay affordance (only when a session replay was recorded).
-  if (t.hasReplay) parts.push(`<button class="btn btn-ghost btn-sm tg-ev-replay" type="button">${kicon('play',{size:14})} Session replay</button>`)
-  // Console context.
-  const cons = Array.isArray(ctx.consoleErrors) ? ctx.consoleErrors : []
-  if (cons.length) {
-    const rows = cons.slice(0, 12).map(e => `<li>[${esc(String(e.level || "error"))}] ${esc(String(e.message || ""))}</li>`).join("")
-    parts.push(`<div class="tg-ev-group"><div class="tg-ev-h">${kicon('monitor',{size:13})} Console (${cons.length})</div><ul class="tg-ev-list">${rows}</ul></div>`)
-  }
-  // Network context.
-  const net = Array.isArray(ctx.networkFailures) ? ctx.networkFailures : []
-  if (net.length) {
-    const rows = net.slice(0, 12).map(n => `<li>${esc(String(n.method || "GET"))} ${esc(String(n.url || ""))} → ${esc(String(n.status))}${n.durationMs != null ? ` (${esc(String(n.durationMs))}ms)` : ""}</li>`).join("")
-    parts.push(`<div class="tg-ev-group"><div class="tg-ev-h">${kicon('radio-tower',{size:13})} Network (${net.length})</div><ul class="tg-ev-list">${rows}</ul></div>`)
-  }
-  if (!parts.length) parts.push(`<div class="tg-ev-empty muted">No extra context was captured for this report.</div>`)
-  return parts.join("")
-}
-
-// Keyboard: j/k move focus · a accept focused · d dismiss focused (only while the triage view is active).
-function tgBindKeys() {
-  if (_tgKeysBound) return
-  _tgKeysBound = true
-  document.addEventListener("keydown", (e) => {
-    if (document.body.getAttribute("data-view") !== "triage") return
-    const tag = (e.target && e.target.tagName || "").toLowerCase()
-    if (tag === "input" || tag === "textarea" || tag === "select" || (e.target && e.target.isContentEditable)) return
-    if (e.metaKey || e.ctrlKey || e.altKey) return
-    const items = tgVisibleItems(); if (!items.length) return
-    const ids = items.map(t => String(t.id))
-    const cur = _tgFocus && ids.includes(_tgFocus) ? ids.indexOf(_tgFocus) : -1
-    const k = e.key.toLowerCase()
-    if (k === "j") { e.preventDefault(); tgSetFocus(ids[Math.min(ids.length - 1, cur + 1)] || ids[0], true) }
-    else if (k === "k") { e.preventDefault(); tgSetFocus(ids[cur <= 0 ? 0 : cur - 1] || ids[0], true) }
-    else if (k === "a" && _tgFocus) { e.preventDefault(); const row = tgRowById(_tgFocus); const pri = row ? row.querySelector(".tg-pri").value : null; tgAccept([_tgFocus], pri) }
-    else if (k === "d" && _tgFocus) { e.preventDefault(); tgDismiss([_tgFocus]) }
-    else if (k === "x" && _tgFocus) { e.preventDefault(); const row = tgRowById(_tgFocus); const cb = row ? row.querySelector(".tg-cb") : null; if (cb) { cb.checked = !cb.checked; cb.dispatchEvent(new Event("change")) } }
-  })
-}
-function tgSetFocus(id, scroll) {
-  _tgFocus = id
+// Scroll to a feedback row (by id) in New reports and pulse it so the deep-link lands somewhere obvious.
+function focusTriageRow(fid) {
+  if (!fid) return
   const host = $("triageList"); if (!host) return
-  host.querySelectorAll(".tg-row").forEach(r => r.classList.toggle("tg-focus", r.getAttribute("data-id") === id))
-  const row = tgRowById(id)
-  if (row && scroll) { try { row.scrollIntoView({ block: "nearest" }) } catch (e) {} }
-}
-
-// Undo toast — shown after a single or bulk dismiss; onUndo restores the reports to status='new'.
-let _tgToastTimer = null
-function tgUndoToast(count, onUndo) {
-  let toast = $("tgToast")
-  if (!toast) {
-    toast = document.createElement("div")
-    toast.id = "tgToast"; toast.className = "tg-toast"
-    document.body.appendChild(toast)
-  }
-  if (_tgToastTimer) { clearTimeout(_tgToastTimer); _tgToastTimer = null }
-  toast.innerHTML = `<span class="tg-toast-msg">${kicon('check-circle',{size:15})} Dismissed ${count} report${count === 1 ? "" : "s"}</span><button class="tg-toast-undo" type="button">${kicon('refresh-cw',{size:13})} Undo</button>`
-  toast.classList.add("show")
-  const undoBtn = toast.querySelector(".tg-toast-undo")
-  undoBtn.addEventListener("click", async () => {
-    toast.classList.remove("show")
-    if (_tgToastTimer) { clearTimeout(_tgToastTimer); _tgToastTimer = null }
-    await onUndo()
-  })
-  _tgToastTimer = setTimeout(() => { toast.classList.remove("show") }, 8000)
+  const row = host.querySelector('.tg-row[data-id="' + (window.CSS && CSS.escape ? CSS.escape(fid) : fid) + '"]')
+  if (!row) return
+  row.scrollIntoView({ behavior: "smooth", block: "center" })
+  row.classList.add("tg-focus")
+  setTimeout(() => row.classList.remove("tg-focus"), 2400)
 }
 
 // ── KLA-255: Pending Sim Matches queue ───────────────────────────────────────
@@ -2911,6 +2798,12 @@ function renderChecklist() {
   const pid = curProjId()
   const studio = $("checklistStudioLink")
   if (studio && pid) studio.setAttribute("href", "/app?project=" + encodeURIComponent(pid))
+  // Point the Sim-run-history links at the active project so /sim-runs opens on the right one.
+  if (pid) {
+    const srHref = "/sim-runs?project=" + encodeURIComponent(pid)
+    const srLink = $("simRunsLink"); if (srLink) srLink.setAttribute("href", srHref)
+    const supRuns = $("supRunsLink"); if (supRuns) supRuns.setAttribute("href", srHref)
+  }
   // Step 3, widget path: show the real embed snippet for THIS project so it's copy-paste ready.
   const snip = $("embedSnippet")
   if (snip && pid) snip.textContent = embedSnippet(pid)
@@ -6327,7 +6220,10 @@ load()
   mirror('memCount','navTeamCount');
   mirror('triageCount','navTriageCount');
   var init=(location.hash||'').replace('#','');
-  setView(VIEWS.indexOf(init)>=0?init:'overview');
+  // Deep-link form "triage/<feedbackId>" (from a Sim-run observation) opens New reports on that row.
+  var deepTriage=init.match(/^triage\/(.+)$/);
+  if(deepTriage){window._pendingTriageFocus=decodeURIComponent(deepTriage[1]);setView('triage');}
+  else{setView(VIEWS.indexOf(init)>=0?init:'overview');}
 })();
 </script>
 

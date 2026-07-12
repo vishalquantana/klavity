@@ -1,6 +1,6 @@
 // Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
-import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, listInboxForProjects, setProjectTrailsAutofile } from "./lib/db"
+import { insertSimRun, getSimRun, listSimRuns, previousSimRunForUrl } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, listInboxForProjects, setProjectTrailsAutofile } from "./lib/db"
 import { issueKeyFor, chooseDedup, humanReportIssueKeyFor } from "./lib/dedup"
 import { classifySimObservation } from "./lib/sim-bug-classify"
 import { getConnector, listConnectorTypes, type TicketPayload, type TicketAttachment } from "./lib/connectors/index"
@@ -35,7 +35,7 @@ import { AsyncLocalStorage } from "node:async_hooks"
 // resolveProject can constrain it to that project (F5) — without threading state through every route.
 const reqCtx = new AsyncLocalStorage<{ boundProject?: string | null }>()
 import { ingestSnapOrSim } from "./lib/expectations-ingest"
-import { runSimReviews, decodeDataUrl as decodeDataUrlLib, splitUrl as splitUrlLib, buildSimRunSummary, activeReviewIndexes, type SimReview } from "./lib/sim-review"
+import { runSimReviews, decodeDataUrl as decodeDataUrlLib, splitUrl as splitUrlLib, buildSimRunSummary, diffSimRuns, activeReviewIndexes, type SimReview } from "./lib/sim-review"
 import { trailsDashboardData, walkTrends } from "./lib/trails-dashboard"
 import { fileFindingById, dismissFinding, realFiler } from "./lib/trails-findings-gate"
 import { getReplay, runsWithReplay } from "./lib/trails-replay"
@@ -2773,6 +2773,23 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (!db) return json({ error: "Database unavailable." }, 503)
 
       const runIdMatch = path.match(/^\/api\/sims\/runs\/([^/]+)$/)
+
+      // GET /api/sims/runs/:runId/diff — what changed versus the previous done run of the SAME url
+      // (JTBD 3.8, Loop B). Returns { current, previous, diff:{ newFindings, resolvedFindings, changedReactions } }.
+      const runDiffMatch = path.match(/^\/api\/sims\/runs\/([^/]+)\/diff$/)
+      if (req.method === "GET" && runDiffMatch) {
+        const run = await getSimRun(runDiffMatch[1])
+        if (!run) return json({ error: "Run not found." }, 404)
+        const access = await projectAccess(meS, run.projectId)
+        if (!access) return json({ error: "Access denied." }, 403)
+        const prev = await previousSimRunForUrl(run.projectId, run.url, run.createdAt, run.id)
+        const diff = diffSimRuns(run.reactions, prev ? prev.reactions : null)
+        return json({
+          current: { id: run.id, url: run.url, createdAt: run.createdAt },
+          previous: prev ? { id: prev.id, url: prev.url, createdAt: prev.createdAt } : null,
+          diff,
+        })
+      }
 
       if (req.method === "GET" && runIdMatch) {
         const runId = runIdMatch[1]
