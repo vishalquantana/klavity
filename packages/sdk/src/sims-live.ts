@@ -1,31 +1,38 @@
 /**
- * Klavity Sims Live — persistent Sim dock + walk/box/pin choreography.
+ * Klavity Sims Live — floating, chat-style feedback panel.
  *
  * "Customers in the room while you build."
  *
- * HOME BASE: Sims huddle bottom-right in the dock — always visible.
+ * SURFACE: a single bottom-right launcher pill (stacked persona avatars +
+ * "N findings from your Sims" + a "M high" badge) expands into a floating,
+ * chat-style card that OVERLAYS the page (never reflows/pushes it). Every Sim
+ * finding lives in this panel as a clickable row.
  *
- * PIN/FOCUS: when renderFeedback() receives a critical/concern observation
- * that resolves to a target element (model `region` first, text-matching fallback second), the Sim
- *   1. DROPS a small collapsed marker on the flagged page element
- *   2. EXPANDS one marker at a time on hover/click or dock click
- *   3. WALKS to that element, then DRAWS a pulsing halo + speech bubble
+ * Each row: persona avatar+name (accent colour), full finding text (clamp with a
+ * "Show more" expand — text is never cut off; the panel scrolls internally),
+ * priority pill (HIGH/MED/LOW), sentiment, and per-row actions:
+ *   • Track as Bug  → SimsLive.onTriage(obs, simName), mark handled, remove row
+ *   • Jump to on page → scroll to the resolved element + a TRANSIENT pulsing halo
+ *   • Dismiss       → mark handled, remove row
  *
- * Critical page-level observations with no target show as a transient huddle bubble.
- * Positive/neutral observations are persisted server-side but are intentionally
- * not displayed on-page.
+ * Header: count ("N findings from M Sims · K high"), filter chips (by persona /
+ * by priority), and a collapse control. Empty / reviewing state: a friendly
+ * "Your Sims are reviewing this page…" shimmer.
  *
- * Public API on window.KlavitySims:
- *   deploy(simIds, sims?, opts?)  — mount dock; opts.mode:'critical'|'all'
- *   setReviewing(bool)            — Dev 4: pulsing ring while review in flight
- *   renderFeedback(id, name, obs) — dispatch each observation to walk or huddle
- *   undeploy()                    — full teardown (walkers + halos + pins + dock)
+ * Retired (was: scattered always-on markers/pins + a looping "walk me through"
+ * tour). The on-page halo now only appears TRANSIENTLY when the user clicks
+ * "Jump to on page" on a row.
+ *
+ * Public API on window.KlavitySims (unchanged contract):
+ *   deploy(simIds, sims?, opts?)  — mount the launcher/panel
+ *   setReviewing(bool)            — reviewing shimmer in launcher + panel
+ *   renderFeedback(id, name, obs) — add each new (non-duplicate) finding as a row
+ *   undeploy()                    — full teardown
  *   onTriage                      — settable hook: (obs, simName) => void
  *
  * Dev split:
- *   THIS FILE  — presence UI, walk choreography, window.KlavitySims API
- *   Dev 4      — DOM/scroll watch engine: calls setReviewing() + renderFeedback()
- *   Dev 6      — right-click menus: calls deploy()
+ *   THIS FILE  — presence UI (launcher + panel), transient jump-to halo, API
+ *   sims-watch — DOM/scroll watch engine: calls setReviewing() + renderFeedback()
  *   Dev 3      — /api/sim/review backend; each review item includes observations[]
  */
 
@@ -71,9 +78,9 @@ export interface LiveObservation {
 
 export interface DeployOpts {
   /**
-   * On-page annotations are intentionally critical-only to keep customer pages
-   * readable. This option is retained for API compatibility; positives/neutral
-   * observations still persist to Triage but do not render on-page.
+   * On-page annotations were historically critical-only. The panel now shows
+   * every concern-level finding as a row; positives/neutral still persist to
+   * Triage but do not surface in the panel. Retained for API compatibility.
    */
   mode?: 'critical' | 'all'
 }
@@ -83,72 +90,70 @@ export interface KlavitySimsAPI {
   setReviewing(reviewing: boolean): void
   renderFeedback(simId: string, simName: string, observations: LiveObservation[]): void
   undeploy(): void
-  /** Set this to receive "Track as Bug" clicks from pinned bubbles. */
+  /** Set this to receive "Track as Bug" clicks from finding rows. */
   onTriage: ((observation: LiveObservation, simName: string) => void) | null
 }
 
 // ── Internal state ────────────────────────────────────────────────────────────
 
-const DOCK_HOST_ID    = 'klav-sims-live'
+const HOST_ID         = 'klav-sims-live'
 const OVERLAY_HOST_ID = 'klav-sims-overlay'
 const EXT_STYLE_ID    = 'klav-sims-ext-css'
 
-let dockHostEl: HTMLElement | null = null
+let hostEl: HTMLElement | null = null
 let shadowRoot: ShadowRoot | null = null
-let dockEl: HTMLElement | null = null
-let overlayEl: HTMLElement | null = null    // full-page overlay for walkers/halos/pins
+let overlayEl: HTMLElement | null = null     // full-page overlay for the transient jump-to halo
 let deployAbort: AbortController | null = null
-interface SimSlot {
+
+/** A Sim registered in this deploy — powers the launcher avatars + row accents. */
+interface SimEntry {
   simId: string
-  avatarEl: HTMLElement   // .ksl-slot in the dock
   accent: string
   initials: string
   name: string
-  clearBubble: (() => void) | null
-  annotationIds: Set<string>
+  photoUrl?: string
 }
-const simSlots = new Map<string, SimSlot>()
+const simEntries = new Map<string, SimEntry>()
 
-/** In-transit walker elements (removed on arrival or undeploy). */
-const walkers = new Set<HTMLElement>()
-
-interface Annotation {
+/** A finding shown as a panel row. */
+interface Finding {
   id: string
-  slot: SimSlot
+  entry: SimEntry
   obs: LiveObservation
-  targetEl: HTMLElement
-  marker: HTMLElement
-  halo: HTMLElement | null
-  bubble: HTMLElement | null
-  markerCleanup: (() => void) | null
-  chromeCleanup: (() => void) | null
+  rowEl: HTMLElement | null
 }
+const findings = new Map<string, Finding>()
+let findingSeq = 0
 
-interface PendingAnnotation {
-  id: string
-  slot: SimSlot
-  obs: LiveObservation
-  targetEl: HTMLElement
-  cleanup: (() => void) | null
-  revealed: boolean
-}
+/** Panel expanded state + active filters. */
+let panelOpen = false
+let personaFilter: string | null = null       // simId or null
+let sevFilter: 'HIGH' | 'MED' | 'LOW' | null = null
+let reviewing = false
 
-/** Active page annotations keyed by a unique annotation id. */
-const annotations = new Map<string, Annotation>()
-const pendingAnnotations = new Map<string, PendingAnnotation>()
-let annotationSeq = 0
+// Cached panel DOM refs (inside the shadow root).
+let launcherEl: HTMLButtonElement | null = null
+let launcherAvatarsEl: HTMLElement | null = null
+let launcherTxtEl: HTMLElement | null = null
+let launcherBadgeEl: HTMLElement | null = null
+let panelEl: HTMLElement | null = null
+let panelCountEl: HTMLElement | null = null
+let panelFiltersEl: HTMLElement | null = null
+let panelListEl: HTMLElement | null = null
+let announcerEl: HTMLElement | null = null
+
+/** The one active transient jump-to halo (cleaned up on next jump / undeploy). */
+let jumpHaloCleanup: (() => void) | null = null
 
 /**
  * Observation-text dedup guard (fixes the live-Sims loop pile-up).
  *
- * A constantly-mutating page (streaming chat, typing indicators, a live sidebar)
- * makes the watch engine re-review the same viewport, and the server returns the
- * SAME findings each time. Without a guard, renderFeedback() keeps ADDING markers
- * for identical observations and the "+N more" counter grows forever.
- *
- * We key each already-shown finding by `simId::<normalized-text-hash>` (text is
- * trimmed / lowercased / whitespace-collapsed) and skip any repeat. Cleared in
- * undeploy() so a fresh deploy starts clean.
+ * A constantly-mutating page (streaming chat, a live sidebar) makes the watch
+ * engine re-review the same viewport, and the server returns the SAME findings
+ * each time. Without a guard, renderFeedback() keeps ADDING rows for identical
+ * observations. We key each already-shown finding by
+ * `simId::<normalized-text>` (trimmed / lowercased / whitespace-collapsed) and
+ * skip repeats. Cleared in undeploy() so a fresh deploy starts clean.
  */
 const seenObservationKeys = new Set<string>()
 
@@ -161,23 +166,6 @@ function normalizeObservationText(text: string): string {
 function observationKey(simId: string, obs: LiveObservation): string {
   return `${simId}::${normalizeObservationText(obs.text)}`
 }
-let focusedAnnotationId: string | null = null
-let walkQueueIndex = 0
-let walkQueueResetTimer: ReturnType<typeof setTimeout> | null = null
-const walkQueueTimers = new Set<ReturnType<typeof setTimeout>>()
-let moreCounterEl: HTMLButtonElement | null = null
-let reviewStatusEl: HTMLElement | null = null
-let tourControlsEl: HTMLElement | null = null
-let tourPlayBtn: HTMLButtonElement | null = null
-let tourPrevBtn: HTMLButtonElement | null = null
-let tourNextBtn: HTMLButtonElement | null = null
-let tourStopBtn: HTMLButtonElement | null = null
-let tourIndex = 0
-let tourPlaying = false
-let tourRunId = 0
-let tourBusy = false
-let tourTimer: ReturnType<typeof setTimeout> | null = null
-const TOUR_READ_MS = 3400
 
 function emitLiveDock(active: boolean): void {
   try {
@@ -185,9 +173,9 @@ function emitLiveDock(active: boolean): void {
   } catch { /* non-fatal: layout hints are best-effort */ }
 }
 
-// ── Dock CSS (shadow DOM) ─────────────────────────────────────────────────────
+// ── Panel CSS (shadow DOM) ─────────────────────────────────────────────────────
 
-const DOCK_CSS = `
+const PANEL_CSS = `
   :host { all: initial; font-family: system-ui, -apple-system, sans-serif; }
 
   .ksl-sr {
@@ -195,295 +183,205 @@ const DOCK_CSS = `
     overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; pointer-events: none;
   }
 
-  .ksl-stack {
-    display: flex; flex-direction: column; align-items: flex-end;
-    gap: 8px; pointer-events: none;
+  /* ── design tokens (mirror packages/core/demo/sims-feedback-panel.html) ── */
+  .ksl-root {
+    --surface:   #16110c;
+    --surface-2: #1c1610;
+    --surface-3: #221b13;
+    --line:      #3a332b;
+    --line-soft: #2a231b;
+    --fg:   #f5f3ee;
+    --fg-2: #cec6bd;
+    --fg-3: #8a8276;
+    --fg-4: #5e5852;
+    --accent:   #8b5cf6;
+    --accent-2: #a78bfa;
+    --accent-3: #c4b5fd;
+    --accent-glow: rgba(139,92,246,.28);
+    --sev-h-bg: rgba(233,79,55,.22);  --sev-h-fg:#e8849a;
+    --sev-m-bg: rgba(244,169,60,.20); --sev-m-fg:#e8a24a;
+    --sev-l-bg: rgba(127,209,196,.15);--sev-l-fg:#7fd1c4;
+    --mono: ui-monospace,'JetBrains Mono',monospace;
+    --ease: cubic-bezier(.34,1.36,.64,1);
+    pointer-events: none;   /* only interactive children capture events */
   }
+  .ksl-root button { font-family: inherit; }
 
-  .ksl-dock {
-    display: flex; flex-direction: row;
-    flex-wrap: wrap-reverse; justify-content: flex-end; align-items: flex-end;
-    gap: 10px; row-gap: 6px;
-    max-width: min(400px, calc(100vw - 32px));
+  /* ═══════════════ launcher pill ═══════════════ */
+  .ksl-launcher {
+    position: fixed; right: 20px; bottom: 20px;
+    display: inline-flex; align-items: center; gap: 0;
+    border: 0; cursor: pointer; background: transparent; padding: 0;
     pointer-events: auto;
   }
+  .ksl-launcher[hidden] { display: none; }
+  .ksl-pill {
+    display: flex; align-items: center; gap: 10px;
+    background: linear-gradient(168deg, var(--surface-2), var(--surface));
+    border: 1px solid var(--accent-glow); border-radius: 999px;
+    padding: 8px 16px 8px 10px;
+    box-shadow: 0 18px 46px -14px rgba(0,0,0,.7), 0 0 0 4px rgba(139,92,246,.1);
+    transition: transform .15s var(--ease), border-color .15s;
+  }
+  .ksl-launcher:hover .ksl-pill { transform: translateY(-2px); border-color: var(--accent-2); }
+  .ksl-launcher:active .ksl-pill { transform: scale(.97); }
+  .ksl-launcher:focus-visible { outline: none; }
+  .ksl-launcher:focus-visible .ksl-pill { border-color: var(--accent-2); box-shadow: 0 18px 46px -14px rgba(0,0,0,.7), 0 0 0 3px var(--accent-2); }
+  .ksl-pill-txt { font-size: 13px; font-weight: 600; color: var(--fg); white-space: nowrap; }
+  .ksl-pill-txt b { color: var(--accent-3); }
+  .ksl-pill-avatars { display: flex; }
+  .ksl-pill-avatars .ksim { margin-left: -10px; }
+  .ksl-pill-avatars .ksim:first-child { margin-left: 0; }
+  .ksl-pill-badge {
+    position: absolute; top: -4px; right: -4px;
+    background: var(--sev-h-fg); color: #2a0e12;
+    font: 700 10px/1 var(--mono); border-radius: 20px; padding: 3px 6px;
+    box-shadow: 0 4px 10px rgba(0,0,0,.5);
+  }
+  .ksl-pill-badge[hidden] { display: none; }
 
-  @keyframes ksl-jumpin {
-    0%   { transform: translateY(80px) scale(.6);  opacity: 0; }
-    52%  { transform: translateY(-14px) scale(1.1); opacity: 1; }
-    72%  { transform: translateY(6px)   scale(.95); }
-    88%  { transform: translateY(-2px)  scale(1.01); }
-    100% { transform: translateY(0)    scale(1);    opacity: 1; }
-  }
-  .ksl-slot {
-    position: relative; display: flex; flex-direction: column; align-items: center;
-    cursor: default;
-    animation: ksl-jumpin .62s cubic-bezier(.34,1.36,.64,1) both;
-    animation-delay: calc(var(--ksl-idx,0) * 72ms);
-    pointer-events: auto;
-  }
-  .ksl-slot.ksl-has-annotation { cursor: pointer; }
-  .ksl-slot.ksl-focus .ksim-head {
-    box-shadow: 0 0 0 3px rgba(139,92,246,.28), 0 0 26px rgba(139,92,246,.36);
-  }
-
-  /* Idle "watching…" label */
-  .ksl-idle {
-    font-family: ui-monospace,'JetBrains Mono',monospace;
-    font-size: 8.5px; letter-spacing: .08em; text-transform: uppercase;
-    color: rgba(255,255,255,.25); margin-top: 3px; white-space: nowrap;
-    pointer-events: none; user-select: none;
-    animation: ksl-idle-breathe 2.8s ease-in-out infinite;
-    transition: opacity .3s;
-  }
-  @keyframes ksl-idle-breathe { 0%,100%{opacity:.45} 50%{opacity:.85} }
-  .ksl-slot.ksl-has-bubble .ksl-idle,
-  .ksl-slot.ksl-thinking   .ksl-idle { opacity: 0 !important; animation: none; }
-
-  /*
-   * Thinking state — spinning SVG progress ring + status caption.
-   *
-   * Layout: the .ksl-ring SVG is absolutely positioned so it orbits the Sim head
-   * without changing the layout. The arc (circle with stroke-dasharray) spins once
-   * every 2.4s, giving a clear "in-progress" signal.
-   *
-   * Status caption: a legible "Sims are reviewing this page…" pill appears above
-   * the dock so the user clearly understands the wait (reviews run ~10–15s and we
-   * never promise a specific duration).
-   */
-  .ksl-ring {
-    position: absolute;
-    top: 50%; left: 50%;
-    /* Centre over the ksim-head. The SVG is 58px; offset by half to centre. */
-    transform: translate(-50%, -72%);
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity .25s;
-  }
-  .ksl-slot.ksl-thinking .ksl-ring { opacity: 1; }
-  .ksl-ring circle {
-    fill: none;
-    stroke: var(--ksl-accent, #6366f1);
-    stroke-width: 2.5;
-    stroke-linecap: round;
-    /* circumference ≈ 2π × 30 ≈ 188.5; dash = 60% of arc */
-    stroke-dasharray: 113 75;
-    stroke-dashoffset: 0;
-    transform-origin: 31px 31px;
-    animation: ksl-spin 2.4s linear infinite;
-  }
-  @keyframes ksl-spin { to { transform: rotate(360deg); } }
-
-  /* "analyzing…" hint pill — appears below the avatar while thinking.
-     We deliberately do NOT claim a duration (reviews run ~10–15s). */
-  .ksl-time-hint {
-    position: absolute;
-    bottom: -18px; left: 50%;
-    transform: translateX(-50%);
-    font-family: ui-monospace, 'JetBrains Mono', monospace;
-    font-size: 8px; letter-spacing: .06em; text-transform: uppercase;
-    color: rgba(255,255,255,.5);
-    background: rgba(99,102,241,.18);
-    border: 1px solid rgba(99,102,241,.3);
-    border-radius: 20px; padding: 1px 6px;
-    white-space: nowrap; pointer-events: none;
-    opacity: 0; transition: opacity .3s .4s;  /* delayed fade-in so fast reviews don't flash it */
-  }
-  .ksl-slot.ksl-thinking .ksl-time-hint { opacity: 1; }
-
-  /*
-   * Reviewing status caption — a legible banner above the whole dock, shown
-   * while ANY review is in flight so the user knows the Sims are actively
-   * analyzing the page (the tiny per-avatar ring alone is too subtle).
-   */
-  .ksl-review-status {
-    display: none;
-    align-items: center;
-    gap: 8px;
-    align-self: flex-end;
-    max-width: min(320px, calc(100vw - 32px));
-    margin-bottom: 2px;
-    padding: 7px 13px 7px 11px;
-    border-radius: 999px;
-    background: linear-gradient(168deg, rgba(28,22,16,.97), rgba(18,14,10,.99));
-    border: 1px solid rgba(139,92,246,.42);
-    box-shadow: 0 14px 40px rgba(0,0,0,.5), 0 0 0 4px rgba(139,92,246,.1), inset 0 1px 0 rgba(255,255,255,.06);
-    -webkit-backdrop-filter: blur(12px) saturate(140%); backdrop-filter: blur(12px) saturate(140%);
-    color: #ded6ff;
-    font-family: system-ui, -apple-system, sans-serif;
-    font-size: 12.5px; font-weight: 600; line-height: 1.2; letter-spacing: .01em;
-    white-space: nowrap; pointer-events: none;
-  }
-  .ksl-review-status.is-on {
-    display: inline-flex;
-    animation: ksl-bubble-in .32s cubic-bezier(.34,1.36,.64,1) both;
-  }
-  .ksl-review-dot {
-    width: 8px; height: 8px; border-radius: 50%;
-    background: #a78bfa; flex-shrink: 0;
+  /* reviewing shimmer inside the launcher */
+  .ksl-launcher.is-reviewing .ksl-pill { border-color: var(--accent-2); }
+  .ksl-launcher.is-reviewing .ksl-pill-txt::after {
+    content: ''; display: inline-block; width: 7px; height: 7px; margin-left: 7px;
+    border-radius: 50%; background: var(--accent-2); vertical-align: middle;
     box-shadow: 0 0 0 0 rgba(167,139,250,.55);
-    animation: ksl-review-pulse 1.4s ease-out infinite;
+    animation: ksl-pulse 1.4s ease-out infinite;
   }
-  @keyframes ksl-review-pulse {
+  @keyframes ksl-pulse {
     0%   { box-shadow: 0 0 0 0 rgba(167,139,250,.55); opacity: 1; }
     70%  { box-shadow: 0 0 0 7px rgba(167,139,250,0); opacity: .85; }
     100% { box-shadow: 0 0 0 0 rgba(167,139,250,0); opacity: 1; }
   }
 
-  /* Huddle bubble */
-  .ksl-bubble {
-    position: absolute; bottom: calc(100% + 10px); right: 0; width: 200px;
-    /* Cap height so a long observation near the viewport top scrolls internally
-       instead of overflowing off-screen with cut-off text. */
-    max-height: calc(100vh - 120px); overflow-y: auto;
-    transform-origin: bottom center;
-    background: linear-gradient(168deg,rgba(28,22,16,.97),rgba(18,14,10,.99));
-    border: 1px solid #3a332b; border-left-width: 3px; border-radius: 13px;
-    padding: 10px 30px 10px 11px;
-    box-shadow: 0 20px 52px rgba(0,0,0,.65), 0 6px 20px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.07);
-    -webkit-backdrop-filter: blur(12px) saturate(140%); backdrop-filter: blur(12px) saturate(140%);
-    pointer-events: auto; z-index: 10;
-    animation: ksl-bubble-in .32s cubic-bezier(.34,1.36,.64,1) both;
+  /* ═══════════════ floating chat panel ═══════════════ */
+  .ksl-panel {
+    position: fixed; right: 20px; bottom: 20px; z-index: 1;
+    width: 378px; max-width: calc(100vw - 32px);
+    height: min(620px, calc(100vh - 96px));
+    display: none; flex-direction: column; overflow: hidden;
+    background: linear-gradient(168deg, var(--surface-2), var(--surface));
+    border: 1px solid var(--line); border-radius: 18px;
+    box-shadow: 0 30px 70px -20px rgba(0,0,0,.8), 0 0 0 4px rgba(139,92,246,.08);
+    transform-origin: bottom right;
+    color: var(--fg); pointer-events: auto;
   }
-  @keyframes ksl-bubble-in {
-    0%  { transform: translateY(18px) scale(.78); opacity: 0; }
-    58% { transform: translateY(-4px)  scale(1.04); opacity: 1; }
-    80% { transform: translateY(2px)   scale(.98); }
-    100%{ transform: translateY(0)     scale(1);   opacity: 1; }
-  }
-  @keyframes ksl-bubble-out {
-    0%  { transform: translateY(0)     scale(1);  opacity: 1; }
-    100%{ transform: translateY(-10px) scale(.88); opacity: 0; }
-  }
-  .ksl-bubble.is-out { pointer-events: none; animation: ksl-bubble-out .24s ease-in forwards; }
-  .ksl-bubble::after  { content:''; position:absolute; bottom:-8px; right:14px; border:7px solid transparent; border-top-color:#3a332b; border-bottom:none; pointer-events:none; }
-  .ksl-bubble::before { content:''; position:absolute; bottom:-6px; right:15px; border:6px solid transparent; border-top-color:#1c1610; border-bottom:none; z-index:1; pointer-events:none; }
+  .ksl-panel.is-open { display: flex; animation: ksl-panel-in .34s var(--ease) both; }
+  @keyframes ksl-panel-in { 0% { transform: translateY(24px) scale(.9); opacity: 0; } 100% { transform: none; opacity: 1; } }
 
-  .ksl-b-tag { font-family:ui-monospace,'JetBrains Mono',monospace; font-size:9px; letter-spacing:.09em; text-transform:uppercase; font-weight:700; margin-bottom:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .ksl-b-sev { display:inline-block; font-family:ui-monospace,monospace; font-size:9px; letter-spacing:.05em; text-transform:uppercase; padding:1px 5px; border-radius:4px; margin-left:7px; vertical-align:middle; background:rgba(233,79,55,.22); color:#e8849a; }
-  .ksl-b-sev.sev-m { background:rgba(244,169,60,.2);   color:#e8a24a; }
-  .ksl-b-sev.sev-l { background:rgba(127,209,196,.15); color:#7fd1c4; }
-  .ksl-b-obs  { font-size:12.5px; line-height:1.47; color:#cec6bd; }
-  .ksl-b-more { font-size:11px; color:#5e5852; margin-top:5px; font-style:italic; }
-  .ksl-b-close {
-    position:absolute; top:7px; right:8px;
-    background:none; border:none; cursor:pointer; color:#5e5852; font-size:13px;
-    line-height:1; padding:2px 4px; border-radius:4px; pointer-events:auto;
-    transition:color .15s,background .15s;
+  .ksl-head { padding: 16px 16px 12px; border-bottom: 1px solid var(--line-soft); flex-shrink: 0; }
+  .ksl-title-row { display: flex; align-items: center; gap: 10px; margin-bottom: 3px; }
+  .ksl-title { font-size: 14.5px; font-weight: 700; }
+  .ksl-count { font-size: 12.5px; color: var(--fg-3); }
+  .ksl-count b { color: var(--accent-3); }
+  .ksl-count .ksl-hi { color: var(--sev-h-fg); }
+  .ksl-icon-btn {
+    margin-left: auto; width: 30px; height: 30px; border-radius: 8px;
+    border: 1px solid var(--line); background: transparent; color: var(--fg-3);
+    cursor: pointer; display: grid; place-items: center;
+    transition: transform .15s var(--ease), background .15s, color .15s;
   }
-  .ksl-b-close:hover   { color:#f5f3ee; background:rgba(255,255,255,.1); }
-  .ksl-b-close:focus-visible { outline:2px solid #8b5cf6; outline-offset:2px; }
+  .ksl-icon-btn:hover { transform: translateY(-1px); background: rgba(255,255,255,.06); color: var(--fg); }
+  .ksl-icon-btn:active { transform: scale(.94); }
+  .ksl-icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .ksl-icon-btn svg { width: 15px; height: 15px; }
 
-  .ksl-close-all {
-    position:absolute; top:-10px; left:-10px; width:20px; height:20px;
-    border-radius:50%; background:#1a1510; border:1px solid #3a332b;
-    color:#7a7268; font-size:11px; display:grid; place-items:center;
-    cursor:pointer; pointer-events:auto; opacity:0;
-    transition:opacity .2s,color .15s,background .15s; z-index:20;
+  .ksl-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; }
+  .ksl-chips[hidden] { display: none; }
+  .ksl-chip {
+    font: 600 11px/1 system-ui,sans-serif; border-radius: 20px; padding: 6px 10px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--surface-2); color: var(--fg-3);
+    display: inline-flex; align-items: center; gap: 5px;
+    transition: transform .15s var(--ease), background .15s, border-color .15s, color .15s;
   }
-  .ksl-dock:hover .ksl-close-all { opacity:1; }
-  .ksl-close-all:hover { color:#f5f3ee; background:#2a2218; }
-  .ksl-close-all:focus-visible { opacity:1; outline:2px solid #8b5cf6; outline-offset:2px; }
+  .ksl-chip:hover { transform: translateY(-1px); color: var(--fg); }
+  .ksl-chip:active { transform: scale(.96); }
+  .ksl-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .ksl-chip .ksl-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .ksl-chip.is-on { background: rgba(139,92,246,.16); border-color: rgba(139,92,246,.5); color: var(--accent-3); }
+  .ksl-chip.sev-on-h { background: var(--sev-h-bg); border-color: var(--sev-h-fg); color: var(--sev-h-fg); }
+  .ksl-chip.sev-on-m { background: var(--sev-m-bg); border-color: var(--sev-m-fg); color: var(--sev-m-fg); }
+  .ksl-chip.sev-on-l { background: var(--sev-l-bg); border-color: var(--sev-l-fg); color: var(--sev-l-fg); }
+  .ksl-chips-label {
+    font: 700 9.5px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase;
+    color: var(--fg-4); align-self: center; margin-right: 2px;
+  }
 
-  .ksl-more-counter {
-    min-width: 42px;
-    height: 30px;
-    border-radius: 999px;
-    border: 1px solid rgba(139,92,246,.38);
-    background: rgba(22,17,12,.92);
-    color: #c4b5fd;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    padding: 0 10px;
-    font: 700 11px/1 ui-monospace,'JetBrains Mono',monospace;
-    cursor: pointer;
-    pointer-events: auto;
-    box-shadow: 0 10px 28px rgba(0,0,0,.34), 0 0 0 4px rgba(139,92,246,.12);
-    transition: transform .15s ease, background .15s ease, border-color .15s ease;
-  }
-  .ksl-more-counter:hover {
-    transform: translateY(-1px) scale(1.04);
-    background: rgba(139,92,246,.2);
-    border-color: rgba(139,92,246,.62);
-  }
-  .ksl-more-counter:active { transform: scale(.97); }
-  .ksl-more-counter:focus-visible { outline:2px solid #8b5cf6; outline-offset:2px; }
+  .ksl-list { flex: 1; overflow-y: auto; padding: 12px 14px 22px; display: flex; flex-direction: column; gap: 10px; }
+  .ksl-list::-webkit-scrollbar { width: 9px; }
+  .ksl-list::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px; border: 2px solid var(--surface); }
 
-  .ksl-tour-controls {
-    height: 30px;
-    border-radius: 999px;
-    border: 1px solid rgba(139,92,246,.32);
-    background: rgba(22,17,12,.92);
-    display: none;
-    align-items: center;
-    gap: 2px;
-    padding: 2px;
-    pointer-events: auto;
-    box-shadow: 0 10px 28px rgba(0,0,0,.34), 0 0 0 4px rgba(139,92,246,.1);
+  /* ── empty / reviewing state ── */
+  .ksl-empty { color: var(--fg-4); font-size: 13px; text-align: center; padding: 40px 18px; line-height: 1.5; }
+  .ksl-empty .ksl-empty-title { color: var(--fg-2); font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+  .ksl-shimmer {
+    display: inline-block; margin-top: 12px; height: 8px; width: 70%; border-radius: 6px;
+    background: linear-gradient(90deg, var(--surface-2) 0%, var(--surface-3) 40%, var(--accent-glow) 50%, var(--surface-3) 60%, var(--surface-2) 100%);
+    background-size: 200% 100%; animation: ksl-shimmer 1.4s linear infinite;
   }
-  .ksl-tour-btn {
-    width: 26px;
-    height: 24px;
-    border-radius: 999px;
-    border: 0;
-    background: transparent;
-    color: #c4b5fd;
-    display: grid;
-    place-items: center;
-    cursor: pointer;
-    padding: 0;
-    transition: transform .15s ease, background .15s ease, color .15s ease;
+  @keyframes ksl-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+  /* ── severity pill ── */
+  .ksl-sev {
+    display: inline-block; font: 700 9px/1 var(--mono); letter-spacing: .05em; text-transform: uppercase;
+    padding: 3px 6px; border-radius: 5px; flex-shrink: 0;
   }
-  .ksl-tour-btn:hover {
-    transform: translateY(-1px) scale(1.06);
-    background: rgba(139,92,246,.2);
-    color: #fff;
+  .ksl-sev.h { background: var(--sev-h-bg); color: var(--sev-h-fg); }
+  .ksl-sev.m { background: var(--sev-m-bg); color: var(--sev-m-fg); }
+  .ksl-sev.l { background: var(--sev-l-bg); color: var(--sev-l-fg); }
+
+  /* ── finding row ── */
+  .ksl-row {
+    position: relative; border: 1px solid var(--line-soft); border-left-width: 3px;
+    border-radius: 12px; background: var(--surface-2); padding: 12px 13px 11px;
+    text-align: left; width: 100%; display: block;
+    transition: transform .15s var(--ease), background .15s, box-shadow .15s;
   }
-  .ksl-tour-btn:active { transform: scale(.97); }
-  .ksl-tour-btn:focus-visible { outline:2px solid #8b5cf6; outline-offset:2px; }
-  .ksl-tour-btn:disabled { opacity:.38; cursor:not-allowed; transform:none; background:transparent; }
-  .ksl-tour-btn.is-playing {
-    background: rgba(139,92,246,.28);
-    color: #fff;
+  .ksl-row:hover { transform: translateY(-2px) scale(1.012); background: var(--surface-3); box-shadow: 0 12px 30px -12px rgba(0,0,0,.7); }
+  .ksl-row .ksl-r-head { display: flex; align-items: center; gap: 9px; margin-bottom: 8px; }
+  .ksl-r-name { font: 700 9.5px/1 var(--mono); letter-spacing: .09em; text-transform: uppercase;
+    color: var(--fg-2); flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .ksl-r-sent { font: 600 10px/1 system-ui,sans-serif; color: var(--fg-4); text-transform: capitalize; white-space: nowrap; }
+  .ksl-r-obs { font-size: 13px; line-height: 1.5; color: var(--fg-2);
+    display: -webkit-box; -webkit-line-clamp: 4; line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+  .ksl-row.is-expanded .ksl-r-obs { -webkit-line-clamp: unset; line-clamp: unset; overflow: visible; }
+  .ksl-r-expand { font: 600 11px/1 system-ui,sans-serif; color: var(--accent-3); margin-top: 6px;
+    background: none; border: 0; padding: 2px 0; cursor: pointer; display: none; }
+  .ksl-row.is-clamped .ksl-r-expand { display: inline-block; }
+  .ksl-r-expand:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .ksl-r-actions { display: flex; gap: 7px; margin-top: 11px; flex-wrap: wrap; }
+  .ksl-r-act {
+    font: 600 11px/1 system-ui,sans-serif; border-radius: 7px; padding: 6px 9px; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 5px;
+    transition: transform .15s var(--ease), background .15s, border-color .15s, color .15s;
   }
+  .ksl-r-act:hover { transform: translateY(-1px); }
+  .ksl-r-act:active { transform: scale(.96); }
+  .ksl-r-act:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .ksl-r-act svg { width: 12px; height: 12px; }
+  .ksl-r-act.track { background: rgba(139,92,246,.18); border: 1px solid rgba(139,92,246,.38); color: var(--accent-3); }
+  .ksl-r-act.track:hover { background: rgba(139,92,246,.32); border-color: rgba(139,92,246,.6); }
+  .ksl-r-act.jump { background: transparent; border: 1px solid var(--line); color: var(--fg-2); }
+  .ksl-r-act.jump:hover { background: rgba(255,255,255,.06); border-color: #5a5248; color: var(--fg); }
+  .ksl-r-act.dismiss { background: transparent; border: 1px solid var(--line); color: var(--fg-4); margin-left: auto; }
+  .ksl-r-act.dismiss:hover { background: rgba(255,255,255,.06); color: var(--fg-2); }
+  .ksl-row.is-removing { opacity: 0; transform: translateX(18px) scale(.96); pointer-events: none;
+    transition: opacity .28s ease, transform .28s var(--ease); }
 
   @media (max-width:480px) {
-    .ksl-dock { max-width:calc(100vw - 24px); gap:7px; }
-    .ksl-bubble { width:min(180px,calc(100vw - 40px)); font-size:12px; }
+    .ksl-panel { right: 12px; bottom: 12px; width: calc(100vw - 24px); }
+    .ksl-launcher { right: 12px; bottom: 12px; }
   }
   @media (prefers-reduced-motion:reduce) {
-    .ksl-slot,.ksl-bubble,.ksl-bubble.is-out { animation:none !important; opacity:1; transform:none; }
-    .ksl-idle { animation:none !important; opacity:.6; }
-    .ksl-ring circle { animation:none !important; }
-    .ksl-review-status.is-on { animation:none !important; }
-    .ksl-review-dot { animation:none !important; }
+    .ksl-panel.is-open,.ksl-row,.ksl-shimmer,.ksl-launcher.is-reviewing .ksl-pill-txt::after { animation: none !important; }
+    .ksl-panel, .ksl-row, .ksl-pill, .ksl-chip, .ksl-r-act, .ksl-icon-btn { transition: none !important; }
   }
 `
 
-// ── Overlay CSS (injected into <head> — applies outside shadow DOM) ───────────
-//
-// All class names use the .klav- prefix to avoid colliding with page styles.
+// ── Overlay CSS (injected into <head> — the transient jump-to halo only) ───────
 
 const EXT_CSS = `
-  /* ── Walker — a Sim that travels from the huddle to a page element ── */
-  .klav-walker {
-    position: fixed;
-    pointer-events: none;
-    z-index: 2147483641;
-    /* CSS transition drives the walk trajectory */
-    transition: left 1.1s cubic-bezier(.4,0,.2,1), top 1.1s cubic-bezier(.4,0,.2,1);
-    will-change: left, top;
-  }
-  /* Suppress idle bob while walking; keep legs moving */
-  .klav-walker .ksim { animation: none !important; }
-  /* Homepage-style fast leg walk (mirrors .sim.walk legA/legB from site/index.html) */
-  .klav-walker .ksim-legs i:nth-child(1) { animation: klav-leg-a .34s ease-in-out infinite alternate !important; }
-  .klav-walker .ksim-legs i:nth-child(2) { animation: klav-leg-b .34s ease-in-out infinite alternate !important; }
-  @keyframes klav-leg-a { from { transform: rotate(-24deg) } to { transform: rotate(24deg) } }
-  @keyframes klav-leg-b { from { transform: rotate(24deg)  } to { transform: rotate(-24deg) } }
-
-  /* ── Halo box — drawn around the flagged page element ── */
+  /* ── Halo box — TRANSIENT highlight drawn around a flagged element on "Jump to" ── */
   .klav-halo {
     position: fixed;
     pointer-events: none;
@@ -491,7 +389,6 @@ const EXT_CSS = `
     z-index: 2147483640;
     border-width: 2px;
     border-style: solid;
-    /* entry: scale-in from centre */
     animation: klav-halo-in .38s cubic-bezier(.34,1.36,.64,1) both,
                klav-halo-pulse 2.4s ease-in-out .4s infinite;
     transition: opacity .18s ease, transform .18s ease;
@@ -504,133 +401,8 @@ const EXT_CSS = `
     0%,100% { opacity: .75; }
     50%     { opacity: 1; }
   }
-
-  /* ── Collapsed marker — small anchored pin before an observation is focused ── */
-  @keyframes klav-marker-in {
-    from { transform: scale(.68); opacity: 0; }
-    60%  { transform: scale(1.08); opacity: 1; }
-    to   { transform: scale(1); opacity: 1; }
-  }
-  .klav-pin-marker {
-    position: fixed;
-    z-index: 2147483642;
-    width: 28px;
-    height: 28px;
-    border-radius: 999px;
-    display: grid;
-    place-items: center;
-    border: 2px solid rgba(255,255,255,.86);
-    box-shadow: 0 8px 26px rgba(0,0,0,.34), 0 0 0 5px var(--klav-marker-glow, rgba(139,92,246,.16));
-    color: #fff;
-    font: 700 9px/1 ui-monospace, 'JetBrains Mono', monospace;
-    letter-spacing: -.02em;
-    cursor: pointer;
-    pointer-events: auto;
-    user-select: none;
-    animation: klav-marker-in .28s cubic-bezier(.34,1.36,.64,1) both;
-    transition: transform .16s ease, opacity .16s ease, filter .16s ease, box-shadow .16s ease;
-  }
-  .klav-pin-marker:hover,
-  .klav-pin-marker:focus-visible {
-    transform: translateY(-2px) scale(1.08);
-    box-shadow: 0 12px 32px rgba(0,0,0,.42), 0 0 0 7px var(--klav-marker-glow, rgba(139,92,246,.22));
-    outline: none;
-  }
-  .klav-pin-marker.is-active {
-    transform: translateY(-3px) scale(1.13);
-    opacity: 1;
-    filter: saturate(1.18);
-  }
-  .klav-pin-marker.is-dim {
-    opacity: .42;
-    filter: grayscale(.35) saturate(.8);
-    transform: scale(.92);
-  }
-  .klav-pin-marker::after {
-    content:'';
-    position:absolute;
-    left:50%;
-    bottom:-7px;
-    transform:translateX(-50%);
-    width:0;
-    height:0;
-    border:6px solid transparent;
-    border-top-color: var(--klav-marker-accent, currentColor);
-    opacity:.95;
-  }
-
-  /* ── Expanded pinned bubble — only one is visible at a time ── */
-  @keyframes klav-pin-in {
-    from { transform: scale(.86) translateY(10px); opacity: 0; }
-    60%  { transform: scale(1.02) translateY(-2px); opacity: 1; }
-    to   { transform: scale(1)   translateY(0);    opacity: 1; }
-  }
-  @keyframes klav-pin-out {
-    to   { transform: scale(.88) translateY(-8px); opacity: 0; }
-  }
-  .klav-pin {
-    position: fixed;
-    z-index: 2147483642;
-    width: 224px;
-    /* Never taller than the viewport; positioning clamps keep the whole card
-       on-screen, and this is only a last-resort cap for genuinely huge cards. */
-    max-height: calc(100vh - 20px);
-    overflow-y: auto;
-    box-sizing: border-box;
-    background: linear-gradient(168deg, rgba(22,17,12,.98), rgba(14,11,8,.99));
-    border: 1px solid #3a332b;
-    border-left-width: 3px;
-    border-radius: 13px;
-    padding: 11px 11px 10px 12px;
-    font-family: system-ui, -apple-system, sans-serif;
-    box-shadow: 0 20px 52px rgba(0,0,0,.68), 0 6px 18px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,.07);
-    -webkit-backdrop-filter: blur(12px) saturate(140%);
-    backdrop-filter: blur(12px) saturate(140%);
-    pointer-events: auto;
-    animation: klav-pin-in .36s cubic-bezier(.34,1.36,.64,1) both;
-    transition: opacity .16s ease, transform .16s ease;
-  }
-  .klav-pin.is-out { animation: klav-pin-out .22s ease-in forwards; pointer-events: none; }
-
-  /* Tail pointing down toward the halo */
-  .klav-pin::after  { content:''; position:absolute; bottom:-8px; left:18px; border:7px solid transparent; border-top-color:#3a332b; border-bottom:none; pointer-events:none; }
-  .klav-pin::before { content:''; position:absolute; bottom:-6px; left:19px; border:6px solid transparent; border-top-color:#16110c;  border-bottom:none; z-index:1; pointer-events:none; }
-
-  /* Header row: mini avatar + name tag + severity pill */
-  .klav-pin-hd    { display:flex; align-items:center; gap:8px; margin-bottom:7px; }
-  .klav-pin-av    { width:22px; height:22px; border-radius:50%; display:grid; place-items:center; font-family:ui-monospace,monospace; font-size:7.5px; font-weight:700; color:#fff; flex-shrink:0; }
-  .klav-pin-name  { font-family:ui-monospace,'JetBrains Mono',monospace; font-size:9px; letter-spacing:.09em; text-transform:uppercase; font-weight:700; flex:1; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
-  .klav-pin-sev   { font-family:ui-monospace,monospace; font-size:9px; letter-spacing:.05em; text-transform:uppercase; padding:1px 5px; border-radius:4px; background:rgba(233,79,55,.22); color:#e8849a; flex-shrink:0; }
-  .klav-pin-sev.sev-m { background:rgba(244,169,60,.2);   color:#e8a24a; }
-  .klav-pin-sev.sev-l { background:rgba(127,209,196,.15); color:#7fd1c4; }
-
-  /* Observation text */
-  .klav-pin-obs { font-size:12.5px; line-height:1.47; color:#cec6bd; margin-bottom:10px; }
-
-  /* Action buttons */
-  .klav-pin-actions { display:flex; gap:7px; }
-  .klav-pin-triage {
-    flex:1; background:rgba(139,92,246,.18); border:1px solid rgba(139,92,246,.38);
-    color:#c4b5fd; font-size:11.5px; font-weight:600; border-radius:7px;
-    padding:5px 8px; cursor:pointer; font-family:system-ui,sans-serif;
-    transition:background .15s,border-color .15s;
-  }
-  .klav-pin-triage:hover { background:rgba(139,92,246,.32); border-color:rgba(139,92,246,.6); }
-  .klav-pin-triage:focus-visible { outline:2px solid #8b5cf6; outline-offset:2px; }
-  .klav-pin-dismiss, .klav-pin-collapse {
-    background:none; border:1px solid #3a332b; color:#6e6560; font-size:11.5px;
-    border-radius:7px; padding:5px 8px; cursor:pointer; font-family:system-ui,sans-serif;
-    transition:background .15s,color .15s,border-color .15s;
-  }
-  .klav-pin-dismiss:hover, .klav-pin-collapse:hover { background:rgba(255,255,255,.08); color:#f5f3ee; border-color:#5a5248; }
-  .klav-pin-dismiss:focus-visible, .klav-pin-collapse:focus-visible { outline:2px solid #8b5cf6; outline-offset:2px; }
-
   @media (prefers-reduced-motion:reduce) {
-    .klav-walker { transition:none !important; }
-    .klav-walker .ksim-legs i { animation:none !important; }
-    .klav-halo,.klav-halo.klav-halo { animation:none !important; opacity:1; transform:none; }
-    .klav-pin-marker { animation:none !important; transition:none !important; }
-    .klav-pin,.klav-pin.is-out { animation:none !important; opacity:1; transform:none; }
+    .klav-halo { animation: none !important; opacity: 1; transform: none; }
   }
 `
 
@@ -645,14 +417,14 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r},${g},${b},${alpha})`
 }
 
-/** Concern = bug/priority OR non-positive sentiment; positives/neutral stay off-page. */
+/** Concern = bug/priority OR non-positive sentiment; positives/neutral stay off the panel. */
 function isConcernObservation(obs: LiveObservation): boolean {
   if (obs.suggestedBug) return true
   const priority = String(obs.priority ?? '').trim().toLowerCase()
   if (priority && priority !== 'none') return true
   const sentiment = String(obs.sentiment ?? '').trim().toLowerCase()
   if (!sentiment) return false
-  const NON_ACTIONABLE = new Set(['positive','satisfied','delighted','neutral','none'])
+  const NON_ACTIONABLE = new Set(['positive', 'satisfied', 'delighted', 'neutral', 'none'])
   return !NON_ACTIONABLE.has(sentiment)
 }
 
@@ -665,24 +437,30 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+/** Normalize a server priority string to a HIGH/MED/LOW bucket (or null). */
+function severityBucket(obs: LiveObservation): 'HIGH' | 'MED' | 'LOW' | null {
+  const p = String(obs.priority ?? '').trim().toLowerCase()
+  if (p === 'high' || p === 'critical' || p === 'urgent') return 'HIGH'
+  if (p === 'medium' || p === 'med') return 'MED'
+  if (p === 'low') return 'LOW'
+  if (obs.suggestedBug) return 'HIGH'
+  return null
+}
+
+const SEV_CLASS: Record<'HIGH' | 'MED' | 'LOW', string> = { HIGH: 'h', MED: 'm', LOW: 'l' }
+const SEV_ORDER: Record<'HIGH' | 'MED' | 'LOW', number> = { HIGH: 0, MED: 1, LOW: 2 }
+
 function isOwnOverlayElement(el: Element | null): boolean {
   if (!el) return false
-  if (el === overlayEl || el === dockHostEl) return true
-  if (el.id === OVERLAY_HOST_ID || el.id === DOCK_HOST_ID || el.id === 'klavity-widget-host') return true
+  if (el === overlayEl || el === hostEl) return true
+  if (el.id === OVERLAY_HOST_ID || el.id === HOST_ID || el.id === 'klavity-widget-host') return true
   const classList = (el as HTMLElement).classList
-  return !!classList && (
-    classList.contains('klav-halo') ||
-    classList.contains('klav-pin') ||
-    classList.contains('klav-pin-marker') ||
-    classList.contains('klav-walker') ||
-    classList.contains('ksl-bubble') ||
-    classList.contains('ksl-slot')
-  )
+  return !!classList && classList.contains('klav-halo')
 }
 
 function withOverlaysHidden<T>(fn: () => T): T {
   const hiddens: { el: HTMLElement; vis: string }[] = []
-  for (const el of [overlayEl, dockHostEl]) {
+  for (const el of [overlayEl, hostEl]) {
     if (!el) continue
     hiddens.push({ el, vis: el.style.visibility })
     el.style.visibility = 'hidden'
@@ -846,9 +624,6 @@ function inferTargetFromText(obs: LiveObservation): HTMLElement | null {
   for (const el of elements) {
     if (!isUsableTarget(el)) continue
     const rect = el.getBoundingClientRect()
-    const visible =
-      rect.bottom > 0 && rect.right > 0 && rect.top < window.innerHeight && rect.left < window.innerWidth
-    if (!visible) continue
     const text = [
       el.textContent || '',
       el.getAttribute('aria-label') || '',
@@ -889,23 +664,22 @@ async function resolveObservationTarget(obs: LiveObservation, opts: { scroll?: b
 
 // ── Shadow host + overlay ─────────────────────────────────────────────────────
 
-function ensureDockHost(): ShadowRoot {
-  if (dockHostEl && shadowRoot) return shadowRoot
-  dockHostEl = document.createElement('div')
-  dockHostEl.id = DOCK_HOST_ID
-  dockHostEl.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:2147483647;pointer-events:none;'
-  shadowRoot = dockHostEl.attachShadow({ mode: 'open' })
+function ensureHost(): ShadowRoot {
+  if (hostEl && shadowRoot) return shadowRoot
+  hostEl = document.createElement('div')
+  hostEl.id = HOST_ID
+  hostEl.style.cssText = 'position:fixed;inset:0;z-index:2147483647;pointer-events:none;'
+  shadowRoot = hostEl.attachShadow({ mode: 'open' })
   injectSimStyles(shadowRoot)
-  const style = document.createElement('style'); style.textContent = DOCK_CSS
+  const style = document.createElement('style'); style.textContent = PANEL_CSS
   shadowRoot.appendChild(style)
-  document.body.appendChild(dockHostEl)
+  document.body.appendChild(hostEl)
   return shadowRoot
 }
 
 function ensureOverlay(): HTMLElement {
   if (overlayEl) return overlayEl
 
-  // Inject EXT_CSS into <head> once
   if (!document.getElementById(EXT_STYLE_ID)) {
     const s = document.createElement('style')
     s.id = EXT_STYLE_ID; s.textContent = EXT_CSS
@@ -919,6 +693,15 @@ function ensureOverlay(): HTMLElement {
   return overlayEl
 }
 
+// ── Sim avatar (uses shared createSim) ─────────────────────────────────────────
+
+function avatarFor(entry: SimEntry, size: number): HTMLElement {
+  return createSim({
+    name: entry.name, initials: entry.initials, photoUrl: entry.photoUrl,
+    color: entry.accent, animate: false, legs: true, size,
+  } as SimProps)
+}
+
 // ── deploy() ─────────────────────────────────────────────────────────────────
 
 function deploy(
@@ -926,908 +709,526 @@ function deploy(
   sims: LiveSimDescriptor[] = [],
   opts: DeployOpts = {},
 ): void {
+  void opts
   if (typeof document === 'undefined') return
   undeploy()   // clean slate
 
-  const shadow = ensureDockHost()
+  const shadow = ensureHost()
   ensureOverlay()
   deployAbort = new AbortController()
 
-  document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape') return
-    if (tourPlaying) stopTour()
-    else collapseFocusedAnnotation()
-  }, { signal: deployAbort.signal })
-  document.addEventListener('pointerdown', (e) => {
-    if (!focusedAnnotationId || isAnnotationEventPath(e)) return
-    collapseFocusedAnnotation()
-  }, { capture: true, signal: deployAbort.signal })
-
-  // Screen reader live region
-  const announcer = document.createElement('div')
-  announcer.className = 'ksl-sr'; announcer.id = 'ksl-announcer'
-  announcer.setAttribute('aria-live', 'polite'); announcer.setAttribute('aria-atomic', 'true')
-  shadow.appendChild(announcer)
-
-  // Vertical stack: reviewing-status caption sits ABOVE the dock.
-  const stack = document.createElement('div')
-  stack.className = 'ksl-stack'
-  shadow.appendChild(stack)
-
-  // Reviewing status caption (hidden until setReviewing(true)).
-  reviewStatusEl = document.createElement('div')
-  reviewStatusEl.className = 'ksl-review-status'
-  reviewStatusEl.setAttribute('role', 'status')
-  reviewStatusEl.setAttribute('aria-live', 'polite')
-  const reviewDot = document.createElement('span')
-  reviewDot.className = 'ksl-review-dot'; reviewDot.setAttribute('aria-hidden', 'true')
-  const reviewText = document.createElement('span')
-  reviewText.className = 'ksl-review-text'
-  reviewText.textContent = 'Sims are reviewing this page…'
-  reviewStatusEl.append(reviewDot, reviewText)
-  stack.appendChild(reviewStatusEl)
-
-  // Dock
-  dockEl = document.createElement('div')
-  dockEl.className = 'ksl-dock'
-  dockEl.setAttribute('role', 'region'); dockEl.setAttribute('aria-label', 'Sims — live feedback')
-  stack.appendChild(dockEl)
-
-  const closeAll = document.createElement('button')
-  closeAll.className = 'ksl-close-all'
-  closeAll.setAttribute('aria-label', 'Stop all Sim reviews'); closeAll.title = 'Stop Sim reviews'
-  closeAll.innerHTML = icon('x', { size: 12 }); closeAll.addEventListener('click', undeploy)
-  dockEl.appendChild(closeAll)
-
-  moreCounterEl = document.createElement('button')
-  moreCounterEl.type = 'button'
-  moreCounterEl.className = 'ksl-more-counter'
-  moreCounterEl.setAttribute('aria-label', 'Show more Sim observations')
-  moreCounterEl.addEventListener('click', () => { void cycleMoreObservation() })
-  dockEl.appendChild(moreCounterEl)
-
-  tourControlsEl = document.createElement('div')
-  tourControlsEl.className = 'ksl-tour-controls'
-  tourControlsEl.setAttribute('role', 'group')
-  tourControlsEl.setAttribute('aria-label', 'Walk me through Sim observations')
-
-  tourPrevBtn = document.createElement('button')
-  tourPrevBtn.type = 'button'
-  tourPrevBtn.className = 'ksl-tour-btn'
-  tourPrevBtn.title = 'Previous observation'
-  tourPrevBtn.setAttribute('aria-label', 'Previous Sim observation')
-  tourPrevBtn.innerHTML = icon('chevron-left', { size: 15 })
-  tourPrevBtn.addEventListener('click', () => { void stepTour(-1) })
-
-  tourPlayBtn = document.createElement('button')
-  tourPlayBtn.type = 'button'
-  tourPlayBtn.className = 'ksl-tour-btn'
-  tourPlayBtn.title = 'Walk me through'
-  tourPlayBtn.setAttribute('aria-label', 'Play Sim walkthrough')
-  tourPlayBtn.innerHTML = icon('play', { size: 14 })
-  tourPlayBtn.addEventListener('click', () => toggleTourPlayback())
-
-  tourNextBtn = document.createElement('button')
-  tourNextBtn.type = 'button'
-  tourNextBtn.className = 'ksl-tour-btn'
-  tourNextBtn.title = 'Next observation'
-  tourNextBtn.setAttribute('aria-label', 'Next Sim observation')
-  tourNextBtn.innerHTML = icon('chevron-right', { size: 15 })
-  tourNextBtn.addEventListener('click', () => { void stepTour(1) })
-
-  tourStopBtn = document.createElement('button')
-  tourStopBtn.type = 'button'
-  tourStopBtn.className = 'ksl-tour-btn'
-  tourStopBtn.title = 'Stop walkthrough'
-  tourStopBtn.setAttribute('aria-label', 'Stop Sim walkthrough')
-  tourStopBtn.innerHTML = icon('x', { size: 13 })
-  tourStopBtn.addEventListener('click', () => stopTour())
-
-  tourControlsEl.append(tourPrevBtn, tourPlayBtn, tourNextBtn, tourStopBtn)
-  dockEl.appendChild(tourControlsEl)
-
   const visible = simIds === 'all' ? sims : sims.filter(s => (simIds as string[]).includes(s.id))
-
   if (!visible.length) {
-    console.warn('[KlavitySims] deploy(): no matching Sims — dock not mounted.')
+    console.warn('[KlavitySims] deploy(): no matching Sims — panel not mounted.')
     undeploy(); return
   }
 
-  emitLiveDock(true)
-
-  visible.slice(0, 8).forEach((sim, idx) => {
+  visible.slice(0, 8).forEach((sim) => {
     const accent = sim.accent || '#6366f1'
     const initials = sim.initials || sim.name.slice(0, 2).toUpperCase()
-
-    const slot = document.createElement('div')
-    slot.className = 'ksl-slot'; slot.dataset.simId = sim.id
-    slot.setAttribute('aria-label', sim.name)
-    slot.setAttribute('role', 'button')
-    slot.setAttribute('tabindex', '0')
-    slot.style.setProperty('--ksl-idx', String(idx))
-    slot.style.setProperty('--ksl-accent', accent)
-    slot.addEventListener('click', () => focusFirstAnnotationForSlot(sim.id))
-    slot.addEventListener('keydown', (e) => {
-      if (e.key !== 'Enter' && e.key !== ' ') return
-      e.preventDefault()
-      focusFirstAnnotationForSlot(sim.id)
-    })
-
-    const size = window.innerWidth <= 480 ? 38 : 46
-    slot.appendChild(createSim({ name: sim.name, initials, photoUrl: sim.photoUrl, color: accent, animate: true, legs: true, size } as SimProps))
-
-    // Spinning progress ring — shown while ksl-thinking; SVG orbits the head
-    const ringNs = 'http://www.w3.org/2000/svg'
-    const ringEl = document.createElementNS(ringNs, 'svg') as SVGSVGElement
-    ringEl.setAttribute('class', 'ksl-ring')
-    ringEl.setAttribute('width', '62'); ringEl.setAttribute('height', '62')
-    ringEl.setAttribute('viewBox', '0 0 62 62')
-    ringEl.setAttribute('aria-hidden', 'true')
-    const circEl = document.createElementNS(ringNs, 'circle') as SVGCircleElement
-    circEl.setAttribute('cx', '31'); circEl.setAttribute('cy', '31'); circEl.setAttribute('r', '29')
-    ringEl.appendChild(circEl)
-    slot.appendChild(ringEl)
-
-    // "analyzing…" hint pill — honest, non-specific (reviews run ~10–15s; we
-    // never promise a hard number we can't guarantee).
-    const hint = document.createElement('span')
-    hint.className = 'ksl-time-hint'; hint.textContent = 'analyzing…'
-    hint.setAttribute('aria-hidden', 'true'); slot.appendChild(hint)
-
-    const idle = document.createElement('span')
-    idle.className = 'ksl-idle'; idle.textContent = 'watching'
-    idle.setAttribute('aria-hidden', 'true'); slot.appendChild(idle)
-
-    dockEl!.appendChild(slot)
-    simSlots.set(sim.id, { simId: sim.id, avatarEl: slot, accent, initials, name: sim.name, clearBubble: null, annotationIds: new Set() })
+    simEntries.set(sim.id, { simId: sim.id, accent, initials, name: sim.name, photoUrl: sim.photoUrl })
   })
+
+  // Root wrapper carries the design tokens.
+  const root = document.createElement('div')
+  root.className = 'ksl-root'
+  shadow.appendChild(root)
+
+  // Screen reader live region
+  announcerEl = document.createElement('div')
+  announcerEl.className = 'ksl-sr'; announcerEl.id = 'ksl-announcer'
+  announcerEl.setAttribute('aria-live', 'polite'); announcerEl.setAttribute('aria-atomic', 'true')
+  root.appendChild(announcerEl)
+
+  // ── launcher pill ──
+  launcherEl = document.createElement('button')
+  launcherEl.type = 'button'
+  launcherEl.className = 'ksl-launcher'
+  launcherEl.setAttribute('aria-label', 'Open Sims feedback panel')
+  launcherEl.addEventListener('click', () => openPanel())
+
+  const pill = document.createElement('span'); pill.className = 'ksl-pill'
+  launcherAvatarsEl = document.createElement('span'); launcherAvatarsEl.className = 'ksl-pill-avatars'
+  launcherTxtEl = document.createElement('span'); launcherTxtEl.className = 'ksl-pill-txt'
+  pill.append(launcherAvatarsEl, launcherTxtEl)
+  launcherBadgeEl = document.createElement('span'); launcherBadgeEl.className = 'ksl-pill-badge'; launcherBadgeEl.hidden = true
+  launcherEl.append(pill, launcherBadgeEl)
+  root.appendChild(launcherEl)
+
+  // launcher avatar stack (up to 3)
+  visible.slice(0, 3).forEach((sim) => {
+    const entry = simEntries.get(sim.id)
+    if (entry) launcherAvatarsEl!.appendChild(avatarFor(entry, 26))
+  })
+
+  // ── panel ──
+  panelEl = document.createElement('section')
+  panelEl.className = 'ksl-panel'
+  panelEl.setAttribute('aria-label', 'Sims feedback')
+  panelEl.setAttribute('role', 'dialog')
+
+  const head = document.createElement('div'); head.className = 'ksl-head'
+  const titleRow = document.createElement('div'); titleRow.className = 'ksl-title-row'
+  const title = document.createElement('div'); title.className = 'ksl-title'; title.textContent = 'Sims feedback'
+  const collapseBtn = document.createElement('button')
+  collapseBtn.type = 'button'; collapseBtn.className = 'ksl-icon-btn'
+  collapseBtn.title = 'Minimize'; collapseBtn.setAttribute('aria-label', 'Minimize Sims feedback panel')
+  collapseBtn.innerHTML = icon('x', { size: 15 })
+  collapseBtn.addEventListener('click', () => closePanel())
+  titleRow.append(title, collapseBtn)
+
+  panelCountEl = document.createElement('div'); panelCountEl.className = 'ksl-count'
+  panelFiltersEl = document.createElement('div'); panelFiltersEl.className = 'ksl-chips'
+  head.append(titleRow, panelCountEl, panelFiltersEl)
+
+  panelListEl = document.createElement('div'); panelListEl.className = 'ksl-list'
+  panelListEl.setAttribute('role', 'list')
+
+  panelEl.append(head, panelListEl)
+  root.appendChild(panelEl)
+
+  // Escape closes the panel (when open).
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && panelOpen) closePanel()
+  }, { signal: deployAbort.signal })
+
+  emitLiveDock(true)
+  syncSurfaces()
 }
 
 // ── setReviewing() ────────────────────────────────────────────────────────────
 
-function setReviewing(reviewing: boolean): void {
-  simSlots.forEach(({ avatarEl }) => avatarEl.classList.toggle('ksl-thinking', reviewing))
-  // Clear, legible caption above the dock so the user knows the Sims are
-  // actively analyzing the page while the review is in flight (~10–15s).
-  reviewStatusEl?.classList.toggle('is-on', reviewing)
+function setReviewing(value: boolean): void {
+  reviewing = value
+  launcherEl?.classList.toggle('is-reviewing', value)
+  syncSurfaces()
+  if (panelOpen) renderList()
 }
 
-// ── Walk choreography helpers ─────────────────────────────────────────────────
+// ── Panel open/close ──────────────────────────────────────────────────────────
 
-/** Create a walking Sim clone that travels from the huddle to destX/destY. */
-function spawnWalker(slot: SimSlot, destX: number, destY: number): Promise<void> {
-  const ov = overlayEl!
-  const huddleRect = dockHostEl!.getBoundingClientRect()
-  const startX = huddleRect.left + huddleRect.width / 2 - 21
-  const startY = huddleRect.top  + huddleRect.height / 2 - 48
-
-  const walkerDiv = document.createElement('div')
-  walkerDiv.className = 'klav-walker'
-  walkerDiv.style.left = startX + 'px'
-  walkerDiv.style.top  = startY + 'px'
-  walkerDiv.appendChild(
-    createSim({ name: slot.name, initials: slot.initials, color: slot.accent, animate: false, legs: true, size: 42 } as SimProps)
-  )
-  ov.appendChild(walkerDiv)
-  walkers.add(walkerDiv)
-
-  return new Promise<void>(resolve => {
-    // Two rAFs ensure the initial position is painted before the transition fires
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      walkerDiv.style.left = destX + 'px'
-      walkerDiv.style.top  = destY + 'px'
-      const done = () => { walkerDiv.remove(); walkers.delete(walkerDiv); resolve() }
-      walkerDiv.addEventListener('transitionend', done, { once: true })
-      setTimeout(done, 1400)   // safety timeout if transitionend never fires
-    }))
-  })
+function openPanel(): void {
+  if (!panelEl || !launcherEl) return
+  panelOpen = true
+  panelEl.classList.add('is-open')
+  launcherEl.hidden = true
+  renderList()
 }
 
-function updateAnnotationFocusClasses(): void {
-  annotations.forEach((ann) => {
-    const active = ann.id === focusedAnnotationId
-    const dim = !!focusedAnnotationId && !active
-    ann.marker.classList.toggle('is-active', active)
-    ann.marker.classList.toggle('is-dim', dim)
-    ann.slot.avatarEl.classList.toggle('ksl-focus', active)
-  })
-  updateDockCounter()
+function closePanel(): void {
+  if (!panelEl || !launcherEl) return
+  panelOpen = false
+  panelEl.classList.remove('is-open')
+  launcherEl.hidden = false
+  syncSurfaces()
 }
 
-function updateDockCounter(): void {
-  if (!moreCounterEl) return
-  const expandedCount = focusedAnnotationId ? 1 : 0
-  const count = Math.max(0, annotations.size - expandedCount) + pendingAnnotations.size
-  moreCounterEl.style.display = count > 0 ? 'inline-flex' : 'none'
-  moreCounterEl.textContent = `+${count} more`
-  moreCounterEl.setAttribute('aria-label', `${count} more Sim observation${count === 1 ? '' : 's'}`)
-  updateTourControls()
+// ── Counts + launcher/header chrome ────────────────────────────────────────────
+
+interface Counts { total: number; sims: number; high: number }
+
+function activeCounts(): Counts {
+  const live = Array.from(findings.values())
+  const sims = new Set(live.map(f => f.entry.simId))
+  const high = live.filter(f => severityBucket(f.obs) === 'HIGH').length
+  return { total: live.length, sims: sims.size, high }
 }
 
-function tourItems(): Array<{ kind: 'annotation' | 'pending'; id: string }> {
-  return [
-    ...Array.from(annotations.keys()).map((id) => ({ kind: 'annotation' as const, id })),
-    ...Array.from(pendingAnnotations.keys()).map((id) => ({ kind: 'pending' as const, id })),
-  ]
-}
+/** Keep launcher label + badge + header count honest with current findings. */
+function syncSurfaces(): void {
+  const c = activeCounts()
 
-function updateTourControls(): void {
-  if (!tourControlsEl || !tourPlayBtn || !tourPrevBtn || !tourNextBtn || !tourStopBtn) return
-  const count = annotations.size + pendingAnnotations.size
-  tourControlsEl.style.display = count > 0 ? 'inline-flex' : 'none'
-  tourPrevBtn.disabled = count < 2
-  tourNextBtn.disabled = count < 2
-  tourStopBtn.disabled = !tourPlaying && !focusedAnnotationId
-  tourPlayBtn.disabled = count === 0
-  tourPlayBtn.classList.toggle('is-playing', tourPlaying)
-  tourPlayBtn.innerHTML = icon(tourPlaying ? 'pause' : 'play', { size: tourPlaying ? 13 : 14 })
-  tourPlayBtn.title = tourPlaying ? 'Pause walkthrough' : 'Walk me through'
-  tourPlayBtn.setAttribute('aria-label', tourPlaying ? 'Pause Sim walkthrough' : 'Play Sim walkthrough')
-}
-
-function clearTourTimer(): void {
-  if (!tourTimer) return
-  clearTimeout(tourTimer)
-  tourTimer = null
-}
-
-function pauseTour(): void {
-  tourPlaying = false
-  tourRunId += 1
-  clearTourTimer()
-  updateTourControls()
-}
-
-function stopTour(): void {
-  pauseTour()
-  collapseFocusedAnnotation()
-}
-
-function toggleTourPlayback(): void {
-  if (tourPlaying) {
-    pauseTour()
-    return
-  }
-  const count = tourItems().length
-  if (!count) return
-  tourPlaying = true
-  tourRunId += 1
-  tourIndex = Math.max(0, Math.min(tourIndex, count - 1))
-  updateTourControls()
-  void runTour(tourRunId)
-}
-
-function waitTourRead(runId: number): Promise<boolean> {
-  return new Promise((resolve) => {
-    clearTourTimer()
-    tourTimer = setTimeout(() => {
-      tourTimer = null
-      resolve(tourPlaying && tourRunId === runId)
-    }, TOUR_READ_MS)
-  })
-}
-
-async function showTourItem(index: number): Promise<boolean> {
-  const items = tourItems()
-  if (!items.length) return false
-  const normalized = ((index % items.length) + items.length) % items.length
-  tourIndex = normalized
-  const item = items[normalized]
-  let annotationId: string | null = null
-
-  if (item.kind === 'annotation') {
-    annotationId = item.id
-  } else {
-    annotationId = await revealPendingAnnotation(item.id)
-  }
-
-  if (!annotationId) return false
-  await focusAnnotation(annotationId)
-  const revealedIndex = Array.from(annotations.keys()).indexOf(annotationId)
-  if (revealedIndex >= 0) tourIndex = revealedIndex
-  updateTourControls()
-  return true
-}
-
-async function runTour(runId: number): Promise<void> {
-  if (!tourPlaying || tourRunId !== runId || tourBusy) return
-  tourBusy = true
-  try {
-    while (tourPlaying && tourRunId === runId) {
-      const count = tourItems().length
-      if (!count) {
-        stopTour()
-        return
-      }
-      const shown = await showTourItem(tourIndex)
-      if (!shown || !tourPlaying || tourRunId !== runId) return
-      const shouldContinue = await waitTourRead(runId)
-      if (!shouldContinue) return
-      collapseFocusedAnnotation()
-      tourIndex = (tourIndex + 1) % Math.max(1, tourItems().length)
-      await sleep(220)
+  if (launcherTxtEl) {
+    if (reviewing && c.total === 0) {
+      launcherTxtEl.innerHTML = 'Your Sims are reviewing…'
+    } else if (c.total === 0) {
+      launcherTxtEl.innerHTML = 'Sims are watching this page'
+    } else {
+      launcherTxtEl.innerHTML = `<b>${c.total}</b> finding${c.total === 1 ? '' : 's'} from your Sims`
     }
-  } finally {
-    tourBusy = false
-    updateTourControls()
-    if (tourPlaying && tourRunId === runId) void runTour(runId)
   }
-}
-
-async function stepTour(delta: number): Promise<void> {
-  pauseTour()
-  const count = tourItems().length
-  if (!count) return
-  tourIndex = ((tourIndex + delta) % count + count) % count
-  await showTourItem(tourIndex)
-}
-
-async function cycleMoreObservation(): Promise<void> {
-  const ids = Array.from(annotations.keys())
-  const start = focusedAnnotationId ? Math.max(0, ids.indexOf(focusedAnnotationId) + 1) : 0
-  const ordered = ids.slice(start).concat(ids.slice(0, start))
-  const next = ordered.find((id) => id !== focusedAnnotationId)
-  if (next) {
-    await focusAnnotation(next)
-    return
+  if (launcherBadgeEl) {
+    launcherBadgeEl.hidden = c.high === 0
+    launcherBadgeEl.textContent = `${c.high} high`
   }
 
-  const pending = pendingAnnotations.values().next().value as PendingAnnotation | undefined
-  if (!pending) return
-  const rect = pending.targetEl.getBoundingClientRect()
-  await scrollDocumentPointIntoView(
-    rect.left + rect.width / 2 + window.scrollX,
-    rect.top + rect.height / 2 + window.scrollY,
-  )
-  const revealedId = await revealPendingAnnotation(pending.id)
-  if (revealedId) await focusAnnotation(revealedId)
+  if (panelOpen) renderHeader(c)
 }
 
-function removeFocusedChrome(ann: Annotation, immediate = false): void {
-  ann.chromeCleanup?.()
-  ann.chromeCleanup = null
-  const halo = ann.halo
-  const bubble = ann.bubble
-  ann.halo = null
-  ann.bubble = null
-  if (immediate) {
-    bubble?.remove()
-    halo?.remove()
-    return
-  }
-  if (bubble) bubble.classList.add('is-out')
-  if (halo) {
-    halo.style.animation = 'klav-pin-out .18s ease-in forwards'
-    halo.style.opacity = '0'
-  }
-  setTimeout(() => {
-    bubble?.remove()
-    halo?.remove()
-  }, 220)
-}
-
-function collapseFocusedAnnotation(immediate = false): void {
-  if (!focusedAnnotationId) return
-  const ann = annotations.get(focusedAnnotationId)
-  focusedAnnotationId = null
-  if (ann) removeFocusedChrome(ann, immediate)
-  simSlots.forEach(({ avatarEl }) => avatarEl.classList.remove('ksl-focus'))
-  updateAnnotationFocusClasses()
-}
-
-/**
- * Fully remove an annotation (or matching pending annotation) from the UI.
- *
- * Used by "Track as Bug" / "Dismiss": collapses focused chrome, tears down the
- * marker + its listeners, drops the annotation from every registry (annotations,
- * the slot's annotationIds, pendingAnnotations), clears the dock "has-annotation"
- * class when the slot is empty, and refreshes the counter + tour so a removed
- * finding never re-surfaces in the "+N more" count or walk-me-through tour.
- *
- * Note: this does NOT touch seenObservationKeys — callers are responsible for
- * marking the observation handled so renderFeedback() won't re-add it.
- */
-function removeAnnotation(annotationId: string): void {
-  const ann = annotations.get(annotationId)
-  if (!ann) return
-
-  // If this annotation is currently focused, collapse its chrome first.
-  if (focusedAnnotationId === annotationId) collapseFocusedAnnotation(true)
-
-  ann.markerCleanup?.()
-  ann.chromeCleanup?.()
-  ann.marker.remove()
-  ann.halo?.remove()
-  ann.bubble?.remove()
-
-  annotations.delete(annotationId)
-  const slot = ann.slot
-  slot.annotationIds.delete(annotationId)
-
-  // Drop any pending annotation for the same slot + observation text so a queued
-  // duplicate can't reveal the just-handled finding.
-  const handledText = normalizeObservationText(ann.obs.text)
-  pendingAnnotations.forEach((pending, pendingId) => {
-    if (pending.slot.simId === slot.simId && normalizeObservationText(pending.obs.text) === handledText) {
-      pending.cleanup?.()
-      pendingAnnotations.delete(pendingId)
+function renderHeader(c: Counts): void {
+  if (panelCountEl) {
+    if (c.total === 0) {
+      panelCountEl.innerHTML = reviewing
+        ? 'Your Sims are reviewing this page…'
+        : 'No findings yet — your Sims are watching.'
+    } else {
+      panelCountEl.innerHTML =
+        `<b>${c.total}</b> finding${c.total === 1 ? '' : 's'} from <b>${c.sims}</b> Sim${c.sims === 1 ? '' : 's'}` +
+        (c.high > 0 ? ` · <span class="ksl-hi">${c.high} high</span>` : '')
     }
+  }
+  renderFilters()
+}
+
+function renderFilters(): void {
+  if (!panelFiltersEl) return
+  const live = Array.from(findings.values())
+  panelFiltersEl.hidden = live.length === 0
+  panelFiltersEl.textContent = ''
+  if (!live.length) return
+
+  // persona chips
+  const simLabel = document.createElement('span'); simLabel.className = 'ksl-chips-label'; simLabel.textContent = 'Sim'
+  panelFiltersEl.appendChild(simLabel)
+  const bySim = new Map<string, { entry: SimEntry; n: number }>()
+  live.forEach(f => {
+    const cur = bySim.get(f.entry.simId) ?? { entry: f.entry, n: 0 }
+    cur.n += 1; bySim.set(f.entry.simId, cur)
+  })
+  bySim.forEach(({ entry, n }) => {
+    const chip = document.createElement('button')
+    chip.type = 'button'
+    chip.className = 'ksl-chip' + (personaFilter === entry.simId ? ' is-on' : '')
+    chip.setAttribute('aria-pressed', String(personaFilter === entry.simId))
+    const dot = document.createElement('span'); dot.className = 'ksl-dot'; dot.style.background = entry.accent
+    chip.append(dot, document.createTextNode(`${entry.initials} · ${n}`))
+    chip.addEventListener('click', () => {
+      personaFilter = personaFilter === entry.simId ? null : entry.simId
+      renderList()
+    })
+    panelFiltersEl!.appendChild(chip)
   })
 
-  // Clear the dock avatar's has-annotation state when the slot has none left.
-  const stillHasAnnotation = Array.from(slot.annotationIds).some((id) => annotations.has(id))
-  if (!stillHasAnnotation) slot.avatarEl.classList.remove('ksl-has-annotation')
-
-  updateDockCounter()
-  updateAnnotationFocusClasses()
-}
-
-/**
- * Mark an observation handled (so renderFeedback() won't re-surface it) and
- * remove its annotation from the page. Shared by "Track as Bug" and "Dismiss".
- */
-function handleAndRemoveAnnotation(ann: Annotation): void {
-  seenObservationKeys.add(observationKey(ann.slot.simId, ann.obs))
-  removeAnnotation(ann.id)
-}
-
-function isAnnotationEventPath(e: Event): boolean {
-  const path = typeof e.composedPath === 'function' ? e.composedPath() : []
-  return path.some((item) => {
-    if (!(item instanceof Element)) return false
-    if (item === overlayEl || item === dockHostEl) return true
-    return item.classList?.contains('klav-pin-marker') ||
-      item.classList?.contains('klav-pin') ||
-      item.classList?.contains('klav-pin-triage') ||
-      item.classList?.contains('klav-pin-dismiss') ||
-      item.classList?.contains('klav-pin-collapse') ||
-      item.classList?.contains('ksl-more-counter') ||
-      item.classList?.contains('ksl-tour-controls') ||
-      item.classList?.contains('ksl-tour-btn') ||
-      item.classList?.contains('ksl-slot') ||
-      item.classList?.contains('ksim')
+  // priority chips
+  const prioLabel = document.createElement('span')
+  prioLabel.className = 'ksl-chips-label'; prioLabel.style.marginLeft = '6px'; prioLabel.textContent = 'Priority'
+  panelFiltersEl.appendChild(prioLabel)
+  ;(['HIGH', 'MED', 'LOW'] as const).forEach(sev => {
+    const n = live.filter(f => severityBucket(f.obs) === sev).length
+    if (!n) return
+    const chip = document.createElement('button')
+    chip.type = 'button'
+    const on = sevFilter === sev
+    chip.className = 'ksl-chip' + (on ? ` sev-on-${SEV_CLASS[sev]}` : '')
+    chip.setAttribute('aria-pressed', String(on))
+    chip.textContent = `${sev} · ${n}`
+    chip.addEventListener('click', () => {
+      sevFilter = sevFilter === sev ? null : sev
+      renderList()
+    })
+    panelFiltersEl!.appendChild(chip)
   })
 }
 
-function visibleElementRect(targetEl: HTMLElement): DOMRect | null {
-  const rect = targetEl.getBoundingClientRect()
-  const visible =
-    rect.width > 0 && rect.height > 0 &&
-    rect.bottom > 0 && rect.right > 0 &&
-    rect.top < window.innerHeight && rect.left < window.innerWidth
-  return visible ? rect : null
+// ── Finding rows ───────────────────────────────────────────────────────────────
+
+function visibleFindings(): Finding[] {
+  return Array.from(findings.values())
+    .filter(f => !personaFilter || f.entry.simId === personaFilter)
+    .filter(f => !sevFilter || severityBucket(f.obs) === sevFilter)
+    .sort((a, b) => {
+      const sa = severityBucket(a.obs); const sb = severityBucket(b.obs)
+      const oa = sa ? SEV_ORDER[sa] : 3; const ob = sb ? SEV_ORDER[sb] : 3
+      return oa - ob
+    })
 }
 
-function positionMarker(marker: HTMLElement, targetEl: HTMLElement): void {
-  const rect = visibleElementRect(targetEl)
-  marker.style.display = rect ? '' : 'none'
-  if (!rect) return
+function buildRow(f: Finding): HTMLElement {
+  const { entry, obs } = f
+  const sev = severityBucket(obs)
 
-  const left = Math.max(8, Math.min(window.innerWidth - 36, rect.left + Math.min(rect.width - 8, 14)))
-  const top = Math.max(8, Math.min(window.innerHeight - 36, rect.top - 12))
-  marker.style.left = `${left}px`
-  marker.style.top = `${top}px`
+  const row = document.createElement('div')
+  row.className = 'ksl-row'
+  row.setAttribute('role', 'listitem')
+  row.dataset.id = f.id
+  row.style.borderLeftColor = entry.accent
+
+  // header: avatar + name + sentiment + sev pill
+  const rHead = document.createElement('div'); rHead.className = 'ksl-r-head'
+  rHead.appendChild(avatarFor(entry, 26))
+  const name = document.createElement('span'); name.className = 'ksl-r-name'
+  name.style.color = entry.accent; name.textContent = entry.name
+  rHead.appendChild(name)
+  const sentiment = String(obs.sentiment ?? '').trim()
+  if (sentiment) {
+    const sent = document.createElement('span'); sent.className = 'ksl-r-sent'; sent.textContent = sentiment
+    rHead.appendChild(sent)
+  }
+  if (sev) {
+    const pill = document.createElement('span'); pill.className = `ksl-sev ${SEV_CLASS[sev]}`
+    pill.setAttribute('aria-label', `Priority: ${sev}`); pill.textContent = sev
+    rHead.appendChild(pill)
+  }
+  row.appendChild(rHead)
+
+  // finding text — textContent only (LLM output, XSS guard). Clamp + expand.
+  const obsEl = document.createElement('div'); obsEl.className = 'ksl-r-obs'
+  obsEl.textContent = obs.text || ''
+  row.appendChild(obsEl)
+
+  const expandBtn = document.createElement('button')
+  expandBtn.type = 'button'; expandBtn.className = 'ksl-r-expand'; expandBtn.textContent = 'Show more'
+  expandBtn.addEventListener('click', () => {
+    const on = row.classList.toggle('is-expanded')
+    expandBtn.textContent = on ? 'Show less' : 'Show more'
+  })
+  row.appendChild(expandBtn)
+
+  // actions
+  const actions = document.createElement('div'); actions.className = 'ksl-r-actions'
+
+  const trackBtn = document.createElement('button')
+  trackBtn.type = 'button'; trackBtn.className = 'ksl-r-act track'
+  trackBtn.innerHTML = icon('bug', { size: 12 }) + ' Track as Bug'
+  trackBtn.setAttribute('aria-label', `Track feedback from ${entry.name} as a bug`)
+  trackBtn.addEventListener('click', () => {
+    SimsLive.onTriage?.(obs, entry.name)
+    handleAndRemoveFinding(f.id)
+  })
+
+  const jumpBtn = document.createElement('button')
+  jumpBtn.type = 'button'; jumpBtn.className = 'ksl-r-act jump'
+  jumpBtn.innerHTML = icon('map-pin', { size: 12 }) + ' Jump to on page'
+  jumpBtn.setAttribute('aria-label', `Jump to where ${entry.name} flagged this`)
+  jumpBtn.addEventListener('click', () => { void jumpToFinding(f.id) })
+
+  const dismissBtn = document.createElement('button')
+  dismissBtn.type = 'button'; dismissBtn.className = 'ksl-r-act dismiss'
+  dismissBtn.textContent = 'Dismiss'
+  dismissBtn.setAttribute('aria-label', `Dismiss feedback from ${entry.name}`)
+  dismissBtn.addEventListener('click', () => { handleAndRemoveFinding(f.id) })
+
+  actions.append(trackBtn, jumpBtn, dismissBtn)
+  row.appendChild(actions)
+
+  return row
 }
 
-function createExpandedChrome(ann: Annotation): void {
+/** Show "Show more" only when the clamped text actually overflows. */
+function markClamped(scope: HTMLElement): void {
+  scope.querySelectorAll('.ksl-row').forEach(row => {
+    const obs = row.querySelector('.ksl-r-obs') as HTMLElement | null
+    if (obs && obs.scrollHeight - obs.clientHeight > 4) row.classList.add('is-clamped')
+  })
+}
+
+function renderList(): void {
+  if (!panelListEl || !panelOpen) { syncSurfaces(); return }
+  const c = activeCounts()
+  renderHeader(c)
+
+  const items = visibleFindings()
+  panelListEl.textContent = ''
+
+  if (!items.length) {
+    const empty = document.createElement('div')
+    empty.className = 'ksl-empty'
+    const hasAny = findings.size > 0
+    if (reviewing && !hasAny) {
+      const t = document.createElement('div'); t.className = 'ksl-empty-title'
+      t.textContent = 'Your Sims are reviewing this page…'
+      const s = document.createElement('div'); s.textContent = 'Findings will appear here as they spot things.'
+      const shimmer = document.createElement('div'); shimmer.className = 'ksl-shimmer'
+      empty.append(t, s, shimmer)
+    } else if (!hasAny) {
+      const t = document.createElement('div'); t.className = 'ksl-empty-title'
+      t.textContent = 'No findings yet'
+      const s = document.createElement('div'); s.textContent = 'Your Sims are watching this page as a first-time customer would.'
+      empty.append(t, s)
+    } else {
+      empty.textContent = 'No findings match these filters.'
+    }
+    panelListEl.appendChild(empty)
+    findings.forEach(f => { f.rowEl = null })
+    return
+  }
+
+  items.forEach(f => {
+    const row = buildRow(f)
+    f.rowEl = row
+    panelListEl!.appendChild(row)
+  })
+  // rows not in the current filtered view have no live DOM node
+  const shown = new Set(items.map(i => i.id))
+  findings.forEach(f => { if (!shown.has(f.id)) f.rowEl = null })
+  markClamped(panelListEl)
+}
+
+// ── Transient "jump to on page" halo ───────────────────────────────────────────
+
+function clearJumpHalo(): void {
+  jumpHaloCleanup?.()
+  jumpHaloCleanup = null
+}
+
+async function jumpToFinding(findingId: string): Promise<void> {
+  const f = findings.get(findingId)
+  if (!f) return
+  const targetEl = await resolveObservationTarget(f.obs, { scroll: true })
+  if (!targetEl || !overlayEl) return
+  drawTransientHalo(targetEl, f.entry.accent)
+}
+
+function drawTransientHalo(targetEl: HTMLElement, accent: string): void {
+  clearJumpHalo()
   const ov = ensureOverlay()
-  const { slot, obs, targetEl } = ann
 
-  // Halo
   const halo = document.createElement('div')
   halo.className = 'klav-halo'
-  halo.style.borderColor = slot.accent
-  halo.style.boxShadow = `0 0 0 4px ${hexToRgba(slot.accent,.16)},0 0 24px ${hexToRgba(slot.accent,.2)}`
+  halo.style.borderColor = accent
+  halo.style.boxShadow = `0 0 0 4px ${hexToRgba(accent, .16)},0 0 24px ${hexToRgba(accent, .2)}`
   ov.appendChild(halo)
 
-  const pin = document.createElement('div')
-  pin.className = 'klav-pin'
-  pin.style.borderLeftColor = slot.accent
-  pin.setAttribute('role', 'status')
-  pin.setAttribute('aria-label', `Focused feedback from ${slot.name}`)
-
-  // Header
-  const hd = document.createElement('div'); hd.className = 'klav-pin-hd'
-
-  const av = document.createElement('div'); av.className = 'klav-pin-av'
-  av.style.background = slot.accent; av.textContent = slot.initials
-
-  const nameEl = document.createElement('span'); nameEl.className = 'klav-pin-name'
-  nameEl.style.color = slot.accent; nameEl.textContent = slot.name
-
-  hd.appendChild(av); hd.appendChild(nameEl)
-
-  if (obs.priority && obs.priority !== 'none') {
-    const sc = obs.priority === 'medium' ? ' sev-m' : obs.priority === 'low' ? ' sev-l' : ''
-    const sev = document.createElement('span')
-    sev.className = `klav-pin-sev${sc}`
-    sev.setAttribute('aria-label', `Priority: ${obs.priority}`)
-    sev.textContent = obs.priority; hd.appendChild(sev)
-  }
-
-  // Observation text — textContent only (LLM output, XSS guard)
-  const obsEl = document.createElement('div'); obsEl.className = 'klav-pin-obs'
-  obsEl.textContent = obs.text || ''
-
-  // Actions
-  const actions = document.createElement('div'); actions.className = 'klav-pin-actions'
-
-  const triageBtn = document.createElement('button'); triageBtn.className = 'klav-pin-triage'
-  triageBtn.innerHTML = icon('bug') + ' Track as Bug'
-  triageBtn.setAttribute('aria-label', `Track observation from ${slot.name} as a bug`)
-  triageBtn.addEventListener('click', () => {
-    // Open the bug composer, then dismiss the finding for good so it never
-    // re-prompts (same finding was re-appearing after tracking — the bug).
-    SimsLive.onTriage?.(obs, slot.name)
-    handleAndRemoveAnnotation(ann)
-  })
-
-  // Explicit "Dismiss" — remove the finding permanently without composing a bug.
-  const dismissBtn = document.createElement('button'); dismissBtn.className = 'klav-pin-dismiss'
-  dismissBtn.textContent = 'Dismiss'
-  dismissBtn.setAttribute('aria-label', `Dismiss feedback from ${slot.name}`)
-  dismissBtn.addEventListener('click', () => { handleAndRemoveAnnotation(ann) })
-
-  // "Collapse" — keep the finding, just close the expanded bubble.
-  const collapseBtn = document.createElement('button'); collapseBtn.className = 'klav-pin-collapse'
-  collapseBtn.textContent = 'Collapse'
-  collapseBtn.setAttribute('aria-label', `Collapse pinned feedback from ${slot.name}`)
-  collapseBtn.addEventListener('click', () => collapseFocusedAnnotation())
-
-  actions.appendChild(triageBtn); actions.appendChild(dismissBtn); actions.appendChild(collapseBtn)
-  pin.appendChild(hd); pin.appendChild(obsEl); pin.appendChild(actions)
-  ov.appendChild(pin)
-
   const ctrl = new AbortController()
-  const updatePosition = () => {
-    const rect = visibleElementRect(targetEl)
-    const visible = !!rect
+  const position = () => {
+    const rect = targetEl.getBoundingClientRect()
+    const visible = rect.width > 0 && rect.height > 0 &&
+      rect.bottom > 0 && rect.right > 0 && rect.top < window.innerHeight && rect.left < window.innerWidth
     halo.style.display = visible ? '' : 'none'
-    pin.style.display = visible ? '' : 'none'
-    if (!rect) return
-
+    if (!visible) return
     halo.style.left = `${rect.left - 5}px`
     halo.style.top = `${rect.top - 5}px`
     halo.style.width = `${rect.width + 10}px`
     halo.style.height = `${rect.height + 10}px`
-
-    // Pin bubble position — prefer above the element, flip below when there's no
-    // room, then ALWAYS clamp to the viewport so the full card text is visible
-    // without scrolling (the primary goal). Only genuinely oversized cards fall
-    // back to an internal scroll via the max-height CSS cap below.
-    const PIN_W = 224
-    const pinHeight = Math.max(112, pin.offsetHeight || 150)
-    let bLeft = rect.left
-    let bTop = rect.top - pinHeight - 14
-    bLeft = Math.max(10, Math.min(window.innerWidth - PIN_W - 10, bLeft))
-    if (bTop < 10) bTop = rect.bottom + 14   // flip below if no space above
-    // Clamp vertically so the whole card stays on-screen (fixes bottom cut-off).
-    bTop = Math.max(10, Math.min(bTop, window.innerHeight - pinHeight - 10))
-    pin.style.left = `${bLeft}px`
-    pin.style.top = `${bTop}px`
   }
-  const scheduleUpdate = () => requestAnimationFrame(updatePosition)
-  updatePosition()
-  window.addEventListener('scroll', scheduleUpdate, { passive: true, signal: ctrl.signal })
-  window.addEventListener('resize', scheduleUpdate, { signal: ctrl.signal })
+  const schedule = () => requestAnimationFrame(position)
+  position()
+  window.addEventListener('scroll', schedule, { passive: true, signal: ctrl.signal })
+  window.addEventListener('resize', schedule, { signal: ctrl.signal })
 
-  ann.halo = halo
-  ann.bubble = pin
-  ann.chromeCleanup = () => ctrl.abort()
-}
+  // Auto-fade after a few seconds — transient by design.
+  const fadeTimer = setTimeout(() => {
+    halo.style.opacity = '0'
+    halo.style.transition = 'opacity .3s ease'
+    setTimeout(() => { if (jumpHaloCleanup === cleanup) clearJumpHalo() }, 320)
+  }, 3200)
 
-async function focusAnnotation(annotationId: string): Promise<void> {
-  const ann = annotations.get(annotationId)
-  if (!ann) return
-
-  if (focusedAnnotationId === annotationId) return
-  collapseFocusedAnnotation(true)
-  focusedAnnotationId = annotationId
-  updateAnnotationFocusClasses()
-
-  const targetRect = ann.targetEl.getBoundingClientRect()
-  await scrollDocumentPointIntoView(
-    targetRect.left + targetRect.width / 2 + window.scrollX,
-    targetRect.top + targetRect.height / 2 + window.scrollY,
-  )
-  if (focusedAnnotationId !== annotationId) return
-
-  const rect = ann.targetEl.getBoundingClientRect()
-  const destX = Math.max(8, Math.min(window.innerWidth - 60, rect.left + rect.width * .1 - 21))
-  const destY = Math.min(window.innerHeight - 80, rect.bottom - 58)
-  if (!prefersReducedMotion()) await spawnWalker(ann.slot, destX, destY)
-  if (focusedAnnotationId !== annotationId) return
-
-  createExpandedChrome(ann)
-}
-
-function focusFirstAnnotationForSlot(simId: string): void {
-  const slot = simSlots.get(simId)
-  if (!slot) return
-  const first = Array.from(slot.annotationIds).find((id) => annotations.has(id))
-  if (first) void focusAnnotation(first)
-}
-
-function createCollapsedAnnotation(slot: SimSlot, obs: LiveObservation, targetEl: HTMLElement): string {
-  const ov = ensureOverlay()
-  const annotationId = `ann_${slot.simId}_${++annotationSeq}`
-  const marker = document.createElement('button')
-  marker.type = 'button'
-  marker.className = 'klav-pin-marker'
-  marker.style.background = slot.accent
-  marker.style.color = '#fff'
-  marker.style.setProperty('--klav-marker-glow', hexToRgba(slot.accent, .2))
-  marker.style.setProperty('--klav-marker-accent', slot.accent)
-  marker.textContent = slot.initials
-  marker.setAttribute('aria-label', `Show feedback from ${slot.name}`)
-  marker.addEventListener('click', (e) => {
-    e.stopPropagation()
-    void focusAnnotation(annotationId)
-  })
-  marker.addEventListener('pointerenter', () => { void focusAnnotation(annotationId) })
-  ov.appendChild(marker)
-
-  const ctrl = new AbortController()
-  const scheduleUpdate = () => requestAnimationFrame(() => positionMarker(marker, targetEl))
-  positionMarker(marker, targetEl)
-  window.addEventListener('scroll', scheduleUpdate, { passive: true, signal: ctrl.signal })
-  window.addEventListener('resize', scheduleUpdate, { signal: ctrl.signal })
-
-  const ann: Annotation = {
-    id: annotationId,
-    slot,
-    obs,
-    targetEl,
-    marker,
-    halo: null,
-    bubble: null,
-    markerCleanup: () => ctrl.abort(),
-    chromeCleanup: null,
+  const cleanup = () => {
+    clearTimeout(fadeTimer)
+    ctrl.abort()
+    halo.remove()
   }
-  annotations.set(annotationId, ann)
-  slot.annotationIds.add(annotationId)
-  slot.avatarEl.classList.add('ksl-has-annotation')
-  updateAnnotationFocusClasses()
-  return annotationId
+  jumpHaloCleanup = cleanup
 }
 
-async function revealPendingAnnotation(pendingId: string): Promise<string | null> {
-  const pending = pendingAnnotations.get(pendingId)
-  if (!pending || pending.revealed) return null
-  pending.revealed = true
-  pending.cleanup?.()
-  pending.cleanup = null
-  pendingAnnotations.delete(pendingId)
-  updateDockCounter()
+// ── Add / remove findings ──────────────────────────────────────────────────────
 
-  if (!simSlots.has(pending.slot.simId)) return null
-  const rect = visibleElementRect(pending.targetEl)
-  if (rect && !prefersReducedMotion()) {
-    const destX = Math.max(8, Math.min(window.innerWidth - 60, rect.left + rect.width * .1 - 21))
-    const destY = Math.min(window.innerHeight - 80, rect.bottom - 58)
-    await spawnWalker(pending.slot, destX, destY)
-  }
-  if (!simSlots.has(pending.slot.simId)) return null
-  return createCollapsedAnnotation(pending.slot, pending.obs, pending.targetEl)
-}
+function addFinding(entry: SimEntry, obs: LiveObservation): void {
+  const id = `f_${entry.simId}_${++findingSeq}`
+  findings.set(id, { id, entry, obs, rowEl: null })
 
-function queueScrollReveal(slot: SimSlot, obs: LiveObservation, targetEl: HTMLElement): void {
-  const pendingId = `pending_${slot.simId}_${++annotationSeq}`
-  const pending: PendingAnnotation = { id: pendingId, slot, obs, targetEl, cleanup: null, revealed: false }
-  pendingAnnotations.set(pendingId, pending)
-  slot.avatarEl.classList.add('ksl-has-annotation')
-  updateDockCounter()
-
-  if (visibleElementRect(targetEl)) {
-    void revealPendingAnnotation(pendingId)
-    return
+  if (panelOpen) {
+    renderList()
+  } else {
+    syncSurfaces()
   }
 
-  if (typeof IntersectionObserver !== 'undefined') {
-    const io = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting || entry.intersectionRatio > 0)) {
-        void revealPendingAnnotation(pendingId)
-      }
-    }, { threshold: 0.1 })
-    io.observe(targetEl)
-    pending.cleanup = () => io.disconnect()
-    return
-  }
-
-  const ctrl = new AbortController()
-  const onScrollOrResize = () => {
-    if (visibleElementRect(targetEl)) void revealPendingAnnotation(pendingId)
-  }
-  window.addEventListener('scroll', onScrollOrResize, { passive: true, signal: ctrl.signal })
-  window.addEventListener('resize', onScrollOrResize, { signal: ctrl.signal })
-  pending.cleanup = () => ctrl.abort()
-}
-
-function enqueueAnnotation(slot: SimSlot, obs: LiveObservation): void {
-  const delay = walkQueueIndex * 120
-  walkQueueIndex += 1
-  if (walkQueueResetTimer) clearTimeout(walkQueueResetTimer)
-  walkQueueResetTimer = setTimeout(() => {
-    walkQueueIndex = 0
-    walkQueueResetTimer = null
-  }, delay + 900)
-  const timer = setTimeout(() => {
-    walkQueueTimers.delete(timer)
-    void resolveObservationTarget(obs, { scroll: false }).then((targetEl) => {
-      if (!simSlots.has(slot.simId)) return
-      if (targetEl) queueScrollReveal(slot, obs, targetEl)
-      else showHuddleBubble(slot, [obs])
-    })
-  }, delay)
-  walkQueueTimers.add(timer)
-}
-
-// ── Huddle bubble (existing behavior for non-walk observations) ───────────────
-
-function showHuddleBubble(slot: SimSlot, observations: LiveObservation[]): void {
-  if (!dockEl || !shadowRoot) return
-
-  slot.clearBubble?.()   // dismiss any existing bubble first
-
-  const first = observations[0]
-  const extraCount = observations.length - 1
-
-  // Update aria-live
-  const ann = shadowRoot.getElementById('ksl-announcer')
-  if (ann) {
-    ann.textContent = ''
+  // Announce for screen readers.
+  if (announcerEl) {
+    announcerEl.textContent = ''
     requestAnimationFrame(() => {
-      if (!shadowRoot) return
-      const a = shadowRoot.getElementById('ksl-announcer')
-      if (a) a.textContent = `${slot.name}: ${first.text || ''}${extraCount > 0 ? ` and ${extraCount} more` : ''}`
+      if (announcerEl) announcerEl.textContent = `${entry.name}: ${obs.text || ''}`
     })
   }
+}
 
-  const bubble = document.createElement('div')
-  bubble.className = 'ksl-bubble'
-  bubble.setAttribute('role', 'status')
-  bubble.setAttribute('aria-label', `Feedback from ${slot.name}`)
-  bubble.style.borderLeftColor = slot.accent
+function removeFinding(findingId: string): void {
+  const f = findings.get(findingId)
+  if (!f) return
 
-  const closeBtn = document.createElement('button')
-  closeBtn.className = 'ksl-b-close'
-  closeBtn.setAttribute('aria-label', `Dismiss feedback from ${slot.name}`)
-  closeBtn.innerHTML = icon('x', { size: 13 })
-
-  const tag = document.createElement('div'); tag.className = 'ksl-b-tag'
-  tag.style.color = slot.accent; tag.textContent = slot.name
-
-  if (first.priority && first.priority !== 'none') {
-    const sc = first.priority === 'medium' ? ' sev-m' : first.priority === 'low' ? ' sev-l' : ''
-    const sev = document.createElement('span')
-    sev.className = `ksl-b-sev${sc}`.replace('sev-m','sev-m').replace('sev-l','sev-l')
-    sev.textContent = first.priority; tag.appendChild(sev)
+  const finish = () => {
+    findings.delete(findingId)
+    if (panelOpen) renderList()
+    else syncSurfaces()
   }
 
-  const obsEl = document.createElement('div'); obsEl.className = 'ksl-b-obs'
-  obsEl.textContent = first.text || ''
-
-  bubble.appendChild(closeBtn); bubble.appendChild(tag); bubble.appendChild(obsEl)
-
-  if (extraCount > 0) {
-    const more = document.createElement('div'); more.className = 'ksl-b-more'
-    more.textContent = `+${extraCount} more observation${extraCount > 1 ? 's' : ''}`
-    bubble.appendChild(more)
+  if (f.rowEl && panelOpen) {
+    const row = f.rowEl
+    row.classList.add('is-removing')
+    setTimeout(finish, prefersReducedMotion() ? 0 : 300)
+  } else {
+    finish()
   }
+}
 
-  slot.avatarEl.appendChild(bubble)
-  slot.avatarEl.classList.add('ksl-has-bubble')
-
-  let dismissed = false
-  const dismiss = () => {
-    if (dismissed) return; dismissed = true
-    clearTimeout(timer)
-    bubble.classList.add('is-out')
-    setTimeout(() => {
-      bubble.remove()
-      if (simSlots.get(slot.avatarEl.dataset.simId ?? '')?.clearBubble === clearFn) {
-        slot.avatarEl.classList.remove('ksl-has-bubble')
-      }
-    }, 265)
-    if (simSlots.get(slot.avatarEl.dataset.simId ?? '')?.clearBubble === clearFn) {
-      simSlots.get(slot.avatarEl.dataset.simId ?? '')!.clearBubble = null
-    }
-  }
-  const timer = setTimeout(dismiss, 14_000)
-  const clearFn = () => { clearTimeout(timer); dismiss() }
-  closeBtn.addEventListener('click', clearFn)
-  slot.clearBubble = clearFn
+/**
+ * Mark an observation handled (so renderFeedback() won't re-surface it) and
+ * remove its row. Shared by "Track as Bug" and "Dismiss".
+ */
+function handleAndRemoveFinding(findingId: string): void {
+  const f = findings.get(findingId)
+  if (!f) return
+  seenObservationKeys.add(observationKey(f.entry.simId, f.obs))
+  removeFinding(findingId)
 }
 
 // ── renderFeedback() ──────────────────────────────────────────────────────────
 
 function renderFeedback(simId: string, simName: string, observations: LiveObservation[]): void {
-  if (!dockEl) return
-  const slot = simSlots.get(simId)
-  if (!slot) {
-    console.warn(`[KlavitySims] renderFeedback: simId "${simId}" not in dock`)
+  void simName
+  if (!hostEl) return
+  const entry = simEntries.get(simId)
+  if (!entry) {
+    console.warn(`[KlavitySims] renderFeedback: simId "${simId}" not registered`)
     return
   }
   if (!observations.length) return
 
-  // Results are arriving — drop the "reviewing…" caption + thinking rings even
-  // if setReviewing(false) hasn't fired yet, so the UI never lies about state.
+  // Results are arriving — drop the "reviewing…" state even if setReviewing(false)
+  // hasn't fired yet, so the UI never lies about state.
   setReviewing(false)
 
-  // Keep the on-page layer action-oriented. Non-actionable observations still
-  // persist through the review pipeline, but they do not create page chrome.
+  // Keep the panel action-oriented. Non-actionable (positive/neutral) observations
+  // still persist through the review pipeline, but do not create rows.
   //
-  // Dedup: a live-mutating page re-reviews the same viewport and the server
-  // returns the SAME findings repeatedly. Skip any observation whose normalized
-  // text we've already shown for this Sim so identical findings never pile up
-  // (this is what stops the "+16 more" → "+36 more" runaway counter).
-  const toWalk: LiveObservation[] = []
-
+  // Dedup: a live-mutating page re-reviews the same viewport and the server returns
+  // the SAME findings repeatedly. Skip any observation whose normalized text we've
+  // already shown for this Sim so identical findings never pile up.
   for (const obs of observations) {
     if (!isConcernObservation(obs)) continue
     const key = observationKey(simId, obs)
-    if (seenObservationKeys.has(key)) continue   // already shown — do not re-add
+    if (seenObservationKeys.has(key)) continue
     seenObservationKeys.add(key)
-    toWalk.push(obs)
+    addFinding(entry, obs)
   }
-
-  // Marker observations: staggered lightly so pins pop in without a wall of chrome.
-  toWalk.forEach((obs) => enqueueAnnotation(slot, obs))
 }
 
 // ── undeploy() ────────────────────────────────────────────────────────────────
 
 function undeploy(): void {
-  pauseTour()
-  tourIndex = 0
-  tourBusy = false
-  tourControlsEl = null
-  tourPlayBtn = null
-  tourPrevBtn = null
-  tourNextBtn = null
-  tourStopBtn = null
-
-  // 1. Cancel huddle bubble timers
-  simSlots.forEach(s => { s.clearBubble?.(); s.clearBubble = null })
-  focusedAnnotationId = null
-  simSlots.clear()
-  // Reset the observation-dedup guard so a fresh deploy starts clean.
+  // 1. Transient halo + state
+  clearJumpHalo()
+  findings.clear()
+  findingSeq = 0
+  simEntries.clear()
   seenObservationKeys.clear()
+  panelOpen = false
+  personaFilter = null
+  sevFilter = null
+  reviewing = false
 
   // 2. Abort global listeners
   deployAbort?.abort(); deployAbort = null
-  if (walkQueueResetTimer) clearTimeout(walkQueueResetTimer)
-  walkQueueResetTimer = null
-  walkQueueTimers.forEach((timer) => clearTimeout(timer))
-  walkQueueTimers.clear()
-  walkQueueIndex = 0
-  pendingAnnotations.forEach((pending) => pending.cleanup?.())
-  pendingAnnotations.clear()
-  moreCounterEl = null
-  reviewStatusEl = null
 
-  // 3. Remove all in-transit walkers immediately
-  walkers.forEach(w => w.remove()); walkers.clear()
+  // 3. Drop cached refs
+  launcherEl = null
+  launcherAvatarsEl = null
+  launcherTxtEl = null
+  launcherBadgeEl = null
+  panelEl = null
+  panelCountEl = null
+  panelFiltersEl = null
+  panelListEl = null
+  announcerEl = null
 
-  // 4. Remove all annotation markers + focused chrome
-  annotations.forEach(({ marker, halo, bubble, markerCleanup, chromeCleanup }) => {
-    markerCleanup?.()
-    chromeCleanup?.()
-    marker.remove()
-    halo?.remove()
-    bubble?.remove()
-  })
-  annotations.clear()
-
-  // 5. Remove overlay host (and any leftover children)
+  // 4. Remove overlay host (transient halo lives here)
   overlayEl?.remove(); overlayEl = null
 
-  // 6. Remove dock host (shadow DOM — cleans up dock + announcer + all slots)
-  dockEl?.remove(); dockEl = null
-  dockHostEl?.remove(); dockHostEl = null; shadowRoot = null
+  // 5. Remove shadow host (cleans up launcher + panel + announcer)
+  hostEl?.remove(); hostEl = null; shadowRoot = null
 
-  // 7. Leave EXT_CSS in place — removing it mid-session can cause a flash;
-  //    it only adds .klav-* rules which harmlessly sit unused between sessions.
+  // 6. Leave EXT_CSS in place — removing it mid-session can cause a flash; it only
+  //    adds .klav-halo rules which harmlessly sit unused between sessions.
   emitLiveDock(false)
 }
 
