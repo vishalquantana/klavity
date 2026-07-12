@@ -1,7 +1,8 @@
 // prototype/lib/expectations-db.ts
 import type { Client } from "@libsql/client"
-import { mergeSource, nextStatus, matchExpectation,
+import { mergeSource, nextStatus, matchExpectationWithNearMisses,
   type SourceRef, type Corroboration, type ExpStatus } from "./expectations"
+import { logNearMisses, embeddingsRematch, embeddingsEnabled } from "./expectations-nearmiss"
 
 /**
  * Maximum number of source refs stored per expectation row.
@@ -56,11 +57,36 @@ export async function upsertExpectation(c: Client, input: {
   // 1) exact dedup_key match in-project
   const exact = await c.execute({ sql: "SELECT * FROM expectations WHERE project_id=? AND dedup_key=? LIMIT 1", args: [input.projectId, input.dedupKey] })
   let existing: ExpectationRow | null = exact.rows.length ? rowTo(exact.rows[0]) : null
-  // 2) else lexical near-duplicate over same-project titles
+  // 2) else lexical near-duplicate over same-project titles.
+  // KLA-251 (B.11): use the near-miss-collecting matcher. `matchId` is IDENTICAL to the old
+  // matchExpectation(...) (≥ 0.82 accept behavior unchanged) — the extra return is the set of
+  // DECLINED pairs in the near-miss band, which we log for cross-source-matching measurement.
   if (!existing) {
     const all = await listExpectations(c, input.projectId)
-    const matchId = matchExpectation({ title: input.title }, all.map((e) => ({ id: e.id, title: e.title })))
-    if (matchId) existing = all.find((e) => e.id === matchId) ?? null
+    const cands = all.map((e) => ({ id: e.id, title: e.title }))
+    const { matchId, nearMisses } = matchExpectationWithNearMisses({ title: input.title }, cands)
+    if (matchId) {
+      existing = all.find((e) => e.id === matchId) ?? null
+    } else {
+      // No lexical match. Log the near-misses (best-effort, never throws) so we can measure
+      // how often the 0.82 thread under-matches before shipping the embeddings upgrade.
+      if (nearMisses.length) {
+        await logNearMisses(c, {
+          projectId: input.projectId,
+          candTitle: input.title,
+          candKind: input.source.kind,
+          existingKinds: [...new Set(all.flatMap((e) => e.sourceRefs.map((r) => r.kind)))],
+          nearMisses,
+          threshold: 0.82,
+        })
+      }
+      // Phase 2 (flag-gated, default OFF): embeddings second pass over the lexically-unmatched
+      // candidates. Only runs when KLAV_EXP_EMBEDDINGS=1; a hit collapses the same as a lexical hit.
+      if (embeddingsEnabled() && cands.length) {
+        const hit = await embeddingsRematch({ candTitle: input.title, existing: cands })
+        if (hit) existing = all.find((e) => e.id === hit.matchId) ?? null
+      }
+    }
   }
   if (existing) {
     const corr = mergeSource(existing.corroboration, input.source.kind)
