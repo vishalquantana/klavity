@@ -21,6 +21,7 @@ import { createTestAccount, listTestAccounts, getTestAccountById, getTestAccount
 import { planeConfigFromForm, redactPlane, type PlaneStored } from "./lib/connection"
 import { assertSafeUrl } from "./lib/url-guard"
 import { safeFetch } from "./lib/safe-fetch"
+import { verifyTurnstile, turnstileEnabled, turnstileSiteKey } from "./lib/turnstile"
 import { screenshotUrl, defaultPreviewPersona } from "./lib/sim-preview"
 import { allow as rlAllow, record as rlRecord, count as rlCount, clear as rlClear } from "./lib/ratelimit"
 import { wrapUntrusted, UNTRUSTED_GUARD } from "./lib/prompt-safety"
@@ -1892,9 +1893,21 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             const gateProj = reqProjectId ? await projectById(reqProjectId) : null
             if (!gateProj) return wjson({ error: "Unknown project." }, 404)
             if (!rlAllow(`fbanon:proj:${reqProjectId}`, FEEDBACK_ANON_PER_PROJECT, FEEDBACK_ANON_WINDOW)) return wjson({ error: "rate limited" }, 429)
-            const gate = (await getWidgetConfig(reqProjectId))?.reportGate || "email"
+            // Default gate is now 'anonymous' (JTBD 1.7): identity is no longer demanded before value is
+            // delivered on the highest-volume path. Projects that explicitly chose 'email'/'login' keep
+            // their setting. An unrecognized/missing value resolves to 'anonymous'.
+            const gate = (await getWidgetConfig(reqProjectId))?.reportGate || "anonymous"
             if (gate === "login") return wjson({ error: "Sign in to Klavity to report on this project." }, 401)
             if (gate === "email" && !validReporterEmail) return wjson({ error: "A valid email is required to submit." }, 400)
+            // Turnstile replaces the email gate's accidental spam-shield role on the anonymous path.
+            // When TURNSTILE_SECRET_KEY is configured, an anonymous submit MUST carry a valid token
+            // (verifyTurnstile fails closed on a missing/invalid token). When Turnstile is unset, this is
+            // a no-op and the per-IP/per-project rate limits above remain the bound. Email/login gates
+            // already carry identity, so we only require the token where no other identity is demanded.
+            if (gate === "anonymous" && turnstileEnabled()) {
+              const tsToken = String(form.get("cf_turnstile_token") || "")
+              if (!(await verifyTurnstile(tsToken, ip))) return wjson({ error: "Verification failed. Please try again." }, 403)
+            }
             anonWidgetAllowed = true
           }
         }
@@ -3040,7 +3053,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // itself and learn its report gate BEFORE any auth. Non-sensitive, project-scoped.
         const proj = await projectById(m[1])
         if (!proj) return json({ error: "Not found." }, 404, WIDGET_CORS)
-        return json({ modalConfig: resolveModalConfig(await getProjectModalConfig(m[1])), widget: (await getWidgetConfig(m[1])) || { mode: "support", ctaUrl: "https://klavity.in/onboarding", reportGate: "email" } }, 200, WIDGET_CORS)
+        // turnstileSiteKey (public by design) tells the widget whether to render a Turnstile challenge
+        // on the anonymous submit path. Empty string when Turnstile isn't provisioned → widget skips it.
+        return json({ modalConfig: resolveModalConfig(await getProjectModalConfig(m[1])), widget: (await getWidgetConfig(m[1])) || { mode: "support", ctaUrl: "https://klavity.in/onboarding", reportGate: "anonymous" }, turnstileSiteKey: turnstileSiteKey() }, 200, WIDGET_CORS)
       }
     }
 

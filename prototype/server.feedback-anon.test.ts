@@ -29,7 +29,9 @@ await rawExec(`CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, email T
 await rawExec(`CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT)`)
 await rawExec(`CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, name TEXT NOT NULL, owner_email TEXT, domain TEXT, plan TEXT NOT NULL DEFAULT 'free', created_at INTEGER NOT NULL)`)
 await rawExec(`CREATE TABLE IF NOT EXISTS account_members (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, email TEXT NOT NULL, account_role TEXT NOT NULL DEFAULT 'member', created_at INTEGER NOT NULL, UNIQUE(account_id, email))`)
-await rawExec(`CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, name TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', review_mode TEXT NOT NULL DEFAULT 'auto', review_budget_daily INTEGER, observability_mode TEXT NOT NULL DEFAULT 'named', modal_config_json TEXT DEFAULT '{}', widget_mode TEXT NOT NULL DEFAULT 'support', widget_cta_url TEXT, widget_notify_email TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
+// widget_report_gate is seeded explicitly here (default 'anonymous' per JTBD 1.7) so we can seed a
+// project with an EXPLICIT 'email' gate and prove explicit configs still behave as before.
+await rawExec(`CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, name TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', review_mode TEXT NOT NULL DEFAULT 'auto', review_budget_daily INTEGER, observability_mode TEXT NOT NULL DEFAULT 'named', modal_config_json TEXT DEFAULT '{}', widget_mode TEXT NOT NULL DEFAULT 'support', widget_cta_url TEXT, widget_notify_email TEXT, widget_report_gate TEXT NOT NULL DEFAULT 'anonymous', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
 await rawExec(`CREATE TABLE IF NOT EXISTS project_members (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, email TEXT NOT NULL, project_role TEXT NOT NULL DEFAULT 'member', invited_by TEXT, created_at INTEGER NOT NULL, UNIQUE(project_id, email))`)
 await rawExec(`CREATE TABLE IF NOT EXISTS feedback (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, sim_id TEXT, actor_email TEXT, url_host TEXT, url_path TEXT, observation TEXT, sentiment TEXT, severity TEXT, priority TEXT, screenshot_id TEXT, suggested_bug_json TEXT, cited_trait_ids_json TEXT, source_quote TEXT, source_transcript_id TEXT, source_date INTEGER, plane_issue_key TEXT, plane_issue_url TEXT, status TEXT NOT NULL DEFAULT 'open', assignee TEXT, notes TEXT, contact_email TEXT, updated_at INTEGER, created_at INTEGER NOT NULL)`)
 await rawExec(`CREATE TABLE IF NOT EXISTS connectors (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, type TEXT NOT NULL, name TEXT NOT NULL, config TEXT NOT NULL DEFAULT '{}', auto_copy INTEGER NOT NULL DEFAULT 0, enabled INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL, created_by TEXT)`)
@@ -47,8 +49,14 @@ await rawExec(
   `INSERT INTO accounts (id, name, owner_email, domain, plan, created_at) VALUES ('a1', 'Test Account', 'owner@test.local', 'test.local', 'free', ?)`,
   [now]
 )
+// p1 = leadgen widget, gate left at the new default ('anonymous').
 await rawExec(
-  `INSERT INTO projects (id, account_id, name, status, review_mode, observability_mode, modal_config_json, widget_mode, widget_cta_url, widget_notify_email, created_at, updated_at) VALUES ('p1', 'a1', 'Test Project', 'active', 'auto', 'named', '{}', 'leadgen', 'https://klavity.in/onboarding', 'lead@x.com', ?, ?)`,
+  `INSERT INTO projects (id, account_id, name, status, review_mode, observability_mode, modal_config_json, widget_mode, widget_cta_url, widget_notify_email, widget_report_gate, created_at, updated_at) VALUES ('p1', 'a1', 'Test Project', 'active', 'auto', 'named', '{}', 'leadgen', 'https://klavity.in/onboarding', 'lead@x.com', 'anonymous', ?, ?)`,
+  [now, now]
+)
+// p2 = support widget with an EXPLICIT 'email' gate — proves explicit configs still gate as before.
+await rawExec(
+  `INSERT INTO projects (id, account_id, name, status, review_mode, observability_mode, modal_config_json, widget_mode, widget_cta_url, widget_notify_email, widget_report_gate, created_at, updated_at) VALUES ('p2', 'a1', 'Email-Gated Project', 'active', 'auto', 'named', '{}', 'support', 'https://klavity.in/onboarding', 'lead@x.com', 'email', ?, ?)`,
   [now, now]
 )
 
@@ -110,14 +118,45 @@ test("anonymous first-party submit persists with null actor", async () => {
   expect(row.rows[0].actor_email).toBeNull()
 })
 
-// ── Test 2: cross-origin anonymous is GATED by the project's report gate ──────
-// p1's gate defaults to 'email', so a foreign-origin report WITHOUT an email is rejected (400),
-// but WITH a valid email it's accepted and persisted (end-user files without a Klavity account).
-test("cross-origin anonymous without the required email is rejected (400)", async () => {
+// ── Test 2 (JTBD 1.7): default gate is 'anonymous' → cross-origin submit with NO email succeeds ──
+// p1's gate is the new default ('anonymous'), so a foreign-origin report WITHOUT any email is accepted
+// and persisted with a null actor + null contact — identity is no longer demanded before value lands.
+test("default-anonymous cross-origin submit with NO email is accepted (200) and persists with null contact", async () => {
   const fd = new FormData()
-  fd.set("description", "x"); fd.set("project_id", "p1")
-  const r = await fetch(`${BASE}/api/feedback`, { method: "POST", body: fd, headers: { origin: "https://evil.example" } })
+  fd.set("description", "anon-default no-email report"); fd.set("project_id", "p1")
+  const r = await fetch(`${BASE}/api/feedback`, { method: "POST", body: fd, headers: { origin: "https://customer.example" } })
+  expect(r.status).toBe(200)
+  const j = await r.json(); expect(j.saved).toBe(true); expect(j.id).toBeTruthy()
+  const row = await rawClient.execute({ sql: "SELECT actor_email, contact_email FROM feedback WHERE id=?", args: [j.id] })
+  expect(row.rows[0].actor_email).toBeNull()
+  expect(row.rows[0].contact_email).toBeNull()
+})
+
+// ── Test 2b (JTBD 1.7): an EXPLICIT 'email' gate (p2) still rejects a submit with no email (400) ──
+// Explicit email/login gate configs must behave exactly as before the default flipped to anonymous.
+test("explicit email-gated project rejects a cross-origin submit with no email (400)", async () => {
+  const fd = new FormData()
+  fd.set("description", "x"); fd.set("project_id", "p2")
+  const r = await fetch(`${BASE}/api/feedback`, { method: "POST", body: fd, headers: { origin: "https://customer.example" } })
   expect(r.status).toBe(400)
+})
+
+// ── Test 2c (JTBD 1.7): success-card email → same contact-email path on a default-anonymous project ──
+// The email typed on the post-submit success card is POSTed to /api/widget/lead, which stores it on the
+// feedback row exactly like the old gate-collected reporter_email — proving the moved ask lands identically.
+test("success-card email (via /api/widget/lead) stores on a default-anonymous feedback row", async () => {
+  const fd = new FormData()
+  fd.set("description", "anon report, email added after"); fd.set("project_id", "p1")
+  const r = await fetch(`${BASE}/api/feedback`, { method: "POST", body: fd, headers: { origin: "https://customer.example" } })
+  expect(r.status).toBe(200)
+  const j = await r.json(); const fid = j.id
+  const lead = await fetch(`${BASE}/api/widget/lead`, {
+    method: "POST", headers: { "content-type": "application/json", origin: "https://customer.example" },
+    body: JSON.stringify({ project_id: "p1", feedback_id: fid, email: "notify-me@test.local", source_url: "https://customer.example/x" }),
+  })
+  expect(lead.status).toBe(200)
+  const row = await rawClient.execute({ sql: "SELECT contact_email FROM feedback WHERE id=?", args: [fid] })
+  expect(row.rows[0].contact_email).toBe("notify-me@test.local")
 })
 
 test("cross-origin anonymous WITH a valid email is accepted + stores the contact", async () => {

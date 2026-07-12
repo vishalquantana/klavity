@@ -59,7 +59,9 @@ export function successCopy(mode: string, ctaUrl: string, suppressEmail = false)
   }
   return { // support (default)
     headline: `Bug filed ${icon('check-circle', { label: 'filed', size: 16 })}`,
-    body: suppressEmail ? "Thanks — we'll keep you posted." : "Want to know when it's fixed? Drop your email and we'll ping you.",
+    // JTBD 1.7: with the anonymous gate as the default, the email ask moved here (post-submit). The
+    // report is already delivered; the email is now a genuinely optional "want updates?" — not a wall.
+    body: suppressEmail ? "Thanks — we'll keep you posted." : "Want updates when this is fixed? Drop your email (optional) and we'll ping you.",
     emailLabel: "Notify me", ctaText: "", ctaUrl,
     showEmail: !suppressEmail, showCta: false,
   }
