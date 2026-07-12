@@ -1,6 +1,6 @@
 // packages/sdk/src/widget.ts
 import { injectSimStyles } from "@klavity/core/sim"
-import { safeToPng, safeToPngWithScale } from "./capture"
+import { safeToPng, safeToPngWithScale, safeToPngWithQuality } from "./capture"
 import { buildModal, installRegionDrag, type ModalController } from "@klavity/core/modal"
 import { cropDataUrl, type Rect } from "@klavity/core/crop"
 import { planScrollStitch, clampCaptureHeight } from "./sharp-capture"
@@ -411,7 +411,7 @@ async function mount() {
   }
   paintLauncher()
   mq.addEventListener('change', paintLauncher)
-  function openReport(type: "bug" | "feature" = "bug", opts?: { initialShot?: string; initialDescription?: string }) {
+  function openReport(type: "bug" | "feature" = "bug", opts?: { initialShot?: string; initialShotQuality?: "rendered" | "wireframe"; initialDescription?: string }) {
     if (composer && (composer.shadowRoot.host as HTMLElement | null)?.isConnected) return
     const identified = firstParty || !!getToken()  // already known to Klavity (own page session, or signed-in widget)
     // Only the "login" gate forces the connect flow on third-party sites. "email"/"anonymous" let an
@@ -435,17 +435,24 @@ async function mount() {
       // EXCEPT when we already have a right-click-drag region shot: that one is the default first image,
       // so we skip the full-page auto-capture and let the zoomed-in region lead.
       autoCaptureOnOpen: !opts?.initialShot,
-      onCaptureFull: async () => safeToPng(document.body, { filter: (n) => (n as HTMLElement).id !== HOST_ID }),
+      // JTBD 1.9: report the capture-quality tag so the composer badges the thumbnail — 'rendered' on the
+      // html-to-image path, 'wireframe' when it fell back to the fetch-free painter. Degraded shots get the
+      // one-tap "Retake sharp" (getDisplayMedia real-pixel path via onRetakeSharp below).
+      onCaptureFull: async () => safeToPngWithQuality(document.body, { filter: (n) => (n as HTMLElement).id !== HOST_ID }),
       onRegionCapture: async (rect) => {
         // Crop the selected VIEWPORT rect out of a full-page capture. Pass the capture's scale so the rect
         // lands correctly even when the fetch-free fallback downscaled a tall page (otherwise → black).
-        const { dataUrl, scale } = await safeToPngWithScale(document.body, { filter: (n) => (n as HTMLElement).id !== HOST_ID })
-        return cropDataUrl(dataUrl, rect, window.scrollX, window.scrollY, scale)
+        const { dataUrl, scale, quality } = await safeToPngWithScale(document.body, { filter: (n) => (n as HTMLElement).id !== HOST_ID })
+        return { dataUrl: await cropDataUrl(dataUrl, rect, window.scrollX, window.scrollY, scale), quality }
       },
       // Sharp capture: real tab pixels via getDisplayMedia (no CORS issues, captures cross-origin images) +
       // scroll-stitch to a full-page image. Feature-detected — undefined on iOS Safari (no getDisplayMedia),
       // where the modal hides the Sharp button and users fall back to the html-to-image "Full Page" above.
-      onCaptureSharp: sharpCaptureSupported() ? () => captureSharpFullPage() : undefined,
+      // Tagged 'real-pixel' so its thumbnail shows the sharp badge and no retake.
+      onCaptureSharp: sharpCaptureSupported() ? async () => ({ dataUrl: await captureSharpFullPage(), quality: "real-pixel" as const }) : undefined,
+      // JTBD 1.9: "Retake sharp" on a degraded thumbnail → the same getDisplayMedia real-pixel capture. Only
+      // wired when the browser supports it (no getDisplayMedia on iOS Safari → no retake affordance shown).
+      onRetakeSharp: sharpCaptureSupported() ? async () => ({ dataUrl: await captureSharpFullPage(), quality: "real-pixel" as const }) : undefined,
       requireEmail,
       // Pre-compress each screenshot as soon as it's captured (runs while the user types their
       // description). By submit time the Promise is settled → zero compression delay before upload.
@@ -497,7 +504,9 @@ async function mount() {
     }
     if (opts?.initialDescription) prefillReportDescription(ctrl, opts.initialDescription)
     // Right-click-drag region: load the cropped selection as the default (first) screenshot, zoomed to fit.
-    if (opts?.initialShot) ctrl.addScreenshot(opts.initialShot)
+    // JTBD 1.9: a right-click-drag region shot is an html-to-image crop, so it carries its capture-quality
+    // tag → the composer badges it (and offers "Retake sharp" when it's rendered/wireframe).
+    if (opts?.initialShot) ctrl.addScreenshot(opts.initialShot, opts.initialShotQuality)
     } catch (e) { console.warn("[Klavity] failed to open the report composer:", e) }
   }
   SimsLive.onTriage = (observation, simName) => {
@@ -815,14 +824,16 @@ async function mount() {
   // default (first), zoomed-in screenshot. A plain right-click (no drag) still shows the menu below. ──
   async function captureRegionAndOpen(rect: Rect) {
     let shot = ""
+    let shotQuality: "rendered" | "wireframe" | undefined
     try {
       // Full-page capture (CSP/CORS-resilient), then crop to the selected VIEWPORT rect (cropDataUrl adds
       // the scroll offset). Pass the capture's scale so the crop is correct even when the fetch-free
       // fallback downscaled a tall page. Best-effort: if capture fails, still open the composer to retry.
-      const { dataUrl, scale } = await safeToPngWithScale(document.body, { filter: (n) => (n as HTMLElement).id !== HOST_ID })
+      const { dataUrl, scale, quality } = await safeToPngWithScale(document.body, { filter: (n) => (n as HTMLElement).id !== HOST_ID })
       shot = await cropDataUrl(dataUrl, rect, window.scrollX, window.scrollY, scale)
+      shotQuality = quality
     } catch { /* fall back to an empty composer */ }
-    openReport("bug", shot ? { initialShot: shot } : undefined)
+    openReport("bug", shot ? { initialShot: shot, initialShotQuality: shotQuality } : undefined)
   }
   let reportArmed = true
   // 'off' mode: install NEITHER the right-click-drag region capture NOR the contextmenu takeover, so
