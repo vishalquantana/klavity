@@ -40,6 +40,33 @@ function safeHttpUrl(u: string | null | undefined): string {
   } catch { return '' }
 }
 
+/**
+ * JTBD 1.9 — capture-quality tag for a screenshot thumbnail. Each capture engine tags its output so the
+ * composer can badge it and, on a degraded shot, offer a one-tap "Retake sharp":
+ *   'real-pixel' -> getDisplayMedia (widget "Screen") / captureVisibleTab (extension). True page pixels,
+ *                   every image (cross-origin included). No warning; no retake offered.
+ *   'rendered'   -> html-to-image ("Full Page" on the widget). A DOM re-render — cross-origin images the
+ *                   page's CSP/CORS blocks are dropped. Retake offered.
+ *   'wireframe'  -> the fetch-free fallback painter. Layout/text/backgrounds only, NO image bytes. Never
+ *                   presented without its badge. Retake offered.
+ */
+export type CaptureQuality = 'real-pixel' | 'rendered' | 'wireframe'
+
+/** A capture callback may return the raw dataUrl (legacy) OR { dataUrl, quality } (JTBD 1.9). */
+export type CaptureResult = string | { dataUrl: string; quality?: CaptureQuality }
+
+/** Normalise a {@link CaptureResult} (raw dataUrl or { dataUrl, quality }) to a uniform shape. */
+function normalizeCapture(r: CaptureResult): { dataUrl: string; quality?: CaptureQuality } {
+  return typeof r === 'string' ? { dataUrl: r } : { dataUrl: r.dataUrl, quality: r.quality }
+}
+
+/** JTBD 1.9 badge metadata per capture-quality tag: label + icon + whether "Retake sharp" applies. */
+const QUALITY_META: Record<CaptureQuality, { label: string; iconName: string; degraded: boolean }> = {
+  'real-pixel': { label: 'Sharp', iconName: 'check-circle', degraded: false },
+  'rendered': { label: 'Rendered', iconName: 'image', degraded: true },
+  'wireframe': { label: 'Wireframe', iconName: 'triangle-alert', degraded: true },
+}
+
 export interface SuccessCopy {
   headline: string
   body: string
@@ -51,13 +78,21 @@ export interface SuccessCopy {
 }
 
 export interface ModalCallbacks {
-  onCaptureFull: () => Promise<string>
-  onRegionCapture?: (rect: { x: number; y: number; w: number; h: number }) => Promise<string>
+  // Each capture callback may return a raw dataUrl (legacy) or { dataUrl, quality } (JTBD 1.9). The quality
+  // tag drives the thumbnail badge + the "Retake sharp" affordance. onCaptureFull is 'rendered'/'wireframe'
+  // on the widget (html-to-image / fetch-free) and 'real-pixel' on the extension (captureVisibleTab stitch).
+  onCaptureFull: () => Promise<CaptureResult>
+  onRegionCapture?: (rect: { x: number; y: number; w: number; h: number }) => Promise<CaptureResult>
   // Optional "sharp" real-pixel capture (the widget's getDisplayMedia scroll-stitch — captures cross-origin
   // images with no CORS issues). When provided, a "Sharp" button is rendered; the modal hides itself during
   // the capture so the composer isn't in the shot. Feature-detected by the host (absent on iOS Safari →
   // button hidden → users fall back to the html-to-image "Full Page").
-  onCaptureSharp?: () => Promise<string>
+  onCaptureSharp?: () => Promise<CaptureResult>
+  // JTBD 1.9: the real-pixel "Retake sharp" path invoked from a degraded (rendered/wireframe) thumbnail's
+  // badge. Returns a fresh real-pixel capture that replaces the degraded image in place. On the widget this
+  // is the getDisplayMedia screen-share; on the extension it's the captureVisibleTab full-page capture. The
+  // host hides its own UI during the capture (same as the Sharp button). Absent → no retake affordance.
+  onRetakeSharp?: () => Promise<CaptureResult>
   onSubmit: (payload: {
     type: ReportType
     description: string
@@ -105,7 +140,10 @@ export interface ModalCallbacks {
 
 export interface ModalController {
   shadowRoot: ShadowRoot
-  addScreenshot: (dataUrl: string) => void
+  // JTBD 1.9: an optional capture-quality tag badges the thumbnail (real-pixel/rendered/wireframe) and,
+  // for a degraded shot, surfaces "Retake sharp". Omit it (e.g. a right-click-drag region shot the host
+  // already knows the quality of) and no badge is shown.
+  addScreenshot: (dataUrl: string, quality?: CaptureQuality) => void
   close: () => void
   // JTBD 1.8: update the attached-proof replay chip after mount (rrweb loads async, so the buffer may
   // only become playable a few hundred ms after the composer opens). No-op when no chip was rendered.
@@ -130,6 +168,10 @@ export function buildModal(
   // Pre-compression is kicked off immediately when a screenshot is added, so by the time the user
   // clicks Submit the Promise is already settled and the upload can start without delay.
   let screenshotCompressed: Promise<string>[] = []
+  // JTBD 1.9: parallel array of capture-quality tags — screenshotQuality[i] describes screenshots[i]
+  // ('real-pixel' | 'rendered' | 'wireframe'), or undefined for images with no known quality (user
+  // uploads / clipboard pastes). Drives the per-thumbnail badge + the "Retake sharp" affordance.
+  let screenshotQuality: (CaptureQuality | undefined)[] = []
   // Upload guards (Dev 6 audit #4): cap how many images can be attached and how big each may be.
   const MAX_IMAGES = 5
   const MAX_FILE_BYTES = 10 * 1024 * 1024 // 10 MB per image
@@ -194,6 +236,26 @@ export function buildModal(
     /* Extend the 22px badges to a ≥40px hit area without enlarging the visible button. The top (X) and
        bottom (pencil) pseudo-areas don't overlap each other; the pencil shares the image's markup action. */
     .klavity-rm::after,.klavity-mk::after{content:"";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:40px;height:40px;}
+    /* JTBD 1.9 capture-quality badge — a small pill on the top-LEFT of each thumbnail. Sits opposite the
+       remove (top-right) + markup (bottom-right) badges so nothing overlaps. Colour-coded by quality:
+       sharp = accent, rendered = neutral, wireframe = amber warning (so a degraded shot is never silent). */
+    .klavity-qb{position:absolute;top:4px;left:4px;z-index:2;display:inline-flex;align-items:center;gap:3px;max-width:calc(100% - 30px);font-size:9.5px;font-weight:700;line-height:1;padding:3px 6px;border-radius:999px;background:var(--kl-chip);color:var(--kl-fg);box-shadow:0 1px 3px rgba(0,0,0,.28);border:1px solid var(--kl-border);pointer-events:none;}
+    .klavity-qb svg{display:block;width:10px;height:10px;}
+    .klavity-qb .klavity-qb-t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .klavity-qb.kl-q-real-pixel{color:var(--kl-accent);background:color-mix(in srgb,var(--kl-chip) 74%,var(--kl-accent) 26%);border-color:color-mix(in srgb,var(--kl-border) 55%,var(--kl-accent) 45%);}
+    .klavity-qb.kl-q-wireframe{color:#8a5a00;background:#fef3c7;border-color:#f59e0b;}
+    /* "Retake sharp" affordance — a full-width pill under the degraded thumbnail (rendered/wireframe).
+       Uses the accent so it reads as the fix. Hidden when no onRetakeSharp host callback is wired. */
+    .klavity-retake{margin-top:5px;width:100%;display:inline-flex;align-items:center;justify-content:center;gap:4px;font-size:10px;font-weight:700;line-height:1;padding:5px 6px;border:none;border-radius:7px;background:color-mix(in srgb,var(--kl-chip) 70%,var(--kl-accent) 30%);color:var(--kl-accent);cursor:pointer;transition:transform .15s cubic-bezier(.2,.7,.2,1),background .15s ease,box-shadow .15s ease;will-change:transform;}
+    .klavity-retake svg{display:block;width:11px;height:11px;}
+    .klavity-retake:hover{transform:var(--kl-lift);background:color-mix(in srgb,var(--kl-chip) 55%,var(--kl-accent) 45%);box-shadow:0 3px 10px color-mix(in srgb,var(--kl-accent) 26%,transparent);}
+    .klavity-retake:active{transform:var(--kl-press);}
+    .klavity-retake:disabled{opacity:.55;cursor:not-allowed;transform:none;box-shadow:none;}
+    .klavity-retake:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
+    .klavity-retake.kl-loading{animation:kl-cap-pulse 1s ease-in-out infinite;}
+    /* A one-line notice under a thumbnail whose annotations were cleared by a retake (JTBD 1.9 AC). */
+    .klavity-retake-note{margin-top:4px;font-size:9.5px;line-height:1.3;color:var(--kl-muted);text-wrap:pretty;}
+    @media (prefers-reduced-motion: reduce){.klavity-retake{transition:none!important;}.klavity-retake.kl-loading{animation:none;}}
     .klavity-actions{display:flex;gap:8px;margin-bottom:12px;}
     .klavity-actions button{flex:1;min-height:40px;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px;background:var(--kl-chip);color:var(--kl-fg);border:none;border-radius:8px;cursor:pointer;font-size:12px;line-height:1;}
     .klavity-actions .kl-cap-ic,.klavity-toggle .kl-cap-ic{display:inline-flex;align-items:center;justify-content:center;flex:none;transition:transform .2s cubic-bezier(.34,1.56,.64,1);line-height:1;}
@@ -448,6 +510,7 @@ export function buildModal(
         e.stopPropagation()
         screenshots.splice(i, 1)
         screenshotCompressed.splice(i, 1)
+        screenshotQuality.splice(i, 1) // JTBD 1.9: keep the quality tags aligned with the shifted indices
         // KLAVITYKLA-217: keep annotationsByIndex aligned with the (now shifted) screenshot indices —
         // drop the removed image's markup and slide every higher index down by one. Without this, submitting
         // the full per-image map would attach an annotation to the wrong screenshot after a mid-strip delete.
@@ -467,6 +530,41 @@ export function buildModal(
       mk.title = 'Mark up'
       mk.addEventListener('click', (e) => { e.stopPropagation(); openAnnotator(i) })
       wrap.append(img, rm, mk)
+
+      // JTBD 1.9: capture-quality badge + guided "Retake sharp". A shot with a known quality tag gets a
+      // small pill (sharp/rendered/wireframe); a DEGRADED shot (rendered/wireframe) also gets a full-width
+      // "Retake sharp" button that re-captures via the host's real-pixel path and swaps the image in place.
+      const quality = screenshotQuality[i]
+      if (quality) {
+        const meta = QUALITY_META[quality]
+        const badge = document.createElement('span')
+        badge.className = 'klavity-qb kl-q-' + quality
+        badge.title =
+          quality === 'real-pixel' ? 'Pixel-perfect capture (every image included)'
+          : quality === 'wireframe' ? 'Wireframe fallback — layout only, images not captured. Retake for a sharp shot.'
+          : 'Rendered capture — some cross-origin images may be missing. Retake for a sharp shot.'
+        badge.innerHTML = icon(meta.iconName, { size: 10 }) + '<span class="klavity-qb-t">' + escHtml(meta.label) + '</span>'
+        wrap.appendChild(badge)
+
+        if (meta.degraded && callbacks.onRetakeSharp) {
+          const retake = document.createElement('button')
+          retake.type = 'button'
+          retake.className = 'klavity-retake'
+          retake.innerHTML = icon('zap', { size: 11 }) + '<span>Retake sharp</span>'
+          retake.title = 'Recapture this shot at full pixel quality'
+          retake.addEventListener('click', (e) => { e.stopPropagation(); void retakeSharp(i, retake) })
+          wrap.appendChild(retake)
+        }
+      }
+      // A retake that dropped the shot's markup leaves a one-line notice on the thumbnail (AC: annotations
+      // are carried OR explicitly cleared with notice — we clear, since the fresh image would misalign them).
+      if (retakeClearedNote.has(i)) {
+        const note = document.createElement('div')
+        note.className = 'klavity-retake-note'
+        note.textContent = 'Markup cleared for the retake.'
+        wrap.appendChild(note)
+      }
+
       strip.appendChild(wrap)
     })
     counter.textContent = `${screenshots.length}/5 images`
@@ -482,14 +580,47 @@ export function buildModal(
     if (errEl) (errEl as HTMLElement).style.display = 'none'
   }
 
-  function addScreenshot(dataUrl: string) {
+  function addScreenshot(dataUrl: string, quality?: CaptureQuality) {
     // Hard cap — every capture/upload/paste path funnels through here, so the limit holds everywhere.
     if (screenshots.length >= MAX_IMAGES) { showError(`You can attach up to ${MAX_IMAGES} images.`); return }
     clearError()
     screenshots.push(dataUrl)
     // Kick off compression immediately — by submit time the Promise is settled (user was typing).
     screenshotCompressed.push(callbacks.compressImage ? callbacks.compressImage(dataUrl) : Promise.resolve(dataUrl))
+    screenshotQuality.push(quality) // JTBD 1.9: stays aligned with screenshots[] (undefined = no badge)
     updateStrip()
+  }
+
+  // JTBD 1.9: re-capture a degraded thumbnail via the host's real-pixel path and swap it in place. The
+  // host hides its own UI (launcher / composer) during onRetakeSharp so the composer isn't in the pixels.
+  // Annotations for that image are dropped (a fresh image would misalign them) with a one-line notice.
+  const retakeClearedNote = new Set<number>()
+  async function retakeSharp(index: number, btn: HTMLButtonElement) {
+    if (busy || !callbacks.onRetakeSharp) return // re-entrancy: a capture/submit is already running
+    lockComposer(true)
+    btn.classList.add('kl-loading')
+    host.style.display = 'none' // keep the composer out of the real-pixel shot
+    try {
+      const restore = maskOn ? maskNumbers(document.body) : null
+      let result: CaptureResult | undefined
+      try { result = await callbacks.onRetakeSharp() }
+      finally { restore?.() }
+      if (result) {
+        const { dataUrl, quality } = normalizeCapture(result)
+        if (dataUrl) {
+          screenshots[index] = dataUrl
+          screenshotCompressed[index] = callbacks.compressImage ? callbacks.compressImage(dataUrl) : Promise.resolve(dataUrl)
+          screenshotQuality[index] = quality ?? 'real-pixel'
+          // Clear any markup on this image — the new capture has different pixels/dimensions.
+          if (annotationsByIndex[index]) { delete annotationsByIndex[index]; retakeClearedNote.add(index) }
+        }
+      }
+    } catch { /* user cancelled the share prompt, or capture failed — leave the original shot untouched */ }
+    finally {
+      host.style.display = ''
+      lockComposer(false)
+      updateStrip() // repaints the badge (now real-pixel), drops the retake button + shows any notice
+    }
   }
 
   // Image-only validation. Most browsers set file.type to an image/* MIME; HEIC/HEIF (and the odd browser
@@ -670,7 +801,10 @@ export function buildModal(
     fullBtn.classList.add('kl-loading')
     try {
       const restore = maskOn ? maskNumbers(document.body) : null
-      try { addScreenshot(await callbacks.onCaptureFull()); setActiveCapture(fullBtn) }
+      try {
+        const { dataUrl, quality } = normalizeCapture(await callbacks.onCaptureFull())
+        addScreenshot(dataUrl, quality); setActiveCapture(fullBtn)
+      }
       finally { restore?.() }
     }
     catch { /* ignore */ }
@@ -692,10 +826,13 @@ export function buildModal(
       target.textContent = 'Capturing…'
       try {
         const restore = maskOn ? maskNumbers(document.body) : null
-        let shot: string | undefined
+        let shot: CaptureResult | undefined
         try { shot = await callbacks.onCaptureSharp!() }
         finally { restore?.() }
-        if (shot) { addScreenshot(shot); setActiveCapture(sharpBtn) }
+        if (shot) {
+          const { dataUrl, quality } = normalizeCapture(shot)
+          if (dataUrl) { addScreenshot(dataUrl, quality ?? 'real-pixel'); setActiveCapture(sharpBtn) }
+        }
       } catch { /* user cancelled the share prompt, or capture failed — just restore */ }
       finally {
         host.style.display = ''
@@ -745,10 +882,13 @@ export function buildModal(
         document.addEventListener('keydown', escHandler, { capture: true })
         try {
           const restore = maskOn ? maskNumbers(document.body) : null
-          let shot: string | undefined
+          let shot: CaptureResult | undefined
           try { shot = await callbacks.onRegionCapture!(rect) }
           finally { restore?.() }
-          if (shot) { addScreenshot(shot); setActiveCapture(regionBtn) }
+          if (shot) {
+            const { dataUrl, quality } = normalizeCapture(shot)
+            if (dataUrl) { addScreenshot(dataUrl, quality); setActiveCapture(regionBtn) }
+          }
         } finally {
           host.style.display = ''
           lockComposer(false)
@@ -1086,7 +1226,8 @@ export function buildModal(
     setTimeout(() => {
       callbacks.onCaptureFull()
         .then(shot => {
-          addScreenshot(shot)
+          const { dataUrl, quality } = normalizeCapture(shot)
+          addScreenshot(dataUrl, quality)
           setActiveCapture(fullBtn)
         })
         .catch(() => {})

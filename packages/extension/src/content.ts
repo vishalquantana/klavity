@@ -1,5 +1,5 @@
 import type { ContentMessage, BackgroundMessage, ReportType, SubmitReportPayload, KlavConfig, KlavMonitoredProject } from '@klavity/core'
-import { buildModal, installRegionDrag, type ModalController } from '@klavity/core/modal'
+import { buildModal, installRegionDrag, type ModalController, type CaptureQuality } from '@klavity/core/modal'
 import { icon } from '@klavity/core/icons'
 import { resolveModalConfig } from '@klavity/core/modal-theme'
 import { installCapture, buildReportContext, type CaptureBuffers } from '@klavity/core/capture'
@@ -157,7 +157,7 @@ async function fetchModalConfig(): Promise<ReturnType<typeof resolveModalConfig>
   return resolveModalConfig({})
 }
 
-async function openModal(type: ReportType, initialShot?: string) {
+async function openModal(type: ReportType, initialShot?: { dataUrl: string; quality?: CaptureQuality }) {
   if (modalCtrl) return // guard against double-open
   if (!isContextValid()) {
     showToast('Extension reloaded. Please refresh the page.')
@@ -170,9 +170,12 @@ async function openModal(type: ReportType, initialShot?: string) {
     autoCaptureOnOpen: !initialShot,
     onCaptureFull,
     onRegionCapture,
+    // JTBD 1.9: the extension's captures are already real-pixel, but wire onRetakeSharp for parity so a
+    // (rare) degraded shot — or a future non-real-pixel path — can still re-capture at full quality.
+    onRetakeSharp: onCaptureFull,
     onSubmit: (p) => submitViaSW(p),
   }, config)
-  if (initialShot) modalCtrl.addScreenshot(initialShot)
+  if (initialShot) modalCtrl.addScreenshot(initialShot.dataUrl, initialShot.quality)
 }
 
 function closeModal() {
@@ -225,18 +228,23 @@ const captureAwaiter = makeCaptureAwaiter({ send: (m) => sendToBackground(m) })
 // Full-page scroll-stitch (GoFullPage-style): scroll the page viewport-by-viewport, capture each frame
 // via the SW's captureVisibleTab, and stitch onto a canvas — so reports get the COMPLETE page, not just
 // what's on screen. Falls back to a single visible capture if stitching can't run (no canvas, errors).
-const onCaptureFull = async (): Promise<string> => {
+// JTBD 1.9: captureVisibleTab grabs the REAL tab pixels (every image, cross-origin included), so both the
+// full-page and region shots are tagged 'real-pixel' → the composer shows the sharp badge, no retake.
+const onCaptureFull = async (): Promise<{ dataUrl: string; quality: 'real-pixel' }> => {
+  let dataUrl: string
   try {
-    return await captureFullPage({ capture: () => captureAwaiter.captureFull() })
+    dataUrl = await captureFullPage({ capture: () => captureAwaiter.captureFull() })
   } catch {
-    return captureAwaiter.captureFull()
+    dataUrl = await captureAwaiter.captureFull()
   }
+  return { dataUrl, quality: 'real-pixel' }
 }
 
-const onRegionCapture = async (rect: { x: number; y: number; w: number; h: number }): Promise<string> => {
+const onRegionCapture = async (rect: { x: number; y: number; w: number; h: number }): Promise<{ dataUrl: string; quality: 'real-pixel' }> => {
   const full = await captureAwaiter.captureFull()
   const dpr = window.devicePixelRatio || 1
-  return cropDataUrl(full, { x: rect.x * dpr, y: rect.y * dpr, w: rect.w * dpr, h: rect.h * dpr }, window.scrollX * dpr, window.scrollY * dpr)
+  const dataUrl = await cropDataUrl(full, { x: rect.x * dpr, y: rect.y * dpr, w: rect.w * dpr, h: rect.h * dpr }, window.scrollX * dpr, window.scrollY * dpr)
+  return { dataUrl, quality: 'real-pixel' }
 }
 
 // ── Message listener ─────────────────────────────────────────────────────────
@@ -557,9 +565,9 @@ const regionDrag = installRegionDrag({
     showCtxMenu(x, y)
   },
   onRegion: async (rect) => {
-    let shot = ''
+    let shot: { dataUrl: string; quality: 'real-pixel' } | null = null
     try { shot = await onRegionCapture(rect) } catch { /* open empty so the user can retry */ }
-    void openModal('bug', shot || undefined)
+    void openModal('bug', shot?.dataUrl ? shot : undefined)
   },
 })
 

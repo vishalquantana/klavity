@@ -546,6 +546,145 @@ describe('buildModal Screen tooltip positioning', () => {
   })
 })
 
+// JTBD 1.9: capture-quality badges + guided "Retake sharp"
+describe('buildModal capture-quality badges (JTBD 1.9)', () => {
+  const ok = async () => ({ issueKey: '1', issueUrl: '' })
+
+  it('badges each engine correctly: real-pixel (Screen/captureVisibleTab), rendered (html-to-image), wireframe (fallback)', () => {
+    // Verify all four engines via their three quality tags. The composer maps:
+    //   getDisplayMedia "Screen" + extension captureVisibleTab -> 'real-pixel'
+    //   widget html-to-image "Full Page"                        -> 'rendered'
+    //   fetch-free fallback painter                             -> 'wireframe'
+    const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: ok })
+    ctrl.addScreenshot('data:image/png;base64,REAL', 'real-pixel')
+    ctrl.addScreenshot('data:image/png;base64,REND', 'rendered')
+    ctrl.addScreenshot('data:image/png;base64,WIRE', 'wireframe')
+    const thumbs = Array.from(ctrl.shadowRoot.querySelectorAll('.klavity-thumb'))
+    expect(thumbs.length).toBe(3)
+    expect(thumbs[0].querySelector('.klavity-qb.kl-q-real-pixel')).not.toBeNull()
+    expect(thumbs[0].querySelector('.klavity-qb')!.textContent).toContain('Sharp')
+    expect(thumbs[1].querySelector('.klavity-qb.kl-q-rendered')).not.toBeNull()
+    expect(thumbs[1].querySelector('.klavity-qb')!.textContent).toContain('Rendered')
+    expect(thumbs[2].querySelector('.klavity-qb.kl-q-wireframe')).not.toBeNull()
+    expect(thumbs[2].querySelector('.klavity-qb')!.textContent).toContain('Wireframe')
+    ctrl.close()
+  })
+
+  it('a shot with no known quality (upload/paste) renders NO badge', () => {
+    const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: ok })
+    ctrl.addScreenshot('data:image/png;base64,UPLOAD') // no quality → plain thumbnail
+    const thumb = ctrl.shadowRoot.querySelector('.klavity-thumb')!
+    expect(thumb.querySelector('.klavity-qb')).toBeNull()
+    expect(thumb.querySelector('.klavity-retake')).toBeNull()
+    ctrl.close()
+  })
+
+  it('the wireframe fallback is NEVER presented without its badge (AC)', () => {
+    const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: ok })
+    ctrl.addScreenshot('data:image/png;base64,WIRE', 'wireframe')
+    const thumb = ctrl.shadowRoot.querySelector('.klavity-thumb')!
+    expect(thumb.querySelector('.klavity-qb.kl-q-wireframe')).not.toBeNull()
+    ctrl.close()
+  })
+
+  it('"Retake sharp" shows only on degraded shots (rendered/wireframe) AND only when onRetakeSharp is wired', () => {
+    // With onRetakeSharp: degraded shots get the button; a real-pixel shot does not.
+    const withRetake = buildModal('bug', { onCaptureFull: async () => 'x', onRetakeSharp: async () => 'y', onSubmit: ok })
+    withRetake.addScreenshot('data:image/png;base64,REAL', 'real-pixel')
+    withRetake.addScreenshot('data:image/png;base64,REND', 'rendered')
+    withRetake.addScreenshot('data:image/png;base64,WIRE', 'wireframe')
+    const t = Array.from(withRetake.shadowRoot.querySelectorAll('.klavity-thumb'))
+    expect(t[0].querySelector('.klavity-retake')).toBeNull()   // real-pixel: no retake
+    expect(t[1].querySelector('.klavity-retake')).not.toBeNull() // rendered: retake offered
+    expect(t[2].querySelector('.klavity-retake')).not.toBeNull() // wireframe: retake offered
+    withRetake.close()
+    // Without onRetakeSharp: even a degraded shot shows the badge but NO retake affordance.
+    const noRetake = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: ok })
+    noRetake.addScreenshot('data:image/png;base64,REND', 'rendered')
+    const thumb = noRetake.shadowRoot.querySelector('.klavity-thumb')!
+    expect(thumb.querySelector('.klavity-qb.kl-q-rendered')).not.toBeNull()
+    expect(thumb.querySelector('.klavity-retake')).toBeNull()
+    noRetake.close()
+  })
+
+  it('"Retake sharp" replaces the degraded shot in place and upgrades the badge to real-pixel', async () => {
+    const onRetakeSharp = vi.fn(async () => ({ dataUrl: 'data:image/png;base64,SHARP', quality: 'real-pixel' as const }))
+    const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onRetakeSharp, onSubmit: ok })
+    ctrl.addScreenshot('data:image/png;base64,WIRE', 'wireframe')
+    const retakeBtn = ctrl.shadowRoot.querySelector('.klavity-retake') as HTMLButtonElement
+    expect(retakeBtn).not.toBeNull()
+    retakeBtn.click()
+    await new Promise(r => setTimeout(r, 0))
+    expect(onRetakeSharp).toHaveBeenCalledTimes(1)
+    // Still exactly ONE screenshot — replaced in place, not appended.
+    const thumbs = ctrl.shadowRoot.querySelectorAll('.klavity-thumb')
+    expect(thumbs.length).toBe(1)
+    const img = thumbs[0].querySelector('img') as HTMLImageElement
+    expect(img.src).toContain('SHARP')
+    // Badge upgraded to sharp; retake affordance gone.
+    expect(thumbs[0].querySelector('.klavity-qb.kl-q-real-pixel')).not.toBeNull()
+    expect(thumbs[0].querySelector('.klavity-retake')).toBeNull()
+    ctrl.close()
+  })
+
+  it('retake clears the shot\'s annotations and shows a one-line notice (AC: cleared with notice)', async () => {
+    // jsdom never fires <img>.onload for a data URL, so make Image fire onload synchronously — this lets us
+    // drive the modal's real annotator UI (openAnnotator) to attach markup, then assert the retake clears it.
+    const OrigImage = globalThis.Image
+    class FakeImage {
+      onload: (() => void) | null = null
+      naturalWidth = 40; naturalHeight = 40
+      set src(_v: string) { queueMicrotask(() => this.onload?.()) }
+    }
+    ;(globalThis as any).Image = FakeImage
+    try {
+      const onRetakeSharp = vi.fn(async () => ({ dataUrl: 'data:image/png;base64,SHARP', quality: 'real-pixel' as const }))
+      const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onRetakeSharp, onSubmit: async () => ({ issueKey: 'K', issueUrl: '' }) })
+      ctrl.addScreenshot('data:image/png;base64,WIRE', 'wireframe')
+      // Open the annotator, draw a rect, and save — so the image carries markup (annotationsByIndex[0]).
+      ;(ctrl.shadowRoot.querySelector('.klavity-mk') as HTMLButtonElement).click()
+      await new Promise(r => setTimeout(r, 0))
+      const canvas = ctrl.shadowRoot.querySelector('canvas') as HTMLCanvasElement
+      expect(canvas).not.toBeNull()
+      canvas.dispatchEvent(new PointerEvent('pointerdown', { clientX: 5, clientY: 5, bubbles: true }))
+      canvas.dispatchEvent(new PointerEvent('pointerup', { clientX: 30, clientY: 30, bubbles: true }))
+      ;(ctrl.shadowRoot.querySelector('#klavity-save-ann') as HTMLButtonElement).click()
+      await new Promise(r => setTimeout(r, 0))
+      // Now retake — markup must be cleared and a one-line notice shown on the thumbnail.
+      ;(ctrl.shadowRoot.querySelector('.klavity-retake') as HTMLButtonElement).click()
+      await new Promise(r => setTimeout(r, 0))
+      const note = ctrl.shadowRoot.querySelector('.klavity-retake-note')
+      expect(note).not.toBeNull()
+      expect(note!.textContent).toMatch(/markup cleared/i)
+      ctrl.close()
+    } finally {
+      ;(globalThis as any).Image = OrigImage
+    }
+  })
+
+  it('capture callbacks may return { dataUrl, quality } (new) — the badge reflects it', async () => {
+    vi.useFakeTimers()
+    const onCaptureFull = vi.fn(async () => ({ dataUrl: 'data:image/png;base64,REND', quality: 'rendered' as const }))
+    const ctrl = buildModal('bug', { onCaptureFull, autoCaptureOnOpen: true, onRetakeSharp: async () => 'y', onSubmit: ok })
+    await vi.advanceTimersByTimeAsync(250)
+    const thumb = ctrl.shadowRoot.querySelector('.klavity-thumb')!
+    expect(thumb.querySelector('.klavity-qb.kl-q-rendered')).not.toBeNull()
+    expect(thumb.querySelector('.klavity-retake')).not.toBeNull()
+    ctrl.close(); vi.useRealTimers()
+  })
+
+  it('legacy string-returning capture callbacks still work (no badge, backward compatible)', async () => {
+    vi.useFakeTimers()
+    const onCaptureFull = vi.fn(async () => 'data:image/png;base64,LEGACY')
+    const ctrl = buildModal('bug', { onCaptureFull, autoCaptureOnOpen: true, onSubmit: ok })
+    await vi.advanceTimersByTimeAsync(250)
+    const thumb = ctrl.shadowRoot.querySelector('.klavity-thumb')!
+    expect(thumb).not.toBeNull()
+    expect(thumb.querySelector('.klavity-qb')).toBeNull() // string return → no quality → no badge
+    ctrl.close(); vi.useRealTimers()
+  })
+})
+
 // JTBD 1.8: attached-proof replay chip
 describe('buildModal replay chip (JTBD 1.8)', () => {
   const base = { onCaptureFull: async () => 'x', onSubmit: async () => ({ issueKey: '1', issueUrl: '' }) }
