@@ -174,16 +174,25 @@ export async function safeToPng(
 }
 
 /**
+ * Capture-quality tag for a screenshot the widget produced (JTBD 1.9). `rendered` = html-to-image
+ * (a DOM re-render — may drop cross-origin images under CSP/CORS); `wireframe` = the fetch-free
+ * fallback painter (layout/text only, no image bytes at all). The composer badges the thumbnail
+ * accordingly and offers a one-tap "Retake sharp" (getDisplayMedia real-pixel path) on both.
+ */
+export type WidgetCaptureQuality = "rendered" | "wireframe"
+
+/**
  * Like {@link safeToPng}, but also returns `scale` — the number of image pixels per CSS pixel of the
  * captured page. Callers that crop a viewport rect out of a full-page capture (region screenshot) MUST
  * use this and pass `scale` to `cropDataUrl`: the html-to-image path is 1:1 (scale = pixelRatio), but the
  * fetch-free fallback downscales tall pages, so a CSS rect cropped at scale 1 would land in the wrong,
- * often clamped → black, area.
+ * often clamped → black, area. Also returns `quality` so the composer can badge the thumbnail
+ * ('rendered' on the html-to-image path, 'wireframe' when it fell back to the fetch-free painter).
  */
 export async function safeToPngWithScale(
   node: HTMLElement,
   opts: { filter?: (n: HTMLElement) => boolean; pixelRatio?: number } = {},
-): Promise<{ dataUrl: string; scale: number }> {
+): Promise<{ dataUrl: string; scale: number; quality: WidgetCaptureQuality }> {
   let skipped = 0
   const callerFilter = opts.filter
   const pixelRatio = opts.pixelRatio ?? 1
@@ -202,10 +211,25 @@ export async function safeToPngWithScale(
     if (skipped) {
       warn(`[Klavity] capture: omitted ${skipped} cross-origin image(s) the page's CSP/CORS blocks — captured the rest`)
     }
-    return { dataUrl: out, scale: pixelRatio }
+    return { dataUrl: out, scale: pixelRatio, quality: "rendered" }
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
     warn(`[Klavity] capture: html-to-image unavailable (${reason}); using fetch-free fallback`)
-    return renderFetchFreeFallback(node, callerFilter, pixelRatio)
+    const fb = renderFetchFreeFallback(node, callerFilter, pixelRatio)
+    return { ...fb, quality: "wireframe" }
   }
+}
+
+/**
+ * Full-page capture that reports its quality tag alongside the image (JTBD 1.9). Thin wrapper over
+ * {@link safeToPngWithScale} for the widget's onCaptureFull, where the crop scale is irrelevant but the
+ * composer still needs to know whether the shot is a faithful 'rendered' capture or the degraded
+ * 'wireframe' fallback so it can badge it and offer "Retake sharp".
+ */
+export async function safeToPngWithQuality(
+  node: HTMLElement,
+  opts: { filter?: (n: HTMLElement) => boolean; pixelRatio?: number } = {},
+): Promise<{ dataUrl: string; quality: WidgetCaptureQuality }> {
+  const { dataUrl, quality } = await safeToPngWithScale(node, opts)
+  return { dataUrl, quality }
 }
