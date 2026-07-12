@@ -3776,6 +3776,22 @@ export async function listTriageFeedback(projectId: string): Promise<any[]> {
           WHERE f.project_id=? AND f.status='new' ORDER BY f.created_at DESC LIMIT 200`,
     args: [projectId],
   })
+  // JTBD 2.8: the triage inbox now expands each row inline to full evidence (screenshot, replay,
+  // console/network context, grounding quote) before you decide. Enrich each row with `hasReplay`
+  // (so the row can offer the ▶ Session replay affordance) and the sanitized `clientContext`
+  // (console/network/browser context captured at report time). Batch-fetch which of these rows
+  // carry a session replay in ONE query — mirrors feedbackIdsWithReplay but kept local to avoid a
+  // circular import (feedback-replay.ts imports ./db).
+  const ids = r.rows.map((x: any) => String(x.id))
+  const replaySet = new Set<string>()
+  if (ids.length) {
+    const ph = ids.map(() => "?").join(",")
+    const rr = await db!.execute({
+      sql: `SELECT DISTINCT feedback_id FROM feedback_replays WHERE project_id=? AND feedback_id IN (${ph})`,
+      args: [projectId, ...ids],
+    }).catch(() => ({ rows: [] as any[] }))
+    for (const row of rr.rows) replaySet.add(String((row as any).feedback_id))
+  }
   return r.rows.map((x: any) => {
     let bug: any = null
     try { bug = x.suggested_bug_json ? JSON.parse(x.suggested_bug_json) : null } catch { bug = null }
@@ -3787,6 +3803,7 @@ export async function listTriageFeedback(projectId: string): Promise<any[]> {
       // KLA-168: use priority (renamed from severity); fall back to severity for legacy rows
       priority: (x.priority ?? x.severity) != null ? String(x.priority ?? x.severity) : null,
       urlPath: x.url_path != null ? String(x.url_path) : null,
+      urlHost: x.url_host != null ? String(x.url_host) : null,
       screenshotId: x.screenshot_id != null ? String(x.screenshot_id) : null,
       suggestedBug: bug,
       sourceQuote: x.source_quote != null ? String(x.source_quote) : null,
@@ -3795,6 +3812,9 @@ export async function listTriageFeedback(projectId: string): Promise<any[]> {
       createdAt: Number(x.created_at),
       // KLA-200: human-readable sequential number
       seqNum: x.seq_num != null ? Number(x.seq_num) : null,
+      // JTBD 2.8: inline-evidence fields for the expandable triage row.
+      hasReplay: replaySet.has(String(x.id)),
+      clientContext: x.client_context_json != null ? safeJsonParse(x.client_context_json) : null,
     }
   })
 }

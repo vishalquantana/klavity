@@ -1298,6 +1298,35 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .tg-shot img{width:100%;height:100%;object-fit:cover;display:block}
 .tg-shot-ph{color:var(--paper-faint);font-size:16px}
 @media(max-width:640px){.tg-row{flex-wrap:wrap}.tg-shot{width:100%;height:120px}}
+/* JTBD 2.8: bulk multi-select + keyboard focus + inline evidence expand + undo toast */
+.tg-cb-wrap{flex:none;display:flex;align-items:center;padding-top:2px;cursor:pointer}
+.tg-cb{width:16px;height:16px;accent-color:var(--indigo);cursor:pointer}
+.tg-row.tg-selected{background:rgba(99,102,241,.06);border-radius:8px}
+.tg-row.tg-focus{box-shadow:inset 3px 0 0 0 var(--indigo);background:rgba(99,102,241,.045);border-radius:8px}
+.tg-row:focus{outline:none}
+.tg-expand-btn{display:inline-flex;align-items:center;gap:5px;margin-top:6px;padding:3px 8px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--paper-dim);font-family:var(--body);font-size:11.5px;font-weight:600;cursor:pointer;transition:border-color var(--mi-dur) var(--mi-ease),color var(--mi-dur) var(--mi-ease),transform var(--mi-dur) var(--mi-ease)}
+.tg-expand-btn:hover{border-color:var(--indigo);color:var(--paper);transform:var(--mi-lift)}
+.tg-expand-btn:active{transform:var(--mi-press)}
+.tg-expand-btn .icon{transition:transform var(--mi-dur) var(--mi-ease)}
+.tg-expand-btn.open .icon{transform:rotate(90deg)}
+.tg-evidence{margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--ink-2);display:flex;flex-direction:column;gap:10px}
+.tg-evidence.hide{display:none}
+.tg-ev-quote{font-style:italic;color:var(--paper);border-left:3px solid var(--indigo);padding-left:10px;font-size:13px}
+.tg-ev-obs{font-size:13px;color:var(--paper-dim);white-space:pre-wrap}
+.tg-ev-meta{display:flex;flex-wrap:wrap;gap:10px;font-family:var(--mono);font-size:11px;color:var(--paper-faint)}
+.tg-ev-meta .icon{vertical-align:-2px}
+.tg-ev-replay{align-self:flex-start}
+.tg-ev-group .tg-ev-h{display:flex;align-items:center;gap:6px;font-weight:600;font-size:12px;color:var(--paper);margin-bottom:4px}
+.tg-ev-list{margin:0;padding-left:0;list-style:none;display:flex;flex-direction:column;gap:3px}
+.tg-ev-list li{font-family:var(--mono);font-size:11px;color:var(--paper-dim);word-break:break-word;padding:2px 6px;background:var(--ink-3);border-radius:5px}
+.tg-ev-empty{font-size:12px}
+.tg-toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(20px);display:flex;align-items:center;gap:14px;padding:11px 16px;border-radius:12px;background:var(--ink-2);border:1px solid var(--line);box-shadow:var(--shadow-border),0 14px 40px rgba(25,20,15,.25);color:var(--paper);font-family:var(--body);font-size:13.5px;opacity:0;pointer-events:none;z-index:9000;transition:opacity var(--mi-dur) var(--mi-ease),transform var(--mi-dur) var(--mi-ease)}
+.tg-toast.show{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto}
+.tg-toast-msg{display:inline-flex;align-items:center;gap:7px}
+.tg-toast-msg .icon{color:var(--green,#10b981)}
+.tg-toast-undo{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:8px;border:1px solid var(--indigo);background:transparent;color:var(--indigo);font-family:var(--body);font-weight:600;font-size:12.5px;cursor:pointer;transition:background var(--mi-dur) var(--mi-ease),transform var(--mi-dur) var(--mi-ease)}
+.tg-toast-undo:hover{background:rgba(99,102,241,.1);transform:var(--mi-lift)}
+.tg-toast-undo:active{transform:var(--mi-press)}
 /* ===== Guided tour (vendored driver.js) — popover restyled to the Klavity design system ===== */
 .driver-popover.klav-tour{background:var(--ink-2);color:var(--paper);border-radius:16px;box-shadow:var(--shadow-border),0 18px 48px rgba(25,20,15,.22);padding:18px;font-family:var(--body);max-width:330px}
 .driver-popover.klav-tour .driver-popover-title{font-family:var(--display);font-weight:600;font-size:17px;color:var(--paper)}
@@ -2379,34 +2408,225 @@ async function renderTriage() {
   // KLA-255: also render pending sim-match confirmations in the same triage card.
   renderSimMatches()
 }
+// JTBD 2.8: bulk + evidence-rich triage. Rows now carry a checkbox for multi-select (backed by
+// the existing PATCH /tickets/bulk endpoint), keyboard nav (j/k move · a accept · d dismiss),
+// an inline-expand panel revealing full evidence (screenshot / replay / console+network / grounding
+// quote) before deciding, and an undo toast after any dismiss that restores the row(s) to status='new'.
+let _tgSelected = new Set()   // selected triage ids
+let _tgFocus = null           // id of the keyboard-focused row
+let _tgKeysBound = false
+function tgRowById(id) { const h = $("triageList"); return h ? h.querySelector('.tg-row[data-id="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"]') : null }
+function tgVisibleItems() { return (_triageItems || []).filter(t => tgSent(t) === _triageSentiment || _triageSentiment === "all") }
+
+async function tgBulkPatch(ids, body) {
+  const pid = curProjId(); if (!pid || !ids.length) return { ok: false }
+  const r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/tickets/bulk", {
+    method: "PATCH", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ...body, ticketIds: ids }),
+  }).catch(() => null)
+  return r && r.ok ? (await r.json().catch(() => ({ ok: true }))) : { ok: false }
+}
+// Accept (single or bulk): status=open, priority applied to all. Reduces the inbox count by N.
+async function tgAccept(ids, priority) {
+  const body = { status: "open" }
+  if (priority) body.priority = priority
+  const res = await tgBulkPatch(ids, body)
+  if (res.ok) { _tgSelected.clear(); await refreshAll(); renderTriage() }
+  return res
+}
+// Dismiss (single or bulk): status=dismissed, then show an undo toast that restores status=new.
+async function tgDismiss(ids) {
+  const restore = ids.slice()
+  const res = await tgBulkPatch(ids, { status: "dismissed" })
+  if (res.ok) {
+    _tgSelected.clear()
+    await refreshAll(); renderTriage()
+    tgUndoToast(restore.length, async () => {
+      const r = await tgBulkPatch(restore, { status: "new" })
+      if (r.ok) { await refreshAll(); renderTriage() }
+    })
+  }
+  return res
+}
+
 function renderTriageItems(items) {
   const host = $("triageList"); if (!host) return
-  if (!items.length) { host.innerHTML = emptyState(kicon('check-circle',{size:32}), "No new reports — you're all caught up.", ""); return }
-  host.innerHTML = items.map(t => `
-    <div class="tg-row ${sevRailClass(t.priority)}" data-id="${esc(String(t.id))}">
+  if (!items.length) { _tgSelected.clear(); _tgFocus = null; renderTriageBulkBar(); host.innerHTML = emptyState(kicon('check-circle',{size:32}), "No new reports — you're all caught up.", ""); return }
+  // Drop stale selections/focus for rows that no longer exist.
+  const present = new Set(items.map(t => String(t.id)))
+  _tgSelected = new Set([..._tgSelected].filter(id => present.has(id)))
+  if (_tgFocus && !present.has(_tgFocus)) _tgFocus = null
+  host.innerHTML = items.map(t => {
+    const id = String(t.id)
+    const sel = _tgSelected.has(id)
+    return `
+    <div class="tg-row ${sevRailClass(t.priority)}${sel ? " tg-selected" : ""}${_tgFocus === id ? " tg-focus" : ""}" data-id="${esc(id)}" tabindex="-1">
+      <label class="tg-cb-wrap" title="Select for bulk action"><input type="checkbox" class="tg-cb"${sel ? " checked" : ""} aria-label="Select report"></label>
       ${t.screenshotId ? `<div class="tg-shot" data-shot="${esc(String(t.screenshotId))}" title="Open screenshot"><div class="tg-shot-ph">${kicon('image',{size:16})}</div></div>` : ""}
       <div class="tg-b">
         <div class="fx-t">${t.seqNum ? `<span class="tkt-seq">#${t.seqNum}</span> ` : ""}${esc(t.title || "Untitled report")}${(t.recurrence >= 2) ? `<span class="fx-recur">recurring ×${t.recurrence}</span>` : ""}</div>
         ${t.sourceQuote ? `<div class="fx-q">"${esc(t.sourceQuote)}"</div>` : (t.observation ? `<div class="fx-q">${esc(t.observation)}</div>` : "")}
         <div class="fx-m">${t.urlPath ? `<span class="fx-area">${esc(t.urlPath)}</span>` : ""}${t.sentiment ? `<span class="chip s-${esc(t.sentiment)}">${esc(t.sentiment)}</span>` : ""}${t.simName ? `<span>${kicon('bot',{size:14})} ${esc(t.simName)}</span>` : ""}${dupAckHtml(t, {badge:true})}${t.createdAt ? `<span class="muted">${esc(ago(t.createdAt))}</span>` : ""}</div>
+        <button class="tg-expand-btn" type="button" aria-expanded="false" title="Show full evidence">${kicon('chevron-right',{size:14})} <span class="tg-expand-lbl">Evidence</span></button>
+        <div class="tg-evidence hide" data-loaded=""></div>
       </div>
       <div class="tg-actions">
-        <select class="tg-pri">${["urgent","high","medium","low"].map(s => `<option value="${s}"${s===(t.priority||"medium")?" selected":""}>${s}</option>`).join("")}</select>
+        <select class="tg-pri" aria-label="Priority">${["urgent","high","medium","low"].map(s => `<option value="${s}"${s===(t.priority||"medium")?" selected":""}>${s}</option>`).join("")}</select>
         <button class="btn btn-indigo btn-sm tg-accept" type="button">Accept as bug</button>
         <button class="btn btn-ghost btn-sm tg-dismiss" type="button">Dismiss</button>
       </div>
-    </div>`).join("")
+    </div>`
+  }).join("")
   host.querySelectorAll(".tg-row").forEach(row => {
     const id = row.getAttribute("data-id")
-    const patch = async (payload) => {
-      await fetch("/api/feedback/" + encodeURIComponent(id), { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) }).catch(() => {})
-      await refreshAll()
-      renderTriage()
-    }
-    row.querySelector(".tg-accept").addEventListener("click", () => patch({ status: "open", priority: row.querySelector(".tg-pri").value }))
-    row.querySelector(".tg-dismiss").addEventListener("click", () => patch({ status: "dismissed" }))
+    const t = (items).find(x => String(x.id) === id)
+    row.querySelector(".tg-accept").addEventListener("click", () => tgAccept([id], row.querySelector(".tg-pri").value))
+    row.querySelector(".tg-dismiss").addEventListener("click", () => tgDismiss([id]))
+    const cb = row.querySelector(".tg-cb")
+    cb.addEventListener("change", () => {
+      if (cb.checked) _tgSelected.add(id); else _tgSelected.delete(id)
+      row.classList.toggle("tg-selected", cb.checked)
+      renderTriageBulkBar()
+    })
+    const exp = row.querySelector(".tg-expand-btn")
+    exp.addEventListener("click", () => tgToggleExpand(row, t))
+    row.addEventListener("click", (ev) => {
+      // Clicking anywhere on the row (but not its controls) focuses it for keyboard nav.
+      if (ev.target.closest(".tg-actions, .tg-cb-wrap, .tg-expand-btn, .tg-evidence, .tg-shot")) return
+      tgSetFocus(id, false)
+    })
   })
   loadTriageShots(host)
+  renderTriageBulkBar()
+  tgBindKeys()
+}
+
+// Bulk action bar — appears above the list when ≥1 row is selected.
+function renderTriageBulkBar() {
+  let bar = $("tgBulkBar")
+  const n = _tgSelected.size
+  const host = $("triageList")
+  if (!bar) {
+    bar = document.createElement("div")
+    bar.id = "tgBulkBar"; bar.className = "bulk-bar tg-bulk-bar"
+    const card = host ? host.closest(".card") : null
+    if (card && host) card.insertBefore(bar, host)
+  }
+  if (!n) { bar.classList.remove("show"); bar.innerHTML = ""; return }
+  const priOpts = ["urgent","high","medium","low"].map(p => `<option value="${p}"${p==="medium"?" selected":""}>${p}</option>`).join("")
+  bar.innerHTML =
+    `<span class="bulk-count">${n} selected</span>` +
+    `<span class="bulk-sep"></span>` +
+    `<span class="bulk-lbl">Priority:</span>` +
+    `<select class="bulk-sel" id="tgBulkPri">${priOpts}</select>` +
+    `<button class="btn btn-indigo btn-sm" id="tgBulkAccept" type="button">Accept as bugs</button>` +
+    `<button class="btn btn-ghost btn-sm" id="tgBulkDismiss" type="button">Dismiss</button>` +
+    `<span class="bulk-sep"></span>` +
+    `<button class="btn btn-ghost btn-sm" id="tgBulkClear" type="button" style="font-size:12px">Clear</button>`
+  bar.classList.add("show")
+  bar.querySelector("#tgBulkAccept").addEventListener("click", () => {
+    const pri = bar.querySelector("#tgBulkPri").value
+    tgAccept([..._tgSelected], pri)
+  })
+  bar.querySelector("#tgBulkDismiss").addEventListener("click", () => tgDismiss([..._tgSelected]))
+  bar.querySelector("#tgBulkClear").addEventListener("click", () => {
+    _tgSelected.clear()
+    if (host) host.querySelectorAll(".tg-row").forEach(r => { r.classList.remove("tg-selected"); const c = r.querySelector(".tg-cb"); if (c) c.checked = false })
+    renderTriageBulkBar()
+  })
+}
+
+// Inline evidence expand — screenshot, session replay, console/network context, grounding quote.
+function tgToggleExpand(row, t) {
+  const box = row.querySelector(".tg-evidence")
+  const btn = row.querySelector(".tg-expand-btn")
+  if (!box || !btn) return
+  const open = box.classList.contains("hide")
+  box.classList.toggle("hide", !open)
+  btn.setAttribute("aria-expanded", open ? "true" : "false")
+  btn.classList.toggle("open", open)
+  if (open && !box.getAttribute("data-loaded")) {
+    box.setAttribute("data-loaded", "1")
+    box.innerHTML = tgEvidenceHtml(t)
+    const rb = box.querySelector(".tg-ev-replay")
+    if (rb) rb.addEventListener("click", () => { if (typeof openReplay === "function") openReplay(String(t.id)) })
+  }
+}
+function tgEvidenceHtml(t) {
+  const ctx = t.clientContext || {}
+  const parts = []
+  if (t.sourceQuote) parts.push(`<div class="tg-ev-quote">"${esc(t.sourceQuote)}"</div>`)
+  if (t.observation && (!t.sourceQuote || t.observation.trim() !== t.sourceQuote.trim())) parts.push(`<div class="tg-ev-obs">${esc(t.observation)}</div>`)
+  const metaBits = []
+  if (t.urlPath) metaBits.push(`<span>${esc((t.urlHost || "") + t.urlPath)}</span>`)
+  if (ctx.userAgent) metaBits.push(`<span>${esc(ctx.userAgent)}</span>`)
+  if (ctx.viewportSize) metaBits.push(`<span>${kicon('monitor',{size:12})} ${esc(ctx.viewportSize)}</span>`)
+  if (metaBits.length) parts.push(`<div class="tg-ev-meta">${metaBits.join("")}</div>`)
+  // Replay affordance (only when a session replay was recorded).
+  if (t.hasReplay) parts.push(`<button class="btn btn-ghost btn-sm tg-ev-replay" type="button">${kicon('play',{size:14})} Session replay</button>`)
+  // Console context.
+  const cons = Array.isArray(ctx.consoleErrors) ? ctx.consoleErrors : []
+  if (cons.length) {
+    const rows = cons.slice(0, 12).map(e => `<li>[${esc(String(e.level || "error"))}] ${esc(String(e.message || ""))}</li>`).join("")
+    parts.push(`<div class="tg-ev-group"><div class="tg-ev-h">${kicon('monitor',{size:13})} Console (${cons.length})</div><ul class="tg-ev-list">${rows}</ul></div>`)
+  }
+  // Network context.
+  const net = Array.isArray(ctx.networkFailures) ? ctx.networkFailures : []
+  if (net.length) {
+    const rows = net.slice(0, 12).map(n => `<li>${esc(String(n.method || "GET"))} ${esc(String(n.url || ""))} → ${esc(String(n.status))}${n.durationMs != null ? ` (${esc(String(n.durationMs))}ms)` : ""}</li>`).join("")
+    parts.push(`<div class="tg-ev-group"><div class="tg-ev-h">${kicon('radio-tower',{size:13})} Network (${net.length})</div><ul class="tg-ev-list">${rows}</ul></div>`)
+  }
+  if (!parts.length) parts.push(`<div class="tg-ev-empty muted">No extra context was captured for this report.</div>`)
+  return parts.join("")
+}
+
+// Keyboard: j/k move focus · a accept focused · d dismiss focused (only while the triage view is active).
+function tgBindKeys() {
+  if (_tgKeysBound) return
+  _tgKeysBound = true
+  document.addEventListener("keydown", (e) => {
+    if (document.body.getAttribute("data-view") !== "triage") return
+    const tag = (e.target && e.target.tagName || "").toLowerCase()
+    if (tag === "input" || tag === "textarea" || tag === "select" || (e.target && e.target.isContentEditable)) return
+    if (e.metaKey || e.ctrlKey || e.altKey) return
+    const items = tgVisibleItems(); if (!items.length) return
+    const ids = items.map(t => String(t.id))
+    const cur = _tgFocus && ids.includes(_tgFocus) ? ids.indexOf(_tgFocus) : -1
+    const k = e.key.toLowerCase()
+    if (k === "j") { e.preventDefault(); tgSetFocus(ids[Math.min(ids.length - 1, cur + 1)] || ids[0], true) }
+    else if (k === "k") { e.preventDefault(); tgSetFocus(ids[cur <= 0 ? 0 : cur - 1] || ids[0], true) }
+    else if (k === "a" && _tgFocus) { e.preventDefault(); const row = tgRowById(_tgFocus); const pri = row ? row.querySelector(".tg-pri").value : null; tgAccept([_tgFocus], pri) }
+    else if (k === "d" && _tgFocus) { e.preventDefault(); tgDismiss([_tgFocus]) }
+    else if (k === "x" && _tgFocus) { e.preventDefault(); const row = tgRowById(_tgFocus); const cb = row ? row.querySelector(".tg-cb") : null; if (cb) { cb.checked = !cb.checked; cb.dispatchEvent(new Event("change")) } }
+  })
+}
+function tgSetFocus(id, scroll) {
+  _tgFocus = id
+  const host = $("triageList"); if (!host) return
+  host.querySelectorAll(".tg-row").forEach(r => r.classList.toggle("tg-focus", r.getAttribute("data-id") === id))
+  const row = tgRowById(id)
+  if (row && scroll) { try { row.scrollIntoView({ block: "nearest" }) } catch (e) {} }
+}
+
+// Undo toast — shown after a single or bulk dismiss; onUndo restores the reports to status='new'.
+let _tgToastTimer = null
+function tgUndoToast(count, onUndo) {
+  let toast = $("tgToast")
+  if (!toast) {
+    toast = document.createElement("div")
+    toast.id = "tgToast"; toast.className = "tg-toast"
+    document.body.appendChild(toast)
+  }
+  if (_tgToastTimer) { clearTimeout(_tgToastTimer); _tgToastTimer = null }
+  toast.innerHTML = `<span class="tg-toast-msg">${kicon('check-circle',{size:15})} Dismissed ${count} report${count === 1 ? "" : "s"}</span><button class="tg-toast-undo" type="button">${kicon('refresh-cw',{size:13})} Undo</button>`
+  toast.classList.add("show")
+  const undoBtn = toast.querySelector(".tg-toast-undo")
+  undoBtn.addEventListener("click", async () => {
+    toast.classList.remove("show")
+    if (_tgToastTimer) { clearTimeout(_tgToastTimer); _tgToastTimer = null }
+    await onUndo()
+  })
+  _tgToastTimer = setTimeout(() => { toast.classList.remove("show") }, 8000)
 }
 
 // ── KLA-255: Pending Sim Matches queue ───────────────────────────────────────
