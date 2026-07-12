@@ -4259,7 +4259,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const activeProj = await projectById(projectId)
           const projectName = activeProj?.name || "Default Project"
           const projects = allProjects.map(p => ({ id: p.id, name: p.name }))
-          const activeOut = { id: projectId, name: projectName, role }
+          // siteUrl: exposed so the Add-a-Sim "Run a review now" panel (JTBD 6.10) can prefill the URL.
+          const activeOut = { id: projectId, name: projectName, role, siteUrl: activeProj?.siteUrl || null }
 
           // members — project roster (project_members), mapped to legacy admin|user for the UI.
           const members = (await membersOfProject(projectId)).map(m => ({ email: m.email, role: m.role === "admin" ? "admin" : "user", createdAt: m.createdAt }))
