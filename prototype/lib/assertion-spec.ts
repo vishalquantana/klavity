@@ -1,5 +1,28 @@
 export type CheckpointKind = "visible" | "textEquals" | "textContains" | "urlMatches" | "elementCount"
 
+/**
+ * B.13: Build the user-message prompt for drafting an assertion from a validated expectation.
+ * Pure + testable: when the expectation carries an originating grounded quote (the actual complaint
+ * the guard exists to catch), include it in the VALIDATED ISSUE block AND add an explicit instruction
+ * so the drafted assert verifies that condition rather than just the title. When there is no quote the
+ * prompt is byte-for-byte the pre-B.13 prompt (no behavior change for legacy rows).
+ */
+export function buildAssertUserPrompt(
+  expectation: { title?: string | null; area?: string | null; urlPath?: string | null; sourceQuote?: string | null },
+  trail: { id: string; name?: string | null; base_url?: string | null },
+  steps: Array<{ idx: number; action: string; target: unknown }>,
+): string {
+  const issue: Record<string, unknown> = { title: expectation.title, area: expectation.area, urlPath: expectation.urlPath }
+  const hasQuote = !!(expectation.sourceQuote && String(expectation.sourceQuote).trim())
+  if (hasQuote) issue.sourceQuote = expectation.sourceQuote
+  return "VALIDATED ISSUE:\n" + JSON.stringify(issue, null, 2) +
+    (hasQuote
+      ? "\n\nThe assertion you draft MUST verify the condition described in the sourceQuote above — that is the actual complaint this guard exists to catch."
+      : "") +
+    "\n\nTARGET TRAIL:\n" + JSON.stringify({ id: trail.id, name: trail.name, baseUrl: trail.base_url }, null, 2) +
+    "\n\nTRAIL STEPS (idx, action, target):\n" + JSON.stringify(steps.map((s) => ({ idx: s.idx, action: s.action, target: s.target })), null, 0)
+}
+
 export type AssertionDraft = {
   trailId: string; afterStepIdx: number; action: "assert"
   target: { role?: string; name?: string; text?: string; selector?: string }

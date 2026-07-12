@@ -59,7 +59,7 @@ import { pickDefaultTrail, type TrailForPick } from "./lib/expectations"
 import { nearMissSummary } from "./lib/expectations-nearmiss"
 import { createLabel, listLabels, updateLabel, deleteLabel, attachLabel, detachLabel, labelsForFeedback, labelsForFeedbackBatch, setSuggestedLabels, getSuggestedLabels } from "./lib/db"
 import { suggestLabelsForFeedback } from "./lib/label-suggest"
-import { validateAssertionDraft, normalizeCheckpointInput } from "./lib/assertion-spec"
+import { validateAssertionDraft, normalizeCheckpointInput, buildAssertUserPrompt } from "./lib/assertion-spec"
 import { buildRecurrenceMemory, listProjectRecurringIssues, type RecurrenceMemory } from "./lib/recurrence-memory"
 import { publishRegressionEvent, listRegressionEvents, acknowledgeRegressionEvent } from "./lib/regression-events"
 import { publishBlogPost, SLUG_RE, type PublishInput } from "./lib/blog-publish"
@@ -393,12 +393,12 @@ async function reactToPage(persona: any, imageB64: string, mediaType: string, pa
 }
 
 async function draftAssertion(expectation: any, trail: any, steps: any[], ctx?: { email?: string | null; projectId?: string | null }) {
+  // B.13: feed the originating grounded quote (the actual complaint/evidence the expectation was born
+  // from) so the drafted assert reflects what the user/Sim/AutoSim actually reported, not just a title.
+  // Prompt building lives in the pure, unit-tested buildAssertUserPrompt.
   const { content, usage } = await chat([
     { role: "system", content: ASSERT_SYS },
-    { role: "user", content:
-      "VALIDATED ISSUE:\n" + JSON.stringify({ title: expectation.title, area: expectation.area, urlPath: expectation.urlPath }, null, 2) +
-      "\n\nTARGET TRAIL:\n" + JSON.stringify({ id: trail.id, name: trail.name, baseUrl: trail.base_url }, null, 2) +
-      "\n\nTRAIL STEPS (idx, action, target):\n" + JSON.stringify(steps.map((s) => ({ idx: s.idx, action: s.action, target: s.target })), null, 0) },
+    { role: "user", content: buildAssertUserPrompt(expectation, trail, steps) },
   ], 800, true, { type: "assert-gen", ...ctx })
   return { content, usage }
 }
@@ -2284,6 +2284,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   dedupKey: issueKeyForFeedback(projectId, urlPath, citation.issueType, citation.citedTraitIds),
                   urlPath: urlPath ?? null, issueType: citation.issueType ?? null,
                   citedTraitIds: Array.isArray(citation.citedTraitIds) ? citation.citedTraitIds.map(String) : [],
+                  // B.13: carry the originating complaint quote through graduation. For a Sim report this is
+                  // the verified trait provenance (tri-state); for an anonymous Snap the observation text is
+                  // the reporter's own words (unverified — no page text to check against).
+                  sourceQuote: citation.sourceQuote ?? (simId ? null : (observation || null)),
+                  sourceQuoteVerified: citation.sourceQuote ? citation.sourceQuoteVerified : (simId ? null : false),
                 })
               }
               if (!dedupedInto) {

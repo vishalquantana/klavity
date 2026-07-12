@@ -316,6 +316,9 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
               dedupKey: issueKeyForFeedback(projectId, urlPath, citation.issueType, citation.citedTraitIds),
               urlPath: urlPath ?? null, issueType: citation.issueType ?? null,
               citedTraitIds: Array.isArray(citation.citedTraitIds) ? citation.citedTraitIds.map(String) : [],
+              // B.13: verified trait provenance quote (tri-state) carries into the expectation row.
+              sourceQuote: citation.sourceQuote ?? null,
+              sourceQuoteVerified: citation.sourceQuote ? citation.sourceQuoteVerified : null,
             })
           }
         }
