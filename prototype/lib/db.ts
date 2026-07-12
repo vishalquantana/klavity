@@ -850,6 +850,15 @@ export async function applySchema(c: Client) {
   // KLA-121: share-token lifecycle — revocation timestamp (NULL = active).
   if (needCol("walk_share_tokens", "revoked_at")) await c.execute("ALTER TABLE walk_share_tokens ADD COLUMN revoked_at INTEGER")
     .catch((e: any) => console.warn("walk_share_tokens.revoked_at ALTER skipped:", e?.message || e))
+  // KLA-210 (JTBD 7.5): Share-link manager — optional passcode gate + last-viewed / view-count signal.
+  // passcode_hash = sha256hex(passcode) (NULL = open link). last_viewed_at / view_count bump each time
+  // token-scoped data is served, surfacing "client opened the report" in the Share manager.
+  if (needCol("walk_share_tokens", "passcode_hash")) await c.execute("ALTER TABLE walk_share_tokens ADD COLUMN passcode_hash TEXT")
+    .catch((e: any) => console.warn("walk_share_tokens.passcode_hash ALTER skipped:", e?.message || e))
+  if (needCol("walk_share_tokens", "last_viewed_at")) await c.execute("ALTER TABLE walk_share_tokens ADD COLUMN last_viewed_at INTEGER")
+    .catch((e: any) => console.warn("walk_share_tokens.last_viewed_at ALTER skipped:", e?.message || e))
+  if (needCol("walk_share_tokens", "view_count")) await c.execute("ALTER TABLE walk_share_tokens ADD COLUMN view_count INTEGER NOT NULL DEFAULT 0")
+    .catch((e: any) => console.warn("walk_share_tokens.view_count ALTER skipped:", e?.message || e))
   if (needCol("projects", "autosim_auth_status")) await c.execute("ALTER TABLE projects ADD COLUMN autosim_auth_status TEXT NOT NULL DEFAULT 'unregistered'")
     .catch((e: any) => console.warn("projects.autosim_auth_status ALTER skipped:", e?.message || e))
   if (needCol("autosim_auth_probe_queue", "error")) await c.execute("ALTER TABLE autosim_auth_probe_queue ADD COLUMN error TEXT")

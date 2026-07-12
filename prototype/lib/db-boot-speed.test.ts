@@ -97,6 +97,9 @@ describe("applySchema — established DB boot speed", () => {
       ["author_sessions", "checkpoint_json"],
       ["author_sessions", "objective_verified"],
       ["walk_share_tokens", "revoked_at"],
+      ["walk_share_tokens", "passcode_hash"],   // KLA-210 (JTBD 7.5): share-manager passcode gate
+      ["walk_share_tokens", "last_viewed_at"],  // KLA-210 (JTBD 7.5): view signal
+      ["walk_share_tokens", "view_count"],      // KLA-210 (JTBD 7.5): view signal
     ]
     const colMap = await loadTableColumns(c, [...new Set(checks.map(([t]) => t))])
     for (const [table, col] of checks) {

@@ -22,11 +22,14 @@ export function _setPdfRendererForTests(fn: PdfRenderer | null): void {
 // mintShareToken
 // ---------------------------------------------------------------------------
 
+// KLA-210 (JTBD 7.5): mint accepts an optional passcode (stored hashed) so a link can be gated,
+// still back-compat with the positional (createdBy, ttlMs) signature used across the codebase.
 export async function mintShareToken(
   projectId: string,
   runId: string,
   createdBy?: string,
   ttlMs: number = 30 * 24 * 3600e3,
+  opts?: { passcode?: string | null },
 ): Promise<string> {
   const { db } = await import("./db")
   if (!db) throw new Error("DB not initialised")
@@ -39,11 +42,13 @@ export async function mintShareToken(
   const id = "wst_" + crypto.randomUUID().replace(/-/g, "")
   const now = Date.now()
   const expiresAt = now + ttlMs
+  const passcode = opts?.passcode ? String(opts.passcode).trim() : ""
+  const passcodeHash = passcode ? sha256hex(passcode) : null
 
   await db.execute({
-    sql: `INSERT INTO walk_share_tokens (id, token_hash, run_id, project_id, created_by, expires_at, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    args: [id, tokenHash, runId, projectId, createdBy ?? null, expiresAt, now],
+    sql: `INSERT INTO walk_share_tokens (id, token_hash, run_id, project_id, created_by, expires_at, created_at, passcode_hash)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [id, tokenHash, runId, projectId, createdBy ?? null, expiresAt, now, passcodeHash],
   })
 
   return rawToken
@@ -53,24 +58,71 @@ export async function mintShareToken(
 // resolveShareToken
 // ---------------------------------------------------------------------------
 
+// Returns a superset shape: legacy callers use { projectId, runId }; the share-manager work adds the
+// row id (for view-recording) and passcodeHash (for the optional passcode gate). Still returns null
+// for unknown / expired / revoked tokens.
 export async function resolveShareToken(
   rawToken: string,
-): Promise<{ projectId: string; runId: string } | null> {
+): Promise<{ projectId: string; runId: string; id: string; passcodeHash: string | null } | null> {
   const { db } = await import("./db")
   if (!db) return null
 
   const tokenHash = sha256hex(rawToken)
   const r = await db.execute({
-    sql: `SELECT project_id, run_id, expires_at, revoked_at FROM walk_share_tokens WHERE token_hash = ?`,
+    sql: `SELECT id, project_id, run_id, expires_at, revoked_at, passcode_hash FROM walk_share_tokens WHERE token_hash = ?`,
     args: [tokenHash],
   })
   if (!r.rows.length) return null
 
-  const row = r.rows[0] as { project_id: string; run_id: string; expires_at: number; revoked_at: number | null }
+  const row = r.rows[0] as { id: string; project_id: string; run_id: string; expires_at: number; revoked_at: number | null; passcode_hash: string | null }
   if (Date.now() > Number(row.expires_at)) return null
   if (row.revoked_at != null) return null
 
-  return { projectId: String(row.project_id), runId: String(row.run_id) }
+  return {
+    projectId: String(row.project_id),
+    runId: String(row.run_id),
+    id: String(row.id),
+    passcodeHash: row.passcode_hash != null ? String(row.passcode_hash) : null,
+  }
+}
+
+// KLA-210 (JTBD 7.5): true when the supplied passcode matches this token's stored hash. A token with
+// no passcode always passes. Constant-ish comparison via hash equality; wrong attempts are rate-limited
+// at the route layer.
+export function checkSharePasscode(passcodeHash: string | null, supplied: string | null | undefined): boolean {
+  if (!passcodeHash) return true
+  if (!supplied) return false
+  return sha256hex(String(supplied)) === passcodeHash
+}
+
+// KLA-210 (JTBD 7.5): record a view — bump last_viewed_at + view_count. Fire-and-forget; a failure here
+// must never break serving the report, so callers wrap it in .catch().
+export async function recordShareView(tokenId: string, now = Date.now()): Promise<void> {
+  const { db } = await import("./db")
+  if (!db) return
+  await db.execute({
+    sql: `UPDATE walk_share_tokens SET last_viewed_at = ?, view_count = COALESCE(view_count, 0) + 1 WHERE id = ?`,
+    args: [now, tokenId],
+  })
+}
+
+// KLA-210 (JTBD 7.5): extend a live token's expiry to now+ttlMs (project+run scoped so a caller can only
+// extend a token they own). Returns true when a live (non-revoked, non-expired) row was bumped.
+export async function extendShareToken(
+  projectId: string,
+  runId: string,
+  tokenId: string,
+  ttlMs: number,
+  now = Date.now(),
+): Promise<boolean> {
+  const { db } = await import("./db")
+  if (!db) throw new Error("DB not initialised")
+  const r = await db.execute({
+    sql: `UPDATE walk_share_tokens SET expires_at = ?
+          WHERE id = ? AND project_id = ? AND run_id = ? AND revoked_at IS NULL AND expires_at > ?`,
+    args: [now + ttlMs, tokenId, projectId, runId, now],
+  })
+  return Number(r.rowsAffected ?? 0) > 0
 }
 
 // ---------------------------------------------------------------------------
@@ -101,19 +153,34 @@ export type ShareTokenSummary = {
   createdBy: string | null
   expiresAt: number
   createdAt: number
+  // KLA-210 (JTBD 7.5): share-manager columns. hasPasscode never leaks the passcode itself.
+  lastViewedAt: number | null
+  viewCount: number
+  hasPasscode: boolean
 }
 
-export async function listShareTokens(projectId: string, runId: string): Promise<ShareTokenSummary[]> {
+// listShareTokens — active (non-revoked, non-expired) tokens for one walk, OR (runId omitted) every
+// active token across a whole project so the Share manager can list them all in one call.
+export async function listShareTokens(projectId: string, runId?: string): Promise<ShareTokenSummary[]> {
   const { db } = await import("./db")
   if (!db) return []
 
-  const r = await db.execute({
-    sql: `SELECT id, project_id, run_id, created_by, expires_at, created_at
-          FROM walk_share_tokens
-          WHERE project_id = ? AND run_id = ? AND revoked_at IS NULL AND expires_at > ?
-          ORDER BY created_at DESC`,
-    args: [projectId, runId, Date.now()],
-  })
+  const now = Date.now()
+  const r = runId != null
+    ? await db.execute({
+        sql: `SELECT id, project_id, run_id, created_by, expires_at, created_at, last_viewed_at, view_count, passcode_hash
+              FROM walk_share_tokens
+              WHERE project_id = ? AND run_id = ? AND revoked_at IS NULL AND expires_at > ?
+              ORDER BY created_at DESC`,
+        args: [projectId, runId, now],
+      })
+    : await db.execute({
+        sql: `SELECT id, project_id, run_id, created_by, expires_at, created_at, last_viewed_at, view_count, passcode_hash
+              FROM walk_share_tokens
+              WHERE project_id = ? AND revoked_at IS NULL AND expires_at > ?
+              ORDER BY created_at DESC`,
+        args: [projectId, now],
+      })
 
   return r.rows.map((row: any) => ({
     id: String(row.id),
@@ -122,6 +189,9 @@ export async function listShareTokens(projectId: string, runId: string): Promise
     createdBy: row.created_by != null ? String(row.created_by) : null,
     expiresAt: Number(row.expires_at),
     createdAt: Number(row.created_at),
+    lastViewedAt: row.last_viewed_at != null ? Number(row.last_viewed_at) : null,
+    viewCount: row.view_count != null ? Number(row.view_count) : 0,
+    hasPasscode: row.passcode_hash != null,
   }))
 }
 

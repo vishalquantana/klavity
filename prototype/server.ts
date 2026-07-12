@@ -46,7 +46,7 @@ import { startTrailScheduler, isValidCron } from "./lib/trails-scheduler"
 import { startCrashReaper } from "./lib/trails-reaper"
 import { runAuthorNow, getAuthorSession, getActiveAuthorSession, listStalledAuthorSessions, listNeedsAuthSessionsForAutoResume, AUTOSIM_DEADLINE_MS_DEFAULT } from "./lib/trails-author"
 import { WalkBusyError, cancelCurrentWalk, cancelCurrentAuthor, PdfBusyError } from "./lib/trails-browser"
-import { mintShareToken, resolveShareToken, renderWalkPdf, revokeShareToken, listShareTokens } from "./lib/trails-share"
+import { mintShareToken, resolveShareToken, renderWalkPdf, revokeShareToken, listShareTokens, extendShareToken, recordShareView, checkSharePasscode } from "./lib/trails-share"
 import { gatherWalkReport } from "./lib/trails-report"
 import { liveWatchSseResponse, openLiveWatchStream } from "./lib/trails-live-watch"
 import { normalizeTrailViewport } from "./lib/trails-viewport"
@@ -82,6 +82,8 @@ const SITE = import.meta.dir + "/../site"
 const PUB = import.meta.dir + "/public"
 const REPO_ROOT = import.meta.dir + "/.."
 const SESSION_DAYS = 90 // 90-day sessions — matches projectCookie precedent in lib/auth.ts
+// KLA-210 (JTBD 7.5): the expiry choices the Share manager offers at mint / extend time.
+const ALLOWED_SHARE_TTL_DAYS = new Set([7, 30, 90])
 // Screenshots embedded in external tracker tickets use a PERMANENT signed link (`/img/<id>.<hmac>`,
 // see lib/imgsign.ts) — never expires, revocable, S3 stays private. (Replaces the old 7-day presign.)
 
@@ -3046,12 +3048,23 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     }
 
     // GET /shared/walk/:token/data — token-scoped walk metadata, steps, replay availability, and findings.
+    // KLA-210 (JTBD 7.5): if the token carries a passcode, no data is served until the correct passcode is
+    // supplied (?pc= or x-share-passcode header); wrong attempts are rate-limited per token+IP. Every
+    // successful serve bumps last_viewed_at / view_count → the "client opened the report" signal.
     const sharedWalkDataMatch = path.match(/^\/shared\/walk\/([a-f0-9]{64})\/data$/)
     if (req.method === "GET" && sharedWalkDataMatch) {
       const rawToken = sharedWalkDataMatch[1]
       if (!rlAllow("sharewalkdata:" + clientIp(req, server), 120, 60_000)) return new Response("Rate limited", { status: 429 })
       const resolved = await resolveShareToken(rawToken)
       if (!resolved) return json({ error: "Not found" }, 404)
+      if (resolved.passcodeHash) {
+        const supplied = url.searchParams.get("pc") || req.headers.get("x-share-passcode") || ""
+        if (!checkSharePasscode(resolved.passcodeHash, supplied)) {
+          // Tight per-token+IP limit so passcodes can't be brute-forced.
+          if (!rlAllow("sharepc:" + resolved.id + ":" + clientIp(req, server), 8, 60_000)) return new Response("Rate limited", { status: 429 })
+          return json({ error: "Passcode required", needsPasscode: true }, 401)
+        }
+      }
       try {
         const [walk, steps] = await Promise.all([
           getWalk(resolved.projectId, resolved.runId),
@@ -3063,6 +3076,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           runsWithReplay(resolved.projectId, [resolved.runId]),
           listFindings(resolved.projectId, { runId: resolved.runId, limit: 1000 }),
         ])
+        // View signal — fire-and-forget so a write failure never blocks the report.
+        recordShareView(resolved.id).catch(() => {})
         return json({
           walk,
           trail,
@@ -3155,6 +3170,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (!rlAllow("sharereplay:" + clientIp(req, server), 30, 60_000)) return new Response("Rate limited", { status: 429 })
       const resolved = await resolveShareToken(rawToken)
       if (!resolved) return new Response("Not found", { status: 404 })
+      // KLA-210 (JTBD 7.5): a passcode-protected link gates the replay too (can't bypass via this URL).
+      if (resolved.passcodeHash && !checkSharePasscode(resolved.passcodeHash, url.searchParams.get("pc") || req.headers.get("x-share-passcode") || "")) {
+        if (!rlAllow("sharepc:" + resolved.id + ":" + clientIp(req, server), 8, 60_000)) return new Response("Rate limited", { status: 429 })
+        return new Response("Passcode required", { status: 401 })
+      }
       try {
         const segments = await getReplay(resolved.projectId, resolved.runId)
         if (!segments) return json({ error: "No replay for this walk." }, 404)
@@ -3173,6 +3193,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (!rlAllow("sharepdf:" + clientIp(req, server), 30, 60_000)) return new Response("Rate limited", { status: 429 })
       const resolved = await resolveShareToken(rawToken)
       if (!resolved) return new Response("Not found", { status: 404 })
+      // KLA-210 (JTBD 7.5): passcode-protected links gate the PDF too (can't bypass via this URL).
+      if (resolved.passcodeHash && !checkSharePasscode(resolved.passcodeHash, url.searchParams.get("pc") || req.headers.get("x-share-passcode") || "")) {
+        if (!rlAllow("sharepc:" + resolved.id + ":" + clientIp(req, server), 8, 60_000)) return new Response("Rate limited", { status: 429 })
+        return new Response("Passcode required", { status: 401 })
+      }
       try {
         const replaySet = await runsWithReplay(resolved.projectId, [resolved.runId])
         const replayUrl = replaySet.has(resolved.runId) ? BASE + "/shared/walk-replay/" + rawToken : undefined
@@ -3580,6 +3605,18 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // GET /api/trails/walks/:runId — walk metadata + trail name + steps for the full-page walk detail.
       // Lighter than /replay (no rrweb segments). Returns hasReplay so the page knows whether to show player.
       // KLA-73: also returns the latest persona judgment (judgment field, null if none yet).
+      // GET /api/trails/walks/shared-links — KLA-210 (JTBD 7.5): every active share token across the
+      // project (the Share manager's list). Placed BEFORE walkDetailMatch so its /:runId regex can't
+      // swallow "shared-links". Walk-scoped; project-portal tokens land once JTBD 7.2 ships.
+      if (req.method === "GET" && path === "/api/trails/walks/shared-links") {
+        try {
+          const tokens = await listShareTokens(projectId)
+          return json({ tokens })
+        } catch (e) {
+          return json(oops(e, "trails-share-list-all"), 500)
+        }
+      }
+
       const walkDetailMatch = path.match(/^\/api\/trails\/walks\/([^/]+)$/)
       if (req.method === "GET" && walkDetailMatch) {
         try {
@@ -4089,18 +4126,24 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           }
         }
 
-        // POST — mint. Returns { url, replayUrl, expiresAt } — replayUrl non-null when a replay exists.
+        // POST — mint. Returns { url, replayUrl, expiresAt, hasPasscode } — replayUrl non-null when a
+        // replay exists. KLA-210 (JTBD 7.5): honors an optional {ttlDays} expiry choice (7/30/90) and
+        // an optional {passcode} that gates the public data endpoint.
         if (req.method === "POST") {
           const check = await gatherWalkReport(projectId, runId)
           if (!check) return json({ error: "Not found" }, 404)
           try {
+            const body = await req.json().catch(() => ({}))
+            const ttlDays = ALLOWED_SHARE_TTL_DAYS.has(Number((body as any).ttlDays)) ? Number((body as any).ttlDays) : 30
+            const ttlMs = ttlDays * 24 * 3600e3
+            const passcode = typeof (body as any).passcode === "string" ? (body as any).passcode.trim().slice(0, 64) : ""
             const [rawToken, replaySet] = await Promise.all([
-              mintShareToken(projectId, runId, meT),
+              mintShareToken(projectId, runId, meT, ttlMs, { passcode: passcode || null }),
               runsWithReplay(projectId, [runId]),
             ])
-            const expiresAt = Date.now() + 30 * 24 * 3600e3
+            const expiresAt = Date.now() + ttlMs
             const replayUrl = replaySet.has(runId) ? BASE + "/shared/walk-replay/" + rawToken : null
-            return json({ url: BASE + "/shared/walk/" + rawToken, pdfUrl: BASE + "/shared/walk-report/" + rawToken, replayUrl, expiresAt })
+            return json({ url: BASE + "/shared/walk/" + rawToken, pdfUrl: BASE + "/shared/walk-report/" + rawToken, replayUrl, expiresAt, ttlDays, hasPasscode: !!passcode })
           } catch (e) {
             return json(oops(e, "trails-share-mint"), 500)
           }
@@ -4108,6 +4151,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       }
 
       // DELETE /api/trails/walks/:runId/share/:tokenId — revoke a share token by its row id.
+      // PATCH  /api/trails/walks/:runId/share/:tokenId — KLA-210 (JTBD 7.5): bump the token's expiry to
+      //   now+{ttlDays} (7/30/90). Project+run scoped so a caller can only extend their own token.
       const shareRevokeMatch = path.match(/^\/api\/trails\/walks\/([^/]+)\/share\/([^/]+)$/)
       if (req.method === "DELETE" && shareRevokeMatch) {
         const tokenId = shareRevokeMatch[2]
@@ -4117,6 +4162,19 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           return json({ ok: true })
         } catch (e) {
           return json(oops(e, "trails-share-revoke"), 500)
+        }
+      }
+      if (req.method === "PATCH" && shareRevokeMatch) {
+        const runId = shareRevokeMatch[1]
+        const tokenId = shareRevokeMatch[2]
+        try {
+          const body = await req.json().catch(() => ({}))
+          const ttlDays = ALLOWED_SHARE_TTL_DAYS.has(Number((body as any).ttlDays)) ? Number((body as any).ttlDays) : 30
+          const extended = await extendShareToken(projectId, runId, tokenId, ttlDays * 24 * 3600e3)
+          if (!extended) return json({ error: "Token not found, revoked, or expired" }, 404)
+          return json({ ok: true, ttlDays, expiresAt: Date.now() + ttlDays * 24 * 3600e3 })
+        } catch (e) {
+          return json(oops(e, "trails-share-extend"), 500)
         }
       }
 
