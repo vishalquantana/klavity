@@ -809,8 +809,10 @@ export async function applySchema(c: Client) {
   if (needCol("projects", "widget_cta_url")) await c.execute("ALTER TABLE projects ADD COLUMN widget_cta_url TEXT").catch((e) => console.warn("projects.widget_cta_url ALTER skipped:", e?.message || e))
   if (needCol("projects", "widget_notify_email")) await c.execute("ALTER TABLE projects ADD COLUMN widget_notify_email TEXT").catch((e) => console.warn("projects.widget_notify_email ALTER skipped:", e?.message || e))
   // report-identity gate: how an end-user is identified before a widget ticket is accepted.
-  // 'email' (default) = logged-in OR a valid email; 'anonymous' = open; 'login' = Klavity token required.
-  if (needCol("projects", "widget_report_gate")) await c.execute("ALTER TABLE projects ADD COLUMN widget_report_gate TEXT NOT NULL DEFAULT 'email'").catch((e) => console.warn("projects.widget_report_gate ALTER skipped:", e?.message || e))
+  // 'anonymous' (default, JTBD 1.7) = open (identity asked post-submit); 'email' = logged-in OR a valid
+  // email; 'login' = Klavity token required. New DBs get 'anonymous' by default; an existing prod column
+  // (created earlier with DEFAULT 'email') is left untouched — createProject sets the value explicitly.
+  if (needCol("projects", "widget_report_gate")) await c.execute("ALTER TABLE projects ADD COLUMN widget_report_gate TEXT NOT NULL DEFAULT 'anonymous'").catch((e) => console.warn("projects.widget_report_gate ALTER skipped:", e?.message || e))
   // KLA-102: per-project instructions.md — freeform guidance the author drops in to shape how
   // AutoSim trails are authored for that project (test conventions, environment quirks, etc.).
   if (needCol("projects", "instructions_md")) await c.execute("ALTER TABLE projects ADD COLUMN instructions_md TEXT").catch((e) => console.warn("projects.instructions_md ALTER skipped:", e?.message || e))
@@ -1362,7 +1364,7 @@ function rowToProject(x: any): ProjectRow {
     widgetMode: String(x.widget_mode || "support"),
     widgetCtaUrl: x.widget_cta_url != null ? String(x.widget_cta_url) : null,
     widgetNotifyEmail: x.widget_notify_email != null ? String(x.widget_notify_email) : null,
-    widgetReportGate: ["anonymous", "email", "login"].includes(String(x.widget_report_gate)) ? String(x.widget_report_gate) : "email",
+    widgetReportGate: ["anonymous", "email", "login"].includes(String(x.widget_report_gate)) ? String(x.widget_report_gate) : "anonymous",
     instructionsMd: x.instructions_md != null ? String(x.instructions_md) : undefined,
     trailsAutofileEnabled: !!x.trails_autofile_enabled,
     siteUrl: x.site_url != null ? String(x.site_url) : null,
@@ -1445,9 +1447,13 @@ export async function createProject(accountId: string, name: string, siteUrl?: s
   const id = "proj_" + crypto.randomUUID()
   const now = Date.now()
   await db!.execute({
-    sql: `INSERT INTO projects (id,account_id,name,status,review_mode,review_budget_daily,observability_mode,site_url,created_at,updated_at)
-          VALUES (?,?,?,?,?,?,?,?,?,?)`,
-    args: [id, accountId, name, "active", "auto", 200, "named", siteUrl ?? null, now, now],
+    // JTBD 1.7: new projects default to the 'anonymous' report gate (identity is asked post-submit, not
+    // as a wall). Set explicitly rather than relying on the column DEFAULT — existing prod DBs created the
+    // column with DEFAULT 'email', so an explicit value is the only way to flip the default for new rows
+    // without a destructive column change. Owners who choose 'email'/'login' later keep their setting.
+    sql: `INSERT INTO projects (id,account_id,name,status,review_mode,review_budget_daily,observability_mode,site_url,widget_report_gate,created_at,updated_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    args: [id, accountId, name, "active", "auto", 200, "named", siteUrl ?? null, "anonymous", now, now],
   })
   const p = await projectById(id)
   return p!
@@ -1796,7 +1802,7 @@ export async function getWidgetConfig(projectId: string): Promise<{ mode: string
   const p = await projectById(projectId)
   if (!p) return null
   const mode = ["support", "leadgen", "off"].includes(p.widgetMode) ? p.widgetMode : "support"
-  const reportGate = ["anonymous", "email", "login"].includes(p.widgetReportGate) ? p.widgetReportGate : "email"
+  const reportGate = ["anonymous", "email", "login"].includes(p.widgetReportGate) ? p.widgetReportGate : "anonymous"
   return { mode, ctaUrl: p.widgetCtaUrl || DEFAULT_WIDGET_CTA, reportGate }
 }
 
@@ -1810,7 +1816,7 @@ export async function setWidgetConfig(projectId: string, cfg: { mode?: string; c
   if (cfg.mode !== undefined) { sets.push("widget_mode=?"); args.push(["support", "leadgen", "off"].includes(cfg.mode) ? cfg.mode : "support") }
   if (cfg.ctaUrl !== undefined) { sets.push("widget_cta_url=?"); args.push(cfg.ctaUrl || null) }
   if (cfg.notifyEmail !== undefined) { sets.push("widget_notify_email=?"); args.push(cfg.notifyEmail || null) }
-  if (cfg.reportGate !== undefined) { sets.push("widget_report_gate=?"); args.push(["anonymous", "email", "login"].includes(cfg.reportGate) ? cfg.reportGate : "email") }
+  if (cfg.reportGate !== undefined) { sets.push("widget_report_gate=?"); args.push(["anonymous", "email", "login"].includes(cfg.reportGate) ? cfg.reportGate : "anonymous") }
   if (!sets.length) return
   sets.push("updated_at=?"); args.push(Date.now()); args.push(projectId)
   await db!.execute({ sql: `UPDATE projects SET ${sets.join(", ")} WHERE id=?`, args })
