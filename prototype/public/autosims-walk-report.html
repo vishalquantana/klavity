@@ -74,6 +74,23 @@ function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){retur
 var token=location.pathname.replace(/^\/shared\/walk\//,"").split("/")[0]
 var state={data:null,segments:[],steps:[],player:null}
 function icon(name,size){return window.kicon?window.kicon(name,{size:size||12}):""}
+// KLA-210 (JTBD 7.5): passcode-protected links. The passcode is kept in-memory + sessionStorage and
+// appended to every token-scoped URL so the PDF / replay / data endpoints all pass the server-side gate.
+var pc=""
+try{pc=sessionStorage.getItem("klav_share_pc_"+token)||""}catch(e){}
+function pcQ(){return pc?("pc="+encodeURIComponent(pc)):""}
+function withPc(u){if(!u||!pc)return u;return u+(u.indexOf("?")>=0?"&":"?")+pcQ()}
+function renderPasscodePrompt(wrong){
+  $("title").textContent="Passcode required"
+  $("meta").textContent=wrong?"That passcode was incorrect. Try again.":"This shared report is passcode-protected. Enter the passcode to continue."
+  $("acts").innerHTML=""
+  var main=document.querySelector(".main")
+  if(main)main.innerHTML='<section class="panel"><h2>Enter passcode</h2>'
+    +'<form class="bug-form" id="pcForm"><input id="pcInput" type="password" maxlength="64" placeholder="Passcode" autocomplete="off"/>'
+    +'<div class="row"><button class="btn primary" type="submit">Unlock</button><span class="msg" id="pcMsg"></span></div></form></section>'
+  var f=$("pcForm")
+  if(f)f.onsubmit=function(ev){ev.preventDefault();pc=($("pcInput").value||"").trim();try{sessionStorage.setItem("klav_share_pc_"+token,pc)}catch(e){}load().catch(function(){})}
+}
 var rrwebReady=null
 function ensureRrweb(){
   if(rrwebReady) return rrwebReady
@@ -215,9 +232,13 @@ $("bugForm").onsubmit=async function(ev){
   }catch(e){msg.style.color="var(--rose)";msg.textContent="Network error."}
 }
 async function load(){
-  var r=await fetch("/shared/walk/"+encodeURIComponent(token)+"/data")
+  var dataUrl="/shared/walk/"+encodeURIComponent(token)+"/data"+(pc?("?"+pcQ()):"")
+  var r=await fetch(dataUrl)
+  if(r.status===401){var g=await r.json().catch(function(){return {}});if(g&&g.needsPasscode){renderPasscodePrompt(!!pc);return}}
   if(!r.ok){$("title").textContent="Shared report not found";$("meta").textContent="This link may be expired or revoked.";return}
   state.data=await r.json()
+  // Thread the passcode onto sub-resource URLs so the PDF / replay endpoints pass the same server gate.
+  if(pc){state.data.pdfUrl=withPc(state.data.pdfUrl);state.data.replayUrl=withPc(state.data.replayUrl)}
   var w=state.data.walk||{}, t=state.data.trail||{}, v=String(w.status||"running")
   document.title=(t.name||"Walk")+" · Shared Walk Report · Klavity";$("title").textContent=t.name||w.id||"Walk report"
   var when=w.startedAt?new Date(w.startedAt).toLocaleString():"";$("meta").innerHTML='<span>ID: '+esc(w.id)+'</span>'+(when?'<span>'+esc(when)+'</span>':"")+(w.llmCalls?'<span>'+esc(w.llmCalls)+' LLM calls</span>':"")
