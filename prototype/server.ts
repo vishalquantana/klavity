@@ -1,6 +1,6 @@
 // Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
 import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, listInboxForProjects, setProjectTrailsAutofile } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, listInboxForProjects, setProjectTrailsAutofile } from "./lib/db"
 import { issueKeyFor, chooseDedup, humanReportIssueKeyFor } from "./lib/dedup"
 import { classifySimObservation } from "./lib/sim-bug-classify"
 import { getConnector, listConnectorTypes, type TicketPayload, type TicketAttachment } from "./lib/connectors/index"
@@ -2407,6 +2407,25 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               ["type", before.type, String(body.type ?? "")],
               ["accent", before.accent, String(body.accent ?? "")],
             ]
+            // JTBD 3.13 (KLAVITYKLA-265): the v3 core (goals / watchFor / voice / expertise / temperament)
+            // is what drives review quality — make edits to it versioned too, not just identity. Only
+            // record when the body actually carried a v3 core (v3.core != null), so a legacy identity-only
+            // PUT (which preserves the stored core) doesn't spuriously log a no-op. Arrays are compared
+            // as JSON so reorders/adds/removes register as a change.
+            if (v3.core) {
+              const bc = before.core
+              const norm = (v: any) => Array.isArray(v) ? JSON.stringify(v) : String(v ?? "")
+              const coreFields: Array<[string, any, any]> = [
+                ["goals", bc?.goals ?? [], v3.core.goals ?? []],
+                ["watchFor", bc?.watchFor ?? [], v3.core.watchFor ?? []],
+                ["voice", bc?.voice ?? "", v3.core.voice ?? ""],
+                ["expertise", bc?.expertise ?? "", v3.core.expertise ?? ""],
+                ["temperament", bc?.temperament ?? "", v3.core.temperament ?? ""],
+              ]
+              for (const [field, b, a] of coreFields) {
+                if (norm(b) !== norm(a)) fields.push([field, norm(b), norm(a)])
+              }
+            }
             for (const [field, b, a] of fields) {
               if ((b ?? "") !== (a ?? "")) await insertPersonaEdit({ personaId: pid, projectId: wid, field, beforeVal: b, afterVal: a, actor: me2, createdAt: now })
             }
@@ -3080,7 +3099,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           listFeedbackForSim(projSP.id, sim.id),
           sourceTranscriptsForSim(sim.id, projSP.id),
         ])
-        return json({ sim, traits, feedback, transcripts })
+        // JTBD 3.13: per-Sim precision — accepted / (accepted + dismissed) of its triaged findings.
+        const acceptRate = simAcceptRate(feedback)
+        return json({ sim, traits, feedback, transcripts, acceptRate })
       } catch (e: any) { return json(oops(e, "profile"), 500) }
     }
     // ── One transcript's raw text — project-scoped, read-only ──
@@ -4773,6 +4794,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               feedbackId: fid,
               meta: { from: fbRow.status, to: meta.status },
             }).catch((e: any) => console.warn("ticket status activity skipped:", e?.message || e)))
+          }
+          // JTBD 3.13 (KLAVITYKLA-265): dismiss-with-reason teaches the Sim. When a human dismisses a
+          // Sim-generated finding and supplies a reason, append it as a trait event on each cited trait
+          // so repeated dismissals visibly accumulate in the Sim's evolution history and shape future
+          // reviews. Only on a fresh transition INTO "dismissed"; best-effort (never blocks the PATCH).
+          if (meta.status === "dismissed" && fbRow.status !== "dismissed" && fbRow.simId && body.reason) {
+            const cited = Array.isArray(fbRow.citedTraitIds) ? fbRow.citedTraitIds.map((x: any) => String(x)) : []
+            await recordSimDismissEvents({
+              simId: fbRow.simId, projectId: fbRow.projectId, feedbackId: fid,
+              reason: String(body.reason), citedTraitIds: cited, actor: me, now: Date.now(),
+            }).catch((e: any) => console.warn("sim dismiss-reason event skipped:", e?.message || e))
           }
           if (meta.priority !== undefined && meta.priority !== fbRow.priority) {
             activityWrites.push(insertActivity({
