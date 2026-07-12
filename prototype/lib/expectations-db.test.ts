@@ -3,6 +3,7 @@ import { test, expect } from "bun:test"
 import { createClient } from "@libsql/client"
 import { applySchema } from "./db"
 import { upsertExpectation, listExpectations, getExpectation, setExpectationEnforced, SOURCE_REFS_MAX } from "./expectations-db"
+import { listNearMisses, nearMissSummary } from "./expectations-nearmiss"
 
 async function fresh() { const c = createClient({ url: "file::memory:" }); await applySchema(c); return c }
 
@@ -73,4 +74,65 @@ test("duplicate source id is not stored twice (exact-id dedup within source refs
   // Same id should appear only once.
   const idsWithFbDup = got!.sourceRefs.filter((r) => r.id === "fb_dup")
   expect(idsWithFbDup.length).toBe(1)
+})
+
+// ── KLA-251 (B.11): declined near-miss logging is wired through upsertExpectation ────────────
+
+test("B.11: a below-threshold pair is logged as a near-miss but does NOT collapse", async () => {
+  const c = await fresh()
+  // Seed an AutoSim finding (autosim), then a Snap report that scores in the band (~0.78) — the
+  // classic under-matched Snap↔AutoSim pair the ticket calls out.
+  await upsertExpectation(c, { projectId: "p1", title: "Finish button missing on onboarding page", dedupKey: "k-a", source: { kind: "autosim", id: "f1" } })
+  await upsertExpectation(c, { projectId: "p1", title: "Submit button missing on onboarding page", dedupKey: "k-b", source: { kind: "snap", id: "s1" } })
+
+  // Not collapsed — two distinct expectations remain (the miss the instrumentation measures).
+  expect((await listExpectations(c, "p1")).length).toBe(2)
+
+  // One near-miss row logged, carrying titles, kinds, score (in band), threshold, and project.
+  const nm = await listNearMisses(c, "p1")
+  expect(nm.length).toBe(1)
+  expect(nm[0].candTitle).toBe("Submit button missing on onboarding page")
+  expect(nm[0].existingTitle).toBe("Finish button missing on onboarding page")
+  expect(nm[0].candKind).toBe("snap")
+  expect(nm[0].existingKinds).toContain("autosim")
+  expect(nm[0].score).toBeGreaterThanOrEqual(0.55)
+  expect(nm[0].score).toBeLessThan(0.82)
+  expect(nm[0].threshold).toBe(0.82)
+  expect(nm[0].projectId).toBe("p1")
+})
+
+test("B.11: exact dedup_key fast path collapses and logs NO near-miss (instrumentation is inert on the fast path)", async () => {
+  const c = await fresh()
+  await upsertExpectation(c, { projectId: "p1", title: "Login fails", dedupKey: "k-same", source: { kind: "sim", id: "s1" } })
+  await upsertExpectation(c, { projectId: "p1", title: "Login totally fails now", dedupKey: "k-same", source: { kind: "snap", id: "s2" } })
+  // Collapsed via exact dedup_key — the lexical/near-miss path never ran.
+  expect((await listExpectations(c, "p1")).length).toBe(1)
+  expect((await listNearMisses(c, "p1")).length).toBe(0)
+})
+
+test("B.11: a >=0.82 lexical match still collapses and logs NO near-miss", async () => {
+  const c = await fresh()
+  await upsertExpectation(c, { projectId: "p1", title: "Finish button missing on onboarding page", dedupKey: "k1", source: { kind: "sim", id: "s1" } })
+  await upsertExpectation(c, { projectId: "p1", title: "Finish button gone on onboarding page", dedupKey: "k2", source: { kind: "snap", id: "s2" } })
+  // Accepted (>=0.82) → collapsed, and the accepted pair is not a "declined" near-miss.
+  expect((await listExpectations(c, "p1")).length).toBe(1)
+  expect((await listNearMisses(c, "p1")).length).toBe(0)
+})
+
+test("B.11: nearMissSummary reports count + score stats + samples per project", async () => {
+  const c = await fresh()
+  await upsertExpectation(c, { projectId: "p1", title: "Finish button missing on onboarding page", dedupKey: "k-a", source: { kind: "autosim", id: "f1" } })
+  await upsertExpectation(c, { projectId: "p1", title: "Submit button missing on onboarding page", dedupKey: "k-b", source: { kind: "snap", id: "s1" } })
+
+  const sum = await nearMissSummary(c, "p1")
+  expect(sum.count).toBe(1)
+  expect(sum.avgScore).toBeGreaterThanOrEqual(0.55)
+  expect(sum.avgScore).toBeLessThan(0.82)
+  expect(sum.samples.length).toBe(1)
+  expect(sum.samples[0].candTitle).toBe("Submit button missing on onboarding page")
+
+  // A project with no near-misses returns an empty, zeroed summary (no throw).
+  const empty = await nearMissSummary(c, "p-empty")
+  expect(empty.count).toBe(0)
+  expect(empty.samples.length).toBe(0)
 })

@@ -41,3 +41,40 @@ export function matchExpectation(
   }
   return best.score >= threshold ? best.id : null
 }
+
+// KLA-251 (B.11): the near-miss BAND. A declined pair whose lexical score lands in
+// [NEAR_MISS_MIN, threshold) is a candidate the 0.82 thread rejected but which may be a
+// true cross-source match ("Target gone: Submit button" vs "can't submit the form"). We log
+// these to measure how often the threshold under-matches before building the embeddings pass.
+// The lower edge filters out pure noise (unrelated titles score near 0).
+export const NEAR_MISS_MIN = 0.55
+
+export type NearMiss = { existingId: string; existingTitle: string; score: number }
+
+/**
+ * Same accept semantics as matchExpectation (≥ threshold → matched id, else null), but ALSO
+ * returns every declined pair scoring in [nearMissMin, threshold) so callers can persist them.
+ *
+ * Purity/regression guard: the returned `matchId` is IDENTICAL to matchExpectation(...) for the
+ * same inputs — instrumentation never changes which id is accepted. When a match is found
+ * (best.score ≥ threshold) the accepted pair is excluded from `nearMisses`, so an accepted
+ * expectation is never also logged as a "declined" near-miss.
+ */
+export function matchExpectationWithNearMisses(
+  cand: { title: string },
+  existing: Array<{ id: string; title: string }>,
+  threshold = 0.82,
+  nearMissMin = NEAR_MISS_MIN,
+): { matchId: string | null; nearMisses: NearMiss[] } {
+  let best: { id: string | null; score: number } = { id: null, score: 0 }
+  const nearMisses: NearMiss[] = []
+  for (const e of existing) {
+    const score = lexicalSim(cand.title, e.title)
+    if (score > best.score) best = { id: e.id, score }
+    if (score >= nearMissMin && score < threshold) {
+      nearMisses.push({ existingId: e.id, existingTitle: e.title, score })
+    }
+  }
+  const matchId = best.score >= threshold ? best.id : null
+  return { matchId, nearMisses: matchId ? nearMisses.filter((n) => n.existingId !== matchId) : nearMisses }
+}

@@ -49,6 +49,19 @@ await rawExec(`CREATE TABLE IF NOT EXISTS expectations (
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 )`)
+// KLA-251 (B.11): near-miss log table (mirrors applySchema DDL) for the ops-report route test.
+await rawExec(`CREATE TABLE IF NOT EXISTS expectation_near_misses (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  cand_title TEXT NOT NULL,
+  existing_id TEXT NOT NULL,
+  existing_title TEXT NOT NULL,
+  cand_kind TEXT,
+  existing_kinds_json TEXT,
+  score REAL NOT NULL,
+  threshold REAL NOT NULL,
+  created_at INTEGER NOT NULL
+)`)
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────────
 const ADMIN_EMAIL = `admin-${ts}@test.local`
@@ -105,6 +118,13 @@ await rawExec(
    JSON.stringify([{ kind: "snap", id: "snap3" }, { kind: "sim", id: "sim3" }]),
    JSON.stringify({ snap: true, sim: true, recurrence: 0 }),
    `dedup_enf_${ts}`, ENFORCED_STEP_ID, NOW, NOW]
+)
+
+// KLA-251 (B.11): a seeded near-miss row for the ops-report route test.
+await rawExec(
+  `INSERT INTO expectation_near_misses (id, project_id, cand_title, existing_id, existing_title, cand_kind, existing_kinds_json, score, threshold, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  [`nm_${ts}`, PROJECT_ID, "Submit button missing on onboarding page", EXP_VALIDATED_ID,
+   "Finish button missing on onboarding page", "snap", JSON.stringify(["autosim"]), 0.78, 0.82, NOW]
 )
 
 // ── Spawn the server ──────────────────────────────────────────────────────────────
@@ -360,4 +380,25 @@ test("retire removes the enforced trail step from trail_steps", async () => {
   // The expectation should be retired
   const expRes = await rawClient.execute({ sql: "SELECT status FROM expectations WHERE id=?", args: [EXP_ENFORCED_ID] })
   expect(String((expRes.rows[0] as any).status)).toBe("retired")
+})
+
+// ── KLA-251 (B.11): cross-source-matching near-miss ops report ────────────────────────────
+test("GET /api/expectations/near-misses summarizes declined near-misses for the project", async () => {
+  const r = await api("GET", `/api/expectations/near-misses?project=${PROJECT_ID}`, null, ADMIN_SID)
+  expect(r.status).toBe(200)
+  const b = await r.json()
+  expect(b.summary).toBeDefined()
+  expect(b.summary.projectId).toBe(PROJECT_ID)
+  expect(b.summary.count).toBe(1)
+  expect(b.summary.avgScore).toBeCloseTo(0.78, 5)
+  expect(b.summary.samples.length).toBe(1)
+  expect(b.summary.samples[0].candTitle).toBe("Submit button missing on onboarding page")
+  expect(b.summary.samples[0].existingKinds).toContain("autosim")
+  // The "near-misses" segment must NOT be swallowed by the /:id route (would 404).
+  expect(b.error).toBeUndefined()
+})
+
+test("GET /api/expectations/near-misses is 401 without a session", async () => {
+  const r = await fetch(`${BASE}/api/expectations/near-misses?project=${PROJECT_ID}`)
+  expect(r.status).toBe(401)
 })

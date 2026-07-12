@@ -52,6 +52,7 @@ import { liveWatchSseResponse, openLiveWatchStream } from "./lib/trails-live-wat
 import { normalizeTrailViewport } from "./lib/trails-viewport"
 import { seedDemoTrails } from "./lib/trails-demo-seed"
 import { listExpectations, getExpectation, setExpectationStatus, setExpectationEnforced, upsertExpectationFromTicket } from "./lib/expectations-db"
+import { nearMissSummary } from "./lib/expectations-nearmiss"
 import { createLabel, listLabels, updateLabel, deleteLabel, attachLabel, detachLabel, labelsForFeedback, labelsForFeedbackBatch, setSuggestedLabels, getSuggestedLabels } from "./lib/db"
 import { suggestLabelsForFeedback } from "./lib/label-suggest"
 import { validateAssertionDraft, normalizeCheckpointInput } from "./lib/assertion-spec"
@@ -3437,6 +3438,18 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const rawStatus = url.searchParams.get("status")
         const status = (["candidate", "validated", "enforced", "retired"] as const).includes(rawStatus as any) ? (rawStatus as "candidate" | "validated" | "enforced" | "retired") : undefined
         return json({ expectations: await listExpectations(db!, projE.id, status) })
+      }
+
+      // GET /api/expectations/near-misses?project=&days= — KLA-251 (B.11): cross-source-matching
+      // instrumentation report. Summarizes how often the 0.82 lexical thread DECLINED a pair that
+      // landed in the near-miss band (candidate under-matches), with a few high-score samples for
+      // human sampling. Read-only ops view; MUST precede the /:id route so "near-misses" is not
+      // parsed as an expectation id.
+      if (req.method === "GET" && path === "/api/expectations/near-misses") {
+        const daysRaw = Number(url.searchParams.get("days"))
+        const days = Number.isFinite(daysRaw) && daysRaw > 0 ? Math.min(daysRaw, 365) : null
+        const sinceMs = days ? Date.now() - days * 24 * 60 * 60 * 1000 : undefined
+        return json({ summary: await nearMissSummary(db!, projE.id, { sinceMs }) })
       }
 
       // GET /api/expectations/:id — fetch a single expectation with full source_refs (enriched).
