@@ -116,6 +116,65 @@ describe('buildModal button guards (re-entrancy)', () => {
   })
 })
 
+describe('buildModal JTBD 1.10 — screenshot-only + mode-aware placeholder', () => {
+  const ok = async () => ({ issueKey: '1', issueUrl: '' })
+
+  it('placeholder is bug-worded in Bug mode and switches to feature wording on toggle', () => {
+    const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: ok })
+    const desc = q(ctrl, '#klavity-desc') as HTMLTextAreaElement
+    expect(desc.placeholder).toBe('Describe the bug...')
+    ;(ctrl.shadowRoot.querySelector('.feat') as HTMLButtonElement).click()
+    expect(desc.placeholder.toLowerCase()).toContain('feature')
+    ;(ctrl.shadowRoot.querySelector('.bug') as HTMLButtonElement).click()
+    expect(desc.placeholder).toBe('Describe the bug...')
+    ctrl.close()
+  })
+
+  it('opening directly in Feature mode shows the feature placeholder', () => {
+    const ctrl = buildModal('feature', { onCaptureFull: async () => 'x', onSubmit: ok })
+    const desc = q(ctrl, '#klavity-desc') as HTMLTextAreaElement
+    expect(desc.placeholder.toLowerCase()).toContain('feature')
+    ctrl.close()
+  })
+
+  it('Submit stays disabled with no description AND no evidence, and enables once a screenshot is attached', () => {
+    const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: ok })
+    const submit = q(ctrl, '#klavity-submit') as HTMLButtonElement
+    const hint = q(ctrl, '#klavity-desc-hint') as HTMLElement
+    // No text, no evidence → disabled, hint hidden.
+    expect(submit.disabled).toBe(true)
+    expect(hint.hidden).toBe(true)
+    // Attach a screenshot with NO typed description → Submit enables + the "we'll title it" hint appears.
+    ctrl.addScreenshot('data:image/png;base64,AAAA')
+    expect(submit.disabled).toBe(false)
+    expect(hint.hidden).toBe(false)
+    ctrl.close()
+  })
+
+  it('removing the last screenshot with no description re-disables Submit and hides the hint', () => {
+    const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: ok })
+    const submit = q(ctrl, '#klavity-submit') as HTMLButtonElement
+    const hint = q(ctrl, '#klavity-desc-hint') as HTMLElement
+    ctrl.addScreenshot('data:image/png;base64,AAAA')
+    expect(submit.disabled).toBe(false)
+    ;(ctrl.shadowRoot.querySelector('.klavity-rm') as HTMLButtonElement).click()
+    expect(submit.disabled).toBe(true)
+    expect(hint.hidden).toBe(true)
+    ctrl.close()
+  })
+
+  it('typing a description hides the evidence hint (typed prose is the title)', () => {
+    const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: ok })
+    const desc = q(ctrl, '#klavity-desc') as HTMLTextAreaElement
+    const hint = q(ctrl, '#klavity-desc-hint') as HTMLElement
+    ctrl.addScreenshot('data:image/png;base64,AAAA')
+    expect(hint.hidden).toBe(false)
+    desc.value = 'the thing is broken'; desc.dispatchEvent(new Event('input'))
+    expect(hint.hidden).toBe(true)
+    ctrl.close()
+  })
+})
+
 describe('buildModal upload guards', () => {
   const ok = async () => ({ issueKey: '1', issueUrl: '' })
   const setFiles = (input: HTMLInputElement, files: File[]) =>
