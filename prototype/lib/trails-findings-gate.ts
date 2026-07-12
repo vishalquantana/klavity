@@ -190,7 +190,10 @@ export function buildTicketFromFinding(finding: Finding, baseUrl: string): Ticke
 
   const lines: string[] = []
   if (rationale) lines.push(rationale)
-  if (finding.groundQuote) lines.push(`Grounded: "${finding.groundQuote}"`)
+  // B.13: only label the quote "Grounded:" when it was verified against captured page text.
+  // Self-referential / model-rationale quotes (groundQuoteVerified !== true) are honest "Reason:" so
+  // external tickets never claim verified grounding a finding never had.
+  if (finding.groundQuote) lines.push(`${finding.groundQuoteVerified === true ? "Grounded" : "Reason"}: "${finding.groundQuote}"`)
   if (fromSel || toSel) lines.push(`Heal diff: ${fromSel ?? "(none)"} → ${toSel ?? "(none)"}`)
   lines.push(`Kind: ${finding.kind} · confidence: ${finding.confidence}`)
   lines.push(`Walk: ${finding.runId}${finding.stepId ? ` · step: ${finding.stepId}` : ""} · trail: ${finding.trailId}`)

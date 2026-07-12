@@ -19,6 +19,10 @@ export async function ingestSnapOrSim(c: Client, args: {
   area?: string | null
   issueType?: string | null
   citedTraitIds?: string[]
+  /** B.13: the verbatim complaint quote (Snap: reporter text; Sim: verified trait provenance). */
+  sourceQuote?: string | null
+  /** B.13: whether sourceQuote was verified against source text (trait provenance tri-state). */
+  sourceQuoteVerified?: boolean | null
 }): Promise<void> {
   try {
     await upsertExpectation(c, {
@@ -28,6 +32,8 @@ export async function ingestSnapOrSim(c: Client, args: {
       urlPath: args.urlPath ?? null,
       dedupKey: args.dedupKey,
       source: { kind: args.isSnap ? "snap" : "sim", id: args.feedbackId },
+      sourceQuote: args.sourceQuote ?? null,
+      sourceQuoteVerified: args.sourceQuoteVerified ?? null,
     })
   } catch (e) {
     console.warn("[expectations] ingestSnapOrSim skipped:", String(e))
@@ -52,6 +58,10 @@ export async function ingestFinding(c: Client, args: {
   title: string
   dedupKey: string
   urlPath?: string | null
+  /** B.13: the finding's grounded quote (page evidence). */
+  sourceQuote?: string | null
+  /** B.13: whether the finding's groundQuote was verified against captured page text. */
+  sourceQuoteVerified?: boolean | null
 }): Promise<string | null> {
   try {
     const exp = await upsertExpectation(c, {
@@ -60,6 +70,8 @@ export async function ingestFinding(c: Client, args: {
       urlPath: args.urlPath ?? null,
       dedupKey: args.dedupKey,
       source: { kind: "autosim", id: args.findingId },
+      sourceQuote: args.sourceQuote ?? null,
+      sourceQuoteVerified: args.sourceQuoteVerified ?? null,
     })
     // KLA-243: if the expectation is already enforced, this finding is a guard-caught regression.
     if (exp.status === "enforced") {
