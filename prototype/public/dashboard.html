@@ -1327,6 +1327,16 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .tg-toast-undo{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:8px;border:1px solid var(--indigo);background:transparent;color:var(--indigo);font-family:var(--body);font-weight:600;font-size:12.5px;cursor:pointer;transition:background var(--mi-dur) var(--mi-ease),transform var(--mi-dur) var(--mi-ease)}
 .tg-toast-undo:hover{background:rgba(99,102,241,.1);transform:var(--mi-lift)}
 .tg-toast-undo:active{transform:var(--mi-press)}
+/* JTBD 2.14: partial-failure toast — stacks a summary line + linkable failing tickets under the message */
+.tg-toast.tg-toast-col{flex-direction:column;align-items:stretch;max-width:min(92vw,460px)}
+.tg-toast-fails{margin-top:2px;font-size:12px;color:var(--paper-dim);display:flex;flex-wrap:wrap;gap:6px}
+.tg-toast-fails a{color:var(--rose);text-decoration:none;font-family:var(--mono);font-size:11.5px;border-bottom:1px dotted var(--rose);cursor:pointer}
+.tg-toast-fails a:hover{opacity:.8}
+/* JTBD 2.14: kanban card multi-select — hover-revealed checkbox, stays visible once selected */
+.kb-card-cb{position:absolute;top:8px;left:8px;width:16px;height:16px;margin:0;cursor:pointer;opacity:0;transition:opacity var(--mi-dur) var(--mi-ease);z-index:2}
+.kb-card:hover .kb-card-cb,.kb-card.kb-selected .kb-card-cb,.kb-card-cb:checked{opacity:1}
+.kb-card.kb-selected{border-color:var(--indigo);box-shadow:0 0 0 1px var(--indigo-soft)}
+.kb-card.has-cb .kb-card-t{padding-left:20px}
 /* ===== Guided tour (vendored driver.js) — popover restyled to the Klavity design system ===== */
 .driver-popover.klav-tour{background:var(--ink-2);color:var(--paper);border-radius:16px;box-shadow:var(--shadow-border),0 18px 48px rgba(25,20,15,.22);padding:18px;font-family:var(--body);max-width:330px}
 .driver-popover.klav-tour .driver-popover-title{font-family:var(--display);font-weight:600;font-size:17px;color:var(--paper)}
@@ -4328,6 +4338,8 @@ let _tktFilters = { status: "", priority: "", label: "", assignee: "", source: "
 let _tktListState = { page: 1, totalPages: 1, loading: false }
 let _tktBoardState = { loading: false }
 let _tktBoardTickets = []
+// JTBD 2.14: board selection UI sync — reassigned each render (see renderTicketsKanban).
+let syncKbSelectionUi = () => {}
 let _tktView = "board" // "list" | "board"
 let _tktFbBound = false
 // KLA-178: multi-select set for bulk actions in list view
@@ -4401,7 +4413,7 @@ function tktFilterBarBind() {
     const hasFilter = Object.values(_tktFilters).some(v => !!v)
     fbClear && fbClear.classList.toggle("hide", !hasFilter)
     _tktListState.page = 1
-    _bulkSelected.clear()  // filter change clears selection
+    // JTBD 2.14: keep selection across filter changes — clear only on explicit Clear or project switch.
     syncTicketFiltersToUrl()
     renderTicketsView()
   }
@@ -4511,8 +4523,102 @@ function priDotClass(pri) {
   return "pri-dot-" + (["urgent","high","medium","low"].includes(pri) ? pri : "none")
 }
 
+// JTBD 2.14: safe bulk actions — every bulk mutation runs through here so it is guarded by an
+// undo toast (restores exact prior values from the API's `prior` array) and surfaces the API's
+// per-ticket `failures` array. `ids` is captured up front; selection is cleared on success.
+// A short human label ("priority to High", "status to Done", "assignee") drives the toast copy.
+let _bulkToastTimer = null
+function bulkActionLabel(body) {
+  if (body.status !== undefined) return "status to " + ticketStatusLabel(body.status)
+  if (body.priority !== undefined) return body.priority === null ? "priority cleared" : ("priority to " + body.priority)
+  if (body.assignee !== undefined) return body.assignee === null ? "assignee cleared" : ("assignee to " + body.assignee)
+  if (body.addLabelId !== undefined) return "label added"
+  if (body.removeLabelId !== undefined) return "label removed"
+  return "updated"
+}
+// Restore prior metadata values per-ticket. Groups tickets by identical prior value so each
+// distinct value is one PATCH (undo of a mixed batch faithfully restores every ticket).
+async function bulkUndo(projId, prior, field) {
+  const groups = new Map()
+  for (const p of (prior || [])) {
+    if (!(field in p)) continue
+    const v = p[field]
+    const key = JSON.stringify(v)
+    if (!groups.has(key)) groups.set(key, { value: v, ids: [] })
+    groups.get(key).ids.push(p.ticketId)
+  }
+  for (const g of groups.values()) {
+    await fetch(`/api/projects/${encodeURIComponent(projId)}/tickets/bulk`, {
+      method: "PATCH", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ticketIds: g.ids, [field]: g.value })
+    }).catch(() => null)
+  }
+}
+// Toast: "N tickets — priority to High" + Undo, plus a failure summary when the batch was partial.
+function bulkResultToast(count, label, failures, undoFields, projId, prior, onDone) {
+  let toast = $("bulkToast")
+  if (!toast) { toast = document.createElement("div"); toast.id = "bulkToast"; toast.className = "tg-toast"; document.body.appendChild(toast) }
+  if (_bulkToastTimer) { clearTimeout(_bulkToastTimer); _bulkToastTimer = null }
+  const failedIds = [...new Set((failures || []).map(f => f.ticketId))]
+  const okCount = Math.max(0, count - failedIds.length)
+  const partial = failedIds.length > 0
+  toast.className = "tg-toast" + (partial ? " tg-toast-col" : "")
+  const canUndo = okCount > 0 && Array.isArray(prior) && prior.length > 0 && undoFields.length > 0
+  const msg = partial
+    ? `${okCount} updated, ${failedIds.length} failed — ${esc(label)}`
+    : `${okCount} ticket${okCount === 1 ? "" : "s"} — ${esc(label)}`
+  let html = `<div class="tg-toast-row" style="display:flex;align-items:center;gap:14px">`
+    + `<span class="tg-toast-msg">${kicon(partial ? 'triangle-alert' : 'check-circle',{size:15})} ${msg}</span>`
+    + (canUndo ? `<button class="tg-toast-undo" type="button">${kicon('refresh-cw',{size:13})} Undo</button>` : "")
+    + `</div>`
+  if (partial) {
+    const links = failedIds.slice(0, 20).map(id => {
+      const t = (state.tickets || []).find(x => String(x.id) === String(id))
+      const seq = t && t.seqNum ? ("#" + t.seqNum) : String(id).slice(0, 8)
+      return `<a data-id="${esc(String(id))}">${esc(seq)}</a>`
+    }).join("")
+    html += `<div class="tg-toast-fails">Failed: ${links}${failedIds.length > 20 ? ` +${failedIds.length - 20} more` : ""}</div>`
+  }
+  toast.innerHTML = html
+  toast.classList.add("show")
+  const undoBtn = toast.querySelector(".tg-toast-undo")
+  if (undoBtn) undoBtn.addEventListener("click", async () => {
+    undoBtn.disabled = true
+    for (const f of undoFields) await bulkUndo(projId, prior, f)
+    toast.classList.remove("show")
+    if (_bulkToastTimer) { clearTimeout(_bulkToastTimer); _bulkToastTimer = null }
+    if (onDone) onDone()
+  })
+  toast.querySelectorAll(".tg-toast-fails a").forEach(a => a.addEventListener("click", () => {
+    const id = a.getAttribute("data-id"); if (id && typeof openSingleTicket === "function") openSingleTicket(id)
+  }))
+  _bulkToastTimer = setTimeout(() => { toast.classList.remove("show") }, 9000)
+}
+// Run one bulk mutation over the current selection. onDone re-renders the affected view.
+async function applyBulkAction(projId, body, onDone) {
+  const ids = [..._bulkSelected]
+  if (!ids.length) return
+  const label = bulkActionLabel(body)
+  const r = await fetch(`/api/projects/${encodeURIComponent(projId)}/tickets/bulk`, {
+    method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...body, ticketIds: ids })
+  }).catch(() => null)
+  if (!r) return
+  const data = await r.json().catch(() => ({}))
+  if (!r.ok && r.status !== 207) return   // hard error (400/403/404): surface nothing, no mutation applied
+  const failures = Array.isArray(data.failures) ? data.failures : []
+  const prior = Array.isArray(data.prior) ? data.prior : []
+  // Which metadata fields changed and are therefore undoable (label ops aren't captured in `prior`).
+  const undoFields = ["status", "priority", "assignee"].filter(f => f in body)
+  _bulkSelected.clear()
+  if (onDone) onDone()
+  bulkResultToast(ids.length, label, failures, undoFields, projId, prior, onDone)
+}
+
 // KLA-178: build the bulk-action toolbar HTML and wire its handlers
-function buildBulkBar(listEl, projId) {
+function buildBulkBar(listEl, projId, opts) {
+  // JTBD 2.14: opts = { onDone, onClear } lets the same bar drive the board view too. When absent,
+  // it falls back to the list-view re-render + row DOM sync (KLA-178 behavior).
+  const onDone = (opts && opts.onDone) || (() => fetchAndRenderTktList())
   const bar = document.createElement("div")
   bar.className = "bulk-bar" + (_bulkSelected.size ? " show" : "")
   bar.id = "tktBulkBar"
@@ -4543,18 +4649,20 @@ function buildBulkBar(listEl, projId) {
     `<span class="bulk-sep"></span>` +
     `<button class="btn btn-ghost btn-sm" id="bulkClose" type="button" style="font-size:12px">Close all</button>`
 
+  // JTBD 2.14: metadata mutations get an Undo toast (restores prior values). Label add/remove
+  // isn't reversible via `prior`, so those get an explicit confirm before applying.
   const doAction = async (body) => {
-    body.ticketIds = [..._bulkSelected]
-    const r = await fetch(`/api/projects/${encodeURIComponent(projId)}/tickets/bulk`, {
-      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body)
-    }).catch(() => null)
-    if (!r || !r.ok) return
-    _bulkSelected.clear()
-    fetchAndRenderTktList()
+    const isLabelOp = body.addLabelId !== undefined || body.removeLabelId !== undefined
+    if (isLabelOp) {
+      const n = _bulkSelected.size
+      if (!confirm(`${bulkActionLabel(body)} on ${n} ticket${n === 1 ? "" : "s"}?`)) return
+    }
+    await applyBulkAction(projId, body, onDone)
   }
 
   bar.querySelector("#bulkClear").addEventListener("click", () => {
     _bulkSelected.clear()
+    if (opts && opts.onClear) { opts.onClear(); return }
     listEl.querySelectorAll(".tkt-list-row").forEach(r => { r.classList.remove("tl-selected"); const cb = r.querySelector(".tl-cb"); if (cb) cb.checked = false })
     const all = listEl.querySelector(".tl-cb-all"); if (all) { all.checked = false; all.indeterminate = false }
     const b = listEl.querySelector("#tktBulkBar"); if (b) b.classList.remove("show")
@@ -4684,12 +4792,13 @@ function renderTktList(listEl, tickets, total) {
     pg.className = "tkt-pg"
     const prev = document.createElement("button")
     prev.className = "tkt-pg-btn"; prev.textContent = "← Prev"; prev.disabled = _tktListState.page <= 1
-    prev.addEventListener("click", () => { _bulkSelected.clear(); _tktListState.page--; fetchAndRenderTktList() })
+    // JTBD 2.14: preserve selection across pages — do NOT clear on paginate.
+    prev.addEventListener("click", () => { _tktListState.page--; fetchAndRenderTktList() })
     const info = document.createElement("span")
     info.className = "tkt-pg-info"; info.textContent = _tktListState.page + " / " + _tktListState.totalPages
     const next = document.createElement("button")
     next.className = "tkt-pg-btn"; next.textContent = "Next →"; next.disabled = _tktListState.page >= _tktListState.totalPages
-    next.addEventListener("click", () => { _bulkSelected.clear(); _tktListState.page++; fetchAndRenderTktList() })
+    next.addEventListener("click", () => { _tktListState.page++; fetchAndRenderTktList() })
     pg.appendChild(prev); pg.appendChild(info); pg.appendChild(next)
     wrap.appendChild(pg)
   }
@@ -4779,6 +4888,7 @@ function renderTicketsKanban(boardTickets) {
     }
   }
   const admin = state.active && state.active.role === "admin"
+  const projId = state.active && state.active.id
   if (Array.isArray(boardTickets)) {
     if (!Array.isArray(state.tickets)) state.tickets = []
     boardTickets.forEach(t => {
@@ -4802,6 +4912,15 @@ function renderTicketsKanban(boardTickets) {
   tickets.forEach(t => {
     groups[kanbanKeyForStatus(t.status)].push(t)
   })
+
+  // JTBD 2.14: board multi-select. Drop stale selections for tickets no longer on the board,
+  // build a column-major ordered id list (for shift-click range selection), and keep a helper
+  // that re-renders the bulk bar + card visuals in place without a full board rebuild.
+  const boardIds = new Set(tickets.map(t => String(t.id)))
+  ;[..._bulkSelected].forEach(id => { if (!boardIds.has(String(id))) _bulkSelected.delete(id) })
+  const orderedIds = []
+  KANBAN_COLS.forEach(col => groups[col.key].forEach(t => orderedIds.push(String(t.id))))
+  let _kbLastClicked = null
 
   const boardEl = document.createElement("div")
   boardEl.className = "kanban"
@@ -4836,8 +4955,9 @@ function renderTicketsKanban(boardTickets) {
     }
     items.forEach(t => {
       const ticketId = t.id
+      const sid = String(ticketId)
       const cardEl = document.createElement("div")
-      cardEl.className = "kb-card " + sevRailClass(t.priority)
+      cardEl.className = "kb-card has-cb " + sevRailClass(t.priority) + (_bulkSelected.has(ticketId) ? " kb-selected" : "")
       cardEl.setAttribute("data-id", ticketId)
       cardEl.setAttribute("data-status-key", col.key)
       cardEl.setAttribute("draggable", "true")
@@ -4860,12 +4980,40 @@ function renderTicketsKanban(boardTickets) {
         cardEl.querySelector(".kb-card-meta").innerHTML = `${stChip}${sevChip}${assignee}${recurBadgeHtml(t)}${lblHtml ? '<span class="lbl-chips" style="margin-left:auto">'+lblHtml+'</span>' : ""}`
       }
       cardEl.innerHTML = `
+        <input type="checkbox" class="kb-card-cb" aria-label="Select ticket for bulk action"${_bulkSelected.has(ticketId) ? " checked" : ""}>
         <button class="copy-ai-icon kb-copy-ai" type="button" aria-label="Copy to AI" title="Copy to AI — paste into Claude / ChatGPT to fix this bug">${kicon('sparkles')}</button>
         <div class="kb-card-t">${kicon('bug')} ${t.seqNum ? `<span class="tkt-seq">#${t.seqNum}</span> ` : ""}${esc(t.title || "Untitled report")}</div>
         <div class="kb-card-d">${sub}</div>
         <div class="kb-card-meta"></div>
         ${assigneePickerHtml(t, true)}`
       renderCard()
+
+      // JTBD 2.14: checkbox toggles selection; shift-click extends a range in board order.
+      const cardCb = cardEl.querySelector(".kb-card-cb")
+      const setSel = (on) => {
+        if (on) _bulkSelected.add(ticketId); else _bulkSelected.delete(ticketId)
+        cardEl.classList.toggle("kb-selected", on)
+        if (cardCb) cardCb.checked = on
+      }
+      const applyRangeTo = (target, on) => {
+        const a = orderedIds.indexOf(sid), b = orderedIds.indexOf(target)
+        if (a < 0 || b < 0) return
+        const [lo, hi] = a < b ? [a, b] : [b, a]
+        for (let i = lo; i <= hi; i++) {
+          const rid = orderedIds[i]
+          if (on) _bulkSelected.add(rid); else _bulkSelected.delete(rid)
+        }
+      }
+      if (cardCb) {
+        cardCb.addEventListener("click", ev => ev.stopPropagation())
+        cardCb.addEventListener("change", ev => {
+          const on = cardCb.checked
+          if (ev.shiftKey && _kbLastClicked && _kbLastClicked !== sid) applyRangeTo(_kbLastClicked, on)
+          else setSel(on)
+          _kbLastClicked = sid
+          syncKbSelectionUi()
+        })
+      }
 
       // Detail is built for the "Copy to AI" action; the card itself opens the single-ticket view.
       const detailEl = buildTktDetail(t, admin, () => renderCard())
@@ -4897,14 +5045,39 @@ function renderTicketsKanban(boardTickets) {
         })
       }
 
-      cardEl.addEventListener("click", () => openSingleTicket(ticketId))
+      cardEl.addEventListener("click", (ev) => {
+        // Shift-click anywhere on a card selects a range without opening the ticket. Plain click opens.
+        if (ev.shiftKey) {
+          ev.preventDefault()
+          const on = !_bulkSelected.has(ticketId)
+          if (_kbLastClicked && _kbLastClicked !== sid) applyRangeTo(_kbLastClicked, on); else setSel(on)
+          _kbLastClicked = sid
+          syncKbSelectionUi()
+          return
+        }
+        openSingleTicket(ticketId)
+      })
       list.appendChild(cardEl)
     })
     colEl.appendChild(list)
     boardEl.appendChild(colEl)
   })
   board.innerHTML = ""
+  // JTBD 2.14: shared bulk bar above the board — same controls/undo/failures as the list view.
+  const rerenderBoard = () => renderTicketsKanban(_tktBoardTickets)
+  const bulkBar = buildBulkBar(board, projId, { onDone: rerenderBoard, onClear: rerenderBoard })
+  board.appendChild(bulkBar)
   board.appendChild(boardEl)
+  // Live count/visibility sync when selection changes via checkbox or shift-click (no full rebuild).
+  syncKbSelectionUi = () => {
+    const bar = board.querySelector("#tktBulkBar")
+    if (bar) { bar.classList.toggle("show", _bulkSelected.size > 0); const cnt = bar.querySelector(".bulk-count"); if (cnt) cnt.textContent = _bulkSelected.size + " selected" }
+    board.querySelectorAll(".kb-card").forEach(c => {
+      const on = _bulkSelected.has(c.getAttribute("data-id"))
+      c.classList.toggle("kb-selected", on)
+      const cb = c.querySelector(".kb-card-cb"); if (cb) cb.checked = on
+    })
+  }
 }
 
 async function loadTktShot(detailEl, annotations) {
