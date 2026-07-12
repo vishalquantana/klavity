@@ -91,10 +91,10 @@ const { reconnectDb, applySchema, migrateV2 } = await import("./db")
 beforeAll(async () => { const db = reconnectDb("file:" + file); await applySchema(db); await migrateV2(db) })
 
 const T = await import("./trails")
-const { tickScheduler } = await import("./trails-scheduler")
+const { tickScheduler, _resetSchedulerQueueForTest, _pendingRetryCount, nextCronFireUtc, nextLocalFireUtc, wallClockInZone } = await import("./trails-scheduler")
 const { _resetWalkPoolForTest } = await import("./trails-browser")
 
-beforeEach(() => { _resetWalkPoolForTest(1, 0) })
+beforeEach(() => { _resetWalkPoolForTest(1, 0); _resetSchedulerQueueForTest() })
 
 async function seedScheduledTrail(schedule: string, lastRunAt: number | null = null) {
   const id = await T.createTrail("proj_s", { name: "Sched", baseUrl: "https://app.test/", authorKind: "llm" })
@@ -192,18 +192,156 @@ test("localToUtcCron / utcCronToLocal roundtrip and timezone offsets", () => {
   expect(localWeekly.weekdays).toEqual([1, 3, 5])
 })
 
-test("tickScheduler handles WalkBusyError and records a skipped run", async () => {
-  const { _resetWalkPoolForTest } = await import("./trails-browser")
-  // Hold the slot by setting active pool size to 0
+test("tickScheduler on a busy slot QUEUES the occurrence instead of skipping immediately", async () => {
+  // Hold the slot by setting active pool size to 0 → every launch throws WalkBusyError.
   _resetWalkPoolForTest(0, 0)
-  
+
   const now = new Date()
   const id = await seedScheduledTrail("* * * * *")
-  
+
   await tickScheduler(now)
-  
+
+  // No skipped/missed row is written yet — the occurrence is held for retry.
+  const walks = await T.listRecentWalks("proj_s", 10)
+  const schedWalks = walks.filter(w => w.trailId === id && w.trigger === "scheduled")
+  expect(schedWalks.length).toBe(0)
+  expect(_pendingRetryCount()).toBe(1)
+})
+
+test("a queued walk RUNS later automatically once the slot frees (retry-or-queue)", async () => {
+  // Busy slot: the occurrence must queue, not skip.
+  _resetWalkPoolForTest(0, 0)
+  const id = await seedScheduledTrail("* * * * *")
+
+  // Pin `now` to a minute boundary so `later` (+40s) stays inside the SAME minute — that way the
+  // main-loop dedup guard (scheduledLastRunAt >= minuteTs) prevents a fresh fire and we're testing
+  // purely the RETRY path, not a new occurrence.
+  const now = new Date(Date.UTC(2026, 6, 7, 10, 0, 0))
+  await tickScheduler(now)
+
+  // Nothing skipped yet — held for retry.
+  let walks = await T.listRecentWalks("proj_s", 20)
+  expect(walks.filter(w => w.trailId === id && w.status === "skipped").length).toBe(0)
+  expect(_pendingRetryCount()).toBe(1)
+
+  // Free the slot, advance past the first backoff (30s) but stay in the same minute, and tick again:
+  // the queued occurrence must RUN (a real trail_runs row appears, non-skipped) — NOT recorded skipped.
+  _resetWalkPoolForTest(1, 0)
+  const later = new Date(now.getTime() + 40_000)
+  await tickScheduler(later)
+
+  walks = await T.listRecentWalks("proj_s", 20)
+  const skipped = walks.filter(w => w.trailId === id && w.status === "skipped")
+  const ran = walks.filter(w => w.trailId === id && w.trigger === "scheduled" && w.status !== "skipped" && w.status !== "missed")
+  expect(skipped.length).toBe(0)              // nothing was silently skipped
+  expect(ran.length).toBeGreaterThanOrEqual(1) // the queued occurrence ended up running
+  expect(_pendingRetryCount()).toBe(0)
+})
+
+test("a genuinely un-runnable occurrence is recorded skipped once its window closes, with reason", async () => {
+  // Slot permanently busy → occurrence queues, then the retry window closes → skipped w/ reason.
+  _resetWalkPoolForTest(0, 0)
+  const id = await seedScheduledTrail("0 3 * * *") // daily → next occurrence is ~24h out; we force expiry
+
+  const now = new Date(Date.UTC(2026, 6, 7, 3, 0)) // matches "0 3 * * *"
+  await tickScheduler(now)
+  expect(_pendingRetryCount()).toBe(1)
+
+  // Jump beyond the 1-hour hard window so the queued occurrence expires.
+  const wayLater = new Date(now.getTime() + 2 * 60 * 60_000)
+  await tickScheduler(wayLater)
+
   const walks = await T.listRecentWalks("proj_s", 10)
   const schedWalks = walks.filter(w => w.trailId === id && w.trigger === "scheduled")
   expect(schedWalks.length).toBe(1)
   expect(schedWalks[0].status).toBe("skipped")
+  // Reason + retry outcome preserved in summary_json.
+  const reason = (schedWalks[0].summary as any)?.reason
+  expect(typeof reason).toBe("string")
+  expect(reason).toContain("busy")
+  expect(_pendingRetryCount()).toBe(0)
+})
+
+// ── DST stability ──────────────────────────────────────────────────────────────
+// nextLocalFireUtc computes wall-clock fire times in a named zone. A "09:00 America/New_York daily"
+// schedule must land on the SAME wall-clock (and correct UTC offset) on both sides of spring-forward
+// and fall-back — that's the property the old new Date().setHours() arithmetic broke.
+
+test("nextLocalFireUtc: 09:00 America/New_York is stable across SPRING-FORWARD (Mar 2026)", () => {
+  const tz = "America/New_York"
+  // 2026 US spring-forward: Sunday March 8, 2026 at 02:00 local → 03:00 (EST -05:00 → EDT -04:00).
+  // Before DST (EST): 09:00 local = 14:00 UTC. After DST (EDT): 09:00 local = 13:00 UTC.
+  const beforeDst = Date.UTC(2026, 2, 5, 0, 0)  // Mar 5 (Thu), still EST
+  const afterDst = Date.UTC(2026, 2, 10, 0, 0)  // Mar 10 (Tue), now EDT
+
+  const f1 = nextLocalFireUtc(9, 0, tz, beforeDst)!
+  const f2 = nextLocalFireUtc(9, 0, tz, afterDst)!
+
+  // Both must read 09:00 local — no hour drift.
+  expect(wallClockInZone(f1, tz).hour).toBe(9)
+  expect(wallClockInZone(f2, tz).hour).toBe(9)
+  // And the UTC offset shifted (14:00 UTC before, 13:00 UTC after) — proving calendar-awareness.
+  expect(new Date(f1).getUTCHours()).toBe(14)
+  expect(new Date(f2).getUTCHours()).toBe(13)
+})
+
+test("nextLocalFireUtc: 09:00 America/New_York is stable across FALL-BACK (Nov 2026)", () => {
+  const tz = "America/New_York"
+  // 2026 US fall-back: Sunday November 1, 2026 at 02:00 local → 01:00 (EDT -04:00 → EST -05:00).
+  const beforeFallback = Date.UTC(2026, 9, 29, 0, 0) // Oct 29, still EDT
+  const afterFallback = Date.UTC(2026, 10, 3, 0, 0)  // Nov 3, now EST
+
+  const f1 = nextLocalFireUtc(9, 0, tz, beforeFallback)!
+  const f2 = nextLocalFireUtc(9, 0, tz, afterFallback)!
+
+  expect(wallClockInZone(f1, tz).hour).toBe(9)
+  expect(wallClockInZone(f2, tz).hour).toBe(9)
+  expect(new Date(f1).getUTCHours()).toBe(13) // EDT: 09:00 = 13:00 UTC
+  expect(new Date(f2).getUTCHours()).toBe(14) // EST: 09:00 = 14:00 UTC
+})
+
+test("nextCronFireUtc: returns the next minute-aligned UTC match after a timestamp", () => {
+  const after = Date.UTC(2026, 6, 7, 1, 30)
+  const next = nextCronFireUtc("0 3 * * *", after, "UTC")!
+  expect(new Date(next).getUTCHours()).toBe(3)
+  expect(new Date(next).getUTCMinutes()).toBe(0)
+  // Strictly after `after`, same day.
+  expect(next).toBeGreaterThan(after)
+  expect(new Date(next).getUTCDate()).toBe(7)
+})
+
+test("nextLocalFireUtc: weekday-constrained schedule only fires on allowed days", () => {
+  const tz = "UTC"
+  // Weekdays only (Mon–Fri = 1..5). Start on a Saturday → next fire must be Monday.
+  const sat = Date.UTC(2026, 6, 4, 0, 0) // 2026-07-04 is a Saturday
+  const next = nextLocalFireUtc(9, 0, tz, sat, [1, 2, 3, 4, 5])!
+  expect(wallClockInZone(next, tz).weekday).toBe(1) // Monday
+})
+
+// ── Coverage ───────────────────────────────────────────────────────────────────
+
+test("computeScheduleCoverage reports N of M scheduled walks ran", async () => {
+  // Fresh project so counts are isolated. 3 scheduled walks ran, 1 skipped, 1 missed → 3 of 5 = 60%.
+  const trailId = await T.createTrail("proj_cov", { name: "CovTrail", baseUrl: "https://x.test/", authorKind: "llm" })
+  await T.updateTrail("proj_cov", trailId, { status: "active", schedule: "* * * * *" })
+
+  const { db } = await import("./db")
+  const now = Date.now()
+  // Insert 3 scheduled rows that ran (terminal green) directly for determinism.
+  for (let i = 0; i < 3; i++) {
+    await db!.execute({
+      sql: `INSERT INTO trail_runs (id, trail_id, project_id, trigger, status, llm_calls, summary_json, trail_version, environment_name, started_at, finished_at)
+            VALUES (?, ?, ?, 'scheduled', 'green', 0, NULL, 1, NULL, ?, ?)`,
+      args: ["walk_cov_ran_" + i, trailId, "proj_cov", now, now],
+    })
+  }
+  await T.recordSkippedScheduledRun("proj_cov", trailId, "skipped", { reason: "slot busy" })
+  await T.recordSkippedScheduledRun("proj_cov", trailId, "missed", { reason: "launch error" })
+
+  const cov = await T.computeScheduleCoverage("proj_cov")
+  expect(cov.scheduled).toBe(5)
+  expect(cov.ran).toBe(3)
+  expect(cov.skipped).toBe(1)
+  expect(cov.missed).toBe(1)
+  expect(cov.coverage).toBeCloseTo(0.6, 5)
 })
