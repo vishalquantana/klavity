@@ -1,6 +1,6 @@
 // Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
 import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, listInboxForProjects, setProjectTrailsAutofile } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, listInboxForProjects, setProjectTrailsAutofile } from "./lib/db"
 import { issueKeyFor, chooseDedup, humanReportIssueKeyFor } from "./lib/dedup"
 import { classifySimObservation } from "./lib/sim-bug-classify"
 import { getConnector, listConnectorTypes, type TicketPayload, type TicketAttachment } from "./lib/connectors/index"
@@ -55,7 +55,7 @@ import { listExpectations, getExpectation, setExpectationStatus, setExpectationE
 import { createLabel, listLabels, updateLabel, deleteLabel, attachLabel, detachLabel, labelsForFeedback, labelsForFeedbackBatch, setSuggestedLabels, getSuggestedLabels } from "./lib/db"
 import { suggestLabelsForFeedback } from "./lib/label-suggest"
 import { validateAssertionDraft, normalizeCheckpointInput } from "./lib/assertion-spec"
-import { buildRecurrenceMemory, listProjectRecurringIssues } from "./lib/recurrence-memory"
+import { buildRecurrenceMemory, listProjectRecurringIssues, type RecurrenceMemory } from "./lib/recurrence-memory"
 import { publishBlogPost, SLUG_RE, type PublishInput } from "./lib/blog-publish"
 import { getExtractModel } from "./lib/extract-model"
 import { parseJSON } from "./lib/parse-json"
@@ -861,6 +861,22 @@ function v3PersonaFields(body: any): { type: string; simClass: string | null; si
   return { type, simClass, side, core }
 }
 
+// A.8: render a RecurrenceMemory's occurrence receipts as an exportable/quotable timeline block —
+// each occurrence's OWN wording + date, e.g.
+//   This issue was reported 3 times:
+//   • Jun 10: "checkout button does nothing"
+//   • Jul 3: "STILL can't check out"
+// Returns "" when there's nothing worth quoting (single occurrence). Used in connector export text
+// AND surfaced to the dashboard "Copy timeline" action.
+function occurrenceTimelineText(mem: RecurrenceMemory | null): string {
+  if (!mem) return ""
+  const occ = (mem.occurrences || []).filter((o) => (o.observation || "").trim())
+  if (occ.length < 2) return ""
+  const day = (ms: number) => new Date(ms).toISOString().slice(0, 10)
+  const lines = occ.map((o) => `• ${day(o.seenAt)}: "${String(o.observation).trim().replace(/\s+/g, " ").slice(0, 240)}"`)
+  return `This issue was reported ${occ.length} times:\n${lines.join("\n")}`
+}
+
 // Build a normalized TicketPayload from a feedback row for the connector adapters. Async because it
 // resolves the screenshot into a permanent signed link (body fallback) + bytes (for native attachment).
 async function feedbackToTicketPayload(fb: any, project: { id: string; name?: string }, simName: string | null = null): Promise<TicketPayload> {
@@ -898,6 +914,16 @@ async function feedbackToTicketPayload(fb: any, project: { id: string; name?: st
         } catch (e: any) { console.warn("attachment bytes fetch failed (link still in body):", e?.message || e) }
       }
     } catch (e: any) { console.warn("screenshot lookup failed for ticket:", e?.message || e) }
+  }
+  // A.8: occurrence timeline — when this report recurred, append each occurrence's own verbatim
+  // wording + date so the external ticket carries the receipts ("you said X on Y, then Y2, then Y3").
+  // Best-effort: a memory lookup failure must never block the export.
+  if (db && (fb.id || fb.projectId)) {
+    try {
+      const mem = await buildRecurrenceMemory(db, String(fb.id), String(fb.projectId))
+      const tl = occurrenceTimelineText(mem)
+      if (tl) lines.push(tl)
+    } catch (e: any) { console.warn("occurrence timeline for export skipped (non-fatal):", e?.message || e) }
   }
   lines.push("Filed by Klavity")
   const body = lines.join("\n\n")
@@ -2078,9 +2104,23 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                 })
               }
               if (dedupedInto) {
-                await bumpFeedbackRecurrence(dedupedInto, Date.now())
+                const seenAt = Date.now()
+                await bumpFeedbackRecurrence(dedupedInto, seenAt)
                 feedbackId = dedupedInto
                 knownDuplicate = true
+                // A.8 occurrence receipts: keep THIS repeat-report's own verbatim description, its
+                // screenshot, and its date instead of discarding them on the counter-bump. Powers the
+                // per-ticket occurrence timeline ("you said X on Y, then Y2, then Y3"). Best-effort —
+                // an occurrence-persist failure must never fail or slow the submission.
+                try {
+                  await insertFeedbackOccurrence({
+                    feedbackId: dedupedInto, projectId, seenAt,
+                    observation: observation || null,
+                    screenshotId: screenshotId || null,
+                    sourceQuote: citation.sourceQuote || null,
+                    reporterEmail: validReporterEmail ? reporterEmail : null,
+                  })
+                } catch (e: any) { console.warn("[occurrence] persist skipped:", e?.message || e) }
                 // Build recurrence memory so callers know this is a recurring issue and who originally
                 // filed it (the "cited virtual customer" — a Sim persona or a previous human reporter).
                 try { recurrenceMem = await buildRecurrenceMemory(db!, dedupedInto, projectId) }
@@ -4589,6 +4629,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (req.method === "GET" && !feedbackSubroute) {
           const lastSeen = fbRow.lastSeenAt ?? fbRow.createdAt
           const isRegression = fbRow.resolvedAt != null && lastSeen > fbRow.resolvedAt
+          // A.8 occurrence timeline: per-report verbatim receipts (description/screenshot/date) so the
+          // detail view can render "you said X on Y, then Y2, then Y3" without a second round-trip.
+          const occurrenceMemory = db
+            ? await buildRecurrenceMemory(db, fid, fbRow.projectId).catch(() => null)
+            : null
           const report = {
             id: fbRow.id,
             projectId: fbRow.projectId,
@@ -4621,6 +4666,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             suggestedLabels: await getSuggestedLabels(fid, fbRow.projectId),
             // KLA-200: human-readable sequential number
             seqNum: fbRow.seqNum ?? null,
+            // A.8: chronological per-occurrence receipts (own wording + screenshot + date).
+            occurrences: occurrenceMemory?.occurrences ?? [],
           }
           return json({ report })
         }
