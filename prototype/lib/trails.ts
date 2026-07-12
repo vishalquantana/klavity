@@ -653,7 +653,10 @@ export async function deleteTrailStep(projectId: string, stepId: string): Promis
   if (r.rows.length) await bumpStepVersion(projectId, String((r.rows[0] as any).trail_id))
 }
 
-export type StepPatch = { actionValue?: string | null; checkpoint?: Checkpoint | null }
+// `target` (B.9 / KLA-249): repoint an existing step's locator in place — used by the "Edit guard"
+// path to adjust an enforced assert step's target without deleting-and-recreating the step (which
+// would destroy the expectation's enforced history). Only applied when present in the patch.
+export type StepPatch = { actionValue?: string | null; checkpoint?: Checkpoint | null; target?: Record<string, string> | null }
 
 export async function updateTrailStep(projectId: string, stepId: string, patch: StepPatch): Promise<boolean> {
   const r = await db!.execute({ sql: `SELECT * FROM trail_steps WHERE id=? AND project_id=?`, args: [stepId, projectId] })
@@ -661,9 +664,10 @@ export async function updateTrailStep(projectId: string, stepId: string, patch: 
   const row = r.rows[0]
   const newActionValue = "actionValue" in patch ? (patch.actionValue ?? null) : row.action_value
   const newCheckpoint = "checkpoint" in patch ? (patch.checkpoint == null ? null : JSON.stringify(patch.checkpoint)) : row.checkpoint_json
+  const newTarget = "target" in patch ? (patch.target == null ? null : JSON.stringify(patch.target)) : row.target_json
   await db!.execute({
-    sql: `UPDATE trail_steps SET action_value=?, checkpoint_json=? WHERE id=? AND project_id=?`,
-    args: [newActionValue, newCheckpoint, stepId, projectId],
+    sql: `UPDATE trail_steps SET action_value=?, checkpoint_json=?, target_json=? WHERE id=? AND project_id=?`,
+    args: [newActionValue, newCheckpoint, newTarget, stepId, projectId],
   })
   await bumpStepVersion(projectId, String(row.trail_id))
   return true
