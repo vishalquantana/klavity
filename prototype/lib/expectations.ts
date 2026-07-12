@@ -24,6 +24,38 @@ export function shouldValidate(c: Corroboration, n: number = RECURRENCE_VALIDATE
   return (c.snap && c.sim) || c.recurrence >= n
 }
 
+// ── B.10 (KLA-250): progress-to-Confirmed hint for a "Seen once" card. ──
+// The auto-validate rule (shouldValidate) is otherwise invisible, so a Seen-once card gives no
+// hint what it's waiting for. This surfaces the SHORTEST remaining path to Confirmed, in plain
+// language, derived from the SAME inputs as shouldValidate — never contradicting it.
+export type ValidationProgress = {
+  /** true once shouldValidate(c) holds — the card would already be Confirmed, no hint needed. */
+  ready: boolean
+  /** plain-language remaining path, e.g. "needs a second source (a human report or a Sim)". */
+  hint: string
+}
+
+export function validationProgress(c: Corroboration, n: number = RECURRENCE_VALIDATE_N): ValidationProgress {
+  const corr: Corroboration = { snap: !!c?.snap, sim: !!c?.sim, recurrence: Math.max(0, Number(c?.recurrence ?? 0)) }
+  if (shouldValidate(corr, n)) return { ready: true, hint: "Ready to confirm." }
+  // Path A — cross-source: one of {human report, Sim} present, needs the other.
+  const haveOneSource = corr.snap !== corr.sim // exactly one of snap/sim
+  // Path B — recurrence: how many more sightings until it recurs enough on its own.
+  const moreSightings = Math.max(1, n - corr.recurrence)
+  // Prefer the cross-source hint when we're one source away (the faster, clearer path); otherwise
+  // fall back to the recurrence count. When nothing has landed yet, name both routes.
+  if (haveOneSource) {
+    const missing = corr.snap ? "a Sim" : "a human report"
+    return { ready: false, hint: `needs a second source (${missing}) — or ${moreSightings} more sighting${moreSightings === 1 ? "" : "s"}` }
+  }
+  if (corr.snap && corr.sim) {
+    // Both sources already present but shouldValidate false only if n>2 edge — keep consistent.
+    return { ready: false, hint: `needs ${moreSightings} more sighting${moreSightings === 1 ? "" : "s"}` }
+  }
+  // No source signal captured yet.
+  return { ready: false, hint: `needs a second source (a human report and a Sim) — or ${moreSightings} more sighting${moreSightings === 1 ? "" : "s"}` }
+}
+
 export function nextStatus(current: ExpStatus, c: Corroboration, n: number = RECURRENCE_VALIDATE_N): ExpStatus {
   // B.9 (KLA-249): a RETIRED row is not a roach motel. When a fresh signal arrives (upsert bumps
   // corroboration on a retired match), the issue has resurfaced after being cleared — resurrect it

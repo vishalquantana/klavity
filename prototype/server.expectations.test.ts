@@ -644,3 +644,99 @@ test("B.5 awaiting-Trail resume: creating a Trail covering the path clears the h
   const row = await rawClient.execute({ sql: "SELECT awaiting_trail FROM expectations WHERE id=?", args: [EXP_ZT_ID] })
   expect(Number((row.rows[0] as any).awaiting_trail)).toBe(0)
 })
+
+// ── B.10 (KLA-250): TRULY enriched GET /api/expectations/:id ──────────────────────────────────
+// The route must hydrate source refs → linkable report/finding evidence (title + grounded quote),
+// resolve the enforced guard's step id → its Trail NAME + step POSITION ("step N of M", never the
+// raw ts_ UUID), and expose a progress-to-Confirmed hint for a Seen-once (candidate) row.
+
+// Seed a finding (findings table exists in the harness schema) + a CANDIDATE expectation that
+// references it as a source, with a single-source corroboration so a progress hint is meaningful.
+const FINDING_ID = `find_b10_${ts}`
+await rawExec(
+  `INSERT INTO findings (id, project_id, run_id, step_id, trail_id, kind, title, evidence_json, ground_quote, confidence, dedup_key, recurrence, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  [FINDING_ID, PROJECT_ID, `run_b10_${ts}`, null, TRAIL_ID, "assertion_failed", "Finish button missing after checkout",
+    null, "The Finish button never rendered on /checkout", 0.9, `fdedup_b10_${ts}`, 1, "queued", NOW, NOW]
+)
+const EXP_CAND_B10 = `exp_cand_b10_${ts}`
+await rawExec(
+  `INSERT INTO expectations (id, project_id, title, area, url_path, status, source_refs_json, corroboration_json, dedup_key, enforced_step_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  [EXP_CAND_B10, PROJECT_ID, "Finish button must render after checkout", "checkout", "/checkout", "candidate",
+    JSON.stringify([{ kind: "finding", id: FINDING_ID }]),
+    JSON.stringify({ snap: false, sim: true, recurrence: 1 }),
+    `dedup_cand_b10_${ts}`, null, NOW, NOW]
+)
+
+// A DEDICATED trail with exactly 2 recorded steps + 1 enforced assert step, so the enriched
+// step-position ("step 3 of 3") is deterministic (isolated from other tests' step mutations).
+const TRAIL_B10_ID = `trl_b10_${ts}`
+const STEP_B10_ENF = `ts_b10_enf_${ts}`
+await rawExec(`INSERT INTO trails (id, project_id, name, intent, base_url, author_kind, status, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  [TRAIL_B10_ID, PROJECT_ID, "Guarded Signup", "sign up", "https://shop.test", "human", "active", ADMIN_EMAIL, NOW, NOW])
+await rawExec(`INSERT INTO trail_steps (id, trail_id, project_id, idx, action, action_value, target_json, checkpoint_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  [`ts_b10_0_${ts}`, TRAIL_B10_ID, PROJECT_ID, 0, "navigate", "https://shop.test/signup", null, null, NOW])
+await rawExec(`INSERT INTO trail_steps (id, trail_id, project_id, idx, action, action_value, target_json, checkpoint_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  [`ts_b10_1_${ts}`, TRAIL_B10_ID, PROJECT_ID, 1, "click", null, JSON.stringify({ role: "button", name: "Sign up" }), null, NOW])
+await rawExec(`INSERT INTO trail_steps (id, trail_id, project_id, idx, action, action_value, target_json, checkpoint_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  [STEP_B10_ENF, TRAIL_B10_ID, PROJECT_ID, 2, "assert", null, JSON.stringify({ role: "heading", name: "Welcome" }), JSON.stringify({ kind: "visible", description: "Welcome heading visible" }), NOW])
+const EXP_GUARDED_B10 = `exp_guarded_b10_${ts}`
+await rawExec(
+  `INSERT INTO expectations (id, project_id, title, area, url_path, status, source_refs_json, corroboration_json, dedup_key, enforced_step_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  [EXP_GUARDED_B10, PROJECT_ID, "Welcome heading visible after signup", "signup", "/signup", "enforced",
+    JSON.stringify([{ kind: "snap", id: "snap_g" }, { kind: "sim", id: "sim_g" }]),
+    JSON.stringify({ snap: true, sim: true, recurrence: 2 }),
+    `dedup_guarded_b10_${ts}`, STEP_B10_ENF, NOW, NOW]
+)
+
+test("B.10 enriched GET resolves a finding source ref → title + grounded quote + finding bucket", async () => {
+  const r = await api("GET", `/api/expectations/${EXP_CAND_B10}?project=${PROJECT_ID}`, null, ADMIN_SID)
+  expect(r.status).toBe(200)
+  const b = await r.json()
+  const exp = b.expectation
+  expect(exp.id).toBe(EXP_CAND_B10)
+  expect(Array.isArray(exp.sources)).toBe(true)
+  expect(exp.sources.length).toBe(1)
+  const src = exp.sources[0]
+  expect(src.kind).toBe("finding")
+  expect(src.resolved).toBe(true)
+  expect(src.title).toBe("Finish button missing after checkout")
+  expect(src.groundedQuote).toBe("The Finish button never rendered on /checkout")
+})
+
+test("B.10 enriched GET gives a Seen-once (candidate) row a progress-to-Confirmed hint", async () => {
+  const r = await api("GET", `/api/expectations/${EXP_CAND_B10}?project=${PROJECT_ID}`, null, ADMIN_SID)
+  const b = await r.json()
+  const p = b.expectation.progress
+  expect(p).toBeTruthy()
+  expect(p.ready).toBe(false)
+  // sim present, snap absent, recurrence 1 → "needs a second source (a human report) — or 2 more sightings"
+  expect(p.hint).toContain("a human report")
+  expect(p.hint.toLowerCase()).toContain("sighting")
+})
+
+test("B.10 enriched GET resolves an enforced guard's step → Trail NAME + step POSITION (no ts_ UUID)", async () => {
+  const r = await api("GET", `/api/expectations/${EXP_GUARDED_B10}?project=${PROJECT_ID}`, null, ADMIN_SID)
+  expect(r.status).toBe(200)
+  const exp = (await r.json()).expectation
+  expect(exp.linkedTrail).toBeTruthy()
+  expect(exp.linkedTrail.trailName).toBe("Guarded Signup")
+  expect(exp.linkedTrail.stepId).toBe(STEP_B10_ENF)
+  // The dedicated trail has steps at idx 0,1 + the assert step at idx 2 → the guard is 3rd of 3.
+  expect(exp.linkedTrail.stepPosition).toBe(3)
+  expect(exp.linkedTrail.stepCount).toBe(3)
+  // An enforced (Guarded) row carries no progress hint.
+  expect(exp.progress).toBeNull()
+})
+
+test("B.10 list GET returns enriched rows (linkedTrail on the guarded one, progress on the candidate)", async () => {
+  const r = await api("GET", `/api/expectations?project=${PROJECT_ID}`, null, ADMIN_SID)
+  expect(r.status).toBe(200)
+  const rows = (await r.json()).expectations as any[]
+  const guarded = rows.find((e) => e.id === EXP_GUARDED_B10)
+  expect(guarded).toBeDefined()
+  expect(guarded.linkedTrail?.trailName).toBe("Guarded Signup")
+  const cand = rows.find((e) => e.id === EXP_CAND_B10)
+  expect(cand).toBeDefined()
+  expect(cand.progress?.ready).toBe(false)
+  expect(Array.isArray(cand.sources)).toBe(true)
+})
