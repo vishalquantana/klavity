@@ -8,6 +8,7 @@ import { type CaptureBuffers } from "@klavity/core/capture"
 import { installCaptureContext, buildCaptureContext } from "./capture-context"
 import type { ReportContext, ReportIdentity } from "@klavity/core"
 import { parseScriptConfig, isFirstParty, buildFeedbackForm, successCopy, compressScreenshot } from "./widget-lib"
+import { getTurnstileToken } from "./load-turnstile"
 import { icon } from "@klavity/core/icons"
 import { createSessionReplay, type SessionReplay } from "./session-replay"
 import { on, emit } from "./events"
@@ -268,7 +269,13 @@ async function mount() {
   // ONE unified fetch: the project config endpoint returns BOTH the appearance theme (modalConfig,
   // → buildModal 3rd arg) AND the lead-gen widget settings (widget: {mode, ctaUrl}, → success copy).
   let modalConfig: any = {}
-  let widget: { mode: string; ctaUrl: string; reportGate: string } = { mode: "support", ctaUrl: "https://klavity.in/onboarding", reportGate: "email" }
+  // JTBD 1.7: the default report gate is 'anonymous' — no email wall before value is delivered. The
+  // email ask moves to the post-submit success card. Projects that explicitly chose 'email'/'login'
+  // still get that behavior via the config fetch below.
+  let widget: { mode: string; ctaUrl: string; reportGate: string } = { mode: "support", ctaUrl: "https://klavity.in/onboarding", reportGate: "anonymous" }
+  // Public Turnstile site key (from the config fetch). When set, the composer renders a Turnstile
+  // challenge on the anonymous submit path so dropping the email gate doesn't open a spam hole.
+  let turnstileSiteKey = ""
   // Launcher display settings (from modalConfig)
   let launcherMode: 'hidden' | 'icon' | 'full' | 'custom' = 'full'
   let launcherText = 'Report a bug'
@@ -282,7 +289,8 @@ async function mount() {
     if (r.ok) {
       const j = await r.json()
       modalConfig = j.modalConfig || {}
-      if (j.widget) widget = { mode: j.widget.mode || "support", ctaUrl: j.widget.ctaUrl || widget.ctaUrl, reportGate: j.widget.reportGate || "email" }
+      if (j.widget) widget = { mode: j.widget.mode || "support", ctaUrl: j.widget.ctaUrl || widget.ctaUrl, reportGate: j.widget.reportGate || "anonymous" }
+      if (typeof j.turnstileSiteKey === "string") turnstileSiteKey = j.turnstileSiteKey
       // Pull launcher display overrides out of modalConfig
       if (modalConfig.launcherMode && ['hidden', 'icon', 'full', 'custom'].includes(modalConfig.launcherMode)) {
         launcherMode = modalConfig.launcherMode
@@ -438,13 +446,20 @@ async function mount() {
       // description). By submit time the Promise is settled → zero compression delay before upload.
       compressImage: compressScreenshot,
       onSubmit: async (p) => {
+        // JTBD 1.7: on the anonymous path (default gate, no identity demanded), fetch a fresh Turnstile
+        // token when the project provisioned a site key — this replaces the dropped email gate's
+        // spam-shield role. Best-effort: getTurnstileToken resolves null on any failure and the server
+        // fail-opens when it can't verify, so a token hiccup never hard-blocks a legitimate report.
+        const needsTurnstile = !!turnstileSiteKey && widget.reportGate === "anonymous" && !identified
+        const turnstileToken = needsTurnstile ? (await getTurnstileToken(turnstileSiteKey)) || undefined : undefined
         const result = await submitFeedback(
           { backendUrl: cfg.backendUrl, projectId: cfg.projectId, firstParty, token: getToken() },
           { type: p.type as "bug" | "feature", description: p.description, pageUrl: location.href, referrer: document.referrer || "", screenshots: p.screenshots,
             context: buildWidgetContext(), replayEvents: replay.snapshot(), annotations: p.annotations,
             // Forward the gate's required email → server reporter_email. Without this, an "email"-gated
-            // project (the default for cross-origin support widgets) rejects every submit with 400.
-            reporterEmail: p.reporterEmail },
+            // project rejects the submit with 400. On the default anonymous gate this is undefined (the
+            // email ask moved to the post-submit success card).
+            reporterEmail: p.reporterEmail, turnstileToken },
           // Drive the modal's progress fill with real XHR upload bytes — overrides the modal's own
           // estimated 10 s animation so the bar reflects actual network speed.
           (pct) => {
@@ -985,7 +1000,7 @@ async function mount() {
 
 export async function submitFeedback(
   cfg: { backendUrl: string; projectId: string; firstParty: boolean; token: string },
-  payload: { type: "bug" | "feature"; description: string; pageUrl: string; referrer?: string; screenshots: string[]; context?: ReportContext; replayEvents?: unknown[]; annotations?: any; reporterEmail?: string },
+  payload: { type: "bug" | "feature"; description: string; pageUrl: string; referrer?: string; screenshots: string[]; context?: ReportContext; replayEvents?: unknown[]; annotations?: any; reporterEmail?: string; turnstileToken?: string },
   // Optional progress callback: called with 0–90 during the upload phase, leaving the final 10%
   // for server-side processing. When provided, the upload uses XMLHttpRequest instead of fetch so
   // the browser exposes real upload progress events. Omitting it (e.g. extension path) keeps the
@@ -1012,6 +1027,10 @@ export async function submitFeedback(
   // Reporter identity for the "email" gate: an end-user with no Klavity account types an email so the
   // server accepts the anonymous cross-origin report and can notify them on fix.
   if (payload.reporterEmail) fd.set("reporter_email", payload.reporterEmail)
+  // JTBD 1.7: Turnstile token for the anonymous submit path — the server verifies it (when
+  // TURNSTILE_SECRET_KEY is set) to replace the email gate's spam-shield role. Omitted when Turnstile
+  // isn't configured for the project, in which case the server's rate limits remain the only bound.
+  if (payload.turnstileToken) fd.set("cf_turnstile_token", payload.turnstileToken)
 
   // XHR path — used when the caller wants real upload-progress events (widget submit flow).
   // fetch() gives no upload progress; XHR's upload.onprogress fires as bytes hit the wire.
