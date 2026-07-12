@@ -21,7 +21,7 @@ import { createTestAccount, listTestAccounts, getTestAccountById, getTestAccount
 import { planeConfigFromForm, redactPlane, type PlaneStored } from "./lib/connection"
 import { assertSafeUrl } from "./lib/url-guard"
 import { safeFetch } from "./lib/safe-fetch"
-import { screenshotUrl, defaultPreviewPersona } from "./lib/sim-preview"
+import { screenshotUrl, authedScreenshotUrl, projectHasHeadlessAuth, defaultPreviewPersona } from "./lib/sim-preview"
 import { allow as rlAllow, record as rlRecord, count as rlCount, clear as rlClear } from "./lib/ratelimit"
 import { wrapUntrusted, UNTRUSTED_GUARD } from "./lib/prompt-safety"
 import { notifyNewSignup } from "./lib/signup-alert"
@@ -5941,10 +5941,27 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           } catch {
             return json({ error: "Couldn't reach that URL. Make sure it's a public https page." }, 400)
           }
-          let shot: { imageB64: string; mediaType: "image/jpeg" }
+          // ── KLA-264 (JTBD 3.12): behind-auth previews ─────────────────────────────
+          // For an authenticated project, reuse its encrypted AutoSim auth method (ADR-0001) to log
+          // in BEFORE the shot so the logged-in app (the highest-value surface) is previewable.
+          // Falls back to a public shot when no headless auth method is configured; credentials are
+          // decrypted at execution time only and never returned to the client or logged.
+          let shot: { imageB64: string; mediaType: "image/jpeg"; authed?: boolean }
           try {
-            shot = await screenshotUrl(pvUrl)
+            if (pvProj) {
+              shot = await authedScreenshotUrl(pvUrl, pvProj.id)
+            } else {
+              shot = await screenshotUrl(pvUrl)
+            }
           } catch {
+            // A behind-login page without a configured Test Account is the most common failure here:
+            // explain the limitation and point at Test Account setup, otherwise a generic hint.
+            if (pvProj && !(await projectHasHeadlessAuth(pvProj.id).catch(() => false))) {
+              return json({
+                error: "Couldn't preview that page. If it's behind a login, configure an AutoSim Test Account for this project so Sims can sign in before reviewing it — then try again.",
+                needsTestAccount: true,
+              }, 400)
+            }
             return json({ error: "Couldn't open that page to preview it. Try a public page." }, 400)
           }
 
