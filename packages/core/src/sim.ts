@@ -157,9 +157,17 @@ export function createSim(props: SimProps): HTMLElement {
 
 /** The component stylesheet. Self-contained; scoped under `.ksim`. */
 export const SIM_STYLES = `
-.ksim{--ksim-size:58px;position:relative;display:inline-flex;flex-direction:column;align-items:center;line-height:1;vertical-align:bottom}
-.ksim.is-animated{animation:ksim-bob 3.1s ease-in-out infinite}
+/* The Sim is a single rigid unit: head + legs must always move together.
+   isolation:isolate + transform-style:flat rasterize head and legs into ONE
+   compositing layer so the z-indexed head can never split onto its own GPU
+   layer and visually detach from the legs when an ancestor is transformed
+   (bob), focused (glow), or walked (left/top clone). */
+.ksim{--ksim-size:58px;position:relative;display:inline-flex;flex-direction:column;align-items:center;line-height:1;vertical-align:bottom;
+  isolation:isolate;transform-style:flat;backface-visibility:hidden}
+.ksim.is-animated{animation:ksim-bob 3.1s ease-in-out infinite;will-change:transform}
 @keyframes ksim-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+/* z-index:2 keeps the head above the legs WITHIN the .ksim isolation context;
+   because .ksim isolates, this no longer promotes the head to its own layer. */
 .ksim-head{position:relative;width:var(--ksim-size);height:var(--ksim-size);border-radius:50%;display:grid;place-items:center;
   box-shadow:0 8px 22px -6px rgba(0,0,0,.7);z-index:2}
 .ksim-mono{background:radial-gradient(120% 120% at 30% 22%,color-mix(in srgb,var(--ksim-persona) 72%,#fff 14%),var(--ksim-persona) 58%,color-mix(in srgb,var(--ksim-persona) 55%,#000 38%));

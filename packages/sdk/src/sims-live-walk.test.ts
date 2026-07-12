@@ -348,4 +348,81 @@ describe("SimsLive walk + outline choreography", () => {
     expect(document.querySelector(".klav-pin-marker")).toBeNull()
     expect(dockShadow()?.querySelector(".ksl-bubble")).toBeNull()
   })
+
+  it("shows a legible reviewing-status caption while a review is in flight (Issue A)", async () => {
+    SimsLive.deploy("all", [SIM])
+
+    const status = dockShadow()?.querySelector(".ksl-review-status") as HTMLElement
+    expect(status).toBeTruthy()
+    // Hidden until a review starts.
+    expect(status.classList.contains("is-on")).toBe(false)
+    expect(status.textContent).toContain("reviewing this page")
+
+    SimsLive.setReviewing(true)
+    expect(status.classList.contains("is-on")).toBe(true)
+    // Every dock slot also shows the thinking ring.
+    const slot = dockShadow()?.querySelector(".ksl-slot") as HTMLElement
+    expect(slot.classList.contains("ksl-thinking")).toBe(true)
+
+    SimsLive.setReviewing(false)
+    expect(status.classList.contains("is-on")).toBe(false)
+    expect(slot.classList.contains("ksl-thinking")).toBe(false)
+  })
+
+  it("does not promise a hard review duration in the time hint (Issue A)", () => {
+    SimsLive.deploy("all", [SIM])
+    const hint = dockShadow()?.querySelector(".ksl-time-hint") as HTMLElement
+    expect(hint).toBeTruthy()
+    // No dishonest "~5s" style number — just an honest, non-specific label.
+    expect(hint.textContent || "").not.toMatch(/\d+\s*s/i)
+    expect((hint.textContent || "").toLowerCase()).toContain("analyz")
+  })
+
+  it("clears the reviewing caption automatically once results render (Issue A)", async () => {
+    makeTarget()
+    SimsLive.deploy("all", [SIM])
+    SimsLive.setReviewing(true)
+    const status = dockShadow()?.querySelector(".ksl-review-status") as HTMLElement
+    expect(status.classList.contains("is-on")).toBe(true)
+
+    SimsLive.renderFeedback(SIM.id, SIM.name, [{
+      text: "The checkout button feels blocked.",
+      sentiment: "blocked",
+      region: { x: 120 / 1280, y: 150 / 720, w: 240 / 1280, h: 90 / 720 },
+      targetViewport: { scrollX: 0, scrollY: 0, width: 1280, height: 720 },
+    }])
+
+    expect(status.classList.contains("is-on")).toBe(false)
+    await settleMarkers()
+  })
+
+  it("clamps the expanded card within the viewport near the bottom edge (Issue C)", async () => {
+    // Target sits near the top so the card flips BELOW it; a tall card would then
+    // overflow the viewport bottom without the vertical clamp.
+    makeTarget()
+    SimsLive.deploy("all", [SIM])
+    SimsLive.renderFeedback(SIM.id, SIM.name, [{
+      text: "The checkout button is confusing and hard to trust.",
+      sentiment: "confused",
+      region: { x: 120 / 1280, y: 150 / 720, w: 240 / 1280, h: 90 / 720 },
+      targetViewport: { scrollX: 0, scrollY: 0, width: 1280, height: 720 },
+    }])
+
+    const markers = await settleMarkers()
+    markers[0].click()
+    await settleWalk()
+
+    const pin = document.querySelector(".klav-pin") as HTMLElement
+    expect(pin).toBeTruthy()
+    // Force a tall card so the clamp math is deterministic and would overflow
+    // (rect.bottom 240 + 14 + 560 = 814 > 720) without the bottom clamp.
+    Object.defineProperty(pin, "offsetHeight", { value: 560, configurable: true })
+    window.dispatchEvent(new Event("resize"))
+    await vi.advanceTimersByTimeAsync(20)
+
+    const top = parseFloat(pin.style.top)
+    // Card top must keep the whole 560px card on-screen: top <= 720 - 560 - 10.
+    expect(top).toBeLessThanOrEqual(720 - 560 - 10)
+    expect(top).toBeGreaterThanOrEqual(10)
+  })
 })

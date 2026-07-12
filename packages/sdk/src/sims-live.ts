@@ -142,6 +142,7 @@ let walkQueueIndex = 0
 let walkQueueResetTimer: ReturnType<typeof setTimeout> | null = null
 const walkQueueTimers = new Set<ReturnType<typeof setTimeout>>()
 let moreCounterEl: HTMLButtonElement | null = null
+let reviewStatusEl: HTMLElement | null = null
 let tourControlsEl: HTMLElement | null = null
 let tourPlayBtn: HTMLButtonElement | null = null
 let tourPrevBtn: HTMLButtonElement | null = null
@@ -168,6 +169,11 @@ const DOCK_CSS = `
   .ksl-sr {
     position: absolute; width: 1px; height: 1px;
     overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; pointer-events: none;
+  }
+
+  .ksl-stack {
+    display: flex; flex-direction: column; align-items: flex-end;
+    gap: 8px; pointer-events: none;
   }
 
   .ksl-dock {
@@ -211,14 +217,15 @@ const DOCK_CSS = `
   .ksl-slot.ksl-thinking   .ksl-idle { opacity: 0 !important; animation: none; }
 
   /*
-   * Thinking state — spinning SVG progress ring + time hint.
+   * Thinking state — spinning SVG progress ring + status caption.
    *
    * Layout: the .ksl-ring SVG is absolutely positioned so it orbits the Sim head
    * without changing the layout. The arc (circle with stroke-dasharray) spins once
    * every 2.4s, giving a clear "in-progress" signal.
    *
-   * Time hint: a small "~5s" pill fades in below the ring so the admin knows a
-   * review takes a few seconds (reviews typically run 3–8s in prod).
+   * Status caption: a legible "Sims are reviewing this page…" pill appears above
+   * the dock so the user clearly understands the wait (reviews run ~10–15s and we
+   * never promise a specific duration).
    */
   .ksl-ring {
     position: absolute;
@@ -243,7 +250,8 @@ const DOCK_CSS = `
   }
   @keyframes ksl-spin { to { transform: rotate(360deg); } }
 
-  /* "~5s" time hint pill — appears below the avatar while thinking */
+  /* "analyzing…" hint pill — appears below the avatar while thinking.
+     We deliberately do NOT claim a duration (reviews run ~10–15s). */
   .ksl-time-hint {
     position: absolute;
     bottom: -18px; left: 50%;
@@ -259,9 +267,51 @@ const DOCK_CSS = `
   }
   .ksl-slot.ksl-thinking .ksl-time-hint { opacity: 1; }
 
+  /*
+   * Reviewing status caption — a legible banner above the whole dock, shown
+   * while ANY review is in flight so the user knows the Sims are actively
+   * analyzing the page (the tiny per-avatar ring alone is too subtle).
+   */
+  .ksl-review-status {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    align-self: flex-end;
+    max-width: min(320px, calc(100vw - 32px));
+    margin-bottom: 2px;
+    padding: 7px 13px 7px 11px;
+    border-radius: 999px;
+    background: linear-gradient(168deg, rgba(28,22,16,.97), rgba(18,14,10,.99));
+    border: 1px solid rgba(139,92,246,.42);
+    box-shadow: 0 14px 40px rgba(0,0,0,.5), 0 0 0 4px rgba(139,92,246,.1), inset 0 1px 0 rgba(255,255,255,.06);
+    -webkit-backdrop-filter: blur(12px) saturate(140%); backdrop-filter: blur(12px) saturate(140%);
+    color: #ded6ff;
+    font-family: system-ui, -apple-system, sans-serif;
+    font-size: 12.5px; font-weight: 600; line-height: 1.2; letter-spacing: .01em;
+    white-space: nowrap; pointer-events: none;
+  }
+  .ksl-review-status.is-on {
+    display: inline-flex;
+    animation: ksl-bubble-in .32s cubic-bezier(.34,1.36,.64,1) both;
+  }
+  .ksl-review-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #a78bfa; flex-shrink: 0;
+    box-shadow: 0 0 0 0 rgba(167,139,250,.55);
+    animation: ksl-review-pulse 1.4s ease-out infinite;
+  }
+  @keyframes ksl-review-pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(167,139,250,.55); opacity: 1; }
+    70%  { box-shadow: 0 0 0 7px rgba(167,139,250,0); opacity: .85; }
+    100% { box-shadow: 0 0 0 0 rgba(167,139,250,0); opacity: 1; }
+  }
+
   /* Huddle bubble */
   .ksl-bubble {
     position: absolute; bottom: calc(100% + 10px); right: 0; width: 200px;
+    /* Cap height so a long observation near the viewport top scrolls internally
+       instead of overflowing off-screen with cut-off text. */
+    max-height: calc(100vh - 120px); overflow-y: auto;
     transform-origin: bottom center;
     background: linear-gradient(168deg,rgba(28,22,16,.97),rgba(18,14,10,.99));
     border: 1px solid #3a332b; border-left-width: 3px; border-radius: 13px;
@@ -382,6 +432,8 @@ const DOCK_CSS = `
     .ksl-slot,.ksl-bubble,.ksl-bubble.is-out { animation:none !important; opacity:1; transform:none; }
     .ksl-idle { animation:none !important; opacity:.6; }
     .ksl-ring circle { animation:none !important; }
+    .ksl-review-status.is-on { animation:none !important; }
+    .ksl-review-dot { animation:none !important; }
   }
 `
 
@@ -496,6 +548,11 @@ const EXT_CSS = `
     position: fixed;
     z-index: 2147483642;
     width: 224px;
+    /* Never taller than the viewport; positioning clamps keep the whole card
+       on-screen, and this is only a last-resort cap for genuinely huge cards. */
+    max-height: calc(100vh - 20px);
+    overflow-y: auto;
+    box-sizing: border-box;
     background: linear-gradient(168deg, rgba(22,17,12,.98), rgba(14,11,8,.99));
     border: 1px solid #3a332b;
     border-left-width: 3px;
@@ -868,11 +925,29 @@ function deploy(
   announcer.setAttribute('aria-live', 'polite'); announcer.setAttribute('aria-atomic', 'true')
   shadow.appendChild(announcer)
 
+  // Vertical stack: reviewing-status caption sits ABOVE the dock.
+  const stack = document.createElement('div')
+  stack.className = 'ksl-stack'
+  shadow.appendChild(stack)
+
+  // Reviewing status caption (hidden until setReviewing(true)).
+  reviewStatusEl = document.createElement('div')
+  reviewStatusEl.className = 'ksl-review-status'
+  reviewStatusEl.setAttribute('role', 'status')
+  reviewStatusEl.setAttribute('aria-live', 'polite')
+  const reviewDot = document.createElement('span')
+  reviewDot.className = 'ksl-review-dot'; reviewDot.setAttribute('aria-hidden', 'true')
+  const reviewText = document.createElement('span')
+  reviewText.className = 'ksl-review-text'
+  reviewText.textContent = 'Sims are reviewing this page…'
+  reviewStatusEl.append(reviewDot, reviewText)
+  stack.appendChild(reviewStatusEl)
+
   // Dock
   dockEl = document.createElement('div')
   dockEl.className = 'ksl-dock'
   dockEl.setAttribute('role', 'region'); dockEl.setAttribute('aria-label', 'Sims — live feedback')
-  shadow.appendChild(dockEl)
+  stack.appendChild(dockEl)
 
   const closeAll = document.createElement('button')
   closeAll.className = 'ksl-close-all'
@@ -969,9 +1044,10 @@ function deploy(
     ringEl.appendChild(circEl)
     slot.appendChild(ringEl)
 
-    // "~5s" time-hint pill — gives the user a sense of expected wait
+    // "analyzing…" hint pill — honest, non-specific (reviews run ~10–15s; we
+    // never promise a hard number we can't guarantee).
     const hint = document.createElement('span')
-    hint.className = 'ksl-time-hint'; hint.textContent = '~5s'
+    hint.className = 'ksl-time-hint'; hint.textContent = 'analyzing…'
     hint.setAttribute('aria-hidden', 'true'); slot.appendChild(hint)
 
     const idle = document.createElement('span')
@@ -987,6 +1063,9 @@ function deploy(
 
 function setReviewing(reviewing: boolean): void {
   simSlots.forEach(({ avatarEl }) => avatarEl.classList.toggle('ksl-thinking', reviewing))
+  // Clear, legible caption above the dock so the user knows the Sims are
+  // actively analyzing the page while the review is in flight (~10–15s).
+  reviewStatusEl?.classList.toggle('is-on', reviewing)
 }
 
 // ── Walk choreography helpers ─────────────────────────────────────────────────
@@ -1319,12 +1398,18 @@ function createExpandedChrome(ann: Annotation): void {
     halo.style.width = `${rect.width + 10}px`
     halo.style.height = `${rect.height + 10}px`
 
-    // Pin bubble position — above element, clamped to viewport
-    const PIN_W = 224, PIN_H_EST = Math.max(112, pin.offsetHeight || 150)
+    // Pin bubble position — prefer above the element, flip below when there's no
+    // room, then ALWAYS clamp to the viewport so the full card text is visible
+    // without scrolling (the primary goal). Only genuinely oversized cards fall
+    // back to an internal scroll via the max-height CSS cap below.
+    const PIN_W = 224
+    const pinHeight = Math.max(112, pin.offsetHeight || 150)
     let bLeft = rect.left
-    let bTop = rect.top - PIN_H_EST - 14
+    let bTop = rect.top - pinHeight - 14
     bLeft = Math.max(10, Math.min(window.innerWidth - PIN_W - 10, bLeft))
     if (bTop < 10) bTop = rect.bottom + 14   // flip below if no space above
+    // Clamp vertically so the whole card stays on-screen (fixes bottom cut-off).
+    bTop = Math.max(10, Math.min(bTop, window.innerHeight - pinHeight - 10))
     pin.style.left = `${bLeft}px`
     pin.style.top = `${bTop}px`
   }
@@ -1572,6 +1657,10 @@ function renderFeedback(simId: string, simName: string, observations: LiveObserv
   }
   if (!observations.length) return
 
+  // Results are arriving — drop the "reviewing…" caption + thinking rings even
+  // if setReviewing(false) hasn't fired yet, so the UI never lies about state.
+  setReviewing(false)
+
   // Keep the on-page layer action-oriented. Non-actionable observations still
   // persist through the review pipeline, but they do not create page chrome.
   const toWalk: LiveObservation[] = []
@@ -1611,6 +1700,7 @@ function undeploy(): void {
   pendingAnnotations.forEach((pending) => pending.cleanup?.())
   pendingAnnotations.clear()
   moreCounterEl = null
+  reviewStatusEl = null
 
   // 3. Remove all in-transit walkers immediately
   walkers.forEach(w => w.remove()); walkers.clear()
