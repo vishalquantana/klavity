@@ -55,6 +55,8 @@ import { normalizeTrailViewport } from "./lib/trails-viewport"
 import { seedDemoTrails } from "./lib/trails-demo-seed"
 import { listExpectations, getExpectation, setExpectationStatus, setExpectationEnforced, demoteExpectationToValidated, setExpectationAwaitingTrail, resumeAwaitingTrailExpectations, upsertExpectationFromTicket } from "./lib/expectations-db"
 import { pickDefaultTrail, type TrailForPick } from "./lib/expectations"
+import { enrichExpectation } from "./lib/expectations-enrich"
+import { getTrailStepById } from "./lib/trails"
 import { nearMissSummary } from "./lib/expectations-nearmiss"
 import { createLabel, listLabels, updateLabel, deleteLabel, attachLabel, detachLabel, labelsForFeedback, labelsForFeedbackBatch, setSuggestedLabels, getSuggestedLabels } from "./lib/db"
 import { suggestLabelsForFeedback } from "./lib/label-suggest"
@@ -3703,6 +3705,45 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const projE = await resolveProject(meE, url.searchParams.get("project"))
       if (!projE) return json({ error: "no project" }, 404)
 
+      // B.10 (KLA-250): shared source/step lookups for enrichExpectation, used by BOTH the list and
+      // the single-row GET so cards render Trail name + step position (not raw ts_ UUIDs) and — for
+      // Seen-once rows — a progress hint. Every lookup is best-effort (returns null on any error).
+      const expEnrichLookups = {
+        getReport: async (id: string) => {
+          try {
+            const fb = await feedbackById(projE.id, id)
+            if (!fb) return null
+            // feedbackById doesn't carry the grounded quote — fetch it directly (best-effort).
+            let groundedQuote: string | null = null
+            try {
+              const q = await db!.execute({ sql: "SELECT source_quote FROM feedback WHERE project_id=? AND id=?", args: [projE.id, id] })
+              if (q.rows.length) groundedQuote = (q.rows[0] as any).source_quote != null ? String((q.rows[0] as any).source_quote) : null
+            } catch { /* column/table absent — no quote */ }
+            return { title: fb.observation ?? null, urlPath: fb.urlPath ?? null, groundedQuote }
+          } catch { return null }
+        },
+        getFinding: async (id: string) => {
+          try {
+            const r = await db!.execute({ sql: "SELECT title, ground_quote FROM findings WHERE project_id=? AND id=?", args: [projE.id, id] })
+            if (!r.rows.length) return null
+            const row = r.rows[0] as any
+            return { title: row.title != null ? String(row.title) : null, urlPath: null,
+              groundedQuote: row.ground_quote != null ? String(row.ground_quote) : null }
+          } catch { return null }
+        },
+        getStep: async (stepId: string) => {
+          try {
+            const step = await getTrailStepById(projE.id, stepId)
+            if (!step) return null
+            const trail = await getTrail(projE.id, step.trailId).catch(() => null)
+            const steps = await listTrailSteps(projE.id, step.trailId).catch(() => [])
+            const position = steps.length ? (steps.findIndex((s) => s.id === stepId) + 1) || null : null
+            return { trailId: step.trailId, trailName: trail?.name ?? null,
+              position: position && position > 0 ? position : null, total: steps.length || null }
+          } catch { return null }
+        },
+      }
+
       // GET /api/expectations?project=&status= — list expectations for the project, optionally filtered.
       if (req.method === "GET" && path === "/api/expectations") {
         const rawStatus = url.searchParams.get("status")
@@ -3714,7 +3755,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const { pick } = await trailsForEnforce(projE.id)
           if (pick.length) await resumeAwaitingTrailExpectations(db!, projE.id, pick)
         } catch (e) { console.warn("[expectations] awaiting-trail resume skipped:", String(e)) }
-        return json({ expectations: await listExpectations(db!, projE.id, status) })
+        const rows = await listExpectations(db!, projE.id, status)
+        // B.10: enrich each row so the Guards board shows Trail name + step position and progress
+        // hints without a follow-up fetch per card. Best-effort — never let one bad row break the list.
+        const enrichedRows = await Promise.all(rows.map((r) => enrichExpectation(r, expEnrichLookups).catch(() => r)))
+        return json({ expectations: enrichedRows })
       }
 
       // GET /api/expectations/near-misses?project=&days= — KLA-251 (B.11): cross-source-matching
@@ -3729,14 +3774,18 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return json({ summary: await nearMissSummary(db!, projE.id, { sinceMs }) })
       }
 
-      // GET /api/expectations/:id — fetch a single expectation with full source_refs (enriched).
-      // Returns the expectation row; callers can cross-reference source IDs against /api/feedback.
+      // GET /api/expectations/:id — fetch a single expectation, TRULY enriched (B.10 / KLA-250).
+      // Hydrates each source ref into a linkable report/finding (title, urlPath, grounded quote),
+      // resolves the enforced guard's step id → its Trail name + step position ("step N of M", never
+      // a raw ts_ UUID, consistent with B.2), and — for a Seen-once (candidate) row — the plain
+      // progress-to-Confirmed hint. Every lookup is best-effort so the route stays a stable 200.
       const singleExpMatch = path.match(/^\/api\/expectations\/([^/]+)$/)
       if (req.method === "GET" && singleExpMatch && !singleExpMatch[1].includes("/")) {
         const expId = singleExpMatch[1]
         const exp = await getExpectation(db!, expId)
         if (!exp || exp.projectId !== projE.id) return json({ error: "not found" }, 404)
-        return json({ expectation: exp })
+        const enriched = await enrichExpectation(exp, expEnrichLookups)
+        return json({ expectation: enriched })
       }
 
       // POST /api/expectations/:id/enforce — draft an assertion (calls LLM). Persists nothing.

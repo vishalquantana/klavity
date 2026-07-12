@@ -195,6 +195,15 @@ body[data-view="recurring"] [data-view]:not([data-view~="recurring"]){display:no
 .ec-badge.recur{background:rgba(217,131,36,.16);color:var(--amber)}
 .ec-badge.enforced-ok{background:rgba(15,157,107,.14);color:var(--green)}
 .exp-card .ec-meta{font-family:var(--mono);font-size:11px;color:var(--paper-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* B.10: progress hint on Seen-once cards + enriched source chips / grounded quote / Trail reference */
+.exp-card .ec-progress{display:flex;align-items:flex-start;gap:5px;font-size:11px;line-height:1.35;color:var(--amber);margin-top:6px}
+.exp-card .ec-progress svg{flex-shrink:0;margin-top:1px}
+.exp-card .ec-quote{font-size:11px;line-height:1.4;color:var(--paper-faint);font-style:italic;margin-top:7px;border-left:2px solid var(--line);padding-left:8px}
+.exp-card .ec-sources{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px}
+.exp-card .ec-src-chip{display:inline-flex;align-items:center;gap:4px;font-family:var(--mono);font-size:9px;letter-spacing:.05em;text-transform:uppercase;padding:3px 7px;border-radius:20px;background:var(--ink-2);border:1px solid var(--line);color:var(--paper-faint);text-decoration:none;transition:background .15s ease,color .15s ease}
+a.exp-card .ec-src-chip,.exp-card a.ec-src-chip{cursor:pointer}
+.exp-card a.ec-src-chip:hover{background:rgba(99,102,241,.14);color:var(--indigo)}
+.exp-card .ec-trail-ref{display:inline-flex;align-items:center;gap:4px;font-family:var(--mono);font-size:9px;letter-spacing:.05em;text-transform:uppercase;padding:3px 8px;border-radius:20px;background:rgba(99,102,241,.1);color:var(--indigo)}
 .exp-card .ec-acts{margin-top:10px}
 .exp-card .ec-confirm{margin-top:10px;background:var(--ink-2);border:1px solid var(--line);border-radius:10px;padding:11px 12px}
 .exp-card .ec-confirm .cc-target{font-family:var(--mono);font-size:10px;color:var(--paper-faint);margin-bottom:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -1453,6 +1462,9 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     <button class="nv" data-go="tickets"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20v-9" /> <path d="M14 7a4 4 0 0 1 4 4v3a6 6 0 0 1-12 0v-3a4 4 0 0 1 4-4z" /> <path d="M14.12 3.88 16 2" /> <path d="M21 21a4 4 0 0 0-3.81-4" /> <path d="M21 5a4 4 0 0 1-3.55 3.97" /> <path d="M22 13h-4" /> <path d="M3 21a4 4 0 0 1 3.81-4" /> <path d="M3 5a4 4 0 0 0 3.55 3.97" /> <path d="M6 13H2" /> <path d="m8 2 1.88 1.88" /> <path d="M9 7.13V6a3 3 0 1 1 6 0v1.13" /></svg></span>Tickets <span class="ct" id="navTicketCount"></span></button>
     <button class="nv" data-go="triage"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg></span>New reports <span class="ct" id="navTriageCount"></span></button>
     <button class="nv" data-go="recurring"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path d="M8 16H3v5" /></svg></span>Recurring <span class="ct" id="navRecurringCount"></span></button>
+    <!-- Guards (B.10): the "things Klavity re-checks forever because they broke once" board, promoted
+         out of AutoSims to its own top-level view so a Snap-only customer can reach it directly. -->
+    <button class="nv" data-go="guards"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" /></svg></span>Guards <span class="ct" id="navGuardsCount"></span></button>
     <button class="nv" data-go="team"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /> <path d="M16 3.128a4 4 0 0 1 0 7.744" /> <path d="M22 21v-2a4 4 0 0 0-3-3.87" /> <circle cx="9" cy="7" r="4" /></svg></span>Team <span class="ct" id="navTeamCount"></span></button>
     <button class="nv" data-go="settings"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" /> <circle cx="12" cy="12" r="3" /></svg></span>Settings</button>
     <!-- App version pinned to the sidebar footer. The placeholder below is replaced
@@ -1629,6 +1641,8 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         <div class="tkt-view-toggle"><button class="tkt-vbtn" id="tktListBtn" title="List view">&#9776; List</button><button class="tkt-vbtn active" id="tktBoardBtn" title="Board view">&#8862; Board</button></div>
         <div class="kb-search"><span class="mag">&#8981;</span><input id="kanbanSearch" placeholder="Search tickets…" autocomplete="off" /></div>
         <button class="btn btn-ghost btn-sm" id="manageLabelsBtn" type="button" title="Manage ticket labels" style="display:none">🏷 Labels</button>
+        <!-- B.10: entry point to the Guards board (things Klavity re-checks forever because they broke once). -->
+        <button class="btn btn-ghost btn-sm" id="ticketsGuardsBtn" type="button" title="Open the Guards board" onclick="klavSetView&&klavSetView('guards')">Guards</button>
         <button class="btn btn-indigo btn-sm" id="newTicketBtn" type="button" title="Create a new ticket">+ New ticket</button>
       </div>
     <!-- Manage Labels modal (KLA-174) -->
@@ -2121,27 +2135,42 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
             <div class="list" id="queue"></div>
           </div>
         </div>
-        <div style="margin-top:22px;margin-bottom:8px;display:flex;align-items:baseline;gap:10px">
-          <h2 style="font-family:var(--display);font-weight:450;font-size:22px;letter-spacing:-.02em">Expectations</h2>
-          <span style="color:var(--paper-faint);font-size:14px">Discovered requirements — enforce to crystallise into an AutoSim step</span>
+        <!-- B.10: the guards board moved to its own top-level "Guards" view so a Snap-only customer
+             can reach it without entering AutoSims. This is a lightweight pointer from AutoSims. -->
+        <div style="margin-top:22px;margin-bottom:8px;display:flex;align-items:center;gap:10px">
+          <h2 style="font-family:var(--display);font-weight:450;font-size:22px;letter-spacing:-.02em">Guards</h2>
+          <span style="color:var(--paper-faint);font-size:14px">The things Klavity re-checks forever because they broke once.</span>
+          <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="klavSetView&&klavSetView('guards')">Open Guards board →</button>
         </div>
-        <div class="exp-board">
-          <div class="exp-col">
-            <h2>Candidate <span class="count" id="expCandCount">0</span></h2>
-            <div id="expCand"></div>
-          </div>
-          <div class="exp-col">
-            <h2>Validated <span class="count" id="expValidCount">0</span></h2>
-            <div id="expValid"></div>
-          </div>
-          <div class="exp-col">
-            <h2>Enforced <span class="count" id="expEnfCount">0</span></h2>
-            <div id="expEnf"></div>
-          </div>
-          <div class="exp-col">
-            <h2>Retired <span class="count" id="expRetCount">0</span></h2>
-            <div id="expRet"></div>
-          </div>
+      </div>
+    </div>
+
+    <!-- ── Guards view (B.10 / KLA-250) — promoted out of AutoSims. A guard is a thing Klavity
+         re-checks forever because it broke once. Columns are plain-language lifecycle stages. ── -->
+    <div class="card full" data-view="guards">
+      <div style="margin-bottom:14px">
+        <h2 style="font-family:var(--display);font-weight:450;font-size:22px;letter-spacing:-.02em;display:flex;align-items:center;gap:8px">
+          <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" /></svg>
+          Guards
+        </h2>
+        <p style="color:var(--paper-faint);font-size:14px;margin-top:4px">A guard is a thing Klavity re-checks forever because it broke once. As reports and Sims agree on an issue, it moves from <b>Seen once</b> to <b>Confirmed</b>, then you turn it into a <b>Guarded</b> AutoSim check that catches it if it ever comes back.</p>
+      </div>
+      <div class="exp-board">
+        <div class="exp-col">
+          <h2>Seen once <span class="count" id="expCandCount">0</span></h2>
+          <div id="expCand"></div>
+        </div>
+        <div class="exp-col">
+          <h2>Confirmed <span class="count" id="expValidCount">0</span></h2>
+          <div id="expValid"></div>
+        </div>
+        <div class="exp-col">
+          <h2>Guarded <span class="count" id="expEnfCount">0</span></h2>
+          <div id="expEnf"></div>
+        </div>
+        <div class="exp-col">
+          <h2>Retired <span class="count" id="expRetCount">0</span></h2>
+          <div id="expRet"></div>
         </div>
       </div>
     </div>
@@ -2639,6 +2668,18 @@ async function renderSimMatches() {
   } catch (e) { /* non-fatal */ }
 }
 
+// B.10: map an internal expectation status → the user-facing Guards stage word. Users never see
+// "candidate"/"validated"/"enforced"; they see "Seen once"/"Confirmed"/"Guarded".
+function guardStatusLabel(status) {
+  switch (status) {
+    case "candidate": return "Seen once"
+    case "validated": return "Confirmed"
+    case "enforced":  return "Guarded"
+    case "retired":   return "Retired"
+    default:          return status ? String(status) : ""
+  }
+}
+
 // ── Recurring Issues view — lazy-loaded when the tab is first activated ──
 let _recurringLoaded = false
 async function renderRecurringIssues() {
@@ -2678,9 +2719,10 @@ async function renderRecurringIssues() {
       if (lastSeen && lastSeen !== firstSeen) metaParts.push("last seen " + lastSeen)
       if (item.regressed && item.resolvedAt) metaParts.push("resolved " + ago(item.resolvedAt) + " → resurfaced")
       if (item.citedSimName) metaParts.push("filed by " + esc(item.citedSimName))
-      // B.6: "expectation: validated" is no longer a dead end — it links to the guard/Expectations board.
+      // B.10: "guard: Confirmed" links to the Guards board (its own view). Never expose the internal
+      // status words (candidate/validated/enforced) — map them to the plain-language guard stages.
       if (item.expectationStatus && item.expectationStatus !== "candidate") {
-        metaParts.push('expectation: <a class="ri-exp-link" href="#settings" onclick="riGoGuard(event)" title="Open the Expectations board">' + esc(item.expectationStatus) + '</a>')
+        metaParts.push('guard: <a class="ri-exp-link" href="#guards" onclick="riGoGuard(event)" title="Open the Guards board">' + esc(guardStatusLabel(item.expectationStatus)) + '</a>')
       }
       const fid = item.feedbackId ? String(item.feedbackId) : ""
       // B.6: rows are actionable — click-through to the ticket, and a "Guard this" that opens the
@@ -2720,11 +2762,12 @@ function riOpenTicket(ev) {
       go()
     }).catch(go)
 }
-// B.6: the "expectation: validated" label links to the guard/Expectations board (Settings view).
+// B.10: the "guard: confirmed" label links to the Guards board (its own top-level view now).
 function riGoGuard(ev) {
   ev.preventDefault()
-  const nv = document.querySelector('.side .nv[data-go="settings"]'); if (nv) nv.click()
-  if (typeof loadExpectations === "function") loadExpectations()
+  const nv = document.querySelector('.side .nv[data-go="guards"]'); if (nv) nv.click()
+  else if (typeof klavSetView === "function") klavSetView("guards")
+  if (typeof window.loadExpectations === "function") window.loadExpectations()
 }
 
 // ── B.6 unified Regression alarm banner ──────────────────────────────────────────────
@@ -3872,9 +3915,9 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
           guardFixBtn.disabled = false
           guardFixBtn.innerHTML = kicon('shield') + " Guarded"
           guardFixBtn.classList.add("btn-indigo")
-          showTktMsg(detailEl, "Guard created — visible on the Expectations board.", false)
-          // Refresh the expectations board so the new guard appears immediately.
-          if (typeof loadExpectations === "function") loadExpectations()
+          showTktMsg(detailEl, "Guard created — visible on the Guards board.", false)
+          // Refresh the Guards board so the new guard appears immediately.
+          if (typeof window.loadExpectations === "function") window.loadExpectations()
         } else {
           guardFixBtn.disabled = false
           guardFixBtn.innerHTML = kicon('shield') + " Guard this fix"
@@ -6475,7 +6518,7 @@ load()
 <script>
 // ===== sidebar view switching =====
 (function(){
-  var VIEWS=['overview','snap','triage','sims','autosims','tickets','team','settings','recurring'];
+  var VIEWS=['overview','snap','triage','sims','autosims','tickets','team','settings','recurring','guards'];
   function sidebarNavs(){
     return [].slice.call(document.querySelectorAll('.side .nv'));
   }
@@ -6504,6 +6547,7 @@ load()
     if(v==='autosims'){if(typeof window.initTrailsView==='function')window.initTrailsView();}
     if(v==='tickets'){if(typeof renderTicketsView==='function')renderTicketsView();}
     if(v==='snap'){if(typeof window.renderSnapView==='function')window.renderSnapView();}
+    if(v==='guards'){if(typeof window.loadExpectations==='function')window.loadExpectations();}
   }
   normalizeSidebar();
   var side=document.querySelector('.side');
@@ -7995,6 +8039,38 @@ load()
     if((c.recurrence||0)>1)html+='<span class="ec-badge recur">×'+esc(c.recurrence)+"</span>"
     return html
   }
+  // B.10: client-side mirror of lib/expectations.validationProgress — the shortest plain-language
+  // path to Confirmed for a Seen-once card, derived from the SAME (snap && sim) || recurrence>=3 rule.
+  function expProgressHint(corr){
+    var c={snap:!!(corr&&corr.snap),sim:!!(corr&&corr.sim),recurrence:Math.max(0,Number(corr&&corr.recurrence||0))}
+    var n=3
+    if((c.snap&&c.sim)||c.recurrence>=n)return null // already qualifies — no hint needed
+    var moreSightings=Math.max(1,n-c.recurrence)
+    var sTail=moreSightings+" more sighting"+(moreSightings===1?"":"s")
+    var haveOne=c.snap!==c.sim
+    if(haveOne){var missing=c.snap?"a Sim":"a human report";return "needs a second source ("+missing+") — or "+sTail}
+    return "needs a second source (a human report and a Sim) — or "+sTail
+  }
+  // B.10: render the enriched source refs (from the enriched GET) as click-through chips linking to
+  // the originating report / AutoSim finding, plus the grounded verbatim quote when captured.
+  function expSourcesHtml(exp){
+    var srcs=(exp&&exp.sources)||[];if(!srcs.length)return""
+    var quote="";var chips=[]
+    srcs.forEach(function(s){
+      if(!quote&&s.groundedQuote)quote=String(s.groundedQuote)
+      var label=s.kind==="report"?"report":(s.kind==="sim"?"Sim":"finding")
+      var ic=s.kind==="report"?kicon("message-circle",{size:10}):kicon("bot",{size:10})
+      if(s.href&&s.resolved){
+        chips.push('<a class="ec-src-chip" href="'+esc(s.href)+'" onclick="expGoSource(event)" title="'+esc(s.title||label)+'">'+ic+' '+esc(label)+'</a>')
+      }else{
+        chips.push('<span class="ec-src-chip" title="'+esc(s.title||label)+'">'+ic+' '+esc(label)+'</span>')
+      }
+    })
+    var out=""
+    if(quote)out+='<div class="ec-quote" title="Verbatim from the source">&ldquo;'+esc(quote.length>140?quote.slice(0,140)+"…":quote)+'&rdquo;</div>'
+    if(chips.length)out+='<div class="ec-sources">'+chips.join("")+'</div>'
+    return out
+  }
   function expCardHtml(exp){
     var meta=[exp.area,exp.urlPath].filter(Boolean).join(" · ")
     var badges=renderExpBadges(exp.corroboration)
@@ -8003,7 +8079,21 @@ load()
     if(meta)html+='<div class="ec-meta">'+esc(meta)+"</div>"
     // KLA-242: show "from ticket" badge when guard was created via "Guard this fix"
     if(exp.sourceTicketId)html+='<div class="ec-meta" style="margin-top:4px">'+kicon('ticket',{size:11})+' from closed ticket</div>'
+    // B.10: progress-to-Confirmed hint on Seen-once cards, so the invisible auto-validate rule is legible.
+    if(exp.status==="candidate"){
+      var hint=(exp.progress&&exp.progress.hint&&!exp.progress.ready)?exp.progress.hint:expProgressHint(exp.corroboration)
+      if(hint)html+='<div class="ec-progress" title="How this becomes a Confirmed guard">'+kicon("clock",{size:11})+' '+esc(hint)+'</div>'
+    }
+    // B.10: enriched source evidence — links to the originating report/finding + grounded quote.
+    html+=expSourcesHtml(exp)
     return html
+  }
+  // B.10: open a card's source (report → Tickets view; finding → AutoSims view).
+  function expGoSource(ev){
+    ev.preventDefault()
+    var href=ev.currentTarget&&ev.currentTarget.getAttribute("href")||""
+    var v=href.indexOf("#tickets")>=0?"tickets":(href.indexOf("#autosims")>=0?"autosims":null)
+    if(v&&typeof klavSetView==="function")klavSetView(v)
   }
   // KLA-243: saves badge html for enforced cards
   function savesBadgeHtml(savesCount){
@@ -8181,9 +8271,9 @@ load()
     $("expEnfCount").textContent=String(enf.length)
     $("expRetCount").textContent=String(ret.length)
     function emptyExp(text){return'<div class="empty"><p>'+esc(text)+"</p></div>"}
-    var candEl=$("expCand");candEl.innerHTML=cand.length?"":emptyExp("No candidates yet.")
+    var candEl=$("expCand");candEl.innerHTML=cand.length?"":emptyExp("Nothing seen yet — issues land here the first time a report or a Sim flags them.")
     cand.forEach(function(exp){var card=document.createElement("div");card.className="exp-card";card.innerHTML=expCardHtml(exp)+'<div class="ec-msg"></div>';candEl.appendChild(card)})
-    var validEl=$("expValid");validEl.innerHTML=valid.length?"":emptyExp("No validated expectations yet.")
+    var validEl=$("expValid");validEl.innerHTML=valid.length?"":emptyExp("Nothing confirmed yet — an issue moves here once a second source agrees, or it recurs enough.")
     valid.forEach(function(exp){
       var card=document.createElement("div");card.className="exp-card";card._exp=exp
       if(exp.awaitingTrail){
@@ -8202,15 +8292,23 @@ load()
         card.querySelector("[data-retire]").onclick=function(){retireExpectation(exp.id,card)}
       }
     })
-    var enfEl=$("expEnf");enfEl.innerHTML=enf.length?"":emptyExp("Nothing enforced yet.")
+    var enfEl=$("expEnf");enfEl.innerHTML=enf.length?"":emptyExp("Nothing guarded yet — confirm an issue, then guard it so an AutoSim catches it if it ever comes back.")
     enf.forEach(function(exp){
       var card=document.createElement("div");card.className="exp-card";card._exp=exp
-      // KLA-243: show saves counter (how many times this guard caught a regression) next to enforced badge
+      // KLA-243: show saves counter (how many times this guard caught a regression) next to guarded badge
       var savesBadge=savesBadgeHtml(exp.savesCount||0)
-      // B.5: friendlier "guard step added" label; keep the raw step id on hover (title) for debugging.
-      card.innerHTML=expCardHtml(exp)+(exp.enforcedStepId
-        ?'<div class="ec-badges" style="margin-top:8px"><span class="ec-badge enforced-ok">enforced</span>'+savesBadge+'<span class="ec-meta" style="margin-left:4px;font-size:10px" title="'+esc(exp.enforcedStepId)+'">guard step added</span></div>'
-        :'<div class="ec-badges" style="margin-top:8px"><span class="ec-badge enforced-ok">enforced</span>'+savesBadge+"</div>")
+      // B.10: show the guard's Trail NAME + step POSITION ("Checkout · step 3 of 5"), not the raw ts_
+      // UUID (consistent with B.2). Falls back to a plain "guard added" chip when the Trail is unresolved.
+      var lt=exp.linkedTrail
+      var trailLbl=""
+      if(lt&&lt.trailName){
+        var posTxt=(lt.stepPosition&&lt.stepCount)?(" · step "+lt.stepPosition+" of "+lt.stepCount):(lt.stepPosition?(" · step "+lt.stepPosition):"")
+        trailLbl='<span class="ec-trail-ref" title="This guard runs as an assert step in this AutoSim">'+kicon("map-pin",{size:11})+' '+esc(lt.trailName)+posTxt+'</span>'
+      }else if(exp.enforcedStepId){
+        trailLbl='<span class="ec-meta" style="margin-left:4px;font-size:10px">guard step added</span>'
+      }
+      card.innerHTML=expCardHtml(exp)
+        +'<div class="ec-badges" style="margin-top:8px"><span class="ec-badge enforced-ok">guarded</span>'+savesBadge+trailLbl+"</div>"
       // B.9: enforced guards get an edit-in-place / un-enforce / retire trio. Edit updates the assert
       // step without recreating it; Un-enforce demotes to validated (keeps history); Retire clears it.
       card.innerHTML+='<div class="ec-acts" style="margin-top:10px;display:flex;gap:7px;flex-wrap:wrap">'
@@ -8227,10 +8325,10 @@ load()
     ret.forEach(function(exp){
       var card=document.createElement("div");card.className="exp-card retired";card._exp=exp
       // B.9: show the retired state + an explainer. If corroboration is still growing, a fresh signal
-      // will resurrect this row back to Candidate (nextStatus), so we tell the user that's possible.
+      // will resurrect this row back to Seen once (nextStatus), so we tell the user that's possible.
       card.innerHTML=expCardHtml(exp)
         +'<div class="ec-badges" style="margin-top:8px"><span class="ec-badge retired">retired</span>'+savesBadgeHtml(exp.savesCount||0)+'</div>'
-        +'<div class="ec-explain">Check removed; history kept. If this issue resurfaces (a fresh Snap or Sim signal), it comes back as a Candidate.</div>'
+        +'<div class="ec-explain">Check removed; history kept. If this issue resurfaces (a fresh report or Sim signal), it comes back to Seen once.</div>'
         +'<div class="ec-msg"></div>'
       retEl.appendChild(card)
     })
@@ -8651,6 +8749,9 @@ load()
   }
   // expose openWizard for inline onclick="openWizard()" in onboarding HTML
   window.openWizard=openWizard
+  // B.10: the Guards board is its own top-level view now — expose its loader so the sidebar's
+  // setView('guards') (a different script block) can populate it on activation.
+  window.loadExpectations=loadExpectations
 })();
 </script>
 <script>
