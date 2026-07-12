@@ -91,6 +91,10 @@ export const linearConnector: Connector = {
     // Wrapped per-attachment so a failure NEVER blocks issue creation (the body keeps the
     // permanent fallback link). No-op when there are no attachments (unchanged behavior).
     let description = ticket.body
+    // JTBD 2.16: Linear applies labels by UUID (labelIds), not by name, so mapping Klavity's
+    // label names onto native Linear labels needs a version-dependent lookup. Carry the
+    // classification in the issue description instead so the exported ticket keeps its labels.
+    if (ticket.labels?.length) description += `\n\nLabels: ${ticket.labels.join(", ")}`
     for (const att of ticket.attachments ?? []) {
       try {
         const assetUrl = await uploadAttachment(api_key, att)

@@ -11,6 +11,9 @@ const TICKET = {
   klavityUrl: "https://klavity.in/dashboard",
 }
 
+// JTBD 2.16: a payload carrying Klavity labels, used to assert exports keep the classification.
+const TICKET_WITH_LABELS = { ...TICKET, labels: ["Regression", "UX polish"] }
+
 // ── Registry ──────────────────────────────────────────────────────────────────
 
 test("registry exposes all five types with fields", () => {
@@ -379,4 +382,77 @@ test("jira createIssue blocks cloud-metadata host without fetching", async () =>
     })
   ).rejects.toThrow()
   expect(fetched).toBe(false)
+})
+
+// ── JTBD 2.16: exports carry Klavity labels ─────────────────────────────────────
+// A ticket exported to a connector must arrive with its Klavity labels so the external
+// issue keeps the classification. Each connector surfaces labels in its idiomatic form:
+// webhook = structured array, GitHub/Jira = native labels field, Plane/Linear = description line.
+
+test("webhook createIssue carries labels in the structured ticket payload", async () => {
+  const calls: any[] = []
+  globalThis.fetch = mock(async (u: any, o: any) => {
+    calls.push([u, o]); return new Response(JSON.stringify({ id: "wh_1" }), { status: 200 })
+  }) as any
+  await getConnector("webhook")!.createIssue(TICKET_WITH_LABELS, { url: "https://webhook.site/abc" })
+  const body = JSON.parse(calls[0][1].body)
+  expect(body.ticket.labels).toEqual(["Regression", "UX polish"])
+})
+
+test("plane createIssue carries labels in the issue description_html", async () => {
+  const calls: any[] = []
+  globalThis.fetch = mock(async (u: any, o: any) => {
+    calls.push([u, o]); return new Response(JSON.stringify({ id: "issue-1", sequence_id: 7 }), { status: 201 })
+  }) as any
+  await getConnector("plane")!.createIssue(TICKET_WITH_LABELS, {
+    host: "https://api.plane.so", workspace: "ws", project_id: "p", token: "t",
+  })
+  const body = JSON.parse(calls[0][1].body)
+  expect(body.description_html).toContain("Labels: Regression, UX polish")
+})
+
+test("github createIssue attaches labels natively as a string array", async () => {
+  const calls: any[] = []
+  globalThis.fetch = mock(async (u: any, o: any) => {
+    calls.push([u, o]); return new Response(JSON.stringify({ number: 3, html_url: "https://gh/i/3" }), { status: 201 })
+  }) as any
+  await getConnector("github")!.createIssue(TICKET_WITH_LABELS, { owner: "o", repo: "r", token: "t" })
+  const body = JSON.parse(calls[0][1].body)
+  expect(body.labels).toEqual(["Regression", "UX polish"])
+})
+
+test("github createIssue omits labels field when there are none", async () => {
+  const calls: any[] = []
+  globalThis.fetch = mock(async (u: any, o: any) => {
+    calls.push([u, o]); return new Response(JSON.stringify({ number: 4, html_url: "https://gh/i/4" }), { status: 201 })
+  }) as any
+  await getConnector("github")!.createIssue(TICKET, { owner: "o", repo: "r", token: "t" })
+  const body = JSON.parse(calls[0][1].body)
+  expect(body.labels).toBeUndefined()
+})
+
+test("jira createIssue attaches labels natively, collapsing spaces to underscores", async () => {
+  const calls: any[] = []
+  globalThis.fetch = mock(async (u: any, o: any) => {
+    calls.push([u, o]); return new Response(JSON.stringify({ key: "PROJ-9" }), { status: 201 })
+  }) as any
+  await getConnector("jira")!.createIssue(TICKET_WITH_LABELS, {
+    host: "https://my.atlassian.net", email: "e", token: "t", project_key: "PROJ",
+  })
+  const body = JSON.parse(calls[0][1].body)
+  // Jira labels cannot contain whitespace — "UX polish" becomes "UX_polish".
+  expect(body.fields.labels).toEqual(["Regression", "UX_polish"])
+})
+
+test("linear createIssue carries labels in the issue description", async () => {
+  const calls: any[] = []
+  globalThis.fetch = mock(async (u: any, o: any) => {
+    calls.push([u, o])
+    return new Response(JSON.stringify({
+      data: { issueCreate: { issue: { identifier: "ENG-9", url: "https://linear.app/i/ENG-9" } } },
+    }), { status: 200 })
+  }) as any
+  await getConnector("linear")!.createIssue(TICKET_WITH_LABELS, { api_key: "k", team_id: "tm" })
+  const body = JSON.parse(calls[0][1].body)
+  expect(body.variables.d).toContain("Labels: Regression, UX polish")
 })
