@@ -13,6 +13,7 @@
 //   from a setInterval / bun.cron in server.ts — suggested follow-up in KLAVITYKLA-203.
 
 import type { Client } from "@libsql/client"
+import { resolveBranding, brandingFooterHtml, brandingFooterText, escapeBranding, type ResolvedBranding } from "./trails-branding"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -43,6 +44,8 @@ export interface TrustReportData {
   isQuietWeek: boolean
   /** KLA-216: honest schedule-health coverage over the window — scheduled walks that actually ran. */
   scheduleCoverage: { scheduled: number; ran: number; skippedOrMissed: number; coverage: number | null }
+  /** KLAVITYKLA-223: per-project agency branding (render-ready). Unbranded default renders as before. */
+  branding: ResolvedBranding
 }
 
 export interface SnapHighlight {
@@ -196,6 +199,17 @@ export async function gatherTrustReport(
     simFindingsTotal === 0 &&
     recurringIssuesTotal === 0
 
+  // 8. KLAVITYKLA-223: agency branding — read from the same injectable client so the digest
+  //    skins to the agency (logo/accent/footer) while staying hermetic in tests.
+  let branding = resolveBranding(null)
+  try {
+    const brR = await c.execute({ sql: "SELECT modal_config_json FROM projects WHERE id=?", args: [projectId] })
+    if (brR.rows.length) {
+      const cfg = JSON.parse(String((brR.rows[0] as any).modal_config_json || "{}")) || {}
+      branding = resolveBranding(cfg.agency_branding)
+    }
+  } catch { /* unbranded default */ }
+
   return {
     projectId,
     projectName,
@@ -212,6 +226,7 @@ export async function gatherTrustReport(
     recurringHighlights,
     isQuietWeek,
     scheduleCoverage,
+    branding,
   }
 }
 
@@ -272,6 +287,14 @@ function sectionCard(title: string, icon: string, rows: string, emptyMsg: string
 /** Build the branded HTML email body for the trust report. Pure — no I/O. */
 export function buildTrustReportHtml(data: TrustReportData): string {
   const dateRange = `${fmtDate(data.weekStart)} – ${fmtDate(data.weekEnd)}`
+
+  // KLAVITYKLA-223: agency branding — logo + name + accent skin the header band; the footer carries
+  // the "Monitored by <Agency> · powered by Klavity" PLG line. Unbranded projects render as before.
+  const branding = data.branding ?? resolveBranding(null)
+  const bAccent = branding.accent
+  const brandHeader = branding.logoDataUrl
+    ? `<img src="${escapeBranding(branding.logoDataUrl)}" alt="${escapeBranding(branding.name || "Agency")} logo" style="max-height:40px;max-width:200px;display:block;margin:0 auto 6px;object-fit:contain" />`
+    : `<div style="${f};font-size:24px;font-weight:800;color:#ffffff;letter-spacing:-.02em">${escapeBranding(branding.name || "Klavity")}</div>`
 
   // Metrics row
   const metricsRow = `
@@ -370,14 +393,14 @@ export function buildTrustReportHtml(data: TrustReportData): string {
     <tr><td align="center" style="padding:32px 16px">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:580px;background:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 2px 10px rgba(20,16,40,.10)">
 
-        <!-- dark brand band -->
+        <!-- dark brand band (agency-branded when configured) -->
         <tr><td align="center" style="background:#1e1b4b;padding:26px 28px 18px">
-          <div style="${f};font-size:24px;font-weight:800;color:#ffffff;letter-spacing:-.02em">Klavity</div>
+          ${brandHeader}
           <div style="${f};font-size:12px;font-weight:600;color:#a5b4fc;letter-spacing:.16em;text-transform:uppercase;margin-top:4px">Weekly Trust Report</div>
         </td></tr>
 
         <!-- accent header -->
-        <tr><td style="background:linear-gradient(135deg,#6366f1,#4f46e5);padding:18px 28px">
+        <tr><td style="background:${esc(bAccent)};padding:18px 28px">
           <div style="${f};font-size:18px;font-weight:700;color:#ffffff">${esc(data.projectName)}</div>
           <div style="${f};font-size:13px;color:#c7d2fe;margin-top:4px">${esc(dateRange)}</div>
         </td></tr>
@@ -401,18 +424,18 @@ export function buildTrustReportHtml(data: TrustReportData): string {
           </a>
         </td></tr>
 
-        <!-- footer -->
+        <!-- footer — carries the agency + Klavity PLG backlink line (KLAVITYKLA-223) -->
         <tr><td style="padding:0 24px 24px">
           <div style="border-top:1px solid #eceaf2;padding-top:14px">
             <p style="margin:0;${f};font-size:11px;color:#a3a0ad;line-height:1.6">
-              This is your weekly digest from Klavity — AI that catches bugs before your users do.
+              This is your weekly digest${branding.whiteLabel ? "" : " from Klavity — AI that catches bugs before your users do"}.
               You're receiving this because you own the <strong>${esc(data.projectName)}</strong> project.
             </p>
           </div>
         </td></tr>
 
       </table>
-      <p style="margin:18px 0 0;${f};font-size:11px;color:#b6b3c0">Sent by Klavity · <a href="https://klavity.in" style="color:#b6b3c0">klavity.in</a></p>
+      <p style="margin:18px 0 0;${f};font-size:11px;color:#b6b3c0">${brandingFooterHtml(branding, { linkColor: "#b6b3c0" })}</p>
     </td></tr>
   </table>
 </body></html>`
@@ -484,10 +507,12 @@ export function buildTrustReportText(data: TrustReportData): string {
     lines.push("")
   }
 
+  // KLAVITYKLA-223: footer carries the "Monitored by <Agency> · powered by Klavity" PLG line.
+  const branding = data.branding ?? resolveBranding(null)
   lines.push(
     "─".repeat(52),
     `View your dashboard: https://klavity.in/dashboard?project=${encodeURIComponent(data.projectId)}#tickets`,
-    "Sent by Klavity — klavity.in",
+    brandingFooterText(branding),
   )
 
   return lines.join("\n")
