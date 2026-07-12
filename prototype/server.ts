@@ -645,6 +645,11 @@ function isWidgetCorsPath(path: string): boolean {
     case "/api/consent":
     case "/api/sim/review":
     case "/api/personas":
+    // The extension content-script runs on the CUSTOMER's domain and calls this bearer-gated,
+    // project-scoped endpoint cross-origin on each page load (content.ts klavFetchServerMatch).
+    // Without CORS on the actual GET response (the OPTIONS preflight alone isn't enough) the
+    // browser drops the body → the extension's live server-match is dead on every third-party site.
+    case "/api/extension/match":
       return true
   }
   if (path.startsWith("/api/personas/")) return true

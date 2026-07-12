@@ -108,6 +108,37 @@ test("401 when no Authorization header", async () => {
   expect(r.status).toBe(401)
 })
 
+// The extension content-script calls this cross-origin from the customer's domain, so the ACTUAL
+// response (not just the OPTIONS preflight) must carry Access-Control-Allow-Origin reflecting the
+// caller's Origin — otherwise the browser drops the body even on a 200. Regression guard for the
+// extension being CORS-dead on every third-party site.
+test("reflects Origin CORS header on the actual GET response (success)", async () => {
+  const ORIGIN = "https://customer.example.com"
+  const r = await fetch(`${BASE}/api/extension/match?url=${encodeURIComponent(MONITORED_URL)}`, {
+    headers: { authorization: `Bearer ${TOKEN_MEMBER}`, origin: ORIGIN },
+  })
+  expect(r.status).toBe(200)
+  expect(r.headers.get("access-control-allow-origin")).toBe(ORIGIN)
+})
+
+test("CORS header present even on the 401 (unauthenticated) response", async () => {
+  const ORIGIN = "https://customer.example.com"
+  const r = await fetch(`${BASE}/api/extension/match?url=${encodeURIComponent(MONITORED_URL)}`, {
+    headers: { origin: ORIGIN },
+  })
+  expect(r.status).toBe(401)
+  expect(r.headers.get("access-control-allow-origin")).toBe(ORIGIN)
+})
+
+test("OPTIONS preflight for /api/extension/match returns CORS", async () => {
+  const ORIGIN = "https://customer.example.com"
+  const r = await fetch(`${BASE}/api/extension/match`, {
+    method: "OPTIONS",
+    headers: { origin: ORIGIN, "access-control-request-method": "GET" },
+  })
+  expect(r.headers.get("access-control-allow-origin")).toBe(ORIGIN)
+})
+
 test("empty projects when url is missing / blank", async () => {
   const r = await fetch(`${BASE}/api/extension/match`, {
     headers: { authorization: `Bearer ${TOKEN_MEMBER}` },
