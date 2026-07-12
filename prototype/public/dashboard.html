@@ -3765,6 +3765,7 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
         <button class="btn btn-ghost btn-sm copy-claude-btn" type="button" title="Copy a detailed prompt to paste into Claude / ChatGPT / any AI coding agent">${kicon('sparkles')} Copy to AI</button>
         <button class="btn btn-ghost btn-sm save-meta-btn">Save</button>
         ${curStatus === "done" ? `<button class="btn btn-ghost btn-sm guard-fix-btn" type="button" title="Turn this fix into an enforceable guard that catches regressions">${kicon('shield')} Guard this fix</button>` : ""}
+        ${(curStatus === "done" && t.guardCaught) ? `<button class="btn btn-ghost btn-sm regr-receipt-btn${t.receiptSent ? " btn-indigo" : ""}" type="button" title="Email the original reporter a forwardable 'caught & fixed before it reached your users' receipt"${t.receiptSent ? " disabled" : ""}>${kicon('mail-check')} ${t.receiptSent ? "Receipt sent" : "Send regression-caught receipt"}</button>` : ""}
       </div>
       <div class="tkt-gap tkt-copy">${copySelect}</div>
       <div class="tkt-err hide tkt-err-el"></div>
@@ -3789,7 +3790,14 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
           const tkt = (state.tickets || []).find(x => x.id === ticketId)
           if (tkt) tkt.status = newStatus
           if (onChange) onChange("status", newStatus)
-          showTktMsg(detailEl, "Saved.", false)
+          // B.7: closing a guard-caught ticket → OFFER the one-click regression-caught receipt (never
+          // auto-sent). The server flags offerRegressionReceipt only for a real transition into done on
+          // a guard-caught ticket with no prior receipt. Nudge the closer to the (now-visible) button.
+          if (newStatus === "done" && d.offerRegressionReceipt) {
+            showTktMsg(detailEl, "Saved. This regression was caught by a guard — you can send the reporter a “caught & fixed” receipt.", false)
+          } else {
+            showTktMsg(detailEl, "Saved.", false)
+          }
         } else {
           showTktMsg(detailEl, d.error || "Couldn't save.", true)
         }
@@ -3898,6 +3906,38 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
           guardFixBtn.disabled = false
           guardFixBtn.innerHTML = kicon('shield') + " Guard this fix"
           showTktMsg(detailEl, d.error || "Could not create guard.", true)
+        }
+      })
+    }
+
+    // B.7: Wire up "Send regression-caught receipt" — emails the original reporter(s) a forwardable
+    // "caught & fixed before it reached your users" receipt. Only rendered on guard-caught, done tickets.
+    const regrReceiptBtn = detailEl.querySelector(".regr-receipt-btn")
+    if (regrReceiptBtn && !regrReceiptBtn.disabled) {
+      regrReceiptBtn.addEventListener("click", async (ev) => {
+        ev.stopPropagation()
+        regrReceiptBtn.disabled = true
+        regrReceiptBtn.innerHTML = kicon('mail-check') + " Sending…"
+        const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/regression-receipt", {
+          method: "POST", headers: { "content-type": "application/json" }, body: "{}"
+        }).catch(() => null)
+        const d = r ? await r.json().catch(() => ({})) : {}
+        if (r && r.ok && d.ok && d.sent) {
+          regrReceiptBtn.innerHTML = kicon('mail-check') + " Receipt sent"
+          regrReceiptBtn.classList.add("btn-indigo")
+          const tkt = (state.tickets || []).find(x => x.id === ticketId)
+          if (tkt) tkt.receiptSent = true
+          const n = Array.isArray(d.recipients) ? d.recipients.length : 0
+          showTktMsg(detailEl, "Receipt sent to " + n + " reporter" + (n === 1 ? "" : "s") + ".", false)
+        } else if (r && r.ok && d.ok && d.sent === false) {
+          // Graceful skip (not guard-caught / no reporter contact) — surfaced, not an error.
+          regrReceiptBtn.disabled = false
+          regrReceiptBtn.innerHTML = kicon('mail-check') + " Send regression-caught receipt"
+          showTktMsg(detailEl, d.message || "No receipt was sent.", true)
+        } else {
+          regrReceiptBtn.disabled = false
+          regrReceiptBtn.innerHTML = kicon('mail-check') + " Send regression-caught receipt"
+          showTktMsg(detailEl, d.error || "Could not send receipt.", true)
         }
       })
     }
