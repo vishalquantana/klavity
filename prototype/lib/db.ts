@@ -2461,6 +2461,52 @@ export async function listFeedbackForSim(projectId: string, simId: string): Prom
   })
 }
 
+// ── JTBD 3.13 (KLAVITYKLA-265): per-Sim precision from stored triage outcomes ──
+// accept rate = accepted / (accepted + dismissed) of a Sim's findings. Pending (untriaged) rows are
+// EXCLUDED from the denominator so an unreviewed backlog doesn't drag the score. accepted/dismissed
+// mirror the triageOutcome() verdicts. Returns rate=null when there is nothing decided yet (0/0), so
+// the UI can show "not enough signal yet" instead of a misleading 0%.
+export type SimAcceptRate = { accepted: number; dismissed: number; pending: number; decided: number; rate: number | null }
+export function simAcceptRate(rows: Pick<SimFeedbackRow, "outcome">[]): SimAcceptRate {
+  let accepted = 0, dismissed = 0, pending = 0
+  for (const r of rows) {
+    if (r.outcome === "confirmed") accepted++
+    else if (r.outcome === "dismissed") dismissed++
+    else pending++
+  }
+  const decided = accepted + dismissed
+  return { accepted, dismissed, pending, decided, rate: decided > 0 ? accepted / decided : null }
+}
+
+// ── JTBD 3.13: dismiss-with-reason teaches the Sim ──
+// When a human dismisses a Sim-generated finding with a reason, append that reason as an append-only
+// trait event on each trait the finding cited (op:"edit", reason:"dismiss: …"). This surfaces in the
+// Sim's evolution history so repeated dismissals visibly accumulate — the signal that shapes future
+// reviews. It does NOT mutate the trait text/state (no updateTrait): the trait stands, but its
+// dismissal record grows. Only cited, in-Sim traits get an event; findings citing no trait are a
+// graceful no-op (the accept-rate stat already reflects the dismissal). Returns the events written.
+export async function recordSimDismissEvents(args: {
+  simId: string; projectId: string; feedbackId: string; reason: string; citedTraitIds: string[]; actor: string; now: number
+}): Promise<number> {
+  const { simId, projectId, feedbackId, reason, citedTraitIds, actor, now } = args
+  const cleanReason = String(reason || "").trim().slice(0, 500)
+  if (!cleanReason || !citedTraitIds.length) return 0
+  // Only write events for traits that actually belong to this Sim (guards a stale/foreign citedTraitId).
+  const owned = new Set((await listTraits(simId)).map((t) => t.id))
+  let written = 0
+  for (const traitId of citedTraitIds) {
+    if (!owned.has(traitId)) continue
+    await insertTraitEvent({
+      traitId, simId, transcriptId: "triage:" + feedbackId,
+      op: "edit", beforeText: null, afterText: null,
+      quote: cleanReason, quoteOffset: null, speaker: null,
+      sourceDate: now, reason: "dismiss: " + cleanReason, actor, createdAt: now,
+    })
+    written++
+  }
+  return written
+}
+
 export async function findFeedbackByIssueKey(projectId: string, issueKey: string): Promise<{ id: string } | null> {
   if (!issueKey) return null
   const r = await db!.execute({
@@ -3875,6 +3921,10 @@ export async function feedbackById(projectId: string, id: string): Promise<any |
     sentiment: x.sentiment != null ? String(x.sentiment) : null,
     priority: (x.priority ?? x.severity) != null ? String(x.priority ?? x.severity) : null,
     screenshotId: x.screenshot_id != null ? String(x.screenshot_id) : null,
+    // JTBD 3.13: expose the Sim's cited traits + source quote so triage actions (e.g. dismiss-with-reason)
+    // can teach the originating trait. Additive — existing callers ignore these.
+    citedTraitIds: safeJsonParse(x.cited_trait_ids_json),
+    sourceQuote: x.source_quote != null ? String(x.source_quote) : null,
     planeIssueKey: x.plane_issue_key != null ? String(x.plane_issue_key) : null,
     planeIssueUrl: x.plane_issue_url != null ? String(x.plane_issue_url) : null,
     status: x.status != null ? String(x.status) : "open",
