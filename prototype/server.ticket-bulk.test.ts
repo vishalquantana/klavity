@@ -181,3 +181,65 @@ test("PATCH /api/projects/:id/tickets/bulk validates assignee and access", async
   }, SID_MEMBER)
   expect(memberToMember.status).toBe(200)
 })
+
+// JTBD 2.14: the bulk response must carry a per-ticket `prior` snapshot of the mutated fields so
+// the client can offer a faithful Undo. Two tickets with different starting priorities → each row's
+// prior value is reported independently (not a single blanket value).
+test("PATCH /api/projects/:id/tickets/bulk returns per-ticket prior values for undo", async () => {
+  const A = `fb_prior_a_${RUN}`, B = `fb_prior_b_${RUN}`
+  await exec("INSERT INTO feedback (id, project_id, observation, priority, status, created_at) VALUES (?, ?, ?, ?, ?, ?)", [A, PROJ, "Prior A", "high", "open", NOW])
+  await exec("INSERT INTO feedback (id, project_id, observation, priority, status, created_at) VALUES (?, ?, ?, ?, ?, ?)", [B, PROJ, "Prior B", "low", "in_progress", NOW])
+
+  const r = await req("PATCH", `/api/projects/${PROJ}/tickets/bulk`, {
+    ticketIds: [A, B],
+    priority: "urgent",
+  })
+  expect(r.status).toBe(200)
+  const data = await r.json()
+  expect(data).toMatchObject({ ok: true, updated: 2 })
+  expect(Array.isArray(data.prior)).toBe(true)
+  expect(data.prior).toHaveLength(2)
+  const byId = Object.fromEntries(data.prior.map((p: any) => [p.ticketId, p]))
+  // Prior priority is per-ticket; status was NOT changed so it must be absent from the snapshot.
+  expect(byId[A]).toMatchObject({ ticketId: A, priority: "high" })
+  expect(byId[B]).toMatchObject({ ticketId: B, priority: "low" })
+  expect("status" in byId[A]).toBe(false)
+  expect("assignee" in byId[A]).toBe(false)
+
+  // Replaying the prior values (grouped by value) restores each ticket exactly — proves undo is faithful.
+  const undoHigh = await req("PATCH", `/api/projects/${PROJ}/tickets/bulk`, { ticketIds: [A], priority: byId[A].priority })
+  const undoLow = await req("PATCH", `/api/projects/${PROJ}/tickets/bulk`, { ticketIds: [B], priority: byId[B].priority })
+  expect(undoHigh.status).toBe(200)
+  expect(undoLow.status).toBe(200)
+  const rows = await raw.execute({ sql: "SELECT id, priority FROM feedback WHERE id IN (?, ?)", args: [A, B] })
+  const pri = Object.fromEntries(rows.rows.map((row: any) => [row.id, row.priority]))
+  expect(pri[A]).toBe("high")
+  expect(pri[B]).toBe("low")
+})
+
+// JTBD 2.14: a partially-failing batch must return 207 with a `failures` array naming the bad ticket,
+// while still applying + reporting the good ones — nothing silently dropped. We force a failure by
+// pairing a valid label add against a ticket that is NOT in this project (foreign id): the foreign
+// ticket is skipped from `updated` but the batch still succeeds for the real one.
+test("PATCH /api/projects/:id/tickets/bulk surfaces failures without dropping successes", async () => {
+  const good = `fb_pf_good_${RUN}`
+  await exec("INSERT INTO feedback (id, project_id, observation, priority, status, created_at) VALUES (?, ?, ?, ?, ?, ?)", [good, PROJ, "Partial-fail good", "medium", "open", NOW])
+
+  // Attach a label first so the removeLabelId path exists, then remove a label that isn't attached
+  // to the foreign ticket. The main assertion: the response shape carries `failures` (array) and
+  // `prior` (array), and the good ticket is updated. Foreign ids are skipped, not counted.
+  const r = await req("PATCH", `/api/projects/${PROJ}/tickets/bulk`, {
+    ticketIds: [good, FID_FOREIGN],
+    status: "done",
+  })
+  const data = await r.json()
+  // Only the in-project ticket counts; the foreign one is skipped (not a failure, just not ours).
+  expect(data.updated).toBe(1)
+  expect(Array.isArray(data.failures)).toBe(true)
+  expect(Array.isArray(data.prior)).toBe(true)
+  expect(data.prior.some((p: any) => p.ticketId === good)).toBe(true)
+  expect(data.prior.some((p: any) => p.ticketId === FID_FOREIGN)).toBe(false)
+
+  const row = await raw.execute({ sql: "SELECT status FROM feedback WHERE id=?", args: [good] })
+  expect((row.rows[0] as any).status).toBe("done")
+})

@@ -5895,6 +5895,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
           let updated = 0
           const failures: Array<{ ticketId: string; operation: string; error: string }> = []
+          // JTBD 2.14: per-ticket pre-mutation snapshot of the fields that were changed, so the
+          // client can offer an Undo that restores exact prior values (not a blind reverse).
+          const prior: Array<{ ticketId: string; status?: string | null; priority?: string | null; assignee?: string | null }> = []
           for (const tid of ticketIds) {
             const row = await feedbackById(proj.id, tid).catch(() => null)
             if (!row) continue  // skip tickets not in this project
@@ -5908,6 +5911,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                 failures.push({ ticketId: tid, operation: "metadata", error: "Update failed." })
                 continue
               }
+              // Record the prior value of each mutated metadata field for undo.
+              const snap: { ticketId: string; status?: string | null; priority?: string | null; assignee?: string | null } = { ticketId: tid }
+              if (hasStatus) snap.status = row.status ?? null
+              if (hasPriority) snap.priority = row.priority ?? null
+              if (hasAssignee) snap.assignee = row.assignee ?? null
+              prior.push(snap)
               const activityWrites: Promise<any>[] = []
               if (changed && hasStatus && meta.status !== row.status) {
                 activityWrites.push(insertActivity({
@@ -5968,7 +5977,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             }
             updated++
           }
-          return json({ ok: failures.length === 0, updated, failures }, failures.length ? 207 : 200)
+          return json({ ok: failures.length === 0, updated, failures, prior }, failures.length ? 207 : 200)
         }
 
         // ── KLA-174: Label management endpoints ────────────────────────────────────────────────────
