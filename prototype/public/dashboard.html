@@ -1288,7 +1288,10 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .tkt-pri-sel:hover{border-color:var(--indigo)}
 .tkt-pri-sel:focus{outline:none;border-color:var(--indigo);box-shadow:0 0 0 3px rgba(99,102,241,.15)}
 /* triage filter chips + screenshot thumbnail (feat/triage-screenshot-filter) */
-.tg-filters{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 14px}
+.tg-filters{display:flex;flex-direction:column;gap:8px;margin:0 0 14px}
+/* JTBD 3.10: sentiment chip row + originating-Sim filter/bulk-dismiss row */
+.tg-filter-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.tg-sim-row{gap:8px}
 .tg-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:20px;border:1px solid var(--line);background:var(--ink);color:var(--paper-dim);font-family:var(--body);font-weight:600;font-size:12.5px;cursor:pointer;transition:border-color .15s,color .15s,background .15s}
 .tg-chip:hover{border-color:var(--paper-faint)}
 .tg-chip .tg-chip-n{font-family:var(--mono);font-size:10px;color:var(--paper-faint);background:var(--ink-3);border-radius:20px;padding:1px 6px}
@@ -2401,13 +2404,27 @@ function maybeOpenDeepLinkTicket() {
 // thumbnails render client-side over the fetched items — no re-fetch on filter change.
 let _triageItems = []
 let _triageSentiment = "all"
+let _triageSim = "all"   // JTBD 3.10: filter New reports by originating Sim ("all" | sim name | "__direct__")
 const TG_SENTIMENTS = [["all", "All"], ["frustrated", "Frustrated"], ["confused", "Confused"], ["satisfied", "Satisfied"], ["neutral", "Neutral"]]
+// JTBD 3.10 (triage hygiene): "critical" collapses the actionable-negative reactions so a reviewer
+// can hide the non-actionable positive/neutral observations a continuous-watch session floods in.
+const TG_SENTIMENT_GROUPS = { critical: ["frustrated", "confused"] }
 // Bucket every reaction into one of the four filter groups (delighted → satisfied; unknown → neutral).
 function tgSent(t) {
   const s = (t.sentiment || "").toLowerCase()
   if (s === "delighted") return "satisfied"
   if (s === "frustrated" || s === "confused" || s === "satisfied") return s
   return "neutral"
+}
+// JTBD 3.10: a report's originating-Sim key for the bulk-dismiss-by-Sim filter. Human/widget
+// reports (no Sim) group under "__direct__"; Sim observations group by their Sim's display name.
+function tgSimKey(t) { return t.simName ? String(t.simName) : "__direct__" }
+// Does a triage row pass the active sentiment filter? "all" → everything; "critical" → the negative
+// group; otherwise an exact bucket match.
+function tgSentPass(t) {
+  if (_triageSentiment === "all") return true
+  const grp = TG_SENTIMENT_GROUPS[_triageSentiment]
+  return grp ? grp.includes(tgSent(t)) : tgSent(t) === _triageSentiment
 }
 async function renderTriage() {
   const pid = curProjId(); if (!pid) return
@@ -2418,7 +2435,7 @@ async function renderTriage() {
   await swrSection(
     "triage:" + pid,
     async () => { const r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/triage"); if (!r.ok) return null; return await r.json() },
-    (d) => { _triageItems = (d && d.triage) || []; renderTriageItems(_triageItems) },
+    (d) => { _triageItems = (d && d.triage) || []; renderTriageView() },
     "triageList",
   )
   // KLA-255: also render pending sim-match confirmations in the same triage card.
@@ -2432,7 +2449,11 @@ let _tgSelected = new Set()   // selected triage ids
 let _tgFocus = null           // id of the keyboard-focused row
 let _tgKeysBound = false
 function tgRowById(id) { const h = $("triageList"); return h ? h.querySelector('.tg-row[data-id="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"]') : null }
-function tgVisibleItems() { return (_triageItems || []).filter(t => tgSent(t) === _triageSentiment || _triageSentiment === "all") }
+// JTBD 3.10: the rows the reviewer currently sees — after both the sentiment and originating-Sim
+// filters. Every renderer/keyboard-nav path funnels through this so the two filters stay consistent.
+function tgVisibleItems() {
+  return (_triageItems || []).filter(t => tgSentPass(t) && (_triageSim === "all" || tgSimKey(t) === _triageSim))
+}
 
 async function tgBulkPatch(ids, body) {
   const pid = curProjId(); if (!pid || !ids.length) return { ok: false }
@@ -2465,9 +2486,75 @@ async function tgDismiss(ids) {
   return res
 }
 
+// JTBD 3.10: render the whole New-reports view — the sentiment + Sim filter bar, then the rows that
+// pass both filters. Called on load and after every filter change so the two stay in lockstep.
+function renderTriageView() {
+  renderTriageFilters()
+  renderTriageItems(tgVisibleItems())
+}
+// JTBD 3.10: sentiment filter (Critical / positive / all …) + bulk-dismiss-by-Sim. Both live in the
+// #triageFilters bar above the list so a reviewer can hide non-actionable positives or clear a noisy
+// Sim's observations in one action, rather than dismissing 60 flooded observations one by one.
+function renderTriageFilters() {
+  const host = $("triageFilters"); if (!host) return
+  const all = _triageItems || []
+  // Sentiment chips: All · Critical (frustrated+confused) · then each bucket, each with a live count.
+  const sentCount = (key) => all.filter(t => {
+    if (key === "all") return true
+    const grp = TG_SENTIMENT_GROUPS[key]
+    return grp ? grp.includes(tgSent(t)) : tgSent(t) === key
+  }).length
+  const sentChips = [["all", "All"], ["critical", "Critical"], ...TG_SENTIMENTS.slice(1)]
+  // Guard against an unknown/stale sentiment key (never against an intentional empty filter — the
+  // filtered-empty state below guides the user to clear it rather than silently resetting on them).
+  if (!sentChips.some(([k]) => k === _triageSentiment)) _triageSentiment = "all"
+  const sentHtml = sentChips.map(([key, label]) => {
+    const n = sentCount(key)
+    const cls = "tg-chip" + (key === "frustrated" || key === "critical" ? " s-frustrated" : key === "satisfied" ? " s-satisfied" : "") + (_triageSentiment === key ? " on" : "")
+    return `<button type="button" class="${cls}" data-tg-sent="${esc(key)}">${esc(label)}<span class="tg-chip-n">${n}</span></button>`
+  }).join("")
+  // Originating-Sim select for bulk-dismiss-by-Sim. Options = distinct Sims (+ Direct reports) present.
+  const simKeys = []
+  const seen = new Set()
+  for (const t of all) { const k = tgSimKey(t); if (!seen.has(k)) { seen.add(k); simKeys.push(k) } }
+  if (!simKeys.includes(_triageSim)) _triageSim = "all"
+  const simCount = (k) => all.filter(t => tgSimKey(t) === k).length
+  const simLabel = (k) => k === "__direct__" ? "Direct reports" : k
+  const simOpts = [`<option value="all">All Sims (${all.length})</option>`]
+    .concat(simKeys.map(k => `<option value="${esc(k)}"${_triageSim === k ? " selected" : ""}>${esc(simLabel(k))} (${simCount(k)})</option>`))
+    .join("")
+  const canDismissSim = _triageSim !== "all" && simCount(_triageSim) > 0
+  const simDismissBtn = canDismissSim
+    ? `<button type="button" class="btn btn-ghost btn-sm" id="tgSimDismiss" title="Dismiss every new report from this Sim">Dismiss all ${simCount(_triageSim)} from ${esc(simLabel(_triageSim))}</button>`
+    : ""
+  host.innerHTML =
+    `<div class="tg-filter-row">${sentHtml}</div>` +
+    `<div class="tg-filter-row tg-sim-row"><span class="bulk-lbl">Sim:</span>` +
+    `<select class="bulk-sel" id="tgSimFilter" aria-label="Filter by originating Sim">${simOpts}</select>` +
+    simDismissBtn + `</div>`
+  host.querySelectorAll("[data-tg-sent]").forEach(b => b.addEventListener("click", () => {
+    _triageSentiment = b.getAttribute("data-tg-sent"); _tgSelected.clear(); renderTriageView()
+  }))
+  const simSel = host.querySelector("#tgSimFilter")
+  if (simSel) simSel.addEventListener("change", () => { _triageSim = simSel.value; _tgSelected.clear(); renderTriageView() })
+  const simDis = host.querySelector("#tgSimDismiss")
+  if (simDis) simDis.addEventListener("click", () => {
+    const ids = (_triageItems || []).filter(t => tgSimKey(t) === _triageSim).map(t => String(t.id))
+    if (ids.length) tgDismiss(ids)
+  })
+}
 function renderTriageItems(items) {
   const host = $("triageList"); if (!host) return
-  if (!items.length) { _tgSelected.clear(); _tgFocus = null; renderTriageBulkBar(); host.innerHTML = emptyState(kicon('check-circle',{size:32}), "No new reports — you're all caught up.", ""); return }
+  if (!items.length) {
+    _tgSelected.clear(); _tgFocus = null; renderTriageBulkBar()
+    // Distinguish "nothing at all" from "nothing matches the active filter" so a filtered-empty
+    // list doesn't read as "all caught up".
+    const filtered = (_triageItems || []).length > 0
+    host.innerHTML = filtered
+      ? emptyState(kicon('search',{size:32}), "No reports match this filter.", `<p class="muted" style="margin-top:2px">Clear the sentiment or Sim filter to see the rest.</p>`)
+      : emptyState(kicon('check-circle',{size:32}), "No new reports — you're all caught up.", "")
+    return
+  }
   // Drop stale selections/focus for rows that no longer exist.
   const present = new Set(items.map(t => String(t.id)))
   _tgSelected = new Set([..._tgSelected].filter(id => present.has(id)))
@@ -6604,11 +6691,14 @@ load()
   }
   // ── Post-add success panel ──
   const successEl=$("smSuccess");
-  function showSuccessPanel(addedName,addedCount){
+  function showSuccessPanel(addedName,addedCount,merged){
     // Update heading to reflect single vs. multiple
     const title=$("smSuccessTitle");
     if(title){
-      if(addedCount&&addedCount>1) title.textContent="Your Sims are ready — now put them to work";
+      // JTBD 3.10: a single duplicate-merge gets an explicit "already exists" heading so the user
+      // knows nothing new was created; new adds and batches keep the "ready to work" framing.
+      if(merged&&(!addedCount||addedCount<=1)) title.textContent=(addedName?""+addedName+" already exists":"That Sim already exists")+" — merged into your existing one";
+      else if(addedCount&&addedCount>1) title.textContent="Your Sims are ready — now put them to work";
       else title.textContent=(addedName?""+addedName+" is ready":"Your Sim is ready")+" — now put them to work";
     }
     // Hide the result cards while keeping them in the DOM (so close() still triggers load())
@@ -6651,15 +6741,20 @@ load()
     const chosenClass=(cardEl&&cardEl.dataset.simclass)||(simClassOf(s));
     try{
       // KLAVITYKLA-301: pass simSource so the server can stamp which Add-a-Sim path created this Sim.
-      await postJSON("/api/personas"+projQ(),{ name:s.name, role:s.role, type:s.type,
+      const res=await postJSON("/api/personas"+projQ(),{ name:s.name, role:s.role, type:s.type,
         simClass:chosenClass, side:sideOf(s), core:s.core||null,
         initials:s.initials||inits(s.name), accent:safeAccent(s.accent,col(s.name||"x")), summary:s.summary||"",
         insights:(Array.isArray(s.insights)?s.insights:[]).map(i=>({ ...i, scope:i.scope||null, portability:i.portability||null })),
         simSource:lastSimSource||null });
       simAdded=true;
-      if(cardEl){ cardEl.classList.add("added"); cardEl.querySelectorAll("button").forEach(b=>b.disabled=true); if(btn) btn.textContent="Added"; } // emoji-ok
+      // JTBD 3.10: POST /api/personas returns {existing:true} when this Sim (normalized name+role)
+      // already exists — the server merged into the existing row instead of duplicating. Tell the user
+      // explicitly rather than silently showing "Added" for a Sim they already have.
+      const merged=!!(res&&res.existing);
+      if(cardEl){ cardEl.classList.add("added"); cardEl.querySelectorAll("button").forEach(b=>b.disabled=true); if(btn) btn.textContent=merged?"Already exists — merged":"Added"; } // emoji-ok
       // Show the success panel unless caller will do it (e.g. "Add all" batches and shows once at end)
-      if(!opts||!opts.defer) showSuccessPanel(s.name,1);
+      if(!opts||!opts.defer) showSuccessPanel(s.name,1,merged);
+      return merged;
     }catch(e){ if(btn){ btn.disabled=false; btn.textContent=orig; } fail(e.message); }
   }
 
@@ -6694,7 +6789,8 @@ load()
       if(!btns.length) return;
       const count=btns.length;
       Promise.all(btns.map(b=>{ const i=+b.dataset.add; const card=b.closest(".sm-sim"); return saveSim(lastSims[i],card,b,{defer:true}); }))
-        .then(()=>showSuccessPanel(null,count))
+        // JTBD 3.10: when the batch is a single Sim that already existed, surface the merged heading.
+        .then(results=>showSuccessPanel(null,count,count===1&&results[0]===true))
         .catch(()=>{}); // individual errors already surface via fail()
     }
   });
