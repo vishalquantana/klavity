@@ -141,6 +141,9 @@ test("GET /api/feedback/:id/timeline returns 404 for outsiders", async () => {
 test("PATCH /api/feedback/:id sets and clears assignee email", async () => {
   const assign = await req("PATCH", `/api/feedback/${FID}`, { assignee: MEMBER.toUpperCase() })
   expect(assign.status).toBe(200)
+  // JTBD 2.15: even for an existing member the notification email is skipped when SendGrid is
+  // unconfigured; the response surfaces that so the assigning UI can warn.
+  expect((await assign.json()).assigneeEmailSent).toBe(false)
 
   const detail = await req("GET", `/api/feedback/${FID}`)
   expect(detail.status).toBe(200)
@@ -173,6 +176,9 @@ test("admin assigning a non-member creates invite and login accepts it into the 
   const invitee = `assigned-${RUN}@external.example`
   const assign = await req("PATCH", `/api/feedback/${FID}`, { assignee: invitee })
   expect(assign.status).toBe(200)
+  // JTBD 2.15: with SENDGRID_API_KEY unset (see beforeAll env), the invite email is silently
+  // skipped — the API must report that so the UI can warn instead of pretending success.
+  expect((await assign.json()).assigneeEmailSent).toBe(false)
 
   const inv = await raw.execute({
     sql: "SELECT project_id, email, feedback_id, status FROM ticket_assignment_invites WHERE project_id=? AND email=?",
@@ -190,7 +196,9 @@ test("admin assigning a non-member creates invite and login accepts it into the 
   const verify = await req("POST", "/api/auth/verify", { email: invitee, code: requestBody.devCode })
   expect(verify.status).toBe(200)
   const verifyBody = await verify.json()
-  expect(verifyBody.redirect).toBe(`/dashboard?project=${encodeURIComponent(PROJ)}#tickets`)
+  // JTBD 2.15: the stored feedbackId deep-links the assignee straight to their ticket after first
+  // login (?ticket=<id>, honored by maybeOpenDeepLinkTicket), not the bare tickets board.
+  expect(verifyBody.redirect).toBe(`/dashboard?project=${encodeURIComponent(PROJ)}&ticket=${encodeURIComponent(FID)}#tickets`)
 
   const member = await raw.execute({
     sql: "SELECT project_role FROM project_members WHERE project_id=? AND email=?",
