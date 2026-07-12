@@ -43,7 +43,13 @@ export interface Trail {
   baselineRef: string | null; authorKind: AuthorKind; status: TrailStatus
   createdBy: string | null; createdAt: number; updatedAt: number
   stepVersion: number
-  schedule: string | null         // 5-field cron expression (UTC), null = no schedule
+  schedule: string | null         // 5-field cron expression, null = no schedule
+  /**
+   * KLA-277 (JTBD 4.13): IANA timezone the `schedule` cron is expressed in (e.g. "America/New_York").
+   * When set, the cron is interpreted as LOCAL wall-clock in this zone and the UTC fire instant is
+   * computed per occurrence, so a 9am-local guard survives DST. Null = legacy baked-UTC cron.
+   */
+  scheduleTz: string | null
   scheduledLastRunAt: number | null  // epoch ms when last scheduled walk was triggered
   /** KLA-73: persona chosen to judge walk results for this Trail. Null = no judge assigned. */
   judgePersonaId: string | null

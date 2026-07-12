@@ -15,6 +15,7 @@ function rowToTrail(r: any): Trail {
     createdBy: r.created_by ?? null, createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
     stepVersion: r.step_version == null ? 1 : Number(r.step_version),
     schedule: r.schedule_cron ?? null,
+    scheduleTz: r.schedule_tz ?? null,
     scheduledLastRunAt: r.scheduled_last_run_at == null ? null : Number(r.scheduled_last_run_at),
     judgePersonaId: r.judge_persona_id ?? null,
     objectiveVerified: r.objective_verified == null ? null : !!r.objective_verified,
@@ -90,7 +91,7 @@ export async function deleteTrail(projectId: string, id: string): Promise<void> 
   await db!.execute({ sql: `DELETE FROM trails WHERE project_id=? AND id=?`, args: [projectId, id] })
 }
 
-export type TrailPatch = { name?: string; status?: TrailStatus; schedule?: string | null; viewport?: TrailViewport | string | null; judgePersonaId?: string | null; environments?: TrailEnvironment[] }
+export type TrailPatch = { name?: string; status?: TrailStatus; schedule?: string | null; scheduleTz?: string | null; viewport?: TrailViewport | string | null; judgePersonaId?: string | null; environments?: TrailEnvironment[] }
 
 export async function updateTrail(projectId: string, id: string, patch: TrailPatch): Promise<boolean> {
   const r = await db!.execute({ sql: `SELECT id FROM trails WHERE project_id=? AND id=?`, args: [projectId, id] })
@@ -100,6 +101,7 @@ export async function updateTrail(projectId: string, id: string, patch: TrailPat
   if (patch.name != null) { sets.push("name=?"); args.push(patch.name) }
   if (patch.status != null) { sets.push("status=?"); args.push(patch.status) }
   if ("schedule" in patch) { sets.push("schedule_cron=?"); args.push(patch.schedule ?? null) }
+  if ("scheduleTz" in patch) { sets.push("schedule_tz=?"); args.push(patch.scheduleTz ?? null) }
   if ("viewport" in patch) { sets.push("viewport_json=?"); args.push(j(normalizeTrailViewport(patch.viewport))) }
   if ("judgePersonaId" in patch) { sets.push("judge_persona_id=?"); args.push(patch.judgePersonaId ?? null) }
   if ("environments" in patch) { sets.push("environments_json=?"); args.push(patch.environments?.length ? j(patch.environments) : null) }

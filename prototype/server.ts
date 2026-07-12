@@ -3821,10 +3821,24 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if ("schedule" in body) {
             if (body.schedule === null || body.schedule === "") {
               patch.schedule = null
+              patch.scheduleTz = null // clearing the schedule clears its timezone too
             } else {
               const expr = typeof body.schedule === "string" ? body.schedule.trim() : ""
-              if (!isValidCron(expr)) return json({ error: "Invalid cron expression (5 UTC fields required, e.g. '0 2 * * *')" }, 400)
+              if (!isValidCron(expr)) return json({ error: "Invalid cron expression (5 fields required, e.g. '0 9 * * *')" }, 400)
               patch.schedule = expr
+              // KLA-277 (JTBD 4.13): DST-safe schedules — when the client supplies scheduleTz the cron
+              // is stored as LOCAL wall-clock in that IANA zone and the UTC fire instant is computed per
+              // occurrence. Validate the zone via Intl; reject unknown zones so we never store garbage.
+              if ("scheduleTz" in body) {
+                const tz = typeof body.scheduleTz === "string" ? body.scheduleTz.trim() : ""
+                if (tz) {
+                  try { new Intl.DateTimeFormat("en-US", { timeZone: tz }) }
+                  catch { return json({ error: "Invalid timezone" }, 400) }
+                  patch.scheduleTz = tz
+                } else {
+                  patch.scheduleTz = null
+                }
+              }
             }
           }
           if ("viewport" in body) {
