@@ -1,6 +1,6 @@
 // Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
 import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, listInboxForProjects, setProjectTrailsAutofile } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, listInboxForProjects, setProjectTrailsAutofile } from "./lib/db"
 import { issueKeyFor, chooseDedup, humanReportIssueKeyFor } from "./lib/dedup"
 import { classifySimObservation } from "./lib/sim-bug-classify"
 import { getConnector, listConnectorTypes, type TicketPayload, type TicketAttachment } from "./lib/connectors/index"
@@ -524,7 +524,24 @@ async function findDuplicateFeedback(args: {
   })
   const exact = await findFeedbackByIssueKey(args.projectId, issueKey)
   const recent = exact ? [] : await listRecentFeedbackForDedup(args.projectId, 50)
-  return chooseDedup({ title: args.title, observation: args.observation }, exact, recent)
+  const target = chooseDedup({ title: args.title, observation: args.observation }, exact, recent)
+  if (!target) return null
+  // A.10: honour a manual split. If an operator split content matching this candidate out of the
+  // matched head into a standalone ticket (recorded as a dedup exclusion + carried on the split
+  // ticket's issue_key), route this repeat to that standalone ticket instead of re-collapsing into
+  // the head — so the next intake pass does not undo the split.
+  const split = await splitTicketForExcludedHead(args.projectId, target, issueKey).catch(() => null)
+  return split ?? target
+}
+// Given a dedup TARGET head and the incoming candidate's issue_key, find a ticket the operator split
+// OUT of that head whose own issue_key equals the candidate's — i.e. the standalone ticket that now
+// owns this content. Returns that ticket's id (re-route the repeat there) or null (no such split).
+async function splitTicketForExcludedHead(projectId: string, headId: string, candidateIssueKey: string): Promise<string | null> {
+  const excluded = await excludedDedupIds(projectId, headId)
+  if (!excluded.size) return null
+  const byKey = await findFeedbackByIssueKey(projectId, candidateIssueKey)
+  if (byKey && byKey.id !== headId && excluded.has(byKey.id)) return byKey.id
+  return null
 }
 // Re-export the key so insert sites store it on new rows.
 function issueKeyForFeedback(projectId: string, urlPath: string | null, issueType: string | null, citedTraitIds: string[]): string {
@@ -4583,7 +4600,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
       // ── Ticket management: PATCH /api/feedback/:id and POST /api/feedback/:id/export ──
       // Resolve the feedback's project via feedbackById across accessible projects.
-      const feedbackIdMatch = path.match(/^\/api\/feedback\/([^/]+?)(\/export|\/replay|\/memory|\/comments|\/timeline|\/activity|\/labels(?:\/([^/]+))?|\/suggest-labels)?$/)
+      const feedbackIdMatch = path.match(/^\/api\/feedback\/([^/]+?)(\/export|\/replay|\/memory|\/merge|\/split|\/comments|\/timeline|\/activity|\/labels(?:\/([^/]+))?|\/suggest-labels)?$/)
       if (feedbackIdMatch) {
         const fid = feedbackIdMatch[1]
         const feedbackSubroute = feedbackIdMatch[2]?.replace(/\/labels\/[^/]+$/, "/labels") || ""
@@ -4596,6 +4613,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const isLabels = feedbackSubroute === "/labels"
         const isSuggestLabels = feedbackSubroute === "/suggest-labels"
         const isGuard = feedbackSubroute === "/guard"
+        const isMerge = feedbackSubroute === "/merge"
+        const isSplit = feedbackSubroute === "/split"
 
         // Resolve which project this feedback belongs to and check the caller has access.
         let fbRow: any = null
@@ -4820,6 +4839,55 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             urlPath: fbRow.urlPath ?? null,
           })
           return json({ ok: true, expectationId: exp.id, status: exp.status })
+        }
+
+        // POST /api/feedback/:id/merge — A.10 human dedup override. Merge ANOTHER ticket (body.mergeId)
+        // INTO this one (the surviving cluster). Sums recurrence counts + dates, carries every reporter
+        // email and occurrence receipt across, keeps this row's issue_key (so future intake dedup and
+        // the expectation link both land on it). Any project member may correct the matcher.
+        if (req.method === "POST" && isMerge) {
+          if (!db) return json({ error: "Database unavailable." }, 503)
+          const body = await req.json().catch(() => ({}))
+          const mergeId = String(body.mergeId ?? body.merge_id ?? "").trim()
+          if (!mergeId) return json({ error: "mergeId is required." }, 400)
+          if (mergeId === fid) return json({ error: "Cannot merge a ticket into itself." }, 400)
+          // The ticket being merged in must belong to the SAME project (no cross-tenant merge).
+          const other = await feedbackById(fbRow.projectId, mergeId)
+          if (!other) return json({ error: "Ticket to merge not found in this project." }, 404)
+          const result = await mergeFeedbackClusters(fbRow.projectId, fid, mergeId, me)
+          if (!result) return json({ error: "Merge failed." }, 500)
+          await insertActivity({
+            projectId: fbRow.projectId, type: "ticket_merged", actorEmail: me, feedbackId: fid,
+            meta: { mergedFrom: mergeId, recurrenceCount: result.recurrenceCount },
+          }).catch((e: any) => console.warn("ticket merge activity skipped:", e?.message || e))
+          return json({ ok: true, survivorId: result.survivorId, recurrenceCount: result.recurrenceCount, contactEmails: result.contactEmails })
+        }
+
+        // POST /api/feedback/:id/split — A.10 human dedup override. Split one wrongly-collapsed
+        // occurrence (body.occurrenceId) out of THIS cluster into its own standalone ticket carrying
+        // that occurrence's date/evidence/reporter email. Decrements this cluster's count/dates and
+        // records a "distinct issues" decision so the next intake pass never re-merges the pair.
+        if (req.method === "POST" && isSplit) {
+          if (!db) return json({ error: "Database unavailable." }, 503)
+          const body = await req.json().catch(() => ({}))
+          const occurrenceId = String(body.occurrenceId ?? body.occurrence_id ?? "").trim()
+          if (!occurrenceId) return json({ error: "occurrenceId is required." }, 400)
+          // Compute the split-out occurrence's CONTENT issue_key so a future re-report of that content
+          // routes to the new standalone ticket (honouring the split) rather than back into the head.
+          const occs = await listFeedbackOccurrences(fid)
+          const occ = occs.find((o) => o.id === occurrenceId)
+          if (!occ) return json({ error: "Occurrence not found on this ticket." }, 404)
+          const contentKey = humanReportIssueKeyFor({
+            projectId: fbRow.projectId, urlPath: fbRow.urlPath ?? "/",
+            text: occ.observation ?? fbRow.observation ?? "",
+          })
+          const result = await splitOccurrenceToNewTicket(fbRow.projectId, fid, occurrenceId, { actor: me, issueKey: contentKey })
+          if (!result) return json({ error: "Split failed." }, 500)
+          await insertActivity({
+            projectId: fbRow.projectId, type: "ticket_split", actorEmail: me, feedbackId: fid,
+            meta: { newTicketId: result.newFeedbackId, occurrenceId, recurrenceCount: result.sourceRecurrenceCount },
+          }).catch((e: any) => console.warn("ticket split activity skipped:", e?.message || e))
+          return json({ ok: true, newFeedbackId: result.newFeedbackId, sourceRecurrenceCount: result.sourceRecurrenceCount })
         }
 
         // POST /api/feedback/:id/export — admin only
