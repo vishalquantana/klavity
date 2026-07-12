@@ -132,6 +132,14 @@ a{color:inherit;text-decoration:none}
 .judgment .jverdict.valid{background:rgba(15,157,107,.16);color:var(--green)}
 .judgment .jverdict.false_positive{background:rgba(219,39,119,.16);color:var(--rose)}
 .judgment .jverdict.clarify{background:rgba(217,131,36,.18);color:var(--amber)}
+.judgment .jprompt{font-size:13px;color:var(--paper-faint);line-height:1.5}
+/* judge controls (picker + trigger) */
+.judge-controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+.judge-pick-label{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--paper-faint)}
+.judge-select{font-family:var(--body);font-size:12px;padding:5px 10px;border-radius:9px;border:1px solid var(--line);background:var(--ink);color:var(--paper);cursor:pointer;transition:border-color var(--mi-dur) var(--mi-ease),transform var(--mi-dur) var(--mi-ease)}
+.judge-select:hover{border-color:var(--indigo)}
+.judge-select:focus{outline:none;border-color:var(--indigo)}
+.judge-msg{font-size:12px;color:var(--paper-faint)}
 
 /* add-bug form */
 .bug-form{display:grid;gap:8px}
@@ -211,6 +219,12 @@ a{color:inherit;text-decoration:none}
 
       <div class="section-card" id="judgmentSection" style="display:none">
         <h2>Persona Judgment</h2>
+        <div class="judge-controls" id="judgeControls" style="display:none">
+          <label class="judge-pick-label" for="judgePersona">Judge voice</label>
+          <select id="judgePersona" class="judge-select"></select>
+          <button class="btn btn-sm" id="judgeBtn" type="button"></button>
+          <span id="judgeMsg" class="judge-msg"></span>
+        </div>
         <div id="judgmentBody"></div>
       </div>
 
@@ -445,23 +459,112 @@ async function actFinding(action,id,btn,qs){
 }
 
 // ── Judgment ──
+// KLA-73 / JTBD 7.6: the client-voiced verdict. The card renders an existing judgment; the controls
+// let the agency pick which Sim voices the verdict (persisted via PATCH /judge-persona) and trigger a
+// judgment on demand (POST /judge) without a page reload. Hidden while a walk is still running.
+var _judgePersonas=[]
 function renderJudgment(j){
-  if(!j){$("judgmentSection").style.display="none";return}
-  $("judgmentSection").style.display=""
-  var verdictMap={}
-  ;(j.verdicts||[]).forEach(function(v){verdictMap[v.findingId]=v})
+  var walk=(walkData&&walkData.walk)||{}
+  var trail=(walkData&&walkData.trail)||null
+  var terminal=String(walk.status||"running")!=="running"
+  var section=$("judgmentSection"),controls=$("judgeControls")
+  // Running walks: hide the whole section (no judging mid-flight).
+  if(!terminal){section.style.display="none";return}
+  section.style.display=""
+  // Populate the judge-persona picker + trigger button (only when we have a trail to attach to).
+  if(trail){
+    controls.style.display=""
+    renderJudgePicker(trail)
+  } else {
+    controls.style.display="none"
+  }
+  var body=$("judgmentBody")
+  if(!j){
+    body.innerHTML='<div class="judgment"><div class="jprompt">No persona has judged this walk yet. '
+      +'Pick a Sim voice above and run “Judge this walk” to translate the step log into client language.</div></div>'
+    return
+  }
   var html='<div class="judgment">'
     +'<div class="jpersona">Judged by <b>'+esc(j.personaName)+'</b></div>'
   if(j.overallNote)html+='<div class="jnote">'+esc(j.overallNote)+'</div>'
   if(j.verdicts&&j.verdicts.length){
     html+='<div class="jrow">'
     j.verdicts.forEach(function(v){
-      html+='<span class="jverdict '+esc(v.verdict)+'">'+esc(v.verdict.replace("_"," "))+'</span>'
+      html+='<span class="jverdict '+esc(v.verdict)+'">'+esc(String(v.verdict).replace("_"," "))+'</span>'
     })
     html+='</div>'
   }
   html+='</div>'
-  $("judgmentBody").innerHTML=html
+  body.innerHTML=html
+}
+
+function renderJudgePicker(trail){
+  var sel=$("judgePersona"),btn=$("judgeBtn"),msg=$("judgeMsg")
+  var current=trail.judgePersonaId||""
+  var opts='<option value="">— choose a Sim —</option>'
+  _judgePersonas.forEach(function(p){
+    opts+='<option value="'+esc(p.id)+'"'+(p.id===current?' selected':'')+'>'+esc(p.name)+(p.role?' · '+esc(p.role):'')+'</option>'
+  })
+  sel.innerHTML=opts
+  if(!_judgePersonas.length){
+    sel.disabled=true;btn.disabled=true
+    btn.textContent="Judge this walk"
+    msg.style.color="var(--paper-faint)";msg.textContent="Add a Sim to this project to judge walks."
+    return
+  }
+  sel.disabled=false;btn.disabled=false;msg.textContent=""
+  btn.innerHTML=window.kicon("sparkles",{size:12})+' Judge this walk'
+  // Persist the chosen judge persona onto the Trail so scheduled/next judgments reuse it.
+  sel.onchange=function(){saveJudgePersona(trail.id,sel.value)}
+  btn.onclick=function(){runJudge(trail)}
+}
+
+async function loadJudgePersonas(){
+  try{
+    var r=await fetch("/api/personas"+projQ())
+    if(!r.ok)return
+    var d=await r.json().catch(function(){return {}})
+    _judgePersonas=Array.isArray(d.personas)?d.personas:[]
+  }catch(e){}
+}
+
+async function saveJudgePersona(trailId,personaId){
+  var msg=$("judgeMsg")
+  msg.style.color="var(--paper-faint)";msg.textContent="Saving…"
+  try{
+    var r=await fetch("/api/trails/"+encodeURIComponent(trailId)+"/judge-persona"+projQ(),
+      {method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({personaId:personaId||null})})
+    var d=await r.json().catch(function(){return {}})
+    if(r.ok&&d.ok){
+      if(walkData&&walkData.trail)walkData.trail.judgePersonaId=personaId||null
+      msg.style.color="var(--green)";msg.textContent="Judge voice saved."
+    } else {
+      msg.style.color="var(--rose)";msg.textContent=d.error||"Could not save."
+    }
+  }catch(e){msg.style.color="var(--rose)";msg.textContent="Network error."}
+}
+
+var _judging=false
+async function runJudge(trail){
+  if(_judging)return
+  var sel=$("judgePersona"),btn=$("judgeBtn"),msg=$("judgeMsg")
+  var personaId=sel.value||trail.judgePersonaId||""
+  if(!personaId){msg.style.color="var(--rose)";msg.textContent="Pick a Sim voice first.";return}
+  _judging=true;btn.disabled=true;sel.disabled=true
+  msg.style.color="var(--paper-faint)";msg.textContent="Judging… the Sim is reading the walk."
+  try{
+    var r=await fetch("/api/trails/walks/"+encodeURIComponent(walkId)+"/judge"+projQ(),
+      {method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({personaId:personaId})})
+    var d=await r.json().catch(function(){return {}})
+    if(r.ok&&d.judgment){
+      if(walkData)walkData.judgment=d.judgment
+      msg.style.color="var(--green)";msg.textContent="Verdict ready."
+      renderJudgment(d.judgment)
+    } else {
+      msg.style.color="var(--rose)";msg.textContent=d.error||"Could not judge this walk."
+    }
+  }catch(e){msg.style.color="var(--rose)";msg.textContent="Network error."}
+  finally{_judging=false;btn.disabled=false;sel.disabled=false}
 }
 
 // ── Share ──
@@ -580,8 +683,9 @@ async function load(){
   replayState.steps=steps
   renderSteps(steps)
 
-  // Findings + judgment
+  // Findings + judgment. Load the project's Sims first so the judge-persona picker is populated.
   renderFindings(d.findings||[],qs)
+  if(String(walk.status||"running")!=="running" && !_judgePersonas.length){ await loadJudgePersonas() }
   renderJudgment(d.judgment||null)
 
   // Replay

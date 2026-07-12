@@ -1,6 +1,6 @@
 // Task 2: Walk Report data gatherer + branded HTML renderer.
 // Pure: no DOM dependencies, no <script> in output, all strings HTML-escaped.
-import type { Trail, Walk, RunStep, Finding } from "./trails-types"
+import type { Trail, Walk, RunStep, Finding, WalkJudgment } from "./trails-types"
 import { resolveBranding, brandingFooterHtml, type ResolvedBranding } from "./trails-branding"
 
 // ---------------------------------------------------------------------------
@@ -14,6 +14,8 @@ export interface WalkReportData {
   walk: Walk
   steps: ReportStep[]
   findings: Finding[]
+  /** KLA-73 / JTBD 7.6: persona-voiced verdict on this walk's findings. Null when none was run. */
+  judgment?: WalkJudgment | null
   projectName?: string
   /** URL where the rrweb replay segments can be fetched (auth'd or share-token'd). Present only when a replay was captured. */
   replayUrl?: string
@@ -30,7 +32,7 @@ export async function gatherWalkReport(
   runId: string,
   opts?: { presign?: (key: string) => string; replayUrl?: string },
 ): Promise<WalkReportData | null> {
-  const { getWalk, listRunSteps, listFindings, getTrail } = await import("./trails")
+  const { getWalk, listRunSteps, listFindings, getTrail, getWalkJudgment } = await import("./trails")
 
   // IDOR guard: getWalk is project-scoped
   const walk = await getWalk(projectId, runId)
@@ -55,6 +57,9 @@ export async function gatherWalkReport(
   const allFindings = await listFindings(projectId)
   const findings = allFindings.filter((f) => f.runId === runId)
 
+  // KLA-73 / JTBD 7.6: the persona-voiced verdict for this walk (best-effort; null when unjudged).
+  const judgment = await getWalkJudgment(projectId, runId).catch(() => null)
+
   // Optional project name — best-effort, not critical
   let projectName: string | undefined
   try {
@@ -69,7 +74,7 @@ export async function gatherWalkReport(
   const { getProjectBranding } = await import("./trails-branding")
   const branding = await getProjectBranding(projectId).catch(() => resolveBranding(null))
 
-  return { trail, walk, steps, findings, projectName, replayUrl: opts?.replayUrl, branding }
+  return { trail, walk, steps, findings, judgment, projectName, replayUrl: opts?.replayUrl, branding }
 }
 
 async function resolveReportScreenshot(
@@ -119,6 +124,7 @@ export function renderWalkReportHtml(
   opts: { baseUrl: string; generatedAt: number; replayUrl?: string },
 ): string {
   const { trail, walk, steps, findings, projectName } = data
+  const judgment = data.judgment ?? null
   const { baseUrl, generatedAt, replayUrl } = opts
 
   const base = baseUrl.replace(/\/$/, "")
@@ -273,6 +279,44 @@ export function renderWalkReportHtml(
       </div>`
       }).join("")
 
+  // Persona Judgment — KLA-73 / JTBD 7.6. The client-voiced verdict ("your AI customer walked
+  // the flow and says…") rendered above the engineer-facing step/finding detail. Verdict pills use
+  // the same green/amber/rose language as the walk page. Degrades to nothing when unjudged.
+  const verdictLabel: Record<string, string> = {
+    valid: "valid",
+    false_positive: "false positive",
+    clarify: "needs clarification",
+  }
+  const verdictPillColor: Record<string, string> = {
+    valid: "#10b981",
+    false_positive: "#e11d48",
+    clarify: "#f59e0b",
+  }
+  const verdictPillBg: Record<string, string> = {
+    valid: "rgba(16,185,129,.12)",
+    false_positive: "rgba(225,29,72,.10)",
+    clarify: "rgba(245,158,11,.14)",
+  }
+  const judgmentHtml = judgment
+    ? (() => {
+        const pills = (judgment.verdicts || [])
+          .map((v) => {
+            const c = verdictPillColor[v.verdict] ?? "#6b7280"
+            const bg = verdictPillBg[v.verdict] ?? "rgba(107,114,128,.1)"
+            const label = verdictLabel[v.verdict] ?? v.verdict
+            return `<span style="display:inline-block;font-family:monospace;font-size:10px;letter-spacing:.06em;text-transform:uppercase;padding:3px 9px;border-radius:12px;background:${esc(bg)};color:${esc(c)};margin:0 6px 6px 0">${esc(label)}</span>`
+          })
+          .join("")
+        return `
+<div style="margin-bottom:24px;padding:16px 18px;background:#f5f5ff;border:1px solid #e0e0ff;border-radius:12px">
+  <div style="font-family:monospace;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:${esc(accent)};margin-bottom:8px">Persona Verdict</div>
+  <div style="font-size:13px;color:#4b5563;margin-bottom:${judgment.overallNote ? "10px" : "0"}">Judged by <strong style="color:#111">${esc(judgment.personaName)}</strong></div>
+  ${judgment.overallNote ? `<blockquote style="margin:0 0 10px;border-left:3px solid ${esc(accent)};padding:8px 14px;background:#fff;border-radius:0 8px 8px 0;color:#374151;font-size:14px;line-height:1.5">${esc(judgment.overallNote)}</blockquote>` : ""}
+  ${pills ? `<div style="margin-top:2px">${pills}</div>` : ""}
+</div>`
+      })()
+    : ""
+
   // Font face declarations — absolute URLs so Chromium can fetch them
   const fontFaces = `
 @font-face {
@@ -352,6 +396,9 @@ ${replayUrl ? `
     <a href="${esc(replayUrl)}" style="font-family:monospace;font-size:11px;color:#6366f1;word-break:break-all">${esc(replayUrl)}</a>
   </div>
 </div>` : ""}
+
+<!-- Persona verdict (client-voiced) — above the engineer-facing step/finding detail -->
+${judgmentHtml}
 
 <!-- Step timeline -->
 <h2 style="font-size:18px;font-weight:500;margin-bottom:14px;color:#111">Steps</h2>
