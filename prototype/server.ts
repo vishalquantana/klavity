@@ -26,6 +26,7 @@ import { allow as rlAllow, record as rlRecord, count as rlCount, clear as rlClea
 import { wrapUntrusted, UNTRUSTED_GUARD } from "./lib/prompt-safety"
 import { notifyNewSignup } from "./lib/signup-alert"
 import { notifyNewReport } from "./lib/report-alert"
+import { notifyBudgetResumeRequest } from "./lib/budget-resume-alert"
 import { reportError } from "./lib/error-alert"
 import { validateModalConfigInput, resolveModalConfig } from "../packages/core/src/modal-theme"
 import { MODEL_CHOICES, MODEL_CHOICE_IDS, DEFAULT_WEIGHTS, pickModel, parseWeightsForm, weightsToPct } from "./lib/models"
@@ -2467,6 +2468,56 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       }
     }
 
+    // ── member "request resume" (JTBD 3.11) — the counterpart to admin pause. When the daily Sim
+    // budget auto-pauses a project (POST /api/sim/review gate f), a non-admin member has no way to
+    // un-pause. This lets ANY project member notify a project admin (email + optional Slack) that
+    // they're blocked and want reviews resumed. It never changes review_mode itself — resuming stays
+    // an admin action — it just closes the notification gap so the wall is no longer a dead end.
+    // Cookie OR Bearer. Best-effort notify (fire-and-forget); the request always succeeds for members.
+    {
+      const resumeMatch = path.match(/^\/api\/sim\/request-resume$/)
+      if (req.method === "POST" && resumeMatch) {
+        const meRR = (await sessionEmail(req)) || (await bearerEmail(req))
+        if (!meRR) return json({ error: "Sign in to continue." }, 401)
+        // Light abuse guard: at most a few requests per member per minute (the alert lib itself
+        // throttles email to 1/project/10min, so this only caps the cheap route churn).
+        if (!rlAllow(`simresume:${meRR}`, 5, 60_000)) return json({ error: "Please wait a moment before requesting again." }, 429)
+        const rbody = await req.json().catch(() => ({}))
+        // Resolve the project the same way the review endpoint does: explicit projectId, else the
+        // first accessible project whose allowlist matches the page the member was blocked on.
+        const rReqProject = String(rbody.projectId || "") || url.searchParams.get("project")
+        const rPageUrl = rbody.url != null ? String(rbody.url) : null
+        let rPid: string | null = null
+        if (rReqProject) {
+          const a = await resolveProject(meRR, rReqProject)
+          if (a) rPid = a.id
+        } else if (rPageUrl) {
+          for (const p of await listProjects(meRR)) {
+            if (!(await projectAccess(meRR, p.id))) continue
+            if (await matchMonitored(p.id, rPageUrl)) { rPid = p.id; break }
+          }
+        }
+        if (!rPid) return json({ error: "Pick a project to request a resume for." }, 400)
+        const rProj = await projectById(rPid)
+        if (!rProj) return json({ error: "Project not found." }, 404)
+        // Record the request on the activity feed so admins see it in the dashboard even if email
+        // or Slack is unconfigured. Distinct type from the auto `admin_notify` so both are visible.
+        await insertActivity({ projectId: rPid, type: "admin_resume_requested", actorEmail: meRR, meta: { reason: "budget_exhausted", pageUrl: rPageUrl } })
+        // Fire-and-forget notify (email owner/admins + optional Slack); never blocks the response.
+        const rBase = process.env.KLAV_BASE_URL || ""
+        const notified = await notifyBudgetResumeRequest({
+          projectId: rPid, projectName: rProj.name, accountId: rProj.accountId,
+          requesterEmail: meRR, pageUrl: rPageUrl, baseUrl: rBase, at: Date.now(),
+        }).catch(() => ({ emailed: false, recipients: 0 }))
+        return json({
+          ok: true, projectId: rPid,
+          message: notified.emailed
+            ? "We've let a project admin know you're waiting to run Sims."
+            : "Request recorded — a project admin will see it in the dashboard.",
+        })
+      }
+    }
+
     // ── signed screenshot URL (P3b, R7) — membership-checked. PRIVATE Sim screenshots return a short-lived
     // presigned GET; the existing public-read Snap screenshots return their direct public URL. Cookie OR Bearer.
     {
@@ -2537,7 +2588,24 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             if (await matchMonitored(p.id, pageUrl)) { projectId = p.id; break }
           }
         }
-        if (!projectId) return wjson({ ok: false, reason: "unauthorized", error: "No accessible project for this URL." }, 401)
+        if (!projectId) {
+          // An explicit project was requested but access failed → a genuine authz miss (keep the
+          // legacy `unauthorized` reason so gate tests + the extension's "sign in" path are stable).
+          if (requestedProject) return wjson({ ok: false, reason: "unauthorized", error: "No accessible project for this URL." }, 401)
+          // Otherwise passive auto-resolution ran and no monitored-URL allowlist entry across the
+          // caller's accessible projects matched this URL. Point them at the fix instead of dead-
+          // ending: add this URL to a project's allowlist in Settings (JTBD 3.11 — the "No accessible
+          // project" error must explain how to fix it and point at allowlist setup).
+          const base = (process.env.KLAV_BASE_URL || "").replace(/\/+$/, "")
+          const settingsUrl = base ? `${base}/dashboard#settings` : null
+          return wjson({
+            ok: false,
+            reason: "noAllowlistMatch",
+            error: "This page isn't on any of your projects' monitored-URL allowlists, so Sims won't run here. Add it in project Settings → Monitored URLs.",
+            hint: "allowlist_setup",
+            settingsUrl,
+          }, 401)
+        }
 
         // Resolve the inputs the pure gate needs (in gate order; cheap reads, no AI/S3 yet).
         const reviewMode = await getReviewMode(projectId)
@@ -2577,6 +2645,18 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             // auto-pause the project + notify the admin (§5 cost guard).
             await setReviewMode(projectId, "paused")
             await insertActivity({ projectId, type: "admin_notify", actorEmail: meR, urlHost, urlPath, meta: { reason: "budget_exhausted", day, budget } })
+            // JTBD 3.11 — don't dead-end the member with "try again tomorrow". Tell them WHY the
+            // project paused and hand them a one-click "request resume" path (POST /api/sim/request-
+            // resume) that notifies a project admin. Admins can also resume directly from Settings.
+            console.log(`[review] blocked reason=budgetExhausted path=${urlPath || "/"}`)
+            const base = (process.env.KLAV_BASE_URL || "").replace(/\/+$/, "")
+            return wjson({
+              ok: false, reason: "budgetExhausted", projectId,
+              error: "Daily Sim budget reached — this project's reviews are paused. Ask an admin to resume, or raise the daily budget in Settings.",
+              canRequestResume: true,
+              requestResumeUrl: "/api/sim/request-resume",
+              settingsUrl: base ? `${base}/dashboard?project=${encodeURIComponent(projectId)}#settings` : null,
+            }, gate.status)
           }
           console.log(`[review] blocked reason=${gate.reason} path=${urlPath || "/"}`)
           return wjson({ ok: false, reason: gate.reason, error: gate.message, projectId }, gate.status)
