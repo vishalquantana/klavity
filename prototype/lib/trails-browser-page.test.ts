@@ -103,13 +103,99 @@ describe.if(RUN_BROWSER)("acquirePlaywrightBrowser (walker seam)", () => {
     await page.close()
   })
 
-  test("with invalid AUTOSIM_CDP_URL (no key) → connectOverCDP throws, not local launch", async () => {
+  test("with invalid AUTOSIM_CDP_URL (no key) → dead remote, falls back to a LOCAL browser", async () => {
+    // KLA-278: an unreachable remote endpoint must NOT become a missed guard — it falls back to local.
     process.env.AUTOSIM_CDP_URL = "ws://127.0.0.1:19999/devtools/browser/nonexistent"
+    delete process.env.STEEL_API_KEY
+    delete process.env.AUTOSIM_CDP_NO_FALLBACK
+    const h = await acquirePlaywrightBrowser({ headless: true })
+    try {
+      expect(h.kind).toBe("local-fallback")
+      expect(typeof h.browser.newPage).toBe("function")
+    } finally {
+      await h.close()
+      delete process.env.AUTOSIM_CDP_URL
+    }
+  })
+
+  test("with invalid AUTOSIM_CDP_URL + AUTOSIM_CDP_NO_FALLBACK=1 → throws, no local fallback", async () => {
+    process.env.AUTOSIM_CDP_URL = "ws://127.0.0.1:19999/devtools/browser/nonexistent"
+    process.env.AUTOSIM_CDP_NO_FALLBACK = "1"
     delete process.env.STEEL_API_KEY
     let threw = false
     try { await acquirePlaywrightBrowser({ headless: true }) } catch { threw = true }
     expect(threw).toBe(true)
     delete process.env.AUTOSIM_CDP_URL
+    delete process.env.AUTOSIM_CDP_NO_FALLBACK
+  })
+})
+
+// ── acquirePlaywrightBrowser: health-check + remote→local fallback (hermetic, injected deps) ─────────
+// KLA-278: the scheduled/CI walk seam must run remote when AUTOSIM_CDP_URL is set, but a DEAD remote
+// endpoint must fall back to a LOCAL browser (not a missed guard). These tests inject fake
+// remote-acquire / local-open impls so the routing + fallback logic is proven WITHOUT a real browser.
+describe("acquirePlaywrightBrowser routing + fallback (hermetic)", () => {
+  const origCdp = process.env.AUTOSIM_CDP_URL
+  const origNoFallback = process.env.AUTOSIM_CDP_NO_FALLBACK
+  const fakeHandle = (kind: string): PlaywrightBrowserHandle =>
+    ({ browser: {} as any, close: async () => {}, kind })
+
+  afterAll(() => {
+    if (origCdp === undefined) delete process.env.AUTOSIM_CDP_URL; else process.env.AUTOSIM_CDP_URL = origCdp
+    if (origNoFallback === undefined) delete process.env.AUTOSIM_CDP_NO_FALLBACK; else process.env.AUTOSIM_CDP_NO_FALLBACK = origNoFallback
+  })
+
+  test("AUTOSIM_CDP_URL unset → opens LOCAL, never touches remote (byte-for-byte default)", async () => {
+    delete process.env.AUTOSIM_CDP_URL
+    delete process.env.AUTOSIM_CDP_NO_FALLBACK
+    let remoteCalls = 0
+    const kinds: string[] = []
+    const h = await acquirePlaywrightBrowser({}, {
+      acquireRemote: async () => { remoteCalls++; return fakeHandle("steel:iad") },
+      openLocal: async (_o, kind) => { kinds.push(kind); return fakeHandle(kind) },
+    })
+    expect(remoteCalls).toBe(0)     // remote path never invoked when unset
+    expect(kinds).toEqual(["local"])
+    expect(h.kind).toBe("local")
+  })
+
+  test("AUTOSIM_CDP_URL set + remote healthy → uses REMOTE, no local fallback", async () => {
+    process.env.AUTOSIM_CDP_URL = "wss://connect.steel.dev"
+    delete process.env.AUTOSIM_CDP_NO_FALLBACK
+    let localCalls = 0
+    const h = await acquirePlaywrightBrowser({}, {
+      acquireRemote: async () => fakeHandle("steel:iad"),
+      openLocal: async (_o, kind) => { localCalls++; return fakeHandle(kind) },
+    })
+    expect(h.kind).toBe("steel:iad")
+    expect(localCalls).toBe(0)      // healthy remote → no fallback
+  })
+
+  test("AUTOSIM_CDP_URL set + remote DEAD → falls back to LOCAL, kind=local-fallback", async () => {
+    process.env.AUTOSIM_CDP_URL = "wss://connect.steel.dev"
+    delete process.env.AUTOSIM_CDP_NO_FALLBACK
+    const kinds: string[] = []
+    const h = await acquirePlaywrightBrowser({}, {
+      acquireRemote: async () => { throw new BrowserLaunchError("Steel session create failed (503)") },
+      openLocal: async (_o, kind) => { kinds.push(kind); return fakeHandle(kind) },
+    })
+    expect(kinds).toEqual(["local-fallback"])  // fell back to local
+    expect(h.kind).toBe("local-fallback")      // visible on the handle → surfaced in walk evidence
+  })
+
+  test("AUTOSIM_CDP_URL set + remote DEAD + AUTOSIM_CDP_NO_FALLBACK=1 → propagates the error", async () => {
+    process.env.AUTOSIM_CDP_URL = "wss://connect.steel.dev"
+    process.env.AUTOSIM_CDP_NO_FALLBACK = "1"
+    let localCalls = 0
+    let err: unknown
+    try {
+      await acquirePlaywrightBrowser({}, {
+        acquireRemote: async () => { throw new BrowserLaunchError("unreachable") },
+        openLocal: async (_o, kind) => { localCalls++; return fakeHandle(kind) },
+      })
+    } catch (e) { err = e }
+    expect(err).toBeInstanceOf(BrowserLaunchError)
+    expect(localCalls).toBe(0)      // strict remote-only → NO local fallback
   })
 })
 
