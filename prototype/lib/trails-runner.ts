@@ -795,7 +795,10 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
     await finishWalk(projectId, runId, {
       status: walkVerdict,
       llmCalls,
-      summary: { healedCount, stepCount: steps.length, ...(walkFailureKind ? { failureKind: walkFailureKind } : {}), ...(deadlineHit ? { error: "deadline_exceeded" } : cancelledBySignal ? { error: "cancelled" } : {}), ...(evSummary ? { evidence: evSummary } : {}) },
+      // browserKind (KLA-278): which browser actually ran the walk — "local", "steel:<region>",
+      // "cdp-remote", or "local-fallback" (remote endpoint was down → we fell back so the guard
+      // still ran). Surfacing it here makes the Steel↔local fallback VISIBLE on the walk report.
+      summary: { healedCount, stepCount: steps.length, browserKind: bh.kind, ...(walkFailureKind ? { failureKind: walkFailureKind } : {}), ...(deadlineHit ? { error: "deadline_exceeded" } : cancelledBySignal ? { error: "cancelled" } : {}), ...(evSummary ? { evidence: evSummary } : {}) },
     })
 
     if (walkVerdict === "red") {
@@ -821,7 +824,7 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
     await finishWalk(projectId, runId, {
       status: "red",
       llmCalls,
-      summary: { ...redReasons.length ? { reasons: redReasons } : {}, failureKind: failureKindForThrownError(e), error: String(e), ...(evSummaryCatch ? { evidence: evSummaryCatch } : {}) },
+      summary: { ...redReasons.length ? { reasons: redReasons } : {}, failureKind: failureKindForThrownError(e), error: String(e), browserKind: bh.kind, ...(evSummaryCatch ? { evidence: evSummaryCatch } : {}) },
     })
     notifyWalkRed({ trailName: trail.name, trailId, projectId, runId, reasons: redReasons, at: Date.now(), failureKind: failureKindForThrownError(e) }).catch(() => {})
     return { runId, verdict: "red", llmCalls, steps: stepSummaries, healedCount, reasons: redReasons, failureKind: failureKindForThrownError(e), ...(evSummaryCatch ? { evidence: evSummaryCatch } : {}) }

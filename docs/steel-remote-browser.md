@@ -13,6 +13,7 @@ heavyweight Chromium process off the 1 GB prod box without any code change.
 | `STEEL_API_URL` | optional | Steel REST API base (default `https://api.steel.dev`). Override for self-hosted Steel. |
 | `STEEL_REGION` | optional | Steel session region: `lax` (Los Angeles) or `iad` (Washington DC). **Recommended: `iad`** (US-east, closest to the Vultr prod box → lowest CDP RTT). Unset → Steel's default region. |
 | `STEEL_CONNECT_TIMEOUT_MS` | optional | CDP connect timeout in ms (default `20000`). Bounds the Playwright attach so an unreachable endpoint fails fast with a `BrowserLaunchError` instead of hanging. |
+| `AUTOSIM_CDP_NO_FALLBACK` | optional | Walk engine only. When `1`, a dead remote endpoint FAILS HARD (RED crash) instead of falling back to a local browser. Default (unset) → **fall back to local** so a dead Steel session never becomes a missed scheduled/CI guard (KLAVITYKLA-278). |
 
 ## Authoring drive (`acquireBrowser` → Puppeteer-over-CDP)
 
@@ -46,6 +47,24 @@ against Steel, per the 2026-07-04 spike):
 
 The authoring drive (`acquireBrowser` → puppeteer only) was already correct and now shares the same
 `createSteelSession()` (websocketUrl + region) helper.
+
+### Health check + local fallback (KLAVITYKLA-278)
+
+The walk engine is the recurring-volume path (scheduled trails + CI-triggered walks all go through
+`walkTrail` → `acquirePlaywrightBrowser`). A dead Steel session or an unreachable remote endpoint must
+**not** turn a guard into a silent RED "crash" with an empty report. So `acquirePlaywrightBrowser`
+now treats the remote connect as a **health check**: if `acquireRemotePlaywrightBrowser()` throws a
+`BrowserLaunchError` (session-create 5xx, connect timeout, unreachable host), the walk **falls back to
+a local Chromium** so the guard still runs. The fallback is visible two ways:
+
+1. a `console.warn` line — `remote walk browser at AUTOSIM_CDP_URL is unreachable (…); falling back to
+   a LOCAL browser …`, and
+2. the walk's `summary.browserKind` is recorded as **`local-fallback`** (vs `local` / `steel:<region>`
+   / `cdp-remote`), so the walk report shows which browser actually ran it.
+
+Set `AUTOSIM_CDP_NO_FALLBACK=1` to opt out (strict remote-only: the original `BrowserLaunchError`
+propagates and the walk finalizes RED as a crash, as before). With `AUTOSIM_CDP_URL` **unset** the
+remote path is never touched — behavior is byte-for-byte the local default.
 
 ## Routing table
 
