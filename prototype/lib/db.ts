@@ -174,6 +174,22 @@ export async function applySchema(c: Client) {
        created_at INTEGER NOT NULL
      )`,
     `CREATE INDEX IF NOT EXISTS ticket_comments_feedback_idx ON ticket_comments (feedback_id, created_at)`,
+    // ── A.8 occurrence receipts (additive): each deduped repeat-report keeps its OWN verbatim
+    // description, screenshot, and date instead of being discarded on the dedup counter-bump.
+    // Attached to the cluster head feedback row (feedback_id). Powers the per-ticket occurrence
+    // timeline ("Jun 10: 'checkout button does nothing' · Jul 3: 'STILL can't check out'").
+    `CREATE TABLE IF NOT EXISTS feedback_occurrences (
+       id TEXT PRIMARY KEY,
+       feedback_id TEXT NOT NULL,
+       project_id TEXT NOT NULL,
+       seen_at INTEGER NOT NULL,
+       observation TEXT,
+       screenshot_id TEXT,
+       source_quote TEXT,
+       reporter_email TEXT,
+       created_at INTEGER NOT NULL
+     )`,
+    `CREATE INDEX IF NOT EXISTS feedback_occ_idx ON feedback_occurrences (feedback_id, seen_at)`,
     `CREATE TABLE IF NOT EXISTS ticket_assignment_invites (
        id TEXT PRIMARY KEY,
        project_id TEXT NOT NULL,
@@ -2452,6 +2468,53 @@ export async function bumpFeedbackRecurrence(id: string, atMs: number): Promise<
       : "UPDATE feedback SET recurrence_count=?, recurrence_dates_json=?, last_seen_at=? WHERE id=?",
     args: [count, JSON.stringify(dates), atMs, id],
   })
+}
+
+// ── A.8 occurrence receipts ──
+// Persist one repeat-report's OWN verbatim evidence (description, screenshot, quote, date) against
+// the cluster-head feedback row. Called on the deduped intake branch so occurrences 2..N are not
+// discarded when the recurrence counter is bumped. Best-effort — never throws into the submit path.
+export type FeedbackOccurrenceInsert = {
+  feedbackId: string; projectId: string; seenAt: number
+  observation?: string | null; screenshotId?: string | null
+  sourceQuote?: string | null; reporterEmail?: string | null
+}
+export async function insertFeedbackOccurrence(o: FeedbackOccurrenceInsert): Promise<string> {
+  const id = "occ_" + crypto.randomUUID()
+  await db!.execute({
+    sql: `INSERT INTO feedback_occurrences (id, feedback_id, project_id, seen_at, observation, screenshot_id, source_quote, reporter_email, created_at)
+          VALUES (?,?,?,?,?,?,?,?,?)`,
+    args: [
+      id, o.feedbackId, o.projectId, o.seenAt,
+      o.observation ?? null, o.screenshotId ?? null, o.sourceQuote ?? null, o.reporterEmail ?? null,
+      Date.now(),
+    ],
+  })
+  return id
+}
+
+export type FeedbackOccurrenceRow = {
+  id: string; feedbackId: string; projectId: string; seenAt: number
+  observation: string | null; screenshotId: string | null
+  sourceQuote: string | null; reporterEmail: string | null; createdAt: number
+}
+// All stored occurrences for a cluster head, chronological. Empty array when none / on error.
+export async function listFeedbackOccurrences(feedbackId: string): Promise<FeedbackOccurrenceRow[]> {
+  try {
+    const r = await db!.execute({
+      sql: `SELECT * FROM feedback_occurrences WHERE feedback_id=? ORDER BY seen_at ASC, created_at ASC`,
+      args: [feedbackId],
+    })
+    return r.rows.map((x: any): FeedbackOccurrenceRow => ({
+      id: String(x.id), feedbackId: String(x.feedback_id), projectId: String(x.project_id),
+      seenAt: Number(x.seen_at),
+      observation: x.observation != null ? String(x.observation) : null,
+      screenshotId: x.screenshot_id != null ? String(x.screenshot_id) : null,
+      sourceQuote: x.source_quote != null ? String(x.source_quote) : null,
+      reporterEmail: x.reporter_email != null ? String(x.reporter_email) : null,
+      createdAt: Number(x.created_at),
+    }))
+  } catch { return [] }
 }
 
 // Cheap headline counts for the dashboard (indexed scans).
