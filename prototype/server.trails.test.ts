@@ -357,3 +357,36 @@ test("the trails page has a per-trail Run affordance that POSTs the walk route",
   expect(html).toContain("/walk")
   expect(html).toContain("Run")
 })
+
+// ── KLA-277 (JTBD 4.13): DST-safe schedules — PATCH persists schedule + scheduleTz ──
+test("PATCH /api/trails/:id persists a local-cron schedule together with its scheduleTz", async () => {
+  const r = await api("PATCH", `/api/trails/${TRAIL_ID}?project=${PROJECT_ID}`,
+    { schedule: "0 9 * * *", scheduleTz: "America/New_York" }, ADMIN_SID)
+  expect(r.status).toBe(200)
+  // Read it back through the dashboard — the trail row must carry both fields.
+  const d = await api("GET", `/api/trails/dashboard?project=${PROJECT_ID}`, null, ADMIN_SID)
+  const b = await d.json()
+  const t = b.trails.find((x: any) => x.id === TRAIL_ID)
+  expect(t.schedule).toBe("0 9 * * *")
+  expect(t.scheduleTz).toBe("America/New_York")
+})
+
+test("PATCH /api/trails/:id rejects an unknown timezone", async () => {
+  const r = await api("PATCH", `/api/trails/${TRAIL_ID}?project=${PROJECT_ID}`,
+    { schedule: "0 9 * * *", scheduleTz: "Not/AZone" }, ADMIN_SID)
+  expect(r.status).toBe(400)
+})
+
+test("PATCH /api/trails/:id clearing the schedule also clears scheduleTz", async () => {
+  // Set, then clear.
+  await api("PATCH", `/api/trails/${TRAIL_ID}?project=${PROJECT_ID}`,
+    { schedule: "0 9 * * *", scheduleTz: "Europe/London" }, ADMIN_SID)
+  const clr = await api("PATCH", `/api/trails/${TRAIL_ID}?project=${PROJECT_ID}`,
+    { schedule: null }, ADMIN_SID)
+  expect(clr.status).toBe(200)
+  const d = await api("GET", `/api/trails/dashboard?project=${PROJECT_ID}`, null, ADMIN_SID)
+  const b = await d.json()
+  const t = b.trails.find((x: any) => x.id === TRAIL_ID)
+  expect(t.schedule).toBeNull()
+  expect(t.scheduleTz).toBeNull()
+})

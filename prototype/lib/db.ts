@@ -838,6 +838,10 @@ export async function applySchema(c: Client) {
   // scheduled_last_run_at guards against double-fire within the same minute window.
   if (needCol("trails", "schedule_cron")) await c.execute("ALTER TABLE trails ADD COLUMN schedule_cron TEXT").catch((e) => console.warn("trails.schedule_cron ALTER skipped:", e?.message || e))
   if (needCol("trails", "scheduled_last_run_at")) await c.execute("ALTER TABLE trails ADD COLUMN scheduled_last_run_at INTEGER").catch((e) => console.warn("trails.scheduled_last_run_at ALTER skipped:", e?.message || e))
+  // KLA-277 (JTBD 4.13): DST-safe schedules — schedule_tz holds the IANA zone the cron is expressed
+  // in. When set, schedule_cron is LOCAL wall-clock and the UTC fire instant is computed per tick so
+  // a 9am-local guard survives DST. Null = legacy baked-UTC cron (unchanged behavior).
+  if (needCol("trails", "schedule_tz")) await c.execute("ALTER TABLE trails ADD COLUMN schedule_tz TEXT").catch((e) => console.warn("trails.schedule_tz ALTER skipped:", e?.message || e))
   // KLA-70: dedup-race fix — enforce UNIQUE(project_id, dedup_key) so recordFinding's
   // INSERT ON CONFLICT is atomic. Pre-collapse any legacy duplicates (keep oldest rowid) first.
   await c.execute("DELETE FROM findings WHERE rowid NOT IN (SELECT MIN(rowid) FROM findings GROUP BY project_id, dedup_key)")
