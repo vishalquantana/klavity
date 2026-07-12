@@ -1790,6 +1790,14 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           <input type="color" id="kl-launcher-icon-color" value="#5b5bf0">
         </label>
         <p style="font-size:12px;opacity:.7;margin-top:-4px">Controls the background color of the floating launcher button.</p>
+        <label>Right-click menu
+          <select id="kl-rightclick-mode">
+            <option value="full">Full — Report, Request &amp; deploy Sims (default)</option>
+            <option value="reportOnly">Report only — no Sims actions for anyone</option>
+            <option value="off">Off — leave the native browser menu alone</option>
+          </select>
+        </label>
+        <p style="font-size:12px;opacity:.7;margin-top:-4px">Controls the Klavity menu on right-click. <b>Report only</b> is best for a client-facing embed — end users never see Sims jargon. <b>Off</b> disables the takeover entirely. In <b>Full</b>, Sims actions appear only to signed-in project members.</p>
         <label>CTA URL
           <input type="url" id="kl-cta" placeholder="https://...">
         </label>
@@ -5403,6 +5411,9 @@ async function loadAppearance() {
       if (ltVal) body.launcherText = ltVal
       const licVal = $("kl-launcher-icon-color") ? $("kl-launcher-icon-color").value : "#5b5bf0"
       if (licVal && licVal !== "#5b5bf0") body.launcherIconColor = licVal
+      // Right-click menu mode (all plans). Only send non-default so existing projects keep 'full'.
+      const rcVal = $("kl-rightclick-mode") ? $("kl-rightclick-mode").value : "full"
+      if (rcVal && rcVal !== "full") body.rightClickMode = rcVal
       const maskChk = $("kl-mask-numbers")
       if (maskChk) body.maskNumbers = maskChk.checked ? true : undefined
       const notifyVal = $("kl-notify").value.trim()
@@ -5437,6 +5448,7 @@ async function loadAppearance() {
     if (c.launcherMode && $("kl-launcher-mode")) $("kl-launcher-mode").value = c.launcherMode
     if (c.launcherText && $("kl-launcher-text")) $("kl-launcher-text").value = c.launcherText
     if (c.launcherIconColor && $("kl-launcher-icon-color")) $("kl-launcher-icon-color").value = c.launcherIconColor
+    if ($("kl-rightclick-mode")) $("kl-rightclick-mode").value = c.rightClickMode || "full"
     if ($("kl-mask-numbers")) $("kl-mask-numbers").checked = !!c.maskNumbers
     syncLauncher()
     // Pre-fill lead-gen widget fields (notify email is never returned — left blank)
