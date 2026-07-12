@@ -617,13 +617,13 @@ const EXT_CSS = `
   }
   .klav-pin-triage:hover { background:rgba(139,92,246,.32); border-color:rgba(139,92,246,.6); }
   .klav-pin-triage:focus-visible { outline:2px solid #8b5cf6; outline-offset:2px; }
-  .klav-pin-dismiss {
+  .klav-pin-dismiss, .klav-pin-collapse {
     background:none; border:1px solid #3a332b; color:#6e6560; font-size:11.5px;
     border-radius:7px; padding:5px 8px; cursor:pointer; font-family:system-ui,sans-serif;
     transition:background .15s,color .15s,border-color .15s;
   }
-  .klav-pin-dismiss:hover { background:rgba(255,255,255,.08); color:#f5f3ee; border-color:#5a5248; }
-  .klav-pin-dismiss:focus-visible { outline:2px solid #8b5cf6; outline-offset:2px; }
+  .klav-pin-dismiss:hover, .klav-pin-collapse:hover { background:rgba(255,255,255,.08); color:#f5f3ee; border-color:#5a5248; }
+  .klav-pin-dismiss:focus-visible, .klav-pin-collapse:focus-visible { outline:2px solid #8b5cf6; outline-offset:2px; }
 
   @media (prefers-reduced-motion:reduce) {
     .klav-walker { transition:none !important; }
@@ -1315,6 +1315,62 @@ function collapseFocusedAnnotation(immediate = false): void {
   updateAnnotationFocusClasses()
 }
 
+/**
+ * Fully remove an annotation (or matching pending annotation) from the UI.
+ *
+ * Used by "Track as Bug" / "Dismiss": collapses focused chrome, tears down the
+ * marker + its listeners, drops the annotation from every registry (annotations,
+ * the slot's annotationIds, pendingAnnotations), clears the dock "has-annotation"
+ * class when the slot is empty, and refreshes the counter + tour so a removed
+ * finding never re-surfaces in the "+N more" count or walk-me-through tour.
+ *
+ * Note: this does NOT touch seenObservationKeys — callers are responsible for
+ * marking the observation handled so renderFeedback() won't re-add it.
+ */
+function removeAnnotation(annotationId: string): void {
+  const ann = annotations.get(annotationId)
+  if (!ann) return
+
+  // If this annotation is currently focused, collapse its chrome first.
+  if (focusedAnnotationId === annotationId) collapseFocusedAnnotation(true)
+
+  ann.markerCleanup?.()
+  ann.chromeCleanup?.()
+  ann.marker.remove()
+  ann.halo?.remove()
+  ann.bubble?.remove()
+
+  annotations.delete(annotationId)
+  const slot = ann.slot
+  slot.annotationIds.delete(annotationId)
+
+  // Drop any pending annotation for the same slot + observation text so a queued
+  // duplicate can't reveal the just-handled finding.
+  const handledText = normalizeObservationText(ann.obs.text)
+  pendingAnnotations.forEach((pending, pendingId) => {
+    if (pending.slot.simId === slot.simId && normalizeObservationText(pending.obs.text) === handledText) {
+      pending.cleanup?.()
+      pendingAnnotations.delete(pendingId)
+    }
+  })
+
+  // Clear the dock avatar's has-annotation state when the slot has none left.
+  const stillHasAnnotation = Array.from(slot.annotationIds).some((id) => annotations.has(id))
+  if (!stillHasAnnotation) slot.avatarEl.classList.remove('ksl-has-annotation')
+
+  updateDockCounter()
+  updateAnnotationFocusClasses()
+}
+
+/**
+ * Mark an observation handled (so renderFeedback() won't re-surface it) and
+ * remove its annotation from the page. Shared by "Track as Bug" and "Dismiss".
+ */
+function handleAndRemoveAnnotation(ann: Annotation): void {
+  seenObservationKeys.add(observationKey(ann.slot.simId, ann.obs))
+  removeAnnotation(ann.id)
+}
+
 function isAnnotationEventPath(e: Event): boolean {
   const path = typeof e.composedPath === 'function' ? e.composedPath() : []
   return path.some((item) => {
@@ -1324,6 +1380,7 @@ function isAnnotationEventPath(e: Event): boolean {
       item.classList?.contains('klav-pin') ||
       item.classList?.contains('klav-pin-triage') ||
       item.classList?.contains('klav-pin-dismiss') ||
+      item.classList?.contains('klav-pin-collapse') ||
       item.classList?.contains('ksl-more-counter') ||
       item.classList?.contains('ksl-tour-controls') ||
       item.classList?.contains('ksl-tour-btn') ||
@@ -1398,14 +1455,26 @@ function createExpandedChrome(ann: Annotation): void {
   const triageBtn = document.createElement('button'); triageBtn.className = 'klav-pin-triage'
   triageBtn.innerHTML = icon('bug') + ' Track as Bug'
   triageBtn.setAttribute('aria-label', `Track observation from ${slot.name} as a bug`)
-  triageBtn.addEventListener('click', () => { SimsLive.onTriage?.(obs, slot.name) })
+  triageBtn.addEventListener('click', () => {
+    // Open the bug composer, then dismiss the finding for good so it never
+    // re-prompts (same finding was re-appearing after tracking — the bug).
+    SimsLive.onTriage?.(obs, slot.name)
+    handleAndRemoveAnnotation(ann)
+  })
 
+  // Explicit "Dismiss" — remove the finding permanently without composing a bug.
   const dismissBtn = document.createElement('button'); dismissBtn.className = 'klav-pin-dismiss'
-  dismissBtn.textContent = 'Collapse'
-  dismissBtn.setAttribute('aria-label', `Collapse pinned feedback from ${slot.name}`)
-  dismissBtn.addEventListener('click', () => collapseFocusedAnnotation())
+  dismissBtn.textContent = 'Dismiss'
+  dismissBtn.setAttribute('aria-label', `Dismiss feedback from ${slot.name}`)
+  dismissBtn.addEventListener('click', () => { handleAndRemoveAnnotation(ann) })
 
-  actions.appendChild(triageBtn); actions.appendChild(dismissBtn)
+  // "Collapse" — keep the finding, just close the expanded bubble.
+  const collapseBtn = document.createElement('button'); collapseBtn.className = 'klav-pin-collapse'
+  collapseBtn.textContent = 'Collapse'
+  collapseBtn.setAttribute('aria-label', `Collapse pinned feedback from ${slot.name}`)
+  collapseBtn.addEventListener('click', () => collapseFocusedAnnotation())
+
+  actions.appendChild(triageBtn); actions.appendChild(dismissBtn); actions.appendChild(collapseBtn)
   pin.appendChild(hd); pin.appendChild(obsEl); pin.appendChild(actions)
   ov.appendChild(pin)
 
