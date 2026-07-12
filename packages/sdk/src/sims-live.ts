@@ -137,6 +137,30 @@ interface PendingAnnotation {
 const annotations = new Map<string, Annotation>()
 const pendingAnnotations = new Map<string, PendingAnnotation>()
 let annotationSeq = 0
+
+/**
+ * Observation-text dedup guard (fixes the live-Sims loop pile-up).
+ *
+ * A constantly-mutating page (streaming chat, typing indicators, a live sidebar)
+ * makes the watch engine re-review the same viewport, and the server returns the
+ * SAME findings each time. Without a guard, renderFeedback() keeps ADDING markers
+ * for identical observations and the "+N more" counter grows forever.
+ *
+ * We key each already-shown finding by `simId::<normalized-text-hash>` (text is
+ * trimmed / lowercased / whitespace-collapsed) and skip any repeat. Cleared in
+ * undeploy() so a fresh deploy starts clean.
+ */
+const seenObservationKeys = new Set<string>()
+
+/** Normalize observation text for dedup: trim, lowercase, collapse whitespace. */
+function normalizeObservationText(text: string): string {
+  return String(text || '').trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
+/** Stable dedup key for an observation within a Sim. */
+function observationKey(simId: string, obs: LiveObservation): string {
+  return `${simId}::${normalizeObservationText(obs.text)}`
+}
 let focusedAnnotationId: string | null = null
 let walkQueueIndex = 0
 let walkQueueResetTimer: ReturnType<typeof setTimeout> | null = null
@@ -1663,10 +1687,19 @@ function renderFeedback(simId: string, simName: string, observations: LiveObserv
 
   // Keep the on-page layer action-oriented. Non-actionable observations still
   // persist through the review pipeline, but they do not create page chrome.
+  //
+  // Dedup: a live-mutating page re-reviews the same viewport and the server
+  // returns the SAME findings repeatedly. Skip any observation whose normalized
+  // text we've already shown for this Sim so identical findings never pile up
+  // (this is what stops the "+16 more" → "+36 more" runaway counter).
   const toWalk: LiveObservation[] = []
 
   for (const obs of observations) {
-    if (isConcernObservation(obs)) toWalk.push(obs)
+    if (!isConcernObservation(obs)) continue
+    const key = observationKey(simId, obs)
+    if (seenObservationKeys.has(key)) continue   // already shown — do not re-add
+    seenObservationKeys.add(key)
+    toWalk.push(obs)
   }
 
   // Marker observations: staggered lightly so pins pop in without a wall of chrome.
@@ -1689,6 +1722,8 @@ function undeploy(): void {
   simSlots.forEach(s => { s.clearBubble?.(); s.clearBubble = null })
   focusedAnnotationId = null
   simSlots.clear()
+  // Reset the observation-dedup guard so a fresh deploy starts clean.
+  seenObservationKeys.clear()
 
   // 2. Abort global listeners
   deployAbort?.abort(); deployAbort = null

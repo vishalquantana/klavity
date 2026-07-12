@@ -16,6 +16,12 @@
 //   seenHashes Set — skip when the viewport fingerprint matches a hash already reviewed
 //   mutationEpoch — bumped on each significant mutation batch so in-place content swaps
 //     (same URL / docHeight) always produce a fresh hash and aren't wrongly skipped
+//   MUTATION CAP — a live-mutating page (streaming chat, live sidebar) can fire
+//     "significant" mutations forever. hasSignificantMutations() now ignores the Sims'
+//     own overlay nodes + streaming/small nodes (raised geometry bar), and after
+//     MAX_MUTATION_REVIEWS_NO_NEW (=3) mutation reviews at the same pathname with no
+//     NEW findings we stop scheduling further mutation reviews for that URL until a
+//     navigation or user scroll resets the cap. (Fixes the live-Sims re-analyze loop.)
 //   busy flag — blocks concurrent calls while a review is in flight
 //   capture timeout (10s) — prevents a hung captureViewport() from locking busy=true
 //
@@ -31,6 +37,15 @@ export function djb2(s: string): number {
     h = ((h << 5) + h + s.charCodeAt(i)) | 0
   }
   return h >>> 0
+}
+
+/**
+ * Normalize a finding's text for dedup (trim / lowercase / collapse whitespace).
+ * Mirrors the client-side dedup in sims-live.ts so the watch engine's "new
+ * finding?" decision matches what the UI actually renders.
+ */
+export function normalizeFindingText(text: string): string {
+  return String(text || '').trim().toLowerCase().replace(/\s+/g, ' ')
 }
 
 /**
@@ -78,44 +93,93 @@ export function shouldSkipReview(
   return seenHashes.has(hash)
 }
 
+// The Sims' own dock / overlay / walker / marker nodes are injected into the page
+// as it works. Their mutations must NEVER count as page changes or the engine
+// would re-review itself in a loop.
+const OWN_OVERLAY_IDS = new Set(['klav-sims-live', 'klav-sims-overlay', 'klavity-widget-host'])
+const OWN_OVERLAY_CLASSES = ['klav-halo', 'klav-pin', 'klav-pin-marker', 'klav-walker', 'ksl-bubble', 'ksl-slot', 'ksl-review-status']
+
+/** True when an element is (or sits inside) one of the Sims' own injected overlay/dock nodes. */
+export function isOwnOverlayNode(el: Element): boolean {
+  if (!el) return false
+  let cur: Element | null = el
+  let hops = 0
+  while (cur && hops < 8) {
+    const id = (cur as HTMLElement).id
+    if (id && OWN_OVERLAY_IDS.has(id)) return true
+    const cls = cur.className
+    if (typeof cls === 'string' && cls) {
+      for (const c of OWN_OVERLAY_CLASSES) if (cls.includes(c)) return true
+    }
+    cur = (cur as HTMLElement).parentElement ?? null
+    hops++
+  }
+  return false
+}
+
 /**
  * True when an added DOM node qualifies as "significant new content":
- *   – a semantic landmark with role=dialog/main/complementary/…
- *   – a class matching common panel/modal/chat/drawer patterns
- *   – a large visible footprint (≥ 100 × 100 px)
- * Ignores metadata nodes (script/style/meta/link) and invisible tiny elements.
+ *   – a semantic landmark with role=dialog/main/complementary
+ *   – a class matching a strong container pattern (modal/dialog/drawer/panel/
+ *     sidebar/overlay/sheet)
+ *   – a LARGE visible footprint (≥ 220 × 180 px — a genuine panel/dialog/content
+ *     block, not a chat line, toast, or typing indicator)
+ * Ignores metadata nodes (script/style/meta/link), the Sims' own overlay nodes,
+ * and small/streaming elements.
+ *
+ * The class list here is intentionally NARROW: "message"/"feed"/"article"/"toast"/
+ * "notification"/"chat"/"alert"/"log" were dropped because a streaming chat app
+ * fires those on every token — exactly the loop we're fixing. Only container-level
+ * chrome counts by class; everything else must clear the large-geometry bar.
  */
 export function isSignificantNode(el: Element): boolean {
   const tag = el.tagName?.toUpperCase() ?? ''
   if (['SCRIPT', 'STYLE', 'META', 'LINK', 'HEAD', 'NOSCRIPT'].includes(tag)) return false
 
+  // Never treat our own dock/overlay mutations as page content.
+  if (isOwnOverlayNode(el)) return false
+
   const role = el.getAttribute?.('role') ?? ''
-  if (['dialog', 'main', 'complementary', 'banner', 'navigation', 'feed', 'log'].includes(role)) return true
+  if (['dialog', 'main', 'complementary'].includes(role)) return true
 
   const cls = el.className
   if (typeof cls === 'string' && cls) {
-    if (/(modal|dialog|drawer|panel|sidebar|chat|message|overlay|sheet|toast|alert|notification|feed|article)/i.test(cls)) return true
+    if (/(modal|dialog|drawer|panel|sidebar|overlay|sheet)/i.test(cls)) return true
   }
 
-  // Geometry fallback — treat a large visible rectangle as significant.
+  // Geometry fallback — only a genuinely LARGE visible rectangle is significant.
+  // Raised from 100×100 to 220×180 so a chat bubble / typing indicator / small
+  // card streaming in does not qualify as a structural page change.
   if (typeof (el as HTMLElement).getBoundingClientRect === 'function') {
     const r = (el as HTMLElement).getBoundingClientRect()
-    return r.width >= 100 && r.height >= 100
+    return r.width >= 220 && r.height >= 180
   }
   const h = (el as HTMLElement).offsetHeight ?? 0
   const w = (el as HTMLElement).offsetWidth ?? 0
-  return h >= 100 && w >= 100
+  return h >= 180 && w >= 220
 }
 
+// Minimum count of significant added element nodes required to treat a mutation
+// batch as a real page change. Kept at 1 (a single true panel/dialog is enough),
+// but the raised isSignificantNode threshold + own-overlay filter above are what
+// stop streaming chat mutations from ever reaching this counter.
+const MIN_SIGNIFICANT_ADDED = 1
+
 /**
- * Returns true when a MutationObserver batch contains at least one significant structural
- * addition. Attribute-only mutations and tiny text-node insertions are ignored.
+ * Returns true when a MutationObserver batch contains a genuine structural
+ * addition worth re-reviewing. Attribute-only mutations, character-data (text
+ * streaming), tiny/streaming nodes, and the Sims' own overlay mutations are all
+ * ignored. Requires at least MIN_SIGNIFICANT_ADDED significant added element nodes.
  */
 export function hasSignificantMutations(mutations: MutationRecord[]): boolean {
+  let significant = 0
   for (const m of mutations) {
     if (m.type !== 'childList') continue
     for (const node of Array.from(m.addedNodes)) {
-      if (node.nodeType === 1 /* ELEMENT_NODE */ && isSignificantNode(node as Element)) return true
+      if (node.nodeType === 1 /* ELEMENT_NODE */ && isSignificantNode(node as Element)) {
+        significant++
+        if (significant >= MIN_SIGNIFICANT_ADDED) return true
+      }
     }
   }
   return false
@@ -129,6 +193,17 @@ const DEFAULT_MUTATION_DEBOUNCE_MS = 800
 const MAX_SEEN_HASHES = 200              // cap the client-side dedup set (memory guard)
 const CAPTURE_TIMEOUT_MS = 10_000       // abort a hung captureViewport() after 10s
 const REVIEW_FETCH_TIMEOUT_MS = 45_000   // abort a stalled /api/sim/review before busy stays true
+
+// Safety cap on mutation-triggered reviews for a live-mutating page.
+//
+// A constantly-changing app (streaming chat, live sidebar) can fire "significant"
+// mutations indefinitely. To stop unbounded AI spend we count consecutive
+// mutation-triggered reviews at the SAME location.pathname that yield NO new
+// findings (findings whose normalized text we haven't already returned). Once we
+// hit MAX_MUTATION_REVIEWS_NO_NEW at a pathname, we stop SCHEDULING further
+// mutation reviews for that URL until a navigation or user scroll resets it.
+// Navigation and scroll triggers are never capped.
+const MAX_MUTATION_REVIEWS_NO_NEW = 3
 
 type TriggerKind = 'scroll' | 'navigation' | 'mutation'
 
@@ -198,9 +273,52 @@ export function startSimsWatch(opts: SimsWatchOptions): SimsWatchController {
   // AbortController for the current in-flight fetch; aborted by stop().
   let fetchAbort: AbortController | null = null
 
+  // ── Mutation-review cap state (fixes the live-page re-analyze loop) ─────────────────────────
+  // Normalized text of every finding we've already surfaced this session — lets the watch
+  // engine decide whether a mutation review produced anything NEW.
+  const seenFindingText = new Set<string>()
+  // The pathname the mutation-review counter currently applies to.
+  let mutationCapPath = ''
+  // Consecutive mutation reviews at mutationCapPath that returned no NEW findings.
+  let mutationNoNewCount = 0
+
+  function currentPathname(): string {
+    return typeof location !== 'undefined' ? location.pathname : ''
+  }
+
+  /** Reset the mutation-review cap — called on real navigation and user scroll. */
+  function resetMutationCap(): void {
+    mutationCapPath = currentPathname()
+    mutationNoNewCount = 0
+  }
+
+  /** True when mutation-triggered reviews are capped for the current pathname. */
+  function mutationCapReached(): boolean {
+    return mutationCapPath === currentPathname() && mutationNoNewCount >= MAX_MUTATION_REVIEWS_NO_NEW
+  }
+
+  /**
+   * Record the outcome of a mutation-triggered review at the given pathname.
+   * Increments the no-new counter when the review surfaced 0 new findings; resets
+   * it (to give the page fresh budget) whenever at least one NEW finding appeared.
+   */
+  function recordMutationOutcome(path: string, newFindings: number): void {
+    if (mutationCapPath !== path) {
+      // Pathname changed since this review was scheduled — start a fresh count.
+      mutationCapPath = path
+      mutationNoNewCount = 0
+    }
+    if (newFindings > 0) mutationNoNewCount = 0
+    else mutationNoNewCount += 1
+  }
+
   // ── Core review pipeline ─────────────────────────────────────────────────────────────────
   async function runReview(trigger: TriggerKind): Promise<void> {
     if (stopped || busy) return
+    // Cap: stop unbounded mutation-triggered reviews on a live-mutating page once
+    // we've had MAX_MUTATION_REVIEWS_NO_NEW at this pathname with nothing new.
+    // Navigation/scroll are never capped and reset the counter (see resetMutationCap).
+    if (trigger === 'mutation' && mutationCapReached()) return
 
     const scrollY = typeof window !== 'undefined' ? (window.scrollY ?? 0) : 0
     const docHeight = typeof document !== 'undefined'
@@ -213,6 +331,10 @@ export function startSimsWatch(opts: SimsWatchOptions): SimsWatchController {
     const viewportH = typeof window !== 'undefined' ? (window.innerHeight ?? 0) : 0
     const title = typeof document !== 'undefined' ? (document.title ?? '') : ''
     const urlPath = typeof location !== 'undefined' ? location.pathname + location.search + location.hash : ''
+
+    // Pathname captured at review start — used by the mutation cap so a review that
+    // finishes after a navigation is still attributed to the URL it was scheduled for.
+    const reviewPath = currentPathname()
 
     // Mutation triggers include the current epoch in the hash so a content swap at the same
     // scroll position / URL always produces a fresh hash and isn't wrongly skipped.
@@ -290,6 +412,9 @@ export function startSimsWatch(opts: SimsWatchOptions): SimsWatchController {
       const kl = typeof window !== 'undefined' ? (window as any).KlavitySims : null
       const renderStart = benchNow()
       let observations = 0
+      // Count findings whose normalized text we've never returned before — the cap
+      // uses this to decide whether a mutation review is producing anything NEW.
+      let newFindings = 0
       for (const review of data.reviews) {
         if (!review?.simId) continue
         const rawObs: unknown[] = Array.isArray(review.observations) ? review.observations : []
@@ -303,10 +428,16 @@ export function startSimsWatch(opts: SimsWatchOptions): SimsWatchController {
           targetViewport,
         }))
         observations += liveObs.length
+        for (const o of liveObs) {
+          const key = `${review.simId}::${normalizeFindingText(o.text)}`
+          if (o.text && !seenFindingText.has(key)) { seenFindingText.add(key); newFindings++ }
+        }
         try {
           kl?.renderFeedback?.(review.simId, review.simName ?? '', liveObs)
         } catch { /* UI errors must never break the watch loop */ }
       }
+      // Update the mutation cap counter for this pathname (only mutation triggers count).
+      if (trigger === 'mutation') recordMutationOutcome(reviewPath, newFindings)
       const renderMs = benchNow() - renderStart
       const totalMs = benchNow() - benchStart
       const server = data.timing?.simReview
@@ -332,6 +463,10 @@ export function startSimsWatch(opts: SimsWatchOptions): SimsWatchController {
   // Navigation signals use delayMs=0 to preempt a pending scroll/mutation timer.
   function schedule(trigger: TriggerKind, delayMs: number): void {
     if (stopped) return
+    // Navigation and user scroll are legitimate "look again" signals — they reset
+    // the mutation-review cap so a real route change or a new viewport gets fresh
+    // review budget even after a live-mutating page exhausted its mutation cap.
+    if (trigger === 'navigation' || trigger === 'scroll') resetMutationCap()
     if (debounceTimer !== null) clearTimeout(debounceTimer)
     debounceTimer = setTimeout(() => {
       debounceTimer = null
@@ -408,8 +543,11 @@ export function startSimsWatch(opts: SimsWatchOptions): SimsWatchController {
       history.pushState = origPush
       history.replaceState = origReplace
     }
-    // Release memory.
+    // Release memory + reset dedup/cap state so a fresh start begins clean.
     seenHashes.clear()
+    seenFindingText.clear()
+    mutationCapPath = ''
+    mutationNoNewCount = 0
   }
 
   return { stop }

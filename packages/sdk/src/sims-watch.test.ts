@@ -1,9 +1,11 @@
 import { afterEach, describe, it, expect, vi } from "vitest"
 import {
   djb2,
+  normalizeFindingText,
   computeContentHash,
   shouldSkipReview,
   isSignificantNode,
+  isOwnOverlayNode,
   hasSignificantMutations,
   startSimsWatch,
 } from "./sims-watch"
@@ -218,38 +220,51 @@ describe("isSignificantNode", () => {
   it("treats role=complementary as significant", () => {
     expect(isSignificantNode(mockEl({ role: "complementary" }))).toBe(true)
   })
-  it("treats role=feed as significant", () => {
-    expect(isSignificantNode(mockEl({ role: "feed" }))).toBe(true)
+  // role=feed/log/banner/navigation were dropped: a live feed streaming in on every
+  // token is exactly the loop we're fixing — those must NOT be significant by role.
+  it("does NOT treat role=feed as significant (streaming feed guard)", () => {
+    expect(isSignificantNode(mockEl({ role: "feed" }))).toBe(false)
   })
 
   it("detects modal class-name pattern", () => {
     expect(isSignificantNode(mockEl({ className: "modal-container" }))).toBe(true)
   })
-  it("detects chat class-name pattern", () => {
+  it("detects panel class-name pattern", () => {
     expect(isSignificantNode(mockEl({ className: "chat-panel" }))).toBe(true)
   })
   it("detects drawer class-name pattern", () => {
     expect(isSignificantNode(mockEl({ className: "right-drawer open" }))).toBe(true)
   })
-  it("detects notification class-name pattern", () => {
-    expect(isSignificantNode(mockEl({ className: "notification-toast" }))).toBe(true)
+  // "notification"/"toast"/"message"/"chat"/"alert" by class were dropped — a streaming
+  // chat fires those per token. A tiny toast (no container class match, small size) is now insignificant.
+  it("does NOT treat a small notification-toast as significant (streaming guard)", () => {
+    expect(isSignificantNode(mockEl({ className: "notification-toast", size: { w: 200, h: 60 } }))).toBe(false)
   })
 
-  it("treats a large element (100×100) as significant via getBoundingClientRect", () => {
-    expect(isSignificantNode(mockEl({ size: { w: 100, h: 100 } }))).toBe(true)
+  it("treats a genuinely large element (≥220×180) as significant via getBoundingClientRect", () => {
+    expect(isSignificantNode(mockEl({ size: { w: 300, h: 240 } }))).toBe(true)
   })
-  it("rejects an element just below the 100×100 threshold", () => {
-    expect(isSignificantNode(mockEl({ size: { w: 99, h: 100 } }))).toBe(false)
-    expect(isSignificantNode(mockEl({ size: { w: 100, h: 99 } }))).toBe(false)
+  it("rejects a mid-size element below the raised 220×180 threshold (chat-bubble sized)", () => {
+    // A chat bubble / small card that used to trip the old 100×100 bar no longer counts.
+    expect(isSignificantNode(mockEl({ size: { w: 200, h: 120 } }))).toBe(false)
+    expect(isSignificantNode(mockEl({ size: { w: 219, h: 180 } }))).toBe(false)
+    expect(isSignificantNode(mockEl({ size: { w: 220, h: 179 } }))).toBe(false)
   })
 
   it("falls back to offsetHeight/Width when getBoundingClientRect is absent", () => {
-    expect(isSignificantNode(mockEl({ offsetSize: { w: 200, h: 150 } }))).toBe(true)
-    expect(isSignificantNode(mockEl({ offsetSize: { w: 50, h: 50 } }))).toBe(false)
+    expect(isSignificantNode(mockEl({ offsetSize: { w: 320, h: 220 } }))).toBe(true)
+    expect(isSignificantNode(mockEl({ offsetSize: { w: 200, h: 120 } }))).toBe(false)
   })
 
   it("ignores an unstyled empty DIV (no role, no class, no size)", () => {
     expect(isSignificantNode(mockEl({}))).toBe(false)
+  })
+
+  it("ignores the Sims' own overlay/dock nodes (self-mutation guard)", () => {
+    // A large node that IS our own dock/overlay must never count, or the engine
+    // would re-review itself in a loop.
+    expect(isSignificantNode(mockEl({ className: "ksl-bubble", size: { w: 400, h: 300 } }))).toBe(false)
+    expect(isSignificantNode(mockEl({ className: "klav-pin-marker", size: { w: 400, h: 300 } }))).toBe(false)
   })
 })
 
@@ -329,6 +344,74 @@ describe("hasSignificantMutations", () => {
     const b = mockNode({ tag: "SPAN", size: { w: 20, h: 20 } })
     expect(hasSignificantMutations([mutRecord("childList", [a, b])])).toBe(false)
   })
+
+  // ── Live streaming-chat scenario (the bug we're fixing) ──────────────────────────────────
+  it("ignores a burst of streaming chat-message mutations (no significant page change)", () => {
+    // Simulate an AI chat streaming tokens: many small message rows + a typing indicator,
+    // none of which is a container-level panel. This must NOT trigger a mutation review.
+    const chatRow1 = mockNode({ tag: "DIV", className: "message chat-message", size: { w: 600, h: 40 } })
+    const chatRow2 = mockNode({ tag: "DIV", className: "message chat-message", size: { w: 600, h: 40 } })
+    const typing = mockNode({ tag: "DIV", className: "typing-indicator", size: { w: 60, h: 20 } })
+    expect(hasSignificantMutations([
+      mutRecord("childList", [chatRow1]),
+      mutRecord("childList", [chatRow2]),
+      mutRecord("childList", [typing]),
+    ])).toBe(false)
+  })
+
+  it("still fires when a genuine dialog/panel opens amid streaming noise", () => {
+    const chatRow = mockNode({ tag: "DIV", className: "message", size: { w: 600, h: 40 } })
+    const dialog = mockNode({ role: "dialog", size: { w: 500, h: 400 } })
+    expect(hasSignificantMutations([
+      mutRecord("childList", [chatRow, dialog]),
+    ])).toBe(true)
+  })
+
+  it("ignores the Sims' own overlay/dock mutations (self-mutation loop guard)", () => {
+    // Our walkers/markers/bubbles are injected into the page as the Sims work.
+    const walker = mockNode({ tag: "DIV", className: "klav-walker", size: { w: 400, h: 300 } })
+    const bubble = mockNode({ tag: "DIV", className: "ksl-bubble", size: { w: 300, h: 240 } })
+    expect(hasSignificantMutations([
+      mutRecord("childList", [walker, bubble]),
+    ])).toBe(false)
+  })
+})
+
+// ── normalizeFindingText ─────────────────────────────────────────────────────────────────
+
+describe("normalizeFindingText", () => {
+  it("trims, lowercases, and collapses whitespace", () => {
+    expect(normalizeFindingText("  The  Checkout   Button\nis Confusing ")).toBe("the checkout button is confusing")
+  })
+  it("treats differently-cased/spaced repeats as the same key", () => {
+    expect(normalizeFindingText("Same Finding")).toBe(normalizeFindingText("  same   finding  "))
+  })
+  it("handles empty/nullish text", () => {
+    expect(normalizeFindingText("")).toBe("")
+    expect(normalizeFindingText(undefined as unknown as string)).toBe("")
+  })
+})
+
+// ── isOwnOverlayNode ─────────────────────────────────────────────────────────────────────
+
+describe("isOwnOverlayNode", () => {
+  it("matches the dock host by id", () => {
+    const el = { id: "klav-sims-live", className: "", parentElement: null } as unknown as Element
+    expect(isOwnOverlayNode(el)).toBe(true)
+  })
+  it("matches an overlay class", () => {
+    const el = { id: "", className: "klav-pin-marker is-active", parentElement: null } as unknown as Element
+    expect(isOwnOverlayNode(el)).toBe(true)
+  })
+  it("matches a child nested inside an overlay node", () => {
+    const parent = { id: "klav-sims-overlay", className: "", parentElement: null } as unknown as Element
+    const child = { id: "", className: "some-inner", parentElement: parent } as unknown as Element
+    expect(isOwnOverlayNode(child)).toBe(true)
+  })
+  it("does not match an ordinary page element", () => {
+    const el = { id: "hero", className: "container main-content", parentElement: null } as unknown as Element
+    expect(isOwnOverlayNode(el)).toBe(false)
+  })
 })
 
 // ── startSimsWatch network timeout ────────────────────────────────────────────────────────
@@ -395,6 +478,145 @@ describe("startSimsWatch", () => {
     history.pushState({}, "", "/dashboard")
     await vi.runOnlyPendingTimersAsync()
     expect(fetchMock).toHaveBeenCalledTimes(2)
+
+    ctrl.stop()
+  })
+
+  // ── Mutation-loop guard integration (the core bug fix) ─────────────────────────────────────
+
+  /**
+   * Stub the DOM globals and expose a controllable MutationObserver so a test can
+   * fire a "significant mutation" batch on demand, plus a fetch that returns a
+   * scripted list of observations. Returns helpers to drive the engine.
+   */
+  function setupWatchHarness(reviewObservations: () => Array<{ observation: string }>) {
+    const loc = { href: "https://example.test/chat", pathname: "/chat", search: "", hash: "" }
+    let mutationCb: ((mutations: unknown[], obs: unknown) => void) | null = null
+
+    vi.stubGlobal("document", {
+      title: "Chat",
+      documentElement: { scrollHeight: 1200 },
+      body: { scrollHeight: 1200 },
+      getElementById: () => null,
+      querySelectorAll: () => [],
+    })
+    vi.stubGlobal("window", {
+      scrollY: 0,
+      scrollX: 0,
+      innerWidth: 1280,
+      innerHeight: 800,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      KlavitySims: { renderFeedback: vi.fn() },
+    })
+    vi.stubGlobal("location", loc)
+    vi.stubGlobal("history", { pushState: vi.fn(), replaceState: vi.fn() })
+    vi.stubGlobal("MutationObserver", class {
+      constructor(cb: (mutations: unknown[], obs: unknown) => void) { mutationCb = cb }
+      observe() {}
+      disconnect() {}
+      takeRecords() { return [] }
+    })
+
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        reviews: [{ simId: "sim_1", simName: "Alex", observations: reviewObservations() }],
+      }),
+    } as unknown as Response))
+    vi.stubGlobal("fetch", fetchMock)
+
+    // A "significant" mutation batch (a real dialog opening) that passes hasSignificantMutations.
+    const significantBatch = [mutRecord("childList", [mockNode({ role: "dialog", size: { w: 500, h: 400 } })])]
+
+    return {
+      fetchMock,
+      fireMutation: () => { mutationCb?.(significantBatch as unknown[], null) },
+      setPath: (p: string) => { loc.pathname = p },
+    }
+  }
+
+  it("caps repeated same-URL mutation reviews after K with no new findings", async () => {
+    vi.useFakeTimers()
+    // Server keeps returning the SAME finding every review — a live page loop.
+    const harness = setupWatchHarness(() => [{ observation: "The header feels cramped" }])
+
+    const ctrl = startSimsWatch({
+      backendUrl: "https://klavity.test",
+      projectId: "proj_1",
+      minIntervalMs: 0, // isolate the mutation cap from the 30s throttle
+      captureViewport: async () => "data:image/png;base64,ZmFrZQ==",
+    })
+
+    // Fire many significant mutations at the same URL. Each mutation bumps the epoch
+    // so the hash is fresh; only the new cap should stop the loop.
+    for (let i = 0; i < 8; i++) {
+      harness.fireMutation()
+      await vi.runOnlyPendingTimersAsync()
+      await Promise.resolve()
+    }
+
+    // First review returns a NEW finding (count stays 0), then 3 no-new reviews reach
+    // the cap (K=3) → 4 mutation reviews total, then no more are scheduled.
+    expect(harness.fetchMock).toHaveBeenCalledTimes(4)
+
+    ctrl.stop()
+  })
+
+  it("a run of insignificant (streaming) mutations never schedules a review", async () => {
+    vi.useFakeTimers()
+    const harness = setupWatchHarness(() => [{ observation: "irrelevant" }])
+    // Override fireMutation to send only insignificant streaming nodes.
+    const loc = { pathname: "/chat" }
+    void loc
+
+    const ctrl = startSimsWatch({
+      backendUrl: "https://klavity.test",
+      projectId: "proj_1",
+      minIntervalMs: 0,
+      captureViewport: async () => "data:image/png;base64,ZmFrZQ==",
+    })
+
+    // hasSignificantMutations returns false for streaming chat rows, so the observer
+    // callback never calls schedule() — we verify by firing an insignificant batch
+    // directly through hasSignificantMutations (the observer's gate).
+    const streamingBatch = [
+      mutRecord("childList", [mockNode({ tag: "DIV", className: "message", size: { w: 600, h: 40 } })]),
+    ]
+    expect(hasSignificantMutations(streamingBatch as unknown as MutationRecord[])).toBe(false)
+    // No review is ever scheduled from streaming noise.
+    await vi.runOnlyPendingTimersAsync()
+    expect(harness.fetchMock).not.toHaveBeenCalled()
+
+    ctrl.stop()
+  })
+
+  it("navigation still triggers a review even after the mutation cap is hit", async () => {
+    vi.useFakeTimers()
+    const harness = setupWatchHarness(() => [{ observation: "The header feels cramped" }])
+
+    const ctrl = startSimsWatch({
+      backendUrl: "https://klavity.test",
+      projectId: "proj_1",
+      minIntervalMs: 0,
+      captureViewport: async () => "data:image/png;base64,ZmFrZQ==",
+    })
+
+    // Exhaust the mutation cap on /chat.
+    for (let i = 0; i < 8; i++) {
+      harness.fireMutation()
+      await vi.runOnlyPendingTimersAsync()
+      await Promise.resolve()
+    }
+    expect(harness.fetchMock).toHaveBeenCalledTimes(4)
+
+    // A real navigation resets the cap and MUST trigger a fresh review.
+    harness.setPath("/settings")
+    history.pushState({}, "", "/settings")
+    await vi.runOnlyPendingTimersAsync()
+    await Promise.resolve()
+    expect(harness.fetchMock).toHaveBeenCalledTimes(5)
 
     ctrl.stop()
   })

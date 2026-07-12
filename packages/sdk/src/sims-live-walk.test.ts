@@ -322,6 +322,61 @@ describe("SimsLive walk + outline choreography", () => {
     expect(document.querySelector(".klav-pin-marker")).toBeNull()
   })
 
+  it("dedupes identical observations across repeat renderFeedback calls (loop guard)", async () => {
+    makeTarget()
+    SimsLive.deploy("all", [SIM])
+
+    const obs: LiveObservation = {
+      text: "The checkout button is confusing and hard to trust.",
+      sentiment: "confused",
+      region: { x: 120 / 1280, y: 150 / 720, w: 240 / 1280, h: 90 / 720 },
+      targetViewport: { scrollX: 0, scrollY: 0, width: 1280, height: 720 },
+    }
+    // First delivery creates one marker.
+    SimsLive.renderFeedback(SIM.id, SIM.name, [obs])
+    let markers = await settleMarkers()
+    expect(markers).toHaveLength(1)
+
+    // A live-mutating page re-reviews and the server returns the SAME finding again
+    // (plus a whitespace/case variant that must normalize to the same key). No new
+    // marker must appear — this is what stops the "+N more" pile-up.
+    SimsLive.renderFeedback(SIM.id, SIM.name, [obs])
+    SimsLive.renderFeedback(SIM.id, SIM.name, [{
+      ...obs,
+      text: "  The Checkout Button   is CONFUSING and hard to trust. ",
+    }])
+    markers = await settleMarkers()
+    expect(markers).toHaveLength(1)
+
+    // A genuinely NEW finding still renders its own marker.
+    SimsLive.renderFeedback(SIM.id, SIM.name, [{
+      ...obs,
+      text: "The pricing section is misleading.",
+    }])
+    markers = await settleMarkers()
+    expect(markers).toHaveLength(2)
+  })
+
+  it("re-deploy after undeploy starts the dedup guard clean", async () => {
+    makeTarget()
+    const obs: LiveObservation = {
+      text: "The checkout button is confusing and hard to trust.",
+      sentiment: "confused",
+      region: { x: 120 / 1280, y: 150 / 720, w: 240 / 1280, h: 90 / 720 },
+      targetViewport: { scrollX: 0, scrollY: 0, width: 1280, height: 720 },
+    }
+
+    SimsLive.deploy("all", [SIM])
+    SimsLive.renderFeedback(SIM.id, SIM.name, [obs])
+    expect(await settleMarkers()).toHaveLength(1)
+
+    SimsLive.undeploy()
+    SimsLive.deploy("all", [SIM])
+    // Same text after a fresh deploy must render again (dedup set was cleared).
+    SimsLive.renderFeedback(SIM.id, SIM.name, [obs])
+    expect(await settleMarkers()).toHaveLength(1)
+  })
+
   it("does not render positive or neutral observations on-page", async () => {
     makeTarget()
     SimsLive.deploy("all", [SIM])
