@@ -192,6 +192,10 @@ export function buildModal(
     return { ...base, byIndex }
   }
   let currentType = initialType
+  // JTBD 1.10: track whether a session-replay buffer is attached — it counts as evidence, so an
+  // evidence-only report (replay but no typed prose / screenshot) can still Submit. Seeded from the
+  // initial callback state and kept in sync by setReplayState() as rrweb resolves post-mount.
+  let replayAttached = callbacks.replayState === 'attached'
   let autodismissTimeout: any = null
 
   const style = document.createElement('style')
@@ -273,6 +277,11 @@ export function buildModal(
     .klav-mask-row:hover{color:var(--kl-fg);}
     .klavity-counter{font-size:11px;color:var(--kl-muted);margin-bottom:8px;font-variant-numeric:tabular-nums;}
     textarea.klavity-desc{width:100%;min-height:100px;resize:vertical;background:var(--kl-input-bg);color:var(--kl-fg);border:1px solid var(--kl-border);border-radius:8px;padding:10px;font-size:14px;margin-bottom:16px;box-sizing:border-box;box-shadow:0 1px 2px rgba(25,20,15,.04);}
+    /* JTBD 1.10: hint shown when the reporter has attached a screenshot but typed nothing — Submit is
+       enabled and the AI will title the report. Sits just under the textarea; hidden by default. */
+    .klavity-desc-hint{display:flex;align-items:center;gap:6px;margin:-8px 0 14px;font-size:12.5px;color:var(--kl-muted);line-height:1.4;}
+    .klavity-desc-hint[hidden]{display:none;}
+    .klavity-desc-hint .icon{color:var(--kl-accent);flex:none;}
     input.klavity-remail{width:100%;background:var(--kl-input-bg);color:var(--kl-fg);border:1px solid var(--kl-border);border-radius:8px;padding:10px;font-size:14px;margin-bottom:10px;box-sizing:border-box;box-shadow:0 1px 2px rgba(25,20,15,.04);}
     .klavity-submit{width:100%;min-height:40px;padding:12px;background:var(--kl-accent);color:var(--kl-on-accent);border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;}
     .klavity-submit:disabled{opacity:.5;cursor:not-allowed;}
@@ -410,7 +419,8 @@ export function buildModal(
     <input type="file" id="klavity-file" accept="image/*,.heic,.heif" multiple style="display:none">
     <div class="klavity-counter" id="klavity-counter">0/5 images</div>
     <div class="klavity-error" id="klavity-err"></div>
-    <textarea class="klavity-desc" id="klavity-desc" placeholder="Describe the bug..."></textarea>
+    <textarea class="klavity-desc" id="klavity-desc" placeholder="${initialType === 'feature' ? "Describe the feature you'd like..." : 'Describe the bug...'}"></textarea>
+    <div class="klavity-desc-hint" id="klavity-desc-hint" hidden>${icon('sparkles', { size: 13 })}<span>We'll title this from your screenshot</span></div>
     ${callbacks.requireEmail ? '<input type="email" class="klavity-remail" id="klavity-remail" placeholder="your@email.com" autocomplete="email">' : ''}
     <button class="klavity-submit" id="klavity-submit" disabled>Submit</button>
     <div class="klavity-progress" id="klavity-progress" role="progressbar" aria-label="Uploading report"><div class="klavity-progress-fill" id="klavity-progress-fill"></div></div>
@@ -472,6 +482,9 @@ export function buildModal(
 
   // JTBD 1.8: mutate the attached-proof chip after mount (rrweb loads async). No-op if no chip exists.
   function setReplayState(state: 'attached' | 'unavailable'): void {
+    // JTBD 1.10: a resolved replay buffer is evidence — re-evaluate Submit so a replay-only report enables.
+    replayAttached = state === 'attached'
+    refreshSubmit()
     const chip = shadowRoot.getElementById('klavity-replay-chip') as HTMLElement | null
     if (!chip) return
     chip.classList.toggle('kl-chip-on', state === 'attached')
@@ -568,6 +581,8 @@ export function buildModal(
       strip.appendChild(wrap)
     })
     counter.textContent = `${screenshots.length}/5 images`
+    // JTBD 1.10: attaching/removing a screenshot changes the evidence state → re-evaluate Submit + hint.
+    refreshSubmit()
   }
 
   // Surface a problem in the shared error line (used for upload + submit failures alike).
@@ -679,24 +694,41 @@ export function buildModal(
   // Toggle
   const bugBtn = modal.querySelector('.bug') as HTMLButtonElement
   const featBtn = modal.querySelector('.feat') as HTMLButtonElement
+  // JTBD 1.10: the composer placeholder follows the Bug/Feature mode ("Describe the feature you'd like…"
+  // reads wrong for a bug and vice-versa). `desc` is declared just below; these handlers run post-mount.
+  const applyModePlaceholder = () => {
+    const el = modal.querySelector('#klavity-desc') as HTMLTextAreaElement | null
+    if (el) el.placeholder = currentType === 'feature' ? "Describe the feature you'd like..." : 'Describe the bug...'
+  }
   bugBtn.addEventListener('click', () => {
     currentType = 'bug'
     bugBtn.classList.add('active')
     featBtn.classList.remove('active')
+    applyModePlaceholder()
   })
   featBtn.addEventListener('click', () => {
     currentType = 'feature'
     featBtn.classList.add('active')
     bugBtn.classList.remove('active')
+    applyModePlaceholder()
   })
 
   // Submit
   const desc = modal.querySelector('#klavity-desc') as HTMLTextAreaElement
   const submitBtn = modal.querySelector('#klavity-submit') as HTMLButtonElement
   const remail = modal.querySelector('#klavity-remail') as HTMLInputElement | null
+  const descHint = modal.querySelector('#klavity-desc-hint') as HTMLElement | null
   // Submit is enabled only when there's a description AND (if a required email field is shown) a valid email.
   const emailValid = () => !callbacks.requireEmail || (!!remail && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(remail.value.trim()))
-  const refreshSubmit = () => { submitBtn.disabled = desc.value.trim() === '' || !emailValid() }
+  // JTBD 1.10: a screenshot (or an attached replay buffer) is evidence in its own right — Submit no longer
+  // requires typed prose. The server accepts an evidence-only report and the AI drafts the title post-intake.
+  const hasEvidence = () => screenshots.length > 0 || replayAttached
+  const refreshSubmit = () => {
+    const noDesc = desc.value.trim() === ''
+    submitBtn.disabled = (noDesc && !hasEvidence()) || !emailValid()
+    // Hint appears only when evidence is present but nothing has been typed ("we'll title it from your shot").
+    if (descHint) descHint.hidden = !(noDesc && hasEvidence())
+  }
   desc.addEventListener('input', refreshSubmit)
   remail?.addEventListener('input', refreshSubmit)
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close() })

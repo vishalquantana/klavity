@@ -4160,6 +4160,16 @@ export async function setSuggestedLabels(feedbackId: string, labelIds: string[])
   })
 }
 
+// JTBD 1.10: overwrite a feedback row's observation (used by the post-intake AI title drafter for a
+// screenshot-only report that was inserted with a deterministic fallback title). Project-scoped so a
+// stray/attacker-supplied feedbackId can't rewrite another tenant's row.
+export async function setFeedbackObservation(feedbackId: string, projectId: string, observation: string): Promise<void> {
+  await db!.execute({
+    sql: "UPDATE feedback SET observation=? WHERE id=? AND project_id=?",
+    args: [observation, feedbackId, projectId],
+  })
+}
+
 // KLA-175: return the suggested LabelRows for a feedback item (resolves IDs → full rows).
 export async function getSuggestedLabels(feedbackId: string, projectId: string): Promise<LabelRow[]> {
   const r = await db!.execute({

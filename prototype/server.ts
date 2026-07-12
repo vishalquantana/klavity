@@ -54,7 +54,7 @@ import { normalizeTrailViewport } from "./lib/trails-viewport"
 import { seedDemoTrails } from "./lib/trails-demo-seed"
 import { listExpectations, getExpectation, setExpectationStatus, setExpectationEnforced, upsertExpectationFromTicket } from "./lib/expectations-db"
 import { createLabel, listLabels, updateLabel, deleteLabel, attachLabel, detachLabel, labelsForFeedback, labelsForFeedbackBatch, setSuggestedLabels, getSuggestedLabels } from "./lib/db"
-import { suggestLabelsForFeedback } from "./lib/label-suggest"
+import { suggestLabelsForFeedback, draftTitleForFeedback, fallbackDraftTitle } from "./lib/label-suggest"
 import { validateAssertionDraft, normalizeCheckpointInput } from "./lib/assertion-spec"
 import { buildRecurrenceMemory, listProjectRecurringIssues } from "./lib/recurrence-memory"
 import { publishBlogPost, SLUG_RE, type PublishInput } from "./lib/blog-publish"
@@ -1875,7 +1875,15 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // Report type from the composer's Bug/Feature toggle (packages/core submit payload `type`).
         // Anything other than the literal "feature" is treated as a bug report.
         const reportType: "bug" | "feature" = String(form.get("type") || "") === "feature" ? "feature" : "bug"
-        if (!description) return wjson({ error: "Description is required." }, 400)
+        // JTBD 1.10: accept screenshot-only (or replay-only) reports. Requiring typed prose even when the
+        // reporter attached perfect visual evidence is a typing tax during which the bug moment ages out of
+        // the replay buffer. Detect attached evidence cheaply BEFORE the 400: at least one screenshot File
+        // or a non-empty replay buffer suffices. A report with NEITHER description NOR evidence still 400s.
+        const hasScreenshotEvidence = form.getAll("screenshots").some((f) => f instanceof File && f.size > 0)
+        const replayRawEarly = String(form.get("replay_events") || "")
+        const hasReplayEvidence = replayRawEarly.length > 2 && replayRawEarly !== "[]" && replayRawEarly !== "null"
+        const hasEvidence = hasScreenshotEvidence || hasReplayEvidence
+        if (!description && !hasEvidence) return wjson({ error: "Add a description or attach a screenshot." }, 400)
         if (description.length > 5000) return wjson({ error: "Description too long." }, 400)
 
         // Anonymous browser report → enforce the project's report gate (project-scoped, rate-limited).
@@ -2026,7 +2034,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // /img/<id>.<hmac> (never expires, revocable, served from our domain) so the <img> renders
           // forever without making the object world-readable. Mint the id now so we can sign the link.
           const sid = "shot_" + crypto.randomUUID()
-          const meta = await uploadScreenshotMeta(buf, f.type || "image/png", SCREENSHOTS.defaultAcl)
+          // JTBD 1.10: a single screenshot upload failure (S3 outage / misconfig) must not 500 the whole
+          // report — especially the new screenshot-only path where the reporter typed nothing. Persist the
+          // report anyway (this shot is simply dropped) rather than losing the whole submission.
+          let meta: UploadedScreenshot
+          try { meta = await uploadScreenshotMeta(buf, f.type || "image/png", SCREENSHOTS.defaultAcl) }
+          catch (upErr: any) { console.error("screenshot upload failed (non-fatal):", upErr?.message || upErr); continue }
           imageUrls.push(`${BASE}/img/${signImageToken(sid)}`)
           uploaded.push({ ...meta, bytes: buf.byteLength, id: sid })
         }
@@ -2085,7 +2098,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               // cross-tenant trait read happens. The report still persists with no citation (no 500).
               const rawSimId = String(form.get("sim_id") || "") || null
               const simId = rawSimId && (await listPersonas(projectId)).some((p) => p.id === rawSimId) ? rawSimId : null
-              const observation = String(form.get("observation") || "") || description
+              // JTBD 1.10: a screenshot-only report has no typed prose. Seed the observation (which drives the
+              // triage title) with a deterministic fallback so the row never shows "Untitled report"; the
+              // post-intake AI drafter (below) refines it in place from the captured page context. Reports
+              // that DID carry text keep it verbatim.
+              const draftedTitle = !description && !String(form.get("observation") || "") && hasEvidence
+              const observation = String(form.get("observation") || "") || description ||
+                (draftedTitle ? fallbackDraftTitle({ reportType, pageUrl }) : "")
               const sentiment = String(form.get("sentiment") || "") || null
               const priority = String(form.get("priority") || "") || null
               let suggestedBug: any = null
@@ -2175,6 +2194,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                 const suggestText = (suggestedBug?.title ? `${suggestedBug.title}\n${observation || ""}` : observation || "").slice(0, 2000)
                 void suggestLabelsForFeedback({ feedbackId, projectId, text: suggestText })
                   .catch((err: any) => console.warn("[label-suggest] non-fatal:", err?.message || err))
+                // JTBD 1.10: screenshot-only report → refine the fallback title from captured page context.
+                // Fire-and-forget; the row already carries a deterministic fallback observation.
+                if (draftedTitle) {
+                  void draftTitleForFeedback({ feedbackId, projectId, reportType, pageUrl, clientContext })
+                    .catch((err: any) => console.warn("[title-draft] non-fatal:", err?.message || err))
+                }
               }
 
               // ── founder notifications (P0 retention loop): email to account owner/admins
