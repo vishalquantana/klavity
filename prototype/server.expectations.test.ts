@@ -411,6 +411,132 @@ test("retire removes the enforced trail step from trail_steps", async () => {
   expect(String((expRes.rows[0] as any).status)).toBe("retired")
 })
 
+// ── B.9 (KLA-249): guard lifecycle — un-enforce, edit-in-place, retire (incl. 409 edges) ──────
+
+// Seed a fresh enforced expectation with a real assert step to exercise the lifecycle routes
+// independently of the earlier tests' mutations.
+async function seedEnforcedExpectation(suffix: string) {
+  const expId = `exp_life_${suffix}_${ts}`
+  const stepId = `ts_life_${suffix}_${ts}`
+  await rawClient.execute({
+    sql: `INSERT INTO trail_steps (id, trail_id, project_id, idx, action, action_value, target_json, checkpoint_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [stepId, TRAIL_ID, PROJECT_ID, 50 + Math.floor(Math.random() * 40), "assert", null,
+      JSON.stringify({ role: "button", name: "Save" }), JSON.stringify({ kind: "visible", description: "Save visible" }), NOW],
+  })
+  await rawClient.execute({
+    sql: `INSERT INTO expectations (id, project_id, title, area, url_path, status, source_refs_json, corroboration_json, dedup_key, enforced_step_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [expId, PROJECT_ID, `Lifecycle guard ${suffix}`, "settings", "/settings", "enforced",
+      JSON.stringify([{ kind: "snap", id: `snap_${suffix}` }, { kind: "sim", id: `sim_${suffix}` }]),
+      JSON.stringify({ snap: true, sim: true, recurrence: 2 }),
+      `dedup_life_${suffix}_${ts}`, stepId, NOW, NOW],
+  })
+  return { expId, stepId }
+}
+
+test("B.9 un-enforce: demotes enforced → validated, removes the assert step, keeps history", async () => {
+  const { expId, stepId } = await seedEnforcedExpectation("unenf")
+  // Precondition: the assert step exists.
+  const before = await rawClient.execute({ sql: "SELECT id FROM trail_steps WHERE id=? AND project_id=?", args: [stepId, PROJECT_ID] })
+  expect(before.rows.length).toBe(1)
+
+  const r = await api("POST", `/api/expectations/${expId}/unenforce?project=${PROJECT_ID}`, {}, ADMIN_SID)
+  expect(r.status).toBe(200)
+  const b = await r.json()
+  expect(b.ok).toBe(true)
+  expect(b.status).toBe("validated")
+
+  // The assert step is gone (the Trail no longer runs the check).
+  const after = await rawClient.execute({ sql: "SELECT id FROM trail_steps WHERE id=? AND project_id=?", args: [stepId, PROJECT_ID] })
+  expect(after.rows.length).toBe(0)
+
+  // The expectation is validated, enforced_step_id cleared, but history (corroboration/source_refs) intact.
+  const row = await rawClient.execute({ sql: "SELECT status, enforced_step_id, corroboration_json, source_refs_json FROM expectations WHERE id=?", args: [expId] })
+  const rec = row.rows[0] as any
+  expect(String(rec.status)).toBe("validated")
+  expect(rec.enforced_step_id).toBe(null)
+  expect(JSON.parse(String(rec.corroboration_json)).recurrence).toBe(2)
+  expect(JSON.parse(String(rec.source_refs_json)).length).toBe(2)
+})
+
+test("B.9 un-enforce: 409 when the expectation is not enforced", async () => {
+  // EXP_RETIRE_ID is retired (validated → retired earlier). Un-enforce must reject with 409.
+  const r = await api("POST", `/api/expectations/${EXP_RETIRE_ID}/unenforce?project=${PROJECT_ID}`, {}, ADMIN_SID)
+  expect(r.status).toBe(409)
+  expect((await r.json()).error).toBe("not enforced")
+})
+
+test("B.9 un-enforce: 404 for a non-existent expectation", async () => {
+  const r = await api("POST", `/api/expectations/exp_missing_${ts}/unenforce?project=${PROJECT_ID}`, {}, ADMIN_SID)
+  expect(r.status).toBe(404)
+})
+
+test("B.9 un-enforce: 401 without a session", async () => {
+  const { expId } = await seedEnforcedExpectation("unenf401")
+  const r = await fetch(`${BASE}/api/expectations/${expId}/unenforce?project=${PROJECT_ID}`, { method: "POST" })
+  expect(r.status).toBe(401)
+})
+
+test("B.9 edit guard: PATCH updates the enforced assert step IN PLACE (same step id survives)", async () => {
+  const { expId, stepId } = await seedEnforcedExpectation("edit")
+  const r = await api("PATCH", `/api/expectations/${expId}/guard-step?project=${PROJECT_ID}`,
+    { target: { role: "button", name: "Save changes" }, checkpoint: { description: "Save-changes button is visible" } }, ADMIN_SID)
+  expect(r.status).toBe(200)
+  const b = await r.json()
+  expect(b.ok).toBe(true)
+  expect(b.stepId).toBe(stepId) // edited in place — NOT retire-and-recreate
+
+  // The step row reflects the edit; the expectation stays enforced on the SAME step.
+  const step = (await rawClient.execute({ sql: "SELECT target_json, checkpoint_json, action FROM trail_steps WHERE id=?", args: [stepId] })).rows[0] as any
+  expect(String(step.action)).toBe("assert")
+  expect(JSON.parse(String(step.target_json)).name).toBe("Save changes")
+  expect(String(step.checkpoint_json)).toContain("Save-changes button is visible")
+  const exp = (await rawClient.execute({ sql: "SELECT status, enforced_step_id FROM expectations WHERE id=?", args: [expId] })).rows[0] as any
+  expect(String(exp.status)).toBe("enforced")
+  expect(String(exp.enforced_step_id)).toBe(stepId)
+})
+
+test("B.9 edit guard: 409 when the expectation is not enforced", async () => {
+  // Seed a validated (not enforced) expectation.
+  const EXP_EDIT_VAL = `exp_editval_${ts}`
+  await rawClient.execute({
+    sql: `INSERT INTO expectations (id, project_id, title, area, url_path, status, source_refs_json, corroboration_json, dedup_key, enforced_step_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [EXP_EDIT_VAL, PROJECT_ID, "Not enforced yet", "x", "/x", "validated",
+      JSON.stringify([{ kind: "snap", id: "s" }]), JSON.stringify({ snap: true, sim: false, recurrence: 3 }),
+      `dedup_editval_${ts}`, null, NOW, NOW],
+  })
+  const r = await api("PATCH", `/api/expectations/${EXP_EDIT_VAL}/guard-step?project=${PROJECT_ID}`, { checkpoint: { description: "nope" } }, ADMIN_SID)
+  expect(r.status).toBe(409)
+  expect((await r.json()).error).toBe("not enforced")
+})
+
+test("B.9 edit guard: 400 when the patch is empty", async () => {
+  const { expId } = await seedEnforcedExpectation("editempty")
+  const r = await api("PATCH", `/api/expectations/${expId}/guard-step?project=${PROJECT_ID}`, {}, ADMIN_SID)
+  expect(r.status).toBe(400)
+  expect((await r.json()).error).toBe("nothing to edit")
+})
+
+test("B.9 edit guard: 401 without a session", async () => {
+  const { expId } = await seedEnforcedExpectation("edit401")
+  const r = await fetch(`${BASE}/api/expectations/${expId}/guard-step?project=${PROJECT_ID}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ checkpoint: { description: "x" } }) })
+  expect(r.status).toBe(401)
+})
+
+test("B.9 retire then re-enforce path: an un-enforced guard can be enforced again (validated is actionable)", async () => {
+  const { expId } = await seedEnforcedExpectation("reenf")
+  // Un-enforce → validated.
+  const un = await api("POST", `/api/expectations/${expId}/unenforce?project=${PROJECT_ID}`, {}, ADMIN_SID)
+  expect(un.status).toBe(200)
+  // Now enforce/confirm again with a fresh draft — the demoted row is enforceable (status validated).
+  const draft = { trailId: TRAIL_ID, afterStepIdx: 0, action: "assert", target: { role: "button", name: "Save" }, checkpoint: { kind: "visible", description: "Save visible again" } }
+  const re = await api("POST", `/api/expectations/${expId}/enforce/confirm?project=${PROJECT_ID}`, { draft }, ADMIN_SID)
+  expect(re.status).toBe(200)
+  const rb = await re.json()
+  expect(typeof rb.stepId).toBe("string")
+  const row = (await rawClient.execute({ sql: "SELECT status FROM expectations WHERE id=?", args: [expId] })).rows[0] as any
+  expect(String(row.status)).toBe("enforced")
+})
+
 // ── KLA-251 (B.11): cross-source-matching near-miss ops report ────────────────────────────
 test("GET /api/expectations/near-misses summarizes declined near-misses for the project", async () => {
   const r = await api("GET", `/api/expectations/near-misses?project=${PROJECT_ID}`, null, ADMIN_SID)

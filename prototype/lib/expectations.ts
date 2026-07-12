@@ -25,6 +25,13 @@ export function shouldValidate(c: Corroboration, n: number = RECURRENCE_VALIDATE
 }
 
 export function nextStatus(current: ExpStatus, c: Corroboration, n: number = RECURRENCE_VALIDATE_N): ExpStatus {
+  // B.9 (KLA-249): a RETIRED row is not a roach motel. When a fresh signal arrives (upsert bumps
+  // corroboration on a retired match), the issue has resurfaced after being cleared — resurrect it
+  // to "candidate" so it re-enters the pipeline and re-appears on the board, rather than silently
+  // absorbing corroboration forever in "retired". It must earn its way back up (candidate→validated)
+  // on the usual cross-source / recurrence rules; we never jump a resurrected row straight past
+  // candidate here.
+  if (current === "retired") return "candidate"
   if (current === "candidate" && shouldValidate(c, n)) return "validated"
   return current
 }

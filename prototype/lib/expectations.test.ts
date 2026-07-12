@@ -23,6 +23,17 @@ test("nextStatus promotes candidate only; enforced is terminal", () => {
   expect(nextStatus("enforced", { snap: true, sim: true, recurrence: 9 })).toBe("enforced")
 })
 
+// B.9 (KLA-249): a retired row is NOT a roach motel — a fresh signal resurrects it to candidate,
+// instead of silently absorbing corroboration forever in "retired".
+test("B.9: nextStatus resurrects a retired row to candidate on a fresh signal", () => {
+  // A retired issue resurfaces (upsert already bumped corroboration on the matched retired row).
+  expect(nextStatus("retired", { snap: true, sim: false, recurrence: 1 })).toBe("candidate")
+  // Even a retired row whose corroboration already clears the validate bar comes back as CANDIDATE
+  // (it must re-earn its way up — we never jump a resurrected row straight to validated/enforced).
+  expect(nextStatus("retired", { snap: true, sim: true, recurrence: 5 })).toBe("candidate")
+  expect(nextStatus("retired", { snap: false, sim: false, recurrence: 9 })).toBe("candidate")
+})
+
 test("matchExpectation finds a lexical near-duplicate, else null", () => {
   const existing = [{ id: "e1", title: "Finish button missing on onboarding" }]
   expect(matchExpectation({ title: "Finish button is missing on onboarding" }, existing)).toBe("e1")
