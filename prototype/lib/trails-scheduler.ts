@@ -50,62 +50,56 @@ export function cronMatches(expr: string, date: Date): boolean {
     && dowMatch
 }
 
-// ── KLA-277 (JTBD 4.13): DST-safe timezone-aware matching ──────────────────────
+// ── Timezone-aware next-fire (DST-safe) ─────────────────────────────────────────
 //
-// When a Trail stores schedule_tz (an IANA zone e.g. "America/New_York"), schedule_cron is
-// interpreted as LOCAL wall-clock time in that zone. We compute the calendar fields of the
-// current UTC instant AS SEEN IN that zone via Intl.DateTimeFormat, then match the cron against
-// them. Because the wall-clock hour is fixed and the UTC↔local mapping is recomputed on every
-// tick, a "9am local" guard keeps firing at 9am local across a DST transition (the UTC minute it
-// fires at simply shifts by an hour) — no conversion is baked at save time.
+// The stored cron is UTC and cronMatches() runs on the UTC minute, so a walk stored as a
+// fixed UTC time drifts by an hour across DST transitions of the account's local zone. To
+// answer "when is the NEXT scheduled occurrence?" without that drift we walk forward minute
+// by minute using calendar-aware conversion (Intl.DateTimeFormat) instead of fixed-offset
+// arithmetic — the wall-clock "09:00 daily" therefore lands on the same UTC instant before AND
+// after spring-forward / fall-back, because we re-derive the offset for each candidate day.
 
-/** Break a UTC instant into calendar fields as observed in `tz`. dow: 0=Sunday. */
-export function zonedParts(
-  date: Date,
-  tz: string,
-): { min: number; hour: number; dom: number; mon: number; dow: number } {
-  const fmt = new Intl.DateTimeFormat("en-US", {
-    timeZone: tz,
-    hour12: false,
-    weekday: "short",
-    year: "numeric",
-    month: "numeric",
-    day: "numeric",
-    hour: "numeric",
-    minute: "numeric",
+/** Break a UTC epoch into its wall-clock parts for `tz` (calendar-aware; no fixed offset). */
+export function wallClockInZone(ms: number, tz: string): { year: number; month: number; day: number; hour: number; minute: number; weekday: number } {
+  const dtf = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz, hour12: false,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", weekday: "short",
   })
-  const map: Record<string, string> = {}
-  for (const p of fmt.formatToParts(date)) map[p.type] = p.value
-  let hour = parseInt(map.hour, 10)
-  if (hour === 24) hour = 0 // some engines render midnight as "24" with hour12:false
-  const dowMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
+  const parts: Record<string, string> = {}
+  for (const p of dtf.formatToParts(new Date(ms))) if (p.type !== "literal") parts[p.type] = p.value
+  const wdMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
+  let hour = parseInt(parts.hour, 10)
+  if (hour === 24) hour = 0 // some engines emit "24" for midnight
   return {
-    min: parseInt(map.minute, 10),
-    hour,
-    dom: parseInt(map.day, 10),
-    mon: parseInt(map.month, 10),
-    dow: dowMap[map.weekday] ?? new Date(date).getUTCDay(),
+    year: parseInt(parts.year, 10), month: parseInt(parts.month, 10), day: parseInt(parts.day, 10),
+    hour, minute: parseInt(parts.minute, 10), weekday: wdMap[parts.weekday] ?? 0,
   }
 }
 
-/**
- * Returns true when `expr` (interpreted as local wall-clock in `tz`) fires at the given UTC
- * instant. When `tz` is falsy this delegates to the plain UTC `cronMatches` for backward
- * compatibility with legacy rows that stored a baked-UTC cron.
- */
-export function cronMatchesTz(expr: string, date: Date, tz?: string | null): boolean {
-  if (!tz) return cronMatches(expr, date)
+/** Does `expr` fire at the given wall-clock (in the schedule's tz)? Mirrors cronMatches field logic. */
+function cronMatchesWall(expr: string, w: { minute: number; hour: number; day: number; month: number; weekday: number }): boolean {
   const parts = expr.trim().split(/\s+/)
   if (parts.length !== 5) return false
   const [minF, hourF, domF, monF, dowF] = parts
-  let p: ReturnType<typeof zonedParts>
-  try { p = zonedParts(date, tz) } catch { return cronMatches(expr, date) } // bad tz → safe fallback
-  const dowMatch = matchField(dowF, p.dow) || (dowF !== "*" && p.dow === 0 && matchField(dowF, 7))
-  return matchField(minF, p.min)
-    && matchField(hourF, p.hour)
-    && matchField(domF, p.dom)
-    && matchField(monF, p.mon)
-    && dowMatch
+  const dowMatch = matchField(dowF, w.weekday) || (dowF !== "*" && w.weekday === 0 && matchField(dowF, 7))
+  return matchField(minF, w.minute) && matchField(hourF, w.hour) && matchField(domF, w.day) && matchField(monF, w.month) && dowMatch
+}
+
+/**
+ * The next UTC epoch (ms, minute-aligned, strictly after `afterMs`) at which `expr` fires when its
+ * fields are interpreted in `tz`. Scans up to `maxMinutes` ahead (default 366 days) — returns null
+ * if nothing matches. Calendar-aware, so a wall-clock schedule stays put across DST transitions.
+ */
+export function nextCronFireUtc(expr: string, afterMs: number, tz = "UTC", maxMinutes = 366 * 24 * 60): number | null {
+  if (!isValidCron(expr)) return null
+  // Start at the next whole minute strictly after afterMs.
+  let ms = (Math.floor(afterMs / 60_000) + 1) * 60_000
+  for (let i = 0; i < maxMinutes; i++, ms += 60_000) {
+    const w = wallClockInZone(ms, tz)
+    if (cronMatchesWall(expr, w)) return ms
+  }
+  return null
 }
 
 /** Basic syntax check — 5 whitespace-separated fields, each field valid. */
@@ -139,9 +133,108 @@ export function isValidCron(expr: string): boolean {
 
 const TICK_MS = 60_000
 
+/**
+ * A scheduled occurrence that couldn't fire because the walk slot was busy. Instead of immediately
+ * recording it "skipped", we hold it here and retry on subsequent ticks with backoff until the slot
+ * frees OR the deadline (the trail's NEXT scheduled occurrence) passes — only then do we record it
+ * skipped, with the retry history preserved. This turns silent skips into "ran late" wherever the
+ * slot frees within the window, so "guarded daily" stays honest.
+ */
+interface QueuedRun {
+  projectId: string
+  trailId: string
+  schedule: string
+  /** minute boundary of the ORIGINAL scheduled fire — the run is attributed to this occurrence */
+  scheduledMinuteTs: number
+  /** stop retrying (and record skipped) once now >= deadline; = next scheduled occurrence */
+  deadlineMs: number
+  attempts: number
+  /** earliest ms at which the next retry is allowed (backoff) */
+  nextRetryAtMs: number
+}
+
+// Keyed by projectId::trailId — one pending retry per trail (a newer occurrence replaces an older).
+const _retryQueue = new Map<string, QueuedRun>()
+
+/** Backoff schedule for slot-busy retries (ms). Caps at the last value. */
+const RETRY_BACKOFF_MS = [30_000, 60_000, 120_000, 300_000]
+function backoffFor(attempts: number): number {
+  return RETRY_BACKOFF_MS[Math.min(attempts, RETRY_BACKOFF_MS.length - 1)]
+}
+
+/** Test hook: clear the in-memory retry queue between cases. */
+export function _resetSchedulerQueueForTest(): void { _retryQueue.clear() }
+/** Test/introspection hook: how many occurrences are currently queued for retry. */
+export function _pendingRetryCount(): number { return _retryQueue.size }
+
+/**
+ * Compute the deadline for a queued occurrence: the trail's next scheduled fire strictly after the
+ * one that just got queued. When we can't resolve one (e.g. `* * * * *`), fall back to a bounded
+ * window so a queued run can never linger forever.
+ */
+function deadlineForOccurrence(schedule: string, scheduledMinuteTs: number, tz: string): number {
+  const next = nextCronFireUtc(schedule, scheduledMinuteTs, tz)
+  const MAX_WINDOW_MS = 60 * 60_000 // hard cap: never retry a single occurrence for more than an hour
+  if (next == null) return scheduledMinuteTs + MAX_WINDOW_MS
+  return Math.min(next, scheduledMinuteTs + MAX_WINDOW_MS)
+}
+
+/** Attempt to launch a scheduled walk. Returns "ran" | "busy" | "error". */
+async function tryLaunchScheduled(projectId: string, trailId: string, schedule: string): Promise<"ran" | "busy" | "error"> {
+  try {
+    await runWalkNow(projectId, trailId, { trigger: "scheduled" })
+    console.log(`[scheduler] fired walk for trail ${trailId} (${schedule})`)
+    return "ran"
+  } catch (e: any) {
+    if (e instanceof WalkBusyError) return "busy"
+    console.warn(`[scheduler] trail ${trailId} launch error:`, String(e?.message || e))
+    return "error"
+  }
+}
+
+/** Drain the retry queue: reattempt each held occurrence, or record it skipped once its window closes. */
+async function drainRetryQueue(nowMs: number): Promise<void> {
+  for (const [key, q] of [..._retryQueue]) {
+    // Window closed without a free slot → record the genuinely-missed run, reason + retries preserved.
+    if (nowMs >= q.deadlineMs) {
+      _retryQueue.delete(key)
+      await recordSkippedScheduledRun(q.projectId, q.trailId, "skipped", {
+        reason: "slot busy for the entire retry window",
+        retryAttempts: q.attempts,
+        scheduledFor: q.scheduledMinuteTs,
+        windowClosedAt: q.deadlineMs,
+      }).catch(() => {})
+      console.log(`[scheduler] trail ${q.trailId} window closed after ${q.attempts} retries — recorded skipped`)
+      continue
+    }
+    if (nowMs < q.nextRetryAtMs) continue // still backing off
+    q.attempts++
+    const outcome = await tryLaunchScheduled(q.projectId, q.trailId, q.schedule)
+    if (outcome === "ran") {
+      _retryQueue.delete(key)
+      console.log(`[scheduler] trail ${q.trailId} ran on retry #${q.attempts} (queued at ${q.scheduledMinuteTs})`)
+    } else if (outcome === "busy") {
+      q.nextRetryAtMs = nowMs + backoffFor(q.attempts)
+    } else {
+      // Hard launch error → not a slot contention issue; record missed and stop retrying.
+      _retryQueue.delete(key)
+      await recordSkippedScheduledRun(q.projectId, q.trailId, "missed", {
+        reason: "launch error on retry",
+        retryAttempts: q.attempts,
+        scheduledFor: q.scheduledMinuteTs,
+      }).catch(() => {})
+    }
+  }
+}
+
 export async function tickScheduler(now = new Date()): Promise<void> {
+  const nowMs = now.getTime()
   // Round down to the current minute boundary for dedup guard.
-  const minuteTs = Math.floor(now.getTime() / 60_000) * 60_000
+  const minuteTs = Math.floor(nowMs / 60_000) * 60_000
+
+  // 1. First, service any occurrences we queued on earlier ticks (retry or expire).
+  await drainRetryQueue(nowMs)
+
   let trails
   try { trails = await listAllScheduledTrails() } catch (e) {
     console.warn("[scheduler] listAllScheduledTrails failed:", String((e as any)?.message || e))
@@ -155,17 +248,22 @@ export async function tickScheduler(now = new Date()): Promise<void> {
     if (trail.scheduledLastRunAt != null && trail.scheduledLastRunAt >= minuteTs) continue
     // Stamp before launching so a concurrent tick (or a fast walk) can't double-fire.
     await touchScheduledLastRunAt(trail.projectId, trail.id, minuteTs).catch(() => {})
-    try {
-      await runWalkNow(trail.projectId, trail.id, { trigger: "scheduled" })
-      console.log(`[scheduler] fired walk for trail ${trail.id} (${trail.schedule})`)
-    } catch (e: any) {
-      if (e instanceof WalkBusyError) {
-        console.log(`[scheduler] trail ${trail.id} busy, skipped this tick`)
-        await recordSkippedScheduledRun(trail.projectId, trail.id, "skipped").catch(() => {})
-      } else {
-        console.warn(`[scheduler] trail ${trail.id} launch error:`, String(e?.message || e))
-        await recordSkippedScheduledRun(trail.projectId, trail.id, "missed").catch(() => {})
-      }
+    const outcome = await tryLaunchScheduled(trail.projectId, trail.id, trail.schedule)
+    if (outcome === "busy") {
+      // Don't skip-and-forget: queue this occurrence for retry until its window closes.
+      // The stored cron is already UTC, so occurrence math runs in UTC (no DST drift for the
+      // stored expression); the calendar-aware nextCronFireUtc keeps deadlines exact.
+      const key = `${trail.projectId}::${trail.id}`
+      _retryQueue.set(key, {
+        projectId: trail.projectId, trailId: trail.id, schedule: trail.schedule,
+        scheduledMinuteTs: minuteTs,
+        deadlineMs: deadlineForOccurrence(trail.schedule, minuteTs, "UTC"),
+        attempts: 0,
+        nextRetryAtMs: nowMs + backoffFor(0),
+      })
+      console.log(`[scheduler] trail ${trail.id} slot busy — queued for retry`)
+    } else if (outcome === "error") {
+      await recordSkippedScheduledRun(trail.projectId, trail.id, "missed", { reason: "launch error" }).catch(() => {})
     }
   }
 }
@@ -174,6 +272,26 @@ export function startTrailScheduler(): ReturnType<typeof setInterval> {
   return setInterval(() => {
     tickScheduler().catch((e) => console.warn("[scheduler] tick crashed:", String((e as any)?.message || e)))
   }, TICK_MS)
+}
+
+/**
+ * DST-safe next-fire for a WALL-CLOCK local schedule. Given a target hour:minute in `tz` (optionally
+ * constrained to a set of weekdays 0=Sun), return the next UTC epoch (ms) strictly after `afterMs`
+ * whose local wall-clock in `tz` matches. Because we re-derive the tz offset for every candidate day
+ * via Intl (calendar-aware), "09:00 America/New_York daily" lands on the correct UTC instant on BOTH
+ * sides of spring-forward and fall-back — the drifting `new Date().setHours` arithmetic (which bakes
+ * in *today's* offset once) does not. `weekdays` empty = every day.
+ */
+export function nextLocalFireUtc(
+  hour: number, minute: number, tz: string, afterMs: number, weekdays: number[] = [], maxMinutes = 366 * 24 * 60,
+): number | null {
+  const dowSet = weekdays.length ? new Set(weekdays) : null
+  let ms = (Math.floor(afterMs / 60_000) + 1) * 60_000
+  for (let i = 0; i < maxMinutes; i++, ms += 60_000) {
+    const w = wallClockInZone(ms, tz)
+    if (w.hour === hour && w.minute === minute && (!dowSet || dowSet.has(w.weekday))) return ms
+  }
+  return null
 }
 
 export function localToUtcCron(frequency: string, hour: number, minute: number, localDows: number[]): string {

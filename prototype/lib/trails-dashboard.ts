@@ -3,7 +3,8 @@
 // the review queue (queued findings), and the published precision metric (legit-bug rate).
 
 import type { Trail, Walk, Finding } from "./trails-types"
-import { listTrails, listRecentWalks, listFindings } from "./trails"
+import { listTrails, listRecentWalks, listFindings, computeScheduleCoverage } from "./trails"
+import type { ScheduleCoverage } from "./trails"
 import { projectPrecision } from "./trails-findings-gate"
 import type { Client } from "@libsql/client"
 
@@ -12,18 +13,21 @@ export interface TrailsDashboard {
   recentWalks: Walk[]
   queue: Finding[]
   precision: { filed: number; dismissed: number; precision: number | null }
+  /** KLA-216: per-project schedule-health coverage over the last 7 days ("13 of 14 scheduled walks ran"). */
+  coverage: ScheduleCoverage
 }
 
 export async function trailsDashboardData(projectId: string): Promise<TrailsDashboard> {
-  const [raw, recentWalks, queue, precision] = await Promise.all([
+  const [raw, recentWalks, queue, precision, coverage] = await Promise.all([
     listTrails(projectId),
     listRecentWalks(projectId, 20),
     listFindings(projectId, { status: "queued", limit: 50 }),
     projectPrecision(projectId),
+    computeScheduleCoverage(projectId),
   ])
   // Hide archived trails from the main dashboard by default (KLA-160).
   const trails = raw.filter((t) => t.status !== "archived")
-  return { trails, recentWalks, queue, precision }
+  return { trails, recentWalks, queue, precision, coverage }
 }
 
 // ── KLA-78: Walk trend over time ──────────────────────────────────────────────────────────────────

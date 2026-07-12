@@ -41,6 +41,8 @@ export interface TrustReportData {
   recurringHighlights: RecurringHighlight[]
   /** True when zero activity across all dimensions */
   isQuietWeek: boolean
+  /** KLA-216: honest schedule-health coverage over the window — scheduled walks that actually ran. */
+  scheduleCoverage: { scheduled: number; ran: number; skippedOrMissed: number; coverage: number | null }
 }
 
 export interface SnapHighlight {
@@ -166,6 +168,28 @@ export async function gatherTrustReport(
     count: Math.max(1, Number(r.rc || 1)),
   }))
 
+  // 7. KLA-216: schedule-health coverage — scheduled walks that actually ran vs. skipped/missed,
+  //    so the digest never claims "guarded daily" while the scheduler was silently skipping.
+  const covR = await c.execute({
+    sql: `SELECT status, COUNT(*) AS n FROM trail_runs
+          WHERE project_id=? AND trigger='scheduled' AND started_at>=? AND started_at<?
+          GROUP BY status`,
+    args: [projectId, windowStart, windowEnd],
+  })
+  let covScheduled = 0, covSkippedOrMissed = 0
+  for (const row of covR.rows as any[]) {
+    const n = Number(row.n || 0)
+    covScheduled += n
+    if (row.status === "skipped" || row.status === "missed") covSkippedOrMissed += n
+  }
+  const covRan = covScheduled - covSkippedOrMissed
+  const scheduleCoverage = {
+    scheduled: covScheduled,
+    ran: covRan,
+    skippedOrMissed: covSkippedOrMissed,
+    coverage: covScheduled > 0 ? covRan / covScheduled : null,
+  }
+
   const isQuietWeek =
     snapReportsTotal === 0 &&
     autoSimRunsTotal === 0 &&
@@ -187,6 +211,7 @@ export async function gatherTrustReport(
     recurringIssuesTotal,
     recurringHighlights,
     isQuietWeek,
+    scheduleCoverage,
   }
 }
 
@@ -261,6 +286,25 @@ export function buildTrustReportHtml(data: TrustReportData): string {
         ${metricCell("Recurring issues", data.recurringIssuesTotal, "#ef4444")}
       </tr>
     </table>`
+
+  // KLA-216: honest schedule-coverage line — only shown when the project had scheduled walks in the
+  // window. Green when fully covered; amber warning when any scheduled walk did not run.
+  const sc = data.scheduleCoverage
+  const coverageBanner = (sc && sc.scheduled > 0)
+    ? (() => {
+        const pct = sc.coverage == null ? "—" : `${Math.round(sc.coverage * 100)}%`
+        const ok = sc.skippedOrMissed === 0
+        const accent = ok ? "#22c55e" : "#f59e0b"
+        const bg = ok ? "#f0fdf4" : "#fffbeb"
+        const border = ok ? "#bbf7d0" : "#fde68a"
+        const line = ok
+          ? `All ${sc.scheduled} scheduled walk${sc.scheduled !== 1 ? "s" : ""} ran (${pct}). Guarded as promised.`
+          : `${sc.ran} of ${sc.scheduled} scheduled walks ran (${pct}) — ${sc.skippedOrMissed} did not run this week.`
+        return `<div style="${f};font-size:13px;color:${accent};background:${bg};border:1px solid ${border};border-radius:10px;padding:12px 16px;margin-bottom:18px">
+          <strong>Schedule health:</strong> ${esc(line)}
+        </div>`
+      })()
+    : ""
 
   // Quiet week notice
   const quietBanner = data.isQuietWeek
@@ -341,6 +385,7 @@ export function buildTrustReportHtml(data: TrustReportData): string {
         <!-- body -->
         <tr><td style="padding:24px 24px 8px">
           ${quietBanner}
+          ${coverageBanner}
           ${metricsRow}
           ${snapSection}
           ${regSection}
@@ -385,6 +430,16 @@ export function buildTrustReportText(data: TrustReportData): string {
 
   if (data.isQuietWeek) {
     lines.push("Quiet week — no reports, Sim findings, or AutoSim runs. Your product behaved!", "")
+  }
+
+  const sc = data.scheduleCoverage
+  if (sc && sc.scheduled > 0) {
+    const pct = sc.coverage == null ? "—" : `${Math.round(sc.coverage * 100)}%`
+    if (sc.skippedOrMissed === 0) {
+      lines.push(`SCHEDULE HEALTH: All ${sc.scheduled} scheduled walk(s) ran (${pct}). Guarded as promised.`, "")
+    } else {
+      lines.push(`SCHEDULE HEALTH: ${sc.ran} of ${sc.scheduled} scheduled walks ran (${pct}) — ${sc.skippedOrMissed} did not run this week.`, "")
+    }
   }
 
   lines.push(
