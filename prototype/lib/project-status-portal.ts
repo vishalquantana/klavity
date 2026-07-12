@@ -15,6 +15,7 @@
 
 import { sha256hex } from "./crypto"
 import { getProjectModalConfig, setProjectModalConfig, projectById } from "./db"
+import { resolveBranding, type ResolvedBranding } from "./trails-branding"
 
 // ---------------------------------------------------------------------------
 // Token generation/revocation
@@ -82,9 +83,22 @@ export interface TrailHealthSummary {
   totalRuns: number
 }
 
+/** KLAVITYKLA-223: client-safe branding surface for the portal. No secrets — logo/name/accent
+ *  all render publicly. Signup backlink is the PLG carrier; white-label removes it. */
+export interface PortalBranding {
+  name: string | null
+  accent: string
+  logoDataUrl: string | null
+  whiteLabel: boolean
+  /** "powered by Klavity" backlink target (empty when white-label). */
+  signupUrl: string
+}
+
 export interface ProjectStatusData {
   projectName: string
   generatedAt: number
+  /** Agency branding for skinning the portal (KLAVITYKLA-223). */
+  branding: PortalBranding
   trails: TrailHealthSummary[]
   /** Counts across all time */
   counts: {
@@ -109,6 +123,21 @@ export async function gatherProjectStatusData(projectId: string): Promise<Projec
 
   const { db } = await import("./db")
   if (!db) return null
+
+  // KLAVITYKLA-223: agency branding — client-safe subset. Best-effort; unbranded default on miss.
+  let branding: ResolvedBranding = resolveBranding(null)
+  try {
+    const cfg = await getProjectModalConfig(projectId)
+    branding = resolveBranding((cfg as Record<string, unknown>).agency_branding)
+  } catch { /* unbranded default */ }
+  const { KLAVITY_SIGNUP_URL } = await import("./trails-branding")
+  const portalBranding: PortalBranding = {
+    name: branding.name,
+    accent: branding.accent,
+    logoDataUrl: branding.logoDataUrl,
+    whiteLabel: branding.whiteLabel,
+    signupUrl: branding.whiteLabel ? "" : KLAVITY_SIGNUP_URL,
+  }
 
   // 1. Trails + their last verdict
   const trailsR = await db.execute({
@@ -197,6 +226,7 @@ export async function gatherProjectStatusData(projectId: string): Promise<Projec
   return {
     projectName: proj.name,
     generatedAt: Date.now(),
+    branding: portalBranding,
     trails,
     counts: {
       bugsReported: totalBugs,
