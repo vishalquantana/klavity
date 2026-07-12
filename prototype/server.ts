@@ -4953,7 +4953,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return json({ project: { id: created.id, name: created.name, accountId: created.accountId, status: created.status, siteUrl: created.siteUrl, role: "admin" } }, 201)
       }
       // Project detail + members (projectAccess-gated) and project-scoped invite (R4) + monitored-urls (P3b) + connectors.
-      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/triage|\/tickets(?:\/bulk)?|\/recurring|\/replays|\/widget-status|\/share-token|\/labels(?:\/[^/]+)?|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/test)?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send|\/trails-autofile)?$/)
+      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/branding|\/triage|\/tickets(?:\/bulk)?|\/recurring|\/replays|\/widget-status|\/share-token|\/labels(?:\/[^/]+)?|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/test)?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send|\/trails-autofile)?$/)
       if (projMatch) {
         const pid = projMatch[1]
         const sub = projMatch[2] || ""
@@ -5244,6 +5244,26 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             // (CORS-open) config GET earlier in this file never returns it: resolveModalConfig strips it.
             ...(access === "admin" ? { slackWebhookUrl: typeof curCfg.slack_webhook_url === "string" ? curCfg.slack_webhook_url : null } : {}),
           })
+        }
+
+        // ── Agency branding / white-label (KLAVITYKLA-223, JTBD 7.10) ─────────────────────────────
+        // GET  /api/projects/:id/branding — current branding + pro flag (admin-only; renders on public pages)
+        // POST /api/projects/:id/branding — set { name?, accent?, logoDataUrl?, whiteLabel? }; validated + Pro-gated
+        // Branding lives inside modal_config_json under `agency_branding` (no migration). White-label is
+        // Pro-gated exactly like widget custom-colors. All inputs are untrusted (public-page render).
+        if (sub === "/branding") {
+          if (access !== "admin") return json({ error: "Only project admins can change branding." }, 403)
+          const { sanitizeBrandingInput, setProjectBranding, getProjectBranding } = await import("./lib/trails-branding")
+          if (req.method === "POST") {
+            const body = await req.json().catch(() => ({}))
+            const pro = await isAccountPro(proj.accountId)
+            const v = sanitizeBrandingInput(body, { isPro: pro })
+            if (!v.ok) return json({ error: (v as { ok: false; error: string }).error }, 400)
+            await setProjectBranding(pid, v.branding)
+            return json({ ok: true, branding: await getProjectBranding(pid), pro })
+          }
+          // GET
+          return json({ branding: await getProjectBranding(pid), pro: await isAccountPro(proj.accountId) })
         }
 
         // ── Trust Report digest (KLAVITYKLA-203): POST /api/projects/:id/trust-report/send ──

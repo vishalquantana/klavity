@@ -239,12 +239,12 @@
 <body>
 
 <header class="header">
-  <a href="https://klavity.in" class="logo" target="_blank" rel="noopener">
+  <a href="https://klavity.in" class="logo" id="brandLogo" target="_blank" rel="noopener">
     <svg width="22" height="22" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
       <rect width="32" height="32" rx="8" fill="#8b5cf6"/>
       <path d="M8 8h4v16H8V8zm6 8 6-8h5L13 18l12 6h-5L14 16z" fill="white"/>
     </svg>
-    Klavity
+    <span id="brandName">Klavity</span>
   </a>
   <div class="header-divider"></div>
   <span class="header-project-name" id="headerProjectName">Loading…</span>
@@ -255,7 +255,7 @@
   <div class="loading">Loading project status…</div>
 </main>
 
-<footer class="footer">
+<footer class="footer" id="brandFooter">
   Powered by <a href="https://klavity.in" target="_blank" rel="noopener">Klavity</a> —
   AI-powered quality assurance for product teams.
   <br><small>This page is read-only and shared via a private link. It does not expose any account internals.</small>
@@ -285,6 +285,12 @@
 
   document.title = data.projectName + ' Status — Klavity'
   headerProjectName.textContent = data.projectName
+
+  // KLAVITYKLA-223: apply per-project agency branding (logo, accent, name, footer).
+  // All values are treated as untrusted: name/text use textContent (never innerHTML),
+  // the accent is applied only after a strict hex check, and the logo is only an <img src>
+  // for a data:image/ URL. Unbranded projects keep the default Klavity chrome.
+  applyBranding(data.branding)
 
   // Compute overall health
   const trails = data.trails || []
@@ -409,6 +415,57 @@
 
   function esc(s) {
     return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+  }
+
+  // KLAVITYKLA-223: skin the portal with per-project agency branding. Every input is untrusted:
+  //   - accent applied only when it passes a strict hex regex (defends the CSS var)
+  //   - name set via textContent (never innerHTML) so HTML in the agency name renders inert
+  //   - logo only accepted as a data:image/ URL (no arbitrary remote/js: src)
+  //   - footer swaps to "Monitored by <Agency> · powered by Klavity", or agency-only under white-label
+  function applyBranding(b) {
+    if (!b || typeof b !== 'object') return
+    const HEX = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/
+    if (typeof b.accent === 'string' && HEX.test(b.accent.trim())) {
+      const a = b.accent.trim()
+      document.documentElement.style.setProperty('--accent', a)
+      document.documentElement.style.setProperty('--accent2', a)
+    }
+    const nameEl = document.getElementById('brandName')
+    if (nameEl && typeof b.name === 'string' && b.name.trim()) nameEl.textContent = b.name.trim()
+    const logoEl = document.getElementById('brandLogo')
+    if (logoEl && typeof b.logoDataUrl === 'string' && /^data:image\//.test(b.logoDataUrl)) {
+      const svg = logoEl.querySelector('svg')
+      if (svg) {
+        const img = document.createElement('img')
+        img.src = b.logoDataUrl
+        img.alt = (typeof b.name === 'string' && b.name.trim() ? b.name.trim() : 'Agency') + ' logo'
+        img.style.height = '22px'
+        img.style.maxWidth = '120px'
+        img.style.objectFit = 'contain'
+        img.style.borderRadius = '5px'
+        svg.replaceWith(img)
+      }
+    }
+    // Footer: rebuild as the PLG line. Cleared first (no innerHTML from user data).
+    const footer = document.getElementById('brandFooter')
+    if (footer) {
+      footer.textContent = ''
+      const monitored = (typeof b.name === 'string' && b.name.trim()) ? ('Monitored by ' + b.name.trim()) : ''
+      if (monitored) footer.appendChild(document.createTextNode(monitored))
+      if (!b.whiteLabel) {
+        if (monitored) footer.appendChild(document.createTextNode(' · '))
+        const link = document.createElement('a')
+        link.href = (typeof b.signupUrl === 'string' && b.signupUrl) ? b.signupUrl : 'https://klavity.in/signup'
+        link.target = '_blank'
+        link.rel = 'noopener'
+        link.textContent = 'powered by Klavity'
+        footer.appendChild(link)
+      }
+      const small = document.createElement('small')
+      small.textContent = 'This page is read-only and shared via a private link. It does not expose any account internals.'
+      footer.appendChild(document.createElement('br'))
+      footer.appendChild(small)
+    }
   }
 
   function showError(type) {
