@@ -870,6 +870,21 @@ details.drawer .drawer-in{padding:0 22px 22px}
 .tkt-tl-text{font-size:13px;margin-top:2px;line-height:1.5;word-break:break-word}
 .tkt-tl-meta{font-size:11px;color:var(--paper-faint);margin-top:2px}
 .tkt-tl-empty{font-size:13px;color:var(--paper-faint);padding:4px 0 2px}
+/* A.8 occurrence timeline — per-report receipts (own wording + date + screenshot) */
+.tkt-occ-wrap{margin-top:18px;border-top:1px solid var(--line);padding-top:14px;display:flex;flex-direction:column;gap:10px;max-width:900px}
+.tkt-occ-hd{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.tkt-occ-hd .tkt-occ-title{font-family:var(--mono);font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--paper-faint)}
+.tkt-occ-count{font-family:var(--mono);font-size:9px;color:var(--amber);background:rgba(217,131,36,.12);border:1px solid rgba(217,131,36,.25);padding:2px 8px;border-radius:20px}
+.tkt-occ-copy{margin-left:auto}
+.tkt-occ-list{display:flex;flex-direction:column;gap:0}
+.tkt-occ-item{display:flex;gap:12px;padding:10px 0;position:relative;border-top:1px solid var(--line)}
+.tkt-occ-item:first-child{border-top:none}
+.tkt-occ-date{flex:none;width:88px;font-family:var(--mono);font-size:11px;color:var(--paper-faint);padding-top:2px}
+.tkt-occ-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.tkt-occ-quote{font-size:13px;line-height:1.5;color:var(--paper-dim);font-style:italic;border-left:2px solid var(--line);padding-left:10px;word-break:break-word}
+.tkt-occ-orig{font-family:var(--mono);font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:var(--paper-faint)}
+.tkt-occ-shot{flex:none;width:96px}
+.tkt-occ-shot img{width:96px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:pointer;display:block}
 .tkt-comment-form{display:flex;flex-direction:column;gap:8px;margin-top:4px}
 .tkt-comment-ta{width:100%;background:var(--ink-2);border:1px solid var(--line);border-radius:10px;padding:9px 11px;color:var(--paper);font-family:var(--body);font-size:13px;outline:none;resize:vertical;min-height:56px;box-sizing:border-box;transition:border-color .15s}
 .tkt-comment-ta:focus{border-color:var(--indigo)}
@@ -4080,6 +4095,82 @@ function buildTimelineSection(ticketId) {
   return wrap
 }
 
+// A.8 occurrence timeline — the "receipts" for a recurring report. Fetches the recurrence memory
+// and, when this issue was reported 2+ times, renders a chronological list where EACH occurrence
+// carries its own verbatim wording + date + screenshot (occurrences 2..N are no longer discarded on
+// dedup). Includes a "Copy timeline" button for client conversations. Returns null when there is
+// nothing to show (single occurrence) so the caller can skip appending it.
+function buildOccurrenceTimeline(ticketId) {
+  const wrap = document.createElement("div")
+  wrap.className = "tkt-occ-wrap hide"
+  wrap.innerHTML = `<div class="tkt-occ-hd">
+      <span class="tkt-occ-title">Occurrence timeline</span>
+      <span class="tkt-occ-count"></span>
+      <button class="btn btn-ghost btn-sm tkt-occ-copy" type="button" title="Copy this occurrence timeline for a client conversation">${kicon('clipboard-list')} Copy timeline</button>
+    </div>
+    <div class="tkt-occ-list"></div>`
+  const listEl = wrap.querySelector(".tkt-occ-list")
+  const countEl = wrap.querySelector(".tkt-occ-count")
+  const copyBtn = wrap.querySelector(".tkt-occ-copy")
+
+  const day = ms => { try { return new Date(Number(ms)).toISOString().slice(0, 10) } catch (e) { return "" } }
+
+  fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/memory")
+    .then(r => r.ok ? r.json() : Promise.reject(r.status))
+    .then(d => {
+      const mem = d && d.memory
+      const occ = (mem && Array.isArray(mem.occurrences) ? mem.occurrences : [])
+        .filter(o => (o.observation || "").trim())
+      if (occ.length < 2) return  // single occurrence: nothing worth a timeline
+      wrap.classList.remove("hide")
+      countEl.textContent = occ.length + " reports"
+      listEl.innerHTML = ""
+      occ.forEach(o => {
+        const item = document.createElement("div")
+        item.className = "tkt-occ-item"
+        const shotHtml = o.screenshotId
+          ? `<div class="tkt-occ-shot" data-shot="${esc(o.screenshotId)}"></div>` : ""
+        item.innerHTML = `
+          <div class="tkt-occ-date">${esc(day(o.seenAt))}${o.isOriginal ? '<div class="tkt-occ-orig">first</div>' : ''}</div>
+          <div class="tkt-occ-body"><div class="tkt-occ-quote">"${esc(String(o.observation).trim())}"</div></div>
+          ${shotHtml}`
+        listEl.appendChild(item)
+        loadOccShot(item)
+      })
+      // Copy timeline text for client conversations — plain, quotable receipts.
+      copyBtn.addEventListener("click", async () => {
+        const lines = occ.map(o => `• ${day(o.seenAt)}: "${String(o.observation).trim()}"`)
+        const text = `This issue was reported ${occ.length} times:\n${lines.join("\n")}`
+        const ok = await copyText(text)
+        const orig = copyBtn.innerHTML
+        copyBtn.innerHTML = ok ? (kicon('check') + " Copied!") : (kicon('x') + " Copy failed")
+        setTimeout(() => { copyBtn.innerHTML = orig }, 2000)
+      })
+    })
+    .catch(() => { /* 404 = no recurrence memory (single report): leave hidden */ })
+
+  return wrap
+}
+
+// Load a single occurrence's screenshot thumbnail (best-effort). Mirrors loadTktShot but scoped to
+// one per-occurrence box so each occurrence shows ITS OWN shot, not just the head report's.
+async function loadOccShot(item) {
+  const box = item.querySelector(".tkt-occ-shot")
+  if (!box || box.getAttribute("data-loaded")) return
+  box.setAttribute("data-loaded", "1")
+  const id = box.getAttribute("data-shot")
+  try {
+    const r = await fetch("/api/screenshots/" + encodeURIComponent(id))
+    const d = await r.json().catch(() => ({}))
+    if (d.url) {
+      const img = document.createElement("img")
+      img.src = d.url; img.alt = "Occurrence screenshot"
+      img.addEventListener("click", () => window.open(d.url, "_blank", "noopener"))
+      box.innerHTML = ""; box.appendChild(img)
+    } else { box.remove() }
+  } catch { box.remove() }
+}
+
 // Overview: flat "Recent tickets" list (unchanged behaviour).
 function renderTickets() {
   const tickets = (state.tickets || []).filter(t => t.status !== "new" && t.status !== "dismissed")
@@ -4167,6 +4258,8 @@ function openSingleTicket(id) {
   if (t.screenshotId) detailEl.classList.add("single-has-shot")   // enables the image-left grid
   single.appendChild(detailEl)
   loadTktShot(detailEl, t.annotations)
+  // A.8: per-ticket occurrence timeline (receipts) — self-hides for single-occurrence reports.
+  single.appendChild(buildOccurrenceTimeline(t.id))
   // KLA-171: append activity timeline + comment composer
   single.appendChild(buildTimelineSection(t.id))
   if (board) board.classList.add("hide")

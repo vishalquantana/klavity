@@ -28,6 +28,14 @@ export type RecurrenceOccurrence = {
   urlPath: string | null
   observation: string | null
   title: string | null
+  // A.8 receipts: per-occurrence evidence for repeat reports (2..N). The original report's
+  // occurrence carries the head row's fields; each deduped repeat carries its OWN verbatim
+  // description + screenshot + quote (from feedback_occurrences), so the timeline can show
+  // "you said X on date Y, then Y2, then Y3" with each occurrence's real wording and shot.
+  occurrenceId: string | null    // feedback_occurrences.id when this row came from a stored receipt
+  screenshotId: string | null    // this occurrence's own screenshot (may differ per occurrence)
+  sourceQuote: string | null     // this occurrence's own grounded quote, when present
+  isOriginal: boolean            // true = the first/original report (the cluster head)
 }
 
 export type ProjectRecurringIssue = RecurrenceMemory & {
@@ -130,6 +138,25 @@ export async function listProjectRecurringIssues(
   return out.slice(0, limit)
 }
 
+type OccReceipt = { id: string; seenAt: number; observation: string | null; screenshotId: string | null; sourceQuote: string | null }
+/** Stored per-occurrence receipts for a cluster-head feedback row (A.8). [] on missing table/error. */
+async function occurrenceReceipts(c: Client, feedbackId: string): Promise<OccReceipt[]> {
+  try {
+    const r = await c.execute({
+      sql: `SELECT id, seen_at, observation, screenshot_id, source_quote
+            FROM feedback_occurrences WHERE feedback_id=? ORDER BY seen_at ASC, created_at ASC`,
+      args: [feedbackId],
+    })
+    return (r.rows as any[]).map((x) => ({
+      id: String(x.id),
+      seenAt: Number(x.seen_at),
+      observation: x.observation != null ? String(x.observation) : null,
+      screenshotId: x.screenshot_id != null ? String(x.screenshot_id) : null,
+      sourceQuote: x.source_quote != null ? String(x.source_quote) : null,
+    }))
+  } catch { return [] }  // older/minimal DB without feedback_occurrences: memory still works
+}
+
 function datesFromRow(row: any): number[] {
   let dates: number[] = []
   try { dates = JSON.parse(row.recurrence_dates_json || "[]") } catch { dates = [] }
@@ -176,14 +203,46 @@ async function memoryFromRows(
     if (rowResolvedAt != null && Number.isFinite(rowResolvedAt)) {
       resolvedAt = resolvedAt == null ? rowResolvedAt : Math.min(resolvedAt, rowResolvedAt)
     }
-    for (const seenAt of rowDates) {
+    const urlPath = row.url_path != null ? String(row.url_path) : null
+    const rowObservation = row.observation != null ? String(row.observation) : null
+    const rowTitle = titleFromRow(row)
+    const rowScreenshotId = row.screenshot_id != null ? String(row.screenshot_id) : null
+    const rowSourceQuote = row.source_quote != null ? String(row.source_quote) : null
+    const createdAt = Number(row.created_at)
+
+    // A.8: stored per-occurrence receipts for repeat reports (2..N) — each keeps its OWN verbatim
+    // description + screenshot + quote. Present only for clusters that recurred after A.8 shipped.
+    const receipts = await occurrenceReceipts(c, String(row.id))
+    const receiptSeenAts = new Set(receipts.map((o) => o.seenAt))
+
+    // Original report → one occurrence from the head row's created_at, carrying the head fields.
+    if (Number.isFinite(createdAt) && createdAt > 0) {
       occurrences.push({
-        feedbackId: String(row.id),
-        seenAt,
-        status,
-        urlPath: row.url_path != null ? String(row.url_path) : null,
-        observation: row.observation != null ? String(row.observation) : null,
-        title: titleFromRow(row),
+        feedbackId: String(row.id), seenAt: createdAt, status, urlPath,
+        observation: rowObservation, title: rowTitle,
+        occurrenceId: null, screenshotId: rowScreenshotId, sourceQuote: rowSourceQuote,
+        isOriginal: true,
+      })
+    }
+    // Each stored receipt → an occurrence with ITS OWN wording/screenshot/quote.
+    for (const rec of receipts) {
+      occurrences.push({
+        feedbackId: String(row.id), seenAt: rec.seenAt, status, urlPath,
+        observation: rec.observation ?? rowObservation, title: rowTitle,
+        occurrenceId: rec.id, screenshotId: rec.screenshotId ?? null, sourceQuote: rec.sourceQuote ?? null,
+        isOriginal: false,
+      })
+    }
+    // Backward-compat: pre-A.8 clusters have recurrence dates but no stored receipts. Emit
+    // date-derived occurrences (sharing the head row's text) for any date lacking a receipt.
+    for (const seenAt of rowDates) {
+      if (seenAt === createdAt) continue          // already emitted as the original
+      if (receiptSeenAts.has(seenAt)) continue     // already emitted from a receipt
+      occurrences.push({
+        feedbackId: String(row.id), seenAt, status, urlPath,
+        observation: rowObservation, title: rowTitle,
+        occurrenceId: null, screenshotId: rowScreenshotId, sourceQuote: rowSourceQuote,
+        isOriginal: false,
       })
     }
   }
