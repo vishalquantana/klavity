@@ -10,6 +10,7 @@ import { deriveHealth } from "./lib/connectors/health"
 import { applyReconcileOps, recurrenceFromEvents, pickCitation, type ReconcileOp, type Trait, type TraitEventRow } from "./lib/provenance"
 import { sendOtp, sendLeadAlert, sendTicketAssignmentEmail, sendTicketAssignmentInviteEmail } from "./lib/mail"
 import { notifyReporterOnFix } from "./lib/fixed-notification"
+import { guardCaughtForFeedback, latestReceiptForFeedback, sendRegressionCaughtReceipt } from "./lib/regression-receipt"
 import { token, otp, emailAllowed, cookie, clearCookie, parseCookies, isOpsAdmin, projectCookie } from "./lib/auth"
 import { uploadScreenshotMeta, presignGet, deleteObject, getObjectBytes, type UploadedScreenshot } from "./lib/s3"
 import { signImageToken, verifyImageToken } from "./lib/imgsign"
@@ -4589,7 +4590,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
       // ── Ticket management: PATCH /api/feedback/:id and POST /api/feedback/:id/export ──
       // Resolve the feedback's project via feedbackById across accessible projects.
-      const feedbackIdMatch = path.match(/^\/api\/feedback\/([^/]+?)(\/export|\/replay|\/memory|\/merge|\/split|\/comments|\/timeline|\/activity|\/labels(?:\/([^/]+))?|\/suggest-labels)?$/)
+      const feedbackIdMatch = path.match(/^\/api\/feedback\/([^/]+?)(\/export|\/replay|\/memory|\/merge|\/split|\/comments|\/timeline|\/activity|\/regression-receipt|\/labels(?:\/([^/]+))?|\/suggest-labels)?$/)
       if (feedbackIdMatch) {
         const fid = feedbackIdMatch[1]
         const feedbackSubroute = feedbackIdMatch[2]?.replace(/\/labels\/[^/]+$/, "/labels") || ""
@@ -4604,6 +4605,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const isGuard = feedbackSubroute === "/guard"
         const isMerge = feedbackSubroute === "/merge"
         const isSplit = feedbackSubroute === "/split"
+        const isRegressionReceipt = feedbackSubroute === "/regression-receipt"
 
         // Resolve which project this feedback belongs to and check the caller has access.
         let fbRow: any = null
@@ -4681,6 +4683,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const occurrenceMemory = db
             ? await buildRecurrenceMemory(db, fid, fbRow.projectId).catch(() => null)
             : null
+          // B.7: is this ticket auto-filed from a guard-caught (checkpoint-gone) regression, and has a
+          // "caught & fixed" receipt already been sent to the original reporter? Drives the one-click
+          // receipt offer on close. Best-effort — never blocks the detail read.
+          const guardInfo = db ? await guardCaughtForFeedback(db, fbRow.projectId, fid).catch(() => null) : null
+          const receiptRec = db && guardInfo?.guardCaught
+            ? await latestReceiptForFeedback(db, fbRow.projectId, fid).catch(() => null)
+            : null
           const report = {
             id: fbRow.id,
             projectId: fbRow.projectId,
@@ -4715,6 +4724,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             seqNum: fbRow.seqNum ?? null,
             // A.8: chronological per-occurrence receipts (own wording + screenshot + date).
             occurrences: occurrenceMemory?.occurrences ?? [],
+            // B.7: guard-caught receipt offer state. guardCaught gates the "Send regression-caught
+            // receipt" action (only guard-caught tickets); receiptSent reflects a prior explicit send.
+            guardCaught: guardInfo?.guardCaught ?? false,
+            receiptSent: receiptRec != null,
+            receiptSentAt: receiptRec?.sentAt ?? null,
+            receiptRecipientCount: receiptRec?.recipients?.length ?? 0,
           }
           return json({ report })
         }
@@ -4807,7 +4822,47 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             const effectivePriority = meta.priority !== undefined ? meta.priority : fbRow.priority
             autoCopyFeedback(fid, fbRow.projectId, me, effectivePriority)
           }
-          return json({ ok: true })
+          // B.7: when this close is on a guard-caught (checkpoint-gone) ticket, tell the UI to OFFER the
+          // one-click "regression-caught receipt" (offer, not silent auto-send). Only surfaced on a real
+          // transition into done, when a receipt hasn't already been sent. Best-effort — never blocks.
+          let offerReceipt = false
+          if (db && meta.status === "done" && fbRow.status !== "done") {
+            const g = await guardCaughtForFeedback(db, fbRow.projectId, fid).catch(() => null)
+            if (g?.guardCaught) {
+              const prior = await latestReceiptForFeedback(db, fbRow.projectId, fid).catch(() => null)
+              offerReceipt = prior == null
+            }
+          }
+          return json({ ok: true, offerRegressionReceipt: offerReceipt })
+        }
+
+        // POST /api/feedback/:id/regression-receipt — B.7 (KLAVITYKLA-247) "regression-caught receipt".
+        // Explicit one-click send, offered when a guard-caught ticket is closed. Emails the original
+        // reporter contact(s) on the issue's dedup cluster a forwardable "caught & fixed before it
+        // reached your users" receipt (first-fixed date + catch time + fix confirmation), reusing A.4's
+        // mail transport. Records the send for audit. Gracefully skips (sent:false) for ordinary tickets
+        // or when no reporter contact exists — the UI surfaces the skip reason.
+        if (req.method === "POST" && isRegressionReceipt) {
+          if (!db) return json({ error: "Database unavailable." }, 503)
+          const proj = await projectById(fbRow.projectId).catch(() => null)
+          const res = await sendRegressionCaughtReceipt({
+            projectId: fbRow.projectId, feedbackId: fid,
+            projectName: proj?.name ?? "your project",
+            ticketTitle: String(fbRow.observation || fbRow.suggestedBug?.title || "the reported issue"),
+            sentBy: me,
+          }, { db })
+          if (!res.ok) return json({ error: res.error }, 500)
+          if (!res.sent) {
+            const reason = res.reason === "not_guard_caught"
+              ? "This ticket wasn't auto-filed from a guard-caught regression."
+              : "No original reporter contact email is on file for this issue."
+            return json({ ok: true, sent: false, reason: res.reason, message: reason })
+          }
+          await insertActivity({
+            projectId: fbRow.projectId, type: "regression_receipt_sent", actorEmail: me, feedbackId: fid,
+            meta: { recipients: res.recipients.length, expectationId: res.record.expectationId },
+          }).catch((e: any) => console.warn("regression receipt activity skipped:", e?.message || e))
+          return json({ ok: true, sent: true, recipients: res.recipients, sentAt: res.record.sentAt })
         }
 
         // POST /api/feedback/:id/guard — KLA-242 "Guard this fix".
