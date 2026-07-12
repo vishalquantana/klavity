@@ -288,6 +288,33 @@ async function renderSignedIn() {
         window.close()
         return
       }
+      // Ensure a REAL host permission for this origin UP-FRONT, inside the click gesture, and
+      // surface the Chrome permission prompt if it's missing. Why up-front: content-script
+      // injection below succeeds via `activeTab` even without a host grant, so the old
+      // request-only-if-injection-fails path was never reached — yet the Sim review's
+      // captureVisibleTab (in the SW) DOES need a real host permission and failed silently.
+      // Requesting here makes the prompt appear the first time you Analyse a new site.
+      // Skip non-http(s) pages and origins already covered by host_permissions.
+      try {
+        const u = new URL(activeTab.url!)
+        if (u.protocol === 'https:' || u.protocol === 'http:') {
+          const origins = [`${u.origin}/*`]
+          const has = await chrome.permissions.contains({ origins }).catch(() => false)
+          if (!has) {
+            let granted = false
+            try { granted = await chrome.permissions.request({ origins }) } catch { granted = false }
+            if (!granted) {
+              showAnalyzeMsg('Klavity needs access to this site to analyse it — click Analyse and choose “Allow”.')
+              analyzeBtn.disabled = false
+              return
+            }
+            // Freshly granted → let the background reconcile dynamic scripts so passive
+            // auto-review also works on this origin going forward.
+            chrome.runtime.sendMessage({ kind: 'KLAV_RECONCILE_SCRIPTS' }).catch(() => {})
+          }
+        }
+      } catch { /* malformed URL — fall through; the inject/capture path will surface any error */ }
+
       analyzeBtn.disabled = true
       analyzeMsg.style.display = 'none'
       const review = { kind: 'KLAV_ADHOC_REVIEW', projectId }
