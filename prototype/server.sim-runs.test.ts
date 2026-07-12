@@ -39,6 +39,10 @@ const ACCOUNT_ID = `acct_sr_${ts}`
 const PROJECT_ID = `proj_sr_${ts}`
 const RUN_ID_1 = `simrun_sr1_${ts}`
 const RUN_ID_2 = `simrun_sr2_${ts}`
+// JTBD 3.8 — same-URL diff: an earlier + a later run of the SAME url (with real observation shape).
+const DIFF_URL = "http://example.com/pricing"
+const DIFF_PREV_ID = `simrun_srd_prev_${ts}`
+const DIFF_CURR_ID = `simrun_srd_curr_${ts}`
 const NOW = Date.now()
 
 await rawExec(`INSERT INTO users (email, created_at) VALUES (?, ?)`, [ADMIN_EMAIL, NOW])
@@ -53,6 +57,23 @@ await rawExec(`INSERT INTO sim_runs (id, project_id, url, status, sim_ids_json, 
   [RUN_ID_1, PROJECT_ID, "http://example.com/login", "done", JSON.stringify(["sim1"]), JSON.stringify([{ simId: "sim1", simName: "Hat 1", observations: [{ text: "Observation 1", sentiment: "frustrated", suggestedBug: { title: "Bug 1", priority: "high" } }] }]), ADMIN_EMAIL, NOW - 2000])
 await rawExec(`INSERT INTO sim_runs (id, project_id, url, status, sim_ids_json, error_msg, actor_email, created_at) VALUES (?,?,?,?,?,?,?,?)`,
   [RUN_ID_2, PROJECT_ID, "http://example.com/checkout", "error", JSON.stringify(["sim1"]), "Vision model crashed", ADMIN_EMAIL, NOW - 1000])
+
+// Same-URL diff seed. PREV: findings A (kept) + B (resolved), sim "Ada" frustrated.
+// CURR: findings A (kept) + C (new, w/ feedbackId), sim "Ada" now satisfied.
+await rawExec(`INSERT INTO sim_runs (id, project_id, url, status, reactions_json, actor_email, created_at) VALUES (?,?,?,?,?,?,?)`,
+  [DIFF_PREV_ID, PROJECT_ID, DIFF_URL, "done", JSON.stringify([
+    { simId: "sim_ada", simName: "Ada", observations: [
+      { observation: "Price toggle is broken", hash: "aaaa000000000001", sentiment: "frustrated", priority: "high", suggestedBug: { title: "toggle" } },
+      { observation: "Footer link 404s", hash: "bbbb000000000002", sentiment: "confused", priority: "low", suggestedBug: { title: "footer" } },
+    ] },
+  ]), ADMIN_EMAIL, NOW - 5000])
+await rawExec(`INSERT INTO sim_runs (id, project_id, url, status, reactions_json, actor_email, created_at) VALUES (?,?,?,?,?,?,?)`,
+  [DIFF_CURR_ID, PROJECT_ID, DIFF_URL, "done", JSON.stringify([
+    { simId: "sim_ada", simName: "Ada", observations: [
+      { observation: "Price toggle is broken", hash: "aaaa000000000001", sentiment: "satisfied", priority: "high", suggestedBug: { title: "toggle" } },
+      { observation: "Signup CTA is hidden below the fold", hash: "cccc000000000003", sentiment: "frustrated", priority: "medium", suggestedBug: { title: "cta" }, feedbackId: "fb_cta_new" },
+    ] },
+  ]), ADMIN_EMAIL, NOW - 4000])
 
 let serverPort: number
 let serverProc: ReturnType<typeof Bun.spawn>
@@ -101,8 +122,8 @@ test("GET /api/sims/runs lists recent runs for the project", async () => {
   expect(res.status).toBe(200)
   const body = await res.json()
   expect(Array.isArray(body.runs)).toBe(true)
-  expect(body.runs.length).toBe(2)
-  // Ordered newest first
+  expect(body.runs.length).toBe(4)
+  // Ordered newest first (RUN_ID_2/RUN_ID_1 are newer than the two DIFF_URL seed runs)
   expect(body.runs[0].id).toBe(RUN_ID_2)
   expect(body.runs[0].status).toBe("error")
   expect(body.runs[1].id).toBe(RUN_ID_1)
@@ -118,4 +139,39 @@ test("GET /api/sims/runs/:runId returns a single run", async () => {
   expect(body.run.url).toBe("http://example.com/login")
   expect(body.run.reactions[0].observations[0].text).toBe("Observation 1")
   expect(body.run.reactions[0].observations[0].suggestedBug.priority).toBe("high")
+})
+
+test("GET /api/sims/runs/:runId/diff reports new/resolved findings + changed reactions vs the previous same-URL run", async () => {
+  const res = await get(`/api/sims/runs/${DIFF_CURR_ID}/diff`)
+  expect(res.status).toBe(200)
+  const body = await res.json()
+  expect(body.diff.hasPrevious).toBe(true)
+  expect(body.previous.id).toBe(DIFF_PREV_ID)
+  // C is new (and deep-links to its feedback row); B is resolved; A is unchanged and appears in neither list.
+  const newTexts = body.diff.newFindings.map((f: any) => f.text)
+  expect(newTexts).toContain("Signup CTA is hidden below the fold")
+  expect(newTexts).not.toContain("Price toggle is broken")
+  const newCta = body.diff.newFindings.find((f: any) => f.text.includes("Signup CTA"))
+  expect(newCta.feedbackId).toBe("fb_cta_new")
+  const resolvedTexts = body.diff.resolvedFindings.map((f: any) => f.text)
+  expect(resolvedTexts).toContain("Footer link 404s")
+  // Ada's sentiment shifted frustrated → satisfied.
+  const adaChange = body.diff.changedReactions.find((c: any) => c.simName === "Ada")
+  expect(adaChange).toBeTruthy()
+  expect(adaChange.from).toBe("frustrated")
+  expect(adaChange.to).toBe("satisfied")
+})
+
+test("GET /api/sims/runs/:runId/diff returns hasPrevious=false for the first run of a URL", async () => {
+  const res = await get(`/api/sims/runs/${DIFF_PREV_ID}/diff`)
+  expect(res.status).toBe(200)
+  const body = await res.json()
+  expect(body.diff.hasPrevious).toBe(false)
+  expect(body.previous).toBeNull()
+  expect(body.diff.newFindings.length).toBe(0)
+})
+
+test("GET /api/sims/runs/:runId/diff 404s for an unknown run", async () => {
+  const res = await get(`/api/sims/runs/nope_${ts}/diff`)
+  expect(res.status).toBe(404)
 })

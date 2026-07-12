@@ -4378,6 +4378,21 @@ export async function listSimRuns(projectId: string, limit = 20): Promise<SimRun
   return r.rows.map(rowToSimRun)
 }
 
+// The most recent 'done' run of the SAME url in this project that finished BEFORE the given
+// run — the baseline the run-history diff compares against (JTBD 3.8: "why is this broken again").
+// Returns null when there is no earlier same-url run to compare to.
+export async function previousSimRunForUrl(
+  projectId: string, url: string, beforeCreatedAt: number, beforeId: string,
+): Promise<SimRunRow | null> {
+  const r = await db!.execute({
+    sql: `SELECT * FROM sim_runs
+          WHERE project_id=? AND url=? AND status='done' AND (created_at < ? OR (created_at = ? AND id <> ?))
+          ORDER BY created_at DESC LIMIT 1`,
+    args: [projectId, url, beforeCreatedAt, beforeCreatedAt, beforeId],
+  })
+  return r.rows.length ? rowToSimRun(r.rows[0]) : null
+}
+
 // ── KLA-174: Flat per-project ticket labels ──────────────────────────────────
 
 export type LabelRow = { id: string; projectId: string; name: string; color: string; createdAt: number }
