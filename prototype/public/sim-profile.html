@@ -35,7 +35,7 @@ a{color:inherit;text-decoration:none}
 .hero .meta{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
 .pill{font-family:var(--mono);font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;padding:4px 9px;border-radius:20px;background:var(--ink-3);color:var(--paper-dim)}
 .pill.client{background:rgba(99,102,241,.14);color:var(--indigo)}
-.pill.internal{background:rgba(217,131,36,.14);color:var(--amber)}
+.pill.user{background:rgba(217,131,36,.14);color:var(--amber)}
 .summary{font-size:15px;color:var(--paper-dim);line-height:1.55;margin:6px 0 30px}
 
 /* layout */
@@ -235,7 +235,11 @@ async function load() {
 
   const s = data.sim || {}
   const studioUrl = pq('/app?sim=' + encodeURIComponent(SIM_ID))
-  const type = s.type === "internal" ? "internal" : "client"
+  // v3 vocabulary (JTBD 3.7): resolve the two-axis simClass (User/Client), preferring the explicit
+  // field and falling back to the legacy type shim (internal maps to user, else client). NEVER label a
+  // v3 user-class Sim as client — the old type-only pill did exactly that.
+  const cls = (s.simClass === "client" || s.simClass === "user") ? s.simClass : (s.type === "internal" ? "user" : "client")
+  const clsLabel = cls === "client" ? "Client" : "User"
   document.title = (s.name || "Sim") + " · Klavity"
   const insights = Array.isArray(s.insights) ? s.insights : []
 
@@ -246,7 +250,7 @@ async function load() {
         <h1>${esc(s.name || "Sim")}</h1>
         <div class="role">${esc(s.role || "")}</div>
         <div class="meta">
-          <span class="pill ${type}">${type}</span>
+          <span class="pill ${cls}">${clsLabel}</span>
           ${typeof s.traitCount === "number" ? `<span class="pill">${s.traitCount} trait${s.traitCount===1?"":"s"}</span>` : ``}
           <span class="pill">${(data.feedback||[]).length} report${(data.feedback||[]).length===1?"":"s"}</span>
         </div>
