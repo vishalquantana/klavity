@@ -40,7 +40,7 @@ describe('inline mode (recordFn provided)', () => {
 
     const replay = createSessionReplay({ recordFn: mockRecord })
 
-    expect(startReplayRecording).toHaveBeenCalledWith(mockRecord, expect.objectContaining({ windowMs: 30_000, maxEvents: 2_000 }))
+    expect(startReplayRecording).toHaveBeenCalledWith(mockRecord, expect.objectContaining({ windowMs: 60_000, maxEvents: 2_000 }))
     expect(replay.snapshot()).toEqual(EVENTS)
   })
 

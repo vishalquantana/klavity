@@ -14,6 +14,14 @@ function escHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
+/** JTBD 1.8: inner markup for the attached-proof replay chip, given the current state.
+ *  'attached' → play-icon "Replay · 60s" with a check; 'unavailable' → muted "Replay · not available". */
+function replayChipInner(state: 'attached' | 'unavailable'): string {
+  return state === 'attached'
+    ? `${icon('play', { size: 12 })}<span>Replay &middot; 60s</span>${icon('check', { size: 12, label: 'attached' })}`
+    : `${icon('play', { size: 12 })}<span>Replay &middot; not available</span>`
+}
+
 /** Human-quotable ticket reference. Klavity feedback ids are "fb_<uuid>" — far too long to read
  *  aloud or quote to support, so shorten to the first uuid block ("fb_1a2b3c4d"). Tracker keys
  *  (e.g. a Plane sequence like "42" or "KLAV-123") pass through unchanged. */
@@ -85,12 +93,23 @@ export interface ModalCallbacks {
   // Called once when the composer closes — via Esc, overlay click, X button, or programmatic close.
   // Used by the widget to fire the public window.Klavity.on('close') event.
   onClose?: () => void
+  // JTBD 1.8: attached-proof chip. Reflects whether a rolling session-replay buffer will ride along
+  // with the report so reporters (and, in the drawer, reviewers) know what evidence traveled:
+  //   'attached'    -> chip reads "Replay 60s" with a check (a scrubbable buffer will attach)
+  //   'unavailable' -> chip reads "Replay not available" (recording off / buffer script failed to load)
+  // Omit entirely (undefined) on paths with no session-replay concept (e.g. the extension) -> no chip.
+  // The buffer becomes playable a few hundred ms after mount, so the host may re-evaluate later via
+  // the controller's setReplayState().
+  replayState?: 'attached' | 'unavailable'
 }
 
 export interface ModalController {
   shadowRoot: ShadowRoot
   addScreenshot: (dataUrl: string) => void
   close: () => void
+  // JTBD 1.8: update the attached-proof replay chip after mount (rrweb loads async, so the buffer may
+  // only become playable a few hundred ms after the composer opens). No-op when no chip was rendered.
+  setReplayState: (state: 'attached' | 'unavailable') => void
 }
 
 export function buildModal(
@@ -146,14 +165,21 @@ export function buildModal(
     /* Staggered content reveal — the genie scales the panel in while its rows softly rise + fade so it feels
        alive (not a flat box). Subtle; zeroed under prefers-reduced-motion below. */
     @keyframes kl-rise{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}
-    .klavity-modal>.klavity-toggle,.klavity-modal>.klavity-page,.klavity-modal>.klavity-strip,.klavity-modal>.klavity-actions,.klavity-modal>textarea.klavity-desc,.klavity-modal>input.klavity-remail,.klavity-modal>.klavity-submit{animation:kl-rise .5s cubic-bezier(.16,1,.3,1) both;}
-    .klavity-modal>.klavity-toggle{animation-delay:.05s}.klavity-modal>.klavity-page{animation-delay:.09s}.klavity-modal>.klavity-strip{animation-delay:.12s}.klavity-modal>.klavity-actions{animation-delay:.15s}.klavity-modal>textarea.klavity-desc{animation-delay:.18s}.klavity-modal>input.klavity-remail{animation-delay:.21s}.klavity-modal>.klavity-submit{animation-delay:.23s}
+    .klavity-modal>.klavity-toggle,.klavity-modal>.klavity-page,.klavity-modal>.klavity-proof,.klavity-modal>.klavity-strip,.klavity-modal>.klavity-actions,.klavity-modal>textarea.klavity-desc,.klavity-modal>input.klavity-remail,.klavity-modal>.klavity-submit{animation:kl-rise .5s cubic-bezier(.16,1,.3,1) both;}
+    .klavity-modal>.klavity-toggle{animation-delay:.05s}.klavity-modal>.klavity-page{animation-delay:.09s}.klavity-modal>.klavity-proof{animation-delay:.11s}.klavity-modal>.klavity-strip{animation-delay:.12s}.klavity-modal>.klavity-actions{animation-delay:.15s}.klavity-modal>textarea.klavity-desc{animation-delay:.18s}.klavity-modal>input.klavity-remail{animation-delay:.21s}.klavity-modal>.klavity-submit{animation-delay:.23s}
     .klavity-modal.kl-closing{animation:kl-genie-out .5s cubic-bezier(.55,0,.85,.25) both;}
     .klavity-toggle{display:flex;gap:8px;margin-bottom:16px;padding-right:34px;}
     .klavity-toggle button{flex:1;min-height:40px;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 12px;border-radius:8px;border:none;cursor:pointer;font-size:14px;font-weight:600;background:var(--kl-chip);color:var(--kl-fg);line-height:1;}
     .klavity-toggle .bug.active{background:var(--kl-accent);color:var(--kl-on-accent);}
     .klavity-toggle .feat.active{background:var(--kl-accent);color:var(--kl-on-accent);}
     .klavity-page{font-size:12px;color:var(--kl-muted);margin-bottom:12px;}
+    /* JTBD 1.8 attached-proof chip: tells the reporter (and later the reviewer, in the drawer) that a
+       rolling session replay will ride along with the report. Sits under the page path, above the strip. */
+    .klavity-proof{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;}
+    .klavity-chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;line-height:1;padding:5px 9px;border-radius:999px;background:var(--kl-chip);color:var(--kl-muted);border:1px solid var(--kl-border);}
+    .klavity-chip svg{display:block;width:12px;height:12px;}
+    .klavity-chip.kl-chip-on{color:var(--kl-accent);background:color-mix(in srgb,var(--kl-chip) 78%,var(--kl-accent) 22%);border-color:color-mix(in srgb,var(--kl-border) 60%,var(--kl-accent) 40%);}
+    .klavity-chip.kl-chip-off{opacity:.72;}
     /* overflow-x:auto forces overflow-y to auto (not visible) per CSS spec — adding vertical padding gives
        the absolutely-positioned rm/mk badge ::after hit-area extensions room so they're not clipped. */
     .klavity-strip{display:flex;gap:8px;overflow-x:auto;padding:6px 4px 16px;margin-bottom:6px;min-height:64px;align-items:flex-start;}
@@ -310,6 +336,7 @@ export function buildModal(
       <button class="feat ${initialType === 'feature' ? 'active' : ''}"><span class="kl-cap-ic">${icon('lightbulb')}</span>Feature</button>
     </div>
     <div class="klavity-page">${icon('map-pin')} ${typeof window !== 'undefined' ? escHtml(window.location.pathname) : ''}</div>
+    ${callbacks.replayState ? `<div class="klavity-proof"><span class="klavity-chip ${callbacks.replayState === 'attached' ? 'kl-chip-on' : 'kl-chip-off'}" id="klavity-replay-chip">${replayChipInner(callbacks.replayState)}</span></div>` : ''}
     <div class="klavity-strip" id="klavity-strip"></div>
     <div class="klavity-actions">
       ${callbacks.onCaptureSharp ? `<button id="klavity-sharp" aria-describedby="klavity-sharp-tip"><span class="kl-cap-ic">${icon('app-window')}</span><span class="kl-sharp-label">Screen</span><span class="kl-info-badge" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></span><span id="klavity-sharp-tip" class="klavity-info-pop" role="tooltip">Screen grabs the <b>whole page — every image, pixel-perfect</b> using your browser's screen-share. Your browser will ask you to <b>share this tab</b>.</span></button>` : ''}
@@ -381,10 +408,20 @@ export function buildModal(
     sharpBtn.addEventListener('blur', hideTip)
   }
 
+  // JTBD 1.8: mutate the attached-proof chip after mount (rrweb loads async). No-op if no chip exists.
+  function setReplayState(state: 'attached' | 'unavailable'): void {
+    const chip = shadowRoot.getElementById('klavity-replay-chip') as HTMLElement | null
+    if (!chip) return
+    chip.classList.toggle('kl-chip-on', state === 'attached')
+    chip.classList.toggle('kl-chip-off', state !== 'attached')
+    chip.innerHTML = replayChipInner(state)
+  }
+
   const controller: ModalController = {
     shadowRoot,
     addScreenshot,
     close,
+    setReplayState,
   }
 
   function updateStrip() {
