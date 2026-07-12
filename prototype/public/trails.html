@@ -1292,7 +1292,7 @@ function renderTrails(d){
     wrap.className = "trail-wrap"
     var row = document.createElement("div")
     row.className = "trail" + (isPaused ? " paused" : "")
-    var schedChip = t.schedule ? '<span class="schedule-chip">'+kicon('clock',{size:9})+' '+esc(friendlySchedule(t.schedule))+'</span>' : ''
+    var schedChip = t.schedule ? '<span class="schedule-chip">'+kicon('clock',{size:9})+' '+esc(friendlySchedule(t.schedule, t.scheduleTz))+'</span>' : ''
     var vp = t.viewport ? ((t.viewport.preset ? t.viewport.preset + " " : "") + t.viewport.width + "×" + t.viewport.height) : "default viewport"
     var html = '<div class="body"><div class="t" data-trail-name-el="'+esc(t.id)+'">'+esc(t.name)+'</div><div class="d">'+esc(t.baseUrl)+' · '+esc(vp)+'</div></div>'
     html += schedChip
@@ -1325,7 +1325,7 @@ function renderTrails(d){
     var pauseLabel = isPaused ? (kicon('play',{size:12}) + ' Resume') : (kicon('pause',{size:12}) + ' Pause')
     menu.innerHTML = '<button data-rename="'+esc(t.id)+'">'+kicon('pencil',{size:12})+' Rename</button>'
       + '<button data-toggle-pause="'+esc(t.id)+'" data-paused="'+String(isPaused)+'">'+pauseLabel+'</button>'
-      + '<button data-set-schedule="'+esc(t.id)+'" data-schedule="'+esc(t.schedule||'')+'">'+kicon('clock',{size:12})+' Set schedule</button>'
+      + '<button data-set-schedule="'+esc(t.id)+'" data-schedule="'+esc(t.schedule||'')+'" data-schedule-tz="'+esc(t.scheduleTz||'')+'">'+kicon('clock',{size:12})+' Set schedule</button>'
       + '<button data-archive="'+esc(t.id)+'">'+kicon('archive',{size:12})+' Archive</button>'
     wrap.appendChild(row)
     wrap.appendChild(menu)
@@ -1435,9 +1435,10 @@ function renderTrails(d){
       e.stopPropagation()
       var id = btn.getAttribute("data-set-schedule")
       var current = btn.getAttribute("data-schedule") || ""
+      var currentTz = btn.getAttribute("data-schedule-tz") || ""
       var menu = document.getElementById("km-"+id)
       if (menu) menu.classList.remove("open")
-      openSchedModal(id, current)
+      openSchedModal(id, current, currentTz)
     }
   })
   // Archive trail (KLA-160)
@@ -1446,7 +1447,7 @@ function renderTrails(d){
       var id = btn.getAttribute("data-archive")
       var menu = document.getElementById("km-"+id)
       if (menu) menu.classList.remove("open")
-      if (!confirm("Archive this trail? It will be hidden from the main list but stays in the database and can be restored by re-activating it later.")) return
+      if (!confirm("Archive this AutoSim? It will be hidden from your main list, but you can find and restore it from the Archived view at any time.")) return
       try {
         var r = await fetch("/api/trails/"+encodeURIComponent(id)+projQ(), { method:"PATCH", headers:{"Content-Type":"application/json"}, body: JSON.stringify({status: "archived"}) })
         if (r.ok) {
@@ -1464,6 +1465,37 @@ function renderTrails(d){
   document.addEventListener("click", function(){
     document.querySelectorAll(".trail-menu.open").forEach(function(m){ m.classList.remove("open") })
   }, {once: false, capture: false})
+}
+
+// ── KLA-277 (JTBD 4.13): DST-safe schedule builder ─────────────────────────────
+// Emit a LOCAL wall-clock cron and send the browser's IANA timezone alongside it. The server
+// stores schedule_tz and recomputes the UTC fire instant per occurrence, so a "9am local" guard
+// keeps firing at 9am local across a DST transition — no offset is baked at save time.
+function localCron(frequency, hour, minute, localDows) {
+  if (frequency === "hourly") return "0 * * * *"
+  if (frequency === "daily") return minute + " " + hour + " * * *"
+  if (frequency === "weekly") {
+    var uniq = localDows.filter(function(v, i, self){ return self.indexOf(v) === i }).sort(function(a,b){ return a - b })
+    return minute + " " + hour + " * * " + uniq.join(",")
+  }
+  return ""
+}
+// Render a stored local-wall-clock cron directly (no UTC conversion — the tz is stored separately).
+function friendlyLocalCron(cron) {
+  var parts = (cron || "").trim().split(/\s+/)
+  if (parts.length !== 5) return ""
+  var min = parseInt(parts[0], 10) || 0, hourStr = parts[1], dowStr = parts[4]
+  var pad = function(n){ return n < 10 ? "0" + n : n }
+  if (hourStr === "*") return "Hourly"
+  var hour = parseInt(hourStr, 10) || 0
+  var timeStr = pad(hour) + ":" + pad(min)
+  if (dowStr === "*") return "Daily · " + timeStr
+  var labels = { 1: "Mon", 2: "Tue", 3: "Wed", 4: "Thu", 5: "Fri", 6: "Sat", 0: "Sun" }
+  var order = [1, 2, 3, 4, 5, 6, 0]
+  var wanted = dowStr.split(",").map(function(x){ return parseInt(x, 10) })
+  var days = []
+  order.forEach(function(d){ if (wanted.indexOf(d) !== -1) days.push(labels[d]) })
+  return "Weekly · " + days.join(",") + " · " + timeStr
 }
 
 // ── KLA-159: Schedule timezone helpers ─────────────────────────────────────────
@@ -1522,8 +1554,10 @@ function utcCronToLocal(cron) {
   return { frequency: "weekly", hour: localHour, minute: localMin, weekdays: uniqueLocalDows }
 }
 
-function friendlySchedule(cron) {
+function friendlySchedule(cron, tz) {
   if (!cron) return ""
+  // KLA-277: rows saved with a stored timezone hold a LOCAL wall-clock cron — render it directly.
+  if (tz) return friendlyLocalCron(cron)
   var localVals = utcCronToLocal(cron)
   var pad = function(n) { return n < 10 ? "0" + n : n }
   var timeStr = pad(localVals.hour) + ":" + pad(localVals.minute)
@@ -1608,10 +1642,25 @@ function updateSchedBuilderUI() {
   $("schedLocalHint").textContent = hint
 }
 
-function openSchedModal(trailId, current){
+// Parse a LOCAL wall-clock cron directly (no UTC conversion) for rows saved with a stored tz.
+function localCronToFields(cron){
+  var parts = (cron || "").trim().split(/\s+/)
+  if (parts.length !== 5) return { frequency: "daily", hour: 9, minute: 0, weekdays: [] }
+  var min = parseInt(parts[0], 10) || 0, hourStr = parts[1], dowStr = parts[4]
+  if (hourStr === "*") return { frequency: "hourly", hour: 9, minute: 0, weekdays: [] }
+  var hour = parseInt(hourStr, 10) || 0
+  if (dowStr === "*") return { frequency: "daily", hour: hour, minute: min, weekdays: [] }
+  var days = dowStr.split(",").map(function(x){ return parseInt(x, 10) })
+    .filter(function(v, i, self){ return self.indexOf(v) === i }).sort(function(a,b){ return a - b })
+  return { frequency: "weekly", hour: hour, minute: min, weekdays: days }
+}
+
+function openSchedModal(trailId, current, tz){
   schedState.trailId = trailId
   $("schedErr").textContent = ""
-  var localVals = utcCronToLocal(current)
+  // KLA-277: a stored tz means `current` is a LOCAL cron — parse it directly; otherwise fall back
+  // to the legacy UTC→local conversion for pre-tz rows.
+  var localVals = tz ? localCronToFields(current) : utcCronToLocal(current)
   $("schedFreq").value = localVals.frequency
   var pad = function(n) { return n < 10 ? "0" + n : n }
   $("schedTime").value = pad(localVals.hour) + ":" + pad(localVals.minute)
@@ -1665,11 +1714,14 @@ document.querySelectorAll(".sched-preset").forEach(function(btn){
   }
 })
 
-async function saveSchedule(expr){
+async function saveSchedule(expr, tz){
   var id = schedState.trailId
   if (!id) return
   var pid = projParam(); var qs = pid ? "?project=" + encodeURIComponent(pid) : ""
-  var body = JSON.stringify({ schedule: expr || null })
+  // KLA-277: send the browser's IANA timezone with the local-wall-clock cron so the server can
+  // recompute the UTC fire instant per occurrence (DST-safe). Clearing sends scheduleTz:null.
+  var payload = expr ? { schedule: expr, scheduleTz: tz || null } : { schedule: null }
+  var body = JSON.stringify(payload)
   var r
   try { r = await fetch("/api/trails/"+encodeURIComponent(id)+qs, { method:"PATCH", headers:{"content-type":"application/json"}, body: body }) }
   catch(e){ $("schedErr").textContent = "Network error"; return }
@@ -1697,9 +1749,10 @@ $("schedSave").onclick = async function(){
   $("schedSave").disabled = true
   var originalText = $("schedSave").textContent
   $("schedSave").textContent = "Saving..."
-  var expr = localToUtcCron(freq, hour, minute, Array.from(selectedSchedDays))
+  var expr = localCron(freq, hour, minute, Array.from(selectedSchedDays))
+  var tz = (Intl.DateTimeFormat().resolvedOptions().timeZone) || null
   try {
-    await saveSchedule(expr)
+    await saveSchedule(expr, tz)
   } finally {
     $("schedSave").disabled = false
     $("schedSave").textContent = originalText

@@ -1,6 +1,6 @@
 // KLA-88 — tests for cron matching + scheduler tick behaviour.
 import { test, expect, beforeAll, beforeEach } from "bun:test"
-import { cronMatches, isValidCron } from "./trails-scheduler"
+import { cronMatches, cronMatchesTz, zonedParts, isValidCron } from "./trails-scheduler"
 import { tmpdir } from "node:os"; import { join } from "node:path"
 
 // ── cronMatches ───────────────────────────────────────────────────────────────
@@ -60,6 +60,52 @@ test("cronMatches: day-of-week (0=Sun)", () => {
 test("cronMatches: rejects wrong field count", () => {
   expect(cronMatches("* * * *", utc(2026, 7, 7, 0, 0))).toBe(false)
   expect(cronMatches("* * * * * *", utc(2026, 7, 7, 0, 0))).toBe(false)
+})
+
+// ── KLA-277 (JTBD 4.13): DST-safe timezone-aware matching ─────────────────────────────────────────
+//
+// America/New_York observes EST (UTC-5) in winter and EDT (UTC-4) in summer. A "9am local" guard
+// must keep firing at 9am local across the DST boundary — its UTC minute simply shifts. The old
+// baked-UTC cron (frozen at save time) would drift by an hour after the transition.
+
+test("zonedParts breaks a UTC instant into the target zone's calendar fields", () => {
+  // 2026-01-15 14:00 UTC = 09:00 EST (winter); 2026-07-15 13:00 UTC = 09:00 EDT (summer)
+  expect(zonedParts(utc(2026, 1, 15, 14, 0), "America/New_York")).toMatchObject({ hour: 9, min: 0, dom: 15, mon: 1 })
+  expect(zonedParts(utc(2026, 7, 15, 13, 0), "America/New_York")).toMatchObject({ hour: 9, min: 0, dom: 15, mon: 7 })
+})
+
+test("cronMatchesTz: a 9am-local guard fires at 9am local in BOTH DST regimes", () => {
+  const cron = "0 9 * * *"
+  const tz = "America/New_York"
+  // Winter (EST, UTC-5): 9am local == 14:00 UTC
+  expect(cronMatchesTz(cron, utc(2026, 1, 15, 14, 0), tz)).toBe(true)
+  expect(cronMatchesTz(cron, utc(2026, 1, 15, 13, 0), tz)).toBe(false) // 8am local
+  // Summer (EDT, UTC-4): 9am local == 13:00 UTC — the fire instant shifts by an hour…
+  expect(cronMatchesTz(cron, utc(2026, 7, 15, 13, 0), tz)).toBe(true)
+  // …and the winter UTC minute (14:00) is now 10am local, so it must NOT fire.
+  expect(cronMatchesTz(cron, utc(2026, 7, 15, 14, 0), tz)).toBe(false)
+})
+
+test("cronMatchesTz: the OLD baked-UTC cron would DRIFT after DST (regression guard)", () => {
+  // Saving "9am ET" in winter as a baked-UTC cron yields "0 14 * * *". In summer that fires at
+  // 10am ET, not 9am — the exact bug JTBD 4.13 fixes. The tz-aware path avoids it.
+  const summer9amEt = utc(2026, 7, 15, 13, 0) // 09:00 EDT
+  expect(cronMatches("0 14 * * *", summer9amEt)).toBe(false)          // baked cron misses 9am ET
+  expect(cronMatchesTz("0 9 * * *", summer9amEt, "America/New_York")).toBe(true) // tz-aware hits it
+})
+
+test("cronMatchesTz: weekday matching respects the target zone's local day", () => {
+  // 2026-07-13 03:00 UTC is still Sunday 23:00 in New York (EDT). A "Sunday 23:00 ET" guard fires.
+  expect(cronMatchesTz("0 23 * * 0", utc(2026, 7, 13, 3, 0), "America/New_York")).toBe(true)
+  // The same instant is Monday in UTC, so the plain UTC matcher would treat it as Monday.
+  expect(cronMatches("0 3 * * 1", utc(2026, 7, 13, 3, 0))).toBe(true)
+})
+
+test("cronMatchesTz: falsy tz and unknown tz fall back to UTC cronMatches", () => {
+  const d = utc(2026, 7, 15, 14, 0)
+  expect(cronMatchesTz("0 14 * * *", d, null)).toBe(cronMatches("0 14 * * *", d))
+  expect(cronMatchesTz("0 14 * * *", d, "")).toBe(cronMatches("0 14 * * *", d))
+  expect(cronMatchesTz("0 14 * * *", d, "Not/AZone")).toBe(cronMatches("0 14 * * *", d))
 })
 
 // ── isValidCron ───────────────────────────────────────────────────────────────
@@ -190,6 +236,37 @@ test("localToUtcCron / utcCronToLocal roundtrip and timezone offsets", () => {
   expect(localWeekly.hour).toBe(14)
   expect(localWeekly.minute).toBe(30)
   expect(localWeekly.weekdays).toEqual([1, 3, 5])
+})
+
+// KLA-277: end-to-end proof through tickScheduler that a tz-scheduled trail fires at the correct
+// UTC instant in each DST regime (and NOT at the stale baked-UTC instant).
+async function seedTzTrail(schedule: string, scheduleTz: string) {
+  const id = await T.createTrail("proj_s", { name: "TzSched", baseUrl: "https://app.test/", authorKind: "llm" })
+  await T.updateTrail("proj_s", id, { status: "active", schedule, scheduleTz })
+  return id
+}
+
+test("tickScheduler: a 9am-ET trail fires at the DST-correct UTC instant summer AND winter", async () => {
+  _resetWalkPoolForTest(1, 0)
+  const id = await seedTzTrail("0 9 * * *", "America/New_York")
+
+  // Winter: 9am EST == 14:00 UTC → fires (scheduled_last_run_at gets stamped for that minute).
+  const winter = new Date(Date.UTC(2026, 0, 15, 14, 0))
+  await tickScheduler(winter)
+  const winterMinute = Math.floor(winter.getTime() / 60_000) * 60_000
+  expect((await T.getTrail("proj_s", id))?.scheduledLastRunAt).toBe(winterMinute)
+
+  // The stale baked-UTC hour (14:00) in SUMMER must NOT fire (that would be 10am ET — the bug).
+  const summerBaked = new Date(Date.UTC(2026, 6, 15, 14, 0))
+  const before = (await T.getTrail("proj_s", id))?.scheduledLastRunAt
+  await tickScheduler(summerBaked)
+  expect((await T.getTrail("proj_s", id))?.scheduledLastRunAt).toBe(before) // unchanged → did not fire
+
+  // Summer: 9am EDT == 13:00 UTC → fires.
+  const summer = new Date(Date.UTC(2026, 6, 15, 13, 0))
+  await tickScheduler(summer)
+  const summerMinute = Math.floor(summer.getTime() / 60_000) * 60_000
+  expect((await T.getTrail("proj_s", id))?.scheduledLastRunAt).toBe(summerMinute)
 })
 
 test("tickScheduler handles WalkBusyError and records a skipped run", async () => {
