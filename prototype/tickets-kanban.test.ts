@@ -94,7 +94,10 @@ test("Tickets list exposes multi-select and bulk actions", () => {
   expect(html).toContain('cbAll.className = "tl-cb-all"')
   expect(html).toContain('cb.className = "tl-cb"')
   expect(html).toContain('/tickets/bulk')
-  expect(html).toContain("body.ticketIds = [..._bulkSelected]")
+  // JTBD 2.14: bulk mutations now route through applyBulkAction (undo-guarded), which reads the
+  // current selection into `ids` before PATCHing.
+  expect(html).toContain("const ids = [..._bulkSelected]")
+  expect(html).toContain("applyBulkAction(projId, body")
   expect(html).toContain('id="bulkStatus"')
   expect(html).toContain('id="bulkPriority"')
   expect(html).toContain('id="bulkAssignee"')
@@ -103,4 +106,44 @@ test("Tickets list exposes multi-select and bulk actions", () => {
   expect(html).toContain('id="bulkAddLabel"')
   expect(html).toContain('id="bulkRemoveLabel"')
   expect(html).toContain('id="bulkClose"')
+})
+
+test("JTBD 2.14: bulk mutations are guarded by an undo toast that restores prior values", () => {
+  // Every bulk action shows a result toast with an Undo affordance...
+  expect(html).toContain("function applyBulkAction(projId, body, onDone)")
+  expect(html).toContain("function bulkResultToast(")
+  expect(html).toContain('class="tg-toast-undo"')
+  // ...and undo replays the API's per-ticket `prior` values (grouped by value) rather than guessing.
+  expect(html).toContain("async function bulkUndo(projId, prior, field)")
+  expect(html).toContain("Array.isArray(data.prior)")
+  // Non-reversible label ops get an explicit confirm instead of a silent instant mutation.
+  expect(html).toContain("if (!confirm(")
+})
+
+test("JTBD 2.14: partial bulk failures are surfaced, not silently dropped", () => {
+  // The API's per-ticket failures array is read and rendered as a summary with linkable ticket ids.
+  expect(html).toContain("Array.isArray(data.failures)")
+  expect(html).toContain("${okCount} updated, ${failedIds.length} failed")
+  expect(html).toContain('class="tg-toast-fails"')
+  expect(html).toContain("openSingleTicket(id)")
+})
+
+test("JTBD 2.14: selection survives pagination and filter changes (clears only on explicit clear/project switch)", () => {
+  // Paginate handlers no longer wipe the selection set.
+  expect(html).toContain("_tktListState.page--; fetchAndRenderTktList()")
+  expect(html).toContain("_tktListState.page++; fetchAndRenderTktList()")
+  expect(html).not.toContain("_bulkSelected.clear(); _tktListState.page--")
+  expect(html).not.toContain("_bulkSelected.clear(); _tktListState.page++")
+  // Filter-change handler no longer clears the selection either.
+  expect(html).not.toContain("_bulkSelected.clear()  // filter change clears selection")
+})
+
+test("JTBD 2.14: kanban board supports card multi-select feeding the shared bulk bar", () => {
+  // Each card carries a hover-revealed checkbox and can be shift-click range-selected...
+  expect(html).toContain('class="kb-card-cb"')
+  expect(html).toContain("const applyRangeTo = (target, on)")
+  expect(html).toContain("ev.shiftKey")
+  // ...and the same buildBulkBar drives the board via an onDone/onClear re-render.
+  expect(html).toContain("buildBulkBar(board, projId, { onDone: rerenderBoard, onClear: rerenderBoard })")
+  expect(html).toContain("syncKbSelectionUi = ()")
 })
