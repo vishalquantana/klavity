@@ -1261,6 +1261,22 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .sm-next-step-arr{color:var(--paper-faint);font-size:16px;align-self:center;flex:none;transition:transform .15s}
 .sm-next-step:hover .sm-next-step-arr{transform:translateX(3px);color:var(--indigo)}
 .sm-success-foot{display:flex;justify-content:center;margin-top:14px}
+/* Run-a-review-now block — primary activation inside the post-add success panel (JTBD 6.10) */
+.sm-run-now{border:1px solid var(--indigo);border-radius:14px;padding:14px 15px;margin-bottom:16px;background:rgba(99,102,241,.06)}
+.sm-run-now-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.sm-run-now-row input[type=url]{flex:1 1 240px;min-width:0;background:var(--ink);border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:13.5px;color:var(--paper);font-family:var(--body);outline:none;transition:border-color .15s}
+.sm-run-now-row input:focus{border-color:var(--indigo);box-shadow:0 0 0 3px color-mix(in srgb,var(--indigo) 18%,transparent)}
+.sm-run-now-row button{white-space:nowrap}
+.sm-run-hint{font-size:12px;color:var(--paper-dim);margin-top:8px;line-height:1.45}
+.sm-run-msg{font-size:12.5px;margin-top:8px;min-height:0;color:var(--rose);line-height:1.45}
+.sm-run-msg:empty{margin-top:0}
+.sm-run-spin{display:none;align-items:center;gap:10px;margin-top:12px;color:var(--paper-faint);font-size:13px}
+.sm-run-spin.show{display:flex}
+.sm-run-saved{display:none;font-size:12px;color:var(--green);margin-top:10px;align-items:center;gap:8px}
+.sm-run-saved.show{display:flex}
+.sm-run-viewall{background:none;border:none;color:var(--indigo);font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;padding:0;transition:filter .15s}
+.sm-run-viewall:hover{filter:brightness(1.15)}
+.sm-next-lead{font-size:12px;color:var(--paper-faint);margin:0 0 4px;text-align:center}
 /* Report-widget embed + live preview + extension card (Settings → Report widget appearance) */
 .wp-embed{margin:4px 0 14px}
 .wp-embed-label{font-size:12px;font-weight:600;opacity:.7;margin-bottom:6px}
@@ -6575,9 +6591,23 @@ load()
         <strong id="smSuccessTitle">Your Sim is ready — now put it to work</strong>
         <p>Pick how you want to see your Sim react to your product:</p>
       </div>
+      <!-- Primary: run the project's real Sims against a URL now — the fastest real activation.
+           Calls the authed /api/sim/preview branch (results persisted + rendered inline below). -->
+      <div class="sm-run-now" id="smRunNow">
+        <div class="sm-run-now-row">
+          <input id="smRunUrl" type="url" placeholder="https://your-product.com/pricing" autocomplete="off" spellcheck="false" />
+          <button class="btn btn-indigo btn-sm" type="button" id="smRunGo">Run a review now</button>
+        </div>
+        <div class="sm-run-hint">Your Sims open this page and file what bugs them — the fastest way to see them work.</div>
+        <div class="sm-run-msg" id="smRunMsg"></div>
+        <div class="sm-run-spin" id="smRunSpin"><span class="sup-spin"></span><span id="smRunSpinMsg">Your Sims are opening the page…</span></div>
+        <div class="sup-results" id="smRunResults"></div>
+        <div class="sm-run-saved" id="smRunSaved">Reactions saved. <button type="button" class="sm-run-viewall" id="smRunViewAll">View all in Sims →</button></div>
+      </div>
       <div class="sm-next-steps">
-        <!-- Primary: Chrome extension — see live reactions while browsing -->
-        <a class="sm-next-step is-primary" href="https://chromewebstore.google.com/detail/olahjdcgbdjajbfmgnakjlehgjdmaene" target="_blank" rel="noopener" id="smNextExt">
+        <p class="sm-next-lead">Or activate another way:</p>
+        <!-- Secondary: Chrome extension — see live reactions while browsing -->
+        <a class="sm-next-step" href="https://chromewebstore.google.com/detail/olahjdcgbdjajbfmgnakjlehgjdmaene" target="_blank" rel="noopener" id="smNextExt">
           <div class="sm-next-step-ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z" /></svg></div>
           <div class="sm-next-step-body">
             <div class="sm-next-step-t">Use in the Chrome extension</div>
@@ -6700,6 +6730,16 @@ load()
   }
   // ── Post-add success panel ──
   const successEl=$("smSuccess");
+  // Best-effort prefill for the "Run a review now" URL: the active project's configured site URL.
+  function projSiteUrl(){ try{ return (state&&state.active&&state.active.siteUrl)||""; }catch(e){ return ""; } }
+  function resetRunNow(){
+    const msg=$("smRunMsg"), spin=$("smRunSpin"), res=$("smRunResults"), saved=$("smRunSaved"), go=$("smRunGo");
+    if(msg) msg.textContent="";
+    if(spin) spin.classList.remove("show");
+    if(res) res.innerHTML="";
+    if(saved) saved.classList.remove("show");
+    if(go) go.disabled=false;
+  }
   function showSuccessPanel(addedName,addedCount){
     // Update heading to reflect single vs. multiple
     const title=$("smSuccessTitle");
@@ -6707,6 +6747,10 @@ load()
       if(addedCount&&addedCount>1) title.textContent="Your Sims are ready — now put them to work";
       else title.textContent=(addedName?""+addedName+" is ready":"Your Sim is ready")+" — now put them to work";
     }
+    // Prefill the run-now URL with the project's site URL when known (empty otherwise).
+    resetRunNow();
+    const runUrl=$("smRunUrl");
+    if(runUrl && !runUrl.value) runUrl.value=projSiteUrl();
     // Hide the result cards while keeping them in the DOM (so close() still triggers load())
     out.style.display="none";
     successEl.classList.add("show");
@@ -6715,6 +6759,64 @@ load()
     successEl.classList.remove("show");
     out.style.display="";
   }
+
+  // ── "Run a review now": run ALL project Sims against a URL via the authed /api/sim/preview
+  //    branch. Results are persisted server-side and rendered inline here so the user sees a real
+  //    Sim reaction in one click, without leaving the modal. Errors render inline (no dead-end).
+  function renderRunReactions(reviews){
+    const sims=(state&&state.sims)||[];
+    return reviews.map(rv=>{
+      const sim=sims.find(s=>s.id===rv.simId)||{};
+      const accent=safeAccent(rv.accent||sim.accent,col(rv.simName||""));
+      const ini=esc(rv.initials||sim.initials||inits(rv.simName||"?"));
+      const observations=Array.isArray(rv.observations)?rv.observations:[];
+      const obsHtml=observations.map(o=>{
+        const sChip=o.sentiment?`<span class="chip s-${esc(o.sentiment)}">${esc(o.sentiment)}</span>`:"";
+        const pChip=o.priority?`<span class="chip sev-${esc(o.priority)}">${esc(o.priority)}</span>`:"";
+        const chips=[sChip,pChip].filter(Boolean).join("");
+        return `<div class="sup-ob">${chips?`<div class="sup-ob-meta">${chips}</div>`:""}<div class="sup-ob-text">${esc(o.observation)}</div></div>`;
+      }).join("");
+      return `<div class="sup-sim-block"><div class="sup-sim-hd"><div class="av" style="background:${accent}">${ini}</div><div><div class="name">${esc(rv.simName||"Sim")}</div><div class="role">${observations.length} observation${observations.length===1?"":"s"}</div></div></div><div class="sup-obs-list">${obsHtml}</div></div>`;
+    }).join("");
+  }
+  async function runReviewNow(){
+    const pid=curProjId();
+    const msg=$("smRunMsg"), spin=$("smRunSpin"), spinMsg=$("smRunSpinMsg"), res=$("smRunResults"), saved=$("smRunSaved"), go=$("smRunGo"), inp=$("smRunUrl");
+    if(msg) msg.textContent="";
+    if(res) res.innerHTML="";
+    if(saved) saved.classList.remove("show");
+    if(!pid){ if(msg) msg.textContent="Select a project first."; return; }
+    let url=(inp&&inp.value||"").trim();
+    if(!url){ if(msg) msg.textContent="Enter your product's URL first."; if(inp) inp.focus(); return; }
+    if(!/^https?:\/\//i.test(url)) url="https://"+url;
+    if(spin){ if(spinMsg) spinMsg.textContent=`Your Sims are opening ${url}…`; spin.classList.add("show"); }
+    if(go) go.disabled=true;
+    try{
+      const r=await fetch("/api/sim/preview",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"include",body:JSON.stringify({url:url,projectId:pid})});
+      const d=await r.json().catch(()=>({}));
+      if(spin) spin.classList.remove("show");
+      if(go) go.disabled=false;
+      if(!r.ok||d.error){ if(msg) msg.textContent=d.error||"Something went wrong. Try a public page."; return; }
+      const reviews=Array.isArray(d.reviews)?d.reviews:[];
+      // A Sim reaction was persisted regardless of whether new observations surfaced.
+      simAdded=true;
+      if(!reviews.length){ if(res) res.innerHTML='<div class="sup-none">Your Sims reviewed the page but had no new observations. Try a different page.</div>'; }
+      else if(res) res.innerHTML=renderRunReactions(reviews);
+      if(d.persisted&&saved) saved.classList.add("show");
+    }catch(e){
+      if(spin) spin.classList.remove("show");
+      if(go) go.disabled=false;
+      if(msg) msg.textContent="Network error — check your connection and try again.";
+    }
+  }
+  $("smRunGo").onclick=runReviewNow;
+  $("smRunUrl").addEventListener("keydown",(e)=>{ if(e.key==="Enter"){ e.preventDefault(); runReviewNow(); } });
+  // "View all in Sims" — close the modal and land on the Sims tab where the run history + persisted
+  // reactions live (close() triggers load() because simAdded is set once a review runs).
+  $("smRunViewAll").onclick=function(){
+    close();
+    if(typeof setView==="function") setView("sims");
+  };
 
   // Widget button: close modal then navigate to Settings → appearance drawer
   $("smNextWidget").onclick=function(){
