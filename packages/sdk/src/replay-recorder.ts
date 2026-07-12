@@ -121,7 +121,7 @@ export function startReplayRecording(
   opts: StartReplayOptions = {},
 ): ReplayController {
   const buf = new ReplayRingBuffer({
-    windowMs: opts.windowMs ?? 45_000,
+    windowMs: opts.windowMs ?? 60_000,
     maxEvents: opts.maxEvents ?? 2000,
   })
   const maskAllInputs = opts.maskAllInputs !== false

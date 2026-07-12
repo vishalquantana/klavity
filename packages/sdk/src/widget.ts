@@ -256,13 +256,18 @@ async function mount() {
   // Announce widget presence so the extension can yield (Task 3 handshake).
   document.dispatchEvent(new CustomEvent("klavity:widget-ready"))
 
-  // ── G1 session replay: rolling ~30s rrweb buffer, masked by default, attached on submit.
+  // ── G1 session replay: rolling ~60s rrweb buffer, masked by default, attached on submit.
   // rrweb (~260 KB) is lazy-loaded from the backend AFTER mount so it's not in the widget IIFE.
   // Disable per-page with data-replay="off". Best-effort: any failure degrades to no-replay.
+  const replayEnabled = (currentScript()?.dataset?.replay || "on") !== "off"
   const replay: SessionReplay = createSessionReplay({
     backendUrl: cfg.backendUrl,
-    enabled: (currentScript()?.dataset?.replay || "on") !== "off",
+    enabled: replayEnabled,
   })
+  // JTBD 1.8: the composer shows an attached-proof chip. It's 'attached' when the buffer already holds a
+  // scrubbable recording (rrweb loaded + a full snapshot captured) and 'unavailable' when replay is off
+  // or the recorder script never loaded. rrweb loads async, so the chip is re-evaluated after open.
+  const replayChipState = (): 'attached' | 'unavailable' => (replayEnabled && replay.hasRecording()) ? 'attached' : 'unavailable'
 
   const firstParty = isFirstParty(location.origin, cfg.backendUrl)
 
@@ -473,9 +478,23 @@ async function mount() {
       },
       // G5: fire 'close' event whenever the composer is dismissed (Esc, overlay click, X button).
       onClose: () => emit("close", {}),
+      // JTBD 1.8: attached-proof chip — tell the reporter whether a session replay will ride along.
+      replayState: replayChipState(),
       success: { copy: successCopy(widget.mode, widget.ctaUrl, suppressSuccessEmail), onLead: postLead },
     }, modalConfig)
     composer = ctrl // track the open composer so a second open is ignored until this one closes
+    // JTBD 1.8: rrweb lazy-loads (a few hundred ms), so the buffer may only become playable AFTER the
+    // composer opens. Poll briefly and flip the chip to 'attached' once a scrubbable recording exists.
+    if (replayEnabled) {
+      let tries = 0
+      const chipTimer = setInterval(() => {
+        // Stop once this composer closed (a new one, or none, is tracked) or the recording is ready.
+        if (composer !== ctrl || replay.hasRecording() || ++tries > 20) {
+          clearInterval(chipTimer)
+          if (composer === ctrl) ctrl.setReplayState(replayChipState())
+        }
+      }, 250)
+    }
     if (opts?.initialDescription) prefillReportDescription(ctrl, opts.initialDescription)
     // Right-click-drag region: load the cropped selection as the default (first) screenshot, zoomed to fit.
     if (opts?.initialShot) ctrl.addScreenshot(opts.initialShot)
