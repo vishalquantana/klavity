@@ -437,7 +437,9 @@ function rowToFinding(r: any): Finding {
   return {
     id: r.id, projectId: r.project_id, runId: r.run_id, stepId: r.step_id ?? null, trailId: r.trail_id,
     kind: r.kind as FindingKind, title: r.title, evidence: pj<Record<string, unknown>>(r.evidence_json),
-    groundQuote: r.ground_quote ?? null, confidence: Number(r.confidence), dedupKey: r.dedup_key,
+    groundQuote: r.ground_quote ?? null,
+    groundQuoteVerified: r.ground_quote_verified == null ? null : Number(r.ground_quote_verified) === 1,
+    confidence: Number(r.confidence), dedupKey: r.dedup_key,
     contentSig: r.content_sig ?? null,
     recurrence: Number(r.recurrence),
     priority: r.priority ?? null,
@@ -449,7 +451,7 @@ function rowToFinding(r: any): Finding {
 
 export async function recordFinding(
   projectId: string,
-  input: { runId: string; trailId: string; stepId?: string; kind: FindingKind; title: string; evidence?: Record<string, unknown>; groundQuote?: string; confidence: number; dedupKey: string; contentSig?: string | null; status?: FindingStatus; urlPath?: string | null },
+  input: { runId: string; trailId: string; stepId?: string; kind: FindingKind; title: string; evidence?: Record<string, unknown>; groundQuote?: string; groundQuoteVerified?: boolean | null; confidence: number; dedupKey: string; contentSig?: string | null; status?: FindingStatus; urlPath?: string | null },
 ): Promise<{ id: string; deduped: boolean; recurrence: number }> {
   // ── Cross-trail content dedup (KLA-77) ─────────────────────────────────────
   // If a content sig matches an existing finding in this project (regardless of which Trail or
@@ -474,7 +476,7 @@ export async function recordFinding(
       const id = String(row.id)
       try {
         const { ingestFinding } = await import("./expectations-ingest")
-        const expId = await ingestFinding(db!, { projectId, findingId: id, title: input.title, dedupKey: input.dedupKey, urlPath: input.urlPath ?? null })
+        const expId = await ingestFinding(db!, { projectId, findingId: id, title: input.title, dedupKey: input.dedupKey, urlPath: input.urlPath ?? null, sourceQuote: input.groundQuote ?? null, sourceQuoteVerified: input.groundQuoteVerified ?? null })
         // KLA-243: link finding → expectation if not already set.
         if (expId) {
           await db!.execute({ sql: `UPDATE findings SET expectation_id=? WHERE id=? AND expectation_id IS NULL`, args: [expId, id] })
@@ -492,13 +494,16 @@ export async function recordFinding(
   const candidateId = uid("find_"); const now = Date.now()
   // KLA-81: compute initial priority (recurrence=1 for new rows; bumped rows recompute below).
   const initialSeverity = computeFindingSeverity({ kind: input.kind, confidence: input.confidence, recurrence: 1 })
+  // B.13: ground_quote_verified is 1 only when the caller has verified the quote against captured
+  // page text; NULL when unknown/self-referential so the ticket body relabels it "Reason:" not "Grounded:".
+  const gqVerified = input.groundQuoteVerified == null ? null : (input.groundQuoteVerified ? 1 : 0)
   await db!.execute({
-    sql: `INSERT INTO findings (id, project_id, run_id, step_id, trail_id, kind, title, evidence_json, ground_quote, confidence, dedup_key, content_sig, recurrence, priority, status, connector_ref, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, NULL, ?, ?)
+    sql: `INSERT INTO findings (id, project_id, run_id, step_id, trail_id, kind, title, evidence_json, ground_quote, ground_quote_verified, confidence, dedup_key, content_sig, recurrence, priority, status, connector_ref, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, NULL, ?, ?)
           ON CONFLICT(project_id, dedup_key) DO UPDATE SET
             recurrence = findings.recurrence + 1,
             updated_at = excluded.updated_at`,
-    args: [candidateId, projectId, input.runId, input.stepId ?? null, input.trailId, input.kind, input.title, j(input.evidence), input.groundQuote ?? null, input.confidence, input.dedupKey, input.contentSig ?? null, initialSeverity, input.status ?? "queued", now, now],
+    args: [candidateId, projectId, input.runId, input.stepId ?? null, input.trailId, input.kind, input.title, j(input.evidence), input.groundQuote ?? null, gqVerified, input.confidence, input.dedupKey, input.contentSig ?? null, initialSeverity, input.status ?? "queued", now, now],
   })
   const row = await db!.execute({
     sql: `SELECT id, recurrence FROM findings WHERE project_id=? AND dedup_key=?`,
@@ -514,7 +519,7 @@ export async function recordFinding(
   }
   try {
     const { ingestFinding } = await import("./expectations-ingest")
-    const expId = await ingestFinding(db!, { projectId, findingId: id, title: input.title, dedupKey: input.dedupKey, urlPath: input.urlPath ?? null })
+    const expId = await ingestFinding(db!, { projectId, findingId: id, title: input.title, dedupKey: input.dedupKey, urlPath: input.urlPath ?? null, sourceQuote: input.groundQuote ?? null, sourceQuoteVerified: input.groundQuoteVerified ?? null })
     // KLA-243: link finding → expectation if not already set.
     if (expId) {
       await db!.execute({ sql: `UPDATE findings SET expectation_id=? WHERE id=? AND expectation_id IS NULL`, args: [expId, id] })
