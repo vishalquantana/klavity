@@ -1042,7 +1042,10 @@ export async function submitFeedback(
   const screenshots = await Promise.all(payload.screenshots.map((s) => compressScreenshot(s)))
   const fd = buildFeedbackForm({
     type: payload.type,
-    description: `[${payload.type}] ${payload.description}`,
+    // JTBD 1.10: a screenshot-only report carries no typed prose — send an EMPTY description (not a bare
+    // "[bug] " prefix) so the server takes the evidence-only branch and the AI drafts the title. Only
+    // prefix the type tag when the reporter actually typed something.
+    description: payload.description.trim() ? `[${payload.type}] ${payload.description}` : "",
     pageUrl: payload.pageUrl,
     referrer: payload.referrer,
     projectId: cfg.projectId,
