@@ -30,6 +30,10 @@ export type TicketPayload = {
   createdAt: number
   klavityUrl: string
   attachments?: TicketAttachment[]
+  // JTBD 2.16: Klavity ticket labels (display names), so exports carry the classification.
+  // Connectors that support name-based labels attach them natively (GitHub/Jira); the rest
+  // surface them in the issue body (see feedbackToTicketPayload). Omitted/empty = no labels.
+  labels?: string[]
 }
 
 export type ExportResult = {

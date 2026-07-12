@@ -62,6 +62,12 @@ export const jiraConnector: Connector = {
             issuetype: { name: issueType },
             summary: ticket.title,
             description: toAdf(ticket.body),
+            // JTBD 2.16: Jira supports a native `labels` field (array of strings). Jira labels
+            // cannot contain whitespace, so collapse spaces to underscores; drop anything that
+            // ends up empty. Omit the field entirely when there are no labels.
+            ...(ticket.labels?.length
+              ? { labels: ticket.labels.map((l) => l.trim().replace(/\s+/g, "_")).filter(Boolean) }
+              : {}),
           },
         }),
       },

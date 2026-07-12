@@ -26,6 +26,12 @@ export const planeConnector: Connector = {
     const { workspace, project_id, token } = cfg
     const apiUrl = `${host}/api/v1/workspaces/${workspace}/projects/${project_id}/issues/`
 
+    // JTBD 2.16: Plane's issue-create API applies labels by UUID, not by name, so we can't map
+    // Klavity's label names onto native Plane labels without a version-dependent lookup. Instead
+    // we carry the classification in the issue description so the exported ticket keeps its labels.
+    let descriptionHtml = ticket.body
+    if (ticket.labels?.length) descriptionHtml += `\n\nLabels: ${ticket.labels.join(", ")}`
+
     // SSRF guard (H3): `host` is user-supplied (self-hosted Plane is allowed, but must be a
     // public https host). safeFetch validates the URL and every redirect hop (loopback /
     // private / link-local / metadata blocked, https required) before the X-API-Key is sent.
@@ -39,7 +45,7 @@ export const planeConnector: Connector = {
         },
         body: JSON.stringify({
           name: ticket.title,
-          description_html: ticket.body,
+          description_html: descriptionHtml,
         }),
       },
       { allowLoopbackInTest: true },
