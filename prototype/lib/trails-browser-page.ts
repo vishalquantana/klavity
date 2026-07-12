@@ -674,30 +674,97 @@ export async function startCdpScreencast(
   }
 }
 
-export async function acquirePlaywrightBrowser(opts: AcquireOpts = {}): Promise<PlaywrightBrowserHandle> {
-  const { chromium } = await import("playwright")
-  const cdpBase = process.env.AUTOSIM_CDP_URL
-  if (!cdpBase) {
-    const browser = await launchLocalChromium(chromium, opts)
-    let watchdog: ReturnType<typeof setTimeout> | null = null
-    const watchdogMs = localBrowserWatchdogMs(opts)
-    if (watchdogMs > 0) {
-      watchdog = setTimeout(() => {
-        try { (browser as any).process?.()?.kill?.("SIGKILL") } catch {}
-        browser.close().catch(() => {})
-      }, watchdogMs)
-      watchdog.unref?.()
-    }
-    return {
-      browser,
-      close: async () => {
-        if (watchdog) clearTimeout(watchdog)
-        watchdog = null
-        await safeClose(browser.close())
-      },
-      kind: "local",
-    }
+/**
+ * Open a LOCAL Playwright Chromium as a PlaywrightBrowserHandle (the walker seam's default + fallback).
+ * Extracted so both the no-AUTOSIM_CDP_URL default path AND the remote→local fallback share one impl.
+ * `kind` is passed in so the fallback can label itself "local-fallback" for evidence/logging.
+ */
+async function openLocalPlaywrightBrowser(
+  chromium: typeof import("playwright").chromium,
+  opts: AcquireOpts,
+  kind: string,
+): Promise<PlaywrightBrowserHandle> {
+  const browser = await launchLocalChromium(chromium, opts)
+  let watchdog: ReturnType<typeof setTimeout> | null = null
+  const watchdogMs = localBrowserWatchdogMs(opts)
+  if (watchdogMs > 0) {
+    watchdog = setTimeout(() => {
+      try { (browser as any).process?.()?.kill?.("SIGKILL") } catch {}
+      browser.close().catch(() => {})
+    }, watchdogMs)
+    watchdog.unref?.()
   }
+  return {
+    browser,
+    close: async () => {
+      if (watchdog) clearTimeout(watchdog)
+      watchdog = null
+      await safeClose(browser.close())
+    },
+    kind,
+  }
+}
+
+/**
+ * Injectable seam for hermetic fallback testing. `acquirePlaywrightBrowser` composes a remote-acquire
+ * step and a local-open step; injecting fakes lets us prove the health-check/fallback path WITHOUT a
+ * real browser or a live Steel endpoint (mirrors the launchLocalChromium(chromium, …) DI already here).
+ */
+export interface AcquirePlaywrightDeps {
+  /** Attempt the remote (Steel / self-hosted CDP) acquire. Throws on an unreachable/dead endpoint. */
+  acquireRemote: (cdpBase: string, opts: AcquireOpts) => Promise<PlaywrightBrowserHandle>
+  /** Open a local Playwright browser with the given kind label. */
+  openLocal: (opts: AcquireOpts, kind: string) => Promise<PlaywrightBrowserHandle>
+}
+
+/**
+ * Walker seam (trails-runner). Returns a native Playwright Browser handle. Routing:
+ *   • AUTOSIM_CDP_URL unset → local chromium.launch() (byte-for-byte unchanged from before this seam).
+ *   • AUTOSIM_CDP_URL set   → connect to the remote browser (Steel / self-hosted CDP). If that connect
+ *     FAILS (dead Steel session, unreachable endpoint), we do NOT let the scheduled/CI walk turn into a
+ *     missed guard: we FALL BACK to a local browser so the walk still runs. The fallback is visible in
+ *     two ways — a console.warn line AND kind="local-fallback" (surfaced in the walk's browser-kind
+ *     evidence). Opt out of fallback (strict remote-only) with AUTOSIM_CDP_NO_FALLBACK=1, in which case
+ *     the original BrowserLaunchError propagates (RED crash) exactly as before.
+ *
+ * `deps` is injectable for hermetic tests; prod always uses the real remote/local impls below.
+ */
+export async function acquirePlaywrightBrowser(
+  opts: AcquireOpts = {},
+  deps?: AcquirePlaywrightDeps,
+): Promise<PlaywrightBrowserHandle> {
+  const cdpBase = process.env.AUTOSIM_CDP_URL
+  const openLocal = deps?.openLocal
+    ?? (async (o: AcquireOpts, kind: string) => openLocalPlaywrightBrowser((await import("playwright")).chromium, o, kind))
+
+  // Default (and byte-for-byte-unchanged) path: no remote endpoint configured → local browser.
+  if (!cdpBase) return await openLocal(opts, "local")
+
+  // Remote configured. Try it; on an infra failure fall back to local so guards still run.
+  const acquireRemote = deps?.acquireRemote ?? acquireRemotePlaywrightBrowser
+  try {
+    return await acquireRemote(cdpBase, opts)
+  } catch (e) {
+    const noFallback = process.env.AUTOSIM_CDP_NO_FALLBACK === "1"
+    if (noFallback) throw e
+    const msg = String((e as any)?.message ?? e)
+    // Visible-in-logs: a dead remote endpoint must never be a silent missed walk.
+    console.warn(
+      `[trails-browser] remote walk browser at AUTOSIM_CDP_URL is unreachable (${msg}); ` +
+      `falling back to a LOCAL browser so the walk still runs. ` +
+      `Set AUTOSIM_CDP_NO_FALLBACK=1 to fail hard instead.`,
+    )
+    return await openLocal(opts, "local-fallback")
+  }
+}
+
+/**
+ * The remote (AUTOSIM_CDP_URL) acquire path for the walker seam. Throws BrowserLaunchError when the
+ * remote browser cannot be reached, so acquirePlaywrightBrowser can decide to fall back to local.
+ * (Callers must NOT invoke this with AUTOSIM_CDP_URL unset.)
+ */
+export async function acquireRemotePlaywrightBrowser(cdpBase: string, _opts: AcquireOpts = {}): Promise<PlaywrightBrowserHandle> {
+  const { chromium } = await import("playwright")
   const key = process.env.STEEL_API_KEY
   if (key) {
     // KLAVITYKLA-195 / 278: Playwright's connectOverCDP() HANGS against Steel's connect proxy (the WS
