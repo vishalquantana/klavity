@@ -4,6 +4,14 @@ export const ALLOWED_THEMES: ModalTheme[] = ['light', 'dark', 'glass', 'neon', '
 export type LauncherMode = 'hidden' | 'icon' | 'full' | 'custom'
 export const ALLOWED_LAUNCHER_MODES: LauncherMode[] = ['hidden', 'icon', 'full', 'custom']
 
+// Right-click (context-menu) takeover mode — lets an agency embed the widget on a client's
+// production domain without hijacking every end-user's native menu or leaking Sims jargon.
+//   full       — current behavior: Klavity menu on right-click; Sims actions gated to members.
+//   reportOnly — menu shows only Report a Bug / Request a Feature / Browser menu (never Sims).
+//   off        — no context-menu takeover at all; the native browser menu is untouched.
+export type RightClickMode = 'full' | 'reportOnly' | 'off'
+export const ALLOWED_RIGHT_CLICK_MODES: RightClickMode[] = ['full', 'reportOnly', 'off']
+
 export interface ModalConfig {
   theme?: ModalTheme
   primary?: string
@@ -14,6 +22,7 @@ export interface ModalConfig {
   launcherMode?: LauncherMode
   launcherText?: string
   launcherIconColor?: string
+  rightClickMode?: RightClickMode
   maskNumbers?: boolean
 }
 
@@ -80,6 +89,9 @@ export function resolveModalConfig(raw: unknown): ModalConfig & { theme: ModalTh
   if (lt) out.launcherText = lt
   const lic = hex(r.launcherIconColor)
   if (lic) out.launcherIconColor = lic
+  if (typeof r.rightClickMode === 'string' && (ALLOWED_RIGHT_CLICK_MODES as string[]).includes(r.rightClickMode)) {
+    out.rightClickMode = r.rightClickMode as RightClickMode
+  }
   if (r.maskNumbers === true) out.maskNumbers = true
   return out
 }
@@ -135,6 +147,9 @@ export function validateModalConfigInput(body: unknown, opts: { isPro: boolean }
   if (lt) config.launcherText = lt
   const lic = hex(body.launcherIconColor)
   if (lic) config.launcherIconColor = lic
+  if (typeof body.rightClickMode === 'string' && (ALLOWED_RIGHT_CLICK_MODES as string[]).includes(body.rightClickMode)) {
+    config.rightClickMode = body.rightClickMode as RightClickMode
+  }
   if ((body as any).maskNumbers === true) config.maskNumbers = true
   if (JSON.stringify(config).length > 2048) return { ok: false, error: 'Config too large.' }
   return { ok: true, config }

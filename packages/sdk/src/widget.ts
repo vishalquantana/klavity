@@ -273,6 +273,10 @@ async function mount() {
   let launcherMode: 'hidden' | 'icon' | 'full' | 'custom' = 'full'
   let launcherText = 'Report a bug'
   let launcherIconColor = '#5b5bf0'
+  // Right-click (context-menu) takeover mode (from modalConfig). Default 'full' preserves the
+  // current behavior for existing projects. 'reportOnly' hides Sims actions from everyone; 'off'
+  // leaves the native context menu untouched (no takeover at all).
+  let rightClickMode: 'full' | 'reportOnly' | 'off' = 'full'
   try {
     const r = await fetchWithTimeout(cfg.backendUrl + "/api/projects/" + encodeURIComponent(cfg.projectId) + "/config")
     if (r.ok) {
@@ -288,6 +292,9 @@ async function mount() {
       }
       if (typeof modalConfig.launcherIconColor === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(modalConfig.launcherIconColor)) {
         launcherIconColor = modalConfig.launcherIconColor
+      }
+      if (modalConfig.rightClickMode && ['full', 'reportOnly', 'off'].includes(modalConfig.rightClickMode)) {
+        rightClickMode = modalConfig.rightClickMode
       }
     }
   } catch { /* default theme + support mode + email gate */ }
@@ -569,6 +576,11 @@ async function mount() {
     // Lucide arrow-right (no such icon in our set → inline) for each card's affordance.
     const ARROW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>'
     let idx = 0
+    // Sims actions ("Deploy all Sims" / "Select Sims…") + the Sim-chip preview row are shown ONLY in
+    // 'full' mode AND only to identified project members (own first-party page, or a signed-in widget
+    // session). Anonymous/unidentified visitors — and every visitor in 'reportOnly' mode — get the
+    // Report/Request/Browser-menu menu without any Sims jargon. (Same identity notion as openReport.)
+    const showSims = rightClickMode === 'full' && (firstParty || !!getToken())
     // Each action is a compact CARD: icon chip + label + optional desc + arrow/hint.
     // Pass desc="" to render a label-only card (no description line — keeps menu short).
     const card = (iconName: string, label: string, desc: string, opts: { primary?: boolean; muted?: boolean; hint?: string; onClick: () => void }) => {
@@ -594,7 +606,7 @@ async function mount() {
     const simsChips = document.createElement("div")
     simsChips.className = "klm-sims-chips"
     simsRow.appendChild(simsChips)
-    if (_issueCount > 0) {
+    if (showSims && _issueCount > 0) {
       const pill = document.createElement("span")
       pill.className = "klm-issue-pill"
       pill.textContent = _issueCount + " issue" + (_issueCount > 1 ? "s" : "")
@@ -602,7 +614,8 @@ async function mount() {
     }
     menu.appendChild(simsRow)
     function syncSimsRow() {
-      simsRow.style.display = simsChips.children.length > 0 || _issueCount > 0 ? "flex" : "none"
+      const hasIssues = showSims && _issueCount > 0
+      simsRow.style.display = simsChips.children.length > 0 || hasIssues ? "flex" : "none"
     }
     function renderSimChips(sims: Array<{ id: string; name: string; initials?: string; accent?: string }>) {
       simsChips.innerHTML = ""
@@ -625,14 +638,17 @@ async function mount() {
       syncSimsRow()
     }
     syncSimsRow()
-    if (_deployedSims.length > 0) {
-      renderSimChips(_deployedSims)
-    } else {
-      // Fetch available Sims async and populate; silent on failure
-      fetchWithTimeout(cfg.backendUrl + "/api/widget/sims?project=" + encodeURIComponent(cfg.projectId))
-        .then((r) => (r.ok ? r.json() : null))
-        .then((d) => { if (Array.isArray(d?.sims) && d.sims.length) renderSimChips(d.sims) })
-        .catch(() => {})
+    // The Sim-chip preview row is a Sims surface — only show it when Sims actions are allowed.
+    if (showSims) {
+      if (_deployedSims.length > 0) {
+        renderSimChips(_deployedSims)
+      } else {
+        // Fetch available Sims async and populate; silent on failure
+        fetchWithTimeout(cfg.backendUrl + "/api/widget/sims?project=" + encodeURIComponent(cfg.projectId))
+          .then((r) => (r.ok ? r.json() : null))
+          .then((d) => { if (Array.isArray(d?.sims) && d.sims.length) renderSimChips(d.sims) })
+          .catch(() => {})
+      }
     }
     // ── Inline Sim picker — replaces menu content in-place, async fetch of /api/personas ──
     const showSimPicker = async () => {
@@ -707,8 +723,11 @@ async function mount() {
     }
     menu.appendChild(card("zap", "Report a Bug", "Snap the page and tell us what broke.", { primary: true, onClick: () => openReport("bug") }))
     menu.appendChild(card("lightbulb", "Request a Feature", "Suggest something you'd love to see.", { onClick: () => openReport("feature") }))
-    menu.appendChild(card("users", "Deploy all Sims", "Have every Sim jump in and analyze this page.", { onClick: () => { closeMenu(); void deployAndWatch("all") } }))
-    menu.appendChild(card("sparkles", "Select Sims…", "Choose which Sims jump into action.", { onClick: () => { void showSimPicker() } }))
+    // Sims actions are member-only + 'full'-mode-only — anonymous visitors and reportOnly never see them.
+    if (showSims) {
+      menu.appendChild(card("users", "Deploy all Sims", "Have every Sim jump in and analyze this page.", { onClick: () => { closeMenu(); void deployAndWatch("all") } }))
+      menu.appendChild(card("sparkles", "Select Sims…", "Choose which Sims jump into action.", { onClick: () => { void showSimPicker() } }))
+    }
     menu.appendChild(card("monitor", "Browser menu", "", { muted: true, hint: "⇧ right-click", onClick: () => { nativePending = true; showNativeHint(x, y) } }))
     // "Powered by Klavity" footer — gradient wordmark, opens the marketing site in a new tab
     const footer = document.createElement("button")
@@ -772,33 +791,38 @@ async function mount() {
     openReport("bug", shot ? { initialShot: shot } : undefined)
   }
   let reportArmed = true
-  const regionDrag = installRegionDrag({
-    isOwnTarget: onOwnUi,
-    mount: root,                        // draw the selection rectangle inside the widget's shadow root
-    shouldIgnore: () => nativePending,  // skip pressing when next click is for the native menu
-    onRightDown: dismissMenuNow,        // close any open menu immediately at mousedown
-    onDragStart: dismissMenuNow,        // safety: also dismiss if menu reappeared before threshold
-    onPlainRightClick: (x, y) => {
-      // suppressNextMenu() is true while pressing, so contextmenu is suppressed; show menu here on mouseup.
+  // 'off' mode: install NEITHER the right-click-drag region capture NOR the contextmenu takeover, so
+  // the native browser menu is left completely untouched everywhere on the page. 'full'/'reportOnly'
+  // both take over the gesture (the menu contents differ, decided in showMenu()).
+  if (rightClickMode !== 'off') {
+    const regionDrag = installRegionDrag({
+      isOwnTarget: onOwnUi,
+      mount: root,                        // draw the selection rectangle inside the widget's shadow root
+      shouldIgnore: () => nativePending,  // skip pressing when next click is for the native menu
+      onRightDown: dismissMenuNow,        // close any open menu immediately at mousedown
+      onDragStart: dismissMenuNow,        // safety: also dismiss if menu reappeared before threshold
+      onPlainRightClick: (x, y) => {
+        // suppressNextMenu() is true while pressing, so contextmenu is suppressed; show menu here on mouseup.
+        if (!reportArmed) return
+        reportArmed = false
+        setTimeout(() => { reportArmed = true }, 400)
+        showMenu(x, y)
+      },
+      onRegion: (rect) => { void captureRegionAndOpen(rect) },
+    })
+
+    document.addEventListener("contextmenu", (e) => {
+      if (e.shiftKey || nativePending) { nativePending = false; return }  // pass through to native menu
+      if (regionDrag.suppressNextMenu()) { e.preventDefault(); return }   // pressing or drag — suppress
+      if (onOwnUi(e)) return
+      // Keyboard contextmenu (no preceding mousedown) — pressing is false, show menu immediately.
+      e.preventDefault()
       if (!reportArmed) return
       reportArmed = false
       setTimeout(() => { reportArmed = true }, 400)
-      showMenu(x, y)
-    },
-    onRegion: (rect) => { void captureRegionAndOpen(rect) },
-  })
-
-  document.addEventListener("contextmenu", (e) => {
-    if (e.shiftKey || nativePending) { nativePending = false; return }  // pass through to native menu
-    if (regionDrag.suppressNextMenu()) { e.preventDefault(); return }   // pressing or drag — suppress
-    if (onOwnUi(e)) return
-    // Keyboard contextmenu (no preceding mousedown) — pressing is false, show menu immediately.
-    e.preventDefault()
-    if (!reportArmed) return
-    reportArmed = false
-    setTimeout(() => { reportArmed = true }, 400)
-    showMenu(e.clientX, e.clientY)
-  })
+      showMenu(e.clientX, e.clientY)
+    })
+  }
 
   const banner = (text: string) => {
     let el = root.getElementById("kw-banner") as HTMLDivElement | null
