@@ -442,3 +442,158 @@ test("GET /shared/walk-report/:token & /api/.../report.pdf — returns 429 Retry
 
   tempProc.kill()
 })
+
+// ── KLA-210 (JTBD 7.5): Share-link manager — expiry choice, list, extend, revoke, passcode, views ──
+
+async function mintShare(body: any = {}) {
+  const r = await fetch(`${base}/api/trails/walks/${WALK_RUN_ID}/share?project=${pid}`, {
+    method: "POST",
+    headers: { cookie: adminCookie, "content-type": "application/json" },
+    body: JSON.stringify(body),
+  })
+  return { r, d: await r.json() }
+}
+
+test("POST share — honors {ttlDays:7} expiry choice (expiresAt ~7 days out, not 30)", async () => {
+  const { r, d } = await mintShare({ ttlDays: 7 })
+  expect(r.status).toBe(200)
+  expect(d.ttlDays).toBe(7)
+  const days = (d.expiresAt - Date.now()) / 86_400_000
+  expect(days).toBeGreaterThan(6.5)
+  expect(days).toBeLessThan(7.5)
+})
+
+test("POST share — invalid ttlDays falls back to the default 30", async () => {
+  const { d } = await mintShare({ ttlDays: 999 })
+  expect(d.ttlDays).toBe(30)
+})
+
+test("GET /api/trails/walks/shared-links — lists live tokens across the project with view columns", async () => {
+  await mintShare({ ttlDays: 30 })
+  const r = await fetch(`${base}/api/trails/walks/shared-links?project=${pid}`, { headers: { cookie: adminCookie } })
+  expect(r.status).toBe(200)
+  const d = await r.json()
+  expect(Array.isArray(d.tokens)).toBe(true)
+  expect(d.tokens.length).toBeGreaterThan(0)
+  const t = d.tokens[0]
+  expect(typeof t.id).toBe("string")
+  expect(typeof t.expiresAt).toBe("number")
+  expect(typeof t.createdAt).toBe("number")
+  expect("lastViewedAt" in t).toBe(true)
+  expect(typeof t.viewCount).toBe("number")
+  expect(typeof t.hasPasscode).toBe("boolean")
+  // No secret hash ever leaks.
+  expect("token_hash" in t).toBe(false)
+})
+
+test("GET /api/trails/walks/shared-links — cross-project sees none of another agency's tokens", async () => {
+  await mintShare({ ttlDays: 30 })
+  const r = await fetch(`${base}/api/trails/walks/shared-links?project=${otherPid}`, { headers: { cookie: otherCookie } })
+  expect(r.status).toBe(200)
+  const d = await r.json()
+  const mine = (d.tokens || []).filter((t: any) => t.runId === WALK_RUN_ID)
+  expect(mine.length).toBe(0)
+})
+
+test("PATCH share/:tokenId — extends the token's expiry to now+90d", async () => {
+  const { d: mint } = await mintShare({ ttlDays: 7 })
+  const token = mint.url.split("/").pop()
+  const list = await fetch(`${base}/api/trails/walks/shared-links?project=${pid}`, { headers: { cookie: adminCookie } }).then((x) => x.json())
+  // Find the freshly-minted 7d token (soonest expiry among mine).
+  const mine = list.tokens.filter((t: any) => t.runId === WALK_RUN_ID)
+  const target = mine.reduce((a: any, b: any) => (a.expiresAt <= b.expiresAt ? a : b))
+
+  const r = await fetch(`${base}/api/trails/walks/${WALK_RUN_ID}/share/${target.id}?project=${pid}`, {
+    method: "PATCH",
+    headers: { cookie: adminCookie, "content-type": "application/json" },
+    body: JSON.stringify({ ttlDays: 90 }),
+  })
+  expect(r.status).toBe(200)
+  const d = await r.json()
+  expect(d.ok).toBe(true)
+  const days = (d.expiresAt - Date.now()) / 86_400_000
+  expect(days).toBeGreaterThan(89)
+  // The public link still resolves after extension.
+  const dataR = await fetch(`${base}/shared/walk/${token}/data`)
+  expect(dataR.status).toBe(200)
+})
+
+test("PATCH share/:tokenId — unknown token returns 404", async () => {
+  const r = await fetch(`${base}/api/trails/walks/${WALK_RUN_ID}/share/wst_nope?project=${pid}`, {
+    method: "PATCH",
+    headers: { cookie: adminCookie, "content-type": "application/json" },
+    body: JSON.stringify({ ttlDays: 30 }),
+  })
+  expect(r.status).toBe(404)
+})
+
+test("DELETE share/:tokenId — revoke immediately kills the public link (data 404s after)", async () => {
+  const { d: mint } = await mintShare({ ttlDays: 30 })
+  const token = mint.url.split("/").pop()
+  // Live before revoke
+  expect((await fetch(`${base}/shared/walk/${token}/data`)).status).toBe(200)
+
+  const list = await fetch(`${base}/api/trails/walks/shared-links?project=${pid}`, { headers: { cookie: adminCookie } }).then((x) => x.json())
+  const target = list.tokens.find((t: any) => t.runId === WALK_RUN_ID)
+  const del = await fetch(`${base}/api/trails/walks/${WALK_RUN_ID}/share/${target.id}?project=${pid}`, {
+    method: "DELETE", headers: { cookie: adminCookie },
+  })
+  expect(del.status).toBe(200)
+  // Dead after revoke
+  expect((await fetch(`${base}/shared/walk/${token}/data`)).status).toBe(404)
+})
+
+test("passcode — data endpoint serves nothing until the correct passcode is supplied", async () => {
+  const { d: mint } = await mintShare({ ttlDays: 30, passcode: "hunter2" })
+  expect(mint.hasPasscode).toBe(true)
+  const token = mint.url.split("/").pop()
+
+  // No passcode → 401 needsPasscode
+  const noPc = await fetch(`${base}/shared/walk/${token}/data`)
+  expect(noPc.status).toBe(401)
+  const noPcBody = await noPc.json()
+  expect(noPcBody.needsPasscode).toBe(true)
+
+  // Wrong passcode → 401
+  const wrong = await fetch(`${base}/shared/walk/${token}/data?pc=wrong`)
+  expect(wrong.status).toBe(401)
+
+  // Correct passcode → 200 with data
+  const ok = await fetch(`${base}/shared/walk/${token}/data?pc=hunter2`)
+  expect(ok.status).toBe(200)
+  const okBody = await ok.json()
+  expect(okBody.walk.id).toBe(WALK_RUN_ID)
+
+  // The PDF endpoint is gated too. The IP-global sharepdf rate-limit (30/min) may be saturated by
+  // earlier PDF tests in this file, so a 429 is acceptable — the security property is that a
+  // passcode-protected PDF is NEVER served (200) without the correct passcode.
+  const pdfNoPc = await fetch(`${base}/shared/walk-report/${token}`)
+  expect(pdfNoPc.status).not.toBe(200)
+  expect([401, 429]).toContain(pdfNoPc.status)
+})
+
+test("passcode — brute-force attempts are rate-limited to 429", async () => {
+  const { d: mint } = await mintShare({ ttlDays: 30, passcode: "s3cret" })
+  const token = mint.url.split("/").pop()
+  let got429 = false
+  for (let i = 0; i < 12; i++) {
+    const r = await fetch(`${base}/shared/walk/${token}/data?pc=nope${i}`)
+    if (r.status === 429) { got429 = true; break }
+  }
+  expect(got429).toBe(true)
+})
+
+test("view signal — opening a shared page records last-viewed / view count", async () => {
+  const { d: mint } = await mintShare({ ttlDays: 30 })
+  const token = mint.url.split("/").pop()
+
+  // Open the report data → records a view.
+  const open = await fetch(`${base}/shared/walk/${token}/data`)
+  expect(open.status).toBe(200)
+  await Bun.sleep(50) // fire-and-forget write settles
+
+  const after = await fetch(`${base}/api/trails/walks/shared-links?project=${pid}`, { headers: { cookie: adminCookie } }).then((x) => x.json())
+  // At least one token for this walk now shows a lastViewedAt + viewCount>=1.
+  const viewed = after.tokens.filter((t: any) => t.runId === WALK_RUN_ID && t.lastViewedAt != null && t.viewCount >= 1)
+  expect(viewed.length).toBeGreaterThan(0)
+})
