@@ -745,14 +745,14 @@ details.drawer .drawer-in{padding:0 22px 22px}
 [data-theme="dark"] .seg button.active{color:#0c0a08}
 .seg button:not(.active):hover{background:var(--ink-3)}
 /* Tickets kanban board */
-.kanban{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;align-items:start}
+.kanban{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;align-items:start}
 .kb-col{background:var(--ink);border:1px solid var(--line);border-radius:14px;padding:10px;display:flex;flex-direction:column;gap:8px;min-width:0}
 .kb-col.drag-over{border-color:var(--indigo);box-shadow:0 0 0 1px var(--indigo-soft)}
 .kb-head{display:flex;align-items:center;gap:8px;padding:2px 4px 6px}
 .kb-head .kb-title{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--paper-faint)}
 .kb-head .kb-n{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--paper-faint);background:var(--ink-3);border-radius:20px;padding:1px 8px}
 .kb-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:var(--paper-faint)}
-.kb-dot-new{background:var(--rose)}.kb-dot-open{background:var(--amber)}.kb-dot-in_progress{background:var(--indigo)}.kb-dot-closed{background:var(--green)}
+.kb-dot-new{background:var(--rose)}.kb-dot-open{background:var(--amber)}.kb-dot-in_progress{background:var(--indigo)}.kb-dot-done{background:var(--green)}.kb-dot-dismissed{background:var(--paper-faint)}
 .kb-list{display:flex;flex-direction:column;gap:8px;min-height:64px}
 .kb-empty{font-size:12px;text-align:center;padding:8px 0}
 .kb-card{position:relative;background:var(--ink-2);border:1px solid var(--line);border-radius:12px;padding:11px 12px;cursor:pointer;transition:border-color .2s,transform var(--mi-dur) var(--mi-ease),box-shadow var(--mi-dur) var(--mi-ease);user-select:none}
@@ -3627,8 +3627,10 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
     detailEl.className = "tkt-detail"
     detailEl.setAttribute("data-id", ticketId)
 
-    // Status segmented control
-    const statuses = ["open", "in_progress", "done"]
+    // Status segmented control — full state machine (KLA-206): New and Dismissed included so
+    // un-dismissing and re-triaging (back to New/Open) are one click from detail, matching the
+    // PATCH /api/feedback/:id VALID_STATUS set.
+    const statuses = ["new", "open", "in_progress", "done", "dismissed"]
     const curStatus = t.status || "open"
     const segBtns = statuses.map(s =>
       `<button class="seg-btn${s===curStatus?" active":""}" data-status="${s}">${STATUS_LABELS[s]}</button>`
@@ -4229,15 +4231,41 @@ function renderTickets() {
 }
 
 // Tickets view: kanban board grouped by status.
+// KLA-206: split the old "Closed" column into Done + Dismissed so a fixed bug and dismissed
+// noise are visually distinct, and dragging a card can produce either state (drop → col.status).
 const KANBAN_COLS = [
   { key: "new",         status: "new",         label: "New",         statuses: ["new"] },
   { key: "open",        status: "open",        label: "Open",        statuses: ["open"] },
   { key: "in_progress", status: "in_progress", label: "In Progress", statuses: ["in_progress"] },
-  { key: "closed",      status: "done",        label: "Closed",      statuses: ["done", "dismissed"] },
+  { key: "done",        status: "done",        label: "Done",        statuses: ["done"] },
+  { key: "dismissed",   status: "dismissed",   label: "Dismissed",   statuses: ["dismissed"] },
 ]
 // Single-ticket view — clicking any ticket (kanban card, recent-tickets row, or Fix-next)
 // opens its full detail here instead of expanding inline, and hides the board.
-function openSingleTicket(id) {
+// KLA-206: fetch fresh data from GET /api/feedback/:id on open so detail reflects the latest
+// server state even when the in-memory list is stale (e.g. status/priority changed elsewhere).
+// We render immediately from cache (instant view) and re-render once the fresh fetch merges in.
+async function openSingleTicket(id) {
+  _renderSingleTicket(id)
+  try {
+    const r = await fetch("/api/feedback/" + encodeURIComponent(id))
+    if (!r.ok) return
+    const d = await r.json().catch(() => null)
+    const fresh = d && d.report
+    if (!fresh) return
+    // Merge fresh server fields onto the cached ticket rather than replacing it, so
+    // dashboard-only enrichment (simName, hasReplay, exports, annotations, suggestedBug)
+    // survives while status/priority/assignee/notes/labels are refreshed.
+    if (!Array.isArray(state.tickets)) state.tickets = []
+    const ix = state.tickets.findIndex(x => String(x.id) === String(id))
+    if (ix >= 0) state.tickets[ix] = { ...state.tickets[ix], ...fresh }
+    else state.tickets.push(fresh)
+    // Only re-render if this ticket is still the one being viewed.
+    const single = $("ticketSingle")
+    if (single && !single.classList.contains("hide")) _renderSingleTicket(id)
+  } catch (e) {}
+}
+function _renderSingleTicket(id) {
   const t = (state.tickets || []).find(x => String(x.id) === String(id))
   if (!t) return
   const nv = document.querySelector('.side .nv[data-go="tickets"]'); if (nv) nv.click()
@@ -4275,11 +4303,15 @@ function openSingleTicket(id) {
   if (listView) listView.classList.add("hide")
   if (toolbar) toolbar.classList.add("hide")
   single.classList.remove("hide")
-  // KLA-200: push deep-link URL so this ticket can be shared / bookmarked
+  // KLA-200: push deep-link URL so this ticket can be shared / bookmarked.
+  // KLA-206: openSingleTicket may render twice (cache then fresh fetch); only push a new
+  // history entry the first time — a re-render for the same ticket replaces in place.
   try {
     const u = new URL(location.href)
+    const already = u.searchParams.get("ticket") === String(id)
     u.searchParams.set("ticket", String(id))
-    history.pushState(null, "", u.toString())
+    if (already) history.replaceState(null, "", u.toString())
+    else history.pushState(null, "", u.toString())
   } catch (e) {}
   try { window.scrollTo(0, 0) } catch (e) {}
 }
@@ -4798,7 +4830,8 @@ function goToTicketsFiltered(filter) {
 function kanbanKeyForStatus(status) {
   if (status === "new") return "new"
   if (status === "in_progress") return "in_progress"
-  if (status === "done" || status === "dismissed") return "closed"
+  if (status === "done") return "done"
+  if (status === "dismissed") return "dismissed"
   return "open"
 }
 function ticketStatusLabel(status) {
