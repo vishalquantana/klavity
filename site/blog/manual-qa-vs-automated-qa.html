@@ -1,0 +1,118 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Manual QA vs. Automated QA: How to Split the Work Right · Klavity</title>
+<meta name="description" content="Manual and automated QA catch different bugs at different costs. Automate the stable, repetitive checks and keep humans on judgment. Here's the split.">
+<link rel="canonical" href="https://klavity.in/blog/manual-qa-vs-automated-qa">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="Manual QA vs. Automated QA: How to Split the Work Right"><meta property="og:description" content="Manual and automated QA catch different bugs at different costs. Automate the stable, repetitive checks and keep humans on judgment. Here's the split.">
+<meta property="og:url" content="https://klavity.in/blog/manual-qa-vs-automated-qa"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Manual QA vs. Automated QA: How to Split the Work Right"><meta name="twitter:description" content="Manual and automated QA catch different bugs at different costs. Automate the stable, repetitive checks and keep humans on judgment. Here's the split."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Manual QA vs. Automated QA: How to Split the Work Right","description":"Manual and automated QA catch different bugs at different costs. Automate the stable, repetitive checks and keep humans on judgment. Here's the split.","datePublished":"2026-07-12","dateModified":"2026-07-12","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/manual-qa-vs-automated-qa","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"Manual QA vs. Automated QA: How to Split the Work Right","item":"https://klavity.in/blog/manual-qa-vs-automated-qa"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/manual-qa-vs-automated-qa"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Is automated QA better than manual QA?","acceptedAnswer":{"@type":"Answer","text":"Neither is better — they catch different bugs. Automated QA is faster and cheaper per run for stable, repetitive checks like regression. Manual QA is better at judgment-heavy work: new features, UX, accessibility, and exploratory edge cases that no one wrote a script for. Mature teams use both."}},{"@type":"Question","name":"What percentage of testing should be automated?","acceptedAnswer":{"@type":"Answer","text":"There is no universal percentage. Instead of a target ratio, automate a test when it is stable and runs on most releases, and keep it manual when the behavior is new, ambiguous, or changing weekly. A brittle test automated too early costs more in maintenance than it saves."}},{"@type":"Question","name":"Can automated tests replace manual testers?","acceptedAnswer":{"@type":"Answer","text":"No. Automated tests only verify what someone thought to check. They cannot notice that a layout looks wrong, that a flow is confusing, or that an unwritten edge case broke. Automation removes repetitive work so testers can spend their time on discovery, where humans still outperform scripts."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Compare · 2026-07-12</div>
+    <h1>Manual QA vs. Automated QA: How to Split the Work Right</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>Manual and automated QA solve different problems: automate stable, high-frequency regression checks to free your team, and reserve manual testing for new features, UX, and exploratory edge cases where human judgment finds bugs scripts can't. The right split isn't a percentage — it's automating what's repetitive and stable, and keeping humans on what's novel and ambiguous.</div>
+    <div class="prose"><p>Manual QA and automated QA are complementary, not competing. <strong>Manual QA</strong> is human-driven testing — best for new features, UX, accessibility, and exploratory edge cases where judgment matters. <strong>Automated QA</strong> runs scripted checks repeatedly and cheaply — best for regression, cross-browser coverage, and stable flows you re-verify every release. The right split isn't a fixed ratio: automate what is stable and repetitive, and keep humans on what is novel and ambiguous.</p>
+
+<h2>What is the difference between manual and automated QA?</h2>
+<p>The difference is who executes the test and what kind of bug it is designed to catch. Manual QA puts a person in front of the product to follow (or deliberately break from) a plan and observe. Automated QA encodes expected behavior as code that a machine runs on demand — in CI, on a schedule, or before each deploy.</p>
+<p>That leads to three durable trade-offs:</p>
+<ul>
+<li><strong>Cost curve.</strong> Automation has a high upfront cost (writing and maintaining the test) and a near-zero marginal cost per run. Manual testing is the reverse: cheap to start, but you pay the full cost again every single time you run it.</li>
+<li><strong>What it catches.</strong> Automation catches <em>regressions</em> — things that used to work and broke. Manual testing catches <em>the unknown</em> — bugs no one thought to encode, plus everything subjective: confusing copy, awkward layout, a flow that technically works but feels wrong.</li>
+<li><strong>Speed vs. depth.</strong> An automated suite re-checks hundreds of paths in minutes without fatigue. A human checks fewer paths but notices things off the script — the essence of <a href="/blog/exploratory-testing-vs-scripted-testing">exploratory testing</a>.</li>
+</ul>
+
+<h2>When should you use manual QA?</h2>
+<p>Reach for manual QA whenever the value of the test depends on human judgment or the target is still moving. Specifically:</p>
+<ol>
+<li><strong>New and changing features.</strong> Before behavior stabilizes, an automated test mostly tests your assumptions and needs constant rewriting. Verify it by hand first; automate once it settles.</li>
+<li><strong>UX, layout, and accessibility.</strong> "Does this look right and feel usable?" is not a pass/fail assertion. Humans catch misaligned elements, poor contrast, and confusing wording that a DOM assertion sails past.</li>
+<li><strong>Exploratory sessions.</strong> Give a tester a goal, not a script, and let them wander. This is where real users' bugs live — the paths your written tests never take.</li>
+<li><strong>One-off and hard-to-automate checks.</strong> If a scenario runs rarely, or requires physical devices, external state, or human interpretation, the automation cost rarely pays back.</li>
+</ol>
+<p>The output of good manual QA is only as useful as the report it produces. A vague "it's broken" wastes the discovery. Capture exact steps, environment, and evidence — screenshot, console, and network — so a developer can act without a second round-trip. Tools like <a href="/snap">Klavity Snap</a> turn a right-click during a manual session into a complete, reproducible ticket, which is where manual QA's value actually lands.</p>
+
+<h2>When should you use automated QA?</h2>
+<p>Automate the work that is boring, repetitive, and stable — exactly the work humans do worst because attention fades. The strongest candidates:</p>
+<ol>
+<li><strong>Regression suites.</strong> The core flows (sign-up, checkout, save) that must never break. Re-checking them by hand every release is the clearest waste of a tester's time.</li>
+<li><strong>Cross-browser and cross-device coverage.</strong> Running the same scenario across many environments is mechanical and parallelizable — a machine's strength.</li>
+<li><strong>High-frequency checks.</strong> Anything you'd run on every commit or every deploy. The more times a test runs, the faster automation pays back its upfront cost.</li>
+<li><strong>Deterministic assertions.</strong> Cases with a clear, stable expected value — an API returns 200, a total equals the sum of line items — where there's nothing subjective to judge.</li>
+</ol>
+
+<h2>How do you decide what to automate?</h2>
+<p>Skip target ratios like "70% automated." They optimize the wrong thing — you can hit a percentage by automating brittle tests that break constantly. Use two questions instead:</p>
+<ol>
+<li><strong>Is it stable?</strong> If the feature or its selectors change most weeks, automating now means rewriting the test most weeks. Wait until it settles.</li>
+<li><strong>Does it run often?</strong> A check you run once a quarter rarely earns back the cost of writing it. A check that gates every deploy earns it back fast.</li>
+</ol>
+<p>Automate only when both answers are yes: <em>stable</em> and <em>frequent</em>. Everything else stays manual — for now. Re-evaluate as features mature; today's manual smoke test is next quarter's automation candidate.</p>
+<p>One caveat undoes a lot of automation ROI: maintenance. When a renamed button or restructured page breaks selectors, a suite can fail loudly on changes that aren't bugs — and the time you spend fixing tests eats the time automation was supposed to save. Reducing that drag is the point of <a href="/autosim">self-healing tests</a>, which re-anchor to the intended element when the UI shifts so cosmetic changes don't fail the whole run.</p>
+
+<h2>How to combine manual and automated QA</h2>
+<p>The two aren't a choice; they're a pipeline. A workflow that plays to each strength:</p>
+<ol>
+<li><strong>Explore manually first.</strong> On a new feature, test by hand and exploratively. Find the bugs, confirm the behavior, and file clean reports.</li>
+<li><strong>Automate what stabilized.</strong> Once behavior settles and you know the paths that matter, encode them as regression tests so you never re-check them by hand.</li>
+<li><strong>Let automation guard the floor.</strong> Run the suite on every deploy to catch regressions instantly, freeing testers from repetitive verification.</li>
+<li><strong>Reinvest the freed time in discovery.</strong> Point human attention back at new features, UX, and exploration — the work automation can't do. Persona-driven exploration, like <a href="/sims">Klavity Sims</a>, extends that reach by having AI users probe flows the way different real users would.</li>
+</ol>
+<p>Done right, automation expands over time as features mature, and your manual effort keeps moving to the frontier of what's new — instead of both fighting over the same regression checklist.</p>
+
+<h2>Common mistakes when splitting the work</h2>
+<ul>
+<li><strong>Automating too early.</strong> Encoding a feature that's still changing produces tests that break on every iteration — pure maintenance cost, little signal.</li>
+<li><strong>Trying to automate everything.</strong> Chasing 100% automation pushes you to script subjective, low-frequency checks where the cost never pays back.</li>
+<li><strong>Treating a green suite as "tested."</strong> Passing automation only means the things you thought to check still work. It says nothing about the bugs you didn't anticipate.</li>
+<li><strong>Ignoring flaky tests.</strong> A suite that fails randomly gets ignored, and an ignored suite catches nothing. Fix flakiness or it quietly erases automation's value.</li>
+</ul>
+<p>The teams that get the most from QA don't pick a side. They automate the stable and repetitive to buy back time, then spend that time on the judgment and discovery only humans can do — and make sure every bug either side finds becomes a report a developer can act on immediately.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Automate tests that are stable and run every release; keep new-feature testing manual.</li><li>Use exploratory manual QA to find bugs no script was written to catch.</li><li>Reserve human judgment for UX, accessibility, and ambiguous behavior.</li><li>Cut automation maintenance with self-healing selectors so flaky tests don't erase the ROI.</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Is automated QA better than manual QA?</summary><p>Neither is better — they catch different bugs. Automated QA is faster and cheaper per run for stable, repetitive checks like regression. Manual QA is better at judgment-heavy work: new features, UX, accessibility, and exploratory edge cases that no one wrote a script for. Mature teams use both.</p></details><details><summary>What percentage of testing should be automated?</summary><p>There is no universal percentage. Instead of a target ratio, automate a test when it is stable and runs on most releases, and keep it manual when the behavior is new, ambiguous, or changing weekly. A brittle test automated too early costs more in maintenance than it saves.</p></details><details><summary>Can automated tests replace manual testers?</summary><p>No. Automated tests only verify what someone thought to check. They cannot notice that a layout looks wrong, that a flow is confusing, or that an unwritten edge case broke. Automation removes repetitive work so testers can spend their time on discovery, where humans still outperform scripts.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
