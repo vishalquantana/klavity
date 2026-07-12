@@ -132,6 +132,16 @@ export async function setExpectationStatus(c: Client, id: string, status: ExpSta
   await c.execute({ sql: "UPDATE expectations SET status=?, updated_at=? WHERE id=?", args: [status, Date.now(), id] })
 }
 
+/**
+ * B.9 (KLA-249): "Un-enforce" — demote an enforced expectation back to validated WITHOUT destroying
+ * its history. Clears enforced_step_id (the caller removes the underlying assert step so the Trail
+ * no longer runs the check) but leaves title / corroboration / source_refs intact, so the user can
+ * re-enforce (repointed/repositioned) later. Unlike retire, the expectation stays actionable.
+ */
+export async function demoteExpectationToValidated(c: Client, id: string): Promise<void> {
+  await c.execute({ sql: "UPDATE expectations SET status='validated', enforced_step_id=NULL, updated_at=? WHERE id=?", args: [Date.now(), id] })
+}
+
 export async function setExpectationEnforced(c: Client, id: string, enforcedStepId: string): Promise<void> {
   // KLA-245 (B.5): enforcing always clears any awaiting-Trail hold (best-effort — old schemas
   // without the column still enforce, just without touching the flag).

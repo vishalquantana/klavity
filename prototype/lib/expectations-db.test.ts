@@ -2,7 +2,7 @@
 import { test, expect } from "bun:test"
 import { createClient } from "@libsql/client"
 import { applySchema } from "./db"
-import { upsertExpectation, listExpectations, getExpectation, setExpectationEnforced, SOURCE_REFS_MAX } from "./expectations-db"
+import { upsertExpectation, listExpectations, getExpectation, setExpectationEnforced, setExpectationStatus, demoteExpectationToValidated, SOURCE_REFS_MAX } from "./expectations-db"
 import { listNearMisses, nearMissSummary } from "./expectations-nearmiss"
 
 async function fresh() { const c = createClient({ url: "file::memory:" }); await applySchema(c); return c }
@@ -39,6 +39,39 @@ test("setExpectationEnforced flips status + records step", async () => {
   const got = await getExpectation(c, e.id)
   expect(got!.status).toBe("enforced")
   expect(got!.enforcedStepId).toBe("ts_99")
+})
+
+// ── B.9 (KLA-249): retired rows resurrect on a fresh signal; un-enforce keeps history ──
+
+test("B.9: a retired expectation resurrects to candidate when a fresh signal matches it", async () => {
+  const c = await fresh()
+  const e = await upsertExpectation(c, { projectId: "p1", title: "Coupon field missing at checkout", dedupKey: "k-res", source: { kind: "snap", id: "s1" } })
+  // Retire it (as the retire route does).
+  await setExpectationStatus(c, e.id, "retired")
+  expect((await getExpectation(c, e.id))!.status).toBe("retired")
+
+  // A fresh Sim signal for the same issue arrives → the retired row is matched, corroboration bumps,
+  // and nextStatus resurrects it to CANDIDATE (it must re-earn its way up).
+  const back = await upsertExpectation(c, { projectId: "p1", title: "Coupon field missing at checkout", dedupKey: "k-res", source: { kind: "sim", id: "s2" } })
+  expect(back.id).toBe(e.id) // same row (not a duplicate)
+  expect(back.status).toBe("candidate")
+  expect(back.corroboration.recurrence).toBe(2)
+  expect((await listExpectations(c, "p1")).length).toBe(1)
+})
+
+test("B.9: demoteExpectationToValidated demotes enforced → validated and clears the step, keeping history", async () => {
+  const c = await fresh()
+  const e = await upsertExpectation(c, { projectId: "p1", title: "Header cart badge visible", dedupKey: "k-un", source: { kind: "snap", id: "s1" } })
+  await setExpectationEnforced(c, e.id, "ts_step_1")
+  expect((await getExpectation(c, e.id))!.status).toBe("enforced")
+
+  await demoteExpectationToValidated(c, e.id)
+  const got = await getExpectation(c, e.id)!
+  expect(got!.status).toBe("validated")
+  expect(got!.enforcedStepId).toBe(null) // the check pointer is cleared
+  // History (corroboration + source refs) survives the demotion.
+  expect(got!.sourceRefs.length).toBe(1)
+  expect(got!.corroboration.recurrence).toBe(1)
 })
 
 // ── Spine leak regression: source_refs_json must stay bounded ────────────────

@@ -53,7 +53,7 @@ import { gatherWalkReport } from "./lib/trails-report"
 import { liveWatchSseResponse, openLiveWatchStream } from "./lib/trails-live-watch"
 import { normalizeTrailViewport } from "./lib/trails-viewport"
 import { seedDemoTrails } from "./lib/trails-demo-seed"
-import { listExpectations, getExpectation, setExpectationStatus, setExpectationEnforced, setExpectationAwaitingTrail, resumeAwaitingTrailExpectations, upsertExpectationFromTicket } from "./lib/expectations-db"
+import { listExpectations, getExpectation, setExpectationStatus, setExpectationEnforced, demoteExpectationToValidated, setExpectationAwaitingTrail, resumeAwaitingTrailExpectations, upsertExpectationFromTicket } from "./lib/expectations-db"
 import { pickDefaultTrail, type TrailForPick } from "./lib/expectations"
 import { nearMissSummary } from "./lib/expectations-nearmiss"
 import { createLabel, listLabels, updateLabel, deleteLabel, attachLabel, detachLabel, labelsForFeedback, labelsForFeedbackBatch, setSuggestedLabels, getSuggestedLabels } from "./lib/db"
@@ -3811,6 +3811,61 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (exp.status !== "validated") return json({ error: "not validated" }, 409)
         await setExpectationAwaitingTrail(db!, id, true)
         return json({ ok: true, awaitingTrail: true })
+      }
+
+      // POST /api/expectations/:id/unenforce — B.9 (KLA-249): demote an enforced guard back to
+      // validated WITHOUT deleting the expectation's history. Removes the underlying assert step so
+      // the Trail no longer runs the check, then flips status → validated (enforced_step_id cleared).
+      // The user can re-enforce later (repointed/repositioned). 409 if the row isn't enforced.
+      const unenforceMatch = path.match(/^\/api\/expectations\/([^/]+)\/unenforce$/)
+      if (req.method === "POST" && unenforceMatch) {
+        const id = unenforceMatch[1]
+        const exp = await getExpectation(db!, id)
+        if (!exp || exp.projectId !== projE.id) return json({ error: "not found" }, 404)
+        if (exp.status !== "enforced") return json({ error: "not enforced" }, 409)
+        // Remove the assert step so the Trail stops running the check (best-effort — a missing step
+        // must not block the demotion). History (corroboration / source_refs) is preserved.
+        if (exp.enforcedStepId) { try { await deleteTrailStep(projE.id, exp.enforcedStepId) } catch (e) { console.warn("[expectations] unenforce step delete skipped:", String(e)) } }
+        await demoteExpectationToValidated(db!, id)
+        return json({ ok: true, status: "validated" })
+      }
+
+      // PATCH /api/expectations/:id/guard-step — B.9 (KLA-249): edit an enforced guard's assert step
+      // IN PLACE (target and/or checkpoint description) rather than retire-and-recreate, which would
+      // destroy the enforced history. 409 if the row isn't enforced or has no step to edit.
+      const editGuardMatch = path.match(/^\/api\/expectations\/([^/]+)\/guard-step$/)
+      if (req.method === "PATCH" && editGuardMatch) {
+        const id = editGuardMatch[1]
+        const exp = await getExpectation(db!, id)
+        if (!exp || exp.projectId !== projE.id) return json({ error: "not found" }, 404)
+        if (exp.status !== "enforced" || !exp.enforcedStepId) return json({ error: "not enforced" }, 409)
+        const body = await req.json().catch(() => null)
+        if (!body || typeof body !== "object") return json({ error: "invalid body" }, 400)
+        const patch: StepPatch = {}
+        if ("target" in body) {
+          const t = (body as any).target
+          if (t == null) return json({ error: "target cannot be cleared on an assert step" }, 400)
+          if (typeof t !== "object" || Array.isArray(t)) return json({ error: "target must be an object" }, 400)
+          const clean: Record<string, string> = {}
+          for (const [k, v] of Object.entries(t)) { if (typeof v === "string") clean[k] = v }
+          if (!Object.keys(clean).length) return json({ error: "target must have at least one string field" }, 400)
+          patch.target = clean
+        }
+        if ("checkpoint" in body) {
+          const cpIn = (body as any).checkpoint
+          if (cpIn == null) return json({ error: "an assert step needs a checkpoint" }, 400)
+          if (typeof cpIn === "object" && typeof cpIn.description === "string") {
+            const cp = normalizeCheckpointInput(cpIn)
+            if (!cp) return json({ error: "invalid checkpoint" }, 400)
+            patch.checkpoint = cp
+          } else return json({ error: "checkpoint must be an object with a description" }, 400)
+        }
+        if (Object.keys(patch).length === 0) return json({ error: "nothing to edit" }, 400)
+        const ok = await updateTrailStep(projE.id, exp.enforcedStepId, patch)
+        if (!ok) return json({ error: "guard step not found" }, 404)
+        // Touch updated_at so the board reflects the edit; the row stays enforced on the same step.
+        await setExpectationStatus(db!, id, "enforced")
+        return json({ ok: true, stepId: exp.enforcedStepId })
       }
 
       // POST /api/expectations/:id/retire — mark expectation as retired.

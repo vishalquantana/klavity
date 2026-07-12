@@ -138,8 +138,15 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 .walk .walk-share-msg{font-family:var(--mono);font-size:10px;color:var(--green);flex-shrink:0;min-width:0}
 
 /* expectations board — three kanban columns */
-.exp-board{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:18px}
+.exp-board{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:18px}
+@media(max-width:1080px){.exp-board{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:820px){.exp-board{grid-template-columns:minmax(0,1fr)}}
+/* B.9 (KLA-249): retired-guard state + lifecycle action buttons on Guard cards */
+.exp-card.retired{opacity:.72}
+.ec-badge.retired{background:rgba(148,163,184,.16);color:var(--paper-faint)}
+.exp-card .ec-explain{font-size:11px;color:var(--paper-faint);line-height:1.4;margin-top:6px}
+.exp-card .ec-acts .btn-danger{color:var(--rose);border-color:rgba(219,39,119,.3)}
+.exp-card .ec-acts .btn-danger:hover{background:rgba(219,39,119,.14)}
 .exp-col{background:var(--ink-2);border:1px solid var(--line);border-radius:18px;padding:20px}
 .exp-col h2{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:14px;display:flex;align-items:center;gap:8px}
 .exp-col h2 .count{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--paper-faint);background:var(--ink-3);padding:2px 8px;border-radius:20px}
@@ -422,6 +429,11 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
         <h2>Enforced <span class="count" id="expEnfCount">0</span></h2>
         <p class="card-hint" style="margin-top:0">Added as an automated assert step in your AutoSims</p>
         <div id="expEnf"></div>
+      </div>
+      <div class="exp-col">
+        <h2>Retired <span class="count" id="expRetCount">0</span></h2>
+        <p class="card-hint" style="margin-top:0">Cleared — history kept; a fresh signal resurrects it</p>
+        <div id="expRet"></div>
       </div>
     </div>
   </div>
@@ -2178,18 +2190,66 @@ async function enforceExpectation(expId, card) {
   }
 }
 
+// B.9 (KLA-249): retire a guard — keeps history, removes the check. Confirmed (destructive).
+async function retireExpectation(expId, card) {
+  var msgEl = card.querySelector(".ec-msg")
+  if (!window.confirm("Retire this guard? It keeps its history but the AutoSim check is removed. A fresh signal can resurrect it later.")) return
+  var pid = projParam(); var qs = pid ? "?project=" + encodeURIComponent(pid) : ""
+  var btn = card.querySelector("[data-retire]"); if (btn) { btn.disabled = true; btn.textContent = "retiring…" }
+  if (msgEl) msgEl.textContent = ""
+  var r; try { r = await fetch("/api/expectations/" + encodeURIComponent(expId) + "/retire" + qs, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }) }
+  catch (e) { if (btn) { btn.disabled = false; btn.textContent = "Retire" } if (msgEl) { msgEl.style.color = "var(--rose)"; msgEl.textContent = "Network error." } return }
+  if (!r.ok) { var eb = await r.json().catch(function() { return {} }); if (btn) { btn.disabled = false; btn.textContent = "Retire" } if (msgEl) { msgEl.style.color = "var(--rose)"; msgEl.textContent = eb.error || "Could not retire." } return }
+  if (msgEl) { msgEl.style.color = "var(--paper-faint)"; msgEl.textContent = "Retired — history kept." }
+  setTimeout(loadExpectations, 500)
+}
+// B.9: un-enforce — demote enforced → validated WITHOUT deleting history; the Trail stops the check.
+async function unenforceExpectation(expId, card) {
+  var msgEl = card.querySelector(".ec-msg")
+  var pid = projParam(); var qs = pid ? "?project=" + encodeURIComponent(pid) : ""
+  var btn = card.querySelector("[data-unenforce]"); if (btn) { btn.disabled = true; btn.textContent = "un-enforcing…" }
+  if (msgEl) msgEl.textContent = ""
+  var r; try { r = await fetch("/api/expectations/" + encodeURIComponent(expId) + "/unenforce" + qs, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }) }
+  catch (e) { if (btn) { btn.disabled = false; btn.textContent = "Un-enforce" } if (msgEl) { msgEl.style.color = "var(--rose)"; msgEl.textContent = "Network error." } return }
+  if (!r.ok) { var eb = await r.json().catch(function() { return {} }); if (btn) { btn.disabled = false; btn.textContent = "Un-enforce" } if (msgEl) { msgEl.style.color = "var(--rose)"; msgEl.textContent = eb.error || "Could not un-enforce." } return }
+  if (msgEl) { msgEl.style.color = "var(--indigo)"; msgEl.textContent = "Un-enforced — back to validated, check removed." }
+  setTimeout(loadExpectations, 500)
+}
+// B.9: edit an enforced guard's assert step IN PLACE (no retire-and-recreate) via an inline form.
+function editGuardStep(exp, card) {
+  var actsEl = card.querySelector(".ec-acts"); if (actsEl) actsEl.style.display = "none"
+  var msgEl = card.querySelector(".ec-msg"); if (msgEl) msgEl.textContent = ""
+  var pid = projParam(); var qs = pid ? "?project=" + encodeURIComponent(pid) : ""
+  var box = document.createElement("div"); box.className = "ec-confirm"
+  box.innerHTML = '<div class="cc-target">Edit this guard’s check — the enforced step is updated in place.</div>'
+    + '<textarea rows="3" placeholder="What must be true…"></textarea>'
+    + '<div class="cc-acts"><button class="btn btn-indigo" style="font-size:12px;padding:7px 13px" data-save-edit>Save</button><button class="btn btn-ghost" style="font-size:12px;padding:7px 13px" data-cancel-edit>Cancel</button></div>'
+  card.appendChild(box)
+  var ta = box.querySelector("textarea")
+  box.querySelector("[data-cancel-edit]").onclick = function() { box.remove(); if (actsEl) actsEl.style.display = ""; if (msgEl) msgEl.textContent = "" }
+  box.querySelector("[data-save-edit]").onclick = async function() {
+    var desc = ta.value.trim(); if (!desc) { if (msgEl) { msgEl.style.color = "var(--amber)"; msgEl.textContent = "Describe what the check should verify." } return }
+    var sb = this; sb.disabled = true; sb.textContent = "saving…"
+    var r; try { r = await fetch("/api/expectations/" + encodeURIComponent(exp.id) + "/guard-step" + qs, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ checkpoint: { description: desc } }) }) }
+    catch (e) { sb.disabled = false; sb.textContent = "Save"; if (msgEl) { msgEl.style.color = "var(--rose)"; msgEl.textContent = "Network error." } return }
+    if (!r.ok) { var eb = await r.json().catch(function() { return {} }); sb.disabled = false; sb.textContent = "Save"; if (msgEl) { msgEl.style.color = "var(--rose)"; msgEl.textContent = eb.error || "Could not save." } return }
+    box.remove(); if (msgEl) { msgEl.style.color = "var(--green)"; msgEl.textContent = "Guard updated in place." }
+    setTimeout(loadExpectations, 500)
+  }
+}
 function renderExpectations(expectations) {
-  var cand = [], valid = [], enf = []
+  var cand = [], valid = [], enf = [], ret = []
   ;(expectations || []).forEach(function(e) {
     if      (e.status === "candidate") cand.push(e)
     else if (e.status === "validated") valid.push(e)
     else if (e.status === "enforced")  enf.push(e)
-    // retired: ignored
+    else if (e.status === "retired")   ret.push(e)
   })
 
   $("expCandCount").textContent  = String(cand.length)
   $("expValidCount").textContent = String(valid.length)
   $("expEnfCount").textContent   = String(enf.length)
+  $("expRetCount").textContent   = String(ret.length)
 
   function emptyExp(text) {
     return '<div class="empty"><p>' + esc(text) + '</p></div>'
@@ -2206,34 +2266,56 @@ function renderExpectations(expectations) {
     candEl.appendChild(card)
   })
 
-  // Validated column
+  // Validated column — Enforce + Retire (B.9: "keeps history, removes the check").
   var validEl = $("expValid")
   validEl.innerHTML = valid.length ? "" : emptyExp("No validated expectations yet.")
   valid.forEach(function(exp) {
     var card = document.createElement("div")
-    card.className = "exp-card"
+    card.className = "exp-card"; card._exp = exp
     card.innerHTML = expCardHtml(exp)
-    + '<div class="ec-acts" style="margin-top:10px">'
+    + '<div class="ec-acts" style="margin-top:10px;display:flex;gap:7px;flex-wrap:wrap">'
     + '<button class="btn btn-indigo" style="font-size:12px;padding:7px 13px" data-enforce="'+esc(exp.id)+'">Enforce</button>'
+    + '<button class="btn btn-ghost btn-danger" style="font-size:12px;padding:7px 13px" data-retire title="Keeps history, removes the check">Retire</button>'
     + '</div>'
     + '<div class="ec-msg"></div>'
     validEl.appendChild(card)
-    card.querySelector("[data-enforce]").onclick = function() {
-      enforceExpectation(exp.id, card)
-    }
+    card.querySelector("[data-enforce]").onclick = function() { enforceExpectation(exp.id, card) }
+    card.querySelector("[data-retire]").onclick = function() { retireExpectation(exp.id, card) }
   })
 
-  // Enforced column
+  // Enforced column — Edit-in-place / Un-enforce / Retire (B.9).
   var enfEl = $("expEnf")
   enfEl.innerHTML = enf.length ? "" : emptyExp("Nothing enforced yet.")
   enf.forEach(function(exp) {
     var card = document.createElement("div")
-    card.className = "exp-card"
+    card.className = "exp-card"; card._exp = exp
     card.innerHTML = expCardHtml(exp)
     + (exp.enforcedStepId
         ? '<div class="ec-badges" style="margin-top:8px"><span class="ec-badge enforced-ok">enforced</span><span class="ec-meta" style="margin-left:4px;font-size:10px">'+esc(exp.enforcedStepId)+'</span></div>'
         : '<div class="ec-badges" style="margin-top:8px"><span class="ec-badge enforced-ok">enforced</span></div>')
+    + '<div class="ec-acts" style="margin-top:10px;display:flex;gap:7px;flex-wrap:wrap">'
+    + (exp.enforcedStepId ? '<button class="btn btn-ghost" style="font-size:12px;padding:7px 13px" data-edit-guard>'+window.kicon("pencil",{size:12})+' Edit</button>' : '')
+    + '<button class="btn btn-ghost" style="font-size:12px;padding:7px 13px" data-unenforce title="Demote to validated — keeps history, stops the check">Un-enforce</button>'
+    + '<button class="btn btn-ghost btn-danger" style="font-size:12px;padding:7px 13px" data-retire title="Keeps history, removes the check">Retire</button>'
+    + '</div>'
+    + '<div class="ec-msg"></div>'
     enfEl.appendChild(card)
+    var editBtn = card.querySelector("[data-edit-guard]"); if (editBtn) editBtn.onclick = function() { editGuardStep(exp, card) }
+    card.querySelector("[data-unenforce]").onclick = function() { unenforceExpectation(exp.id, card) }
+    card.querySelector("[data-retire]").onclick = function() { retireExpectation(exp.id, card) }
+  })
+
+  // Retired column (B.9) — cleared guards keep their history; a fresh signal resurrects to Candidate.
+  var retEl = $("expRet")
+  retEl.innerHTML = ret.length ? "" : emptyExp("Nothing retired.")
+  ret.forEach(function(exp) {
+    var card = document.createElement("div")
+    card.className = "exp-card retired"; card._exp = exp
+    card.innerHTML = expCardHtml(exp)
+    + '<div class="ec-badges" style="margin-top:8px"><span class="ec-badge retired">retired</span></div>'
+    + '<div class="ec-explain">Check removed; history kept. If this issue resurfaces (a fresh Snap or Sim signal), it comes back as a Candidate.</div>'
+    + '<div class="ec-msg"></div>'
+    retEl.appendChild(card)
   })
 }
 
