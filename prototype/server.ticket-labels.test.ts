@@ -29,6 +29,7 @@ const ACCT = `acct_lbl_${RUN}`
 const PROJ = `proj_lbl_${RUN}`
 const OTHER_PROJ = `proj_lbl_other_${RUN}`
 const FID = `fb_lbl_${RUN}`
+const FID2 = `fb_lbl2_${RUN}`   // JTBD 2.16: a second (unlabeled) ticket in the same project, to prove the label filter excludes it.
 const OTHER_FID = `fb_lbl_other_${RUN}`
 const OTHER_LABEL = `lbl_other_${RUN}`
 const NOW = Date.now()
@@ -79,6 +80,7 @@ beforeAll(async () => {
   await exec("INSERT INTO project_members (id, project_id, email, project_role, invited_by, created_at) VALUES (?, ?, ?, ?, ?, ?)", [`pm_own_${RUN}`, PROJ, OWNER, "admin", null, NOW])
   await exec("INSERT INTO project_members (id, project_id, email, project_role, invited_by, created_at) VALUES (?, ?, ?, ?, ?, ?)", [`pm_mem_${RUN}`, PROJ, MEMBER, "member", null, NOW])
   await exec("INSERT INTO feedback (id, project_id, observation, priority, status, created_at) VALUES (?, ?, ?, ?, ?, ?)", [FID, PROJ, "Payment fails on checkout", "high", "open", NOW])
+  await exec("INSERT INTO feedback (id, project_id, observation, priority, status, created_at) VALUES (?, ?, ?, ?, ?, ?)", [FID2, PROJ, "Unlabeled ticket in same project", "medium", "open", NOW])
   await exec("INSERT INTO feedback (id, project_id, observation, priority, status, created_at) VALUES (?, ?, ?, ?, ?, ?)", [OTHER_FID, OTHER_PROJ, "Other project ticket", "medium", "open", NOW])
   await exec("INSERT INTO labels (id, project_id, name, color, created_at) VALUES (?, ?, ?, ?, ?)", [OTHER_LABEL, OTHER_PROJ, "Other", "#22c55e", NOW])
   await exec("INSERT INTO ticket_labels (label_id, feedback_id, created_at) VALUES (?, ?, ?)", [OTHER_LABEL, OTHER_FID, NOW])
@@ -188,6 +190,34 @@ test("GET /api/projects/:id/tickets includes labels per ticket", async () => {
   expect(ticket).toBeTruthy()
   expect(Array.isArray(ticket.labels)).toBe(true)
   expect(ticket.labels.some((l: any) => l.id === createdLabelId)).toBe(true)
+})
+
+// JTBD 2.16: filtering by a label returns only tickets carrying it. FID has createdLabelId
+// attached; FID2 (same project) has no label and must be excluded.
+test("GET /api/projects/:id/tickets?label=:lid returns only tickets carrying that label", async () => {
+  // Sanity: without the filter, both project tickets are present.
+  const all = await (await req("GET", `/api/projects/${PROJ}/tickets`)).json()
+  const allIds = all.tickets.map((t: any) => t.id)
+  expect(allIds).toContain(FID)
+  expect(allIds).toContain(FID2)
+
+  const r = await req("GET", `/api/projects/${PROJ}/tickets?label=${encodeURIComponent(createdLabelId)}`)
+  expect(r.status).toBe(200)
+  const d = await r.json()
+  const ids = d.tickets.map((t: any) => t.id)
+  expect(ids).toContain(FID)
+  expect(ids).not.toContain(FID2)
+  // total reflects the filtered set (drives pagination), not the whole project.
+  expect(d.total).toBe(1)
+})
+
+// JTBD 2.16: a label from another project can never match this project's tickets (tenant scoping).
+test("GET /api/projects/:id/tickets?label=<foreign label> matches nothing in this project", async () => {
+  const r = await req("GET", `/api/projects/${PROJ}/tickets?label=${encodeURIComponent(OTHER_LABEL)}`)
+  expect(r.status).toBe(200)
+  const d = await r.json()
+  expect(d.tickets.length).toBe(0)
+  expect(d.total).toBe(0)
 })
 
 test("POST /api/feedback/:id/labels rejects label from different project", async () => {
