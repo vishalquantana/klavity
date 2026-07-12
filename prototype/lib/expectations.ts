@@ -42,6 +42,76 @@ export function matchExpectation(
   return best.score >= threshold ? best.id : null
 }
 
+// ── B.5 (KLA-245): Trail picker + zero-Trail fallback for the Enforce flow. ──
+// Pure (DB-free) helpers so the enforce route (and the shared "Guard this fix" picker) can
+// default the target Trail by urlPath match against each Trail's recorded steps — never a
+// silent "first Trail" guess — and so the awaiting-Trail resume logic is unit-testable.
+
+/** Minimal Trail shape the picker needs: its id, its baseUrl, and the URLs its steps navigate to. */
+export type TrailForPick = { id: string; baseUrl?: string | null; stepUrls: Array<string | null | undefined> }
+
+/** Extract the path component (no query/hash) from a full or relative URL. Returns "" on garbage. */
+export function urlPathOf(raw: string | null | undefined): string {
+  if (!raw) return ""
+  const s = String(raw).trim()
+  if (!s) return ""
+  if (s.startsWith("/")) {
+    // Already a path (possibly with query/hash).
+    return s.split(/[?#]/)[0]
+  }
+  try {
+    return new URL(s).pathname
+  } catch {
+    // Not a parseable absolute URL — strip scheme+host heuristically, then query/hash.
+    const noScheme = s.replace(/^[a-z]+:\/\//i, "")
+    const slash = noScheme.indexOf("/")
+    const path = slash >= 0 ? noScheme.slice(slash) : "/"
+    return path.split(/[?#]/)[0]
+  }
+}
+
+/**
+ * Score how well a Trail's recorded steps cover an expectation's urlPath.
+ * Higher is better; 0 means no path signal at all. Exact path match on any step (or the baseUrl)
+ * beats a prefix/containment match, which beats a bare same-first-segment match.
+ */
+export function trailUrlPathScore(expUrlPath: string | null | undefined, trail: TrailForPick): number {
+  const want = urlPathOf(expUrlPath)
+  if (!want || want === "/") return 0
+  const candidates = [urlPathOf(trail.baseUrl), ...trail.stepUrls.map(urlPathOf)].filter(Boolean)
+  let best = 0
+  const wantSeg = want.split("/").filter(Boolean)[0] || ""
+  for (const p of candidates) {
+    if (p === want) { best = Math.max(best, 100); continue }
+    // one contains the other (e.g. "/checkout" vs "/checkout/confirm")
+    if (p.startsWith(want + "/") || want.startsWith(p + "/")) { best = Math.max(best, 60); continue }
+    const pSeg = p.split("/").filter(Boolean)[0] || ""
+    if (wantSeg && pSeg && wantSeg === pSeg) best = Math.max(best, 30)
+  }
+  return best
+}
+
+/**
+ * Pick the Trail whose recorded steps best match the expectation's urlPath.
+ * Returns null when there are no trails. When NO trail has any path signal (all score 0) we fall
+ * back to the FIRST trail in the given order (callers pass trails newest-first) — but that is an
+ * explicit, surfaced default, not the silent server-side first-Trail guess this ticket removes.
+ * `bestScore` lets callers tell a real urlPath match apart from the no-signal fallback.
+ */
+export function pickDefaultTrail(
+  expUrlPath: string | null | undefined,
+  trails: TrailForPick[],
+): { trailId: string | null; bestScore: number } {
+  if (!trails.length) return { trailId: null, bestScore: 0 }
+  let bestId = trails[0].id
+  let bestScore = 0
+  for (const t of trails) {
+    const s = trailUrlPathScore(expUrlPath, t)
+    if (s > bestScore) { bestScore = s; bestId = t.id }
+  }
+  return { trailId: bestId, bestScore }
+}
+
 // KLA-251 (B.11): the near-miss BAND. A declined pair whose lexical score lands in
 // [NEAR_MISS_MIN, threshold) is a candidate the 0.82 thread rejected but which may be a
 // true cross-source match ("Target gone: Submit button" vs "can't submit the form"). We log

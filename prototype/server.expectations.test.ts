@@ -46,6 +46,7 @@ await rawExec(`CREATE TABLE IF NOT EXISTS expectations (
   corroboration_json TEXT NOT NULL DEFAULT '{}',
   dedup_key TEXT NOT NULL,
   enforced_step_id TEXT,
+  awaiting_trail INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 )`)
@@ -90,6 +91,15 @@ await rawExec(`INSERT INTO trails (id, project_id, name, intent, base_url, autho
 await rawExec(`INSERT INTO trail_steps (id, trail_id, project_id, idx, action, action_value, target_json, checkpoint_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [STEP_ID, TRAIL_ID, PROJECT_ID, 0, "click", null, JSON.stringify({ role: "button", name: "Checkout" }), null, NOW])
 await rawExec(`INSERT INTO trail_steps (id, trail_id, project_id, idx, action, action_value, target_json, checkpoint_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [STEP_ID_1, TRAIL_ID, PROJECT_ID, 1, "navigate", "https://shop.test/confirm", null, null, NOW])
 
+// B.5: a SECOND trail whose steps navigate to /signup — used to test urlPath-match default
+// preselection and repoint-to-a-non-first-Trail. Created AFTER the Checkout trail, so it is NOT
+// the "first" trail (listTrails orders newest-first → this one sorts first; the OLD code's silent
+// first-Trail would pick THIS regardless of path — we assert the default is now path-driven).
+const TRAIL_SIGNUP_ID = `trl_signup_${ts}`
+const SIGNUP_STEP_ID = `ts_signup0_${ts}`
+await rawExec(`INSERT INTO trails (id, project_id, name, intent, base_url, author_kind, status, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [TRAIL_SIGNUP_ID, PROJECT_ID, "Signup", "sign up a new user", "https://shop.test", "human", "active", ADMIN_EMAIL, NOW + 1000, NOW + 1000])
+await rawExec(`INSERT INTO trail_steps (id, trail_id, project_id, idx, action, action_value, target_json, checkpoint_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [SIGNUP_STEP_ID, TRAIL_SIGNUP_ID, PROJECT_ID, 0, "navigate", "https://shop.test/signup", null, null, NOW])
+
 // A pre-enforced step for the retire-removes-step test
 await rawExec(`INSERT INTO trail_steps (id, trail_id, project_id, idx, action, action_value, target_json, checkpoint_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [ENFORCED_STEP_ID, TRAIL_ID, PROJECT_ID, 99, "assert", null, JSON.stringify({ role: "button", name: "Cart" }), JSON.stringify({ kind: "visible", description: "Cart count visible" }), NOW])
 
@@ -118,6 +128,25 @@ await rawExec(
    JSON.stringify([{ kind: "snap", id: "snap3" }, { kind: "sim", id: "sim3" }]),
    JSON.stringify({ snap: true, sim: true, recurrence: 0 }),
    `dedup_enf_${ts}`, ENFORCED_STEP_ID, NOW, NOW]
+)
+
+// ── B.5 (KLA-245): a SECOND account+project that has ZERO trails, for the zero-Trail fallback +
+// awaiting-Trail resume tests. Keeping it isolated means adding a trail here can't perturb the
+// primary project's trail-picker tests.
+const ACCT_ZT = `acct_zt_${ts}`
+const PROJ_ZT = `proj_zt_${ts}`
+await rawExec(`INSERT INTO accounts (id, name, owner_email, created_at) VALUES (?, ?, ?, ?)`, [ACCT_ZT, "Zero-Trail WS", ADMIN_EMAIL, NOW])
+await rawExec(`INSERT INTO account_members (id, account_id, email, account_role, created_at) VALUES (?, ?, ?, ?, ?)`, [`am_${ACCT_ZT}`, ACCT_ZT, ADMIN_EMAIL, "owner", NOW])
+await rawExec(`INSERT INTO projects (id, account_id, name, status, review_mode, review_budget_daily, observability_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [PROJ_ZT, ACCT_ZT, "Zero-Trail Project", "active", "auto", 200, "named", NOW, NOW])
+await rawExec(`INSERT INTO project_members (id, project_id, email, project_role, invited_by, created_at) VALUES (?, ?, ?, ?, ?, ?)`, [`pm_zt_${ts}`, PROJ_ZT, ADMIN_EMAIL, "admin", null, NOW])
+// A validated expectation in the zero-Trail project (urlPath /pricing).
+const EXP_ZT_ID = `exp_zt_${ts}`
+await rawExec(
+  `INSERT INTO expectations (id, project_id, title, area, url_path, status, source_refs_json, corroboration_json, dedup_key, enforced_step_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  [EXP_ZT_ID, PROJ_ZT, "Pricing table must render three tiers", "pricing", "/pricing", "validated",
+   JSON.stringify([{ kind: "snap", id: "snapzt" }, { kind: "sim", id: "simzt" }]),
+   JSON.stringify({ snap: true, sim: true, recurrence: 0 }),
+   `dedup_zt_${ts}`, null, NOW, NOW]
 )
 
 // KLA-251 (B.11): a seeded near-miss row for the ops-report route test.
@@ -401,4 +430,91 @@ test("GET /api/expectations/near-misses summarizes declined near-misses for the 
 test("GET /api/expectations/near-misses is 401 without a session", async () => {
   const r = await fetch(`${BASE}/api/expectations/near-misses?project=${PROJECT_ID}`)
   expect(r.status).toBe(401)
+})
+
+// ── B.5 (KLA-245): Trail picker + zero-Trail fallback ──────────────────────────────────────
+
+test("B.5 repoint: enforce/confirm lands the assert in the EXPLICITLY-chosen non-first Trail", async () => {
+  // Fresh validated expectation; hand-built draft targeting the Checkout (older, non-first) trail.
+  const EXP_REPOINT_ID = `exp_repoint_${ts}`
+  await rawClient.execute({
+    sql: `INSERT INTO expectations (id, project_id, title, area, url_path, status, source_refs_json, corroboration_json, dedup_key, enforced_step_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [EXP_REPOINT_ID, PROJECT_ID, "Repoint target expectation", "signup", "/signup", "validated",
+      JSON.stringify([{ kind: "snap", id: "snap_rp" }]),
+      JSON.stringify({ snap: true, sim: false, recurrence: 3 }),
+      `dedup_rp_${ts}`, null, NOW, NOW],
+  })
+  // The user repointed to the SIGNUP trail (which is the newest/first, but we assert the server
+  // honors the explicit draft.trailId rather than any first-Trail default).
+  const draft = {
+    trailId: TRAIL_SIGNUP_ID,
+    afterStepIdx: 0,
+    action: "assert",
+    target: { role: "heading", name: "Welcome" },
+    checkpoint: { kind: "visible", description: "Welcome heading visible after signup" },
+  }
+  const r = await api("POST", `/api/expectations/${EXP_REPOINT_ID}/enforce/confirm?project=${PROJECT_ID}`, { draft }, ADMIN_SID)
+  expect(r.status).toBe(200)
+  const b = await r.json()
+  expect(b.trailId).toBe(TRAIL_SIGNUP_ID)
+  // The new assert step must belong to the chosen trail, not the Checkout trail.
+  const stepRow = await rawClient.execute({ sql: "SELECT trail_id, action FROM trail_steps WHERE id=?", args: [b.stepId] })
+  expect(stepRow.rows.length).toBe(1)
+  expect(String((stepRow.rows[0] as any).trail_id)).toBe(TRAIL_SIGNUP_ID)
+  expect(String((stepRow.rows[0] as any).action)).toBe("assert")
+})
+
+test("B.5 zero-Trail: enforce returns zeroTrails:true (200), NOT a 422 dead end", async () => {
+  const r = await api("POST", `/api/expectations/${EXP_ZT_ID}/enforce?project=${PROJ_ZT}`, {}, ADMIN_SID)
+  expect(r.status).toBe(200)
+  const b = await r.json()
+  expect(b.zeroTrails).toBe(true)
+  expect(b.draft).toBeUndefined()
+  expect(Array.isArray(b.trails)).toBe(true)
+  expect(b.trails.length).toBe(0)
+})
+
+test("B.5 hold-awaiting-trail: flags the expectation and suppresses the Enforce offer", async () => {
+  const r = await api("POST", `/api/expectations/${EXP_ZT_ID}/hold-awaiting-trail?project=${PROJ_ZT}`, {}, ADMIN_SID)
+  expect(r.status).toBe(200)
+  expect((await r.json()).awaitingTrail).toBe(true)
+
+  // The expectation is still validated but now carries awaitingTrail=true in the list.
+  const list = await api("GET", `/api/expectations?project=${PROJ_ZT}`, null, ADMIN_SID)
+  const lb = await list.json()
+  const exp = lb.expectations.find((e: any) => e.id === EXP_ZT_ID)
+  expect(exp).toBeDefined()
+  expect(exp.status).toBe("validated")
+  expect(exp.awaitingTrail).toBe(true)
+
+  // DB row reflects the hold.
+  const row = await rawClient.execute({ sql: "SELECT awaiting_trail FROM expectations WHERE id=?", args: [EXP_ZT_ID] })
+  expect(Number((row.rows[0] as any).awaiting_trail)).toBe(1)
+})
+
+test("B.5 awaiting-Trail resume: creating a Trail covering the path clears the hold on next list load", async () => {
+  // Precondition: EXP_ZT_ID (urlPath /pricing) is held awaiting a Trail from the prior test.
+  const pre = await rawClient.execute({ sql: "SELECT awaiting_trail FROM expectations WHERE id=?", args: [EXP_ZT_ID] })
+  expect(Number((pre.rows[0] as any).awaiting_trail)).toBe(1)
+
+  // Create a Trail in the zero-Trail project whose step navigates to /pricing.
+  const ZT_TRAIL_ID = `trl_zt_${ts}`
+  await rawClient.execute({
+    sql: `INSERT INTO trails (id, project_id, name, intent, base_url, author_kind, status, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [ZT_TRAIL_ID, PROJ_ZT, "Pricing tour", "browse pricing", "https://shop.test", "human", "active", ADMIN_EMAIL, NOW, NOW],
+  })
+  await rawClient.execute({
+    sql: `INSERT INTO trail_steps (id, trail_id, project_id, idx, action, action_value, target_json, checkpoint_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [`ts_ztp_${ts}`, ZT_TRAIL_ID, PROJ_ZT, 0, "navigate", "https://shop.test/pricing", null, null, NOW],
+  })
+
+  // Loading the expectations board resumes the hold (server clears awaiting_trail for covered paths).
+  const list = await api("GET", `/api/expectations?project=${PROJ_ZT}`, null, ADMIN_SID)
+  const lb = await list.json()
+  const exp = lb.expectations.find((e: any) => e.id === EXP_ZT_ID)
+  expect(exp).toBeDefined()
+  expect(exp.awaitingTrail).toBe(false)
+
+  const row = await rawClient.execute({ sql: "SELECT awaiting_trail FROM expectations WHERE id=?", args: [EXP_ZT_ID] })
+  expect(Number((row.rows[0] as any).awaiting_trail)).toBe(0)
 })

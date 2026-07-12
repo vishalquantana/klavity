@@ -988,6 +988,13 @@ export async function applySchema(c: Client) {
   // via "Guard this fix". NULL for expectations discovered by the normal spine ingest path.
   if (needCol("expectations", "source_ticket_id")) await c.execute("ALTER TABLE expectations ADD COLUMN source_ticket_id TEXT")
     .catch((e: any) => console.warn("expectations.source_ticket_id ALTER skipped:", e?.message || e))
+  // KLA-245 (B.5): awaiting_trail — a validated expectation the user chose to "hold as
+  // validated-awaiting-Trail" from the Enforce flow because the project had no Trail (or none
+  // covering its path) to attach an assert step to. Status stays 'validated'; this flag only
+  // suppresses the Enforce offer until a Trail covering the expectation's urlPath is created,
+  // at which point the enforce list route clears the flag and the offer resurfaces. 0 = not held.
+  if (needCol("expectations", "awaiting_trail")) await c.execute("ALTER TABLE expectations ADD COLUMN awaiting_trail INTEGER NOT NULL DEFAULT 0")
+    .catch((e: any) => console.warn("expectations.awaiting_trail ALTER skipped:", e?.message || e))
   // KLAVITYKLA-301: sim_source — records which Add-a-Sim path created this Sim so the first-run
   // checklist can tick honestly. Values: 'describe' | 'from-site' | 'transcript'. NULL on legacy
   // rows = unknown origin; these are NOT treated as transcript Sims (step 4 stays unticked).

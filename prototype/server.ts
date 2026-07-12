@@ -53,7 +53,8 @@ import { gatherWalkReport } from "./lib/trails-report"
 import { liveWatchSseResponse, openLiveWatchStream } from "./lib/trails-live-watch"
 import { normalizeTrailViewport } from "./lib/trails-viewport"
 import { seedDemoTrails } from "./lib/trails-demo-seed"
-import { listExpectations, getExpectation, setExpectationStatus, setExpectationEnforced, upsertExpectationFromTicket } from "./lib/expectations-db"
+import { listExpectations, getExpectation, setExpectationStatus, setExpectationEnforced, setExpectationAwaitingTrail, resumeAwaitingTrailExpectations, upsertExpectationFromTicket } from "./lib/expectations-db"
+import { pickDefaultTrail, type TrailForPick } from "./lib/expectations"
 import { nearMissSummary } from "./lib/expectations-nearmiss"
 import { createLabel, listLabels, updateLabel, deleteLabel, attachLabel, detachLabel, labelsForFeedback, labelsForFeedbackBatch, setSuggestedLabels, getSuggestedLabels } from "./lib/db"
 import { suggestLabelsForFeedback } from "./lib/label-suggest"
@@ -399,6 +400,36 @@ async function draftAssertion(expectation: any, trail: any, steps: any[], ctx?: 
       "\n\nTRAIL STEPS (idx, action, target):\n" + JSON.stringify(steps.map((s) => ({ idx: s.idx, action: s.action, target: s.target })), null, 0) },
   ], 800, true, { type: "assert-gen", ...ctx })
   return { content, usage }
+}
+
+// B.5 (KLA-245): a short human label for a Trail step so the Enforce confirm card can show WHERE
+// the assert lands (e.g. "after step 4: Submit signup") and the step picker is meaningful.
+function stepLabel(s: any): string {
+  const t = s?.target || {}
+  const named = t.accessibleName || t.name || t.text || t.testId
+  if (named) return `${s.action} ${named}`
+  if (s.action === "navigate" && s.actionValue) return `navigate ${s.actionValue}`
+  return String(s.action || "step")
+}
+
+// B.5 (KLA-245): map DB trails+steps into the DB-free TrailForPick shape used by pickDefaultTrail,
+// plus a UI payload the dashboard renders in the repoint dropdown / step picker.
+async function trailsForEnforce(projectId: string): Promise<{
+  pick: TrailForPick[]
+  ui: Array<{ id: string; name: string; steps: Array<{ afterStepIdx: number; label: string }> }>
+}> {
+  const trails = await listTrails(projectId)
+  const pick: TrailForPick[] = []
+  const ui: Array<{ id: string; name: string; steps: Array<{ afterStepIdx: number; label: string }> }> = []
+  for (const t of trails) {
+    const steps = await listTrailSteps(projectId, t.id)
+    pick.push({ id: t.id, baseUrl: t.baseUrl, stepUrls: steps.map((s) => (s.action === "navigate" ? s.actionValue : null)) })
+    // Step-position options: "after step N: <label>" (afterStepIdx = the step's idx; the assert
+    // lands at idx+1). Only steps at idx >= 0 qualify — validateAssertionDraft rejects negatives.
+    const stepOpts = steps.map((s) => ({ afterStepIdx: s.idx, label: `after step ${s.idx + 1}: ${stepLabel(s)}` }))
+    ui.push({ id: t.id, name: t.name, steps: stepOpts })
+  }
+  return { pick, ui }
 }
 
 // ── P3a reconcile: one LLM call that evolves ONE Sim against ONE transcript (§5 cost guard). ──
@@ -3676,6 +3707,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (req.method === "GET" && path === "/api/expectations") {
         const rawStatus = url.searchParams.get("status")
         const status = (["candidate", "validated", "enforced", "retired"] as const).includes(rawStatus as any) ? (rawStatus as "candidate" | "validated" | "enforced" | "retired") : undefined
+        // B.5 (KLA-245): lazily resume any awaiting-Trail expectations now covered by a Trail, so the
+        // Enforce offer resurfaces on the next board load regardless of how the Trail was created.
+        // Best-effort — a resume failure must never break the list.
+        try {
+          const { pick } = await trailsForEnforce(projE.id)
+          if (pick.length) await resumeAwaitingTrailExpectations(db!, projE.id, pick)
+        } catch (e) { console.warn("[expectations] awaiting-trail resume skipped:", String(e)) }
         return json({ expectations: await listExpectations(db!, projE.id, status) })
       }
 
@@ -3702,6 +3740,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       }
 
       // POST /api/expectations/:id/enforce — draft an assertion (calls LLM). Persists nothing.
+      // B.5 (KLA-245): returns the full Trail picker payload (`trails`) + a urlPath-match default
+      // (`defaultTrailId`) so the confirm card can show WHICH Trail and WHERE the step lands, and
+      // let the user repoint. With zero Trails we return `zeroTrails:true` at 200 (never a 422 dead
+      // end) so the UI can offer the record-a-guard-Trail / hold-as-awaiting fallbacks.
       const enforceMatch = path.match(/^\/api\/expectations\/([^/]+)\/enforce$/)
       if (req.method === "POST" && enforceMatch) {
         const id = enforceMatch[1]
@@ -3709,17 +3751,28 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (!exp || exp.projectId !== projE.id) return json({ error: "not found" }, 404)
         if (exp.status !== "validated") return json({ error: "not validated" }, 409)
         const body = await req.json().catch(() => ({}))
-        const trailId = body.trailId || (await listTrails(projE.id))[0]?.id
-        if (!trailId) return json({ error: "no trail to attach to" }, 422)
+        const { pick, ui } = await trailsForEnforce(projE.id)
+        if (!pick.length) {
+          // No Trail to attach to — offer fallbacks instead of a 422 dead end (B.5 acceptance).
+          return json({ zeroTrails: true, trails: [], defaultTrailId: null })
+        }
+        // Default = the Trail whose recorded steps best match the expectation's urlPath (never the
+        // silent "first Trail" the old code used). An explicit body.trailId still wins (repoint).
+        const { trailId: matchedDefault } = pickDefaultTrail(exp.urlPath, pick)
+        const requested = typeof body.trailId === "string" && body.trailId ? body.trailId : ""
+        const trailId = requested || matchedDefault || pick[0].id
         const trail = await getTrail(projE.id, trailId)
         if (!trail) return json({ error: "trail not found" }, 422)
         const steps = await listTrailSteps(projE.id, trailId)
         const { content } = await draftAssertion(exp, trail, steps, { email: meE, projectId: projE.id })
         const draft = validateAssertionDraft({ ...parseJSON(content), trailId })
-        return json({ draft })
+        return json({ draft, trails: ui, defaultTrailId: matchedDefault ?? trailId })
       }
 
       // POST /api/expectations/:id/enforce/confirm — write the assert step, mark expectation enforced.
+      // B.5 (KLA-245): the assert lands in the trail the DRAFT carries (draft.trailId is required by
+      // validateAssertionDraft) — the server no longer falls back to the project's first Trail. The
+      // draft's afterStepIdx may have been repointed by the user in the picker.
       const confirmMatch = path.match(/^\/api\/expectations\/([^/]+)\/enforce\/confirm$/)
       if (req.method === "POST" && confirmMatch) {
         const id = confirmMatch[1]
@@ -3733,7 +3786,20 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (!trail) return json({ error: "trail not found" }, 422)
         const stepId = await insertAssertStep(projE.id, draft.trailId, draft.afterStepIdx, draft.target, draft.checkpoint)
         await setExpectationEnforced(db!, id, stepId)
-        return json({ stepId })
+        return json({ stepId, trailId: draft.trailId })
+      }
+
+      // POST /api/expectations/:id/hold-awaiting-trail — B.5 (KLA-245): the zero-Trail fallback.
+      // Keeps the expectation validated but flags it awaiting a Trail; the enforce offer is
+      // suppressed until a Trail covering its urlPath is created (auto-resumed on the next board load).
+      const holdMatch = path.match(/^\/api\/expectations\/([^/]+)\/hold-awaiting-trail$/)
+      if (req.method === "POST" && holdMatch) {
+        const id = holdMatch[1]
+        const exp = await getExpectation(db!, id)
+        if (!exp || exp.projectId !== projE.id) return json({ error: "not found" }, 404)
+        if (exp.status !== "validated") return json({ error: "not validated" }, 409)
+        await setExpectationAwaitingTrail(db!, id, true)
+        return json({ ok: true, awaitingTrail: true })
       }
 
       // POST /api/expectations/:id/retire — mark expectation as retired.

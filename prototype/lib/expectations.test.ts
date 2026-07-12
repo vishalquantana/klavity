@@ -1,6 +1,7 @@
 // prototype/lib/expectations.test.ts
 import { test, expect } from "bun:test"
-import { mergeSource, shouldValidate, nextStatus, matchExpectation, matchExpectationWithNearMisses, NEAR_MISS_MIN, RECURRENCE_VALIDATE_N } from "./expectations"
+import { mergeSource, shouldValidate, nextStatus, matchExpectation, matchExpectationWithNearMisses, NEAR_MISS_MIN, RECURRENCE_VALIDATE_N,
+  urlPathOf, trailUrlPathScore, pickDefaultTrail } from "./expectations"
 
 test("mergeSource sets the flag and bumps recurrence", () => {
   const c0 = { snap: false, sim: false, recurrence: 0 }
@@ -69,4 +70,47 @@ test("B.11: below-band noise produces NO near-miss (lower edge filters junk)", (
   const r = matchExpectationWithNearMisses({ title: "Payment gateway integration request" }, existing)
   expect(r.matchId).toBe(null)
   expect(r.nearMisses.length).toBe(0)
+})
+
+// ── B.5 (KLA-245): Trail picker default-by-urlPath (never a silent "first Trail" guess) ──
+
+test("B.5: urlPathOf normalizes absolute, relative, and query/hash-bearing URLs", () => {
+  expect(urlPathOf("https://shop.test/signup?ref=1#top")).toBe("/signup")
+  expect(urlPathOf("/checkout/confirm")).toBe("/checkout/confirm")
+  expect(urlPathOf("http://x/y/z")).toBe("/y/z")
+  expect(urlPathOf("")).toBe("")
+  expect(urlPathOf(null)).toBe("")
+})
+
+test("B.5: trailUrlPathScore rewards exact > containment > same-segment > none", () => {
+  const t = (stepUrls: string[], baseUrl = "https://shop.test") => ({ id: "t", baseUrl, stepUrls })
+  expect(trailUrlPathScore("/signup", t(["https://shop.test/signup"]))).toBe(100)
+  expect(trailUrlPathScore("/signup", t(["https://shop.test/signup/step2"]))).toBe(60)
+  expect(trailUrlPathScore("/signup/details", t(["https://shop.test/signup"]))).toBe(60)
+  expect(trailUrlPathScore("/signup/a", t(["https://shop.test/signup/b"]))).toBe(30)
+  expect(trailUrlPathScore("/signup", t(["https://shop.test/checkout"]))).toBe(0)
+  expect(trailUrlPathScore(null, t(["https://shop.test/signup"]))).toBe(0)
+})
+
+test("B.5: pickDefaultTrail picks the urlPath-matching Trail, NOT the first in the list", () => {
+  // Order mimics listTrails (newest-first). A path-blind "first Trail" would pick "checkout".
+  const trails = [
+    { id: "checkout", baseUrl: "https://shop.test", stepUrls: ["https://shop.test/checkout"] },
+    { id: "signup", baseUrl: "https://shop.test", stepUrls: ["https://shop.test/signup"] },
+  ]
+  const r = pickDefaultTrail("/signup", trails)
+  expect(r.trailId).toBe("signup")
+  expect(r.bestScore).toBe(100)
+})
+
+test("B.5: pickDefaultTrail falls back to the first Trail (bestScore 0) when no path signal", () => {
+  const trails = [
+    { id: "a", baseUrl: "https://shop.test", stepUrls: ["https://shop.test/x"] },
+    { id: "b", baseUrl: "https://shop.test", stepUrls: ["https://shop.test/y"] },
+  ]
+  const r = pickDefaultTrail("/nowhere", trails)
+  expect(r.trailId).toBe("a")
+  expect(r.bestScore).toBe(0)
+  // Zero trails → null.
+  expect(pickDefaultTrail("/signup", []).trailId).toBe(null)
 })
