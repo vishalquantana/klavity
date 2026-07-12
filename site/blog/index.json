@@ -138,5 +138,12 @@
     "excerpt": "AI bug reporting uses AI to turn a rough report into a complete, reproducible ticket — capturing steps, environment, and evidence automatically.",
     "category": "Learn",
     "date": "2026-07-11"
+  },
+  {
+    "slug": "manual-qa-vs-automated-qa",
+    "title": "Manual QA vs. Automated QA: How to Split the Work Right",
+    "excerpt": "Manual and automated QA catch different bugs at different costs. Automate the stable, repetitive checks and keep humans on judgment. Here's the split.",
+    "category": "Compare",
+    "date": "2026-07-12"
   }
 ]
