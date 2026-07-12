@@ -246,6 +246,12 @@ export async function recordSkippedScheduledRun(
   projectId: string,
   trailId: string,
   status: "skipped" | "missed",
+  /**
+   * KLA-216: optional reason + retry outcome preserved on the skipped/missed row (stored in
+   * summary_json). Lets the Walks list and coverage surface explain WHY a scheduled run didn't
+   * happen (e.g. "slot busy for the entire retry window", how many retries were attempted).
+   */
+  detail?: Record<string, unknown>,
 ): Promise<string> {
   const id = uid("walk_")
   const tv = await db!.execute({ sql: `SELECT step_version FROM trails WHERE project_id=? AND id=?`, args: [projectId, trailId] })
@@ -253,8 +259,8 @@ export async function recordSkippedScheduledRun(
   const now = Date.now()
   await db!.execute({
     sql: `INSERT INTO trail_runs (id, trail_id, project_id, trigger, status, llm_calls, summary_json, trail_version, environment_name, started_at, finished_at)
-          VALUES (?, ?, ?, 'scheduled', ?, 0, NULL, ?, NULL, ?, ?)`,
-    args: [id, trailId, projectId, status, trailVersion, now, now],
+          VALUES (?, ?, ?, 'scheduled', ?, 0, ?, ?, NULL, ?, ?)`,
+    args: [id, trailId, projectId, status, j(detail ?? null), trailVersion, now, now],
   })
   return id
 }
@@ -370,6 +376,39 @@ export async function listWalks(projectId: string, trailId: string): Promise<Wal
 export async function listRecentWalks(projectId: string, limit = 20): Promise<Walk[]> {
   const r = await db!.execute({ sql: `SELECT * FROM trail_runs WHERE project_id=? ORDER BY started_at DESC LIMIT ?`, args: [projectId, limit] })
   return r.rows.map(rowToWalk)
+}
+
+/**
+ * KLA-216: Per-project schedule-health coverage over a window. Counts scheduled walk occurrences and
+ * how many actually ran, so "guarded daily" is never silently false: a schedule that quietly skipped
+ * runs shows e.g. "13 of 14 scheduled walks ran". A run "ran" if it reached any real terminal/active
+ * state; it did NOT run if it was recorded skipped or missed. `sinceMs` defaults to 7 days ago.
+ */
+export interface ScheduleCoverage {
+  scheduled: number   // total scheduled occurrences in the window (ran + skipped + missed)
+  ran: number         // occurrences that actually launched a walk
+  skipped: number     // occurrences recorded skipped (slot busy for the whole retry window)
+  missed: number      // occurrences recorded missed (launch error)
+  coverage: number | null // ran / scheduled; null when nothing was scheduled in the window
+}
+
+export async function computeScheduleCoverage(projectId: string, sinceMs?: number): Promise<ScheduleCoverage> {
+  const since = sinceMs ?? Date.now() - 7 * 24 * 3600 * 1000
+  const r = await db!.execute({
+    sql: `SELECT status, COUNT(*) AS n FROM trail_runs
+          WHERE project_id=? AND trigger='scheduled' AND started_at>=?
+          GROUP BY status`,
+    args: [projectId, since],
+  })
+  let scheduled = 0, skipped = 0, missed = 0
+  for (const row of r.rows as any[]) {
+    const n = Number(row.n || 0)
+    scheduled += n
+    if (row.status === "skipped") skipped += n
+    else if (row.status === "missed") missed += n
+  }
+  const ran = scheduled - skipped - missed
+  return { scheduled, ran, skipped, missed, coverage: scheduled > 0 ? ran / scheduled : null }
 }
 
 // KLA-158: Paginated walk list for the All Walks page. Returns walks + total count in one round-trip.

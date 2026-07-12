@@ -367,6 +367,16 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
     <div class="sub" id="precSub">Once you've reviewed findings below, this shows what share were genuine bugs vs. false alarms. Appears after your first few reviews.</div>
   </div>
 
+  <!-- KLA-216: schedule-health coverage — honest "N of M scheduled walks ran" over the last 7 days.
+       Hidden until at least one scheduled walk exists so we never claim "guarded" without evidence. -->
+  <div class="banner" id="covBanner" style="display:none">
+    <div>
+      <div class="lbl">Schedule health · scheduled walks that ran</div>
+      <div class="pct" id="covPct">—</div>
+    </div>
+    <div class="sub" id="covSub"></div>
+  </div>
+
   <!-- Trails (each runnable on-demand) -->
   <div class="card" style="margin-bottom:18px">
     <h2 id="trailsCardHead">AutoSims <span class="count" id="trailsCount">0</span></h2>
@@ -1874,6 +1884,24 @@ async function render(d){
   } else {
     $("precPct").textContent = Math.round(p.precision * 100) + "%"
     $("precSub").textContent = p.filed + " filed · " + p.dismissed + " dismissed — the share of reviewed findings that were real bugs."
+  }
+
+  // KLA-216: schedule-health coverage — only claim "guarded" when we can prove it ran.
+  const cov = d.coverage || {}
+  if (cov.scheduled > 0) {
+    $("covBanner").style.display = ""
+    const pct = cov.coverage == null ? "—" : Math.round(cov.coverage * 100) + "%"
+    $("covPct").textContent = pct
+    var covMsg = cov.ran + " of " + cov.scheduled + " scheduled walks ran in the last 7 days"
+    var missedTotal = (cov.skipped || 0) + (cov.missed || 0)
+    if (missedTotal > 0) {
+      covMsg += " — " + missedTotal + " did not (see skipped/missed rows below)."
+    } else {
+      covMsg += " — fully guarded."
+    }
+    $("covSub").textContent = covMsg
+  } else {
+    $("covBanner").style.display = "none"
   }
 
   // walks
