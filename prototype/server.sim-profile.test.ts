@@ -26,7 +26,7 @@ await rawExec(`CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, account
 await rawExec(`CREATE TABLE IF NOT EXISTS project_members (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, email TEXT NOT NULL, project_role TEXT NOT NULL DEFAULT 'member', invited_by TEXT, created_at INTEGER NOT NULL, UNIQUE(project_id, email))`)
 await rawExec(`CREATE TABLE IF NOT EXISTS feedback (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, sim_id TEXT, actor_email TEXT, url_host TEXT, url_path TEXT, observation TEXT, sentiment TEXT, severity TEXT, priority TEXT, screenshot_id TEXT, suggested_bug_json TEXT, cited_trait_ids_json TEXT, source_quote TEXT, source_transcript_id TEXT, source_date INTEGER, plane_issue_key TEXT, plane_issue_url TEXT, status TEXT NOT NULL DEFAULT 'open', assignee TEXT, notes TEXT, updated_at INTEGER, created_at INTEGER NOT NULL)`)
 await rawExec(`CREATE INDEX IF NOT EXISTS fb_sim_idx ON feedback (sim_id, created_at)`)
-await rawExec(`CREATE TABLE IF NOT EXISTS personas (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL, role TEXT, type TEXT NOT NULL DEFAULT 'client', initials TEXT, accent TEXT, summary TEXT, insights_json TEXT, avatar TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
+await rawExec(`CREATE TABLE IF NOT EXISTS personas (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL, role TEXT, type TEXT NOT NULL DEFAULT 'client', initials TEXT, accent TEXT, summary TEXT, insights_json TEXT, avatar TEXT, sim_class TEXT, side TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
 await rawExec(`CREATE TABLE IF NOT EXISTS sim_traits (id TEXT PRIMARY KEY, sim_id TEXT NOT NULL, project_id TEXT NOT NULL, kind TEXT NOT NULL, text TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', strength INTEGER NOT NULL DEFAULT 1, src_transcript_id TEXT NOT NULL, src_quote TEXT NOT NULL, src_quote_offset INTEGER, src_speaker TEXT, area TEXT, issue_type TEXT, severity TEXT, priority TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
 await rawExec(`CREATE TABLE IF NOT EXISTS trait_events (id TEXT PRIMARY KEY, trait_id TEXT NOT NULL, sim_id TEXT NOT NULL, transcript_id TEXT NOT NULL, op TEXT NOT NULL, before_text TEXT, after_text TEXT, quote TEXT NOT NULL, quote_offset INTEGER, speaker TEXT, source_date INTEGER NOT NULL, reason TEXT, created_at INTEGER NOT NULL)`)
 await rawExec(`CREATE TABLE IF NOT EXISTS transcripts (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, title TEXT, raw_text TEXT NOT NULL, source_date INTEGER NOT NULL, speakers_json TEXT, added_by TEXT NOT NULL, created_at INTEGER NOT NULL)`)
@@ -37,6 +37,7 @@ const ACCOUNT_ID = `acct_sp_${ts}`
 const PROJECT_ID = `proj_sp_${ts}`
 const SIM_ID = `sim_sp_${ts}`
 const OTHER_SIM = `sim_other_${ts}`
+const USER_SIM = `sim_user_${ts}` // JTBD 3.7: a v3 "user"-class Sim (legacy type='internal')
 const TX_ID = `tx_sp_${ts}`
 const TRAIT_ID = `trait_sp_${ts}`
 const NOW = Date.now()
@@ -53,6 +54,10 @@ await rawExec(`INSERT INTO personas (id, project_id, name, role, type, initials,
   [SIM_ID, PROJECT_ID, "Sarah Chen", "Procurement Lead", "client", "SC", "#6366f1", "Efficiency-obsessed buyer", JSON.stringify([{ kind: "pain", text: "Slow approvals", quote: "Approvals take forever" }]), NOW, NOW])
 await rawExec(`INSERT INTO personas (id, project_id, name, role, type, initials, accent, summary, insights_json, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
   [OTHER_SIM, PROJECT_ID, "Other Sim", "Decoy", "client", "OS", "#999999", "decoy", "[]", NOW, NOW])
+// A v3 user-class Sim: sim_class='user' with the legacy type='internal' shim. The profile pill must
+// render "User" here, NOT "client" (the pre-3.7 bug labeled it "client").
+await rawExec(`INSERT INTO personas (id, project_id, name, role, type, sim_class, initials, accent, summary, insights_json, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+  [USER_SIM, PROJECT_ID, "Dana Ops", "Product Operator", "internal", "user", "DO", "#d98324", "Hands-on operator", "[]", NOW, NOW])
 
 // A trait + the source transcript that seeded it (linked via a trait_event)
 await rawExec(`INSERT INTO transcripts (id, project_id, title, raw_text, source_date, speakers_json, added_by, created_at) VALUES (?,?,?,?,?,?,?,?)`,
@@ -146,4 +151,23 @@ test("GET /sim/:id redirects to /login when signed out", async () => {
   const res = await fetch(`${BASE}/sim/${SIM_ID}`, { redirect: "manual" })
   expect([301, 302, 303, 307, 308]).toContain(res.status)
   expect(res.headers.get("location") || "").toContain("/login")
+})
+
+// ── JTBD 3.7: v3 User/Client vocabulary on the Sim profile ──
+test("profile API carries simClass so the pill can render v3 User/Client vocabulary", async () => {
+  const res = await get(`/api/sims/${USER_SIM}/profile?project=${PROJECT_ID}`)
+  expect(res.status).toBe(200)
+  const body = await res.json()
+  // The user-class Sim must expose simClass="user" — the client renders "User" from this, never "client".
+  expect(body.sim.simClass).toBe("user")
+})
+
+test("profile page no longer hardcodes the legacy pill that mislabels a user-class Sim as client", async () => {
+  const res = await get(`/sim/${USER_SIM}`)
+  expect(res.status).toBe(200)
+  const html = await res.text()
+  // The pre-3.7 bug: `s.type === "internal" ? "internal" : "client"` — a v3 user-class Sim rendered
+  // "client". That expression must be gone, replaced by the User/Client simClass resolution.
+  expect(html).not.toContain('s.type === "internal" ? "internal" : "client"')
+  expect(html).toContain('s.simClass === "client" || s.simClass === "user"')
 })

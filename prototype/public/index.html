@@ -1150,45 +1150,14 @@ function ssFilterList(q) {
 // Stubs filled in later tasks (defined here so renderStudio never throws on missing fns).
 function openNewSimForm() { ssOpenNewSimForm() }
 function openTranscriptUpload() { ssOpenTranscriptUpload() }
-// ── Task 7: + New Sim — inline form in col 2 → POST /api/personas → navigate ──
+// ── + New Sim — route to the dashboard's v3 Add-a-Sim modal (JTBD 3.7) ──
+// The legacy Studio form POSTed a v2-shaped stub to /api/personas (name/role/type only, no core),
+// contradicting the User/Client vocabulary and leaving coreless Sims. All creation now flows through
+// the single v3 Add-a-Sim path (describe / from-site / transcript, each stamping simClass + core) via
+// the dashboard's ?create-sim=1 deep link, so there is exactly one creation surface.
 function ssOpenNewSimForm() {
-  const col = $("ssCol2"); if (!col) return
-  col.innerHTML = `<div class="ss-scroll"><div class="ss-c2-pad">
-    <div class="ss-newform">
-      <div class="ss-c1-top" style="margin-bottom:10px"><h2 style="font-family:var(--display);font-size:18px">New Sim</h2></div>
-      <input id="ssNewName" placeholder="Name" />
-      <input id="ssNewRole" placeholder="Role (e.g. Procurement Lead · Acme)" />
-      <select id="ssNewType"><option value="client">client</option><option value="internal">internal</option></select>
-      <textarea id="ssNewSummary" rows="3" placeholder="One-line summary"></textarea>
-      <div class="ss-mini-row">
-        <button class="ss-mini-btn primary" id="ssNewSave">Create Sim</button>
-        <button class="ss-mini-btn ghost" id="ssNewCancel">Cancel</button>
-      </div>
-    </div>
-  </div></div>`
-  const nm = $("ssNewName"); if (nm) nm.focus()
-  $("ssNewCancel").onclick = () => { if (ssActiveSim) renderPersonaDetail(ssActiveSim); else { const c = $("ssCol2"); if (c) c.innerHTML = "" } }
-  $("ssNewSave").onclick = async () => {
-    const name = ($("ssNewName").value || "").trim()
-    if (!name) { ssToast("Name is required."); return }
-    const role = ($("ssNewRole").value || "").trim()
-    const type = $("ssNewType").value
-    const summary = ($("ssNewSummary").value || "").trim()
-    const initials = name.slice(0, 2).toUpperCase()
-    const btn = $("ssNewSave"); btn.disabled = true; btn.textContent = "Creating…"
-    try {
-      const r = await fetch(pq('/api/personas'), {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name, role, type, initials, accent: "#6366f1", summary, insights: [] }),
-      })
-      const d = await r.json().catch(() => ({}))
-      if (!r.ok || !d.persona?.id) throw new Error(d.error || "create failed")
-      ssNavigateToSim(d.persona.id)
-    } catch (e) {
-      btn.disabled = false; btn.textContent = "Create Sim"
-      ssToast("Create failed: " + e.message)
-    }
-  }
+  const pid = studioProjectId()
+  location.href = "/dashboard?create-sim=1" + (pid ? "&project=" + encodeURIComponent(pid) : "")
 }
 
 // ── Task 7: transcript upload — paste/drop form in col 2 → POST /api/transcripts ──
