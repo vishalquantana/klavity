@@ -146,8 +146,22 @@ export function buildFeedbackForm(input: { type?: string; description: string; p
   // Screenshots: widget receives data URLs (html-to-image), so we convert inline.
   // Extension path fetches blobs via fetch(dataUrl) in submitReport instead.
   for (const s of input.screenshots) fd.append("screenshots", dataUrlToBlob(s), "screenshot.png")
-  // Annotation overlay (KLAVITYKLA-1): structured markup { w, h, shapes } for the clean screenshot, so the
-  // ticket can re-render a toggleable/zoomable highlight. Extension draws nothing, widget-only.
-  if (input.annotations && Array.isArray(input.annotations.shapes) && input.annotations.shapes.length) fd.set("annotations_json", JSON.stringify(input.annotations))
+  // Annotation overlay (KLAVITYKLA-1 / KLAVITYKLA-217): structured markup { w, h, shapes, byIndex } so the
+  // ticket can re-render a toggleable/zoomable highlight on EVERY annotated screenshot (not just #1). The
+  // top-level shapes carry screenshot #0 (backward compat); `byIndex` maps each image index → its markup.
+  // Serialize when either the hoisted shapes OR any per-image entry has shapes. Extension draws nothing, widget-only.
+  if (hasAnnotations(input.annotations)) fd.set("annotations_json", JSON.stringify(input.annotations))
   return fd
+}
+
+// True when the annotations payload carries at least one drawn shape — either on the hoisted (index-0)
+// entry or on any per-image `byIndex` entry. Guards against serializing an empty/whitespace overlay.
+function hasAnnotations(ann: any): boolean {
+  if (!ann || typeof ann !== "object") return false
+  const nonEmpty = (o: any) => o && Array.isArray(o.shapes) && o.shapes.length > 0
+  if (nonEmpty(ann)) return true
+  if (ann.byIndex && typeof ann.byIndex === "object") {
+    for (const k of Object.keys(ann.byIndex)) if (nonEmpty(ann.byIndex[k])) return true
+  }
+  return false
 }

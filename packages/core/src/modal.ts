@@ -117,6 +117,19 @@ export function buildModal(
   // Structured markup per screenshot index { w, h, shapes } so the ticket can re-render a
   // toggleable/zoomable overlay instead of baking the drawing into the uploaded image.
   const annotationsByIndex: Record<number, any> = {}
+  // KLAVITYKLA-217: serialize the FULL per-image markup map (not just screenshot #0). The wire shape
+  // stays backward-compatible — the index-0 entry's fields ({ w, h, shapes, … }) are hoisted to the top
+  // level so existing single-image consumers (server sanitizer + ticket drawer) keep working unchanged,
+  // while `byIndex` carries every annotated image so overlays on screenshots 2–5 no longer vanish.
+  // Returns null when nothing is annotated (identical to the previous `annotationsByIndex[0] ?? null`).
+  const buildAnnotationsPayload = (): any => {
+    const keys = Object.keys(annotationsByIndex)
+    if (!keys.length) return null
+    const byIndex: Record<string, any> = {}
+    for (const k of keys) byIndex[k] = annotationsByIndex[k as any]
+    const base = annotationsByIndex[0] ?? annotationsByIndex[Number(keys[0])] ?? {}
+    return { ...base, byIndex }
+  }
   let currentType = initialType
   let autodismissTimeout: any = null
 
@@ -398,6 +411,14 @@ export function buildModal(
         e.stopPropagation()
         screenshots.splice(i, 1)
         screenshotCompressed.splice(i, 1)
+        // KLAVITYKLA-217: keep annotationsByIndex aligned with the (now shifted) screenshot indices —
+        // drop the removed image's markup and slide every higher index down by one. Without this, submitting
+        // the full per-image map would attach an annotation to the wrong screenshot after a mid-strip delete.
+        delete annotationsByIndex[i]
+        for (const key of Object.keys(annotationsByIndex).map(Number).filter(n => n > i).sort((a, b) => a - b)) {
+          annotationsByIndex[key - 1] = annotationsByIndex[key]
+          delete annotationsByIndex[key]
+        }
         if (screenshots.length === 0) {
           setActiveCapture(null)
         }
@@ -557,7 +578,7 @@ export function buildModal(
       // seconds, these Promises are already settled — zero wait. Falls back to the raw dataUrl when
       // compressImage is not provided (e.g. extension path).
       const finalScreenshots = await Promise.all(screenshotCompressed)
-      const result = await callbacks.onSubmit({ type: currentType, description, screenshots: finalScreenshots, annotations: annotationsByIndex[0] ?? null, reporterEmail: remail?.value.trim() || undefined })
+      const result = await callbacks.onSubmit({ type: currentType, description, screenshots: finalScreenshots, annotations: buildAnnotationsPayload(), reporterEmail: remail?.value.trim() || undefined })
       finishProgress()
       if (callbacks.success) {
         // Mode-aware lead/CTA screen rendered THROUGH the existing themed modal — no auto-close;

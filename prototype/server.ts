@@ -1907,28 +1907,54 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           try { clientContext = sanitizeClientContext(JSON.parse(ctxRaw)) } catch { clientContext = null }
         }
 
-        // Annotation overlay (KLAVITYKLA-1): structured markup { w, h, shapes:[], region?, selector? } so the
-        // ticket can re-render the highlight over the screenshot. Optional, size-capped, sanitized defensively
-        // (coords coerced to finite numbers, shape types allowlisted, strings clamped) since it renders into the DOM.
+        // Annotation overlay (KLAVITYKLA-1 / KLAVITYKLA-217): structured markup { w, h, shapes:[], region?,
+        // selector?, byIndex? } so the ticket can re-render the highlight over EACH screenshot. Optional,
+        // size-capped, sanitized defensively (coords coerced to finite numbers, shape types allowlisted, strings
+        // clamped) since it renders into the DOM. The `byIndex` map carries every annotated image (2–5 no longer
+        // dropped); the hoisted top-level fields mirror index-0 for backward-compatible single-image consumers.
         let annotations: any = null
         const annRaw = String(form.get("annotations_json") || "")
-        if (annRaw && annRaw.length <= 100_000) {
+        if (annRaw && annRaw.length <= 500_000) {
           try {
             const a = JSON.parse(annRaw)
             const num = (v: any) => (typeof v === "number" && isFinite(v)) ? v : 0
             const okTypes = new Set(["rect", "arrow", "circle", "pen", "text", "pin"])
-            const shapes = Array.isArray(a?.shapes) ? a.shapes.slice(0, 50).filter((s: any) => s && okTypes.has(s.type)).map((s: any) => {
-              const o: any = { type: String(s.type) }
-              for (const k of ["x", "y", "w", "h", "x1", "y1", "x2", "y2", "rx", "ry", "n"]) if (s[k] != null) o[k] = num(s[k])
-              if (s.color != null) o.color = String(s.color).slice(0, 24)
-              if (s.label != null) o.label = String(s.label).slice(0, 200)
-              if (s.type === "text") o.text = String(s.text ?? "").slice(0, 200)
-              if (Array.isArray(s.points)) o.points = s.points.slice(0, 400).map((p: any) => ({ x: num(p?.x), y: num(p?.y) }))
-              return o
-            }) : []
-            const region = a?.region ? { x: num(a.region.x), y: num(a.region.y), w: num(a.region.w), h: num(a.region.h) } : null
-            const selector = a?.selector != null ? String(a.selector).slice(0, 300) : null
-            annotations = (shapes.length || region || selector) ? { w: num(a?.w), h: num(a?.h), shapes, region, selector } : null
+            // Sanitize a single image's markup entry ({ w, h, shapes, region, selector }) → null when empty.
+            const sanitizeEntry = (a: any): any => {
+              const shapes = Array.isArray(a?.shapes) ? a.shapes.slice(0, 50).filter((s: any) => s && okTypes.has(s.type)).map((s: any) => {
+                const o: any = { type: String(s.type) }
+                for (const k of ["x", "y", "w", "h", "x1", "y1", "x2", "y2", "rx", "ry", "n"]) if (s[k] != null) o[k] = num(s[k])
+                if (s.color != null) o.color = String(s.color).slice(0, 24)
+                if (s.label != null) o.label = String(s.label).slice(0, 200)
+                if (s.type === "text") o.text = String(s.text ?? "").slice(0, 200)
+                if (Array.isArray(s.points)) o.points = s.points.slice(0, 400).map((p: any) => ({ x: num(p?.x), y: num(p?.y) }))
+                return o
+              }) : []
+              const region = a?.region ? { x: num(a.region.x), y: num(a.region.y), w: num(a.region.w), h: num(a.region.h) } : null
+              const selector = a?.selector != null ? String(a.selector).slice(0, 300) : null
+              return (shapes.length || region || selector) ? { w: num(a?.w), h: num(a?.h), shapes, region, selector } : null
+            }
+            const base = sanitizeEntry(a)
+            // Per-image map: sanitize each entry independently (capped at MAX_IMAGES=5 keys). Every image's
+            // shapes are validated — not just index 0 — so no screenshot's markup escapes sanitization.
+            let byIndex: Record<string, any> | null = null
+            if (a?.byIndex && typeof a.byIndex === "object" && !Array.isArray(a.byIndex)) {
+              const keys = Object.keys(a.byIndex).filter(k => /^\d+$/.test(k)).slice(0, 5)
+              for (const k of keys) {
+                const entry = sanitizeEntry(a.byIndex[k])
+                if (entry) { (byIndex ||= {})[k] = entry }
+              }
+            }
+            if (base && byIndex) annotations = { ...base, byIndex }
+            else if (base) annotations = byIndex ? { ...base, byIndex } : base
+            else if (byIndex) {
+              // No usable index-0 entry but later images are annotated — hoist the lowest-index entry so the
+              // existing single-image drawer still shows something while byIndex carries the full set.
+              const lowest = Object.keys(byIndex).map(Number).sort((x, y) => x - y)[0]
+              annotations = { ...byIndex[String(lowest)], byIndex }
+            } else {
+              annotations = null
+            }
           } catch { annotations = null }
         }
 
