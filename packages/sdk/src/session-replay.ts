@@ -22,9 +22,11 @@
 //   blockClass: 'klavity-no-record'  — hide any element with this class.
 //
 // SIZE/ROLLING-WINDOW DEFAULTS:
-//   windowMs:   30_000   — retain the last ~30 seconds of events.
+//   windowMs:   60_000   — retain the last ~60 seconds of events.
 //   maxEvents:  2_000    — hard cap independent of time (memory guard).
-// (Callers may override; ≥45 s window is also fine — server gzip caps the payload at 6 MB.)
+// (Callers may override. 60 s comfortably fits the intake caps: the server rejects a raw payload
+//  over 6 MB and saveFeedbackReplay durably trims the stored gzip to ~600 KB oldest-first, so a busy
+//  page's longer buffer degrades gracefully instead of failing the submit.)
 //
 // Best-effort throughout: rrweb load failures, recordFn errors, and stop() on a not-yet-started
 // recorder all degrade silently — snapshot() returns [] and the report submits without replay.
@@ -94,7 +96,7 @@ export function createSessionReplay(opts: SessionReplayOptions): SessionReplay {
   let ctrl: ReplayController | null = null
 
   const replayOpts: StartReplayOptions = {
-    windowMs:      opts.windowMs  ?? 30_000,
+    windowMs:      opts.windowMs  ?? 60_000,
     maxEvents:     opts.maxEvents ?? 2_000,
     maskAllInputs: opts.maskAllInputs !== false,  // default ON
     maskText:      opts.maskText      !== false,  // default ON

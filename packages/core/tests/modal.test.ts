@@ -540,8 +540,59 @@ describe('buildModal Screen tooltip positioning', () => {
     
     // Active state should be cleared since screenshots length is 0
     expect(fullBtn.classList.contains('kl-active')).toBe(false)
-    
+
     ctrl.close()
     vi.useRealTimers()
+  })
+})
+
+// JTBD 1.8: attached-proof replay chip
+describe('buildModal replay chip (JTBD 1.8)', () => {
+  const base = { onCaptureFull: async () => 'x', onSubmit: async () => ({ issueKey: '1', issueUrl: '' }) }
+
+  it('renders no chip when replayState is omitted (e.g. the extension path)', () => {
+    const ctrl = buildModal('bug', { ...base })
+    expect(q(ctrl, '.klavity-proof')).toBeNull()
+    expect(q(ctrl, '#klavity-replay-chip')).toBeNull()
+    ctrl.close()
+  })
+
+  it("renders the attached chip ('Replay · 60s' + on-state) when replayState is 'attached'", () => {
+    const ctrl = buildModal('bug', { ...base, replayState: 'attached' })
+    const chip = q(ctrl, '#klavity-replay-chip')!
+    expect(chip).not.toBeNull()
+    expect(chip.textContent).toContain('Replay')
+    expect(chip.textContent).toContain('60s')
+    expect(chip.classList.contains('kl-chip-on')).toBe(true)
+    expect(chip.classList.contains('kl-chip-off')).toBe(false)
+    ctrl.close()
+  })
+
+  it("renders the not-available chip when replayState is 'unavailable'", () => {
+    const ctrl = buildModal('bug', { ...base, replayState: 'unavailable' })
+    const chip = q(ctrl, '#klavity-replay-chip')!
+    expect(chip).not.toBeNull()
+    expect(chip.textContent).toContain('not available')
+    expect(chip.classList.contains('kl-chip-off')).toBe(true)
+    expect(chip.classList.contains('kl-chip-on')).toBe(false)
+    ctrl.close()
+  })
+
+  it('setReplayState flips the chip from unavailable → attached after mount (rrweb loads async)', () => {
+    const ctrl = buildModal('bug', { ...base, replayState: 'unavailable' })
+    let chip = q(ctrl, '#klavity-replay-chip')!
+    expect(chip.textContent).toContain('not available')
+    ctrl.setReplayState('attached')
+    chip = q(ctrl, '#klavity-replay-chip')!
+    expect(chip.textContent).toContain('60s')
+    expect(chip.classList.contains('kl-chip-on')).toBe(true)
+    ctrl.close()
+  })
+
+  it('setReplayState is a no-op (no throw) when no chip was rendered', () => {
+    const ctrl = buildModal('bug', { ...base })
+    expect(() => ctrl.setReplayState('attached')).not.toThrow()
+    expect(q(ctrl, '#klavity-replay-chip')).toBeNull()
+    ctrl.close()
   })
 })
