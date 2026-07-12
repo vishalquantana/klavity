@@ -38,7 +38,14 @@ export const githubConnector: Connector = {
           "User-Agent": "Klavity",
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ title: ticket.title, body: ticket.body }),
+        // JTBD 2.16: GitHub accepts labels natively as an array of strings. GitHub will only
+        // apply labels that already exist in the repo; unknown ones are ignored (never an error),
+        // so passing Klavity's label names is safe. Omit the field entirely when there are none.
+        body: JSON.stringify({
+          title: ticket.title,
+          body: ticket.body,
+          ...(ticket.labels?.length ? { labels: ticket.labels } : {}),
+        }),
       },
       { allowHosts: ["github.com"] },
     )

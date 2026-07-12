@@ -888,6 +888,16 @@ async function feedbackToTicketPayload(fb: any, project: { id: string; name?: st
   if (urlVal) lines.push(`URL: ${urlVal}`)
   // Where the visitor came from (document.referrer), when captured.
   if (fb.sourceReferrer) lines.push(`Referred from: ${fb.sourceReferrer}`)
+  // JTBD 2.16: resolve the ticket's Klavity labels so the export carries the classification.
+  // Passed as the structured `labels` field on the payload; each connector surfaces them in its
+  // own idiomatic way (GitHub/Jira native label field, Plane/Linear description line, webhook
+  // structured array) — see the connector adapters. Best-effort; never blocks the export.
+  let labelNames: string[] = []
+  if (fb.id) {
+    try {
+      labelNames = (await labelsForFeedback(String(fb.id))).map((l: any) => String(l.name)).filter(Boolean)
+    } catch (e: any) { console.warn("label lookup failed for ticket payload (non-fatal):", e?.message || e) }
+  }
   // G2/G3/G5: append captured dev-tools context (console + network + env + identity/metadata) so the
   // external ticket carries the same technical context the extension path does.
   if (fb.clientContext) {
@@ -923,6 +933,7 @@ async function feedbackToTicketPayload(fb: any, project: { id: string; name?: st
     createdAt: fb.createdAt,
     klavityUrl: `${BASE}/dashboard?project=${project.id}`,
     attachments,
+    labels: labelNames,
   }
 }
 
