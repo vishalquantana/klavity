@@ -546,6 +546,24 @@ export async function applySchema(c: Client) {
      )`,
     `CREATE INDEX IF NOT EXISTS exp_proj_status_idx ON expectations(project_id, status)`,
     `CREATE INDEX IF NOT EXISTS exp_proj_dedup_idx ON expectations(project_id, dedup_key)`,
+    // ── KLA-251 (B.11): declined near-miss log — cross-source matching instrumentation. ──
+    // Every candidate pair that scores in the near-miss BAND (below the 0.82 accept threshold but
+    // above the noise floor) is recorded here so we can MEASURE how often the lexical threshold
+    // under-matches Snap↔AutoSim pairs before deciding to build the embeddings upgrade. This is a
+    // pure observability sink — no user-visible behavior depends on it and upsert never reads it back.
+    `CREATE TABLE IF NOT EXISTS expectation_near_misses (
+       id TEXT PRIMARY KEY,
+       project_id TEXT NOT NULL,
+       cand_title TEXT NOT NULL,
+       existing_id TEXT NOT NULL,
+       existing_title TEXT NOT NULL,
+       cand_kind TEXT,                 -- source kind of the incoming candidate ('snap'|'sim'|'autosim')
+       existing_kinds_json TEXT,       -- source kinds already on the existing expectation, deduped
+       score REAL NOT NULL,            -- lexical similarity of the declined pair (band.min..threshold)
+       threshold REAL NOT NULL,        -- accept threshold in force when this pair was declined
+       created_at INTEGER NOT NULL
+     )`,
+    `CREATE INDEX IF NOT EXISTS exp_nearmiss_proj_idx ON expectation_near_misses(project_id, created_at)`,
     // ── widget heartbeat: one row per (project, host) recording the last time /widget.js loaded there.
     //    Powers the dashboard "Widget: active — last seen … on …" / "not detected yet" indicator. ──
     `CREATE TABLE IF NOT EXISTS widget_pings (
