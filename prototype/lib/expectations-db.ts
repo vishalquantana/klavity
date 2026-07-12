@@ -1,7 +1,7 @@
 // prototype/lib/expectations-db.ts
 import type { Client } from "@libsql/client"
-import { mergeSource, nextStatus, matchExpectationWithNearMisses,
-  type SourceRef, type Corroboration, type ExpStatus } from "./expectations"
+import { mergeSource, nextStatus, matchExpectationWithNearMisses, trailUrlPathScore,
+  type SourceRef, type Corroboration, type ExpStatus, type TrailForPick } from "./expectations"
 import { logNearMisses, embeddingsRematch, embeddingsEnabled } from "./expectations-nearmiss"
 
 /**
@@ -22,6 +22,8 @@ export type ExpectationRow = {
   savesCount: number
   /** KLA-242: feedback ticket id this guard was created from via "Guard this fix" */
   sourceTicketId: string | null
+  /** KLA-245 (B.5): held as validated-awaiting-Trail — Enforce offer suppressed until a matching Trail exists. */
+  awaitingTrail: boolean
 }
 
 function rowTo(x: any): ExpectationRow {
@@ -33,6 +35,7 @@ function rowTo(x: any): ExpectationRow {
     createdAt: Number(x.created_at), updatedAt: Number(x.updated_at),
     savesCount: Number(x.saves_count ?? 0),
     sourceTicketId: x.source_ticket_id ?? null,
+    awaitingTrail: !!Number(x.awaiting_trail ?? 0),
   }
 }
 
@@ -130,7 +133,55 @@ export async function setExpectationStatus(c: Client, id: string, status: ExpSta
 }
 
 export async function setExpectationEnforced(c: Client, id: string, enforcedStepId: string): Promise<void> {
-  await c.execute({ sql: "UPDATE expectations SET status='enforced', enforced_step_id=?, updated_at=? WHERE id=?", args: [enforcedStepId, Date.now(), id] })
+  // KLA-245 (B.5): enforcing always clears any awaiting-Trail hold (best-effort — old schemas
+  // without the column still enforce, just without touching the flag).
+  await c.execute({ sql: "UPDATE expectations SET status='enforced', enforced_step_id=?, awaiting_trail=0, updated_at=? WHERE id=?", args: [enforcedStepId, Date.now(), id] })
+    .catch(async (e: any) => {
+      if (!String(e?.message || e).includes("awaiting_trail")) throw e
+      await c.execute({ sql: "UPDATE expectations SET status='enforced', enforced_step_id=?, updated_at=? WHERE id=?", args: [enforcedStepId, Date.now(), id] })
+    })
+}
+
+/**
+ * KLA-245 (B.5): "Hold as validated-awaiting-Trail" — the user hit Enforce but the project has no
+ * Trail (or none covering the path) to attach an assert step to. We keep the expectation validated
+ * and set awaiting_trail=1 so the board can show a "waiting for a Trail" state and suppress the
+ * Enforce offer until a matching Trail is created (see resumeAwaitingTrailExpectations).
+ */
+export async function setExpectationAwaitingTrail(c: Client, id: string, awaiting: boolean): Promise<void> {
+  await c.execute({ sql: "UPDATE expectations SET awaiting_trail=?, updated_at=? WHERE id=?", args: [awaiting ? 1 : 0, Date.now(), id] })
+    .catch((e: any) => { if (!String(e?.message || e).includes("awaiting_trail")) throw e })
+}
+
+/**
+ * KLA-245 (B.5): resume awaiting-Trail expectations whose urlPath is now covered by an existing
+ * Trail. Called lazily by the enforce list route so the Enforce offer resurfaces regardless of HOW
+ * the covering Trail was created (approve / author / seed). Clears awaiting_trail for each matching
+ * expectation and returns the count resumed. No-op (returns 0) when the column is absent.
+ */
+export async function resumeAwaitingTrailExpectations(
+  c: Client,
+  projectId: string,
+  trails: TrailForPick[],
+): Promise<number> {
+  if (!trails.length) return 0
+  let rows: any[]
+  try {
+    const r = await c.execute({
+      sql: "SELECT id, url_path FROM expectations WHERE project_id=? AND status='validated' AND awaiting_trail=1",
+      args: [projectId],
+    })
+    rows = r.rows as any[]
+  } catch (e: any) {
+    if (String(e?.message || e).includes("awaiting_trail")) return 0
+    throw e
+  }
+  let resumed = 0
+  for (const row of rows) {
+    const covered = trails.some((t) => trailUrlPathScore(row.url_path ?? null, t) > 0)
+    if (covered) { await setExpectationAwaitingTrail(c, String(row.id), false); resumed++ }
+  }
+  return resumed
 }
 
 /**

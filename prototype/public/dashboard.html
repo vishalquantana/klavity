@@ -7999,26 +7999,94 @@ load()
     if(!savesCount)return''
     return'<span class="ec-badge" style="background:rgba(99,102,241,.14);color:var(--indigo)" title="Times this guard caught a regression">'+esc(String(savesCount))+' save'+(savesCount===1?'':'s')+'</span>'
   }
+  // B.5 (KLA-245): open the New AutoSim wizard prefilled to record a short guard Trail scoped to
+  // this expectation's URL + evidence. Used by the zero-Trail fallback so the user is never dead-ended.
+  function openGuardTrailWizard(exp){
+    if(typeof openWizard!=="function")return
+    openWizard()
+    try{
+      var name=document.getElementById("wizName");if(name)name.value=("Guard: "+(exp.title||"")).slice(0,80)
+      var urlEl=document.getElementById("wizUrl")
+      if(urlEl&&exp.urlPath&&!urlEl.value){
+        // Seed a full URL when urlPath is a path; leave absolute URLs as-is.
+        var p=String(exp.urlPath)
+        urlEl.value=/^https?:\/\//i.test(p)?p:(location.origin+ (p.charAt(0)==="/"?p:"/"+p))
+      }
+      var objEl=document.getElementById("wizObj")
+      if(objEl&&!objEl.value){
+        objEl.value="Record a short (about 3-step) guard that reaches "+(exp.urlPath||"the page")+
+          " and verifies: "+(exp.title||"the expected behaviour")+". Keep it minimal — just enough to catch this regression."
+      }
+    }catch(e){}
+  }
+  // B.5: render the zero-Trail fallback inside a validated card (no Trail exists to attach to).
+  function renderZeroTrailFallback(exp,card,btn,msgEl){
+    var pid=projParam();var qs=pid?"?project="+encodeURIComponent(pid):""
+    var actsEl=card.querySelector(".ec-acts");if(actsEl)actsEl.style.display="none"
+    var fb=document.createElement("div");fb.className="ec-confirm"
+    fb.innerHTML='<div class="cc-target">No AutoSim Trail exists yet to attach this guard to.</div>'
+      +'<div class="cc-acts"><button class="btn btn-indigo" data-record-trail>'+kicon("shield",{size:13})+' Record a guard Trail</button>'
+      +'<button class="btn btn-ghost" data-hold-awaiting>Hold until a Trail exists</button>'
+      +'<button class="btn btn-ghost" data-cancel-enforce>Cancel</button></div>'
+    card.appendChild(fb)
+    fb.querySelector("[data-cancel-enforce]").onclick=function(){
+      fb.remove();if(actsEl)actsEl.style.display="";if(btn){btn.disabled=false;btn.textContent="Enforce"}
+    }
+    fb.querySelector("[data-record-trail]").onclick=function(){ openGuardTrailWizard(exp) }
+    fb.querySelector("[data-hold-awaiting]").onclick=async function(){
+      var hb=this;hb.disabled=true;hb.textContent="holding…"
+      var rh;try{rh=await fetch("/api/expectations/"+encodeURIComponent(exp.id)+"/hold-awaiting-trail"+qs,{method:"POST",headers:{"content-type":"application/json"},body:"{}"})}
+      catch(e){hb.disabled=false;hb.textContent="Hold until a Trail exists";if(msgEl){msgEl.style.color="var(--rose)";msgEl.textContent="Network error."}return}
+      if(!rh.ok){hb.disabled=false;hb.textContent="Hold until a Trail exists";var eb=await rh.json().catch(function(){return{}});if(msgEl){msgEl.style.color="var(--rose)";msgEl.textContent=eb.error||"Could not hold."}return}
+      fb.remove();if(msgEl){msgEl.style.color="var(--indigo)";msgEl.textContent="Held — the Enforce offer will return once a matching Trail exists."}
+      setTimeout(loadExpectations,800)
+    }
+  }
   async function enforceExpectation(expId,card){
     var pid=projParam();var qs=pid?"?project="+encodeURIComponent(pid):""
     var btn=card.querySelector("[data-enforce]");var msgEl=card.querySelector(".ec-msg")
+    // exp is stashed on the card by renderExpectations so fallbacks have title/urlPath.
+    var exp=card._exp||{id:expId}
     if(btn){btn.disabled=true;btn.textContent="drafting…"}
     if(msgEl)msgEl.textContent=""
     var r;try{r=await fetch("/api/expectations/"+encodeURIComponent(expId)+"/enforce"+qs,{method:"POST",headers:{"content-type":"application/json"},body:"{}"})}
     catch(e){if(btn){btn.disabled=false;btn.textContent="Enforce"}if(msgEl){msgEl.style.color="var(--rose)";msgEl.textContent="Network error."}return}
     var b=await r.json().catch(function(){return{}})
     if(!r.ok){if(btn){btn.disabled=false;btn.textContent="Enforce"}if(msgEl){msgEl.style.color="var(--rose)";msgEl.textContent=b.error||"Enforce failed."}return}
+    // B.5: zero-Trail — never a dead end; offer record-a-guard-Trail / hold-as-awaiting.
+    if(b.zeroTrails){renderZeroTrailFallback(exp,card,btn,msgEl);return}
     var draft=b.draft
     if(!draft){if(btn){btn.disabled=false;btn.textContent="Enforce"}if(msgEl){msgEl.style.color="var(--amber)";msgEl.textContent="Couldn't draft an assertion."}return}
+    var trails=Array.isArray(b.trails)?b.trails:[]
     var actsEl=card.querySelector(".ec-acts");if(actsEl)actsEl.style.display="none"
     if(msgEl)msgEl.textContent=""
     var confirmEl=document.createElement("div");confirmEl.className="ec-confirm"
     var target=draft.target?Object.keys(draft.target).map(function(k){return k+":"+draft.target[k]}).join(" · "):""
     var desc=(draft.checkpoint&&draft.checkpoint.description)?draft.checkpoint.description:(draft.description||"")
-    confirmEl.innerHTML=(target?'<div class="cc-target">Target: '+esc(target)+"</div>":"")
+    // B.5: Trail repoint dropdown + step-position dropdown so the user sees WHICH Trail and WHERE.
+    var trailOpts=trails.map(function(t){return'<option value="'+esc(t.id)+'"'+(t.id===draft.trailId?" selected":"")+">"+esc(t.name||t.id)+"</option>"}).join("")
+    confirmEl.innerHTML='<div class="cc-target">Trail <select data-trail-sel style="max-width:220px">'+trailOpts+"</select></div>"
+      +'<div class="cc-target">Position <select data-step-sel style="max-width:280px"></select></div>'
+      +(target?'<div class="cc-target">Target: '+esc(target)+"</div>":"")
       +'<textarea rows="3" placeholder="Assertion description…">'+esc(desc)+"</textarea>"
       +'<div class="cc-acts"><button class="btn btn-indigo" data-confirm-enforce>Confirm</button><button class="btn btn-ghost" data-cancel-enforce>Cancel</button></div>'
-    card.appendChild(confirmEl);var textarea=confirmEl.querySelector("textarea")
+    card.appendChild(confirmEl)
+    var textarea=confirmEl.querySelector("textarea")
+    var trailSel=confirmEl.querySelector("[data-trail-sel]")
+    var stepSel=confirmEl.querySelector("[data-step-sel]")
+    var curTrailId=draft.trailId
+    var curAfterIdx=draft.afterStepIdx
+    function fillSteps(){
+      var t=trails.filter(function(x){return x.id===curTrailId})[0]
+      var opts=(t&&t.steps)||[]
+      // Default the position to the drafted afterStepIdx when present in this trail; else last step.
+      var have=opts.some(function(o){return o.afterStepIdx===curAfterIdx})
+      if(!have&&opts.length)curAfterIdx=opts[opts.length-1].afterStepIdx
+      stepSel.innerHTML=opts.length?opts.map(function(o){return'<option value="'+esc(String(o.afterStepIdx))+'"'+(o.afterStepIdx===curAfterIdx?" selected":"")+">"+esc(o.label)+"</option>"}).join(""):'<option value="">(no steps — assert lands first)</option>'
+    }
+    fillSteps()
+    if(trailSel)trailSel.onchange=function(){curTrailId=this.value;fillSteps()}
+    if(stepSel)stepSel.onchange=function(){var v=parseInt(this.value,10);if(!isNaN(v))curAfterIdx=v}
     confirmEl.querySelector("[data-cancel-enforce]").onclick=function(){
       confirmEl.remove();if(actsEl)actsEl.style.display="";if(msgEl)msgEl.textContent=""
       if(btn){btn.disabled=false;btn.textContent="Enforce"}
@@ -8026,6 +8094,9 @@ load()
     confirmEl.querySelector("[data-confirm-enforce]").onclick=async function(){
       var confirmBtn=this;confirmBtn.disabled=true;confirmBtn.textContent="saving…"
       var editedDesc=textarea.value.trim();var finalDraft=Object.assign({},draft)
+      // B.5: carry the (possibly repointed) Trail + step position from the picker.
+      finalDraft.trailId=curTrailId||draft.trailId
+      if(typeof curAfterIdx==="number"&&!isNaN(curAfterIdx))finalDraft.afterStepIdx=curAfterIdx
       if(finalDraft.checkpoint){finalDraft.checkpoint=Object.assign({},finalDraft.checkpoint,{description:editedDesc})}
       else{finalDraft.description=editedDesc}
       var r2;try{r2=await fetch("/api/expectations/"+encodeURIComponent(expId)+"/enforce/confirm"+qs,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({draft:finalDraft})})}
@@ -8051,19 +8122,29 @@ load()
     cand.forEach(function(exp){var card=document.createElement("div");card.className="exp-card";card.innerHTML=expCardHtml(exp)+'<div class="ec-msg"></div>';candEl.appendChild(card)})
     var validEl=$("expValid");validEl.innerHTML=valid.length?"":emptyExp("No validated expectations yet.")
     valid.forEach(function(exp){
-      var card=document.createElement("div");card.className="exp-card"
-      // KLA-242: for guards from "Guard this fix" show Enforce button and from-ticket chip
-      card.innerHTML=expCardHtml(exp)+'<div class="ec-acts" style="margin-top:10px"><button class="btn btn-indigo" style="font-size:12px;padding:7px 13px" data-enforce="'+esc(exp.id)+'">Enforce</button></div><div class="ec-msg"></div>'
-      validEl.appendChild(card)
-      card.querySelector("[data-enforce]").onclick=function(){enforceExpectation(exp.id,card)}
+      var card=document.createElement("div");card.className="exp-card";card._exp=exp
+      if(exp.awaitingTrail){
+        // B.5: held awaiting a Trail — show the state + let the user record a Trail now.
+        card.innerHTML=expCardHtml(exp)
+          +'<div class="ec-badges" style="margin-top:8px"><span class="ec-badge" style="background:rgba(99,102,241,.14);color:var(--indigo)">'+kicon("clock",{size:11})+' awaiting Trail</span></div>'
+          +'<div class="ec-acts" style="margin-top:10px"><button class="btn btn-ghost" style="font-size:12px;padding:7px 13px" data-record-trail-awaiting>'+kicon("shield",{size:12})+' Record a guard Trail</button></div><div class="ec-msg"></div>'
+        validEl.appendChild(card)
+        card.querySelector("[data-record-trail-awaiting]").onclick=function(){openGuardTrailWizard(exp)}
+      }else{
+        // KLA-242: for guards from "Guard this fix" show Enforce button and from-ticket chip
+        card.innerHTML=expCardHtml(exp)+'<div class="ec-acts" style="margin-top:10px"><button class="btn btn-indigo" style="font-size:12px;padding:7px 13px" data-enforce="'+esc(exp.id)+'">Enforce</button></div><div class="ec-msg"></div>'
+        validEl.appendChild(card)
+        card.querySelector("[data-enforce]").onclick=function(){enforceExpectation(exp.id,card)}
+      }
     })
     var enfEl=$("expEnf");enfEl.innerHTML=enf.length?"":emptyExp("Nothing enforced yet.")
     enf.forEach(function(exp){
       var card=document.createElement("div");card.className="exp-card"
       // KLA-243: show saves counter (how many times this guard caught a regression) next to enforced badge
       var savesBadge=savesBadgeHtml(exp.savesCount||0)
+      // B.5: friendlier "guard step added" label; keep the raw step id on hover (title) for debugging.
       card.innerHTML=expCardHtml(exp)+(exp.enforcedStepId
-        ?'<div class="ec-badges" style="margin-top:8px"><span class="ec-badge enforced-ok">enforced</span>'+savesBadge+'<span class="ec-meta" style="margin-left:4px;font-size:10px">'+esc(exp.enforcedStepId)+"</span></div>"
+        ?'<div class="ec-badges" style="margin-top:8px"><span class="ec-badge enforced-ok">enforced</span>'+savesBadge+'<span class="ec-meta" style="margin-left:4px;font-size:10px" title="'+esc(exp.enforcedStepId)+'">guard step added</span></div>'
         :'<div class="ec-badges" style="margin-top:8px"><span class="ec-badge enforced-ok">enforced</span>'+savesBadge+"</div>")
       enfEl.appendChild(card)
     })
