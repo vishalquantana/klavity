@@ -17,6 +17,9 @@
 import { safeFetch } from "./safe-fetch"
 import { formatIST } from "./signup-alert"
 import { reportError, _isNonProdEnv } from "./error-alert"
+import { publishRegressionEvent } from "./regression-events"
+import { db } from "./db"
+import type { Client } from "@libsql/client"
 
 export interface WalkRedAlertContext {
   trailName: string
@@ -31,6 +34,33 @@ export interface WalkRedAlertContext {
   failureKind?: "crash" | "regression"
   /** true when the browser could not be started/reached at all (infra). Implies infra routing. */
   browserUnavailable?: boolean
+  /** DB client override (tests). Defaults to the shared `db`. */
+  db?: Client | null
+}
+
+/**
+ * B.6 unified regression alarm — GUARD detector. A genuine walk RED (checkpoint gone / expectation
+ * failure, NOT an infra crash) is a regression the guard caught. Publish it into the shared
+ * regression stream so it lands in the SAME banner/feed as the memory + sim-reopen detectors, deduped
+ * per issue. Kept separate from the Slack side of notifyWalkRed so it also fires (and is testable)
+ * regardless of the prod-only Slack gate. NEVER throws.
+ */
+export async function publishGuardRegression(
+  ctx: WalkRedAlertContext, overrides: { db?: Client | null; notify?: boolean } = {},
+): Promise<void> {
+  if (isInfraFailure(ctx)) return // infra crash is not a product regression
+  const c = overrides.db ?? ctx.db ?? db
+  if (!c) return
+  await publishRegressionEvent({
+    projectId: ctx.projectId,
+    // One issue per (trail) — repeated RED walks of the same trail collapse into one alarm/hour.
+    issueKey: `guard:${ctx.trailId}`,
+    source: "guard",
+    title: ctx.trailName ? `${ctx.trailName} regression` : "guard regression",
+    at: ctx.at,
+    baseUrl: (process.env.KLAV_BASE_URL || "").replace("klavity.quantana.top", "klavity.in") || "",
+    evidence: { runId: ctx.runId, trailId: ctx.trailId, reasons: ctx.reasons },
+  }, { db: c, ...(overrides.notify != null ? { notify: overrides.notify } : {}) }).catch(() => {})
 }
 
 /** An infra failure is a crash OR an unavailable browser — never a real product regression. */
@@ -85,6 +115,12 @@ export function buildWalkRedSlackPayload(ctx: WalkRedAlertContext, baseUrl?: str
 }
 
 export async function notifyWalkRed(ctx: WalkRedAlertContext): Promise<void> {
+  // B.6: publish the GUARD regression event into the unified stream FIRST (before the Slack gate),
+  // so a genuine walk RED lands in the dashboard banner/feed and fires the founder email even when
+  // the walk-Slack channel is unset. The event's own notify does nothing in non-prod (safeFetch/mail
+  // are no-ops without env), so this stays test-safe. Fire-and-forget; never blocks the walk result.
+  void publishGuardRegression(ctx).catch(() => {})
+
   // Gate: do nothing in test/CI/dev — prevents flooding Slack from test walk runs.
   // reportError (for infra path) has its own gate, but we also guard the regression
   // path here so the entire function is a no-op in non-prod envs.
