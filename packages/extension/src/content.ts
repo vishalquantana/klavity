@@ -982,8 +982,12 @@ async function klavRunAdhoc(projectId: string): Promise<void> {
     await klavAdhocRemember(domain)
   }
   klavNotice('Sims analysing this page…')
-  const dataUrl = await klavCapture()
-  if (!dataUrl) { klavNotice("Couldn't capture this page — try again."); return }
+  // klavCapture() returns { dataUrl, error, elapsed } — destructure it (see the review path at the
+  // other call site). Prior bug: `const dataUrl = await klavCapture()` bound the whole OBJECT, so
+  // `if (!dataUrl)` never tripped and the object (not the data: URL) was sent as screenshotDataUrl,
+  // making /api/sim/review fail → the generic "Couldn't analyze this page right now."
+  const { dataUrl, error: capError } = await klavCapture()
+  if (!dataUrl) { klavNotice(capError === 'timeout' ? "Couldn't capture this page — try again." : "Couldn't capture this page — check the extension can access this site."); return }
   const resp = await klavSend<{ ok: boolean; status: number; body: any }>({
     kind: 'KLAV_REVIEW', projectId, url: location.href, domSig: klavDomSig(), screenshotDataUrl: dataUrl, adhoc: true,
   })
