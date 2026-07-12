@@ -25,13 +25,17 @@ import {
   insertScreenshot, insertSimRun, type SimReviewScheduleRow,
 } from "./db"
 import { runSimReviews, splitUrl, buildSimRunSummary } from "./sim-review"
-import { screenshotUrl } from "./sim-preview"
+import { authedScreenshotUrl } from "./sim-preview"
 import { safeFetch } from "./safe-fetch"
 
 // Injectable dependencies so the runner can be fully unit-tested without a browser or LLM.
 export interface ScheduleRunDeps {
-  /** Screenshot a URL; returns { imageB64, mediaType }. */
-  takeScreenshot: (url: string) => Promise<{ imageB64: string; mediaType: string }>
+  /**
+   * Screenshot a URL; returns { imageB64, mediaType }. Receives the schedule's projectId so the
+   * production impl can log the project's configured AutoSim Test Account in first (KLA-264 / JTBD
+   * 3.12) — letting scheduled runs review pinned behind-login URLs (e.g. the client app dashboard).
+   */
+  takeScreenshot: (url: string, projectId: string) => Promise<{ imageB64: string; mediaType: string }>
   /** React fn forwarded to runSimReviews. */
   reactFn: Parameters<typeof runSimReviews>[0]["reactFn"]
   /** Citation resolver forwarded to runSimReviews. */
@@ -76,10 +80,10 @@ async function runOneSchedule(
       return { ...base, simCount: 0, totalObservations: 0, simRunId: null, skipped: "no Sims" }
     }
 
-    // Screenshot the target URL.
+    // Screenshot the target URL (authed via the project's Test Account when configured — KLA-264).
     let shot: { imageB64: string; mediaType: string }
     try {
-      shot = await deps.takeScreenshot(schedule.targetUrl)
+      shot = await deps.takeScreenshot(schedule.targetUrl, schedule.projectId)
     } catch (e: any) {
       console.warn(`[sim-schedule] screenshot failed for schedule ${schedule.id}:`, e?.message || e)
       // Don't advance next_run_at — retry on next tick.
@@ -203,7 +207,9 @@ export function buildProductionDeps(
   storeScreenshotFn?: ScheduleRunDeps["storeScreenshot"],
 ): ScheduleRunDeps {
   return {
-    takeScreenshot: screenshotUrl,
+    // Behind-auth scheduled previews (KLA-264): log in with the project's encrypted AutoSim Test
+    // Account before the shot when one is configured; otherwise a plain public screenshot.
+    takeScreenshot: (url, projectId) => authedScreenshotUrl(url, projectId),
     reactFn: reactFnArg,
     resolveCitationsFn: resolveCitationsFnArg,
     db: dbClient,

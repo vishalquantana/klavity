@@ -211,11 +211,16 @@ test("listDueSimReviewSchedules: returns only enabled schedules whose next_run_a
 function buildMockDeps(opts: {
   reactions?: any[]
   screenshotFails?: boolean
-}): ScheduleRunDeps & { calls: { projectId: string; url: string }[] } {
+}): ScheduleRunDeps & { calls: { projectId: string; url: string }[]; shotArgs: { url: string; projectId: string }[] } {
   const calls: { projectId: string; url: string }[] = []
-  const deps: ScheduleRunDeps & { calls: { projectId: string; url: string }[] } = {
+  const shotArgs: { url: string; projectId: string }[] = []
+  const deps: ScheduleRunDeps & { calls: { projectId: string; url: string }[]; shotArgs: { url: string; projectId: string }[] } = {
     calls,
-    takeScreenshot: async (url: string) => {
+    shotArgs,
+    takeScreenshot: async (url: string, projectId: string) => {
+      // KLA-264: runOneSchedule must forward the schedule's projectId so the production impl can
+      // establish the authed session before screenshotting behind-login URLs.
+      shotArgs.push({ url, projectId })
       if (opts.screenshotFails) throw new Error("Screenshot failed (mock)")
       return { imageB64: "aGVsbG8=", mediaType: "image/jpeg" }
     },
@@ -263,6 +268,12 @@ test("runDueSchedules: runs only due schedules (not future-dated ones)", async (
   // (It might appear from OTHER tests creating due schedules, but rds-future.com's id is not there)
   const futureResult = results.find(r => r.url === "https://rds-future.com")
   expect(futureResult).toBeUndefined()
+
+  // KLA-264: takeScreenshot receives the schedule's projectId so the production impl can log in via
+  // the project's AutoSim Test Account before screenshotting a behind-login target.
+  const dueShot = deps.shotArgs.find((s) => s.url === "https://rds-due.com")
+  expect(dueShot).toBeTruthy()
+  expect(dueShot!.projectId).toBe(PROJ_A)
 })
 
 test("runDueSchedules: disabled schedules are not run", async () => {
