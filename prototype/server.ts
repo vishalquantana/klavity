@@ -3407,10 +3407,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           listRunSteps(resolved.projectId, resolved.runId),
         ])
         if (!walk) return json({ error: "Not found" }, 404)
-        const [trail, replaySet, findings] = await Promise.all([
+        const [trail, replaySet, findings, judgment] = await Promise.all([
           getTrail(resolved.projectId, walk.trailId),
           runsWithReplay(resolved.projectId, [resolved.runId]),
           listFindings(resolved.projectId, { runId: resolved.runId, limit: 1000 }),
+          // KLA-73 / JTBD 7.6: the persona-voiced verdict so the public share page can show it.
+          getWalkJudgment(resolved.projectId, resolved.runId),
         ])
         // View signal — fire-and-forget so a write failure never blocks the report.
         recordShareView(resolved.id).catch(() => {})
@@ -3419,6 +3421,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           trail,
           steps,
           findings,
+          judgment: judgment ?? null,
           hasReplay: replaySet.has(resolved.runId),
           replayUrl: replaySet.has(resolved.runId) ? "/shared/walk-replay/" + rawToken : null,
           liveUrl: walk.status === "running" ? "/shared/walk-live/" + rawToken : null,

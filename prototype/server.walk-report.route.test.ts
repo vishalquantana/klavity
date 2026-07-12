@@ -307,6 +307,89 @@ test("POST /shared/walk/:token/findings/:id/dismiss — dismisses a queued findi
   expect(finding.status).toBe("dismissed")
 })
 
+// ── KLA-73 / JTBD 7.6: persona judgment surfaced on the public share page ─────────
+// Seed a persona + record a WalkJudgment via the trails lib (same DB as the subprocess server),
+// then assert the judgment flows through /shared/walk/:token/data and the share HTML scaffolds it.
+const JUDGE_PERSONA_ID = `persona_wr_judge_${ts}`
+await rawExec(
+  `INSERT INTO personas (id, project_id, name, role, type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  [JUDGE_PERSONA_ID, PROJECT_ID, "Priya", "Head of Growth", "client", NOW, NOW],
+)
+
+test("GET /shared/walk/:token/data — includes persona judgment when one has been recorded", async () => {
+  // Record a judgment for the seeded walk through the lib (writes to the same file DB).
+  await T.recordWalkJudgment(PROJECT_ID, {
+    runId: WALK_RUN_ID,
+    personaId: JUDGE_PERSONA_ID,
+    personaName: "Priya",
+    verdicts: [{ findingId: SEEDED_FINDING_ID, verdict: "valid", confidence: 0.9, rationale: "This breaks my signup." }],
+    overallNote: "The checkout regression would cost us conversions.",
+  })
+
+  const mintR = await fetch(`${base}/api/trails/walks/${WALK_RUN_ID}/share?project=${pid}`, {
+    method: "POST",
+    headers: { cookie: adminCookie },
+  })
+  const { url: shareUrl } = await mintR.json()
+  const token = shareUrl.split("/").pop()
+
+  const r = await fetch(`${base}/shared/walk/${token}/data`)
+  expect(r.status).toBe(200)
+  const body = await r.json()
+  expect(body.judgment).toBeTruthy()
+  expect(body.judgment.personaName).toBe("Priya")
+  expect(body.judgment.overallNote).toContain("conversions")
+  expect(body.judgment.verdicts[0].verdict).toBe("valid")
+})
+
+test("GET /shared/walk/:token/data — degrades gracefully (judgment:null) for an unjudged walk", async () => {
+  // Fresh walk with no judgment recorded.
+  const trailId2 = await T.createTrail(PROJECT_ID, { name: "Unjudged flow", intent: "no judge", baseUrl: "https://x.test/" })
+  await T.setTrailStatus(PROJECT_ID, trailId2, "active")
+  const stepId2 = await T.addTrailStep(PROJECT_ID, trailId2, { idx: 0, action: "click" })
+  const runId2 = await T.startWalk(PROJECT_ID, trailId2)
+  await T.addRunStep(PROJECT_ID, { runId: runId2, trailId: trailId2, stepId: stepId2, idx: 0, tier: "cache", verdict: "green", confidence: 1 })
+  await T.finishWalk(PROJECT_ID, runId2, { status: "green", llmCalls: 1 })
+
+  const mintR = await fetch(`${base}/api/trails/walks/${runId2}/share?project=${pid}`, {
+    method: "POST",
+    headers: { cookie: adminCookie },
+  })
+  const { url: shareUrl } = await mintR.json()
+  const token = shareUrl.split("/").pop()
+
+  const r = await fetch(`${base}/shared/walk/${token}/data`)
+  expect(r.status).toBe(200)
+  const body = await r.json()
+  expect(body.judgment).toBe(null)
+})
+
+test("GET /autosims/walk/:id — authed detail page scaffolds the Judge this walk trigger + picker", async () => {
+  const r = await fetch(`${base}/autosims/walk/${WALK_RUN_ID}?project=${pid}`, {
+    headers: { cookie: adminCookie },
+  })
+  expect(r.status).toBe(200)
+  const html = await r.text()
+  expect(html).toContain("Judge this walk")
+  expect(html).toContain('id="judgePersona"')
+  expect(html).toContain("judge-persona")
+})
+
+test("GET /shared/walk/:token — public HTML scaffolds the Persona Verdict panel + renderer", async () => {
+  const mintR = await fetch(`${base}/api/trails/walks/${WALK_RUN_ID}/share?project=${pid}`, {
+    method: "POST",
+    headers: { cookie: adminCookie },
+  })
+  const { url: shareUrl } = await mintR.json()
+
+  const r = await fetch(shareUrl)
+  expect(r.status).toBe(200)
+  const html = await r.text()
+  expect(html).toContain("Persona Verdict")
+  expect(html).toContain('id="judgmentPanel"')
+  expect(html).toContain("renderJudgment")
+})
+
 test("GET /shared/walk-report/:token — valid token serves inline PDF (no auth required)", async () => {
   // Mint a token via the API first
   const mintR = await fetch(`${base}/api/trails/walks/${WALK_RUN_ID}/share?project=${pid}`, {
