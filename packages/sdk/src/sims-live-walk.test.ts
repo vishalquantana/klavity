@@ -451,6 +451,124 @@ describe("SimsLive walk + outline choreography", () => {
     await settleMarkers()
   })
 
+  it("Track as Bug removes the finding and drops the dock counter (no re-prompt)", async () => {
+    makeTarget()
+    SimsLive.deploy("all", [SIM])
+
+    const obs: LiveObservation = {
+      text: "The checkout button is confusing and hard to trust.",
+      sentiment: "confused",
+      region: { x: 120 / 1280, y: 150 / 720, w: 240 / 1280, h: 90 / 720 },
+      targetViewport: { scrollX: 0, scrollY: 0, width: 1280, height: 720 },
+    }
+    // A second concern so the dock counter is non-zero after removal.
+    const obs2: LiveObservation = { ...obs, text: "The pricing section is misleading." }
+    SimsLive.renderFeedback(SIM.id, SIM.name, [obs, obs2])
+
+    const markers = await settleMarkers()
+    expect(markers).toHaveLength(2)
+
+    const counter = dockShadow()?.querySelector(".ksl-more-counter") as HTMLButtonElement
+    expect(counter.textContent).toBe("+2 more")
+
+    // Focus the first finding, then click "Track as Bug".
+    markers[0].click()
+    await settleWalk()
+    expect(document.querySelector(".klav-pin")).toBeTruthy()
+
+    const onTriage = vi.fn()
+    SimsLive.onTriage = onTriage
+    const trackBtn = document.querySelector(".klav-pin-triage") as HTMLButtonElement
+    trackBtn.click()
+
+    // Bug composer fired AND the finding is gone (marker + expanded chrome).
+    expect(onTriage).toHaveBeenCalledWith(obs, SIM.name)
+    await vi.advanceTimersByTimeAsync(260)
+    expect(document.querySelector(".klav-pin")).toBeNull()
+    expect(document.querySelector(".klav-halo")).toBeNull()
+    expect(document.querySelectorAll(".klav-pin-marker")).toHaveLength(1)
+    // Counter reflects one fewer (was +2, now +1 with nothing focused).
+    expect(counter.textContent).toBe("+1 more")
+  })
+
+  it("does not re-create a tracked finding on a subsequent renderFeedback (handled key blocks it)", async () => {
+    makeTarget()
+    SimsLive.deploy("all", [SIM])
+
+    const obs: LiveObservation = {
+      text: "The checkout button is confusing and hard to trust.",
+      sentiment: "confused",
+      region: { x: 120 / 1280, y: 150 / 720, w: 240 / 1280, h: 90 / 720 },
+      targetViewport: { scrollX: 0, scrollY: 0, width: 1280, height: 720 },
+    }
+    SimsLive.renderFeedback(SIM.id, SIM.name, [obs])
+    let markers = await settleMarkers()
+    expect(markers).toHaveLength(1)
+
+    markers[0].click()
+    await settleWalk()
+    SimsLive.onTriage = vi.fn()
+    ;(document.querySelector(".klav-pin-triage") as HTMLButtonElement).click()
+    await vi.advanceTimersByTimeAsync(260)
+    expect(document.querySelectorAll(".klav-pin-marker")).toHaveLength(0)
+
+    // A live re-review returns the SAME finding — it must NOT re-appear.
+    SimsLive.renderFeedback(SIM.id, SIM.name, [obs])
+    markers = await settleMarkers()
+    expect(markers).toHaveLength(0)
+    expect(document.querySelector(".klav-pin")).toBeNull()
+  })
+
+  it("Dismiss removes a finding permanently and blocks its re-render", async () => {
+    makeTarget()
+    SimsLive.deploy("all", [SIM])
+    const obs: LiveObservation = {
+      text: "The checkout button is confusing and hard to trust.",
+      sentiment: "confused",
+      region: { x: 120 / 1280, y: 150 / 720, w: 240 / 1280, h: 90 / 720 },
+      targetViewport: { scrollX: 0, scrollY: 0, width: 1280, height: 720 },
+    }
+    SimsLive.renderFeedback(SIM.id, SIM.name, [obs])
+    const markers = await settleMarkers()
+    markers[0].click()
+    await settleWalk()
+
+    const dismissBtn = document.querySelector(".klav-pin-dismiss") as HTMLButtonElement
+    expect(dismissBtn.textContent).toBe("Dismiss")
+    dismissBtn.click()
+    await vi.advanceTimersByTimeAsync(260)
+    expect(document.querySelectorAll(".klav-pin-marker")).toHaveLength(0)
+
+    SimsLive.renderFeedback(SIM.id, SIM.name, [obs])
+    expect(await settleMarkers()).toHaveLength(0)
+  })
+
+  it("undeploy clears the handled set so a tracked finding CAN show again after re-deploy", async () => {
+    makeTarget()
+    const obs: LiveObservation = {
+      text: "The checkout button is confusing and hard to trust.",
+      sentiment: "confused",
+      region: { x: 120 / 1280, y: 150 / 720, w: 240 / 1280, h: 90 / 720 },
+      targetViewport: { scrollX: 0, scrollY: 0, width: 1280, height: 720 },
+    }
+
+    SimsLive.deploy("all", [SIM])
+    SimsLive.renderFeedback(SIM.id, SIM.name, [obs])
+    const markers = await settleMarkers()
+    markers[0].click()
+    await settleWalk()
+    SimsLive.onTriage = vi.fn()
+    ;(document.querySelector(".klav-pin-triage") as HTMLButtonElement).click()
+    await vi.advanceTimersByTimeAsync(260)
+    expect(document.querySelectorAll(".klav-pin-marker")).toHaveLength(0)
+
+    // Fresh deploy must clear the handled key — same finding shows again.
+    SimsLive.undeploy()
+    SimsLive.deploy("all", [SIM])
+    SimsLive.renderFeedback(SIM.id, SIM.name, [obs])
+    expect(await settleMarkers()).toHaveLength(1)
+  })
+
   it("clamps the expanded card within the viewport near the bottom edge (Issue C)", async () => {
     // Target sits near the top so the card flips BELOW it; a tall card would then
     // overflow the viewport bottom without the vertical clamp.
