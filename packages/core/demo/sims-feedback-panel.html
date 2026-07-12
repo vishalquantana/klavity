@@ -1,0 +1,713 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Klavity · Sims Feedback Panel — Design Mockup</title>
+<!--
+  ══════════════════════════════════════════════════════════════════════════════
+  KLAVITY SIMS — "Feedback Panel" DESIGN MOCKUP  (THROWAWAY / NOT PRODUCTION)
+  ══════════════════════════════════════════════════════════════════════════════
+
+  WHY: Today the live Sims surface findings as scattered on-page bubbles + a
+  "walk me through" tour. Clicking individual findings is fiddly. The ask is for
+  "an overlay or chat-type panel where we can see all the feedback… maybe a right
+  side panel." This file explores THREE distinct directions so the product owner
+  can react and pick one.
+
+  WHAT: A faux "onboarding chat" page in the background, with a variation switcher
+  at the top. Toggle between:
+    A) DOCKED RAIL     — right rail that pushes the page over; grouped controls.
+    B) FLOATING CHAT   — collapsible bottom-right launcher that opens a feed.
+    C) PERSONA ACCORDION — grouped-by-Sim accordion vs A/B's flat priority list.
+
+  Findings are REAL-shaped sample data matching what the Sims actually produce
+  (persona accent, HIGH/MED/LOW pills, sentiment, grounded page-specific text).
+  Every finding is a clickable card; clicking simulates highlighting the spot on
+  the faux page (a halo). Panels scroll internally so long text is never clipped.
+
+  HOW TO OPEN: just double-click this file, or:
+    open packages/core/demo/sims-feedback-panel.html
+  No build step, no server, no dependencies. Self-contained inline CSS + JS.
+
+  Aesthetic mirrors packages/sdk/src/sims-live.ts + packages/core/src/sim.ts:
+  warm-dark surfaces, purple accent (#8b5cf6), circle-with-legs avatars,
+  per-persona accents, sev pills (HIGH/MED/LOW), hover-lift / active-scale.
+  ══════════════════════════════════════════════════════════════════════════════
+-->
+<style>
+  /* ═══════════════════════ tokens ═══════════════════════ */
+  :root{
+    --bg:            #0b0b12;
+    --surface:       #16110c;
+    --surface-2:     #1c1610;
+    --surface-3:     #221b13;
+    --line:          #3a332b;
+    --line-soft:     #2a231b;
+    --fg:            #f5f3ee;
+    --fg-2:          #cec6bd;
+    --fg-3:          #8a8276;
+    --fg-4:          #5e5852;
+    --accent:        #8b5cf6;
+    --accent-2:      #a78bfa;
+    --accent-3:      #c4b5fd;
+    --accent-glow:   rgba(139,92,246,.28);
+    /* sev pills — straight from sims-live.ts */
+    --sev-h-bg: rgba(233,79,55,.22);  --sev-h-fg:#e8849a;
+    --sev-m-bg: rgba(244,169,60,.20); --sev-m-fg:#e8a24a;
+    --sev-l-bg: rgba(127,209,196,.15);--sev-l-fg:#7fd1c4;
+    --mono: ui-monospace,'JetBrains Mono',monospace;
+    --sans: system-ui,-apple-system,"Segoe UI",sans-serif;
+    --ease: cubic-bezier(.34,1.36,.64,1);
+    --rail-w: 384px;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; margin:0; }
+  body{
+    font-family:var(--sans); color:var(--fg); background:var(--bg);
+    overflow:hidden;
+  }
+  button{ font-family:inherit; }
+
+  /* ═══════════════════════ top switcher bar ═══════════════════════ */
+  #topbar{
+    position:fixed; top:0; left:0; right:0; height:52px; z-index:60;
+    display:flex; align-items:center; gap:14px; padding:0 18px;
+    background:linear-gradient(180deg,rgba(12,10,8,.96),rgba(12,10,8,.82));
+    border-bottom:1px solid var(--line-soft);
+    -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
+  }
+  #topbar .brand{ font-weight:700; font-size:14px; letter-spacing:.01em; white-space:nowrap; }
+  #topbar .brand b{ color:var(--accent-2); }
+  #topbar .tag{ font:600 10px/1 var(--mono); letter-spacing:.08em; text-transform:uppercase;
+    color:var(--fg-3); border:1px solid var(--line); border-radius:20px; padding:4px 8px; white-space:nowrap; }
+  .switcher{ display:flex; gap:4px; margin-left:auto; background:var(--surface-2);
+    border:1px solid var(--line); border-radius:11px; padding:4px; }
+  .switcher button{
+    border:0; background:transparent; color:var(--fg-3); cursor:pointer;
+    font-size:12.5px; font-weight:600; padding:7px 13px; border-radius:8px;
+    transition:transform .15s var(--ease), background .15s, color .15s;
+  }
+  .switcher button:hover{ transform:translateY(-1px); color:var(--fg); }
+  .switcher button:active{ transform:scale(.97); }
+  .switcher button.on{ background:linear-gradient(135deg,var(--accent),#7c3aed); color:#fff;
+    box-shadow:0 6px 18px -6px var(--accent-glow); }
+  .hint{ font-size:11.5px; color:var(--fg-4); margin-left:2px; white-space:nowrap; }
+  @media (max-width:920px){ .hint{ display:none; } #topbar .tag{ display:none; } }
+
+  /* ═══════════════════════ faux onboarding-chat page ═══════════════════════ */
+  #page{
+    position:absolute; inset:52px 0 0 0; overflow-y:auto;
+    background:
+      radial-gradient(60rem 40rem at 88% -10%, rgba(139,92,246,.10) 0%, transparent 60%),
+      radial-gradient(50rem 40rem at -8% 110%, rgba(99,102,241,.10) 0%, transparent 60%),
+      var(--bg);
+    transition:padding-right .42s var(--ease);
+  }
+  body.rail-open #page{ padding-right:var(--rail-w); }
+  .page-inner{ max-width:760px; margin:0 auto; padding:34px 26px 120px; }
+  .kicker{ font:600 11px/1 var(--mono); letter-spacing:.14em; text-transform:uppercase; color:var(--accent-3); }
+  .page-h1{ font-size:30px; font-weight:700; margin:10px 0 6px; letter-spacing:-.01em; }
+  .page-sub{ color:var(--fg-3); margin:0 0 26px; font-size:14.5px; line-height:1.5; }
+
+  /* faux form card — the "Corporate Identity" surface the Sims critique */
+  .card{ background:var(--surface); border:1px solid var(--line-soft); border-radius:16px;
+    padding:22px 22px 24px; margin-bottom:20px; }
+  .card h2{ font-size:16px; margin:0 0 3px; }
+  .card .card-sub{ color:var(--fg-4); font-size:12.5px; margin:0 0 18px; }
+  .field{ margin-bottom:15px; }
+  .field label{ display:block; font-size:12px; color:var(--fg-3); margin-bottom:6px; font-weight:600; }
+  .field .val{ background:var(--surface-2); border:1px solid var(--line); border-radius:10px;
+    padding:11px 13px; font-size:14px; color:var(--fg); position:relative; transition:box-shadow .2s, border-color .2s; }
+  .field .val.muted{ color:var(--fg-4); }
+  .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .cta-row{ display:flex; gap:12px; margin-top:22px; }
+  .btn-primary{ background:linear-gradient(135deg,var(--accent),#7c3aed); color:#fff; border:0;
+    padding:12px 22px; border-radius:11px; font-weight:600; font-size:14px; cursor:pointer;
+    transition:transform .15s var(--ease); }
+  .btn-primary:hover{ transform:translateY(-1px); } .btn-primary:active{ transform:scale(.97); }
+  .btn-ghost{ background:transparent; color:var(--fg-2); border:1px solid var(--line);
+    padding:12px 20px; border-radius:11px; font-weight:600; font-size:14px; cursor:pointer;
+    transition:transform .15s var(--ease), background .15s; }
+  .btn-ghost:hover{ transform:translateY(-1px); background:rgba(255,255,255,.05); }
+  .btn-ghost:active{ transform:scale(.97); }
+  .msg-note{ font-size:12.5px; color:var(--fg-4); margin-top:14px; }
+
+  /* halo drawn on the faux page when a finding is clicked — mirrors .klav-halo */
+  .field .val.is-flagged{
+    border-color:transparent;
+    box-shadow:0 0 0 2px var(--halo,#8b5cf6), 0 0 26px -2px var(--halo,#8b5cf6);
+    animation:halo-pulse 2.4s ease-in-out .2s infinite;
+  }
+  @keyframes halo-pulse{ 0%,100%{ opacity:1; } 50%{ opacity:.72; } }
+  .flag-caret{ position:absolute; top:-11px; right:12px; font:700 9px/1 var(--mono);
+    letter-spacing:.06em; text-transform:uppercase; color:#fff; padding:3px 7px; border-radius:6px;
+    background:var(--halo,#8b5cf6); box-shadow:0 6px 16px -4px rgba(0,0,0,.6);
+    opacity:0; transform:translateY(4px); transition:opacity .2s, transform .2s var(--ease); }
+  .field .val.is-flagged .flag-caret{ opacity:1; transform:translateY(0); }
+
+  /* ═══════════════════════ Sim avatar (circle-with-legs, from sim.ts) ═══════════════════════ */
+  .sim{ --sz:34px; position:relative; display:inline-flex; flex-direction:column; align-items:center;
+    line-height:1; flex-shrink:0; }
+  .sim .head{ width:var(--sz); height:var(--sz); border-radius:50%; display:grid; place-items:center;
+    color:#fff; font:700 calc(var(--sz)*.34)/1 var(--mono); letter-spacing:.02em;
+    background:radial-gradient(120% 120% at 30% 22%,
+      color-mix(in srgb,var(--p) 72%,#fff 14%), var(--p) 58%,
+      color-mix(in srgb,var(--p) 55%,#000 38%));
+    box-shadow:0 8px 22px -6px rgba(0,0,0,.7), inset 0 2px 4px rgba(255,255,255,.25),
+      inset 0 -6px 12px rgba(0,0,0,.28); text-shadow:0 1px 2px rgba(0,0,0,.35); }
+  .sim .legs{ display:flex; gap:calc(var(--sz)*.12); margin-top:calc(var(--sz)*.07); }
+  .sim .legs i{ width:calc(var(--sz)*.12); height:calc(var(--sz)*.29); border-radius:calc(var(--sz)*.07);
+    background:color-mix(in srgb,var(--p) 60%,#000 30%); transform-origin:top center; }
+  .sim.animate .legs i:nth-child(1){ animation:leg-a 1.6s ease-in-out infinite; }
+  .sim.animate .legs i:nth-child(2){ animation:leg-b 1.6s ease-in-out infinite; }
+  @keyframes leg-a{ 0%,100%{ transform:rotate(-6deg); } 50%{ transform:rotate(7deg); } }
+  @keyframes leg-b{ 0%,100%{ transform:rotate(6deg); }  50%{ transform:rotate(-7deg); } }
+  /* emotion mark (sentiment) — small floating glyph, top-right */
+  .sim .mark{ position:absolute; top:calc(var(--sz)*-.24); right:calc(var(--sz)*-.22);
+    width:calc(var(--sz)*.5); height:calc(var(--sz)*.5); border-radius:50%; display:grid; place-items:center;
+    font:700 calc(var(--sz)*.34)/1 var(--mono); color:#fff; border:1.5px solid rgba(12,10,8,.7);
+    box-shadow:0 2px 6px rgba(0,0,0,.5); }
+
+  /* ═══════════════════════ shared finding-card styles ═══════════════════════ */
+  .sev{ display:inline-block; font:700 9px/1 var(--mono); letter-spacing:.05em; text-transform:uppercase;
+    padding:3px 6px; border-radius:5px; }
+  .sev.h{ background:var(--sev-h-bg); color:var(--sev-h-fg); }
+  .sev.m{ background:var(--sev-m-bg); color:var(--sev-m-fg); }
+  .sev.l{ background:var(--sev-l-bg); color:var(--sev-l-fg); }
+
+  .card-row{
+    position:relative; border:1px solid var(--line-soft); border-left-width:3px;
+    border-radius:12px; background:var(--surface-2); padding:12px 13px 11px;
+    cursor:pointer; text-align:left; width:100%; display:block;
+    transition:transform .15s var(--ease), background .15s, border-color .15s, box-shadow .15s;
+  }
+  .card-row:hover{ transform:translateY(-2px) scale(1.012); background:var(--surface-3);
+    box-shadow:0 12px 30px -12px rgba(0,0,0,.7); }
+  .card-row:active{ transform:scale(.985); }
+  .card-row:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  .card-row.is-selected{ background:var(--surface-3);
+    box-shadow:0 0 0 1px var(--pa,#8b5cf6), 0 12px 30px -12px rgba(0,0,0,.7); }
+  .card-row .r-head{ display:flex; align-items:center; gap:9px; margin-bottom:8px; }
+  .card-row .r-name{ font:700 9.5px/1 var(--mono); letter-spacing:.09em; text-transform:uppercase;
+    color:var(--fg-2); flex:1; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+  .card-row .r-sent{ font:600 10px/1 var(--sans); color:var(--fg-4); text-transform:capitalize; }
+  .card-row .r-obs{ font-size:13px; line-height:1.5; color:var(--fg-2);
+    display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+  .card-row.expanded .r-obs{ -webkit-line-clamp:unset; }
+  .card-row .r-expand{ font:600 11px/1 var(--sans); color:var(--accent-3); margin-top:6px;
+    background:none; border:0; padding:2px 0; cursor:pointer; display:none; }
+  .card-row.clamped .r-expand{ display:inline-block; }
+  .card-row .r-actions{ display:flex; gap:7px; margin-top:11px; }
+  .r-act{ font:600 11px/1 var(--sans); border-radius:7px; padding:6px 9px; cursor:pointer;
+    display:inline-flex; align-items:center; gap:5px; transition:transform .15s var(--ease), background .15s, border-color .15s, color .15s; }
+  .r-act:hover{ transform:translateY(-1px); } .r-act:active{ transform:scale(.96); }
+  .r-act.track{ background:rgba(139,92,246,.18); border:1px solid rgba(139,92,246,.38); color:var(--accent-3); }
+  .r-act.track:hover{ background:rgba(139,92,246,.32); border-color:rgba(139,92,246,.6); }
+  .r-act.track.done{ background:rgba(127,209,196,.15); border-color:rgba(127,209,196,.4); color:var(--sev-l-fg); pointer-events:none; }
+  .r-act.jump{ background:transparent; border:1px solid var(--line); color:var(--fg-2); }
+  .r-act.jump:hover{ background:rgba(255,255,255,.06); border-color:#5a5248; color:var(--fg); }
+  .r-act.dismiss{ background:transparent; border:1px solid var(--line); color:var(--fg-4); margin-left:auto; }
+  .r-act.dismiss:hover{ background:rgba(255,255,255,.06); color:var(--fg-2); }
+  .card-row.dismissing{ opacity:0; transform:translateX(18px) scale(.96); pointer-events:none;
+    transition:opacity .28s ease, transform .28s var(--ease); }
+
+  /* ═══════════════════════ shared panel chrome (header/filters/list) ═══════════════════════ */
+  .panel-head{ padding:16px 16px 12px; border-bottom:1px solid var(--line-soft); flex-shrink:0; }
+  .panel-title-row{ display:flex; align-items:center; gap:10px; margin-bottom:3px; }
+  .panel-title{ font-size:14.5px; font-weight:700; }
+  .panel-count{ font-size:12.5px; color:var(--fg-3); }
+  .panel-count b{ color:var(--accent-3); }
+  .panel-icon-btn{ margin-left:auto; width:30px; height:30px; border-radius:8px; border:1px solid var(--line);
+    background:transparent; color:var(--fg-3); cursor:pointer; display:grid; place-items:center; font-size:15px;
+    transition:transform .15s var(--ease), background .15s, color .15s; }
+  .panel-icon-btn:hover{ transform:translateY(-1px); background:rgba(255,255,255,.06); color:var(--fg); }
+  .panel-icon-btn:active{ transform:scale(.94); }
+  .chips{ display:flex; flex-wrap:wrap; gap:6px; margin-top:11px; }
+  .chip{ font:600 11px/1 var(--sans); border-radius:20px; padding:6px 10px; cursor:pointer;
+    border:1px solid var(--line); background:var(--surface-2); color:var(--fg-3);
+    display:inline-flex; align-items:center; gap:5px;
+    transition:transform .15s var(--ease), background .15s, border-color .15s, color .15s; }
+  .chip:hover{ transform:translateY(-1px); color:var(--fg); } .chip:active{ transform:scale(.96); }
+  .chip .dot{ width:8px; height:8px; border-radius:50%; }
+  .chip.on{ background:rgba(139,92,246,.16); border-color:rgba(139,92,246,.5); color:var(--accent-3); }
+  .chip.sev-on-h{ background:var(--sev-h-bg); border-color:var(--sev-h-fg); color:var(--sev-h-fg); }
+  .chip.sev-on-m{ background:var(--sev-m-bg); border-color:var(--sev-m-fg); color:var(--sev-m-fg); }
+  .chip.sev-on-l{ background:var(--sev-l-bg); border-color:var(--sev-l-fg); color:var(--sev-l-fg); }
+  .chips-label{ font:600 9.5px/1 var(--mono); letter-spacing:.08em; text-transform:uppercase;
+    color:var(--fg-4); align-self:center; margin-right:2px; }
+  .panel-list{ flex:1; overflow-y:auto; padding:12px 14px 22px; display:flex; flex-direction:column; gap:10px; }
+  .panel-list::-webkit-scrollbar{ width:9px; }
+  .panel-list::-webkit-scrollbar-thumb{ background:var(--line); border-radius:6px; border:2px solid var(--surface); }
+  .empty{ color:var(--fg-4); font-size:12.5px; text-align:center; padding:34px 12px; }
+  .group-h{ display:flex; align-items:center; gap:8px; margin:4px 2px 2px; }
+  .group-h .glabel{ font:700 9.5px/1 var(--mono); letter-spacing:.09em; text-transform:uppercase; color:var(--fg-3); }
+  .group-h .gline{ flex:1; height:1px; background:var(--line-soft); }
+  .group-h .gcount{ font:600 10px/1 var(--mono); color:var(--fg-4); }
+
+  /* ═══════════════════════ VARIATION A — docked right rail ═══════════════════════ */
+  #railA{
+    position:fixed; top:52px; right:0; bottom:0; width:var(--rail-w); z-index:50;
+    display:flex; flex-direction:column;
+    background:linear-gradient(168deg,var(--surface-2),var(--surface));
+    border-left:1px solid var(--line);
+    box-shadow:-24px 0 60px -30px rgba(0,0,0,.8);
+    transform:translateX(100%); transition:transform .42s var(--ease); visibility:hidden;
+  }
+  body.rail-open #railA{ transform:translateX(0); visibility:visible; }
+  /* collapsed rail tab (when closed) */
+  #railTab{ position:fixed; top:96px; right:0; z-index:49; display:none;
+    background:linear-gradient(135deg,var(--accent),#7c3aed); color:#fff;
+    border:0; border-radius:12px 0 0 12px; padding:12px 12px 12px 14px; cursor:pointer;
+    writing-mode:vertical-rl; font:700 11px/1 var(--mono); letter-spacing:.12em; text-transform:uppercase;
+    box-shadow:-8px 0 24px -8px rgba(0,0,0,.6); transition:transform .15s var(--ease); }
+  #railTab:hover{ transform:translateX(-2px); }
+  #railTab .badge{ display:block; margin-top:8px; background:#fff; color:var(--accent);
+    border-radius:20px; padding:3px 0; font:700 10px/1 var(--mono); writing-mode:horizontal-tb; text-align:center; }
+
+  /* ═══════════════════════ VARIATION B — floating chat launcher ═══════════════════════ */
+  #fabB{ position:fixed; right:22px; bottom:22px; z-index:52; display:none; align-items:center; gap:0;
+    border:0; cursor:pointer; background:transparent; }
+  #fabB .fab-pill{ display:flex; align-items:center; gap:10px;
+    background:linear-gradient(168deg,var(--surface-2),var(--surface));
+    border:1px solid var(--accent-glow); border-radius:999px; padding:8px 16px 8px 10px;
+    box-shadow:0 18px 46px -14px rgba(0,0,0,.7), 0 0 0 4px rgba(139,92,246,.1);
+    transition:transform .15s var(--ease), border-color .15s; }
+  #fabB:hover .fab-pill{ transform:translateY(-2px); border-color:var(--accent-2); }
+  #fabB:active .fab-pill{ transform:scale(.97); }
+  #fabB .fab-txt{ font-size:13px; font-weight:600; color:var(--fg); }
+  #fabB .fab-txt b{ color:var(--accent-3); }
+  #fabB .fab-avatars{ display:flex; }
+  #fabB .fab-avatars .sim{ margin-left:-10px; }
+  #fabB .fab-avatars .sim:first-child{ margin-left:0; }
+  #fabB .fab-badge{ position:absolute; top:-4px; right:-4px; background:var(--sev-h-fg); color:#2a0e12;
+    font:700 10px/1 var(--mono); border-radius:20px; padding:3px 6px; box-shadow:0 4px 10px rgba(0,0,0,.5); }
+
+  #chatB{
+    position:fixed; right:22px; bottom:22px; z-index:53; width:378px;
+    max-width:calc(100vw - 32px); height:min(620px, calc(100vh - 96px));
+    display:none; flex-direction:column; overflow:hidden;
+    background:linear-gradient(168deg,var(--surface-2),var(--surface));
+    border:1px solid var(--line); border-radius:18px;
+    box-shadow:0 30px 70px -20px rgba(0,0,0,.8), 0 0 0 4px rgba(139,92,246,.08);
+    transform-origin:bottom right;
+  }
+  #chatB.open{ display:flex; animation:chat-in .34s var(--ease) both; }
+  @keyframes chat-in{ 0%{ transform:translateY(24px) scale(.9); opacity:0; } 100%{ transform:none; opacity:1; } }
+
+  /* ═══════════════════════ VARIATION C — persona accordion (reuses rail shell) ═══════════════════════ */
+  .accordion-sim{ border:1px solid var(--line-soft); border-radius:13px; overflow:hidden; background:var(--surface-2);
+    transition:border-color .15s; }
+  .accordion-sim.open{ border-color:var(--pa); }
+  .acc-head{ display:flex; align-items:center; gap:11px; padding:12px 13px; cursor:pointer; width:100%;
+    border:0; background:transparent; text-align:left; border-left:3px solid var(--pa);
+    transition:background .15s; }
+  .acc-head:hover{ background:var(--surface-3); }
+  .acc-head:active{ transform:none; }
+  .acc-meta{ flex:1; min-width:0; }
+  .acc-name{ font-size:13.5px; font-weight:700; color:var(--fg); }
+  .acc-role{ font:600 10.5px/1.3 var(--sans); color:var(--fg-4); margin-top:2px;
+    overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+  .acc-counts{ display:flex; gap:4px; align-items:center; }
+  .acc-chev{ color:var(--fg-4); font-size:14px; transition:transform .2s var(--ease); margin-left:2px; }
+  .accordion-sim.open .acc-chev{ transform:rotate(90deg); }
+  .acc-body{ display:none; flex-direction:column; gap:9px; padding:2px 11px 13px; }
+  .accordion-sim.open .acc-body{ display:flex; }
+
+  @media (prefers-reduced-motion:reduce){
+    *{ animation:none !important; transition:none !important; }
+  }
+  @media (max-width:640px){
+    body.rail-open #page{ padding-right:0; }
+    #railA{ width:100%; } :root{ --rail-w:100%; }
+  }
+</style>
+</head>
+<body class="rail-open">
+
+  <!-- ═══════════════ top switcher ═══════════════ -->
+  <div id="topbar">
+    <div class="brand">Klavity <b>Sims</b></div>
+    <span class="tag">Feedback-Panel Mockup</span>
+    <div class="switcher" role="tablist" aria-label="Panel variation">
+      <button id="btnA" class="on" onclick="setVariation('A')">A · Docked rail</button>
+      <button id="btnB" onclick="setVariation('B')">B · Floating chat</button>
+      <button id="btnC" onclick="setVariation('C')">C · Persona accordion</button>
+    </div>
+    <span class="hint" id="hint">Click any finding → it highlights on the page.</span>
+  </div>
+
+  <!-- ═══════════════ faux onboarding-chat page ═══════════════ -->
+  <div id="page">
+    <div class="page-inner">
+      <div class="kicker">Onboarding · Step 3 of 5</div>
+      <h1 class="page-h1">Let's set up your company profile</h1>
+      <p class="page-sub">Your Sims are reviewing this page live as a first-time customer would — like having customers in the room while you build.</p>
+
+      <div class="card">
+        <h2>Corporate Identity</h2>
+        <p class="card-sub">This appears on invoices and your public workspace page.</p>
+
+        <div class="field"><label>Legal company name</label>
+          <div class="val" data-anchor="name">Acme Robotics Pvt Ltd</div></div>
+
+        <div class="grid2">
+          <div class="field"><label>Founded year</label>
+            <div class="val" data-anchor="founded">2026</div></div>
+          <div class="field"><label>Employees</label>
+            <div class="val muted" data-anchor="employees">Select a range…</div></div>
+        </div>
+
+        <div class="field"><label>Company website</label>
+          <div class="val" data-anchor="website">acme-robotics</div></div>
+
+        <div class="field"><label>Billing email</label>
+          <div class="val muted" data-anchor="email">Same as account email</div></div>
+      </div>
+
+      <div class="card">
+        <h2>Almost there</h2>
+        <p class="card-sub">You can change any of this later in Settings.</p>
+        <div class="cta-row">
+          <button class="btn-primary" data-anchor="submit">Save &amp; continue</button>
+          <button class="btn-ghost" data-anchor="skip">Skip for now</button>
+        </div>
+        <p class="msg-note" data-anchor="terms">By continuing you agree to our Terms.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ VARIATION A — docked right rail ═══════════════ -->
+  <button id="railTab" onclick="openRail()">Sims<span class="badge" id="tabBadge">7</span></button>
+  <aside id="railA" aria-label="Sims feedback rail">
+    <div class="panel-head">
+      <div class="panel-title-row">
+        <div class="panel-title">Live feedback</div>
+        <button class="panel-icon-btn" title="Collapse panel" onclick="closeRail()" aria-label="Collapse panel">›</button>
+      </div>
+      <div class="panel-count" id="countA"></div>
+      <div class="chips" id="filtersA"></div>
+    </div>
+    <div class="panel-list" id="listA"></div>
+  </aside>
+
+  <!-- ═══════════════ VARIATION B — floating chat ═══════════════ -->
+  <button id="fabB" onclick="openChat()" aria-label="Open Sims feedback">
+    <span class="fab-pill">
+      <span class="fab-avatars" id="fabAvatars"></span>
+      <span class="fab-txt"><b id="fabCount">7</b> findings from your Sims</span>
+    </span>
+    <span class="fab-badge" id="fabBadge">3 high</span>
+  </button>
+  <section id="chatB" aria-label="Sims feedback chat">
+    <div class="panel-head">
+      <div class="panel-title-row">
+        <div class="panel-title">Sims feedback</div>
+        <button class="panel-icon-btn" title="Minimize" onclick="closeChat()" aria-label="Minimize">—</button>
+      </div>
+      <div class="panel-count" id="countB"></div>
+      <div class="chips" id="filtersB"></div>
+    </div>
+    <div class="panel-list" id="listB"></div>
+  </section>
+
+  <!-- ═══════════════ VARIATION C — persona accordion (uses rail shell) ═══════════════ -->
+  <aside id="railC" aria-label="Sims feedback by persona"
+    style="position:fixed;top:52px;right:0;bottom:0;width:var(--rail-w);z-index:50;display:none;flex-direction:column;background:linear-gradient(168deg,var(--surface-2),var(--surface));border-left:1px solid var(--line);box-shadow:-24px 0 60px -30px rgba(0,0,0,.8);">
+    <div class="panel-head">
+      <div class="panel-title-row">
+        <div class="panel-title">Feedback by Sim</div>
+        <button class="panel-icon-btn" title="Collapse panel" onclick="closeRail()" aria-label="Collapse panel">›</button>
+      </div>
+      <div class="panel-count" id="countC"></div>
+      <div class="chips" id="filtersC"></div>
+    </div>
+    <div class="panel-list" id="listC"></div>
+  </aside>
+
+<script>
+/* ══════════════════════════════════════════════════════════════════════════
+   SAMPLE DATA — shaped like real Sim observations (persona + accent + sev +
+   sentiment + grounded, page-specific text). Anchors map to faux-page els.
+   ══════════════════════════════════════════════════════════════════════════ */
+const SIMS = {
+  TG: { id:'TG', name:'Tanmayi Gunturu', role:'Detail-obsessed ops lead', accent:'#e0607e', initials:'TG' },
+  KB: { id:'KB', name:'Karan Bhatt',     role:'Skeptical first-time buyer', accent:'#6366f1', initials:'KB' },
+  RE: { id:'RE', name:'Riya Elango',     role:'Time-pressed founder',       accent:'#37b58f', initials:'RE' },
+  VK: { id:'VK', name:'Vikram Kohli',    role:'Enterprise procurement',     accent:'#e0a13c', initials:'VK' },
+};
+// sentiment → glyph + bg (mirrors sim.ts emotion accents)
+const SENT = {
+  alarmed:    { g:'!', bg:'#ef6b6b', label:'alarmed' },
+  frustrated: { g:'>', bg:'#e8849a', label:'frustrated' },
+  confused:   { g:'?', bg:'#e8a24a', label:'confused' },
+  neutral:    { g:'·', bg:'#8a8276', label:'neutral' },
+  inspired:   { g:'*', bg:'#8b8bf5', label:'inspired' },
+  satisfied:  { g:'✓', bg:'#7fd1c4', label:'satisfied' },
+};
+const FINDINGS = [
+  { id:'f1', sim:'TG', sev:'HIGH', sent:'alarmed', anchor:'founded',
+    text:"I'm checking the 'Corporate Identity' section. I see 'Founded Year 2026'. Founded in 2026? That's not possible, we're in 2024. This looks like incorrect data or a data-entry error that needs flagging." },
+  { id:'f2', sim:'KB', sev:'HIGH', sent:'frustrated', anchor:'website',
+    text:"The 'Company website' field just shows 'acme-robotics' with no https:// and no domain. As a buyer I can't tell if this is a real URL or a broken placeholder — it never validated what I typed. If I submit this, does my public page just 404?" },
+  { id:'f3', sim:'VK', sev:'HIGH', sent:'confused', anchor:'terms',
+    text:"'By continuing you agree to our Terms' — but there's no link on 'Terms'. For procurement sign-off I have to review the actual terms before I click Save. Right now the sentence implies a link that isn't there, which is a compliance red flag." },
+  { id:'f4', sim:'RE', sev:'MED', sent:'frustrated', anchor:'employees',
+    text:"'Employees — Select a range…' is required-looking but empty, and there's no asterisk or helper text telling me it's mandatory. I'll hit Save, get bounced back, and won't know why. Mark required fields clearly." },
+  { id:'f5', sim:'KB', sev:'MED', sent:'confused', anchor:'email',
+    text:"Billing email says 'Same as account email' but I can't see WHICH email that is anywhere on this screen. If my account email is a personal one, my invoices go to the wrong place and I won't realize until it's too late." },
+  { id:'f6', sim:'TG', sev:'MED', sent:'neutral', anchor:'skip',
+    text:"'Skip for now' sits right next to the primary 'Save & continue' with almost equal weight. It's easy to fat-finger Skip and lose everything I just typed. The escape hatch shouldn't compete visually with the main action." },
+  { id:'f7', sim:'RE', sev:'LOW', sent:'inspired', anchor:'submit',
+    text:"Nice — the 'Save & continue' button is clear and the step counter ('Step 3 of 5') sets expectations. One small win: showing an estimated time-left would make me more likely to push through the last two steps." },
+  { id:'f8', sim:'VK', sev:'LOW', sent:'neutral', anchor:'name',
+    text:"'Legal company name' is prefilled with 'Acme Robotics Pvt Ltd' — good — but for enterprise I'd expect a matching 'Registered entity / VAT number' field nearby. Its absence isn't blocking, just worth noting for larger accounts." },
+];
+
+const SEV_ORDER = { HIGH:0, MED:1, LOW:2 };
+const SEV_CLASS  = { HIGH:'h', MED:'m', LOW:'l' };
+
+/* ── shared UI state ── */
+let personaFilter = null;      // sim id or null
+let sevFilter = null;          // 'HIGH'|'MED'|'LOW' or null
+const tracked = new Set();     // findings tracked as bugs
+const dismissed = new Set();   // findings dismissed
+let selectedId = null;
+
+/* ── helpers ── */
+function simAvatarHTML(sim, sent, sz){
+  const s = SENT[sent];
+  const mark = s ? `<span class="mark" style="background:${s.bg}">${s.g}</span>` : '';
+  return `<span class="sim animate" style="--p:${sim.accent};--sz:${sz||34}px">
+    ${mark}<span class="head">${sim.initials}</span>
+    <span class="legs"><i></i><i></i></span></span>`;
+}
+function visibleFindings(){
+  return FINDINGS.filter(f => !dismissed.has(f.id))
+    .filter(f => !personaFilter || f.sim === personaFilter)
+    .filter(f => !sevFilter || f.sev === sevFilter);
+}
+function activeCounts(){
+  const live = FINDINGS.filter(f => !dismissed.has(f.id));
+  const sims = new Set(live.map(f=>f.sim));
+  const high = live.filter(f=>f.sev==='HIGH').length;
+  return { total: live.length, sims: sims.size, high };
+}
+
+/* ── faux-page halo ── */
+function flagAnchor(anchor, accent){
+  document.querySelectorAll('.is-flagged').forEach(el=>{
+    el.classList.remove('is-flagged'); const c=el.querySelector('.flag-caret'); if(c) c.remove();
+  });
+  if(!anchor) return;
+  const el = document.querySelector(`[data-anchor="${anchor}"]`);
+  if(!el) return;
+  el.style.setProperty('--halo', accent);
+  el.classList.add('is-flagged');
+  if(getComputedStyle(el).position === 'static') el.style.position='relative';
+  const caret = document.createElement('span');
+  caret.className='flag-caret'; caret.textContent='Sim flagged this';
+  el.appendChild(caret);
+  el.scrollIntoView({ behavior:'smooth', block:'center' });
+}
+
+/* ── build one finding card (used by A and B; also inside C) ── */
+function findingCardHTML(f){
+  const sim = SIMS[f.sim];
+  const sc  = SEV_CLASS[f.sev];
+  const isTracked = tracked.has(f.id);
+  return `<button class="card-row" style="border-left-color:${sim.accent};--pa:${sim.accent}"
+      data-id="${f.id}" data-anchor="${f.anchor}" data-accent="${sim.accent}"
+      onclick="onCardClick('${f.id}', event)">
+    <div class="r-head">
+      ${simAvatarHTML(sim, f.sent, 30)}
+      <span class="r-name">${sim.name}</span>
+      <span class="r-sent">${SENT[f.sent].label}</span>
+      <span class="sev ${sc}">${f.sev}</span>
+    </div>
+    <div class="r-obs">${f.text}</div>
+    <button class="r-expand" onclick="toggleExpand('${f.id}', event)">Show more</button>
+    <div class="r-actions">
+      <span class="r-act track ${isTracked?'done':''}" onclick="trackBug('${f.id}', event)">
+        ${isTracked ? '✓ Tracked' : '＋ Track as Bug'}</span>
+      <span class="r-act jump" onclick="jumpTo('${f.id}', event)">◎ Jump to on page</span>
+      <span class="r-act dismiss" onclick="dismiss('${f.id}', event)">Dismiss</span>
+    </div>
+  </button>`;
+}
+
+/* ── filter chips (persona + priority) ── */
+function filtersHTML(){
+  const live = FINDINGS.filter(f=>!dismissed.has(f.id));
+  let html = `<span class="chips-label">Sim</span>`;
+  Object.values(SIMS).forEach(s=>{
+    const n = live.filter(f=>f.sim===s.id).length;
+    if(!n) return;
+    html += `<span class="chip ${personaFilter===s.id?'on':''}" onclick="togglePersona('${s.id}')">
+      <span class="dot" style="background:${s.accent}"></span>${s.initials} · ${n}</span>`;
+  });
+  html += `<span class="chips-label" style="margin-left:6px">Priority</span>`;
+  ['HIGH','MED','LOW'].forEach(sev=>{
+    const n = live.filter(f=>f.sev===sev).length;
+    if(!n) return;
+    const on = sevFilter===sev ? `sev-on-${SEV_CLASS[sev]}` : '';
+    html += `<span class="chip ${on}" onclick="toggleSev('${sev}')">${sev} · ${n}</span>`;
+  });
+  return html;
+}
+
+/* ── render flat list (A + B) ── */
+function renderFlat(listEl, countEl, filtersEl){
+  const c = activeCounts();
+  countEl.innerHTML = `<b>${c.total}</b> findings from <b>${c.sims}</b> Sims · <span style="color:var(--sev-h-fg)">${c.high} high</span>`;
+  filtersEl.innerHTML = filtersHTML();
+  const items = visibleFindings().sort((a,b)=> SEV_ORDER[a.sev]-SEV_ORDER[b.sev]);
+  if(!items.length){ listEl.innerHTML = `<div class="empty">No findings match these filters.</div>`; return; }
+  listEl.innerHTML = items.map(findingCardHTML).join('');
+  markClamped(listEl);
+  restoreSelection(listEl);
+}
+
+/* ── render persona accordion (C) ── */
+function renderAccordion(){
+  const listEl = document.getElementById('listC');
+  const c = activeCounts();
+  document.getElementById('countC').innerHTML =
+    `<b>${c.total}</b> findings from <b>${c.sims}</b> Sims · <span style="color:var(--sev-h-fg)">${c.high} high</span>`;
+  document.getElementById('filtersC').innerHTML = filtersHTML();
+  const items = visibleFindings();
+  if(!items.length){ listEl.innerHTML = `<div class="empty">No findings match these filters.</div>`; return; }
+  const bySim = {};
+  items.forEach(f => (bySim[f.sim] = bySim[f.sim]||[]).push(f));
+  listEl.innerHTML = Object.keys(bySim).map((sid, idx) => {
+    const sim = SIMS[sid];
+    const list = bySim[sid].sort((a,b)=>SEV_ORDER[a.sev]-SEV_ORDER[b.sev]);
+    const pills = ['HIGH','MED','LOW'].map(sev=>{
+      const n = list.filter(f=>f.sev===sev).length;
+      return n ? `<span class="sev ${SEV_CLASS[sev]}">${n}</span>` : '';
+    }).join('');
+    const sent = list[0].sent;
+    return `<div class="accordion-sim ${idx===0?'open':''}" style="--pa:${sim.accent}">
+      <button class="acc-head" onclick="toggleAccordion(this)">
+        ${simAvatarHTML(sim, sent, 34)}
+        <span class="acc-meta"><span class="acc-name">${sim.name}</span>
+          <span class="acc-role">${sim.role}</span></span>
+        <span class="acc-counts">${pills}</span>
+        <span class="acc-chev">›</span>
+      </button>
+      <div class="acc-body">${list.map(findingCardHTML).join('')}</div>
+    </div>`;
+  }).join('');
+  markClamped(listEl);
+  restoreSelection(listEl);
+}
+
+/* ── clamp detection: show "Show more" only when text actually overflows ── */
+function markClamped(scope){
+  scope.querySelectorAll('.card-row').forEach(row=>{
+    const obs = row.querySelector('.r-obs');
+    if(obs && obs.scrollHeight - obs.clientHeight > 4) row.classList.add('clamped');
+  });
+}
+function restoreSelection(scope){
+  if(!selectedId) return;
+  const row = scope.querySelector(`.card-row[data-id="${selectedId}"]`);
+  if(row) row.classList.add('is-selected');
+}
+
+/* ── master render for the active variation ── */
+let variation = 'A';
+function render(){
+  if(variation==='A') renderFlat(document.getElementById('listA'), document.getElementById('countA'), document.getElementById('filtersA'));
+  else if(variation==='B') renderFlat(document.getElementById('listB'), document.getElementById('countB'), document.getElementById('filtersB'));
+  else renderAccordion();
+  // keep FAB / tab badges honest
+  const c = activeCounts();
+  document.getElementById('fabCount').textContent = c.total;
+  document.getElementById('fabBadge').textContent = c.high + ' high';
+  document.getElementById('tabBadge').textContent = c.total;
+}
+
+/* ══════════════ interactions ══════════════ */
+function onCardClick(id, e){
+  // ignore clicks that originated on an action button
+  if(e && e.target.closest('.r-act, .r-expand')) return;
+  const f = FINDINGS.find(x=>x.id===id); if(!f) return;
+  selectedId = id;
+  document.querySelectorAll('.card-row.is-selected').forEach(el=>el.classList.remove('is-selected'));
+  document.querySelectorAll(`.card-row[data-id="${id}"]`).forEach(el=>el.classList.add('is-selected'));
+  flagAnchor(f.anchor, SIMS[f.sim].accent);
+}
+function jumpTo(id, e){ e.stopPropagation(); onCardClick(id, null); }
+function toggleExpand(id, e){
+  e.stopPropagation();
+  document.querySelectorAll(`.card-row[data-id="${id}"]`).forEach(row=>{
+    const on = row.classList.toggle('expanded');
+    const btn = row.querySelector('.r-expand'); if(btn) btn.textContent = on ? 'Show less' : 'Show more';
+  });
+}
+function trackBug(id, e){
+  e.stopPropagation(); tracked.add(id); render();
+}
+function dismiss(id, e){
+  e.stopPropagation();
+  document.querySelectorAll(`.card-row[data-id="${id}"]`).forEach(row=>row.classList.add('dismissing'));
+  setTimeout(()=>{ dismissed.add(id); if(selectedId===id){ selectedId=null; flagAnchor(null); } render(); }, 280);
+}
+function togglePersona(sid){ personaFilter = personaFilter===sid ? null : sid; render(); }
+function toggleSev(sev){ sevFilter = sevFilter===sev ? null : sev; render(); }
+function toggleAccordion(btn){ btn.parentElement.classList.toggle('open'); }
+
+/* ── panel open/close ── */
+function openRail(){ document.body.classList.add('rail-open'); syncRailChrome(); }
+function closeRail(){ document.body.classList.remove('rail-open'); syncRailChrome(); }
+function openChat(){ document.getElementById('chatB').classList.add('open'); document.getElementById('fabB').style.display='none'; }
+function closeChat(){ document.getElementById('chatB').classList.remove('open'); document.getElementById('fabB').style.display='flex'; }
+function syncRailChrome(){
+  const closed = !document.body.classList.contains('rail-open');
+  // rail tab only for A/C when closed
+  document.getElementById('railTab').style.display = (closed && variation!=='B') ? 'block' : 'none';
+}
+
+/* ── variation switch ── */
+function setVariation(v){
+  variation = v;
+  document.getElementById('btnA').classList.toggle('on', v==='A');
+  document.getElementById('btnB').classList.toggle('on', v==='B');
+  document.getElementById('btnC').classList.toggle('on', v==='C');
+
+  // reset all panels
+  document.getElementById('railA').style.display = 'flex';
+  document.getElementById('railC').style.display = 'none';
+  document.getElementById('fabB').style.display  = 'none';
+  document.getElementById('chatB').classList.remove('open');
+  document.getElementById('railTab').style.display = 'none';
+  flagAnchor(null); selectedId=null;
+
+  if(v==='A'){
+    document.body.classList.add('rail-open');
+    document.getElementById('railA').style.display='flex';
+    document.getElementById('hint').textContent='Docked rail — pushes the page over. Click a finding to highlight it.';
+  } else if(v==='B'){
+    document.body.classList.remove('rail-open');       // chat floats, never pushes page
+    document.getElementById('railA').style.display='none';
+    document.getElementById('fabB').style.display='flex';
+    document.getElementById('chatB').classList.add('open');
+    document.getElementById('hint').textContent='Floating chat — expands from a launcher, overlays bottom-right.';
+  } else {
+    document.body.classList.add('rail-open');
+    document.getElementById('railA').style.display='none';
+    document.getElementById('railC').style.display='flex';
+    document.getElementById('hint').textContent='Persona accordion — grouped by Sim; expand each to read their findings.';
+  }
+  render();
+  syncRailChrome();
+}
+
+/* ── boot ── */
+document.getElementById('fabAvatars').innerHTML =
+  ['TG','KB','RE'].map(id=>simAvatarHTML(SIMS[id], null, 26)).join('');
+setVariation('A');
+</script>
+</body>
+</html>
