@@ -10,8 +10,8 @@ test("expectations table exists with expected columns", async () => {
   const names = cols.rows.map((r: any) => r.name).sort()
   // KLA-242: source_ticket_id — ticket this guard was created from
   // KLA-243: saves_count — number of times this guard caught a regression
-  // KLA-245 (B.5): awaiting_trail — held validated-awaiting-Trail from the Enforce zero-Trail fallback
+  // B.13: source_quote / source_quote_verified / source_quote_ref — the originating grounded quote
   expect(names).toEqual(
-    ["area","awaiting_trail","corroboration_json","created_at","dedup_key","enforced_step_id","id","project_id","saves_count","source_refs_json","source_ticket_id","status","title","updated_at","url_path"].sort()
+    ["area","corroboration_json","created_at","dedup_key","enforced_step_id","id","project_id","saves_count","source_quote","source_quote_ref","source_quote_verified","source_refs_json","source_ticket_id","status","title","updated_at","url_path"].sort()
   )
 })

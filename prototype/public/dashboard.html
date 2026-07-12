@@ -8282,6 +8282,12 @@ load()
     var badges=renderExpBadges(exp.corroboration)
     var html='<div class="ec-title">'+esc(exp.title)+"</div>"
     if(badges)html+='<div class="ec-badges">'+badges+"</div>"
+    // B.13: show the originating grounded quote the expectation was born from; only mark it "verified"
+    // when it passed verification against source text, otherwise show it plainly (no false grounding claim).
+    if(exp.sourceQuote){
+      var vTag=exp.sourceQuoteVerified===true?'<span class="ec-badge" style="background:rgba(16,185,129,.14);color:var(--green);margin-left:6px" title="Verified against source text">verified</span>':''
+      html+='<div class="ec-quote" style="margin-top:6px;font-style:italic;color:var(--paper-faint);font-size:12px;border-left:2px solid var(--line);padding-left:8px">“'+esc(exp.sourceQuote)+'”'+vTag+'</div>'
+    }
     if(meta)html+='<div class="ec-meta">'+esc(meta)+"</div>"
     // KLA-242: show "from ticket" badge when guard was created via "Guard this fix"
     if(exp.sourceTicketId)html+='<div class="ec-meta" style="margin-top:4px">'+kicon('ticket',{size:11})+' from closed ticket</div>'

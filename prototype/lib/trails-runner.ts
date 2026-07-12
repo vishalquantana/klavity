@@ -1131,7 +1131,9 @@ async function runOneStep(
         await recordFinding(projectId, {
           runId, trailId, stepId: step.id, kind: "regression", title,
           evidence: tagRedEvidence(failureKindForExpectationFailure(), { reason: "element_gone", fingerprint: fp, cachedSelector, action: step.action, pageUrl: stepPageUrl }),
-          groundQuote: title, confidence: 0.7,
+          // B.13: groundQuote is a synthesized diagnostic (self-referential title), NOT a verbatim
+          // page-text quote — mark unverified so external tickets relabel it "Reason:" not "Grounded:".
+          groundQuote: title, groundQuoteVerified: false, confidence: 0.7,
           dedupKey: `${trailId}:${step.id}:element-gone`,
           contentSig: contentSigFor({ kind: "regression", fp, urlPath: stepPageUrl }),
           urlPath: stepPageUrl,
@@ -1253,7 +1255,8 @@ async function runOneStep(
       await recordFinding(projectId, {
         runId, trailId, stepId: step.id, kind: "regression", title,
         evidence: tagRedEvidence(failureKindForExpectationFailure(), { reason: isAssert ? "checkpoint_failed" : "action_failed", action: step.action, selector: resolved.selector, checkpoint: step.checkpoint?.description ?? null, pageUrl: stepPageUrl }),
-        groundQuote: title, confidence: 0.8,
+        // B.13: self-referential title, not verified page text → unverified.
+        groundQuote: title, groundQuoteVerified: false, confidence: 0.8,
         dedupKey: `${trailId}:${step.id}:${isAssert ? "checkpoint-failed" : "action-failed"}`,
         contentSig: contentSigFor({ kind: "regression", fp, urlPath: stepPageUrl }),
         urlPath: stepPageUrl,
@@ -1359,7 +1362,8 @@ async function runVisionTier2(
       await recordFinding(projectId, {
         runId, trailId, stepId: step.id, kind: "regression", title,
         evidence: tagRedEvidence(failureKindForExpectationFailure(), { reason: "checkpoint_gone", target: fp, pageUrl: opts.fixtureUrl, checkpoint: step.checkpoint?.description ?? null }),
-        groundQuote: title, confidence: 1,
+        // B.13: self-referential title, not verified page text → unverified.
+        groundQuote: title, groundQuoteVerified: false, confidence: 1,
         dedupKey: `${trailId}:${step.id}:checkpoint-gone`,
         // Checkpoint-gone is a report-critical failure for this recorded assertion. Do not collapse
         // it across trails by content signature, or a later red walk can lose its run-scoped finding.
@@ -1429,7 +1433,8 @@ async function runVisionTier2(
       await recordFinding(projectId, {
         runId, trailId, stepId: step.id, kind: "regression", title,
         evidence: tagRedEvidence(failureKindForExpectationFailure(), { rationale: decision.rationale, target: fp, pageUrl: opts.fixtureUrl, domExcerpt }),
-        groundQuote: decision.rationale, confidence: decision.confidence,
+        // B.13: the vision rationale is the model's explanation, not a verbatim page-text quote → unverified.
+        groundQuote: decision.rationale, groundQuoteVerified: false, confidence: decision.confidence,
         dedupKey: `${trailId}:${step.id}:gone`,
         contentSig: contentSigFor({ kind: "regression", fp, urlPath: stepPageUrl }),
         urlPath: stepPageUrl,
@@ -1548,7 +1553,8 @@ async function fileAmberHeal(
       runId, trailId, stepId: step.id, kind: "amber_heal",
       title: `AutoSim found a possible match for "${fp?.accessibleName ?? fp?.text ?? step.action}" but wasn't confident enough to act — please review.`,
       evidence: { rationale, target: fp, pageUrl: opts.fixtureUrl, classification },
-      groundQuote: rationale, confidence, dedupKey: `${trailId}:${step.id}:lowconf`,
+      // B.13: the vision rationale is the model's explanation, not a verbatim page-text quote → unverified.
+      groundQuote: rationale, groundQuoteVerified: false, confidence, dedupKey: `${trailId}:${step.id}:lowconf`,
       contentSig: contentSigFor({ kind: "amber_heal", fp, urlPath: pageUrl }),
       urlPath: pageUrl,
     })

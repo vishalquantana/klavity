@@ -1000,6 +1000,23 @@ export async function applySchema(c: Client) {
   // rows = unknown origin; these are NOT treated as transcript Sims (step 4 stays unticked).
   if (needCol("personas", "sim_source")) await c.execute("ALTER TABLE personas ADD COLUMN sim_source TEXT")
     .catch((e: any) => console.warn("personas.sim_source ALTER skipped:", e?.message || e))
+  // KLAVITYKLA-253 (JTBD B.13): carry the ORIGINATING grounded quote through graduation.
+  // source_quote      — the verbatim complaint/evidence the expectation was born from (Snap/Sim/AutoSim).
+  // source_quote_verified — 1 = verified against source text (trait provenance / page text), 0 = present but
+  //                         not verified, NULL = never had a quote. Rendered on Guard cards + fed to draftAssertion.
+  // source_quote_ref  — the source ref id (feedback/finding id) the quote came from, for auditability.
+  // NULL on all legacy rows — every read tolerates null.
+  if (needCol("expectations", "source_quote")) await c.execute("ALTER TABLE expectations ADD COLUMN source_quote TEXT")
+    .catch((e: any) => console.warn("expectations.source_quote ALTER skipped:", e?.message || e))
+  if (needCol("expectations", "source_quote_verified")) await c.execute("ALTER TABLE expectations ADD COLUMN source_quote_verified INTEGER")
+    .catch((e: any) => console.warn("expectations.source_quote_verified ALTER skipped:", e?.message || e))
+  if (needCol("expectations", "source_quote_ref")) await c.execute("ALTER TABLE expectations ADD COLUMN source_quote_ref TEXT")
+    .catch((e: any) => console.warn("expectations.source_quote_ref ALTER skipped:", e?.message || e))
+  // KLAVITYKLA-253 (JTBD B.13): findings ground_quote_verified — 1 = the ground_quote passed verification
+  // against captured page text; 0/NULL = self-referential/synthesized rationale that must NOT be labeled
+  // "Grounded:" in external tickets. Legacy rows are NULL → treated as unverified (relabeled "Reason:").
+  if (needCol("findings", "ground_quote_verified")) await c.execute("ALTER TABLE findings ADD COLUMN ground_quote_verified INTEGER")
+    .catch((e: any) => console.warn("findings.ground_quote_verified ALTER skipped:", e?.message || e))
 }
 
 // ── schema_meta helpers ──

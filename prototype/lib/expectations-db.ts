@@ -22,8 +22,12 @@ export type ExpectationRow = {
   savesCount: number
   /** KLA-242: feedback ticket id this guard was created from via "Guard this fix" */
   sourceTicketId: string | null
-  /** KLA-245 (B.5): held as validated-awaiting-Trail — Enforce offer suppressed until a matching Trail exists. */
-  awaitingTrail: boolean
+  /** B.13: the verbatim complaint/evidence this expectation was born from. NULL on legacy rows. */
+  sourceQuote: string | null
+  /** B.13: 1=verified against source text, 0=present-but-unverified, null=no quote. */
+  sourceQuoteVerified: boolean | null
+  /** B.13: source ref id (feedback/finding id) the quote came from, for auditability. */
+  sourceQuoteRef: string | null
 }
 
 function rowTo(x: any): ExpectationRow {
@@ -35,7 +39,9 @@ function rowTo(x: any): ExpectationRow {
     createdAt: Number(x.created_at), updatedAt: Number(x.updated_at),
     savesCount: Number(x.saves_count ?? 0),
     sourceTicketId: x.source_ticket_id ?? null,
-    awaitingTrail: !!Number(x.awaiting_trail ?? 0),
+    sourceQuote: x.source_quote ?? null,
+    sourceQuoteVerified: x.source_quote_verified == null ? null : Number(x.source_quote_verified) === 1,
+    sourceQuoteRef: x.source_quote_ref ?? null,
   }
 }
 
@@ -55,6 +61,9 @@ export async function upsertExpectation(c: Client, input: {
   projectId: string; title: string; area?: string | null; urlPath?: string | null; dedupKey: string; source: SourceRef
   /** KLA-242: feedback ticket id when created via "Guard this fix" */
   sourceTicketId?: string | null
+  /** B.13: originating grounded quote + its verification state + the ref id it came from. */
+  sourceQuote?: string | null
+  sourceQuoteVerified?: boolean | null
 }): Promise<ExpectationRow> {
   const now = Date.now()
   // 1) exact dedup_key match in-project
@@ -106,11 +115,20 @@ export async function upsertExpectation(c: Client, input: {
     // KLA-242: back-fill source_ticket_id if provided and not already set.
     const ticketColUpdate = (input.sourceTicketId && !existing.sourceTicketId)
       ? ", source_ticket_id=?" : ""
-    const updateArgs: (string | number)[] = [JSON.stringify(corr), JSON.stringify(refs), status, now]
+    // B.13: back-fill the originating grounded quote the FIRST time one arrives (the row's
+    // birth quote is the most faithful complaint; later corroborations don't overwrite it).
+    const backfillQuote = (input.sourceQuote != null && input.sourceQuote !== "" && existing.sourceQuote == null)
+    const quoteColUpdate = backfillQuote ? ", source_quote=?, source_quote_verified=?, source_quote_ref=?" : ""
+    const updateArgs: (string | number | null)[] = [JSON.stringify(corr), JSON.stringify(refs), status, now]
     if (input.sourceTicketId && !existing.sourceTicketId) updateArgs.push(input.sourceTicketId)
+    if (backfillQuote) {
+      updateArgs.push(input.sourceQuote!)
+      updateArgs.push(input.sourceQuoteVerified == null ? null : (input.sourceQuoteVerified ? 1 : 0))
+      updateArgs.push(input.source.id)
+    }
     updateArgs.push(existing.id)
     await c.execute({
-      sql: `UPDATE expectations SET corroboration_json=?, source_refs_json=?, status=?, updated_at=?${ticketColUpdate} WHERE id=?`,
+      sql: `UPDATE expectations SET corroboration_json=?, source_refs_json=?, status=?, updated_at=?${ticketColUpdate}${quoteColUpdate} WHERE id=?`,
       args: updateArgs,
     })
     return (await getExpectation(c, existing.id))!
@@ -118,12 +136,17 @@ export async function upsertExpectation(c: Client, input: {
   const id = "exp_" + crypto.randomUUID()
   const corr = mergeSource({ snap: false, sim: false, recurrence: 0 }, input.source.kind)
   const status = nextStatus("candidate", corr)
+  const hasQuote = input.sourceQuote != null && input.sourceQuote !== ""
   await c.execute({
-    sql: `INSERT INTO expectations (id,project_id,title,area,url_path,status,source_refs_json,corroboration_json,dedup_key,enforced_step_id,source_ticket_id,created_at,updated_at)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    sql: `INSERT INTO expectations (id,project_id,title,area,url_path,status,source_refs_json,corroboration_json,dedup_key,enforced_step_id,source_ticket_id,source_quote,source_quote_verified,source_quote_ref,created_at,updated_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [id, input.projectId, input.title, input.area ?? null, input.urlPath ?? null, status,
            JSON.stringify([input.source]), JSON.stringify(corr), input.dedupKey, null,
-           input.sourceTicketId ?? null, now, now],
+           input.sourceTicketId ?? null,
+           hasQuote ? input.sourceQuote! : null,
+           hasQuote ? (input.sourceQuoteVerified == null ? null : (input.sourceQuoteVerified ? 1 : 0)) : null,
+           hasQuote ? input.source.id : null,
+           now, now],
   })
   return (await getExpectation(c, id))!
 }
