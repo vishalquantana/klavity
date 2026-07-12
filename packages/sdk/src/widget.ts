@@ -980,6 +980,10 @@ export async function submitFeedback(
     screenshots,
     context: payload.context,
     replayEvents: payload.replayEvents,
+    // KLAVITYKLA-217: forward the full per-image annotation map so markup on every screenshot reaches
+    // the server as annotations_json (buildFeedbackForm serializes it). Previously omitted here, which
+    // silently dropped the overlay from the widget submit path.
+    annotations: payload.annotations,
   })
   // Reporter identity for the "email" gate: an end-user with no Klavity account types an email so the
   // server accepts the anonymous cross-origin report and can notify them on fix.
