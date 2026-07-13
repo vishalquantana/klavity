@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { buildModal } from '../src/modal'
 
 beforeEach(() => { document.body.innerHTML = '' })
@@ -792,5 +792,55 @@ describe('buildModal replay chip (JTBD 1.8)', () => {
     expect(() => ctrl.setReplayState('attached')).not.toThrow()
     expect(q(ctrl, '#klavity-replay-chip')).toBeNull()
     ctrl.close()
+  })
+})
+
+describe('buildModal voice input', () => {
+  let mockSR: any
+  function stubSR() {
+    mockSR = { continuous: false, interimResults: false, lang: '', onresult: null, onerror: null, onend: null, start: vi.fn(), stop: vi.fn() }
+    vi.stubGlobal('SpeechRecognition', vi.fn(() => mockSR))
+  }
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  it('renders mic button when SpeechRecognition supported', () => {
+    stubSR()
+    const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: async () => ({ issueKey: '1', issueUrl: '' }) })
+    expect(q(ctrl, '#klavity-voice')).not.toBeNull(); ctrl.close()
+  })
+  it('no mic button when SpeechRecognition unavailable', () => {
+    vi.stubGlobal('SpeechRecognition', undefined); vi.stubGlobal('webkitSpeechRecognition', undefined)
+    const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: async () => ({ issueKey: '1', issueUrl: '' }) })
+    expect(q(ctrl, '#klavity-voice')).toBeNull(); ctrl.close()
+  })
+  it('appends transcript to desc', () => {
+    stubSR()
+    const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: async () => ({ issueKey: '1', issueUrl: '' }) })
+    q(ctrl, '#klavity-voice')!.dispatchEvent(new MouseEvent('click'))
+    mockSR.onresult({ resultIndex: 0, results: [Object.assign([{ transcript: 'hello world' }], { isFinal: true })] })
+    expect((q(ctrl, '#klavity-desc') as HTMLTextAreaElement).value).toBe('hello world'); ctrl.close()
+  })
+  it('prepends space when desc has non-whitespace tail', () => {
+    stubSR()
+    const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: async () => ({ issueKey: '1', issueUrl: '' }) })
+    const desc = q(ctrl, '#klavity-desc') as HTMLTextAreaElement; desc.value = 'existing text'
+    q(ctrl, '#klavity-voice')!.dispatchEvent(new MouseEvent('click'))
+    mockSR.onresult({ resultIndex: 0, results: [Object.assign([{ transcript: 'more text' }], { isFinal: true })] })
+    expect(desc.value).toBe('existing text more text'); ctrl.close()
+  })
+  it('no extra space when desc ends with whitespace', () => {
+    stubSR()
+    const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: async () => ({ issueKey: '1', issueUrl: '' }) })
+    const desc = q(ctrl, '#klavity-desc') as HTMLTextAreaElement; desc.value = 'existing text '
+    q(ctrl, '#klavity-voice')!.dispatchEvent(new MouseEvent('click'))
+    mockSR.onresult({ resultIndex: 0, results: [Object.assign([{ transcript: 'more text' }], { isFinal: true })] })
+    expect(desc.value).toBe('existing text more text'); ctrl.close()
+  })
+  it('shows inline error for not-allowed', () => {
+    stubSR()
+    const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: async () => ({ issueKey: '1', issueUrl: '' }) })
+    q(ctrl, '#klavity-voice')!.dispatchEvent(new MouseEvent('click'))
+    mockSR.onerror({ error: 'not-allowed' })
+    expect(q(ctrl, '#klavity-voice-err')?.textContent).toBe('Microphone access was denied'); ctrl.close()
   })
 })

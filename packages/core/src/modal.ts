@@ -2,6 +2,7 @@ import type { ReportType } from './types'
 import { Annotator } from './annotator'
 import { themeCss, resolveModalConfig, type ModalConfig } from './modal-theme'
 import { icon } from './icons'
+import { VoiceInput } from './voice-input'
 import { maskNumbers } from './mask-numbers'
 
 // Re-exported here so the widget + extension can import the shared right-click-drag region gesture from
@@ -391,6 +392,17 @@ export function buildModal(
       z-index:3;
     }
     @media (max-width:430px){.klavity-lead{flex-direction:column}.klavity-lead button{width:100%;}}
+    #klavity-voice{position:relative;}
+    #klavity-voice .kl-cap-ic{position:relative;}
+    .kl-vring{display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:36px;height:36px;pointer-events:none;}
+    .kl-vring-bg{stroke:color-mix(in srgb,var(--kl-border) 80%,transparent);}
+    .kl-vring-prog{stroke:var(--kl-accent);transition:stroke .3s ease;}
+    #klavity-voice.kl-voice-rec .kl-vring{display:block;}
+    #klavity-voice.kl-voice-rec{color:rgb(220 38 38);background:color-mix(in srgb,rgb(220 38 38) 10%,var(--kl-chip));}
+    #klavity-voice.kl-voice-warn .kl-vring-prog{stroke:#f97316;}
+    .kl-vdot{display:none;position:absolute;top:0;right:0;width:6px;height:6px;border-radius:50%;background:rgb(220 38 38);}
+    #klavity-voice.kl-voice-rec .kl-vdot{display:block;animation:kl-vdot-pulse 1.2s ease infinite;}
+    @keyframes kl-vdot-pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.5;transform:scale(.7);}}
     @media (prefers-reduced-motion: reduce){.klavity-overlay,.klavity-modal,.klavity-modal.kl-closing,.klavity-modal>*, .klavity-toast-progress{animation-duration:.01ms!important;}.klavity-modal{--kl-lift:none;--kl-press:none;--kl-bhover:none;--kl-bpress:none;}.klavity-info,.klavity-rm,.klavity-mk{transition:none!important;}.klavity-actions button.kl-loading{animation:none;}.klavity-actions .kl-cap-ic,.klavity-toggle .kl-cap-ic{transition:none;transform:none!important;}}
   `
   shadowRoot.appendChild(style)
@@ -414,6 +426,7 @@ export function buildModal(
       <button id="klavity-full" title="Full Page — instant capture; may miss some cross-origin images"><span class="kl-cap-ic">${icon('camera')}</span><span class="kl-full-label">Full Page</span></button>
       <button id="klavity-upload"><span class="kl-cap-ic">${icon('image')}</span><span class="kl-upload-label">Upload</span></button>
       ${callbacks.onRegionCapture ? `<button id="klavity-region"><span class="kl-cap-ic">${icon('scissors')}</span><span class="kl-region-label">Region</span></button>` : ''}
+      ${VoiceInput.isSupported() ? `<button id="klavity-voice" title="Dictate description"><span class="kl-cap-ic">${icon('mic')}<span class="kl-vdot"></span></span><span class="kl-voice-label">Voice</span><svg class="kl-vring" viewBox="0 0 32 32" aria-hidden="true"><circle class="kl-vring-bg" cx="16" cy="16" r="13" fill="none" stroke-width="2"/><circle class="kl-vring-prog" cx="16" cy="16" r="13" fill="none" stroke-width="2" stroke-dasharray="81.68" stroke-dashoffset="81.68" stroke-linecap="round" transform="rotate(-90 16 16)"/></svg></button>` : ''}
     </div>
     <label class="klav-mask-row"><input type="checkbox" id="klavity-mask-numbers"${maskOn ? ' checked' : ''}>${icon('eye-off', { size: 13 })}<span>Mask numbers</span></label>
     <input type="file" id="klavity-file" accept="image/*,.heic,.heif" multiple style="display:none">
@@ -660,7 +673,10 @@ export function buildModal(
     }
   }
 
+  let _stopVoice: (() => void) | null = null
+
   function close() {
+    _stopVoice?.()
     if (autodismissTimeout) {
       clearTimeout(autodismissTimeout)
       autodismissTimeout = null
@@ -738,7 +754,7 @@ export function buildModal(
   // flight. `lockComposer(true)` disables every capture button (Sharp/Full Page/Upload/Region) and Submit;
   // releasing restores Submit to its validity state. Each action also early-returns when `busy` so a
   // queued double-click can't slip through before the disabled attribute paints.
-  const captureBtnEls = () => Array.from(modal.querySelectorAll('.klavity-actions button')) as HTMLButtonElement[]
+  const captureBtnEls = () => Array.from(modal.querySelectorAll('.klavity-actions button:not(#klavity-voice)')) as HTMLButtonElement[]
   let busy = false
   const lockComposer = (on: boolean) => {
     busy = on
@@ -751,6 +767,68 @@ export function buildModal(
   const setActiveCapture = (btn: HTMLButtonElement | null) => {
     captureBtnEls().forEach(b => { b.classList.remove('kl-active'); b.removeAttribute('aria-pressed') })
     if (btn) { btn.classList.add('kl-active'); btn.setAttribute('aria-pressed', 'true') }
+  }
+
+  const voiceBtn = modal.querySelector('#klavity-voice') as HTMLButtonElement | null
+  if (voiceBtn) {
+    const voice = new VoiceInput()
+    const CIRCUMFERENCE = 81.68
+    const WARN_THRESHOLD_MS = 15000
+    const ringProg = voiceBtn.querySelector('.kl-vring-prog') as SVGCircleElement | null
+    let rafId = 0, startTime = 0, voiceRecording = false
+
+    const startRing = () => {
+      startTime = Date.now()
+      const tick = () => {
+        const elapsed = Date.now() - startTime
+        const progress = Math.min(elapsed / 180000, 1)
+        ringProg?.setAttribute('stroke-dashoffset', String(progress * CIRCUMFERENCE))
+        if (elapsed >= 180000 - WARN_THRESHOLD_MS) voiceBtn.classList.add('kl-voice-warn')
+        if (elapsed < 180000) rafId = requestAnimationFrame(tick)
+      }
+      rafId = requestAnimationFrame(tick)
+    }
+
+    const stopRing = () => {
+      cancelAnimationFrame(rafId)
+      ringProg?.setAttribute('stroke-dashoffset', String(CIRCUMFERENCE))
+      voiceBtn.classList.remove('kl-voice-warn')
+    }
+
+    voice.onTranscript = (text) => {
+      const existing = desc.value
+      desc.value = existing + (existing.length > 0 && !/\s$/.test(existing) ? ' ' : '') + text
+      refreshSubmit()
+    }
+
+    voice.onError = (_, message) => {
+      if (!message) return
+      let errEl = shadowRoot.getElementById('klavity-voice-err')
+      if (!errEl) {
+        errEl = document.createElement('div')
+        errEl.id = 'klavity-voice-err'
+        errEl.style.cssText = 'color:rgb(220 38 38);font-size:12px;margin-top:4px;'
+        desc.insertAdjacentElement('afterend', errEl)
+      }
+      errEl.textContent = message
+      setTimeout(() => { if (errEl) errEl.textContent = '' }, 4000)
+    }
+
+    voice.onStop = () => {
+      voiceRecording = false
+      voiceBtn.classList.remove('kl-voice-rec')
+      stopRing()
+    }
+
+    voiceBtn.addEventListener('click', () => {
+      if (!voiceRecording) {
+        voiceRecording = true; voiceBtn.classList.add('kl-voice-rec'); voice.start(); startRing()
+      } else {
+        voice.stop()
+      }
+    })
+
+    _stopVoice = () => { if (voiceRecording) voice.stop() }
   }
 
   submitBtn.addEventListener('click', async () => {
