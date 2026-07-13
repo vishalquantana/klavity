@@ -843,4 +843,16 @@ describe('buildModal voice input', () => {
     mockSR.onerror({ error: 'not-allowed' })
     expect(q(ctrl, '#klavity-voice-err')?.textContent).toBe('Microphone access was denied'); ctrl.close()
   })
+  it('resets button to idle state after 180s auto-stop', () => {
+    vi.useFakeTimers()
+    stubSR()
+    const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: async () => ({ issueKey: '1', issueUrl: '' }) })
+    const voiceBtn = q(ctrl, '#klavity-voice') as HTMLButtonElement
+    voiceBtn.dispatchEvent(new MouseEvent('click'))
+    expect(voiceBtn.classList.contains('kl-voice-rec')).toBe(true)
+    vi.advanceTimersByTime(180000)
+    expect(voiceBtn.classList.contains('kl-voice-rec')).toBe(false)
+    ctrl.close()
+    vi.useRealTimers()
+  })
 })

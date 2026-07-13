@@ -784,7 +784,11 @@ export function buildModal(
         const progress = Math.min(elapsed / 180000, 1)
         ringProg?.setAttribute('stroke-dashoffset', String(progress * CIRCUMFERENCE))
         if (elapsed >= 180000 - WARN_THRESHOLD_MS) voiceBtn.classList.add('kl-voice-warn')
-        if (elapsed < 180000) rafId = requestAnimationFrame(tick)
+        if (elapsed >= 180000) {
+          voice.stop()  // belt-and-suspenders: VoiceInput's own timer also fires at 180s
+          return
+        }
+        rafId = requestAnimationFrame(tick)
       }
       rafId = requestAnimationFrame(tick)
     }
@@ -807,11 +811,15 @@ export function buildModal(
       if (!errEl) {
         errEl = document.createElement('div')
         errEl.id = 'klavity-voice-err'
-        errEl.style.cssText = 'color:rgb(220 38 38);font-size:12px;margin-top:4px;'
+        errEl.style.cssText = 'color:rgb(220 38 38);font-size:12px;margin-top:4px;opacity:1;'
         desc.insertAdjacentElement('afterend', errEl)
       }
+      errEl.style.opacity = '1'
+      errEl.style.transition = ''
       errEl.textContent = message
-      setTimeout(() => { if (errEl) errEl.textContent = '' }, 4000)
+      errEl.style.transition = 'opacity .3s ease'
+      setTimeout(() => { if (errEl) errEl.style.opacity = '0' }, 3700)
+      setTimeout(() => { if (errEl) { errEl.textContent = ''; errEl.style.opacity = '1'; errEl.style.transition = '' } }, 4000)
     }
 
     voice.onStop = () => {
