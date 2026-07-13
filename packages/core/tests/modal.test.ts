@@ -801,7 +801,7 @@ describe('buildModal voice input', () => {
     mockSR = { continuous: false, interimResults: false, lang: '', onresult: null, onerror: null, onend: null, start: vi.fn(), stop: vi.fn() }
     vi.stubGlobal('SpeechRecognition', vi.fn(() => mockSR))
   }
-  afterEach(() => { vi.unstubAllGlobals() })
+  afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
 
   it('renders mic button when SpeechRecognition supported', () => {
     stubSR()
@@ -853,6 +853,5 @@ describe('buildModal voice input', () => {
     vi.advanceTimersByTime(180000)
     expect(voiceBtn.classList.contains('kl-voice-rec')).toBe(false)
     ctrl.close()
-    vi.useRealTimers()
   })
 })
