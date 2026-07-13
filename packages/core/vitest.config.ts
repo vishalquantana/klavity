@@ -5,6 +5,7 @@ export default defineConfig({
     include: ['**/*.{test,spec}.?(c|m)[jt]s?(x)', '../../scripts/*.test.mjs', '../../site/*.test.mjs'],
     environmentMatchGlobs: [
       ['tests/modal.test.ts', 'jsdom'],
+      ['tests/voice-input.test.ts', 'jsdom'],
       ['../../site/kit.icon.test.mjs', 'jsdom'],
       ['src/mask-numbers.test.ts', 'jsdom'],
     ],
