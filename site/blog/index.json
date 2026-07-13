@@ -145,5 +145,12 @@
     "excerpt": "Manual and automated QA catch different bugs at different costs. Automate the stable, repetitive checks and keep humans on judgment. Here's the split.",
     "category": "Compare",
     "date": "2026-07-12"
+  },
+  {
+    "slug": "in-app-bug-reporting-guide",
+    "title": "In-App Bug Reporting: A Practical Guide for QA Teams",
+    "excerpt": "In-app bug reporting lets people file a bug from inside your product, so it ships with the exact state — URL, console, network, and environment — attached.",
+    "category": "Guides",
+    "date": "2026-07-13"
   }
 ]
