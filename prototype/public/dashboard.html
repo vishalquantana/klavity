@@ -1527,7 +1527,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
               <div class="cl-embed">
                 <code id="embedSnippet">Loading…</code>
                 <button class="btn btn-ghost btn-sm" id="embedCopy" type="button">Copy</button>
-                <button class="btn btn-ghost btn-sm" id="embedCopyAI" type="button" title="Widget not loading? If your site has a Content Security Policy, copy paste-ready fix instructions for your AI or developer.">Copy to AI</button>
+                <button class="btn btn-ghost btn-sm" id="embedCopyAI" type="button" title="Copy full instructions for your AI coding agent — embeds the widget on all pages and fixes any Content Security Policy errors.">Copy to AI</button>
               </div>
               <div class="cl-wdetect" id="clWidgetDetect"></div>
             </div>
@@ -1594,7 +1594,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       <div class="snap-embed-row">
         <code id="snapViewSnippet">Loading…</code>
         <button class="btn btn-ghost btn-sm" id="snapViewCopy" type="button">Copy</button>
-        <button class="btn btn-ghost btn-sm" id="snapViewCopyAI" type="button" title="CSP block? Copy paste-ready fix instructions for your AI or developer.">Copy to AI</button>
+        <button class="btn btn-ghost btn-sm" id="snapViewCopyAI" type="button" title="Copy full instructions for your AI coding agent — embeds the widget on all pages and fixes any Content Security Policy errors.">Copy to AI</button>
       </div>
       <div class="snap-detect" id="snapViewDetect" role="status" aria-live="polite">
         <span class="sdot" aria-hidden="true"></span><span id="snapViewDetectTxt">Waiting for your site… paste the snippet, then reload your page</span>
@@ -1859,9 +1859,9 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           <div class="cl-embed">
             <code id="appearanceSnippet">Loading…</code>
             <button class="btn btn-ghost btn-sm" id="appearanceEmbedCopy" type="button">Copy</button>
-            <button class="btn btn-ghost btn-sm" id="appearanceEmbedCopyAI" type="button" title="Widget not loading? If your site has a Content Security Policy, copy paste-ready fix instructions for your AI or developer.">Copy to AI</button>
+            <button class="btn btn-ghost btn-sm" id="appearanceEmbedCopyAI" type="button" title="Copy full instructions for your AI coding agent — embeds the widget on all pages and fixes any Content Security Policy errors.">Copy to AI</button>
           </div>
-          <p style="font-size:12px;opacity:.7;margin:6px 0 0">Paste this before <code>&lt;/body&gt;</code> on any page — no extension needed. Widget not showing up? Use <b>Copy to AI</b> to get a Content-Security-Policy fix for your dev.</p>
+          <p style="font-size:12px;opacity:.7;margin:6px 0 0">Paste this before <code>&lt;/body&gt;</code> on any page — no extension needed. Widget not showing up? Use <b>Copy to AI</b> for step-by-step instructions your AI coding agent can follow to embed it site-wide and fix any CSP errors.</p>
         </div>
         <div class="wp-config-preview">
         <div class="wp-config">
@@ -3116,30 +3116,70 @@ function embedSnippet(pid) {
 function cspFixPrompt(pid) {
   const origin = location.origin
   return [
-    "My site embeds the Klavity report widget but it isn't loading — the browser",
-    "console shows a Content Security Policy (CSP) error blocking " + origin + "/widget.js.",
+    "## Task: embed a bug-reporting widget on every page of this site",
     "",
-    "Please update my site's Content-Security-Policy so the widget can load. Add the",
-    "Klavity origin (" + origin + ") to these directives:",
+    "I want to add a small floating button to every page of my web application so that",
+    "users can click it at any time to report a bug, send feedback, or flag an issue.",
+    "The button is provided by a third-party service called Klavity. When clicked, it",
+    "opens a composer where the user can describe the problem and attach a screenshot.",
+    "Reports are sent to my Klavity dashboard for triage.",
     "",
-    "  - script-src   " + origin + "   (so widget.js can load and run)",
-    "  - connect-src  " + origin + "   (so it can POST reports to /api/feedback)",
-    "  - img-src      data:   (so the captured screenshot preview can display)",
+    "### Step 1 — Add the widget snippet to every page",
     "",
-    "If a directive isn't set yet, the browser falls back to default-src — so either add the",
-    "value to default-src or create the specific directive above.",
+    "Paste the following <script> tag just before </body> on every HTML page (or in your",
+    "shared layout / _document / base template so it loads site-wide):",
     "",
-    "The CSP header is usually set in one of these places — find whichever applies to my site:",
-    "  - A helmet() / CSP config in an Express, Node, or Next.js server",
-    "  - A <meta http-equiv=\"Content-Security-Policy\"> tag in the HTML <head>",
-    "  - A reverse proxy or host: nginx (add_header Content-Security-Policy), Caddy,",
-    "    Cloudflare, or a Vercel / Netlify headers config",
-    "",
-    "The widget snippet on my page is:",
     "  " + embedSnippet(pid),
     "",
-    "After the change, reload the page and confirm the console CSP error is gone and the",
-    "Klavity widget button appears. Do not remove any of the existing CSP sources.",
+    "The script loads asynchronously (defer) and injects a small floating button in the",
+    "bottom-right corner. It does not block page rendering.",
+    "",
+    "### Step 2 — Fix the Content Security Policy (if your site uses one)",
+    "",
+    "If your site sets a Content-Security-Policy (CSP) header, the browser will block the",
+    "widget unless you explicitly allow its origin. You may already see this error in the",
+    "browser console:",
+    "",
+    "  Refused to load the script '" + origin + "/widget.js' because it violates",
+    "  the following Content Security Policy directive: \"script-src 'self'\"",
+    "",
+    "Add the following three values to your CSP. Do NOT remove any existing sources —",
+    "only append these new ones:",
+    "",
+    "  script-src  " + origin,
+    "    → lets the browser download and execute widget.js",
+    "",
+    "  connect-src " + origin,
+    "    → lets the widget POST bug reports to " + origin + "/api/feedback",
+    "",
+    "  img-src     data:",
+    "    → lets the widget display the captured screenshot as a base64 preview",
+    "",
+    "If a directive doesn't exist yet, the browser falls back to default-src, so you can",
+    "either add the value to default-src or create the specific directive.",
+    "",
+    "### Where to find the CSP setting",
+    "",
+    "Look for the CSP in whichever of these places applies to this project:",
+    "  - Node / Express: a helmet() call or res.setHeader('Content-Security-Policy', ...)",
+    "    in server.js, app.js, or a middleware file",
+    "  - Next.js: the headers() function in next.config.js, or middleware.ts",
+    "  - HTML: <meta http-equiv=\"Content-Security-Policy\" content=\"...\"> in <head>",
+    "  - nginx: add_header Content-Security-Policy \"...\" in nginx.conf or a site config",
+    "  - Caddy: header Content-Security-Policy \"...\" in the Caddyfile",
+    "  - Vercel: a headers entry in vercel.json",
+    "  - Netlify: a [[headers]] block in netlify.toml",
+    "  - Cloudflare: a Transform Rule or a Workers script that sets the header",
+    "",
+    "### Verification",
+    "",
+    "After making both changes:",
+    "  1. Reload any page of the site.",
+    "  2. Open DevTools → Console — there should be no CSP errors mentioning " + origin + ".",
+    "  3. A small floating button should appear in the bottom-right corner of the page.",
+    "  4. Clicking it should open the bug-report composer.",
+    "",
+    "Tell me what files you changed and show the updated CSP string so I can verify it.",
   ].join("\n")
 }
 // Shared clipboard helper with button feedback — used by both Copy and Copy-to-AI buttons.
