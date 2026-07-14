@@ -232,6 +232,14 @@ export function buildModal(
     .kl-hsep{width:1px;height:24px;background:rgba(255,255,255,.14);margin:0 3px;}
     .kl-hgrow{flex:1;}
     .kl-hhint{color:#7d879f;font-size:11px;font-weight:600;white-space:nowrap;}
+    /* Contextual text options (outline colour + size) — only visible while the Text tool is active. */
+    .kl-htextopts{display:inline-flex;align-items:center;gap:5px;}
+    .kl-htextopts[hidden]{display:none;}
+    .kl-hlabel{color:#7d879f;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin:0 1px;}
+    .kl-hopt{min-width:28px;height:30px;padding:0 8px;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:transparent;color:#cfd5ea;font-size:12px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;}
+    .kl-hopt:hover{background:rgba(255,255,255,.08);}
+    .kl-hopt.kl-on{background:var(--kl-accent);color:var(--kl-on-accent);border-color:transparent;}
+    .kl-osq{width:13px;height:13px;border-radius:3px;display:inline-block;}
     .kl-htool:focus-visible,.kl-htbtn:focus-visible,.kl-hcolor:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
     .klavity-thumb.kl-thumb-active img{outline:2px solid var(--kl-accent);outline-offset:1px;}
     @media (max-width:760px){.kl-hhint{display:none;}}
@@ -1088,6 +1096,18 @@ export function buildModal(
       t('count', 'Numbers', heroGlyph('<circle cx="12" cy="12" r="9"/><text x="12" y="16" text-anchor="middle" font-size="11" font-weight="700" fill="currentColor" stroke="none">1</text>'), 'c') +
       `<span class="kl-hsep"></span>` +
       c('#ef4444') + c('#f97316') + c('#3b82f6') + c('#111827') +
+      // Contextual text options — shown only while the Text tool is active (toggled in selectTool).
+      `<span class="kl-htextopts" id="kl-hero-textopts" hidden>` +
+        `<span class="kl-hsep"></span>` +
+        `<span class="kl-hlabel">Outline</span>` +
+        `<button type="button" class="kl-hopt kl-on" data-outline="black" title="Black outline"><span class="kl-osq" style="background:#111"></span></button>` +
+        `<button type="button" class="kl-hopt" data-outline="white" title="White outline"><span class="kl-osq" style="background:#fff;border:1px solid #999"></span></button>` +
+        `<button type="button" class="kl-hopt" data-outline="none" title="No outline">None</button>` +
+        `<span class="kl-hlabel">Size</span>` +
+        `<button type="button" class="kl-hopt" data-size="18" title="Small">S</button>` +
+        `<button type="button" class="kl-hopt kl-on" data-size="26" title="Medium">M</button>` +
+        `<button type="button" class="kl-hopt" data-size="40" title="Large">L</button>` +
+      `</span>` +
       `<span class="kl-hsep"></span>` +
       `<button type="button" class="kl-htbtn" id="kl-hero-undo" title="Undo (⌘Z)" aria-label="Undo">${heroGlyph('<path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/>', 14)}</button>` +
       `<button type="button" class="kl-htbtn" id="kl-hero-clear" title="Clear" aria-label="Clear">${icon('trash-2', { size: 14 })}</button>` +
@@ -1151,6 +1171,9 @@ export function buildModal(
       tools.innerHTML = heroToolbarHtml()
       let activeTool = 'pen'
       let activeColor = '#ef4444'
+      let textSize = 26
+      let textOutline: 'black' | 'white' | 'none' = 'black'
+      const textOpts = tools.querySelector('#kl-hero-textopts') as HTMLElement | null
       const persist = () => {
         if (annotator.shapes.length) annotationsByIndex[index] = { w: canvas.width, h: canvas.height, shapes: annotator.shapes.map(s => ({ ...s })) }
         else delete annotationsByIndex[index]
@@ -1158,6 +1181,7 @@ export function buildModal(
       const selectTool = (t: string) => {
         activeTool = t
         tools.querySelectorAll<HTMLElement>('[data-tool]').forEach(el => el.classList.toggle('kl-on', el.dataset.tool === t))
+        if (textOpts) textOpts.hidden = t !== 'text'
       }
       const selectColor = (col: string, btn?: HTMLElement) => {
         activeColor = col
@@ -1165,6 +1189,14 @@ export function buildModal(
       }
       tools.querySelectorAll('[data-tool]').forEach(b => b.addEventListener('click', () => selectTool((b as HTMLElement).dataset.tool!)))
       tools.querySelectorAll('[data-color]').forEach(b => b.addEventListener('click', () => selectColor((b as HTMLElement).dataset.color!, b as HTMLElement)))
+      tools.querySelectorAll('[data-outline]').forEach(b => b.addEventListener('click', () => {
+        textOutline = (b as HTMLElement).dataset.outline as 'black' | 'white' | 'none'
+        tools.querySelectorAll<HTMLElement>('[data-outline]').forEach(el => el.classList.toggle('kl-on', el === b))
+      }))
+      tools.querySelectorAll('[data-size]').forEach(b => b.addEventListener('click', () => {
+        textSize = Number((b as HTMLElement).dataset.size)
+        tools.querySelectorAll<HTMLElement>('[data-size]').forEach(el => el.classList.toggle('kl-on', el === b))
+      }))
       tools.querySelector('#kl-hero-undo')?.addEventListener('click', () => { annotator.undo(); persist() })
       tools.querySelector('#kl-hero-clear')?.addEventListener('click', () => { annotator.clearAll(); persist() })
       selectTool(activeTool)
@@ -1186,9 +1218,11 @@ export function buildModal(
         const pt = toImg(e); startX = pt.x; startY = pt.y
         if (activeTool === 'text') {
           const input = document.createElement('input')
-          input.style.cssText = `position:fixed;left:${e.clientX}px;top:${e.clientY}px;background:transparent;border:1px dashed ${activeColor};color:${activeColor};font-size:16px;outline:none;z-index:2147483647;min-width:80px;`
+          const shadow = textOutline === 'none' ? 'none' : `0 0 2px ${textOutline}, 0 0 2px ${textOutline}`
+          input.style.cssText = `position:fixed;left:${e.clientX}px;top:${e.clientY}px;background:transparent;border:1px dashed ${activeColor};color:${activeColor};font-size:${textSize}px;font-weight:700;text-shadow:${shadow};outline:none;z-index:2147483647;min-width:80px;`
+          const sz = textSize, ol = textOutline
           document.body.appendChild(input); input.focus()
-          input.addEventListener('blur', () => { if (input.value.trim()) { annotator.addShape({ type: 'text', color: activeColor, x: startX, y: startY, text: input.value.trim() }); persist() } input.remove() }, { once: true })
+          input.addEventListener('blur', () => { if (input.value.trim()) { annotator.addShape({ type: 'text', color: activeColor, x: startX, y: startY, text: input.value.trim(), size: sz, outline: ol }); persist() } input.remove() }, { once: true })
           input.addEventListener('keydown', (ke) => { if (ke.key === 'Enter') input.blur(); ke.stopPropagation() })
           return
         }

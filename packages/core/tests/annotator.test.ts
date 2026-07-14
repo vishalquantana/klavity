@@ -80,6 +80,15 @@ describe('Annotator', () => {
     expect((a.shapes[1] as any).n).toBe(2)
   })
 
+  it('accepts a text shape with size + outline options', () => {
+    const a = new Annotator(makeCanvas(), 'data:image/png;base64,img')
+    a.addShape({ type: 'text', color: '#ff0000', x: 5, y: 6, text: 'hi', size: 40, outline: 'white' })
+    expect(a.shapes).toHaveLength(1)
+    const s = a.shapes[0] as any
+    expect(s.size).toBe(40)
+    expect(s.outline).toBe('white')
+  })
+
   it('computeLineWidth scales with image width', () => {
     const a = new Annotator(makeCanvas(), 'data:image/png;base64,img')
     // canvas.width = 400 → lineWidth = max(3, 400/400) = 3

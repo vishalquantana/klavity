@@ -161,7 +161,7 @@ export type Shape =
   | { type: 'arrow'; color: string; x1: number; y1: number; x2: number; y2: number }
   // straight line segment from (x1,y1) to (x2,y2)
   | { type: 'line'; color: string; x1: number; y1: number; x2: number; y2: number }
-  | { type: 'text'; color: string; x: number; y: number; text: string }
+  | { type: 'text'; color: string; x: number; y: number; text: string; size?: number; outline?: 'black' | 'white' | 'none' }
   // circle is an axis-aligned ellipse; (x,y) is the centre, rx/ry the radii (from the drag bbox)
   | { type: 'circle'; color: string; x: number; y: number; rx: number; ry: number }
   // numbered marker pin: filled dot with a step number, dropped by the count tool
