@@ -1,0 +1,115 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to Run a Bug Bash That Actually Finds Real Bugs · Klavity</title>
+<meta name="description" content="A bug bash only works when it's scoped, timeboxed, and captures reproducible evidence. Here's how to plan one, run the session, and triage what it finds.">
+<link rel="canonical" href="https://klavity.in/blog/how-to-run-a-bug-bash">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="How to Run a Bug Bash That Actually Finds Real Bugs"><meta property="og:description" content="A bug bash only works when it's scoped, timeboxed, and captures reproducible evidence. Here's how to plan one, run the session, and triage what it finds.">
+<meta property="og:url" content="https://klavity.in/blog/how-to-run-a-bug-bash"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="How to Run a Bug Bash That Actually Finds Real Bugs"><meta name="twitter:description" content="A bug bash only works when it's scoped, timeboxed, and captures reproducible evidence. Here's how to plan one, run the session, and triage what it finds."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"How to Run a Bug Bash That Actually Finds Real Bugs","description":"A bug bash only works when it's scoped, timeboxed, and captures reproducible evidence. Here's how to plan one, run the session, and triage what it finds.","datePublished":"2026-07-14","dateModified":"2026-07-14","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/how-to-run-a-bug-bash","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Run a Bug Bash That Actually Finds Real Bugs","item":"https://klavity.in/blog/how-to-run-a-bug-bash"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/how-to-run-a-bug-bash"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"How long should a bug bash last?","acceptedAnswer":{"@type":"Answer","text":"Keep the active testing window to 60–90 minutes. Attention and creativity drop off after that, and short sessions are easier to schedule across a busy team. Reserve a separate block afterward for triage rather than trying to sort findings live."}},{"@type":"Question","name":"How many people should join a bug bash?","acceptedAnswer":{"@type":"Answer","text":"Five to ten testers is a practical range. Fewer than five and you miss the diversity of paths that makes a bash valuable; more than ten and duplicate reports pile up faster than anyone can triage them. Mix roles — engineering, design, support, sales — so different mental models hit different corners of the product."}},{"@type":"Question","name":"What's the difference between a bug bash and regular QA?","acceptedAnswer":{"@type":"Answer","text":"Regular QA verifies known requirements against a plan. A bug bash is deliberately exploratory: people poke at the product without a script, looking for the unexpected. It complements automated tests and scripted QA rather than replacing them — the bash finds what nobody thought to write a test for."}},{"@type":"Question","name":"When should you run a bug bash?","acceptedAnswer":{"@type":"Answer","text":"Before a significant release, after a large feature merges, or ahead of a launch when the risk of user-facing regressions is highest. Run them on a real staging build with production-like data, not on a developer's local branch, so the bugs you find are the ones users would actually hit."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-07-14</div>
+    <h1>How to Run a Bug Bash That Actually Finds Real Bugs</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>A bug bash is a timeboxed session where a cross-functional group uses a product specifically to find bugs before release. The ones that pay off are narrowly scoped to a single feature or flow, staffed by people from different roles, and backed by a fast way to file reproducible reports so triage can happen the same day.</div>
+    <div class="prose"><p>A bug bash is a timeboxed session where a cross-functional group uses a product with the explicit goal of finding bugs before release. To run one that surfaces real, fixable bugs: scope it to a specific feature or flow, invite five to ten people from different roles, give everyone a charter and a fast way to file reproducible reports, then triage every finding within 24 hours while the context is still fresh. The bashes that fail almost always skip one of those four ingredients — usually the last one.</p>
+
+<h2>What is a bug bash?</h2>
+<p>A bug bash is a form of structured exploratory testing. Instead of executing a fixed test plan, a group of people deliberately tries to break the product within a fixed window, filing what they find as they go. The value comes from diversity of paths: a support engineer, a designer, and a backend developer each carry different assumptions, so they each stumble into different corners of the product. Automated suites verify what you already thought to test; a bug bash finds what nobody thought to write a test for.</p>
+<p>It is a complement to your existing process, not a replacement. Scripted QA and end-to-end tests still guard your known requirements. The bash is the layer that catches the unexpected interaction — the one you only see when a human clicks something in an order no test author anticipated.</p>
+
+<h2>How to plan a bug bash</h2>
+<p>Most of the outcome is decided before anyone starts testing. A vague, unscoped bash produces a pile of duplicate low-severity noise that nobody triages. Plan it like this:</p>
+<ol>
+<li><strong>Pick one scope.</strong> Choose a single feature, user flow, or release candidate. “Test the whole app” guarantees shallow coverage and heavy duplication. “Test the new checkout flow on mobile Safari” produces findings you can act on.</li>
+<li><strong>Write a one-line charter.</strong> State the goal, the build to test, the environment, and what's out of bounds. Everyone should be able to read it in ten seconds and know exactly where to aim.</li>
+<li><strong>Use a production-like build.</strong> Test on staging with realistic data, not a local branch. Bugs found on a throwaway dataset are often not the bugs your users hit.</li>
+<li><strong>Decide how bugs get filed before you start.</strong> This is the single biggest predictor of whether a bash is useful. If filing a report means switching tabs, taking a manual screenshot, and hunting for the console, people stop filing after the first few and just call things out verbally — and verbal bugs evaporate.</li>
+<li><strong>Assign a triage owner.</strong> One person is responsible for sorting every incoming report during and right after the session. Without an owner, findings sit untriaged and the whole exercise is wasted.</li>
+</ol>
+
+<h2>Who should attend a bug bash</h2>
+<p>The right attendee list is the mechanism, not a formality. Aim for five to ten testers spanning at least three roles:</p>
+<ul>
+<li><strong>Engineers</strong> reach for edge cases and malformed input because they know where the seams are.</li>
+<li><strong>Designers</strong> notice broken states, layout regressions, and interactions that technically work but feel wrong.</li>
+<li><strong>Support and success</strong> reproduce the paths real customers actually take, including the messy ones.</li>
+<li><strong>Sales and non-technical staff</strong> use the product with none of the insider knowledge that makes engineers unconsciously avoid the sharp edges.</li>
+</ul>
+<p>That last group matters more than teams expect. The bugs your QA team never finds are often the ones hiding in the paths QA is too expert to take. If you can't assemble a diverse human group for every release, <a href="/sims">persona-driven testing</a> can stand in — AI personas built from real customer data explore the product the way different user types would, surfacing assumption mismatches between full human bashes.</p>
+
+<h2>How to run the bug bash session</h2>
+<ol>
+<li><strong>Kick off with the charter (5 minutes).</strong> Restate the scope, the environment, and how to file a report. Confirm everyone can access the build.</li>
+<li><strong>Test heads-down (60–90 minutes).</strong> No meetings, no narration. Everyone uses the product and files as they find. Encourage people to try the “wrong” thing: double-clicks, back-button mid-flow, refresh during a save, pasting emoji into number fields.</li>
+<li><strong>File complete reports on the spot.</strong> A useful report carries exact steps, the environment, and evidence — a screenshot, the console output, and the failing network request. Capturing that state at the moment of failure is what prevents the dreaded “cannot reproduce” later. An in-app reporter like <a href="/snap">Klavity Snap</a> lets a tester right-click, capture the screenshot, console, and network trace automatically, and file to your tracker without leaving the page — which keeps people filing instead of shouting bugs across the room.</li>
+<li><strong>Watch for duplicates as they arrive.</strong> The triage owner tags and merges in real time so ten people hitting the same broken button become one ticket, not ten.</li>
+</ol>
+
+<h2>How to triage bug bash findings</h2>
+<p>A bash generates its value only if the findings get sorted quickly. Do it within 24 hours, while everyone still remembers what they did:</p>
+<ol>
+<li><strong>Deduplicate first.</strong> Merge reports that describe the same underlying defect before you assess anything, so severity and priority aren't split across five tickets.</li>
+<li><strong>Classify severity and priority separately.</strong> How badly it breaks the product is a different question from how soon you should fix it. Keeping them independent stops the loudest bug from jumping the most important one.</li>
+<li><strong>Confirm reproducibility.</strong> A report with steps, environment, and evidence should reproduce on the first try. Ones that don't go back to the reporter immediately, not into a “someday” pile.</li>
+<li><strong>Route and close the loop.</strong> Assign real bugs to owners and tell the bash participants what happened to their findings. People who see their reports acted on show up to the next bash; people who don't, quietly stop filing.</li>
+</ol>
+
+<h2>Common bug bash mistakes to avoid</h2>
+<ul>
+<li><strong>No scope.</strong> “Break the app” produces noise. One feature, one flow.</li>
+<li><strong>No filing mechanism.</strong> If reporting is slow, people stop reporting. Decide the tool before the session, not during it.</li>
+<li><strong>Skipping evidence.</strong> “It was broken earlier” is not a bug report. No screenshot, console, and network trace means no reproduction and no fix.</li>
+<li><strong>No triage owner.</strong> Untriaged findings rot. One person owns the sort, same day.</li>
+<li><strong>Treating it as a substitute for tests.</strong> A bash finds the unknown; it doesn't guard against regressions. Once you've fixed a bash bug, add a test so it stays fixed.</li>
+</ul>
+
+<h2>How often should you run a bug bash?</h2>
+<p>Tie bashes to risk, not the calendar. Run one before any significant release, after a large feature merges, and ahead of a launch — the moments when the chance of a user-facing regression is highest. For steadily shipping teams, a short bash every sprint on that sprint's riskiest change tends to beat a rare, sprawling all-hands one. Between bashes, let automated coverage carry the load: a suite of <a href="/autosim">self-healing end-to-end tests</a> guards the flows you've already validated so each human bash can spend its energy on what's genuinely new. For more on sorting what a bash turns up, see our guide to <a href="/blog">triaging a bug backlog</a>.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Scope every bash to one feature or flow and write a one-line charter</li><li>Invite 5–10 testers from different roles, not just engineers</li><li>Give everyone a fast, in-app way to file reproducible reports</li><li>Triage every finding within 24 hours while context is still fresh</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>How long should a bug bash last?</summary><p>Keep the active testing window to 60–90 minutes. Attention and creativity drop off after that, and short sessions are easier to schedule across a busy team. Reserve a separate block afterward for triage rather than trying to sort findings live.</p></details><details><summary>How many people should join a bug bash?</summary><p>Five to ten testers is a practical range. Fewer than five and you miss the diversity of paths that makes a bash valuable; more than ten and duplicate reports pile up faster than anyone can triage them. Mix roles — engineering, design, support, sales — so different mental models hit different corners of the product.</p></details><details><summary>What's the difference between a bug bash and regular QA?</summary><p>Regular QA verifies known requirements against a plan. A bug bash is deliberately exploratory: people poke at the product without a script, looking for the unexpected. It complements automated tests and scripted QA rather than replacing them — the bash finds what nobody thought to write a test for.</p></details><details><summary>When should you run a bug bash?</summary><p>Before a significant release, after a large feature merges, or ahead of a launch when the risk of user-facing regressions is highest. Run them on a real staging build with production-like data, not on a developer's local branch, so the bugs you find are the ones users would actually hit.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
