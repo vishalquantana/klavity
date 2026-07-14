@@ -100,7 +100,16 @@ export class Annotator {
       ctx.textAlign = 'start'
       ctx.textBaseline = 'alphabetic'
     } else if (shape.type === 'text') {
-      ctx.font = `bold ${this.computeFontSize()}px sans-serif`
+      const size = shape.size ?? this.computeFontSize()
+      ctx.font = `bold ${size}px sans-serif`
+      const outline = shape.outline ?? 'none'
+      if (outline !== 'none') {
+        ctx.lineJoin = 'round'
+        ctx.lineWidth = Math.max(3, size * 0.18)
+        ctx.strokeStyle = outline === 'white' ? '#ffffff' : '#111111'
+        ctx.strokeText(shape.text, shape.x, shape.y)
+        ctx.fillStyle = shape.color
+      }
       ctx.fillText(shape.text, shape.x, shape.y)
     }
   }
