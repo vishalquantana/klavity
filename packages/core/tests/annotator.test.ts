@@ -65,6 +65,21 @@ describe('Annotator', () => {
     expect(a.shapes[0].type).toBe('circle')
   })
 
+  it('accepts a line shape', () => {
+    const a = new Annotator(makeCanvas(), 'data:image/png;base64,img')
+    a.addShape({ type: 'line', color: '#ff0000', x1: 1, y1: 2, x2: 3, y2: 4 })
+    expect(a.shapes).toHaveLength(1)
+    expect(a.shapes[0].type).toBe('line')
+  })
+
+  it('accepts a numbered count shape', () => {
+    const a = new Annotator(makeCanvas(), 'data:image/png;base64,img')
+    a.addShape({ type: 'count', color: '#ff0000', x: 5, y: 6, n: 1 })
+    a.addShape({ type: 'count', color: '#ff0000', x: 9, y: 9, n: 2 })
+    expect(a.shapes.map(s => s.type)).toEqual(['count', 'count'])
+    expect((a.shapes[1] as any).n).toBe(2)
+  })
+
   it('computeLineWidth scales with image width', () => {
     const a = new Annotator(makeCanvas(), 'data:image/png;base64,img')
     // canvas.width = 400 → lineWidth = max(3, 400/400) = 3

@@ -78,10 +78,27 @@ export class Annotator {
         shape.y2 - headLen * Math.sin(angle + Math.PI / 6),
       )
       ctx.stroke()
+    } else if (shape.type === 'line') {
+      ctx.beginPath()
+      ctx.moveTo(shape.x1, shape.y1)
+      ctx.lineTo(shape.x2, shape.y2)
+      ctx.stroke()
     } else if (shape.type === 'circle') {
       ctx.beginPath()
       ctx.ellipse(shape.x, shape.y, Math.abs(shape.rx), Math.abs(shape.ry), 0, 0, Math.PI * 2)
       ctx.stroke()
+    } else if (shape.type === 'count') {
+      const r = Math.max(13, this.computeFontSize())
+      ctx.beginPath()
+      ctx.arc(shape.x, shape.y, r, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = '#fff'
+      ctx.font = `bold ${Math.round(r * 1.05)}px sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(String(shape.n), shape.x, shape.y)
+      ctx.textAlign = 'start'
+      ctx.textBaseline = 'alphabetic'
     } else if (shape.type === 'text') {
       ctx.font = `bold ${this.computeFontSize()}px sans-serif`
       ctx.fillText(shape.text, shape.x, shape.y)

@@ -159,6 +159,10 @@ export type Shape =
   | { type: 'pen'; color: string; points: Array<{ x: number; y: number }> }
   | { type: 'rect'; color: string; x: number; y: number; w: number; h: number }
   | { type: 'arrow'; color: string; x1: number; y1: number; x2: number; y2: number }
+  // straight line segment from (x1,y1) to (x2,y2)
+  | { type: 'line'; color: string; x1: number; y1: number; x2: number; y2: number }
   | { type: 'text'; color: string; x: number; y: number; text: string }
   // circle is an axis-aligned ellipse; (x,y) is the centre, rx/ry the radii (from the drag bbox)
   | { type: 'circle'; color: string; x: number; y: number; rx: number; ry: number }
+  // numbered marker pin: filled dot with a step number, dropped by the count tool
+  | { type: 'count'; color: string; x: number; y: number; n: number }
