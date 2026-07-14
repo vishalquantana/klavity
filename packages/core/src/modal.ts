@@ -471,7 +471,7 @@ export function buildModal(
       <textarea class="klavity-desc" id="klavity-desc" placeholder="${initialType === 'feature' ? "Describe the feature you'd like..." : 'Describe the bug...'}"></textarea>
       <div class="klavity-desc-hint" id="klavity-desc-hint" hidden>${icon('sparkles', { size: 13 })}<span>No title needed — we'll auto-generate one for you</span></div>
       ${callbacks.requireEmail ? '<input type="email" class="klavity-remail" id="klavity-remail" placeholder="your@email.com" autocomplete="email">' : ''}
-      <button class="klavity-submit" id="klavity-submit" disabled>Submit</button>
+      <button class="klavity-submit" id="klavity-submit" title="Submit (S)" disabled>Submit</button>
       <div class="klavity-progress" id="klavity-progress" role="progressbar" aria-label="Uploading report"><div class="klavity-progress-fill" id="klavity-progress-fill"></div></div>
     </div>
   `
@@ -733,7 +733,15 @@ export function buildModal(
   }
 
   function escHandler(e: KeyboardEvent) {
-    if (e.key === 'Escape') { e.stopPropagation(); close() }
+    if (e.key === 'Escape') { e.stopPropagation(); close(); return }
+    // S submits the report — but only when the user isn't typing and no fullscreen editor owns the keys.
+    if ((e.key === 's' || e.key === 'S') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      const el = e.target as HTMLElement | null
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return
+      if (shadowRoot.querySelector('.kl-edtb')) return // fullscreen markup editor is open
+      const btn = shadowRoot.getElementById('klavity-submit') as HTMLButtonElement | null
+      if (btn && !btn.disabled) { e.preventDefault(); e.stopPropagation(); btn.click() }
+    }
   }
   document.addEventListener('keydown', escHandler, { capture: true })
 
