@@ -703,7 +703,10 @@ describe('buildModal capture-quality badges (JTBD 1.9)', () => {
       // Open the annotator, draw a rect, and save — so the image carries markup (annotationsByIndex[0]).
       ;(ctrl.shadowRoot.querySelector('.klavity-mk') as HTMLButtonElement).click()
       await new Promise(r => setTimeout(r, 0))
-      const canvas = ctrl.shadowRoot.querySelector('canvas') as HTMLCanvasElement
+      // The image-hero pane keeps its own always-on canvas; the fullscreen markup editor appends a second
+      // canvas last, so target that one (the editor) to drive openAnnotator's draw→save flow.
+      const canvases = ctrl.shadowRoot.querySelectorAll('canvas')
+      const canvas = canvases[canvases.length - 1] as HTMLCanvasElement
       expect(canvas).not.toBeNull()
       canvas.dispatchEvent(new PointerEvent('pointerdown', { clientX: 5, clientY: 5, bubbles: true }))
       canvas.dispatchEvent(new PointerEvent('pointerup', { clientX: 30, clientY: 30, bubbles: true }))

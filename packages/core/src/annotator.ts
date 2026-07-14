@@ -36,7 +36,9 @@ export class Annotator {
   redraw(): void {
     // Image may not be defined in non-browser environments (e.g., tests)
     if (typeof Image === 'undefined') return
-    const ctx = this.canvas.getContext('2d')!
+    const ctx = this.canvas.getContext('2d')
+    // Headless canvases (jsdom) return a null 2D context — nothing to paint, bail safely.
+    if (!ctx) return
     const img = new Image()
     img.onload = () => {
       ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
