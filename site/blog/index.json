@@ -152,5 +152,12 @@
     "excerpt": "In-app bug reporting lets people file a bug from inside your product, so it ships with the exact state — URL, console, network, and environment — attached.",
     "category": "Guides",
     "date": "2026-07-13"
+  },
+  {
+    "slug": "how-to-run-a-bug-bash",
+    "title": "How to Run a Bug Bash That Actually Finds Real Bugs",
+    "excerpt": "A bug bash only works when it's scoped, timeboxed, and captures reproducible evidence. Here's how to plan one, run the session, and triage what it finds.",
+    "category": "Guides",
+    "date": "2026-07-14"
   }
 ]
