@@ -1,4 +1,4 @@
-import type { ReportType } from './types'
+import type { ReportType, Shape } from './types'
 import { Annotator } from './annotator'
 import { themeCss, resolveModalConfig, type ModalConfig } from './modal-theme'
 import { icon } from './icons'
@@ -9,6 +9,22 @@ import { maskNumbers } from './mask-numbers'
 // the same module they already use for buildModal (avoids adding a package.json export entry, which the
 // orchestrator's version-stamp ownership could clobber).
 export { installRegionDrag, type RegionDragHandle, type RegionDragOptions } from './region-drag'
+
+/** Shift every annotation shape by (dx, dy) — used to rebase markup into a cropped image's new origin.
+ *  Pure + coordinate-only so it's unit-testable without a canvas. Returns fresh shape objects. */
+export function translateShapes(shapes: Shape[], dx: number, dy: number): Shape[] {
+  return shapes.map((s): Shape => {
+    switch (s.type) {
+      case 'pen': return { ...s, points: s.points.map(p => ({ x: p.x + dx, y: p.y + dy })) }
+      case 'rect': return { ...s, x: s.x + dx, y: s.y + dy }
+      case 'circle': return { ...s, x: s.x + dx, y: s.y + dy }
+      case 'count': return { ...s, x: s.x + dx, y: s.y + dy }
+      case 'text': return { ...s, x: s.x + dx, y: s.y + dy }
+      case 'arrow': return { ...s, x1: s.x1 + dx, y1: s.y1 + dy, x2: s.x2 + dx, y2: s.y2 + dy }
+      case 'line': return { ...s, x1: s.x1 + dx, y1: s.y1 + dy, x2: s.x2 + dx, y2: s.y2 + dy }
+    }
+  })
+}
 
 /** Escape text for safe interpolation into innerHTML. */
 function escHtml(s: string): string {
@@ -1094,6 +1110,7 @@ export function buildModal(
       t('arrow', 'Arrow', heroGlyph('<line x1="5" y1="19" x2="19" y2="5"/><polyline points="10 5 19 5 19 14"/>'), 'a') +
       t('text', 'Text', heroGlyph('<path d="M5 6h14M12 6v13M9 19h6"/>'), 't') +
       t('count', 'Numbers', heroGlyph('<circle cx="12" cy="12" r="9"/><text x="12" y="16" text-anchor="middle" font-size="11" font-weight="700" fill="currentColor" stroke="none">1</text>'), 'c') +
+      t('crop', 'Crop', heroGlyph('<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>'), 'k') +
       `<span class="kl-hsep"></span>` +
       c('#ef4444') + c('#f97316') + c('#3b82f6') + c('#111827') +
       // Contextual text options — shown only while the Text tool is active (toggled in selectTool).
@@ -1112,7 +1129,7 @@ export function buildModal(
       `<button type="button" class="kl-htbtn" id="kl-hero-undo" title="Undo (⌘Z)" aria-label="Undo">${heroGlyph('<path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/>', 14)}</button>` +
       `<button type="button" class="kl-htbtn" id="kl-hero-clear" title="Clear" aria-label="Clear">${icon('trash-2', { size: 14 })}</button>` +
       `<span class="kl-hgrow"></span>` +
-      `<span class="kl-hhint">P pen · L line · R rect · O circle · T text · C numbers</span>`
+      `<span class="kl-hhint">P pen · L line · R rect · O circle · T text · C numbers · K crop</span>`
     )
   }
 
@@ -1135,6 +1152,35 @@ export function buildModal(
     if (activeIndex >= screenshots.length) activeIndex = screenshots.length - 1
     if (activeIndex < 0) activeIndex = 0
     mountHeroAnnotator(activeIndex)
+  }
+
+  // Destructive crop: replace screenshots[index] with the selected region of the CLEAN image and rebase
+  // that image's markup into the new origin. Browser-only (needs a real 2D context); no-op if unavailable.
+  function applyHeroCrop(index: number, rx: number, ry: number, rw: number, rh: number) {
+    const srcUrl = screenshots[index]
+    if (!srcUrl) return
+    const src = new Image()
+    src.onload = () => {
+      if (screenshots[index] !== srcUrl) return // selection changed / removed while decoding
+      const cc = document.createElement('canvas')
+      cc.width = Math.max(1, Math.round(rw))
+      cc.height = Math.max(1, Math.round(rh))
+      const cx = cc.getContext('2d')
+      if (!cx) return
+      cx.drawImage(src, rx, ry, rw, rh, 0, 0, cc.width, cc.height)
+      let cropped: string
+      try { cropped = cc.toDataURL('image/png') } catch { return }
+      screenshots[index] = cropped
+      screenshotCompressed[index] = callbacks.compressImage ? callbacks.compressImage(cropped) : Promise.resolve(cropped)
+      const prevShapes = annotationsByIndex[index]?.shapes as Shape[] | undefined
+      if (Array.isArray(prevShapes) && prevShapes.length) {
+        annotationsByIndex[index] = { w: cc.width, h: cc.height, shapes: translateShapes(prevShapes, -rx, -ry) }
+      } else {
+        delete annotationsByIndex[index]
+      }
+      updateStrip()
+    }
+    src.src = srcUrl
   }
 
   function mountHeroAnnotator(index: number) {
@@ -1214,8 +1260,19 @@ export function buildModal(
       // Numbered-pin counter continues from any pins already on this image.
       let countN = annotator.shapes.reduce((m, s: any) => s.type === 'count' ? Math.max(m, s.n) : m, 0)
       let drawing = false, startX = 0, startY = 0, penPoints: Array<{ x: number; y: number }> = []
+      // Crop drag state: a dashed overlay box tracks the selection in stage-relative pixels.
+      let cropBox: HTMLDivElement | null = null
+      let cropClient = { x: 0, y: 0 }
       canvas.addEventListener('pointerdown', (e) => {
         const pt = toImg(e); startX = pt.x; startY = pt.y
+        if (activeTool === 'crop') {
+          drawing = true
+          cropClient = { x: e.clientX, y: e.clientY }
+          cropBox = document.createElement('div')
+          cropBox.style.cssText = 'position:absolute;border:2px dashed #6c63ff;background:rgba(108,99,255,.14);pointer-events:none;z-index:6;left:0;top:0;width:0;height:0;'
+          stage.appendChild(cropBox)
+          return
+        }
         if (activeTool === 'text') {
           const input = document.createElement('input')
           const shadow = textOutline === 'none' ? 'none' : `0 0 2px ${textOutline}, 0 0 2px ${textOutline}`
@@ -1234,11 +1291,30 @@ export function buildModal(
         drawing = true
         if (activeTool === 'pen') penPoints = [pt]
       })
-      canvas.addEventListener('pointermove', (e) => { if (drawing && activeTool === 'pen') penPoints.push(toImg(e)) })
+      canvas.addEventListener('pointermove', (e) => {
+        if (!drawing) return
+        if (activeTool === 'pen') { penPoints.push(toImg(e)); return }
+        if (activeTool === 'crop' && cropBox) {
+          const sr = stage.getBoundingClientRect()
+          const x1 = Math.min(cropClient.x, e.clientX), y1 = Math.min(cropClient.y, e.clientY)
+          const x2 = Math.max(cropClient.x, e.clientX), y2 = Math.max(cropClient.y, e.clientY)
+          cropBox.style.left = (x1 - sr.left) + 'px'
+          cropBox.style.top = (y1 - sr.top) + 'px'
+          cropBox.style.width = (x2 - x1) + 'px'
+          cropBox.style.height = (y2 - y1) + 'px'
+        }
+      })
       canvas.addEventListener('pointerup', (e) => {
         if (!drawing) return
         drawing = false
         const pt = toImg(e)
+        if (activeTool === 'crop') {
+          if (cropBox) { cropBox.remove(); cropBox = null }
+          const rx = Math.max(0, Math.min(startX, pt.x)), ry = Math.max(0, Math.min(startY, pt.y))
+          const rw = Math.abs(pt.x - startX), rh = Math.abs(pt.y - startY)
+          if (rw > 4 && rh > 4) applyHeroCrop(index, rx, ry, rw, rh)
+          return
+        }
         if (activeTool === 'pen' && penPoints.length > 1) annotator.addShape({ type: 'pen', color: activeColor, points: penPoints })
         else if (activeTool === 'line') annotator.addShape({ type: 'line', color: activeColor, x1: startX, y1: startY, x2: pt.x, y2: pt.y })
         else if (activeTool === 'rect') annotator.addShape({ type: 'rect', color: activeColor, x: Math.min(startX, pt.x), y: Math.min(startY, pt.y), w: Math.abs(pt.x - startX), h: Math.abs(pt.y - startY) })
@@ -1247,7 +1323,7 @@ export function buildModal(
         persist()
       })
 
-      const TOOL_KEYS: Record<string, string> = { p: 'pen', l: 'line', r: 'rect', o: 'circle', a: 'arrow', t: 'text', c: 'count' }
+      const TOOL_KEYS: Record<string, string> = { p: 'pen', l: 'line', r: 'rect', o: 'circle', a: 'arrow', t: 'text', c: 'count', k: 'crop' }
       heroKeyHandler = (e: KeyboardEvent) => {
         if (!document.body.contains(host)) { detachHeroKeys(); return }
         const el = e.target as HTMLElement | null
