@@ -1072,17 +1072,19 @@ export function buildModal(
     const c = (col: string) => `<button type="button" class="kl-hcolor" data-color="${col}" style="background:${col}" title="${col}" aria-label="Colour ${col}"></button>`
     return (
       t('pen', 'Pen', icon('pencil', { size: 15 }), 'p') +
+      t('line', 'Line', heroGlyph('<line x1="5" y1="19" x2="19" y2="5"/>'), 'l') +
       t('rect', 'Rectangle', icon('square', { size: 15 }), 'r') +
       t('circle', 'Circle', heroGlyph('<circle cx="12" cy="12" r="9"/>'), 'o') +
       t('arrow', 'Arrow', heroGlyph('<line x1="5" y1="19" x2="19" y2="5"/><polyline points="10 5 19 5 19 14"/>'), 'a') +
       t('text', 'Text', heroGlyph('<path d="M5 6h14M12 6v13M9 19h6"/>'), 't') +
+      t('count', 'Numbers', heroGlyph('<circle cx="12" cy="12" r="9"/><text x="12" y="16" text-anchor="middle" font-size="11" font-weight="700" fill="currentColor" stroke="none">1</text>'), 'c') +
       `<span class="kl-hsep"></span>` +
       c('#ef4444') + c('#f97316') + c('#3b82f6') + c('#111827') +
       `<span class="kl-hsep"></span>` +
       `<button type="button" class="kl-htbtn" id="kl-hero-undo" title="Undo (⌘Z)" aria-label="Undo">${heroGlyph('<path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/>', 14)}</button>` +
       `<button type="button" class="kl-htbtn" id="kl-hero-clear" title="Clear" aria-label="Clear">${icon('trash-2', { size: 14 })}</button>` +
       `<span class="kl-hgrow"></span>` +
-      `<span class="kl-hhint">P pen · R rect · O circle · A arrow · T text</span>`
+      `<span class="kl-hhint">P pen · L line · R rect · O circle · T text · C numbers</span>`
     )
   }
 
@@ -1169,6 +1171,8 @@ export function buildModal(
         const offX = (r.width - dispW) / 2, offY = (r.height - dispH) / 2
         return { x: (e.clientX - r.left - offX) / s, y: (e.clientY - r.top - offY) / s }
       }
+      // Numbered-pin counter continues from any pins already on this image.
+      let countN = annotator.shapes.reduce((m, s: any) => s.type === 'count' ? Math.max(m, s.n) : m, 0)
       let drawing = false, startX = 0, startY = 0, penPoints: Array<{ x: number; y: number }> = []
       canvas.addEventListener('pointerdown', (e) => {
         const pt = toImg(e); startX = pt.x; startY = pt.y
@@ -1180,6 +1184,11 @@ export function buildModal(
           input.addEventListener('keydown', (ke) => { if (ke.key === 'Enter') input.blur(); ke.stopPropagation() })
           return
         }
+        if (activeTool === 'count') {
+          annotator.addShape({ type: 'count', color: activeColor, x: pt.x, y: pt.y, n: ++countN })
+          persist()
+          return
+        }
         drawing = true
         if (activeTool === 'pen') penPoints = [pt]
       })
@@ -1189,13 +1198,14 @@ export function buildModal(
         drawing = false
         const pt = toImg(e)
         if (activeTool === 'pen' && penPoints.length > 1) annotator.addShape({ type: 'pen', color: activeColor, points: penPoints })
+        else if (activeTool === 'line') annotator.addShape({ type: 'line', color: activeColor, x1: startX, y1: startY, x2: pt.x, y2: pt.y })
         else if (activeTool === 'rect') annotator.addShape({ type: 'rect', color: activeColor, x: Math.min(startX, pt.x), y: Math.min(startY, pt.y), w: Math.abs(pt.x - startX), h: Math.abs(pt.y - startY) })
         else if (activeTool === 'circle') annotator.addShape({ type: 'circle', color: activeColor, x: (startX + pt.x) / 2, y: (startY + pt.y) / 2, rx: Math.abs(pt.x - startX) / 2, ry: Math.abs(pt.y - startY) / 2 })
         else if (activeTool === 'arrow') annotator.addShape({ type: 'arrow', color: activeColor, x1: startX, y1: startY, x2: pt.x, y2: pt.y })
         persist()
       })
 
-      const TOOL_KEYS: Record<string, string> = { p: 'pen', r: 'rect', o: 'circle', a: 'arrow', t: 'text' }
+      const TOOL_KEYS: Record<string, string> = { p: 'pen', l: 'line', r: 'rect', o: 'circle', a: 'arrow', t: 'text', c: 'count' }
       heroKeyHandler = (e: KeyboardEvent) => {
         if (!document.body.contains(host)) { detachHeroKeys(); return }
         const el = e.target as HTMLElement | null
