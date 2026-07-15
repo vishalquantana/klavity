@@ -1,4 +1,4 @@
-import type { ReportType } from './types'
+import type { ReportType, Shape } from './types'
 import { Annotator } from './annotator'
 import { themeCss, resolveModalConfig, type ModalConfig } from './modal-theme'
 import { icon } from './icons'
@@ -9,6 +9,22 @@ import { maskNumbers } from './mask-numbers'
 // the same module they already use for buildModal (avoids adding a package.json export entry, which the
 // orchestrator's version-stamp ownership could clobber).
 export { installRegionDrag, type RegionDragHandle, type RegionDragOptions } from './region-drag'
+
+/** Shift every annotation shape by (dx, dy) — used to rebase markup into a cropped image's new origin.
+ *  Pure + coordinate-only so it's unit-testable without a canvas. Returns fresh shape objects. */
+export function translateShapes(shapes: Shape[], dx: number, dy: number): Shape[] {
+  return shapes.map((s): Shape => {
+    switch (s.type) {
+      case 'pen': return { ...s, points: s.points.map(p => ({ x: p.x + dx, y: p.y + dy })) }
+      case 'rect': return { ...s, x: s.x + dx, y: s.y + dy }
+      case 'circle': return { ...s, x: s.x + dx, y: s.y + dy }
+      case 'count': return { ...s, x: s.x + dx, y: s.y + dy }
+      case 'text': return { ...s, x: s.x + dx, y: s.y + dy }
+      case 'arrow': return { ...s, x1: s.x1 + dx, y1: s.y1 + dy, x2: s.x2 + dx, y2: s.y2 + dy }
+      case 'line': return { ...s, x1: s.x1 + dx, y1: s.y1 + dy, x2: s.x2 + dx, y2: s.y2 + dy }
+    }
+  })
+}
 
 /** Escape text for safe interpolation into innerHTML. */
 function escHtml(s: string): string {
@@ -193,6 +209,10 @@ export function buildModal(
     return { ...base, byIndex }
   }
   let currentType = initialType
+  // Image-hero: the screenshot currently shown big + live-annotated in the hero pane. Clicking a
+  // thumbnail selects it; the inline annotator mounts on it and persists shapes to annotationsByIndex.
+  let activeIndex = 0
+  let heroKeyHandler: ((e: KeyboardEvent) => void) | null = null
   // JTBD 1.10: track whether a session-replay buffer is attached — it counts as evidence, so an
   // evidence-only report (replay but no typed prose / screenshot) can still Submit. Seeded from the
   // initial callback state and kept in sync by setReplayState() as rrweb resolves post-mount.
@@ -206,14 +226,47 @@ export function buildModal(
     @keyframes kl-genie-out{from{opacity:1;transform:translateY(0) scaleX(1) scaleY(1)}to{opacity:0;transform:translateY(180px) scaleX(.04) scaleY(.06)}}
     @keyframes kl-ov{from{opacity:0}to{opacity:1}}
     .klavity-overlay{position:fixed;inset:0;background:var(--kl-overlay);display:flex;align-items:center;justify-content:center;pointer-events:all;animation:kl-ov .3s ease both;}
-    .klavity-modal{position:relative;overflow-y:auto;max-height:calc(100vh - 40px);isolation:isolate;background:var(--kl-glow,transparent),var(--kl-bg);color:var(--kl-fg);border-radius:var(--kl-radius);padding:24px;width:100%;max-width:480px;box-shadow:0 0 0 1px var(--kl-border),var(--kl-shadow);font-family:var(--kl-font,system-ui,sans-serif);-webkit-font-smoothing:antialiased;-webkit-backdrop-filter:var(--kl-backdrop);backdrop-filter:var(--kl-backdrop);transform-origin:bottom center;animation:kl-genie-in .6s cubic-bezier(.16,1,.3,1) both;}
+    .klavity-modal{position:relative;overflow:hidden;isolation:isolate;background:var(--kl-glow,transparent),var(--kl-bg);color:var(--kl-fg);border-radius:var(--kl-radius);padding:0;width:92vw;max-width:min(1160px,92vw);max-height:94vh;box-shadow:0 0 0 1px var(--kl-border),var(--kl-shadow);font-family:var(--kl-font,system-ui,sans-serif);-webkit-font-smoothing:antialiased;-webkit-backdrop-filter:var(--kl-backdrop);backdrop-filter:var(--kl-backdrop);transform-origin:bottom center;animation:kl-genie-in .6s cubic-bezier(.16,1,.3,1) both;display:grid;grid-template-columns:minmax(0,1fr) 384px;}
+    /* Image-hero two-pane layout: big annotatable screenshot on the left, controls on the right. */
+    .kl-hero{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--kl-hero-bg,#0e1424);}
+    .kl-hero-tools{display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:8px 14px;min-height:48px;border-bottom:1px solid rgba(255,255,255,.06);}
+    .kl-hero-stage{flex:1;min-height:0;position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:14px;}
+    .kl-hero-empty{display:flex;flex-direction:column;align-items:center;gap:12px;color:#7d879f;font-size:13.5px;font-weight:500;text-align:center;max-width:260px;line-height:1.5;}
+    .kl-hero-empty svg{opacity:.6;}
+    .kl-side{display:flex;flex-direction:column;min-width:0;border-left:1px solid var(--kl-border);padding:22px 20px;overflow-y:auto;}
+    .kl-side>.klavity-submit{margin-top:auto;}
+    @media (max-width:760px){.klavity-modal{grid-template-columns:1fr;width:96vw;max-height:96vh;}.kl-hero{max-height:44vh;}.kl-side{overflow-y:visible;border-left:none;border-top:1px solid var(--kl-border);}}
+    /* Hero annotation toolbar — always-on tools over the image. Tap targets ≥36px for touch. */
+    .kl-htool,.kl-htbtn{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;min-width:38px;height:38px;padding:0 8px;border:1px solid transparent;border-radius:9px;background:transparent;color:#cfd5ea;cursor:pointer;line-height:1;transition:transform .12s ease,background .12s ease;}
+    .kl-htool .kl-hk{font-size:9px;font-weight:700;opacity:.5;}
+    .kl-htool:hover,.kl-htbtn:hover{background:rgba(255,255,255,.08);transform:translateY(-1px);}
+    .kl-htool.kl-on{background:var(--kl-accent);color:var(--kl-on-accent);box-shadow:0 4px 12px color-mix(in srgb,var(--kl-accent) 45%,transparent);}
+    .kl-htool.kl-on .kl-hk{opacity:.85;}
+    .kl-hcolor{width:24px;height:24px;border-radius:50%;border:2px solid rgba(255,255,255,.65);cursor:pointer;padding:0;transition:transform .12s ease;}
+    .kl-hcolor:hover{transform:scale(1.14);}
+    .kl-hcolor.kl-on{outline:2px solid #fff;outline-offset:2px;}
+    .kl-hsep{width:1px;height:24px;background:rgba(255,255,255,.14);margin:0 3px;}
+    .kl-hgrow{flex:1;}
+    .kl-hhint{color:#7d879f;font-size:11px;font-weight:600;white-space:nowrap;}
+    /* Contextual text options (outline colour + size) — only visible while the Text tool is active. */
+    .kl-htextopts{display:inline-flex;align-items:center;gap:5px;}
+    .kl-htextopts[hidden]{display:none;}
+    .kl-hlabel{color:#7d879f;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin:0 1px;}
+    .kl-hopt{min-width:28px;height:30px;padding:0 8px;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:transparent;color:#cfd5ea;font-size:12px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;}
+    .kl-hopt:hover{background:rgba(255,255,255,.08);}
+    .kl-hopt.kl-on{background:var(--kl-accent);color:var(--kl-on-accent);border-color:transparent;}
+    .kl-osq{width:13px;height:13px;border-radius:3px;display:inline-block;}
+    .kl-htool:focus-visible,.kl-htbtn:focus-visible,.kl-hcolor:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
+    .klavity-thumb.kl-thumb-active img{outline:2px solid var(--kl-accent);outline-offset:1px;}
+    @media (max-width:760px){.kl-hhint{display:none;}}
+    @media (prefers-reduced-motion:reduce){.kl-htool,.kl-htbtn,.kl-hcolor{transition:none;}.kl-htool:hover,.kl-htbtn:hover,.kl-hcolor:hover{transform:none;}}
     .klavity-modal::before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;background:linear-gradient(to right,color-mix(in srgb,var(--kl-border) 58%,transparent) 1px,transparent 1px) 0 0/44px 44px,linear-gradient(to bottom,color-mix(in srgb,var(--kl-border) 58%,transparent) 1px,transparent 1px) 0 0/44px 44px;opacity:.36;}
     .klavity-modal>*{position:relative;z-index:1;}
     /* Staggered content reveal — the genie scales the panel in while its rows softly rise + fade so it feels
        alive (not a flat box). Subtle; zeroed under prefers-reduced-motion below. */
     @keyframes kl-rise{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}
-    .klavity-modal>.klavity-toggle,.klavity-modal>.klavity-page,.klavity-modal>.klavity-proof,.klavity-modal>.klavity-strip,.klavity-modal>.klavity-actions,.klavity-modal>textarea.klavity-desc,.klavity-modal>input.klavity-remail,.klavity-modal>.klavity-submit{animation:kl-rise .5s cubic-bezier(.16,1,.3,1) both;}
-    .klavity-modal>.klavity-toggle{animation-delay:.05s}.klavity-modal>.klavity-page{animation-delay:.09s}.klavity-modal>.klavity-proof{animation-delay:.11s}.klavity-modal>.klavity-strip{animation-delay:.12s}.klavity-modal>.klavity-actions{animation-delay:.15s}.klavity-modal>textarea.klavity-desc{animation-delay:.18s}.klavity-modal>input.klavity-remail{animation-delay:.21s}.klavity-modal>.klavity-submit{animation-delay:.23s}
+    .kl-side>.klavity-toggle,.kl-side>.klavity-page,.kl-side>.klavity-proof,.kl-hero>.klavity-strip,.kl-side>.klavity-actions,.kl-side>textarea.klavity-desc,.kl-side>input.klavity-remail,.kl-side>.klavity-submit{animation:kl-rise .5s cubic-bezier(.16,1,.3,1) both;}
+    .kl-side>.klavity-toggle{animation-delay:.05s}.kl-side>.klavity-page{animation-delay:.09s}.kl-side>.klavity-proof{animation-delay:.11s}.kl-hero>.klavity-strip{animation-delay:.12s}.kl-side>.klavity-actions{animation-delay:.15s}.kl-side>textarea.klavity-desc{animation-delay:.18s}.kl-side>input.klavity-remail{animation-delay:.21s}.kl-side>.klavity-submit{animation-delay:.23s}
     .klavity-modal.kl-closing{animation:kl-genie-out .5s cubic-bezier(.55,0,.85,.25) both;}
     .klavity-toggle{display:flex;gap:8px;margin-bottom:16px;padding-right:34px;}
     .klavity-toggle button{flex:1;min-height:40px;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 12px;border-radius:8px;border:none;cursor:pointer;font-size:14px;font-weight:600;background:var(--kl-chip);color:var(--kl-fg);line-height:1;}
@@ -414,29 +467,37 @@ export function buildModal(
   modal.className = 'klavity-modal'
   modal.innerHTML = `
     <button class="klavity-x" id="klavity-x" type="button" aria-label="Close" title="Close (Esc)">${icon('x', { size: 16 })}</button>
-    <div class="klavity-toggle">
-      <button class="bug ${initialType === 'bug' ? 'active' : ''}"><span class="kl-cap-ic">${icon('bug')}</span>Bug</button>
-      <button class="feat ${initialType === 'feature' ? 'active' : ''}"><span class="kl-cap-ic">${icon('lightbulb')}</span>Feature</button>
+    <div class="kl-hero" id="klavity-hero">
+      <div class="kl-hero-tools" id="klavity-hero-tools"></div>
+      <div class="kl-hero-stage" id="klavity-hero-stage">
+        <div class="kl-hero-empty" id="klavity-hero-empty">${icon('image', { size: 34 })}<span>Capture or upload a screenshot to start marking it up</span></div>
+      </div>
+      <div class="klavity-strip" id="klavity-strip"></div>
     </div>
-    <div class="klavity-page">${icon('map-pin')} ${typeof window !== 'undefined' ? escHtml(window.location.pathname) : ''}</div>
-    ${callbacks.replayState ? `<div class="klavity-proof"><span class="klavity-chip ${callbacks.replayState === 'attached' ? 'kl-chip-on' : 'kl-chip-off'}" id="klavity-replay-chip">${replayChipInner(callbacks.replayState)}</span></div>` : ''}
-    <div class="klavity-strip" id="klavity-strip"></div>
-    <div class="klavity-actions">
-      ${callbacks.onCaptureSharp ? `<button id="klavity-sharp" aria-describedby="klavity-sharp-tip"><span class="kl-cap-ic">${icon('app-window')}</span><span class="kl-sharp-label">Screen</span><span class="kl-info-badge" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></span><span id="klavity-sharp-tip" class="klavity-info-pop" role="tooltip">Screen grabs the <b>whole page — every image, pixel-perfect</b> using your browser's screen-share. Your browser will ask you to <b>share this tab</b>.</span></button>` : ''}
-      <button id="klavity-full" title="Full Page — instant capture; may miss some cross-origin images"><span class="kl-cap-ic">${icon('camera')}</span><span class="kl-full-label">Full Page</span></button>
-      <button id="klavity-upload"><span class="kl-cap-ic">${icon('image')}</span><span class="kl-upload-label">Upload</span></button>
-      ${callbacks.onRegionCapture ? `<button id="klavity-region"><span class="kl-cap-ic">${icon('scissors')}</span><span class="kl-region-label">Region</span></button>` : ''}
-      ${VoiceInput.isSupported() ? `<button id="klavity-voice" title="Dictate description"><span class="kl-cap-ic">${icon('mic')}<span class="kl-vdot"></span></span><span class="kl-voice-label">Voice</span><svg class="kl-vring" viewBox="0 0 32 32" aria-hidden="true"><circle class="kl-vring-bg" cx="16" cy="16" r="13" fill="none" stroke-width="2"/><circle class="kl-vring-prog" cx="16" cy="16" r="13" fill="none" stroke-width="2" stroke-dasharray="81.68" stroke-dashoffset="81.68" stroke-linecap="round" transform="rotate(-90 16 16)"/></svg></button>` : ''}
+    <div class="kl-side" id="klavity-side">
+      <div class="klavity-toggle">
+        <button class="bug ${initialType === 'bug' ? 'active' : ''}"><span class="kl-cap-ic">${icon('bug')}</span>Bug</button>
+        <button class="feat ${initialType === 'feature' ? 'active' : ''}"><span class="kl-cap-ic">${icon('lightbulb')}</span>Feature</button>
+      </div>
+      <div class="klavity-page">${icon('map-pin')} ${typeof window !== 'undefined' ? escHtml(window.location.pathname) : ''}</div>
+      ${callbacks.replayState ? `<div class="klavity-proof"><span class="klavity-chip ${callbacks.replayState === 'attached' ? 'kl-chip-on' : 'kl-chip-off'}" id="klavity-replay-chip">${replayChipInner(callbacks.replayState)}</span></div>` : ''}
+      <div class="klavity-actions">
+        ${callbacks.onCaptureSharp ? `<button id="klavity-sharp" aria-describedby="klavity-sharp-tip"><span class="kl-cap-ic">${icon('app-window')}</span><span class="kl-sharp-label">Screen</span><span class="kl-info-badge" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></span><span id="klavity-sharp-tip" class="klavity-info-pop" role="tooltip">Screen grabs the <b>whole page — every image, pixel-perfect</b> using your browser's screen-share. Your browser will ask you to <b>share this tab</b>.</span></button>` : ''}
+        <button id="klavity-full" title="Full Page — instant capture; may miss some cross-origin images"><span class="kl-cap-ic">${icon('camera')}</span><span class="kl-full-label">Full Page</span></button>
+        <button id="klavity-upload"><span class="kl-cap-ic">${icon('image')}</span><span class="kl-upload-label">Upload</span></button>
+        ${callbacks.onRegionCapture ? `<button id="klavity-region"><span class="kl-cap-ic">${icon('scissors')}</span><span class="kl-region-label">Region</span></button>` : ''}
+        ${VoiceInput.isSupported() ? `<button id="klavity-voice" title="Dictate description"><span class="kl-cap-ic">${icon('mic')}<span class="kl-vdot"></span></span><span class="kl-voice-label">Voice</span><svg class="kl-vring" viewBox="0 0 32 32" aria-hidden="true"><circle class="kl-vring-bg" cx="16" cy="16" r="13" fill="none" stroke-width="2"/><circle class="kl-vring-prog" cx="16" cy="16" r="13" fill="none" stroke-width="2" stroke-dasharray="81.68" stroke-dashoffset="81.68" stroke-linecap="round" transform="rotate(-90 16 16)"/></svg></button>` : ''}
+      </div>
+      <label class="klav-mask-row"><input type="checkbox" id="klavity-mask-numbers"${maskOn ? ' checked' : ''}>${icon('eye-off', { size: 13 })}<span>Mask numbers</span></label>
+      <input type="file" id="klavity-file" accept="image/*,.heic,.heif" multiple style="display:none">
+      <div class="klavity-counter" id="klavity-counter">0/5 images</div>
+      <div class="klavity-error" id="klavity-err"></div>
+      <textarea class="klavity-desc" id="klavity-desc" placeholder="${initialType === 'feature' ? "Describe the feature you'd like..." : 'Describe the bug...'}"></textarea>
+      <div class="klavity-desc-hint" id="klavity-desc-hint" hidden>${icon('sparkles', { size: 13 })}<span>No title needed — we'll auto-generate one for you</span></div>
+      ${callbacks.requireEmail ? '<input type="email" class="klavity-remail" id="klavity-remail" placeholder="your@email.com" autocomplete="email">' : ''}
+      <button class="klavity-submit" id="klavity-submit" title="Submit (S)" disabled>Submit</button>
+      <div class="klavity-progress" id="klavity-progress" role="progressbar" aria-label="Uploading report"><div class="klavity-progress-fill" id="klavity-progress-fill"></div></div>
     </div>
-    <label class="klav-mask-row"><input type="checkbox" id="klavity-mask-numbers"${maskOn ? ' checked' : ''}>${icon('eye-off', { size: 13 })}<span>Mask numbers</span></label>
-    <input type="file" id="klavity-file" accept="image/*,.heic,.heif" multiple style="display:none">
-    <div class="klavity-counter" id="klavity-counter">0/5 images</div>
-    <div class="klavity-error" id="klavity-err"></div>
-    <textarea class="klavity-desc" id="klavity-desc" placeholder="${initialType === 'feature' ? "Describe the feature you'd like..." : 'Describe the bug...'}"></textarea>
-    <div class="klavity-desc-hint" id="klavity-desc-hint" hidden>${icon('sparkles', { size: 13 })}<span>We'll title this from your screenshot</span></div>
-    ${callbacks.requireEmail ? '<input type="email" class="klavity-remail" id="klavity-remail" placeholder="your@email.com" autocomplete="email">' : ''}
-    <button class="klavity-submit" id="klavity-submit" disabled>Submit</button>
-    <div class="klavity-progress" id="klavity-progress" role="progressbar" aria-label="Uploading report"><div class="klavity-progress-fill" id="klavity-progress-fill"></div></div>
   `
 
   overlay.appendChild(modal)
@@ -519,15 +580,16 @@ export function buildModal(
     screenshots.forEach((dataUrl, i) => {
       const wrap = document.createElement('div')
       wrap.className = 'klavity-thumb'
+      if (i === activeIndex) wrap.classList.add('kl-thumb-active')
       const img = document.createElement('img')
       img.src = dataUrl
-      img.title = 'Click to mark up'
+      img.title = 'Click to select + mark up'
       // Portrait screenshot: add kl-tall so the thumbnail shows more vertical content.
       img.addEventListener('load', () => {
         if (img.naturalHeight > img.naturalWidth * 1.4) wrap.classList.add('kl-tall')
       }, { once: true })
-      // Click the thumbnail itself to open the full-screen markup editor (not just the pencil icon)
-      img.addEventListener('click', () => openAnnotator(i))
+      // Image-hero: clicking a thumbnail selects it as the active shot in the big hero annotator.
+      img.addEventListener('click', () => { activeIndex = i; updateStrip() })
       const rm = document.createElement('button')
       rm.className = 'klavity-rm'
       rm.innerHTML = icon('x', { size: 13 })
@@ -596,6 +658,8 @@ export function buildModal(
     counter.textContent = `${screenshots.length}/5 images`
     // JTBD 1.10: attaching/removing a screenshot changes the evidence state → re-evaluate Submit + hint.
     refreshSubmit()
+    // Image-hero: keep the big annotator pane in sync with the strip (selection / empty state).
+    syncHero()
   }
 
   // Surface a problem in the shared error line (used for upload + submit failures alike).
@@ -693,7 +757,15 @@ export function buildModal(
   }
 
   function escHandler(e: KeyboardEvent) {
-    if (e.key === 'Escape') { e.stopPropagation(); close() }
+    if (e.key === 'Escape') { e.stopPropagation(); close(); return }
+    // S submits the report — but only when the user isn't typing and no fullscreen editor owns the keys.
+    if ((e.key === 's' || e.key === 'S') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      const el = e.target as HTMLElement | null
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return
+      if (shadowRoot.querySelector('.kl-edtb')) return // fullscreen markup editor is open
+      const btn = shadowRoot.getElementById('klavity-submit') as HTMLButtonElement | null
+      if (btn && !btn.disabled) { e.preventDefault(); e.stopPropagation(); btn.click() }
+    }
   }
   document.addEventListener('keydown', escHandler, { capture: true })
 
@@ -1018,6 +1090,250 @@ export function buildModal(
         host.style.display = ''
         lockComposer(false)
       })
+    }
+  }
+
+  // ── Image-hero inline annotator ─────────────────────────────────────────────────────────────
+  // A small inline SVG helper for tool glyphs the shared icon set doesn't ship (circle/arrow/text/undo).
+  function heroGlyph(inner: string, size = 15): string {
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-0.125em">${inner}</svg>`
+  }
+  function heroToolbarHtml(): string {
+    const t = (name: string, label: string, glyph: string, key: string) =>
+      `<button type="button" class="kl-htool" data-tool="${name}" title="${label} (${key.toUpperCase()})" aria-label="${label}">${glyph}<span class="kl-hk">${key.toUpperCase()}</span></button>`
+    const c = (col: string) => `<button type="button" class="kl-hcolor" data-color="${col}" style="background:${col}" title="${col}" aria-label="Colour ${col}"></button>`
+    return (
+      t('pen', 'Pen', icon('pencil', { size: 15 }), 'p') +
+      t('line', 'Line', heroGlyph('<line x1="5" y1="19" x2="19" y2="5"/>'), 'l') +
+      t('rect', 'Rectangle', icon('square', { size: 15 }), 'r') +
+      t('circle', 'Circle', heroGlyph('<circle cx="12" cy="12" r="9"/>'), 'o') +
+      t('arrow', 'Arrow', heroGlyph('<line x1="5" y1="19" x2="19" y2="5"/><polyline points="10 5 19 5 19 14"/>'), 'a') +
+      t('text', 'Text', heroGlyph('<path d="M5 6h14M12 6v13M9 19h6"/>'), 't') +
+      t('count', 'Numbers', heroGlyph('<circle cx="12" cy="12" r="9"/><text x="12" y="16" text-anchor="middle" font-size="11" font-weight="700" fill="currentColor" stroke="none">1</text>'), 'c') +
+      t('crop', 'Crop', heroGlyph('<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>'), 'k') +
+      `<span class="kl-hsep"></span>` +
+      c('#ef4444') + c('#f97316') + c('#3b82f6') + c('#111827') +
+      // Contextual text options — shown only while the Text tool is active (toggled in selectTool).
+      `<span class="kl-htextopts" id="kl-hero-textopts" hidden>` +
+        `<span class="kl-hsep"></span>` +
+        `<span class="kl-hlabel">Outline</span>` +
+        `<button type="button" class="kl-hopt kl-on" data-outline="black" title="Black outline"><span class="kl-osq" style="background:#111"></span></button>` +
+        `<button type="button" class="kl-hopt" data-outline="white" title="White outline"><span class="kl-osq" style="background:#fff;border:1px solid #999"></span></button>` +
+        `<button type="button" class="kl-hopt" data-outline="none" title="No outline">None</button>` +
+        `<span class="kl-hlabel">Size</span>` +
+        `<button type="button" class="kl-hopt" data-size="18" title="Small">S</button>` +
+        `<button type="button" class="kl-hopt kl-on" data-size="26" title="Medium">M</button>` +
+        `<button type="button" class="kl-hopt" data-size="40" title="Large">L</button>` +
+      `</span>` +
+      `<span class="kl-hsep"></span>` +
+      `<button type="button" class="kl-htbtn" id="kl-hero-undo" title="Undo (⌘Z)" aria-label="Undo">${heroGlyph('<path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/>', 14)}</button>` +
+      `<button type="button" class="kl-htbtn" id="kl-hero-clear" title="Clear" aria-label="Clear">${icon('trash-2', { size: 14 })}</button>` +
+      `<span class="kl-hgrow"></span>` +
+      `<span class="kl-hhint">P pen · L line · R rect · O circle · T text · C numbers · K crop</span>`
+    )
+  }
+
+  function detachHeroKeys() {
+    if (heroKeyHandler) { document.removeEventListener('keydown', heroKeyHandler, { capture: true } as any); heroKeyHandler = null }
+  }
+
+  function renderHeroEmpty() {
+    const stage = shadowRoot.getElementById('klavity-hero-stage')
+    const tools = shadowRoot.getElementById('klavity-hero-tools')
+    if (tools) tools.innerHTML = ''
+    if (stage) stage.innerHTML = `<div class="kl-hero-empty">${icon('image', { size: 34 })}<span>Capture or upload a screenshot to start marking it up</span></div>`
+    detachHeroKeys()
+  }
+
+  // Keep the hero pane in sync with the strip: clamp the active index, show the empty state when there
+  // are no shots, otherwise mount the inline annotator on the active screenshot.
+  function syncHero() {
+    if (screenshots.length === 0) { activeIndex = 0; renderHeroEmpty(); return }
+    if (activeIndex >= screenshots.length) activeIndex = screenshots.length - 1
+    if (activeIndex < 0) activeIndex = 0
+    mountHeroAnnotator(activeIndex)
+  }
+
+  // Destructive crop: replace screenshots[index] with the selected region of the CLEAN image and rebase
+  // that image's markup into the new origin. Browser-only (needs a real 2D context); no-op if unavailable.
+  function applyHeroCrop(index: number, rx: number, ry: number, rw: number, rh: number) {
+    const srcUrl = screenshots[index]
+    if (!srcUrl) return
+    const src = new Image()
+    src.onload = () => {
+      if (screenshots[index] !== srcUrl) return // selection changed / removed while decoding
+      const cc = document.createElement('canvas')
+      cc.width = Math.max(1, Math.round(rw))
+      cc.height = Math.max(1, Math.round(rh))
+      const cx = cc.getContext('2d')
+      if (!cx) return
+      cx.drawImage(src, rx, ry, rw, rh, 0, 0, cc.width, cc.height)
+      let cropped: string
+      try { cropped = cc.toDataURL('image/png') } catch { return }
+      screenshots[index] = cropped
+      screenshotCompressed[index] = callbacks.compressImage ? callbacks.compressImage(cropped) : Promise.resolve(cropped)
+      const prevShapes = annotationsByIndex[index]?.shapes as Shape[] | undefined
+      if (Array.isArray(prevShapes) && prevShapes.length) {
+        annotationsByIndex[index] = { w: cc.width, h: cc.height, shapes: translateShapes(prevShapes, -rx, -ry) }
+      } else {
+        delete annotationsByIndex[index]
+      }
+      updateStrip()
+    }
+    src.src = srcUrl
+  }
+
+  function mountHeroAnnotator(index: number) {
+    const stage = shadowRoot.getElementById('klavity-hero-stage')
+    const tools = shadowRoot.getElementById('klavity-hero-tools')
+    if (!stage || !tools) return
+    const dataUrl = screenshots[index]
+    if (!dataUrl) { renderHeroEmpty(); return }
+    detachHeroKeys()
+
+    // Build the canvas + toolbar SYNCHRONOUSLY (so the hero is populated immediately and is testable in
+    // headless envs). The natural image dimensions are applied async once the bitmap decodes.
+    stage.innerHTML = ''
+    const canvas = document.createElement('canvas')
+    canvas.width = 1
+    canvas.height = 1
+    canvas.style.cssText = 'display:block;max-width:100%;max-height:100%;object-fit:contain;cursor:crosshair;touch-action:none;background:#fff;border-radius:8px;box-shadow:0 12px 40px rgba(0,0,0,.5);'
+    const annotator = new Annotator(canvas, dataUrl)
+    const prior = annotationsByIndex[index]?.shapes
+    if (Array.isArray(prior)) prior.forEach((s: any) => annotator.shapes.push({ ...s }))
+    stage.appendChild(canvas)
+    // Size the canvas to the real image once it decodes, then repaint (no-op in headless envs).
+    const sizer = new Image()
+    sizer.onload = () => {
+      if (!document.body.contains(host) || activeIndex !== index || screenshots[index] !== dataUrl) return
+      canvas.width = sizer.naturalWidth || 1
+      canvas.height = sizer.naturalHeight || 1
+      annotator.redraw()
+    }
+    sizer.src = dataUrl
+    annotator.redraw()
+
+    {
+      tools.innerHTML = heroToolbarHtml()
+      let activeTool = 'pen'
+      let activeColor = '#ef4444'
+      let textSize = 26
+      let textOutline: 'black' | 'white' | 'none' = 'black'
+      const textOpts = tools.querySelector('#kl-hero-textopts') as HTMLElement | null
+      const persist = () => {
+        if (annotator.shapes.length) annotationsByIndex[index] = { w: canvas.width, h: canvas.height, shapes: annotator.shapes.map(s => ({ ...s })) }
+        else delete annotationsByIndex[index]
+      }
+      const selectTool = (t: string) => {
+        activeTool = t
+        tools.querySelectorAll<HTMLElement>('[data-tool]').forEach(el => el.classList.toggle('kl-on', el.dataset.tool === t))
+        if (textOpts) textOpts.hidden = t !== 'text'
+      }
+      const selectColor = (col: string, btn?: HTMLElement) => {
+        activeColor = col
+        tools.querySelectorAll<HTMLElement>('[data-color]').forEach(el => el.classList.toggle('kl-on', el === btn))
+      }
+      tools.querySelectorAll('[data-tool]').forEach(b => b.addEventListener('click', () => selectTool((b as HTMLElement).dataset.tool!)))
+      tools.querySelectorAll('[data-color]').forEach(b => b.addEventListener('click', () => selectColor((b as HTMLElement).dataset.color!, b as HTMLElement)))
+      tools.querySelectorAll('[data-outline]').forEach(b => b.addEventListener('click', () => {
+        textOutline = (b as HTMLElement).dataset.outline as 'black' | 'white' | 'none'
+        tools.querySelectorAll<HTMLElement>('[data-outline]').forEach(el => el.classList.toggle('kl-on', el === b))
+      }))
+      tools.querySelectorAll('[data-size]').forEach(b => b.addEventListener('click', () => {
+        textSize = Number((b as HTMLElement).dataset.size)
+        tools.querySelectorAll<HTMLElement>('[data-size]').forEach(el => el.classList.toggle('kl-on', el === b))
+      }))
+      tools.querySelector('#kl-hero-undo')?.addEventListener('click', () => { annotator.undo(); persist() })
+      tools.querySelector('#kl-hero-clear')?.addEventListener('click', () => { annotator.clearAll(); persist() })
+      selectTool(activeTool)
+      selectColor(activeColor, tools.querySelector('[data-color]') as HTMLElement)
+
+      // Map a pointer event to image-pixel coordinates (canvas is object-fit:contain, so letterboxing
+      // is possible — use the rendered content box, not the element box).
+      const toImg = (e: PointerEvent) => {
+        const r = canvas.getBoundingClientRect()
+        const s = Math.min(r.width / canvas.width, r.height / canvas.height) || 1
+        const dispW = canvas.width * s, dispH = canvas.height * s
+        const offX = (r.width - dispW) / 2, offY = (r.height - dispH) / 2
+        return { x: (e.clientX - r.left - offX) / s, y: (e.clientY - r.top - offY) / s }
+      }
+      // Numbered-pin counter continues from any pins already on this image.
+      let countN = annotator.shapes.reduce((m, s: any) => s.type === 'count' ? Math.max(m, s.n) : m, 0)
+      let drawing = false, startX = 0, startY = 0, penPoints: Array<{ x: number; y: number }> = []
+      // Crop drag state: a dashed overlay box tracks the selection in stage-relative pixels.
+      let cropBox: HTMLDivElement | null = null
+      let cropClient = { x: 0, y: 0 }
+      canvas.addEventListener('pointerdown', (e) => {
+        const pt = toImg(e); startX = pt.x; startY = pt.y
+        if (activeTool === 'crop') {
+          drawing = true
+          cropClient = { x: e.clientX, y: e.clientY }
+          cropBox = document.createElement('div')
+          cropBox.style.cssText = 'position:absolute;border:2px dashed #6c63ff;background:rgba(108,99,255,.14);pointer-events:none;z-index:6;left:0;top:0;width:0;height:0;'
+          stage.appendChild(cropBox)
+          return
+        }
+        if (activeTool === 'text') {
+          const input = document.createElement('input')
+          const shadow = textOutline === 'none' ? 'none' : `0 0 2px ${textOutline}, 0 0 2px ${textOutline}`
+          input.style.cssText = `position:fixed;left:${e.clientX}px;top:${e.clientY}px;background:transparent;border:1px dashed ${activeColor};color:${activeColor};font-size:${textSize}px;font-weight:700;text-shadow:${shadow};outline:none;z-index:2147483647;min-width:80px;`
+          const sz = textSize, ol = textOutline
+          document.body.appendChild(input); input.focus()
+          input.addEventListener('blur', () => { if (input.value.trim()) { annotator.addShape({ type: 'text', color: activeColor, x: startX, y: startY, text: input.value.trim(), size: sz, outline: ol }); persist() } input.remove() }, { once: true })
+          input.addEventListener('keydown', (ke) => { if (ke.key === 'Enter') input.blur(); ke.stopPropagation() })
+          return
+        }
+        if (activeTool === 'count') {
+          annotator.addShape({ type: 'count', color: activeColor, x: pt.x, y: pt.y, n: ++countN })
+          persist()
+          return
+        }
+        drawing = true
+        if (activeTool === 'pen') penPoints = [pt]
+      })
+      canvas.addEventListener('pointermove', (e) => {
+        if (!drawing) return
+        if (activeTool === 'pen') { penPoints.push(toImg(e)); return }
+        if (activeTool === 'crop' && cropBox) {
+          const sr = stage.getBoundingClientRect()
+          const x1 = Math.min(cropClient.x, e.clientX), y1 = Math.min(cropClient.y, e.clientY)
+          const x2 = Math.max(cropClient.x, e.clientX), y2 = Math.max(cropClient.y, e.clientY)
+          cropBox.style.left = (x1 - sr.left) + 'px'
+          cropBox.style.top = (y1 - sr.top) + 'px'
+          cropBox.style.width = (x2 - x1) + 'px'
+          cropBox.style.height = (y2 - y1) + 'px'
+        }
+      })
+      canvas.addEventListener('pointerup', (e) => {
+        if (!drawing) return
+        drawing = false
+        const pt = toImg(e)
+        if (activeTool === 'crop') {
+          if (cropBox) { cropBox.remove(); cropBox = null }
+          const rx = Math.max(0, Math.min(startX, pt.x)), ry = Math.max(0, Math.min(startY, pt.y))
+          const rw = Math.abs(pt.x - startX), rh = Math.abs(pt.y - startY)
+          if (rw > 4 && rh > 4) applyHeroCrop(index, rx, ry, rw, rh)
+          return
+        }
+        if (activeTool === 'pen' && penPoints.length > 1) annotator.addShape({ type: 'pen', color: activeColor, points: penPoints })
+        else if (activeTool === 'line') annotator.addShape({ type: 'line', color: activeColor, x1: startX, y1: startY, x2: pt.x, y2: pt.y })
+        else if (activeTool === 'rect') annotator.addShape({ type: 'rect', color: activeColor, x: Math.min(startX, pt.x), y: Math.min(startY, pt.y), w: Math.abs(pt.x - startX), h: Math.abs(pt.y - startY) })
+        else if (activeTool === 'circle') annotator.addShape({ type: 'circle', color: activeColor, x: (startX + pt.x) / 2, y: (startY + pt.y) / 2, rx: Math.abs(pt.x - startX) / 2, ry: Math.abs(pt.y - startY) / 2 })
+        else if (activeTool === 'arrow') annotator.addShape({ type: 'arrow', color: activeColor, x1: startX, y1: startY, x2: pt.x, y2: pt.y })
+        persist()
+      })
+
+      const TOOL_KEYS: Record<string, string> = { p: 'pen', l: 'line', r: 'rect', o: 'circle', a: 'arrow', t: 'text', c: 'count', k: 'crop' }
+      heroKeyHandler = (e: KeyboardEvent) => {
+        if (!document.body.contains(host)) { detachHeroKeys(); return }
+        const el = e.target as HTMLElement | null
+        if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); annotator.undo(); persist(); return }
+        if (e.metaKey || e.ctrlKey || e.altKey) return
+        const k = e.key.toLowerCase()
+        if (TOOL_KEYS[k]) { e.preventDefault(); selectTool(TOOL_KEYS[k]) }
+      }
+      document.addEventListener('keydown', heroKeyHandler, { capture: true })
     }
   }
 

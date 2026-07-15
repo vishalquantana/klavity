@@ -36,7 +36,9 @@ export class Annotator {
   redraw(): void {
     // Image may not be defined in non-browser environments (e.g., tests)
     if (typeof Image === 'undefined') return
-    const ctx = this.canvas.getContext('2d')!
+    const ctx = this.canvas.getContext('2d')
+    // Headless canvases (jsdom) return a null 2D context — nothing to paint, bail safely.
+    if (!ctx) return
     const img = new Image()
     img.onload = () => {
       ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
@@ -76,12 +78,38 @@ export class Annotator {
         shape.y2 - headLen * Math.sin(angle + Math.PI / 6),
       )
       ctx.stroke()
+    } else if (shape.type === 'line') {
+      ctx.beginPath()
+      ctx.moveTo(shape.x1, shape.y1)
+      ctx.lineTo(shape.x2, shape.y2)
+      ctx.stroke()
     } else if (shape.type === 'circle') {
       ctx.beginPath()
       ctx.ellipse(shape.x, shape.y, Math.abs(shape.rx), Math.abs(shape.ry), 0, 0, Math.PI * 2)
       ctx.stroke()
+    } else if (shape.type === 'count') {
+      const r = Math.max(13, this.computeFontSize())
+      ctx.beginPath()
+      ctx.arc(shape.x, shape.y, r, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = '#fff'
+      ctx.font = `bold ${Math.round(r * 1.05)}px sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(String(shape.n), shape.x, shape.y)
+      ctx.textAlign = 'start'
+      ctx.textBaseline = 'alphabetic'
     } else if (shape.type === 'text') {
-      ctx.font = `bold ${this.computeFontSize()}px sans-serif`
+      const size = shape.size ?? this.computeFontSize()
+      ctx.font = `bold ${size}px sans-serif`
+      const outline = shape.outline ?? 'none'
+      if (outline !== 'none') {
+        ctx.lineJoin = 'round'
+        ctx.lineWidth = Math.max(3, size * 0.18)
+        ctx.strokeStyle = outline === 'white' ? '#ffffff' : '#111111'
+        ctx.strokeText(shape.text, shape.x, shape.y)
+        ctx.fillStyle = shape.color
+      }
       ctx.fillText(shape.text, shape.x, shape.y)
     }
   }
