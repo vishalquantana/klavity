@@ -159,5 +159,12 @@
     "excerpt": "A bug bash only works when it's scoped, timeboxed, and captures reproducible evidence. Here's how to plan one, run the session, and triage what it finds.",
     "category": "Guides",
     "date": "2026-07-14"
+  },
+  {
+    "slug": "qa-metrics-that-actually-matter",
+    "title": "The QA Metrics That Actually Matter (and Which to Drop)",
+    "excerpt": "Test pass rate and bug count look busy but hide quality. Track escaped defects, reopen rate, MTTR, and flakiness instead. Here's why, and how.",
+    "category": "Insights",
+    "date": "2026-07-15"
   }
 ]
