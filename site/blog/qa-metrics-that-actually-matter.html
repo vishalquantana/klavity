@@ -1,0 +1,94 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The QA Metrics That Actually Matter (and Which to Drop) · Klavity</title>
+<meta name="description" content="Test pass rate and bug count look busy but hide quality. Track escaped defects, reopen rate, MTTR, and flakiness instead. Here's why, and how.">
+<link rel="canonical" href="https://klavity.in/blog/qa-metrics-that-actually-matter">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="The QA Metrics That Actually Matter (and Which to Drop)"><meta property="og:description" content="Test pass rate and bug count look busy but hide quality. Track escaped defects, reopen rate, MTTR, and flakiness instead. Here's why, and how.">
+<meta property="og:url" content="https://klavity.in/blog/qa-metrics-that-actually-matter"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="The QA Metrics That Actually Matter (and Which to Drop)"><meta name="twitter:description" content="Test pass rate and bug count look busy but hide quality. Track escaped defects, reopen rate, MTTR, and flakiness instead. Here's why, and how."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"The QA Metrics That Actually Matter (and Which to Drop)","description":"Test pass rate and bug count look busy but hide quality. Track escaped defects, reopen rate, MTTR, and flakiness instead. Here's why, and how.","datePublished":"2026-07-15","dateModified":"2026-07-15","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/qa-metrics-that-actually-matter","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"The QA Metrics That Actually Matter (and Which to Drop)","item":"https://klavity.in/blog/qa-metrics-that-actually-matter"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/qa-metrics-that-actually-matter"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is the most important QA metric?","acceptedAnswer":{"@type":"Answer","text":"Escaped defect rate — the share of bugs found in production rather than before release. It measures the one thing QA exists to prevent: defects reaching users. A high escaped defect rate means your pre-release testing is missing the paths real users take, regardless of how many tests pass."}},{"@type":"Question","name":"Why is test pass rate a bad QA metric?","acceptedAnswer":{"@type":"Answer","text":"Test pass rate only reflects the checks you already wrote, so it goes green even when large parts of the product are untested or broken in ways no test covers. It also hides flaky tests behind retries. A 99% pass rate on a shallow suite is worse than 90% on a suite that exercises real user journeys."}},{"@type":"Question","name":"How do you measure defect escape rate?","acceptedAnswer":{"@type":"Answer","text":"Divide the number of defects found in production during a period by the total defects found in that period (pre-release plus production), then multiply by 100. Track it per release or per month and watch the trend rather than any single number — a rising escape rate points to gaps in test coverage or environment parity."}},{"@type":"Question","name":"What is a good MTTR for bugs?","acceptedAnswer":{"@type":"Answer","text":"There is no universal target; MTTR only makes sense compared against your own baseline and segmented by severity. Measure time-to-resolution separately for critical, high, and low-severity bugs, then work to shorten each trend. Most MTTR is lost to back-and-forth on missing reproduction details, not to the fix itself."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Insights · 2026-07-15</div>
+    <h1>The QA Metrics That Actually Matter (and Which to Drop)</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>The QA metrics worth tracking measure quality that reached users, not activity inside your process. The four that matter most are escaped defect rate, defect reopen rate, mean time to resolution (MTTR), and test flakiness rate. Vanity metrics like raw bug count, total test count, and test pass rate reward motion, not outcomes.</div>
+    <div class="prose"><p>The QA metrics that actually matter measure quality that reached your users, not activity inside your process. The four worth tracking are <strong>escaped defect rate</strong> (bugs found in production vs. before release), <strong>defect reopen rate</strong> (fixes that didn't hold), <strong>mean time to resolution</strong> segmented by severity, and <strong>test flakiness rate</strong>. Metrics like raw bug count, total test count, and headline test pass rate reward motion instead of outcomes, and should be demoted or dropped.</p>
+
+<h2>Why most QA dashboards measure the wrong thing</h2>
+<p>Most QA dashboards fill up with numbers that are easy to collect: how many bugs were filed, how many tests exist, what percentage passed. These are activity metrics. They go up when the team is busy and look reassuring in a status meeting, but none of them answer the only question that matters — <em>is the product getting better for the people using it?</em></p>
+<p>The problem is that activity and outcome can move in opposite directions. A team can write 500 new tests, ship a 99% pass rate, close 80 bugs a sprint, and still have users hitting broken checkout every week — because the tests cover the paths QA already knew about, and the real defects live in the paths nobody tested. Good QA metrics are the ones that stay honest when the process looks busy.</p>
+
+<h2>The four QA metrics worth tracking</h2>
+<p>Each of these measures an outcome, is hard to game, and points to a specific fix when it moves in the wrong direction.</p>
+<ol>
+<li><strong>Escaped defect rate.</strong> The share of defects discovered in production rather than before release. Compute it as production defects divided by total defects (pre-release + production) for the period, times 100. This is the single best proxy for "how well is testing actually working," because it counts only the bugs that got past every gate. A rising trend means your coverage or environment parity is slipping — not that users got unlucky.</li>
+<li><strong>Defect reopen rate.</strong> The percentage of resolved bugs that get reopened because the fix was incomplete or wrong. A healthy fix stays fixed. A climbing reopen rate signals rushed fixes, missing regression tests, or bugs that were closed as "cannot reproduce" without ever being understood. It's a direct measure of fix quality, which raw close-count completely hides.</li>
+<li><strong>Mean time to resolution (MTTR), by severity.</strong> How long a bug takes from report to verified fix. The key is to <em>segment</em> it: a blended average lets a fast pile of typo fixes mask slow critical-bug resolution. Track critical, high, and low separately and drive each trend down. In practice, most of MTTR is not coding time — it's the round-trips spent asking the reporter for steps, logs, and environment that should have been captured up front.</li>
+<li><strong>Test flakiness rate.</strong> The percentage of test runs that fail and then pass on retry without any code change. Flaky tests quietly poison every other metric: they inflate your "failures," get silenced with blanket retries, and eventually train the team to ignore red builds. Measure flakiness explicitly and quarantine offenders so a real regression never hides behind a test everyone has learned to re-run.</li>
+</ol>
+
+<h2>Which QA metrics to drop (or demote)</h2>
+<p>These aren't useless, but as headline numbers they mislead more than they inform:</p>
+<ul>
+<li><strong>Raw bug count.</strong> More bugs found can mean better testing <em>or</em> a worse product — the number alone can't tell you which. Watch escaped defect rate instead, and use bug count only as supporting context.</li>
+<li><strong>Total number of tests.</strong> Test count measures how much you wrote, not how much you covered. A thousand assertions on a settings page while checkout goes untested is a big number and a bad safety net. Coverage of critical user journeys matters; the raw total does not.</li>
+<li><strong>Headline test pass rate.</strong> Pass rate reflects only the checks you already thought to write, and it's easily gamed by flaky retries and shallow tests. A green suite is necessary, not sufficient. Pair it with escaped defect rate so you can see when "all green" and "actually working" have drifted apart.</li>
+<li><strong>Bugs closed per person.</strong> Rewarding close-count encourages closing tickets, not fixing problems — and it punishes the engineer who takes an extra day to fix the root cause instead of the symptom. Reopen rate is the honest counterweight.</li>
+</ul>
+
+<h2>How to make these metrics easy to collect</h2>
+<p>The reason teams fall back on vanity metrics is that the good ones feel expensive to measure. They don't have to be, if the data is captured at the source:</p>
+<ol>
+<li><strong>Tag where each defect was found.</strong> Add a required "found in" field (production vs. staging vs. pre-release) to every bug so escaped defect rate falls out of a query instead of a manual audit.</li>
+<li><strong>Capture evidence at report time.</strong> Most MTTR bleeds out in the gap between "a bug was filed" and "an engineer can reproduce it." If every report ships with exact steps, console output, network activity, and environment attached, that gap collapses. In-app tools like <a href="/snap">Klavity Snap</a> capture that context on the first report, which is what actually moves MTTR — and it makes reopen rate meaningful, because closed bugs were genuinely understood, not guessed at.</li>
+<li><strong>Instrument flakiness in CI.</strong> Record which tests fail-then-pass on retry and surface the list every week. <a href="/autosim">AutoSim</a>'s self-healing tests reduce one common flakiness source — brittle selectors that break when the UI shifts — so your flakiness rate reflects real instability, not maintenance debt.</li>
+<li><strong>Review trends, not snapshots.</strong> Every metric here is a trend line, not a target to hit once. Look at direction over the last several releases; a single month's number is noise.</li>
+</ol>
+<p>Once escaped defects, reopen rate, MTTR, and flakiness are on one dashboard, retros change character: instead of arguing about how many bugs were closed, the team asks why a defect escaped and how to close the gap. For more on turning a noisy backlog into signal, see our <a href="/blog">guides on bug triage and reproducibility</a>.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Track escaped defect rate as your headline QA metric</li><li>Watch reopen rate to catch fixes that don't hold</li><li>Segment MTTR by severity, not one blended average</li><li>Measure flakiness rate and quarantine flaky tests</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What is the most important QA metric?</summary><p>Escaped defect rate — the share of bugs found in production rather than before release. It measures the one thing QA exists to prevent: defects reaching users. A high escaped defect rate means your pre-release testing is missing the paths real users take, regardless of how many tests pass.</p></details><details><summary>Why is test pass rate a bad QA metric?</summary><p>Test pass rate only reflects the checks you already wrote, so it goes green even when large parts of the product are untested or broken in ways no test covers. It also hides flaky tests behind retries. A 99% pass rate on a shallow suite is worse than 90% on a suite that exercises real user journeys.</p></details><details><summary>How do you measure defect escape rate?</summary><p>Divide the number of defects found in production during a period by the total defects found in that period (pre-release plus production), then multiply by 100. Track it per release or per month and watch the trend rather than any single number — a rising escape rate points to gaps in test coverage or environment parity.</p></details><details><summary>What is a good MTTR for bugs?</summary><p>There is no universal target; MTTR only makes sense compared against your own baseline and segmented by severity. Measure time-to-resolution separately for critical, high, and low-severity bugs, then work to shorten each trend. Most MTTR is lost to back-and-forth on missing reproduction details, not to the fix itself.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
