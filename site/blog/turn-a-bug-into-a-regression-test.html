@@ -1,0 +1,98 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to Turn a Bug Into a Regression Test That Sticks · Klavity</title>
+<meta name="description" content="A fixed bug with no test will come back. Here's how to convert any bug into a regression test that fails before the fix and passes after.">
+<link rel="canonical" href="https://klavity.in/blog/turn-a-bug-into-a-regression-test">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="How to Turn a Bug Into a Regression Test That Sticks"><meta property="og:description" content="A fixed bug with no test will come back. Here's how to convert any bug into a regression test that fails before the fix and passes after.">
+<meta property="og:url" content="https://klavity.in/blog/turn-a-bug-into-a-regression-test"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="How to Turn a Bug Into a Regression Test That Sticks"><meta name="twitter:description" content="A fixed bug with no test will come back. Here's how to convert any bug into a regression test that fails before the fix and passes after."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"How to Turn a Bug Into a Regression Test That Sticks","description":"A fixed bug with no test will come back. Here's how to convert any bug into a regression test that fails before the fix and passes after.","datePublished":"2026-07-16","dateModified":"2026-07-16","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/turn-a-bug-into-a-regression-test","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Turn a Bug Into a Regression Test That Sticks","item":"https://klavity.in/blog/turn-a-bug-into-a-regression-test"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/turn-a-bug-into-a-regression-test"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a regression test?","acceptedAnswer":{"@type":"Answer","text":"A regression test is an automated check that verifies a specific behavior still works after code changes. A regression test born from a bug asserts the exact behavior that was broken, so if the bug ever returns, the test fails and CI catches it before release."}},{"@type":"Question","name":"Should every bug get a regression test?","acceptedAnswer":{"@type":"Answer","text":"Not literally every one, but every bug that reached a user, was expensive to diagnose, or lives in critical-path code should. Trivial cosmetic issues in low-traffic areas rarely earn the maintenance cost. Use the rule: if this bug reappearing would embarrass you or page someone, write the test."}},{"@type":"Question","name":"Do I write the regression test before or after the fix?","acceptedAnswer":{"@type":"Answer","text":"Before. Write the failing test first, confirm it fails for the right reason on the unpatched code, then apply the fix and watch it pass. This 'red-green' order is the only way to prove the test actually catches the bug rather than passing by accident."}},{"@type":"Question","name":"How do I keep regression tests from becoming flaky?","acceptedAnswer":{"@type":"Answer","text":"Make them deterministic: control time, seed random data, mock external network calls, and assert on observable behavior rather than internal timing. For end-to-end tests, use resilient selectors or self-healing tests so a UI rename doesn't break a test that was catching a real regression."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-07-16</div>
+    <h1>How to Turn a Bug Into a Regression Test That Sticks</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>To turn a bug into a regression test, reproduce it reliably, write a test that fails on the broken code, apply the fix so the test goes green, and add it to CI. The one rule that makes it real: the test must fail before the fix and pass after — otherwise it proves nothing and guards nothing.</div>
+    <div class="prose"><p>To turn a bug into a regression test, reproduce the bug reliably, write an automated test that <strong>fails on the broken code</strong>, apply the fix so the test turns green, and add it to your CI pipeline. The one rule that makes this real: the test must fail before the fix and pass after. A test written after the fix that has never seen the bug fail proves nothing &mdash; it can pass for the wrong reasons and give you false confidence that the bug is guarded.</p>
+
+<h2>Why every serious bug deserves a regression test</h2>
+<p>A bug you fix without a test is a bug you will fix again. Code changes, someone refactors the area, a merge silently reverts a line &mdash; and the same defect ships a second time, usually to the same customer who reported it first. That is what &ldquo;regression&rdquo; means: a behavior that used to work (or that you deliberately fixed) quietly breaks again.</p>
+<p>The regression test is the memory the codebase keeps of that fix. It encodes, in executable form, the sentence &ldquo;this specific thing must keep working.&rdquo; Three things make bug-derived regression tests more valuable than tests written from a spec:</p>
+<ul>
+<li><strong>They target proven-fragile code.</strong> A bug is evidence that this exact path is easy to break. That is precisely where a guard earns its keep.</li>
+<li><strong>They come with a reproduction for free.</strong> The bug report already tells you the inputs, the state, and the expected result. Half the work of writing a test is done.</li>
+<li><strong>They document intent.</strong> Six months later, a well-named regression test explains <em>why</em> a strange-looking line exists, so the next developer does not &ldquo;clean it up&rdquo; and reintroduce the bug.</li>
+</ul>
+
+<h2>How to turn a bug into a regression test, step by step</h2>
+<ol>
+<li><strong>Reproduce it deterministically first.</strong> Before you write any test, get the bug to fail the same way every time by hand or in a script. If you can only reproduce it &ldquo;sometimes,&rdquo; you have not found the root cause yet, and a test built on a flaky repro will itself be flaky. Nail down the exact inputs, state, and environment.</li>
+<li><strong>Write the test at the lowest level that still catches it.</strong> If the bug lives in a pure function, a unit test is fastest and most stable. If it only appears when several components interact, use an integration test. Reach for a full end-to-end test only when the bug depends on the real browser, routing, or UI. Lower-level tests are faster and less flaky, so prefer them when they can still reproduce the defect.</li>
+<li><strong>Assert the behavior, not the fix.</strong> Test what the user should observe &mdash; the correct total, the saved record, the absent error &mdash; not the internal change you made. If you assert on the implementation (&ldquo;this helper was called once&rdquo;), the test breaks on every refactor and stops protecting anything. Behavioral assertions survive rewrites.</li>
+<li><strong>Confirm it fails for the right reason.</strong> Run the new test against the <em>unpatched</em> code. It must fail, and the failure message must describe the actual bug. A test that passes on broken code is worthless; a test that fails with an unrelated error (a typo, a missing import) is lying to you. This red step is the whole point &mdash; skip it and you have not verified anything.</li>
+<li><strong>Apply the fix and watch it go green.</strong> Now make the code change. The test should pass. If it does not, either your fix is incomplete or your test asserts the wrong thing &mdash; both are worth knowing before you ship.</li>
+<li><strong>Name it after the bug and link the ticket.</strong> Give the test a name a stranger can read (<code>refund_amount_stays_positive_after_partial_return</code>, not <code>test_bug_4821</code>) and reference the bug ID in a comment. When it fails in two years, whoever is on call should understand the stakes in ten seconds.</li>
+<li><strong>Add it to CI so it runs on every change.</strong> A regression test that only lives on your laptop guards nothing. It has to run in the pipeline, on every pull request, so the bug cannot return without turning something red.</li>
+</ol>
+
+<h2>What separates a durable regression test from a brittle one</h2>
+<p>The failure mode of regression suites is not too few tests &mdash; it is tests so fragile that people start ignoring or deleting them. A regression test earns permanence by being:</p>
+<ul>
+<li><strong>Deterministic.</strong> Control anything non-repeatable: freeze the clock, seed random generators, and mock external network calls. A test whose result depends on the current time, a live API, or execution order will fail randomly and train the team to shrug at red builds. Flakiness is how a good test dies.</li>
+<li><strong>Focused.</strong> One regression test should defend one behavior. A sprawling test that checks fifteen things fails for fifteen reasons and tells you nothing precise. Small tests localize the problem the moment they break.</li>
+<li><strong>Independent.</strong> It should set up its own state and not rely on another test having run first. Shared state across tests is one of the most common sources of intermittent failures &mdash; the same category of problem behind most <a href="/blog/fix-flaky-end-to-end-tests">flaky end-to-end tests</a>.</li>
+</ul>
+
+<h2>Where the reproduction data actually comes from</h2>
+<p>The hardest part of writing a regression test is usually not the assertion &mdash; it is recreating the exact state in which the bug appeared. This is where the quality of the original bug report decides how fast you can build the test. A report that says &ldquo;checkout is broken&rdquo; leaves you guessing. A report that carries the URL, the console errors, the failing network request, and the browser and viewport hands you the test&rsquo;s setup on a plate.</p>
+<p>That is the practical case for capturing rich evidence at report time rather than reconstructing it later. Tools like <a href="/snap">Klavity Snap</a> let anyone file a bug from inside the product with the screenshot, console log, network trace, and environment attached, so the person writing the regression test starts from the real state instead of a paraphrase. The better your <a href="/blog/how-to-write-a-bug-report-developers-act-on">bug reports</a> are, the cheaper every regression test becomes.</p>
+
+<h2>How AI and self-healing tests keep the suite from rotting</h2>
+<p>End-to-end regression tests decay for a mundane reason: the UI changes. A button gets renamed, a page restructures, and a selector that was catching a real regression now fails because the element moved &mdash; not because the bug came back. Teams respond by disabling the test, and the guard is gone.</p>
+<p><a href="/autosim">Self-healing end-to-end tests</a> address this by re-resolving a moved or renamed element from surrounding context instead of failing on a stale selector, so the test keeps verifying the behavior it was written to protect through cosmetic UI churn. That does not excuse you from the discipline above &mdash; you still write the failing test first, still assert behavior, still run it in CI. It just lowers the maintenance tax that otherwise erodes a regression suite one deleted test at a time. The goal is a suite where every entry is a bug that can never quietly ship twice.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Write the test before the fix and confirm it fails first</li><li>Assert the user-visible behavior, not the specific fix</li><li>Reuse the exact reproduction state from the bug report</li><li>Add it to CI and link it to the bug ID so it can't rot</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What is a regression test?</summary><p>A regression test is an automated check that verifies a specific behavior still works after code changes. A regression test born from a bug asserts the exact behavior that was broken, so if the bug ever returns, the test fails and CI catches it before release.</p></details><details><summary>Should every bug get a regression test?</summary><p>Not literally every one, but every bug that reached a user, was expensive to diagnose, or lives in critical-path code should. Trivial cosmetic issues in low-traffic areas rarely earn the maintenance cost. Use the rule: if this bug reappearing would embarrass you or page someone, write the test.</p></details><details><summary>Do I write the regression test before or after the fix?</summary><p>Before. Write the failing test first, confirm it fails for the right reason on the unpatched code, then apply the fix and watch it pass. This 'red-green' order is the only way to prove the test actually catches the bug rather than passing by accident.</p></details><details><summary>How do I keep regression tests from becoming flaky?</summary><p>Make them deterministic: control time, seed random data, mock external network calls, and assert on observable behavior rather than internal timing. For end-to-end tests, use resilient selectors or self-healing tests so a UI rename doesn't break a test that was catching a real regression.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
