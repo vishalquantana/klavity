@@ -6680,11 +6680,17 @@ $("inviteBtn") && ($("inviteBtn").onclick = async () => {
   $("inviteEmail").value = ""; $("inviteMsg").style.color="var(--green)"; $("inviteMsg").textContent = `Invited ${email} — they can sign in now.`
   state.members = d.members; renderMembers(state.active && state.active.role === "admin")
 })
-// KLA-292 new-project modal wiring
-$("npCreate") && ($("npCreate").onclick = createProject)
-$("npName") && ($("npName").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); createProject() } else if (e.key === "Escape") closeNewProject() })
-$("npUrl") && ($("npUrl").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); createProject() } else if (e.key === "Escape") closeNewProject() })
-$("npBg") && ($("npBg").onclick = (e) => { if (e.target === $("npBg")) closeNewProject() })
+// KLA-292 new-project modal wiring. The modal markup lives LATER in the document (after this <script>),
+// so at parse time these elements don't exist yet and bare bindings would silently no-op (the Create
+// button did nothing). Defer wiring until DOMContentLoaded so #npCreate/#npName/#npUrl/#npBg exist.
+const wireNewProjectModal = () => {
+  $("npCreate") && ($("npCreate").onclick = createProject)
+  $("npName") && ($("npName").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); createProject() } else if (e.key === "Escape") closeNewProject() })
+  $("npUrl") && ($("npUrl").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); createProject() } else if (e.key === "Escape") closeNewProject() })
+  $("npBg") && ($("npBg").onclick = (e) => { if (e.target === $("npBg")) closeNewProject() })
+}
+if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", wireNewProjectModal)
+else wireNewProjectModal()
 $("logout").onclick = async () => { await fetch("/api/auth/logout", { method:"POST" }); location.href = "/" }
 
 // ── G1 session replay viewer (rrweb-player, lazy-loaded vendor asset) ─────────────────
