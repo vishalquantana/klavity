@@ -166,5 +166,12 @@
     "excerpt": "Test pass rate and bug count look busy but hide quality. Track escaped defects, reopen rate, MTTR, and flakiness instead. Here's why, and how.",
     "category": "Insights",
     "date": "2026-07-15"
+  },
+  {
+    "slug": "turn-a-bug-into-a-regression-test",
+    "title": "How to Turn a Bug Into a Regression Test That Sticks",
+    "excerpt": "A fixed bug with no test will come back. Here's how to convert any bug into a regression test that fails before the fix and passes after.",
+    "category": "Guides",
+    "date": "2026-07-16"
   }
 ]
