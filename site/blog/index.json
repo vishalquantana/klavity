@@ -173,5 +173,12 @@
     "excerpt": "A fixed bug with no test will come back. Here's how to convert any bug into a regression test that fails before the fix and passes after.",
     "category": "Guides",
     "date": "2026-07-16"
+  },
+  {
+    "slug": "unit-integration-end-to-end-tests-testing-pyramid",
+    "title": "The Testing Pyramid: Unit, Integration, and E2E Tests",
+    "excerpt": "Unit tests check one function, integration tests check modules together, and E2E tests drive the whole app like a user. Here's how to split them.",
+    "category": "Compare",
+    "date": "2026-07-17"
   }
 ]
