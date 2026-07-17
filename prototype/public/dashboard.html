@@ -234,6 +234,11 @@ a.exp-card .ec-src-chip,.exp-card a.ec-src-chip{cursor:pointer}
 .modal .mhead h3{font-family:var(--display);font-weight:500;font-size:20px}
 .modal .mclose{margin-left:auto;background:none;border:1px solid var(--line);border-radius:9px;color:var(--paper-dim);font-size:18px;line-height:1;padding:4px 10px;cursor:pointer}
 .modal .mclose:hover{color:var(--paper)}
+/* New-project modal inputs — match the app's standard input style (padding/radius/focus ring). Without
+   this they fell back to the thin browser base and looked cramped next to every other input. */
+#npBg input{width:100%;box-sizing:border-box;background:var(--ink);border:1px solid var(--line);border-radius:10px;padding:10px 12px;color:var(--paper);font-family:var(--body);font-size:14px;outline:none;transition:border-color var(--mi-dur) var(--mi-ease),box-shadow var(--mi-dur) var(--mi-ease)}
+#npBg input:focus{border-color:var(--indigo);box-shadow:0 0 0 3px color-mix(in srgb,var(--indigo) 20%,transparent)}
+#npBg input::placeholder{color:var(--paper-faint)}
 .steptl{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
 .steptl .sp{font-family:var(--mono);font-size:10px;letter-spacing:.04em;padding:4px 9px;border-radius:8px;border:1px solid var(--line);background:var(--ink-3);color:var(--paper-faint);cursor:pointer}
 .steptl .sp.green{color:var(--green)}.steptl .sp.amber{color:var(--amber);border-color:rgba(217,131,36,.4)}.steptl .sp.red{color:var(--rose);border-color:rgba(219,39,119,.4)}
@@ -1429,6 +1434,10 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .driver-popover.klav-tour .driver-popover-next-btn{color:#fff;border-color:transparent;background:linear-gradient(135deg,#a9a9ff,var(--indigo))}
 [data-theme="dark"] .driver-popover.klav-tour .driver-popover-next-btn{color:#0c0a08}
 .driver-popover.klav-tour .driver-popover-next-btn:hover{border-color:transparent;filter:brightness(1.05)}
+/* "Skip tour" — muted text button pinned to the far-left of the footer (injected via onPopoverRender) */
+.driver-popover.klav-tour .driver-popover-footer{align-items:center}
+.driver-popover.klav-tour .klav-skip-tour{margin-right:auto;background:transparent;border:none;color:var(--paper-faint);font-family:var(--body);font-weight:600;font-size:12.5px;padding:7px 2px;cursor:pointer;text-shadow:none;transition:color var(--mi-dur) var(--mi-ease)}
+.driver-popover.klav-tour .klav-skip-tour:hover{color:var(--paper)}
 /* Arrow triangles are borders in driver.css — recolor every side to the popover surface. */
 .driver-popover.klav-tour .driver-popover-arrow-side-left{border-left-color:var(--ink-2)}
 .driver-popover.klav-tour .driver-popover-arrow-side-right{border-right-color:var(--ink-2)}
@@ -7347,6 +7356,24 @@ load()
       stageRadius: 12,
       overlayOpacity: 0.6,
       steps: steps,
+      // Explicit "Skip tour" affordance on every step (beyond the ×, Esc and click-away) so a
+      // first-time user never feels trapped by the auto-launched overlay.
+      onPopoverRender: function (popover) {
+        try {
+          var wrap = popover && popover.wrapper
+          if (!wrap || wrap.querySelector(".klav-skip-tour")) return
+          var skip = document.createElement("button")
+          skip.type = "button"
+          skip.className = "klav-skip-tour"
+          skip.textContent = "Skip tour"
+          skip.addEventListener("click", function () { try { d.destroy() } catch (e) {} })
+          var footer = wrap.querySelector(".driver-popover-footer")
+          var nav = wrap.querySelector(".driver-popover-navigation-btns")
+          if (footer) footer.insertBefore(skip, footer.firstChild)   // far-left of the footer
+          else if (nav) nav.insertBefore(skip, nav.firstChild)
+          else wrap.appendChild(skip)
+        } catch (e) {}
+      },
       onDestroyed: function () { running = false },
     })
     d.drive()
