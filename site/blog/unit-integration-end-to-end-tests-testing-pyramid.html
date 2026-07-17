@@ -1,0 +1,106 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Testing Pyramid: Unit, Integration, and E2E Tests · Klavity</title>
+<meta name="description" content="Unit tests check one function, integration tests check modules together, and E2E tests drive the whole app like a user. Here's how to split them.">
+<link rel="canonical" href="https://klavity.in/blog/unit-integration-end-to-end-tests-testing-pyramid">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="The Testing Pyramid: Unit, Integration, and E2E Tests"><meta property="og:description" content="Unit tests check one function, integration tests check modules together, and E2E tests drive the whole app like a user. Here's how to split them.">
+<meta property="og:url" content="https://klavity.in/blog/unit-integration-end-to-end-tests-testing-pyramid"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="The Testing Pyramid: Unit, Integration, and E2E Tests"><meta name="twitter:description" content="Unit tests check one function, integration tests check modules together, and E2E tests drive the whole app like a user. Here's how to split them."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"The Testing Pyramid: Unit, Integration, and E2E Tests","description":"Unit tests check one function, integration tests check modules together, and E2E tests drive the whole app like a user. Here's how to split them.","datePublished":"2026-07-17","dateModified":"2026-07-17","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/unit-integration-end-to-end-tests-testing-pyramid","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"The Testing Pyramid: Unit, Integration, and E2E Tests","item":"https://klavity.in/blog/unit-integration-end-to-end-tests-testing-pyramid"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/unit-integration-end-to-end-tests-testing-pyramid"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is the difference between unit, integration, and end-to-end tests?","acceptedAnswer":{"@type":"Answer","text":"A unit test checks a single function or class in isolation, usually with its dependencies mocked. An integration test checks that two or more real components work together — for example, that your service layer talks to the database correctly. An end-to-end (E2E) test drives the fully assembled application through a real browser or client, exercising the same path a user would."}},{"@type":"Question","name":"How many of each type of test should I have?","acceptedAnswer":{"@type":"Answer","text":"There is no universal ratio, but the pyramid shape holds: the largest number of tests should be fast unit tests, a smaller layer of integration tests, and the fewest E2E tests — reserved for critical journeys like sign-up, checkout, and login. If E2E tests outnumber your unit tests, you likely have an 'ice-cream cone' anti-pattern that will be slow and flaky."}},{"@type":"Question","name":"Why do end-to-end tests break so often?","acceptedAnswer":{"@type":"Answer","text":"E2E tests touch the most moving parts — the UI, network, backend, and real timing — so any change to a selector, a slow response, or shared test data can fail them. That fragility is why teams keep the E2E layer small and increasingly use self-healing tests that repair broken selectors automatically instead of failing the whole suite."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Compare · 2026-07-17</div>
+    <h1>The Testing Pyramid: Unit, Integration, and E2E Tests</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>Unit tests verify one function in isolation, integration tests verify that modules work together, and end-to-end (E2E) tests drive the whole running app the way a user would. The testing pyramid says keep many fast unit tests at the base, fewer integration tests in the middle, and a small set of E2E tests for your most critical user journeys.</div>
+    <div class="prose"><p>Unit, integration, and end-to-end tests differ by <strong>scope</strong>: a unit test checks one function in isolation, an integration test checks that several real modules work together, and an end-to-end (E2E) test drives the fully assembled application the way a user would. The testing pyramid is the guideline for balancing them: many fast unit tests at the base, fewer integration tests in the middle, and a small set of E2E tests at the top for your most critical journeys.</p>
+
+<h2>What is the difference between unit, integration, and end-to-end tests?</h2>
+<p>The clearest way to tell the three apart is to ask <em>how much of the system is real</em> when the test runs.</p>
+<ul>
+<li><strong>Unit test</strong> — Exercises a single function, method, or class with its dependencies replaced by mocks or stubs. It answers: "Does this piece of logic behave correctly in isolation?" A price-rounding function, a date parser, or a reducer are classic unit-test targets.</li>
+<li><strong>Integration test</strong> — Exercises two or more real components together, with no mock at the seam you care about. It answers: "Do these parts agree on the contract between them?" Examples: your repository layer against a real (or in-memory) database, or an API handler calling a real validation module.</li>
+<li><strong>End-to-end test</strong> — Drives the whole running app — frontend, backend, and data store — through the same interface a user or client uses, typically a real browser. It answers: "Can a person actually complete this task?" Sign-up, checkout, and login flows are the usual candidates.</li>
+</ul>
+<p>A useful rule of thumb: the more of the real system a test touches, the more confidence it gives you when it passes, and the more places it can break for reasons unrelated to your change.</p>
+
+<h2>What is the testing pyramid?</h2>
+<p>The testing pyramid, popularized by Mike Cohn, is a shape that describes a healthy distribution of tests. Unit tests form the wide base because they are cheap, fast, and precise. Integration tests sit in a narrower middle band. E2E tests form the small tip because each one is slow and brittle relative to what it verifies.</p>
+<p>The pyramid is a guideline, not a law — but the ordering is what matters. Fast, isolated tests should dominate because they give you feedback in milliseconds and point directly at the broken line of code. Slow, whole-system tests should be rare because a failure tells you "something in this journey broke" without saying where.</p>
+<h3>The ice-cream cone anti-pattern</h3>
+<p>When teams invert the pyramid — a handful of unit tests and a heavy top layer of E2E and manual tests — you get the "ice-cream cone." The symptoms are familiar: slow CI, tests that fail intermittently, and a suite people re-run instead of trust. If your E2E tests outnumber your unit tests, that is the pattern to unwind.</p>
+
+<h2>When should you use each type of test?</h2>
+<p>Match the test type to the kind of bug you are trying to catch, because each layer catches something the others cannot.</p>
+<ol>
+<li><strong>Reach for a unit test when the risk is in the logic.</strong> Branching rules, calculations, parsing, and edge cases (empty input, negative numbers, timezone boundaries) belong here. These are the tests you write the most of because logic bugs are the most common and the cheapest to pin down.</li>
+<li><strong>Reach for an integration test when the risk is at a seam.</strong> Mismatched API contracts, wrong SQL, serialization errors, and misconfigured clients slip past unit tests precisely because unit tests mock those seams away. An integration test uses the real collaborator so the contract is actually verified.</li>
+<li><strong>Reach for an E2E test when the risk is a broken user journey.</strong> A route that no longer renders, a form that submits to the wrong endpoint, or a login that silently fails are things only the assembled app reveals. Keep this list short: the flows where a break costs you revenue or trust.</li>
+</ol>
+
+<h2>How many of each test should you have?</h2>
+<p>There is no correct universal ratio, and chasing a specific number is a distraction. What holds across teams is the <em>shape</em>: unit tests most numerous, integration tests fewer, E2E tests fewest. Instead of a target count, use these signals:</p>
+<ul>
+<li><strong>Speed of feedback</strong> — If your test suite takes so long that people stop running it locally, you are too heavy at the top. Push coverage down into faster layers.</li>
+<li><strong>Where failures point</strong> — If most failures require debugging to locate the cause, you are relying too much on E2E tests. A good unit test fails with the exact function named.</li>
+<li><strong>Flakiness</strong> — A test that fails and passes without a code change is worse than no test, because it trains people to ignore red. Flakiness clusters in the E2E layer, which is another reason to keep it small.</li>
+</ul>
+<p>For a deeper comparison of the frameworks that run the E2E layer, see our guide on <a href="/blog/playwright-vs-cypress-regression-testing">Playwright vs. Cypress</a>.</p>
+
+<h2>Why do end-to-end tests break so often — and what to do about it?</h2>
+<p>E2E tests are fragile by nature: they depend on selectors, network timing, and shared test data, any of which can change without your logic being wrong. A renamed button, a slow API response, or a leftover record from a previous run can turn a passing suite red. That is the tax you pay for testing the whole system at once.</p>
+<p>Three practices keep the E2E layer maintainable:</p>
+<ol>
+<li><strong>Test journeys, not pages.</strong> Write E2E tests around complete user goals — "a new user can sign up and reach the dashboard" — rather than asserting on every element of every screen. Fewer, higher-value tests break less and mean more.</li>
+<li><strong>Wait on state, not on time.</strong> Replace fixed sleeps with waits for a specific element or network response. Timing-based waits are the single largest source of E2E flakiness.</li>
+<li><strong>Let selectors self-heal.</strong> When your UI changes, a renamed or restructured element shouldn't fail an otherwise-correct test. <a href="/blog/what-are-self-healing-end-to-end-tests">Self-healing tests</a> re-identify the element and keep going, which is exactly what Klavity <a href="/autosim">AutoSim</a> does for the E2E layer so a UI refactor doesn't turn your whole suite red.</li>
+</ol>
+
+<h2>Putting it together</h2>
+<p>Think of the three layers as a division of labor, not competitors. Unit tests prove your logic is correct, integration tests prove your modules agree, and E2E tests prove a real person can get through the door. Weight your suite toward the fast, precise base; keep the slow, whole-system tip small and focused on the journeys you cannot afford to break. When an E2E test does fail, the goal is to know within minutes whether it caught a real regression or just a moved selector — and to keep the ones that matter green.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Keep unit tests fast and numerous — they are your first line of defense</li><li>Use integration tests to catch wiring and contract bugs between modules</li><li>Reserve E2E tests for critical user journeys, not every feature</li><li>If E2E tests outnumber unit tests, you have an ice-cream cone to fix</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What is the difference between unit, integration, and end-to-end tests?</summary><p>A unit test checks a single function or class in isolation, usually with its dependencies mocked. An integration test checks that two or more real components work together — for example, that your service layer talks to the database correctly. An end-to-end (E2E) test drives the fully assembled application through a real browser or client, exercising the same path a user would.</p></details><details><summary>How many of each type of test should I have?</summary><p>There is no universal ratio, but the pyramid shape holds: the largest number of tests should be fast unit tests, a smaller layer of integration tests, and the fewest E2E tests — reserved for critical journeys like sign-up, checkout, and login. If E2E tests outnumber your unit tests, you likely have an 'ice-cream cone' anti-pattern that will be slow and flaky.</p></details><details><summary>Why do end-to-end tests break so often?</summary><p>E2E tests touch the most moving parts — the UI, network, backend, and real timing — so any change to a selector, a slow response, or shared test data can fail them. That fragility is why teams keep the E2E layer small and increasingly use self-healing tests that repair broken selectors automatically instead of failing the whole suite.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
