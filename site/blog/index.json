@@ -180,5 +180,12 @@
     "excerpt": "Unit tests check one function, integration tests check modules together, and E2E tests drive the whole app like a user. Here's how to split them.",
     "category": "Compare",
     "date": "2026-07-17"
+  },
+  {
+    "slug": "what-is-a-minimal-reproducible-example",
+    "title": "What Is a Minimal Reproducible Example? A Practical Guide",
+    "excerpt": "A minimal reproducible example (MRE) is the smallest self-contained code and steps that reliably trigger a bug. Here's how to build one that gets it fixed.",
+    "category": "Learn",
+    "date": "2026-07-18"
   }
 ]
