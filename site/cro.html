@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<!-- SEO -->
+<title>Free CRO audit — send an AI customer to your site · Klavity</title>
+<meta name="description" content="Paste your URL and a Klavity Sim — an AI first-time visitor — tries to convert on your site, then tells you exactly why it didn't. A free, one-time conversion-rate (CRO) audit.">
+<link rel="canonical" href="https://klavity.in/cro">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="/favicon.svg">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="Why isn't your site converting? Ask an AI customer.">
+<meta property="og:description" content="A Klavity Sim visits your site like a real first-time buyer and tells you exactly where it lost them. Free, instant CRO audit.">
+<meta property="og:url" content="https://klavity.in/cro">
+<meta property="og:image" content="https://klavity.in/favicon.svg">
+<!-- Twitter -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Why isn't your site converting? Ask an AI customer.">
+<meta name="twitter:description" content="A Klavity Sim visits your site like a real first-time buyer and tells you exactly where it lost them.">
+<meta name="twitter:image" content="https://klavity.in/favicon.svg">
+
+<!-- Fonts + shared kit -->
+<link rel="stylesheet" href="/fonts/fonts.css" />
+<link rel="stylesheet" href="/kit.css">
+
+<!-- JSON-LD: the free tool -->
+<script type="application/ld+json">
+{"@context":"https://schema.org","@graph":[
+{"@type":"WebApplication","name":"Klavity CRO Sim","applicationCategory":"BusinessApplication","operatingSystem":"Web","url":"https://klavity.in/cro","description":"A free tool that sends an AI first-time visitor (a Klavity Sim) to your website and reports the conversion frictions that stop real customers from signing up or buying.","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}},
+{"@type":"FAQPage","mainEntity":[
+{"@type":"Question","name":"What does the CRO Sim do?","acceptedAnswer":{"@type":"Answer","text":"It sends an AI persona to your page that behaves like a real first-time visitor trying to convert, then reports the ranked frictions that would stop them - grounded in what your page actually says."}},
+{"@type":"Question","name":"Is it free?","acceptedAnswer":{"@type":"Answer","text":"Yes. The one-time analysis is free. Enter your email to unlock the full friction list and the single highest-impact fix."}},
+{"@type":"Question","name":"How is this different from a page-speed or SEO grader?","acceptedAnswer":{"@type":"Answer","text":"It is not a checklist bot. A named Sim narrates a real conversion attempt and quotes your page, so you see WHY a human bounces - not just a score."}}
+]}
+]}
+</script>
+
+<style>
+/* This page is its own front door — Sims/rose identity, with amber accents for friction severity. */
+.cro-top{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--ink) 88%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.cro-top .wrap{display:flex;align-items:center;justify-content:space-between;height:58px}
+.cro-brand{display:inline-flex;align-items:center;gap:9px;font-family:var(--display);font-weight:600;font-size:19px;letter-spacing:-.01em}
+.cro-brand .dot{width:11px;height:11px;border-radius:99px;background:var(--accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 18%,transparent)}
+.cro-brand small{font-family:var(--body);font-weight:600;font-size:11px;color:var(--paper-faint);letter-spacing:.02em}
+
+.hero{padding:64px 0 30px;text-align:center}
+.hero .eyebrow{justify-content:center;margin:0 auto 18px}
+.hero h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,58px);line-height:1.04;letter-spacing:-.02em;max-width:16ch;margin:0 auto}
+.hero h1 em{font-style:normal;color:var(--accent-text)}
+.hero .sub{max-width:52ch;margin:20px auto 0;font-size:clamp(16px,2.3vw,20px);color:var(--paper-dim)}
+
+.form{max-width:600px;margin:34px auto 0;display:flex;gap:10px}
+@media(max-width:560px){.form{flex-direction:column}}
+.form input[type=url]{flex:1;font-family:var(--body);font-size:16px;padding:15px 18px;border-radius:14px;border:1px solid var(--line);background:var(--ink-2);color:var(--paper);transition:border-color 150ms ease,box-shadow 150ms ease}
+.form input[type=url]:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 15%,transparent)}
+.form .btn{padding:15px 26px;font-size:15px}
+.hint{margin:12px auto 0;font-size:12.5px;color:var(--paper-faint)}
+.err{max-width:600px;margin:14px auto 0;color:var(--red-text);font-size:14px;text-align:center;min-height:1px}
+
+.trust{display:flex;flex-wrap:wrap;gap:8px 16px;justify-content:center;margin:26px auto 0;font-size:12.5px;color:var(--paper-faint)}
+.trust span{display:inline-flex;align-items:center;gap:6px}
+
+.result{max-width:760px;margin:14px auto 0;padding:0 0 60px}
+.hidden{display:none !important}
+
+/* thinking / progress */
+.thinking{max-width:600px;margin:30px auto 0;text-align:center;color:var(--paper-dim);font-size:15px}
+.thinking .bar{height:3px;border-radius:99px;background:var(--line-2);overflow:hidden;margin:14px auto 0;max-width:340px}
+.thinking .bar i{display:block;height:100%;width:40%;background:var(--accent);border-radius:99px;animation:slide 1.4s var(--ease) infinite}
+@keyframes slide{0%{margin-left:-40%}100%{margin-left:100%}}
+@media(prefers-reduced-motion:reduce){.thinking .bar i{animation:none;width:100%;margin-left:0}}
+
+/* persona card */
+.persona{display:flex;gap:16px;align-items:flex-start;padding:22px;border-radius:18px;background:var(--ink-2);border:1px solid var(--line);box-shadow:0 8px 26px rgba(25,20,15,.05)}
+.avatar{flex:0 0 auto;width:54px;height:54px;border-radius:16px;display:grid;place-items:center;font-family:var(--display);font-weight:600;font-size:21px;color:#fff}
+.persona h2{font-family:var(--display);font-size:22px;font-weight:600;line-height:1.15}
+.persona .role{font-size:13px;color:var(--paper-faint);margin-top:2px}
+.persona .oneliner{margin-top:10px;font-size:15px;color:var(--paper-dim);font-style:italic}
+
+.verdict{margin-top:18px;padding:20px 22px;border-radius:16px;background:color-mix(in srgb,var(--accent) 7%,var(--ink-2));border:1px solid color-mix(in srgb,var(--accent) 22%,var(--line))}
+.verdict .lbl{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent-text);font-weight:600}
+.verdict p{margin-top:8px;font-size:16.5px;line-height:1.55}
+
+.frictions{margin-top:14px;display:flex;flex-direction:column;gap:12px}
+.friction{padding:18px 20px;border-radius:14px;background:var(--ink-2);border:1px solid var(--line);border-left:4px solid var(--sev);opacity:0;transform:translateY(8px);animation:rise .45s var(--ease) forwards}
+@keyframes rise{to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.friction{animation:none;opacity:1;transform:none}}
+.friction .head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.friction .sev{font-family:var(--mono);font-size:9px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border-radius:6px;color:#fff;background:var(--sev)}
+.friction h3{font-family:var(--display);font-size:17px;font-weight:600}
+.friction .where{font-size:12px;color:var(--paper-faint);font-family:var(--mono)}
+.friction .quote{margin-top:11px;padding-left:12px;border-left:2px solid var(--line);font-style:italic;color:var(--paper-dim);font-size:14.5px}
+.friction .why{margin-top:10px;font-size:14.5px;line-height:1.55}
+.friction .fix{margin-top:10px;font-size:14px;padding:10px 12px;border-radius:10px;background:color-mix(in srgb,var(--green) 8%,var(--ink-3));border:1px solid color-mix(in srgb,var(--green) 20%,transparent)}
+.friction .fix b{color:var(--green-text)}
+
+/* email gate */
+.gate{margin-top:16px;padding:26px 24px;border-radius:18px;text-align:center;background:linear-gradient(180deg,var(--ink-2),color-mix(in srgb,var(--accent) 6%,var(--ink-2)));border:1px solid color-mix(in srgb,var(--accent) 26%,var(--line));position:relative;overflow:hidden}
+.gate::before{content:"";position:absolute;inset:-40px 0 auto 0;height:80px;background:linear-gradient(180deg,var(--ink),transparent);pointer-events:none}
+.gate .lock{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;margin:0 auto 12px;background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent-text)}
+.gate h3{font-family:var(--display);font-size:22px;font-weight:600}
+.gate p{max-width:44ch;margin:8px auto 0;color:var(--paper-dim);font-size:15px}
+.gate .form{margin-top:20px;max-width:460px}
+.gate input[type=email]{flex:1;font-family:var(--body);font-size:15px;padding:14px 16px;border-radius:12px;border:1px solid var(--line);background:var(--ink-2);color:var(--paper)}
+.gate input[type=email]:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 15%,transparent)}
+.gate .fine{margin-top:12px;font-size:11.5px;color:var(--paper-faint)}
+
+/* one fix + CTA */
+.onefix{margin-top:16px;padding:24px;border-radius:18px;background:var(--paper);color:var(--ink);border:1px solid var(--paper)}
+.onefix .lbl{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:color-mix(in srgb,var(--ink) 65%,transparent);font-weight:600}
+.onefix p{margin-top:8px;font-size:18px;line-height:1.5;font-family:var(--display)}
+
+.cta{margin-top:16px;padding:30px 26px;text-align:center;border-radius:18px;background:color-mix(in srgb,var(--accent) 9%,var(--ink-2));border:1px solid color-mix(in srgb,var(--accent) 24%,var(--line))}
+.cta h3{font-family:var(--display);font-size:23px;font-weight:600;max-width:26ch;margin:0 auto}
+.cta p{max-width:50ch;margin:10px auto 0;color:var(--paper-dim);font-size:15px}
+.cta .btn{margin-top:18px;padding:14px 28px;font-size:15px}
+
+.footer .wrap{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;font-size:13px}
+.footer a{text-decoration:underline;text-underline-offset:3px}
+</style>
+</head>
+<body style="--accent:var(--rose);--accent-text:var(--rose-text)">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="cro-top">
+  <div class="wrap">
+    <a class="cro-brand" href="/"><span class="dot"></span>Klavity <small>· CRO Sim</small></a>
+    <a class="btn btn-ghost" href="/pricing">Pricing</a>
+  </div>
+</header>
+
+<main id="main">
+  <section class="hero wrap">
+    <span class="eyebrow tag">Free · one-time · no signup to run</span>
+    <h1>Why isn't your site <em>converting?</em> Ask an AI&nbsp;customer.</h1>
+    <p class="sub">Paste your URL. A Klavity <b>Sim</b> — an AI first-time visitor — tries to convert on your page, then tells you exactly where it lost them.</p>
+
+    <form class="form" id="analyzeForm" novalidate>
+      <input type="url" id="url" name="url" placeholder="yourwebsite.com" autocomplete="url" required aria-label="Website URL">
+      <button class="btn btn-primary" type="submit" id="runBtn">Send the Sim</button>
+    </form>
+    <div class="hint">Works on any public page — landing page, pricing, homepage.</div>
+    <div class="err" id="analyzeErr" role="alert"></div>
+
+    <div class="trust">
+      <span>Grounded in your real page copy</span>
+      <span>Ranked by conversion impact</span>
+      <span>Results in ~15 seconds</span>
+    </div>
+  </section>
+
+  <div class="thinking hidden" id="thinking" aria-live="polite">
+    <div id="thinkingText">The Sim is landing on your page and trying to convert…</div>
+    <div class="bar"><i></i></div>
+  </div>
+
+  <section class="result hidden" id="result" aria-live="polite"></section>
+</main>
+
+<footer class="footer">
+  <div class="wrap">
+    <span>Powered by <a href="/">Klavity</a> — AI customers that catch what breaks conversion, continuously.</span>
+    <span><a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></span>
+  </div>
+</footer>
+
+<script src="/icons.generated.js"></script>
+<script>
+(function () {
+  "use strict";
+  var SEV = {
+    critical: { color: "var(--red)", label: "Critical" },
+    high:     { color: "var(--amber)", label: "High" },
+    medium:   { color: "var(--indigo)", label: "Medium" },
+    low:      { color: "var(--green)", label: "Low" }
+  };
+
+  var $ = function (id) { return document.getElementById(id); };
+  var form = $("analyzeForm"), urlInput = $("url"), runBtn = $("runBtn");
+  var errEl = $("analyzeErr"), thinking = $("thinking"), result = $("result");
+  var current = null; // { reportId }
+
+  // Build a DOM node with text/attrs/children. All dynamic text goes through textContent — never
+  // innerHTML — so a hostile page's copy quoted back into the report can't inject markup.
+  function el(tag, opts, kids) {
+    var n = document.createElement(tag);
+    opts = opts || {};
+    if (opts.cls) n.className = opts.cls;
+    if (opts.text != null) n.textContent = opts.text;
+    if (opts.attrs) for (var k in opts.attrs) n.setAttribute(k, opts.attrs[k]);
+    if (opts.style) n.setAttribute("style", opts.style);
+    (kids || []).forEach(function (c) { if (c) n.appendChild(c); });
+    return n;
+  }
+
+  function sevInfo(s) { return SEV[s] || SEV.medium; }
+
+  function frictionNode(f, i) {
+    var info = sevInfo(f.severity);
+    var head = el("div", { cls: "head" }, [
+      el("span", { cls: "sev", text: info.label }),
+      el("h3", { text: f.title || "Friction" }),
+      f.where ? el("span", { cls: "where", text: f.where }) : null
+    ]);
+    var kids = [head];
+    if (f.quote) kids.push(el("div", { cls: "quote", text: '“' + f.quote + '”' }));
+    if (f.why) kids.push(el("div", { cls: "why", text: f.why }));
+    if (f.fix) {
+      var fix = el("div", { cls: "fix" }, [el("b", { text: "Fix: " })]);
+      fix.appendChild(document.createTextNode(f.fix));
+      kids.push(fix);
+    }
+    return el("div", {
+      cls: "friction",
+      style: "--sev:" + info.color + ";animation-delay:" + (i * 70) + "ms"
+    }, kids);
+  }
+
+  function personaNode(p) {
+    var avatar = el("div", { cls: "avatar", text: p.initials || "SM", style: "background:" + (p.accent || "var(--accent)") });
+    var body = el("div", {}, [
+      el("h2", { text: p.name || "A first-time visitor" }),
+      el("div", { cls: "role", text: p.role || "First-time visitor" }),
+      p.oneLiner ? el("div", { cls: "oneliner", text: '“' + p.oneLiner + '”' }) : null
+    ]);
+    return el("div", { cls: "persona" }, [avatar, body]);
+  }
+
+  function verdictNode(v) {
+    return el("div", { cls: "verdict" }, [
+      el("div", { cls: "lbl", text: "The Sim's verdict" }),
+      el("p", { text: v })
+    ]);
+  }
+
+  function gateNode(hiddenCount) {
+    var lock = el("div", { cls: "lock" });
+    if (window.kicon) lock.innerHTML = window.kicon("lock", 20); else lock.textContent = "🔒";
+    var f = el("form", { cls: "form", attrs: { id: "gateForm", novalidate: "" } }, [
+      el("input", { attrs: { type: "email", id: "email", placeholder: "you@company.com", required: "", "aria-label": "Your email" } }),
+      el("button", { cls: "btn btn-primary", attrs: { type: "submit", id: "unlockBtn" }, text: "Show the full report" })
+    ]);
+    var moreLabel = hiddenCount > 0
+      ? ("See the " + hiddenCount + " more friction" + (hiddenCount === 1 ? "" : "s") + " + the one fix that matters most")
+      : "See the one fix that matters most";
+    var wrap = el("div", { cls: "gate" }, [
+      lock,
+      el("h3", { text: "Unlock the full CRO report" }),
+      el("p", { text: moreLabel + ". Free — just tell us where to send it." }),
+      f,
+      el("div", { cls: "fine", text: "We'll email you the report. No spam." }),
+      el("div", { cls: "err", attrs: { id: "gateErr", role: "alert" } })
+    ]);
+    return wrap;
+  }
+
+  function ctaNode() {
+    return el("div", { cls: "cta" }, [
+      el("h3", { text: "That was one Sim, one time. Your real customers hit this every day." }),
+      el("p", { text: "And every time you ship, a fixed problem can quietly come back. Klavity runs these Sims continuously and flags the moment your conversion breaks — before it costs you." }),
+      el("a", { cls: "btn btn-primary", attrs: { href: "/onboarding?ref=cro" }, text: "Run this continuously — free" })
+    ]);
+  }
+
+  function setLoading(on) {
+    runBtn.disabled = on;
+    runBtn.textContent = on ? "Analyzing…" : "Send the Sim";
+    thinking.classList.toggle("hidden", !on);
+  }
+
+  function showErr(msg) { errEl.textContent = msg || ""; }
+
+  form.addEventListener("submit", function (e) {
+    e.preventDefault();
+    showErr("");
+    var url = (urlInput.value || "").trim();
+    if (!url) { showErr("Enter a website URL."); return; }
+    result.classList.add("hidden");
+    result.textContent = "";
+    setLoading(true);
+    fetch("/api/cro/analyze", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url: url })
+    }).then(function (r) {
+      return r.json().then(function (d) { return { ok: r.ok, d: d }; });
+    }).then(function (res) {
+      setLoading(false);
+      if (!res.ok) { showErr(res.d && res.d.error ? res.d.error : "Something went wrong. Try again."); return; }
+      current = { reportId: res.d.reportId };
+      renderPreview(res.d);
+    }).catch(function () {
+      setLoading(false);
+      showErr("Network error. Please try again.");
+    });
+  });
+
+  function renderPreview(d) {
+    result.textContent = "";
+    result.appendChild(personaNode(d.persona || {}));
+    if (d.verdict) result.appendChild(verdictNode(d.verdict));
+    var list = el("div", { cls: "frictions" });
+    (d.frictionsShown || []).forEach(function (f, i) { list.appendChild(frictionNode(f, i)); });
+    result.appendChild(list);
+    result.appendChild(gateNode(d.hiddenCount || 0));
+    result.classList.remove("hidden");
+    result.scrollIntoView({ behavior: "smooth", block: "start" });
+    wireGate();
+  }
+
+  function wireGate() {
+    var gform = $("gateForm");
+    if (!gform) return;
+    gform.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var gerr = $("gateErr"), btn = $("unlockBtn"), email = ($("email").value || "").trim();
+      if (gerr) gerr.textContent = "";
+      if (!email || email.indexOf("@") < 0) { if (gerr) gerr.textContent = "Enter a valid email."; return; }
+      btn.disabled = true; btn.textContent = "Unlocking…";
+      fetch("/api/cro/unlock", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ reportId: current.reportId, email: email })
+      }).then(function (r) {
+        return r.json().then(function (d) { return { ok: r.ok, d: d }; });
+      }).then(function (res) {
+        if (!res.ok) {
+          btn.disabled = false; btn.textContent = "Show the full report";
+          if (gerr) gerr.textContent = res.d && res.d.error ? res.d.error : "Couldn't unlock. Try again.";
+          return;
+        }
+        renderFull(res.d);
+      }).catch(function () {
+        btn.disabled = false; btn.textContent = "Show the full report";
+        if (gerr) gerr.textContent = "Network error. Please try again.";
+      });
+    });
+  }
+
+  function renderFull(d) {
+    result.textContent = "";
+    result.appendChild(personaNode(d.persona || {}));
+    if (d.verdict) result.appendChild(verdictNode(d.verdict));
+    var list = el("div", { cls: "frictions" });
+    (d.frictions || []).forEach(function (f, i) { list.appendChild(frictionNode(f, i)); });
+    result.appendChild(list);
+    if (d.oneFixNow) {
+      result.appendChild(el("div", { cls: "onefix" }, [
+        el("div", { cls: "lbl", text: "If you fix one thing" }),
+        el("p", { text: d.oneFixNow })
+      ]));
+    }
+    result.appendChild(ctaNode());
+    result.classList.remove("hidden");
+  }
+})();
+</script>
+</body>
+</html>

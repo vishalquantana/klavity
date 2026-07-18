@@ -27,6 +27,7 @@ import { screenshotUrl, defaultPreviewPersona } from "./lib/sim-preview"
 import { allow as rlAllow, record as rlRecord, count as rlCount, clear as rlClear } from "./lib/ratelimit"
 import { wrapUntrusted, UNTRUSTED_GUARD } from "./lib/prompt-safety"
 import { notifyNewSignup } from "./lib/signup-alert"
+import { CRO_SYS, normalizeCroReport, croPreview, type CroReport } from "./lib/cro-sim"
 import { notifyNewReport } from "./lib/report-alert"
 import { notifyBudgetResumeRequest } from "./lib/budget-resume-alert"
 import { reportError } from "./lib/error-alert"
@@ -1270,6 +1271,51 @@ const EXTRACT_TRANSCRIPT_MAX_CHARS = 300_000  // ~75k tokens — fits ~2–3 hou
 // cost ~4× lower than the ceiling. React/reconcile calls use their own (smaller) budgets.
 const EXTRACT_MAX_OUTPUT_TOKENS = 16_000
 const AI_DEMO_MAX_IMG_B64 = 12_000_000 // ~9 MB decoded — cap the react screenshot payload
+
+// ── CRO Sim front door (site/cro.html + /api/cro/*) ──────────────────────────────────────────────
+// A finished /api/cro/analyze report is held in-process, keyed by an unguessable id, so the email gate
+// (/api/cro/unlock) can reveal the full result WITHOUT re-running the LLM (halves cost, not gameable
+// from the client). Ephemeral by design: state is lost on restart, which is fine — the analyze→unlock
+// round-trip is seconds, and a lost report just means "run it again". Same in-process rationale as the
+// rate limiter above.
+interface CroStored { report: CroReport; url: string; createdAt: number }
+const croReports = new Map<string, CroStored>()
+const CRO_REPORT_TTL_MS = 30 * 60 * 1000 // 30 min — plenty for analyze→email→unlock
+const CRO_MAX_REPORTS = 5_000 // backstop against unbounded growth on a long-lived process
+const CRO_UNLOCK_PER_IP = 30 // email-gate submissions per IP / hour (abuse guard)
+
+function croStore(url: string, report: CroReport): string {
+  const now = Date.now()
+  // Opportunistic GC of expired reports; hard-evict oldest if we somehow blow past the cap.
+  for (const [k, v] of croReports) if (now - v.createdAt > CRO_REPORT_TTL_MS) croReports.delete(k)
+  if (croReports.size >= CRO_MAX_REPORTS) {
+    const oldest = [...croReports.entries()].sort((a, b) => a[1].createdAt - b[1].createdAt)[0]
+    if (oldest) croReports.delete(oldest[0])
+  }
+  const id = crypto.randomUUID()
+  croReports.set(id, { report, url, createdAt: now })
+  return id
+}
+
+function croGet(id: string): CroStored | null {
+  const v = croReports.get(id)
+  if (!v) return null
+  if (Date.now() - v.createdAt > CRO_REPORT_TTL_MS) { croReports.delete(id); return null }
+  return v
+}
+
+// Fire-and-forget Slack alert on a captured CRO lead. Reuses the signup webhook (SLACK_SIGNUP_WEBHOOK_URL);
+// no-op when unset. Never throws — a failed alert must not break the unlock response.
+function notifyCroLead(email: string, url: string): void {
+  const webhook = process.env.SLACK_SIGNUP_WEBHOOK_URL
+  console.log(`[cro-lead] ${email} analyzed ${url}`)
+  if (!webhook) return
+  const payload = { text: `🔍 New CRO Sim lead: ${email}\n• analyzed: ${url}` }
+  void safeFetch(webhook, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) }, { allowHosts: ["hooks.slack.com"] })
+    .then((res) => { if (!res.ok) console.error(`cro lead slack alert: webhook returned ${res.status}`) })
+    .catch((err: any) => console.error("cro lead slack alert (non-fatal):", err?.message || err))
+}
+
 // Throttle key for an AI demo call: prefer the authed email, else the abuse-safe client IP.
 function aiDemoLimited(meEmail: string | null, req: Request, server: any): boolean {
   const key = meEmail ? `aidemo:u:${meEmail}` : `aidemo:ip:${clientIp(req, server)}`
@@ -1434,6 +1480,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (req.method === "GET" && path === "/sims") return file(SITE + "/sims.html")
     if (req.method === "GET" && path === "/autosim") return file(SITE + "/autosim.html")
     if (req.method === "GET" && path === "/pricing") return file(SITE + "/pricing.html")
+    // ── CRO Sim: standalone top-of-funnel front door (see /api/cro/*) ──
+    if (req.method === "GET" && (path === "/cro" || path === "/roast")) return file(SITE + "/cro.html")
     // ── POST /api/blog/publish — authenticated blog post publish + git push (Plan B path) ──
     // Auth: Authorization: Bearer <BLOG_PUBLISH_TOKEN>. The GH_TOKEN env var is used for the push URL
     // inline (never stored in git config) and must NEVER appear in any log or response body.
@@ -3359,6 +3407,58 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // on the anonymous submit path. Empty string when Turnstile isn't provisioned → widget skips it.
         return json({ modalConfig: resolveModalConfig(await getProjectModalConfig(m[1])), widget: (await getWidgetConfig(m[1])) || { mode: "support", ctaUrl: "https://klavity.in/onboarding", reportGate: "anonymous" }, turnstileSiteKey: turnstileSiteKey() }, 200, WIDGET_CORS)
       }
+    }
+
+    // ── CRO Sim front door (site/cro.html) — ANONYMOUS, must stay ABOVE the session wall below ──
+    // One ephemeral visitor Sim critiques a URL's conversion, grounded in the page text. analyze returns
+    // the UNGATED preview (persona + verdict + top-2 frictions) + a reportId; unlock exchanges reportId +
+    // email for the FULL report (no re-run of the LLM). No auth, no persist.
+    if (req.method === "POST" && path === "/api/cro/analyze") {
+      try {
+        let { url: siteUrl } = await req.json()
+        siteUrl = String(siteUrl || "").trim()
+        if (!siteUrl) return json({ error: "Enter a website URL." }, 400)
+        if (!/^https?:\/\//i.test(siteUrl)) siteUrl = "https://" + siteUrl
+        // Anonymous tool → throttle by client IP (no email available).
+        if (aiDemoLimited(null, req, server)) return json({ error: "Too many analyses from this network. Please wait an hour and try again." }, 429, { "Retry-After": "3600" })
+        // SSRF-guarded fetch of the public page (private/loopback hosts rejected by the guard).
+        let html = ""
+        try {
+          const res = await safeFetch(siteUrl, { headers: { "user-agent": "KlavitySimBot/1.0 (+https://klavity.in)" }, signal: AbortSignal.timeout(8000) })
+          if (!res.ok) return json({ error: `Couldn't read that page (HTTP ${res.status}).` }, 400)
+          html = (await res.text()).slice(0, 300_000)
+        } catch {
+          return json({ error: "Couldn't reach that URL. Make sure it's a public https page." }, 400)
+        }
+        const text = html
+          .replace(/<script[\s\S]*?<\/script>/gi, " ")
+          .replace(/<style[\s\S]*?<\/style>/gi, " ")
+          .replace(/<[^>]+>/g, " ")
+          .replace(/&[a-z#0-9]+;/gi, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, AI_DEMO_MAX_CHARS)
+        if (text.length < 40) return json({ error: "That page didn't have enough text to analyze." }, 400)
+        const { content } = await chat([{ role: "system", content: CRO_SYS }, { role: "user", content: "Page URL: " + siteUrl + "\n\nPage text:\n" + wrapUntrusted(text) }], 1800, true, { type: "cro", email: null })
+        const report = normalizeCroReport(parseJSON(content))
+        if (report.frictions.length === 0) return json({ error: "Couldn't analyze that page — try a different URL." }, 400)
+        const reportId = croStore(siteUrl, report)
+        return json({ reportId, url: siteUrl, ...croPreview(report) })
+      } catch (e: any) { return json(oops(e, "cro"), 500) }
+    }
+    if (req.method === "POST" && path === "/api/cro/unlock") {
+      try {
+        const body = await req.json().catch(() => ({}))
+        const reportId = String(body?.reportId || "").trim()
+        const email = String(body?.email || "").trim().toLowerCase()
+        if (!reportId) return json({ error: "Missing report." }, 400)
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || email.length > 200) return json({ error: "Enter a valid email." }, 400)
+        if (!rlAllow(`cro:unlock:${clientIp(req, server)}`, CRO_UNLOCK_PER_IP, AI_DEMO_WINDOW)) return json({ error: "Too many requests. Please wait and try again." }, 429, { "Retry-After": "3600" })
+        const stored = croGet(reportId)
+        if (!stored) return json({ error: "That report expired — please run the analysis again." }, 410)
+        notifyCroLead(email, stored.url)
+        return json({ url: stored.url, ...stored.report })
+      } catch (e: any) { return json(oops(e, "cro"), 500) }
     }
 
     // ── everything below requires a session ──
