@@ -78,6 +78,7 @@ import { capturePosthog } from "./lib/posthog"
 import { createSimReviewSchedule, listSimReviewSchedules, getSimReviewSchedule, deleteSimReviewSchedule, setSimReviewScheduleEnabled, type SimReviewScheduleFrequency } from "./lib/db"
 import { startSimsDigestScheduler, sendSimsDigest, type SimsDigestDeps, DAY_MS as SIMS_DIGEST_DAY_MS } from "./lib/sims-digest"
 import { sendReportAlertEmail } from "./lib/mail"
+import { enrollLead, buildNurtureEmail, recordNurtureEmailSent, recordSendgridEvents, startLeadNurtureScheduler } from "./lib/lead-nurture"
 
 const KEY = process.env.OPENROUTER_API_KEY
 const MODEL = process.env.KLAV_MODEL || "google/gemini-2.5-flash"
@@ -3551,7 +3552,62 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           await fetch(slackUrl, { method: "POST", headers: { "content-type": "application/json" }, body })
         } catch {}
       })()
+      // Fire-and-forget: enroll in nurture sequence + send step 1 immediately.
+      void (async () => {
+        try {
+          const { enrolled, sequenceId } = await enrollLead(db!, email, { url: siteUrl, source })
+          if (enrolled && process.env.SENDGRID_API_KEY) {
+            const content = buildNurtureEmail(1, { analyzedUrl: siteUrl, baseUrl: BASE })
+            await sendReportAlertEmail([email], content.subject, content.html, content.text)
+            await recordNurtureEmailSent(db!, sequenceId, 1)
+          }
+        } catch (e: any) {
+          console.warn("[lead-nurture] enroll/step1 failed:", e?.message || e)
+        }
+      })()
       return json({ ok: true })
+    }
+
+    // POST /api/sendgrid/events — SendGrid event webhook for nurture email open/click tracking.
+    // Requires SENDGRID_WEBHOOK_TOKEN env var and matching ?token= query param.
+    if (req.method === "POST" && path === "/api/sendgrid/events") {
+      const expectedToken = process.env.SENDGRID_WEBHOOK_TOKEN
+      if (!expectedToken) return json({ error: "not configured" }, 403)
+      if (url.searchParams.get("token") !== expectedToken) return json({ error: "unauthorized" }, 401)
+      const parsed = await readJsonLimited(req, 512_000)
+      if (!parsed.ok) return json({ error: parsed.error }, parsed.status)
+      const evts = Array.isArray(parsed.data) ? (parsed.data as any[]) : []
+      void recordSendgridEvents(db!, evts.map((ev: any) => ({
+        sgMessageId: String(ev?.sg_message_id || ev?.["sg-message-id"] || ""),
+        eventType: String(ev?.event || ""),
+        timestampMs: Number(ev?.timestamp || 0) * 1000,
+      })).filter((ev) => ev.sgMessageId))
+      return json({ ok: true })
+    }
+
+    // GET /unsubscribe — one-click unsubscribe from nurture emails.
+    if (req.method === "GET" && path === "/unsubscribe") {
+      const unsubEmail = (url.searchParams.get("email") || "").trim().toLowerCase()
+      if (unsubEmail && db) {
+        void db!.execute({
+          sql: `UPDATE lead_nurture_sequences SET unsubscribed_at=?, next_at=NULL
+                WHERE email=? AND unsubscribed_at IS NULL`,
+          args: [Date.now(), unsubEmail],
+        })
+      }
+      const f2 = "font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif"
+      return new Response(
+        `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Unsubscribed — Klavity</title></head>
+<body style="margin:0;padding:48px 16px;background:#f4f3f7;${f2};color:#3f3a52;text-align:center">
+<div style="max-width:480px;margin:0 auto;background:#fff;border-radius:18px;padding:40px 32px;box-shadow:0 2px 10px rgba(20,16,40,.10)">
+<div style="font-size:22px;font-weight:800;color:#1e1b4b;margin-bottom:8px">Klavity</div>
+<h2 style="font-size:20px;font-weight:700;color:#3f3a52;margin:24px 0 12px">You've been unsubscribed.</h2>
+<p style="font-size:14px;color:#6b6678;line-height:1.6;margin:0 0 24px">You won't receive any more nurture emails from Klavity.</p>
+<a href="/" style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:10px 24px;border-radius:8px">Return to Klavity</a>
+</div>
+</body></html>`,
+        { headers: { "content-type": "text/html;charset=utf-8" } },
+      )
     }
 
     // ── everything below requires a session ──
@@ -7199,4 +7255,10 @@ if (db && process.env.NODE_ENV !== "test") {
   startCrashReaper(db!)
   // KLAVITYKLA-261: daily Sims digest — ticks every hour, sends per-project digest.
   startSimsDigestScheduler({ db: db!, sendEmail: sendReportAlertEmail })
+  // KLAVITYKLA-330: lead nurture scheduler — ticks every hour, sends steps 2 + 3.
+  startLeadNurtureScheduler({
+    db: db!,
+    sendEmail: (to, subject, html, text) => sendReportAlertEmail([to], subject, html, text),
+    baseUrl: BASE,
+  })
 }
