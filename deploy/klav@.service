@@ -1,0 +1,25 @@
+[Unit]
+Description=Klav Sims prototype (Bun) — slot %i
+After=network.target
+
+[Service]
+Type=simple
+User=klav
+WorkingDirectory=/opt/klav/prototype
+# Base env (API keys, DB URL, etc.)
+EnvironmentFile=/etc/klav/klav.env
+# Slot-specific overrides: /etc/klav/klav-blue.env → PORT=4317
+#                           /etc/klav/klav-green.env → PORT=4318
+# The leading dash makes it optional (won't fail if absent).
+EnvironmentFile=-/etc/klav/klav-%i.env
+ExecStart=/home/klav/.bun/bin/bun run server.ts
+Restart=on-failure
+RestartSec=3
+
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=read-only
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
