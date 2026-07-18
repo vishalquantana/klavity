@@ -722,9 +722,22 @@ async function dashboardPage(): Promise<Response> {
     let version = ""
     try { version = String((await Bun.file(import.meta.dir + "/../package.json").json())?.version || "") } catch { /* fall back to empty */ }
     const raw = await Bun.file(PUB + "/dashboard.html").text()
-    DASHBOARD_HTML = raw.replaceAll("__APP_VERSION__", version)
+    DASHBOARD_HTML = raw.replaceAll("__APP_VERSION__", version).replaceAll("__POSTHOG_KEY__", _PH_KEY)
   }
   return new Response(DASHBOARD_HTML, { headers: { "content-type": "text/html; charset=utf-8" } })
+}
+// Serve HTML pages with __POSTHOG_KEY__ substituted from KLAV_POSTHOG_KEY env var.
+// Cached per path — refreshes on process restart (i.e. every deploy).
+const _htmlCache = new Map<string, string>()
+const _PH_KEY = process.env.KLAV_POSTHOG_KEY || ""
+async function htmlPage(path: string, extraHeaders?: Record<string, string>): Promise<Response> {
+  if (!_htmlCache.has(path)) {
+    const raw = await Bun.file(path).text()
+    _htmlCache.set(path, _PH_KEY ? raw.replaceAll("__POSTHOG_KEY__", _PH_KEY) : raw)
+  }
+  return new Response(_htmlCache.get(path)!, {
+    headers: { "content-type": "text/html; charset=utf-8", ...extraHeaders },
+  })
 }
 function redirect(loc: string, headers: Record<string, string> = {}) { return new Response(null, { status: 302, headers: { Location: loc, ...headers } }) }
 function fmtUsd(n: number): string { return "$" + (Number(n) || 0).toFixed(4) }
@@ -1401,13 +1414,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (req.method === "GET" && path === "/favicon.ico") return file(PUB + "/favicon.ico")
 
     // ── public marketing + login ──
-    if (req.method === "GET" && path === "/") return file(SITE + "/index.html")
+    if (req.method === "GET" && path === "/") return htmlPage(SITE + "/index.html")
     if (req.method === "GET" && path === "/local") return redirect("/")
     if (req.method === "GET" && path === "/home") return redirect("/")
     if (req.method === "GET" && path === "/login") {
       // Already signed in → skip the login page and land on the dashboard.
       if (await sessionEmail(req)) return redirect("/dashboard")
-      return file(PUB + "/login.html")
+      return htmlPage(PUB + "/login.html")
     }
     if (req.method === "GET" && path === "/sim-emotions") return file(PUB + "/sim-emotions.html")
     if (req.method === "GET" && path === "/sim-identity") return file(PUB + "/sim-identity.html")
@@ -1427,13 +1440,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       })
     }
     if (req.method === "GET" && path === "/intro-reel") return file(SITE + "/intro-reel.html")
-    if (req.method === "GET" && path === "/privacy") return file(SITE + "/privacy.html")
-    if (req.method === "GET" && path === "/terms") return file(SITE + "/terms.html")
+    if (req.method === "GET" && path === "/privacy") return htmlPage(SITE + "/privacy.html")
+    if (req.method === "GET" && path === "/terms") return htmlPage(SITE + "/terms.html")
     // ── marketing product pages + shared kit assets ──
-    if (req.method === "GET" && path === "/snap") return file(SITE + "/snap.html")
-    if (req.method === "GET" && path === "/sims") return file(SITE + "/sims.html")
-    if (req.method === "GET" && path === "/autosim") return file(SITE + "/autosim.html")
-    if (req.method === "GET" && path === "/pricing") return file(SITE + "/pricing.html")
+    if (req.method === "GET" && path === "/snap") return htmlPage(SITE + "/snap.html")
+    if (req.method === "GET" && path === "/sims") return htmlPage(SITE + "/sims.html")
+    if (req.method === "GET" && path === "/autosim") return htmlPage(SITE + "/autosim.html")
+    if (req.method === "GET" && path === "/pricing") return htmlPage(SITE + "/pricing.html")
     // ── POST /api/blog/publish — authenticated blog post publish + git push (Plan B path) ──
     // Auth: Authorization: Bearer <BLOG_PUBLISH_TOKEN>. The GH_TOKEN env var is used for the push URL
     // inline (never stored in git config) and must NEVER appear in any log or response body.
@@ -3370,14 +3383,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const qs = url.search || ""
       return new Response(null, { status: 301, headers: { Location: "/autosims" + qs } })
     }
-    if (req.method === "GET" && path === "/autosims") return me ? file(PUB + "/trails.html") : redirect("/login")
-    if (req.method === "GET" && path === "/autosims/walks") return me ? file(PUB + "/autosims-walks.html") : redirect("/login")
-    if (req.method === "GET" && /^\/autosims\/walk\/[^/]+$/.test(path)) return me ? file(PUB + "/autosims-walk.html") : redirect("/login")
+    if (req.method === "GET" && path === "/autosims") return me ? htmlPage(PUB + "/trails.html") : redirect("/login")
+    if (req.method === "GET" && path === "/autosims/walks") return me ? htmlPage(PUB + "/autosims-walks.html") : redirect("/login")
+    if (req.method === "GET" && /^\/autosims\/walk\/[^/]+$/.test(path)) return me ? htmlPage(PUB + "/autosims-walk.html") : redirect("/login")
     // AT2 auth setup router — "Give your Sims a key" (KLAVITYKLA-267)
-    if (req.method === "GET" && path === "/autosims/auth") return me ? file(PUB + "/auth-router.html") : redirect("/login")
-    if (req.method === "GET" && path === "/sim-runs") return me ? file(PUB + "/sim-runs.html") : redirect("/login")
+    if (req.method === "GET" && path === "/autosims/auth") return me ? htmlPage(PUB + "/auth-router.html") : redirect("/login")
+    if (req.method === "GET" && path === "/sim-runs") return me ? htmlPage(PUB + "/sim-runs.html") : redirect("/login")
     // KLAVITYKLA-201: cross-project inbox — the agency's "morning screen"
-    if (req.method === "GET" && path === "/inbox") return me ? file(PUB + "/inbox.html") : redirect("/login")
+    if (req.method === "GET" && path === "/inbox") return me ? htmlPage(PUB + "/inbox.html") : redirect("/login")
 
     // GET /shared/walk/:token — public interactive AutoSim walk report page.
     const sharedWalkPageMatch = path.match(/^\/shared\/walk\/([a-f0-9]{64})$/)
@@ -3385,7 +3398,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (!rlAllow("sharewalkpage:" + clientIp(req, server), 120, 60_000)) return new Response("Rate limited", { status: 429 })
       const resolved = await resolveShareToken(sharedWalkPageMatch[1])
       if (!resolved) return new Response("Not found", { status: 404 })
-      return file(PUB + "/autosims-walk-report.html")
+      return htmlPage(PUB + "/autosims-walk-report.html")
     }
 
     // GET /shared/walk/:token/data — token-scoped walk metadata, steps, replay availability, and findings.
@@ -3576,15 +3589,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (!rlAllow("shareproj:page:" + clientIp(req, server), 120, 60_000)) return new Response("Rate limited", { status: 429 })
       const projectId = await resolveProjectShareToken(sharedProjectPageMatch[1])
       if (!projectId) return new Response("Not found", { status: 404 })
-      const f = Bun.file(PUB + "/project-status.html")
-      if (!(await f.exists())) return new Response("Not found", { status: 404 })
-      return new Response(f, {
-        headers: {
-          "content-type": "text/html; charset=utf-8",
-          "x-robots-tag": "noindex, nofollow",
-          "cache-control": "no-store",
-        },
-      })
+      const _psPath = PUB + "/project-status.html"
+      if (!(await Bun.file(_psPath).exists())) return new Response("Not found", { status: 404 })
+      return htmlPage(_psPath, { "x-robots-tag": "noindex, nofollow", "cache-control": "no-store" })
     }
 
     const sharedProjectDataMatch = path.match(/^\/shared\/project\/([a-f0-9]{64})\/data$/)
@@ -3642,7 +3649,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (req.method === "GET" && path === "/app") return me ? file(PUB + "/index.html") : redirect("/login")
     // Sim Profile page — clicking a Sim row in the dashboard opens /sim/:id (read-only persona +
     // its triaged feedback + the calls that seeded it). The id is read client-side from the path.
-    if (req.method === "GET" && /^\/sim\/[^/]+$/.test(path)) return me ? file(PUB + "/sim-profile.html") : redirect("/login")
+    if (req.method === "GET" && /^\/sim\/[^/]+$/.test(path)) return me ? htmlPage(PUB + "/sim-profile.html") : redirect("/login")
     if (req.method === "GET" && path === "/onboarding") {
       // The onboarding wizard is the signup flow for new users (email → OTP → name project → add URL →
       // install extension → pick Sims, inline). ensureAccount gives every verified user a default
@@ -3660,7 +3667,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           }
         }
       } catch { /* DB error — serve onboarding.html rather than crashing */ }
-      return file(SITE + "/onboarding.html")
+      return htmlPage(SITE + "/onboarding.html")
     }
 
     // ── CI API (KLA-90) — machine-to-machine, project-scoped bearer tokens (kci_*). ──
