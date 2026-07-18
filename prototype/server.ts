@@ -1,6 +1,6 @@
 // Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
 import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution } from "./lib/db"
 import { sanitizeAttr } from "./lib/attr"
 import { issueKeyFor, chooseDedup, humanReportIssueKeyFor } from "./lib/dedup"
 import { classifySimObservation } from "./lib/sim-bug-classify"
@@ -68,7 +68,7 @@ import { publishBlogPost, SLUG_RE, type PublishInput } from "./lib/blog-publish"
 import { getExtractModel } from "./lib/extract-model"
 import { parseJSON } from "./lib/parse-json"
 import { EXTRACT_SYS as EXTRACT_SYS_PROMPT, normalizeExtractedPersonas } from "./lib/extract-pipeline"
-import { createStripeCheckoutSession, createStripePortalSession, intervalFromLookupKey, normalizeInterval, planFromLookupKey, quotasForPlan, retrieveStripeSubscription, verifyStripeWebhook } from "./lib/billing"
+import { createStripeCheckoutSession, createStripePortalSession, intervalFromPrice, normalizeInterval, planFromPrice, quotasForPlan, retrieveStripeSubscription, verifyStripeWebhook } from "./lib/billing"
 import { sanitizeInsight } from "./lib/extract-sanitize"
 import { runAutosimAuthProbe } from "./lib/autosim-auth-probe"
 import { mintProjectShareToken, revokeProjectShareToken, resolveProjectShareToken, gatherProjectStatusData } from "./lib/project-status-portal"
@@ -1189,7 +1189,7 @@ const BILLING_PER_USER = 20
 const BILLING_WEBHOOK_MAX_BYTES = 256 * 1024
 
 function effectivePlanForStripeStatus(plan: string | null, status: string | null): string {
-  const normalized = plan === "pro" || plan === "team" || plan === "scale" ? plan : "free"
+  const normalized = plan === "pro" || plan === "team" || plan === "founding" || plan === "scale" ? plan : "free"
   return status === "active" || status === "trialing" ? normalized : "free"
 }
 
@@ -1205,15 +1205,31 @@ async function accountIdFromStripeSubscriptionObject(sub: any): Promise<string |
   return customer ? accountIdForStripeCustomer(customer) : null
 }
 
-async function applyStripeSubscriptionState(sub: any): Promise<void> {
-  const accountId = await accountIdFromStripeSubscriptionObject(sub)
+// KLAVITYKLA-336: invoice events (invoice.paid / invoice.payment_failed) carry the subscription +
+// customer but never account_id metadata — resolve the same way as accountIdFromStripeSubscriptionObject
+// minus the metadata step (invoices don't have their own metadata.account_id in our flow).
+async function accountIdFromStripeInvoiceObject(invoice: any): Promise<string | null> {
+  const subId = invoice?.subscription ? String(invoice.subscription) : ""
+  if (subId) {
+    const bySub = await accountIdForStripeSubscription(subId)
+    if (bySub) return bySub
+  }
+  const customer = invoice?.customer ? String(invoice.customer) : ""
+  return customer ? accountIdForStripeCustomer(customer) : null
+}
+
+// fallbackAccountId: used by the hosted-Payment-Link checkout path (KLAVITYKLA-336), where the
+// subscription carries no account_id metadata (Payment Links don't set subscription_data metadata)
+// and the account was just resolved/provisioned by email instead.
+async function applyStripeSubscriptionState(sub: any, fallbackAccountId?: string | null): Promise<void> {
+  const accountId = (await accountIdFromStripeSubscriptionObject(sub)) || fallbackAccountId || null
   if (!accountId) throw new Error("Stripe subscription is missing account_id metadata")
   const price = sub?.items?.data?.[0]?.price
-  const planFromPrice = planFromLookupKey(price?.lookup_key) || (sub?.metadata?.plan ? String(sub.metadata.plan) : null)
-  const interval = intervalFromLookupKey(price?.lookup_key) || (price?.recurring?.interval ? normalizeInterval(String(price.recurring.interval)) : null)
+  const resolvedPlan = planFromPrice(price) || (sub?.metadata?.plan ? String(sub.metadata.plan) : null)
+  const interval = intervalFromPrice(price) || (sub?.metadata?.interval ? normalizeInterval(String(sub.metadata.interval)) : null)
   const status = sub?.status ? String(sub.status) : null
   await updateAccountBillingState(accountId, {
-    plan: effectivePlanForStripeStatus(planFromPrice, status),
+    plan: effectivePlanForStripeStatus(resolvedPlan, status),
     stripeCustomerId: sub?.customer ? String(sub.customer) : null,
     stripeSubscriptionId: sub?.id ? String(sub.id) : null,
     billingStatus: status,
@@ -1223,25 +1239,67 @@ async function applyStripeSubscriptionState(sub: any): Promise<void> {
   })
 }
 
-async function applyStripeCheckoutSession(session: any): Promise<void> {
-  const accountId = session?.metadata?.account_id || session?.client_reference_id
-  if (!accountId) throw new Error("Stripe checkout session is missing account_id")
+// KLAVITYKLA-336: resolve the account for a hosted Payment-Link checkout.session.completed — these
+// have NO account_id metadata (unlike our own /api/billing/checkout sessions, which always set
+// metadata.account_id / client_reference_id). Fall back to the buyer's checkout email: reuse an
+// existing account owned by that email, or provision a brand-new one so a cold Payment-Link buyer
+// still gets entitled without ever visiting the dashboard first.
+async function resolveOrProvisionAccountForCheckoutSession(session: any): Promise<string | null> {
+  const email = session?.customer_details?.email ? String(session.customer_details.email).trim().toLowerCase() : ""
+  if (!email) return null
+  const existing = await accountIdForOwnerEmail(email)
+  if (existing) return existing
+  const memberships = await ensureAccount(email)
+  return memberships[0]?.workspaceId || null
+}
+
+// Returns the accountId the session was applied to (or null if the session was ignored/unmappable) so
+// the caller can decide whether to log a subscription_created funnel event.
+async function applyStripeCheckoutSession(session: any): Promise<string | null> {
+  const directAccountId = session?.metadata?.account_id || session?.client_reference_id
   const subscriptionId = session?.subscription ? String(session.subscription) : ""
-  if (subscriptionId) {
-    const sub = await retrieveStripeSubscription(subscriptionId)
-    await applyStripeSubscriptionState(sub)
-    return
+  const sub = subscriptionId ? await retrieveStripeSubscription(subscriptionId) : null
+
+  if (directAccountId) {
+    // Our own /api/billing/checkout flow — always carries account_id metadata.
+    if (sub) {
+      await applyStripeSubscriptionState(sub, String(directAccountId))
+      return String(directAccountId)
+    }
+    const plan = session?.metadata?.plan ? String(session.metadata.plan) : "free"
+    await updateAccountBillingState(String(directAccountId), {
+      plan,
+      stripeCustomerId: session?.customer ? String(session.customer) : null,
+      stripeSubscriptionId: null,
+      billingStatus: "checkout_completed",
+      billingInterval: session?.metadata?.interval ? normalizeInterval(String(session.metadata.interval)) : null,
+      billingCurrentPeriodEnd: null,
+      billingCancelAtPeriodEnd: false,
+    })
+    return String(directAccountId)
   }
-  const plan = session?.metadata?.plan ? String(session.metadata.plan) : "free"
-  await updateAccountBillingState(String(accountId), {
-    plan,
-    stripeCustomerId: session?.customer ? String(session.customer) : null,
-    stripeSubscriptionId: null,
-    billingStatus: "checkout_completed",
-    billingInterval: session?.metadata?.interval ? normalizeInterval(String(session.metadata.interval)) : null,
-    billingCurrentPeriodEnd: null,
-    billingCancelAtPeriodEnd: false,
-  })
+
+  // Hosted Payment Link (no account_id metadata). Only treat this as ours when it's explicitly
+  // tagged (metadata.plan === "klavity", set on the Payment Link) or the purchased price resolves to
+  // a known Klavity price ID — anything else (WALI / other Stripe products on the same account) is
+  // ignored. NEVER throw here: an unmappable session must still 200 so Stripe doesn't retry forever.
+  const price = sub?.items?.data?.[0]?.price
+  const isKlavitySession = session?.metadata?.plan === "klavity" || !!planFromPrice(price)
+  if (!isKlavitySession) {
+    console.warn("[billing webhook] ignoring non-klavity checkout.session.completed", session?.id)
+    return null
+  }
+  if (!sub) {
+    console.warn("[billing webhook] klavity Payment-Link session has no subscription to apply", session?.id)
+    return null
+  }
+  const accountId = await resolveOrProvisionAccountForCheckoutSession(session)
+  if (!accountId) {
+    console.warn("[billing webhook] could not resolve/provision account for Payment-Link session", session?.id)
+    return null
+  }
+  await applyStripeSubscriptionState(sub, accountId)
+  return accountId
 }
 
 // Auto-copy flood cap (M6): max external tickets auto-filed per project per hour.
@@ -1454,8 +1512,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const event = await verifyStripeWebhook(raw, req.headers.get("stripe-signature"))
         if (event.type === "checkout.session.completed") {
           const sess = event.data?.object
-          await applyStripeCheckoutSession(sess)
-          const acctId = sess?.metadata?.account_id || sess?.client_reference_id
+          const acctId = await applyStripeCheckoutSession(sess)
           if (acctId) {
             const subEmail = sess?.customer_details?.email ? String(sess.customer_details.email) : undefined
             void trackFunnel(db!, {
@@ -1491,6 +1548,44 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                 plan: sub?.metadata?.plan ?? undefined,
                 stripeSubscriptionId: sub?.id ? String(sub.id) : undefined,
               },
+            })
+          }
+        } else if (event.type === "invoice.paid") {
+          // KLAVITYKLA-336: a recurring renewal charge succeeded — refresh billing_status to
+          // "active" and the period end, but keep the plan Stripe already told us via the
+          // subscription.updated event (never invent a plan from an invoice alone).
+          const invoice = event.data?.object
+          const accountId = await accountIdFromStripeInvoiceObject(invoice)
+          if (accountId) {
+            const current = await accountBillingState(accountId)
+            const periodEnd = invoice?.lines?.data?.[0]?.period?.end ? Number(invoice.lines.data[0].period.end) * 1000 : current.billingCurrentPeriodEnd
+            await updateAccountBillingState(accountId, {
+              plan: current.plan,
+              stripeCustomerId: invoice?.customer ? String(invoice.customer) : current.stripeCustomerId,
+              stripeSubscriptionId: invoice?.subscription ? String(invoice.subscription) : current.stripeSubscriptionId,
+              billingStatus: "active",
+              billingInterval: current.billingInterval,
+              billingCurrentPeriodEnd: periodEnd,
+              billingCancelAtPeriodEnd: current.billingCancelAtPeriodEnd,
+            })
+          }
+        } else if (event.type === "invoice.payment_failed") {
+          // A renewal charge failed. Stripe auto-retries per its Smart Retries schedule — mark the
+          // account past_due for visibility (e.g. in-app banners) but do NOT downgrade the plan here;
+          // only customer.subscription.deleted / .updated (status=canceled/unpaid) does that, once
+          // Stripe gives up retrying.
+          const invoice = event.data?.object
+          const accountId = await accountIdFromStripeInvoiceObject(invoice)
+          if (accountId) {
+            const current = await accountBillingState(accountId)
+            await updateAccountBillingState(accountId, {
+              plan: current.plan,
+              stripeCustomerId: invoice?.customer ? String(invoice.customer) : current.stripeCustomerId,
+              stripeSubscriptionId: invoice?.subscription ? String(invoice.subscription) : current.stripeSubscriptionId,
+              billingStatus: "past_due",
+              billingInterval: current.billingInterval,
+              billingCurrentPeriodEnd: current.billingCurrentPeriodEnd,
+              billingCancelAtPeriodEnd: current.billingCancelAtPeriodEnd,
             })
           }
         }

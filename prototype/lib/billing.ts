@@ -1,7 +1,12 @@
-export type BillingPlan = "free" | "pro" | "team" | "scale" | "partner"
+export type BillingPlan = "free" | "pro" | "team" | "founding" | "scale" | "partner"
 export type BillingInterval = "month" | "year"
 
-export const STRIPE_PRICE_CATALOG: Record<Exclude<BillingPlan, "free" | "scale" | "partner">, Record<BillingInterval, { lookupKey: string; unitAmount: number; label: string }>> = {
+// "founding" (Founding Team) is an annual-only supporter tier sold exclusively via a hosted Stripe
+// Payment Link (see STRIPE_PRICE_IDS below) — it has no "month" entry, hence Partial<...> here.
+export const STRIPE_PRICE_CATALOG: Record<Exclude<BillingPlan, "free" | "scale" | "partner">, Partial<Record<BillingInterval, { lookupKey: string; unitAmount: number; label: string }>>> = {
+  founding: {
+    year: { lookupKey: "klavity_founding_annual_290", unitAmount: 29000, label: "Klavity Founding Team" },
+  },
   pro: {
     month: { lookupKey: "klavity_pro_monthly_29", unitAmount: 2900, label: "Klavity Pro" },
     year: { lookupKey: "klavity_pro_annual_290", unitAmount: 29000, label: "Klavity Pro" },
@@ -12,9 +17,12 @@ export const STRIPE_PRICE_CATALOG: Record<Exclude<BillingPlan, "free" | "scale" 
   },
 }
 
+// founding mirrors Pro's quotas (same $290/yr price point as Pro annual) — at-or-above Pro per
+// KLAVITYKLA-336. Bump independently later if Founding members should get more.
 export const PLAN_QUOTAS: Record<BillingPlan, { projects: number | null; sims: number | null; simReactionsMonthly: number | null; autosimFlows: number | null; autosimCadence: string }> = {
   free: { projects: 1, sims: 1, simReactionsMonthly: 25, autosimFlows: 1, autosimCadence: "weekly" },
   pro: { projects: 5, sims: 5, simReactionsMonthly: 500, autosimFlows: 5, autosimCadence: "daily" },
+  founding: { projects: 5, sims: 5, simReactionsMonthly: 500, autosimFlows: 5, autosimCadence: "daily" },
   team: { projects: null, sims: 20, simReactionsMonthly: 2500, autosimFlows: 20, autosimCadence: "on-deploy/hourly" },
   scale: { projects: null, sims: null, simReactionsMonthly: null, autosimFlows: null, autosimCadence: "custom" },
   partner: { projects: null, sims: null, simReactionsMonthly: null, autosimFlows: null, autosimCadence: "unlimited" },
@@ -30,7 +38,7 @@ export function quotasForPlan(plan: string | null | undefined) {
 }
 
 export function normalizePlan(plan: string | null | undefined): BillingPlan {
-  return plan === "pro" || plan === "team" || plan === "scale" || plan === "partner" ? plan : "free"
+  return plan === "pro" || plan === "team" || plan === "founding" || plan === "scale" || plan === "partner" ? plan : "free"
 }
 
 export function normalizeInterval(interval: string | null | undefined): BillingInterval {
@@ -39,20 +47,71 @@ export function normalizeInterval(interval: string | null | undefined): BillingI
 
 export function planFromLookupKey(lookupKey: string | null | undefined): BillingPlan | null {
   const key = String(lookupKey || "")
+  if (!key) return null
   for (const [plan, intervals] of Object.entries(STRIPE_PRICE_CATALOG)) {
-    if (Object.values(intervals).some((entry) => entry.lookupKey === key)) return plan as BillingPlan
+    if (Object.values(intervals).some((entry) => entry?.lookupKey === key)) return plan as BillingPlan
   }
   return null
 }
 
 export function intervalFromLookupKey(lookupKey: string | null | undefined): BillingInterval | null {
   const key = String(lookupKey || "")
+  if (!key) return null
   for (const intervals of Object.values(STRIPE_PRICE_CATALOG)) {
     for (const [interval, entry] of Object.entries(intervals)) {
-      if (entry.lookupKey === key) return interval as BillingInterval
+      if (entry?.lookupKey === key) return interval as BillingInterval
     }
   }
   return null
+}
+
+// ── Live Stripe price ID → plan/interval (KLAVITYKLA-336) ──────────────────────────────────────
+// Webhook subscription/invoice/checkout-session payloads carry a Stripe price.id, not our internal
+// lookup_key (lookup_key is only set on prices *we* create via ensureStripePrice for the self-serve
+// /api/billing/checkout flow). These are the live production Stripe price IDs for the public Klavity
+// catalog — PUBLIC identifiers, not secrets — safe to hardcode. Keep in lockstep with the Stripe
+// Dashboard if a price is ever repriced (Stripe prices are immutable; a repriced plan gets a new ID).
+export const STRIPE_PRICE_IDS: Record<string, { plan: Exclude<BillingPlan, "free" | "scale" | "partner">; interval: BillingInterval }> = {
+  // Founding Team — annual only, $290/yr
+  price_1TuhSqDWQd30h1DiyqjXQ3NC: { plan: "founding", interval: "year" },
+  // Pro — $29/mo, $290/yr
+  price_1TuhSrDWQd30h1DivfC0EMKT: { plan: "pro", interval: "month" },
+  price_1TuhSrDWQd30h1DiTy9eSe5p: { plan: "pro", interval: "year" },
+  // Team — $99/mo, $990/yr
+  price_1TuhSsDWQd30h1DiU5g7VDZo: { plan: "team", interval: "month" },
+  price_1TuhStDWQd30h1DiRzJCtPsF: { plan: "team", interval: "year" },
+}
+
+export function planFromPriceId(priceId: string | null | undefined): BillingPlan | null {
+  const id = String(priceId || "")
+  if (!id) return null
+  return STRIPE_PRICE_IDS[id]?.plan ?? null
+}
+
+export function intervalFromPriceId(priceId: string | null | undefined): BillingInterval | null {
+  const id = String(priceId || "")
+  if (!id) return null
+  return STRIPE_PRICE_IDS[id]?.interval ?? null
+}
+
+// Combined resolver used at every webhook callsite: try the live price-ID map first (works for both
+// self-serve checkout AND hosted Payment Link purchases, since Payment Links use these same live
+// price IDs), then fall back to lookup_key (covers prices created by ensureStripePrice in Stripe test
+// mode, which don't have one of the live IDs above), then Stripe's own `recurring.interval` for interval.
+type StripePriceLike = { id?: string | null; lookup_key?: string | null; recurring?: { interval?: string | null } | null } | null | undefined
+
+export function planFromPrice(price: StripePriceLike): BillingPlan | null {
+  if (!price) return null
+  return planFromPriceId(price.id) ?? planFromLookupKey(price.lookup_key)
+}
+
+export function intervalFromPrice(price: StripePriceLike): BillingInterval | null {
+  if (!price) return null
+  return (
+    intervalFromPriceId(price.id) ??
+    intervalFromLookupKey(price.lookup_key) ??
+    (price.recurring?.interval ? normalizeInterval(String(price.recurring.interval)) : null)
+  )
 }
 
 function stripeKey(): string {
@@ -82,7 +141,8 @@ async function stripeRequest(path: string, params: URLSearchParams, method = "PO
 }
 
 export async function ensureStripePrice(plan: "pro" | "team", interval: BillingInterval): Promise<string> {
-  const entry = STRIPE_PRICE_CATALOG[plan][interval]
+  // pro/team always define both month + year (only "founding" is annual-only) — safe to assert.
+  const entry = STRIPE_PRICE_CATALOG[plan][interval]!
   const lookup = new URLSearchParams()
   lookup.append("lookup_keys[]", entry.lookupKey)
   lookup.set("active", "true")

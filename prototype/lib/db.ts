@@ -1842,7 +1842,8 @@ export async function setProjectModalConfig(projectId: string, config: Record<st
 }
 
 // Paid/partner plans that unlock Pro-gated features. 'partner' = unlimited internal/partner access.
-const PRO_PLANS = new Set(["pro", "team", "scale", "partner"])
+// 'founding' = Founding Team annual supporter tier (KLAVITYKLA-336) — treated as a paid plan.
+const PRO_PLANS = new Set(["pro", "team", "founding", "scale", "partner"])
 
 export function planIsPro(plan: string): boolean { return PRO_PLANS.has(plan) }
 export function planIsUnlimited(plan: string): boolean { return plan === 'partner' || plan === 'scale' }
@@ -1904,6 +1905,17 @@ export async function accountBillingState(accountId: string): Promise<AccountBil
 
 export async function accountIdForStripeCustomer(customerId: string): Promise<string | null> {
   const r = await db!.execute({ sql: "SELECT id FROM accounts WHERE stripe_customer_id=? LIMIT 1", args: [customerId] })
+  return r.rows.length ? String((r.rows[0] as any).id) : null
+}
+
+// KLAVITYKLA-336: resolve an account by its owner_email — used to entitle a cold hosted-Payment-Link
+// purchase (no account_id metadata) via the buyer's checkout email. Oldest matching account wins if
+// somehow more than one row shares an owner_email (shouldn't happen — owner_email is set once at
+// ensureAccount time — but stay deterministic rather than picking an arbitrary row).
+export async function accountIdForOwnerEmail(email: string): Promise<string | null> {
+  const e = String(email || "").trim().toLowerCase()
+  if (!e) return null
+  const r = await db!.execute({ sql: "SELECT id FROM accounts WHERE lower(owner_email)=? ORDER BY created_at ASC LIMIT 1", args: [e] })
   return r.rows.length ? String((r.rows[0] as any).id) : null
 }
 
