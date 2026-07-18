@@ -741,6 +741,34 @@ export async function applySchema(c: Client) {
      )`,
     `CREATE INDEX IF NOT EXISTS srs_proj_idx ON sim_review_schedules (project_id, enabled, next_run_at)`,
     `CREATE INDEX IF NOT EXISTS srs_due_idx ON sim_review_schedules (enabled, next_run_at)`,
+    // KLAVITYKLA-330: lead nurture sequences — one row per (email, sequence) enrollment.
+    // step = next scheduled step to send (2 or 3); NULL = sequence complete.
+    // next_at = when to fire the next step (ms); NULL = done or unsubscribed.
+    `CREATE TABLE IF NOT EXISTS lead_nurture_sequences (
+       id TEXT PRIMARY KEY,
+       email TEXT NOT NULL,
+       sequence TEXT NOT NULL DEFAULT 'cro',
+       step INTEGER,
+       source TEXT,
+       url TEXT,
+       next_at INTEGER,
+       enrolled_at INTEGER NOT NULL,
+       completed_at INTEGER,
+       unsubscribed_at INTEGER,
+       UNIQUE(email, sequence))`,
+    `CREATE INDEX IF NOT EXISTS lns_next_idx ON lead_nurture_sequences (next_at)`,
+    `CREATE INDEX IF NOT EXISTS lns_email_idx ON lead_nurture_sequences (email)`,
+    // KLAVITYKLA-330: one row per nurture email sent; sg_message_id enables open/click webhook tracking.
+    `CREATE TABLE IF NOT EXISTS lead_nurture_emails (
+       id TEXT PRIMARY KEY,
+       sequence_id TEXT NOT NULL,
+       step INTEGER NOT NULL,
+       sg_message_id TEXT,
+       sent_at INTEGER NOT NULL,
+       opened_at INTEGER,
+       clicked_at INTEGER)`,
+    `CREATE INDEX IF NOT EXISTS lne_seq_idx ON lead_nurture_emails (sequence_id, step)`,
+    `CREATE INDEX IF NOT EXISTS lne_sg_idx ON lead_nurture_emails (sg_message_id)`,
   ]
   // Boot-time fix: run the whole static CREATE TABLE/INDEX block as ONE batched round-trip instead
   // of ~150 sequential `await c.execute(s)` calls. Against REMOTE Turso those 150 round-trips cost
