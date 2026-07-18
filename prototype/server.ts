@@ -27,7 +27,6 @@ import { screenshotUrl, defaultPreviewPersona } from "./lib/sim-preview"
 import { allow as rlAllow, record as rlRecord, count as rlCount, clear as rlClear } from "./lib/ratelimit"
 import { wrapUntrusted, UNTRUSTED_GUARD } from "./lib/prompt-safety"
 import { notifyNewSignup } from "./lib/signup-alert"
-import { CRO_SYS, normalizeCroReport, croPreview, type CroReport } from "./lib/cro-sim"
 import { notifyNewReport } from "./lib/report-alert"
 import { notifyBudgetResumeRequest } from "./lib/budget-resume-alert"
 import { reportError } from "./lib/error-alert"
@@ -1285,51 +1284,6 @@ const EXTRACT_TRANSCRIPT_MAX_CHARS = 300_000  // ~75k tokens — fits ~2–3 hou
 // cost ~4× lower than the ceiling. React/reconcile calls use their own (smaller) budgets.
 const EXTRACT_MAX_OUTPUT_TOKENS = 16_000
 const AI_DEMO_MAX_IMG_B64 = 12_000_000 // ~9 MB decoded — cap the react screenshot payload
-
-// ── CRO Sim front door (site/cro.html + /api/cro/*) ──────────────────────────────────────────────
-// A finished /api/cro/analyze report is held in-process, keyed by an unguessable id, so the email gate
-// (/api/cro/unlock) can reveal the full result WITHOUT re-running the LLM (halves cost, not gameable
-// from the client). Ephemeral by design: state is lost on restart, which is fine — the analyze→unlock
-// round-trip is seconds, and a lost report just means "run it again". Same in-process rationale as the
-// rate limiter above.
-interface CroStored { report: CroReport; url: string; createdAt: number }
-const croReports = new Map<string, CroStored>()
-const CRO_REPORT_TTL_MS = 30 * 60 * 1000 // 30 min — plenty for analyze→email→unlock
-const CRO_MAX_REPORTS = 5_000 // backstop against unbounded growth on a long-lived process
-const CRO_UNLOCK_PER_IP = 30 // email-gate submissions per IP / hour (abuse guard)
-
-function croStore(url: string, report: CroReport): string {
-  const now = Date.now()
-  // Opportunistic GC of expired reports; hard-evict oldest if we somehow blow past the cap.
-  for (const [k, v] of croReports) if (now - v.createdAt > CRO_REPORT_TTL_MS) croReports.delete(k)
-  if (croReports.size >= CRO_MAX_REPORTS) {
-    const oldest = [...croReports.entries()].sort((a, b) => a[1].createdAt - b[1].createdAt)[0]
-    if (oldest) croReports.delete(oldest[0])
-  }
-  const id = crypto.randomUUID()
-  croReports.set(id, { report, url, createdAt: now })
-  return id
-}
-
-function croGet(id: string): CroStored | null {
-  const v = croReports.get(id)
-  if (!v) return null
-  if (Date.now() - v.createdAt > CRO_REPORT_TTL_MS) { croReports.delete(id); return null }
-  return v
-}
-
-// Fire-and-forget Slack alert on a captured CRO lead. Reuses the signup webhook (SLACK_SIGNUP_WEBHOOK_URL);
-// no-op when unset. Never throws — a failed alert must not break the unlock response.
-function notifyCroLead(email: string, url: string): void {
-  const webhook = process.env.SLACK_SIGNUP_WEBHOOK_URL
-  console.log(`[cro-lead] ${email} analyzed ${url}`)
-  if (!webhook) return
-  const payload = { text: `🔍 New CRO Sim lead: ${email}\n• analyzed: ${url}` }
-  void safeFetch(webhook, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) }, { allowHosts: ["hooks.slack.com"] })
-    .then((res) => { if (!res.ok) console.error(`cro lead slack alert: webhook returned ${res.status}`) })
-    .catch((err: any) => console.error("cro lead slack alert (non-fatal):", err?.message || err))
-}
-
 // Throttle key for an AI demo call: prefer the authed email, else the abuse-safe client IP.
 function aiDemoLimited(meEmail: string | null, req: Request, server: any): boolean {
   const key = meEmail ? `aidemo:u:${meEmail}` : `aidemo:ip:${clientIp(req, server)}`
