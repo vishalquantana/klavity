@@ -26,6 +26,27 @@ export interface PublishResult {
   url: string
 }
 
+// KLAVITYKLA-324: this function IS the "blog generator" — posts are authored externally (the daily
+// remote routine) and their raw HTML is written verbatim below, so there is no template file in this
+// repo to patch. Instead, inject the attribution include here so every post published through this
+// path carries first-touch UTM/referrer capture without the external author needing to know about it.
+// Idempotent (no-op if already present) and best-effort: unrecognized HTML shapes are left untouched
+// rather than risk corrupting a post — publishing must never fail because of this.
+export function ensureAttrScript(html: string): string {
+  if (html.includes("/attr.js")) return html
+  const kitTag = '<script src="/kit.js" defer></script>'
+  const kitIdx = html.indexOf(kitTag)
+  if (kitIdx !== -1) {
+    const insertAt = kitIdx + kitTag.length
+    return html.slice(0, insertAt) + '<script src="/attr.js" defer></script>' + html.slice(insertAt)
+  }
+  const headCloseIdx = html.indexOf("</head>")
+  if (headCloseIdx !== -1) {
+    return html.slice(0, headCloseIdx) + '<script src="/attr.js" defer></script>' + html.slice(headCloseIdx)
+  }
+  return html // no recognizable head/kit.js hook — leave unchanged rather than guess
+}
+
 export async function spawnGit(args: string[], opts: { cwd: string }): Promise<GitResult> {
   const proc = Bun.spawn(["git", ...args], {
     cwd: opts.cwd,
@@ -46,10 +67,11 @@ export async function publishBlogPost(
   ghToken: string,
   runGit: GitRunner = spawnGit,
 ): Promise<PublishResult> {
-  const { slug, title, excerpt, category, date, html } = input
+  const { slug, title, excerpt, category, date, html: rawHtml } = input
   const blogDir = repoRoot + "/site/blog"
+  const html = ensureAttrScript(rawHtml)
 
-  // 1. Write the HTML file verbatim
+  // 1. Write the HTML file (attribution include injected if the post didn't already have one)
   await Bun.write(blogDir + "/" + slug + ".html", html)
 
   // 2. Upsert index.json — dedupe by slug, newest entry first

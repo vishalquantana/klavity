@@ -151,7 +151,7 @@ setInterval(() => {
 }, 4200)
 
 async function post(url, body) {
-  const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
+  const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(window.KlavAttr && body && typeof body === 'object' ? window.KlavAttr.attach(body) : body) })
   return r.json()
 }
 function show(step) { $("step-email").classList.toggle("hide", step !== "email"); $("step-code").classList.toggle("hide", step !== "code") }
