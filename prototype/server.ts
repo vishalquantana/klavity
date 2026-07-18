@@ -711,9 +711,9 @@ function timingSafeStrEqual(a: string, b: string): boolean {
   for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
   return diff === 0
 }
-function parseAttribution(raw: unknown): { source: string; medium: string; campaign: string; referrer: string; anonId: string } {
+function parseAttribution(raw: unknown): { source: string | null; medium: string | null; campaign: string | null; referrer: string | null; anonId: string | null } {
   const a = (raw != null && typeof raw === "object" && !Array.isArray(raw)) ? (raw as Record<string, unknown>) : {}
-  const s = (v: unknown, max: number) => String(v ?? "").trim().slice(0, max)
+  const s = (v: unknown, max: number) => { const t = String(v ?? "").trim(); return t.length ? t.slice(0, max) : null }
   return { source: s(a.source, 100), medium: s(a.medium, 100), campaign: s(a.campaign, 100), referrer: s(a.referrer, 500), anonId: s(a.anonId, 500) }
 }
 function file(path: string) { return new Response(Bun.file(path)) }
@@ -1915,10 +1915,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const acceptedAssignmentInvites = await acceptPendingTicketAssignmentInvites(e)
         const newMemberships = acceptedAssignmentInvites.length ? null : await ensureAccount(e)
         if (wasNew && attribution != null) {
-          const accountId = (newMemberships ?? acceptedAssignmentInvites)[0]?.workspaceId
+          const postSignupMs = newMemberships ?? (await membershipsFor(e))
+          const accountId = postSignupMs[0]?.workspaceId
           if (accountId) {
             const attr = parseAttribution(attribution)
-            await db!.execute({
+            void db!.execute({
               sql: "UPDATE accounts SET first_source=?,first_medium=?,first_campaign=?,first_referrer=?,anon_id=? WHERE id=?",
               args: [attr.source, attr.medium, attr.campaign, attr.referrer, attr.anonId, accountId],
             }).catch((err: any) => console.error("attribution persist (non-fatal):", err?.message || err))
