@@ -274,6 +274,7 @@ button.goaltile[aria-pressed="true"]{border-color:var(--indigo);box-shadow:0 0 0
 a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{outline:2px solid #8b8bf5;outline-offset:2px;border-radius:5px}
 @media (prefers-reduced-motion: reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}}
 </style>
+<script src="/kit.js" defer></script>
 </head>
 <body>
 <div class="shell norail" id="shell">
@@ -766,8 +767,9 @@ async function verifyCode(){
   if (code.length < 4) { err.textContent = 'Enter the 6-digit code.'; return }
   const btn = $('verifyBtn'); btn.disabled = true; btn.textContent = 'Verifying…'
   try {
+    const _attr = (typeof window !== 'undefined' && window.klavAttribution) ? window.klavAttribution() : {}
     const v = await jsonFetch('/api/auth/verify', {
-      method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(window.KlavAttr ? window.KlavAttr.attach({ email, code }) : { email, code })
+      method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ email, code, attribution: _attr })
     })
     if (!v.ok) { err.textContent = v.data.error || 'Invalid or expired code.'; return }
     // signed in (cookie set). Resolve the default project, then set its name to the chosen project name.
