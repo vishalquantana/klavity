@@ -2,6 +2,7 @@
 import { createClient, type Client } from "@libsql/client"
 import { insightsFromTraits, type Trait, type TraitKind, type TraitStatus, type TraitEventRow } from "./provenance"
 import { encryptSecret, sha256hex } from "./crypto"
+import type { SanitizedAttr } from "./attr"
 
 const url = process.env.TURSO_DATABASE_URL
 const authToken = process.env.TURSO_AUTH_TOKEN
@@ -741,7 +742,7 @@ export async function applySchema(c: Client) {
     "sim_traits", "trait_events", "personas",
     "feedback", "projects", "accounts", "trails", "trail_runs",
     "trail_steps", "walk_share_tokens", "findings", "author_sessions",
-    "ai_calls", "autosim_auth_probe_queue", "expectations",
+    "ai_calls", "autosim_auth_probe_queue", "expectations", "users",
   ]
   const _cols = await loadTableColumns(c, ALTERED_TABLES)
   const needCol = (table: string, col: string) => !(_cols.get(table)?.has(col) ?? false)
@@ -1029,6 +1030,24 @@ export async function applySchema(c: Client) {
   // "Grounded:" in external tickets. Legacy rows are NULL → treated as unverified (relabeled "Reason:").
   if (needCol("findings", "ground_quote_verified")) await c.execute("ALTER TABLE findings ADD COLUMN ground_quote_verified INTEGER")
     .catch((e: any) => console.warn("findings.ground_quote_verified ALTER skipped:", e?.message || e))
+  // KLAVITYKLA-324: first-touch UTM/referrer attribution — captured on signup (site/attr.js →
+  // POST /api/auth/verify), persisted FIRST-TOUCH-WINS onto both the signup row (users) and the
+  // subscription row (accounts, so "which channel produced paid customers" is one query, no joins).
+  const userAttrCols: [string, string][] = [
+    ["utm_source", "TEXT"], ["utm_medium", "TEXT"], ["utm_campaign", "TEXT"],
+    ["utm_term", "TEXT"], ["utm_content", "TEXT"],
+    ["attr_referrer", "TEXT"], ["attr_landing_page", "TEXT"],
+    ["attr_first_seen_at", "INTEGER"],
+  ]
+  for (const [col, def] of userAttrCols) {
+    if (needCol("users", col)) await c.execute(`ALTER TABLE users ADD COLUMN ${col} ${def}`)
+      .catch((e: any) => console.warn(`users.${col} ALTER skipped:`, e?.message || e))
+  }
+  const accountAttrCols: [string, string][] = [["utm_source", "TEXT"], ["utm_medium", "TEXT"], ["utm_campaign", "TEXT"]]
+  for (const [col, def] of accountAttrCols) {
+    if (needCol("accounts", col)) await c.execute(`ALTER TABLE accounts ADD COLUMN ${col} ${def}`)
+      .catch((e: any) => console.warn(`accounts.${col} ALTER skipped:`, e?.message || e))
+  }
 }
 
 // ── schema_meta helpers ──
@@ -1331,6 +1350,30 @@ export async function upsertUser(email: string) {
   await db!.execute({ sql: "INSERT INTO users (email,created_at) VALUES (?,?) ON CONFLICT(email) DO NOTHING", args: [email, Date.now()] })
 }
 
+// KLAVITYKLA-324: FIRST-TOUCH WINS. Every SET clause is COALESCE(col, ?) so this only ever fills
+// in a currently-NULL column — a returning user who logs back in from a different campaign link
+// never has their original acquisition source overwritten. No-op (not even a round-trip) when
+// `attr` is null/empty, so a signup with no attribution at all is unaffected.
+export async function setUserAttribution(email: string, attr: SanitizedAttr | null): Promise<void> {
+  if (!attr) return
+  await db!.execute({
+    sql: `UPDATE users SET
+            utm_source = COALESCE(utm_source, ?),
+            utm_medium = COALESCE(utm_medium, ?),
+            utm_campaign = COALESCE(utm_campaign, ?),
+            utm_term = COALESCE(utm_term, ?),
+            utm_content = COALESCE(utm_content, ?),
+            attr_referrer = COALESCE(attr_referrer, ?),
+            attr_landing_page = COALESCE(attr_landing_page, ?),
+            attr_first_seen_at = COALESCE(attr_first_seen_at, ?)
+          WHERE email = ?`,
+    args: [
+      attr.source ?? null, attr.medium ?? null, attr.campaign ?? null, attr.term ?? null, attr.content ?? null,
+      attr.referrer ?? null, attr.landing_page ?? null, attr.first_seen_at ?? null,
+      email,
+    ],
+  })
+}
 // E1: sessions.id stores sha256hex(raw token), never the raw bearer. The caller keeps the RAW `id`
 // (it generated it) for the HttpOnly cookie; we only ever persist its hash, so a DB read can't be
 // replayed as a session.
@@ -1440,7 +1483,12 @@ export async function setAccountDomain(accountId: string, domain: string): Promi
   await db.execute({ sql: "UPDATE accounts SET domain=? WHERE id=?", args: [domain || null, accountId] })
 }
 
-export async function ensureAccount(email: string): Promise<Membership[]> {
+// `attr` (optional): the signing-up user's sanitized first-touch attribution (KLAVITYKLA-324),
+// stamped onto the brand-new account row so "which channel produced this paying account" is a
+// single query against accounts, no joins. Only applied when THIS call actually creates the
+// account (existing.length === 0) — a returning user hitting ensureAccount as a no-op never
+// touches account attribution.
+export async function ensureAccount(email: string, attr?: SanitizedAttr | null): Promise<Membership[]> {
   const existing = await membershipsFor(email)
   if (existing.length) return existing
   const aid = crypto.randomUUID()
@@ -1454,7 +1502,35 @@ export async function ensureAccount(email: string): Promise<Membership[]> {
     args: ["proj_" + aid, aid, "Default Project", "active", "auto", 200, "named", now, now],
   })
   await db!.execute({ sql: "INSERT OR IGNORE INTO project_members (id,project_id,email,project_role,invited_by,created_at) VALUES (?,?,?,?,?,?)", args: ["pm_" + aid + "_" + email, "proj_" + aid, email, "admin", null, now] })
+  if (attr) await setAccountAttribution(aid, attr)
   return membershipsFor(email)
+}
+
+// KLAVITYKLA-324: FIRST-TOUCH WINS (same COALESCE contract as setUserAttribution) — a later login
+// from a different campaign link never clobbers the account's original acquisition source.
+export async function setAccountAttribution(accountId: string, attr: SanitizedAttr | null): Promise<void> {
+  if (!attr) return
+  await db!.execute({
+    sql: `UPDATE accounts SET
+            utm_source = COALESCE(utm_source, ?),
+            utm_medium = COALESCE(utm_medium, ?),
+            utm_campaign = COALESCE(utm_campaign, ?)
+          WHERE id = ?`,
+    args: [attr.source ?? null, attr.medium ?? null, attr.campaign ?? null, accountId],
+  })
+}
+
+// Read helper: which channel produced this (paid or free) account. One query, no joins — the
+// entire point of persisting the utm trio onto accounts rather than only onto users.
+export async function attributionForAccount(accountId: string): Promise<{ utmSource: string | null; utmMedium: string | null; utmCampaign: string | null } | null> {
+  const r = await db!.execute({ sql: "SELECT utm_source, utm_medium, utm_campaign FROM accounts WHERE id=?", args: [accountId] })
+  if (!r.rows.length) return null
+  const row = r.rows[0] as any
+  return {
+    utmSource: row.utm_source != null ? String(row.utm_source) : null,
+    utmMedium: row.utm_medium != null ? String(row.utm_medium) : null,
+    utmCampaign: row.utm_campaign != null ? String(row.utm_campaign) : null,
+  }
 }
 
 export async function accountRole(accountId: string, email: string): Promise<string | null> {

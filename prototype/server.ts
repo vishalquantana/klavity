@@ -1,6 +1,7 @@
 // Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
 import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, listInboxForProjects, setProjectTrailsAutofile } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution } from "./lib/db"
+import { sanitizeAttr } from "./lib/attr"
 import { issueKeyFor, chooseDedup, humanReportIssueKeyFor } from "./lib/dedup"
 import { classifySimObservation } from "./lib/sim-bug-classify"
 import { getConnector, listConnectorTypes, type TicketPayload, type TicketAttachment } from "./lib/connectors/index"
@@ -1471,6 +1472,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     }
     if (req.method === "GET" && path === "/kit.css") return new Response(Bun.file(SITE + "/kit.css"), { headers: { "content-type": "text/css; charset=utf-8" } })
     if (req.method === "GET" && path === "/kit.js") return new Response(Bun.file(SITE + "/kit.js"), { headers: { "content-type": "text/javascript; charset=utf-8" } })
+    // KLAVITYKLA-324: first-touch acquisition attribution capture, defer-loaded on every marketing page.
+    if (req.method === "GET" && path === "/attr.js") return new Response(Bun.file(SITE + "/attr.js"), { headers: { "content-type": "text/javascript; charset=utf-8" } })
     // ── generated icon bundle (Lucide SVGs, from scripts/gen-icons.mjs) ──
     // EVERY served page does <script src="/icons.generated.js"> and calls kicon()/window.KLAV_ICONS.
     // Serve the prototype/public copy: it is a strict superset (same icon data PLUS the self-contained
@@ -1856,7 +1859,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (req.method === "POST" && path === "/api/auth/verify") {
       try {
         if (!db) return json({ error: "Login is not configured." }, 500)
-        const { email, code } = await req.json()
+        const { email, code, attr: rawAttr } = await req.json()
         const e = String(email || "").trim().toLowerCase()
         const c = String(code || "").trim()
         // Brute-force lockout (H1): after OTP_FAIL_MAX wrong codes for this (email,IP) within the
@@ -1898,16 +1901,36 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // a default membership (which it always does on first login). A genuinely new user starts in the
         // signup wizard, not a cold empty dashboard; returning users go straight to the dashboard.
         const wasNew = (await membershipsFor(e)).length === 0
-        // Fire-and-forget Slack alert on genuinely new signups (enriched with geo/device/domain).
+        // KLAVITYKLA-324: first-touch UTM/referrer attribution — genuinely-new-signup only (never
+        // re-derived/overwritten on a returning login, even though setUserAttribution/ensureAccount
+        // are themselves COALESCE-guarded first-touch-wins). Prefer the body field (site/attr.js
+        // attach()); fall back to the `klav_attr` cookie so attribution survives even if the caller
+        // never wired attach() into its fetch. sanitizeAttr is the ONE choke point — raw client
+        // input never reaches a column unsanitized. Best-effort: a bad attr never breaks login.
+        let signupAttr: ReturnType<typeof sanitizeAttr> = null
+        if (wasNew) {
+          try {
+            let attrSource: unknown = rawAttr
+            if (!attrSource) {
+              const rawCookie = parseCookies(req.headers.get("cookie"))["klav_attr"]
+              if (rawCookie) { try { attrSource = JSON.parse(decodeURIComponent(rawCookie)) } catch { attrSource = null } }
+            }
+            signupAttr = sanitizeAttr(attrSource)
+            await setUserAttribution(e, signupAttr)
+          } catch (err: any) { console.error("signup attribution (non-fatal):", err?.message || err) }
+        }
+        // Fire-and-forget Slack alert on genuinely new signups (enriched with geo/device/domain + source).
         // Best-effort: never blocks or fails the signup. No-op unless SLACK_SIGNUP_WEBHOOK_URL is set.
         if (wasNew) {
           const sUa = req.headers.get("user-agent") || undefined
           const sRef = req.headers.get("referer") || req.headers.get("origin") || undefined
-          void notifyNewSignup({ email: e, ip: vIp, userAgent: sUa, referer: sRef, at: Date.now() })
+          void notifyNewSignup({ email: e, ip: vIp, userAgent: sUa, referer: sRef, at: Date.now(), attr: signupAttr || undefined })
             .catch((err: any) => console.error("signup slack alert (non-fatal):", err?.message || err))
         }
         const acceptedAssignmentInvites = await acceptPendingTicketAssignmentInvites(e)
-        if (!acceptedAssignmentInvites.length) await ensureAccount(e)
+        // Pass the signing-up user's first-touch attribution onto the freshly-created account
+        // (the utm trio → the subscription row), so "which channel produced paid" is a joinless query.
+        if (!acceptedAssignmentInvites.length) await ensureAccount(e, signupAttr)
         const sid = token()
         await createSession(sid, e, Date.now() + SESSION_DAYS * 86400 * 1000)
         // JTBD 2.15: land the new assignee directly on the ticket they were assigned. The invite row
