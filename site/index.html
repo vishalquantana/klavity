@@ -36,6 +36,9 @@
 <link rel="preload" href="/kit.css" as="style" onload="this.onload=null;this.rel='stylesheet'" />
 <noscript><link rel="stylesheet" href="/kit.css" /></noscript>
 
+<!-- First-touch UTM/referrer attribution capture (KLAVITYKLA-324). -->
+<script src="/attr.js" defer></script>
+
 <!-- Only the 8 icons this page renders (theme toggle + the self-review tour), inlined to drop a
      render-blocking request and ~9KB of unused icon JS from the critical path. /icons.generated.js
      is still served for the app pages; this page no longer depends on it. -->

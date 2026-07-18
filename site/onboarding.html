@@ -26,6 +26,9 @@
 <meta name="twitter:image" content="https://klavity.in/favicon.svg" />
 <link rel="stylesheet" href="/fonts/fonts.css" />
 <script src="/icons.generated.js"></script>
+<!-- First-touch UTM/referrer attribution capture (KLAVITYKLA-324). onboarding.html is the signup
+     page, so it needs its own include — it doesn't otherwise load kit.js. -->
+<script src="/attr.js" defer></script>
 <style>
 :root{--ink:#f5f3ee;--ink-2:#ffffff;--ink-3:#efeae0;--paper:#19140f;--paper-dim:#574f45;--paper-faint:#8a8076;
 --indigo:#6366f1;--indigo-deep:#4f46e5;--amber:#d98324;--rose:#db2777;--green:#0f9d6b;--line:rgba(25,20,15,.12);
@@ -734,7 +737,10 @@ async function requestCode(){
   const btn = $('createBtn'); btn.disabled = true; btn.textContent = 'Sending code…'
   try {
     const { ok, status, data } = await jsonFetch('/api/auth/request', {
-      method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ email })
+      method:'POST', headers:{'content-type':'application/json'},
+      // KLAVITYKLA-324: window.KlavAttr may be undefined if attr.js failed to load — guarded so
+      // that can NEVER break login.
+      body: JSON.stringify(window.KlavAttr ? window.KlavAttr.attach({ email }) : { email })
     })
     if (!ok) { err.textContent = data.error || (status===403 ? 'This email isn’t on the access list yet.' : 'Could not send a code.'); return }
     // success → switch to the code-entry view
@@ -764,7 +770,9 @@ async function verifyCode(){
   const btn = $('verifyBtn'); btn.disabled = true; btn.textContent = 'Verifying…'
   try {
     const v = await jsonFetch('/api/auth/verify', {
-      method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ email, code })
+      method:'POST', headers:{'content-type':'application/json'},
+      // KLAVITYKLA-324: guarded — a missing attr.js must never break login.
+      body: JSON.stringify(window.KlavAttr ? window.KlavAttr.attach({ email, code }) : { email, code })
     })
     if (!v.ok) { err.textContent = v.data.error || 'Invalid or expired code.'; return }
     // signed in (cookie set). Resolve the default project, then set its name to the chosen project name.
