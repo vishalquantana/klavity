@@ -74,6 +74,7 @@ import { runAutosimAuthProbe } from "./lib/autosim-auth-probe"
 import { mintProjectShareToken, revokeProjectShareToken, resolveProjectShareToken, gatherProjectStatusData } from "./lib/project-status-portal"
 import { runDueSchedules, buildProductionDeps } from "./lib/sim-review-schedule"
 import { trackFunnel, CLIENT_INGESTABLE } from "./lib/funnel"
+import { capturePosthog } from "./lib/posthog"
 import { createSimReviewSchedule, listSimReviewSchedules, getSimReviewSchedule, deleteSimReviewSchedule, setSimReviewScheduleEnabled, type SimReviewScheduleFrequency } from "./lib/db"
 import { startSimsDigestScheduler, sendSimsDigest, type SimsDigestDeps, DAY_MS as SIMS_DIGEST_DAY_MS } from "./lib/sims-digest"
 import { sendReportAlertEmail } from "./lib/mail"
@@ -1947,6 +1948,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const attrForSlack = attribution != null ? parseAttribution(attribution) : null
           void notifyNewSignup({ email: e, ip: vIp, userAgent: sUa, referer: sRef, utmSource: attrForSlack?.source || undefined, at: Date.now() })
             .catch((err: any) => console.error("signup slack alert (non-fatal):", err?.message || err))
+          // PostHog activation: signup_completed — fire for genuinely new accounts only.
+          void capturePosthog(e, "signup_completed", {
+            email: e,
+            source: sRef ? (() => { try { return new URL(sRef).hostname.replace(/^www\./, "") } catch { return "direct" } })() : "direct",
+            referrer: sRef ?? null,
+          })
         }
         const acceptedAssignmentInvites = await acceptPendingTicketAssignmentInvites(e)
         const newMemberships = acceptedAssignmentInvites.length ? null : await ensureAccount(e)
@@ -2337,6 +2344,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   }, { db }).catch(() => {})
                 }
               } else {
+                // PostHog activation: first_bug_filed / first_widget_report — check BEFORE insert.
+                let priorFeedbackCount = 1 // safe default: assume not-first if query fails
+                if (db) {
+                  try {
+                    const r = await db.execute({ sql: "SELECT COUNT(*) AS n FROM feedback WHERE project_id=?", args: [projectId] })
+                    priorFeedbackCount = Number((r.rows[0] as any)?.n ?? 1)
+                  } catch { /* non-fatal */ }
+                }
                 feedbackId = await insertFeedback({
                   projectId, simId, actorEmail: actor, urlHost, urlPath, sourceReferrer: sourceReferrer || null,
                   observation, sentiment, priority, screenshotId, suggestedBug,
@@ -2346,6 +2361,15 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   issueKey: newIssueKey,
                   clientContext, annotations,
                 })
+                if (priorFeedbackCount === 0 && feedbackId) {
+                  const fbSource = anonWidgetAllowed ? "widget" : (simId ? "sim" : "extension")
+                  // first_bug_filed: very first report for this project (any source)
+                  void capturePosthog(actor ?? "anonymous", "first_bug_filed", { project_id: projectId, source: fbSource })
+                  // first_widget_report: first report arriving via widget token (cross-origin anonymous submit)
+                  if (anonWidgetAllowed) {
+                    void capturePosthog("anonymous", "first_widget_report", { project_id: projectId })
+                  }
+                }
               }
               // Reporter email (from the widget's "log in or email" gate): persist as the contact so
               // it shows in the dashboard and drives notify-on-fix. Fires on new + deduped rows.
@@ -2993,12 +3017,20 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // Best-effort — a record failure never fails the HTTP response.
         if (db) {
           try {
+            // PostHog activation: first_sim_run — check BEFORE inserting the new row.
+            const priorRunCount = await db.execute({
+              sql: "SELECT COUNT(*) AS n FROM sim_runs WHERE project_id=?",
+              args: [projectId],
+            }).then((r: any) => Number(r.rows[0]?.n ?? 0)).catch(() => 1)
             await insertSimRun({
               projectId, url: pageUrl,
               simIds: reqSimIds.length ? reqSimIds : null,  // null = all Sims
               screenshotId, reactions: reviews,
               actorEmail: meR, status: "done", finishedAt: Date.now(),
             })
+            if (priorRunCount === 0) {
+              void capturePosthog(meR ?? "server", "first_sim_run", { project_id: projectId })
+            }
           } catch (e: any) { console.warn("[review] sim_runs insert skipped:", e?.message || e) }
         }
         const benchRunInsertAt = Date.now()
@@ -5740,6 +5772,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const created = await createProject(active.workspaceId, name, siteUrl)
         // The creator is an account admin → implicit project-admin via projectAccess; no extra row needed.
         void trackFunnel(db!, { event: "app_connected", email: me, accountId: active.workspaceId, url: siteUrl ?? undefined })
+        // PostHog activation: project_created.
+        void capturePosthog(me, "project_created", { project_id: created.id, account_id: created.accountId })
         return json({ project: { id: created.id, name: created.name, accountId: created.accountId, status: created.status, siteUrl: created.siteUrl, role: "admin" } }, 201)
       }
       // Project detail + members (projectAccess-gated) and project-scoped invite (R4) + monitored-urls (P3b) + connectors.
