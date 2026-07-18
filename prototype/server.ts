@@ -74,6 +74,7 @@ import { runAutosimAuthProbe } from "./lib/autosim-auth-probe"
 import { mintProjectShareToken, revokeProjectShareToken, resolveProjectShareToken, gatherProjectStatusData } from "./lib/project-status-portal"
 import { runDueSchedules, buildProductionDeps } from "./lib/sim-review-schedule"
 import { trackFunnel, CLIENT_INGESTABLE } from "./lib/funnel"
+import { gatherGrowthScorecard } from "./lib/growth-scorecard"
 import { capturePosthog } from "./lib/posthog"
 import { createSimReviewSchedule, listSimReviewSchedules, getSimReviewSchedule, deleteSimReviewSchedule, setSimReviewScheduleEnabled, type SimReviewScheduleFrequency } from "./lib/db"
 import { startSimsDigestScheduler, sendSimsDigest, type SimsDigestDeps, DAY_MS as SIMS_DIGEST_DAY_MS } from "./lib/sims-digest"
@@ -775,7 +776,7 @@ function renderOpsAdmin(d: {
   const prev = d.offset > 0 ? `<a href="/opsadmin?offset=${Math.max(0, d.offset - 50)}">← newer</a>` : ""
   const next = d.recent.length === 50 ? `<a href="/opsadmin?offset=${d.offset + 50}">older →</a>` : ""
   const todayPct = Math.min(100, Math.round((d.today / Math.max(0.0001, d.cap)) * 100))
-  return `<!doctype html><html><head><meta charset="utf-8"><title>Klavity Ops — AI credits</title>
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Klavity Ops</title>
 <style>
   :root{--bg:#0b0c10;--card:#15171e;--ink:#e8eaf0;--mut:#9aa3b2;--line:#262a35;--accent:#6366f1}
   *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,sans-serif}
@@ -797,8 +798,18 @@ function renderOpsAdmin(d: {
   .pager{margin-top:10px;display:flex;gap:16px}.pager a{color:var(--accent);text-decoration:none}
   input[type=number]{background:#0b0c10;color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:4px 6px;width:80px;text-align:right}
   button{background:var(--accent);color:#fff;border:0;border-radius:6px;padding:8px 14px;font-weight:600;cursor:pointer}
+  .tabs{display:flex;gap:8px;margin-bottom:24px;border-bottom:1px solid var(--line);padding-bottom:0}
+  .tab-btn{background:none;border:none;border-bottom:2px solid transparent;color:var(--mut);font:600 13px/1 system-ui,sans-serif;padding:8px 16px 10px;cursor:pointer;border-radius:0;margin-bottom:-1px}
+  .tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
+  .tab-btn:hover:not(.active){color:var(--ink)}
+  #growth-loading{color:var(--mut);padding:48px 0;text-align:center}
 </style></head><body><div class="wrap">
-  <h1>AI credits — Ops</h1><p class="sub">Every OpenRouter call, with real credit cost. Private to ops admins.</p>
+  <h1>Ops</h1><p class="sub">Private to ops admins.</p>
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('ai')">AI Credits</button>
+    <button class="tab-btn" onclick="switchTab('growth')">Growth</button>
+  </div>
+  <div id="tab-ai">
   <div class="cards">
     <div class="card"><b>${fmtUsd(d.totals.totalCost)}</b><span>Total spend</span></div>
     <div class="card"><b>${d.totals.callCount}</b><span>Total calls</span></div>
@@ -825,7 +836,64 @@ function renderOpsAdmin(d: {
   <div class="panel"><h2>Recent calls</h2><table><thead><tr><th>When (UTC)</th><th>Type</th><th>Actor</th><th>Project</th><th class="r">In/Out tok</th><th class="r">Cost</th></tr></thead><tbody>${recRows}</tbody></table>
     <div class="pager">${prev}${next}</div>
   </div>
-</div></body></html>`
+  </div><!-- /tab-ai -->
+  <div id="tab-growth" style="display:none">
+    <div id="growth-loading">Loading growth scorecard...</div>
+    <div id="growth-content" style="display:none">
+      <div class="panel">
+        <h2>Weekly GTM Scorecard — last 8 weeks</h2>
+        <p class="sub" style="margin:-4px 0 14px;font-size:12px">Reach=check_started · Runs=check_completed · Leads=lead_captured · Activ=app_connected/continuous_enabled · Paid=subscription_created · MRR est from plan price · D30=still active after 30d</p>
+        <div id="growth-table" style="overflow-x:auto"></div>
+      </div>
+    </div>
+  </div><!-- /tab-growth -->
+</div>
+<script>
+var _growthLoaded=false;
+function switchTab(t){
+  var ai=document.getElementById('tab-ai'),gr=document.getElementById('tab-growth');
+  ai.style.display=t==='ai'?'':'none';
+  gr.style.display=t==='growth'?'':'none';
+  var btns=document.querySelectorAll('.tab-btn');
+  btns[0].classList.toggle('active',t==='ai');
+  btns[1].classList.toggle('active',t==='growth');
+  if(t==='growth'&&!_growthLoaded){_growthLoaded=true;_loadGrowth();}
+}
+async function _loadGrowth(){
+  try{
+    var r=await fetch('/api/opsadmin/growth');
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    var d=await r.json();
+    _renderGrowth(d);
+  }catch(e){
+    document.getElementById('growth-loading').textContent='Failed to load: '+e;
+  }
+}
+function _renderGrowth(d){
+  var rows=d.weeks||[];
+  if(!rows.length){document.getElementById('growth-loading').textContent='No data yet.';return;}
+  var h='<table><thead><tr><th>Week</th><th class="r">Reach</th><th class="r">Runs</th><th class="r">Compl%</th><th class="r">Leads</th><th class="r">Activ%</th><th class="r">New Paid</th><th class="r">MRR+</th><th class="r">D30 Ret%</th><th>Best Chan</th></tr></thead><tbody>';
+  for(var i=0;i<rows.length;i++){
+    var w=rows[i];
+    h+='<tr><td>'+_e(w.week)+'</td>'
+      +'<td class="r">'+w.reach+'</td>'
+      +'<td class="r">'+w.runs+'</td>'
+      +'<td class="r">'+_e(w.completionPct)+'</td>'
+      +'<td class="r">'+w.leads+'</td>'
+      +'<td class="r">'+_e(w.activationPct)+'</td>'
+      +'<td class="r">'+w.newPaid+'</td>'
+      +'<td class="r">'+(w.mrrUsd>0?'$'+w.mrrUsd:'—')+'</td>'
+      +'<td class="r">'+_e(w.d30RetainedPct)+'</td>'
+      +'<td>'+_e(w.bestChannel)+'</td></tr>';
+  }
+  h+='</tbody></table>';
+  document.getElementById('growth-table').innerHTML=h;
+  document.getElementById('growth-loading').style.display='none';
+  document.getElementById('growth-content').style.display='';
+}
+function _e(s){return String(s||'').replace(/[<>&"]/g,function(c){return{'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]||c;});}
+</script>
+</body></html>`
 }
 async function sessionEmail(req: Request): Promise<string | null> {
   if (!db) return null
@@ -3896,6 +3964,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (!me || !isOpsAdmin(me)) return new Response("Not found", { status: 404 }) // hide route from non-ops
       const days = Math.max(1, Math.min(366, Number(url.searchParams.get("days") || 30) || 30))
       return json(await opsTenantCostSummary(days))
+    }
+    // KLAVITYKLA-332: weekly GTM growth scorecard
+    if (req.method === "GET" && path === "/api/opsadmin/growth") {
+      if (!me || !isOpsAdmin(me)) return new Response("Not found", { status: 404 })
+      return json(await gatherGrowthScorecard(db!))
     }
     if (req.method === "POST" && path === "/opsadmin/model-mix") {
       if (!me || !isOpsAdmin(me)) return new Response("Not found", { status: 404 }) // hide route from non-ops
