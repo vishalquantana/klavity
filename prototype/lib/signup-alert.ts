@@ -14,7 +14,6 @@
 import { createHash } from "node:crypto"
 import { safeFetch } from "./safe-fetch"
 import { ipBlockReason } from "./url-guard"
-import type { SanitizedAttr } from "./attr"
 
 export interface SignupContext {
   email: string
@@ -23,8 +22,6 @@ export interface SignupContext {
   referer?: string
   /** epoch ms of the signup */
   at: number
-  /** KLAVITYKLA-324: sanitized first-touch UTM/referrer attribution, when captured. */
-  attr?: SanitizedAttr
 }
 
 // ── email ─────────────────────────────────────────────────────────────────────
@@ -177,16 +174,6 @@ function field(label: string, value: string) {
   return { type: "mrkdwn", text: `*${label}*\n${value}` }
 }
 
-// KLAVITYKLA-324: "Source: reddit / referral · campaign: launch-day" — the immediate human-visible
-// payoff of attribution capture. "direct" when no first-touch attribution was ever recorded (organic
-// visit, ad blocker stripped the params, or the signup predates this feature).
-export function formatAttrLine(attr?: SanitizedAttr): string {
-  if (!attr || (!attr.source && !attr.medium && !attr.campaign)) return "direct"
-  let line = `${attr.source || "direct"} / ${attr.medium || "none"}`
-  if (attr.campaign) line += ` · campaign: ${attr.campaign}`
-  return line
-}
-
 export function buildSlackPayload(ctx: SignupContext, geo: GeoInfo | null, em: EmailInfo, ua: UaInfo) {
   const locParts = [geo?.city, geo?.regionName, geo?.country].filter(Boolean)
   const location = locParts.length ? `${flagEmoji(geo?.countryCode)} ${locParts.join(", ")}`.trim() : "—"
@@ -209,7 +196,6 @@ export function buildSlackPayload(ctx: SignupContext, geo: GeoInfo | null, em: E
     field("Device", `${ua.browser} · ${ua.os} · ${ua.device}`),
     field("IP", `\`${ctx.ip}\`${geo?.reverse ? ` · ${geo.reverse}` : ""}`),
     field("Source", ctx.referer ? `<${ctx.referer}|${truncate(ctx.referer, 60)}>` : "Direct / unknown"),
-    field("Attribution", formatAttrLine(ctx.attr)),
     field("Signed up", formatIST(ctx.at)),
   ]
   if (em.logoUrl) fields.push(field("Logo", `<${em.logoUrl}|company logo>`))
