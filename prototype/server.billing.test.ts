@@ -3,6 +3,7 @@ import { createClient } from "@libsql/client"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { unlinkSync } from "node:fs"
+import { STRIPE_PRICE_IDS } from "./lib/billing"
 
 const RUN = `${Date.now()}-${Math.random().toString(36).slice(2)}`
 const DB_FILE = join(tmpdir(), `klav-billing-route-${RUN}.db`)
@@ -12,6 +13,12 @@ const ACCOUNT = `acct_billing_${RUN}`
 const PROJECT = `proj_billing_${RUN}`
 const NOW = Date.now()
 const WEBHOOK_SECRET = "whsec_route_test"
+
+// Live Founding Team price ID (KLAVITYKLA-336) — pulled from the real catalog so this test can't
+// silently drift from the price map it's exercising.
+const FOUNDING_PRICE_ID = Object.entries(STRIPE_PRICE_IDS).find(([, v]) => v.plan === "founding")![0]
+const LINK_BUYER_EMAIL = `founding-link-${RUN}@test.local`
+const WALI_BUYER_EMAIL = `wali-buyer-${RUN}@test.local`
 
 function rmDb() {
   for (const suffix of ["", "-wal", "-shm"]) {
@@ -66,6 +73,33 @@ beforeAll(async () => {
           cancel_at_period_end: false,
           metadata: { account_id: ACCOUNT, plan: "team", interval: "year" },
           items: { data: [{ price: { lookup_key: "klavity_team_annual_990", recurring: { interval: "year" } } }] },
+        })
+      }
+      // Hosted Payment-Link purchase (KLAVITYKLA-336): the subscription behind a cold Payment-Link
+      // buy carries NO account_id metadata (unlike our own /api/billing/checkout flow above) — only
+      // the live price ID identifies the plan.
+      if (req.method === "GET" && url.pathname === "/v1/subscriptions/sub_founding_link") {
+        return Response.json({
+          id: "sub_founding_link",
+          customer: "cus_founding_link_buyer",
+          status: "active",
+          current_period_end: 2000000000,
+          cancel_at_period_end: false,
+          metadata: {},
+          items: { data: [{ price: { id: FOUNDING_PRICE_ID, recurring: { interval: "year" } } }] },
+        })
+      }
+      // A same-account Payment Link for an unrelated Stripe product (WALI) — not a Klavity price,
+      // no account_id metadata, no klavity tag. Must be ignored, never entitled.
+      if (req.method === "GET" && url.pathname === "/v1/subscriptions/sub_wali_999") {
+        return Response.json({
+          id: "sub_wali_999",
+          customer: "cus_wali_buyer",
+          status: "active",
+          current_period_end: 2000000000,
+          cancel_at_period_end: false,
+          metadata: {},
+          items: { data: [{ price: { id: "price_wali_unrelated", recurring: { interval: "month" } } }] },
         })
       }
       return Response.json({ error: { message: `unhandled ${req.method} ${url.pathname}` } }, { status: 404 })
@@ -292,4 +326,136 @@ test("past_due Stripe webhook records status but does not grant paid entitlement
   expect(acct.rows[0]).toMatchObject({ plan: "free", billing_status: "past_due" })
   const project = await raw.execute({ sql: "SELECT billing_plan, billing_status FROM projects WHERE id=?", args: [PROJECT] })
   expect(project.rows[0]).toMatchObject({ billing_plan: "free", billing_status: "past_due" })
+})
+
+// ── KLAVITYKLA-336: invoice events ──────────────────────────────────────────────────────────────
+
+test("invoice.paid refreshes billing_status to active and the period end, keeping the current plan", async () => {
+  // Put the account back into an active team subscription (it ended the previous test as
+  // plan=free/past_due) — the account's stripe_subscription_id is still sub_test_123 throughout.
+  await exec("UPDATE accounts SET plan='team', billing_status='past_due', billing_interval='year', stripe_subscription_id='sub_test_123' WHERE id=?", [ACCOUNT])
+
+  const event = {
+    id: "evt_invoice_paid",
+    type: "invoice.paid",
+    data: {
+      object: {
+        id: "in_test_paid",
+        customer: "cus_test_123",
+        subscription: "sub_test_123",
+        lines: { data: [{ period: { end: 1999999999 } }] },
+      },
+    },
+  }
+  const rawBody = JSON.stringify(event)
+  const r = await fetch(`${BASE}/api/billing/webhook`, {
+    method: "POST",
+    headers: { "stripe-signature": await stripeSig(rawBody, WEBHOOK_SECRET), "content-type": "application/json" },
+    body: rawBody,
+  })
+  expect(r.status).toBe(200)
+
+  const acct = await raw.execute({ sql: "SELECT plan, billing_status, billing_current_period_end FROM accounts WHERE id=?", args: [ACCOUNT] })
+  expect(acct.rows[0]).toMatchObject({ plan: "team", billing_status: "active", billing_current_period_end: 1999999999000 })
+})
+
+test("invoice.payment_failed sets billing_status to past_due WITHOUT downgrading the plan", async () => {
+  await exec("UPDATE accounts SET plan='team', billing_status='active', stripe_subscription_id='sub_test_123' WHERE id=?", [ACCOUNT])
+
+  const event = {
+    id: "evt_invoice_failed",
+    type: "invoice.payment_failed",
+    data: {
+      object: {
+        id: "in_test_failed",
+        customer: "cus_test_123",
+        subscription: "sub_test_123",
+      },
+    },
+  }
+  const rawBody = JSON.stringify(event)
+  const r = await fetch(`${BASE}/api/billing/webhook`, {
+    method: "POST",
+    headers: { "stripe-signature": await stripeSig(rawBody, WEBHOOK_SECRET), "content-type": "application/json" },
+    body: rawBody,
+  })
+  expect(r.status).toBe(200)
+
+  const acct = await raw.execute({ sql: "SELECT plan, billing_status FROM accounts WHERE id=?", args: [ACCOUNT] })
+  // Plan must NOT be reset to free — Stripe retries payment_failed invoices; only an eventual
+  // customer.subscription.deleted/updated(status=canceled) should ever downgrade the plan.
+  expect(acct.rows[0]).toMatchObject({ plan: "team", billing_status: "past_due" })
+})
+
+// ── KLAVITYKLA-336: hosted Payment-Link provisioning ────────────────────────────────────────────
+
+test("a klavity Payment-Link checkout.session.completed with NO account_id but a known email provisions and entitles a brand-new account", async () => {
+  const preExisting = await raw.execute({ sql: "SELECT id FROM accounts WHERE owner_email=?", args: [LINK_BUYER_EMAIL] })
+  expect(preExisting.rows.length).toBe(0)
+
+  const event = {
+    id: "evt_founding_link",
+    type: "checkout.session.completed",
+    data: {
+      object: {
+        id: "cs_founding_link",
+        subscription: "sub_founding_link",
+        customer: "cus_founding_link_buyer",
+        // NO account_id / client_reference_id — this is what a hosted Payment Link session looks like.
+        customer_details: { email: LINK_BUYER_EMAIL },
+        metadata: {},
+      },
+    },
+  }
+  const rawBody = JSON.stringify(event)
+  const r = await fetch(`${BASE}/api/billing/webhook`, {
+    method: "POST",
+    headers: { "stripe-signature": await stripeSig(rawBody, WEBHOOK_SECRET), "content-type": "application/json" },
+    body: rawBody,
+  })
+  expect(r.status).toBe(200)
+
+  const acct = await raw.execute({ sql: "SELECT id, plan, billing_status, billing_interval, stripe_customer_id, stripe_subscription_id FROM accounts WHERE owner_email=?", args: [LINK_BUYER_EMAIL] })
+  expect(acct.rows.length).toBe(1)
+  expect(acct.rows[0]).toMatchObject({
+    plan: "founding",
+    billing_status: "active",
+    billing_interval: "year",
+    stripe_customer_id: "cus_founding_link_buyer",
+    stripe_subscription_id: "sub_founding_link",
+  })
+
+  // A default project must exist too (ensureAccount's normal side effect) — a cold Payment-Link
+  // buyer lands on a working dashboard, not an empty account with no project.
+  const newAccountId = String((acct.rows[0] as any).id)
+  const projects = await raw.execute({ sql: "SELECT id FROM projects WHERE account_id=?", args: [newAccountId] })
+  expect(projects.rows.length).toBeGreaterThan(0)
+})
+
+test("a non-klavity checkout.session.completed (no account_id, unmappable price) is ignored: 200, no throw, no account created", async () => {
+  const event = {
+    id: "evt_wali_session",
+    type: "checkout.session.completed",
+    data: {
+      object: {
+        id: "cs_wali_other_product",
+        subscription: "sub_wali_999",
+        customer: "cus_wali_buyer",
+        customer_details: { email: WALI_BUYER_EMAIL },
+        metadata: {},
+      },
+    },
+  }
+  const rawBody = JSON.stringify(event)
+  const r = await fetch(`${BASE}/api/billing/webhook`, {
+    method: "POST",
+    headers: { "stripe-signature": await stripeSig(rawBody, WEBHOOK_SECRET), "content-type": "application/json" },
+    body: rawBody,
+  })
+  // Must 200 (not throw/500) so Stripe never hammers retries on a session we can't/shouldn't map.
+  expect(r.status).toBe(200)
+  expect(await r.json()).toMatchObject({ received: true })
+
+  const acct = await raw.execute({ sql: "SELECT id FROM accounts WHERE owner_email=?", args: [WALI_BUYER_EMAIL] })
+  expect(acct.rows.length).toBe(0)
 })
