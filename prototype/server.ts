@@ -1384,8 +1384,24 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const raw = await req.text()
         if (raw.length > BILLING_WEBHOOK_MAX_BYTES) return json({ error: "payload too large" }, 413)
         const event = await verifyStripeWebhook(raw, req.headers.get("stripe-signature"))
-        if (event.type === "checkout.session.completed") await applyStripeCheckoutSession(event.data?.object)
-        else if (event.type === "customer.subscription.created" || event.type === "customer.subscription.updated") {
+        if (event.type === "checkout.session.completed") {
+          const sess = event.data?.object
+          await applyStripeCheckoutSession(sess)
+          const acctId = sess?.metadata?.account_id || sess?.client_reference_id
+          if (acctId) {
+            const subEmail = sess?.customer_details?.email ? String(sess.customer_details.email) : undefined
+            void trackFunnel(db!, {
+              event: "subscription_created",
+              email: subEmail,
+              accountId: String(acctId),
+              props: {
+                plan: sess?.metadata?.plan ?? undefined,
+                interval: sess?.metadata?.interval ?? undefined,
+                stripeSessionId: sess?.id ? String(sess.id) : undefined,
+              },
+            })
+          }
+        } else if (event.type === "customer.subscription.created" || event.type === "customer.subscription.updated") {
           await applyStripeSubscriptionState(event.data?.object)
         } else if (event.type === "customer.subscription.deleted") {
           const sub = event.data?.object
@@ -1399,6 +1415,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               billingInterval: null,
               billingCurrentPeriodEnd: sub?.current_period_end ? Number(sub.current_period_end) * 1000 : null,
               billingCancelAtPeriodEnd: false,
+            })
+            void trackFunnel(db!, {
+              event: "subscription_canceled",
+              accountId,
+              props: {
+                plan: sub?.metadata?.plan ?? undefined,
+                stripeSubscriptionId: sub?.id ? String(sub.id) : undefined,
+              },
             })
           }
         }
@@ -5297,6 +5321,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             billingCancelAtPeriodEnd: billing.billingCancelAtPeriodEnd,
           })
         }
+        void trackFunnel(db!, { event: "checkout_started", email: me, accountId: active.workspaceId, props: { plan, interval } })
         return json({ ok: true, url: session.url, sessionId: session.id })
       }
 
