@@ -4,12 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<!-- PostHog (injected by htmlPage via __POSTHOG_KEY__; no-op when the key is unset) -->
-<script>!function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.people.toString()+" (stub)"},o="capture identify alias people.set people.set_once set_config register register_once unregister opt_out_capturing has_opted_out_capturing opt_in_capturing reset isFeatureEnabled onFeatureFlags getFeatureFlag getFeatureFlagPayload reloadFeatureFlags group updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures getActiveMatchingSurveys getSurveys onSessionId".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);posthog.init("__POSTHOG_KEY__",{api_host:"https://us.i.posthog.com",person_profiles:"identified_only"})</script>
-
 <!-- SEO -->
-<title>Free CRO audit — send an AI customer to your site · Klavity</title>
-<meta name="description" content="Paste your URL and a Klavity Sim — an AI first-time visitor — tries to convert on your site, then tells you exactly why it didn't. A free, one-time conversion-rate (CRO) audit.">
+<title>Free CRO Vibe Check — Find What's Killing Your Conversions · Klavity</title>
+<meta name="description" content="Paste your landing page URL and get an instant AI-powered CRO audit. Free, no login required. Find friction that's costing you conversions in seconds.">
 <link rel="canonical" href="https://klavity.in/cro">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/favicon.ico" sizes="any">
@@ -18,351 +15,315 @@
 <!-- Open Graph -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Klavity">
-<meta property="og:title" content="Why isn't your site converting? Ask an AI customer.">
-<meta property="og:description" content="A Klavity Sim visits your site like a real first-time buyer and tells you exactly where it lost them. Free, instant CRO audit.">
+<meta property="og:title" content="Free CRO Vibe Check — Find What's Killing Your Conversions">
+<meta property="og:description" content="Paste your URL. Get an instant AI-powered CRO audit, free. No login.">
 <meta property="og:url" content="https://klavity.in/cro">
 <meta property="og:image" content="https://klavity.in/favicon.svg">
 <!-- Twitter -->
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Why isn't your site converting? Ask an AI customer.">
-<meta name="twitter:description" content="A Klavity Sim visits your site like a real first-time buyer and tells you exactly where it lost them.">
+<meta name="twitter:title" content="Free CRO Vibe Check — Find Conversion Friction">
+<meta name="twitter:description" content="Paste your landing page URL, get an instant AI CRO audit. Free.">
 <meta name="twitter:image" content="https://klavity.in/favicon.svg">
 
-<!-- Fonts + shared kit -->
+<!-- Fonts -->
 <link rel="stylesheet" href="/fonts/fonts.css" />
+<!-- Shared kit -->
 <link rel="stylesheet" href="/kit.css">
+<script src="/kit.js" defer></script>
 
-<!-- JSON-LD: the free tool -->
+<!-- JSON-LD -->
 <script type="application/ld+json">
-{"@context":"https://schema.org","@graph":[
-{"@type":"WebApplication","name":"Klavity CRO Sim","applicationCategory":"BusinessApplication","operatingSystem":"Web","url":"https://klavity.in/cro","description":"A free tool that sends an AI first-time visitor (a Klavity Sim) to your website and reports the conversion frictions that stop real customers from signing up or buying.","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}},
-{"@type":"FAQPage","mainEntity":[
-{"@type":"Question","name":"What does the CRO Sim do?","acceptedAnswer":{"@type":"Answer","text":"It sends an AI persona to your page that behaves like a real first-time visitor trying to convert, then reports the ranked frictions that would stop them - grounded in what your page actually says."}},
-{"@type":"Question","name":"Is it free?","acceptedAnswer":{"@type":"Answer","text":"Yes. The one-time analysis is free. Enter your email to unlock the full friction list and the single highest-impact fix."}},
-{"@type":"Question","name":"How is this different from a page-speed or SEO grader?","acceptedAnswer":{"@type":"Answer","text":"It is not a checklist bot. A named Sim narrates a real conversion attempt and quotes your page, so you see WHY a human bounces - not just a score."}}
-]}
-]}
+{"@context":"https://schema.org","@type":"WebApplication","name":"Klavity CRO Vibe Check","applicationCategory":"BusinessApplication","operatingSystem":"Web","url":"https://klavity.in/cro","description":"Free AI-powered CRO audit tool. Paste your landing page URL and instantly discover friction points killing your conversions.","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}
 </script>
 
 <style>
-/* This page is its own front door — Sims/rose identity, with amber accents for friction severity. */
-.cro-top{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--ink) 88%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
-.cro-top .wrap{display:flex;align-items:center;justify-content:space-between;height:58px}
-.cro-brand{display:inline-flex;align-items:center;gap:9px;font-family:var(--display);font-weight:600;font-size:19px;letter-spacing:-.01em}
-.cro-brand .dot{width:11px;height:11px;border-radius:99px;background:var(--accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 18%,transparent)}
-.cro-brand small{font-family:var(--body);font-weight:600;font-size:11px;color:var(--paper-faint);letter-spacing:.02em}
-
-.hero{padding:64px 0 30px;text-align:center}
-.hero .eyebrow{justify-content:center;margin:0 auto 18px}
-.hero h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,58px);line-height:1.04;letter-spacing:-.02em;max-width:16ch;margin:0 auto}
-.hero h1 em{font-style:normal;color:var(--accent-text)}
-.hero .sub{max-width:52ch;margin:20px auto 0;font-size:clamp(16px,2.3vw,20px);color:var(--paper-dim)}
-
-.form{max-width:600px;margin:34px auto 0;display:flex;gap:10px}
-@media(max-width:560px){.form{flex-direction:column}}
-.form input[type=url]{flex:1;font-family:var(--body);font-size:16px;padding:15px 18px;border-radius:14px;border:1px solid var(--line);background:var(--ink-2);color:var(--paper);transition:border-color 150ms ease,box-shadow 150ms ease}
-.form input[type=url]:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 15%,transparent)}
-.form .btn{padding:15px 26px;font-size:15px}
-.hint{margin:12px auto 0;font-size:12.5px;color:var(--paper-faint)}
-.err{max-width:600px;margin:14px auto 0;color:var(--red-text);font-size:14px;text-align:center;min-height:1px}
-
-.trust{display:flex;flex-wrap:wrap;gap:8px 16px;justify-content:center;margin:26px auto 0;font-size:12.5px;color:var(--paper-faint)}
-.trust span{display:inline-flex;align-items:center;gap:6px}
-
-.result{max-width:760px;margin:14px auto 0;padding:0 0 60px}
-.hidden{display:none !important}
-
-/* thinking / progress */
-.thinking{max-width:600px;margin:30px auto 0;text-align:center;color:var(--paper-dim);font-size:15px}
-.thinking .bar{height:3px;border-radius:99px;background:var(--line-2);overflow:hidden;margin:14px auto 0;max-width:340px}
-.thinking .bar i{display:block;height:100%;width:40%;background:var(--accent);border-radius:99px;animation:slide 1.4s var(--ease) infinite}
-@keyframes slide{0%{margin-left:-40%}100%{margin-left:100%}}
-@media(prefers-reduced-motion:reduce){.thinking .bar i{animation:none;width:100%;margin-left:0}}
-
-/* persona card */
-.persona{display:flex;gap:16px;align-items:flex-start;padding:22px;border-radius:18px;background:var(--ink-2);border:1px solid var(--line);box-shadow:0 8px 26px rgba(25,20,15,.05)}
-.avatar{flex:0 0 auto;width:54px;height:54px;border-radius:16px;display:grid;place-items:center;font-family:var(--display);font-weight:600;font-size:21px;color:#fff}
-.persona h2{font-family:var(--display);font-size:22px;font-weight:600;line-height:1.15}
-.persona .role{font-size:13px;color:var(--paper-faint);margin-top:2px}
-.persona .oneliner{margin-top:10px;font-size:15px;color:var(--paper-dim);font-style:italic}
-
-.verdict{margin-top:18px;padding:20px 22px;border-radius:16px;background:color-mix(in srgb,var(--accent) 7%,var(--ink-2));border:1px solid color-mix(in srgb,var(--accent) 22%,var(--line))}
-.verdict .lbl{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent-text);font-weight:600}
-.verdict p{margin-top:8px;font-size:16.5px;line-height:1.55}
-
-.frictions{margin-top:14px;display:flex;flex-direction:column;gap:12px}
-.friction{padding:18px 20px;border-radius:14px;background:var(--ink-2);border:1px solid var(--line);border-left:4px solid var(--sev);opacity:0;transform:translateY(8px);animation:rise .45s var(--ease) forwards}
-@keyframes rise{to{opacity:1;transform:none}}
-@media(prefers-reduced-motion:reduce){.friction{animation:none;opacity:1;transform:none}}
-.friction .head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.friction .sev{font-family:var(--mono);font-size:9px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border-radius:6px;color:#fff;background:var(--sev)}
-.friction h3{font-family:var(--display);font-size:17px;font-weight:600}
-.friction .where{font-size:12px;color:var(--paper-faint);font-family:var(--mono)}
-.friction .quote{margin-top:11px;padding-left:12px;border-left:2px solid var(--line);font-style:italic;color:var(--paper-dim);font-size:14.5px}
-.friction .why{margin-top:10px;font-size:14.5px;line-height:1.55}
-.friction .fix{margin-top:10px;font-size:14px;padding:10px 12px;border-radius:10px;background:color-mix(in srgb,var(--green) 8%,var(--ink-3));border:1px solid color-mix(in srgb,var(--green) 20%,transparent)}
-.friction .fix b{color:var(--green-text)}
-
-/* email gate */
-.gate{margin-top:16px;padding:26px 24px;border-radius:18px;text-align:center;background:linear-gradient(180deg,var(--ink-2),color-mix(in srgb,var(--accent) 6%,var(--ink-2)));border:1px solid color-mix(in srgb,var(--accent) 26%,var(--line));position:relative;overflow:hidden}
-.gate::before{content:"";position:absolute;inset:-40px 0 auto 0;height:80px;background:linear-gradient(180deg,var(--ink),transparent);pointer-events:none}
-.gate .lock{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;margin:0 auto 12px;background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent-text)}
-.gate h3{font-family:var(--display);font-size:22px;font-weight:600}
-.gate p{max-width:44ch;margin:8px auto 0;color:var(--paper-dim);font-size:15px}
-.gate .form{margin-top:20px;max-width:460px}
-.gate input[type=email]{flex:1;font-family:var(--body);font-size:15px;padding:14px 16px;border-radius:12px;border:1px solid var(--line);background:var(--ink-2);color:var(--paper)}
-.gate input[type=email]:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 15%,transparent)}
-.gate .fine{margin-top:12px;font-size:11.5px;color:var(--paper-faint)}
-
-/* one fix + CTA */
-.onefix{margin-top:16px;padding:24px;border-radius:18px;background:var(--paper);color:var(--ink);border:1px solid var(--paper)}
-.onefix .lbl{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:color-mix(in srgb,var(--ink) 65%,transparent);font-weight:600}
-.onefix p{margin-top:8px;font-size:18px;line-height:1.5;font-family:var(--display)}
-
-.cta{margin-top:16px;padding:30px 26px;text-align:center;border-radius:18px;background:color-mix(in srgb,var(--accent) 9%,var(--ink-2));border:1px solid color-mix(in srgb,var(--accent) 24%,var(--line))}
-.cta h3{font-family:var(--display);font-size:23px;font-weight:600;max-width:26ch;margin:0 auto}
-.cta p{max-width:50ch;margin:10px auto 0;color:var(--paper-dim);font-size:15px}
-.cta .btn{margin-top:18px;padding:14px 28px;font-size:15px}
-
-.footer .wrap{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;font-size:13px}
-.footer a{text-decoration:underline;text-underline-offset:3px}
+:root{--accent:#7c3aed;--accent-light:#ede9fe;--accent-dark:#5b21b6}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-sans,'Inter',system-ui,sans-serif);background:#f9fafb;color:#111827;min-height:100vh}
+.hero{background:linear-gradient(135deg,#1e1b4b 0%,#312e81 50%,#4c1d95 100%);color:#fff;padding:4rem 1.5rem 3rem;text-align:center}
+.hero h1{font-size:clamp(1.8rem,5vw,3rem);font-weight:800;letter-spacing:-0.02em;margin-bottom:1rem;line-height:1.1}
+.hero p{font-size:1.125rem;opacity:.85;max-width:540px;margin:0 auto 2.5rem}
+.badge{display:inline-block;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);border-radius:999px;padding:.25rem .85rem;font-size:.8rem;font-weight:600;letter-spacing:.05em;text-transform:uppercase;margin-bottom:1.25rem}
+.tool-card{background:#fff;border-radius:1.25rem;box-shadow:0 4px 32px rgba(0,0,0,.08);max-width:640px;margin:-1.5rem auto 0;padding:2rem;position:relative;z-index:1}
+.form-row{display:flex;gap:.75rem;flex-wrap:wrap}
+.url-input{flex:1;min-width:0;border:1.5px solid #d1d5db;border-radius:.6rem;padding:.75rem 1rem;font-size:1rem;outline:none;transition:border .15s}
+.url-input:focus{border-color:var(--accent)}
+.url-input::placeholder{color:#9ca3af}
+.btn-analyze{background:var(--accent);color:#fff;border:none;border-radius:.6rem;padding:.75rem 1.5rem;font-size:1rem;font-weight:700;cursor:pointer;white-space:nowrap;transition:background .15s,transform .1s;flex-shrink:0}
+.btn-analyze:hover{background:var(--accent-dark)}
+.btn-analyze:active{transform:scale(.97)}
+.btn-analyze:disabled{background:#9ca3af;cursor:not-allowed;transform:none}
+.spinner{display:none;width:1.2rem;height:1.2rem;border:3px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:.5rem}
+@keyframes spin{to{transform:rotate(360deg)}}
+#status{margin-top:1rem;font-size:.9rem;color:#6b7280;min-height:1.25rem}
+.results{display:none;margin-top:2rem}
+.results-header{font-size:1.1rem;font-weight:700;margin-bottom:1rem;color:#111827}
+.friction-list{list-style:none;display:flex;flex-direction:column;gap:.75rem}
+.friction-item{border:1px solid #e5e7eb;border-radius:.75rem;padding:1rem 1.125rem;border-left:4px solid #d1d5db}
+.friction-item.high{border-left-color:#ef4444}
+.friction-item.medium{border-left-color:#f59e0b}
+.friction-item.low{border-left-color:#10b981}
+.friction-title{font-weight:700;font-size:.95rem;margin-bottom:.25rem;display:flex;align-items:center;gap:.5rem}
+.severity-chip{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:.15rem .5rem;border-radius:999px}
+.severity-chip.high{background:#fee2e2;color:#dc2626}
+.severity-chip.medium{background:#fef3c7;color:#b45309}
+.severity-chip.low{background:#d1fae5;color:#047857}
+.friction-fix{font-size:.88rem;color:#374151;margin-top:.25rem}
+.gate{display:none;background:#f5f3ff;border:1.5px solid #ddd6fe;border-radius:.75rem;padding:1.5rem;margin-top:1.5rem;text-align:center}
+.gate h3{font-size:1rem;font-weight:700;margin-bottom:.5rem;color:#4c1d95}
+.gate p{font-size:.9rem;color:#6b7280;margin-bottom:1rem}
+.gate-row{display:flex;gap:.5rem;flex-wrap:wrap}
+.email-input{flex:1;min-width:0;border:1.5px solid #d1d5db;border-radius:.6rem;padding:.65rem .9rem;font-size:.95rem;outline:none;transition:border .15s}
+.email-input:focus{border-color:var(--accent)}
+.btn-unlock{background:var(--accent);color:#fff;border:none;border-radius:.6rem;padding:.65rem 1.25rem;font-weight:700;cursor:pointer;font-size:.95rem;transition:background .15s,transform .1s;flex-shrink:0}
+.btn-unlock:hover{background:var(--accent-dark)}
+.btn-unlock:active{transform:scale(.97)}
+.btn-unlock:disabled{background:#9ca3af;cursor:not-allowed;transform:none}
+#unlock-status{margin-top:.5rem;font-size:.85rem;color:#6b7280}
+.cta-section{background:#fff;border-radius:1rem;border:1.5px solid #ede9fe;padding:1.5rem;margin-top:1.5rem;text-align:center}
+.cta-section h4{font-weight:700;font-size:1rem;margin-bottom:.4rem}
+.cta-section p{font-size:.88rem;color:#6b7280;margin-bottom:1rem}
+.btn-cta{display:inline-block;background:var(--accent);color:#fff;border-radius:.6rem;padding:.6rem 1.25rem;font-weight:700;font-size:.9rem;text-decoration:none;transition:background .15s,transform .1s}
+.btn-cta:hover{background:var(--accent-dark)}
+.trust{display:flex;justify-content:center;gap:1.5rem;flex-wrap:wrap;margin-top:2.5rem;padding-top:2.5rem;border-top:1px solid #e5e7eb}
+.trust-item{display:flex;align-items:center;gap:.4rem;font-size:.85rem;color:#6b7280}
+.faq{max-width:640px;margin:3rem auto;padding:0 1.5rem 3rem}
+.faq h2{font-size:1.4rem;font-weight:800;margin-bottom:1.5rem;color:#111827}
+.faq-item{border-bottom:1px solid #e5e7eb;padding:1rem 0}
+.faq-item summary{font-weight:600;cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center}
+.faq-item summary::after{content:'+';font-size:1.2rem;color:#9ca3af}
+.faq-item[open] summary::after{content:'−'}
+.faq-item p{padding-top:.75rem;font-size:.9rem;color:#4b5563;line-height:1.6}
+.error-msg{background:#fee2e2;border:1px solid #fecaca;border-radius:.5rem;padding:.75rem 1rem;font-size:.9rem;color:#dc2626;margin-top:.75rem;display:none}
+@media(max-width:500px){.form-row,.gate-row{flex-direction:column}.btn-analyze,.btn-unlock{width:100%}}
 </style>
 </head>
-<body style="--accent:var(--rose);--accent-text:var(--rose-text)">
-<a class="skip-link" href="#main">Skip to content</a>
+<body>
 
-<header class="cro-top">
-  <div class="wrap">
-    <a class="cro-brand" href="/"><span class="dot"></span>Klavity <small>· CRO Sim</small></a>
-    <a class="btn btn-ghost" href="/pricing">Pricing</a>
-  </div>
-</header>
+<div class="hero">
+  <div class="badge">Free CRO Audit Tool</div>
+  <h1>What's killing your conversions?</h1>
+  <p>Paste any landing page URL. Get an AI-powered friction audit in seconds — free, no login required.</p>
 
-<main id="main">
-  <section class="hero wrap">
-    <span class="eyebrow tag">Free · one-time · no signup to run</span>
-    <h1>Why isn't your site <em>converting?</em> Ask an AI&nbsp;customer.</h1>
-    <p class="sub">Paste your URL. A Klavity <b>Sim</b> — an AI first-time visitor — tries to convert on your page, then tells you exactly where it lost them.</p>
-
-    <form class="form" id="analyzeForm" novalidate>
-      <input type="url" id="url" name="url" placeholder="yourwebsite.com" autocomplete="url" required aria-label="Website URL">
-      <button class="btn btn-primary" type="submit" id="runBtn">Send the Sim</button>
+  <div class="tool-card">
+    <form id="cro-form">
+      <div class="form-row">
+        <input type="url" id="site-url" class="url-input" placeholder="https://yoursite.com/pricing" autocomplete="url" required>
+        <button type="submit" id="analyze-btn" class="btn-analyze">
+          <span class="spinner" id="spinner"></span>
+          <span id="btn-label">Analyse free</span>
+        </button>
+      </div>
+      <div class="error-msg" id="error-msg"></div>
+      <div id="status"></div>
     </form>
-    <div class="hint">Works on any public page — landing page, pricing, homepage.</div>
-    <div class="err" id="analyzeErr" role="alert"></div>
+
+    <div class="results" id="results">
+      <div class="results-header" id="results-header"></div>
+      <ul class="friction-list" id="friction-list"></ul>
+
+      <div class="gate" id="gate">
+        <h3>Get your full report by email</h3>
+        <p>Enter your work email to unlock all fixes and a shareable link.</p>
+        <div class="gate-row">
+          <input type="email" id="email-input" class="email-input" placeholder="you@company.com" autocomplete="email">
+          <button id="unlock-btn" class="btn-unlock">Unlock report</button>
+        </div>
+        <div id="unlock-status"></div>
+      </div>
+
+      <div class="cta-section" id="cta-section" style="display:none">
+        <h4>Keep friction away permanently</h4>
+        <p>Klavity's Sims analyse your product continuously — catching issues before your customers do.</p>
+        <a href="/onboarding" class="btn-cta">Start free — no credit card</a>
+      </div>
+    </div>
 
     <div class="trust">
-      <span>Grounded in your real page copy</span>
-      <span>Ranked by conversion impact</span>
-      <span>Results in ~15 seconds</span>
+      <div class="trust-item">✓ Free, no login</div>
+      <div class="trust-item">✓ AI-powered analysis</div>
+      <div class="trust-item">✓ Results in &lt;30 seconds</div>
     </div>
-  </section>
-
-  <div class="thinking hidden" id="thinking" aria-live="polite">
-    <div id="thinkingText">The Sim is landing on your page and trying to convert…</div>
-    <div class="bar"><i></i></div>
   </div>
+</div>
 
-  <section class="result hidden" id="result" aria-live="polite"></section>
-</main>
+<section class="faq">
+  <h2>Frequently asked questions</h2>
 
-<footer class="footer">
-  <div class="wrap">
-    <span>Powered by <a href="/">Klavity</a> — AI customers that catch what breaks conversion, continuously.</span>
-    <span><a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></span>
-  </div>
-</footer>
+  <details class="faq-item">
+    <summary>What does the CRO Vibe Check analyse?</summary>
+    <p>It fetches your page's public HTML and uses an AI model to identify friction points that reduce conversion — unclear CTAs, missing social proof, confusing copy, flow friction, and more. It surfaces up to 8 issues ranked by severity.</p>
+  </details>
 
-<script src="/icons.generated.js"></script>
+  <details class="faq-item">
+    <summary>Is my page content stored?</summary>
+    <p>No. The page text is fetched once, passed to the AI for analysis, and discarded. We only store your email (if you unlock) and the funnel event so we can follow up. See our <a href="/privacy">privacy policy</a>.</p>
+  </details>
+
+  <details class="faq-item">
+    <summary>What's the difference between this and Klavity?</summary>
+    <p>This tool gives you a one-off snapshot. Klavity runs your Sims — AI personas based on your real customers — continuously against every page, surfacing regressions and recurring friction the moment they appear.</p>
+  </details>
+
+  <details class="faq-item">
+    <summary>Does it work on password-protected or SPAs?</summary>
+    <p>It analyses the publicly-served HTML. For password-protected pages or heavy SPAs that render client-side, the result may be partial. Klavity's AutoSims drive a real browser and can log in.</p>
+  </details>
+</section>
+
 <script>
 (function () {
-  "use strict";
-  var SEV = {
-    critical: { color: "var(--red)", label: "Critical" },
-    high:     { color: "var(--amber)", label: "High" },
-    medium:   { color: "var(--indigo)", label: "Medium" },
-    low:      { color: "var(--green)", label: "Low" }
-  };
+  const BASE = ""
+  // Stable anon ID for this browser session (used to stitch funnel rows together)
+  let anonId = sessionStorage.getItem("klav_anon") || ("anon_" + crypto.randomUUID())
+  sessionStorage.setItem("klav_anon", anonId)
 
-  var $ = function (id) { return document.getElementById(id); };
-  var form = $("analyzeForm"), urlInput = $("url"), runBtn = $("runBtn");
-  var errEl = $("analyzeErr"), thinking = $("thinking"), result = $("result");
-  var current = null; // { reportId }
+  // UTM / source capture
+  const params = new URLSearchParams(location.search)
+  const source = params.get("utm_source") || document.referrer || "direct"
+  const referrer = document.referrer || ""
 
-  // Build a DOM node with text/attrs/children. All dynamic text goes through textContent — never
-  // innerHTML — so a hostile page's copy quoted back into the report can't inject markup.
-  function el(tag, opts, kids) {
-    var n = document.createElement(tag);
-    opts = opts || {};
-    if (opts.cls) n.className = opts.cls;
-    if (opts.text != null) n.textContent = opts.text;
-    if (opts.attrs) for (var k in opts.attrs) n.setAttribute(k, opts.attrs[k]);
-    if (opts.style) n.setAttribute("style", opts.style);
-    (kids || []).forEach(function (c) { if (c) n.appendChild(c); });
-    return n;
-  }
+  const form = document.getElementById("cro-form")
+  const urlInput = document.getElementById("site-url")
+  const analyzeBtn = document.getElementById("analyze-btn")
+  const btnLabel = document.getElementById("btn-label")
+  const spinner = document.getElementById("spinner")
+  const statusEl = document.getElementById("status")
+  const errorMsg = document.getElementById("error-msg")
+  const resultsEl = document.getElementById("results")
+  const resultsHeader = document.getElementById("results-header")
+  const frictionList = document.getElementById("friction-list")
+  const gate = document.getElementById("gate")
+  const emailInput = document.getElementById("email-input")
+  const unlockBtn = document.getElementById("unlock-btn")
+  const unlockStatus = document.getElementById("unlock-status")
+  const ctaSection = document.getElementById("cta-section")
 
-  function sevInfo(s) { return SEV[s] || SEV.medium; }
-
-  function frictionNode(f, i) {
-    var info = sevInfo(f.severity);
-    var head = el("div", { cls: "head" }, [
-      el("span", { cls: "sev", text: info.label }),
-      el("h3", { text: f.title || "Friction" }),
-      f.where ? el("span", { cls: "where", text: f.where }) : null
-    ]);
-    var kids = [head];
-    if (f.quote) kids.push(el("div", { cls: "quote", text: '“' + f.quote + '”' }));
-    if (f.why) kids.push(el("div", { cls: "why", text: f.why }));
-    if (f.fix) {
-      var fix = el("div", { cls: "fix" }, [el("b", { text: "Fix: " })]);
-      fix.appendChild(document.createTextNode(f.fix));
-      kids.push(fix);
-    }
-    return el("div", {
-      cls: "friction",
-      style: "--sev:" + info.color + ";animation-delay:" + (i * 70) + "ms"
-    }, kids);
-  }
-
-  function personaNode(p) {
-    var avatar = el("div", { cls: "avatar", text: p.initials || "SM", style: "background:" + (p.accent || "var(--accent)") });
-    var body = el("div", {}, [
-      el("h2", { text: p.name || "A first-time visitor" }),
-      el("div", { cls: "role", text: p.role || "First-time visitor" }),
-      p.oneLiner ? el("div", { cls: "oneliner", text: '“' + p.oneLiner + '”' }) : null
-    ]);
-    return el("div", { cls: "persona" }, [avatar, body]);
-  }
-
-  function verdictNode(v) {
-    return el("div", { cls: "verdict" }, [
-      el("div", { cls: "lbl", text: "The Sim's verdict" }),
-      el("p", { text: v })
-    ]);
-  }
-
-  function gateNode(hiddenCount) {
-    var lock = el("div", { cls: "lock" });
-    if (window.kicon) lock.innerHTML = window.kicon("lock", 20); else lock.textContent = "🔒";
-    var f = el("form", { cls: "form", attrs: { id: "gateForm", novalidate: "" } }, [
-      el("input", { attrs: { type: "email", id: "email", placeholder: "you@company.com", required: "", "aria-label": "Your email" } }),
-      el("button", { cls: "btn btn-primary", attrs: { type: "submit", id: "unlockBtn" }, text: "Show the full report" })
-    ]);
-    var moreLabel = hiddenCount > 0
-      ? ("See the " + hiddenCount + " more friction" + (hiddenCount === 1 ? "" : "s") + " + the one fix that matters most")
-      : "See the one fix that matters most";
-    var wrap = el("div", { cls: "gate" }, [
-      lock,
-      el("h3", { text: "Unlock the full CRO report" }),
-      el("p", { text: moreLabel + ". Free — just tell us where to send it." }),
-      f,
-      el("div", { cls: "fine", text: "We'll email you the report. No spam." }),
-      el("div", { cls: "err", attrs: { id: "gateErr", role: "alert" } })
-    ]);
-    return wrap;
-  }
-
-  function ctaNode() {
-    return el("div", { cls: "cta" }, [
-      el("h3", { text: "That was one Sim, one time. Your real customers hit this every day." }),
-      el("p", { text: "And every time you ship, a fixed problem can quietly come back. Klavity runs these Sims continuously and flags the moment your conversion breaks — before it costs you." }),
-      el("a", { cls: "btn btn-primary", attrs: { href: "/onboarding?ref=cro" }, text: "Run this continuously — free" })
-    ]);
-  }
+  let analysedUrl = ""
 
   function setLoading(on) {
-    runBtn.disabled = on;
-    runBtn.textContent = on ? "Analyzing…" : "Send the Sim";
-    thinking.classList.toggle("hidden", !on);
+    analyzeBtn.disabled = on
+    spinner.style.display = on ? "inline-block" : "none"
+    btnLabel.textContent = on ? "Analysing…" : "Analyse free"
+    statusEl.textContent = on ? "Fetching and analysing your page…" : ""
+    errorMsg.style.display = "none"
   }
 
-  function showErr(msg) { errEl.textContent = msg || ""; }
+  function showError(msg) {
+    errorMsg.textContent = msg
+    errorMsg.style.display = "block"
+    statusEl.textContent = ""
+  }
 
-  form.addEventListener("submit", function (e) {
-    e.preventDefault();
-    showErr("");
-    var url = (urlInput.value || "").trim();
-    if (!url) { showErr("Enter a website URL."); return; }
-    result.classList.add("hidden");
-    result.textContent = "";
-    setLoading(true);
-    fetch("/api/cro/analyze", {
+  function severityLabel(s) {
+    return { high: "High", medium: "Medium", low: "Low" }[s] || s
+  }
+
+  form.addEventListener("submit", async function (e) {
+    e.preventDefault()
+    const rawUrl = urlInput.value.trim()
+    if (!rawUrl) return
+
+    setLoading(true)
+    resultsEl.style.display = "none"
+    frictionList.innerHTML = ""
+
+    // Fire check_started funnel event
+    void fetch(BASE + "/api/track", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ url: url })
-    }).then(function (r) {
-      return r.json().then(function (d) { return { ok: r.ok, d: d }; });
-    }).then(function (res) {
-      setLoading(false);
-      if (!res.ok) { showErr(res.d && res.d.error ? res.d.error : "Something went wrong. Try again."); return; }
-      current = { reportId: res.d.reportId };
-      renderPreview(res.d);
-    }).catch(function () {
-      setLoading(false);
-      showErr("Network error. Please try again.");
-    });
-  });
+      body: JSON.stringify({ event: "check_started", anonId, url: rawUrl, source, referrer }),
+    }).catch(() => {})
 
-  function renderPreview(d) {
-    result.textContent = "";
-    result.appendChild(personaNode(d.persona || {}));
-    if (d.verdict) result.appendChild(verdictNode(d.verdict));
-    var list = el("div", { cls: "frictions" });
-    (d.frictionsShown || []).forEach(function (f, i) { list.appendChild(frictionNode(f, i)); });
-    result.appendChild(list);
-    result.appendChild(gateNode(d.hiddenCount || 0));
-    result.classList.remove("hidden");
-    result.scrollIntoView({ behavior: "smooth", block: "start" });
-    wireGate();
-  }
-
-  function wireGate() {
-    var gform = $("gateForm");
-    if (!gform) return;
-    gform.addEventListener("submit", function (e) {
-      e.preventDefault();
-      var gerr = $("gateErr"), btn = $("unlockBtn"), email = ($("email").value || "").trim();
-      if (gerr) gerr.textContent = "";
-      if (!email || email.indexOf("@") < 0) { if (gerr) gerr.textContent = "Enter a valid email."; return; }
-      btn.disabled = true; btn.textContent = "Unlocking…";
-      fetch("/api/cro/unlock", {
+    try {
+      const res = await fetch(BASE + "/api/cro/analyze", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ reportId: current.reportId, email: email })
-      }).then(function (r) {
-        return r.json().then(function (d) { return { ok: r.ok, d: d }; });
-      }).then(function (res) {
-        if (!res.ok) {
-          btn.disabled = false; btn.textContent = "Show the full report";
-          if (gerr) gerr.textContent = res.d && res.d.error ? res.d.error : "Couldn't unlock. Try again.";
-          return;
-        }
-        renderFull(res.d);
-      }).catch(function () {
-        btn.disabled = false; btn.textContent = "Show the full report";
-        if (gerr) gerr.textContent = "Network error. Please try again.";
-      });
-    });
-  }
+        body: JSON.stringify({ url: rawUrl, anonId, source, referrer }),
+      })
+      const data = await res.json()
+      if (!res.ok) { showError(data.error || "Something went wrong. Please try again."); setLoading(false); return }
+      analysedUrl = data.url || rawUrl
 
-  function renderFull(d) {
-    result.textContent = "";
-    result.appendChild(personaNode(d.persona || {}));
-    if (d.verdict) result.appendChild(verdictNode(d.verdict));
-    var list = el("div", { cls: "frictions" });
-    (d.frictions || []).forEach(function (f, i) { list.appendChild(frictionNode(f, i)); });
-    result.appendChild(list);
-    if (d.oneFixNow) {
-      result.appendChild(el("div", { cls: "onefix" }, [
-        el("div", { cls: "lbl", text: "If you fix one thing" }),
-        el("p", { text: d.oneFixNow })
-      ]));
+      const frictions = data.frictions || []
+      setLoading(false)
+
+      if (!frictions.length) {
+        resultsHeader.textContent = "No major friction found — this page is in good shape! 🎉"
+        frictionList.innerHTML = ""
+      } else {
+        resultsHeader.textContent = `Found ${frictions.length} friction point${frictions.length === 1 ? "" : "s"} on ${new URL(analysedUrl).hostname}`
+        // Show first 2 fully, rest blurred (unlock gate)
+        frictions.forEach(function (f, i) {
+          const li = document.createElement("li")
+          li.className = "friction-item " + (f.severity || "medium")
+          const isVisible = i < 2
+          li.innerHTML = `
+            <div class="friction-title" style="${isVisible ? "" : "filter:blur(4px);user-select:none"}">
+              ${escHtml(f.title)}
+              <span class="severity-chip ${f.severity}">${severityLabel(f.severity)}</span>
+            </div>
+            <div class="friction-fix" style="${isVisible ? "" : "filter:blur(4px);user-select:none"}">→ ${escHtml(f.fix)}</div>
+          `
+          frictionList.appendChild(li)
+        })
+      }
+
+      resultsEl.style.display = "block"
+      if (frictions.length > 2) gate.style.display = "block"
+      if (frictions.length <= 2) ctaSection.style.display = "block"
+    } catch {
+      showError("Network error. Please check your connection and try again.")
+      setLoading(false)
     }
-    result.appendChild(ctaNode());
-    result.classList.remove("hidden");
+  })
+
+  unlockBtn.addEventListener("click", async function () {
+    const email = (emailInput.value || "").trim()
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      unlockStatus.textContent = "Please enter a valid email."
+      unlockStatus.style.color = "#dc2626"
+      return
+    }
+    unlockBtn.disabled = true
+    unlockBtn.textContent = "Sending…"
+    unlockStatus.textContent = ""
+
+    try {
+      const res = await fetch(BASE + "/api/cro/unlock", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email, url: analysedUrl, anonId, source, referrer }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        unlockStatus.textContent = data.error || "Something went wrong."
+        unlockStatus.style.color = "#dc2626"
+        unlockBtn.disabled = false
+        unlockBtn.textContent = "Unlock report"
+        return
+      }
+      // Unlock all blurred items
+      document.querySelectorAll(".friction-item [style*='blur']").forEach(function (el) {
+        el.style.filter = ""
+        el.style.userSelect = ""
+      })
+      gate.style.display = "none"
+      ctaSection.style.display = "block"
+      unlockStatus.style.color = "#047857"
+      unlockStatus.textContent = "✓ Full report unlocked — check your inbox for a copy."
+    } catch {
+      unlockStatus.textContent = "Network error. Try again."
+      unlockStatus.style.color = "#dc2626"
+      unlockBtn.disabled = false
+      unlockBtn.textContent = "Unlock report"
+    }
+  })
+
+  function escHtml(str) {
+    return String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
   }
-})();
+})()
 </script>
 </body>
 </html>
