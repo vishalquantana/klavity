@@ -174,6 +174,96 @@ test("signed Stripe webhook updates account and project plan state", async () =>
   expect(project.rows[0]).toMatchObject({ billing_plan: "team", billing_status: "active" })
 })
 
+// ── GTM funnel events — KLAVITYKLA-328 ──────────────────────────────────────────────────────────
+
+test("POST /api/billing/checkout inserts a checkout_started funnel row", async () => {
+  const r = await authed("/api/billing/checkout", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ plan: "pro", interval: "month" }),
+  })
+  expect(r.status).toBe(200)
+  await Bun.sleep(300)
+  const rows = await raw.execute({
+    sql: "SELECT * FROM funnel_events WHERE account_id=? AND event='checkout_started' ORDER BY created_at DESC LIMIT 1",
+    args: [ACCOUNT],
+  })
+  expect(rows.rows.length).toBeGreaterThan(0)
+  const row = rows.rows[0] as any
+  expect(row.email).toBe(OWNER)
+  const props = JSON.parse(row.props_json)
+  expect(props.plan).toBe("pro")
+  expect(props.interval).toBe("month")
+})
+
+test("checkout.session.completed webhook inserts a subscription_created funnel row", async () => {
+  const event = {
+    id: "evt_checkout_completed",
+    type: "checkout.session.completed",
+    data: {
+      object: {
+        id: "cs_test_funnel",
+        subscription: "sub_test_123",
+        client_reference_id: ACCOUNT,
+        customer: "cus_test_123",
+        customer_details: { email: OWNER },
+        metadata: { account_id: ACCOUNT, plan: "team", interval: "year" },
+      },
+    },
+  }
+  const rawBody = JSON.stringify(event)
+  const r = await fetch(`${BASE}/api/billing/webhook`, {
+    method: "POST",
+    headers: { "stripe-signature": await stripeSig(rawBody, WEBHOOK_SECRET), "content-type": "application/json" },
+    body: rawBody,
+  })
+  expect(r.status).toBe(200)
+  await Bun.sleep(300)
+  const rows = await raw.execute({
+    sql: "SELECT * FROM funnel_events WHERE account_id=? AND event='subscription_created'",
+    args: [ACCOUNT],
+  })
+  expect(rows.rows.length).toBeGreaterThan(0)
+  const row = rows.rows[0] as any
+  expect(row.email).toBe(OWNER)
+  const props = JSON.parse(row.props_json)
+  expect(props.plan).toBe("team")
+})
+
+test("customer.subscription.deleted webhook inserts a subscription_canceled funnel row", async () => {
+  const event = {
+    id: "evt_sub_deleted",
+    type: "customer.subscription.deleted",
+    data: {
+      object: {
+        id: "sub_test_123",
+        customer: "cus_test_123",
+        status: "canceled",
+        current_period_end: 2000000000,
+        cancel_at_period_end: false,
+        metadata: { account_id: ACCOUNT, plan: "team", interval: "year" },
+        items: { data: [{ price: { lookup_key: "klavity_team_annual_990", recurring: { interval: "year" } } }] },
+      },
+    },
+  }
+  const rawBody = JSON.stringify(event)
+  const r = await fetch(`${BASE}/api/billing/webhook`, {
+    method: "POST",
+    headers: { "stripe-signature": await stripeSig(rawBody, WEBHOOK_SECRET), "content-type": "application/json" },
+    body: rawBody,
+  })
+  expect(r.status).toBe(200)
+  await Bun.sleep(300)
+  const rows = await raw.execute({
+    sql: "SELECT * FROM funnel_events WHERE account_id=? AND event='subscription_canceled'",
+    args: [ACCOUNT],
+  })
+  expect(rows.rows.length).toBeGreaterThan(0)
+  const row = rows.rows[0] as any
+  const props = JSON.parse(row.props_json)
+  expect(props.plan).toBe("team")
+})
+
 test("past_due Stripe webhook records status but does not grant paid entitlements", async () => {
   const event = {
     id: "evt_test_past_due",
