@@ -1331,7 +1331,7 @@ function clientIp(req: Request, server?: { requestIP?: (r: Request) => { address
 // and blocking third-party script origins. Tighten script-src to nonces in a later, browser-tested pass.
 const CSP = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://esm.sh",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://esm.sh https://us-assets.i.posthog.com",
   // Fonts are self-hosted (site/fonts/) — no third-party font origins needed.
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self' data:",
