@@ -1,0 +1,110 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What Is a Minimal Reproducible Example? A Practical Guide · Klavity</title>
+<meta name="description" content="A minimal reproducible example (MRE) is the smallest self-contained code and steps that reliably trigger a bug. Here's how to build one that gets it fixed.">
+<link rel="canonical" href="https://klavity.in/blog/what-is-a-minimal-reproducible-example">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="What Is a Minimal Reproducible Example? A Practical Guide"><meta property="og:description" content="A minimal reproducible example (MRE) is the smallest self-contained code and steps that reliably trigger a bug. Here's how to build one that gets it fixed.">
+<meta property="og:url" content="https://klavity.in/blog/what-is-a-minimal-reproducible-example"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="What Is a Minimal Reproducible Example? A Practical Guide"><meta name="twitter:description" content="A minimal reproducible example (MRE) is the smallest self-contained code and steps that reliably trigger a bug. Here's how to build one that gets it fixed."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"What Is a Minimal Reproducible Example? A Practical Guide","description":"A minimal reproducible example (MRE) is the smallest self-contained code and steps that reliably trigger a bug. Here's how to build one that gets it fixed.","datePublished":"2026-07-18","dateModified":"2026-07-18","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/what-is-a-minimal-reproducible-example","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"What Is a Minimal Reproducible Example? A Practical Guide","item":"https://klavity.in/blog/what-is-a-minimal-reproducible-example"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/what-is-a-minimal-reproducible-example"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What does MRE stand for?","acceptedAnswer":{"@type":"Answer","text":"MRE stands for 'minimal reproducible example.' It's the modern name for the same idea earlier called an MCVE (minimal, complete, and verifiable example) or SSCCE (short, self-contained, correct example). All three describe the smallest self-contained case that reproduces a problem."}},{"@type":"Question","name":"How is an MRE different from a bug report?","acceptedAnswer":{"@type":"Answer","text":"A bug report describes a problem; an MRE demonstrates it. The report gives context — what you expected, what happened, and your environment — while the MRE is the runnable proof anyone can execute to see the failure themselves. A strong bug report contains an MRE."}},{"@type":"Question","name":"How small should a minimal reproducible example be?","acceptedAnswer":{"@type":"Answer","text":"As small as it can be while still failing. Remove code, data, and steps one at a time; if the bug still reproduces, the removal was safe. Stop when deleting anything else makes the bug disappear. Most MREs are far shorter than the original code — often a few dozen lines."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Learn · 2026-07-18</div>
+    <h1>What Is a Minimal Reproducible Example? A Practical Guide</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>A minimal reproducible example (MRE) is the smallest possible piece of code, data, and steps that reliably reproduces a bug on someone else's machine. It has three properties: minimal (nothing that isn't needed), complete (everything that is), and reproducible (fails the same way every time). A good MRE is the single fastest way to get a bug fixed, because it removes the guesswork.</div>
+    <div class="prose"><p>A <strong>minimal reproducible example (MRE)</strong> is the smallest, self-contained set of code, data, and steps that reliably triggers a bug on someone else's machine. It strips a problem down to only the parts required to make it fail, so whoever investigates can run it, watch the failure, and fix it without guessing. An MRE has three defining properties: it is <em>minimal</em> (nothing extra), <em>complete</em> (nothing missing), and <em>reproducible</em> (it fails the same way every time).</p>
+
+<h2>What does "minimal reproducible example" mean?</h2>
+<p>The term is often shortened to MRE, and you'll see two older names for the same idea: <strong>MCVE</strong> (minimal, complete, and verifiable example) and <strong>SSCCE</strong> (short, self-contained, correct example). They all describe the same target — the smallest case that still demonstrates the problem. Break the name into its three parts:</p>
+<ol>
+<li><strong>Minimal.</strong> Every line, file, and step that isn't needed to reproduce the bug has been removed. If deleting something doesn't stop the failure, it doesn't belong.</li>
+<li><strong>Complete.</strong> Everything that <em>is</em> needed is present. Someone can take your example, run it as-is, and see the failure — no missing imports, no undefined variables, no "assume you have X set up."</li>
+<li><strong>Reproducible.</strong> It fails consistently, not intermittently. If it only breaks sometimes, you either capture the exact conditions that make it break or you note the flakiness explicitly.</li>
+</ol>
+
+<h2>Why does a minimal reproducible example matter?</h2>
+<p>Most of the time a bug spends waiting is spent on the back-and-forth: "Can you share your version?" "What did you click?" "I can't reproduce this." An MRE collapses that loop into a single artifact. Three concrete reasons it speeds up a fix:</p>
+<ul>
+<li><strong>It removes ambiguity.</strong> A runnable case can't be misread the way prose can. Whoever picks up the ticket sees the exact failure instead of reconstructing it from a description.</li>
+<li><strong>It isolates the cause.</strong> The act of shrinking the example is itself debugging. Very often you find the culprit while cutting away everything around it — and sometimes realize the bug was in your own setup before you ever file it.</li>
+<li><strong>It becomes the regression test.</strong> A minimal failing case is most of the work of a test that proves the fix and stops the bug from coming back. The MRE you attach today is the test you commit tomorrow.</li>
+</ul>
+
+<h2>How do you create a minimal reproducible example?</h2>
+<p>Reduction is the core technique: start from the code that fails and remove things until you can't remove any more without the bug disappearing.</p>
+<ol>
+<li><strong>Reproduce it yourself first.</strong> Confirm you can trigger the bug reliably before trying to shrink it. If you can't reproduce it on demand, note the conditions under which it does appear.</li>
+<li><strong>Copy, don't edit in place.</strong> Work on a duplicate so aggressive deletion can't damage your real project. You're going to remove most of it.</li>
+<li><strong>Delete in halves.</strong> Cut roughly half the remaining code or steps and re-run. If the bug still shows, keep that half and repeat. If it vanishes, restore and cut a different part. This binary search converges fast.</li>
+<li><strong>Inline the dependencies.</strong> Replace external services, private data, and large frameworks with the smallest stand-in that still reproduces the failure — a hardcoded value, a tiny fixture, a two-line stub.</li>
+<li><strong>Sanitize the data.</strong> Swap real customer records for the minimum synthetic data that triggers the bug, so the example is safe to share.</li>
+<li><strong>Verify on a clean environment.</strong> Run your final example somewhere fresh — a new folder, a container, a fresh browser profile. If it fails there too, it's genuinely complete. If it doesn't, something in your local setup was part of the cause, and that's worth knowing.</li>
+</ol>
+
+<h2>What to include alongside the example</h2>
+<p>The runnable code is the centerpiece, but an MRE lands best when it ships with the context that makes it easy to run and interpret:</p>
+<ul>
+<li><strong>Exact steps</strong> to reach the failure, numbered, with no assumed knowledge.</li>
+<li><strong>Expected vs. actual</strong> — what should happen, and what happens instead.</li>
+<li><strong>Environment</strong> — versions, OS, browser, and any relevant configuration.</li>
+<li><strong>Evidence</strong> — the error message or stack trace, plus a screenshot, console output, or failing network request where the bug is visual or in the browser. (See our guide on <a href="/blog/how-to-write-a-bug-report-developers-act-on">writing a bug report developers act on</a> for the full checklist.)</li>
+</ul>
+
+<h2>Common mistakes that break an MRE</h2>
+<p>Even a well-intentioned example fails its job when it slips on one of these:</p>
+<ul>
+<li><strong>Too much.</strong> Pasting the whole file or repo instead of the failing slice. The reader has to find the bug before they can fix it.</li>
+<li><strong>Too little.</strong> Trimming so hard that the example no longer runs — a missing import or an undefined variable, and the reader can't even reach the real bug.</li>
+<li><strong>Not actually reproducible.</strong> "It sometimes fails" with no captured conditions. If it's a race or timing issue, say so and describe when it appears — that's still useful signal.</li>
+<li><strong>Environment left out.</strong> The example runs fine for the reader because the bug depended on a version or setting you never mentioned.</li>
+</ul>
+
+<h2>Where tooling helps</h2>
+<p>The hardest part of an MRE is usually capturing the environment and evidence accurately — the details people forget or mistype from memory. In-app bug reporting tools attach the current URL, console, network activity, and environment automatically at the moment a bug is flagged, so the reproduction context is captured rather than reconstructed later. Klavity's <a href="/snap">Snap</a> does this from a right-click, giving you the environment and evidence half of an MRE for free — you supply the minimal steps, and the state travels with the report. It's the difference between "works on my machine" and a case anyone can run.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Reduce the failing case until removing anything makes the bug vanish</li><li>Make it complete: anyone should be able to run it with no missing pieces</li><li>Confirm it reproduces on a clean environment before you share it</li><li>Attach the environment, exact steps, and evidence alongside the code</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What does MRE stand for?</summary><p>MRE stands for 'minimal reproducible example.' It's the modern name for the same idea earlier called an MCVE (minimal, complete, and verifiable example) or SSCCE (short, self-contained, correct example). All three describe the smallest self-contained case that reproduces a problem.</p></details><details><summary>How is an MRE different from a bug report?</summary><p>A bug report describes a problem; an MRE demonstrates it. The report gives context — what you expected, what happened, and your environment — while the MRE is the runnable proof anyone can execute to see the failure themselves. A strong bug report contains an MRE.</p></details><details><summary>How small should a minimal reproducible example be?</summary><p>As small as it can be while still failing. Remove code, data, and steps one at a time; if the bug still reproduces, the removal was safe. Stop when deleting anything else makes the bug disappear. Most MREs are far shorter than the original code — often a few dozen lines.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
