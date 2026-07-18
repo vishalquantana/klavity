@@ -73,6 +73,7 @@ import { sanitizeInsight } from "./lib/extract-sanitize"
 import { runAutosimAuthProbe } from "./lib/autosim-auth-probe"
 import { mintProjectShareToken, revokeProjectShareToken, resolveProjectShareToken, gatherProjectStatusData } from "./lib/project-status-portal"
 import { runDueSchedules, buildProductionDeps } from "./lib/sim-review-schedule"
+import { trackFunnel, CLIENT_INGESTABLE } from "./lib/funnel"
 import { createSimReviewSchedule, listSimReviewSchedules, getSimReviewSchedule, deleteSimReviewSchedule, setSimReviewScheduleEnabled, type SimReviewScheduleFrequency } from "./lib/db"
 import { startSimsDigestScheduler, sendSimsDigest, type SimsDigestDeps, DAY_MS as SIMS_DIGEST_DAY_MS } from "./lib/sims-digest"
 import { sendReportAlertEmail } from "./lib/mail"
@@ -84,7 +85,7 @@ const BASE = (process.env.KLAV_BASE_URL || `http://localhost:${PORT}`)
   .replace("klavity.quantana.top", "klavity.in")
 const SECURE = BASE.startsWith("https")
 const DEV_SHOW_OTP = process.env.KLAV_DEV_SHOW_OTP === "1"
-const ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
+const ENDPOINT = process.env.OPENROUTER_ENDPOINT || "https://openrouter.ai/api/v1/chat/completions"
 const OPS_DAILY_CAP_USD = Number(process.env.OPS_DAILY_CAP_USD || 50)
 const SITE = import.meta.dir + "/../site"
 const PUB = import.meta.dir + "/public"
@@ -723,9 +724,22 @@ async function dashboardPage(): Promise<Response> {
     let version = ""
     try { version = String((await Bun.file(import.meta.dir + "/../package.json").json())?.version || "") } catch { /* fall back to empty */ }
     const raw = await Bun.file(PUB + "/dashboard.html").text()
-    DASHBOARD_HTML = raw.replaceAll("__APP_VERSION__", version)
+    DASHBOARD_HTML = raw.replaceAll("__APP_VERSION__", version).replaceAll("__POSTHOG_KEY__", _PH_KEY)
   }
   return new Response(DASHBOARD_HTML, { headers: { "content-type": "text/html; charset=utf-8" } })
+}
+// Serve HTML pages with __POSTHOG_KEY__ substituted from KLAV_POSTHOG_KEY env var.
+// Cached per path — refreshes on process restart (i.e. every deploy).
+const _htmlCache = new Map<string, string>()
+const _PH_KEY = process.env.KLAV_POSTHOG_KEY || ""
+async function htmlPage(path: string, extraHeaders?: Record<string, string>): Promise<Response> {
+  if (!_htmlCache.has(path)) {
+    const raw = await Bun.file(path).text()
+    _htmlCache.set(path, _PH_KEY ? raw.replaceAll("__POSTHOG_KEY__", _PH_KEY) : raw)
+  }
+  return new Response(_htmlCache.get(path)!, {
+    headers: { "content-type": "text/html; charset=utf-8", ...extraHeaders },
+  })
 }
 function redirect(loc: string, headers: Record<string, string> = {}) { return new Response(null, { status: 302, headers: { Location: loc, ...headers } }) }
 function fmtUsd(n: number): string { return "$" + (Number(n) || 0).toFixed(4) }
@@ -1319,7 +1333,7 @@ function clientIp(req: Request, server?: { requestIP?: (r: Request) => { address
 // and blocking third-party script origins. Tighten script-src to nonces in a later, browser-tested pass.
 const CSP = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://esm.sh",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://esm.sh https://us-assets.i.posthog.com",
   // Fonts are self-hosted (site/fonts/) — no third-party font origins needed.
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self' data:",
@@ -1402,13 +1416,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (req.method === "GET" && path === "/favicon.ico") return file(PUB + "/favicon.ico")
 
     // ── public marketing + login ──
-    if (req.method === "GET" && path === "/") return file(SITE + "/index.html")
+    if (req.method === "GET" && path === "/") return htmlPage(SITE + "/index.html")
     if (req.method === "GET" && path === "/local") return redirect("/")
     if (req.method === "GET" && path === "/home") return redirect("/")
     if (req.method === "GET" && path === "/login") {
       // Already signed in → skip the login page and land on the dashboard.
       if (await sessionEmail(req)) return redirect("/dashboard")
-      return file(PUB + "/login.html")
+      return htmlPage(PUB + "/login.html")
     }
     if (req.method === "GET" && path === "/sim-emotions") return file(PUB + "/sim-emotions.html")
     if (req.method === "GET" && path === "/sim-identity") return file(PUB + "/sim-identity.html")
@@ -1428,13 +1442,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       })
     }
     if (req.method === "GET" && path === "/intro-reel") return file(SITE + "/intro-reel.html")
-    if (req.method === "GET" && path === "/privacy") return file(SITE + "/privacy.html")
-    if (req.method === "GET" && path === "/terms") return file(SITE + "/terms.html")
+    if (req.method === "GET" && path === "/privacy") return htmlPage(SITE + "/privacy.html")
+    if (req.method === "GET" && path === "/terms") return htmlPage(SITE + "/terms.html")
     // ── marketing product pages + shared kit assets ──
-    if (req.method === "GET" && path === "/snap") return file(SITE + "/snap.html")
-    if (req.method === "GET" && path === "/sims") return file(SITE + "/sims.html")
-    if (req.method === "GET" && path === "/autosim") return file(SITE + "/autosim.html")
-    if (req.method === "GET" && path === "/pricing") return file(SITE + "/pricing.html")
+    if (req.method === "GET" && path === "/snap") return htmlPage(SITE + "/snap.html")
+    if (req.method === "GET" && path === "/sims") return htmlPage(SITE + "/sims.html")
+    if (req.method === "GET" && path === "/autosim") return htmlPage(SITE + "/autosim.html")
+    if (req.method === "GET" && path === "/pricing") return htmlPage(SITE + "/pricing.html")
+    if (req.method === "GET" && path === "/cro") return htmlPage(SITE + "/cro.html")
     // ── POST /api/blog/publish — authenticated blog post publish + git push (Plan B path) ──
     // Auth: Authorization: Bearer <BLOG_PUBLISH_TOKEN>. The GH_TOKEN env var is used for the push URL
     // inline (never stored in git config) and must NEVER appear in any log or response body.
@@ -2715,6 +2730,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const mode: "paused" | "auto" = body.mode === "auto" || body.paused === false ? "auto" : body.mode === "paused" || body.paused === true ? "paused" : "paused"
         await setReviewMode(pid, mode)
         await insertActivity({ projectId: pid, type: "review_mode_changed", actorEmail: meP, meta: { mode } })
+        if (mode === "auto") void trackFunnel(db!, { event: "continuous_enabled", email: meP, accountId: pid, props: { projectId: pid } })
         return json({ ok: true, projectId: pid, reviewMode: mode })
       }
     }
@@ -3384,6 +3400,113 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       }
     }
 
+    // ── GTM funnel ingest — KLAVITYKLA-327 ──────────────────────────────────────────────────────────
+    // Anonymous; rate-limited per IP. Accepts only CLIENT_INGESTABLE events so clients can't fake
+    // server-owned conversion events (check_completed, lead_captured, …).
+    if (req.method === "POST" && path === "/api/track") {
+      const ip = clientIp(req, server)
+      if (!rlAllow(`track:ip:${ip}`, 60, 60_000)) return json({ error: "rate limited" }, 429)
+      const CRO_MAX = 2_048
+      const parsed = await readJsonLimited(req, CRO_MAX)
+      if (!parsed.ok) return json({ error: parsed.error }, parsed.status)
+      const b = parsed.data as Record<string, unknown>
+      const event = String(b.event ?? "")
+      if (!CLIENT_INGESTABLE.includes(event)) return json({ error: "Unknown event." }, 400)
+      const anonId = b.anonId ? String(b.anonId).slice(0, 64) : undefined
+      const bodyUrl = b.url ? String(b.url).slice(0, 500) : undefined
+      const source = b.source ? String(b.source).slice(0, 100) : undefined
+      const referrer = b.referrer ? String(b.referrer).slice(0, 500) : undefined
+      const props = b.props && typeof b.props === "object" && !Array.isArray(b.props) ? b.props as Record<string, unknown> : undefined
+      void trackFunnel(db!, { event: event as any, anonId, url: bodyUrl, source, referrer, props })
+      return json({ ok: true })
+    }
+
+    // ── CRO / Vibe Check free tool — KLAVITYKLA-327 ─────────────────────────────────────────────────
+    // POST /api/cro/analyze — SSRF-guarded page fetch + AI friction analysis. Anonymous (no login).
+    if (req.method === "POST" && path === "/api/cro/analyze") {
+      const ip = clientIp(req, server)
+      if (!rlAllow(`cro:ip:${ip}`, 10, 60_000)) return json({ error: "Too many requests. Please try again in a minute." }, 429)
+      const parsed = await readJsonLimited(req, 4_096)
+      if (!parsed.ok) return json({ error: parsed.error }, parsed.status)
+      const b = parsed.data as Record<string, unknown>
+      let siteUrl = String(b.url ?? "").trim()
+      if (!siteUrl) return json({ error: "Enter your site URL." }, 400)
+      if (!/^https?:\/\//i.test(siteUrl)) siteUrl = "https://" + siteUrl
+      const anonId = b.anonId ? String(b.anonId).slice(0, 64) : undefined
+      const source = b.source ? String(b.source).slice(0, 100) : undefined
+      const referrer = b.referrer ? String(b.referrer).slice(0, 500) : undefined
+      let siteText = ""
+      try {
+        const res = await safeFetch(siteUrl, { headers: { "user-agent": "KlavityBot/1.0 (+https://klavity.in)" }, signal: AbortSignal.timeout(8_000) }, { allowLoopbackInTest: true })
+        if (!res.ok) return json({ error: `Couldn't read that page (HTTP ${res.status}).` }, 400)
+        const html = (await res.text()).slice(0, 300_000)
+        siteText = html
+          .replace(/<script[\s\S]*?<\/script>/gi, " ")
+          .replace(/<style[\s\S]*?<\/style>/gi, " ")
+          .replace(/<[^>]+>/g, " ")
+          .replace(/&[a-z#0-9]+;/gi, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, AI_DEMO_MAX_CHARS)
+      } catch {
+        return json({ error: "Couldn't reach that URL. Make sure it's a public https page." }, 400)
+      }
+      if (siteText.length < 40) return json({ error: "That page didn't have enough text to analyse." }, 400)
+      const sys = "You are a conversion-rate optimisation (CRO) expert reviewing a web page for friction. " +
+        "Analyse the page text and identify SPECIFIC friction points that reduce conversion. " +
+        "For each, provide: a short title (≤8 words), severity (high/medium/low), and a one-sentence fix. " +
+        "Focus on: unclear CTAs, missing social proof, confusing copy, friction in the signup/purchase flow, " +
+        "missing value proposition, and mobile-unfriendly patterns. " +
+        "Respond with ONLY valid JSON: {\"frictions\":[{\"title\":string,\"severity\":\"high\"|\"medium\"|\"low\",\"fix\":string}]} " +
+        "with 4-8 friction items. No prose outside the JSON."
+      let content = ""
+      try {
+        ;({ content } = await chat(
+          [{ role: "system", content: sys }, { role: "user", content: `Page URL: ${siteUrl}\n\nPage text:\n${siteText}` }],
+          800, true, { type: "cro-analyze", email: null },
+        ))
+      } catch (e: any) {
+        console.error("[cro/analyze] AI call failed:", e?.message || e)
+        return json({ error: "Analysis failed. Please try again." }, 503)
+      }
+      const data = parseJSON(content)
+      const frictions: Array<{ title: string; severity: string; fix: string }> = (data.frictions ?? [])
+        .slice(0, 8)
+        .map((f: any) => ({
+          title: String(f.title ?? "").slice(0, 80),
+          severity: ["high", "medium", "low"].includes(String(f.severity)) ? String(f.severity) : "medium",
+          fix: String(f.fix ?? "").slice(0, 200),
+        }))
+      void trackFunnel(db!, { event: "check_completed", anonId, url: siteUrl, source, referrer, props: { frictions: frictions.length } })
+      return json({ frictions, url: siteUrl })
+    }
+
+    // POST /api/cro/unlock — capture email to unlock the full report. Anonymous.
+    if (req.method === "POST" && path === "/api/cro/unlock") {
+      const ip = clientIp(req, server)
+      if (!rlAllow(`crounlock:ip:${ip}`, 20, 60 * 60_000)) return json({ error: "rate limited" }, 429)
+      const parsed = await readJsonLimited(req, 2_048)
+      if (!parsed.ok) return json({ error: parsed.error }, parsed.status)
+      const b = parsed.data as Record<string, unknown>
+      const email = String(b.email ?? "").trim().toLowerCase()
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || email.length > 200) return json({ error: "Enter a valid email." }, 400)
+      const siteUrl = b.url ? String(b.url).slice(0, 500) : undefined
+      const anonId = b.anonId ? String(b.anonId).slice(0, 64) : undefined
+      const source = b.source ? String(b.source).slice(0, 100) : undefined
+      const referrer = b.referrer ? String(b.referrer).slice(0, 500) : undefined
+      void trackFunnel(db!, { event: "lead_captured", anonId, email, url: siteUrl, source, referrer })
+      // Fire-and-forget lead alert (same pattern as widget lead).
+      void (async () => {
+        try {
+          const slackUrl = process.env.SLACK_SIGNUP_WEBHOOK_URL
+          if (!slackUrl) return
+          const body = JSON.stringify({ text: `🎯 CRO tool lead: *${email}* analysed \`${siteUrl ?? "unknown"}\` (source: ${source ?? "direct"})` })
+          await fetch(slackUrl, { method: "POST", headers: { "content-type": "application/json" }, body })
+        } catch {}
+      })()
+      return json({ ok: true })
+    }
+
     // ── everything below requires a session ──
     const me = await sessionEmail(req)
     const needLogin = () => (req.method === "GET" ? redirect("/login") : json({ error: "Sign in to continue." }, 401))
@@ -3393,14 +3516,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const qs = url.search || ""
       return new Response(null, { status: 301, headers: { Location: "/autosims" + qs } })
     }
-    if (req.method === "GET" && path === "/autosims") return me ? file(PUB + "/trails.html") : redirect("/login")
-    if (req.method === "GET" && path === "/autosims/walks") return me ? file(PUB + "/autosims-walks.html") : redirect("/login")
-    if (req.method === "GET" && /^\/autosims\/walk\/[^/]+$/.test(path)) return me ? file(PUB + "/autosims-walk.html") : redirect("/login")
+    if (req.method === "GET" && path === "/autosims") return me ? htmlPage(PUB + "/trails.html") : redirect("/login")
+    if (req.method === "GET" && path === "/autosims/walks") return me ? htmlPage(PUB + "/autosims-walks.html") : redirect("/login")
+    if (req.method === "GET" && /^\/autosims\/walk\/[^/]+$/.test(path)) return me ? htmlPage(PUB + "/autosims-walk.html") : redirect("/login")
     // AT2 auth setup router — "Give your Sims a key" (KLAVITYKLA-267)
-    if (req.method === "GET" && path === "/autosims/auth") return me ? file(PUB + "/auth-router.html") : redirect("/login")
-    if (req.method === "GET" && path === "/sim-runs") return me ? file(PUB + "/sim-runs.html") : redirect("/login")
+    if (req.method === "GET" && path === "/autosims/auth") return me ? htmlPage(PUB + "/auth-router.html") : redirect("/login")
+    if (req.method === "GET" && path === "/sim-runs") return me ? htmlPage(PUB + "/sim-runs.html") : redirect("/login")
     // KLAVITYKLA-201: cross-project inbox — the agency's "morning screen"
-    if (req.method === "GET" && path === "/inbox") return me ? file(PUB + "/inbox.html") : redirect("/login")
+    if (req.method === "GET" && path === "/inbox") return me ? htmlPage(PUB + "/inbox.html") : redirect("/login")
 
     // GET /shared/walk/:token — public interactive AutoSim walk report page.
     const sharedWalkPageMatch = path.match(/^\/shared\/walk\/([a-f0-9]{64})$/)
@@ -3408,7 +3531,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (!rlAllow("sharewalkpage:" + clientIp(req, server), 120, 60_000)) return new Response("Rate limited", { status: 429 })
       const resolved = await resolveShareToken(sharedWalkPageMatch[1])
       if (!resolved) return new Response("Not found", { status: 404 })
-      return file(PUB + "/autosims-walk-report.html")
+      return htmlPage(PUB + "/autosims-walk-report.html")
     }
 
     // GET /shared/walk/:token/data — token-scoped walk metadata, steps, replay availability, and findings.
@@ -3599,15 +3722,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (!rlAllow("shareproj:page:" + clientIp(req, server), 120, 60_000)) return new Response("Rate limited", { status: 429 })
       const projectId = await resolveProjectShareToken(sharedProjectPageMatch[1])
       if (!projectId) return new Response("Not found", { status: 404 })
-      const f = Bun.file(PUB + "/project-status.html")
-      if (!(await f.exists())) return new Response("Not found", { status: 404 })
-      return new Response(f, {
-        headers: {
-          "content-type": "text/html; charset=utf-8",
-          "x-robots-tag": "noindex, nofollow",
-          "cache-control": "no-store",
-        },
-      })
+      const _psPath = PUB + "/project-status.html"
+      if (!(await Bun.file(_psPath).exists())) return new Response("Not found", { status: 404 })
+      return htmlPage(_psPath, { "x-robots-tag": "noindex, nofollow", "cache-control": "no-store" })
     }
 
     const sharedProjectDataMatch = path.match(/^\/shared\/project\/([a-f0-9]{64})\/data$/)
@@ -3665,7 +3782,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (req.method === "GET" && path === "/app") return me ? file(PUB + "/index.html") : redirect("/login")
     // Sim Profile page — clicking a Sim row in the dashboard opens /sim/:id (read-only persona +
     // its triaged feedback + the calls that seeded it). The id is read client-side from the path.
-    if (req.method === "GET" && /^\/sim\/[^/]+$/.test(path)) return me ? file(PUB + "/sim-profile.html") : redirect("/login")
+    if (req.method === "GET" && /^\/sim\/[^/]+$/.test(path)) return me ? htmlPage(PUB + "/sim-profile.html") : redirect("/login")
     if (req.method === "GET" && path === "/onboarding") {
       // The onboarding wizard is the signup flow for new users (email → OTP → name project → add URL →
       // install extension → pick Sims, inline). ensureAccount gives every verified user a default
@@ -3683,7 +3800,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           }
         }
       } catch { /* DB error — serve onboarding.html rather than crashing */ }
-      return file(SITE + "/onboarding.html")
+      return htmlPage(SITE + "/onboarding.html")
     }
 
     // ── CI API (KLA-90) — machine-to-machine, project-scoped bearer tokens (kci_*). ──
@@ -5608,6 +5725,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         }
         const created = await createProject(active.workspaceId, name, siteUrl)
         // The creator is an account admin → implicit project-admin via projectAccess; no extra row needed.
+        void trackFunnel(db!, { event: "app_connected", email: me, accountId: active.workspaceId, url: siteUrl ?? undefined })
         return json({ project: { id: created.id, name: created.name, accountId: created.accountId, status: created.status, siteUrl: created.siteUrl, role: "admin" } }, 201)
       }
       // Project detail + members (projectAccess-gated) and project-scoped invite (R4) + monitored-urls (P3b) + connectors.

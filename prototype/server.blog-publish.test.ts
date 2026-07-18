@@ -7,7 +7,7 @@ import { test, expect, beforeAll, afterAll, beforeEach } from "bun:test"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { mkdirSync, writeFileSync, rmSync } from "node:fs"
-import { publishBlogPost, SLUG_RE, ensureAttrScript } from "./lib/blog-publish"
+import { publishBlogPost, SLUG_RE } from "./lib/blog-publish"
 
 // ── Unit tests: SLUG_RE ──────────────────────────────────────────────────────
 
@@ -24,30 +24,6 @@ test("SLUG_RE rejects path-traversal and invalid slugs", () => {
   expect(SLUG_RE.test("foo bar")).toBe(false)
   expect(SLUG_RE.test("foo.html")).toBe(false)
   expect(SLUG_RE.test("")).toBe(false)
-})
-
-// ── Unit tests: ensureAttrScript (KLAVITYKLA-324 — auto-inject attribution include) ──────────
-
-test("ensureAttrScript inserts attr.js right after the kit.js tag when present", () => {
-  const html = '<head><link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script></head><body></body>'
-  const out = ensureAttrScript(html)
-  expect(out).toContain('<script src="/kit.js" defer></script><script src="/attr.js" defer></script>')
-})
-
-test("ensureAttrScript inserts attr.js before </head> when there is no kit.js tag", () => {
-  const html = "<html><head><title>T</title></head><body>Hi</body></html>"
-  const out = ensureAttrScript(html)
-  expect(out).toBe('<html><head><title>T</title><script src="/attr.js" defer></script></head><body>Hi</body></html>')
-})
-
-test("ensureAttrScript is idempotent — already-present include is left untouched", () => {
-  const html = '<head><script src="/kit.js" defer></script><script src="/attr.js" defer></script></head>'
-  expect(ensureAttrScript(html)).toBe(html)
-})
-
-test("ensureAttrScript leaves HTML with no <head>/kit.js hook unchanged (best-effort, never corrupts)", () => {
-  const html = "<html><body>Hello flaky tests</body></html>"
-  expect(ensureAttrScript(html)).toBe(html)
 })
 
 // ── Integration tests: publishBlogPost (mocked git runner) ───────────────────

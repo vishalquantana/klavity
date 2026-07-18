@@ -179,6 +179,24 @@ export async function applySchema(c: Client) {
     )`,
     `CREATE INDEX IF NOT EXISTS evt_proj_idx ON activity_events (project_id, created_at)`,
     `CREATE INDEX IF NOT EXISTS evt_actor_idx ON activity_events (project_id, actor_email, created_at)`,
+    // GTM funnel — KLAVITYKLA-327: check_started → check_completed → lead_captured → app_connected → continuous_enabled
+    `CREATE TABLE IF NOT EXISTS funnel_events (
+       id TEXT PRIMARY KEY,
+       event TEXT NOT NULL,
+       anon_id TEXT,
+       email TEXT,
+       account_id TEXT,
+       source TEXT,
+       medium TEXT,
+       campaign TEXT,
+       referrer TEXT,
+       url TEXT,
+       props_json TEXT,
+       created_at INTEGER NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS fe_event_idx ON funnel_events (event, created_at)`,
+    `CREATE INDEX IF NOT EXISTS fe_anon_idx ON funnel_events (anon_id)`,
+    `CREATE INDEX IF NOT EXISTS fe_email_idx ON funnel_events (email)`,
     `CREATE TABLE IF NOT EXISTS ticket_comments (
        id TEXT PRIMARY KEY,
        feedback_id TEXT NOT NULL,
