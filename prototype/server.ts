@@ -711,6 +711,11 @@ function timingSafeStrEqual(a: string, b: string): boolean {
   for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
   return diff === 0
 }
+function parseAttribution(raw: unknown): { source: string; medium: string; campaign: string; referrer: string; anonId: string } {
+  const a = (raw != null && typeof raw === "object" && !Array.isArray(raw)) ? (raw as Record<string, unknown>) : {}
+  const s = (v: unknown, max: number) => String(v ?? "").trim().slice(0, max)
+  return { source: s(a.source, 100), medium: s(a.medium, 100), campaign: s(a.campaign, 100), referrer: s(a.referrer, 500), anonId: s(a.anonId, 500) }
+}
 function file(path: string) { return new Response(Bun.file(path)) }
 // Serve the dashboard with the app version injected into its sidebar-footer placeholder
 // (__APP_VERSION__). Sourced from package.json — the orchestrator's single version stamp —
@@ -1856,7 +1861,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (req.method === "POST" && path === "/api/auth/verify") {
       try {
         if (!db) return json({ error: "Login is not configured." }, 500)
-        const { email, code } = await req.json()
+        const { email, code, attribution } = await req.json()
         const e = String(email || "").trim().toLowerCase()
         const c = String(code || "").trim()
         // Brute-force lockout (H1): after OTP_FAIL_MAX wrong codes for this (email,IP) within the
@@ -1903,11 +1908,22 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (wasNew) {
           const sUa = req.headers.get("user-agent") || undefined
           const sRef = req.headers.get("referer") || req.headers.get("origin") || undefined
-          void notifyNewSignup({ email: e, ip: vIp, userAgent: sUa, referer: sRef, at: Date.now() })
+          const attrForSlack = attribution != null ? parseAttribution(attribution) : null
+          void notifyNewSignup({ email: e, ip: vIp, userAgent: sUa, referer: sRef, utmSource: attrForSlack?.source || undefined, at: Date.now() })
             .catch((err: any) => console.error("signup slack alert (non-fatal):", err?.message || err))
         }
         const acceptedAssignmentInvites = await acceptPendingTicketAssignmentInvites(e)
-        if (!acceptedAssignmentInvites.length) await ensureAccount(e)
+        const newMemberships = acceptedAssignmentInvites.length ? null : await ensureAccount(e)
+        if (wasNew && attribution != null) {
+          const accountId = (newMemberships ?? acceptedAssignmentInvites)[0]?.workspaceId
+          if (accountId) {
+            const attr = parseAttribution(attribution)
+            await db!.execute({
+              sql: "UPDATE accounts SET first_source=?,first_medium=?,first_campaign=?,first_referrer=?,anon_id=? WHERE id=?",
+              args: [attr.source, attr.medium, attr.campaign, attr.referrer, attr.anonId, accountId],
+            }).catch((err: any) => console.error("attribution persist (non-fatal):", err?.message || err))
+          }
+        }
         const sid = token()
         await createSession(sid, e, Date.now() + SESSION_DAYS * 86400 * 1000)
         // JTBD 2.15: land the new assignee directly on the ticket they were assigned. The invite row

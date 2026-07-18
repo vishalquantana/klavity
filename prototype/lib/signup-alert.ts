@@ -20,6 +20,7 @@ export interface SignupContext {
   ip: string
   userAgent?: string
   referer?: string
+  utmSource?: string
   /** epoch ms of the signup */
   at: number
 }
@@ -195,7 +196,7 @@ export function buildSlackPayload(ctx: SignupContext, geo: GeoInfo | null, em: E
     field("Network", network),
     field("Device", `${ua.browser} · ${ua.os} · ${ua.device}`),
     field("IP", `\`${ctx.ip}\`${geo?.reverse ? ` · ${geo.reverse}` : ""}`),
-    field("Source", ctx.referer ? `<${ctx.referer}|${truncate(ctx.referer, 60)}>` : "Direct / unknown"),
+    field("Source", ctx.utmSource ? `utm: ${ctx.utmSource}` : ctx.referer ? `<${ctx.referer}|${truncate(ctx.referer, 60)}>` : "Direct / unknown"),
     field("Signed up", formatIST(ctx.at)),
   ]
   if (em.logoUrl) fields.push(field("Logo", `<${em.logoUrl}|company logo>`))
