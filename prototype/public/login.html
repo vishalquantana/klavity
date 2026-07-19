@@ -129,6 +129,14 @@ try {
   }
 } catch (e) {}
 
+// KLAVITYKLA-303: the dashboard lands here after a self-serve account deletion. Confirm it,
+// so the user isn't dumped on a bare login screen wondering whether the erase went through.
+try {
+  if (new URLSearchParams(location.search).get("deleted") === "1" && $("emailMsg")) {
+    $("emailMsg").textContent = "Your account and data have been deleted. Thanks for trying Klavity."
+  }
+} catch (e) {}
+
 // seamless quote marquee + rotating Sim greeter
 const qt = $("qTrack"); if (qt) qt.innerHTML += qt.innerHTML
 const QUIPS = [
