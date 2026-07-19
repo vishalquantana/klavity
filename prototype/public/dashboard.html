@@ -3123,6 +3123,9 @@ function render(fromCache) {
 function renderChecklist() {
   const el = $("checklist")
   if (!el) return
+  // KLAVITYKLA-348: bail out until dashboard state has loaded — setView('overview') can fire from a
+  // sidebar onclick before load() assigns `state`, and every tick below dereferences it.
+  if (!state) return
   // KLAVITYKLA-301 step 1: "See a Sim react" ticks only when a real Sim reaction/feedback row
   // exists (sim_id IS NOT NULL feedback). The server exposes this as state.hasSimReaction.
   // Fall back to the old heuristic for backwards-compat (e.g. old server without the field).
@@ -3392,7 +3395,9 @@ function renderSnapView() {
   // Reflect widget live-detection state (mirrors clWidgetDetect in checklist)
   const det = $("snapViewDetect"), dtxt = $("snapViewDetectTxt")
   if (det && dtxt) {
-    const ws = state.widgetStatus
+    // KLAVITYKLA-348: `state` is null until load() populates it, and the Snap view is reachable
+    // from a sidebar onclick before that. Guard the read (matches maybeCelebrateFirstReport).
+    const ws = state && state.widgetStatus
     if (ws && ws.lastSeen) {
       det.classList.add("ok")
       const h = ws.host && ws.host !== "(unknown)" ? ws.host : "your site"
