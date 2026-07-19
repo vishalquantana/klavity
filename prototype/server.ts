@@ -1423,6 +1423,10 @@ function aiDemoLimited(meEmail: string | null, req: Request, server: any): boole
   const key = meEmail ? `aidemo:u:${meEmail}` : `aidemo:ip:${clientIp(req, server)}`
   return !rlAllow(key, AI_DEMO_PER_USER, AI_DEMO_WINDOW)
 }
+// Pre-signup "instant aha" (site/onboarding.html step 0) endpoints, intentionally ANONYMOUS:
+// each carries its own protection (aiDemoLimited per-IP throttle, SSRF-guarded safeFetch,
+// payload caps) so the blanket /api/* login gate exempts exactly this set — nothing else.
+const ANON_AI_DEMO_ROUTES = new Set(["POST /api/persona/site", "POST /api/sim/preview"])
 
 // True when an address is loopback or RFC1918/link-local private — i.e. a trusted reverse proxy on
 // the same box (Caddy). Only such a peer may set X-Forwarded-For; a public peer's XFF is forged.
@@ -1848,6 +1852,15 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       let host = hostFrom(req.headers.get("origin") || "") || hostFrom(req.headers.get("referer") || "")
       if (!host) host = String(body.host || "").toLowerCase().replace(/[^a-z0-9.:_-]/g, "").slice(0, 200)
       if (!host) host = "(unknown)"
+      // First-party pages (dashboard/onboarding mount /widget.js for dogfooding) must NOT satisfy
+      // install verification: a ping whose derived host is this app's own host (request Host or the
+      // public BASE origin) is acknowledged but never recorded, so the "Widget detected" chip only
+      // flips green on a real external install.
+      const ownHosts = new Set([
+        url.host.toLowerCase(),
+        (() => { try { return new URL(BASE).host.toLowerCase() } catch { return "" } })(),
+      ].filter(Boolean))
+      if (ownHosts.has(host)) return wjson({ ok: true })
       try { await recordWidgetPing(projectId, host) } catch (e: any) { console.error("widget ping (non-fatal):", e?.message || e) }
       return wjson({ ok: true })
     }
@@ -2068,7 +2081,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (req.method === "POST" && path === "/api/auth/verify") {
       try {
         if (!db) return json({ error: "Login is not configured." }, 500)
-        const { email, code, attribution } = await req.json()
+        const { email, code, attribution, attr } = await req.json()
         const e = String(email || "").trim().toLowerCase()
         const c = String(code || "").trim()
         // Brute-force lockout (H1): after OTP_FAIL_MAX wrong codes for this (email,IP) within the
@@ -2119,7 +2132,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         let signupAttr: ReturnType<typeof sanitizeAttr> = null
         if (wasNew) {
           try {
-            let attrSource: unknown = rawAttr
+            let attrSource: unknown = attr ?? attribution
             if (!attrSource) {
               const rawCookie = parseCookies(req.headers.get("cookie"))["klav_attr"]
               if (rawCookie) { try { attrSource = JSON.parse(decodeURIComponent(rawCookie)) } catch { attrSource = null } }
@@ -2144,9 +2157,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           })
         }
         const acceptedAssignmentInvites = await acceptPendingTicketAssignmentInvites(e)
-        const newMemberships = acceptedAssignmentInvites.length ? null : await ensureAccount(e)
+        const newMemberships = acceptedAssignmentInvites.length ? null : await ensureAccount(e, signupAttr)
+        const postSignupMs = newMemberships ?? (await membershipsFor(e))
+        // The caller's own default project — ensureAccount creates it as "proj_"+<first membership's
+        // account id>. Returned so the onboarding wizard targets the RIGHT project instead of
+        // guessing (its old ".pop()" heuristic picked the wrong one for multi-project users).
+        const defaultProjectId = postSignupMs[0] ? "proj_" + postSignupMs[0].workspaceId : null
         if (wasNew && attribution != null) {
-          const postSignupMs = newMemberships ?? (await membershipsFor(e))
           const accountId = postSignupMs[0]?.workspaceId
           if (accountId) {
             const attr = parseAttribution(attribution)
@@ -2165,7 +2182,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const dest = firstInvite
           ? `/dashboard?project=${encodeURIComponent(firstInvite.projectId)}${firstInvite.feedbackId ? `&ticket=${encodeURIComponent(firstInvite.feedbackId)}` : ""}#tickets`
           : wasNew ? "/onboarding" : "/dashboard"
-        return json({ ok: true, redirect: dest, token: sid }, 200, { "Set-Cookie": cookie("klav_session", sid, SESSION_DAYS * 86400, SECURE) })
+        return json({ ok: true, redirect: dest, token: sid, projectId: defaultProjectId }, 200, { "Set-Cookie": cookie("klav_session", sid, SESSION_DAYS * 86400, SECURE) })
       } catch (err: any) { return json(oops(err, "auth"), 500) }
     }
     if (req.method === "POST" && path === "/api/auth/logout") {
@@ -5124,7 +5141,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     }
 
     if (path.startsWith("/api/")) {
-      if (!me) return needLogin()
+      // ANON_AI_DEMO_ROUTES power the pre-signup onboarding aha and are safe anonymously
+      // (own rate limit + SSRF guard + caps) — their handlers below re-derive auth themselves.
+      if (!me && !ANON_AI_DEMO_ROUTES.has(`${req.method} ${path}`)) return needLogin()
 
       // dashboard data
       if (req.method === "GET" && path === "/api/me") {

@@ -54,7 +54,7 @@ beforeAll(async () => {
       // allow every email we mint below (they all share the RUN suffix)
       KLAV_TEST_OTP_EMAILS: [
         `body-${RUN}@test.local`, `cookie-${RUN}@test.local`, `firsttouch-${RUN}@test.local`,
-        `hostile-${RUN}@test.local`, `noattr-${RUN}@test.local`,
+        `hostile-${RUN}@test.local`, `noattr-${RUN}@test.local`, `projid-${RUN}@test.local`,
       ].join(","),
     },
     stdout: "pipe",
@@ -197,6 +197,30 @@ test("(e) signup with no attribution at all still succeeds — login must never 
   const u = await userRow(email)
   expect(u.utm_source == null).toBe(true)
   expect(u.utm_medium == null).toBe(true)
+})
+
+// ── (f) verify returns the caller's own default project id ───────────────────
+// Contract for the onboarding wizard: projectId = "proj_"+<first membership's account id>
+// (the default project ensureAccount creates), replacing the wizard's wrong-project ".pop()"
+// heuristic. Must be present for a fresh signup and match the persisted accounts row.
+test("(f) verify response includes projectId — the ensured default project for a fresh signup", async () => {
+  const email = `projid-${RUN}@test.local`
+  const r = await verify(email, { attr: { source: "hn", medium: "referral" } })
+  expect(r.status).toBe(200)
+  const body = await r.json()
+  expect(body.ok).toBe(true)
+  const a = await accountRow(email)
+  expect(a).toBeDefined()
+  expect(body.projectId).toBe("proj_" + a.id)
+
+  // attribution persisted alongside (same signup)
+  const u = await userRow(email)
+  expect(u.utm_source).toBe("hn")
+
+  // a returning login still reports the same project id
+  const r2 = await verify(email)
+  expect(r2.status).toBe(200)
+  expect((await r2.json()).projectId).toBe("proj_" + a.id)
 })
 
 // ── sanitizeAttr unit tests (the single server-side choke point) ─────────────
