@@ -327,12 +327,22 @@ async function mount() {
   } catch { /* best-effort */ }
 
   async function postLead(feedbackId: string, email: string) {
-    await fetch(cfg.backendUrl + "/api/widget/lead", {
+    // JTBD 1.13 — lead capture must NOT fail silently. fetch() only rejects on a network error; a 4xx/5xx
+    // (validation reject, missing row, project mode off, server error) resolves normally. If we didn't
+    // inspect res.ok the modal would confirm "we'll be in touch" while the lead was actually dropped. So
+    // we throw on any non-2xx: the success card catches it and shows a real error + retry (see modal.ts
+    // renderSuccess.submitLead). The visitor's email is durably persisted server-side BEFORE this returns.
+    const res = await fetch(cfg.backendUrl + "/api/widget/lead", {
       method: "POST", headers: { "content-type": "application/json" },
       // Carry the source site so a lead alert says where the lead came from (fallback to the feedback
       // row's captured values server-side).
       body: JSON.stringify({ project_id: cfg.projectId, feedback_id: feedbackId, email, source_url: location.href, source_host: location.host, referrer: document.referrer || "" }),
     })
+    if (!res.ok) {
+      // Surface a concise reason for the console/telemetry without leaking server internals to the UI.
+      const detail = await res.text().catch(() => "")
+      throw new Error(`lead capture failed (${res.status})${detail ? ": " + detail.slice(0, 200) : ""}`)
+    }
   }
 
   // ── Sim-deploy state + issue counter (declared before any code that references them) ──
