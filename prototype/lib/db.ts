@@ -2153,6 +2153,17 @@ export async function latestWidgetPing(projectId: string): Promise<{ host: strin
   return { host: String(row.host), lastSeen: Number(row.last_seen), firstSeen: Number(row.first_seen), hits: Number(row.hits) }
 }
 
+// countRecentFeedback: how many reports landed for a project since `sinceMs` (epoch ms). Powers the
+// heartbeat diagnosis (KLA-295) — "widget loads but no reports arrived" is a distinct failure from
+// "widget never loaded". Indexed COUNT(*) on fb_proj_idx; best-effort (throws bubble to the caller).
+export async function countRecentFeedback(projectId: string, sinceMs: number): Promise<number> {
+  const r = await db!.execute({
+    sql: "SELECT COUNT(*) AS n FROM feedback WHERE project_id=? AND created_at>=?",
+    args: [projectId, sinceMs],
+  })
+  return Number((r.rows[0] as any).n)
+}
+
 // §2.3 effective role: max(account_role, project_role); account owner/admin ⇒ implicit project-admin.
 export async function projectAccess(email: string, projectId: string): Promise<'admin' | 'member' | null> {
   const proj = await projectById(projectId)
