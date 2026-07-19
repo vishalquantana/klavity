@@ -235,6 +235,46 @@ test("Trail.stepVersion increments on deleteTrailStep", async () => {
   expect(after).toBe(before + 1)
 })
 
+// ── KLAVITYKLA-275: reorder draft steps ──────────────────────────────────────
+test("reorderTrailSteps reassigns idx to the given order and bumps stepVersion", async () => {
+  const id = await T.createTrail("proj_R", { name: "Reorder", baseUrl: "https://r.test/" })
+  const a = await T.addTrailStep("proj_R", id, { idx: 0, action: "navigate", actionValue: "https://r.test/" })
+  const b = await T.addTrailStep("proj_R", id, { idx: 1, action: "click", target: { role: "button", accessibleName: "Buy" } })
+  const c = await T.addTrailStep("proj_R", id, { idx: 2, action: "assert", checkpoint: { description: "done" } })
+  const before = (await T.getTrail("proj_R", id))!.stepVersion
+
+  // Move the click (b) to the front: [b, a, c]
+  const ok = await T.reorderTrailSteps("proj_R", id, [b, a, c])
+  expect(ok).toBe(true)
+
+  const steps = await T.listTrailSteps("proj_R", id) // ORDER BY idx
+  expect(steps.map((s) => s.id)).toEqual([b, a, c])
+  expect(steps.map((s) => s.idx)).toEqual([0, 1, 2])
+  // the reordered click step kept its target (only idx changed)
+  expect(steps[0].action).toBe("click")
+  expect(steps[0].target?.accessibleName).toBe("Buy")
+
+  const after = (await T.getTrail("proj_R", id))!.stepVersion
+  expect(after).toBe(before + 1)
+})
+
+test("reorderTrailSteps rejects a mismatched id set and writes nothing", async () => {
+  const id = await T.createTrail("proj_R", { name: "ReorderBad", baseUrl: "https://r.test/" })
+  const a = await T.addTrailStep("proj_R", id, { idx: 0, action: "navigate", actionValue: "https://r.test/" })
+  const b = await T.addTrailStep("proj_R", id, { idx: 1, action: "click" })
+  const before = (await T.getTrail("proj_R", id))!.stepVersion
+
+  expect(await T.reorderTrailSteps("proj_R", id, [a])).toBe(false)            // wrong length
+  expect(await T.reorderTrailSteps("proj_R", id, [a, a])).toBe(false)         // duplicate id
+  expect(await T.reorderTrailSteps("proj_R", id, [a, "tstep_nope"])).toBe(false) // unknown id
+  expect(await T.reorderTrailSteps("proj_R", id, [])).toBe(false)             // empty
+
+  // order and version untouched by any of the rejected calls
+  const steps = await T.listTrailSteps("proj_R", id)
+  expect(steps.map((s) => s.id)).toEqual([a, b])
+  expect((await T.getTrail("proj_R", id))!.stepVersion).toBe(before)
+})
+
 test("Walk.trailVersion is pinned to Trail.stepVersion at walk start and does not change when steps are later edited", async () => {
   const id = await T.createTrail("proj_V", { name: "VerWalk", baseUrl: "https://v.test/" })
   await T.addTrailStep("proj_V", id, { idx: 0, action: "navigate", actionValue: "https://v.test/" })
