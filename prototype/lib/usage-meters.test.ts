@@ -13,6 +13,7 @@ import { expect, test } from "bun:test"
 import { useIsolatedDb } from "./test-db-isolation"
 import {
   incrementUsageMeter, getAccountUsage, getAccountUsageMap, usagePeriod,
+  getAccountUsageByProject, tenantTodaySpendByProject,
 } from "./db"
 
 // Wire the isolated DB. useIsolatedDb() also sets process.env.TURSO_DATABASE_URL
@@ -153,4 +154,65 @@ test("incrementUsageMeter returns void and does not block/gate the caller (no en
   }
   const usage = await getAccountUsageMap(t.accountId)
   expect(usage.sim_review).toBe(50) // all counted, none blocked
+})
+
+// ── KLAVITYKLA-276: per-project usage + cost breakdown ──────────────────────────────────────────
+test("getAccountUsageByProject returns one row per (project, metric) with the joined project name", async () => {
+  const t = await freshTenant()
+  const proj2 = await addProject(t.accountId)
+  await incrementUsageMeter({ metric: "sim_review", projectId: t.projectId })
+  await incrementUsageMeter({ metric: "sim_review", projectId: t.projectId })
+  await incrementUsageMeter({ metric: "autosim_walk", projectId: t.projectId })
+  await incrementUsageMeter({ metric: "sim_review", projectId: proj2 })
+
+  const rows = await getAccountUsageByProject(t.accountId)
+  const p1sim = rows.find(r => r.projectId === t.projectId && r.metric === "sim_review")!
+  const p1walk = rows.find(r => r.projectId === t.projectId && r.metric === "autosim_walk")!
+  const p2sim = rows.find(r => r.projectId === proj2 && r.metric === "sim_review")!
+  expect(p1sim.count).toBe(2)
+  expect(p1walk.count).toBe(1)
+  expect(p2sim.count).toBe(1)
+  expect(typeof p1sim.name).toBe("string") // name joined from projects, not null
+})
+
+test("getAccountUsageByProject isolates by period and by account", async () => {
+  const t = await freshTenant()
+  const other = await freshTenant()
+  await incrementUsageMeter({ metric: "sim_review", projectId: t.projectId, atMs: Date.UTC(2026, 5, 15) }) // June
+  await incrementUsageMeter({ metric: "sim_review", projectId: t.projectId, atMs: Date.UTC(2026, 6, 20) }) // July
+  await incrementUsageMeter({ metric: "sim_review", projectId: other.projectId, atMs: Date.UTC(2026, 6, 20) })
+
+  const july = await getAccountUsageByProject(t.accountId, { period: "2026-07" })
+  expect(july.length).toBe(1)
+  expect(july[0].projectId).toBe(t.projectId)
+  expect(july[0].count).toBe(1)
+  // other account's July usage never leaks into t's breakdown
+  expect(july.some(r => r.projectId === other.projectId)).toBe(false)
+})
+
+test("tenantTodaySpendByProject sums today's ai_calls cost per project", async () => {
+  const t = await freshTenant()
+  const proj2 = await addProject(t.accountId)
+  const client = getClient()
+  const now = Date.now()
+  const yesterday = now - 36 * 60 * 60 * 1000
+  const ins = async (projectId: string, cost: number, at: number) =>
+    client.execute({
+      sql: `INSERT INTO ai_calls (id, created_at, type, model, account_id, project_id, cost_usd, ok)
+            VALUES (?,?,?,?,?,?,?,1)`,
+      args: [`ai_${Math.random().toString(36).slice(2)}`, at, "sim", "m", t.accountId, projectId, cost],
+    })
+  await ins(t.projectId, 0.30, now)
+  await ins(t.projectId, 0.12, now)
+  await ins(proj2, 0.05, now)
+  await ins(t.projectId, 9.99, yesterday) // excluded: not today
+
+  const rows = await tenantTodaySpendByProject(t.accountId)
+  const byProj = Object.fromEntries(rows.map(r => [r.projectId, r.cost]))
+  expect(byProj[t.projectId]).toBeCloseTo(0.42)
+  expect(byProj[proj2]).toBeCloseTo(0.05)
+})
+
+test("tenantTodaySpendByProject returns [] for a blank account id", async () => {
+  expect(await tenantTodaySpendByProject("")).toEqual([])
 })
