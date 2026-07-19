@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Monthly Guarded Flows Report — Klavity</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0f0f13;
+      --surface: #17171d;
+      --surface2: #1e1e26;
+      --border: rgba(255,255,255,0.07);
+      --text: #e8e8f0;
+      --muted: rgba(232,232,240,0.5);
+      --accent: #8b5cf6;
+      --accent2: #a78bfa;
+      --green: #22c55e;
+      --amber: #f59e0b;
+      --red: #ef4444;
+      --radius: 10px;
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; line-height: 1.5; }
+    a { color: var(--accent2); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .header { border-bottom: 1px solid var(--border); padding: 18px 24px; display: flex; align-items: center; gap: 12px; background: var(--surface); }
+    .logo { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 1.05rem; letter-spacing: -0.01em; color: var(--text); text-decoration: none; }
+    .logo svg { flex-shrink: 0; }
+    .header-divider { width: 1px; height: 20px; background: var(--border); }
+    .header-project-name { font-size: 0.95rem; color: var(--muted); font-weight: 500; }
+    .header-badge { margin-left: auto; background: rgba(139,92,246,0.15); color: var(--accent2); border: 1px solid rgba(139,92,246,0.3); border-radius: 20px; padding: 3px 10px; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; }
+
+    .main { max-width: 860px; margin: 0 auto; padding: 40px 24px 80px; }
+    .page-title { font-size: 1.65rem; font-weight: 700; letter-spacing: -0.025em; margin-bottom: 4px; }
+    .page-subtitle { color: var(--muted); font-size: 0.9rem; margin-bottom: 20px; }
+    .generated-at { font-size: 0.8rem; color: var(--muted); margin-top: 6px; }
+
+    /* Month picker */
+    .month-nav { display: flex; align-items: center; gap: 10px; margin-bottom: 30px; }
+    .month-select {
+      background: var(--surface); color: var(--text); border: 1px solid var(--border);
+      border-radius: 8px; padding: 8px 12px; font-size: 0.9rem; font-family: var(--font);
+      font-weight: 600; cursor: pointer; transition: border-color 150ms ease;
+    }
+    .month-select:hover { border-color: rgba(139,92,246,0.45); }
+    .month-current { font-size: 1.05rem; font-weight: 700; }
+
+    .section { margin-bottom: 40px; }
+    .section-title { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-bottom: 14px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+
+    .stats-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin-bottom: 36px; }
+    .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; transition: border-color 150ms ease; }
+    .stat-card:hover { border-color: rgba(139,92,246,0.35); }
+    .stat-value { font-size: 2rem; font-weight: 700; letter-spacing: -0.03em; line-height: 1; margin-bottom: 6px; font-variant-numeric: tabular-nums; }
+    .stat-label { font-size: 0.78rem; color: var(--muted); font-weight: 500; }
+    .stat-card.green .stat-value { color: var(--green); }
+    .stat-card.amber .stat-value { color: var(--amber); }
+    .stat-card.red .stat-value { color: var(--red); }
+    .stat-card.purple .stat-value { color: var(--accent2); }
+
+    .flows-list { display: flex; flex-direction: column; gap: 10px; }
+    .flow-row { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 18px; display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 16px; transition: border-color 150ms ease; }
+    .flow-row:hover { border-color: rgba(139,92,246,0.35); }
+    .flow-name { font-weight: 500; font-size: 0.95rem; }
+    .flow-meta { color: var(--muted); font-size: 0.8rem; margin-top: 2px; }
+    .flow-meta b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+    .flow-rate { font-size: 0.85rem; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+    .verdict-pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 20px; padding: 4px 12px; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+    .verdict-pill.green { background: rgba(34,197,94,0.12); color: var(--green); border: 1px solid rgba(34,197,94,0.25); }
+    .verdict-pill.amber { background: rgba(245,158,11,0.12); color: var(--amber); border: 1px solid rgba(245,158,11,0.25); }
+    .verdict-pill.red   { background: rgba(239,68,68,0.12);  color: var(--red);   border: 1px solid rgba(239,68,68,0.25); }
+    .verdict-pill.none  { background: rgba(255,255,255,0.05); color: var(--muted); border: 1px solid var(--border); }
+    .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .green .dot { background: var(--green); }
+    .amber .dot { background: var(--amber); }
+    .red   .dot { background: var(--red); }
+    .none  .dot { background: var(--muted); }
+
+    .health-banner { border-radius: var(--radius); padding: 20px 24px; display: flex; align-items: center; gap: 16px; margin-bottom: 36px; border: 1px solid; }
+    .health-banner.green { background: rgba(34,197,94,0.07); border-color: rgba(34,197,94,0.25); }
+    .health-banner.amber { background: rgba(245,158,11,0.07); border-color: rgba(245,158,11,0.25); }
+    .health-banner.red   { background: rgba(239,68,68,0.07); border-color: rgba(239,68,68,0.25); }
+    .health-banner.none  { background: var(--surface2); border-color: var(--border); }
+    .health-icon { line-height: 1; }
+    .health-title { font-size: 1.1rem; font-weight: 700; }
+    .health-banner.green .health-title { color: var(--green); }
+    .health-banner.amber .health-title { color: var(--amber); }
+    .health-banner.red .health-title   { color: var(--red); }
+    .health-banner.none .health-title  { color: var(--muted); }
+    .health-desc { font-size: 0.85rem; color: var(--muted); margin-top: 2px; }
+
+    .empty { color: var(--muted); font-size: 0.875rem; font-style: italic; padding: 12px 0; }
+    .footer { border-top: 1px solid var(--border); padding: 24px; text-align: center; font-size: 0.8rem; color: var(--muted); margin-top: 60px; }
+    .footer a { color: var(--accent2); }
+    .loading { text-align: center; padding: 80px 24px; color: var(--muted); }
+    .error-state { text-align: center; padding: 80px 24px; }
+    .error-state h1 { font-size: 3rem; font-weight: 800; color: var(--muted); margin-bottom: 8px; }
+    .error-state p { color: var(--muted); }
+
+    @media (max-width: 540px) {
+      .flow-row { grid-template-columns: 1fr; gap: 8px; }
+      .flow-rate { text-align: left; }
+      .stats-row { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+
+<header class="header">
+  <a href="https://klavity.in" class="logo" id="brandLogo" target="_blank" rel="noopener">
+    <svg width="22" height="22" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="32" height="32" rx="8" fill="#8b5cf6"/>
+      <path d="M8 8h4v16H8V8zm6 8 6-8h5L13 18l12 6h-5L14 16z" fill="white"/>
+    </svg>
+    <span id="brandName">Klavity</span>
+  </a>
+  <div class="header-divider"></div>
+  <span class="header-project-name" id="headerProjectName">Loading…</span>
+  <span class="header-badge">Monthly Report</span>
+</header>
+
+<main class="main" id="main">
+  <div class="loading">Loading monthly report…</div>
+</main>
+
+<footer class="footer" id="brandFooter">
+  Powered by <a href="https://klavity.in" target="_blank" rel="noopener">Klavity</a> —
+  AI-powered quality assurance for product teams.
+  <br><small>This page is read-only and shared via a private link. It does not expose any account internals.</small>
+</footer>
+
+<script>
+(async () => {
+  const main = document.getElementById('main')
+  const headerProjectName = document.getElementById('headerProjectName')
+
+  // Extract token from URL: /shared/project/<token>/flows-report
+  const token = location.pathname.split('/shared/project/')[1]?.split('/')[0] || ''
+  if (!token) { showError('notfound'); return }
+
+  // Optional ?month=YYYY-MM
+  const qMonth = new URLSearchParams(location.search).get('month')
+
+  async function load(month) {
+    main.innerHTML = '<div class="loading">Loading monthly report…</div>'
+    let data
+    try {
+      const q = month ? ('?month=' + encodeURIComponent(month)) : ''
+      const res = await fetch('/shared/project/' + token + '/flows-report/data' + q)
+      if (!res.ok) { showError(res.status === 404 ? 'notfound' : 'error'); return }
+      data = await res.json()
+    } catch { showError('error'); return }
+    render(data)
+  }
+
+  function reltime(ms) {
+    if (!ms) return '—'
+    return new Date(ms).toLocaleDateString(undefined, { month:'short', day:'numeric' })
+  }
+  function verdictLabel(v) {
+    return v === 'green' ? 'Healthy' : v === 'amber' ? 'Warning' : v === 'red' ? 'Failing' : 'No runs'
+  }
+  function pctLabel(r) { return Math.round((Number(r) || 0) * 100) + '%' }
+
+  function render(data) {
+    document.title = data.projectName + ' — Monthly Report — Klavity'
+    headerProjectName.textContent = data.projectName
+    applyBranding(data.branding)
+
+    const flows = data.flows || []
+    const totals = data.totals || {}
+    const months = data.availableMonths || []
+
+    // Overall health from flow verdicts this month
+    let overallHealth = 'none'
+    const active = flows.filter(f => f.totalRuns > 0)
+    if (active.length > 0) {
+      if (active.some(f => f.health === 'red')) overallHealth = 'red'
+      else if (active.some(f => f.health === 'amber')) overallHealth = 'amber'
+      else overallHealth = 'green'
+    }
+    const healthLabels = {
+      green: { icon: iconCheck, title: 'A healthy month', desc: 'Every guarded flow that ran this month passed. No failures recorded.' },
+      amber: { icon: iconWarn, title: 'Some warnings this month', desc: 'One or more guarded flows raised warnings. See the breakdown below.' },
+      red:   { icon: iconX, title: 'Failures caught this month', desc: 'One or more guarded flows failed. These are the issues Klavity caught before your clients did.' },
+      none:  { icon: iconBox, title: 'No runs this month', desc: 'No guarded flows ran in this reporting month. Pick another month below.' },
+    }
+    const h = healthLabels[overallHealth] || healthLabels.none
+
+    // Month picker options
+    const monthSet = new Set(months)
+    if (data.month) monthSet.add(data.month)
+    const monthOpts = Array.from(monthSet).sort().reverse().map(m =>
+      `<option value="${esc(m)}"${m === data.month ? ' selected' : ''}>${esc(labelFor(m))}</option>`
+    ).join('')
+
+    const flowRows = flows.length === 0
+      ? `<p class="empty">No guarded flows are configured for this project yet.</p>`
+      : flows.map(f => `
+        <div class="flow-row">
+          <div>
+            <div class="flow-name">${esc(f.trailName)}</div>
+            <div class="flow-meta">
+              <b>${f.totalRuns}</b> run${f.totalRuns !== 1 ? 's' : ''}
+              &middot; <b>${f.passed}</b> passed &middot; <b>${f.warned}</b> warned &middot; <b>${f.failed}</b> failed
+              ${f.regressionsCaught > 0 ? `&middot; <b>${f.regressionsCaught}</b> regression${f.regressionsCaught !== 1 ? 's' : ''} caught` : ''}
+              ${f.lastRunAt ? `&middot; last run ${reltime(f.lastRunAt)}` : ''}
+            </div>
+          </div>
+          <span class="verdict-pill ${f.health}"><span class="dot"></span>${verdictLabel(f.health)}</span>
+          <div class="flow-rate">${f.totalRuns > 0 ? pctLabel(f.passRate) : '—'}</div>
+        </div>
+      `).join('')
+
+    const generatedAt = new Date(data.generatedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+
+    main.innerHTML = `
+      <h1 class="page-title">${esc(data.projectName)}</h1>
+      <p class="page-subtitle">Monthly guarded-flows report — shared via private link</p>
+
+      <div class="month-nav">
+        <span class="month-current">${esc(data.monthLabel)}</span>
+        <select class="month-select" id="monthSelect" aria-label="Choose report month">${monthOpts}</select>
+      </div>
+
+      <div class="health-banner ${overallHealth}">
+        <div class="health-icon">${h.icon}</div>
+        <div>
+          <div class="health-title">${esc(h.title)}</div>
+          <div class="health-desc">${esc(h.desc)}</div>
+        </div>
+      </div>
+
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="stat-value">${totals.totalRuns ?? 0}</div>
+          <div class="stat-label">Flow runs</div>
+        </div>
+        <div class="stat-card green">
+          <div class="stat-value">${totals.passed ?? 0}</div>
+          <div class="stat-label">Passed</div>
+        </div>
+        <div class="stat-card ${(totals.warned ?? 0) > 0 ? 'amber' : ''}">
+          <div class="stat-value">${totals.warned ?? 0}</div>
+          <div class="stat-label">Warned</div>
+        </div>
+        <div class="stat-card ${(totals.failed ?? 0) > 0 ? 'red' : ''}">
+          <div class="stat-value">${totals.failed ?? 0}</div>
+          <div class="stat-label">Failed</div>
+        </div>
+        <div class="stat-card purple">
+          <div class="stat-value">${totals.regressionsCaught ?? 0}</div>
+          <div class="stat-label">Regressions caught</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">${totals.totalRuns > 0 ? pctLabel(totals.passRate) : '—'}</div>
+          <div class="stat-label">Pass rate</div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Guarded Flow Breakdown — ${esc(data.monthLabel)}</div>
+        <div class="flows-list">${flowRows}</div>
+      </div>
+
+      <p class="generated-at">Generated: ${generatedAt}</p>
+    `
+
+    const sel = document.getElementById('monthSelect')
+    if (sel) sel.addEventListener('change', () => {
+      const m = sel.value
+      const nu = new URL(location.href)
+      nu.searchParams.set('month', m)
+      history.replaceState(null, '', nu.toString())
+      load(m)
+    })
+  }
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+  }
+  function labelFor(ym) {
+    const m = /^(\d{4})-(\d{2})$/.exec(ym)
+    if (!m) return ym
+    const names = ['January','February','March','April','May','June','July','August','September','October','November','December']
+    const idx = Number(m[2]) - 1
+    return (names[idx] || m[2]) + ' ' + m[1]
+  }
+
+  function applyBranding(b) {
+    if (!b || typeof b !== 'object') return
+    const HEX = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/
+    if (typeof b.accent === 'string' && HEX.test(b.accent.trim())) {
+      const a = b.accent.trim()
+      document.documentElement.style.setProperty('--accent', a)
+      document.documentElement.style.setProperty('--accent2', a)
+    }
+    const nameEl = document.getElementById('brandName')
+    if (nameEl && typeof b.name === 'string' && b.name.trim()) nameEl.textContent = b.name.trim()
+    const logoEl = document.getElementById('brandLogo')
+    if (logoEl && typeof b.logoDataUrl === 'string' && /^data:image\//.test(b.logoDataUrl)) {
+      const svg = logoEl.querySelector('svg')
+      if (svg) {
+        const img = document.createElement('img')
+        img.src = b.logoDataUrl
+        img.alt = (typeof b.name === 'string' && b.name.trim() ? b.name.trim() : 'Agency') + ' logo'
+        img.style.height = '22px'; img.style.maxWidth = '120px'; img.style.objectFit = 'contain'; img.style.borderRadius = '5px'
+        svg.replaceWith(img)
+      }
+    }
+    const footer = document.getElementById('brandFooter')
+    if (footer) {
+      footer.textContent = ''
+      const monitored = (typeof b.name === 'string' && b.name.trim()) ? ('Monitored by ' + b.name.trim()) : ''
+      if (monitored) footer.appendChild(document.createTextNode(monitored))
+      if (!b.whiteLabel) {
+        if (monitored) footer.appendChild(document.createTextNode(' · '))
+        const link = document.createElement('a')
+        link.href = (typeof b.signupUrl === 'string' && b.signupUrl) ? b.signupUrl : 'https://klavity.in/signup'
+        link.target = '_blank'; link.rel = 'noopener'; link.textContent = 'powered by Klavity'
+        footer.appendChild(link)
+      }
+      const small = document.createElement('small')
+      small.textContent = 'This page is read-only and shared via a private link. It does not expose any account internals.'
+      footer.appendChild(document.createElement('br'))
+      footer.appendChild(small)
+    }
+  }
+
+  await load(qMonth)
+})()
+
+const iconCheck = '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.801 10A10 10 0 1 1 17 3.335"/><path d="m9 11 3 3L22 4"/></svg>'
+const iconWarn = '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>'
+const iconX = '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>'
+const iconBox = '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="opacity:.5"><rect width="18" height="18" x="3" y="3" rx="2"/></svg>'
+
+function showError(type) {
+  const h = document.getElementById('headerProjectName')
+  if (h) h.textContent = type === 'notfound' ? 'Not found' : 'Error'
+  document.title = 'Not Found — Klavity'
+  const main = document.getElementById('main')
+  if (main) main.innerHTML =
+    '<div class="error-state"><h1>' + (type === 'notfound' ? '404' : '500') + '</h1><p>' +
+    (type === 'notfound'
+      ? 'This report could not be found. The link may have been revoked or is invalid.'
+      : 'Failed to load the monthly report. Please try again.') +
+    '</p></div>'
+}
+</script>
+</body>
+</html>
