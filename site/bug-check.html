@@ -197,9 +197,9 @@ body{font-family:var(--font-sans,'Inter',system-ui,sans-serif);background:#f9faf
     </div>
 
     <div class="trust">
-      <div class="trust-item">✓ Free, no signup</div>
-      <div class="trust-item">✓ AI-powered scan</div>
-      <div class="trust-item">✓ Results in &lt;30 seconds</div>
+      <div class="trust-item"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>Free, no signup</div>
+      <div class="trust-item"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>AI-powered scan</div>
+      <div class="trust-item"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>Results in &lt;30 seconds</div>
     </div>
   </div>
 </div>
@@ -403,7 +403,7 @@ body{font-family:var(--font-sans,'Inter',system-ui,sans-serif);background:#f9faf
       gate.style.display = "none"
       ctaSection.style.display = "block"
       unlockStatus.style.color = "#047857"
-      unlockStatus.textContent = "✓ Full report unlocked — check your inbox for a copy."
+      unlockStatus.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px"><polyline points="20 6 9 17 4 12"></polyline></svg> Full report unlocked — check your inbox for a copy.'
     } catch {
       unlockStatus.textContent = "Network error. Try again."
       unlockStatus.style.color = "#dc2626"
