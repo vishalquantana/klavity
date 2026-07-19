@@ -3,7 +3,7 @@
 // in user-facing HTML fails to parse. Catches the smart-quote corruption class
 // (e.g. `let x = ‘widget’`) that silently killed /onboarding signup on prod.
 // JSON-LD / JSON / src= scripts are skipped. Run: node scripts/check-inline-js.mjs
-import { readFileSync, writeFileSync, readdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { readFileSync, writeFileSync, readdirSync, unlinkSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -19,6 +19,7 @@ const DIRS = ['site', 'prototype/public']
 const SCRIPT_RE = /<script([^>]*)>([\s\S]*?)<\/script>/gi
 
 let failures = 0
+let tmpSeq = 0
 for (const dir of DIRS) {
   let entries = []
   try { entries = readdirSync(dir) } catch { continue }
@@ -41,9 +42,15 @@ for (const dir of DIRS) {
         if (isModule) {
           execFileSync('node', ['--input-type=module', '--check'], { input: js, stdio: 'pipe' })
         } else {
-          const tmp = join(TMPDIR, `s${tmpSeq++}.js`)
+          // Temp file MUST be unique per invocation. A fixed name in the shared
+          // tmpdir races when two agents/CI jobs run this guard concurrently: one
+          // process overwrites the other's file mid-check, which both invents
+          // SyntaxErrors in untouched files AND — far worse — can let a genuinely
+          // corrupt script pass by checking a healthy script's bytes instead.
+          const tmp = join(tmpdir(), `klav-inline-check.${process.pid}.${tmpSeq++}.js`)
           writeFileSync(tmp, js)
-          execFileSync('node', ['--check', tmp], { stdio: 'pipe' })
+          try { execFileSync('node', ['--check', tmp], { stdio: 'pipe' }) }
+          finally { try { unlinkSync(tmp) } catch {} }
         }
       } catch (e) {
         failures++
