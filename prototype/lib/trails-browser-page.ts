@@ -142,6 +142,19 @@ function krefSnapshotBody(): string {
         if (role) {
           let line = `${indent}${role} "${nameOf(child)}"`
           if ((child as HTMLInputElement).disabled) line += " {disabled}"
+          // Fill-state signal (KLA: criticalpath1 stall): without it the model cannot see that its
+          // own `type` succeeded (the accessible name is just the placeholder) and loops re-typing.
+          // Deliberately length-only — resolved {{cred:...}} values must never enter LLM context.
+          if (isFormControl(child)) {
+            const iv = child as HTMLInputElement
+            if (role === "checkbox" || role === "radio") { if (iv.checked) line += " {checked}" }
+            else if (child.tagName.toLowerCase() === "select") {
+              const sel = child as unknown as HTMLSelectElement
+              const optText = (sel.selectedOptions?.[0]?.textContent || "").trim().slice(0, 40)
+              if (optText) line += ` {selected: "${optText}"}`
+            }
+            else if (typeof iv.value === "string" && iv.value.length) line += ` {filled: ${iv.value.length} chars}`
+          }
           if (INTERACTIVE.has(t) || child.getAttribute("role")) {
             const ref = `e${++n}`
             child.setAttribute("data-kref", ref)
