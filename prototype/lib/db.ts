@@ -1807,6 +1807,8 @@ export async function finishAutosimAuthProbe(input: {
   projectId: string
   ok: boolean
   error?: string | null
+  /** ok=true but no real login was performed (fixed_otp format-check) — do NOT promote to verified. */
+  unverifiedLogin?: boolean
   resumeSummary?: unknown
 }): Promise<void> {
   const now = Date.now()
@@ -1825,8 +1827,11 @@ export async function finishAutosimAuthProbe(input: {
       input.projectId,
     ],
   })
-  if (input.ok) {
+  if (input.ok && !input.unverifiedLogin) {
     await db!.execute({ sql: "UPDATE projects SET autosim_auth_status='verified', updated_at=? WHERE id=?", args: [now, input.projectId] })
+  } else if (input.ok) {
+    // Probe passed format checks only (fixed_otp): stay "registered" until a walk truly logs in.
+    await db!.execute({ sql: "UPDATE projects SET autosim_auth_status='registered', updated_at=? WHERE id=? AND autosim_auth_status!='verified'", args: [now, input.projectId] })
   } else {
     await db!.execute({ sql: "UPDATE projects SET autosim_auth_status='registered', updated_at=? WHERE id=? AND autosim_auth_status!='verified'", args: [now, input.projectId] })
   }
