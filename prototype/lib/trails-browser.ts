@@ -137,6 +137,30 @@ export function _resetPdfAdmissionForTest(timeoutMs?: number): void {
 
 export function isWalkInFlight(): boolean { return _active > 0 }
 
+/**
+ * KLAVITYKLA-346 — aggregate in-flight/queued work for the deploy busy-check + drain.
+ * The zero-downtime autodeploy polls this (via GET /api/health/busy) on the OLD slot before it is
+ * stopped, and drains until `busy === 0` (or a cap) so an in-flight AutoSim/Sim run is never killed
+ * mid-flight by a slot flip.
+ *   activeWalks  — walks/AutoSim runs currently executing (holding a slot)
+ *   queuedWalks  — waiters admitted to the queue but not yet started
+ *   authorActive — a Trail-author drive is in flight
+ *   pdfActive    — a PDF render is in flight
+ *   busy         — total unit of in-flight+queued work; 0 means safe to stop this slot
+ */
+export function walkPoolStats(): {
+  activeWalks: number
+  queuedWalks: number
+  authorActive: boolean
+  pdfActive: boolean
+  busy: number
+} {
+  let queued = 0
+  for (const arr of _perProjectWaiters.values()) queued += arr.length
+  const busy = _active + queued + (_authorActive ? 1 : 0) + (_pdfRunning ? 1 : 0)
+  return { activeWalks: _active, queuedWalks: queued, authorActive: _authorActive, pdfActive: _pdfRunning, busy }
+}
+
 /** runId registered in the CURRENT slot (null outside a slot or before setCurrentWalkRunId). */
 export function currentWalkRunId(): string | null { return _als.getStore()?.runId ?? null }
 
