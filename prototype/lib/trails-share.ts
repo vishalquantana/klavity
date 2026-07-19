@@ -10,7 +10,12 @@ import { sha256hex } from "./crypto"
 // Injectable seam for route tests (subprocess env flag + module-level override)
 // ---------------------------------------------------------------------------
 
-type PdfRenderer = (projectId: string, runId: string, baseUrl: string) => Promise<Uint8Array>
+type PdfRenderer = (
+  projectId: string,
+  runId: string,
+  baseUrl: string,
+  opts?: { replayUrl?: string; dataTransform?: (d: any) => any },
+) => Promise<Uint8Array>
 
 let _customPdfRenderer: PdfRenderer | null = null
 
@@ -221,17 +226,33 @@ export async function renderWalkPdf(
   baseUrl: string,
   opts?: { replayUrl?: string; dataTransform?: (d: any) => any },
 ): Promise<Uint8Array> {
-  // Module-level injectable seam (set via _setPdfRendererForTests in unit tests)
-  if (_customPdfRenderer) return _customPdfRenderer(projectId, runId, baseUrl)
+  // Module-level injectable seam (set via _setPdfRendererForTests in unit tests).
+  // opts is forwarded so a stub can assert what transform the ROUTE handed us.
+  if (_customPdfRenderer) return _customPdfRenderer(projectId, runId, baseUrl, opts)
 
-  // Env-flag fake for subprocess route tests — never active without the flag
+  // Env-flag fake for subprocess route tests — never active without the flag.
+  // It mirrors the real path's data pipeline (gather → dataTransform) and serializes the RESULT into
+  // the fake PDF bytes. That is what makes masking observable at the route level: without it a route
+  // test could not tell a masked PDF from an unmasked one, which is exactly how the public share link
+  // shipped with no redaction at all (KLAVITYKLA-353 H1).
   if (process.env.KLAV_TEST_FAKE_PDF === "1") {
     const { withPdfSlot } = await import("./trails-browser")
+    // Gather + transform happen OUTSIDE withPdfSlot, same as the real renderer (KLA-59): the PDF
+    // slot is only ever held by the Chromium work, never by data preparation.
+    let payload = ""
+    try {
+      const { gatherWalkReport } = await import("./trails-report")
+      const rawData = await gatherWalkReport(projectId, runId)
+      if (rawData) {
+        const data = opts?.dataTransform ? opts.dataTransform(rawData) : rawData
+        payload = " " + JSON.stringify(data)
+      }
+    } catch { /* fake renderer must never fail the route on a gather hiccup */ }
     return withPdfSlot(async () => {
       if (process.env.KLAV_TEST_FAKE_PDF_DELAY) {
         await new Promise((r) => setTimeout(r, parseInt(process.env.KLAV_TEST_FAKE_PDF_DELAY, 10)))
       }
-      return new TextEncoder().encode("%PDF-fake-for-tests " + runId)
+      return new TextEncoder().encode("%PDF-fake-for-tests " + runId + payload)
     })
   }
 

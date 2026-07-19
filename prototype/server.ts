@@ -4456,12 +4456,19 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         ])
         // View signal — fire-and-forget so a write failure never blocks the report.
         recordShareView(resolved.id).catch(() => {})
+        // PII masking (KLAVITYKLA-353): the public share PAGE is rendered from this JSON, so it is
+        // the same unauthenticated surface as /shared/walk-report/:token and gets the same redaction.
+        // Masking the PDF alone would have left the interactive report leaking verbatim.
+        const projCfgSharedData = await getProjectModalConfig(resolved.projectId)
+        const masked = isMaskingEnabled(projCfgSharedData)
+          ? maskWalkReportData({ findings, steps, judgment: judgment ?? null })
+          : { findings, steps, judgment: judgment ?? null }
         return json({
           walk,
           trail,
-          steps,
-          findings,
-          judgment: judgment ?? null,
+          steps: masked.steps,
+          findings: masked.findings,
+          judgment: masked.judgment ?? null,
           hasReplay: replaySet.has(resolved.runId),
           replayUrl: replaySet.has(resolved.runId) ? "/shared/walk-replay/" + rawToken : null,
           liveUrl: walk.status === "running" ? "/shared/walk-live/" + rawToken : null,
@@ -4580,7 +4587,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       try {
         const replaySet = await runsWithReplay(resolved.projectId, [resolved.runId])
         const replayUrl = replaySet.has(resolved.runId) ? BASE + "/shared/walk-replay/" + rawToken : undefined
-        const pdfBytes = await renderWalkPdf(resolved.projectId, resolved.runId, BASE, { replayUrl })
+        // PII masking (KLAVITYKLA-353): this route is UNAUTHENTICATED — the recipient is a client
+        // or anyone holding the link. It needs redaction at least as badly as the owner's own
+        // authenticated download, so it applies the identical dataTransform. (Masking runs OUTSIDE
+        // withPdfSlot, inside renderWalkPdf — see KLA-59; the transform never holds the PDF slot.)
+        const projCfgShare = await getProjectModalConfig(resolved.projectId)
+        const shareTransform = isMaskingEnabled(projCfgShare) ? maskWalkReportData : undefined
+        const pdfBytes = await renderWalkPdf(resolved.projectId, resolved.runId, BASE, { replayUrl, dataTransform: shareTransform })
         const shortId = resolved.runId.slice(0, 8)
         return new Response(pdfBytes, {
           headers: {
@@ -7404,6 +7417,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             } else if (prevCfg.slack_webhook_url !== undefined) {
               nextCfg.slack_webhook_url = prevCfg.slack_webhook_url
             }
+            // piiMasking (KLAVITYKLA-353) — the ONLY writer for the data-masking switch. It is a
+            // server-owned key like the two above (validateModalConfigInput strips unknown keys, so
+            // without this branch an appearance save would silently turn masking back OFF).
+            // Admin-only (we're already past the access !== "admin" gate). Default is OFF: absent
+            // key stays absent, and only an exact boolean flips it.
+            if (typeof body.piiMasking === "boolean") {
+              if (body.piiMasking === true) nextCfg.piiMasking = true
+              // false → key simply not carried forward (absent === off)
+            } else if (prevCfg.piiMasking !== undefined) {
+              nextCfg.piiMasking = prevCfg.piiMasking
+            }
             await setProjectModalConfig(pid, nextCfg)
             // Persist widget mode/cta/notify if any were provided (partial update).
             const hasWidget = body.mode !== undefined || body.cta_url !== undefined || body.notify_email !== undefined || body.report_gate !== undefined
@@ -7429,6 +7453,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             // Report-alert Slack webhook — admin-eyes only (it is a capability URL). The public
             // (CORS-open) config GET earlier in this file never returns it: resolveModalConfig strips it.
             ...(access === "admin" ? { slackWebhookUrl: typeof curCfg.slack_webhook_url === "string" ? curCfg.slack_webhook_url : null } : {}),
+            // piiMasking (KLAVITYKLA-353): admin-only read-back so the setting is inspectable and a
+            // UI can render its state. resolveModalConfig strips it from the public config GET.
+            ...(access === "admin" ? { piiMasking: curCfg.piiMasking === true } : {}),
           })
         }
 
