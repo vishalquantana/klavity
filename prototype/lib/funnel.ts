@@ -13,13 +13,18 @@ export const FUNNEL_EVENTS = [
   "checkout_started",
   "subscription_created",
   "subscription_canceled",
+  // KLAVITYKLA-331 — founder booking CTA on the unlocked report / nurture email.
+  "booking_cta_clicked",
+  "meeting_booked",
 ] as const
 
 export type FunnelEvent = (typeof FUNNEL_EVENTS)[number]
 
 // Events that anonymous clients are allowed to fire via POST /api/track.
 // Server owns the conversion events (check_completed onward) so they can't be spoofed.
-export const CLIENT_INGESTABLE: readonly string[] = ["check_started"] as const
+// booking_cta_clicked is a pure intent signal fired from the page (KLAVITYKLA-331) — spoofing it
+// buys nothing, and there is no server-side hook for a link click.
+export const CLIENT_INGESTABLE: readonly string[] = ["check_started", "booking_cta_clicked"] as const
 
 export interface FunnelParams {
   event: FunnelEvent

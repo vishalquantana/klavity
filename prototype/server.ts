@@ -781,14 +781,29 @@ async function dashboardPage(): Promise<Response> {
   }
   return new Response(DASHBOARD_HTML, { headers: { "content-type": "text/html; charset=utf-8" } })
 }
-// Serve HTML pages with __POSTHOG_KEY__ substituted from KLAV_POSTHOG_KEY env var.
+// Serve HTML pages with __POSTHOG_KEY__ substituted from KLAV_POSTHOG_KEY env var and
+// __CAL_BOOKING_URL__ from CAL_BOOKING_URL (KLAVITYKLA-331 — founder booking CTA).
 // Cached per path — refreshes on process restart (i.e. every deploy).
 const _htmlCache = new Map<string, string>()
 const _PH_KEY = process.env.KLAV_POSTHOG_KEY || ""
+// Default is the founder's 15-minute Cal.com link; override per environment with CAL_BOOKING_URL.
+export const DEFAULT_CAL_BOOKING_URL = "https://cal.com/klavity/15min"
+export function normalizeCalBookingUrl(raw?: string | null): string {
+  const v = String(raw || "").trim()
+  if (!v) return DEFAULT_CAL_BOOKING_URL
+  // Only http(s) — a javascript:/data: value here would be injected straight into an href.
+  if (!/^https?:\/\//i.test(v)) return DEFAULT_CAL_BOOKING_URL
+  // Escape the few characters that could break out of the href="" attribute.
+  return v.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+}
+export const CAL_BOOKING_URL = normalizeCalBookingUrl(process.env.CAL_BOOKING_URL)
 async function htmlPage(path: string, extraHeaders?: Record<string, string>): Promise<Response> {
   if (!_htmlCache.has(path)) {
     const raw = await Bun.file(path).text()
-    _htmlCache.set(path, _PH_KEY ? raw.replaceAll("__POSTHOG_KEY__", _PH_KEY) : raw)
+    let out = raw
+    if (_PH_KEY) out = out.replaceAll("__POSTHOG_KEY__", _PH_KEY)
+    out = out.replaceAll("__CAL_BOOKING_URL__", CAL_BOOKING_URL)
+    _htmlCache.set(path, out)
   }
   return new Response(_htmlCache.get(path)!, {
     headers: { "content-type": "text/html; charset=utf-8", ...extraHeaders },

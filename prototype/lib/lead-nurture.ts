@@ -81,6 +81,17 @@ function brandedEmail(
 </body></html>`
 }
 
+// KLAVITYKLA-331 — the founder's booking link, configurable per environment via CAL_BOOKING_URL.
+export const DEFAULT_CAL_BOOKING_URL = "https://cal.com/klavity/15min"
+
+/** Resolve the Cal.com booking URL and tag it with a source so bookings are attributable. */
+export function calBookingLink(configured?: string, source?: string): string {
+  const raw = String(configured ?? process.env.CAL_BOOKING_URL ?? "").trim()
+  const base = /^https?:\/\//i.test(raw) ? raw : DEFAULT_CAL_BOOKING_URL
+  if (!source) return base
+  return base + (base.includes("?") ? "&" : "?") + "utm_source=klavity&utm_campaign=" + encodeURIComponent(source)
+}
+
 export interface NurtureEmailContent {
   subject: string
   html: string
@@ -140,11 +151,13 @@ export function buildStep1Email(opts: { analyzedUrl?: string; baseUrl?: string; 
   }
 }
 
-export function buildStep2Email(opts: { analyzedUrl?: string; baseUrl?: string }): NurtureEmailContent {
+export function buildStep2Email(opts: { analyzedUrl?: string; baseUrl?: string; calBookingUrl?: string }): NurtureEmailContent {
   const url = opts.analyzedUrl || "your site"
   const base = (opts.baseUrl || "https://klavity.in").replace(/\/$/, "")
   const ctaLink = `${base}/onboarding?ref=cro-step2`
   const unsubLink = `${base}/unsubscribe`
+  // KLAVITYKLA-331 — founder booking link. Tagged so Cal.com attributes the booking to this step.
+  const bookingLink = calBookingLink(opts.calBookingUrl, "nurture-step2")
 
   const body = `
 <p style="${F};font-size:15px;line-height:1.6;color:#3f3a52;margin:0 0 14px">
@@ -162,7 +175,10 @@ export function buildStep2Email(opts: { analyzedUrl?: string; baseUrl?: string }
     <li>Replay your real user journeys as persistent AI Sims</li>
     <li>File tickets automatically when something breaks</li>
   </ul>
-</div>`
+</div>
+<p style="${F};font-size:13px;line-height:1.6;color:#6b6678;margin:16px 0 0;text-align:center">
+  Rather talk it through? <a href="${esc(bookingLink)}" style="color:#4f46e5;font-weight:600;text-decoration:none">Book 15 min with the founder</a>
+</p>`
 
   const text = [
     `Yesterday you found friction points on ${url}.`,
@@ -176,6 +192,8 @@ export function buildStep2Email(opts: { analyzedUrl?: string; baseUrl?: string }
     "  · File tickets automatically when something breaks",
     "",
     `Connect your app: ${ctaLink}`,
+    "",
+    `Rather talk it through? Book 15 min with the founder: ${bookingLink}`,
     "",
     "Sent by Klavity · klavity.in",
     `Unsubscribe: ${unsubLink}`,
@@ -238,7 +256,7 @@ export function buildStep3Email(opts: { analyzedUrl?: string; baseUrl?: string }
 }
 
 /** Build email content for a given nurture step (1, 2, or 3). Pure — no I/O. */
-export function buildNurtureEmail(step: number, opts: { analyzedUrl?: string; baseUrl?: string; tool?: string }): NurtureEmailContent {
+export function buildNurtureEmail(step: number, opts: { analyzedUrl?: string; baseUrl?: string; tool?: string; calBookingUrl?: string }): NurtureEmailContent {
   if (step === 1) return buildStep1Email(opts)
   if (step === 2) return buildStep2Email(opts)
   if (step === 3) return buildStep3Email(opts)
