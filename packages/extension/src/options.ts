@@ -2,6 +2,7 @@ import { DEFAULT_SETTINGS, dispatchSubmit } from '@klavity/core'
 import { submitReport as backendSubmit } from '@klavity/core/integrations/backend'
 import type { KlavitySettings, SubmitReportPayload } from '@klavity/core'
 import { icon } from '@klavity/core/icons'
+import { mountOtpInput } from '@klavity/core/otp-input'
 
 const $ = (id: string) => document.getElementById(id) as HTMLInputElement | HTMLSelectElement
 const setVal = (id: string, v: string) => { ($(id) as HTMLInputElement).value = v }
@@ -179,38 +180,62 @@ function renderConnectorsLink() {
   el.href = url ? `${url}/dashboard#connectors` : '#'
 }
 
-async function sendCode() {
+// Request (or resend) a sign-in code for the entered email. Returns true on success.
+async function requestKlavCode(): Promise<boolean> {
   const url = backendUrl()
   const email = ($('klav-email') as HTMLInputElement).value.trim()
-  if (!url) return setKlavMsg(false, 'Set the Backend URL first.')
-  if (!email.includes('@')) return setKlavMsg(false, 'Enter a valid email.')
+  if (!url) { setKlavMsg(false, 'Set the Backend URL first.'); return false }
+  if (!email.includes('@')) { setKlavMsg(false, 'Enter a valid email.'); return false }
   setKlavMsg(null, 'Sending code…')
   try {
     const r = await fetch(`${url}/api/auth/request`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) })
     const d = await r.json().catch(() => ({} as any))
-    if (!r.ok) return setKlavMsg(false, d.error || `Request failed (${r.status})`)
-    document.getElementById('klav-otp-row')!.style.display = ''
+    if (!r.ok) { setKlavMsg(false, d.error || `Request failed (${r.status})`); return false }
     setKlavMsg(true, d.devCode ? `Dev code: ${d.devCode}` : 'Code sent — check your email.')
-  } catch (e) { setKlavMsg(false, (e as Error).message) }
+    return true
+  } catch (e) { setKlavMsg(false, (e as Error).message); return false }
+}
+
+async function sendCode() {
+  if (!(await requestKlavCode())) return
+  document.getElementById('klav-otp-row')!.style.display = ''
+  otp.clear()
+  ;($('klav-code') as HTMLInputElement).focus()
+  otp.startResendCooldown(30)
 }
 
 async function verifyCode() {
   const url = backendUrl()
   const email = ($('klav-email') as HTMLInputElement).value.trim()
   const code = ($('klav-code') as HTMLInputElement).value.trim()
+  if (code.length < 4) return setKlavMsg(false, 'Enter the 6-digit code.')
   setKlavMsg(null, 'Signing in…')
   try {
     const r = await fetch(`${url}/api/auth/verify`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, code }) })
     const d = await r.json().catch(() => ({} as any))
-    if (!r.ok || !d.token) return setKlavMsg(false, d.error || 'Invalid or expired code.')
+    if (!r.ok || !d.token) { setKlavMsg(false, d.error || 'Invalid or expired code.'); otp.clear(); (($('klav-code') as HTMLInputElement)).focus(); return }
     klavToken = d.token; klavEmail = email
     await chrome.storage.sync.set({ klavEmail })
     await persist() // writes klavToken + connectionMode into settings
     document.getElementById('klav-otp-row')!.style.display = 'none'
+    otp.stopResendCooldown()
     setKlavMsg(null, '')
     renderAccount()
   } catch (e) { setKlavMsg(false, (e as Error).message) }
 }
+
+// Unified OTP input UX (digit-only, paste-to-fill, auto-submit, Enter) + resend cooldown —
+// the same @klavity/core/otp-input helper the web login/widget-connect + popup screens use.
+const otp = mountOtpInput({
+  input: $('klav-code') as HTMLInputElement,
+  length: 6,
+  onComplete: () => { void verifyCode() },
+  resend: {
+    el: document.getElementById('klav-resend')!,
+    cooldownSecs: 30,
+    onResend: () => requestKlavCode(),
+  },
+})
 
 async function signOut() {
   klavToken = ''; klavEmail = ''

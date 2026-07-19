@@ -1934,6 +1934,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     }
     if (req.method === "GET" && path === "/robots.txt") return new Response(Bun.file(SITE + "/robots.txt"), { headers: { "content-type": "text/plain; charset=utf-8" } })
     if (req.method === "GET" && path === "/klavity-sim.js") return file(PUB + "/klavity-sim.js")
+    // Unified OTP-input helper (window.KlavityOTP), shared by login.html + widget-connect.html.
+    // Built from packages/core/src/otp-input.global.ts. No generic static handler → explicit route.
+    if (req.method === "GET" && path === "/otp-input.js") return new Response(Bun.file(PUB + "/otp-input.js"), { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "public, max-age=3600" } })
     // ── vendored driver.js (dashboard first-run guided tour) — pinned v1.6.0, MIT. Served locally
     // because the CSP only allows 'self' + esm.sh script origins (no CDN hotlinking). ──
     if (req.method === "GET" && path === "/vendor/driver.min.js") {
