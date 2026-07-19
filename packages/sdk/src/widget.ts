@@ -357,12 +357,15 @@ async function mount() {
   const reportBtn = document.createElement("button")
   reportBtn.className = "kl-launcher-btn"
   reportBtn.title = "Klavity is active on this page — right-click anywhere or click here to report"
-  // ── Active/monitoring indicator: a small live green dot on the launcher so it's obvious Klavity is on. ──
+  // ── Active/monitoring indicator: a small green status light INSIDE the pill (like a chat "online"
+  // dot), immediately left of the bug icon. It deliberately does NOT sit in the top-right corner and
+  // does NOT pulse forever — that reads as an unread-notification badge and competed with the real
+  // red issue count (.kl-issue-badge), which owns the corner slot. It settles once on load instead.
   if (!root.getElementById("klavity-launcher-anim")) {
     const a = document.createElement("style"); a.id = "klavity-launcher-anim"
     a.textContent =
-      "@keyframes kl-active-pulse{0%{box-shadow:0 0 0 0 rgba(34,197,94,.5)}70%{box-shadow:0 0 0 7px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}" +
-      ".kl-active-dot{position:absolute;top:-3px;right:-3px;width:11px;height:11px;border-radius:50%;background:#22c55e;border:2px solid #fff;animation:kl-active-pulse 2.2s ease-out infinite;}" +
+      "@keyframes kl-active-settle{0%{transform:scale(.4);opacity:0}100%{transform:scale(1);opacity:1}}" +
+      ".kl-active-dot{flex:0 0 auto;width:7px;height:7px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 2px rgba(34,197,94,.28);animation:kl-active-settle .45s cubic-bezier(0.2, 0.7, 0.2, 1) 1;}" +
       ".kl-issue-badge{position:absolute;top:-7px;left:-7px;min-width:17px;height:17px;border-radius:9px;background:#ef4444;color:#fff;font-size:9.5px;font-weight:700;padding:0 4px;display:none;align-items:center;justify-content:center;border:2px solid #fff;font-family:system-ui,sans-serif;line-height:1;}" +
       ".kl-launcher-btn{transition:transform 0.15s cubic-bezier(0.2, 0.7, 0.2, 1), background 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;will-change:transform;}" +
       ".kl-launcher-btn:hover{transform:translateY(-1px) scale(1.02);filter:brightness(1.06);box-shadow:0 10px 28px rgba(91,91,240,.45);}" +
@@ -370,9 +373,10 @@ async function mount() {
       "@media (prefers-reduced-motion: reduce){.kl-active-dot{animation:none}.kl-launcher-btn{transition:none!important;transform:none!important;}}"
     root.appendChild(a)
   }
-  // The green "active" dot + red issue badge are children of the launcher button (absolutely
-  // positioned relative to it). paintLauncher() overwrites reportBtn.innerHTML, so we keep these
-  // as JS-owned nodes and re-append them after every repaint (see paintLauncher()).
+  // Both indicators are children of the launcher button. The red issue badge is absolutely
+  // positioned in the corner; the green active dot rides inline in the pill's flex flow.
+  // paintLauncher() overwrites reportBtn.innerHTML, so we keep these as JS-owned nodes and
+  // re-attach them after every repaint (see paintLauncher()).
   const activeDot = document.createElement("span")
   activeDot.className = "kl-active-dot"
   activeDot.setAttribute("aria-hidden", "true")
@@ -405,8 +409,10 @@ async function mount() {
       reportBtn.innerHTML = `${icon('bug')} ${label}`
       reportBtn.style.cssText = `position:relative;border:0;border-radius:999px;padding:10px 16px;background:${launcherIconColor};color:#fff;font-weight:600;font-size:13px;cursor:pointer;box-shadow:0 8px 24px rgba(91,91,240,.32);display:inline-flex;align-items:center;gap:7px;pointer-events:auto`
     }
-    // Re-attach the JS-owned indicator nodes wiped by the innerHTML overwrite.
-    reportBtn.appendChild(activeDot)
+    // Re-attach the JS-owned indicator nodes wiped by the innerHTML overwrite. The active dot goes
+    // FIRST in the flow so it sits just left of the bug icon; in icon-only mode (44px circle) there
+    // is no inline room for it, so it's omitted there — the button title still says Klavity is active.
+    if (effective !== 'icon') reportBtn.insertBefore(activeDot, reportBtn.firstChild)
     reportBtn.appendChild(issueBadge)
   }
   paintLauncher()
