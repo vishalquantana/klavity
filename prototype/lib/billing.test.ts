@@ -1,7 +1,9 @@
 import { expect, test } from "bun:test"
 import {
+  buildAgencyClientReport,
   buildProjectUsage,
   buildUsageMeters,
+  isAgencyEntitled,
   intervalFromLookupKey,
   intervalFromPrice,
   intervalFromPriceId,
@@ -226,7 +228,7 @@ test("founding is annual-only in the price catalog (no monthly entry) at $290/yr
 })
 
 test("PLAN_QUOTAS covers every BillingPlan value (type exhaustiveness holds at runtime too)", () => {
-  const plans = ["free", "pro", "team", "founding", "scale", "partner"] as const
+  const plans = ["free", "pro", "team", "agency", "founding", "scale", "partner"] as const
   for (const plan of plans) {
     expect(PLAN_QUOTAS[plan]).toBeDefined()
   }
@@ -238,6 +240,97 @@ test("Founding/Pro/Team catalog amounts stay correct", () => {
   expect(STRIPE_PRICE_CATALOG.pro.year?.unitAmount).toBe(29000)
   expect(STRIPE_PRICE_CATALOG.team.month?.unitAmount).toBe(9900)
   expect(STRIPE_PRICE_CATALOG.team.year?.unitAmount).toBe(99000)
+})
+
+// ── KLAVITYKLA-310: Agency tier + per-client usage & outcomes rollup ────────────────────────────
+
+test("agency tier normalizes and carries unlimited projects at-or-above Team allowances", () => {
+  expect(normalizePlan("agency")).toBe("agency")
+  const agency = PLAN_QUOTAS.agency, team = PLAN_QUOTAS.team
+  expect(agency.projects).toBeNull() // unlimited client sites
+  expect(agency.sims!).toBeGreaterThanOrEqual(team.sims!)
+  expect(agency.simReactionsMonthly!).toBeGreaterThanOrEqual(team.simReactionsMonthly!)
+  expect(agency.autosimFlows!).toBeGreaterThanOrEqual(team.autosimFlows!)
+})
+
+test("agency price catalog encodes monthly + two-months-free annual", () => {
+  expect(STRIPE_PRICE_CATALOG.agency.month?.unitAmount).toBe(24900)
+  expect(STRIPE_PRICE_CATALOG.agency.year?.unitAmount).toBe(249000)
+  expect(STRIPE_PRICE_CATALOG.agency.year!.unitAmount).toBe(STRIPE_PRICE_CATALOG.agency.month!.unitAmount * 10)
+})
+
+test("isAgencyEntitled gates on agency/scale/partner or an unlimited flag", () => {
+  expect(isAgencyEntitled("agency")).toBe(true)
+  expect(isAgencyEntitled("scale")).toBe(true)
+  expect(isAgencyEntitled("partner")).toBe(true)
+  expect(isAgencyEntitled("free")).toBe(false)
+  expect(isAgencyEntitled("pro")).toBe(false)
+  expect(isAgencyEntitled("team")).toBe(false)
+  expect(isAgencyEntitled("free", true)).toBe(true) // unlimited override
+  expect(isAgencyEntitled(null)).toBe(false)
+})
+
+test("buildAgencyClientReport merges usage + outcomes into one row per client", () => {
+  const rows = buildAgencyClientReport(
+    [{ projectId: "p1", name: "Acme" }, { projectId: "p2", name: "Beta" }],
+    [
+      { projectId: "p1", metric: "sim_review", count: 4 },
+      { projectId: "p1", metric: "autosim_walk", count: 2 },
+      { projectId: "p2", metric: "sim_review", count: 1 },
+    ],
+    [
+      { projectId: "p1", reportsFound: 7, regressionsCaught: 3, guardedGreen: 8, guardedAmber: 1, guardedRed: 1, guardedTotal: 10 },
+      { projectId: "p2", reportsFound: 0, regressionsCaught: 0, guardedGreen: 0, guardedAmber: 0, guardedRed: 0, guardedTotal: 0 },
+    ],
+  )
+  const p1 = rows.find((r) => r.projectId === "p1")!
+  expect(p1.name).toBe("Acme")
+  expect(p1.simReviews).toBe(4)
+  expect(p1.autosimWalks).toBe(2)
+  expect(p1.reportsFound).toBe(7)
+  expect(p1.regressionsCaught).toBe(3)
+  expect(p1.guardedRuns).toBe(10)
+  expect(p1.guardedPassRate).toBeCloseTo(0.8)
+  const p2 = rows.find((r) => r.projectId === "p2")!
+  expect(p2.guardedRuns).toBe(0)
+  expect(p2.guardedPassRate).toBeNull() // no guarded runs → null, not 0
+})
+
+test("buildAgencyClientReport sorts most-outcomes-first, then usage, then name", () => {
+  const rows = buildAgencyClientReport(
+    [{ projectId: "a", name: "A" }, { projectId: "b", name: "B" }, { projectId: "c", name: "C" }],
+    [{ projectId: "b", metric: "sim_review", count: 9 }],
+    [
+      { projectId: "a", reportsFound: 5, regressionsCaught: 0, guardedGreen: 0, guardedAmber: 0, guardedRed: 0, guardedTotal: 0 },
+      { projectId: "b", reportsFound: 0, regressionsCaught: 0, guardedGreen: 0, guardedAmber: 0, guardedRed: 0, guardedTotal: 0 },
+      { projectId: "c", reportsFound: 0, regressionsCaught: 0, guardedGreen: 0, guardedAmber: 0, guardedRed: 0, guardedTotal: 0 },
+    ],
+  )
+  // 'a' leads (most outcomes), then 'b' (has usage), then 'c' (nothing).
+  expect(rows.map((r) => r.projectId)).toEqual(["a", "b", "c"])
+})
+
+test("buildAgencyClientReport falls back to green+amber+red when guardedTotal is missing", () => {
+  const rows = buildAgencyClientReport(
+    [{ projectId: "p", name: "P" }],
+    [],
+    [{ projectId: "p", reportsFound: 0, regressionsCaught: 0, guardedGreen: 3, guardedAmber: 0, guardedRed: 1, guardedTotal: 0 }],
+  )
+  expect(rows[0].guardedRuns).toBe(4)
+  expect(rows[0].guardedPassRate).toBeCloseTo(0.75)
+})
+
+test("buildAgencyClientReport tolerates empty inputs and garbage counts", () => {
+  expect(buildAgencyClientReport()).toEqual([])
+  const rows = buildAgencyClientReport(
+    [{ projectId: "p", name: null }],
+    [{ projectId: "p", metric: "sim_review", count: -5 as any }],
+    [{ projectId: "p", reportsFound: NaN as any, regressionsCaught: -1 as any, guardedGreen: 0, guardedAmber: 0, guardedRed: 0, guardedTotal: 0 }],
+  )
+  expect(rows[0].simReviews).toBe(0)
+  expect(rows[0].reportsFound).toBe(0)
+  expect(rows[0].regressionsCaught).toBe(0)
+  expect(rows[0].name).toBe("p") // falls back to id when name is null
 })
 
 test("normalizes Stripe intervals and verifies signed webhook payloads", async () => {

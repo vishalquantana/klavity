@@ -1996,7 +1996,7 @@ export async function setProjectModalConfig(projectId: string, config: Record<st
 
 // Paid/partner plans that unlock Pro-gated features. 'partner' = unlimited internal/partner access.
 // 'founding' = Founding Team annual supporter tier (KLAVITYKLA-336) — treated as a paid plan.
-const PRO_PLANS = new Set(["pro", "team", "founding", "scale", "partner"])
+const PRO_PLANS = new Set(["pro", "team", "agency", "founding", "scale", "partner"])
 
 export function planIsPro(plan: string): boolean { return PRO_PLANS.has(plan) }
 export function planIsUnlimited(plan: string): boolean { return plan === 'partner' || plan === 'scale' }
@@ -4824,6 +4824,81 @@ export async function listInboxForProjects(
     regressionCount: regCounts[pid] ?? 0,
     topReports: topMap[pid] ?? [],
   }))
+}
+
+// ── Agency per-client OUTCOMES rollup (KLAVITYKLA-310) ──────────────────────────────────────────
+// For every project in `projectIds` (caller authorises the list), return the trust-loop outcomes in
+// a time window: reports found (all Snap/Sim feedback), regressions caught (findings kind='regression'),
+// and guarded-flow walk counts by verdict (green/amber/red) so the caller can compute a pass rate.
+// One query per data type (O(1) in project count), mirroring listInboxForProjects. Read-only.
+export type AgencyOutcomeRow = {
+  projectId: string
+  reportsFound: number
+  regressionsCaught: number
+  guardedGreen: number
+  guardedAmber: number
+  guardedRed: number
+  guardedTotal: number
+}
+
+export async function agencyClientOutcomes(
+  projectIds: string[],
+  opts?: { windowMs?: number },
+): Promise<AgencyOutcomeRow[]> {
+  if (!projectIds.length) return []
+  const windowMs = opts?.windowMs ?? 30 * 24 * 3600 * 1000 // 30-day default window
+  const since = Date.now() - windowMs
+  const ph = projectIds.map(() => "?").join(",")
+
+  // 1. Reports found per project (every filed report in the window, not just untriaged).
+  const repR = await db!.execute({
+    sql: `SELECT project_id, COUNT(*) AS cnt FROM feedback
+          WHERE project_id IN (${ph}) AND created_at >= ?
+          GROUP BY project_id`,
+    args: [...projectIds, since],
+  })
+  const reports: Record<string, number> = {}
+  for (const row of repR.rows) reports[String((row as any).project_id)] = Number((row as any).cnt)
+
+  // 2. Regressions caught per project ("why are fixed things breaking again").
+  const regR = await db!.execute({
+    sql: `SELECT project_id, COUNT(*) AS cnt FROM findings
+          WHERE project_id IN (${ph}) AND kind='regression' AND created_at >= ?
+          GROUP BY project_id`,
+    args: [...projectIds, since],
+  })
+  const regs: Record<string, number> = {}
+  for (const row of regR.rows) regs[String((row as any).project_id)] = Number((row as any).cnt)
+
+  // 3. Guarded-flow walk verdicts per project (green=pass, amber=warn, red=fail).
+  const walkR = await db!.execute({
+    sql: `SELECT project_id,
+                 SUM(CASE WHEN status='green' THEN 1 ELSE 0 END) AS g,
+                 SUM(CASE WHEN status='amber' THEN 1 ELSE 0 END) AS a,
+                 SUM(CASE WHEN status='red'   THEN 1 ELSE 0 END) AS r,
+                 COUNT(*) AS t
+          FROM trail_runs
+          WHERE project_id IN (${ph}) AND status IN ('green','amber','red') AND started_at >= ?
+          GROUP BY project_id`,
+    args: [...projectIds, since],
+  })
+  const walks: Record<string, { g: number; a: number; r: number; t: number }> = {}
+  for (const row of walkR.rows) {
+    walks[String((row as any).project_id)] = {
+      g: Number((row as any).g ?? 0), a: Number((row as any).a ?? 0),
+      r: Number((row as any).r ?? 0), t: Number((row as any).t ?? 0),
+    }
+  }
+
+  return projectIds.map((pid) => {
+    const w = walks[pid] ?? { g: 0, a: 0, r: 0, t: 0 }
+    return {
+      projectId: pid,
+      reportsFound: reports[pid] ?? 0,
+      regressionsCaught: regs[pid] ?? 0,
+      guardedGreen: w.g, guardedAmber: w.a, guardedRed: w.r, guardedTotal: w.t,
+    }
+  })
 }
 
 // Paginated, filterable ticket list for the /tickets view (KLA-169).
