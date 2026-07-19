@@ -40,6 +40,13 @@ export type AutosimAuthProbeResult = {
    * Absent on success or on non-mint methods.
    */
   failureKind?: ProbeFailureKind
+  /**
+   * True when ok=true but NO real login was performed (fixed_otp: only the secret format was
+   * checked — a generic probe cannot drive an arbitrary site's OTP UI). Callers must NOT promote
+   * the project to "verified" on this result; verification happens on the first successful walk
+   * login. Absence of this flag on ok=true means a real authenticated state was confirmed.
+   */
+  unverifiedLogin?: boolean
 }
 
 export type RunAutosimAuthProbeResult = AutosimAuthProbeResult & {
@@ -221,7 +228,9 @@ export const defaultAutosimAuthVerifier: AutosimAuthVerifier = async (config, br
 
   if (config.method === "fixed_otp") {
     if (secret.length < 4 || secret.length > 128) return { ok: false, error: "fixed OTP secret has an invalid length" }
-    return { ok: true }
+    // criticalpath1 dogfood: this green previously read as "verified" while the very first walk
+    // died at the OTP wall — a probe cannot drive an arbitrary login UI, so be honest about it.
+    return { ok: true, unverifiedLogin: true, error: "format checked — login verifies on the first successful walk" }
   }
 
   if (config.method === "mint_link") {
@@ -283,10 +292,12 @@ export async function runAutosimAuthProbe(
       return { ok: false, error, failureKind: verified.failureKind, probeId, projectId: probe.projectId, resumeSummary: null }
     }
 
-    await finishAutosimAuthProbe({ probeId, projectId: probe.projectId, ok: true, resumeSummary: null })
+    const unverifiedLogin = verified.unverifiedLogin === true
+    const note = unverifiedLogin ? redactSecret(verified.error || "", secret) || null : null
+    await finishAutosimAuthProbe({ probeId, projectId: probe.projectId, ok: true, error: note, unverifiedLogin, resumeSummary: null })
     const resumeSummary = await (opts.resume ?? autoResumeNeedsAuthSessions)(probe.projectId)
-    await finishAutosimAuthProbe({ probeId, projectId: probe.projectId, ok: true, resumeSummary })
-    return { ok: true, error: null, probeId, projectId: probe.projectId, resumeSummary }
+    await finishAutosimAuthProbe({ probeId, projectId: probe.projectId, ok: true, error: note, unverifiedLogin, resumeSummary })
+    return { ok: true, error: note, unverifiedLogin, probeId, projectId: probe.projectId, resumeSummary }
   } catch (e: any) {
     const error = redactSecret(e, secret)
     await finishAutosimAuthProbe({ probeId, projectId: probe.projectId, ok: false, error })

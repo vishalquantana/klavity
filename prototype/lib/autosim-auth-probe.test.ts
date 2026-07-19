@@ -32,6 +32,7 @@ const ACCOUNT = "acct_autosim_probe"
 const PROJECT_GREEN = "proj_autosim_probe_green"
 const PROJECT_RED = "proj_autosim_probe_red"
 const PROJECT_RESUME = "proj_autosim_probe_resume"
+const PROJECT_HONEST = "proj_autosim_probe_honest"
 const OWNER = "vishal@quantana.com.au"
 const FIXTURE_URL = "https://example.com/login"
 
@@ -94,7 +95,7 @@ beforeAll(async () => {
   await applySchema(c)
   const now = Date.now()
   await c.execute({ sql: "INSERT INTO accounts (id, name, owner_email, created_at) VALUES (?, ?, ?, ?)", args: [ACCOUNT, "Probe", OWNER, now] })
-  for (const projectId of [PROJECT_GREEN, PROJECT_RED, PROJECT_RESUME]) {
+  for (const projectId of [PROJECT_GREEN, PROJECT_RED, PROJECT_RESUME, PROJECT_HONEST]) {
     await c.execute({ sql: "INSERT INTO projects (id, account_id, name, status, review_mode, review_budget_daily, observability_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", args: [projectId, ACCOUNT, "Probe Project", "active", "auto", 200, "named", now, now] })
   }
 })
@@ -131,6 +132,23 @@ test("green auth probe marks the project verified, redacts secret payloads, and 
   const probe = await getAutosimAuthProbe(probeId)
   expect(probe?.status).toBe("green")
   expect(probe?.resumeSummary).toMatchObject({ eligible: 1 })
+})
+
+test("fixed_otp DEFAULT verifier is honest: green probe but project stays 'registered' (no false verified)", async () => {
+  // criticalpath1 regression: the default fixed_otp probe only format-checks the secret (it cannot
+  // drive an arbitrary login UI), so it must NOT promote the project to 'verified' — the first
+  // live walk previously died at the OTP wall right after the UI said verified.
+  const probeId = await register(PROJECT_HONEST, "fixed_otp", "666666")
+  const result = await runAutosimAuthProbe(probeId, {
+    resume: async () => ({ eligible: 0, resumed: [], skipped: [], errors: [] }),
+  })
+  expect(result.ok).toBe(true)
+  expect(result.unverifiedLogin).toBe(true)
+  const project = await db!.execute({ sql: "SELECT autosim_auth_status FROM projects WHERE id=?", args: [PROJECT_HONEST] })
+  expect((project.rows[0] as any).autosim_auth_status).toBe("registered")
+  const probe = await getAutosimAuthProbe(probeId)
+  expect(probe?.status).toBe("green")
+  expect(probe?.error || "").toContain("verifies on the first successful walk")
 })
 
 test("red auth probe stores a redacted failure and does not auto-resume", async () => {
