@@ -114,6 +114,10 @@ const BASE = (process.env.KLAV_BASE_URL || `http://localhost:${PORT}`)
   .replace("klavity.quantana.top", "klavity.in")
 const SECURE = BASE.startsWith("https")
 const DEV_SHOW_OTP = process.env.KLAV_DEV_SHOW_OTP === "1"
+// KLAVITYKLA-9 security fix — Enterprise SSO is OFF by default. Every /api/sso/* and /auth/sso/*
+// route 404s unless this is explicitly enabled, so the feature can never be reached on an
+// environment that has not deliberately opted in.
+const SSO_ENABLED = ["1", "true"].includes((process.env.KLAV_SSO_ENABLED || "").trim().toLowerCase())
 const ENDPOINT = process.env.OPENROUTER_ENDPOINT || "https://openrouter.ai/api/v1/chat/completions"
 const OPS_DAILY_CAP_USD = Number(process.env.OPS_DAILY_CAP_USD || 50)
 // KLAVITYKLA-341 — bounded slice of OPS_DAILY_CAP_USD reserved for the anonymous free-tool AI calls
@@ -2555,6 +2559,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     // DELETE /api/sso/config    — remove OIDC config (account owner/admin)
     // GET  /auth/sso/login      — initiate OIDC login (?domain=acme.com)
     // GET  /auth/sso/callback   — handle IdP callback (?code=&state=)
+    //
+    // KILL SWITCH: the whole surface is gated behind KLAV_SSO_ENABLED (default OFF). When the flag
+    // is not set these are indistinguishable from routes that do not exist.
+    if (!SSO_ENABLED && (path.startsWith("/api/sso/") || path.startsWith("/auth/sso/"))) {
+      return json({ error: "Not found" }, 404)
+    }
 
     if (req.method === "GET" && path === "/api/sso/config") {
       if (!db || !me) return json({ error: "Unauthorized" }, 401)
