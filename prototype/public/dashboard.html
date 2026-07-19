@@ -560,6 +560,11 @@ body[data-view="recurring"] .grid>.card[data-view~="recurring"]{grid-column:1/-1
 .ri-guard-link{font-family:var(--mono);font-size:10px;letter-spacing:.04em;padding:3px 8px;border-radius:20px;background:rgba(219,39,119,.10);color:var(--rose);text-decoration:none;display:inline-flex;align-items:center;gap:4px;transition:background var(--mi-dur) ease,transform var(--mi-press-dur)}
 .ri-guard-link:hover{background:rgba(219,39,119,.18)}
 .ri-guard-link:active{transform:scale(.97)}
+/* KLAVITYKLA-239: inline re-open triage action on regressed rows — rose to match the regression accent */
+.ri-reopen-btn{font-family:var(--mono);font-size:10px;letter-spacing:.04em;padding:3px 8px;border-radius:20px;border:1px solid rgba(219,39,119,.35);background:transparent;color:var(--rose);cursor:pointer;display:inline-flex;align-items:center;gap:4px;transition:background var(--mi-dur) ease,transform var(--mi-press-dur)}
+.ri-reopen-btn:hover{background:rgba(219,39,119,.14)}
+.ri-reopen-btn:active{transform:scale(.97)}
+.ri-reopen-btn[disabled]{opacity:.55;cursor:default}
 .ri-exp-link{color:var(--indigo);text-decoration:underline;text-underline-offset:2px;cursor:pointer}
 .ri-exp-link:hover{color:var(--paper)}
 .ri-section-desc{font-size:13px;color:var(--paper-faint);margin:-10px 0 16px;line-height:1.5;max-width:620px}
@@ -3003,11 +3008,24 @@ async function renderRecurringIssues() {
       const guardLink = (fid && item.expectationStatus !== "enforced")
         ? `<a class="ri-guard-link" href="#tickets" data-ri-ticket="${esc(fid)}" onclick="riOpenTicket(event)" title="Turn this into an enforceable guard">${kicon('shield',{size:11})} Guard this</a>`
         : ""
+      // KLAVITYKLA-239: make each recurring row directly actionable, not just informational.
+      // Beyond "view ticket" + "Guard this", surface (a) a jump to the freshest replay (the most
+      // recent occurrence's own row) and (b) an inline re-open for regressions — so a fix that broke
+      // again is triaged straight from this view instead of hunting for the ticket elsewhere.
+      const occs = Array.isArray(item.occurrences) ? item.occurrences : []
+      const latestOcc = occs.length ? occs.reduce((a, b) => (((b && b.seenAt) || 0) > ((a && a.seenAt) || 0) ? b : a)) : null
+      const latestFid = latestOcc && latestOcc.feedbackId ? String(latestOcc.feedbackId) : ""
+      const latestLink = (latestFid && latestFid !== fid)
+        ? `<a class="ri-ticket-link" href="#tickets" data-ri-latest="${esc(latestFid)}" onclick="riOpenLatest(event)" title="Open the most recent occurrence of this issue">${kicon('clock',{size:11})} latest occurrence</a>`
+        : ""
+      const reopenBtn = (fid && item.regressed)
+        ? `<button type="button" class="ri-reopen-btn" data-ri-ticket="${esc(fid)}" onclick="riReopen(event)" title="Re-open this ticket — put the regression back in the active queue">${kicon('rotate-cw',{size:11})} Re-open</button>`
+        : ""
       return `<div class="ri-item${item.regressed ? " is-regression" : ""}">
         ${regFlag}
         <div class="ri-head">
           <div class="ri-title">${title}</div>
-          <div class="ri-chips">${impactChip}${priChip}${ticketLink}${guardLink}</div>
+          <div class="ri-chips">${impactChip}${priChip}${ticketLink}${latestLink}${guardLink}${reopenBtn}</div>
         </div>
         ${metaParts.length ? `<div class="ri-meta">${metaParts.join(" · ")}</div>` : ""}
         ${item.summary ? `<div class="ri-summary">${esc(item.summary)}</div>` : ""}
@@ -3019,9 +3037,7 @@ async function renderRecurringIssues() {
 }
 // B.6: open a recurring-issue row's ticket drawer (view-ticket + "Guard this" both route here — the
 // B.1 guard flow's "Guard this fix" button lives inside the drawer, pre-scoped to this issue).
-function riOpenTicket(ev) {
-  ev.preventDefault()
-  const fid = ev.currentTarget && ev.currentTarget.getAttribute("data-ri-ticket")
+function riOpenTicketId(fid) {
   if (!fid) return
   const nv = document.querySelector('.side .nv[data-go="tickets"]'); if (nv) nv.click()
   const go = () => { if (typeof openSingleTicket === "function") openSingleTicket(fid) }
@@ -3031,6 +3047,52 @@ function riOpenTicket(ev) {
       if (d && d.report) { if (!state.tickets) state.tickets = []; if (!state.tickets.find(x => x.id === d.report.id)) state.tickets.push(d.report) }
       go()
     }).catch(go)
+}
+function riOpenTicket(ev) {
+  ev.preventDefault()
+  riOpenTicketId(ev.currentTarget && ev.currentTarget.getAttribute("data-ri-ticket"))
+}
+// KLAVITYKLA-239: jump straight to the freshest replay — opens the most recent occurrence's own
+// ticket row in the drawer (not the original cluster head), so the newest evidence is one click away.
+function riOpenLatest(ev) {
+  ev.preventDefault(); ev.stopPropagation()
+  riOpenTicketId(ev.currentTarget && ev.currentTarget.getAttribute("data-ri-latest"))
+}
+// KLAVITYKLA-239: re-open a regressed recurring issue inline — flips status → open (same PATCH the
+// triage/ticket views use) so a fix that broke again lands back in the active queue, then refreshes
+// the Recurring list. Reuses the existing per-ticket feedback endpoint; no new backend.
+let _riToastTimer = null
+async function riReopen(ev) {
+  ev.preventDefault(); ev.stopPropagation()
+  const btn = ev.currentTarget; if (!btn) return
+  const fid = btn.getAttribute("data-ri-ticket"); if (!fid) return
+  if (btn.getAttribute("data-busy")) return
+  btn.setAttribute("data-busy", "1"); btn.setAttribute("disabled", "disabled")
+  try {
+    const r = await fetch("/api/feedback/" + encodeURIComponent(fid), {
+      method: "PATCH", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status: "open" }), credentials: "include",
+    })
+    const d = r ? await r.json().catch(() => ({})) : {}
+    if (!r || !r.ok || d.ok === false) throw new Error(d.error || "Couldn't re-open.")
+    // Keep any cached ticket in sync so the drawer/board reflect the re-open immediately.
+    ;(state.tickets || []).forEach(t => { if (String(t.id) === String(fid)) t.status = "open" })
+    riToast(kicon('rotate-cw', { size: 15 }) + " Re-opened — back in the active queue.")
+    _recurringLoaded = false
+    if (typeof renderRecurringIssues === "function") await renderRecurringIssues()
+  } catch (e) {
+    btn.removeAttribute("data-busy"); btn.removeAttribute("disabled")
+    riToast(kicon('triangle-alert', { size: 15 }) + " " + esc((e && e.message) || "Couldn't re-open."), true)
+  }
+}
+function riToast(html, warn) {
+  let toast = $("riToast")
+  if (!toast) { toast = document.createElement("div"); toast.id = "riToast"; document.body.appendChild(toast) }
+  toast.className = "tg-toast" + (warn ? " tg-toast-warn" : "")
+  toast.innerHTML = `<span class="tg-toast-msg">${html}</span>`
+  toast.classList.add("show")
+  if (_riToastTimer) clearTimeout(_riToastTimer)
+  _riToastTimer = setTimeout(() => toast.classList.remove("show"), 4200)
 }
 // B.10: the "guard: confirmed" label links to the Guards board (its own top-level view now).
 function riGoGuard(ev) {
