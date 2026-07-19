@@ -48,6 +48,23 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 .banner .pct{font-family:var(--display);font-weight:500;font-size:42px;line-height:1;letter-spacing:-.02em}
 .banner .lbl{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:6px}
 .banner .sub{color:var(--paper-dim);font-size:14px;max-width:52ch}
+/* KLA-270: resumable / partial-draft banner — stalled authoring sessions the user left mid-way. */
+.resume-banner{background:linear-gradient(135deg,rgba(217,131,36,.12),rgba(217,131,36,.04));border:1px solid rgba(217,131,36,.34);border-radius:18px;padding:18px 22px;margin-bottom:22px}
+.resume-banner .rb-head{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--amber);margin-bottom:4px}
+.resume-banner .rb-sub{color:var(--paper-dim);font-size:13px;margin-bottom:8px;max-width:60ch}
+.rd-row{display:flex;align-items:center;gap:12px;justify-content:space-between;padding:12px 0;border-top:1px solid var(--line)}
+.rd-main{min-width:0}
+.rd-name{font-size:14px;font-weight:600;margin-bottom:3px}
+.rd-meta{font-family:var(--mono);font-size:11px;color:var(--paper-faint);display:flex;gap:10px;flex-wrap:wrap}
+.rd-reason{color:var(--paper-dim);font-size:12.5px;margin-top:4px;max-width:62ch}
+.rd-err{color:var(--rose);font-family:var(--mono);font-size:11px;margin-top:6px}
+.rd-act{flex-shrink:0;display:flex;align-items:center;gap:8px}
+.rd-resume{font-family:var(--body);font-weight:600;font-size:13px;padding:8px 14px;border-radius:9px;border:none;cursor:pointer;color:#fff;background:linear-gradient(135deg,#a9a9ff,var(--indigo));transition:transform .1s}
+[data-theme="dark"] .rd-resume{color:#0c0a08}
+.rd-resume:active{transform:translateY(1px)}
+.rd-resume:disabled{opacity:.6;cursor:default}
+.rd-link{font-family:var(--mono);font-size:11px;color:var(--indigo);border:1px solid var(--line);padding:7px 12px;border-radius:9px}
+.rd-link:hover{border-color:var(--indigo)}
 
 .grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px}
 @media(max-width:820px){.grid{grid-template-columns:minmax(0,1fr)}}
@@ -373,6 +390,10 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
       <button class="btn btn-indigo" id="newTrailBtn">+ New AutoSim</button>
     </div>
   </div>
+
+  <!-- KLA-270: resumable partial drafts — stalled/paused authoring sessions the user left mid-way.
+       Populated by loadResumableDrafts(); hidden when there's nothing to resume. -->
+  <div class="resume-banner" id="resumeBanner" style="display:none"></div>
 
   <!-- precision banner (legit-bug rate) — KLA-163: hidden until the project has at least one Trail -->
   <div class="banner" id="precBanner">
@@ -2504,9 +2525,24 @@ async function pollAuthor(sessionId, box){
       return
     }
     var display = humanizeStall(s.stallReason) || s.status
-    box.innerHTML = html + '<div class="nt-stall">Stopped: ' + esc(display) +
-      '</div><div class="hint">Refine the objective above and hit Create AutoSim again.</div>'
+    // KLA-270: when a stalled session saved a checkpoint, let the user resume it from where it
+    // stopped rather than re-running from scratch. Falls back to the refine-and-retry hint.
+    var canResume = s.status === "stalled" && s.checkpoint
+    box.innerHTML = html + '<div class="nt-stall">Stopped: ' + esc(display) + '</div>'
+      + (canResume
+          ? '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px">'
+            + '<button class="rd-resume" id="ntResume">' + kicon('play',{size:11}) + ' Resume from checkpoint</button>'
+            + '<span class="hint" style="margin:0">or refine the objective above and create it again.</span>'
+            + '<span class="rd-err" id="ntResumeErr"></span>'
+            + '</div>'
+          : '<div class="hint">Refine the objective above and hit Create AutoSim again.</div>')
     document.getElementById("ntGo").disabled = false
+    if(canResume){
+      var ntResume = document.getElementById("ntResume")
+      if(ntResume) ntResume.addEventListener("click", function(){
+        startResume(s, ntResume, document.getElementById("ntResumeErr"))
+      })
+    }
     return
   }
   document.getElementById("ntGo").disabled = false
@@ -2725,9 +2761,89 @@ async function reattachActiveAuthorSession(){
   } catch(e) {}
 }
 
+// ── KLA-270: resume a stalled authoring session from its saved checkpoint ──────────────────────
+// Opens the authoring modal with the original context, kicks the server to continue the drive from
+// the persisted checkpoint (POST /api/trails/author/:id/resume), then live-polls the resumed session.
+async function startResume(session, btn, errEl){
+  if(btn){ btn.disabled = true; btn.textContent = "Resuming..." }
+  if(errEl) errEl.textContent = ""
+  var rr
+  try { rr = await fetch("/api/trails/author/" + encodeURIComponent(session.id) + "/resume" + projQ(), { method: "POST" }) }
+  catch(e){ if(btn){ btn.disabled = false; btn.textContent = "Resume" } if(errEl) errEl.textContent = "Network error — try again."; return }
+  if(!rr.ok){
+    var e = await rr.json().catch(function(){ return {} })
+    if(btn){ btn.disabled = false; btn.textContent = "Resume" }
+    if(errEl) errEl.textContent = e.error || ("Couldn't resume (" + rr.status + ")")
+    return
+  }
+  var rd = await rr.json()
+  // Reflect the original context so the user sees what's being continued, then watch it live.
+  document.getElementById("ntName").value = session.name || ""
+  document.getElementById("ntUrl").value = session.baseUrl || ""
+  document.getElementById("ntObj").value = session.objective || ""
+  document.getElementById("ntGo").disabled = true
+  var box = document.getElementById("ntProgress")
+  box.innerHTML = '<div class="nt-live">Resuming AutoSim from checkpoint...</div>'
+  openModal("ntBg")
+  loadResumableDrafts() // refresh the banner (this session is now running, not stalled)
+  pollAuthor(rd.sessionId, box)
+}
+
+// Surface partial drafts / stalled authoring sessions so the user can pick up where they left off
+// instead of starting over. Best-effort: any failure just hides the banner.
+async function loadResumableDrafts(){
+  var banner = document.getElementById("resumeBanner")
+  if(!banner) return
+  var sessions = []
+  try {
+    var r = await fetch("/api/trails/author/stalled" + projQ())
+    if(!r.ok){ banner.style.display = "none"; return }
+    var d = await r.json()
+    sessions = (d.sessions || []).filter(function(s){ return s.status === "stalled" || s.status === "needs_auth" })
+  } catch(e){ banner.style.display = "none"; return }
+  if(!sessions.length){ banner.style.display = "none"; return }
+
+  var rows = sessions.map(function(s, i){
+    var steps = (s.checkpoint && typeof s.checkpoint.stepIdx === "number") ? s.checkpoint.stepIdx
+              : (Array.isArray(s.steps) ? s.steps.length : 0)
+    var when = s.updatedAt ? new Date(s.updatedAt).toLocaleString() : ""
+    var reason = humanizeStall(s.stallReason) || (s.status === "needs_auth" ? "Paused at a sign-in wall." : "AutoSim stopped part-way.")
+    var meta = '<div class="rd-meta">'
+      + '<span>' + esc(steps) + (steps === 1 ? " step recorded" : " steps recorded") + '</span>'
+      + (when ? '<span>' + esc(when) + '</span>' : "")
+      + (s.trailId ? '<span>' + kicon('file-text',{size:10}) + ' partial draft saved</span>' : "")
+      + '</div>'
+    var act = (s.status === "needs_auth")
+      ? '<a class="rd-link" href="/autosims/auth' + esc(projQ()) + '">' + kicon('lock',{size:10}) + ' Sign in &amp; resume</a>'
+      : '<button class="rd-resume" data-rd="' + esc(String(i)) + '">' + kicon('play',{size:11}) + ' Resume</button>'
+    return '<div class="rd-row">'
+      + '<div class="rd-main">'
+        + '<div class="rd-name">' + esc(s.name || "Untitled AutoSim") + '</div>'
+        + meta
+        + '<div class="rd-reason">' + esc(reason) + '</div>'
+        + '<div class="rd-err" id="rdErr' + esc(String(i)) + '"></div>'
+      + '</div>'
+      + '<div class="rd-act">' + act + '</div>'
+    + '</div>'
+  }).join("")
+
+  banner.innerHTML = '<div class="rb-head">' + kicon('rotate-cw',{size:11}) + ' Pick up where you left off</div>'
+    + '<div class="rb-sub">These AutoSims stopped part-way. Resume to continue from the last saved checkpoint instead of starting over.</div>'
+    + rows
+  banner.style.display = ""
+
+  banner.querySelectorAll(".rd-resume").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      var i = Number(btn.getAttribute("data-rd"))
+      startResume(sessions[i], btn, document.getElementById("rdErr" + i))
+    })
+  })
+}
+
 load()
 loadExpectations()
 reattachActiveAuthorSession()
+loadResumableDrafts()
 </script>
 </body>
 </html>
