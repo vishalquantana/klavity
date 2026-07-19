@@ -357,7 +357,11 @@ test("bug-check analyze pins ONE model + temperature 0 across many independent (
   for (let i = 0; i < DETERMINISM_CALLS; i++) {
     const r = await fetch(`${BASE}/api/cro/analyze`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      // The analyze route allows 10 requests / 60s per IP. Tests connect from 127.0.0.1, which
+      // clientIp() treats as a trusted proxy peer, so a distinct X-Forwarded-For puts each call in
+      // its own rate-limit bucket — N is driven by the statistics we need, not by the throttle,
+      // and the shared default bucket is left intact for the other tests in this file.
+      headers: { "content-type": "application/json", "x-forwarded-for": `203.0.113.${i + 10}` },
       // Distinct path per call ⇒ distinct cache key ⇒ a REAL model call every iteration.
       body: JSON.stringify({ url: `${PAGE_BASE}/det-${RUN}-${i}`, anonId: `anon_detN_${RUN}_${i}`, mode: "qa" }),
     })
@@ -386,7 +390,7 @@ test("the model pin is scoped to bug-check: /cro analyze still uses the weighted
   const before = croAiRequests.length
   const r = await fetch(`${BASE}/api/cro/analyze`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.200" },
     body: JSON.stringify({ url: `${PAGE_BASE}/cro-unpinned-${RUN}`, anonId: "anon_croun_" + RUN }),
   })
   expect(r.status).toBe(200)
