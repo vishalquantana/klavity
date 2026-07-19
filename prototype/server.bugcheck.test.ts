@@ -105,14 +105,21 @@ beforeAll(async () => {
       { title: "No social proof", severity: "medium", fix: "Add testimonials or customer logos" },
     ],
   })
+  // Every finding carries an `evidence` quote. The grounded ones quote the stub page verbatim; the
+  // SPECULATIVE one quotes text that appears nowhere on the page — KLAVITYKLA-342's false-positive
+  // gate must drop exactly that one.
   const fakeFindings = JSON.stringify({
     findings: [
-      { what: HOSTILE_WHAT, where: HOSTILE_WHERE, why: "A user cannot complete the primary action.", severity: "high" },
+      { what: HOSTILE_WHAT, where: HOSTILE_WHERE, evidence: "Welcome back", why: "A user cannot complete the primary action.", severity: "high" },
       // KLAVITYKLA-342: the exact false positive from the launch smoke test — a hallucinated
       // broken-link claim about a link that actually resolves 200. Must never reach the user.
-      { what: 'Broken link "GitHub"', where: "Header navigation", why: "The link leads nowhere.", severity: "high" },
-      { what: "Sync status shows literal \"undefined\"", where: "text near \"last sync\"", why: "Looks broken/unfinished to a visiting user.", severity: "medium" },
-      { what: "Active-user count shows NaN", where: "text near \"active users\"", why: "Undermines trust in the product.", severity: "low" },
+      // Deliberately GROUNDED so this fixture keeps proving the LINK filter drops it, rather than
+      // silently being caught by the newer evidence gate instead.
+      { what: 'Broken link "GitHub"', where: "Header navigation", evidence: "GitHub", why: "The link leads nowhere.", severity: "high" },
+      { what: "Sync status shows literal \"undefined\"", where: "text near \"last sync\"", evidence: "last sync was undefined", why: "Looks broken/unfinished to a visiting user.", severity: "medium" },
+      { what: "Active-user count shows NaN", where: "text near \"active users\"", evidence: "NaN active users", why: "Undermines trust in the product.", severity: "low" },
+      // Pure speculation about behaviour the model cannot see in the text, with a fabricated quote.
+      { what: "Checkout button fails to submit", where: ".checkout", evidence: "Payment declined — please retry", why: "Users cannot pay.", severity: "high" },
     ],
   })
 
@@ -120,7 +127,7 @@ beforeAll(async () => {
   // KLAVITYKLA-342 (same URL scanned twice → 0 findings, then 8).
   const fakeFindingsAltModel = JSON.stringify({
     findings: [
-      { what: "Hero image fails to load", where: ".hero img", why: "The page looks empty above the fold.", severity: "high" },
+      { what: "Hero image fails to load", where: ".hero img", evidence: "Acme Dashboard", why: "The page looks empty above the fold.", severity: "high" },
     ],
   })
   findingsForModel = (model: string) => (model === PINNED_MODEL ? fakeFindings : fakeFindingsAltModel)
@@ -336,6 +343,22 @@ test("POST /api/cro/analyze mode=qa: scanning the same URL twice returns an IDEN
   const second = await call()
   expect(second.findings).toEqual(first.findings)
   expect(second.checked).toEqual(first.checked)
+})
+
+test("POST /api/cro/analyze mode=qa: a SPECULATIVE finding whose evidence quote is not on the page is DROPPED", async () => {
+  const res = await fetch(`${BASE}/api/cro/analyze`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.240" },
+    body: JSON.stringify({ url: `${PAGE_BASE}/speculative-${RUN}`, anonId: "anon_spec_" + RUN, mode: "qa" }),
+  })
+  expect(res.status).toBe(200)
+  const body = await res.json()
+  // The stub claimed a checkout failure quoting "Payment declined — please retry", which appears
+  // nowhere in the fetched page. Unverifiable speculation must not reach the user.
+  expect(body.findings.some((f: any) => /checkout/i.test(f.what))).toBe(false)
+  // ...while findings quoting real page text survive, so the gate is not simply dropping everything.
+  expect(body.findings.some((f: any) => f.what.includes("undefined"))).toBe(true)
+  expect(body.findings.some((f: any) => f.what.includes("NaN"))).toBe(true)
 })
 
 // ── The ROOT-CAUSE determinism test (KLAVITYKLA-342). ─────────────────────────────────────────
