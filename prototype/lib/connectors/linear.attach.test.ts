@@ -97,7 +97,9 @@ test("linear uploads attachment then embeds assetUrl markdown in issue descripti
   expect(desc).toContain(`![screenshot](${ASSET_URL})`)
   expect(desc).toContain("fallback") // original body preserved
 
-  expect(r).toEqual({ externalKey: "ENG-7", externalUrl: "https://linear.app/team/issue/ENG-7" })
+  expect(r).toMatchObject({ externalKey: "ENG-7", externalUrl: "https://linear.app/team/issue/ENG-7" })
+  // KLA-285: the attach succeeded, so nothing to warn about.
+  expect(r.attachmentWarning).toBeFalsy()
 })
 
 // (2) Graceful degradation: when the upload step fails/throws, the issue is STILL created and
@@ -135,7 +137,12 @@ test("linear still creates issue when attachment upload fails (graceful)", async
   expect(desc).not.toContain("![screenshot]")
   expect(desc).toContain("fallback")
 
-  expect(r).toEqual({ externalKey: "ENG-7", externalUrl: "https://linear.app/team/issue/ENG-7" })
+  expect(r).toMatchObject({ externalKey: "ENG-7", externalUrl: "https://linear.app/team/issue/ENG-7" })
+  // KLA-285: degrading to the body link is allowed, but it must no longer be SILENT — the reason
+  // rides back on the export result so it lands on the ticket's export timeline.
+  expect(r.attachmentWarning).toBeTruthy()
+  expect(r.attachmentWarning).toContain("shot.png")
+  expect(r.attachmentWarning).toContain("link included in body")
 })
 
 // (2b) A thrown error inside the upload (e.g. fetch rejects) is also swallowed.
