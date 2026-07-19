@@ -92,13 +92,14 @@ test("dashboard.html: openers navigate to the page and preserve all three modes"
   // three-mode openers route through openSimModal with the mode preselected
   expect(dashSrc).toContain('window.openSimModalSite = function(){ window.openSimModal("site") }')
   expect(dashSrc).toContain('window.openSimModalCall = function(){ window.openSimModal("call") }')
-  // describe/site/call are all still valid panes
-  expect(dashSrc).toContain('PANE_ORDER={describe:"describe",site:"site",call:"call"}')
+  // describe/site/call are all still valid panes (null-prototype allowlist — see
+  // dashboard-sim-new-url.test.ts for the prototype-pollution regression)
+  expect(dashSrc).toContain('{describe:"describe",site:"site",call:"call"}')
 })
 
 test("dashboard.html: landing on /sim/new opens the surface (deep-link) and Back closes it", () => {
   // maybeOpenCreateSim honours the path + ?mode=
-  expect(dashSrc).toContain("if(atSimNew()){ want=true; mode=PANE_ORDER[qp.get(\"mode\")]||\"describe\"; }")
+  expect(dashSrc).toContain("if(atSimNew()){ want=true; mode=paneOf(qp.get(\"mode\")); }")
   // popstate handler wires Back/forward to open/close the surface
   expect(dashSrc).toContain('window.addEventListener("popstate"')
 })
