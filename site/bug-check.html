@@ -8,8 +8,8 @@
 <script>!function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.people.toString()+" (stub)"},o="capture identify alias people.set people.set_once set_config register register_once unregister opt_out_capturing has_opted_out_capturing opt_in_capturing reset isFeatureEnabled onFeatureFlags getFeatureFlag getFeatureFlagPayload reloadFeatureFlags group updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures getActiveMatchingSurveys getSurveys onSessionId".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);posthog.init("__POSTHOG_KEY__",{api_host:"https://us.i.posthog.com",person_profiles:"identified_only"})</script>
 
 <!-- SEO -->
-<title>Free Bug Check — Find What's Broken In Your App · Klavity</title>
-<meta name="description" content="Paste your app URL and get an AI bug scan in minutes. Free, no signup required. Klavity's AI users walk your app like real customers and file the bugs nobody reported.">
+<title>Free Bug Check — Watch AI Customers Walk Your App · Klavity</title>
+<meta name="description" content="Paste your app URL and watch a cast of AI customers walk your page and say what tripped them up, then read the verified list of what's broken. Free, no signup, results in minutes.">
 <link rel="canonical" href="https://klavity.in/bug-check">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/favicon.ico" sizes="any">
@@ -18,14 +18,14 @@
 <!-- Open Graph -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Klavity">
-<meta property="og:title" content="What's broken in your app right now? — Free Bug Check">
-<meta property="og:description" content="Paste your URL. Klavity's AI users walk it like real customers — and file the bugs nobody reported. Free, no signup.">
+<meta property="og:title" content="Watch AI customers walk your app — Free Bug Check">
+<meta property="og:description" content="Paste your URL. Watch AI customers walk your page and react out loud, then get the verified list of what's broken. Free, no signup.">
 <meta property="og:url" content="https://klavity.in/bug-check">
 <meta property="og:image" content="https://klavity.in/og.png">
 <!-- Twitter -->
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="What's broken in your app right now?">
-<meta name="twitter:description" content="Paste your URL. Klavity's AI users walk it like real customers — and file the bugs nobody reported. Free, no signup.">
+<meta name="twitter:title" content="Watch AI customers walk your app">
+<meta name="twitter:description" content="Paste your URL. Watch AI customers walk your page and react out loud, then get the verified list of what's broken. Free, no signup.">
 <meta name="twitter:image" content="https://klavity.in/og.png">
 
 <!-- Fonts -->
@@ -36,7 +36,7 @@
 
 <!-- JSON-LD -->
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"WebApplication","name":"Klavity Bug Check","applicationCategory":"DeveloperApplication","operatingSystem":"Web","url":"https://klavity.in/bug-check","description":"Free AI-powered bug scan. Paste your app URL and discover broken links, dead buttons, and user-facing breakage in minutes.","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}
+{"@context":"https://schema.org","@type":"WebApplication","name":"Klavity Bug Check","applicationCategory":"DeveloperApplication","operatingSystem":"Web","url":"https://klavity.in/bug-check","description":"Free AI bug check. Paste your app URL, watch a cast of AI customers walk your page and react to it, and get a verified list of broken links, dead buttons and user-facing breakage in minutes.","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}
 </script>
 
 <style>
@@ -47,7 +47,7 @@ body{font-family:var(--font-sans,'Inter',system-ui,sans-serif);background:#f9faf
 .hero h1{font-size:clamp(1.8rem,5vw,3rem);font-weight:800;letter-spacing:-0.02em;margin-bottom:1rem;line-height:1.1}
 .hero p{font-size:1.125rem;opacity:.85;max-width:540px;margin:0 auto 2.5rem}
 .badge{display:inline-block;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);border-radius:999px;padding:.25rem .85rem;font-size:.8rem;font-weight:600;letter-spacing:.05em;text-transform:uppercase;margin-bottom:1.25rem}
-.tool-card{background:#fff;border-radius:1.25rem;box-shadow:0 4px 32px rgba(0,0,0,.08);max-width:640px;margin:-1.5rem auto 0;padding:2rem;position:relative;z-index:1}
+.tool-card{background:#fff;color:#111827;border-radius:1.25rem;box-shadow:0 4px 32px rgba(0,0,0,.08);max-width:640px;margin:-1.5rem auto 0;padding:2rem;position:relative;z-index:1}
 .pretrust{display:flex;align-items:flex-start;gap:.5rem;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:.6rem;padding:.65rem .85rem;font-size:.8rem;line-height:1.5;color:#5b21b6;margin-bottom:1rem}
 .pretrust svg{flex-shrink:0;margin-top:.15rem}
 .form-row{display:flex;gap:.75rem;flex-wrap:wrap}
@@ -68,7 +68,7 @@ body{font-family:var(--font-sans,'Inter',system-ui,sans-serif);background:#f9faf
 .finding-item.high{border-left-color:#ef4444}
 .finding-item.medium{border-left-color:#f59e0b}
 .finding-item.low{border-left-color:#10b981}
-.finding-title{font-weight:700;font-size:.95rem;margin-bottom:.25rem;display:flex;align-items:center;gap:.5rem}
+.finding-title{font-weight:700;font-size:.95rem;margin-bottom:.25rem;display:flex;align-items:center;gap:.5rem;color:#111827}
 .severity-chip{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:.15rem .5rem;border-radius:999px}
 .severity-chip.high{background:#fee2e2;color:#dc2626}
 .severity-chip.medium{background:#fef3c7;color:#b45309}
@@ -106,6 +106,62 @@ body{font-family:var(--font-sans,'Inter',system-ui,sans-serif);background:#f9faf
 .faq-item p{padding-top:.75rem;font-size:.9rem;color:#4b5563;line-height:1.6}
 .error-msg{background:#fee2e2;border:1px solid #fecaca;border-radius:.5rem;padding:.75rem 1rem;font-size:.9rem;color:#dc2626;margin-top:.75rem;display:none}
 @media(max-width:500px){.form-row,.gate-row{flex-direction:column}.btn-analyze,.btn-unlock{width:100%}}
+
+/* ── Sim walk-through ──────────────────────────────────────────────────────────────────────────
+   The prospect's own page, captured full-height, scroll-animating inside a fake browser frame
+   while named Sims pop speech bubbles anchored to what they are reacting to. We cannot inject
+   anything into someone else's site, so the "walk" is played over our own capture of it. */
+.walk{display:none;margin-top:1.75rem;border-top:1px solid #e5e7eb;padding-top:1.5rem;text-align:left}
+.walk.on{display:block}
+.walk-title{font-size:1.05rem;font-weight:800;color:#111827;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
+.walk-sub{font-size:.85rem;color:#6b7280;margin-top:.3rem}
+.walk-cast{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.9rem}
+.walk-member{display:flex;align-items:center;gap:.45rem;background:#f9fafb;border:1px solid #e5e7eb;border-radius:999px;padding:.25rem .7rem .25rem .25rem;opacity:.45;transition:opacity .25s,transform .15s,box-shadow .25s}
+.walk-member.live{opacity:1;box-shadow:0 2px 10px rgba(124,58,237,.18)}
+.walk-member:hover{transform:scale(1.02)}
+.walk-av{width:1.7rem;height:1.7rem;border-radius:999px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:.65rem;font-weight:800;letter-spacing:.02em;flex-shrink:0}
+.walk-nm{font-size:.78rem;font-weight:700;color:#111827;line-height:1.2}
+.walk-rl{display:block;font-size:.68rem;font-weight:500;color:#6b7280}
+.walk-stage{margin-top:1rem;border:1px solid #e5e7eb;border-radius:.9rem;overflow:hidden;background:#fff;box-shadow:0 6px 28px rgba(17,24,39,.10)}
+.walk-chrome{display:flex;align-items:center;gap:.35rem;background:#f3f4f6;border-bottom:1px solid #e5e7eb;padding:.45rem .7rem}
+.walk-dot{width:.5rem;height:.5rem;border-radius:999px;background:#d1d5db;flex-shrink:0}
+.walk-addr{flex:1;min-width:0;margin-left:.4rem;background:#fff;border:1px solid #e5e7eb;border-radius:999px;padding:.15rem .6rem;font-size:.7rem;color:#6b7280;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.walk-viewport{position:relative;width:100%;height:clamp(300px,52vh,520px);overflow:hidden;background:#f9fafb}
+.walk-shot{position:absolute;top:0;left:0;width:100%;height:auto;display:block;will-change:transform;transition:transform 1s cubic-bezier(.4,0,.2,1)}
+.walk-layer{position:absolute;inset:0;pointer-events:none}
+.walk-halo{position:absolute;border:2px solid var(--accent);border-radius:.4rem;box-shadow:0 0 0 9999px rgba(17,24,39,.32);opacity:0;transition:opacity .35s}
+.walk-halo.on{opacity:1}
+.walk-bubble{position:absolute;max-width:min(320px,74%);background:#fff;border:1px solid #e5e7eb;border-left:3px solid var(--accent);border-radius:.7rem;padding:.6rem .75rem;box-shadow:0 8px 26px rgba(17,24,39,.22);opacity:0;transform:translateY(6px) scale(.97);transition:opacity .3s,transform .3s}
+.walk-bubble.on{opacity:1;transform:none}
+.walk-bubble-hd{display:flex;align-items:center;gap:.4rem;margin-bottom:.3rem}
+.walk-bubble-nm{font-size:.72rem;font-weight:800;color:#111827}
+.walk-bubble-rl{font-size:.68rem;color:#6b7280}
+.walk-bubble-txt{font-size:.82rem;line-height:1.45;color:#1f2937}
+.walk-bubble-tgt{font-size:.68rem;color:#7c3aed;margin-top:.3rem;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere}
+.walk-sent{margin-left:auto;font-size:.6rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em;padding:.1rem .4rem;border-radius:999px;background:#f3f4f6;color:#4b5563}
+.walk-sent.bad{background:#fee2e2;color:#dc2626}
+.walk-sent.good{background:#d1fae5;color:#047857}
+.walk-bar{display:flex;align-items:center;gap:.75rem;margin-top:.75rem;flex-wrap:wrap}
+.walk-progress{flex:1;min-width:120px;height:.3rem;border-radius:999px;background:#e5e7eb;overflow:hidden}
+.walk-progress span{display:block;height:100%;width:0;background:var(--accent);border-radius:999px;transition:width .4s}
+.walk-skip{background:#fff;border:1.5px solid #ddd6fe;color:var(--accent-dark);border-radius:.5rem;padding:.35rem .8rem;font-size:.78rem;font-weight:700;cursor:pointer;transition:background .15s,transform .15s,border-color .15s}
+.walk-skip:hover{background:#f5f3ff;border-color:var(--accent);transform:scale(1.02)}
+.walk-skip:active{transform:scale(.97)}
+.walk-log{list-style:none;margin-top:1rem;display:flex;flex-direction:column;gap:.6rem}
+.walk-log li{display:flex;gap:.6rem;align-items:flex-start;font-size:.85rem;color:#374151;line-height:1.45}
+.walk-note{font-size:.82rem;color:#6b7280;margin-top:.9rem}
+/* Static view: the same walk with no motion at all — the capture is simply scrollable and every
+   Sim line is already on the page as text. Used for prefers-reduced-motion and "Show everything". */
+.walk-viewport.still{height:auto;max-height:520px;overflow-y:auto}
+.walk-viewport.still .walk-shot{position:relative;transform:none;transition:none}
+.walk-viewport.still .walk-layer{display:none}
+@media(prefers-reduced-motion:reduce){
+  .walk-shot,.walk-bubble,.walk-halo,.walk-member,.walk-progress span{transition:none}
+}
+@media(max-width:500px){
+  .walk-viewport{height:clamp(240px,44vh,360px)}
+  .walk-bubble{max-width:92%}
+}
 </style>
 <script type="application/ld+json">
 {
@@ -117,7 +173,7 @@ body{font-family:var(--font-sans,'Inter',system-ui,sans-serif);background:#f9faf
       "name": "What does the Bug Check scan for?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "It fetches your page's public HTML and uses an AI model to look for user-facing breakage — dead or broken links, non-functional-looking buttons, error states leaking into the page, collapsed or duplicated layout, and empty/placeholder states shown where real content should be. It surfaces up to 8 findings ranked by severity."
+        "text": "Two things happen. To start, we read your page and build a small cast of AI customers (Sims) from what it actually says, capture your page in a real browser, and walk each Sim through it — you watch them scroll and react out loud. Then we run the verified scan: we resolve your page's real links over HTTP and use an AI model to look for user-facing breakage — dead or broken links, non-functional-looking buttons, error states leaking into the page, collapsed or duplicated layout, and empty/placeholder states — quoting the exact text on your page as evidence. It surfaces up to 8 findings ranked by severity."
       }
     },
     {
@@ -152,8 +208,8 @@ body{font-family:var(--font-sans,'Inter',system-ui,sans-serif);background:#f9faf
 
 <div class="hero">
   <div class="badge">Free Bug Scan Tool</div>
-  <h1>What's broken in your app right now?</h1>
-  <p>Paste your URL. Klavity's AI users walk it like real customers — and file the bugs nobody reported. Free, no signup.</p>
+  <h1>Watch AI customers walk your app</h1>
+  <p>Paste your URL and watch it happen: Klavity builds a cast of AI customers from your own page, walks them through it, and shows you what tripped them up — plus a verified list of what's broken. Free, no signup, results in minutes.</p>
 
   <div class="tool-card">
     <!-- Trust line — MUST be visible above the input (KLAVITYKLA-341). -->
@@ -173,6 +229,34 @@ body{font-family:var(--font-sans,'Inter',system-ui,sans-serif);background:#f9faf
       <div class="error-msg" id="error-msg" role="alert" aria-live="polite"></div>
       <div id="status"></div>
     </form>
+
+    <!-- The show. Sims walking the prospect's own page, above the substance (the findings). -->
+    <section class="walk" id="sim-walk" aria-labelledby="walk-title">
+      <h2 class="walk-title" id="walk-title">Your Sims are opening the page</h2>
+      <p class="walk-sub" id="walk-sub">Meeting the customers this page is written for.</p>
+      <div class="walk-cast" id="walk-cast"></div>
+
+      <div class="walk-stage" id="walk-stage" hidden>
+        <div class="walk-chrome">
+          <span class="walk-dot"></span><span class="walk-dot"></span><span class="walk-dot"></span>
+          <span class="walk-addr" id="walk-addr"></span>
+        </div>
+        <div class="walk-viewport" id="walk-viewport">
+          <img class="walk-shot" id="walk-shot" alt="Screenshot of the page being walked" src="">
+          <div class="walk-layer" id="walk-layer" aria-hidden="true"></div>
+        </div>
+      </div>
+
+      <div class="walk-bar" id="walk-bar" hidden>
+        <div class="walk-progress"><span id="walk-progress-fill"></span></div>
+        <button type="button" class="walk-skip" id="walk-skip">Show everything</button>
+      </div>
+
+      <!-- The accessible record of the walk. Every bubble also lands here as real text, so a
+           screen reader (and anyone who skips the animation) gets the full transcript. -->
+      <ol class="walk-log" id="walk-log" aria-live="polite"></ol>
+      <p class="walk-note" id="walk-note"></p>
+    </section>
 
     <div class="results" id="results">
       <div class="results-header" id="results-header"></div>
@@ -209,7 +293,7 @@ body{font-family:var(--font-sans,'Inter',system-ui,sans-serif);background:#f9faf
 
   <details class="faq-item">
     <summary>What does the Bug Check scan for?</summary>
-    <p>It fetches your page's public HTML and uses an AI model to look for user-facing breakage — dead or broken links, non-functional-looking buttons, error states leaking into the page, collapsed or duplicated layout, and empty/placeholder states shown where real content should be. It surfaces up to 8 findings ranked by severity.</p>
+    <p>Two things happen. To start, we read your page and build a small cast of AI customers (Sims) from what it actually says, capture your page in a real browser, and walk each Sim through it — you watch them scroll and react out loud. Then we run the verified scan: we resolve your page's real links over HTTP and use an AI model to look for user-facing breakage — dead or broken links, non-functional-looking buttons, error states leaking into the page, collapsed or duplicated layout, and empty/placeholder states — quoting the exact text on your page as evidence. It surfaces up to 8 findings ranked by severity.</p>
   </details>
 
   <details class="faq-item">
@@ -258,6 +342,322 @@ body{font-family:var(--font-sans,'Inter',system-ui,sans-serif);background:#f9faf
   const ctaSection = document.getElementById("cta-section")
 
   let analysedUrl = ""
+
+  // ── Sim walk-through ─────────────────────────────────────────────────────────────────────────
+  // We cannot inject anything into someone else's site, so the "walk" is played over a full-page
+  // capture WE took: the image scroll-animates inside a browser frame while each Sim's speech
+  // bubble pops anchored to the region its reaction is about. Every bubble is real DOM text and is
+  // mirrored into #walk-log, so the whole scene is readable without seeing a single pixel of it.
+  const walkEl = document.getElementById("sim-walk")
+  const walkTitle = document.getElementById("walk-title")
+  const walkSub = document.getElementById("walk-sub")
+  const walkCast = document.getElementById("walk-cast")
+  const walkStage = document.getElementById("walk-stage")
+  const walkViewport = document.getElementById("walk-viewport")
+  const walkShot = document.getElementById("walk-shot")
+  const walkLayer = document.getElementById("walk-layer")
+  const walkAddr = document.getElementById("walk-addr")
+  const walkBar = document.getElementById("walk-bar")
+  const walkFill = document.getElementById("walk-progress-fill")
+  const walkSkip = document.getElementById("walk-skip")
+  const walkLog = document.getElementById("walk-log")
+  const walkNote = document.getElementById("walk-note")
+
+  const SCROLL_MS = 1000     // page glides to the region the next Sim is talking about
+  const SETTLE_MS = 450      // beat of stillness before anyone speaks
+  const HOLD_MS = 2900       // long enough to actually read the line
+  const WALK_TIMEOUT_MS = 120000  // hard ceiling: never leave a spinner running forever
+
+  // A re-submit must abandon any walk still playing, or two timelines fight over the same DOM.
+  let walkRun = 0
+  let walkData = null
+  let walkShowingAll = false
+
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  const prefersReducedMotion = () =>
+    typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches
+
+  function sentimentClass(s) {
+    if (s === "frustrated" || s === "confused") return "bad"
+    if (s === "satisfied" || s === "delighted") return "good"
+    return ""
+  }
+
+  function resetWalk() {
+    walkRun++
+    walkData = null
+    walkShowingAll = false
+    walkEl.classList.remove("on")
+    walkStage.hidden = true
+    walkBar.hidden = true
+    walkCast.innerHTML = ""
+    walkLayer.innerHTML = ""
+    walkLog.innerHTML = ""
+    walkNote.textContent = ""
+    walkFill.style.width = "0"
+    walkViewport.classList.remove("still")
+    walkShot.removeAttribute("src")
+    walkShot.style.transform = "translateY(0)"
+  }
+
+  // A failed walk must never eat the page: the scan underneath is the substance and still runs.
+  function walkFailed(msg) {
+    walkEl.classList.add("on")
+    walkStage.hidden = true
+    walkBar.hidden = true
+    walkTitle.textContent = "The Sims couldn't walk this one"
+    walkSub.textContent = msg
+    walkNote.textContent = "Your scan results are below."
+  }
+
+  function renderCast(cast) {
+    walkCast.innerHTML = ""
+    cast.forEach(function (m, i) {
+      const el = document.createElement("div")
+      el.className = "walk-member"
+      el.dataset.sim = m.name
+      const av = document.createElement("span")
+      av.className = "walk-av"
+      av.style.background = m.accent
+      av.textContent = m.initials
+      const nm = document.createElement("span")
+      nm.className = "walk-nm"
+      nm.textContent = m.name
+      const rl = document.createElement("span")
+      rl.className = "walk-rl"
+      rl.textContent = m.role
+      nm.appendChild(rl)
+      el.appendChild(av)
+      el.appendChild(nm)
+      el.style.transitionDelay = (i * 90) + "ms"
+      walkCast.appendChild(el)
+    })
+  }
+
+  function markLive(name) {
+    Array.prototype.forEach.call(walkCast.children, function (el) {
+      el.classList.toggle("live", el.dataset.sim === name)
+    })
+  }
+
+  // Mirror of a bubble as permanent, screen-reader-reachable text.
+  function logBeat(beat) {
+    const li = document.createElement("li")
+    const av = document.createElement("span")
+    av.className = "walk-av"
+    av.style.background = beat.accent
+    av.textContent = beat.initials
+    const body = document.createElement("span")
+    const who = document.createElement("strong")
+    who.textContent = beat.simName + (beat.simRole ? " (" + beat.simRole + ")" : "") + ": "
+    body.appendChild(who)
+    body.appendChild(document.createTextNode("“" + beat.observation + "”"))
+    li.appendChild(av)
+    li.appendChild(body)
+    walkLog.appendChild(li)
+  }
+
+  // Rendered height of the capture. Falls back to the viewport height before the image reports a
+  // natural size, so a beat that arrives early still lands somewhere sane rather than at NaN.
+  function shotHeight() {
+    return walkShot.offsetHeight || walkViewport.clientHeight
+  }
+
+  function placeBeat(beat, offset) {
+    const W = walkViewport.clientWidth
+    const VH = walkViewport.clientHeight
+    const H = shotHeight()
+    walkLayer.innerHTML = ""
+
+    if (beat.region) {
+      const halo = document.createElement("div")
+      halo.className = "walk-halo"
+      halo.style.left = (beat.region.x * W) + "px"
+      halo.style.top = ((beat.region.y * H) - offset) + "px"
+      halo.style.width = (beat.region.w * W) + "px"
+      halo.style.height = (beat.region.h * H) + "px"
+      walkLayer.appendChild(halo)
+      requestAnimationFrame(function () { halo.classList.add("on") })
+    }
+
+    const bubble = document.createElement("div")
+    bubble.className = "walk-bubble"
+    const hd = document.createElement("div")
+    hd.className = "walk-bubble-hd"
+    const av = document.createElement("span")
+    av.className = "walk-av"
+    av.style.background = beat.accent
+    av.textContent = beat.initials
+    const nm = document.createElement("span")
+    nm.className = "walk-bubble-nm"
+    nm.textContent = beat.simName
+    const rl = document.createElement("span")
+    rl.className = "walk-bubble-rl"
+    rl.textContent = beat.simRole
+    const sent = document.createElement("span")
+    sent.className = "walk-sent " + sentimentClass(beat.sentiment)
+    sent.textContent = beat.sentiment
+    hd.appendChild(av); hd.appendChild(nm); hd.appendChild(rl); hd.appendChild(sent)
+    const txt = document.createElement("div")
+    txt.className = "walk-bubble-txt"
+    txt.textContent = "“" + beat.observation + "”"
+    bubble.appendChild(hd)
+    bubble.appendChild(txt)
+    if (beat.targetDescription) {
+      const tgt = document.createElement("div")
+      tgt.className = "walk-bubble-tgt"
+      tgt.textContent = beat.targetDescription
+      bubble.appendChild(tgt)
+    }
+    walkLayer.appendChild(bubble)
+
+    // Anchored under the region when there is room, otherwise nudged back into frame. A
+    // region-less (page-level) reaction just sits mid-frame — a clean sequential reveal beats a
+    // bubble pointing confidently at the wrong element.
+    const bw = bubble.offsetWidth
+    const bh = bubble.offsetHeight
+    let top = beat.region ? ((beat.region.y + beat.region.h) * H) - offset + 10 : (VH * 0.42)
+    let left = beat.region ? (beat.region.x * W) : 12
+    top = Math.min(Math.max(top, 8), Math.max(8, VH - bh - 8))
+    left = Math.min(Math.max(left, 8), Math.max(8, W - bw - 8))
+    bubble.style.top = top + "px"
+    bubble.style.left = left + "px"
+    requestAnimationFrame(function () { bubble.classList.add("on") })
+  }
+
+  // Scroll offset that brings a normalised y into frame, biased high so the bubble below it fits.
+  function offsetFor(beat) {
+    const VH = walkViewport.clientHeight
+    const H = shotHeight()
+    const max = Math.max(0, H - VH)
+    if (!beat.region) return Math.min(max, 0)
+    return Math.min(Math.max((beat.region.y * H) - (VH * 0.3), 0), max)
+  }
+
+  // The static view: no motion, capture scrollable in place, every line already on the page. This
+  // is what prefers-reduced-motion gets, and what "Show everything" switches to mid-play.
+  function showAll() {
+    if (!walkData || walkShowingAll) return
+    walkShowingAll = true
+    walkRun++
+    walkViewport.classList.add("still")
+    walkLayer.innerHTML = ""
+    walkShot.style.transform = "translateY(0)"
+    walkLog.innerHTML = ""
+    walkData.beats.forEach(logBeat)
+    Array.prototype.forEach.call(walkCast.children, function (el) { el.classList.add("live") })
+    walkFill.style.width = "100%"
+    walkSkip.hidden = true
+    finishWalk()
+  }
+
+  function finishWalk() {
+    const host = walkData ? hostOf(walkData.url) : "your page"
+    walkTitle.textContent = walkData.cast.length + " Sims walked " + host
+    walkSub.textContent = "This is the same thing Klavity runs on every deploy — with Sims built from your real customers."
+    walkNote.textContent = "Everything they said is listed above. The verified scan findings are below."
+  }
+
+  function hostOf(u) {
+    try { return new URL(u).hostname } catch { return u }
+  }
+
+  async function playWalk(data) {
+    const myRun = ++walkRun
+    walkData = data
+    walkShowingAll = false
+    walkSkip.hidden = false
+    walkAddr.textContent = data.url
+    walkStage.hidden = false
+    walkBar.hidden = false
+    walkTitle.textContent = "Watch your Sims walk " + hostOf(data.url)
+    walkSub.textContent = data.cast.length + " customers this page is written for, reacting as they scroll."
+    renderCast(data.cast)
+
+    // Wait for the capture to actually paint before measuring it — every position below is derived
+    // from the rendered image height, and measuring a zero-height image puts every bubble at the top.
+    await new Promise(function (resolve) {
+      let done = false
+      const go = function () { if (!done) { done = true; resolve() } }
+      walkShot.onload = go
+      walkShot.onerror = go
+      walkShot.src = "data:" + data.screenshot.mediaType + ";base64," + data.screenshot.b64
+      setTimeout(go, 8000)
+    })
+    if (myRun !== walkRun) return
+
+    if (prefersReducedMotion()) { showAll(); return }
+
+    for (let i = 0; i < data.beats.length; i++) {
+      const beat = data.beats[i]
+      const offset = offsetFor(beat)
+      walkShot.style.transform = "translateY(" + (-offset) + "px)"
+      markLive(beat.simName)
+      await sleep(SCROLL_MS)
+      if (myRun !== walkRun) return
+      await sleep(SETTLE_MS)
+      if (myRun !== walkRun) return
+      placeBeat(beat, offset)
+      logBeat(beat)
+      walkFill.style.width = (((i + 1) / data.beats.length) * 100) + "%"
+      await sleep(HOLD_MS)
+      if (myRun !== walkRun) return
+    }
+    // Land in the static view: the animation is over, so let the visitor scroll their own page
+    // capture freely instead of leaving it frozen at the last beat's offset.
+    walkLayer.innerHTML = ""
+    walkViewport.classList.add("still")
+    walkShot.style.transform = "translateY(0)"
+    walkSkip.hidden = true
+    finishWalk()
+    void fetch(BASE + "/api/track", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ event: "simwalk_completed", anonId, url: data.url, source, referrer, props: { tool: TOOL, sims: data.cast.length, beats: data.beats.length } }),
+    }).catch(function () {})
+  }
+
+  // Runs alongside the scan, never blocking it. Any failure degrades to a one-line explanation.
+  async function runWalk(url) {
+    resetWalk()
+    const myRun = walkRun
+    walkEl.classList.add("on")
+    walkTitle.textContent = "Your Sims are opening " + hostOf(url)
+    walkSub.textContent = "Working out who this page is written for, then walking it. Usually a minute or two."
+    walkNote.textContent = ""
+
+    const controller = typeof AbortController === "function" ? new AbortController() : null
+    const bail = setTimeout(function () { if (controller) controller.abort() }, WALK_TIMEOUT_MS)
+    try {
+      const res = await fetch(BASE + "/api/simwalk", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url: url }),
+        signal: controller ? controller.signal : undefined,
+      })
+      let data = {}
+      try { data = await res.json() } catch {}
+      if (myRun !== walkRun) return
+      if (!res.ok) {
+        walkFailed(res.status === 429
+          ? (data.error || "A lot of people are running walk-throughs right now — try again in a few minutes.")
+          : (data.error || "We couldn't open that page in a browser."))
+        return
+      }
+      if (!data.beats || !data.beats.length || !data.screenshot) {
+        walkFailed("Nobody had anything to say about that page.")
+        return
+      }
+      await playWalk(data)
+    } catch (e) {
+      if (myRun !== walkRun) return
+      walkFailed("The walk-through took too long to load.")
+    } finally {
+      clearTimeout(bail)
+    }
+  }
+
+  walkSkip.addEventListener("click", showAll)
 
   function setLoading(on) {
     analyzeBtn.disabled = on
@@ -337,6 +737,12 @@ body{font-family:var(--font-sans,'Inter',system-ui,sans-serif);background:#f9faf
     setLoading(true)
     resultsEl.style.display = "none"
     findingList.innerHTML = ""
+
+    // The show and the substance run side by side: the walk-through is slower (it drives a real
+    // browser and one vision call per Sim), so kicking it off here means the prospect has something
+    // alive to watch while the scan lands underneath it. Deliberately not awaited — a walk that
+    // fails or times out must never hold up, or hide, the findings.
+    void runWalk(rawUrl)
 
     // Fire check_started funnel event
     void fetch(BASE + "/api/track", {

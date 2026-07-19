@@ -213,7 +213,14 @@ const cap = (s: string, c: number) => (s.length > c ? s.slice(0, c - 20) + "\nâ€
 export interface BrowserPage {
   url(): string
   goto(url: string, timeoutMs: number): Promise<void>
-  screenshotJpeg(quality: number, timeoutMs: number): Promise<string> // base64, no data: prefix
+  /**
+   * base64 JPEG, no data: prefix.
+   * `opts.fullPage` captures the WHOLE scrollable document rather than just the viewport â€” used by
+   * the /bug-check Sim walk-through, which scroll-animates the captured page in the browser and
+   * anchors Sim speech bubbles to reaction regions. Regions returned by the vision model are
+   * normalised against whatever image it was shown, so display and model MUST share one capture.
+   */
+  screenshotJpeg(quality: number, timeoutMs: number, opts?: { fullPage?: boolean }): Promise<string>
   krefSnapshot(capChars?: number): Promise<string>
   count(selector: string): Promise<number>
   fingerprint(selector: string): Promise<Fingerprint>
@@ -261,7 +268,7 @@ class PlaywrightPage implements BrowserPage {
   constructor(private page: import("playwright").Page) {}
   url() { return this.page.url() }
   async goto(url: string, timeoutMs: number) { await this.page.goto(url, { timeout: timeoutMs, waitUntil: "domcontentloaded" }) }
-  async screenshotJpeg(quality: number, timeoutMs: number) { return (await this.page.screenshot({ type: "jpeg", quality, timeout: timeoutMs })).toString("base64") }
+  async screenshotJpeg(quality: number, timeoutMs: number, opts?: { fullPage?: boolean }) { return (await this.page.screenshot({ type: "jpeg", quality, timeout: timeoutMs, fullPage: !!opts?.fullPage })).toString("base64") }
   async krefSnapshot(capChars = KREF_SNAPSHOT_CAP) { return cap(await this.page.evaluate(krefSnapshotBody), capChars) }
   async count(selector: string) { return await this.page.locator(selector).count() }
   async fingerprint(selector: string) { return await this.page.locator(selector).first().evaluate(fingerprintBody) }
@@ -368,7 +375,7 @@ class PuppeteerPage implements BrowserPage {
   constructor(private page: any) {}
   url() { return this.page.url() }
   async goto(url: string, timeoutMs: number) { await this.page.goto(url, { timeout: timeoutMs, waitUntil: "domcontentloaded" }) }
-  async screenshotJpeg(quality: number, _timeoutMs: number) { return (await this.page.screenshot({ type: "jpeg", quality, encoding: "base64" })) as string }
+  async screenshotJpeg(quality: number, _timeoutMs: number, opts?: { fullPage?: boolean }) { return (await this.page.screenshot({ type: "jpeg", quality, encoding: "base64", fullPage: !!opts?.fullPage })) as string }
   async krefSnapshot(capChars = KREF_SNAPSHOT_CAP) { return cap(await this.page.evaluate(krefSnapshotBody), capChars) }
   async count(selector: string) { return await this.page.evaluate((s: string) => document.querySelectorAll(s).length, selector) }
   async fingerprint(selector: string) { return await this.page.$eval(selector, fingerprintBody) }

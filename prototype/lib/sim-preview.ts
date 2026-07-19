@@ -34,7 +34,7 @@ export interface ScreenshotResult {
  */
 export async function screenshotUrl(
   url: string,
-  opts: { navTimeoutMs?: number; shotTimeoutMs?: number; quality?: number; settleMs?: number } = {},
+  opts: { navTimeoutMs?: number; shotTimeoutMs?: number; quality?: number; settleMs?: number; fullPage?: boolean } = {},
   deps: ScreenshotDeps = {},
 ): Promise<ScreenshotResult> {
   const acquire = deps.acquire ?? acquireBrowser
@@ -49,7 +49,7 @@ export async function screenshotUrl(
     await page.goto(url, navTimeoutMs)
     // brief settle so above-the-fold content/webfonts paint before the shot
     if (settleMs > 0) await page.waitMs(settleMs)
-    const imageB64 = await page.screenshotJpeg(quality, shotTimeoutMs)
+    const imageB64 = await page.screenshotJpeg(quality, shotTimeoutMs, { fullPage: !!opts.fullPage })
     if (!imageB64 || imageB64.length < 100) throw new Error("empty screenshot")
     return { imageB64, mediaType: "image/jpeg" }
   } finally {
