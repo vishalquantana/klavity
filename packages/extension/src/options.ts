@@ -164,24 +164,19 @@ function renderAccount() {
   document.getElementById('klav-signedin')!.style.display = signedIn ? '' : 'none'
   if (signedIn) {
     ;(document.getElementById('klav-who') as HTMLElement).textContent = klavEmail || 'your Klavity account'
-    void loadPersonal()
+    renderConnectorsLink()
   }
 }
 
-async function loadPersonal() {
+// KLAVITYKLA-288: the per-user "personal Plane connection" is retired. The extension no longer
+// reads or writes /api/integration/personal (both endpoints now answer 410) — trackers are configured
+// once per project under Connectors in the dashboard, which is the only place the team can see them.
+// All this does now is point the retired panel at the right dashboard URL for the configured backend.
+function renderConnectorsLink() {
+  const el = document.getElementById('pers-connectors-link') as HTMLAnchorElement | null
+  if (!el) return
   const url = backendUrl()
-  if (!url || !klavToken) return
-  try {
-    const r = await fetch(`${url}/api/integration/personal`, { headers: { Authorization: `Bearer ${klavToken}` } })
-    if (!r.ok) return
-    const d = await r.json()
-    if (d?.config) {
-      setVal('pers-host', d.config.host || 'https://api.plane.so')
-      setVal('pers-workspace', d.config.workspace || '')
-      setVal('pers-projectId', d.config.projectId || '')
-      ;($('pers-token') as HTMLInputElement).placeholder = d.config.hasToken ? '•••• saved — leave blank to keep' : 'API token'
-    }
-  } catch { /* ignore */ }
+  el.href = url ? `${url}/dashboard#connectors` : '#'
 }
 
 async function sendCode() {
@@ -225,31 +220,8 @@ async function signOut() {
   setKlavMsg(null, '')
 }
 
-async function savePersonal() {
-  const url = backendUrl()
-  const msg = document.getElementById('pers-result')!
-  const setMsg = (ok: boolean | null, t: string) => { msg.className = 'testresult' + (ok === true ? ' ok' : ok === false ? ' err' : ''); msg.textContent = t }
-  if (!url || !klavToken) return setMsg(false, 'Sign in first.')
-  const form = new FormData()
-  const tok = ($('pers-token') as HTMLInputElement).value.trim()
-  if (tok) form.set('token', tok)
-  form.set('host', ($('pers-host') as HTMLInputElement).value.trim() || 'https://api.plane.so')
-  form.set('workspace', ($('pers-workspace') as HTMLInputElement).value.trim())
-  form.set('project_id', ($('pers-projectId') as HTMLInputElement).value.trim())
-  setMsg(null, 'Saving…')
-  try {
-    const r = await fetch(`${url}/api/integration/personal`, { method: 'POST', headers: { Authorization: `Bearer ${klavToken}` }, body: form })
-    const d = await r.json().catch(() => ({} as any))
-    if (!r.ok) return setMsg(false, d.error || `Failed (${r.status})`)
-    ;($('pers-token') as HTMLInputElement).value = ''
-    ;($('pers-token') as HTMLInputElement).placeholder = '•••• saved — leave blank to keep'
-    setMsg(true, 'Personal connection saved (synced to your account).')
-  } catch (e) { setMsg(false, (e as Error).message) }
-}
-
 $('klav-send').addEventListener('click', () => void sendCode())
 $('klav-verify').addEventListener('click', () => void verifyCode())
 $('klav-signout').addEventListener('click', () => void signOut())
-$('pers-save').addEventListener('click', () => void savePersonal())
 
 load().then(() => setSaveState('saved'))
