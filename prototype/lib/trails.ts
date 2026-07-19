@@ -669,6 +669,27 @@ export async function deleteTrailStep(projectId: string, stepId: string): Promis
   if (r.rows.length) await bumpStepVersion(projectId, String((r.rows[0] as any).trail_id))
 }
 
+/**
+ * KLAVITYKLA-275: reorder a draft trail's steps to match `orderedIds` exactly, reassigning each
+ * step's idx to its 0-based position in the list. The id set must match the trail's current steps
+ * one-for-one — a wrong length, a duplicate id, or any id that isn't a current step of this trail
+ * writes NOTHING and returns false (fail-loud; never a partial reorder). On success bumps
+ * step_version once so a subsequent re-verify walk runs against the new order. (tstep_trail_idx is a
+ * NON-unique index, so reassigning idx in place needs no parking phase.)
+ */
+export async function reorderTrailSteps(projectId: string, trailId: string, orderedIds: string[]): Promise<boolean> {
+  const current = await listTrailSteps(projectId, trailId)
+  if (current.length === 0 || current.length !== orderedIds.length) return false
+  if (new Set(orderedIds).size !== orderedIds.length) return false // duplicate id
+  const currentIds = new Set(current.map((s) => s.id))
+  for (const id of orderedIds) if (!currentIds.has(id)) return false // unknown / cross-trail id
+  for (let i = 0; i < orderedIds.length; i++) {
+    await db!.execute({ sql: `UPDATE trail_steps SET idx=? WHERE id=? AND project_id=?`, args: [i, orderedIds[i], projectId] })
+  }
+  await bumpStepVersion(projectId, trailId)
+  return true
+}
+
 // `target` (B.9 / KLA-249): repoint an existing step's locator in place — used by the "Edit guard"
 // path to adjust an enforced assert step's target without deleting-and-recreating the step (which
 // would destroy the expectation's enforced history). Only applied when present in the patch.
