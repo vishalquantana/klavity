@@ -1,7 +1,8 @@
 // Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
 import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
 import { buildMemberExport, membersToCsv, MEMBER_EXPORT_FIELDS } from "./lib/member-export"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes } from "./lib/db"
+import { isMaskingEnabled, maskMemberExportRow, maskDeep, maskWalkReportData } from "./lib/data-masking"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject } from "./lib/db"
 import { checkTenantBudget, tenantBudgetEnforcementEnabled, tenantBudgetRemaining, TenantBudgetExceededError } from "./lib/tenant-budget"
 import { sanitizeAttr } from "./lib/attr"
 import { deriveActivation, type ActivationSignals } from "./lib/activation"
@@ -2690,8 +2691,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const target = requested && isOpsAdmin(meE) ? requested : meE
       try {
         const data = await exportUserData(target)
-        logAudit({ action: "gdpr_export", actorEmail: meE, targetEmail: target, ip: clientIp(req, server) })
-        return json(data, 200, { "Content-Disposition": `attachment; filename="klavity-export-${target}.json"` })
+        // PII masking: ops-admin DSAR fulfilment can pass ?mask=1 to redact PII from the payload.
+        const payload = url.searchParams.get("mask") === "1" ? maskDeep(data) : data
+        return json(payload, 200, { "Content-Disposition": `attachment; filename="klavity-export-${target}.json"` })
       } catch (err: any) { return json(oops(err, "export"), 500) }
     }
 
@@ -5650,7 +5652,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         try {
           const replaySet = await runsWithReplay(projectId, [runId])
           const replayUrl = replaySet.has(runId) ? BASE + "/api/trails/walks/" + runId + "/replay" : undefined
-          const pdfBytes = await renderWalkPdf(projectId, runId, BASE, { replayUrl })
+          // PII masking: apply redaction to the gathered report data when enabled for this project.
+          const projCfgPdf = await getProjectModalConfig(projectId)
+          const dataTransform = isMaskingEnabled(projCfgPdf) ? maskWalkReportData : undefined
+          const pdfBytes = await renderWalkPdf(projectId, runId, BASE, { replayUrl, dataTransform })
           const shortId = runId.slice(0, 8)
           return new Response(pdfBytes as unknown as BodyInit, {
             headers: {
@@ -6086,21 +6091,24 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (!proj) return json({ error: "No project." }, 400)
         const result = buildMemberExport(proj.access, await membersOfProject(proj.id))
         if (!result.ok) return json({ error: result.error }, result.status)
+        // PII masking: if the project has piiMasking enabled in modal_config_json, redact email values.
+        const projCfgM = await getProjectModalConfig(proj.id)
+        const exportRows = isMaskingEnabled(projCfgM) ? result.rows.map(maskMemberExportRow) : result.rows
         const format = (url.searchParams.get("format") || "csv").toLowerCase()
         // Audit trail (best-effort — never fail the export on a logging hiccup).
         await insertActivity({
           projectId: proj.id, type: "member_export", actorEmail: me,
-          meta: { count: result.rows.length, fields: [...MEMBER_EXPORT_FIELDS], format },
+          meta: { count: exportRows.length, fields: [...MEMBER_EXPORT_FIELDS], format, piiMasked: isMaskingEnabled(projCfgM) },
         }).catch((e: any) => console.warn("member_export activity skipped:", e?.message || e))
         logAudit({ action: "member_export", actorEmail: me, projectId: proj.id, ip: clientIp(req, server), meta: { count: result.rows.length, format } })
         if (format === "json") {
           return json(
-            { project: proj.id, fields: [...MEMBER_EXPORT_FIELDS], members: result.rows },
+            { project: proj.id, fields: [...MEMBER_EXPORT_FIELDS], members: exportRows },
             200,
             { "Content-Disposition": `attachment; filename="klavity-members-${proj.id}.json"` },
           )
         }
-        return new Response(membersToCsv(result.rows), {
+        return new Response(membersToCsv(exportRows), {
           status: 200,
           headers: {
             "content-type": "text/csv; charset=utf-8",
