@@ -898,6 +898,10 @@ details.drawer .drawer-in{padding:0 22px 22px}
 .exp-badge{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;background:var(--ink-3);border:1px solid var(--line);font-family:var(--mono);font-size:10px;color:var(--paper-faint);text-decoration:none;transition:border-color .2s,color .15s,transform var(--mi-dur) var(--mi-ease),box-shadow var(--mi-dur) var(--mi-ease)}
 .exp-badge:hover{border-color:var(--indigo);color:var(--indigo);transform:var(--mi-lift);box-shadow:var(--mi-shadow)}
 .exp-badge .exp-err{color:var(--rose)}
+.exp-retry{background:none;border:none;padding:0 0 0 2px;margin:0;font-family:var(--mono);font-size:10px;color:var(--paper-faint);text-decoration:underline;cursor:pointer;transition:color .15s,transform var(--mi-dur) var(--mi-ease)}
+.exp-retry:hover{color:var(--indigo);transform:var(--mi-lift)}
+.exp-retry:active{transform:scale(.97)}
+.exp-retry[disabled]{opacity:.5;cursor:default;transform:none}
 .tkt-copy{display:flex;align-items:center;gap:8px;margin-top:4px}
 .tkt-copy select{appearance:none;background:var(--ink-2);border:1px solid var(--line);border-radius:8px;padding:7px 28px 7px 10px;color:var(--paper);font-family:var(--body);font-size:13px;outline:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center}
 .tkt-copy select:focus{border-color:var(--indigo)}
@@ -4030,11 +4034,15 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
       `<button class="seg-btn${s===curStatus?" active":""}" data-status="${s}">${STATUS_LABELS[s]}</button>`
     ).join("")
 
-    // Export badges HTML
+    // Export badges HTML. A failed export (KLA-283) gets an inline Retry control instead of a dead
+    // "failed" badge — it re-runs the export against the same connector and swaps itself for the
+    // normal success badge in place.
     let badgesHtml = exports.map(exp =>
       exp.externalUrl
         ? `<a class="exp-badge" href="${esc(exp.externalUrl)}" target="_blank" rel="noopener">${esc(exp.type)} · ${esc(exp.externalKey||"View")} ↗</a>`
-        : `<span class="exp-badge"><span class="exp-err">${esc(exp.type)} failed</span></span>`
+        : `<span class="exp-badge"><span class="exp-err">${esc(exp.type)} failed</span>${
+            admin && exp.connectorId ? `<button class="exp-retry" type="button" data-connector="${esc(exp.connectorId)}" title="Retry this export">Retry</button>` : ""
+          }</span>`
     ).join("") + legacyBadge
 
     // Copy-to dropdown: only if admin and there are connectors
@@ -4293,7 +4301,56 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
       })
     }
 
-    // Wire up copy-to button
+    // Wire up copy-to button + per-badge Retry (KLA-283).
+    // Both paths share runExport(): POST the export, then render the result. The server refuses a
+    // duplicate manual export with 409 + alreadyExported; we surface that as a confirm carrying the
+    // existing external key, and only re-POST with force:true if the user picks "export anyway".
+    const applyExportResult = (exp, replaceEl) => {
+      const badgesDiv = detailEl.querySelector(".tkt-badges")
+      if (!badgesDiv) return
+      let newBadge
+      if (exp.externalUrl) {
+        newBadge = document.createElement("a")
+        newBadge.className = "exp-badge"
+        newBadge.href = exp.externalUrl; newBadge.target = "_blank"; newBadge.rel = "noopener"
+        newBadge.textContent = exp.type + " · " + (exp.externalKey || "View") + " ↗"
+      } else {
+        newBadge = document.createElement("span")
+        newBadge.className = "exp-badge"
+        newBadge.innerHTML = `<span class="exp-err">${esc(exp.type)} ${esc(exp.status === "failed" ? ("failed: " + (exp.error || "")) : "")}</span>`
+      }
+      // A retry swaps the failed badge in place; a fresh export appends a new one.
+      if (replaceEl && replaceEl.parentNode) replaceEl.parentNode.replaceChild(newBadge, replaceEl)
+      else badgesDiv.appendChild(newBadge)
+    }
+
+    const runExport = async (connectorId, opts) => {
+      const o = opts || {}
+      const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/export", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify(o.force ? { connectorId, force: true } : { connectorId })
+      }).catch(() => null)
+      const d = r ? await r.json().catch(() => ({})) : {}
+      if (r && r.status === 409 && d.alreadyExported) {
+        const a = d.alreadyExported
+        const where = a.connectorName || a.type
+        const key = a.externalKey ? (" as " + a.externalKey) : ""
+        if (a.externalUrl && window.confirm("Already in " + where + key + ".\n\nOK to open it, or Cancel to choose again.")) {
+          window.open(a.externalUrl, "_blank", "noopener")
+          return
+        }
+        if (!window.confirm("Export anyway? This creates a SECOND issue in " + where + ".")) return
+        return runExport(connectorId, { force: true, replaceEl: o.replaceEl })
+      }
+      if (d.ok && d.export) {
+        applyExportResult(d.export, o.replaceEl)
+        if (d.export.status === "failed") showTktMsg(detailEl, "Export failed: " + (d.export.error || "unknown"), true)
+        else showTktMsg(detailEl, "Copied!", false)
+      } else {
+        showTktMsg(detailEl, d.error || "Export failed.", true)
+      }
+    }
+
     const copyBtn = detailEl.querySelector(".copy-btn")
     if (copyBtn) {
       copyBtn.addEventListener("click", async (ev) => {
@@ -4302,33 +4359,27 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
         const connectorId = sel ? sel.value : null
         if (!connectorId) return
         copyBtn.disabled = true
-        const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/export", {
-          method: "POST", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ connectorId })
-        }).catch(() => null)
-        copyBtn.disabled = false
-        const d = r ? await r.json().catch(() => ({})) : {}
-        if (d.ok && d.export) {
-          const exp = d.export
-          const badgesDiv = detailEl.querySelector(".tkt-badges")
-          if (badgesDiv) {
-            const newBadge = document.createElement("a")
-            newBadge.className = "exp-badge"
-            if (exp.externalUrl) {
-              newBadge.href = exp.externalUrl; newBadge.target = "_blank"; newBadge.rel = "noopener"
-              newBadge.textContent = exp.type + " · " + (exp.externalKey || "View") + " ↗"
-            } else {
-              newBadge.innerHTML = `<span class="exp-err">${esc(exp.type)} ${esc(exp.status === "failed" ? ("failed: " + (exp.error || "")) : "")}</span>`
-            }
-            badgesDiv.appendChild(newBadge)
-          }
-          if (exp.status === "failed") showTktMsg(detailEl, "Export failed: " + (exp.error || "unknown"), true)
-          else showTktMsg(detailEl, "Copied!", false)
-        } else {
-          showTktMsg(detailEl, d.error || "Export failed.", true)
-        }
+        try { await runExport(connectorId, {}) } finally { copyBtn.disabled = false }
       })
     }
+
+    detailEl.querySelectorAll(".exp-retry").forEach(btn => {
+      btn.addEventListener("click", async (ev) => {
+        ev.stopPropagation()
+        const connectorId = btn.getAttribute("data-connector")
+        if (!connectorId) return
+        const badgeEl = btn.closest(".exp-badge")
+        btn.disabled = true
+        btn.textContent = "Retrying…"
+        try {
+          // A retry follows a FAILED export, so there is no prior success to guard against — the
+          // server's 409 would only fire if one exists, and runExport handles that case too.
+          await runExport(connectorId, { replaceEl: badgeEl })
+        } finally {
+          if (btn.isConnected) { btn.disabled = false; btn.textContent = "Retry" }
+        }
+      })
+    })
 
     // KLA-174: wire up label row
     const lblRow = detailEl.querySelector(".tkt-lbl-row")
