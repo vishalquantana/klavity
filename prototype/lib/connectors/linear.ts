@@ -19,7 +19,12 @@ const LINEAR_API = "https://api.linear.app/graphql"
 //         headers = { "Content-Type": contentType, ...each { key, value } }
 //   step 3: embed `![screenshot](assetUrl)` in the issue description before creating it.
 //
-// NEEDS E2E VERIFICATION against a live Linear workspace (fileUpload mutation + presigned PUT).
+// STILL UNVERIFIED against a live Linear workspace (KLA-285): no Linear API key / workspace is
+// available to this codebase, so the fileUpload mutation + presigned PUT above remain derived from
+// Linear's published GraphQL schema rather than an observed round-trip. Unlike Plane (verified and
+// corrected 2026-07-19) this path may still be wrong. It is now at least LOUD rather than silent —
+// any failure is reported via ExportResult.attachmentWarning and lands on the export timeline, so a
+// wrong request shape shows up as a visible "screenshot attach failed" instead of a silent fallback.
 //
 // Graceful degradation: every attachment upload is wrapped in try/catch. On ANY failure we
 // console.warn and SKIP — the issue body already carries the permanent fallback link per
@@ -95,15 +100,17 @@ export const linearConnector: Connector = {
     // label names onto native Linear labels needs a version-dependent lookup. Carry the
     // classification in the issue description instead so the exported ticket keeps its labels.
     if (ticket.labels?.length) description += `\n\nLabels: ${ticket.labels.join(", ")}`
+    const attachFailures: string[] = []
     for (const att of ticket.attachments ?? []) {
       try {
         const assetUrl = await uploadAttachment(api_key, att)
         if (assetUrl) description += `\n\n![screenshot](${assetUrl})`
       } catch (e) {
-        console.warn(
-          `linear attachment upload skipped (${att.filename}): ${e instanceof Error ? e.message : String(e)}`,
-        )
-        // Skip — fallback link already in body; continue creating the issue normally.
+        const reason = e instanceof Error ? e.message : String(e)
+        console.warn(`linear attachment upload skipped (${att.filename}): ${reason}`)
+        // Skip — fallback link already in body; continue creating the issue normally. KLA-285:
+        // report it on the export record so the degradation is visible without opening the issue.
+        attachFailures.push(`${att.filename}: ${reason}`)
       }
     }
 
@@ -143,6 +150,9 @@ export const linearConnector: Connector = {
     return {
       externalKey: issue?.identifier ?? null,
       externalUrl: issue?.url ?? null,
+      attachmentWarning: attachFailures.length
+        ? `screenshot attach failed (${attachFailures.length}/${ticket.attachments?.length ?? 0}) — link included in body: ${attachFailures.join("; ").slice(0, 300)}`
+        : null,
     }
   },
 
