@@ -110,6 +110,12 @@ export interface ModalCallbacks {
   // is the getDisplayMedia screen-share; on the extension it's the captureVisibleTab full-page capture. The
   // host hides its own UI during the capture (same as the Sharp button). Absent → no retake affordance.
   onRetakeSharp?: () => Promise<CaptureResult>
+  // KLAVITYKLA-228 (JTBD 1.11): optional on-page element picker. When provided, a "Pick element" button
+  // appears in the capture actions row. Clicking it hides the composer and invokes this callback, which
+  // lets the reporter click the broken element on the live page; it resolves a robust unique CSS selector
+  // (or null if cancelled). The selector rides along as annotations.selector so the finding is pinned to
+  // the exact DOM node. Widget-only — the extension omits it (no button rendered), preserving parity.
+  onPickElement?: () => Promise<string | null>
   onSubmit: (payload: {
     type: ReportType
     description: string
@@ -195,6 +201,9 @@ export function buildModal(
   // Structured markup per screenshot index { w, h, shapes } so the ticket can re-render a
   // toggleable/zoomable overlay instead of baking the drawing into the uploaded image.
   const annotationsByIndex: Record<number, any> = {}
+  // KLAVITYKLA-228: a CSS selector for an element the reporter pinned via the on-page picker. Rides on the
+  // annotations payload as `annotations.selector` (top level) so the ticket links the finding to the DOM node.
+  let pickedSelector: string | null = null
   // KLAVITYKLA-217: serialize the FULL per-image markup map (not just screenshot #0). The wire shape
   // stays backward-compatible — the index-0 entry's fields ({ w, h, shapes, … }) are hoisted to the top
   // level so existing single-image consumers (server sanitizer + ticket drawer) keep working unchanged,
@@ -202,11 +211,18 @@ export function buildModal(
   // Returns null when nothing is annotated (identical to the previous `annotationsByIndex[0] ?? null`).
   const buildAnnotationsPayload = (): any => {
     const keys = Object.keys(annotationsByIndex)
-    if (!keys.length) return null
-    const byIndex: Record<string, any> = {}
-    for (const k of keys) byIndex[k] = annotationsByIndex[k as any]
-    const base = annotationsByIndex[0] ?? annotationsByIndex[Number(keys[0])] ?? {}
-    return { ...base, byIndex }
+    // Nothing drawn AND no pinned element → no overlay payload at all.
+    if (!keys.length && !pickedSelector) return null
+    const out: any = {}
+    if (keys.length) {
+      const byIndex: Record<string, any> = {}
+      for (const k of keys) byIndex[k] = annotationsByIndex[k as any]
+      const base = annotationsByIndex[0] ?? annotationsByIndex[Number(keys[0])] ?? {}
+      Object.assign(out, base, { byIndex })
+    }
+    // KLAVITYKLA-228: pin the picked element selector at the top level (server sanitizer + drawer read it there).
+    if (pickedSelector) out.selector = pickedSelector
+    return out
   }
   let currentType = initialType
   // Image-hero: the screenshot currently shown big + live-annotated in the hero pane. Clicking a
@@ -326,6 +342,15 @@ export function buildModal(
     .klavity-actions button:disabled .kl-cap-ic{transform:none;}
     .klavity-actions button.kl-loading{opacity:.9;animation:kl-cap-pulse 1s ease-in-out infinite;}
     @keyframes kl-cap-pulse{0%,100%{opacity:.55}50%{opacity:.95}}
+    /* KLAVITYKLA-228 — pinned-element chip: shows the selector captured by the on-page picker, with a
+       one-tap Clear. Sits under the capture actions row, above the mask toggle. */
+    .klavity-pickinfo{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:-4px 0 12px;font-size:11.5px;color:var(--kl-muted);line-height:1.4;}
+    .klavity-pickinfo[hidden]{display:none;}
+    .klavity-pickinfo .kl-pick-ic{color:var(--kl-accent);display:inline-flex;flex:none;}
+    .klavity-pickinfo code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--kl-fg);background:var(--kl-chip);padding:2px 6px;border-radius:6px;max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .klavity-pickinfo .kl-pick-clear{background:none;border:none;color:var(--kl-muted);cursor:pointer;font-size:11px;text-decoration:underline;padding:2px 2px;border-radius:5px;}
+    .klavity-pickinfo .kl-pick-clear:hover{color:var(--kl-fg);}
+    .klavity-pickinfo .kl-pick-clear:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
     .klav-mask-row{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--kl-muted);cursor:pointer;margin-bottom:10px;user-select:none;}
     .klav-mask-row input[type=checkbox]{accent-color:var(--kl-accent);width:13px;height:13px;cursor:pointer;}
     .klav-mask-row:hover{color:var(--kl-fg);}
@@ -487,8 +512,10 @@ export function buildModal(
         <button id="klavity-full" title="Full Page — instant capture; may miss some cross-origin images"><span class="kl-cap-ic">${icon('camera')}</span><span class="kl-full-label">Full Page</span></button>
         <button id="klavity-upload"><span class="kl-cap-ic">${icon('image')}</span><span class="kl-upload-label">Upload</span></button>
         ${callbacks.onRegionCapture ? `<button id="klavity-region"><span class="kl-cap-ic">${icon('scissors')}</span><span class="kl-region-label">Region</span></button>` : ''}
+        ${callbacks.onPickElement ? `<button id="klavity-pick" title="Pick the exact element that's broken"><span class="kl-cap-ic">${icon('mouse-pointer-2')}</span><span class="kl-pick-label">Pick element</span></button>` : ''}
         ${VoiceInput.isSupported() ? `<button id="klavity-voice" title="Dictate description"><span class="kl-cap-ic">${icon('mic')}<span class="kl-vdot"></span></span><span class="kl-voice-label">Voice</span><svg class="kl-vring" viewBox="0 0 32 32" aria-hidden="true"><circle class="kl-vring-bg" cx="16" cy="16" r="13" fill="none" stroke-width="2"/><circle class="kl-vring-prog" cx="16" cy="16" r="13" fill="none" stroke-width="2" stroke-dasharray="81.68" stroke-dashoffset="81.68" stroke-linecap="round" transform="rotate(-90 16 16)"/></svg></button>` : ''}
       </div>
+      ${callbacks.onPickElement ? `<div class="klavity-pickinfo" id="klavity-pickinfo" role="status" aria-live="polite" hidden></div>` : ''}
       <label class="klav-mask-row"><input type="checkbox" id="klavity-mask-numbers"${maskOn ? ' checked' : ''}>${icon('eye-off', { size: 13 })}<span>Mask numbers</span></label>
       <input type="file" id="klavity-file" accept="image/*,.heic,.heif" multiple style="display:none">
       <div class="klavity-counter" id="klavity-counter">0/5 images</div>
@@ -1091,6 +1118,42 @@ export function buildModal(
         host.style.display = ''
         lockComposer(false)
       })
+    }
+  }
+
+  // ── Element picker (KLAVITYKLA-228 / JTBD 1.11) ─────────────────────────────────────────────
+  // Mirrors the region-capture flow: hide the composer, hand control to the host's on-page picker,
+  // and pin the resolved selector onto the report as annotations.selector. The picked selector is
+  // reflected as a small "Element pinned" chip (with a one-tap Clear) under the actions row.
+  const pickBtn = shadowRoot.getElementById('klavity-pick') as HTMLButtonElement | null
+  const pickInfo = shadowRoot.getElementById('klavity-pickinfo') as HTMLElement | null
+  const reflectPicked = () => {
+    if (pickBtn) {
+      pickBtn.classList.toggle('kl-active', !!pickedSelector)
+      if (pickedSelector) pickBtn.setAttribute('aria-pressed', 'true'); else pickBtn.removeAttribute('aria-pressed')
+    }
+    if (!pickInfo) return
+    if (!pickedSelector) { pickInfo.hidden = true; pickInfo.innerHTML = ''; return }
+    pickInfo.hidden = false
+    pickInfo.innerHTML = `<span class="kl-pick-ic">${icon('mouse-pointer-2', { size: 13 })}</span><span>Element pinned:</span><code title="${escHtml(pickedSelector)}">${escHtml(pickedSelector)}</code><button type="button" class="kl-pick-clear" id="klavity-pick-clear">Clear</button>`
+    pickInfo.querySelector('#klavity-pick-clear')?.addEventListener('click', () => { pickedSelector = null; reflectPicked() })
+  }
+  if (pickBtn && callbacks.onPickElement) {
+    pickBtn.onclick = async () => {
+      if (busy) return // re-entrancy: a capture/submit/pick is already running
+      lockComposer(true)
+      // Drop the modal's Esc handler so Esc during picking only cancels the picker, not the composer.
+      document.removeEventListener('keydown', escHandler, { capture: true })
+      host.style.display = 'none'
+      try {
+        const sel = await callbacks.onPickElement!()
+        if (sel) { pickedSelector = sel; reflectPicked() }
+      } catch { /* picker failure must never break the composer */ }
+      finally {
+        document.addEventListener('keydown', escHandler, { capture: true })
+        host.style.display = ''
+        lockComposer(false)
+      }
     }
   }
 

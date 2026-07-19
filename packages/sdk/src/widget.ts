@@ -8,6 +8,7 @@ import { type CaptureBuffers } from "@klavity/core/capture"
 import { installCaptureContext, buildCaptureContext } from "./capture-context"
 import type { ReportContext, ReportIdentity } from "@klavity/core"
 import { parseScriptConfig, isFirstParty, buildFeedbackForm, successCopy, compressScreenshot } from "./widget-lib"
+import { computeSelector } from "./element-selector"
 import { getTurnstileToken } from "./load-turnstile"
 import { icon } from "@klavity/core/icons"
 import { createSessionReplay, type SessionReplay } from "./session-replay"
@@ -19,6 +20,75 @@ const HOST_ID = "klavity-widget-host"
 const TOKEN_KEY = "klavity_widget_token"
 const WIDGET_FETCH_TIMEOUT_MS = 15_000
 const SIM_REVIEW_FETCH_TIMEOUT_MS = 45_000
+
+// KLAVITYKLA-228 (JTBD 1.11): on-page element picker. Mounts a lightweight highlight overlay that tracks
+// the element under the cursor; on click it computes a robust unique CSS selector to pin onto the report
+// as annotations.selector. Esc cancels. Resolves the selector string, or null when cancelled/unavailable.
+// The highlight/label/banner are pointer-events:none so elementFromPoint always reads the page beneath.
+function pickElementOnPage(): Promise<string | null> {
+  return new Promise((resolve) => {
+    if (typeof document === "undefined" || !document.body) return resolve(null)
+    const box = document.createElement("div")
+    box.style.cssText = "position:fixed;z-index:2147483646;pointer-events:none;border:2px solid #6d5efc;background:rgba(109,94,252,.14);border-radius:4px;box-shadow:0 0 0 2px rgba(255,255,255,.55);display:none;"
+    const label = document.createElement("div")
+    label.style.cssText = "position:fixed;z-index:2147483646;pointer-events:none;font:600 11px/1.4 system-ui,-apple-system,sans-serif;color:#fff;background:#6d5efc;padding:2px 7px;border-radius:5px;max-width:60vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:none;"
+    const banner = document.createElement("div")
+    banner.setAttribute("role", "status")
+    banner.setAttribute("aria-live", "polite")
+    banner.textContent = "Click the element that's broken · press Esc to cancel"
+    banner.style.cssText = "position:fixed;z-index:2147483647;top:16px;left:50%;transform:translateX(-50%);pointer-events:none;font:600 13px/1.4 system-ui,-apple-system,sans-serif;color:#fff;background:#111827;padding:8px 16px;border-radius:999px;box-shadow:0 6px 24px rgba(0,0,0,.3);"
+    document.body.append(box, label, banner)
+    const rootEl = document.documentElement
+    const prevCursor = rootEl.style.cursor
+    rootEl.style.cursor = "crosshair"
+
+    const isOurs = (el: Element | null): boolean => {
+      for (let n: Element | null = el; n; n = n.parentElement) {
+        if (n.id === HOST_ID || n === box || n === label || n === banner) return true
+      }
+      return false
+    }
+    const highlight = (el: Element) => {
+      const r = el.getBoundingClientRect()
+      box.style.display = "block"
+      box.style.left = r.left + "px"; box.style.top = r.top + "px"
+      box.style.width = r.width + "px"; box.style.height = r.height + "px"
+      const tag = el.tagName.toLowerCase()
+      const id = el.id ? "#" + el.id : ""
+      const cls = el.classList && el.classList.length ? "." + el.classList[0] : ""
+      label.textContent = tag + id + cls
+      label.style.display = "block"
+      label.style.left = r.left + "px"
+      label.style.top = Math.max(2, r.top - 22) + "px"
+    }
+    const onMove = (e: MouseEvent) => {
+      const el = document.elementFromPoint(e.clientX, e.clientY)
+      if (!el || isOurs(el)) return
+      highlight(el)
+    }
+    const cleanup = (result: string | null) => {
+      document.removeEventListener("mousemove", onMove, true)
+      document.removeEventListener("click", onClick, true)
+      document.removeEventListener("keydown", onKey, true)
+      rootEl.style.cursor = prevCursor
+      box.remove(); label.remove(); banner.remove()
+      resolve(result)
+    }
+    const onClick = (e: MouseEvent) => {
+      const el = document.elementFromPoint(e.clientX, e.clientY)
+      if (!el || isOurs(el)) return
+      e.preventDefault(); e.stopPropagation()
+      cleanup(computeSelector(el))
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); cleanup(null) }
+    }
+    // Capture phase so we win the click/keydown before the host page's own handlers.
+    document.addEventListener("mousemove", onMove, true)
+    document.addEventListener("click", onClick, true)
+    document.addEventListener("keydown", onKey, true)
+  })
+}
 
 function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = WIDGET_FETCH_TIMEOUT_MS): Promise<Response> {
   const ctrl = new AbortController()
@@ -469,6 +539,10 @@ async function mount() {
       // JTBD 1.9: "Retake sharp" on a degraded thumbnail → the same getDisplayMedia real-pixel capture. Only
       // wired when the browser supports it (no getDisplayMedia on iOS Safari → no retake affordance shown).
       onRetakeSharp: sharpCaptureSupported() ? async () => ({ dataUrl: await captureSharpFullPage(), quality: "real-pixel" as const }) : undefined,
+      // JTBD 1.11 (KLAVITYKLA-228): let the reporter click the exact broken element on the page. The modal
+      // hides itself, the picker highlights elements on hover, and the click resolves a robust CSS selector
+      // pinned to the report as annotations.selector (the server sanitizer + ticket drawer already read it).
+      onPickElement: pickElementOnPage,
       requireEmail,
       // Pre-compress each screenshot as soon as it's captured (runs while the user types their
       // description). By submit time the Promise is settled → zero compression delay before upload.
