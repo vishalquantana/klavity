@@ -80,6 +80,13 @@ export async function initDb() {
   // KLA-103: add auth_shape to test_accounts for OTP/passwordless support (existing rows get default 'password').
   if (!_initCols.get("test_accounts")?.has("auth_shape"))
     await db!.execute("ALTER TABLE test_accounts ADD COLUMN auth_shape TEXT NOT NULL DEFAULT 'password'").catch((e: any) => console.warn("test_accounts.auth_shape ALTER skipped:", e?.message || e))
+  // KLAVITYKLA-9 security fix: DNS-TXT domain-ownership proof for SSO. Columns are added NULL,
+  // so every PRE-EXISTING config is treated as UNVERIFIED and cannot be used to log in until its
+  // owner proves the domain. That is deliberate — those rows were accepted without any check.
+  for (const [col, def] of [["domain_verify_token", "TEXT"], ["domain_verified_at", "INTEGER"]]) {
+    if (!(await columnExists(db, "account_oidc_configs", col)))
+      await db!.execute(`ALTER TABLE account_oidc_configs ADD COLUMN ${col} ${def}`).catch((e: any) => console.warn(`account_oidc_configs.${col} ALTER skipped:`, e?.message || e))
+  }
   await migrateConnectorsPlane(db)
   await migrateConnectorsPlanePersonal(db)
   await backfillTriageV1(db)
@@ -821,12 +828,17 @@ export async function applySchema(c: Client) {
     // PER-ACCOUNT OIDC CONFIG — one row per account that has enabled SSO. client_secret_enc is
     // AES-GCM encrypted via lib/crypto.ts (KLAV_SECRET envelope key). allowed_domain restricts
     // which email domains may log in via this IdP (e.g. "acme.com").
+    // domain_verify_token / domain_verified_at implement DNS-TXT domain-ownership proof
+    // (KLAVITYKLA-9 security fix). allowed_domain is NOT trusted until domain_verified_at is
+    // set; otherwise any account could claim victim.com and log in as its users.
     `CREATE TABLE IF NOT EXISTS account_oidc_configs (
        account_id TEXT PRIMARY KEY,
        issuer TEXT NOT NULL,
        client_id TEXT NOT NULL,
        client_secret_enc TEXT NOT NULL,
        allowed_domain TEXT NOT NULL,
+       domain_verify_token TEXT,
+       domain_verified_at INTEGER,
        created_by TEXT,
        created_at INTEGER NOT NULL,
        updated_at INTEGER NOT NULL)`,
@@ -5490,23 +5502,44 @@ export async function deleteSimReviewSchedule(projectId: string, id: string): Pr
 
 // ── Enterprise SSO OIDC (KLAVITYKLA-9) ──────────────────────────────────────
 
-export async function getAccountOidcConfig(
-  accountId: string,
-): Promise<{ issuer: string; clientId: string; clientSecretEnc: string; allowedDomain: string } | null> {
-  const r = await db!.execute({
-    sql: "SELECT issuer, client_id, client_secret_enc, allowed_domain FROM account_oidc_configs WHERE account_id=?",
-    args: [accountId],
-  })
-  if (!r.rows.length) return null
-  const row = r.rows[0] as any
+export type AccountOidcConfig = {
+  issuer: string
+  clientId: string
+  clientSecretEnc: string
+  allowedDomain: string
+  domainVerifyToken: string | null
+  /** ms epoch when DNS-TXT ownership of allowedDomain was proven; null = NOT verified. */
+  domainVerifiedAt: number | null
+}
+
+function rowToOidcConfig(row: any): AccountOidcConfig {
   return {
     issuer: String(row.issuer),
     clientId: String(row.client_id),
     clientSecretEnc: String(row.client_secret_enc),
     allowedDomain: String(row.allowed_domain),
+    domainVerifyToken: row.domain_verify_token == null ? null : String(row.domain_verify_token),
+    domainVerifiedAt: row.domain_verified_at == null ? null : Number(row.domain_verified_at),
   }
 }
 
+const OIDC_COLS =
+  "issuer, client_id, client_secret_enc, allowed_domain, domain_verify_token, domain_verified_at"
+
+export async function getAccountOidcConfig(accountId: string): Promise<AccountOidcConfig | null> {
+  const r = await db!.execute({
+    sql: `SELECT ${OIDC_COLS} FROM account_oidc_configs WHERE account_id=?`,
+    args: [accountId],
+  })
+  if (!r.rows.length) return null
+  return rowToOidcConfig(r.rows[0])
+}
+
+/**
+ * Saves the config. Changing allowed_domain RESETS domain_verified_at to NULL and stores the
+ * new verify token — otherwise an account could verify a domain it owns and then swap in
+ * victim.com while keeping the verified flag.
+ */
 export async function upsertAccountOidcConfig(
   accountId: string,
   issuer: string,
@@ -5514,18 +5547,39 @@ export async function upsertAccountOidcConfig(
   clientSecretEnc: string,
   allowedDomain: string,
   createdBy: string,
+  domainVerifyToken: string,
 ): Promise<void> {
   const now = Date.now()
   await db!.execute({
     sql: `INSERT INTO account_oidc_configs
-            (account_id, issuer, client_id, client_secret_enc, allowed_domain, created_by, created_at, updated_at)
-          VALUES (?,?,?,?,?,?,?,?)
+            (account_id, issuer, client_id, client_secret_enc, allowed_domain,
+             domain_verify_token, domain_verified_at, created_by, created_at, updated_at)
+          VALUES (?,?,?,?,?,?,NULL,?,?,?)
           ON CONFLICT(account_id) DO UPDATE SET
             issuer=excluded.issuer, client_id=excluded.client_id,
             client_secret_enc=excluded.client_secret_enc, allowed_domain=excluded.allowed_domain,
+            domain_verify_token=CASE
+              WHEN account_oidc_configs.allowed_domain = excluded.allowed_domain
+                   AND account_oidc_configs.domain_verify_token IS NOT NULL
+              THEN account_oidc_configs.domain_verify_token
+              ELSE excluded.domain_verify_token END,
+            domain_verified_at=CASE
+              WHEN account_oidc_configs.allowed_domain = excluded.allowed_domain
+              THEN account_oidc_configs.domain_verified_at
+              ELSE NULL END,
             updated_at=excluded.updated_at`,
-    args: [accountId, issuer, clientId, clientSecretEnc, allowedDomain, createdBy, now, now],
+    args: [accountId, issuer, clientId, clientSecretEnc, allowedDomain, domainVerifyToken, createdBy, now, now],
   })
+}
+
+/** Marks the account's CURRENT allowed_domain as DNS-verified. Domain-scoped so a concurrent
+ *  domain change can never be retro-verified by an in-flight check. */
+export async function markOidcDomainVerified(accountId: string, allowedDomain: string): Promise<boolean> {
+  const r = await db!.execute({
+    sql: "UPDATE account_oidc_configs SET domain_verified_at=?, updated_at=? WHERE account_id=? AND allowed_domain=?",
+    args: [Date.now(), Date.now(), accountId, allowedDomain.toLowerCase()],
+  })
+  return (r.rowsAffected ?? 0) > 0
 }
 
 export async function deleteAccountOidcConfig(accountId: string): Promise<void> {
@@ -5535,22 +5589,21 @@ export async function deleteAccountOidcConfig(accountId: string): Promise<void> 
   })
 }
 
+/**
+ * Looks up the SSO config serving `domain`. Only returns VERIFIED configs — an unverified
+ * allowed_domain must never be able to start a login (that was the takeover primitive).
+ */
 export async function findAccountByOidcDomain(
   domain: string,
-): Promise<{ accountId: string; issuer: string; clientId: string; clientSecretEnc: string; allowedDomain: string } | null> {
+): Promise<(AccountOidcConfig & { accountId: string }) | null> {
   const r = await db!.execute({
-    sql: "SELECT account_id, issuer, client_id, client_secret_enc, allowed_domain FROM account_oidc_configs WHERE allowed_domain=?",
+    sql: `SELECT account_id, ${OIDC_COLS} FROM account_oidc_configs
+          WHERE allowed_domain=? AND domain_verified_at IS NOT NULL`,
     args: [domain.toLowerCase()],
   })
   if (!r.rows.length) return null
   const row = r.rows[0] as any
-  return {
-    accountId: String(row.account_id),
-    issuer: String(row.issuer),
-    clientId: String(row.client_id),
-    clientSecretEnc: String(row.client_secret_enc),
-    allowedDomain: String(row.allowed_domain),
-  }
+  return { accountId: String(row.account_id), ...rowToOidcConfig(row) }
 }
 
 export async function createSsoState(
