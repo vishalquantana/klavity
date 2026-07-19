@@ -399,6 +399,46 @@
     }
   }
 </style>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "What counts as an AutoSim flow?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "An AutoSim flow (or Trail) is a recorded critical path in your product (such as checkout or user registration) that Klavity tests on a schedule. Maintenance actions like creating, editing, and manually verifying a flow do not count against your limits—only active, scheduled runs do."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What happens if we hit our reaction or flow limits?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Quota enforcement is not yet active — we are shipping enforcement gently and will announce before any hard limits go live. When it does land, our intent is to degrade cadence gracefully (e.g. daily runs slow to weekly) rather than hard-stop, and we will never silently bill overages."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What counts as a page review?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "A page review (what our billing calls a Sim reaction) occurs when one of your active client-persona Sims reviews a page (triggered automatically by URL changes or manual consent) to inspect changes, write notes, or file issues. Extra page reviews are kept cheap based on local LLM COGS."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can we export our AutoSim flows?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Klavity is open-core and we strongly oppose vendor lock-in. AutoSim flows are stored as structured steps in an open schema. One-click export to standard Playwright test scripts is on the roadmap — contact us if this is a blocker."
+      }
+    }
+  ]
+}
+</script>
 </head>
 <body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
 <a class="skip-link" href="#main">Skip to content</a>
