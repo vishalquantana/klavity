@@ -358,6 +358,14 @@ export async function applySchema(c: Client) {
     // Distinct from ai_calls (the after-the-fact audit ledger): this is the pre-flight cap gate.
     `CREATE TABLE IF NOT EXISTS daily_ai_spend (
        day TEXT PRIMARY KEY, reserved_usd REAL NOT NULL DEFAULT 0)`,
+    // FREE-TOOL DAILY SUB-CAP (KLAVITYKLA-341) — a bounded slice of the global daily_ai_spend cap
+    // reserved exclusively for the anonymous free-tool AI calls (CRO + bug-check). A viral Reddit
+    // post hitting the free tool can never starve paid Sims/AutoSims of the shared OPS_DAILY_CAP_USD
+    // budget: this sub-cap gates BEFORE the global reservation, using its own tiny slice of budget
+    // (KLAV_FREETOOL_DAILY_CAP_USD). Same atomic reserve/reconcile shape as daily_ai_spend, just a
+    // separate row keyed by day so the two caps never contend on the same UPDATE.
+    `CREATE TABLE IF NOT EXISTS daily_freetool_spend (
+       day TEXT PRIMARY KEY, reserved_usd REAL NOT NULL DEFAULT 0)`,
     // USAGE METERS (KLAVITYKLA-305) — billable value-metric counters. MEASUREMENT ONLY: this ledger
     // COUNTS the billable events (meter = Sims + guarded AutoSim flows) per account, per billing
     // period (UTC month 'YYYY-MM'), per metric type (e.g. 'sim_review', 'autosim_walk'). It never
@@ -3329,6 +3337,64 @@ export async function reconcileDailySpend(estUsd: number, actualUsd: number): Pr
 // Read today's reserved spend (0 if no row yet) — for the /opsadmin dashboard + tests.
 export async function reservedDailySpend(): Promise<number> {
   const r = await db!.execute({ sql: "SELECT reserved_usd FROM daily_ai_spend WHERE day=?", args: [utcDay()] })
+  return r.rows.length ? Number((r.rows[0] as any).reserved_usd) : 0
+}
+
+// ── free-tool daily sub-cap (KLAVITYKLA-341) ────────────────────────────────────────────────────
+// `ai_calls.type` values that count against the free-tool sub-cap. Both the CRO friction tool and
+// its QA/bug-check sibling share one bounded slice of the global daily budget — keep this list in
+// sync with the `type` passed to chat(...) at the /api/cro/analyze call sites in server.ts.
+export const FREETOOL_AI_TYPES = ["cro-analyze", "bugcheck-analyze"] as const
+
+export async function freeToolTodaySpend(): Promise<number> {
+  const placeholders = FREETOOL_AI_TYPES.map(() => "?").join(",")
+  const r = await db!.execute({
+    sql: `SELECT COALESCE(SUM(cost_usd),0) AS cost FROM ai_calls
+          WHERE date(created_at/1000,'unixepoch') = date('now') AND type IN (${placeholders})`,
+    args: [...FREETOOL_AI_TYPES],
+  })
+  return Number((r.rows[0] as any).cost)
+}
+
+// Same atomic reserve/reconcile shape as tryReserveDailySpend/reconcileDailySpend (see comments
+// above), but against the SEPARATE daily_freetool_spend row so a viral free-tool spike can only
+// ever consume its own bounded slice (KLAV_FREETOOL_DAILY_CAP_USD) — never the shared global cap
+// that paid Sims/AutoSims also draw from. Callers MUST check this BEFORE the global
+// tryReserveDailySpend gate (and before making the LLM call) so a denial here never touches the
+// global budget either.
+export async function tryReserveFreeToolSpend(estUsd: number, capUsd: number): Promise<boolean> {
+  if (!Number.isFinite(estUsd) || estUsd <= 0) return false
+  if (!Number.isFinite(capUsd) || capUsd <= 0) return false
+  const day = utcDay()
+  const seed = await freeToolTodaySpend()
+  await db!.execute({
+    sql: "INSERT INTO daily_freetool_spend (day,reserved_usd) VALUES (?,?) ON CONFLICT(day) DO NOTHING",
+    args: [day, seed],
+  })
+  const r = await db!.execute({
+    sql: "UPDATE daily_freetool_spend SET reserved_usd = reserved_usd + ? WHERE day=? AND reserved_usd + ? <= ?",
+    args: [estUsd, day, estUsd, capUsd],
+  })
+  return Number(r.rowsAffected) > 0
+}
+
+// Release (or true-up) a free-tool reservation, e.g. back to 0 when the call ultimately failed
+// after the reservation succeeded — mirrors reconcileDailySpend.
+export async function reconcileFreeToolSpend(estUsd: number, actualUsd: number): Promise<void> {
+  const e = Number.isFinite(estUsd) ? estUsd : 0
+  const a = Number.isFinite(actualUsd) ? actualUsd : 0
+  const delta = a - e
+  if (delta === 0) return
+  const day = utcDay()
+  await db!.execute({
+    sql: "UPDATE daily_freetool_spend SET reserved_usd = MAX(0, reserved_usd + ?) WHERE day=?",
+    args: [delta, day],
+  })
+}
+
+// Read today's reserved free-tool spend (0 if no row yet) — for tests + future /opsadmin surfacing.
+export async function reservedFreeToolSpend(): Promise<number> {
+  const r = await db!.execute({ sql: "SELECT reserved_usd FROM daily_freetool_spend WHERE day=?", args: [utcDay()] })
   return r.rows.length ? Number((r.rows[0] as any).reserved_usd) : 0
 }
 

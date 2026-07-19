@@ -20,6 +20,10 @@
 import type { Client } from "@libsql/client"
 
 export const SEQUENCE_CRO = "cro"
+// KLAVITYKLA-341: bug-check leads get their own nurture sequence row (distinct `sequence` value)
+// so the two free tools' leads stay segmentable end-to-end (enrollment, sent-email history, and
+// per-tool copy) without a schema change — `sequence` was already the segmentation column.
+export const SEQUENCE_BUGCHECK = "bugcheck"
 export const NURTURE_DAY_MS = 24 * 60 * 60 * 1000
 
 /** Delay from enroll before step 2 fires (+1 day). */
@@ -83,46 +87,55 @@ export interface NurtureEmailContent {
   text: string
 }
 
-export function buildStep1Email(opts: { analyzedUrl?: string; baseUrl?: string }): NurtureEmailContent {
+// KLAVITYKLA-341: per-tool copy so the step-1 recap actually matches what the person just did —
+// "friction report" reads oddly to someone who just ran a bug scan, and vice versa.
+function toolCopy(tool?: string): { label: string; noun: string; toolLink: string; verb: string } {
+  if (tool === "bugcheck") return { label: "Bug Check", noun: "bugs", toolLink: "/bug-check", verb: "scanned" }
+  return { label: "CRO", noun: "friction", toolLink: "/cro", verb: "analysed" }
+}
+
+export function buildStep1Email(opts: { analyzedUrl?: string; baseUrl?: string; tool?: string }): NurtureEmailContent {
   const url = opts.analyzedUrl || "your site"
   const base = (opts.baseUrl || "https://klavity.in").replace(/\/$/, "")
-  const croLink = `${base}/cro`
+  const t = toolCopy(opts.tool)
+  const toolLink = `${base}${t.toolLink}`
   const unsubLink = `${base}/unsubscribe`
+  const reportNoun = t.noun === "bugs" ? "bug report" : "friction report"
 
   const body = `
 <p style="${F};font-size:15px;line-height:1.6;color:#3f3a52;margin:0 0 14px">
-  Thanks for using the Klavity CRO analyser on <strong>${esc(url)}</strong>.
+  Thanks for using the Klavity ${esc(t.label)} tool on <strong>${esc(url)}</strong>.
 </p>
 <p style="${F};font-size:14px;line-height:1.6;color:#6b6678;margin:0 0 14px">
-  Your full friction report is ready — the real reasons visitors leave before converting.
+  Your full ${esc(reportNoun)} is ready — the real ${esc(t.noun)} we found when we ${esc(t.verb)} the page.
   Share it with your team, or re-run the check any time a new version ships.
 </p>
 <div style="background:#f3f1ff;border-left:3px solid #6366f1;border-radius:8px;padding:14px 16px;margin-bottom:0">
   <p style="${F};font-size:13px;line-height:1.5;color:#3f3a52;margin:0">
-    <strong>What's next?</strong> The friction you found today is a snapshot.
-    Klavity's Sims catch them <em>continuously</em> — so you know the moment something
+    <strong>What's next?</strong> What we found today is a snapshot.
+    Klavity's Sims catch it <em>continuously</em> — so you know the moment something
     regresses after a deploy.
   </p>
 </div>`
 
   const text = [
-    `Thanks for using the Klavity CRO analyser on ${url}.`,
+    `Thanks for using the Klavity ${t.label} tool on ${url}.`,
     "",
-    "Your full friction report is ready — the real reasons visitors leave before converting.",
+    `Your full ${reportNoun} is ready — the real ${t.noun} we found when we ${t.verb} the page.`,
     "Share it with your team or re-run the check any time.",
     "",
-    "What's next? The friction you found today is a snapshot.",
-    "Klavity's Sims catch them continuously — so you know the moment something regresses.",
+    "What's next? What we found today is a snapshot.",
+    "Klavity's Sims catch it continuously — so you know the moment something regresses.",
     "",
-    `Re-run the analysis: ${croLink}`,
+    `Re-run the check: ${toolLink}`,
     "",
     "Sent by Klavity · klavity.in",
     `Unsubscribe: ${unsubLink}`,
   ].join("\n")
 
   return {
-    subject: `Your CRO friction report for ${url}`,
-    html: brandedEmail("CRO Report", "Your friction report is ready", body, croLink, "Re-run the analysis →", unsubLink),
+    subject: `Your ${t.label} report for ${url}`,
+    html: brandedEmail(`${t.label} Report`, `Your ${reportNoun} is ready`, body, toolLink, "Re-run the check →", unsubLink),
     text,
   }
 }
@@ -225,7 +238,7 @@ export function buildStep3Email(opts: { analyzedUrl?: string; baseUrl?: string }
 }
 
 /** Build email content for a given nurture step (1, 2, or 3). Pure — no I/O. */
-export function buildNurtureEmail(step: number, opts: { analyzedUrl?: string; baseUrl?: string }): NurtureEmailContent {
+export function buildNurtureEmail(step: number, opts: { analyzedUrl?: string; baseUrl?: string; tool?: string }): NurtureEmailContent {
   if (step === 1) return buildStep1Email(opts)
   if (step === 2) return buildStep2Email(opts)
   if (step === 3) return buildStep3Email(opts)
@@ -244,19 +257,22 @@ export interface EnrollResult {
 }
 
 /**
- * Insert a lead into the CRO nurture sequence. Idempotent: second call returns enrolled=false.
+ * Insert a lead into the nurture sequence for the given tool ("cro" default, "bugcheck" —
+ * KLAVITYKLA-341). Idempotent per (email, tool): second call for the same tool returns
+ * enrolled=false; a lead can be enrolled in BOTH tools' sequences independently.
  * Step 1 is NOT sent here — the caller sends it immediately after enrolling.
  * Steps 2 and 3 are scheduled via next_at and processed by tickLeadNurture().
  */
 export async function enrollLead(
   c: Client,
   email: string,
-  opts: { source?: string; url?: string; nowMs?: number } = {},
+  opts: { source?: string; url?: string; nowMs?: number; tool?: string } = {},
 ): Promise<EnrollResult> {
   const now = opts.nowMs ?? Date.now()
+  const sequence = opts.tool === "bugcheck" ? SEQUENCE_BUGCHECK : SEQUENCE_CRO
   const existing = await c.execute({
     sql: `SELECT id FROM lead_nurture_sequences WHERE email=? AND sequence=?`,
-    args: [email, SEQUENCE_CRO],
+    args: [email, sequence],
   })
   if (existing.rows.length) {
     return { enrolled: false, sequenceId: String((existing.rows[0] as any).id) }
@@ -266,7 +282,7 @@ export async function enrollLead(
   await c.execute({
     sql: `INSERT INTO lead_nurture_sequences (id, email, sequence, step, source, url, next_at, enrolled_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    args: [id, email, SEQUENCE_CRO, STEP_SCHED_FIRST, opts.source ?? null, opts.url ?? null, now + STEP2_DELAY_MS, now],
+    args: [id, email, sequence, STEP_SCHED_FIRST, opts.source ?? null, opts.url ?? null, now + STEP2_DELAY_MS, now],
   })
   return { enrolled: true, sequenceId: id }
 }
@@ -285,12 +301,13 @@ export async function recordNurtureEmailSent(
     args: [nid("lne"), sequenceId, step, sgMessageId ?? null, now],
   })
   try {
-    const r = await c.execute({ sql: `SELECT email FROM lead_nurture_sequences WHERE id=?`, args: [sequenceId] })
+    const r = await c.execute({ sql: `SELECT email, sequence FROM lead_nurture_sequences WHERE id=?`, args: [sequenceId] })
     if (r.rows.length) {
       const email = String((r.rows[0] as any).email)
+      const sequence = String((r.rows[0] as any).sequence || SEQUENCE_CRO)
       await c.execute({
         sql: `INSERT INTO funnel_events (id, event, email, props_json, created_at) VALUES (?, ?, ?, ?, ?)`,
-        args: [nid("fe"), "email_sent", email, JSON.stringify({ step, sequence: SEQUENCE_CRO }), now],
+        args: [nid("fe"), "email_sent", email, JSON.stringify({ step, sequence }), now],
       })
     }
   } catch { /* best-effort */ }
@@ -360,7 +377,7 @@ export async function tickLeadNurture(deps: LeadNurtureDeps): Promise<void> {
   const now = deps.nowMs ? deps.nowMs() : Date.now()
 
   const r = await deps.db.execute({
-    sql: `SELECT id, email, step, url FROM lead_nurture_sequences
+    sql: `SELECT id, email, step, url, sequence FROM lead_nurture_sequences
           WHERE step IS NOT NULL AND next_at IS NOT NULL AND next_at <= ? AND unsubscribed_at IS NULL
           ORDER BY next_at ASC LIMIT 100`,
     args: [now],
@@ -371,9 +388,10 @@ export async function tickLeadNurture(deps: LeadNurtureDeps): Promise<void> {
     const email = String(row.email)
     const step = Number(row.step)
     const analyzedUrl = row.url ? String(row.url) : undefined
+    const tool = String(row.sequence || SEQUENCE_CRO) === SEQUENCE_BUGCHECK ? "bugcheck" : "cro"
 
     try {
-      const content = buildNurtureEmail(step, { analyzedUrl, baseUrl: deps.baseUrl })
+      const content = buildNurtureEmail(step, { analyzedUrl, baseUrl: deps.baseUrl, tool })
       await deps.sendEmail(email, content.subject, content.html, content.text)
       await recordNurtureEmailSent(deps.db, seqId, step, null, now)
 
