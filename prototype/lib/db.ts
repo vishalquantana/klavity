@@ -4226,6 +4226,24 @@ export async function listTicketExports(feedbackId: string): Promise<TicketExpor
   return r.rows.map(rowToTicketExport)
 }
 
+// KLA-283 (JTBD 5.4): already-exported guard. Returns the most-recent SUCCESSFUL export of this
+// ticket to this connector, so a repeat manual "Copy to…" can warn ("Already in Jira as ACME-42")
+// instead of silently creating a second external issue. Failed attempts are ignored — they never
+// produced an external issue, so re-exporting after a failure must stay friction-free (that's Retry).
+// Scoped to connectorId (not type): two Jira connectors are two destinations, both legitimate.
+export async function findPriorSuccessfulExport(
+  feedbackId: string, connectorId: string
+): Promise<TicketExportRow | null> {
+  if (!feedbackId || !connectorId) return null
+  const r = await db!.execute({
+    sql: `SELECT * FROM ticket_exports
+          WHERE feedback_id=? AND connector_id=? AND status='ok'
+          ORDER BY created_at DESC LIMIT 1`,
+    args: [feedbackId, connectorId],
+  })
+  return r.rows.length ? rowToTicketExport(r.rows[0]) : null
+}
+
 // INBOUND two-way sync (G4): reverse-map an external tracker issue back to its Klavity export.
 // Matches on (type, external_key) — the EXACT key the outbound createIssue stored — and ignores
 // failed exports (which never produced an external issue, so external_key is null). Returns the
