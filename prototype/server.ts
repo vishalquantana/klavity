@@ -692,6 +692,20 @@ function isWidgetCorsPath(path: string): boolean {
   if (path.startsWith("/api/personas/")) return true
   return /^\/api\/projects\/[^/]+\/config$/.test(path)
 }
+// KLAVITYKLA-318: legacy domain. Kept alive for /api/* (with CORS) so unmigrated extensions/widgets
+// keep working; site paths still 301 to klavity.in for SEO. Retirement gate: legacy /api hits ~0
+// for a full week (see docs/legacy-domain-retirement.md), then delete this whole block.
+const LEGACY_HOST = "klavity.quantana.top"
+const legacyHostApiHits = new Map<string, number>()
+function noteLegacyHostApiHit(path: string): void {
+  const n = (legacyHostApiHits.get(path) || 0) + 1
+  legacyHostApiHits.set(path, n)
+  // Log the first hit per path per process, then every 100th — visible but not a log flood.
+  if (n === 1 || n % 100 === 0) console.warn(`[legacy-domain] ${LEGACY_HOST}${path} served in place (hit #${n}) — client not yet migrated to klavity.in`)
+}
+export function _legacyHostApiHitsForTest(): Record<string, number> {
+  return Object.fromEntries(legacyHostApiHits)
+}
 function widgetCorsHeaders(req: Request): Record<string, string> {
   const origin = req.headers.get("origin")
   return {
@@ -1720,9 +1734,18 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     // DELIBERATE BACKWARD-COMPAT: klavity.quantana.top is the legacy domain; keep this redirect
     // so existing bookmarks, embeds, and API callers on the old domain still work.
     // Do NOT remove until all known consumers have migrated.
-    if (req.headers.get("host") === "klavity.quantana.top" && path !== "/widget.js") {
-      const dest = "https://klavity.in" + path + (url.search || "")
-      return new Response(null, { status: 301, headers: { location: dest } })
+    // KLAVITYKLA-318: /api/* must NEVER be 301'd here. A redirected cross-origin fetch loses the
+    // Access-Control-Allow-Origin header, so any extension/widget still pointed at the legacy host
+    // fails with an opaque "No 'Access-Control-Allow-Origin' header is present" instead of working.
+    // Serve legacy-host API calls in place (the withWidgetCors chokepoint attaches reflected-Origin
+    // CORS exactly as on klavity.in) and count the hits so we can tell when it's safe to retire.
+    if (req.headers.get("host") === LEGACY_HOST && path !== "/widget.js") {
+      if (path.startsWith("/api/")) {
+        noteLegacyHostApiHit(path)
+      } else {
+        const dest = "https://klavity.in" + path + (url.search || "")
+        return new Response(null, { status: 301, headers: { location: dest } })
+      }
     }
 
     // ── favicon ──
