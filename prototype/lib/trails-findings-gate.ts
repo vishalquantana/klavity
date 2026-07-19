@@ -182,7 +182,39 @@ export function severityForKind(kind: Finding["kind"]): string {
   return kind === "regression" ? "high" : kind === "visual" ? "low" : "medium"
 }
 
-export function buildTicketFromFinding(finding: Finding, baseUrl: string): TicketPayload {
+// KLA-231 (JTBD 1.14): the DOM selector of the affected element, pulled from whichever evidence key
+// a given finding class populated (ambiguous-selector → `selector`; element-gone → `cachedSelector` /
+// fingerprint.domPath; heal → resolved/to selector). Null when no locator is recorded.
+export function findingSelector(finding: Finding): string | null {
+  const ev = (finding.evidence ?? {}) as Record<string, unknown>
+  const fp = (ev.fingerprint ?? {}) as Record<string, unknown>
+  const cand =
+    (ev.selector as string) ||
+    (ev.cachedSelector as string) ||
+    (ev.resolvedSelector as string) ||
+    (ev.toSelector as string) ||
+    (fp.domPath as string) ||
+    (fp.testId as string) ||
+    ""
+  return cand ? String(cand) : null
+}
+
+// KLA-231 (JTBD 1.14): the shared "evidence receipts" block appended to every auto-filed Trail ticket
+// so the assignee gets the selector, a link to reproduce (per-step screenshots), and — when captured —
+// a session-replay link, on BOTH the auto-file and manual-file paths. Pure: link targets derive only
+// from the finding's ids; the replay line is emitted only when the caller confirms a recording exists.
+export function findingEvidenceLines(finding: Finding, baseUrl: string, hasReplay: boolean): string[] {
+  const out: string[] = []
+  const sel = findingSelector(finding)
+  if (sel) out.push(`Selector: ${sel}`)
+  if (finding.runId) {
+    out.push(`Reproduction (screenshots for every step): ${baseUrl}/api/trails/walks/${finding.runId}/report.pdf`)
+    if (hasReplay) out.push(`Session replay: ${baseUrl}/api/trails/walks/${finding.runId}/replay`)
+  }
+  return out
+}
+
+export function buildTicketFromFinding(finding: Finding, baseUrl: string, opts?: { hasReplay?: boolean }): TicketPayload {
   const ev = (finding.evidence ?? {}) as Record<string, unknown>
   const rationale = (ev.rationale as string) || finding.groundQuote || ""
   const fromSel = ev.fromSelector as string | null | undefined
@@ -195,6 +227,8 @@ export function buildTicketFromFinding(finding: Finding, baseUrl: string): Ticke
   // external tickets never claim verified grounding a finding never had.
   if (finding.groundQuote) lines.push(`${finding.groundQuoteVerified === true ? "Grounded" : "Reason"}: "${finding.groundQuote}"`)
   if (fromSel || toSel) lines.push(`Heal diff: ${fromSel ?? "(none)"} → ${toSel ?? "(none)"}`)
+  // KLA-231: evidence receipts (selector + reproduction link + optional replay link).
+  lines.push(...findingEvidenceLines(finding, baseUrl, opts?.hasReplay ?? false))
   lines.push(`Kind: ${finding.kind} · confidence: ${finding.confidence}`)
   lines.push(`Walk: ${finding.runId}${finding.stepId ? ` · step: ${finding.stepId}` : ""} · trail: ${finding.trailId}`)
   lines.push("Filed by Klavity OS Trails")
@@ -237,7 +271,13 @@ export const realFiler: Filer = async (projectId, finding) => {
   const connectors = await listAutoCopyConnectors(projectId)
   if (!connectors.length) return null
   const baseUrl = (process.env.KLAV_BASE_URL || "https://klavity.in").replace("klavity.quantana.top", "klavity.in")
-  const baseTicket = buildTicketFromFinding(finding, baseUrl)
+  // KLA-231: only advertise a "Session replay" link when a recording actually exists (capture is opt-in).
+  let hasReplay = false
+  try {
+    const { runsWithReplay } = await import("./trails-replay")
+    hasReplay = (await runsWithReplay(projectId, [finding.runId])).has(finding.runId)
+  } catch { /* best-effort: no replay line rather than a 404 link */ }
+  const baseTicket = buildTicketFromFinding(finding, baseUrl, { hasReplay })
   const attachment = await findingScreenshotAttachment(finding, baseUrl)
   const ticket: TicketPayload = attachment ? { ...baseTicket, attachments: [attachment] } : baseTicket
 

@@ -8924,14 +8924,21 @@ load()
       var f=queue[_q];var ev=f.evidence||{}
       var rationale=ev.rationale||f.groundQuote||""
       var fromSel=ev.fromSelector;var toSel=ev.toSelector
+      var selector=ev.selector||ev.cachedSelector||ev.resolvedSelector||toSel||(ev.fingerprint&&(ev.fingerprint.domPath||ev.fingerprint.testId))||""
       var shotUrl=ev.screenshotUrl||null
       var card=document.createElement("div");card.className="find"
       var html='<div class="top"><span class="kind '+esc(f.kind)+'">'+esc(f.kind)+'</span><span class="conf">conf '+esc(f.confidence)+"</span></div>"
       html+='<div class="ft">'+esc(f.title)+"</div>"
       if(rationale)html+='<div class="quote">'+esc(rationale)+"</div>"
       if(fromSel||toSel)html+='<div class="diff">'+esc(fromSel||"(none)")+" &rarr; "+esc(toSel||"(none)")+"</div>"
+      // KLA-231: explicit selector receipt (distinct from the heal from&rarr;to diff above).
+      if(selector&&selector!==fromSel&&selector!==toSel)html+='<div class="diff">'+window.kicon("search",{size:12})+" Selector: "+esc(selector)+"</div>"
       if(shotUrl){var label=ev.screenshotLabel?esc(ev.screenshotLabel):"Screenshot";html+='<div class="evidence"><img src="'+esc(shotUrl)+'" alt="'+esc(label)+'"></div>'}
-      else if(!shotUrl&&f.runId){var qs2=projParam()?"?project="+encodeURIComponent(projParam()):"";html+='<a class="walk-link" href="/api/trails/walks/'+esc(f.runId)+"/report.pdf"+qs2+'" target="_blank" rel="noopener">'+window.kicon("file-text",{size:12})+" View Walk Report — screenshots for every step</a>"}
+      // KLA-231: reproduction receipt — the per-step Walk report (screenshots for every step) always
+      // links when there's a runId, whether or not a single-step screenshot was inlined above.
+      if(f.runId){var qs2=projParam()?"?project="+encodeURIComponent(projParam()):"";html+='<a class="walk-link" href="/api/trails/walks/'+esc(f.runId)+"/report.pdf"+qs2+'" target="_blank" rel="noopener">'+window.kicon("file-text",{size:12})+" View Walk Report — screenshots for every step</a>"
+        // Session replay link only where a recording actually exists (annotated server-side).
+        if(f.hasReplay)html+='<a class="walk-link" href="/api/trails/walks/'+esc(f.runId)+"/replay"+qs2+'" target="_blank" rel="noopener">'+window.kicon("play",{size:12})+" Session replay</a>"}
       if(f.connectorError)html+='<div class="msg" style="color:var(--rose)">Auto-file failed: '+esc(f.connectorError)+"</div>"
       html+='<div class="acts"><button class="btn btn-indigo" data-act="file" data-id="'+esc(f.id)+'">File</button><button class="btn btn-ghost" data-act="dismiss" data-id="'+esc(f.id)+'">Dismiss</button></div><div class="msg" data-msg="'+esc(f.id)+'"></div>'
       card.innerHTML=html;qEl.appendChild(card)
