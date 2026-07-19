@@ -475,7 +475,14 @@ test("GET /shared/walk-report/:token & /api/.../report.pdf — returns 429 Retry
       KLAV_SECRET: TEST_SECRET,
       KLAV_BASE_URL: `http://localhost:${tempPort}`,
       KLAV_TEST_FAKE_PDF: "1",
-      KLAV_TEST_FAKE_PDF_DELAY: "1000",
+      // KLA-207 made PDF renders QUEUE (serialize) instead of rejecting on mere concurrency;
+      // the "busy" 429 now only fires when a queued waiter exceeds the PDF queue timeout
+      // (PDF_QUEUE_TIMEOUT_MS, floored to a 1000ms minimum). To exercise that path
+      // deterministically we hold the 1st render (3000ms fake delay) well past the queue
+      // timeout (1000ms) so the 2nd concurrent request reliably times out → 429 Retry-After: 5
+      // while the 1st is still in-flight → 200.
+      KLAV_TEST_FAKE_PDF_DELAY: "2000",
+      KLAV_PDF_QUEUE_TIMEOUT_MS: "1000",
     }
   })
 
