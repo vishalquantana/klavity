@@ -49,6 +49,53 @@ function extractNormalizeUrl(html: string): (raw: unknown) => Result {
   return new Function(`${src}; return normalizeUrl;`)() as (raw: unknown) => Result;
 }
 
+/**
+ * Speed-claim detector. Returns every "seconds"-style or "instant" promise in a
+ * page. <style> blocks are stripped first so CSS durations (`transition:.15s`,
+ * `animation:spin .7s`) are not false positives, and "15 min with the founder"
+ * (a meeting length, not a scan-time promise) is explicitly allowed.
+ */
+export function findSpeedClaims(html: string): string[] {
+  const withoutCss = html.replace(/<style[\s\S]*?<\/style>/gi, '');
+  const patterns = [
+    /\bseconds?\b/gi, // "in seconds", "<30 seconds"
+    /\bsecs?\b/gi, // "30 secs", "~5 sec"
+    /\b\d+\s*s\b/gi, // "30s", "~30 s"
+    /\binstantly\b/gi, // "instantly discover..."
+    /\binstant\b/gi, // "an instant AI bug scan"
+    /\bin real[- ]time\b/gi,
+    /\bimmediately\b/gi,
+  ];
+  const hits: string[] = [];
+  for (const re of patterns) {
+    for (const m of withoutCss.matchAll(re)) {
+      const ctx = withoutCss.slice(Math.max(0, m.index! - 40), m.index! + 40);
+      if (/\d+\s*min\b/i.test(ctx) && /founder|booking|call/i.test(ctx)) continue; // "Book 15 min"
+      hits.push(m[0]);
+    }
+  }
+  return hits;
+}
+
+describe('speed-claim detector', () => {
+  it('flags the exact wordings that shipped before this fix', () => {
+    expect(findSpeedClaims('<p>Results in &lt;30 seconds</p>').length).toBeGreaterThan(0);
+    expect(findSpeedClaims('<p>friction audit in seconds</p>').length).toBeGreaterThan(0);
+    expect(findSpeedClaims('<meta content="an instant AI bug scan">').length).toBeGreaterThan(0);
+    expect(findSpeedClaims('{"description":"instantly discover friction"}').length).toBeGreaterThan(0);
+    expect(findSpeedClaims('<p>done in ~30s</p>').length).toBeGreaterThan(0);
+    expect(findSpeedClaims('<p>scan takes 45 secs</p>').length).toBeGreaterThan(0);
+    expect(findSpeedClaims('<script>const eta = "about 20 seconds"</script>').length).toBeGreaterThan(0);
+  });
+
+  it('does not flag CSS durations, the booking length, or minutes framing', () => {
+    expect(findSpeedClaims('<style>a{transition:background .15s;animation:spin .7s}</style>')).toEqual([]);
+    expect(findSpeedClaims('<a class="booking-link">Book 15 min with the founder</a>')).toEqual([]);
+    expect(findSpeedClaims('<p>Results in minutes</p>')).toEqual([]);
+    expect(findSpeedClaims('<p>try again in a few minutes</p>')).toEqual([]);
+  });
+});
+
 describe('free-tool URL input markup', () => {
   for (const page of PAGES) {
     describe(page, () => {
@@ -87,9 +134,18 @@ describe('free-tool URL input markup', () => {
         expect(html).not.toMatch(/\bprompt\(/);
       });
 
-      it('drops the unmeasured exact-second timing claim', () => {
-        expect(html).not.toContain('30 seconds');
+      it('carries the minutes framing in the trust row', () => {
         expect(html).toContain('Results in minutes');
+      });
+
+      // The founder dropped exact-second claims: sim-run durations were never
+      // measured. This sweeps the WHOLE page — visible copy, meta description,
+      // og/twitter tags, JSON-LD and inline JS strings — because the first pass
+      // fixed only the trust row and left "in seconds" in the cro hero plus
+      // "instant"/"instantly" in four meta/schema fields.
+      it('has no seconds-style or "instant" speed claim anywhere', () => {
+        const found = findSpeedClaims(html);
+        expect(found).toEqual([]);
       });
 
       it('runs the submit path through normalizeUrl before fetching', () => {
