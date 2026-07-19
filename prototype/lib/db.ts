@@ -352,6 +352,13 @@ export async function applySchema(c: Client) {
     `CREATE INDEX IF NOT EXISTS ai_calls_created_idx ON ai_calls (created_at)`,
     `CREATE INDEX IF NOT EXISTS ai_calls_proj_idx ON ai_calls (project_id, created_at)`,
     `CREATE INDEX IF NOT EXISTS ai_calls_type_idx ON ai_calls (type, created_at)`,
+    // TEST-OTP AUDIT (KLAVITYKLA-304) — one row per accepted test-OTP bypass login, so the
+    // /opsadmin Test-OTP panel can show recent bypass logins without grepping server logs. The
+    // [TEST-OTP-USED] console.warn is kept alongside this table.
+    `CREATE TABLE IF NOT EXISTS test_otp_uses (
+       id TEXT PRIMARY KEY, created_at INTEGER NOT NULL, email TEXT NOT NULL,
+       via TEXT NOT NULL, ip TEXT)`,
+    `CREATE INDEX IF NOT EXISTS test_otp_uses_created_idx ON test_otp_uses (created_at)`,
     // DAILY AI SPEND — ATOMIC global daily-spend reservation ledger (cost-cap race fix, FIX A). One row
     // per UTC day ('YYYY-MM-DD'). reserved_usd is incremented BEFORE each LLM call via an atomic
     // conditional upsert (tryReserveDailySpend) and reconciled to the real cost after (reconcileDailySpend).
