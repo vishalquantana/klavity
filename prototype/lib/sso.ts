@@ -7,6 +7,7 @@
 // JWT verification covers RS256 and ES256; unsupported algorithms are rejected.
 
 import { assertSafeUrl } from "./url-guard"
+import { resolveTxt } from "node:dns/promises"
 
 export type OidcDiscovery = {
   issuer: string
@@ -29,10 +30,119 @@ export interface SsoDeps {
   // Called with every outbound URL before it is fetched. Default: assertSafeUrl.
   // Pass `async () => {}` in hermetic tests to skip real DNS.
   guardUrl?: (url: string) => Promise<void>
+  // DNS TXT resolver used by domain-ownership verification. Default: node:dns resolveTxt.
+  resolveTxt?: (host: string) => Promise<string[][]>
 }
 
 const defaultGuardUrl = async (url: string): Promise<void> => {
   await assertSafeUrl(url)
+}
+
+// ── Domain ownership (KLAVITYKLA-9 security fix) ─────────────────────────────
+//
+// THE ATTACK THIS PREVENTS: the SSO config used to accept ANY syntactically valid
+// allowedDomain. Because the callback mints a GLOBAL, email-keyed session for whatever
+// email the (account-controlled) IdP asserts, an attacker could point their own IdP at
+// allowedDomain=victim.com, assert email=ceo@victim.com, and log in as that user
+// everywhere in Klavity. Setting allowedDomain=gmail.com generalised it to every Gmail
+// user. A domain is therefore only honoured once the account has PROVEN it owns it, via
+// a DNS TXT record, and public mailbox providers are never eligible at all.
+
+// Public/consumer email providers. Nobody can legitimately own SSO for these, and allowing
+// one would hand the holder a session as every user with an address there.
+export const PUBLIC_EMAIL_DOMAINS = new Set([
+  "gmail.com",
+  "googlemail.com",
+  "outlook.com",
+  "hotmail.com",
+  "live.com",
+  "msn.com",
+  "yahoo.com",
+  "yahoo.co.uk",
+  "ymail.com",
+  "icloud.com",
+  "me.com",
+  "mac.com",
+  "aol.com",
+  "proton.me",
+  "protonmail.com",
+  "pm.me",
+  "gmx.com",
+  "gmx.net",
+  "mail.com",
+  "zoho.com",
+  "yandex.com",
+  "yandex.ru",
+  "fastmail.com",
+  "tutanota.com",
+  "tuta.io",
+  "hey.com",
+  "qq.com",
+  "163.com",
+  "126.com",
+])
+
+export function isPublicEmailDomain(domain: string): boolean {
+  return PUBLIC_EMAIL_DOMAINS.has(domain.trim().toLowerCase())
+}
+
+/**
+ * Syntactic + policy validation for an SSO allowedDomain. Returns null when acceptable,
+ * otherwise a client-safe reason string.
+ *
+ * Note this is necessary but NOT sufficient — the domain must additionally be proven via
+ * verifyDomainOwnership() before any login is allowed against it.
+ */
+export function validateSsoDomain(raw: string): string | null {
+  const domain = raw.trim().toLowerCase()
+  if (!domain) return "allowedDomain is required"
+  if (domain.length > 253) return "allowedDomain is too long"
+  // Labels: alphanumeric + hyphens, no leading/trailing hyphen; at least one dot (a bare TLD
+  // or a single label like "localhost" is never a valid email domain to federate).
+  if (!/^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(domain))
+    return "allowedDomain must be a valid domain name (e.g. acme.com)"
+  if (isPublicEmailDomain(domain))
+    return "Public email providers cannot be used for SSO — use a domain your organisation owns"
+  return null
+}
+
+/** The DNS TXT record name an account must publish to prove it owns `domain`. */
+export const SSO_DOMAIN_TXT_PREFIX = "klavity-sso-verify"
+
+export function ssoDomainTxtValue(verifyToken: string): string {
+  return `${SSO_DOMAIN_TXT_PREFIX}=${verifyToken}`
+}
+
+/**
+ * Proves the account controls DNS for `domain` by looking for a
+ * `klavity-sso-verify=<token>` TXT record on it (or on the _klavity subdomain).
+ *
+ * Returns true only on an exact token match. Any DNS failure returns false — this must
+ * fail CLOSED, since a false positive is a full account-takeover primitive.
+ */
+export async function verifyDomainOwnership(
+  domain: string,
+  verifyToken: string,
+  deps: SsoDeps = {},
+): Promise<boolean> {
+  if (validateSsoDomain(domain) !== null) return false
+  if (!verifyToken || verifyToken.length < 16) return false
+  const resolver = deps.resolveTxt ?? resolveTxt
+  const expected = ssoDomainTxtValue(verifyToken)
+  const hosts = [domain.trim().toLowerCase(), `_klavity.${domain.trim().toLowerCase()}`]
+  for (const host of hosts) {
+    let records: string[][]
+    try {
+      records = await resolver(host)
+    } catch {
+      continue // NXDOMAIN / SERVFAIL on one candidate: try the next, never pass.
+    }
+    // A TXT record can be chunked into multiple strings; join per-record before comparing.
+    for (const chunks of records ?? []) {
+      if ((Array.isArray(chunks) ? chunks.join("") : String(chunks)).trim() === expected) return true
+    }
+  }
+  return false
 }
 
 // ── Discovery ────────────────────────────────────────────────────────────────
@@ -58,6 +168,13 @@ export async function fetchOidcDiscovery(
 
   if (!doc.authorization_endpoint || !doc.token_endpoint || !doc.jwks_uri) {
     throw new Error("OIDC discovery doc is missing required fields")
+  }
+  // The discovery doc must self-identify as the issuer we asked for (OIDC Discovery §4.3).
+  // Without this a redirect/mis-hosted document could hand us endpoints for a different IdP
+  // while we go on validating id_tokens against the configured issuer string.
+  const normalize = (s: string) => s.replace(/\/+$/, "")
+  if (normalize(String(doc.issuer ?? "")) !== normalize(issuer)) {
+    throw new Error(`OIDC discovery issuer mismatch: expected ${issuer}, got ${doc.issuer}`)
   }
   // Validate all IdP endpoint URLs before we ever use them.
   await guard(doc.authorization_endpoint)
@@ -179,6 +296,9 @@ export async function verifyIdToken(
     nonce: string
     // Allow a small clock skew (default 60s) for iat checks.
     clockSkewSec?: number
+    // Require the IdP to assert email_verified === true. Defaults to true — an unverified
+    // email is attacker-choosable at most IdPs, so trusting it as an identity is a bypass.
+    requireEmailVerified?: boolean
   },
   deps: SsoDeps = {},
 ): Promise<OidcClaims> {
@@ -195,7 +315,11 @@ export async function verifyIdToken(
   const aud: string[] = Array.isArray(payload.aud) ? payload.aud : [payload.aud]
   if (!aud.includes(params.clientId))
     throw new Error("id_token audience does not include this client_id")
-  if (payload.exp && payload.exp < now - skew)
+  // exp is REQUIRED. Previously it was only checked when present, so a token that simply
+  // omitted the claim never expired — a stolen id_token would have been valid forever.
+  if (typeof payload.exp !== "number")
+    throw new Error("id_token missing required 'exp' claim")
+  if (payload.exp < now - skew)
     throw new Error("id_token has expired")
   if (payload.iat && payload.iat > now + skew)
     throw new Error("id_token issued in the future")
@@ -203,6 +327,10 @@ export async function verifyIdToken(
     throw new Error("id_token nonce mismatch")
   if (!payload.sub) throw new Error("id_token missing required 'sub' claim")
   if (!payload.email) throw new Error("id_token missing required 'email' claim")
+  // email_verified must be explicitly true. An IdP that lets a user self-assert an
+  // unverified address would otherwise let them claim any colleague's mailbox.
+  if ((params.requireEmailVerified ?? true) && payload.email_verified !== true)
+    throw new Error("id_token email_verified is not true")
 
   // ── Fetch JWKS and verify signature ──
   await guard(params.jwksUri)
