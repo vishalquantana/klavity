@@ -8,6 +8,7 @@ import { createClient } from "@libsql/client"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { unlinkSync } from "node:fs"
+import { MODEL_CHOICE_IDS } from "./lib/models"
 
 const RUN = `${Date.now()}-${Math.random().toString(36).slice(2)}`
 const DB_FILE = join(tmpdir(), `klav-bugcheck-${RUN}.db`)
@@ -39,6 +40,19 @@ let PAGE_BASE = ""
 let aiServer: ReturnType<typeof Bun.serve>
 let AI_BASE = ""
 let aiCallCount = 0
+
+// KLAVITYKLA-342 — every model/temperature the server actually requested, split by call type.
+type AiReq = { model: string; temperature: unknown }
+const qaAiRequests: AiReq[] = []
+const croAiRequests: AiReq[] = []
+
+// The model the bug-check path MUST pin to. Deliberately NOT one of MODEL_CHOICE_IDS: the weighted
+// picker can only ever return a curated choice id (it falls back to KLAV_MODEL only when every
+// weight is zero, and a fresh DB seeds three non-zero weights). So observing this exact string
+// proves the pin was used, and observing a choice id proves the pin was bypassed. That is the
+// discriminator the previous, vacuous version of this test lacked.
+const PINNED_MODEL = "test/pinned-bugcheck-model"
+let findingsForModel: (model: string) => string = () => "{}"
 
 // A malicious finding straight from a "hostile fetched page" — an AI that (mis)quotes page
 // content verbatim into a finding is the realistic worst case; this proves the RENDER path
@@ -102,6 +116,15 @@ beforeAll(async () => {
     ],
   })
 
+  // A DIFFERENT model yields a different number of findings — the exact failure mode reported in
+  // KLAVITYKLA-342 (same URL scanned twice → 0 findings, then 8).
+  const fakeFindingsAltModel = JSON.stringify({
+    findings: [
+      { what: "Hero image fails to load", where: ".hero img", why: "The page looks empty above the fold.", severity: "high" },
+    ],
+  })
+  findingsForModel = (model: string) => (model === PINNED_MODEL ? fakeFindings : fakeFindingsAltModel)
+
   aiServer = Bun.serve({
     port: 0,
     fetch(req) {
@@ -111,8 +134,23 @@ beforeAll(async () => {
       // just alternate based on a header the test can't set — instead, sniff the body.
       return req.text().then((bodyText) => {
         const isQa = bodyText.includes("USER-FACING BREAKAGE")
+        // KLAVITYKLA-342: record the model/temperature the server ACTUALLY asked for. This is the
+        // only way to see through to the root cause — the response body alone cannot reveal that
+        // the server weight-picked a different model on this call.
+        let reqModel = "", reqTemp: unknown = undefined
+        try {
+          const parsed = JSON.parse(bodyText)
+          reqModel = String(parsed.model ?? "")
+          reqTemp = parsed.temperature
+        } catch {}
+        ;(isQa ? qaAiRequests : croAiRequests).push({ model: reqModel, temperature: reqTemp })
+        // The findings VARY BY MODEL. A real multi-model deployment behaves this way (that is the
+        // whole reason random routing produced 0-vs-8-finding flapping), and it makes the
+        // user-visible determinism assertion meaningful instead of tautological: with a constant
+        // stub response, a determinism test passes even when the model changes every call.
+        const body = isQa ? findingsForModel(reqModel) : fakeFrictions
         return Response.json({
-          choices: [{ message: { content: isQa ? fakeFindings : fakeFrictions } }],
+          choices: [{ message: { content: body } }],
           usage: { prompt_tokens: 100, completion_tokens: 80, cost: 0.001 },
         })
       })
@@ -138,6 +176,8 @@ beforeAll(async () => {
       SENDGRID_API_KEY: "",
       KLAV_MAIL_FROM: "",
       KLAV_FREETOOL_DAILY_CAP_USD: "5",
+      // KLAVITYKLA-342: MODEL (= KLAV_MODEL) is what the bug-check path pins to.
+      KLAV_MODEL: PINNED_MODEL,
     },
     stdout: "ignore",
     stderr: "ignore",
@@ -296,6 +336,68 @@ test("POST /api/cro/analyze mode=qa: scanning the same URL twice returns an IDEN
   const second = await call()
   expect(second.findings).toEqual(first.findings)
   expect(second.checked).toEqual(first.checked)
+})
+
+// ── The ROOT-CAUSE determinism test (KLAVITYKLA-342). ─────────────────────────────────────────
+// The test above is necessary but NOT sufficient: the second scan is served from the 10-minute
+// analyze cache, so it would pass even if the model were re-rolled on every real call. This test
+// defeats the cache (a distinct URL per call → distinct `${mode}|${url}` cache key) and asserts on
+// the thing that actually varied: the model the server requested from OpenRouter.
+//
+// WITHOUT the `model: MODEL` pin, chat() falls through to
+//   pickModel(await getActiveWeights(), MODEL_CHOICE_IDS, MODEL, Math.random())
+// which on a fresh DB weight-picks across three seeded models (50/40/10). Over N=12 independent
+// calls the chance every roll lands on the same model is 0.5^12 + 0.4^12 + 0.1^12 ≈ 2.6e-4, so
+// this test fails essentially always if the pin is reverted.
+const DETERMINISM_CALLS = 12
+
+test("bug-check analyze pins ONE model + temperature 0 across many independent (cache-missing) calls", async () => {
+  const before = qaAiRequests.length
+  const bodies: any[] = []
+  for (let i = 0; i < DETERMINISM_CALLS; i++) {
+    const r = await fetch(`${BASE}/api/cro/analyze`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      // Distinct path per call ⇒ distinct cache key ⇒ a REAL model call every iteration.
+      body: JSON.stringify({ url: `${PAGE_BASE}/det-${RUN}-${i}`, anonId: `anon_detN_${RUN}_${i}`, mode: "qa" }),
+    })
+    expect(r.status).toBe(200)
+    bodies.push(await r.json())
+  }
+
+  // Every iteration really did reach the model (no cache hits silently reducing N to 1).
+  const reqs = qaAiRequests.slice(before)
+  expect(reqs.length).toBe(DETERMINISM_CALLS)
+
+  // (1) ROOT CAUSE: the model actually requested is invariant, and is the pinned one — not a
+  // weight-picked choice id.
+  const models = [...new Set(reqs.map((r) => r.model))]
+  expect(models).toEqual([PINNED_MODEL])
+
+  // (2) temperature 0 on every single call (a pinned model at default temperature still drifts).
+  expect([...new Set(reqs.map((r) => r.temperature))]).toEqual([0])
+
+  // (3) USER-VISIBLE CONSEQUENCE: identical input ⇒ identical findings. The stub varies its
+  // findings by model, so this assertion is only satisfiable while (1) holds.
+  for (const b of bodies) expect(b.findings).toEqual(bodies[0].findings)
+})
+
+test("the model pin is scoped to bug-check: /cro analyze still uses the weighted picker", async () => {
+  const before = croAiRequests.length
+  const r = await fetch(`${BASE}/api/cro/analyze`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ url: `${PAGE_BASE}/cro-unpinned-${RUN}`, anonId: "anon_croun_" + RUN }),
+  })
+  expect(r.status).toBe(200)
+  const reqs = croAiRequests.slice(before)
+  expect(reqs.length).toBe(1)
+  // A curated choice id from the weighted mix — NOT the bug-check pin. Proves the fix did not
+  // change behaviour for other AI call types.
+  expect(MODEL_CHOICE_IDS).toContain(reqs[0].model)
+  expect(reqs[0].model).not.toBe(PINNED_MODEL)
+  // /cro deliberately does not pin temperature either.
+  expect(reqs[0].temperature).toBeUndefined()
 })
 
 // ── XSS: hostile fetched-page content echoed by the AI must render safely ──────────────────────
