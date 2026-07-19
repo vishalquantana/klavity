@@ -2058,6 +2058,9 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     <div class="drawer-in">
       <p class="tacc-hint" style="margin-bottom:12px">Current plan: <b id="planLabel">…</b> <span id="billingStatusLabel" class="muted" style="font-size:12px"></span></p>
       <div id="billingQuotaNote" class="muted" style="font-size:12px;margin-bottom:12px"></div>
+      <!-- KLAVITYKLA-309: customer-facing usage meter — current-period Sims / AutoSim runs vs plan
+           allowance, rendered as progress bars by _wirePlan from GET /api/account/usage. -->
+      <div id="billingUsage" style="margin:0 0 14px"></div>
       <!-- GTM round 2: Founding Team offer — annual-only Pro at the locked founding price. The
            server forces interval to "year" for plan:"founding" (see /api/billing/checkout). -->
       <div id="foundingRibbon" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;border:1px solid rgba(139,92,246,.35);background:linear-gradient(135deg,rgba(99,102,241,.10),rgba(139,92,246,.08));border-radius:8px;padding:10px 14px;margin-bottom:12px">
@@ -7052,6 +7055,29 @@ window.openPlanDrawer = openPlanDrawer
     var flows = lim.autosimFlows == null ? "unlimited AutoSim flows" : lim.autosimFlows + " AutoSim flows"
     return projects + " · " + sims + " · " + flows + " · enforcement " + (q.enforcement ? "on" : "off")
   }
+  var esc = function(s){ return String(s==null?"":s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c] }) }
+  // KLAVITYKLA-309: render current-period usage vs plan allowance as progress bars.
+  function renderUsage(meters){
+    var box = $("billingUsage"); if (!box) return
+    if (!meters || !meters.length){ box.innerHTML = ""; return }
+    var html = '<div style="font-weight:600;font-size:12px;margin-bottom:8px">Usage this month</div>'
+    meters.forEach(function(m){
+      var rightTxt = m.unlimited ? "Unlimited" : (m.used + " / " + m.limit + (m.overLimit ? " · over plan" : ""))
+      html += '<div style="margin-bottom:10px">'
+        + '<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;margin-bottom:4px">'
+        + '<span>' + esc(m.label) + '</span>'
+        + '<span class="muted"' + (m.overLimit ? ' style="color:var(--rose)"' : '') + '>' + esc(rightTxt) + '</span></div>'
+      if (!m.unlimited){
+        var width = Math.max(0, Math.min(100, Number(m.pct) || 0))
+        var bg = m.overLimit ? 'var(--rose)' : 'linear-gradient(90deg,var(--indigo),var(--green))'
+        html += '<div style="background:var(--ink-3);border-radius:999px;height:6px;overflow:hidden">'
+          + '<div style="height:100%;border-radius:999px;width:' + width + '%;background:' + bg + ';transition:width .4s ease"></div>'
+          + '</div>'
+      }
+      html += '</div>'
+    })
+    box.innerHTML = html
+  }
   async function refresh(){
     try {
       var r = await fetch("/api/account/plan"); if (!r.ok) return
@@ -7064,6 +7090,8 @@ window.openPlanDrawer = openPlanDrawer
       // Sidebar plan pill: free accounts only — a compact, always-visible path to the plan drawer.
       var pill = $("planPill")
       if (pill) pill.classList.toggle("hide", !!(d.unlimited || (d.plan && d.plan !== "free")))
+      // Current-period usage meter (separate read; failure is non-fatal to the plan panel).
+      try { var ur = await fetch("/api/account/usage"); if (ur.ok){ var ud = await ur.json(); renderUsage(ud.meters) } } catch(e){}
     } catch(e){}
   }
   window.refreshPlan = refresh   // billing=success return refetches through this
