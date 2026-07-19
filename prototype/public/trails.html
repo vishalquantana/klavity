@@ -292,7 +292,19 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 .dr-step-del:hover{color:var(--rose);transform:var(--mi-lift)}
 .dr-step-del:active{transform:var(--mi-press)}
 .dr-step-saving{font-size:10px;color:var(--paper-faint);margin-top:3px}
-.dr-foot{display:flex;gap:10px;align-items:center;padding-top:14px;border-top:1px solid var(--line)}
+/* KLAVITYKLA-275: reorder controls (move step up/down) */
+.dr-step-move{display:flex;flex-direction:column;gap:2px;flex-shrink:0;margin-top:1px}
+.dr-step-mv{background:none;border:none;cursor:pointer;color:var(--paper-faint);padding:1px 3px;border-radius:5px;font-size:11px;line-height:1;transition:color .15s,transform var(--mi-dur) var(--mi-ease)}
+.dr-step-mv:hover:not(:disabled){color:var(--indigo);transform:var(--mi-lift)}
+.dr-step-mv:active:not(:disabled){transform:var(--mi-press)}
+.dr-step-mv:disabled{opacity:.25;cursor:default}
+.dr-foot{display:flex;gap:10px;align-items:center;padding-top:14px;border-top:1px solid var(--line);flex-wrap:wrap}
+/* KLAVITYKLA-275: re-verify verdict pill inline in the modal footer */
+.dr-verify-msg{font-family:var(--mono);font-size:11px;color:var(--paper-faint);display:inline-flex;align-items:center;gap:6px}
+.dr-verdict{font-family:var(--mono);font-size:9px;letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;border-radius:20px}
+.dr-verdict.green{background:rgba(15,157,107,.14);color:var(--green)}
+.dr-verdict.amber{background:rgba(217,131,36,.16);color:var(--amber)}
+.dr-verdict.red{background:rgba(219,39,119,.14);color:var(--rose)}
 .dr-err{font-size:13px;color:var(--rose);margin-top:8px}
 
 /* KLA-88: schedule chip on trail row */
@@ -650,12 +662,14 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
     <div class="dr-body" id="drBody">
       <div class="dr-trail-name" id="drName"></div>
       <div class="dr-trail-url" id="drUrl"></div>
-      <p class="dr-hint">These are the steps AutoSim recorded. Edit any text or URL inline by clicking it, delete steps that look wrong, then click Activate to start scheduling this AutoSim.</p>
+      <p class="dr-hint">These are the steps AutoSim recorded. Edit any text or URL inline by clicking it, use the arrows to reorder a step, and delete steps that look wrong. Re-verify to re-run the edited flow live, then Activate to start scheduling this AutoSim.</p>
       <div class="dr-steps" id="drSteps"></div>
     </div>
     <div class="dr-foot">
       <button class="btn btn-indigo" id="drActivate">Activate AutoSim</button>
+      <button class="btn btn-ghost" id="drReverify" title="Re-run the edited steps live to confirm the flow still passes before activating">Re-verify</button>
       <button class="btn btn-ghost" id="drCancel">Cancel</button>
+      <span class="dr-verify-msg" id="drVerifyMsg"></span>
       <span class="dr-err hide" id="drErr"></span>
     </div>
   </div>
@@ -1100,7 +1114,7 @@ async function healDiffFor(runId){
 }
 
 // ── Draft Review modal ────────────────────────────────────────────────────────
-var drState = { trailId: null }
+var drState = { trailId: null, steps: [] }
 
 function drStepLabel(action){
   return { navigate:"navigate", click:"click", type:"type", select:"select", assert:"assert", wait:"wait" }[action] || action
@@ -1169,10 +1183,11 @@ async function drDeleteStep(trailId, stepId, cardEl){
     if (r.ok){
       cardEl.style.transition = "opacity .2s"
       cardEl.style.opacity = "0"
-      setTimeout(function(){ if (cardEl.parentNode) cardEl.parentNode.removeChild(cardEl)
-        // reindex step numbers
-        var cards = $("drSteps").querySelectorAll(".dr-step")
-        cards.forEach(function(c, i){ var n = c.querySelector(".dr-step-n"); if(n) n.textContent = String(i+1) })
+      setTimeout(function(){
+        // Drop the step from the in-memory list and re-render so numbers, move-button disabled
+        // state, and the reorder payload all stay consistent (KLAVITYKLA-275).
+        drState.steps = drState.steps.filter(function(s){ return s.id !== stepId })
+        renderDrSteps(drState.steps)
       }, 200)
     } else {
       var d = await r.json().catch(function(){return{}})
@@ -1192,7 +1207,40 @@ async function drDeleteStep(trailId, stepId, cardEl){
   }
 }
 
+// KLAVITYKLA-275: persist the current on-screen step order to the server (draft-only).
+// Reads the order straight from drState.steps (kept in sync by move/delete). On failure the caller
+// reverts the in-memory swap and re-renders so the UI never drifts from the persisted order.
+async function drPersistOrder(){
+  var trailId = drState.trailId; if (!trailId) return false
+  var pid = projParam(); var qs = pid ? "?project=" + encodeURIComponent(pid) : ""
+  try {
+    var r = await fetch("/api/trails/" + encodeURIComponent(trailId) + "/steps/reorder" + qs, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ order: drState.steps.map(function(s){ return s.id }) }),
+    })
+    return r.ok
+  } catch(e){ return false }
+}
+
+// Move the step at `i` by `dir` (-1 up / +1 down): swap in drState.steps, re-render, then persist.
+async function drMoveStep(i, dir){
+  var j = i + dir
+  if (j < 0 || j >= drState.steps.length) return
+  var arr = drState.steps
+  var tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp
+  renderDrSteps(arr)
+  var ok = await drPersistOrder()
+  if (!ok){
+    // revert the swap and re-render — keep the UI honest with what's stored
+    var t2 = arr[i]; arr[i] = arr[j]; arr[j] = t2
+    renderDrSteps(arr)
+    var msg = $("drVerifyMsg"); if (msg){ msg.style.color = "var(--rose)"; msg.textContent = "Couldn't save the new order" }
+  }
+}
+
 function renderDrSteps(steps){
+  drState.steps = steps || []
   var el = $("drSteps")
   if (!steps || !steps.length){
     el.innerHTML = '<div style="color:var(--paper-faint);font-size:13px;padding:12px 0">No steps authored yet.</div>'
@@ -1205,12 +1253,29 @@ function renderDrSteps(steps){
     var editable = drStepEditable(action)
     var card = document.createElement("div")
     card.className = "dr-step"
+    card.dataset.stepId = s.id
 
     // step number
     var numSpan = document.createElement("span")
     numSpan.className = "dr-step-n"
     numSpan.textContent = String(i + 1)
     card.appendChild(numSpan)
+
+    // reorder controls (up / down)
+    var mv = document.createElement("div")
+    mv.className = "dr-step-move"
+    var up = document.createElement("button")
+    up.className = "dr-step-mv"; up.type = "button"; up.innerHTML = "&#9650;"
+    up.title = "Move step up"; up.setAttribute("aria-label", "Move step " + (i + 1) + " up")
+    up.disabled = i === 0
+    up.onclick = function(){ drMoveStep(i, -1) }
+    var down = document.createElement("button")
+    down.className = "dr-step-mv"; down.type = "button"; down.innerHTML = "&#9660;"
+    down.title = "Move step down"; down.setAttribute("aria-label", "Move step " + (i + 1) + " down")
+    down.disabled = i === steps.length - 1
+    down.onclick = function(){ drMoveStep(i, 1) }
+    mv.appendChild(up); mv.appendChild(down)
+    card.appendChild(mv)
 
     // body
     var body = document.createElement("div")
@@ -1287,10 +1352,13 @@ function renderDrSteps(steps){
 
 async function openDraftReview(trailId){
   drState.trailId = trailId
+  drState.steps = []
   var pid = projParam(); var qs = pid ? "?project=" + encodeURIComponent(pid) : ""
   $("drName").textContent = "Loading…"
   $("drUrl").textContent = ""
   $("drSteps").innerHTML = ""
+  $("drVerifyMsg").textContent = ""; $("drVerifyMsg").style.color = ""
+  $("drReverify").disabled = false; $("drReverify").innerHTML = "Re-verify"; drVerifying = false
   $("drErr").textContent = ""; $("drErr").classList.add("hide")
   $("drActivate").disabled = false; $("drActivate").textContent = "Activate AutoSim"
   $("drBg").classList.add("open")
@@ -1311,6 +1379,59 @@ function closeDraftReview(){
 
 $("drClose").onclick = closeDraftReview
 $("drCancel").onclick = closeDraftReview
+
+// KLAVITYKLA-275: Re-verify — re-run the (edited) draft flow live from the review screen and show
+// the verdict inline. A draft walk is a Verification Walk: it captures evidence but files no
+// findings (server-side draft-gate), so this is a safe "does it still pass?" check before Activate.
+var drVerifying = false
+function drVerdictHtml(status){
+  var s = String(status || "")
+  var label = s === "green" ? "passed" : (s === "amber" ? "adapted" : (s === "red" ? "failed" : s))
+  var cls = (s === "green" || s === "amber" || s === "red") ? s : "amber"
+  return '<span class="dr-verdict '+cls+'">'+esc(label)+'</span>'
+}
+$("drReverify").onclick = async function(){
+  var trailId = drState.trailId; if (!trailId || drVerifying) return
+  var pid = projParam(); var qs = pid ? "?project=" + encodeURIComponent(pid) : ""
+  var btn = $("drReverify"); var msg = $("drVerifyMsg")
+  drVerifying = true
+  btn.disabled = true; $("drActivate").disabled = true
+  btn.innerHTML = kicon('loader',{size:12})+' Re-verifying…'
+  msg.style.color = ""; msg.textContent = ""
+  $("drErr").textContent = ""; $("drErr").classList.add("hide")
+  var runId = null
+  try {
+    var r = await fetch("/api/trails/" + encodeURIComponent(trailId) + "/walk" + qs, { method:"POST", headers:{ "content-type":"application/json" }, body:"{}" })
+    if (r.status === 409){ msg.style.color = "var(--amber)"; msg.textContent = "A walk is already running — try again shortly."; drVerifyDone(); return }
+    if (!r.ok){ msg.style.color = "var(--rose)"; msg.textContent = "Couldn't start the walk."; drVerifyDone(); return }
+    var b = await r.json().catch(function(){ return {} })
+    runId = b.runId
+  } catch(e){ msg.style.color = "var(--rose)"; msg.textContent = "Network error."; drVerifyDone(); return }
+
+  // Poll /progress until the walk leaves 'running' (mirrors runTrail's phased poll: 80×1.5s + grace).
+  var POLL_GRACE_MS = 90000, gracePhaseStarted = 0
+  for (var i = 0; ; i++){
+    var inGrace = i >= 80
+    await new Promise(function(res){ setTimeout(res, inGrace ? 3000 : 1500) })
+    if (inGrace && gracePhaseStarted === 0) gracePhaseStarted = Date.now()
+    var prog = null
+    try { var pr = await fetch("/api/trails/walks/" + encodeURIComponent(runId) + "/progress" + qs); if (pr.ok) prog = await pr.json().catch(function(){ return null }) } catch(e){}
+    if (prog && prog.status !== "running"){
+      msg.style.color = ""
+      msg.innerHTML = 'Re-verify: ' + drVerdictHtml(prog.status)
+        + ' <a href="/autosims/walk/' + encodeURIComponent(runId) + projQ() + '" style="color:var(--indigo)">view walk</a>'
+      drVerifyDone(); return
+    }
+    if (prog && prog.totalSteps > 0){ msg.style.color = ""; msg.textContent = 'Re-verifying… step ' + prog.stepsDone + '/' + prog.totalSteps }
+    if (inGrace && Date.now() - gracePhaseStarted > POLL_GRACE_MS){ msg.style.color = "var(--amber)"; msg.textContent = "Still running — check the walk detail."; break }
+  }
+  drVerifyDone()
+}
+function drVerifyDone(){
+  drVerifying = false
+  var btn = $("drReverify"); if (btn){ btn.disabled = false; btn.innerHTML = "Re-verify" }
+  $("drActivate").disabled = false
+}
 
 $("drActivate").onclick = async function(){
   var trailId = drState.trailId; if (!trailId) return

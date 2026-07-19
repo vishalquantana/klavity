@@ -58,7 +58,7 @@ import { trailsDashboardData, walkTrends } from "./lib/trails-dashboard"
 import { fileFindingById, dismissFinding, realFiler } from "./lib/trails-findings-gate"
 import { getReplay, runsWithReplay } from "./lib/trails-replay"
 import { saveFeedbackReplay, getFeedbackReplay, feedbackIdsWithReplay, pruneOldFeedbackReplays } from "./lib/feedback-replay"
-import { listRunSteps, listTrails, getTrail, getWalk, setTrailStatus, listTrailSteps, insertAssertStep, deleteTrailStep, updateTrailStep, updateTrail, countRunSteps, countTrailSteps, listTrailRunHistory, listFindings, recordFinding, getWalkJudgment, type TrailPatch, type StepPatch, resumeWalk, listWalksPaged } from "./lib/trails"
+import { listRunSteps, listTrails, getTrail, getWalk, setTrailStatus, listTrailSteps, insertAssertStep, deleteTrailStep, updateTrailStep, reorderTrailSteps, updateTrail, countRunSteps, countTrailSteps, listTrailRunHistory, listFindings, recordFinding, getWalkJudgment, type TrailPatch, type StepPatch, resumeWalk, listWalksPaged } from "./lib/trails"
 import { runWalkNow } from "./lib/trails-trigger"
 import { startTrailScheduler, isValidCron } from "./lib/trails-scheduler"
 import { startCrashReaper } from "./lib/trails-reaper"
@@ -5371,6 +5371,27 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (!trail) return json({ error: "Not found" }, 404)
           const steps = await listTrailSteps(projectId, trail.id)
           return json({ trail, steps })
+        }
+      }
+
+      // POST /api/trails/:id/steps/reorder — KLAVITYKLA-275: reorder a draft trail's steps so the
+      // user can drag click/type/etc. steps up or down before re-verifying. Body { order: string[] }
+      // must list every current step id exactly once. Draft-only (active trails are immutable here).
+      // Placed before the PATCH/DELETE :stepId matchers; POST never collides with them by method.
+      {
+        const mReorder = path.match(/^\/api\/trails\/([^/]+)\/steps\/reorder$/)
+        if (req.method === "POST" && mReorder) {
+          const trail = await getTrail(projectId, mReorder[1])
+          if (!trail) return json({ error: "Not found" }, 404)
+          if (trail.status !== "draft") return json({ error: "Trail is not a draft" }, 409)
+          const body = await req.json().catch(() => null)
+          const order = body && Array.isArray((body as any).order) ? (body as any).order : null
+          if (!order || !order.every((x: unknown) => typeof x === "string")) {
+            return json({ error: "order must be an array of step ids" }, 400)
+          }
+          const ok = await reorderTrailSteps(projectId, trail.id, order as string[])
+          if (!ok) return json({ error: "order must list every current step id exactly once" }, 400)
+          return json({ ok: true })
         }
       }
 
