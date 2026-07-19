@@ -49,6 +49,24 @@ export type ExportResult = {
   attachmentWarning?: string | null
 }
 
+// JTBD 5.10 (KLAVITYKLA-289): one issue fetched FROM an external tracker, normalised to the shape
+// Klavity needs to upsert it as a ticket. The REVERSE direction of createIssue/TicketPayload.
+//   - externalKey MUST equal what this connector's createIssue would store (github "#42",
+//     linear "ENG-42"), because import dedupe matches on (type, externalKey) against ticket_exports —
+//     the same seam inbound status-sync uses (see inbound.ts extractExternalKey / findExportByExternalKey).
+//   - priority is already mapped to Klavity's vocabulary ("urgent"|"high"|"medium"|"low"|null); the
+//     adapter degrades a provider that has no priority to null.
+//   - status is the raw provider state string (best-effort, optional) for display/mapping; never required.
+export type ImportedIssue = {
+  externalKey: string
+  externalUrl: string | null
+  title: string
+  body: string
+  priority: string | null
+  status?: string | null
+  createdAt: number
+}
+
 // Result of pushing an outbound comment to an external tracker.
 export type CommentSyncResult = {
   ok: boolean
@@ -134,6 +152,27 @@ export interface Connector {
     fields: FieldUpdate,
     cfg: Record<string, string>,
   ): Promise<FieldSyncResult>
+
+  /**
+   * JTBD 5.10 (KLAVITYKLA-289): the REVERSE of createIssue — pull recent issues that were filed
+   * FIRST in the external tracker ("external-first") so Klavity can import them as tickets and manage
+   * them alongside native reports. Returns issues newest-first, normalised to ImportedIssue.
+   *
+   * Each issue's `externalKey` MUST match the exact key this connector's createIssue stores, so the
+   * import path can dedupe against ticket_exports on (type, externalKey) and re-import cheaply without
+   * creating duplicate tickets.
+   *
+   * Optional so adapters without a straightforward list API (or a test fake) may omit it; the import
+   * route rejects a connector whose adapter lacks it. Unlike the outbound best-effort methods, this
+   * MAY throw on transport/auth failure — the import route wraps it and surfaces a generic error.
+   *
+   * @param cfg   Decrypted connector config (same shape as createIssue receives).
+   * @param opts  Optional { limit } cap on how many recent issues to fetch (adapter clamps it).
+   */
+  listIssues?(
+    cfg: Record<string, string>,
+    opts?: { limit?: number },
+  ): Promise<ImportedIssue[]>
 }
 
 // ── Registry ───────────────────────────────────────────────────────────────────
