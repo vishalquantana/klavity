@@ -37,6 +37,38 @@ export function quotasForPlan(plan: string | null | undefined) {
   return { plan: p, enforcement: billingEnforcementEnabled(), quotas: PLAN_QUOTAS[p] }
 }
 
+// ── Customer-facing usage meters (KLAVITYKLA-309) ───────────────────────────────────────────────
+// Maps the current-period metered value-metric counts (from getAccountUsage: 'sim_review' +
+// 'autosim_walk') onto the account plan's monthly allowance so the billing drawer can draw
+// "used / limit" progress bars. DISPLAY ONLY — no enforcement/blocking/charge happens here.
+export type UsageMeterView = {
+  key: "sims" | "autosim"
+  metric: "sim_review" | "autosim_walk"
+  label: string
+  used: number
+  limit: number | null // null → unlimited on this plan
+  unlimited: boolean
+  pct: number // 0..100, clamped; 0 when unlimited
+  overLimit: boolean
+}
+
+export function buildUsageMeters(plan: string | null | undefined, usage: Record<string, number> = {}): UsageMeterView[] {
+  const q = PLAN_QUOTAS[normalizePlan(plan)]
+  const defs: Array<{ key: UsageMeterView["key"]; metric: UsageMeterView["metric"]; label: string; limit: number | null }> = [
+    { key: "sims", metric: "sim_review", label: "Sim reviews", limit: q.simReactionsMonthly },
+    { key: "autosim", metric: "autosim_walk", label: "AutoSim runs", limit: q.autosimFlows },
+  ]
+  return defs.map((d) => {
+    const raw = Number(usage?.[d.metric])
+    const used = Number.isFinite(raw) && raw > 0 ? Math.trunc(raw) : 0
+    const unlimited = d.limit == null
+    const limit = d.limit
+    const pct = unlimited ? 0 : limit && limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : used > 0 ? 100 : 0
+    const overLimit = !unlimited && limit != null && used > limit
+    return { key: d.key, metric: d.metric, label: d.label, used, limit, unlimited, pct, overLimit }
+  })
+}
+
 export function normalizePlan(plan: string | null | undefined): BillingPlan {
   return plan === "pro" || plan === "team" || plan === "founding" || plan === "scale" || plan === "partner" ? plan : "free"
 }

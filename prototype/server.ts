@@ -83,7 +83,7 @@ import { publishBlogPost, SLUG_RE, type PublishInput } from "./lib/blog-publish"
 import { getExtractModel } from "./lib/extract-model"
 import { parseJSON } from "./lib/parse-json"
 import { EXTRACT_SYS as EXTRACT_SYS_PROMPT, normalizeExtractedPersonas } from "./lib/extract-pipeline"
-import { billingEnforcementEnabled, createStripeCheckoutSession, createStripePortalSession, intervalFromPrice, normalizeInterval, normalizePlan, PLAN_QUOTAS, planFromPrice, quotasForPlan, retrieveStripeSubscription, verifyStripeWebhook } from "./lib/billing"
+import { billingEnforcementEnabled, buildUsageMeters, createStripeCheckoutSession, createStripePortalSession, intervalFromPrice, normalizeInterval, normalizePlan, PLAN_QUOTAS, planFromPrice, quotasForPlan, retrieveStripeSubscription, verifyStripeWebhook } from "./lib/billing"
 import { sanitizeInsight } from "./lib/extract-sanitize"
 import { runAutosimAuthProbe } from "./lib/autosim-auth-probe"
 import { generateAuthPrompt } from "./lib/autosim-auth-prompt"
@@ -6005,7 +6005,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const metrics = await getAccountUsage(active.workspaceId, { period })
         const usage: Record<string, number> = { sim_review: 0, autosim_walk: 0 }
         for (const m of metrics) usage[m.metric] = m.count
-        return json({ accountId: active.workspaceId, period, usage, metrics })
+        // KLAVITYKLA-309: attach the current plan + per-metric display meters (used/limit/pct) so the
+        // billing drawer can render usage-vs-allowance progress bars from this single call.
+        const billing = await accountBillingState(active.workspaceId)
+        const meters = buildUsageMeters(billing.plan, usage)
+        return json({ accountId: active.workspaceId, period, plan: billing.plan, usage, metrics, meters })
       }
 
       if (req.method === "POST" && path === "/api/billing/checkout") {

@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
 import {
+  buildUsageMeters,
   intervalFromLookupKey,
   intervalFromPrice,
   intervalFromPriceId,
@@ -40,6 +41,54 @@ test("billing quotas are dark by default unless the enforcement flag is enabled"
   expect(quotasForPlan("team").quotas.autosimFlows).toBe(20)
   if (prev == null) delete process.env.KLAV_BILLING_ENFORCEMENT
   else process.env.KLAV_BILLING_ENFORCEMENT = prev
+})
+
+// ── KLAVITYKLA-309: customer-facing usage meters ────────────────────────────────────────────────
+
+test("buildUsageMeters maps current-period usage onto the plan's Sim/AutoSim allowance", () => {
+  const meters = buildUsageMeters("pro", { sim_review: 125, autosim_walk: 2 })
+  const sims = meters.find((m) => m.key === "sims")!
+  const auto = meters.find((m) => m.key === "autosim")!
+  // Pro: 500 Sim reviews/mo, 5 AutoSim flows.
+  expect(sims.used).toBe(125)
+  expect(sims.limit).toBe(500)
+  expect(sims.pct).toBe(25)
+  expect(sims.unlimited).toBe(false)
+  expect(sims.overLimit).toBe(false)
+  expect(auto.used).toBe(2)
+  expect(auto.limit).toBe(5)
+  expect(auto.pct).toBe(40)
+})
+
+test("buildUsageMeters clamps to 100% and flags over-limit usage", () => {
+  const sims = buildUsageMeters("free", { sim_review: 40 }).find((m) => m.key === "sims")!
+  // Free: 25 Sim reviews/mo — 40 used is over the cap.
+  expect(sims.pct).toBe(100)
+  expect(sims.overLimit).toBe(true)
+})
+
+test("buildUsageMeters reports unlimited plans without a bar percentage", () => {
+  const meters = buildUsageMeters("scale", { sim_review: 9999, autosim_walk: 9999 })
+  for (const m of meters) {
+    expect(m.limit).toBeNull()
+    expect(m.unlimited).toBe(true)
+    expect(m.pct).toBe(0)
+    expect(m.overLimit).toBe(false)
+  }
+})
+
+test("buildUsageMeters defaults missing/garbage metric counts to zero", () => {
+  const meters = buildUsageMeters("pro", { sim_review: NaN as any })
+  const sims = meters.find((m) => m.key === "sims")!
+  const auto = meters.find((m) => m.key === "autosim")!
+  expect(sims.used).toBe(0)
+  expect(sims.pct).toBe(0)
+  expect(auto.used).toBe(0)
+})
+
+test("buildUsageMeters normalizes unknown plan strings to Free limits", () => {
+  const sims = buildUsageMeters("mystery" as any, { sim_review: 10 }).find((m) => m.key === "sims")!
+  expect(sims.limit).toBe(25)
 })
 
 // ── KLAVITYKLA-336: live price-ID resolver ──────────────────────────────────────────────────────
