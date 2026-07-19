@@ -1,6 +1,6 @@
 import { DEFAULT_SETTINGS } from '@klavity/core'
 import type { KlavitySettings } from '@klavity/core'
-import { trySilentLogin, requestCode, verifyCode, isSignedIn, getConfig, getSelectedProjectId, setSelectedProjectId, pickProject, signOut } from './auth'
+import { trySilentLogin, requestCode, verifyCode, isSignedIn, isSignedOutExplicitly, getConfig, getSelectedProjectId, setSelectedProjectId, pickProject, signOut } from './auth'
 
 interface Sim { id: string; name: string; role: string; accent: string; initials: string; enabled: boolean }
 interface Recent { type: string; desc: string; issueKey: string; issueUrl: string; ts: number }
@@ -10,9 +10,11 @@ const $ = (id: string) => document.getElementById(id)!
 // ── Top-level routing ──────────────────────────────────────────────────
 async function route() {
   if (await isSignedIn()) return showApp()
+  showAuth()
+  // After an explicit sign-out we stay signed out — no cookie re-login.
+  if (await isSignedOutExplicitly()) return promptForSignedOut()
   // Try the silent (cookie) path once before showing the form.
   $('auth-sub').textContent = 'Checking your session…'
-  showAuth()
   if (await trySilentLogin() && await isSignedIn()) return showApp()
   promptForCode()
 }
@@ -22,6 +24,11 @@ function showApp() { $('view-auth').style.display = 'none'; $('view-app').style.
 
 function promptForCode() {
   $('auth-sub').textContent = "Enter your email and we'll send a 6-digit code."
+  $('auth-form').classList.remove('hidden')
+}
+
+function promptForSignedOut() {
+  $('auth-sub').textContent = "You're signed out. Your klavity.in session in this browser is untouched — sign out there too to fully disconnect."
   $('auth-form').classList.remove('hidden')
 }
 
@@ -129,7 +136,7 @@ changeEmailEl.addEventListener('click', (e) => { e.preventDefault(); goEmailStag
 
 silentEl.addEventListener('click', async () => {
   setErr('')
-  if (await trySilentLogin() && await isSignedIn()) showApp()
+  if (await trySilentLogin({ force: true }) && await isSignedIn()) showApp()
   else setErr('Not signed in on the website yet — enter your email above to get a code.')
 })
 

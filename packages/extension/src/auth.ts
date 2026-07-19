@@ -28,8 +28,27 @@ export function triggerConfigSync(): Promise<KlavConfig | null> {
   })
 }
 
-export async function trySilentLogin(): Promise<boolean> {
+/**
+ * True when the user explicitly signed out of the extension. While set we skip
+ * the cookie-based silent login, otherwise the klavity.in `klav_session` cookie
+ * re-authenticates them on the next popup open and sign-out looks broken.
+ */
+export async function isSignedOutExplicitly(): Promise<boolean> {
+  const r = await chrome.storage.local.get('klavSignedOut')
+  return !!r.klavSignedOut
+}
+
+async function clearSignedOutFlag(): Promise<void> {
+  await chrome.storage.local.remove(['klavSignedOut'])
+}
+
+/**
+ * Sign in from the klavity.in session cookie. Suppressed after an explicit
+ * sign-out unless `force` (the user pressed "Continue" themselves).
+ */
+export async function trySilentLogin(opts: { force?: boolean } = {}): Promise<boolean> {
   if (!chrome.cookies?.get) return false
+  if (!opts.force && (await isSignedOutExplicitly())) return false
   const base = backendBase(await readSettings())
   // A cache minted against a previous backend must never survive a re-auth against the
   // current one — otherwise a stale-domain cookie re-mints the old backend's config.
@@ -37,6 +56,7 @@ export async function trySilentLogin(): Promise<boolean> {
   try {
     const cookie = await chrome.cookies.get({ url: base, name: 'klav_session' })
     if (!cookie?.value) return false
+    await clearSignedOutFlag()
     await persistToken(cookie.value, base)
     await triggerConfigSync()
     return true
@@ -71,6 +91,7 @@ export async function verifyCode(email: string, code: string): Promise<{ ok: boo
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok || !data.token) return { ok: false, error: data.error || 'Invalid or expired code.' }
+    await clearSignedOutFlag()
     await persistToken(data.token, base)
     await triggerConfigSync()
     return { ok: true }
@@ -92,7 +113,9 @@ export async function isSignedIn(): Promise<boolean> {
 export async function signOut(): Promise<void> {
   const cur = await readSettings()
   await chrome.storage.sync.set({ klavSettings: { ...cur, klavToken: '', connectionMode: 'direct' } })
-  await chrome.storage.local.remove(['klavConfig', 'klavSims', 'klavSelectedProjectId'])
+  // Keep klavSelectedProjectId so the user's project survives a later re-login.
+  await chrome.storage.local.remove(['klavConfig', 'klavSims'])
+  await chrome.storage.local.set({ klavSignedOut: true })
 }
 
 export async function getSelectedProjectId(): Promise<string | null> {
