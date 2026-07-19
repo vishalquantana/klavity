@@ -2087,6 +2087,14 @@ export async function listPartnerCodeRedemptions(opts: {
   return r.rows.map(rowToRedemption)
 }
 
+// Total number of tool users (rows in `users`). Used to gate PostHog session replay
+// to roughly the first ~50 users (KLAVITYKLA-329). Degrades to 0 when there's no DB.
+export async function countUsers(): Promise<number> {
+  if (!db) return 0
+  const r = await db.execute({ sql: "SELECT COUNT(*) AS n FROM users" })
+  return Number((r.rows[0] as any)?.n || 0)
+}
+
 // How many times a given code has been redeemed (for per-code cap enforcement/reporting).
 export async function countPartnerCodeRedemptions(code: string): Promise<number> {
   const r = await db!.execute({
