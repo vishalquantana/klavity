@@ -82,6 +82,40 @@ finish the verification, export a ticket with a screenshot to a real Linear work
 the image renders inline in the issue description; then update this section and drop the
 "STILL UNVERIFIED" comment at the top of `linear.ts`.
 
+## Manual live-verify checklist (human step — not automated)
+
+The hermetic tests in `plane.attach.test.ts` and `linear.attach.test.ts` prove the request shapes
+are correct against a faithful mock. To confirm the image actually renders inline in a real tracker
+(the final visual gate), a human must do the following once before closing KLAVITYKLA-285.
+
+### Plane (self-hosted at plane.quantana.top)
+
+1. Open Klavity at <https://klavity.in>, log in as `vishal@quantana.com.au`.
+2. Open any existing feedback item that has a screenshot — look for the camera icon in the
+   feedback list or use the "Test report" button on the dashboard.
+3. In the feedback detail panel, click **Export → Plane** (or use an auto-copy connector already
+   configured for workspace `qbuilder`, project `05ea72ad`).
+4. Open the exported Plane issue at <https://plane.quantana.top/qbuilder/projects/05ea72ad/issues/>.
+5. **Visual check**: the screenshot renders inline in the "Attachments" section of the issue (not
+   just a link in the description body). The thumbnail should be visible without clicking anything.
+6. Hover the attachment thumbnail and confirm the filename matches the one Klavity uploaded
+   (e.g. `shot-<timestamp>.png`).
+7. If the attachment is missing: check `ticket_exports` in the DB for a non-null `error` column
+   (the `attachmentWarning` text). Also check server logs for `plane attachment upload failed`.
+
+### Linear
+
+1. Open Klavity, same feedback item with a screenshot.
+2. Export → Linear, using your API key and the target team ID.
+3. Open the created Linear issue.
+4. **Visual check**: the issue description contains an inline image rendered from the `assetUrl`
+   returned by the `fileUpload` mutation (markdown: `![screenshot](https://uploads.linear.app/…)`).
+   The image must load — it is not just a broken-image placeholder.
+5. If no image: check `ticket_exports.error` for `screenshot attach failed`. Also check server
+   logs for `linear attachment upload skipped`.
+6. When the live round-trip confirms the request shapes are correct, remove the "STILL UNVERIFIED"
+   comment at the top of `lib/connectors/linear.ts` and update the Linear section above.
+
 ## Jira
 
 `lib/connectors/jira.ts` uses Jira's documented `/attachments` endpoint with the
