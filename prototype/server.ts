@@ -4159,6 +4159,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     const needLogin = () => (req.method === "GET" ? redirect("/login") : json({ error: "Sign in to continue." }, 401))
 
     if (req.method === "GET" && path === "/dashboard") return me ? await dashboardPage() : redirect("/login")
+    // KLAVITYKLA-187: dedicated Sim-creation page. Serves the dashboard app; the client opens
+    // the Add-a-Sim surface when the path is /sim/new. `?mode=describe|site|call` preselects a tab.
+    if (req.method === "GET" && (path === "/sim/new" || path === "/sim/new/")) return me ? await dashboardPage() : redirect("/login")
     if (req.method === "GET" && path === "/trails") {
       const qs = url.search || ""
       return new Response(null, { status: 301, headers: { Location: "/autosims" + qs } })
