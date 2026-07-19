@@ -588,6 +588,18 @@ h1 {
 function $(id){return document.getElementById(id)}
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
 function projParam(){try{return new URLSearchParams(location.search).get("project")}catch(e){return null}}
+// KLAVITYKLA-371: how long the run actually took. durationMs is null while a run is still
+// in progress (finished_at NULL) — render "running…" rather than a bogus 0.0s.
+function fmtDuration(run){
+  if(!run) return "";
+  var ms = run.durationMs;
+  if(ms == null && run.finishedAt != null && run.createdAt != null) ms = run.finishedAt - run.createdAt;
+  if(ms == null) return "running…";
+  if(ms < 1000) return ms + "ms";
+  if(ms < 60000) return (ms/1000).toFixed(1) + "s";
+  var m = Math.floor(ms/60000);
+  return m + "m " + Math.round((ms % 60000)/1000) + "s";
+}
 
 const state = {
   email: "",
@@ -719,6 +731,7 @@ function renderRuns() {
     card.innerHTML = `
       <div class="run-meta">
         <span class="run-time">${esc(dateStr)}</span>
+        <span class="run-time" title="How long this run took">${esc(fmtDuration(run))}</span>
         <span class="${pillClass}">${esc(pillText)}</span>
       </div>
       <div class="run-url" title="${esc(run.url)}">${esc(truncatedUrl)}</div>
@@ -848,6 +861,7 @@ function renderDetails(run) {
         <div style="font-size: 11px; font-family: var(--mono); color: var(--paper-faint); margin-top: 8px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
           <span>RUN ID: ${esc(run.id)}</span>
           <span>RAN AT: ${esc(dateStr)}</span>
+          <span>TOOK: ${esc(fmtDuration(run))}</span>
         </div>
         ${rerunnable ? `<div class="run-actions">
           <button class="run-rerun-btn" id="rerunBtn" type="button">${window.kicon('rotate-cw', {size: 13})} Re-run this URL</button>
