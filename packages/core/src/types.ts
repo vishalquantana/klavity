@@ -141,6 +141,14 @@ export interface KlavConfig {
   backendUrl: string
   projects: KlavMonitoredProject[]
   syncedAt: number
+  /**
+   * Version stamp of the project config the backend served (KLAVITYKLA-320). Changes
+   * whenever an admin edits reviewMode / monitored URLs in the dashboard, so the
+   * extension can cheaply revalidate instead of serving a stale cache. Optional
+   * because caches written by older builds won't have it (treated as "unknown" →
+   * forces one full resync).
+   */
+  configVersion?: string
 }
 
 export type ContentMessage =
