@@ -103,6 +103,46 @@ body{font-family:var(--font-sans,'Inter',system-ui,sans-serif);background:#f9faf
 .error-msg{background:#fee2e2;border:1px solid #fecaca;border-radius:.5rem;padding:.75rem 1rem;font-size:.9rem;color:#dc2626;margin-top:.75rem;display:none}
 @media(max-width:500px){.form-row,.gate-row{flex-direction:column}.btn-analyze,.btn-unlock{width:100%}}
 </style>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "What does the Bug Check scan for?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "It fetches your page's public HTML and uses an AI model to look for user-facing breakage — dead or broken links, non-functional-looking buttons, error states leaking into the page, collapsed or duplicated layout, and empty/placeholder states shown where real content should be. It surfaces up to 8 findings ranked by severity."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is my page content stored?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. The page text is fetched once, passed to the AI for analysis, and discarded. We only store your email (if you unlock) and the funnel event so we can follow up. See our privacy policy."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What's the difference between this and Klavity?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "This tool gives you a one-off snapshot. Klavity's Sims — AI personas based on your real customers — walk your product continuously, surfacing regressions and broken flows the moment they appear, and file the tickets automatically."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does it work on password-protected or SPAs?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "It analyses the publicly-served HTML. For password-protected pages or heavy SPAs that render client-side, the result may be partial. Klavity's AutoSims drive a real browser, can log in, and click through actual flows."
+      }
+    }
+  ]
+}
+</script>
 </head>
 <body>
 
