@@ -1,6 +1,6 @@
 // Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
 import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution } from "./lib/db"
 import { sanitizeAttr } from "./lib/attr"
 import { issueKeyFor, chooseDedup, humanReportIssueKeyFor } from "./lib/dedup"
 import { classifySimObservation } from "./lib/sim-bug-classify"
@@ -5395,15 +5395,21 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const tickets = feedbackTickets.map(f => {
             const p = f.simId ? personaById.get(f.simId) : null
             const meta = ticketMetaRows[f.id] ?? { status: "open", assignee: null, notes: null, recurrence: 1, recurrenceDatesJson: null, lastSeenAt: null, resolvedAt: null, createdAt: f.createdAt }
-            // Build exports: latest ok per connector
+            // Build exports: latest attempt per connector (rows arrive newest-first). A success
+            // always wins over an older failure for the same connector; a connector whose LATEST
+            // attempt failed and never succeeded surfaces as a failed badge so the UI can offer
+            // Retry (KLA-283). connectorId + status ride along for that retry call.
             const rawExports = ticketExportsMap[f.id] ?? []
+            const okConnectors = new Set<string>()
             const seenConnector = new Set<string>()
-            const exports: { type: string; externalKey: string | null; externalUrl: string | null }[] = []
+            const exports: { type: string; externalKey: string | null; externalUrl: string | null; connectorId: string; status: string }[] = []
+            for (const exp of rawExports) if (exp.status === "ok") okConnectors.add(exp.connectorId)
             for (const exp of rawExports) {
-              if (exp.status === "ok" && !seenConnector.has(exp.connectorId)) {
-                seenConnector.add(exp.connectorId)
-                exports.push({ type: exp.type, externalKey: exp.externalKey, externalUrl: exp.externalUrl })
-              }
+              // A later failed retry must not hide an issue that already exists in the tracker.
+              if (exp.status !== "ok" && okConnectors.has(exp.connectorId)) continue
+              if (seenConnector.has(exp.connectorId)) continue
+              seenConnector.add(exp.connectorId)
+              exports.push({ type: exp.type, externalKey: exp.externalKey, externalUrl: exp.externalUrl, connectorId: exp.connectorId, status: exp.status })
             }
             return {
               id: f.id, simName: p?.name ?? null,
@@ -5995,6 +6001,26 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (!connector) return json({ error: "Connector not found." }, 404)
           const adapter = getConnector(connector.type)
           if (!adapter) return json({ error: "Unknown connector type." }, 400)
+
+          // KLA-283 (JTBD 5.4): already-exported guard — SERVER-enforced so the UI can't silently
+          // bypass it. If this ticket already has a successful export to this connector, refuse with
+          // 409 + the prior export's key/url so the client can offer "open it / export anyway".
+          // The caller re-sends { force: true } to proceed (which still records a new export row, so
+          // timeline history keeps every attempt). First-time exports are untouched.
+          const force = body.force === true
+          if (!force) {
+            const prior = await findPriorSuccessfulExport(fid, connectorId)
+            if (prior) {
+              return json({
+                error: `Already exported to ${connector.name}${prior.externalKey ? ` as ${prior.externalKey}` : ""}.`,
+                alreadyExported: {
+                  type: prior.type, externalKey: prior.externalKey,
+                  externalUrl: prior.externalUrl, createdAt: prior.createdAt,
+                  connectorName: connector.name,
+                },
+              }, 409)
+            }
+          }
 
           // Decrypt secret fields before calling createIssue
           const decryptedConfig: Record<string, string> = { ...connector.config }
