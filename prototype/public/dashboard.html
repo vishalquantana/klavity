@@ -139,7 +139,7 @@ body[data-view="recurring"] [data-view]:not([data-view~="recurring"]){display:no
 .find .diff{font-family:var(--mono);font-size:12px;color:var(--paper-faint);margin-top:8px;background:var(--ink-3);padding:7px 10px;border-radius:8px;overflow-x:auto}
 .find .evidence{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11.5px;color:var(--paper-faint);margin-top:8px;padding:6px 9px;background:var(--ink-3);border-radius:8px;border:1px dashed var(--line)}
 .find .evidence img{width:42px;height:28px;object-fit:cover;border-radius:5px;border:1px solid var(--line);cursor:pointer}
-.find .walk-link{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11.5px;color:var(--indigo);margin-top:8px;padding:4px 0;text-decoration:none;border-bottom:1px dashed var(--line)}
+.find .walk-link{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11.5px;color:var(--indigo);margin-top:8px;padding:4px 0;text-decoration:none;background:none;border:0;border-bottom:1px dashed var(--line);cursor:pointer;text-align:left}
 .find .walk-link:hover{border-color:var(--indigo)}
 .find .acts{display:flex;gap:8px;margin-top:12px}
 .ob-wrap{padding:4px 0 24px}
@@ -8685,7 +8685,9 @@ load()
       el.appendChild(ch)
     })
   }
-  async function openReplay(runId){
+  // KLAVITYKLA-221 (JTBD 7.9): focusStepIdx lets a finding row open the player already seeked to the
+  // exact step (chapter) it was raised at. When omitted, fall back to the first failing step.
+  async function openReplay(runId,focusStepIdx){
     var pid=projParam();var qs=pid?"?project="+encodeURIComponent(pid):""
     $("replayNote").textContent="Loading replay…"
     $("replaySteps").innerHTML="";$("replayChapters").innerHTML=""
@@ -8698,8 +8700,9 @@ load()
     if(!r.ok){$("replayNote").textContent="Couldn't load the replay.";return}
     var d=await r.json()
     replayState.segments=d.segments||[];replayState.steps=d.steps||[]
-    var firstBad=replayState.steps.find(function(s){var v=String(s.verdict);return v==="amber"||v==="red"})
-    replayState.focusStep=firstBad?firstBad.idx:null
+    var wantIdx=(focusStepIdx!=null&&focusStepIdx!==""&&isFinite(Number(focusStepIdx)))?Number(focusStepIdx):null
+    if(wantIdx==null){var firstBad=replayState.steps.find(function(s){var v=String(s.verdict);return v==="amber"||v==="red"});wantIdx=firstBad?firstBad.idx:null}
+    replayState.focusStep=wantIdx
     renderReplaySteps();renderChapters()
     playSegment(replayState.focusStep!=null?chapterForStep(replayState.focusStep):0)
   }
@@ -9341,13 +9344,17 @@ load()
       // KLA-231: reproduction receipt — the per-step Walk report (screenshots for every step) always
       // links when there's a runId, whether or not a single-step screenshot was inlined above.
       if(f.runId){var qs2=projParam()?"?project="+encodeURIComponent(projParam()):"";html+='<a class="walk-link" href="/api/trails/walks/'+esc(f.runId)+"/report.pdf"+qs2+'" target="_blank" rel="noopener">'+window.kicon("file-text",{size:12})+" View Walk Report — screenshots for every step</a>"
-        // Session replay link only where a recording actually exists (annotated server-side).
-        if(f.hasReplay)html+='<a class="walk-link" href="/api/trails/walks/'+esc(f.runId)+"/replay"+qs2+'" target="_blank" rel="noopener">'+window.kicon("play",{size:12})+" Session replay</a>"}
+        // KLAVITYKLA-221 (JTBD 7.9): open the in-page Walk replay player seeked to the EXACT step this
+        // finding was raised at (replayStepIdx, annotated server-side) — not the raw JSON in a new tab.
+        if(f.hasReplay)html+='<button type="button" class="walk-link" data-replay-finding="'+esc(f.runId)+'" data-replay-step="'+(f.replayStepIdx!=null?esc(f.replayStepIdx):"")+'">'+window.kicon("play",{size:12})+" Session replay at this moment</button>"}
       if(f.connectorError)html+='<div class="msg" style="color:var(--rose)">Auto-file failed: '+esc(f.connectorError)+"</div>"
       html+='<div class="acts"><button class="btn btn-indigo" data-act="file" data-id="'+esc(f.id)+'">File</button><button class="btn btn-ghost" data-act="dismiss" data-id="'+esc(f.id)+'">Dismiss</button></div><div class="msg" data-msg="'+esc(f.id)+'"></div>'
       card.innerHTML=html;qEl.appendChild(card)
     }
     qEl.querySelectorAll("button[data-act]").forEach(function(btn){btn.onclick=function(){act(btn.getAttribute("data-act"),btn.getAttribute("data-id"))}})
+    // KLAVITYKLA-221 (JTBD 7.9): a finding's "Session replay at this moment" opens the Walk replay
+    // player seeked to the step it was raised at (data-replay-step), so the evidence is one click away.
+    qEl.querySelectorAll("button[data-replay-finding]").forEach(function(btn){btn.onclick=function(){var si=btn.getAttribute("data-replay-step");openReplay(btn.getAttribute("data-replay-finding"),si)}})
   }
   // KLAVITYKLA-271 (JTBD 4.7): scroll the review-queue card a failing run raised into view and flash it,
   // so the "Finding" action on a walk answer lands the user on the exact card whose File button opens a ticket.
