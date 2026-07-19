@@ -295,7 +295,25 @@
     color: var(--paper-dim);
     line-height: 1.5;
   }
-  
+  /* KLAVITYKLA-338: positioning block now lives inline in the pricing grid,
+     directly after the Free tier — span the full row so it reads as a
+     divider between Free and the paid tiers rather than a grid card. */
+  .pricing-grid .positioning-section {
+    grid-column: 1 / -1;
+  }
+  .qa-cost-anchor {
+    text-align: center;
+    max-width: 56ch;
+    margin: 0 auto 32px;
+    font-size: 15px;
+    color: var(--paper-dim);
+  }
+  .plan-value-anchor {
+    font-size: 13px;
+    color: var(--paper-faint);
+    margin: -18px 0 20px;
+  }
+
   /* Coming-soon tag — used inline next to features that are not yet available */
   .cs-tag {
     display: inline-block;
@@ -373,8 +391,9 @@
 
   <!-- ── PRICING CARDS ───────────────────────────────────────────────────── -->
   <section class="wrap">
+    <p class="qa-cost-anchor reveal" style="--d:.2s">Your first QA hire costs $60,000 a year. Klavity's Team plan is $99 a month.</p>
     <div class="pricing-grid auto-stagger">
-      
+
       <!-- Free -->
       <div class="card pricing-card reveal">
         <div class="plan-name">Free</div>
@@ -394,7 +413,7 @@
           </li>
           <li>
             <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-            <span><strong>1</strong> active Sim <span style="color:var(--paper-faint)">(25 reactions/mo)</span></span>
+            <span><strong>1</strong> active Sim <span style="color:var(--paper-faint)">(25 page reviews/mo)</span></span>
           </li>
           <li>
             <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
@@ -409,6 +428,21 @@
             <span><strong>Unlimited</strong> seats &amp; reporters</span>
           </li>
         </ul>
+      </div>
+
+      <!-- ── FREE TIER POSITIONING CALLOUT (KLAVITYKLA-338: moved directly
+           after Free — it justifies FREE plumbing, so it should sit next to
+           the Free tier, not read as framing for the paid tiers below) ── -->
+      <div class="positioning-section reveal">
+        <div class="positioning-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--indigo)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+        </div>
+        <div class="positioning-content">
+          <h3>Why is the core plumbing free?</h3>
+          <p>
+            Category standards like Marker.io charge up to $199/month just to capture console logs, record screens, and sync bug reports. We believe collaborative bug reporting is basic plumbing. Klavity offers the entire Snap suite—including widgets, extensions, two-way sync, and unlimited reporters—free forever. We only charge for our unique AI agent layers (Sims and AutoSims).
+          </p>
+        </div>
       </div>
 
       <!-- Pro -->
@@ -430,7 +464,7 @@
           </li>
           <li>
             <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-            <span><strong>5</strong> active Sims <span style="color:var(--paper-faint)">(500 reactions/mo)</span></span>
+            <span><strong>5</strong> active Sims <span style="color:var(--paper-faint)">(500 page reviews/mo)</span></span>
           </li>
           <li>
             <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
@@ -456,6 +490,7 @@
           <span class="plan-price" id="priceTeam" data-monthly="99" data-annual="82">99</span>
           <span class="plan-price-period" id="periodTeam">/ month</span>
         </div>
+        <p class="plan-value-anchor">≈ 2% of one QA engineer's salary.</p>
         <a class="btn btn-indigo plan-btn" href="/onboarding?plan=team">Start Team trial</a>
         
         <div class="plan-features-title">Everything in Pro, plus</div>
@@ -466,7 +501,7 @@
           </li>
           <li>
             <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-            <span><strong>20</strong> active Sims <span style="color:var(--paper-faint)">(2,500 reactions/mo)</span></span>
+            <span><strong>20</strong> active Sims <span style="color:var(--paper-faint)">(2,500 page reviews/mo)</span></span>
           </li>
           <li>
             <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
@@ -513,21 +548,6 @@
         </ul>
       </div>
 
-    </div>
-  </section>
-
-  <!-- ── FREE TIER POSITIONING CALLOUT ───────────────────────────────────── -->
-  <section class="wrap reveal">
-    <div class="positioning-section">
-      <div class="positioning-icon">
-        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--indigo)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
-      </div>
-      <div class="positioning-content">
-        <h3>Why is the core plumbing free?</h3>
-        <p>
-          Category standards like Marker.io charge up to $199/month just to capture console logs, record screens, and sync bug reports. We believe collaborative bug reporting is basic plumbing. Klavity offers the entire Snap suite—including widgets, extensions, two-way sync, and unlimited reporters—free forever. We only charge for our unique AI agent layers (Sims and AutoSims).
-        </p>
-      </div>
     </div>
   </section>
 
@@ -686,9 +706,9 @@
       </details>
 
       <details class="card">
-        <summary style="font-family:var(--display);font-weight:540;font-size:18px;cursor:pointer">What counts as a Sim reaction?</summary>
+        <summary style="font-family:var(--display);font-weight:540;font-size:18px;cursor:pointer">What counts as a page review?</summary>
         <p style="color:var(--paper-dim);font-size:15px;margin:10px 0 0">
-          A Sim reaction occurs when one of your active client-persona Sims reviews a page (triggered automatically by URL changes or manual consent) to inspect changes, write notes, or file issues. Extra Sim reactions are kept cheap based on local LLM COGS.
+          A page review (what our billing calls a Sim reaction) occurs when one of your active client-persona Sims reviews a page (triggered automatically by URL changes or manual consent) to inspect changes, write notes, or file issues. Extra page reviews are kept cheap based on local LLM COGS.
         </p>
       </details>
 
