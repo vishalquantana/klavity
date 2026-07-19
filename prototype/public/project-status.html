@@ -364,7 +364,8 @@
 
   main.innerHTML = `
     <h1 class="page-title">${esc(data.projectName)}</h1>
-    <p class="page-subtitle">Project quality status — shared via private link</p>
+    <p class="page-subtitle">Project quality status — shared via private link
+      &nbsp;·&nbsp; <a href="/shared/project/${esc(token)}/flows-report">View monthly report →</a></p>
     <p class="generated-at">Last refreshed: ${generatedAt}</p>
 
     <div style="margin-top:28px"></div>

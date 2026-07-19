@@ -116,6 +116,25 @@ export interface ProjectStatusData {
   }>
 }
 
+/** Resolve the client-safe agency branding surface for a project's shared pages.
+ *  Best-effort — returns the unbranded Klavity default when config is missing/invalid.
+ *  Shared by the status portal (KLA-205) and the monthly guarded-flows report (KLA-279). */
+export async function gatherPortalBranding(projectId: string): Promise<PortalBranding> {
+  let branding: ResolvedBranding = resolveBranding(null)
+  try {
+    const cfg = await getProjectModalConfig(projectId)
+    branding = resolveBranding((cfg as Record<string, unknown>).agency_branding)
+  } catch { /* unbranded default */ }
+  const { KLAVITY_SIGNUP_URL } = await import("./trails-branding")
+  return {
+    name: branding.name,
+    accent: branding.accent,
+    logoDataUrl: branding.logoDataUrl,
+    whiteLabel: branding.whiteLabel,
+    signupUrl: branding.whiteLabel ? "" : KLAVITY_SIGNUP_URL,
+  }
+}
+
 /** Aggregate client-appropriate project health data. No PII, no internal config, no account data. */
 export async function gatherProjectStatusData(projectId: string): Promise<ProjectStatusData | null> {
   const proj = await projectById(projectId)
@@ -125,19 +144,7 @@ export async function gatherProjectStatusData(projectId: string): Promise<Projec
   if (!db) return null
 
   // KLAVITYKLA-223: agency branding — client-safe subset. Best-effort; unbranded default on miss.
-  let branding: ResolvedBranding = resolveBranding(null)
-  try {
-    const cfg = await getProjectModalConfig(projectId)
-    branding = resolveBranding((cfg as Record<string, unknown>).agency_branding)
-  } catch { /* unbranded default */ }
-  const { KLAVITY_SIGNUP_URL } = await import("./trails-branding")
-  const portalBranding: PortalBranding = {
-    name: branding.name,
-    accent: branding.accent,
-    logoDataUrl: branding.logoDataUrl,
-    whiteLabel: branding.whiteLabel,
-    signupUrl: branding.whiteLabel ? "" : KLAVITY_SIGNUP_URL,
-  }
+  const portalBranding: PortalBranding = await gatherPortalBranding(projectId)
 
   // 1. Trails + their last verdict
   const trailsR = await db.execute({
