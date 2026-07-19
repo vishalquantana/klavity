@@ -71,3 +71,32 @@ test("the hero lead is not hard-coded a second time in page JS (single source)",
   expect(dashboard).toContain(lead)
   expect(trails).toContain(lead)
 })
+
+// ── KLAVITYKLA-360: the bulk share-link manager (KLA-210) was the last capability that
+// only /autosims had. It is now ported into the dashboard AutoSims view, so the two
+// surfaces are at parity and /autosims can redirect. These lock the parity in place.
+test("the dashboard AutoSims view has the bulk share-link manager (KLA-210 parity)", () => {
+  // Entry point in the Walks card header + the modal shell.
+  expect(dashboard).toContain('id="shmOpenBtn"')
+  expect(dashboard).toContain('id="shmBg"')
+  expect(dashboard).toContain('id="shmList"')
+  expect(dashboard).toContain('id="shmClose"')
+})
+
+test("the ported share-link manager keeps full list / revoke / extend capability", () => {
+  // List every live token for the project.
+  expect(dashboard).toContain('"/api/trails/walks/shared-links"+projQ()')
+  // Revoke (DELETE) and extend (PATCH with a ttlDays body) a single token.
+  expect(dashboard).toContain("function shmRevoke")
+  expect(dashboard).toContain("function shmExtend")
+  expect(dashboard).toContain('method:"DELETE"')
+  expect(dashboard).toContain('JSON.stringify({ttlDays:ttlDays})')
+  // Expiry presets and the "last viewed" client-open signal survive the port.
+  expect(dashboard).toContain('class="shm-ext-sel"')
+  expect(dashboard).toContain("tk.lastViewedAt")
+  expect(dashboard).toContain("tk.hasPasscode")
+})
+
+test("the ported share-link manager uses the kicon system, not emoji", () => {
+  expect(dashboard).toContain('window.kicon("footprints"')
+})
