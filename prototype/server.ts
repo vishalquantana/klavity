@@ -13,6 +13,7 @@ import { deriveHealth } from "./lib/connectors/health"
 import { applyReconcileOps, recurrenceFromEvents, pickCitation, type ReconcileOp, type Trait, type TraitEventRow } from "./lib/provenance"
 import { sendOtp, sendLeadAlert, sendTicketAssignmentEmail, sendTicketAssignmentInviteEmail } from "./lib/mail"
 import { notifyReporterOnFix } from "./lib/fixed-notification"
+import { notifyTicketComment } from "./lib/notify"
 import { guardCaughtForFeedback, latestReceiptForFeedback, sendRegressionCaughtReceipt } from "./lib/regression-receipt"
 import { token, otp, emailAllowed, cookie, clearCookie, parseCookies, isOpsAdmin, projectCookie } from "./lib/auth"
 import { uploadScreenshotMeta, presignGet, deleteObject, getObjectBytes, type UploadedScreenshot } from "./lib/s3"
@@ -5945,6 +5946,27 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             // Double-guard: pushCommentToLinkedIssues already catches internally.
             console.warn("[comment-sync] unexpected top-level error:", e)
           })
+
+          // KLAVITYKLA-209 (JTBD 2.12) — notify the assignee + reporter + prior
+          // commenters (watchers) that a new comment landed. Fire-and-forget: the
+          // recipient gather + email/Slack sends never block or throw into this
+          // response. The actor (me) is excluded and recipients are deduped inside
+          // notifyTicketComment.
+          void (async () => {
+            const priorCommenters = (await listTicketComments(fid).catch(() => [])).map((c) => c.author)
+            const projName = allProjects.find((p: any) => p.id === fbRow.projectId)?.name ?? null
+            await notifyTicketComment({
+              feedbackId: fid,
+              ticketTitle: fbRow.observation ?? null,
+              projectName: projName,
+              commentBody: text,
+              ticketUrl: ticketDashboardUrl(fbRow.projectId, fid),
+              author: me,
+              assignee: fbRow.assignee,
+              contactEmail: fbRow.contactEmail,
+              priorCommenters,
+            })
+          })().catch((e: any) => console.warn("[notify] comment notification failed:", e?.message || e))
 
           return json({ comment }, 201)
         }
