@@ -842,6 +842,23 @@ async function htmlPage(path: string, extraHeaders?: Record<string, string>): Pr
   })
 }
 function redirect(loc: string, headers: Record<string, string> = {}) { return new Response(null, { status: 302, headers: { Location: loc, ...headers } }) }
+// KLAVITYKLA-229 (JTBD 1.12): resume intent after a login gate. `safeNext` accepts ONLY a
+// same-origin absolute path ("/dashboard?…#…") — never a scheme, protocol-relative "//host",
+// or backslash variant — so a captured/replayed `next` can't become an open redirect. Length-
+// capped to keep a hostile querystring from ballooning the login URL. Returns null if unsafe.
+function safeNext(raw: unknown): string | null {
+  const s = typeof raw === "string" ? raw.trim() : ""
+  if (!s || s.length > 512) return null
+  // Must be a rooted path; reject "//x" and "/\x" (both resolve to another origin in browsers).
+  if (s[0] !== "/" || s[1] === "/" || s[1] === "\\") return null
+  if (/[\x00-\x1f]/.test(s)) return null
+  return s
+}
+// Build a /login redirect that remembers where the user was headed so verify can replay it.
+function loginGate(path: string, search: string): Response {
+  const next = safeNext(path + (search || ""))
+  return redirect(next ? "/login?next=" + encodeURIComponent(next) : "/login")
+}
 function fmtUsd(n: number): string { return "$" + (Number(n) || 0).toFixed(4) }
 function renderOpsAdmin(d: {
   totals: { totalCost: number; totalInputTokens: number; totalOutputTokens: number; callCount: number }
@@ -1849,8 +1866,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (req.method === "GET" && path === "/local") return redirect("/")
     if (req.method === "GET" && path === "/home") return redirect("/")
     if (req.method === "GET" && path === "/login") {
-      // Already signed in → skip the login page and land on the dashboard.
-      if (await sessionEmail(req)) return redirect("/dashboard")
+      // Already signed in → skip the login page. KLAVITYKLA-229: if a captured intent rode in on
+      // ?next=, resume it (safe same-origin paths only) instead of dropping them on the dashboard.
+      if (await sessionEmail(req)) return redirect(safeNext(url.searchParams.get("next")) || "/dashboard")
       return htmlPage(PUB + "/login.html")
     }
     if (req.method === "GET" && path === "/sim-emotions") return file(PUB + "/sim-emotions.html")
@@ -2350,7 +2368,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (req.method === "POST" && path === "/api/auth/verify") {
       try {
         if (!db) return json({ error: "Login is not configured." }, 500)
-        const { email, code, attribution, attr } = await req.json()
+        const { email, code, attribution, attr, next } = await req.json()
         const e = String(email || "").trim().toLowerCase()
         const c = String(code || "").trim()
         // Brute-force lockout (H1): after OTP_FAIL_MAX wrong codes for this (email,IP) within the
@@ -2450,9 +2468,15 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // stores the feedbackId; when present we deep-link with ?ticket=<id> (honored by
         // maybeOpenDeepLinkTicket) so they don't have to re-find the ticket on the board.
         const firstInvite = acceptedAssignmentInvites[0]
+        // KLAVITYKLA-229 (JTBD 1.12): resume the intent the user was chasing when the login gate
+        // interrupted them, instead of dumping them on the dashboard. Precedence: an accepted ticket
+        // assignment invite (strongest, deep-links to the ticket) > a captured safe `next` path >
+        // the funnel default (new users → onboarding, returning users → dashboard). `next` is
+        // re-validated server-side so a tampered value can never become an open redirect.
+        const resumeNext = safeNext(next)
         const dest = firstInvite
           ? `/dashboard?project=${encodeURIComponent(firstInvite.projectId)}${firstInvite.feedbackId ? `&ticket=${encodeURIComponent(firstInvite.feedbackId)}` : ""}#tickets`
-          : wasNew ? "/onboarding" : "/dashboard"
+          : resumeNext || (wasNew ? "/onboarding" : "/dashboard")
         return json({ ok: true, redirect: dest, token: sid, projectId: defaultProjectId }, 200, { "Set-Cookie": cookie("klav_session", sid, SESSION_DAYS * 86400, SECURE) })
       } catch (err: any) { return json(oops(err, "auth"), 500) }
     }
@@ -4156,21 +4180,22 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
     // ── everything below requires a session ──
     const me = await sessionEmail(req)
-    const needLogin = () => (req.method === "GET" ? redirect("/login") : json({ error: "Sign in to continue." }, 401))
+    // KLAVITYKLA-229: GET gates remember the intended destination via ?next= so verify can resume it.
+    const needLogin = () => (req.method === "GET" ? loginGate(path, url.search) : json({ error: "Sign in to continue." }, 401))
 
-    if (req.method === "GET" && path === "/dashboard") return me ? await dashboardPage() : redirect("/login")
+    if (req.method === "GET" && path === "/dashboard") return me ? await dashboardPage() : loginGate(path, url.search)
     if (req.method === "GET" && path === "/trails") {
       const qs = url.search || ""
       return new Response(null, { status: 301, headers: { Location: "/autosims" + qs } })
     }
-    if (req.method === "GET" && path === "/autosims") return me ? htmlPage(PUB + "/trails.html") : redirect("/login")
-    if (req.method === "GET" && path === "/autosims/walks") return me ? htmlPage(PUB + "/autosims-walks.html") : redirect("/login")
-    if (req.method === "GET" && /^\/autosims\/walk\/[^/]+$/.test(path)) return me ? htmlPage(PUB + "/autosims-walk.html") : redirect("/login")
+    if (req.method === "GET" && path === "/autosims") return me ? htmlPage(PUB + "/trails.html") : loginGate(path, url.search)
+    if (req.method === "GET" && path === "/autosims/walks") return me ? htmlPage(PUB + "/autosims-walks.html") : loginGate(path, url.search)
+    if (req.method === "GET" && /^\/autosims\/walk\/[^/]+$/.test(path)) return me ? htmlPage(PUB + "/autosims-walk.html") : loginGate(path, url.search)
     // AT2 auth setup router — "Give your Sims a key" (KLAVITYKLA-267)
-    if (req.method === "GET" && path === "/autosims/auth") return me ? htmlPage(PUB + "/auth-router.html") : redirect("/login")
-    if (req.method === "GET" && path === "/sim-runs") return me ? htmlPage(PUB + "/sim-runs.html") : redirect("/login")
+    if (req.method === "GET" && path === "/autosims/auth") return me ? htmlPage(PUB + "/auth-router.html") : loginGate(path, url.search)
+    if (req.method === "GET" && path === "/sim-runs") return me ? htmlPage(PUB + "/sim-runs.html") : loginGate(path, url.search)
     // KLAVITYKLA-201: cross-project inbox — the agency's "morning screen"
-    if (req.method === "GET" && path === "/inbox") return me ? htmlPage(PUB + "/inbox.html") : redirect("/login")
+    if (req.method === "GET" && path === "/inbox") return me ? htmlPage(PUB + "/inbox.html") : loginGate(path, url.search)
 
     // GET /shared/walk/:token — public interactive AutoSim walk report page.
     const sharedWalkPageMatch = path.match(/^\/shared\/walk\/([a-f0-9]{64})$/)
@@ -4456,10 +4481,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       await refreshWeightsCache()
       return redirect("/opsadmin")
     }
-    if (req.method === "GET" && path === "/app") return me ? file(PUB + "/index.html") : redirect("/login")
+    if (req.method === "GET" && path === "/app") return me ? file(PUB + "/index.html") : loginGate(path, url.search)
     // Sim Profile page — clicking a Sim row in the dashboard opens /sim/:id (read-only persona +
     // its triaged feedback + the calls that seeded it). The id is read client-side from the path.
-    if (req.method === "GET" && /^\/sim\/[^/]+$/.test(path)) return me ? htmlPage(PUB + "/sim-profile.html") : redirect("/login")
+    if (req.method === "GET" && /^\/sim\/[^/]+$/.test(path)) return me ? htmlPage(PUB + "/sim-profile.html") : loginGate(path, url.search)
     if (req.method === "GET" && path === "/onboarding") {
       // The onboarding wizard is the signup flow for new users (email → OTP → name project → add URL →
       // install extension → pick Sims, inline). ensureAccount gives every verified user a default
