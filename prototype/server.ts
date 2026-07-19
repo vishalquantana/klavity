@@ -11,6 +11,7 @@ import { getConnector, listConnectorTypes, type TicketPayload, type TicketAttach
 import { inboundSupported, verifyGithubSignature, verifyLinearSignature, extractExternalKey, mapExternalStatus } from "./lib/connectors/inbound"
 import { pushCommentToLinkedIssues } from "./lib/connectors/comment-sync"
 import { syncFieldsToLinkedIssues } from "./lib/connectors/field-sync"
+import { importExternalIssues } from "./lib/connectors/import"
 import { deriveHealth } from "./lib/connectors/health"
 import { applyReconcileOps, recurrenceFromEvents, pickCitation, type ReconcileOp, type Trait, type TraitEventRow } from "./lib/provenance"
 import { sendOtp, sendLeadAlert, sendTicketAssignmentEmail, sendTicketAssignmentInviteEmail } from "./lib/mail"
@@ -6631,6 +6632,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // because `^\/connectors\/([^/]+)$` would otherwise capture cid="test".
           const testNoCid = sub === "/connectors/test"
           const cidTestMatch = sub.match(/^\/connectors\/([^/]+)\/test$/)
+          // JTBD 5.10 (KLA-289): import external-first issues from a saved connector. Matched before
+          // the generic /connectors/:cid handler for the same reason as the test routes.
+          const cidImportMatch = sub.match(/^\/connectors\/([^/]+)\/import$/)
 
           // A clearly-labelled test ticket used by both test endpoints to genuinely verify connectivity.
           const TEST_PAYLOAD: TicketPayload = {
@@ -6687,6 +6691,38 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               // A10: generic message + logged correlation id (no guard/upstream leak).
               const o = oops(e, "connector-test")
               return json({ ok: false, error: o.error, id: o.id })
+            }
+          }
+
+          // POST /api/projects/:pid/connectors/:cid/import — JTBD 5.10: pull recent external-first
+          // issues from this connector's tracker and upsert them as Klavity tickets, deduping on
+          // (type, externalKey) so re-import never creates duplicates (admin only).
+          if (req.method === "POST" && cidImportMatch) {
+            if (access !== "admin") return json({ error: "Only project admins can import tickets." }, 403)
+            const connector = await getConnectorById(pid, cidImportMatch[1])
+            if (!connector) return json({ error: "Connector not found." }, 404)
+            const adapter = getConnector(connector.type)
+            if (!adapter) return json({ error: "Unknown connector type." }, 400)
+            if (typeof adapter.listIssues !== "function") {
+              return json({ error: `Importing is not supported for ${connector.type} connectors yet.` }, 400)
+            }
+            const body = await req.json().catch(() => ({}))
+            // Optional caller cap; clamp defensively (adapters also clamp).
+            let limit: number | undefined
+            const rawLimit = Number(body?.limit)
+            if (Number.isFinite(rawLimit) && rawLimit > 0) limit = Math.min(100, Math.floor(rawLimit))
+            try {
+              const summary = await importExternalIssues(pid, connector.id, { actorEmail: me, limit })
+              // Successful import counts as an inbound heartbeat (fire-and-forget, non-fatal).
+              touchConnectorHeartbeat(connector.id, { kind: "inbound", success: true })
+                .catch((e: any) => console.warn("heartbeat record failed (non-fatal):", e?.message || e))
+              return json({ ok: true, import: summary })
+            } catch (e: any) {
+              // A10: log raw error with a correlation id; return only a generic message + id.
+              const o = oops(e, "connector-import")
+              touchConnectorHeartbeat(connector.id, { kind: "inbound", success: false, error: (e as any)?.message || "Import failed" })
+                .catch((err: any) => console.warn("heartbeat record failed (non-fatal):", err?.message || err))
+              return json({ ok: false, error: o.error, id: o.id }, 502)
             }
           }
 

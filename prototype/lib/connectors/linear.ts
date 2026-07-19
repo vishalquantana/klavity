@@ -1,7 +1,19 @@
-import type { Connector, TicketPayload, ExportResult, CommentSyncResult, FieldUpdate, FieldSyncResult } from "./index"
+import type { Connector, TicketPayload, ExportResult, CommentSyncResult, FieldUpdate, FieldSyncResult, ImportedIssue } from "./index"
 import { safeFetch } from "../safe-fetch"
 
 const LINEAR_API = "https://api.linear.app/graphql"
+
+// JTBD 5.10: reverse of linearPriority — map Linear's priority Int back onto Klavity's vocabulary
+// (0 none → null). Used on IMPORT so an issue keeps its priority when pulled into Klavity.
+function priorityFromLinear(p: any): string | null {
+  switch (Number(p)) {
+    case 1: return "urgent"
+    case 2: return "high"
+    case 3: return "medium"
+    case 4: return "low"
+    default: return null
+  }
+}
 
 // JTBD 5.7: Linear priority is an integer (0 none, 1 urgent, 2 high, 3 medium, 4 low). Map
 // Klavity's values onto it. Returns null for unset/unknown so the caller omits the field.
@@ -312,5 +324,62 @@ export const linearConnector: Connector = {
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) }
     }
+  },
+
+  // listIssues (JTBD 5.10): fetch recent issues for the configured team to import as Klavity tickets.
+  //   POST https://api.linear.app/graphql
+  //   query($tm:ID,$n:Int){ issues(filter:{team:{id:{eq:$tm}}}, first:$n, orderBy:createdAt){
+  //     nodes { identifier url title description priority createdAt state { name type } } } }
+  // externalKey = issue.identifier (e.g. "ENG-42") to match createIssue exactly, so re-import dedupes
+  // against ticket_exports. Priority is mapped from Linear's Int back to Klavity's vocabulary.
+  async listIssues(cfg: Record<string, string>, opts?: { limit?: number }): Promise<ImportedIssue[]> {
+    const { api_key, team_id } = cfg
+    if (!api_key) throw new Error("linear listIssues: missing api_key in config")
+
+    const first = Math.max(1, Math.min(100, opts?.limit ?? 50))
+    const res = await safeFetch(
+      LINEAR_API,
+      {
+        method: "POST",
+        headers: { "Authorization": api_key, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query:
+            "query($tm:ID,$n:Int){ issues(filter:{team:{id:{eq:$tm}}}, first:$n, orderBy:createdAt){ nodes { identifier url title description priority createdAt state { name type } } } }",
+          // team_id is optional: with it we scope to the linked team; without it Linear returns the
+          // API key's accessible issues (still bounded by `first`).
+          variables: { tm: team_id || null, n: first },
+        }),
+      },
+      { allowHosts: ["linear.app"] },
+    )
+
+    if (!res.ok) {
+      const text = (await res.text().catch(() => "")).slice(0, 200)
+      console.error(`linear listIssues error ${res.status}: ${text}`)
+      throw new Error(`tracker request failed (HTTP ${res.status})`)
+    }
+
+    const json = await res.json()
+    if (json?.errors?.length) {
+      console.error(`linear listIssues graphql error: ${json.errors[0]?.message ?? "unknown error"}`)
+      throw new Error("tracker request failed (GraphQL error)")
+    }
+
+    const nodes: any[] = json?.data?.issues?.nodes ?? []
+    const out: ImportedIssue[] = []
+    for (const n of nodes) {
+      if (!n?.identifier) continue
+      const createdAt = n?.createdAt ? Date.parse(String(n.createdAt)) : NaN
+      out.push({
+        externalKey: String(n.identifier),
+        externalUrl: n?.url != null ? String(n.url) : null,
+        title: String(n?.title ?? n.identifier),
+        body: n?.description != null ? String(n.description) : "",
+        priority: priorityFromLinear(n?.priority),
+        status: n?.state?.name != null ? String(n.state.name) : (n?.state?.type != null ? String(n.state.type) : null),
+        createdAt: Number.isFinite(createdAt) ? createdAt : Date.now(),
+      })
+    }
+    return out
   },
 }
