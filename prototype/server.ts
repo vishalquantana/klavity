@@ -108,7 +108,7 @@ import { sendReportAlertEmail } from "./lib/mail"
 import { diagnoseHeartbeat, renderDeveloperEmail, type HeartbeatSignals } from "./lib/heartbeat-diagnosis"
 import { countRecentFeedback, countUsers } from "./lib/db"
 import { enrollLead, buildNurtureEmail, recordNurtureEmailSent, recordSendgridEvents, startLeadNurtureScheduler } from "./lib/lead-nurture"
-import { extractInventory, extractLinks, verifyLinks, brokenLinkFindings, filterModelFindings, checkedSummary, MAX_LINKS_CHECKED } from "./lib/bugcheck"
+import { extractInventory, extractLinks, verifyLinks, brokenLinkFindings, filterModelFindings, checkedSummary, sameOriginCrawlTargets, MAX_LINKS_CHECKED } from "./lib/bugcheck"
 import { fetchOidcDiscovery, buildAuthorizationUrl, exchangeCode, verifyIdToken, validateSsoDomain, verifyDomainOwnership, ssoDomainTxtValue, SSO_DOMAIN_TXT_PREFIX, type OidcDiscovery, type OidcClaims } from "./lib/sso"
 import { getAccountOidcConfig, upsertAccountOidcConfig, deleteAccountOidcConfig, findAccountByOidcDomain, markOidcDomainVerified, createSsoState, consumeSsoState, ensureAccountMember } from "./lib/db"
 
@@ -1710,6 +1710,13 @@ function analyzeCacheSet(key: string, body: any, props: Record<string, unknown>)
 const AI_DEMO_WINDOW = 60 * 60 * 1000
 const AI_DEMO_PER_USER = 40            // LLM demo calls per user / hour
 const AI_DEMO_MAX_CHARS = 100_000      // brief / site-text char cap
+// Bug Check multi-page crawl (KLAVITYKLA-347). Deliberately small and hard-bounded: same-origin
+// only, never recursive (depth 1), and folded into the SAME single LLM call so AI spend per scan is
+// unchanged. These caps are the whole safety story — do not raise them without re-checking the
+// free-tool daily budget.
+const CRAWL_MAX_EXTRA_PAGES = 4        // pages beyond the entered URL
+const CRAWL_TIME_BUDGET_MS = 12_000    // hard wall-clock ceiling for the extra fetches
+const CRAWL_PER_PAGE_CHARS = 15_000    // per sub-page slice of the model's char budget
 // Transcripts are whole call recordings — a 1-hour meeting is easily >100k chars. The extract model
 // (gemini-2.5-flash, ~1M-token context) handles this comfortably, and the per-user hourly throttle +
 // daily $ cap already bound abuse, so give transcripts a much larger ceiling than a one-line brief.
@@ -4278,6 +4285,15 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return json(cached.body)
       }
 
+      const htmlToText = (html: string) =>
+        html
+          .replace(/<script[\s\S]*?<\/script>/gi, " ")
+          .replace(/<style[\s\S]*?<\/style>/gi, " ")
+          .replace(/<[^>]+>/g, " ")
+          .replace(/&[a-z#0-9]+;/gi, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+
       let siteText = ""
       let siteHtml = ""
       try {
@@ -4285,14 +4301,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (!res.ok) return json({ error: `Couldn't read that page (HTTP ${res.status}).` }, 400)
         const html = (await res.text()).slice(0, 300_000)
         siteHtml = html
-        siteText = html
-          .replace(/<script[\s\S]*?<\/script>/gi, " ")
-          .replace(/<style[\s\S]*?<\/style>/gi, " ")
-          .replace(/<[^>]+>/g, " ")
-          .replace(/&[a-z#0-9]+;/gi, " ")
-          .replace(/\s+/g, " ")
-          .trim()
-          .slice(0, AI_DEMO_MAX_CHARS)
+        siteText = htmlToText(html).slice(0, AI_DEMO_MAX_CHARS)
       } catch {
         return json({ error: "Couldn't reach that URL. Make sure it's a public https page." }, 400)
       }
@@ -4316,11 +4325,60 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // told link health is already covered, and any link claim it makes anyway is dropped below.
       const inventory = mode === "qa" ? extractInventory(siteHtml) : null
       let linkChecks: Awaited<ReturnType<typeof verifyLinks>> = []
+      let pagesScanned = 1
       if (mode === "qa") {
-        const links = extractLinks(siteHtml, siteUrl, MAX_LINKS_CHECKED)
+        // BUG 3 (KLAVITYKLA-347): a one-page scan finishing in three seconds with three findings
+        // doesn't read as a product that "walks your site". We now also pull a SMALL, bounded set
+        // of same-origin pages the entered page links to (shallowest paths first ≈ nav/footer
+        // destinations) and analyse them together.
+        //
+        // COST IS DELIBERATELY UNCHANGED: the extra pages are concatenated into the SAME single LLM
+        // call, inside the existing AI_DEMO_MAX_CHARS budget, so this is still exactly one model
+        // call per scan against the same free-tool daily cap. The only added cost is a handful of
+        // plain HTTP GETs (~1-2s wall clock, run concurrently, hard total time budget below).
+        const pageLinks = await extractLinks(siteHtml, siteUrl, MAX_LINKS_CHECKED).catch(() => [])
+        const allLinks = [...pageLinks]
+        const seenHref = new Set(pageLinks.map((l) => l.href))
+
+        const targets = sameOriginCrawlTargets(pageLinks, siteUrl, CRAWL_MAX_EXTRA_PAGES)
+        const crawlDeadline = Date.now() + CRAWL_TIME_BUDGET_MS
+        const extraTexts: string[] = []
+        await Promise.all(
+          targets.map(async (target) => {
+            if (Date.now() > crawlDeadline) return
+            try {
+              const res = await safeFetch(
+                target,
+                { headers: { "user-agent": "KlavityBot/1.0 (+https://klavity.in)" }, signal: AbortSignal.timeout(6_000) },
+                { allowLoopbackInTest: true },
+              )
+              if (!res.ok) return
+              const ct = res.headers.get("content-type") ?? ""
+              if (ct && !/html/i.test(ct)) return
+              const html = (await res.text()).slice(0, 200_000)
+              const text = htmlToText(html)
+              if (text.length < 40) return
+              extraTexts.push(`\n\n--- Page: ${target} ---\n${text.slice(0, CRAWL_PER_PAGE_CHARS)}`)
+              // Links discovered on sub-pages are verified too, still under MAX_LINKS_CHECKED.
+              for (const l of await extractLinks(html, target, MAX_LINKS_CHECKED).catch(() => [])) {
+                if (!seenHref.has(l.href) && allLinks.length < MAX_LINKS_CHECKED) {
+                  seenHref.add(l.href)
+                  allLinks.push(l)
+                }
+              }
+            } catch { /* a sub-page we can't read is simply not scanned — never fails the scan */ }
+          }),
+        )
+        pagesScanned = 1 + extraTexts.length
+        if (extraTexts.length) {
+          // Keep the entered page's text intact and append sub-pages only up to the model budget.
+          siteText = (`--- Page: ${siteUrl} ---\n${siteText}` + extraTexts.join("")).slice(0, AI_DEMO_MAX_CHARS)
+        }
+
         linkChecks = await verifyLinks(
-          links,
+          allLinks,
           (u, init) => safeFetch(u, init, { allowLoopbackInTest: true }),
+          { baseUrl: siteUrl },
         ).catch(() => [])
       }
       const verifiedBroken = brokenLinkFindings(linkChecks)
@@ -4352,8 +4410,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           "(short, ≤10 words), where it is (a CSS selector, element description, or the exact visible text near " +
           "it — ≤80 chars), the verbatim evidence quote, why a real user would care (one sentence), and a " +
           "severity (high/medium/low). " +
+          // Multi-page (KLAVITYKLA-347): the user text may contain several same-site pages, each
+          // introduced by a "--- Page: <url> ---" header. Findings must say WHICH page they're on,
+          // otherwise a multi-page report is unactionable.
+          "The page text you are given may cover SEVERAL pages of the same site, each introduced by a line " +
+          "of the form \"--- Page: <url> ---\". Review ALL of them. When a finding comes from a page other " +
+          "than the first, begin the \"where\" field with that page's path so the user knows where to look. " +
           "Respond with ONLY valid JSON: {\"findings\":[{\"what\":string,\"where\":string,\"evidence\":string," +
-          "\"why\":string,\"severity\":\"high\"|\"medium\"|\"low\"}]} with 0-8 findings (0 if the page looks healthy). " +
+          "\"why\":string,\"severity\":\"high\"|\"medium\"|\"low\"}]} with 0-8 findings (0 if the pages look healthy). " +
           "No prose outside the JSON."
         : "You are a conversion-rate optimisation (CRO) expert reviewing a web page for friction. " +
           "Analyse the page text and identify SPECIFIC friction points that reduce conversion. " +
@@ -4395,16 +4459,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // filter AND the evidence-grounding gate. Every broken-link claim we ship has been resolved
         // over HTTP; every model finding we ship quotes text that provably exists on the page
         // (KLAVITYKLA-342 false positives). `siteText` is exactly what the model was shown.
-        const findings = [...verifiedBroken, ...filterModelFindings(modelFindings, verifiedBroken, siteText)].slice(0, 8)
+        const findings = [...verifiedBroken, ...filterModelFindings(modelFindings, verifiedBroken, siteText)].slice(0, 12)
         // Zero findings is a RESULT, not an empty page — tell the user what was actually checked.
         const checked = {
           links: linkChecks.length,
           forms: inventory?.forms ?? 0,
           buttons: inventory?.buttons ?? 0,
-          summary: checkedSummary(inventory ?? { links: 0, forms: 0, buttons: 0, inputs: 0 }, linkChecks.length),
+          pages: pagesScanned,
+          summary: checkedSummary(inventory ?? { links: 0, forms: 0, buttons: 0, inputs: 0 }, linkChecks.length, pagesScanned),
         }
         const body = { findings, url: siteUrl, tool: "bugcheck", checked }
-        const props = { tool: "bugcheck", findings: findings.length, linksChecked: linkChecks.length, brokenLinks: verifiedBroken.length }
+        const props = { tool: "bugcheck", findings: findings.length, linksChecked: linkChecks.length, brokenLinks: verifiedBroken.length, pages: pagesScanned }
         analyzeCacheSet(cacheKey, body, props)
         void trackFunnel(db!, { event: "check_completed", anonId, url: siteUrl, source, referrer, props })
         return json(body)
