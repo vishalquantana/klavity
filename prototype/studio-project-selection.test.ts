@@ -32,7 +32,10 @@ function extractFn(src: string, startSig: string): string {
 
 const resolveSrc = extractFn(STUDIO, "function resolveStudioProject(")
 const pqSrc = extractFn(STUDIO, "function pq(")
-const openStudioSrc = extractFn(ONBOARD, "function openStudio(")
+// openStudio is `async function openStudio()` (it awaits markOnboarded()); anchor on the async
+// keyword so it is PRESERVED — extracting the bare `function openStudio(` strips `async`, leaving
+// a top-level `await` in a non-async fn → SyntaxError.
+const openStudioSrc = extractFn(ONBOARD, "async function openStudio(")
 const renderSnippetSrc = extractFn(ONBOARD, "function renderWidgetSnippet(")
 
 // =============================================================================
@@ -76,28 +79,33 @@ test("studio: pq appends ?project= (and &project= when a query exists)", () => {
 // =============================================================================
 // 3 · Onboarding: openStudio carries the step-1 project into the Studio
 // =============================================================================
-function runOpenStudio(intent: string, projectId: string | null, goal: string | null = null): string {
+// openStudio is async (it `await markOnboarded()`s before setting location.href), so we must
+// AWAIT it before reading the resulting href. markOnboarded is a free reference in the extracted
+// unit — inject a no-op stub in the Function scope (mirroring how `window` is injected) so the
+// awaited call resolves without touching the network.
+async function runOpenStudio(intent: string, projectId: string | null, goal: string | null = null): Promise<string> {
   const win = { location: { href: "" } }
-  const openStudio = new Function("intent", "projectId", "goal", "window",
-    openStudioSrc + "\nreturn openStudio;")(intent, projectId, goal, win) as () => void
-  openStudio()
+  const markOnboarded = async () => {}
+  const openStudio = new Function("intent", "projectId", "goal", "window", "markOnboarded",
+    openStudioSrc + "\nreturn openStudio;")(intent, projectId, goal, win, markOnboarded) as () => Promise<void>
+  await openStudio()
   return win.location.href
 }
-test("onboarding: hats handoff carries ?project= alongside starter=hats", () => {
-  expect(runOpenStudio("hats", "proj_9db93ede")).toBe("/app?starter=hats&project=proj_9db93ede")
+test("onboarding: hats handoff carries ?project= alongside starter=hats", async () => {
+  expect(await runOpenStudio("hats", "proj_9db93ede")).toBe("/app?starter=hats&project=proj_9db93ede")
 })
-test("onboarding: transcript handoff carries ?project= before the #add-transcript hash", () => {
-  expect(runOpenStudio("transcript", "proj_9db93ede")).toBe("/app?project=proj_9db93ede#add-transcript")
+test("onboarding: transcript handoff carries ?project= before the #add-transcript hash", async () => {
+  expect(await runOpenStudio("transcript", "proj_9db93ede")).toBe("/app?project=proj_9db93ede#add-transcript")
 })
-test("onboarding: no resolved project degrades to the original destinations", () => {
-  expect(runOpenStudio("hats", null)).toBe("/app?starter=hats")
-  expect(runOpenStudio("transcript", null)).toBe("/app#add-transcript")
+test("onboarding: no resolved project degrades to the original destinations", async () => {
+  expect(await runOpenStudio("hats", null)).toBe("/app?starter=hats")
+  expect(await runOpenStudio("transcript", null)).toBe("/app#add-transcript")
 })
 // Goal fork: the chosen goal rides along into the Studio (after project, before any #hash)
 // so the Studio/dashboard can tailor the first-run experience to Snap vs Sims.
-test("onboarding: the goal fork carries goal= on both Studio handoffs", () => {
-  expect(runOpenStudio("hats", "proj_9db93ede", "sims")).toBe("/app?starter=hats&project=proj_9db93ede&goal=sims")
-  expect(runOpenStudio("transcript", "proj_9db93ede", "snap")).toBe("/app?project=proj_9db93ede&goal=snap#add-transcript")
+test("onboarding: the goal fork carries goal= on both Studio handoffs", async () => {
+  expect(await runOpenStudio("hats", "proj_9db93ede", "sims")).toBe("/app?starter=hats&project=proj_9db93ede&goal=sims")
+  expect(await runOpenStudio("transcript", "proj_9db93ede", "snap")).toBe("/app?project=proj_9db93ede&goal=snap#add-transcript")
 })
 
 // =============================================================================
