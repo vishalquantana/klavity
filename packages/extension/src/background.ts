@@ -1,6 +1,7 @@
 import type { BackgroundMessage, ContentMessage, KlavitySettings, KlavConfig, ReportType } from '@klavity/core'
 import { findProjectForUrl } from './project-url'
 import { onSettingsChanged } from './config-flush'
+import { revalidateConfig } from './config-revalidate'
 import { DEFAULT_SETTINGS } from '@klavity/core'
 import { dispatchSubmit } from '@klavity/core/submit'
 import { submitReport as jiraSubmit } from '@klavity/core/integrations/jira'
@@ -106,13 +107,16 @@ async function syncConfig(): Promise<KlavConfig | null> {
       headers: { Authorization: `Bearer ${settings.klavToken}` },
     })
     if (!res.ok) return null
-    const data = await res.json() as { email: string; token: string; projects: KlavConfig['projects'] }
+    const data = await res.json() as { email: string; token: string; projects: KlavConfig['projects']; configVersion?: string }
     const config: KlavConfig = {
       email: data.email,
       token: data.token,                 // narrow-scope ext token — used for all live-activation calls
       backendUrl: base,
       projects: Array.isArray(data.projects) ? data.projects : [],
       syncedAt: Date.now(),
+      // Version stamp we revalidate against (KLAVITYKLA-320). An older backend omits it;
+      // the cache then always looks stale, which just means we probe more often.
+      configVersion: typeof data.configVersion === 'string' ? data.configVersion : undefined,
     }
     await chrome.storage.local.set({ klavConfig: config })
     // Push to any open tabs so their content scripts refresh without a reload.
@@ -128,6 +132,17 @@ async function syncConfig(): Promise<KlavConfig | null> {
 async function getConfig(): Promise<KlavConfig | null> {
   const r = await chrome.storage.local.get('klavConfig')
   return (r.klavConfig as KlavConfig | undefined) ?? null
+}
+
+// KLAVITYKLA-320: an admin editing the project config in the dashboard used to be
+// invisible to an already-installed extension until the next browser restart. Probe
+// the cheap /config/version endpoint (at most once per TTL) and resync when it moved.
+function maybeRevalidateConfig(): Promise<boolean> {
+  return revalidateConfig({
+    getConfig,
+    syncConfig,
+    saveConfig: (config) => chrome.storage.local.set({ klavConfig: config }),
+  }).catch(() => false)
 }
 
 function broadcastConfig(config: KlavConfig | null) {
@@ -466,7 +481,11 @@ async function openModal(tabId: number, reportType: ReportType, tab?: chrome.tab
 chrome.runtime.onMessage.addListener((msg: BackgroundMessage, sender, sendResponse) => {
   // ── Live activation (P3b) — config read / forced sync ──────────────────────
   if (msg.kind === 'KLAV_GET_CONFIG') {
+    // Answer from cache immediately (this is on the page-load hot path), but kick off a
+    // TTL-gated revalidation; if the dashboard config moved, syncConfig() broadcasts the
+    // fresh copy to open tabs a moment later (KLAVITYKLA-320).
     getConfig().then((config) => sendResponse({ ok: true, config }))
+    void maybeRevalidateConfig()
     return true
   }
   if (msg.kind === 'KLAV_SYNC_CONFIG') {
