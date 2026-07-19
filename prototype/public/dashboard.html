@@ -2066,6 +2066,10 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       <!-- KLAVITYKLA-276: customer-facing cost + per-project breakdown — today's AI cost vs the
            account budget, and each project's metered usage / cost, from GET /api/account/usage. -->
       <div id="billingProjects" style="margin:0 0 14px"></div>
+      <!-- KLAVITYKLA-310: Agency per-client usage & outcomes rollup — one row per client (=project)
+           with reports found, guarded-flow pass rate and regressions caught. Populated by _wirePlan
+           from GET /api/account/agency-report; hidden for non-Agency accounts. -->
+      <div id="billingAgency" style="margin:0 0 14px"></div>
       <!-- GTM round 2: Founding Team offer — annual-only Pro at the locked founding price. The
            server forces interval to "year" for plan:"founding" (see /api/billing/checkout). -->
       <div id="foundingRibbon" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;border:1px solid rgba(139,92,246,.35);background:linear-gradient(135deg,rgba(99,102,241,.10),rgba(139,92,246,.08));border-radius:8px;padding:10px 14px;margin-bottom:12px">
@@ -2087,6 +2091,12 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           <div class="muted" style="font-size:12px;margin:4px 0 10px">$99/mo · $990/yr</div>
           <button class="btn btn-indigo btn-sm billingCheckout" data-plan="team" data-interval="month">Monthly</button>
           <button class="btn btn-sm billingCheckout" data-plan="team" data-interval="year">Annual</button>
+        </div>
+        <div style="border:1px solid rgba(243,236,225,.14);border-radius:8px;padding:12px">
+          <div style="font-weight:700">Agency</div>
+          <div class="muted" style="font-size:12px;margin:4px 0 10px">$249/mo · $2,490/yr · unlimited client sites</div>
+          <button class="btn btn-indigo btn-sm billingCheckout" data-plan="agency" data-interval="month">Monthly</button>
+          <button class="btn btn-sm billingCheckout" data-plan="agency" data-interval="year">Annual</button>
         </div>
         <div style="border:1px solid rgba(243,236,225,.14);border-radius:8px;padding:12px">
           <div style="font-weight:700">Scale</div>
@@ -7048,7 +7058,7 @@ window.openPlanDrawer = openPlanDrawer
 
 // Plan & partner-code redemption (Settings → Plan & access).
 ;(function _wirePlan(){
-  var pretty = { free:"Free", pro:"Pro", team:"Team", scale:"Scale", partner:"Partner · Unlimited" }
+  var pretty = { free:"Free", pro:"Pro", team:"Team", agency:"Agency", scale:"Scale", partner:"Partner · Unlimited" }
   var lbl = $("planLabel"), area = $("redeemArea"), btn = $("redeemBtn"), inp = $("redeemCode"), msg = $("redeemMsg")
   var statusLbl = $("billingStatusLabel"), quotaNote = $("billingQuotaNote"), billingMsg = $("billingMsg"), portalBtn = $("billingPortalBtn")
   if (!lbl) return
@@ -7118,6 +7128,30 @@ window.openPlanDrawer = openPlanDrawer
     }
     box.innerHTML = html
   }
+  // KLAVITYKLA-310: render the Agency per-client usage & outcomes rollup (GET /api/account/agency-report).
+  function pctText(r){ return r == null ? "—" : Math.round(Number(r) * 100) + "%" }
+  function renderAgency(data){
+    var box = $("billingAgency"); if (!box) return
+    var clients = (data && data.clients) || []
+    if (!clients.length){ box.innerHTML = ""; return }
+    var html = '<div style="font-weight:600;font-size:12px;margin-bottom:8px">Per-client report '
+      + '<span class="muted" style="font-weight:400">· last 30 days</span></div>'
+    clients.forEach(function(c){
+      var sims = Number(c.simReviews)||0, walks = Number(c.autosimWalks)||0
+      var reports = Number(c.reportsFound)||0, regs = Number(c.regressionsCaught)||0
+      var pass = c.guardedPassRate
+      var meta = []
+      meta.push(reports + ' report' + (reports === 1 ? '' : 's') + ' found')
+      if (Number(c.guardedRuns)||0) meta.push(pctText(pass) + ' pass')
+      if (regs) meta.push(regs + ' regression' + (regs === 1 ? '' : 's') + ' caught')
+      if (sims) meta.push(sims + ' Sim' + (sims === 1 ? '' : 's'))
+      if (walks) meta.push(walks + ' AutoSim' + (walks === 1 ? '' : 's'))
+      html += '<div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline;font-size:12px;margin-bottom:6px">'
+        + '<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600">' + esc(c.name || 'Unnamed client') + '</span>'
+        + '<span class="muted" style="flex:none;text-align:right">' + esc(meta.join(' · ')) + '</span></div>'
+    })
+    box.innerHTML = html
+  }
   async function refresh(){
     try {
       var r = await fetch("/api/account/plan"); if (!r.ok) return
@@ -7132,6 +7166,11 @@ window.openPlanDrawer = openPlanDrawer
       if (pill) pill.classList.toggle("hide", !!(d.unlimited || (d.plan && d.plan !== "free")))
       // Current-period usage meter (separate read; failure is non-fatal to the plan panel).
       try { var ur = await fetch("/api/account/usage"); if (ur.ok){ var ud = await ur.json(); renderUsage(ud.meters); renderProjects(ud) } } catch(e){}
+      // Agency per-client rollup — only Agency/unlimited accounts are entitled (endpoint 403s otherwise).
+      var agencyEntitled = d.unlimited || d.plan === "agency" || d.plan === "scale" || d.plan === "partner"
+      if (agencyEntitled){
+        try { var ar = await fetch("/api/account/agency-report"); if (ar.ok){ var ad = await ar.json(); renderAgency(ad) } } catch(e){}
+      } else { renderAgency(null) }
     } catch(e){}
   }
   window.refreshPlan = refresh   // billing=success return refetches through this

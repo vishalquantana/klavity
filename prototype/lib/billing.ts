@@ -1,4 +1,4 @@
-export type BillingPlan = "free" | "pro" | "team" | "founding" | "scale" | "partner"
+export type BillingPlan = "free" | "pro" | "team" | "agency" | "founding" | "scale" | "partner"
 export type BillingInterval = "month" | "year"
 
 // "founding" (Founding Team) is an annual-only supporter tier sold exclusively via a hosted Stripe
@@ -15,6 +15,13 @@ export const STRIPE_PRICE_CATALOG: Record<Exclude<BillingPlan, "free" | "scale" 
     month: { lookupKey: "klavity_team_monthly_99", unitAmount: 9900, label: "Klavity Team" },
     year: { lookupKey: "klavity_team_annual_990", unitAmount: 99000, label: "Klavity Team" },
   },
+  // Agency (KLAVITYKLA-310): for agencies/consultancies running Klavity across many CLIENT sites.
+  // Each client is a project — the plan lifts the per-account project cap and adds the per-client
+  // usage & outcomes rollup report. Annual = two months free (10× monthly), same as Pro/Team.
+  agency: {
+    month: { lookupKey: "klavity_agency_monthly_249", unitAmount: 24900, label: "Klavity Agency" },
+    year: { lookupKey: "klavity_agency_annual_2490", unitAmount: 249000, label: "Klavity Agency" },
+  },
 }
 
 // founding mirrors Pro's quotas (same $290/yr price point as Pro annual) — at-or-above Pro per
@@ -24,6 +31,9 @@ export const PLAN_QUOTAS: Record<BillingPlan, { projects: number | null; sims: n
   pro: { projects: 5, sims: 5, simReactionsMonthly: 500, autosimFlows: 5, autosimCadence: "daily" },
   founding: { projects: 5, sims: 5, simReactionsMonthly: 500, autosimFlows: 5, autosimCadence: "daily" },
   team: { projects: null, sims: 20, simReactionsMonthly: 2500, autosimFlows: 20, autosimCadence: "on-deploy/hourly" },
+  // Agency (KLAVITYKLA-310): unlimited client projects; Sims/AutoSim allowances above Team so an
+  // agency can cover many clients without immediately hitting Scale.
+  agency: { projects: null, sims: 50, simReactionsMonthly: 5000, autosimFlows: 50, autosimCadence: "on-deploy/hourly" },
   scale: { projects: null, sims: null, simReactionsMonthly: null, autosimFlows: null, autosimCadence: "custom" },
   partner: { projects: null, sims: null, simReactionsMonthly: null, autosimFlows: null, autosimCadence: "unlimited" },
 }
@@ -118,8 +128,98 @@ export function buildProjectUsage(
   })
 }
 
+// ── Agency per-client usage & OUTCOMES rollup (KLAVITYKLA-310) ──────────────────────────────────
+// For an Agency-tier account, roll every CLIENT (= project) up into one report row combining
+// metered usage (Sim reviews, AutoSim runs) with the trust-loop OUTCOMES that justify the retainer:
+//   • reportsFound        — bugs surfaced (Snap + Sim feedback) in the window
+//   • guardedPassRate     — guarded-flow (AutoSim/Trail) walk pass rate: green / (green+amber+red)
+//   • regressionsCaught   — findings flagged as regressions ("fixed things breaking again")
+// Pure merge of already-authorised rows — DISPLAY ONLY, no enforcement.
+export type AgencyClientOutcomeRow = {
+  projectId: string
+  reportsFound: number
+  regressionsCaught: number
+  guardedGreen: number
+  guardedAmber: number
+  guardedRed: number
+  guardedTotal: number
+}
+
+export type AgencyClientView = {
+  projectId: string
+  name: string
+  simReviews: number
+  autosimWalks: number
+  reportsFound: number
+  regressionsCaught: number
+  guardedRuns: number
+  guardedPassRate: number | null // 0..1, null when no guarded runs in window
+}
+
+export function buildAgencyClientReport(
+  projects: Array<{ projectId: string; name: string | null }> = [],
+  usageRows: Array<{ projectId: string; name?: string | null; metric: string; count: number }> = [],
+  outcomeRows: AgencyClientOutcomeRow[] = [],
+): AgencyClientView[] {
+  const byProject = new Map<string, AgencyClientView>()
+  const ensure = (pidRaw: string, name: string | null): AgencyClientView => {
+    const pid = String(pidRaw || "")
+    let v = byProject.get(pid)
+    if (!v) {
+      v = {
+        projectId: pid, name: name || (pid || "Unattributed"),
+        simReviews: 0, autosimWalks: 0, reportsFound: 0, regressionsCaught: 0,
+        guardedRuns: 0, guardedPassRate: null,
+      }
+      byProject.set(pid, v)
+    } else if (name && (!v.name || v.name === v.projectId)) {
+      v.name = name
+    }
+    return v
+  }
+  // Seed one row per known client so a project with outcomes but no metered usage still shows.
+  for (const p of projects) ensure(p.projectId, p.name)
+  for (const r of usageRows) {
+    const v = ensure(r.projectId, r.name ?? null)
+    const c = Number.isFinite(r.count) && r.count > 0 ? Math.trunc(r.count) : 0
+    if (r.metric === "sim_review") v.simReviews += c
+    else if (r.metric === "autosim_walk") v.autosimWalks += c
+  }
+  const num = (n: unknown) => (Number.isFinite(Number(n)) && Number(n) > 0 ? Math.trunc(Number(n)) : 0)
+  const greenByProject = new Map<string, number>()
+  for (const o of outcomeRows) {
+    const v = ensure(o.projectId, null)
+    v.reportsFound += num(o.reportsFound)
+    v.regressionsCaught += num(o.regressionsCaught)
+    const green = num(o.guardedGreen), amber = num(o.guardedAmber), red = num(o.guardedRed)
+    const total = num(o.guardedTotal) || green + amber + red
+    v.guardedRuns += total
+    greenByProject.set(v.projectId, (greenByProject.get(v.projectId) ?? 0) + green)
+  }
+  // Pass rate = green / total across the window; null when there were no guarded runs.
+  for (const v of byProject.values()) {
+    v.guardedPassRate = v.guardedRuns > 0 ? (greenByProject.get(v.projectId) ?? 0) / v.guardedRuns : null
+  }
+  // Lead with the clients that show the most trust-loop signal (outcomes first, then usage, then name).
+  return Array.from(byProject.values()).sort((a, b) => {
+    const ao = a.reportsFound + a.regressionsCaught, bo = b.reportsFound + b.regressionsCaught
+    if (bo !== ao) return bo - ao
+    const au = a.simReviews + a.autosimWalks + a.guardedRuns, bu = b.simReviews + b.autosimWalks + b.guardedRuns
+    if (bu !== au) return bu - au
+    return a.name.localeCompare(b.name)
+  })
+}
+
 export function normalizePlan(plan: string | null | undefined): BillingPlan {
-  return plan === "pro" || plan === "team" || plan === "founding" || plan === "scale" || plan === "partner" ? plan : "free"
+  return plan === "pro" || plan === "team" || plan === "agency" || plan === "founding" || plan === "scale" || plan === "partner" ? plan : "free"
+}
+
+// Agency-tier entitlement (KLAVITYKLA-310). The per-client usage & outcomes rollup is gated to
+// accounts on the Agency plan (or any unlimited/enterprise tier, which the caller passes as
+// `unlimited`). Pure — no DB — so routes and the UI can share one predicate.
+export function isAgencyEntitled(plan: string | null | undefined, unlimited = false): boolean {
+  const p = normalizePlan(plan)
+  return unlimited || p === "agency" || p === "scale" || p === "partner"
 }
 
 export function normalizeInterval(interval: string | null | undefined): BillingInterval {
@@ -221,7 +321,7 @@ async function stripeRequest(path: string, params: URLSearchParams, method = "PO
   return body
 }
 
-export async function ensureStripePrice(plan: "pro" | "team" | "founding", interval: BillingInterval): Promise<string> {
+export async function ensureStripePrice(plan: "pro" | "team" | "agency" | "founding", interval: BillingInterval): Promise<string> {
   // pro/team define both month + year; "founding" is annual-only (the checkout route forces its
   // interval to "year"), so guard instead of asserting.
   const entry = STRIPE_PRICE_CATALOG[plan][interval]
@@ -252,7 +352,7 @@ export async function ensureStripePrice(plan: "pro" | "team" | "founding", inter
 export async function createStripeCheckoutSession(input: {
   accountId: string
   email: string
-  plan: "pro" | "team" | "founding"
+  plan: "pro" | "team" | "agency" | "founding"
   interval: BillingInterval
   successUrl: string
   cancelUrl: string
