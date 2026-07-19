@@ -24,6 +24,8 @@ export interface ModalConfig {
   launcherIconColor?: string
   rightClickMode?: RightClickMode
   maskNumbers?: boolean
+  /** Pro-gated: when true, hides the "Powered by Klavity" footer on the widget menu and modal success screen. */
+  whiteLabel?: boolean
 }
 
 const HEX = /^#[0-9a-fA-F]{3,8}$/
@@ -93,6 +95,9 @@ export function resolveModalConfig(raw: unknown): ModalConfig & { theme: ModalTh
     out.rightClickMode = r.rightClickMode as RightClickMode
   }
   if (r.maskNumbers === true) out.maskNumbers = true
+  // whiteLabel: read from top-level (already-resolved passthrough) or nested agency_branding (stored format).
+  const ab = isObj(r.agency_branding) ? (r.agency_branding as Record<string, unknown>) : {}
+  if (r.whiteLabel === true || ab.whiteLabel === true) out.whiteLabel = true
   return out
 }
 

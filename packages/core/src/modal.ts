@@ -1646,10 +1646,12 @@ export function buildModal(
 
     modal.appendChild(wrap)
 
-    const pb = document.createElement('div')
-    pb.className = 'klavity-pb'
-    pb.innerHTML = `Powered by <a href="https://klavity.in" target="_blank" rel="noopener">Klavity</a>`
-    modal.appendChild(pb)
+    if (!cfg.whiteLabel) {
+      const pb = document.createElement('div')
+      pb.className = 'klavity-pb'
+      pb.innerHTML = `Powered by <a href="https://klavity.in" target="_blank" rel="noopener">Klavity</a>`
+      modal.appendChild(pb)
+    }
 
     if (!copy.showEmail && !copy.showCta) {
       startAutodismiss()

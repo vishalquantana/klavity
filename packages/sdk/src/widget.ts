@@ -778,13 +778,15 @@ async function mount() {
       menu.appendChild(card("sparkles", "Select Sims…", "Choose which Sims jump into action.", { onClick: () => { void showSimPicker() } }))
     }
     menu.appendChild(card("monitor", "Browser menu", "", { muted: true, hint: "⇧ right-click", onClick: () => { nativePending = true; showNativeHint(x, y) } }))
-    // "Powered by Klavity" footer — gradient wordmark, opens the marketing site in a new tab
-    const footer = document.createElement("button")
-    footer.className = "klm-foot"
-    footer.style.animationDelay = (70 + idx * 64) + "ms"
-    footer.innerHTML = "Powered by <strong style=\"background:linear-gradient(135deg,#6366f1,#8b5cf6);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;font-weight:700\">Klavity</strong>"
-    footer.addEventListener("click", () => { closeMenu(); window.open("https://klavity.in", "_blank", "noopener,noreferrer") })
-    menu.appendChild(footer)
+    // "Powered by Klavity" footer — hidden for Pro accounts with whiteLabel enabled (KLAVITYKLA-311).
+    if (!modalConfig.whiteLabel) {
+      const footer = document.createElement("button")
+      footer.className = "klm-foot"
+      footer.style.animationDelay = (70 + idx * 64) + "ms"
+      footer.innerHTML = "Powered by <strong style=\"background:linear-gradient(135deg,#6366f1,#8b5cf6);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;font-weight:700\">Klavity</strong>"
+      footer.addEventListener("click", () => { closeMenu(); window.open("https://klavity.in", "_blank", "noopener,noreferrer") })
+      menu.appendChild(footer)
+    }
     // One-pass shimmer sweep — appended LAST so it sweeps OVER the opaque cards (pointer-events:none).
     const shine = document.createElement("div"); shine.className = "klm-shine"; menu.appendChild(shine)
 
