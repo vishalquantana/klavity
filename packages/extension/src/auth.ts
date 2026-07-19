@@ -1,4 +1,5 @@
 import type { KlavitySettings, KlavConfig, KlavMonitoredProject } from '@klavity/core'
+import { flushIfBackendChanged } from './config-flush'
 
 const DEFAULT_BACKEND = 'https://klavity.in'
 
@@ -30,6 +31,9 @@ export function triggerConfigSync(): Promise<KlavConfig | null> {
 export async function trySilentLogin(): Promise<boolean> {
   if (!chrome.cookies?.get) return false
   const base = backendBase(await readSettings())
+  // A cache minted against a previous backend must never survive a re-auth against the
+  // current one — otherwise a stale-domain cookie re-mints the old backend's config.
+  await flushIfBackendChanged(base)
   try {
     const cookie = await chrome.cookies.get({ url: base, name: 'klav_session' })
     if (!cookie?.value) return false
