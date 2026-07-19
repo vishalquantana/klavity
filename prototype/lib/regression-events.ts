@@ -147,7 +147,9 @@ export async function publishRegressionEvent(
   input: RegressionEventInput, overrides: Partial<RegressionEventDeps> = {},
 ): Promise<{ published: boolean; deduped: boolean; event: RegressionEventRow | null }> {
   try {
-    const c = overrides.db ?? db
+    // An EXPLICIT db override (even undefined) wins over the module db, so tests and no-DB local
+    // dev can force the no-op path; only an absent key falls back to the shared client.
+    const c = "db" in overrides ? overrides.db : db
     if (!c) return { published: false, deduped: false, event: null } // no DB (local dev) → nothing to do
     if (!input.projectId || !input.issueKey) return { published: false, deduped: false, event: null }
     const windowMs = overrides.dedupWindowMs ?? REGRESSION_DEDUP_WINDOW_MS
