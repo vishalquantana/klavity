@@ -312,10 +312,10 @@
   }
 
   const healthLabels = {
-    green: { icon: '✅', title: 'All systems healthy', desc: 'All guarded flows are passing. No active regressions.' },
-    amber: { icon: '⚠️', title: 'Attention needed', desc: 'Some flows have warnings. Review the guarded flows below.' },
-    red:   { icon: '🔴', title: 'Issues detected', desc: 'One or more guarded flows are failing. Immediate attention recommended.' },
-    none:  { icon: '⬜', title: 'No data yet', desc: 'No AutoSim runs completed yet. Status will appear after the first run.' },
+    green: { icon: '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.801 10A10 10 0 1 1 17 3.335"/><path d="m9 11 3 3L22 4"/></svg>', title: 'All systems healthy', desc: 'All guarded flows are passing. No active regressions.' },
+    amber: { icon: '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>', title: 'Attention needed', desc: 'Some flows have warnings. Review the guarded flows below.' },
+    red:   { icon: '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>', title: 'Issues detected', desc: 'One or more guarded flows are failing. Immediate attention recommended.' },
+    none:  { icon: '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="opacity:.5"><rect width="18" height="18" x="3" y="3" rx="2"/></svg>', title: 'No data yet', desc: 'No AutoSim runs completed yet. Status will appear after the first run.' },
   }
   const h = healthLabels[overallHealth] || healthLabels.none
 

@@ -304,7 +304,7 @@ function attachPlayerControls(replayer,host){
   var playing=true,scrubbing=false,rafId=null;
   function fmt(ms){var s=Math.floor(Math.max(0,ms)/1000);return Math.floor(s/60)+":"+("0"+(s%60)).slice(-2)}
   var ctrl=document.createElement("div");ctrl.id="rplCtrl";ctrl.className="rpl-ctrl";
-  ctrl.innerHTML='<button class="rpl-pp" id="rplPP">⏸</button>'
+  ctrl.innerHTML='<button class="rpl-pp" id="rplPP">'+window.kicon("pause",{size:12})+'</button>'
     +'<input class="rpl-scrub" id="rplScrub" type="range" min="0" max="'+Math.ceil(totalMs)+'" value="0" step="500"/>'
     +'<span class="rpl-time" id="rplTime">0:00 / '+fmt(totalMs)+'</span>'
     +'<select class="rpl-spd" id="rplSpd"><option value="0.5">0.5x</option>'
@@ -320,15 +320,15 @@ function attachPlayerControls(replayer,host){
       sc.value=Math.min(cur,totalMs);ti.textContent=fmt(cur)+" / "+fmt(totalMs)}
     if(playing) rafId=requestAnimationFrame(tick)
   }
-  try{replayer.on("finish",function(){playing=false;pp.textContent="▶";stopTick()})}catch(e){}
+  try{replayer.on("finish",function(){playing=false;pp.innerHTML=window.kicon("play",{size:12});stopTick()})}catch(e){}
   pp.onclick=function(){
-    if(playing){try{replayer.pause()}catch(e){}playing=false;pp.textContent="▶";stopTick()}
-    else{var t=0;try{t=Number(sc.value)}catch(e){}try{replayer.play(t)}catch(e){}playing=true;pp.textContent="⏸";rafId=requestAnimationFrame(tick)}
+    if(playing){try{replayer.pause()}catch(e){}playing=false;pp.innerHTML=window.kicon("play",{size:12});stopTick()}
+    else{var t=0;try{t=Number(sc.value)}catch(e){}try{replayer.play(t)}catch(e){}playing=true;pp.innerHTML=window.kicon("pause",{size:12});rafId=requestAnimationFrame(tick)}
   };
   sc.addEventListener("mousedown",function(){scrubbing=true;try{replayer.pause()}catch(e){}stopTick()});
   sc.addEventListener("touchstart",function(){scrubbing=true;try{replayer.pause()}catch(e){}stopTick()},{passive:true});
   sc.addEventListener("input",function(){ti.textContent=fmt(Number(sc.value))+" / "+fmt(totalMs)});
-  function onScrubEnd(){if(!scrubbing)return;scrubbing=false;var t=Number(sc.value);try{replayer.play(t)}catch(e){}playing=true;pp.textContent="⏸";rafId=requestAnimationFrame(tick)}
+  function onScrubEnd(){if(!scrubbing)return;scrubbing=false;var t=Number(sc.value);try{replayer.play(t)}catch(e){}playing=true;pp.innerHTML=window.kicon("pause",{size:12});rafId=requestAnimationFrame(tick)}
   sc.addEventListener("mouseup",onScrubEnd);sc.addEventListener("touchend",onScrubEnd);
   sp.addEventListener("change",function(){try{replayer.setConfig({speed:Number(sp.value)})}catch(e){}});
   rafId=requestAnimationFrame(tick);
