@@ -101,6 +101,7 @@ import { diagnoseHeartbeat, renderDeveloperEmail, type HeartbeatSignals } from "
 import { countRecentFeedback, countUsers } from "./lib/db"
 import { enrollLead, buildNurtureEmail, recordNurtureEmailSent, recordSendgridEvents, startLeadNurtureScheduler } from "./lib/lead-nurture"
 import { extractInventory, extractLinks, verifyLinks, brokenLinkFindings, filterModelFindings, checkedSummary, MAX_LINKS_CHECKED } from "./lib/bugcheck"
+import { logAudit, queryAuditLog, auditRowsToCsv, type AuditAction } from "./lib/audit-log"
 
 const KEY = process.env.OPENROUTER_API_KEY
 const MODEL = process.env.KLAV_MODEL || "google/gemini-2.5-flash"
@@ -2521,6 +2522,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         }
         const sid = token()
         await createSession(sid, e, Date.now() + SESSION_DAYS * 86400 * 1000)
+        logAudit({ action: "login", actorEmail: e, ip: vIp, meta: { wasNew, testOtp: testOtpGranted } })
         // JTBD 2.15: land the new assignee directly on the ticket they were assigned. The invite row
         // stores the feedbackId; when present we deep-link with ?ticket=<id> (honored by
         // maybeOpenDeepLinkTicket) so they don't have to re-find the ticket on the board.
@@ -2554,6 +2556,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const target = requested && isOpsAdmin(meE) ? requested : meE
       try {
         const data = await exportUserData(target)
+        logAudit({ action: "gdpr_export", actorEmail: meE, targetEmail: target, ip: clientIp(req, server) })
         return json(data, 200, { "Content-Disposition": `attachment; filename="klavity-export-${target}.json"` })
       } catch (err: any) { return json(oops(err, "export"), 500) }
     }
@@ -2574,6 +2577,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         for (const key of s3Keys) {
           await deleteObject(key).catch((e) => console.warn(`erase: S3 delete failed for ${key}: ${e?.message || e}`))
         }
+        logAudit({ action: "gdpr_erasure", actorEmail: meD, targetEmail: victim, ip: clientIp(req, server), meta: { s3Keys: s3Keys.length } })
         // If the caller erased themselves, clear their session cookie too.
         const clearSelf = victim === meD
         return json({ ok: true, erased: victim, screenshots: s3Keys.length }, 200, clearSelf ? { "Set-Cookie": clearCookie("klav_session", SECURE) } : undefined)
@@ -4570,6 +4574,42 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       await refreshWeightsCache()
       return redirect("/opsadmin")
     }
+    // ── KLAVITYKLA-352: Security audit log — ops-admin only ──────────────────────────────────────
+    // GET  /api/audit         — query audit log (JSON by default, CSV via ?format=csv)
+    // Query params: action, actorEmail, projectId, accountId, limit (max 1000), offset, since (ms epoch)
+    if (req.method === "GET" && path === "/api/audit") {
+      if (!me || !isOpsAdmin(me)) return new Response("Not found", { status: 404 })
+      const opts: Parameters<typeof queryAuditLog>[0] = {}
+      const qAction = url.searchParams.get("action")
+      if (qAction) opts.action = qAction as AuditAction
+      const qActor = url.searchParams.get("actorEmail")
+      if (qActor) opts.actorEmail = qActor.toLowerCase()
+      const qProject = url.searchParams.get("projectId")
+      if (qProject) opts.projectId = qProject
+      const qAccount = url.searchParams.get("accountId")
+      if (qAccount) opts.accountId = qAccount
+      const qLimit = Number(url.searchParams.get("limit") || 200)
+      opts.limit = Math.min(isNaN(qLimit) ? 200 : qLimit, 1000)
+      const qOffset = Number(url.searchParams.get("offset") || 0)
+      opts.offset = isNaN(qOffset) ? 0 : qOffset
+      const qSince = Number(url.searchParams.get("since") || 0)
+      if (qSince > 0) opts.since = qSince
+      try {
+        const rows = await queryAuditLog(opts)
+        const format = (url.searchParams.get("format") || "json").toLowerCase()
+        if (format === "csv") {
+          return new Response(auditRowsToCsv(rows), {
+            status: 200,
+            headers: {
+              "content-type": "text/csv; charset=utf-8",
+              "Content-Disposition": `attachment; filename="klavity-audit-log.csv"`,
+            },
+          })
+        }
+        return json({ rows, count: rows.length, opts })
+      } catch (err: any) { return json(oops(err, "audit"), 500) }
+    }
+
     if (req.method === "GET" && path === "/app") return me ? file(PUB + "/index.html") : loginGate(path, url.search)
     // Sim Profile page — clicking a Sim row in the dashboard opens /sim/:id (read-only persona +
     // its triaged feedback + the calls that seeded it). The id is read client-side from the path.
@@ -5918,6 +5958,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           projectId: proj.id, type: "member_export", actorEmail: me,
           meta: { count: result.rows.length, fields: [...MEMBER_EXPORT_FIELDS], format },
         }).catch((e: any) => console.warn("member_export activity skipped:", e?.message || e))
+        logAudit({ action: "member_export", actorEmail: me, projectId: proj.id, ip: clientIp(req, server), meta: { count: result.rows.length, format } })
         if (format === "json") {
           return json(
             { project: proj.id, fields: [...MEMBER_EXPORT_FIELDS], members: result.rows },
@@ -5974,6 +6015,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             }).catch((e: any) => console.warn("member invite email skipped:", e?.message || e))
           }
         }
+        if (priorAccess) {
+          logAudit({ action: "role_change", actorEmail: me, targetEmail: inv, projectId: proj.id, ip: clientIp(req, server), meta: { from: priorAccess, to: wantRole, status } })
+        } else {
+          logAudit({ action: "member_invite", actorEmail: me, targetEmail: inv, projectId: proj.id, ip: clientIp(req, server), meta: { role: wantRole, status } })
+        }
         return json({ ok: true, invite: { email: inv, role: wantRole, status }, emailSent, members: await membersOfProject(proj.id) })
       }
 
@@ -6021,6 +6067,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (proj.access !== "admin") return json({ error: "Only admins can revoke invites." }, 403)
         const revoked = await revokeProjectInvite(proj.id, inv)
         if (!revoked) return json({ error: "No pending invite for that email." }, 404)
+        logAudit({ action: "member_revoke", actorEmail: me, targetEmail: inv, projectId: proj.id, ip: clientIp(req, server) })
         return json({ ok: true, invites: await listProjectInvites(proj.id) })
       }
 
@@ -7054,6 +7101,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
             const id = await createConnector(pid, { type: type as any, name, config: encConfig, autoCopy, createdBy: me })
             const created = await getConnectorById(pid, id)
+            logAudit({ action: "connector_create", actorEmail: me, projectId: pid, ip: clientIp(req, server), meta: { type, name, connectorId: id } })
             return json({ ok: true, connector: connectorToClient(created!) }, 201)
           }
 
@@ -7087,6 +7135,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             }
 
             await updateConnector(pid, cid, patch)
+            logAudit({ action: "connector_update", actorEmail: me, projectId: pid, ip: clientIp(req, server), meta: { connectorId: cid, fields: Object.keys(patch) } })
             return json({ ok: true })
           }
 
@@ -7096,6 +7145,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             const existing = await getConnectorById(pid, cid)
             if (!existing) return json({ error: "Connector not found." }, 404)
             await removeConnector(pid, cid)
+            logAudit({ action: "connector_delete", actorEmail: me, projectId: pid, ip: clientIp(req, server), meta: { connectorId: cid, type: existing.type, name: existing.name } })
             return json({ ok: true })
           }
 
@@ -7879,7 +7929,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const inv = String(body.email || "").trim().toLowerCase()
           const role = body.role === "admin" ? "admin" : "member"
           if (!inv.includes("@")) return json({ error: "Enter a valid email." }, 400)
+          const priorRole = (await projectAccess(inv, pid)) ?? null
           await addProjectMember(pid, proj.accountId, inv, role, me)
+          if (priorRole) {
+            logAudit({ action: "role_change", actorEmail: me, targetEmail: inv, projectId: pid, ip: clientIp(req, server), meta: { from: priorRole, to: role } })
+          } else {
+            logAudit({ action: "member_invite", actorEmail: me, targetEmail: inv, projectId: pid, ip: clientIp(req, server), meta: { role } })
+          }
           return json({ ok: true, members: await membersOfProject(pid) })
         }
         // Rename a project (name only) — admin-gated. The signup onboarding calls this on the user's
