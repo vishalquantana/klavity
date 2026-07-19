@@ -688,17 +688,17 @@ let projectId = null          // resolved after sign-in (the user's default proj
 let intent = 'transcript'     // step-3 choice: 'transcript' | 'hats'
 let goal = null               // goal fork: 'snap' (bug reports first) | 'sims' (AI review first)
 
-// Buy intent from /pricing (?plan=pro|team): stash it and carry it to every dashboard exit
+// Buy intent from /pricing (?plan=pro|team|founding): stash it and carry it to every dashboard exit
 // as &upgrade=<plan> (the dashboard opens the plan drawer). The Studio exit goes to /app
 // instead — there we deliberately leave the 'klav-plan-intent' sessionStorage key in place
 // and the dashboard reads it on its next visit.
 let planIntent = null
 try {
   const _plan = new URL(window.location.href).searchParams.get('plan')
-  if (_plan === 'pro' || _plan === 'team') { planIntent = _plan; sessionStorage.setItem('klav-plan-intent', _plan) }
+  if (_plan === 'pro' || _plan === 'team' || _plan === 'founding') { planIntent = _plan; sessionStorage.setItem('klav-plan-intent', _plan) }
   else {
     const _saved = sessionStorage.getItem('klav-plan-intent')
-    if (_saved === 'pro' || _saved === 'team') planIntent = _saved
+    if (_saved === 'pro' || _saved === 'team' || _saved === 'founding') planIntent = _saved
   }
 } catch(e){}
 
@@ -922,6 +922,7 @@ async function applyProjectName(){
 
 // ── Step 2: which install path is selected ('widget' | 'extension') ──
 let installPath = 'widget'
+let extConnected = false   // extension handshake done — flips the CTA back to plain Continue
 
 function selectInstall(which) {
   installPath = which
@@ -937,7 +938,13 @@ function selectInstall(which) {
 //   extension → connect handshake; Snap+widget → finish to reports; Sims+widget → step 3.
 function updateS2Cta(){
   const cont = $('s2continue'); if (!cont) return
-  if (installPath === 'extension') { cont.textContent = 'Connect & continue →'; cont.onclick = connectExtension; return }
+  if (installPath === 'extension') {
+    // Instructions say "click the button below to connect it" — so before the handshake the
+    // button must read "Connect & continue", and only AFTER connecting become plain Continue.
+    if (extConnected) { cont.textContent = 'Continue →'; cont.onclick = () => go(3) }
+    else { cont.textContent = 'Connect & continue →'; cont.onclick = connectExtension }
+    return
+  }
   if (goal === 'snap') { cont.textContent = 'Finish — go to my reports →'; cont.onclick = finishToReports }
   else { cont.textContent = 'Continue →'; cont.onclick = () => go(3) }
 }
@@ -955,7 +962,7 @@ function finishToReports(){
 function s2SkipLater(){ if (goal === 'snap') finishToReports(); else go(3) }
 
 function s2proceed() {
-  if (installPath === 'extension') connectExtension()
+  if (installPath === 'extension' && !extConnected) connectExtension()
   else if (goal === 'snap') finishToReports()
   else go(3)
 }
@@ -964,6 +971,8 @@ function s2proceed() {
 //    section of step 2 is visible; flip the chip green (with host) the moment it's seen. ──
 let widgetPollTimer = null
 let widgetSeen = false
+let widgetPollStart = 0        // first poll start — drives the 75s install-failure rescue
+let widgetRescueShown = false
 function setWidgetChipDetected(host) {
   const chip = $('widgetChip'), txt = $('widgetChipTxt')
   if (!chip || !txt) return
@@ -979,11 +988,66 @@ async function pollWidgetStatus() {
       widgetSeen = true
       setWidgetChipDetected(data.host)
       stopWidgetPoll()
+      return
     }
   } catch (e) { /* transient — keep polling */ }
+  // Install-failure rescue: after ~75s with no heartbeat, the most common cause is a strict
+  // Content-Security-Policy silently blocking widget.js — escalate with a ready-to-paste
+  // AI-agent prompt (mirrors the dashboard's "Copy to AI" fix). Polling continues regardless.
+  if (!widgetSeen && widgetPollStart && Date.now() - widgetPollStart > 75000) showWidgetRescue()
+}
+// Minimal inline cspFixPrompt (full version lives in dashboard.html): the paste-ready prompt a
+// founder hands to their AI/dev when a CSP blocks the widget. Includes their real snippet.
+function cspFixPrompt() {
+  const origin = location.origin
+  return [
+    '## Task: embed the Klavity bug-report widget on this site',
+    '',
+    'I want a small floating bug-report button on every page. Reports go to my Klavity dashboard.',
+    '',
+    '### Step 1 — Add the widget snippet to every page',
+    '',
+    'Paste this just before </body> (or in the shared layout / _document / base template):',
+    '',
+    '  ' + widgetSnippetText(),
+    '',
+    '### Step 2 — Fix the Content Security Policy (if the site sets one)',
+    '',
+    'A CSP header blocks the widget unless its origin is allowed. Append (do NOT remove existing sources):',
+    '',
+    '  script-src  ' + origin + '   (download + execute widget.js)',
+    '  connect-src ' + origin + '   (POST reports to ' + origin + '/api/feedback)',
+    '  img-src     data:   (base64 screenshot preview)',
+    '',
+    'The CSP may live in: Express/helmet middleware, next.config.js headers(), a <meta http-equiv=',
+    '"Content-Security-Policy"> tag, nginx/Caddy config, vercel.json, or netlify.toml.',
+    '',
+    '### Verification',
+    '',
+    'Reload any page: no CSP errors in the console mentioning ' + origin + ', and a floating button',
+    'appears bottom-right that opens a bug-report composer. Tell me what you changed.',
+  ].join('\n')
+}
+function showWidgetRescue() {
+  if (widgetRescueShown) return
+  const chip = $('widgetChip'); if (!chip) return
+  widgetRescueShown = true
+  const d = document.createElement('div')
+  d.id = 'widgetRescue'
+  d.style.cssText = 'display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap'
+  d.innerHTML = '<span style="color:var(--paper-faint);font-size:11.5px;max-width:44ch">Still waiting — if the button doesn\'t appear on your site, a Content-Security-Policy may be blocking it.</span>'
+    + '<button type="button" class="btn btn-ghost" id="cspFixBtn">Copy the fix for your AI agent</button>'
+  chip.insertAdjacentElement('afterend', d)
+  const btn = document.getElementById('cspFixBtn')
+  btn.onclick = function(){
+    navigator.clipboard && navigator.clipboard.writeText(cspFixPrompt()).then(function(){
+      const t = btn.textContent; btn.textContent = 'Copied — paste it to your AI'; setTimeout(function(){ btn.textContent = t }, 1800)
+    }).catch(function(){})
+  }
 }
 function startWidgetPoll() {
   if (widgetSeen || widgetPollTimer) return
+  if (!widgetPollStart) widgetPollStart = Date.now()
   pollWidgetStatus()
   widgetPollTimer = setInterval(pollWidgetStatus, 3000)
 }
@@ -1055,7 +1119,8 @@ async function connectExtension(){
     })
     if (resp && resp.ok) {
       msg.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg> Extension connected — your Sims can now watch the pages you listed.'
-      const cont = $('s2continue'); if (cont){ cont.textContent = 'Continue →'; cont.onclick = () => go(3) }
+      extConnected = true
+      updateS2Cta()
     }
     else throw new Error('the extension rejected the connection')
   } catch(e){ msg.textContent = "Couldn't connect: " + e.message }
@@ -1182,6 +1247,17 @@ async function bootstrap(){
     const savedGoal = urlGoal || localStorage.getItem('klav-onboarding-goal')
     if (savedGoal === 'snap' || savedGoal === 'sims') { goal = savedGoal; applyGoal() }
   } catch(e){}
+  // Homepage handoff (?url=<their site>): prefill the step-0 hero field so the aha preview is
+  // one click away. Deliberately NOT auto-run — the explicit click keeps rate-limit abuse down.
+  try {
+    const _hu = new URL(window.location.href).searchParams.get('url') // .get() percent-decodes
+    if (_hu) {
+      let _u = _hu.trim()
+      if (_u && !/^https?:\/\//i.test(_u)) _u = 'https://' + _u
+      const _parsed = new URL(_u)
+      if ((_parsed.protocol === 'http:' || _parsed.protocol === 'https:') && $('uhUrl')) $('uhUrl').value = _u
+    }
+  } catch(e){ /* malformed ?url= — leave the field empty */ }
   // 10s timeout: a hanging /api/me must never block paint() — the welcome screen must always show.
   const ctrl = new AbortController()
   const tmo = setTimeout(() => ctrl.abort(), 10000)

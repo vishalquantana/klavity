@@ -2032,6 +2032,15 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     <div class="drawer-in">
       <p class="tacc-hint" style="margin-bottom:12px">Current plan: <b id="planLabel">…</b> <span id="billingStatusLabel" class="muted" style="font-size:12px"></span></p>
       <div id="billingQuotaNote" class="muted" style="font-size:12px;margin-bottom:12px"></div>
+      <!-- GTM round 2: Founding Team offer — annual-only Pro at the locked founding price. The
+           server forces interval to "year" for plan:"founding" (see /api/billing/checkout). -->
+      <div id="foundingRibbon" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;border:1px solid rgba(139,92,246,.35);background:linear-gradient(135deg,rgba(99,102,241,.10),rgba(139,92,246,.08));border-radius:8px;padding:10px 14px;margin-bottom:12px">
+        <div style="flex:1;min-width:220px">
+          <div style="font-weight:700;font-size:13.5px">Founding Team — $290/yr</div>
+          <div class="muted" style="font-size:12px;margin-top:2px">Everything in Pro, price locked forever, direct line to the founder.</div>
+        </div>
+        <button class="btn btn-indigo btn-sm billingCheckout" data-plan="founding" data-interval="year">Join as a founder</button>
+      </div>
       <div id="billingPlans" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:14px">
         <div style="border:1px solid rgba(243,236,225,.14);border-radius:8px;padding:12px">
           <div style="font-weight:700">Pro</div>
@@ -3108,8 +3117,27 @@ function renderChecklist() {
   if (snip && pid) snip.textContent = embedSnippet(pid)
   // Live install confirmation: while "Waiting for your site…" shows, poll the heartbeat probe.
   if (!widgetSeen && !el.classList.contains("hide")) startWidgetStatusPoll()
+  // GTM round 2: one-time celebration when the FIRST real report lands from the customer's own
+  // site (runs on every checklist refresh, incl. the widget-status poll's first-heartbeat rerender).
+  maybeCelebrateFirstReport()
 }
 window.renderChecklist = renderChecklist   // called from setView so the poll restarts on Overview
+
+// ── First-report celebration toast — fires exactly once per project, the moment we've observed
+//    BOTH a genuine widget detection on a non-first-party host (the heartbeat host isn't this
+//    dashboard's own origin) AND at least one feedback row. Persisted in localStorage so it never
+//    re-fires; reuses the billing-return klavToast pattern with a jump into New reports. ──
+function maybeCelebrateFirstReport() {
+  const pid = curProjId(); if (!pid) return
+  const ws = state && state.widgetStatus
+  const host = ws && ws.host
+  const genuine = !!(ws && ws.lastSeen && host && host !== "(unknown)" && host !== location.hostname)
+  const hasFeedback = (((state && state.counts) || {}).feedback || 0) >= 1
+  if (!genuine || !hasFeedback) return
+  try { if (localStorage.getItem("klavFirstReportToast:" + pid) === "1") return } catch (e) { return }
+  try { localStorage.setItem("klavFirstReportToast:" + pid, "1") } catch (e) {}
+  klavToast('First report received from <b>' + esc(host) + '</b> — it\'s in <a href="#triage" style="color:var(--indigo)" onclick="setView(\'triage\');return false">New reports</a>')
+}
 
 // ── Live "Widget detected" flip — polls GET /api/projects/:id/widget-status (~3s, one indexed row
 //    read server-side) while the checklist or Snap view shows "Waiting for your site…". On the first
@@ -3600,6 +3628,15 @@ async function createProject() {
   const r = await fetch("/api/projects", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, siteUrl: siteUrlRaw || undefined }) })
   const d = await r.json().catch(() => ({}))
   $("npCreate").disabled = false
+  // GTM round 2: plan-quota hit (server sends 402 + code:"quota_exceeded" + upgradeUrl when
+  // KLAV_BILLING_ENFORCEMENT=1) — surface the message and open the plan drawer in place
+  // (honouring upgradeUrl's intent without navigating away).
+  if (r.status === 402 && d.code === "quota_exceeded") {
+    closeNewProject()
+    klavToast(esc(d.error || "You've hit your plan's project limit."), true)
+    openPlanDrawer()
+    return
+  }
   if (d.error || !d.project) { $("npMsg").style.color = "var(--rose)"; $("npMsg").textContent = d.error || "Couldn't create project."; return }
   location.href = "/dashboard?project=" + encodeURIComponent(d.project.id)
 }
@@ -6770,13 +6807,13 @@ window.openPlanDrawer = openPlanDrawer
   })
 })()
 
-// P0 upgrade deep links: onboarding (and pricing pages) land here with ?upgrade=pro|team or a
-// sessionStorage 'klav-plan-intent' — open the Plan & billing drawer and clear the intent.
+// P0 upgrade deep links: onboarding (and pricing pages) land here with ?upgrade=pro|team|founding
+// or a sessionStorage 'klav-plan-intent' — open the Plan & billing drawer and clear the intent.
 ;(function _planIntent(){
   var want = null
   try { want = new URLSearchParams(location.search).get("upgrade") } catch(e){}
   try { if (!want) want = sessionStorage.getItem("klav-plan-intent") } catch(e){}
-  if (want !== "pro" && want !== "team") return
+  if (want !== "pro" && want !== "team" && want !== "founding") return
   try { sessionStorage.removeItem("klav-plan-intent") } catch(e){}
   try { var u = new URL(location.href); u.searchParams.delete("upgrade"); history.replaceState(null, "", u.pathname + u.search + u.hash) } catch(e){}
   // Defer past the sidebar view-switch script (runs later in the document) so setView exists.
@@ -7118,7 +7155,8 @@ load()
   async function postJSON(url,body){
     const r=await fetch(url,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});
     const d=await r.json().catch(()=>({}));
-    if(!r.ok){ const err=new Error(d.error||("HTTP "+r.status)); err.traceId=d.id||null; throw err; }
+    // GTM round 2: carry status + code so callers can react to 402 quota_exceeded (plan drawer).
+    if(!r.ok){ const err=new Error(d.error||("HTTP "+r.status)); err.traceId=d.id||null; err.status=r.status; err.code=d.code||null; throw err; }
     return d;
   }
   async function genBrief(){
@@ -7273,7 +7311,18 @@ load()
       // Show the success panel unless caller will do it (e.g. "Add all" batches and shows once at end)
       if(!opts||!opts.defer) showSuccessPanel(s.name,1,merged);
       return merged;
-    }catch(e){ if(btn){ btn.disabled=false; btn.textContent=orig; } fail(e.message); }
+    }catch(e){
+      if(btn){ btn.disabled=false; btn.textContent=orig; }
+      // GTM round 2: Sim quota hit (402 quota_exceeded, only when KLAV_BILLING_ENFORCEMENT=1) —
+      // close the modal so the plan drawer is visible, toast the message, open the drawer in place.
+      if(e&&e.status===402&&e.code==="quota_exceeded"){
+        close();
+        klavToast(esc(e.message||"You've hit your plan's Sim limit."), true);
+        if(typeof openPlanDrawer==="function") openPlanDrawer();
+        return;
+      }
+      fail(e.message);
+    }
   }
 
   // delegate clicks inside the result list (Add / Skip / Add all / simClass picker)
