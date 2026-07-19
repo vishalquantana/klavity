@@ -157,9 +157,11 @@ export function buildFeedbackForm(input: { type?: string; description: string; p
 }
 
 // True when the annotations payload carries at least one drawn shape — either on the hoisted (index-0)
-// entry or on any per-image `byIndex` entry. Guards against serializing an empty/whitespace overlay.
+// entry or on any per-image `byIndex` entry — OR a picked element selector (KLAVITYKLA-228). Guards
+// against serializing an empty/whitespace overlay while still shipping a lone `annotations.selector`.
 function hasAnnotations(ann: any): boolean {
   if (!ann || typeof ann !== "object") return false
+  if (typeof ann.selector === "string" && ann.selector.trim() !== "") return true
   const nonEmpty = (o: any) => o && Array.isArray(o.shapes) && o.shapes.length > 0
   if (nonEmpty(ann)) return true
   if (ann.byIndex && typeof ann.byIndex === "object") {
