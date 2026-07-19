@@ -326,6 +326,29 @@ a.exp-card .ec-src-chip,.exp-card a.ec-src-chip{cursor:pointer}
 #schedBg input:focus{border-color:var(--indigo)}
 #schedBg .sched-preset{font-family:var(--mono);font-size:11px;padding:4px 10px;border-radius:8px;border:1px solid var(--line);background:var(--ink-3);color:var(--paper-faint);cursor:pointer;transition:border-color var(--mi-dur) var(--mi-ease),color var(--mi-dur) var(--mi-ease)}
 #schedBg .sched-preset:hover{border-color:var(--indigo);color:var(--indigo)}
+/* ── KLA-210 (JTBD 7.5): bulk share-link manager — ported from /autosims (KLAVITYKLA-360) ── */
+.shm-open-btn{font-family:var(--mono);font-size:10px;letter-spacing:.04em;padding:5px 10px;border-radius:9px;border:1px solid var(--line);background:transparent;color:var(--paper-dim);cursor:pointer;display:inline-flex;align-items:center;gap:5px;transition:transform var(--mi-dur) var(--mi-ease),border-color var(--mi-dur) var(--mi-ease),color var(--mi-dur) var(--mi-ease)}
+.shm-open-btn:hover{border-color:var(--indigo);color:var(--paper);transform:var(--mi-lift)}
+.shm-open-btn:active{transform:var(--mi-press)}
+#shmBg .modal{max-width:700px}
+.shm-empty{font-family:var(--mono);font-size:12px;color:var(--paper-faint);padding:22px 4px;text-align:center}
+.shm-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.shm-row:last-child{border-bottom:none}
+.shm-row .shm-main{flex:1;min-width:180px}
+.shm-row .shm-target{font-size:13px;color:var(--paper);font-weight:600;display:flex;align-items:center;gap:6px}
+.shm-row .shm-meta{font-family:var(--mono);font-size:10.5px;color:var(--paper-faint);margin-top:4px;line-height:1.6}
+.shm-row .shm-viewed{color:var(--green)}
+.shm-lock{font-family:var(--mono);font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:var(--indigo);border:1px solid rgba(99,102,241,.4);border-radius:6px;padding:1px 5px}
+.shm-acts{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.shm-ext-sel{font-family:var(--mono);font-size:11px;padding:5px 8px;border-radius:8px;border:1px solid var(--line);background:var(--ink);color:var(--paper-dim);cursor:pointer;transition:border-color var(--mi-dur) var(--mi-ease)}
+.shm-ext-sel:hover{border-color:var(--indigo)}
+.shm-btn{font-family:var(--mono);font-size:10px;letter-spacing:.04em;padding:5px 10px;border-radius:9px;border:1px solid var(--line);background:transparent;color:var(--paper-dim);cursor:pointer;transition:transform var(--mi-dur) var(--mi-ease),border-color var(--mi-dur) var(--mi-ease),color var(--mi-dur) var(--mi-ease)}
+.shm-btn:hover:not(:disabled){border-color:var(--indigo);color:var(--paper);transform:var(--mi-lift)}
+.shm-btn:active:not(:disabled){transform:var(--mi-press)}
+.shm-btn.danger{color:var(--rose);border-color:rgba(219,39,119,.4)}
+.shm-btn.danger:hover:not(:disabled){background:rgba(219,39,119,.1);border-color:var(--rose);color:var(--rose)}
+.shm-msg{font-family:var(--mono);font-size:10.5px;color:var(--green);min-height:14px;width:100%}
+.shm-msg.err{color:var(--rose)}
 #wizBg .modal{max-width:560px;padding:26px 28px}
 .wiz-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:20px}
 .wiz-eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--indigo);margin-bottom:4px}
@@ -2315,7 +2338,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         </div>
         <div class="grid">
           <div class="card">
-            <h2 style="display:flex;align-items:baseline;gap:8px">Walks <span class="count" id="walksCount">0</span><a id="walksViewAll" href="/autosims/walks" style="font-family:var(--mono);font-size:11px;color:var(--indigo);margin-left:auto;letter-spacing:.03em">View all →</a></h2>
+            <h2 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">Walks <span class="count" id="walksCount">0</span><button class="shm-open-btn" id="shmOpenBtn" type="button" title="Manage the share links you've minted for these walks">Manage share links</button><a id="walksViewAll" href="/autosims/walks" style="font-family:var(--mono);font-size:11px;color:var(--indigo);margin-left:auto;letter-spacing:.03em">View all →</a></h2>
             <div class="list" id="walks"></div>
           </div>
           <div class="card">
@@ -8505,6 +8528,19 @@ load()
 </div>
 
 <!-- Schedule modal -->
+<!-- KLA-210 (JTBD 7.5): bulk share-link manager — list / revoke / extend every link minted for a walk.
+     Ported from the standalone /autosims page (KLAVITYKLA-360) so the dashboard is the one canonical surface. -->
+<div class="modal-bg" id="shmBg">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Manage share links">
+    <div class="mhead">
+      <h3>Share links</h3>
+      <button class="mclose" id="shmClose" aria-label="Close">&times;</button>
+    </div>
+    <p class="lead" style="margin-bottom:14px">Every live link you've minted for a walk. Revoke to kill a link instantly, or extend its expiry. "Last viewed" tells you when a client last opened the report.</p>
+    <div id="shmList"><div class="shm-empty">Loading&hellip;</div></div>
+  </div>
+</div>
+
 <div class="modal-bg" id="schedBg">
   <div class="modal" role="dialog" aria-modal="true" aria-label="Schedule this AutoSim">
     <div class="mhead">
@@ -9154,6 +9190,87 @@ load()
     updateSchedBuilderUI()
   }
   function closeSchedModal(){$("schedBg").classList.remove("open");schedState.trailId=null}
+
+  // ── KLA-210 (JTBD 7.5): bulk share-link manager ────────────────────────────
+  // Ported verbatim-in-behaviour from the standalone /autosims page (KLAVITYKLA-360).
+  // Lists every live share token across walks, and lets you revoke or extend each one.
+  function shmFmtWhen(ms){try{return new Date(ms).toLocaleString()}catch(e){return""}}
+  function shmExpiryLabel(expiresAt){
+    var days=Math.max(0,Math.round((expiresAt-Date.now())/86400000))
+    return "expires "+shmFmtWhen(expiresAt)+" ("+(days<=0?"today":(days+"d"))+")"
+  }
+  function shmRowHtml(tk){
+    var lock=tk.hasPasscode?'<span class="shm-lock" title="Passcode-protected">Passcode</span>':''
+    var viewed=tk.lastViewedAt
+      ?'<span class="shm-viewed">Client opened the report '+esc(shmFmtWhen(tk.lastViewedAt))+' \xb7 '+esc(String(tk.viewCount||1))+' view'+((tk.viewCount||1)===1?'':'s')+'</span>'
+      :'<span>Not opened yet</span>'
+    return '<div class="shm-row" data-tid="'+esc(tk.id)+'" data-run="'+esc(tk.runId)+'">'
+      +'<div class="shm-main">'
+      +  '<div class="shm-target">'+window.kicon("footprints",{size:13})+'Walk '+esc(String(tk.runId).slice(0,8))+lock+'</div>'
+      +  '<div class="shm-meta"><span>created '+esc(shmFmtWhen(tk.createdAt))+'</span><br/><span>'+esc(shmExpiryLabel(tk.expiresAt))+'</span><br/>'+viewed+'</div>'
+      +'</div>'
+      +'<div class="shm-acts">'
+      +  '<select class="shm-ext-sel" aria-label="Extend expiry"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option></select>'
+      +  '<button class="shm-btn" data-shm-extend="'+esc(tk.id)+'" type="button">Extend</button>'
+      +  '<button class="shm-btn danger" data-shm-revoke="'+esc(tk.id)+'" type="button">Revoke</button>'
+      +'</div>'
+      +'<div class="shm-msg" data-shm-msg="'+esc(tk.id)+'"></div>'
+      +'</div>'
+  }
+  async function loadShareLinks(){
+    var host=$("shmList");if(!host)return
+    host.innerHTML='<div class="shm-empty">Loading…</div>'
+    try{
+      var r=await fetch("/api/trails/walks/shared-links"+projQ())
+      var d=await r.json().catch(function(){return{}})
+      if(!r.ok){host.innerHTML='<div class="shm-empty">'+esc(d.error||"Could not load share links.")+'</div>';return}
+      var tokens=d.tokens||[]
+      if(!tokens.length){host.innerHTML='<div class="shm-empty">No live share links. Mint one with the Share button on any walk.</div>';return}
+      host.innerHTML=tokens.map(shmRowHtml).join("")
+      host.querySelectorAll("[data-shm-revoke]").forEach(function(btn){
+        btn.onclick=function(){shmRevoke(btn.getAttribute("data-shm-revoke"),btn)}
+      })
+      host.querySelectorAll("[data-shm-extend]").forEach(function(btn){
+        btn.onclick=function(){shmExtend(btn.getAttribute("data-shm-extend"),btn)}
+      })
+    }catch(e){host.innerHTML='<div class="shm-empty">Network error loading share links.</div>'}
+  }
+  function shmSel(tid){return (window.CSS&&CSS.escape)?CSS.escape(tid):tid}
+  function shmRowOf(tid){var h=$("shmList");return h?h.querySelector('.shm-row[data-tid="'+shmSel(tid)+'"]'):null}
+  function shmMsg(tid,text,isErr){
+    var h=$("shmList");if(!h)return
+    var el=h.querySelector('[data-shm-msg="'+shmSel(tid)+'"]')
+    if(el){el.className="shm-msg"+(isErr?" err":"");el.textContent=text||""}
+  }
+  async function shmRevoke(tid,btn){
+    var row=shmRowOf(tid);if(!row)return
+    var runId=row.getAttribute("data-run")
+    if(!window.confirm("Revoke this link? Anyone holding it will immediately lose access."))return
+    btn.disabled=true;shmMsg(tid,"Revoking…",false)
+    try{
+      var r=await fetch("/api/trails/walks/"+encodeURIComponent(runId)+"/share/"+encodeURIComponent(tid)+projQ(),{method:"DELETE"})
+      var d=await r.json().catch(function(){return{}})
+      if(r.ok&&d.ok){await loadShareLinks();return}
+      shmMsg(tid,d.error||"Could not revoke.",true);btn.disabled=false
+    }catch(e){shmMsg(tid,"Network error.",true);btn.disabled=false}
+  }
+  async function shmExtend(tid,btn){
+    var row=shmRowOf(tid);if(!row)return
+    var runId=row.getAttribute("data-run")
+    var sel=row.querySelector(".shm-ext-sel")
+    var ttlDays=sel?Number(sel.value):30
+    btn.disabled=true;shmMsg(tid,"Extending…",false)
+    try{
+      var r=await fetch("/api/trails/walks/"+encodeURIComponent(runId)+"/share/"+encodeURIComponent(tid)+projQ(),{
+        method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({ttlDays:ttlDays})
+      })
+      var d=await r.json().catch(function(){return{}})
+      if(r.ok&&d.ok){await loadShareLinks();return}
+      shmMsg(tid,d.error||"Could not extend.",true);btn.disabled=false
+    }catch(e){shmMsg(tid,"Network error.",true);btn.disabled=false}
+  }
+  function openShareMgr(){$("shmBg").classList.add("open");loadShareLinks()}
+  function closeShareMgr(){$("shmBg").classList.remove("open")}
   async function saveSchedule(expr){
     var id=schedState.trailId;if(!id)return
     var pid=projParam();var qs=pid?"?project="+encodeURIComponent(pid):""
@@ -9964,6 +10081,10 @@ load()
     $("schedClose").onclick=closeSchedModal
     $("schedCancel").onclick=closeSchedModal
     $("schedBg").onclick=function(e){if(e.target===$("schedBg"))closeSchedModal()}
+    // KLA-210: bulk share-link manager
+    var _shmOpen=$("shmOpenBtn");if(_shmOpen)_shmOpen.onclick=openShareMgr
+    var _shmClose=$("shmClose");if(_shmClose)_shmClose.onclick=closeShareMgr
+    var _shmBg=$("shmBg");if(_shmBg)_shmBg.onclick=function(e){if(e.target===_shmBg)closeShareMgr()}
     $("schedFreq").onchange = function() {
       updateSchedBuilderUI()
     }
