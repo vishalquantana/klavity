@@ -61,8 +61,52 @@ test("buildUsageMeters maps current-period usage onto the plan's Sim/AutoSim all
   expect(sims.unlimited).toBe(false)
   expect(sims.overLimit).toBe(false)
   expect(auto.used).toBe(2)
-  expect(auto.limit).toBe(5)
-  expect(auto.pct).toBe(40)
+  // KLAVITYKLA-359: AutoSim runs are metered against the MONTHLY RUN cap (pro: 150), not the
+  // configured-flow allowance (pro: 5).
+  expect(auto.limit).toBe(150)
+  expect(auto.pct).toBe(1)
+})
+
+// ── KLAVITYKLA-359: dedicated monthly AutoSim-run quota ─────────────────────────────────────────
+
+test("PLAN_QUOTAS carries a monthly AutoSim-run cap distinct from the configured-flow allowance", () => {
+  const plans = ["free", "pro", "team", "agency", "founding", "scale", "partner"] as const
+  for (const plan of plans) {
+    const q = PLAN_QUOTAS[plan]
+    expect(q).toHaveProperty("autosimRunsMonthly")
+    // Unlimited tiers are null on BOTH keys; metered tiers must allow more runs than they allow
+    // configured flows (each flow is expected to run many times a month).
+    if (q.autosimFlows == null) expect(q.autosimRunsMonthly).toBeNull()
+    else expect(q.autosimRunsMonthly!).toBeGreaterThan(q.autosimFlows)
+  }
+})
+
+test("monthly AutoSim-run caps increase monotonically up the plan ladder", () => {
+  const { free, pro, founding, team, agency, scale, partner } = PLAN_QUOTAS
+  expect(free.autosimRunsMonthly).toBe(10)
+  expect(pro.autosimRunsMonthly).toBe(150)
+  expect(founding.autosimRunsMonthly!).toBeGreaterThanOrEqual(pro.autosimRunsMonthly!)
+  expect(team.autosimRunsMonthly!).toBeGreaterThan(pro.autosimRunsMonthly!)
+  expect(agency.autosimRunsMonthly!).toBeGreaterThan(team.autosimRunsMonthly!)
+  expect(scale.autosimRunsMonthly).toBeNull()
+  expect(partner.autosimRunsMonthly).toBeNull()
+})
+
+test("the AutoSim meter compares monthly runs against the monthly run cap, not the flow count", () => {
+  // The KLAVITYKLA-309 bug: 12 runs on Free rendered as "12 / 1" (runs vs configured flows).
+  const auto = buildUsageMeters("free", { autosim_walk: 12 }).find((m) => m.key === "autosim")!
+  expect(auto.limit).toBe(PLAN_QUOTAS.free.autosimRunsMonthly)
+  expect(auto.limit).not.toBe(PLAN_QUOTAS.free.autosimFlows)
+  expect(auto.used).toBe(12)
+  expect(auto.overLimit).toBe(true) // 12 > 10 — still over, but now against a like-for-like cap
+  expect(auto.pct).toBe(100)
+})
+
+test("the AutoSim meter stays well under 100% for ordinary run volumes on paid plans", () => {
+  const auto = buildUsageMeters("team", { autosim_walk: 60 }).find((m) => m.key === "autosim")!
+  expect(auto.limit).toBe(600)
+  expect(auto.pct).toBe(10)
+  expect(auto.overLimit).toBe(false)
 })
 
 test("buildUsageMeters clamps to 100% and flags over-limit usage", () => {
@@ -220,6 +264,7 @@ test("founding tier normalizes correctly and carries at-or-above-Pro quotas", ()
   expect(quotasForPlan("founding").plan).toBe("founding")
   expect(founding.simReactionsMonthly).toBeGreaterThanOrEqual(pro.simReactionsMonthly!)
   expect(founding.autosimFlows).toBeGreaterThanOrEqual(pro.autosimFlows!)
+  expect(founding.autosimRunsMonthly).toBeGreaterThanOrEqual(pro.autosimRunsMonthly!)
   expect(founding.projects === null || founding.projects >= pro.projects!).toBe(true)
   expect(founding.sims === null || founding.sims >= pro.sims!).toBe(true)
 })
@@ -253,6 +298,7 @@ test("agency tier normalizes and carries unlimited projects at-or-above Team all
   expect(agency.sims!).toBeGreaterThanOrEqual(team.sims!)
   expect(agency.simReactionsMonthly!).toBeGreaterThanOrEqual(team.simReactionsMonthly!)
   expect(agency.autosimFlows!).toBeGreaterThanOrEqual(team.autosimFlows!)
+  expect(agency.autosimRunsMonthly!).toBeGreaterThanOrEqual(team.autosimRunsMonthly!)
 })
 
 test("agency price catalog encodes monthly + two-months-free annual", () => {
