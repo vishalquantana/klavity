@@ -175,6 +175,31 @@ test("timed-out PDF waiter does not prevent subsequent requests from running", a
   expect(await third).toBe("third")
 })
 
+test("PDF slot is not wedged after a queue timeout — dispatch must skip the stale waiter (KLA-59 leak)", async () => {
+  // Regression for the slot-leak: a timed-out waiter used to linger in the queue (its stored
+  // resolve was a wrapper, so identity-removal never matched). When the running render finished
+  // and dispatched, it shifted that stale waiter, set _pdfRunning=true, and the no-op wrapper
+  // never released it — wedging PDF rendering so EVERY later report 429'd until restart.
+  _resetPdfAdmissionForTest(30)
+
+  let release!: () => void
+  const gate = new Promise<void>((r) => { release = r })
+  const first = withPdfSlot(async () => { await gate; return "first" })
+  await Promise.resolve() // first acquires the slot
+
+  // Second queues and times out at 30ms — it must be REMOVED from the queue, not left behind.
+  const timedOut = await withPdfSlot(async () => "second").catch((e) => e)
+  expect(timedOut).toBeInstanceOf(PdfBusyError)
+
+  // Release first. Its dispatch must NOT wake the stale timed-out waiter and wedge the slot.
+  release()
+  expect(await first).toBe("first")
+
+  // A brand-new request AFTER everything must acquire the slot and run. With the bug the slot
+  // stayed permanently "running" and this would itself time out with PdfBusyError.
+  expect(await withPdfSlot(async () => "third")).toBe("third")
+})
+
 // ── 4. renderWalkPdf end-to-end isolation via injected renderer ───────────────────────────────────
 
 test("renderWalkPdf does not contend with the walk slot (KLAVITYKLA-207 end-to-end)", async () => {

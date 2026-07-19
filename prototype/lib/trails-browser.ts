@@ -330,18 +330,24 @@ export async function withPdfSlot<T>(fn: () => Promise<T>): Promise<T> {
   // Queue path: wait for the slot to free up, subject to timeout.
   await new Promise<void>((resolve, reject) => {
     let settled = false
+    // Keep a stable reference to THIS waiter object so the timeout removes exactly it.
+    // (The stored `resolve` is a wrapper, so the old identity match `w.resolve === resolve`
+    //  never hit — a timed-out waiter lingered in the queue and, when later shifted by
+    //  _pdfDispatch, flipped _pdfRunning=true without ever running or releasing the slot,
+    //  wedging PDF rendering permanently so every later report 429'd. KLA-59 regression.)
+    const waiter = {
+      resolve: () => { if (!settled) { settled = true; clearTimeout(timer); resolve() } },
+      reject,
+    }
     const timer = setTimeout(() => {
       if (settled) return
       settled = true
       // Remove from queue so a later dispatch doesn't wake a timed-out waiter.
-      const idx = _pdfWaiters.findIndex((w) => w.resolve === resolve)
+      const idx = _pdfWaiters.indexOf(waiter)
       if (idx >= 0) _pdfWaiters.splice(idx, 1)
       reject(new PdfBusyError(`PDF render queue timed out after ${_pdfTimeoutMs}ms — try again shortly`))
     }, _pdfTimeoutMs)
-    _pdfWaiters.push({
-      resolve: () => { if (!settled) { settled = true; clearTimeout(timer); resolve() } },
-      reject,
-    })
+    _pdfWaiters.push(waiter)
   })
   // Slot handed to us by _pdfDispatch — run and release.
   try {
