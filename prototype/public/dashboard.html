@@ -124,7 +124,10 @@ body[data-view="recurring"] [data-view]:not([data-view~="recurring"]){display:no
 .pill.pill-draft{background:rgba(139,139,245,.14);color:var(--indigo)}
 .pill.paused{background:rgba(139,139,139,.15);color:var(--paper-faint)}
 .pill.needs_auth{background:rgba(217,131,36,.18);color:var(--amber)}
-.find{padding:15px 16px;background:var(--ink);border:1px solid var(--line);border-radius:14px}
+.find{padding:15px 16px;background:var(--ink);border:1px solid var(--line);border-radius:14px;scroll-margin-top:80px}
+/* KLAVITYKLA-271: brief highlight when a walk row's "Finding" action jumps to the matching queue card */
+.find.find-flash{animation:findFlash 1.6s ease}
+@keyframes findFlash{0%,100%{border-color:var(--line);box-shadow:none}18%{border-color:var(--indigo);box-shadow:0 0 0 3px rgba(99,102,241,.22)}}
 .find .top{display:flex;align-items:center;gap:10px;margin-bottom:8px}
 .find .kind{font-family:var(--mono);font-size:9px;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:20px;background:var(--ink-3);color:var(--paper-faint)}
 .find .kind.regression{background:rgba(219,39,119,.14);color:var(--rose)}
@@ -8914,6 +8917,9 @@ load()
     var wEl=$("walks")
     wEl.innerHTML=walks.length?"":"<div class=\"empty\"><div class=\"em\">"+window.kicon("footprints",{size:18})+"</div><p>No Walks yet. Create an AutoSim and run it to see verdicts here.</p></div>"
     var trailNameFor={};(d.trails||[]).forEach(function(t){trailNameFor[t.id]=t.name})
+    // KLAVITYKLA-271 (JTBD 4.7): map each run that produced a still-queued finding → that finding id,
+    // so a failing run answer can offer a "Finding" jump straight to the review card (which files the ticket).
+    var queuedFindingRuns={};(d.queue||[]).forEach(function(f){if(f&&f.runId&&!queuedFindingRuns[f.runId])queuedFindingRuns[f.runId]=f.id})
     for(var _w=0;_w<walks.length;_w++){
       var w=walks[_w];var v=String(w.status||"running");var when=w.startedAt?new Date(w.startedAt).toLocaleString():""
       var wRow=document.createElement("div");wRow.className="walk"
@@ -8924,6 +8930,10 @@ load()
         +(w.hasReplay && v !== "skipped" && v !== "missed" ?'<a class="replay-btn" href="'+esc(detailHref)+'" target="_top">'+kicon("play",{size:10})+" Replay</a>":"")
         +(v !== "skipped" && v !== "missed" && v !== "running" ?'<a class="replay-btn" href="'+esc(detailHref)+'" target="_top">'+kicon("eye",{size:10})+" View</a>":"")
         +(v==="running"?'<button class="replay-btn" data-live-run="'+esc(w.id)+'">'+kicon("eye",{size:10})+" Live</button>":"")
+        // KLAVITYKLA-271 (JTBD 4.7): make a failing run answer actionable in place — jump to the finding
+        // it raised (the review card that files the ticket) and re-run the same flow without hunting for it.
+        +((v==="red"||v==="amber")&&queuedFindingRuns[w.id]?'<button class="replay-btn" data-jump-finding="'+esc(queuedFindingRuns[w.id])+'">'+kicon("bug",{size:10})+" Finding</button>":"")
+        +((v==="red"||v==="amber")&&w.trailId?'<button class="replay-btn" data-rerun-trail="'+esc(w.trailId)+'">'+kicon("refresh-cw",{size:10})+" Re-run</button>":"")
         +(v !== "skipped" && v !== "missed" ?'<a class="walk-pdf-btn" href="'+esc(pdfHref)+'" target="_blank" rel="noopener">'+kicon("file-text",{size:10})+" PDF</a>":"")
         +(v !== "skipped" && v !== "missed" ?'<button class="walk-share-btn" data-share-run="'+esc(w.id)+'">'+kicon("link",{size:10})+" Share</button>":"")
         +'<span class="walk-share-msg" data-share-msg="'+esc(w.id)+'"></span>'
@@ -8934,9 +8944,14 @@ load()
         +'<span class="pill '+esc(v)+'">'+esc(v)+"</span>"
         +(v==="amber"?' <span class="muted">— healed but unconfirmed; review findings queue.</span>':"")
         +(v==="needs_auth"?' <span class="muted">— paused at an auth gate; give your Sim a key to resume.</span>':"")
+        +'<span class="run-msg" style="font-family:var(--mono);font-size:10px;color:var(--paper-faint)"></span>'
       wEl.appendChild(wRow)
     }
     wEl.querySelectorAll("button[data-live-run]").forEach(function(btn){btn.onclick=function(){openLiveWatch(btn.getAttribute("data-live-run"))}})
+    // KLAVITYKLA-271: re-run a failing flow in place (reuses runTrail's live-watch + poll-until-verdict),
+    // and jump to the finding a failing run raised so it can be filed as a ticket without scrolling to hunt.
+    wEl.querySelectorAll("button[data-rerun-trail]").forEach(function(btn){btn.onclick=function(){var row=btn.closest(".walk");runTrail(btn.getAttribute("data-rerun-trail"),btn,row)}})
+    wEl.querySelectorAll("button[data-jump-finding]").forEach(function(btn){btn.onclick=function(){jumpToFinding(btn.getAttribute("data-jump-finding"))}})
     wEl.querySelectorAll("button[data-share-run]").forEach(function(btn){
       btn.onclick=async function(){
         var runId=btn.getAttribute("data-share-run")
@@ -8964,7 +8979,7 @@ load()
       var fromSel=ev.fromSelector;var toSel=ev.toSelector
       var selector=ev.selector||ev.cachedSelector||ev.resolvedSelector||toSel||(ev.fingerprint&&(ev.fingerprint.domPath||ev.fingerprint.testId))||""
       var shotUrl=ev.screenshotUrl||null
-      var card=document.createElement("div");card.className="find"
+      var card=document.createElement("div");card.className="find";card.id="finding-"+f.id
       var html='<div class="top"><span class="kind '+esc(f.kind)+'">'+esc(f.kind)+'</span><span class="conf">conf '+esc(f.confidence)+"</span></div>"
       html+='<div class="ft">'+esc(f.title)+"</div>"
       if(rationale)html+='<div class="quote">'+esc(rationale)+"</div>"
@@ -8982,6 +8997,16 @@ load()
       card.innerHTML=html;qEl.appendChild(card)
     }
     qEl.querySelectorAll("button[data-act]").forEach(function(btn){btn.onclick=function(){act(btn.getAttribute("data-act"),btn.getAttribute("data-id"))}})
+  }
+  // KLAVITYKLA-271 (JTBD 4.7): scroll the review-queue card a failing run raised into view and flash it,
+  // so the "Finding" action on a walk answer lands the user on the exact card whose File button opens a ticket.
+  function jumpToFinding(id){
+    var el=document.getElementById("finding-"+id)
+    if(!el)return false
+    try{el.scrollIntoView({behavior:"smooth",block:"center"})}catch(e){el.scrollIntoView()}
+    el.classList.remove("find-flash");void el.offsetWidth;el.classList.add("find-flash")
+    setTimeout(function(){el.classList.remove("find-flash")},1700)
+    return true
   }
   async function act(kind,id){
     var pid=projParam();var qs=pid?"?project="+encodeURIComponent(pid):""
