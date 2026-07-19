@@ -122,6 +122,20 @@ test("rejects feedback from another project", async () => {
   expect(r.status).toBe(404)
 })
 
+test("KLAVITYKLA-230: unpersistable lead returns non-2xx and NEVER a false ok:true", async () => {
+  // Non-silent contract: when the lead cannot be durably attached (no matching feedback row), the
+  // server must reply with a real error status and must NOT return { ok: true } — otherwise the widget
+  // would confirm "we'll be in touch" while the lead was dropped. Client-side (modal.ts) turns this
+  // non-2xx into a visible, retryable error instead of a false success.
+  const r = await fetch(`${BASE}/api/widget/lead`, {
+    method: "POST", headers: { "content-type": "application/json", origin: BASE },
+    body: JSON.stringify({ project_id: "p1", feedback_id: "does-not-exist", email: "buyer@co.com" }),
+  })
+  expect(r.status).toBeGreaterThanOrEqual(400)
+  const bodyJson = await r.json().catch(() => ({}))
+  expect(bodyJson.ok).toBeUndefined()
+})
+
 test("cross-origin lead is accepted (project-scoped, not first-party only)", async () => {
   // The widget runs on the customer's own site, so a lead must attach from any origin. Abuse is
   // bounded by the per-IP rate limit and the (project_id, feedback_id) pair — only a real row updates.

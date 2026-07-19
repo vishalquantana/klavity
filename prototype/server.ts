@@ -1967,7 +1967,16 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // capture it). Sanitized: kept only as an http(s) URL, capped.
       const leadReferrerRaw = String(body.referrer || "").trim().slice(0, 500)
       const leadReferrer = /^https?:\/\//i.test(leadReferrerRaw) ? leadReferrerRaw : ""
-      const ok = await setFeedbackContactEmail(feedbackId, projectId, email)
+      // JTBD 1.13 — durably persist the lead's email BEFORE the best-effort alert, and never claim success
+      // if the write fails. A DB error must surface as a real 5xx (client retries) instead of bubbling
+      // uncaught or being masked as a success — and it must be logged with lead context, not swallowed.
+      let ok: boolean
+      try {
+        ok = await setFeedbackContactEmail(feedbackId, projectId, email)
+      } catch (e: any) {
+        console.error(`[lead] persist failed project=${projectId} feedback=${feedbackId}:`, e?.message || e)
+        return wjson({ error: "could not save lead" }, 503)
+      }
       if (!ok) return wjson({ error: "not found" }, 404)
       // fire-and-forget alert (never blocks / fails the response)
       void (async () => {
