@@ -2,6 +2,7 @@
 import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
 import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution } from "./lib/db"
 import { sanitizeAttr } from "./lib/attr"
+import { deriveActivation, type ActivationSignals } from "./lib/activation"
 import { issueKeyFor, chooseDedup, humanReportIssueKeyFor } from "./lib/dedup"
 import { classifySimObservation } from "./lib/sim-bug-classify"
 import { getConnector, listConnectorTypes, type TicketPayload, type TicketAttachment } from "./lib/connectors/index"
@@ -5727,6 +5728,54 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (!active) return json({ error: "No account." }, 400)
         await markAccountOnboarded(active.workspaceId)
         return json({ ok: true })
+      }
+
+      // ── canonical activation state + lifecycle nudge (KLAVITYKLA-298, JTBD 6.8) ──
+      // Server-DERIVED activation: instead of the frontend re-inferring "onboarded"
+      // from loose signals, we gather the real signals here (project created, widget
+      // heartbeat, first report, first Sim + reaction, connector linked, teammate
+      // invited) and hand them to the pure deriveActivation() ladder. The dashboard/
+      // onboarding read this one authoritative value. Signals aggregate across ALL of
+      // the account's projects so "the account has done X" is honest regardless of
+      // which project the user is currently viewing.
+      if (req.method === "GET" && path === "/api/activation") {
+        try {
+          const projects = await listProjects(me)
+          const projectCount = projects.length
+
+          let hasWidgetHeartbeat = false
+          let reportCount = 0
+          let simCount = 0
+          let hasSimReaction = false
+          let connectorCount = 0
+          let memberCount = 0
+
+          for (const p of projects) {
+            const [ping, counts, personas, simFb, connectors, members] = await Promise.all([
+              latestWidgetPing(p.id),
+              dashboardCounts(p.id),
+              listPersonas(p.id),
+              listFeedback(p.id, { simOnly: true, limit: 1 }),
+              listConnectors(p.id),
+              membersOfProject(p.id),
+            ])
+            if (ping) hasWidgetHeartbeat = true
+            reportCount += counts.feedback ?? 0
+            simCount += personas.length
+            if (simFb.length > 0) hasSimReaction = true
+            connectorCount += connectors.length
+            memberCount = Math.max(memberCount, members.length)
+          }
+
+          const signals: ActivationSignals = {
+            projectCount, hasWidgetHeartbeat, reportCount,
+            simCount, hasSimReaction, connectorCount, memberCount,
+          }
+          const activation = deriveActivation(signals)
+          return json({ email: me, signals, activation })
+        } catch (e: any) {
+          return json(oops(e, "activation"), 500)
+        }
       }
 
       // Redeem a partner/internal access code → sets the account to the 'partner' (unlimited) plan.
