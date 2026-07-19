@@ -90,6 +90,8 @@ import { capturePosthog } from "./lib/posthog"
 import { createSimReviewSchedule, listSimReviewSchedules, getSimReviewSchedule, deleteSimReviewSchedule, setSimReviewScheduleEnabled, type SimReviewScheduleFrequency } from "./lib/db"
 import { startSimsDigestScheduler, sendSimsDigest, type SimsDigestDeps, DAY_MS as SIMS_DIGEST_DAY_MS } from "./lib/sims-digest"
 import { sendReportAlertEmail } from "./lib/mail"
+import { diagnoseHeartbeat, renderDeveloperEmail, type HeartbeatSignals } from "./lib/heartbeat-diagnosis"
+import { countRecentFeedback } from "./lib/db"
 import { enrollLead, buildNurtureEmail, recordNurtureEmailSent, recordSendgridEvents, startLeadNurtureScheduler } from "./lib/lead-nurture"
 import { extractInventory, extractLinks, verifyLinks, brokenLinkFindings, filterModelFindings, checkedSummary, MAX_LINKS_CHECKED } from "./lib/bugcheck"
 
@@ -6477,7 +6479,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return json({ project: { id: created.id, name: created.name, accountId: created.accountId, status: created.status, siteUrl: created.siteUrl, role: "admin" } }, 201)
       }
       // Project detail + members (projectAccess-gated) and project-scoped invite (R4) + monitored-urls (P3b) + connectors.
-      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/branding|\/triage|\/tickets(?:\/bulk)?|\/recurring|\/replays|\/widget-status|\/share-token|\/labels(?:\/[^/]+)?|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/test)?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send|\/trails-autofile|\/regression-events(?:\/[^/]+\/ack)?)?$/)
+      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/branding|\/triage|\/tickets(?:\/bulk)?|\/recurring|\/replays|\/widget-status|\/heartbeat-diagnosis(?:\/email)?|\/share-token|\/labels(?:\/[^/]+)?|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/test)?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send|\/trails-autofile|\/regression-events(?:\/[^/]+\/ack)?)?$/)
       if (projMatch) {
         const pid = projMatch[1]
         const sub = projMatch[2] || ""
@@ -7049,6 +7051,68 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (req.method === "GET" && sub === "/widget-status") {
           const ping = await latestWidgetPing(pid)
           return json({ seen: !!ping, host: ping?.host ?? null, last_seen_at: ping?.lastSeen ?? null })
+        }
+
+        // ── Heartbeat diagnosis + "email my developer" (KLAVITYKLA-295, JTBD 6.5) ──────────────────
+        // GET  /api/projects/:id/heartbeat-diagnosis        — diagnose WHY the widget went silent (any member)
+        // POST /api/projects/:id/heartbeat-diagnosis/email  — email the diagnosis + fix steps to a developer
+        // Both derive their signals the same way (latest ping + config + recent-report count) so the email
+        // sends exactly what the UI showed. Pure mapping lives in lib/heartbeat-diagnosis.ts (unit-tested).
+        if (sub === "/heartbeat-diagnosis" || sub === "/heartbeat-diagnosis/email") {
+          const staleAfterMs = 24 * 60 * 60 * 1000
+          const buildSignals = async (): Promise<HeartbeatSignals> => {
+            const now = Date.now()
+            const ping = await latestWidgetPing(pid)
+            let recentReportCount = 0
+            try { recentReportCount = await countRecentFeedback(pid, now - staleAfterMs) } catch { /* non-fatal */ }
+            const cfg = await getWidgetConfig(pid)
+            return {
+              now,
+              everSeen: !!ping,
+              lastSeen: ping?.lastSeen ?? null,
+              firstSeen: ping?.firstSeen ?? null,
+              pingHost: ping?.host ?? null,
+              expectedHost: proj.siteUrl ?? null,
+              widgetMode: cfg?.mode ?? proj.widgetMode ?? "support",
+              reportGate: cfg?.reportGate ?? proj.widgetReportGate ?? "anonymous",
+              recentReportCount,
+              staleAfterMs,
+            }
+          }
+
+          if (req.method === "GET" && sub === "/heartbeat-diagnosis") {
+            const diagnosis = diagnoseHeartbeat(await buildSignals())
+            return json({ diagnosis })
+          }
+
+          if (req.method === "POST" && sub === "/heartbeat-diagnosis/email") {
+            if (access !== "admin") return json({ error: "Only project admins can email a developer." }, 403)
+            const body = await req.json().catch(() => ({}))
+            const devEmail = String(body?.developer_email || "").trim()
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(devEmail) || devEmail.length > 200) {
+              return json({ error: "A valid developer_email is required." }, 400)
+            }
+            const diagnosis = diagnoseHeartbeat(await buildSignals())
+            const origin = process.env.KLAV_PUBLIC_ORIGIN || "https://klavity.in"
+            const mail = renderDeveloperEmail({
+              projectName: proj.name,
+              diagnosis,
+              dashboardUrl: `${origin}/app`,
+              fromName: me,
+            })
+            if (!process.env.SENDGRID_API_KEY) {
+              // No transport configured — return the composed diagnosis so the caller can copy/paste it,
+              // and flag that nothing was actually sent (parity with other "email skipped" surfaces).
+              return json({ ok: false, sent: false, reason: "email_not_configured", diagnosis, preview: mail })
+            }
+            try {
+              await sendReportAlertEmail([devEmail], mail.subject, mail.html, mail.text)
+            } catch (e: any) {
+              console.warn("heartbeat email skipped (non-fatal):", e?.message || e)
+              return json({ ok: false, sent: false, reason: "send_failed", diagnosis }, 502)
+            }
+            return json({ ok: true, sent: true, to: devEmail, diagnosis })
+          }
         }
 
         // GET /api/projects/:id/triage — un-triaged feedback queue (any project member)
