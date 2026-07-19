@@ -423,6 +423,29 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 /* stat cards — pure count displays; navigation is via card-go buttons on the grid cards below */
 .stat-go{display:none}
 @media(max-width:760px){.stats{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
+/* KLAVITYKLA-225 — trend chart + drill-down */
+.trend-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.trend-range{display:inline-flex;margin-left:auto;background:var(--ink-3);border:1px solid var(--line);border-radius:999px;padding:2px}
+.trend-range button{border:none;background:none;font-family:var(--mono);font-size:11px;letter-spacing:.03em;color:var(--paper-faint);padding:5px 12px;border-radius:999px;cursor:pointer;transition:background .15s,color .15s}
+.trend-range button.on{background:var(--ink-2);color:var(--paper);box-shadow:var(--shadow-border)}
+.trend-legend{display:flex;gap:16px;flex-wrap:wrap;margin:14px 0 6px;font-size:12px;color:var(--paper-faint)}
+.trend-legend span{display:inline-flex;align-items:center;gap:6px}
+.trend-legend i{width:10px;height:10px;border-radius:3px;display:inline-block}
+.trend-legend b{color:var(--paper);font-variant-numeric:tabular-nums}
+.trend-chart{width:100%;overflow:visible}
+.trend-chart .tc-pt{cursor:pointer;transition:r .12s}
+.trend-chart .tc-hit{cursor:pointer;fill:transparent}
+.trend-chart .tc-col.on .tc-band{opacity:.14}
+.trend-empty{padding:30px 6px;color:var(--paper-faint);font-size:13px;text-align:center}
+.trend-drill{margin-top:14px;border-top:1px solid var(--line);padding-top:12px}
+.trend-drill.hide{display:none}
+.trend-drill-hd{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--paper-dim);margin-bottom:10px}
+.trend-drill-hd .tdh-close{margin-left:auto;background:none;border:none;color:var(--paper-faint);cursor:pointer;font-size:16px;line-height:1;padding:2px 6px;border-radius:6px}
+.trend-drill-hd .tdh-close:hover{color:var(--paper);background:var(--ink-3)}
+.trend-drill-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border:1px solid var(--line);border-radius:10px;margin-bottom:7px;cursor:pointer;background:var(--ink-2);transition:border-color .15s,transform var(--mi-press-dur)}
+.trend-drill-item:hover{border-color:var(--indigo);transform:var(--mi-lift)}
+.trend-drill-item .tdi-ttl{flex:1;min-width:0;font-size:13px;color:var(--paper);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.trend-drill-item .tdi-pri{font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:999px;background:var(--ink-3);color:var(--paper-faint)}
 /* insight KPI strip */
 .kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:20px}
 .kpi{background:var(--ink-2);box-shadow:var(--shadow-border);border-radius:16px;padding:15px 16px;min-height:104px}
@@ -1665,6 +1688,24 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   </div>
 
   <div class="grid">
+    <!-- KLAVITYKLA-225 (JTBD 7.11): trend chart — reports/findings/regressions over time, click a day to drill down -->
+    <div class="card full" data-view="overview" id="trendCard">
+      <div class="trend-head">
+        <h2 style="display:flex;align-items:center;gap:10px;margin:0"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v16a2 2 0 0 0 2 2h16" /> <path d="m19 9-5 5-4-4-3 3" /></svg> Trends</h2>
+        <div class="trend-range" id="trendRange" role="group" aria-label="Trend time range">
+          <button type="button" class="on" data-days="30" aria-pressed="true">30 days</button>
+          <button type="button" data-days="90" aria-pressed="false">90 days</button>
+        </div>
+      </div>
+      <div class="muted" style="margin:8px 0 0;font-size:12.5px">Reports, findings and regressions over time. Click any day to see what came in.</div>
+      <div class="trend-legend" id="trendLegend"></div>
+      <div id="trendChart"><div class="trend-empty">Loading trends…</div></div>
+      <div class="trend-drill hide" id="trendDrill" aria-live="polite">
+        <div class="trend-drill-hd"><span id="trendDrillTitle"></span><button type="button" class="tdh-close" id="trendDrillClose" aria-label="Close drill-down">&times;</button></div>
+        <div id="trendDrillList"></div>
+      </div>
+    </div>
+
     <!-- Sims overview (compact grid — shows on overview only; Sims tab uses simsFeed for full detail) -->
     <div class="card" data-view="overview">
       <h2 style="display:flex;align-items:center;gap:10px"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 16 1.5 1.5" /> <path d="m14 8-1.5-1.5" /> <path d="M15 2c-1.798 1.998-2.518 3.995-2.807 5.993" /> <path d="m16.5 10.5 1 1" /> <path d="m17 6-2.891-2.891" /> <path d="M2 15c6.667-6 13.333 0 20-6" /> <path d="m20 9 .891.891" /> <path d="M3.109 14.109 4 15" /> <path d="m6.5 12.5 1 1" /> <path d="m7 18 2.891 2.891" /> <path d="M9 22c1.798-1.998 2.518-3.995 2.807-5.993" /></svg> Your Sims<button class="card-go" type="button" onclick="setView('sims')" aria-label="View all Sims and their feedback">View all <span class="card-arrow" aria-hidden="true">→</span></button></h2>
@@ -3245,6 +3286,8 @@ function render(fromCache) {
     loadConnectors(admin)
     loadAppearance()
     loadLabels(admin)
+    wireTrends()
+    loadTrends()
     if (admin) { loadLive(); loadObs(); taccRender(); if (typeof ciRender === "function") ciRender(); loadTrailsAutofile() }
   }
 
@@ -3253,6 +3296,198 @@ function render(fromCache) {
 
   // First-run guided tour: auto-starts once per browser on a genuinely fresh project (see tour script).
   if (window.maybeStartTour) window.maybeStartTour()
+}
+
+// ── KLAVITYKLA-225 (JTBD 7.11): dashboard trend chart + drill-down ────────────────────────────
+// Renders reports/findings/regressions over the last 30/90 days as an accessible inline SVG.
+// Clicking (or keyboard-activating) a day opens a filtered list of that day's reports for the
+// currently selected series; each row deep-links into the ticket.
+const TREND_SERIES_META = [
+  { key: "reports",     label: "Reports",     color: "var(--indigo)" },
+  { key: "findings",    label: "Findings",    color: "var(--amber)" },
+  { key: "regressions", label: "Regressions", color: "var(--rose)" },
+]
+let _trendDays = 30
+let _trendSeries = "reports"
+let _trendData = null
+let _trendWired = false
+
+function wireTrends() {
+  if (_trendWired) return
+  _trendWired = true
+  const range = $("trendRange")
+  if (range) range.addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-days]"); if (!b) return
+    const d = Number(b.getAttribute("data-days")) === 90 ? 90 : 30
+    if (d === _trendDays) return
+    _trendDays = d
+    for (const btn of range.querySelectorAll("button")) {
+      const on = Number(btn.getAttribute("data-days")) === d
+      btn.classList.toggle("on", on); btn.setAttribute("aria-pressed", on ? "true" : "false")
+    }
+    hideTrendDrill()
+    loadTrends()
+  })
+  const legend = $("trendLegend")
+  if (legend) legend.addEventListener("click", (e) => {
+    const s = e.target.closest("[data-series]"); if (!s) return
+    _trendSeries = s.getAttribute("data-series")
+    renderTrendLegend()
+    if (_trendData) renderTrendChart(_trendData)
+    hideTrendDrill()
+  })
+  const chart = $("trendChart")
+  if (chart) {
+    chart.addEventListener("click", (e) => {
+      const col = e.target.closest("[data-day]"); if (!col) return
+      drillTrend(col.getAttribute("data-day"))
+    })
+    chart.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return
+      const col = e.target.closest("[data-day]"); if (!col) return
+      e.preventDefault(); drillTrend(col.getAttribute("data-day"))
+    })
+  }
+  const close = $("trendDrillClose")
+  if (close) close.addEventListener("click", hideTrendDrill)
+}
+
+async function loadTrends() {
+  const chart = $("trendChart"); if (!chart) return
+  const pid = curProjId()
+  try {
+    const r = await fetch("/api/dashboard/trends?days=" + _trendDays + (pid ? "&project=" + encodeURIComponent(pid) : ""), { credentials: "include" })
+    if (!r.ok) { chart.innerHTML = '<div class="trend-empty">Trends are unavailable right now.</div>'; return }
+    const data = await r.json()
+    if (!data || data.error || !Array.isArray(data.buckets)) { chart.innerHTML = '<div class="trend-empty">Trends are unavailable right now.</div>'; return }
+    _trendData = data
+    renderTrendLegend()
+    renderTrendChart(data)
+  } catch (e) {
+    chart.innerHTML = '<div class="trend-empty">Trends are unavailable right now.</div>'
+  }
+}
+
+function renderTrendLegend() {
+  const el = $("trendLegend"); if (!el) return
+  const totals = (_trendData && _trendData.totals) || { reports: 0, findings: 0, regressions: 0 }
+  el.innerHTML = TREND_SERIES_META.map((s) => {
+    const on = s.key === _trendSeries
+    return '<span role="button" tabindex="0" data-series="' + s.key + '" aria-pressed="' + (on ? "true" : "false") +
+      '" style="cursor:pointer;' + (on ? "" : "opacity:.55") + '"><i style="background:' + s.color + '"></i>' +
+      s.label + ' <b>' + Number(totals[s.key] || 0) + '</b></span>'
+  }).join("")
+}
+
+function renderTrendChart(data) {
+  const host = $("trendChart"); if (!host) return
+  const buckets = data.buckets || []
+  const totalAll = (data.totals ? (data.totals.reports + data.totals.findings + data.totals.regressions) : 0)
+  if (!buckets.length || totalAll === 0) {
+    host.innerHTML = '<div class="trend-empty">No activity in the last ' + (data.days || _trendDays) + ' days yet. Reports and findings will chart here as they arrive.</div>'
+    return
+  }
+  const n = buckets.length
+  const W = 760, H = 210, padL = 8, padR = 8, padT = 12, padB = 26
+  const plotW = W - padL - padR, plotH = H - padT - padB
+  let max = 1
+  for (const b of buckets) max = Math.max(max, b.reports, b.findings, b.regressions)
+  const x = (i) => n === 1 ? padL + plotW / 2 : padL + plotW * (i / (n - 1))
+  const y = (v) => padT + plotH * (1 - v / max)
+  const step = n > 1 ? plotW / (n - 1) : plotW
+
+  // Grid baseline + max gridline.
+  let svg = '<svg class="trend-chart" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" role="img" width="100%" height="210" ' +
+    'aria-label="' + esc('Trends over ' + (data.days || _trendDays) + ' days: ' + (data.totals.reports) + ' reports, ' + (data.totals.findings) + ' findings, ' + (data.totals.regressions) + ' regressions.') + '">'
+  svg += '<line x1="' + padL + '" y1="' + (padT + plotH) + '" x2="' + (W - padR) + '" y2="' + (padT + plotH) + '" stroke="var(--line)" stroke-width="1"/>'
+  svg += '<line x1="' + padL + '" y1="' + padT + '" x2="' + (W - padR) + '" y2="' + padT + '" stroke="var(--line)" stroke-width="1" stroke-dasharray="3 4"/>'
+  svg += '<text x="' + (padL) + '" y="' + (padT - 3) + '" font-family="var(--mono)" font-size="9" fill="var(--paper-faint)">' + max + '</text>'
+
+  // Series lines (active series drawn last / thickest; area fill under the active one).
+  const order = TREND_SERIES_META.slice().sort((a, b) => (a.key === _trendSeries ? 1 : 0) - (b.key === _trendSeries ? 1 : 0))
+  for (const s of order) {
+    const active = s.key === _trendSeries
+    const pts = buckets.map((b, i) => x(i) + "," + y(b[s.key])).join(" ")
+    if (active) {
+      const area = "M " + x(0) + "," + (padT + plotH) + " L " + buckets.map((b, i) => x(i) + "," + y(b[s.key])).join(" L ") + " L " + x(n - 1) + "," + (padT + plotH) + " Z"
+      svg += '<path d="' + area + '" fill="' + s.color + '" opacity="0.10"/>'
+    }
+    svg += '<polyline points="' + pts + '" fill="none" stroke="' + s.color + '" stroke-width="' + (active ? 2.4 : 1.3) + '" opacity="' + (active ? 1 : 0.5) + '" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>'
+  }
+  // Dots for the active series when the window is small enough to be legible.
+  if (n <= 45) {
+    const s = TREND_SERIES_META.find((m) => m.key === _trendSeries)
+    for (let i = 0; i < n; i++) {
+      const v = buckets[i][_trendSeries]
+      if (!v) continue
+      svg += '<circle class="tc-pt" cx="' + x(i) + '" cy="' + y(v) + '" r="2.8" fill="' + s.color + '"/>'
+    }
+  }
+  // X-axis date labels — ~6 evenly spaced.
+  const labelEvery = Math.max(1, Math.ceil(n / 6))
+  for (let i = 0; i < n; i += labelEvery) {
+    const d = buckets[i].day.slice(5) // MM-DD
+    svg += '<text x="' + x(i) + '" y="' + (H - 8) + '" font-family="var(--mono)" font-size="8.5" fill="var(--paper-faint)" text-anchor="middle">' + d + '</text>'
+  }
+  // Invisible per-day hit columns (drill targets) — keyboard + pointer.
+  for (let i = 0; i < n; i++) {
+    const b = buckets[i]
+    const cx = x(i) - step / 2
+    const lbl = esc(b.day + ": " + b.reports + " reports, " + b.findings + " findings, " + b.regressions + " regressions. Activate to drill down.")
+    svg += '<rect class="tc-hit" data-day="' + b.day + '" role="button" tabindex="0" aria-label="' + lbl + '" x="' + cx + '" y="' + padT + '" width="' + step + '" height="' + plotH + '"><title>' + lbl + '</title></rect>'
+  }
+  svg += "</svg>"
+  host.innerHTML = svg
+}
+
+async function drillTrend(day) {
+  const drill = $("trendDrill"), list = $("trendDrillList"), title = $("trendDrillTitle")
+  if (!drill || !list) return
+  const meta = TREND_SERIES_META.find((m) => m.key === _trendSeries) || TREND_SERIES_META[0]
+  drill.classList.remove("hide")
+  title.innerHTML = '<i style="display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:7px;background:' + meta.color + '"></i>' + esc(meta.label + " on " + day)
+  list.innerHTML = '<div class="trend-empty" style="padding:14px">Loading…</div>'
+  const pid = curProjId()
+  try {
+    const r = await fetch("/api/dashboard/trends?day=" + encodeURIComponent(day) + "&series=" + _trendSeries + (pid ? "&project=" + encodeURIComponent(pid) : ""), { credentials: "include" })
+    const data = r.ok ? await r.json() : null
+    const items = (data && Array.isArray(data.items)) ? data.items : []
+    if (!items.length) { list.innerHTML = '<div class="trend-empty" style="padding:14px">No ' + esc(meta.label.toLowerCase()) + ' on this day.</div>'; return }
+    list.innerHTML = ""
+    for (const it of items) {
+      const row = document.createElement("div")
+      row.className = "trend-drill-item"; row.setAttribute("role", "button"); row.tabIndex = 0
+      row.innerHTML = '<span class="tdi-ttl">' + esc(it.title || "Untitled report") + '</span>' +
+        (it.priority ? '<span class="tdi-pri">' + esc(it.priority) + '</span>' : "") +
+        '<span class="muted" style="font-family:var(--mono);font-size:10px">' + esc(ago(it.createdAt)) + '</span>'
+      const open = () => openTicketById(it.id)
+      row.addEventListener("click", open)
+      row.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open() } })
+      list.appendChild(row)
+    }
+  } catch (e) {
+    list.innerHTML = '<div class="trend-empty" style="padding:14px">Couldn\'t load these reports.</div>'
+  }
+}
+
+function hideTrendDrill() { const d = $("trendDrill"); if (d) d.classList.add("hide") }
+
+// Open a ticket by id from anywhere — ensures it's in state.tickets first (drill items may be
+// older than the recent-tickets window the dashboard preloads).
+function openTicketById(id) {
+  if (typeof openSingleTicket !== "function") return
+  const have = (state && Array.isArray(state.tickets) && state.tickets.find((x) => String(x.id) === String(id)))
+  if (have) { openSingleTicket(id); return }
+  fetch("/api/feedback/" + encodeURIComponent(id), { credentials: "include" })
+    .then((r) => r.ok ? r.json() : null)
+    .then((d) => {
+      if (d && d.report) {
+        if (!state.tickets) state.tickets = []
+        if (!state.tickets.find((x) => String(x.id) === String(d.report.id))) state.tickets.push(d.report)
+      }
+      openSingleTicket(id)
+    })
+    .catch(() => openSingleTicket(id))
 }
 
 // ── First-run checklist — value-ordered, NON-GATED; auto-ticks from dashboard state ──
