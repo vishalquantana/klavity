@@ -2566,7 +2566,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           try {
             const a = JSON.parse(annRaw)
             const num = (v: any) => (typeof v === "number" && isFinite(v)) ? v : 0
-            const okTypes = new Set(["rect", "arrow", "circle", "pen", "text", "pin"])
+            // Keep in lockstep with the modal's Shape union (packages/core/src/types.ts) — every tool the
+            // hero toolbar exposes (pen/line/rect/circle/arrow/text/count) must survive sanitize, else the
+            // reporter's markup is silently dropped. `line` + `count` were missing, so those two tools' output
+            // never reached the ticket. `pin` is retained for forward-compat though nothing emits it today.
+            const okTypes = new Set(["rect", "arrow", "circle", "pen", "line", "text", "count", "pin"])
             // Sanitize a single image's markup entry ({ w, h, shapes, region, selector }) → null when empty.
             const sanitizeEntry = (a: any): any => {
               const shapes = Array.isArray(a?.shapes) ? a.shapes.slice(0, 50).filter((s: any) => s && okTypes.has(s.type)).map((s: any) => {

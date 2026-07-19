@@ -5879,6 +5879,9 @@ async function loadTktShot(detailEl, annotations) {
         img.addEventListener("click", () => window.open(d.url, "_blank", "noopener"))
         box.innerHTML = ""; box.appendChild(img)
       }
+      // KLAVITYKLA-228: surface the element the reporter pinned via the on-page picker. Stored on
+      // annotations.selector but previously never rendered — a selector-only report showed nothing.
+      mountPinnedSelector(box, annotations)
     } else { box.innerHTML = '<div class="muted" style="font-size:12px">Screenshot couldn’t be loaded.</div>' }
   } catch { box.innerHTML = '<div class="muted" style="font-size:12px">Screenshot error</div>' }
 }
@@ -5898,6 +5901,14 @@ function mountAnnotationOverlay(box, img, ann, url) {
     else if (s.type === "circle") svg.appendChild(set(document.createElementNS(NS, "ellipse"), { cx: s.x, cy: s.y, rx: Math.abs(s.rx || 0), ry: Math.abs(s.ry || 0), fill: "none", stroke: col, "stroke-width": sw }))
     else if (s.type === "pen" && Array.isArray(s.points)) svg.appendChild(set(document.createElementNS(NS, "polyline"), { points: s.points.map(p => p.x + "," + p.y).join(" "), fill: "none", stroke: col, "stroke-width": sw, "stroke-linecap": "round", "stroke-linejoin": "round" }))
     else if (s.type === "text") { const t = set(document.createElementNS(NS, "text"), { x: s.x, y: s.y, fill: col, "font-size": Math.max(16, W / 55), "font-weight": 700, "font-family": "sans-serif" }); t.textContent = s.text || ""; svg.appendChild(t) }
+    else if (s.type === "line") svg.appendChild(set(document.createElementNS(NS, "line"), { x1: s.x1, y1: s.y1, x2: s.x2, y2: s.y2, stroke: col, "stroke-width": sw, "stroke-linecap": "round" }))
+    else if (s.type === "count") {
+      // Numbered-pin counter: a filled disc with the sequence number centred in white.
+      const r = Math.max(14, W / 40)
+      svg.appendChild(set(document.createElementNS(NS, "circle"), { cx: s.x, cy: s.y, r: r, fill: col, stroke: "#fff", "stroke-width": Math.max(1.5, sw / 3) }))
+      const t = set(document.createElementNS(NS, "text"), { x: s.x, y: s.y, fill: "#fff", "font-size": r * 1.1, "font-weight": 700, "font-family": "sans-serif", "text-anchor": "middle", "dominant-baseline": "central" })
+      t.textContent = String(s.n == null ? "" : s.n); svg.appendChild(t)
+    }
     else if (s.type === "arrow") {
       svg.appendChild(set(document.createElementNS(NS, "line"), { x1: s.x1, y1: s.y1, x2: s.x2, y2: s.y2, stroke: col, "stroke-width": sw, "stroke-linecap": "round" }))
       const a = Math.atan2(s.y2 - s.y1, s.x2 - s.x1), hl = Math.max(12, sw * 4)
@@ -5915,6 +5926,23 @@ function mountAnnotationOverlay(box, img, ann, url) {
   box.classList.add("tkt-shotwrap")
   box.innerHTML = ""; box.appendChild(inner); box.appendChild(bar)
   box.addEventListener("click", e => { if (e.target.closest(".tkt-ann-btn")) return; box.classList.toggle("zoomed") })
+}
+// KLAVITYKLA-228: render the CSS selector the reporter pinned via the on-page element picker as a small
+// chip under the screenshot, so triage can link the finding to the exact DOM node. The selector is
+// server-sanitized (clamped to 300 chars) but still untrusted — set it via textContent, never innerHTML.
+function mountPinnedSelector(box, annotations) {
+  const sel = annotations && typeof annotations.selector === "string" ? annotations.selector.trim() : ""
+  if (!box || !sel) return
+  if (box.querySelector(".tkt-pinsel")) return
+  const row = document.createElement("div")
+  row.className = "tkt-pinsel"
+  row.style.cssText = "display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:var(--paper-faint)"
+  const lbl = document.createElement("span"); lbl.textContent = "Pinned element"
+  const code = document.createElement("code")
+  code.style.cssText = "font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;background:var(--paper-soft,rgba(0,0,0,.06));padding:2px 6px;border-radius:6px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+  code.textContent = sel; code.title = sel
+  row.appendChild(lbl); row.appendChild(code)
+  box.appendChild(row)
 }
 
 function showTktMsg(detailEl, msg, isErr) {

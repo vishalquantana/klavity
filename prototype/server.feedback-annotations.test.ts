@@ -182,6 +182,35 @@ test("byIndex present but index-0 empty — lowest annotated image is hoisted fo
   expect(stored.byIndex["4"].shapes[0].type).toBe("circle")
 })
 
+test("line + count shapes survive sanitize (every hero tool must round-trip, not just rect/arrow/circle/pen/text)", async () => {
+  // Regression: the sanitizer allowlist omitted `line` and `count`, so those two hero tools' markup was
+  // silently stripped on the server and never reached the ticket. Both are first-class tools (keys l / c).
+  const payload = {
+    w: 900, h: 600,
+    shapes: [
+      { type: "line", x1: 10, y1: 20, x2: 200, y2: 40, color: "#f59e0b" },
+      { type: "count", x: 300, y: 120, n: 3, color: "#2563eb" },
+    ],
+  }
+  const stored = await submit(payload, "line + count round-trip")
+  expect(stored).not.toBeNull()
+  expect(stored.shapes.map((s: any) => s.type).sort()).toEqual(["count", "line"])
+  const line = stored.shapes.find((s: any) => s.type === "line")
+  expect(line.x1).toBe(10); expect(line.x2).toBe(200); expect(line.y2).toBe(40)
+  const count = stored.shapes.find((s: any) => s.type === "count")
+  expect(count.n).toBe(3)          // the counter's sequence number must survive
+  expect(count.x).toBe(300); expect(count.y).toBe(120)
+})
+
+test("pinned selector-only report (KLA-228): no drawn shapes, selector persists for the drawer", async () => {
+  // A report where the reporter only pinned an element via the on-page picker (no drawing). The selector
+  // must survive so the dashboard drawer can surface the pinned DOM node.
+  const stored = await submit({ selector: "main > .cart button.checkout" }, "selector-only pin")
+  expect(stored).not.toBeNull()
+  expect(stored.selector).toBe("main > .cart button.checkout")
+  expect(Array.isArray(stored.shapes) ? stored.shapes.length : 0).toBe(0)
+})
+
 test("malformed annotations_json never fails the submission", async () => {
   const stored = await submit("{not valid json", "bad annotations blob")
   expect(stored).toBeNull()
