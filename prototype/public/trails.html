@@ -10,6 +10,7 @@
 <title>AutoSims · Klavity</title>
 <link rel="stylesheet" href="/fonts/fonts.css" />
 <link rel="stylesheet" href="/vendor/klv-view.css" />
+<script src="/vendor/autosims-copy.js"></script>
 <style>
 :root{--ink:#f5f3ee;--ink-2:#ffffff;--ink-3:#efeae0;--paper:#19140f;--paper-dim:#574f45;--paper-faint:#8a8076;--indigo:#6366f1;--indigo-deep:#4f46e5;--amber:#d98324;--rose:#db2777;--green:#0f9d6b;--line:rgba(25,20,15,.12);
 --display:'Fraunces',serif;--body:'Hanken Grotesk',system-ui,sans-serif;--mono:'JetBrains Mono',monospace;
@@ -1950,14 +1951,22 @@ async function loadData(){
   } catch(e){ return null }
 }
 
+// KLAVITYKLA-269: canonical AutoSims copy, single-sourced from /vendor/autosims-copy.js so
+// this page and the dashboard AutoSims view never drift.
+var AS_COPY = (typeof window !== "undefined" && window.KLAV_AUTOSIMS_COPY) || {}
+
 async function load(){
   const d = await loadData()
-  if (!d) { $("lead").textContent = "Couldn't load AutoSims."; return }
+  if (!d) { $("lead").textContent = AS_COPY.loadError || "Couldn't load AutoSims."; return }
   await render(d)
 }
 
 async function render(d){
   $("who").textContent = d.email || ""
+  // Apply canonical hero + precision-label copy (KLAVITYKLA-269).
+  if (AS_COPY.lead) $("lead").textContent = AS_COPY.lead
+  var _precLbl = document.querySelector("#precBanner .lbl")
+  if (_precLbl && AS_COPY.precisionLabel) _precLbl.textContent = AS_COPY.precisionLabel
   // Keep "All Walks" nav link scoped to the active project
   var _pid = projParam()
   if (_pid) $("navWalks").href = "/autosims/walks?project=" + encodeURIComponent(_pid)
@@ -1977,9 +1986,11 @@ async function render(d){
   // precision
   const p = d.precision || {}
   if (p.precision == null) {
-    $("precPct").textContent = "—"
-    $("precSub").textContent = "No findings reviewed yet. Signal quality appears once you File or Dismiss items in the review queue."
+    // KLAVITYKLA-269: match the dashboard canonical — hide the dead "—" state; the precision
+    // banner only appears once real review data exists (no more divergent "—" on /autosims).
+    $("precBanner").style.display = "none"
   } else {
+    $("precBanner").style.display = ""
     $("precPct").textContent = Math.round(p.precision * 100) + "%"
     $("precSub").textContent = p.filed + " filed · " + p.dismissed + " dismissed — the share of reviewed findings that were real bugs."
   }
