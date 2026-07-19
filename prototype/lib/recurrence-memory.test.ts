@@ -2,7 +2,7 @@
 // Unit tests for the pure helpers in recurrence-memory.ts.
 // No DB required — buildSummary/ordinal are side-effect-free.
 import { test, expect } from "bun:test"
-import { ordinal, buildSummary } from "./recurrence-memory"
+import { ordinal, buildSummary, recurrenceImpact } from "./recurrence-memory"
 
 // ── ordinal ─────────────────────────────────────────────────────────────────
 
@@ -76,4 +76,53 @@ test("buildSummary: large count uses correct ordinal (11th)", () => {
 test("buildSummary: 21st uses correct ordinal", () => {
   const s = buildSummary(21, D, null)
   expect(s).toContain("21st occurrence")
+})
+
+// ── recurrenceImpact (KLAVITYKLA-236) ─────────────────────────────────────────
+
+test("recurrenceImpact: single non-regressed report is a mild notice", () => {
+  const i = recurrenceImpact({ count: 2, regressed: false })
+  expect(i.level).toBe(1)
+  expect(i.tier).toBe("recurring")
+  expect(i.regressed).toBe(false)
+})
+
+test("recurrenceImpact: escalates level with count (persistent → chronic)", () => {
+  expect(recurrenceImpact({ count: 3, regressed: false }).level).toBe(2)
+  expect(recurrenceImpact({ count: 4, regressed: false }).tier).toBe("persistent")
+  expect(recurrenceImpact({ count: 5, regressed: false }).level).toBe(3)
+  expect(recurrenceImpact({ count: 9, regressed: false }).tier).toBe("chronic")
+})
+
+test("recurrenceImpact: headline conveys trust weight, not a bare number", () => {
+  const chronic = recurrenceImpact({ count: 6, regressed: false })
+  expect(chronic.headline.toLowerCase()).toContain("chronic")
+  const regr = recurrenceImpact({ count: 2, regressed: true })
+  expect(regr.headline.toLowerCase()).toContain("broke again")
+})
+
+test("recurrenceImpact: regression always outranks a plain repeat", () => {
+  const regr = recurrenceImpact({ count: 2, regressed: true })
+  const chronic = recurrenceImpact({ count: 20, regressed: false })
+  expect(regr.tier).toBe("regression")
+  expect(regr.level).toBeGreaterThanOrEqual(3)
+  expect(regr.score).toBeGreaterThan(chronic.score) // regressions surface first
+})
+
+test("recurrenceImpact: repeated regression stings harder (level 4)", () => {
+  expect(recurrenceImpact({ count: 3, regressed: true }).level).toBe(4)
+  expect(recurrenceImpact({ count: 2, regressed: true }).level).toBe(3)
+})
+
+test("recurrenceImpact: score is monotonic in count so ranking is stable", () => {
+  const a = recurrenceImpact({ count: 2, regressed: false }).score
+  const b = recurrenceImpact({ count: 3, regressed: false }).score
+  const c = recurrenceImpact({ count: 5, regressed: false }).score
+  expect(b).toBeGreaterThan(a)
+  expect(c).toBeGreaterThan(b)
+})
+
+test("recurrenceImpact: guards bad input (0/NaN → count 1)", () => {
+  expect(recurrenceImpact({ count: 0, regressed: false }).count).toBe(1)
+  expect(recurrenceImpact({ count: NaN as any, regressed: false }).count).toBe(1)
 })
