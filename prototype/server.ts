@@ -1421,8 +1421,13 @@ const BILLING_WINDOW = 60 * 60 * 1000
 const BILLING_PER_USER = 20
 const BILLING_WEBHOOK_MAX_BYTES = 256 * 1024
 
+// KLAVITYKLA-310 fix: this used to carry its OWN hand-written plan allowlist (pro|team|founding|
+// scale) which silently drifted when the Agency tier shipped — /api/billing/checkout accepts
+// plan:"agency", but every paying Agency subscriber came back through this function and was
+// downgraded to "free". Delegate to the single source of truth (normalizePlan in lib/billing) so a
+// new tier can never be dropped on the floor here again.
 function effectivePlanForStripeStatus(plan: string | null, status: string | null): string {
-  const normalized = plan === "pro" || plan === "team" || plan === "founding" || plan === "scale" ? plan : "free"
+  const normalized = normalizePlan(plan)
   return status === "active" || status === "trialing" ? normalized : "free"
 }
 
