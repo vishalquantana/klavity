@@ -69,6 +69,55 @@ export function buildUsageMeters(plan: string | null | undefined, usage: Record<
   })
 }
 
+// ── Per-project usage + cost breakdown (KLAVITYKLA-276) ─────────────────────────────────────────
+// Merges per-project usage rows (getAccountUsageByProject) with per-project AI spend rows
+// (tenantTodaySpendByProject) into one display row per project for the billing drawer, so a
+// customer can see WHICH project is consuming the account's metered allowance and what it cost
+// today. DISPLAY ONLY — the plan quota is account-wide; this attributes usage/cost, it does not
+// enforce a per-project limit.
+export type ProjectUsageView = {
+  projectId: string
+  name: string
+  simReviews: number
+  autosimWalks: number
+  costToday: number // USD AI spend today attributed to this project
+}
+
+export function buildProjectUsage(
+  usageRows: Array<{ projectId: string; name: string | null; metric: string; count: number }> = [],
+  spendRows: Array<{ projectId: string; cost: number }> = [],
+): ProjectUsageView[] {
+  const byProject = new Map<string, ProjectUsageView>()
+  const ensure = (pidRaw: string, name: string | null): ProjectUsageView => {
+    const pid = String(pidRaw || "")
+    let v = byProject.get(pid)
+    if (!v) {
+      v = { projectId: pid, name: name || (pid || "Unattributed"), simReviews: 0, autosimWalks: 0, costToday: 0 }
+      byProject.set(pid, v)
+    } else if (name && (!v.name || v.name === v.projectId)) {
+      v.name = name // fill in a real name if an earlier row only had the id
+    }
+    return v
+  }
+  for (const r of usageRows) {
+    const v = ensure(r.projectId, r.name)
+    const c = Number.isFinite(r.count) && r.count > 0 ? Math.trunc(r.count) : 0
+    if (r.metric === "sim_review") v.simReviews += c
+    else if (r.metric === "autosim_walk") v.autosimWalks += c
+  }
+  for (const s of spendRows) {
+    const v = ensure(s.projectId, null)
+    v.costToday += Number.isFinite(s.cost) && s.cost > 0 ? s.cost : 0
+  }
+  // Busiest projects first (metered activity, then cost, then name) so the drawer leads with signal.
+  return Array.from(byProject.values()).sort((a, b) => {
+    const au = a.simReviews + a.autosimWalks, bu = b.simReviews + b.autosimWalks
+    if (bu !== au) return bu - au
+    if (b.costToday !== a.costToday) return b.costToday - a.costToday
+    return a.name.localeCompare(b.name)
+  })
+}
+
 export function normalizePlan(plan: string | null | undefined): BillingPlan {
   return plan === "pro" || plan === "team" || plan === "founding" || plan === "scale" || plan === "partner" ? plan : "free"
 }
