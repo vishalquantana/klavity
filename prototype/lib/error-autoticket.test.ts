@@ -2,7 +2,15 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { applySchema, db, reconnectDb } from "./db"
-import { autoTicketError, errorTicketSignature } from "./error-autoticket"
+import {
+  autoTicketError,
+  errorTicketSignature,
+  planeIssuesUrl,
+  planeProject,
+  _resetAutoTicketFailureState,
+} from "./error-autoticket"
+
+const PROJECT_UUID = "05ea72ad-a53f-46d5-b37e-7874ce2a65b4"
 
 const RUN = `${Date.now()}_${Math.random().toString(16).slice(2)}`
 
@@ -11,7 +19,9 @@ const ENV_KEYS = [
   "KLAV_ERROR_AUTOTICKET",
   "KLAV_TICKETS_PLANE_HOST",
   "KLAV_TICKETS_PLANE_WORKSPACE",
+  "KLAV_TICKETS_PLANE_PROJECT",
   "KLAV_TEST_ALLOW_LOOPBACK",
+  "SLACK_ERROR_WEBHOOK_URL",
 ] as const
 
 let origFetch: typeof globalThis.fetch
@@ -47,6 +57,7 @@ beforeEach(async () => {
   process.env.KLAV_TICKETS_PLANE_HOST = "http://localhost:9999"
   process.env.KLAV_TICKETS_PLANE_WORKSPACE = "qbuilder"
   process.env.KLAV_TEST_ALLOW_LOOPBACK = "1"
+  _resetAutoTicketFailureState()
   reconnectDb(`file:${join(tmpdir(), `klav-error-autoticket-${RUN}-${dbSeq++}.db`)}`)
   await applySchema(db!)
 })
@@ -66,7 +77,7 @@ describe("error auto-ticketing", () => {
     await autoTicketError({ where: "backend", message: "Database unavailable", route: "extract", status: 500 })
 
     expect(calls).toHaveLength(1)
-    expect(calls[0].url).toContain("/api/v1/workspaces/qbuilder/projects/05ea72ad/issues/")
+    expect(calls[0].url).toContain(`/api/v1/workspaces/qbuilder/projects/${PROJECT_UUID}/issues/`)
     const body = JSON.parse(calls[0].init.body as string)
     expect(body.name).toContain("[backend] Database unavailable")
 
@@ -74,7 +85,7 @@ describe("error auto-ticketing", () => {
     expect(r).toHaveLength(1)
     expect(Number(r[0].count)).toBe(1)
     expect(String(r[0].ticket_key)).toBe("101")
-    expect(String(r[0].ticket_url)).toContain("/projects/05ea72ad/issues/issue-uuid-1")
+    expect(String(r[0].ticket_url)).toContain(`/projects/${PROJECT_UUID}/issues/issue-uuid-1`)
   })
 
   test("repeat signature bumps count without duplicate Plane issue", async () => {
@@ -166,5 +177,96 @@ describe("error auto-ticketing", () => {
     })
     expect(a).toBe(b)
     expect(a).not.toBe(c)
+  })
+})
+
+// ── KLAVITYKLA-347 regression ────────────────────────────────────────────────
+// The module used to hardcode the TRUNCATED project id "05ea72ad". Plane's REST API only
+// resolves /projects/{id}/ by full UUID, so every auto-ticket POST 404'd and was swallowed:
+// error auto-ticketing never filed a single ticket in prod. These tests fail on any regression
+// back to a short/invalid id, or to a URL shape other than the working Plane endpoint.
+describe("KLAVITYKLA-347: Plane endpoint shape", () => {
+  test("project id is a full UUID, not a truncated prefix", () => {
+    expect(planeProject()).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+    expect(planeProject()).toBe(PROJECT_UUID)
+  })
+
+  test("constructed issues URL matches the working Plane endpoint exactly", () => {
+    expect(planeIssuesUrl()).toBe(
+      `http://localhost:9999/api/v1/workspaces/qbuilder/projects/${PROJECT_UUID}/issues/`,
+    )
+    expect(planeIssuesUrl().endsWith("/issues/")).toBe(true)
+  })
+
+  test("a non-UUID KLAV_TICKETS_PLANE_PROJECT override is rejected, not used", () => {
+    process.env.KLAV_TICKETS_PLANE_PROJECT = "05ea72ad"
+    expect(planeProject()).toBe(PROJECT_UUID)
+  })
+
+  test("a valid UUID override is honoured", () => {
+    process.env.KLAV_TICKETS_PLANE_PROJECT = "11111111-2222-3333-4444-555555555555"
+    expect(planeProject()).toBe("11111111-2222-3333-4444-555555555555")
+  })
+
+  test("the POST actually sent uses the full-UUID path and a trailing slash", async () => {
+    const { calls } = makePlaneFetch()
+    await autoTicketError({ where: "backend", message: "url shape check", route: "extract" })
+    expect(calls).toHaveLength(1)
+    expect(calls[0].url).toBe(planeIssuesUrl())
+    expect((calls[0].init.headers as any)["X-API-Key"]).toBe("plane-token")
+  })
+
+  test("seen-again comment URL also uses the full-UUID path", async () => {
+    const { calls } = makePlaneFetch()
+    const info = { where: "backend" as const, message: "comment url shape", route: "extract" }
+    Date.now = () => 1_000
+    await autoTicketError(info)
+    Date.now = () => 1_000 + 60 * 60 * 1000 + 1
+    await autoTicketError(info)
+    const comment = calls.find((c) => c.url.includes("/comments/"))!
+    expect(comment.url).toBe(
+      `http://localhost:9999/api/v1/workspaces/qbuilder/projects/${PROJECT_UUID}/issues/issue-uuid-1/comments/`,
+    )
+  })
+
+  test("persistent filing failures are logged loudly with the attempted URL", async () => {
+    const logged: string[] = []
+    const origErr = console.error
+    console.error = ((...a: any[]) => { logged.push(a.join(" ")) }) as any
+    globalThis.fetch = mock(async () => new Response('{"error":"Page not found."}', { status: 404 })) as any
+    try {
+      await autoTicketError({ where: "backend", message: "loud failure", route: "extract" })
+    } finally {
+      console.error = origErr
+    }
+    expect(logged.join("\n")).toContain(planeIssuesUrl())
+    expect(logged.join("\n")).toContain("error-autoticket FAILED")
+    expect(await rows()).toHaveLength(0)
+  })
+
+  test("repeated failures raise a distinct Slack alert once the threshold is hit", async () => {
+    process.env.SLACK_ERROR_WEBHOOK_URL = "https://hooks.slack.com/services/T00/B00/fake"
+    const slack: string[] = []
+    globalThis.fetch = mock(async (url: string, init?: RequestInit) => {
+      if (String(url).includes("hooks.slack.com")) {
+        slack.push(String((init as any)?.body || ""))
+        return new Response("ok", { status: 200 })
+      }
+      return new Response('{"error":"Page not found."}', { status: 404 })
+    }) as any
+    const origErr = console.error
+    console.error = (() => {}) as any
+    try {
+      await autoTicketError({ where: "backend", message: "fail 1", route: "a" })
+      expect(slack).toHaveLength(0)
+      await autoTicketError({ where: "backend", message: "fail 2", route: "b" })
+      expect(slack).toHaveLength(0)
+      await autoTicketError({ where: "backend", message: "fail 3", route: "c" })
+    } finally {
+      console.error = origErr
+    }
+    expect(slack).toHaveLength(1)
+    expect(slack[0]).toContain("auto-ticketing is DOWN")
+    expect(slack[0]).toContain(PROJECT_UUID)
   })
 })

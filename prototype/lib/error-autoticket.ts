@@ -4,8 +4,14 @@ import { sha256hex } from "./crypto"
 import { planeConnector } from "./connectors/plane"
 import { safeFetch } from "./safe-fetch"
 
-const PLANE_PROJECT_ID = "05ea72ad"
+// KLAVITYKLA-347: this MUST be Plane's full project UUID. The Plane REST API resolves
+// /projects/{id}/ by UUID only — the short 8-char prefix ("05ea72ad") that used to live here
+// 404s on every single call, which silently disabled error auto-ticketing in prod.
+const PLANE_PROJECT_ID_DEFAULT = "05ea72ad-a53f-46d5-b37e-7874ce2a65b4"
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const SEEN_AGAIN_COMMENT_WINDOW_MS = 60 * 60 * 1000
+const FAILURE_ALERT_THRESHOLD = 3
+const FAILURE_ALERT_COOLDOWN_MS = 6 * 60 * 60 * 1000
 
 type ErrorTicketRow = {
   signature: string
@@ -26,6 +32,62 @@ function planeHost(): string {
 
 function planeWorkspace(): string {
   return process.env.KLAV_TICKETS_PLANE_WORKSPACE || "qbuilder"
+}
+
+export function planeProject(): string {
+  const fromEnv = (process.env.KLAV_TICKETS_PLANE_PROJECT || "").trim()
+  // A non-UUID override (e.g. a truncated id pasted from a URL) would 404 every request,
+  // so we ignore it and fall back to the known-good default rather than going dark.
+  if (fromEnv && UUID_RE.test(fromEnv)) return fromEnv
+  if (fromEnv) console.error(`error-autoticket: ignoring non-UUID KLAV_TICKETS_PLANE_PROJECT=${fromEnv}`)
+  return PLANE_PROJECT_ID_DEFAULT
+}
+
+/** The exact endpoint Plane requires: POST {host}/api/v1/workspaces/{ws}/projects/{uuid}/issues/ */
+export function planeIssuesUrl(): string {
+  return `${planeHost().replace(/\/$/, "")}/api/v1/workspaces/${planeWorkspace()}/projects/${planeProject()}/issues/`
+}
+
+// ── loud-failure tracking (KLAVITYKLA-347) ───────────────────────────────────
+// Fail-open on the request path is right (never break a user request) but a persistent
+// failure must not stay invisible: after N consecutive failures we raise a distinct Slack
+// alert so a dead safety net can't go unnoticed again.
+let consecutiveFailures = 0
+let lastFailureAlertAt = 0
+
+export function _resetAutoTicketFailureState(): void {
+  consecutiveFailures = 0
+  lastFailureAlertAt = 0
+}
+
+async function noteFailure(err: any, url: string): Promise<void> {
+  consecutiveFailures++
+  console.error(
+    `error-autoticket FAILED (non-fatal, ${consecutiveFailures} consecutive): ${err?.message || err} — POST ${url}`,
+  )
+  if (consecutiveFailures < FAILURE_ALERT_THRESHOLD) return
+
+  const webhook = process.env.SLACK_ERROR_WEBHOOK_URL
+  const now = Date.now()
+  if (!webhook || now - lastFailureAlertAt < FAILURE_ALERT_COOLDOWN_MS) return
+  lastFailureAlertAt = now
+  try {
+    await safeFetch(
+      webhook,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          text:
+            `:rotating_light: Klavity error auto-ticketing is DOWN — ${consecutiveFailures} consecutive failures.\n` +
+            `Last error: ${String(err?.message || err).slice(0, 300)}\nEndpoint: ${url}`,
+        }),
+      },
+      { allowHosts: ["hooks.slack.com"] },
+    )
+  } catch (e: any) {
+    console.error("error-autoticket: failure alert could not be delivered:", e?.message || e)
+  }
 }
 
 function normalizeText(input: string | null | undefined): string {
@@ -82,7 +144,7 @@ async function addSeenAgainComment(row: ErrorTicketRow, info: ErrorInfo, now: nu
   if (!issueId) return
 
   const host = planeHost().replace(/\/$/, "")
-  const apiUrl = `${host}/api/v1/workspaces/${planeWorkspace()}/projects/${PLANE_PROJECT_ID}/issues/${issueId}/comments/`
+  const apiUrl = `${host}/api/v1/workspaces/${planeWorkspace()}/projects/${planeProject()}/issues/${issueId}/comments/`
   const body = `<p>Seen again at ${escapeHtml(new Date(now).toISOString())}. Count: ${row.count + 1}.</p><p>Latest route: ${escapeHtml(info.route || "(none)")}</p>`
   await safeFetch(
     apiUrl,
@@ -125,7 +187,7 @@ export async function autoTicketError(info: ErrorInfo): Promise<void> {
       {
         host: planeHost(),
         workspace: planeWorkspace(),
-        project_id: PLANE_PROJECT_ID,
+        project_id: planeProject(),
         token: process.env.KLAV_TICKETS_PLANE_KEY!,
       },
     )
@@ -134,8 +196,9 @@ export async function autoTicketError(info: ErrorInfo): Promise<void> {
             VALUES (?,?,?,?,?,?)`,
       args: [signature, result.externalKey ?? null, result.externalUrl ?? null, 1, now, now],
     })
+    consecutiveFailures = 0
   } catch (err: any) {
-    console.error("error-autoticket (non-fatal):", err?.message || err)
+    await noteFailure(err, planeIssuesUrl())
   }
 }
 
