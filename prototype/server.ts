@@ -1,7 +1,7 @@
 // Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
 import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
 import { buildMemberExport, membersToCsv, MEMBER_EXPORT_FIELDS } from "./lib/member-export"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes } from "./lib/db"
 import { checkTenantBudget, tenantBudgetEnforcementEnabled, tenantBudgetRemaining, TenantBudgetExceededError } from "./lib/tenant-budget"
 import { sanitizeAttr } from "./lib/attr"
 import { deriveActivation, type ActivationSignals } from "./lib/activation"
@@ -83,7 +83,7 @@ import { publishBlogPost, SLUG_RE, type PublishInput } from "./lib/blog-publish"
 import { getExtractModel } from "./lib/extract-model"
 import { parseJSON } from "./lib/parse-json"
 import { EXTRACT_SYS as EXTRACT_SYS_PROMPT, normalizeExtractedPersonas } from "./lib/extract-pipeline"
-import { billingEnforcementEnabled, buildProjectUsage, buildUsageMeters, createStripeCheckoutSession, createStripePortalSession, intervalFromPrice, normalizeInterval, normalizePlan, PLAN_QUOTAS, planFromPrice, quotasForPlan, retrieveStripeSubscription, verifyStripeWebhook } from "./lib/billing"
+import { billingEnforcementEnabled, buildAgencyClientReport, buildProjectUsage, buildUsageMeters, createStripeCheckoutSession, createStripePortalSession, intervalFromPrice, isAgencyEntitled, normalizeInterval, normalizePlan, PLAN_QUOTAS, planFromPrice, quotasForPlan, retrieveStripeSubscription, verifyStripeWebhook } from "./lib/billing"
 import { sanitizeInsight } from "./lib/extract-sanitize"
 import { runAutosimAuthProbe } from "./lib/autosim-auth-probe"
 import { generateAuthPrompt } from "./lib/autosim-auth-prompt"
@@ -6158,6 +6158,34 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return json({ accountId: active.workspaceId, period, plan: billing.plan, usage, metrics, meters, quotas, cost, projects })
       }
 
+      // KLAVITYKLA-310: Agency per-CLIENT usage & OUTCOMES rollup. One row per client (= project)
+      // combining this-period metered usage (Sim reviews, AutoSim runs) with the trust-loop outcomes
+      // that justify an agency retainer: reports found, guarded-flow pass rate, regressions caught.
+      // Gated to Agency-tier (or unlimited/enterprise) accounts. Read-only; DISPLAY ONLY.
+      if (req.method === "GET" && path === "/api/account/agency-report") {
+        const ms = await membershipsFor(me); const active = ms[0]
+        if (!active) return json({ error: "No account." }, 400)
+        const billing = await accountBillingState(active.workspaceId)
+        const unlimited = await isAccountUnlimited(active.workspaceId)
+        if (!isAgencyEntitled(billing.plan, unlimited)) {
+          return json({ error: "The per-client report is an Agency plan feature.", plan: billing.plan }, 403)
+        }
+        const period = url.searchParams.get("period") || usagePeriod()
+        // Only projects OWNED by this account (listProjects also returns invited-guest projects).
+        const clients = (await listProjects(me)).filter((p) => p.accountId === active.workspaceId)
+        const projectIds = clients.map((p) => p.id)
+        const [usageRows, outcomeRows] = await Promise.all([
+          getAccountUsageByProject(active.workspaceId, { period }),
+          agencyClientOutcomes(projectIds),
+        ])
+        const projects = buildAgencyClientReport(
+          clients.map((p) => ({ projectId: p.id, name: p.name })),
+          usageRows,
+          outcomeRows,
+        )
+        return json({ accountId: active.workspaceId, period, plan: billing.plan, clientCount: projects.length, clients: projects })
+      }
+
       if (req.method === "POST" && path === "/api/billing/checkout") {
         const ms = await membershipsFor(me); const active = ms[0]
         if (!active) return json({ error: "No account." }, 400)
@@ -6167,7 +6195,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (!parsed.ok) return json({ error: parsed.error }, parsed.status)
         const plan = String(parsed.data?.plan || "")
         if (plan === "scale") return json({ error: "Scale is sales-assisted. Contact vishal@quantana.com.au." }, 400)
-        if (plan !== "pro" && plan !== "team" && plan !== "founding") return json({ error: "Choose Pro, Team, or Founding." }, 400)
+        if (plan !== "pro" && plan !== "team" && plan !== "agency" && plan !== "founding") return json({ error: "Choose Pro, Team, Agency, or Founding." }, 400)
         // Founding Team is annual-only (STRIPE_PRICE_CATALOG.founding has no "month" entry) — force
         // the interval to "year" regardless of what the client sent so checkout can never miss the
         // catalog. Pro/Team keep the caller's choice.

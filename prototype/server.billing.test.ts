@@ -494,5 +494,5 @@ test("POST /api/billing/checkout still rejects unknown plans, with Founding in t
     body: JSON.stringify({ plan: "basic", interval: "month" }),
   })
   expect(r.status).toBe(400)
-  expect((await r.json()).error).toBe("Choose Pro, Team, or Founding.")
+  expect((await r.json()).error).toBe("Choose Pro, Team, Agency, or Founding.")
 })
