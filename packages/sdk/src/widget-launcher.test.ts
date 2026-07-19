@@ -450,10 +450,51 @@ describe("mobile icon-only launcher", () => {
     expect(btn.style.borderRadius).toBe("999px")
   })
 
-  it("still shows the green active dot on a phone viewport (survives repaint)", async () => {
+  it("drops the inline active dot when the pill collapses to an icon circle", async () => {
+    // KLAVITYKLA-321: the active dot lives INSIDE the pill, left of the icon. A 44×44 icon circle
+    // has no inline room for it, and re-adding it in the corner is the notification-badge look we
+    // removed — so icon-only mode conveys "active" via the button title instead.
     stubMatchMedia(true)
     await mountWith({ launcherMode: "full" })
     const btn = launcherButton()
-    expect(btn.querySelector(".kl-active-dot")).toBeTruthy()
+    expect(btn.querySelector(".kl-active-dot")).toBeNull()
+    expect(btn.title).toContain("Klavity is active")
+  })
+})
+
+// ── 7. Active indicator reads as a status light, not a notification badge ──────
+// KLAVITYKLA-321: the old dot sat top-right with a white ring and an infinite pulse — the universal
+// unread-badge pattern — and competed with the real red issue count. It now rides inline in the pill.
+
+describe("launcher active indicator (KLAVITYKLA-321)", () => {
+  it("renders the active dot inline, immediately before the bug icon", async () => {
+    stubMatchMedia(false)
+    await mountWith({ launcherMode: "full" })
+    const btn = launcherButton()
+    const dot = btn.querySelector(".kl-active-dot")
+    expect(dot).toBeTruthy()
+    // first child of the button → sits left of the icon + label, inside the pill
+    expect(btn.firstElementChild).toBe(dot)
+  })
+
+  it("does not corner-position or infinitely pulse the active dot", async () => {
+    stubMatchMedia(false)
+    await mountWith({ launcherMode: "full" })
+    const css = (launcherButton().getRootNode() as ShadowRoot).getElementById("klavity-launcher-anim")?.textContent || ""
+    const dotRule = css.slice(css.indexOf(".kl-active-dot{"), css.indexOf("}", css.indexOf(".kl-active-dot{")))
+    expect(dotRule).not.toContain("position:absolute")
+    expect(dotRule).not.toContain("infinite")
+    expect(css).not.toContain("kl-active-pulse")
+    // reduced-motion guard survives
+    expect(css).toContain("prefers-reduced-motion")
+  })
+
+  it("leaves the corner slot to the red issue-count badge", async () => {
+    stubMatchMedia(false)
+    await mountWith({ launcherMode: "full" })
+    const btn = launcherButton()
+    expect(btn.querySelector(".kl-issue-badge")).toBeTruthy()
+    const css = (btn.getRootNode() as ShadowRoot).getElementById("klavity-launcher-anim")?.textContent || ""
+    expect(css).toContain(".kl-issue-badge{position:absolute;")
   })
 })
