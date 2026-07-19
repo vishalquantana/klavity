@@ -25,7 +25,7 @@ export type PageLink = { href: string; text: string }
 
 export type LinkCheck = { href: string; text: string; status: number | null; ok: boolean }
 
-export type BugFinding = { what: string; where: string; why: string; severity: string }
+export type BugFinding = { what: string; where: string; why: string; severity: string; evidence?: string }
 
 /** How many links we're willing to resolve per scan — bounds latency and outbound load. */
 export const MAX_LINKS_CHECKED = 12
@@ -172,12 +172,47 @@ export function isLinkBreakageClaim(f: { what?: string; where?: string; why?: st
   return LINKY.test(blob) && BREAKY.test(blob)
 }
 
-/** Drop model link-breakage claims, then de-dupe against findings we already produced. */
-export function filterModelFindings(findings: BugFinding[], already: BugFinding[]): BugFinding[] {
+/**
+ * Shortest evidence quote we'll accept. Anything shorter ("NaN" is 3) matches too much text by
+ * chance, which would make grounding a rubber stamp.
+ */
+export const MIN_EVIDENCE_LEN = 6
+
+/** Whitespace/case-insensitive normalisation so a quote survives the model reflowing the text. */
+function normalizeForGrounding(s: string): string {
+  return s.toLowerCase().replace(/[\s ]+/g, " ").trim()
+}
+
+/**
+ * FALSE-POSITIVE GATE (KLAVITYKLA-342). A model finding must quote VERBATIM text from the page it
+ * was shown; we then check that quote really occurs in that page text. Speculative findings
+ * ("the checkout probably fails", "users may be confused") cannot produce a quote that grounds,
+ * so they are dropped mechanically instead of being argued with in the prompt.
+ *
+ * This deliberately does NOT judge whether the quoted thing is genuinely broken — that needs
+ * product judgement. It only enforces that every shipped finding is anchored to text that
+ * demonstrably exists on the page, which is what killed the reported false positives (findings
+ * about elements and states that were never on the page at all).
+ */
+export function isGrounded(f: BugFinding, pageText: string): boolean {
+  const quote = String(f.evidence ?? "").trim()
+  if (quote.length < MIN_EVIDENCE_LEN) return false
+  return normalizeForGrounding(pageText).includes(normalizeForGrounding(quote))
+}
+
+/**
+ * Drop model link-breakage claims and ungrounded (speculative/hallucinated) findings, then de-dupe
+ * against findings we already produced.
+ *
+ * `pageText` is the exact text handed to the model. Omit it to skip grounding (used by callers
+ * that have already grounded, and keeps this helper usable for the non-qa path).
+ */
+export function filterModelFindings(findings: BugFinding[], already: BugFinding[], pageText?: string): BugFinding[] {
   const seen = new Set(already.map((f) => f.what.toLowerCase().trim()))
   const out: BugFinding[] = []
   for (const f of findings) {
     if (isLinkBreakageClaim(f)) continue
+    if (pageText !== undefined && !isGrounded(f, pageText)) continue
     const key = f.what.toLowerCase().trim()
     if (!key || seen.has(key)) continue
     seen.add(key)

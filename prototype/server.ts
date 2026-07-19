@@ -3883,11 +3883,22 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           "inventory of an element that exists (e.g. \"'Log in' link\", \"'Sign up' button\") — an element merely " +
           "being present is not a bug. Report a finding ONLY if the page text itself is evidence it is broken; if " +
           "you are not sure, leave it out. Returning zero findings for a healthy page is the correct answer. " +
+          // KLAVITYKLA-342 (false positives): every finding must carry a VERBATIM quote from the
+          // supplied page text. The server re-checks that the quote actually occurs in the page and
+          // DISCARDS any finding whose quote it cannot find, so speculation is not merely
+          // discouraged here — it is mechanically unable to reach the user.
+          "EVERY finding MUST include an \"evidence\" field containing a VERBATIM, character-for-character " +
+          "quote (at least 6 characters) COPIED from the page text above that demonstrates the breakage. Do not " +
+          "paraphrase, summarise, translate or invent the quote. If you cannot copy an exact quote from the page " +
+          "text proving the problem, DO NOT report that finding — a finding without a real quote will be " +
+          "automatically discarded. Never speculate about behaviour you cannot see in the text (what happens on " +
+          "click, whether a form submits, whether an image loads, what a script does). " +
           "For each finding give: what broke " +
           "(short, ≤10 words), where it is (a CSS selector, element description, or the exact visible text near " +
-          "it — ≤80 chars), why a real user would care (one sentence), and a severity (high/medium/low). " +
-          "Respond with ONLY valid JSON: {\"findings\":[{\"what\":string,\"where\":string,\"why\":string," +
-          "\"severity\":\"high\"|\"medium\"|\"low\"}]} with 0-8 findings (0 if the page looks healthy). " +
+          "it — ≤80 chars), the verbatim evidence quote, why a real user would care (one sentence), and a " +
+          "severity (high/medium/low). " +
+          "Respond with ONLY valid JSON: {\"findings\":[{\"what\":string,\"where\":string,\"evidence\":string," +
+          "\"why\":string,\"severity\":\"high\"|\"medium\"|\"low\"}]} with 0-8 findings (0 if the page looks healthy). " +
           "No prose outside the JSON."
         : "You are a conversion-rate optimisation (CRO) expert reviewing a web page for friction. " +
           "Analyse the page text and identify SPECIFIC friction points that reduce conversion. " +
@@ -3916,17 +3927,20 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const data = parseJSON(content)
 
       if (mode === "qa") {
-        const modelFindings: Array<{ what: string; where: string; why: string; severity: string }> = (data.findings ?? [])
+        const modelFindings: Array<{ what: string; where: string; why: string; severity: string; evidence?: string }> = (data.findings ?? [])
           .slice(0, 8)
           .map((f: any) => ({
             what: String(f.what ?? "").slice(0, 100),
             where: String(f.where ?? "").slice(0, 120),
             why: String(f.why ?? "").slice(0, 200),
+            evidence: String(f.evidence ?? "").slice(0, 200),
             severity: ["high", "medium", "low"].includes(String(f.severity)) ? String(f.severity) : "medium",
           }))
         // Verified-broken links first (facts), then whatever model findings survive the link-claim
-        // filter. Every broken-link claim we ship has been resolved over HTTP.
-        const findings = [...verifiedBroken, ...filterModelFindings(modelFindings, verifiedBroken)].slice(0, 8)
+        // filter AND the evidence-grounding gate. Every broken-link claim we ship has been resolved
+        // over HTTP; every model finding we ship quotes text that provably exists on the page
+        // (KLAVITYKLA-342 false positives). `siteText` is exactly what the model was shown.
+        const findings = [...verifiedBroken, ...filterModelFindings(modelFindings, verifiedBroken, siteText)].slice(0, 8)
         // Zero findings is a RESULT, not an empty page — tell the user what was actually checked.
         const checked = {
           links: linkChecks.length,
