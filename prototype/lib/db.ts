@@ -790,6 +790,26 @@ export async function applySchema(c: Client) {
        clicked_at INTEGER)`,
     `CREATE INDEX IF NOT EXISTS lne_seq_idx ON lead_nurture_emails (sequence_id, step)`,
     `CREATE INDEX IF NOT EXISTS lne_sg_idx ON lead_nurture_emails (sg_message_id)`,
+    // ── KLAVITYKLA-315: partner-code redemption ledger [JTBD 8.11]. One durable row per successful
+    // partner/discount code redemption so redemptions are auditable and per-code caps can be
+    // enforced/reported. Additive only — no FK constraints, no existing table touched.
+    //   code          = the normalized (UPPERCASE) partner code that was redeemed.
+    //   account_id    = the workspace/account the entitlement was applied to.
+    //   redeemed_by   = email of the user who redeemed (NULL for legacy/system redemptions).
+    //   granted_plan  = the plan/entitlement the code granted (e.g. 'partner').
+    //   source        = where the redemption came from (e.g. 'api', 'admin', 'test').
+    //   redeemed_at   = epoch ms of the redemption.
+    `CREATE TABLE IF NOT EXISTS partner_code_redemptions (
+       id TEXT PRIMARY KEY,
+       code TEXT NOT NULL,
+       account_id TEXT NOT NULL,
+       redeemed_by TEXT,
+       granted_plan TEXT NOT NULL,
+       source TEXT NOT NULL DEFAULT 'api',
+       redeemed_at INTEGER NOT NULL
+     )`,
+    `CREATE INDEX IF NOT EXISTS pcr_code_idx ON partner_code_redemptions (code, redeemed_at)`,
+    `CREATE INDEX IF NOT EXISTS pcr_account_idx ON partner_code_redemptions (account_id, redeemed_at)`,
   ]
   // Boot-time fix: run the whole static CREATE TABLE/INDEX block as ONE batched round-trip instead
   // of ~150 sequential `await c.execute(s)` calls. Against REMOTE Turso those 150 round-trips cost
@@ -1991,6 +2011,82 @@ export async function setAccountPlan(accountId: string, plan: string): Promise<v
     sql: "UPDATE projects SET billing_plan=?, billing_updated_at=? WHERE account_id=?",
     args: [String(plan || "free"), Date.now(), accountId],
   })
+}
+
+// ── KLAVITYKLA-315: partner-code redemption ledger [JTBD 8.11] ──────────────────
+// A durable, auditable record of every successful partner/discount code redemption.
+export type PartnerCodeRedemption = {
+  id: string
+  code: string
+  accountId: string
+  redeemedBy: string | null
+  grantedPlan: string
+  source: string
+  redeemedAt: number
+}
+
+function rowToRedemption(row: any): PartnerCodeRedemption {
+  return {
+    id: String(row.id),
+    code: String(row.code),
+    accountId: String(row.account_id),
+    redeemedBy: row.redeemed_by != null ? String(row.redeemed_by) : null,
+    grantedPlan: String(row.granted_plan),
+    source: String(row.source),
+    redeemedAt: Number(row.redeemed_at),
+  }
+}
+
+// Record one redemption row. Code is normalized (trim + UPPERCASE) so the ledger is
+// consistent with how codes are matched at redemption time. Returns the stored row.
+export async function recordPartnerCodeRedemption(input: {
+  code: string
+  accountId: string
+  redeemedBy?: string | null
+  grantedPlan: string
+  source?: string
+}): Promise<PartnerCodeRedemption> {
+  const row: PartnerCodeRedemption = {
+    id: "pcr_" + crypto.randomUUID(),
+    code: String(input.code || "").trim().toUpperCase(),
+    accountId: String(input.accountId),
+    redeemedBy: input.redeemedBy != null ? String(input.redeemedBy) : null,
+    grantedPlan: String(input.grantedPlan || "partner"),
+    source: String(input.source || "api"),
+    redeemedAt: Date.now(),
+  }
+  await db!.execute({
+    sql: `INSERT INTO partner_code_redemptions (id, code, account_id, redeemed_by, granted_plan, source, redeemed_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    args: [row.id, row.code, row.accountId, row.redeemedBy, row.grantedPlan, row.source, row.redeemedAt],
+  })
+  return row
+}
+
+// List redemptions, newest first. Filter by code and/or account when provided.
+export async function listPartnerCodeRedemptions(opts: {
+  code?: string
+  accountId?: string
+  limit?: number
+} = {}): Promise<PartnerCodeRedemption[]> {
+  const where: string[] = []
+  const args: any[] = []
+  if (opts.code != null) { where.push("code = ?"); args.push(String(opts.code).trim().toUpperCase()) }
+  if (opts.accountId != null) { where.push("account_id = ?"); args.push(String(opts.accountId)) }
+  const limit = Math.max(1, Math.min(1000, Number(opts.limit) || 500))
+  const sql = `SELECT * FROM partner_code_redemptions${where.length ? " WHERE " + where.join(" AND ") : ""}
+               ORDER BY redeemed_at DESC LIMIT ?`
+  const r = await db!.execute({ sql, args: [...args, limit] })
+  return r.rows.map(rowToRedemption)
+}
+
+// How many times a given code has been redeemed (for per-code cap enforcement/reporting).
+export async function countPartnerCodeRedemptions(code: string): Promise<number> {
+  const r = await db!.execute({
+    sql: "SELECT COUNT(*) AS n FROM partner_code_redemptions WHERE code = ?",
+    args: [String(code || "").trim().toUpperCase()],
+  })
+  return Number((r.rows[0] as any)?.n || 0)
 }
 
 export type AccountBillingState = {
