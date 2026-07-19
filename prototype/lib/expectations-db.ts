@@ -28,6 +28,8 @@ export type ExpectationRow = {
   sourceQuoteVerified: boolean | null
   /** B.13: source ref id (feedback/finding id) the quote came from, for auditability. */
   sourceQuoteRef: string | null
+  /** B.5: validated-but-unenforceable — waiting for a Trail that covers the path. */
+  awaitingTrail: boolean
 }
 
 function rowTo(x: any): ExpectationRow {
@@ -42,6 +44,7 @@ function rowTo(x: any): ExpectationRow {
     sourceQuote: x.source_quote ?? null,
     sourceQuoteVerified: x.source_quote_verified == null ? null : Number(x.source_quote_verified) === 1,
     sourceQuoteRef: x.source_quote_ref ?? null,
+    awaitingTrail: Number(x.awaiting_trail ?? 0) === 1,
   }
 }
 
