@@ -1729,6 +1729,16 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (req.method === "GET" && path === "/favicon.svg") return file(PUB + "/favicon.svg")
     if (req.method === "GET" && path === "/favicon.ico") return file(PUB + "/favicon.ico")
 
+    // ── brand assets (PNG) ──
+    if (req.method === "GET" && path === "/og.png")
+      return new Response(Bun.file(SITE + "/og.png"), { headers: { "content-type": "image/png", "cache-control": "public, max-age=31536000, immutable" } })
+    if (req.method === "GET" && path === "/logo.png")
+      return new Response(Bun.file(SITE + "/logo.png"), { headers: { "content-type": "image/png", "cache-control": "public, max-age=31536000, immutable" } })
+    if (req.method === "GET" && path === "/app-icon-1024.png")
+      return new Response(Bun.file(SITE + "/app-icon-1024.png"), { headers: { "content-type": "image/png", "cache-control": "public, max-age=31536000, immutable" } })
+    if (req.method === "GET" && path === "/apple-touch-icon.png")
+      return new Response(Bun.file(SITE + "/apple-touch-icon.png"), { headers: { "content-type": "image/png", "cache-control": "public, max-age=31536000, immutable" } })
+
     // ── public marketing + login ──
     if (req.method === "GET" && path === "/") return htmlPage(SITE + "/index.html")
     if (req.method === "GET" && path === "/local") return redirect("/")
