@@ -3,7 +3,7 @@
 // in user-facing HTML fails to parse. Catches the smart-quote corruption class
 // (e.g. `let x = ‘widget’`) that silently killed /onboarding signup on prod.
 // JSON-LD / JSON / src= scripts are skipped. Run: node scripts/check-inline-js.mjs
-import { readFileSync, writeFileSync, readdirSync, unlinkSync } from 'node:fs'
+import { readFileSync, writeFileSync, readdirSync, unlinkSync, mkdtempSync, rmSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -19,7 +19,6 @@ const DIRS = ['site', 'prototype/public']
 const SCRIPT_RE = /<script([^>]*)>([\s\S]*?)<\/script>/gi
 
 let failures = 0
-let tmpSeq = 0
 for (const dir of DIRS) {
   let entries = []
   try { entries = readdirSync(dir) } catch { continue }
@@ -47,7 +46,7 @@ for (const dir of DIRS) {
           // process overwrites the other's file mid-check, which both invents
           // SyntaxErrors in untouched files AND — far worse — can let a genuinely
           // corrupt script pass by checking a healthy script's bytes instead.
-          const tmp = join(tmpdir(), `klav-inline-check.${process.pid}.${tmpSeq++}.js`)
+          const tmp = join(TMPDIR, `s.${tmpSeq++}.js`)
           writeFileSync(tmp, js)
           try { execFileSync('node', ['--check', tmp], { stdio: 'pipe' }) }
           finally { try { unlinkSync(tmp) } catch {} }
