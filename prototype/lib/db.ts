@@ -81,6 +81,7 @@ export async function initDb() {
   if (!_initCols.get("test_accounts")?.has("auth_shape"))
     await db!.execute("ALTER TABLE test_accounts ADD COLUMN auth_shape TEXT NOT NULL DEFAULT 'password'").catch((e: any) => console.warn("test_accounts.auth_shape ALTER skipped:", e?.message || e))
   await migrateConnectorsPlane(db)
+  await migrateConnectorsPlanePersonal(db)
   await backfillTriageV1(db)
   await backfillTrailStatus(db)
   await backfillOnboardedAt(db)
@@ -1259,6 +1260,64 @@ export async function migrateConnectorsPlane(c: Client) {
     })
   }
   await metaSet(c, "connectors_plane_migrated", String(Date.now()))
+}
+
+// ── KLAVITYKLA-288: retire the legacy PERSONAL (per-user) Plane connection. ──
+// The extension options page used to store a Plane connection at scope='user', owner_id=<email>,
+// and POST /api/feedback pushed inline with it. That inline path is gone — so any user who still
+// has a personal connection would silently stop filing to Plane. This one-time migration folds
+// each personal connection into the connector system so nothing is lost.
+//
+// Scoping rule (deliberate, security-relevant): a personal token is only ever copied into projects
+// belonging to an account the user OWNS (accounts.owner_email = their email). We never push someone's
+// personal API token into a project owned by a different account — that would leak the secret to
+// teammates who could read it back through the connector surface.
+//
+// Double-file safety: a project that already has ANY type='plane' connector is skipped, so a project
+// can never end up with two Plane connectors both auto-copying the same report.
+// Idempotent: guarded by the connectors_plane_personal_migrated flag, and re-running after the flag
+// is cleared is still safe because of the per-project "already has a plane connector" check.
+export async function migrateConnectorsPlanePersonal(c: Client) {
+  if (await metaGet(c, "connectors_plane_personal_migrated")) return // already done — fast no-op
+
+  const rows = (await c.execute(
+    "SELECT owner_id, config_json FROM integrations WHERE scope='user' AND integration='plane'"
+  )).rows as any[]
+  for (const row of rows) {
+    const email = String(row.owner_id || "").toLowerCase()
+    if (!email) continue
+    const rawCfg = row.config_json ? JSON.parse(String(row.config_json)) : {}
+    // An incomplete personal connection could never have filed anything — don't materialize it.
+    if (!rawCfg.token_enc || !rawCfg.workspace || !rawCfg.projectId) continue
+    const config: Record<string, string> = {
+      token: String(rawCfg.token_enc), // stays ENCRYPTED — never decrypted here
+      workspace: String(rawCfg.workspace),
+      project_id: String(rawCfg.projectId),
+    }
+    if (rawCfg.host) config.host = String(rawCfg.host)
+
+    const projects = (await c.execute({
+      sql: `SELECT p.id AS id FROM projects p
+              JOIN accounts a ON a.id = p.account_id
+             WHERE LOWER(a.owner_email) = ?`,
+      args: [email],
+    })).rows as any[]
+    for (const p of projects) {
+      const projectId = String(p.id)
+      const existing = (await c.execute({
+        sql: "SELECT id FROM connectors WHERE project_id=? AND type='plane' LIMIT 1",
+        args: [projectId],
+      })).rows
+      if (existing.length) continue // already covered — adding another would double-file
+      await c.execute({
+        sql: `INSERT INTO connectors (id,project_id,type,name,config,auto_copy,enabled,created_at,created_by)
+              VALUES (?,?,?,?,?,?,?,?,?)`,
+        args: ["conn_" + crypto.randomUUID(), projectId, "plane", "Plane (migrated from personal connection)",
+               JSON.stringify(config), 1, 1, Date.now(), email],
+      })
+    }
+  }
+  await metaSet(c, "connectors_plane_personal_migrated", String(Date.now()))
 }
 
 // ── One-time retroactive triage backfill (guarded by schema_meta flag). ──
