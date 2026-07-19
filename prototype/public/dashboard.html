@@ -2057,6 +2057,9 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       <!-- KLAVITYKLA-309: customer-facing usage meter — current-period Sims / AutoSim runs vs plan
            allowance, rendered as progress bars by _wirePlan from GET /api/account/usage. -->
       <div id="billingUsage" style="margin:0 0 14px"></div>
+      <!-- KLAVITYKLA-276: customer-facing cost + per-project breakdown — today's AI cost vs the
+           account budget, and each project's metered usage / cost, from GET /api/account/usage. -->
+      <div id="billingProjects" style="margin:0 0 14px"></div>
       <!-- GTM round 2: Founding Team offer — annual-only Pro at the locked founding price. The
            server forces interval to "year" for plan:"founding" (see /api/billing/checkout). -->
       <div id="foundingRibbon" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;border:1px solid rgba(139,92,246,.35);background:linear-gradient(135deg,rgba(99,102,241,.10),rgba(139,92,246,.08));border-radius:8px;padding:10px 14px;margin-bottom:12px">
@@ -7057,6 +7060,41 @@ window.openPlanDrawer = openPlanDrawer
     })
     box.innerHTML = html
   }
+  // KLAVITYKLA-276: render today's AI cost vs budget + a per-project usage/cost breakdown.
+  function money(n){ return '$' + (Number(n)||0).toFixed(2) }
+  function renderProjects(data){
+    var box = $("billingProjects"); if (!box) return
+    var cost = data && data.cost, projects = (data && data.projects) || []
+    var html = ''
+    if (cost && Number(cost.budget) > 0){
+      var spent = Number(cost.today)||0, budget = Number(cost.budget)||0
+      var pct = Math.max(0, Math.min(100, budget > 0 ? Math.round((spent/budget)*100) : 0))
+      var over = !!cost.overBudget
+      var bg = over ? 'var(--rose)' : 'linear-gradient(90deg,var(--indigo),var(--green))'
+      html += '<div style="font-weight:600;font-size:12px;margin-bottom:8px">AI cost today</div>'
+        + '<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;margin-bottom:4px">'
+        + '<span class="muted">Across all projects</span>'
+        + '<span class="muted"' + (over ? ' style="color:var(--rose)"' : '') + '>' + esc(money(spent)) + ' / ' + esc(money(budget)) + (over ? ' · over budget' : '') + '</span></div>'
+        + '<div style="background:var(--ink-3);border-radius:999px;height:6px;overflow:hidden;margin-bottom:12px">'
+        + '<div style="height:100%;border-radius:999px;width:' + pct + '%;background:' + bg + ';transition:width .4s ease"></div></div>'
+    }
+    // Only projects with any metered usage or cost are worth listing.
+    var active = projects.filter(function(p){ return (Number(p.simReviews)||0) + (Number(p.autosimWalks)||0) > 0 || (Number(p.costToday)||0) > 0 })
+    if (active.length){
+      html += '<div style="font-weight:600;font-size:12px;margin-bottom:8px">By project</div>'
+      active.forEach(function(p){
+        var sims = Number(p.simReviews)||0, walks = Number(p.autosimWalks)||0, c = Number(p.costToday)||0
+        var parts = []
+        if (sims) parts.push(sims + ' Sim' + (sims === 1 ? '' : 's'))
+        if (walks) parts.push(walks + ' AutoSim' + (walks === 1 ? '' : 's'))
+        var meta = parts.join(' · ') || 'no usage'
+        html += '<div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline;font-size:12px;margin-bottom:6px">'
+          + '<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(p.name || 'Unattributed') + '</span>'
+          + '<span class="muted" style="flex:none">' + esc(meta) + (c > 0 ? ' · ' + esc(money(c)) : '') + '</span></div>'
+      })
+    }
+    box.innerHTML = html
+  }
   async function refresh(){
     try {
       var r = await fetch("/api/account/plan"); if (!r.ok) return
@@ -7070,7 +7108,7 @@ window.openPlanDrawer = openPlanDrawer
       var pill = $("planPill")
       if (pill) pill.classList.toggle("hide", !!(d.unlimited || (d.plan && d.plan !== "free")))
       // Current-period usage meter (separate read; failure is non-fatal to the plan panel).
-      try { var ur = await fetch("/api/account/usage"); if (ur.ok){ var ud = await ur.json(); renderUsage(ud.meters) } } catch(e){}
+      try { var ur = await fetch("/api/account/usage"); if (ur.ok){ var ud = await ur.json(); renderUsage(ud.meters); renderProjects(ud) } } catch(e){}
     } catch(e){}
   }
   window.refreshPlan = refresh   // billing=success return refetches through this
