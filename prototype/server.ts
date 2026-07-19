@@ -56,6 +56,7 @@ const reqCtx = new AsyncLocalStorage<{ boundProject?: string | null }>()
 import { ingestSnapOrSim } from "./lib/expectations-ingest"
 import { runSimReviews, decodeDataUrl as decodeDataUrlLib, splitUrl as splitUrlLib, buildSimRunSummary, diffSimRuns, activeReviewIndexes, type SimReview } from "./lib/sim-review"
 import { trailsDashboardData, walkTrends } from "./lib/trails-dashboard"
+import { dashboardTrends, dashboardTrendDrill, TREND_SERIES, type TrendSeries } from "./lib/dashboard-trends"
 import { fileFindingById, dismissFinding, realFiler } from "./lib/trails-findings-gate"
 import { getReplay, runsWithReplay } from "./lib/trails-replay"
 import { saveFeedbackReplay, getFeedbackReplay, feedbackIdsWithReplay, pruneOldFeedbackReplays } from "./lib/feedback-replay"
@@ -6082,6 +6083,37 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           )
         } catch (e: any) {
           return json(oops(e, "dashboard"), 500)
+        }
+      }
+
+      // ── KLAVITYKLA-225 (JTBD 7.11): dashboard trend chart + drill-down ──
+      // GET /api/dashboard/trends?project=:id&days=30|90 → { days, buckets[], totals }
+      //   buckets are day-bucketed reports/findings/regressions counts, oldest→newest, zero-filled.
+      // Drill-down: add &day=YYYY-MM-DD&series=reports|findings|regressions → { day, series, items[] }
+      //   the underlying reports for one clicked point. Project-scoped exactly like /api/dashboard.
+      if (req.method === "GET" && path === "/api/dashboard/trends") {
+        try {
+          const paramProject = url.searchParams.get("project")
+          const cookieProject = !paramProject
+            ? decodeURIComponent(parseCookies(req.headers.get("cookie"))["klav_proj"] || "") || null
+            : null
+          const resolved = await resolveProject(me, paramProject || cookieProject)
+          if (!resolved) return json({ error: "No access to this project." }, 403)
+          const projectId = resolved.id
+
+          const drillDay = url.searchParams.get("day")
+          if (drillDay) {
+            const rawSeries = String(url.searchParams.get("series") || "reports") as TrendSeries
+            const series: TrendSeries = TREND_SERIES.includes(rawSeries) ? rawSeries : "reports"
+            const items = await dashboardTrendDrill(projectId, { day: drillDay, series })
+            return json({ day: drillDay, series, items })
+          }
+
+          const days = Number(url.searchParams.get("days")) === 90 ? 90 : 30
+          const trends = await dashboardTrends(projectId, { days })
+          return json(trends)
+        } catch (e: any) {
+          return json(oops(e, "dashboard-trends"), 500)
         }
       }
 
