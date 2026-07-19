@@ -23,6 +23,7 @@ import { createTestAccount, listTestAccounts, getTestAccountById, getTestAccount
 import { planeConfigFromForm, redactPlane, type PlaneStored } from "./lib/connection"
 import { assertSafeUrl } from "./lib/url-guard"
 import { safeFetch } from "./lib/safe-fetch"
+import { extConfigVersion, type ExtProjectConfig } from "./lib/ext-config-version"
 import { verifyTurnstile, turnstileEnabled, turnstileSiteKey } from "./lib/turnstile"
 import { screenshotUrl, authedScreenshotUrl, projectHasHeadlessAuth, defaultPreviewPersona } from "./lib/sim-preview"
 import { publishRegressionEvent, listRegressionEvents, acknowledgeRegressionEvent } from "./lib/regression-events"
@@ -111,6 +112,21 @@ const SESSION_DAYS = 90 // 90-day sessions — matches projectCookie precedent i
 const ALLOWED_SHARE_TTL_DAYS = new Set([7, 30, 90])
 // Screenshots embedded in external tracker tickets use a PERMANENT signed link (`/img/<id>.<hmac>`,
 // see lib/imgsign.ts) — never expires, revocable, S3 stays private. (Replaces the old 7-day presign.)
+
+/**
+ * The extension-visible project config for `email` (KLAVITYKLA-320). Shared by
+ * GET /api/extension/config and its /version sibling so the hash the extension
+ * revalidates against is computed over EXACTLY the payload it caches.
+ */
+async function extensionProjectConfig(email: string): Promise<ExtProjectConfig[]> {
+  const out: ExtProjectConfig[] = []
+  for (const p of await listProjects(email)) {
+    if (!(await projectAccess(email, p.id))) continue // project-scoped via projectAccess
+    const patterns = (await listMonitoredUrls(p.id, { enabledOnly: true })).map(m => m.urlPattern)
+    out.push({ id: p.id, name: p.name, reviewMode: p.reviewMode, monitoredUrls: patterns })
+  }
+  return out
+}
 
 function normalizeAssigneeEmail(value: unknown): string | null {
   if (value === null || value === undefined) return null
@@ -2992,17 +3008,25 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (req.method === "GET" && path === "/api/extension/config") {
       const meX = (await sessionEmail(req)) || (await bearerEmail(req))
       if (!meX) return json({ error: "Sign in to continue." }, 401)
-      const projects = await listProjects(meX)
-      const out = []
-      for (const p of projects) {
-        const access = await projectAccess(meX, p.id)
-        if (!access) continue // project-scoped via projectAccess
-        const patterns = (await listMonitoredUrls(p.id, { enabledOnly: true })).map(m => m.urlPattern)
-        out.push({ id: p.id, name: p.name, reviewMode: p.reviewMode, monitoredUrls: patterns })
-      }
+      const out = await extensionProjectConfig(meX)
       // Dedicated narrow-scope token (R5): replaces reusing the raw session id as the Bearer.
       const extToken = await issueExtensionToken(meX, null, SESSION_DAYS * 24 * 60 * 60 * 1000)
-      return json({ email: meX, token: extToken, projects: out })
+      // configVersion (KLAVITYKLA-320): lets the extension detect a dashboard-side config
+      // change and drop its cache instead of serving stale review modes / monitored URLs.
+      return json({ email: meX, token: extToken, projects: out, configVersion: extConfigVersion(out) })
+    }
+
+    // ── extension config VERSION (KLAVITYKLA-320) — cheap revalidation endpoint.
+    // Same auth as /api/extension/config but mints NO token and returns only the hash,
+    // so the extension can poll it on a short TTL and do the full (token-minting) sync
+    // only when the admin has actually changed something.
+    if (req.method === "GET" && path === "/api/extension/config/version") {
+      const meCV = (await bearerEmail(req)) || (await sessionEmail(req))
+      if (!meCV) return json({ error: "Sign in to continue." }, 401)
+      const tokCV = (req.headers.get("authorization") || "").slice(7, 15)
+      if (!rlAllow(`extcfgver:tok:${tokCV}`, 60, 60_000)) return json({ error: "rate limited" }, 429)
+      if (!rlAllow(`extcfgver:ip:${clientIp(req, server)}`, 120, 60_000)) return json({ error: "rate limited" }, 429)
+      return json({ configVersion: extConfigVersion(await extensionProjectConfig(meCV)) })
     }
 
     // ── extension URL match (R5b) — bearer-gated real-time allowlist check.
