@@ -7787,29 +7787,75 @@ load()
   $("smBrief").addEventListener("keydown",(e)=>{ if(e.key==="Enter"){ e.preventDefault(); genBrief(); } });
   $("smUrl").addEventListener("keydown",(e)=>{ if(e.key==="Enter"){ e.preventDefault(); genSite(); } });
 
-  function close(){ ov.classList.remove("show"); document.body.style.overflow=""; hideSuccessPanel(); if(simAdded){ simAdded=false; load(); } }
-  $("simClose").onclick=close;
-  ov.addEventListener("mousedown",(e)=>{ if(e.target===ov) close(); });
-  document.addEventListener("keydown",(e)=>{ if(e.key==="Escape"&&ov.classList.contains("show")) close(); });
-
-  // exposed openers
-  window.openSimModal=function(){
+  // KLAVITYKLA-187: the Add-a-Sim surface is addressable at /sim/new so it behaves like a
+  // dedicated page (shareable URL, Back closes it) while reusing this modal's logic.
+  const SIM_NEW_PATH="/sim/new";
+  const PANE_ORDER={describe:"describe",site:"site",call:"call"};
+  function atSimNew(){ try{ return location.pathname===SIM_NEW_PATH||location.pathname===SIM_NEW_PATH+"/"; }catch(e){ return false; } }
+  function simNewUrl(mode){ return SIM_NEW_PATH+((mode&&mode!=="describe")?("?mode="+encodeURIComponent(mode)):""); }
+  function currentMode(){ try{ return PANE_ORDER[new URLSearchParams(location.search).get("mode")]||"describe"; }catch(e){ return "describe"; } }
+  function selectPane(mode){ const b=ov.querySelector('.sm-seg button[data-pane="'+(PANE_ORDER[mode]||"describe")+'"]'); if(b) b.click(); }
+  // Pure UI: reveal the surface + preselect a tab, WITHOUT touching history.
+  function openSimSurface(mode){
+    mode=PANE_ORDER[mode]||"describe";
     const first=!(state&&state.sims&&state.sims.length);
     $("simHd").textContent=first?"Bring your first Sim to life":"Add a Sim";
     // Prefill the site URL from the project when known — one less hop to a first Sim reaction.
     out.innerHTML=""; out.style.display=""; $("smBrief").value=""; $("smUrl").value=(state&&state.active&&state.active.siteUrl)||""; $("smTx").value="";
     hideSuccessPanel();
-    ov.querySelector('.sm-seg button[data-pane="describe"]').click();
-    ov.classList.add("show"); document.body.style.overflow="hidden"; setTimeout(()=>$("smBrief").focus(),60);
+    selectPane(mode);
+    ov.classList.add("show"); document.body.style.overflow="hidden";
+    const focusId=mode==="site"?"smUrl":mode==="call"?"smTx":"smBrief";
+    setTimeout(()=>{const el=$(focusId); if(el) el.focus();},60);
+  }
+  let simNewReturnUrl=null;
+  // fromPop=true means popstate already moved history — don't touch it again.
+  function close(fromPop){
+    ov.classList.remove("show"); document.body.style.overflow=""; hideSuccessPanel();
+    if(!fromPop&&atSimNew()){ try{ history.replaceState(null,"",simNewReturnUrl||"/dashboard"); }catch(e){} }
+    simNewReturnUrl=null;
+    if(simAdded){ simAdded=false; load(); }
+  }
+  $("simClose").onclick=function(){ close(); };
+  ov.addEventListener("mousedown",(e)=>{ if(e.target===ov) close(); });
+  document.addEventListener("keydown",(e)=>{ if(e.key==="Escape"&&ov.classList.contains("show")) close(); });
+  // Back/forward: /sim/new opens the surface; navigating away closes it.
+  window.addEventListener("popstate",function(){
+    autoOpened=true;
+    if(atSimNew()){ if(!ov.classList.contains("show")) openSimSurface(currentMode()); else selectPane(currentMode()); }
+    else if(ov.classList.contains("show")){ close(true); }
+  });
+
+  // exposed openers — navigate to the dedicated /sim/new page, then reveal the surface.
+  window.openSimModal=function(mode){
+    mode=PANE_ORDER[mode]||"describe";
+    if(!atSimNew()){
+      simNewReturnUrl=location.pathname+location.search+location.hash;
+      try{ history.pushState(null,"",simNewUrl(mode)); }catch(e){}
+    } else {
+      try{ history.replaceState(null,"",simNewUrl(mode)); }catch(e){}
+    }
+    openSimSurface(mode);
   };
   let autoOpened=false;
   window.maybeOpenCreateSim=function(){
     if(autoOpened) return;
-    let want=false; try{ want=new URLSearchParams(location.search).get("create-sim")==="1"||location.hash==="#create-sim"; }catch(e){}
+    let want=false, mode="describe";
+    try{
+      const qp=new URLSearchParams(location.search);
+      if(atSimNew()){ want=true; mode=PANE_ORDER[qp.get("mode")]||"describe"; }
+      else if(qp.get("create-sim")==="1"||location.hash==="#create-sim"){ want=true; }
+    }catch(e){}
     if(!want) return;
     autoOpened=true;
-    try{ const u=new URL(location.href); u.searchParams.delete("create-sim"); if(u.hash==="#create-sim")u.hash=""; history.replaceState(null,"",u.pathname+u.search); }catch(e){}
-    window.openSimModal();
+    if(atSimNew()){
+      // Already on the dedicated page (direct hit / deep link) — open in place, no extra history entry.
+      openSimSurface(mode);
+    } else {
+      // Legacy ?create-sim=1 / #create-sim deep link — normalize the URL, then open (pushes /sim/new).
+      try{ const u=new URL(location.href); u.searchParams.delete("create-sim"); if(u.hash==="#create-sim")u.hash=""; history.replaceState(null,"",u.pathname+u.search); }catch(e){}
+      window.openSimModal();
+    }
   };
   // Deep-link race fix (found by an AutoSim walk 2026-07-04): the dashboard render can fire
   // BEFORE this script parses (same-box API returns instantly in headless walks), and its
@@ -7817,22 +7863,9 @@ load()
   // Re-check once we exist - the autoOpened flag keeps this idempotent.
   window.maybeOpenCreateSim();
   // A4: opener that pre-selects the "From your site" tab — used by empty states and checklist item 1
-  window.openSimModalSite = function(){
-    window.openSimModal()
-    // Switch to the "site" pane after a tick so the modal is visible
-    setTimeout(function(){
-      var siteBtn = document.querySelector('.sm-seg button[data-pane="site"]')
-      if(siteBtn) siteBtn.click()
-    }, 60)
-  }
+  window.openSimModalSite = function(){ window.openSimModal("site") }
   // opener that pre-selects the "From a call" tab — used by the clickable empty-state card
-  window.openSimModalCall = function(){
-    window.openSimModal()
-    setTimeout(function(){
-      var callBtn = document.querySelector('.sm-seg button[data-pane="call"]')
-      if(callBtn) callBtn.click()
-    }, 60)
-  }
+  window.openSimModalCall = function(){ window.openSimModal("call") }
   // Keyboard support for the clickable onboarding cards (role="button"): Enter/Space activates.
   // Delegated on document so it survives the empty state's innerHTML re-renders.
   document.addEventListener('keydown', function(e){
