@@ -88,6 +88,7 @@ import { createSimReviewSchedule, listSimReviewSchedules, getSimReviewSchedule, 
 import { startSimsDigestScheduler, sendSimsDigest, type SimsDigestDeps, DAY_MS as SIMS_DIGEST_DAY_MS } from "./lib/sims-digest"
 import { sendReportAlertEmail } from "./lib/mail"
 import { enrollLead, buildNurtureEmail, recordNurtureEmailSent, recordSendgridEvents, startLeadNurtureScheduler } from "./lib/lead-nurture"
+import { extractInventory, extractLinks, verifyLinks, brokenLinkFindings, filterModelFindings, checkedSummary, MAX_LINKS_CHECKED } from "./lib/bugcheck"
 
 const KEY = process.env.OPENROUTER_API_KEY
 const MODEL = process.env.KLAV_MODEL || "google/gemini-2.5-flash"
@@ -288,7 +289,10 @@ const ASSERT_SYS =
 // jsonMode forces structured output — safe for text calls, but Gemini's vision path
 // via OpenRouter often returns empty content under json_object, so leave it OFF for
 // image calls and rely on the prompt + parseJSON's extraction instead.
-async function chat(messages: any[], maxTokens: number, jsonMode = false, ctx?: { type: string; feature?: string | null; email?: string | null; projectId?: string | null; model?: string }) {
+// `ctx.temperature` (KLAVITYKLA-342) pins sampling for callers that must be REPRODUCIBLE — a user
+// re-running the same free scan has to get the same answer. Omit it everywhere else to keep the
+// existing (provider-default) behaviour untouched.
+async function chat(messages: any[], maxTokens: number, jsonMode = false, ctx?: { type: string; feature?: string | null; email?: string | null; projectId?: string | null; model?: string; temperature?: number }) {
   const t0 = Date.now()
   const label = ctx?.type || "chat"
   // M5/LLM10: enforce the daily spend cap server-side, ATOMICALLY. The old `opsTodaySpend() >= cap`
@@ -326,7 +330,7 @@ async function chat(messages: any[], maxTokens: number, jsonMode = false, ctx?: 
     res = await fetch(ENDPOINT, {
       method: "POST",
       headers: { Authorization: `Bearer ${KEY}`, "content-type": "application/json", "HTTP-Referer": BASE, "X-Title": "Klavity" },
-      body: JSON.stringify({ model, max_tokens: maxTokens, messages, usage: { include: true }, ...(jsonMode ? { response_format: { type: "json_object" } } : {}) }),
+      body: JSON.stringify({ model, max_tokens: maxTokens, messages, usage: { include: true }, ...(typeof ctx?.temperature === "number" ? { temperature: ctx.temperature } : {}), ...(jsonMode ? { response_format: { type: "json_object" } } : {}) }),
       signal: ctl.signal,
     })
   } catch (e: any) {
@@ -1474,6 +1478,30 @@ function autoCopyFeedback(feedbackId: string, projectId: string, actor: string |
 const FEEDBACK_ANON_WINDOW = 60 * 60 * 1000
 const FEEDBACK_ANON_PER_IP = 20
 const FEEDBACK_ANON_PER_PROJECT = 200
+
+// ── Free-tool analyze cache — KLAVITYKLA-342 ─────────────────────────────────────────────────────
+// The bug-check scan MUST be reproducible: re-running the same URL cannot return a different set of
+// findings (it did — 0, then 8, then 0). Combined with a pinned model + temperature 0, a short
+// in-memory TTL cache makes a re-run within the window byte-identical, and collapses a launch spike
+// on one URL to a single LLM call. In-memory on purpose: one box, and staleness beyond a few
+// minutes is undesirable anyway (the user is fixing the page).
+const ANALYZE_CACHE_TTL_MS = 10 * 60 * 1000
+const ANALYZE_CACHE_MAX = 500
+const analyzeCache = new Map<string, { at: number; body: any; props: Record<string, unknown> }>()
+function analyzeCacheGet(key: string): { body: any; props: Record<string, unknown> } | null {
+  const hit = analyzeCache.get(key)
+  if (!hit) return null
+  if (Date.now() - hit.at > ANALYZE_CACHE_TTL_MS) { analyzeCache.delete(key); return null }
+  return { body: hit.body, props: hit.props }
+}
+function analyzeCacheSet(key: string, body: any, props: Record<string, unknown>) {
+  // Bounded, oldest-first eviction — a Map iterates in insertion order.
+  if (analyzeCache.size >= ANALYZE_CACHE_MAX) {
+    const oldest = analyzeCache.keys().next().value
+    if (oldest !== undefined) analyzeCache.delete(oldest)
+  }
+  analyzeCache.set(key, { at: Date.now(), body, props })
+}
 
 // Legacy AI demo endpoints (/api/persona/brief, /api/extract, /api/react) — each makes an LLM call but
 // had no per-user throttle or input cap (only the daily $ cap). Bound them per user/hour + size.
@@ -3785,11 +3813,23 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const anonId = b.anonId ? String(b.anonId).slice(0, 64) : undefined
       const source = b.source ? String(b.source).slice(0, 100) : undefined
       const referrer = b.referrer ? String(b.referrer).slice(0, 500) : undefined
+      // KLAVITYKLA-342 (determinism): a user who re-runs the same scan must get the same answer.
+      // Serve an identical, already-computed result for a short window instead of re-rolling the
+      // model. Also makes a Reddit spike on one URL cost exactly one LLM call.
+      const cacheKey = `${mode}|${siteUrl}`
+      const cached = mode === "qa" ? analyzeCacheGet(cacheKey) : null
+      if (cached) {
+        void trackFunnel(db!, { event: "check_completed", anonId, url: siteUrl, source, referrer, props: { ...cached.props, cached: true } })
+        return json(cached.body)
+      }
+
       let siteText = ""
+      let siteHtml = ""
       try {
         const res = await safeFetch(siteUrl, { headers: { "user-agent": "KlavityBot/1.0 (+https://klavity.in)" }, signal: AbortSignal.timeout(8_000) }, { allowLoopbackInTest: true })
         if (!res.ok) return json({ error: `Couldn't read that page (HTTP ${res.status}).` }, 400)
         const html = (await res.text()).slice(0, 300_000)
+        siteHtml = html
         siteText = html
           .replace(/<script[\s\S]*?<\/script>/gi, " ")
           .replace(/<style[\s\S]*?<\/style>/gi, " ")
@@ -3814,14 +3854,36 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return json({ error: "The scanner is busy right now — please try again in a few minutes." }, 429)
       }
 
+      // ── KLAVITYKLA-342: mechanical link verification (qa mode only) ────────────────────────────
+      // The model used to be handed tag-stripped text and asked to spot "broken links" — it can't
+      // know, and it was wrong on real sites (flagged a link that returns 200). We resolve the
+      // page's real hrefs OURSELVES and only ever report the ones that actually fail; the model is
+      // told link health is already covered, and any link claim it makes anyway is dropped below.
+      const inventory = mode === "qa" ? extractInventory(siteHtml) : null
+      let linkChecks: Awaited<ReturnType<typeof verifyLinks>> = []
+      if (mode === "qa") {
+        const links = extractLinks(siteHtml, siteUrl, MAX_LINKS_CHECKED)
+        linkChecks = await verifyLinks(
+          links,
+          (u, init) => safeFetch(u, init, { allowLoopbackInTest: true }),
+        ).catch(() => [])
+      }
+      const verifiedBroken = brokenLinkFindings(linkChecks)
+
       const sys = mode === "qa"
         ? "You are a QA engineer reviewing a live web page for USER-FACING BREAKAGE — things that are visibly " +
           "broken for a real visitor, not conversion-copy nitpicks. Analyse the page text and identify SPECIFIC " +
-          "breakage: broken/dead links or flows, dead or non-functional-looking buttons, obvious error states " +
+          "breakage: obvious error states " +
           "(e.g. \"undefined\", \"NaN\", stack traces, 404/500 text leaked into the page), layout/content that " +
           "looks collapsed or duplicated, empty or placeholder states shown where real content should be, and " +
           "other signs the page is not working as intended. Do NOT report conversion/marketing friction (that's a " +
-          "different tool) — only report things that look genuinely BROKEN. For each finding give: what broke " +
+          "different tool) — only report things that look genuinely BROKEN. NEVER report links as broken, dead or " +
+          "404: every link on this page has already been resolved mechanically by a separate checker, so any link " +
+          "claim from you would be a guess and will be discarded. NEVER report a finding that is merely an " +
+          "inventory of an element that exists (e.g. \"'Log in' link\", \"'Sign up' button\") — an element merely " +
+          "being present is not a bug. Report a finding ONLY if the page text itself is evidence it is broken; if " +
+          "you are not sure, leave it out. Returning zero findings for a healthy page is the correct answer. " +
+          "For each finding give: what broke " +
           "(short, ≤10 words), where it is (a CSS selector, element description, or the exact visible text near " +
           "it — ≤80 chars), why a real user would care (one sentence), and a severity (high/medium/low). " +
           "Respond with ONLY valid JSON: {\"findings\":[{\"what\":string,\"where\":string,\"why\":string," +
@@ -3838,7 +3900,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       try {
         ;({ content } = await chat(
           [{ role: "system", content: sys }, { role: "user", content: `Page URL: ${siteUrl}\n\nPage text:\n${siteText}` }],
-          800, true, { type: mode === "qa" ? "bugcheck-analyze" : "cro-analyze", email: null },
+          800, true, mode === "qa"
+            // Determinism (KLAVITYKLA-342): pin BOTH the model and the temperature. The default
+            // path weight-picks a model at random per call, which alone made two identical scans
+            // disagree (0 findings vs 8). /cro keeps the original random-routing behaviour.
+            ? { type: "bugcheck-analyze", email: null, model: MODEL, temperature: 0 }
+            : { type: "cro-analyze", email: null },
         ))
       } catch (e: any) {
         // The reservation above never converted into a real LLM spend — release it back to today's slice.
@@ -3849,7 +3916,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const data = parseJSON(content)
 
       if (mode === "qa") {
-        const findings: Array<{ what: string; where: string; why: string; severity: string }> = (data.findings ?? [])
+        const modelFindings: Array<{ what: string; where: string; why: string; severity: string }> = (data.findings ?? [])
           .slice(0, 8)
           .map((f: any) => ({
             what: String(f.what ?? "").slice(0, 100),
@@ -3857,8 +3924,21 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             why: String(f.why ?? "").slice(0, 200),
             severity: ["high", "medium", "low"].includes(String(f.severity)) ? String(f.severity) : "medium",
           }))
-        void trackFunnel(db!, { event: "check_completed", anonId, url: siteUrl, source, referrer, props: { tool: "bugcheck", findings: findings.length } })
-        return json({ findings, url: siteUrl, tool: "bugcheck" })
+        // Verified-broken links first (facts), then whatever model findings survive the link-claim
+        // filter. Every broken-link claim we ship has been resolved over HTTP.
+        const findings = [...verifiedBroken, ...filterModelFindings(modelFindings, verifiedBroken)].slice(0, 8)
+        // Zero findings is a RESULT, not an empty page — tell the user what was actually checked.
+        const checked = {
+          links: linkChecks.length,
+          forms: inventory?.forms ?? 0,
+          buttons: inventory?.buttons ?? 0,
+          summary: checkedSummary(inventory ?? { links: 0, forms: 0, buttons: 0, inputs: 0 }, linkChecks.length),
+        }
+        const body = { findings, url: siteUrl, tool: "bugcheck", checked }
+        const props = { tool: "bugcheck", findings: findings.length, linksChecked: linkChecks.length, brokenLinks: verifiedBroken.length }
+        analyzeCacheSet(cacheKey, body, props)
+        void trackFunnel(db!, { event: "check_completed", anonId, url: siteUrl, source, referrer, props })
+        return json(body)
       }
 
       const frictions: Array<{ title: string; severity: string; fix: string }> = (data.frictions ?? [])
