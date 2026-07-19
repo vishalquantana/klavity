@@ -817,25 +817,28 @@ export async function applySchema(c: Client) {
      )`,
     `CREATE INDEX IF NOT EXISTS pcr_code_idx ON partner_code_redemptions (code, redeemed_at)`,
     `CREATE INDEX IF NOT EXISTS pcr_account_idx ON partner_code_redemptions (account_id, redeemed_at)`,
-    // ── KLAVITYKLA-352: Security audit log — immutable, append-only record of security-sensitive
-    // actions (login, member invite/revoke, role change, connector config, GDPR export/erasure,
-    // project/account deletion). Never updated or deleted by application code.
-    // meta_json carries action-specific context (e.g. { role:'admin', from:'member' }).
-    // ip is the client IP at action time (null for server-side actions).
-    `CREATE TABLE IF NOT EXISTS audit_log (
-       id TEXT PRIMARY KEY,
+    // ── Enterprise SSO — OIDC (KLAVITYKLA-9, additive). ──
+    // PER-ACCOUNT OIDC CONFIG — one row per account that has enabled SSO. client_secret_enc is
+    // AES-GCM encrypted via lib/crypto.ts (KLAV_SECRET envelope key). allowed_domain restricts
+    // which email domains may log in via this IdP (e.g. "acme.com").
+    `CREATE TABLE IF NOT EXISTS account_oidc_configs (
+       account_id TEXT PRIMARY KEY,
+       issuer TEXT NOT NULL,
+       client_id TEXT NOT NULL,
+       client_secret_enc TEXT NOT NULL,
+       allowed_domain TEXT NOT NULL,
+       created_by TEXT,
        created_at INTEGER NOT NULL,
-       action TEXT NOT NULL,
-       actor_email TEXT NOT NULL,
-       target_email TEXT,
-       project_id TEXT,
-       account_id TEXT,
-       meta_json TEXT,
-       ip TEXT)`,
-    `CREATE INDEX IF NOT EXISTS audit_log_created_idx ON audit_log (created_at DESC)`,
-    `CREATE INDEX IF NOT EXISTS audit_log_actor_idx ON audit_log (actor_email, created_at DESC)`,
-    `CREATE INDEX IF NOT EXISTS audit_log_project_idx ON audit_log (project_id, created_at DESC)`,
-    `CREATE INDEX IF NOT EXISTS audit_log_action_idx ON audit_log (action, created_at DESC)`,
+       updated_at INTEGER NOT NULL)`,
+    // SSO STATES — short-lived anti-CSRF state+nonce pairs for the OIDC authorization-code flow.
+    // One row per initiated login; consumed (deleted) on callback. Auto-expires in 10 minutes.
+    `CREATE TABLE IF NOT EXISTS sso_states (
+       state TEXT PRIMARY KEY,
+       account_id TEXT NOT NULL,
+       nonce TEXT NOT NULL,
+       created_at INTEGER NOT NULL,
+       expires_at INTEGER NOT NULL)`,
+    `CREATE INDEX IF NOT EXISTS sso_state_expires_idx ON sso_states (expires_at)`,
   ]
   // Boot-time fix: run the whole static CREATE TABLE/INDEX block as ONE batched round-trip instead
   // of ~150 sequential `await c.execute(s)` calls. Against REMOTE Turso those 150 round-trips cost
@@ -5465,4 +5468,112 @@ export async function deleteSimReviewSchedule(projectId: string, id: string): Pr
     args: [id, projectId],
   })
   return (r.rowsAffected ?? 0) > 0
+}
+
+// ── Enterprise SSO OIDC (KLAVITYKLA-9) ──────────────────────────────────────
+
+export async function getAccountOidcConfig(
+  accountId: string,
+): Promise<{ issuer: string; clientId: string; clientSecretEnc: string; allowedDomain: string } | null> {
+  const r = await db!.execute({
+    sql: "SELECT issuer, client_id, client_secret_enc, allowed_domain FROM account_oidc_configs WHERE account_id=?",
+    args: [accountId],
+  })
+  if (!r.rows.length) return null
+  const row = r.rows[0] as any
+  return {
+    issuer: String(row.issuer),
+    clientId: String(row.client_id),
+    clientSecretEnc: String(row.client_secret_enc),
+    allowedDomain: String(row.allowed_domain),
+  }
+}
+
+export async function upsertAccountOidcConfig(
+  accountId: string,
+  issuer: string,
+  clientId: string,
+  clientSecretEnc: string,
+  allowedDomain: string,
+  createdBy: string,
+): Promise<void> {
+  const now = Date.now()
+  await db!.execute({
+    sql: `INSERT INTO account_oidc_configs
+            (account_id, issuer, client_id, client_secret_enc, allowed_domain, created_by, created_at, updated_at)
+          VALUES (?,?,?,?,?,?,?,?)
+          ON CONFLICT(account_id) DO UPDATE SET
+            issuer=excluded.issuer, client_id=excluded.client_id,
+            client_secret_enc=excluded.client_secret_enc, allowed_domain=excluded.allowed_domain,
+            updated_at=excluded.updated_at`,
+    args: [accountId, issuer, clientId, clientSecretEnc, allowedDomain, createdBy, now, now],
+  })
+}
+
+export async function deleteAccountOidcConfig(accountId: string): Promise<void> {
+  await db!.execute({
+    sql: "DELETE FROM account_oidc_configs WHERE account_id=?",
+    args: [accountId],
+  })
+}
+
+export async function findAccountByOidcDomain(
+  domain: string,
+): Promise<{ accountId: string; issuer: string; clientId: string; clientSecretEnc: string; allowedDomain: string } | null> {
+  const r = await db!.execute({
+    sql: "SELECT account_id, issuer, client_id, client_secret_enc, allowed_domain FROM account_oidc_configs WHERE allowed_domain=?",
+    args: [domain.toLowerCase()],
+  })
+  if (!r.rows.length) return null
+  const row = r.rows[0] as any
+  return {
+    accountId: String(row.account_id),
+    issuer: String(row.issuer),
+    clientId: String(row.client_id),
+    clientSecretEnc: String(row.client_secret_enc),
+    allowedDomain: String(row.allowed_domain),
+  }
+}
+
+export async function createSsoState(
+  state: string,
+  accountId: string,
+  nonce: string,
+  expiresAt: number,
+): Promise<void> {
+  await db!.execute({
+    sql: "INSERT INTO sso_states (state, account_id, nonce, created_at, expires_at) VALUES (?,?,?,?,?)",
+    args: [state, accountId, nonce, Date.now(), expiresAt],
+  })
+}
+
+export async function consumeSsoState(
+  state: string,
+): Promise<{ accountId: string; nonce: string } | null> {
+  const r = await db!.execute({
+    sql: "SELECT account_id, nonce, expires_at FROM sso_states WHERE state=?",
+    args: [state],
+  })
+  if (!r.rows.length) return null
+  await db!.execute({ sql: "DELETE FROM sso_states WHERE state=?", args: [state] })
+  const row = r.rows[0] as any
+  if (Number(row.expires_at) < Date.now()) return null
+  return { accountId: String(row.account_id), nonce: String(row.nonce) }
+}
+
+export async function ensureAccountMember(
+  accountId: string,
+  email: string,
+): Promise<void> {
+  const now = Date.now()
+  await db!.execute({
+    sql: "INSERT OR IGNORE INTO account_members (id,account_id,email,account_role,created_at) VALUES (?,?,?,?,?)",
+    args: [`am_sso_${accountId}_${email}`, accountId, email, "member", now],
+  })
+  // Also ensure the user has access to the default project for this account.
+  const projectId = `proj_${accountId}`
+  await db!.execute({
+    sql: "INSERT OR IGNORE INTO project_members (id,project_id,email,project_role,invited_by,created_at) VALUES (?,?,?,?,?,?)",
+    args: [`pm_sso_${projectId}_${email}`, projectId, email, "member", null, now],
+  })
 }
