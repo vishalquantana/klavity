@@ -1750,6 +1750,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (req.method === "GET" && path === "/cro") return htmlPage(SITE + "/cro.html")
     // KLAVITYKLA-341 — QA-flavoured sibling of /cro for a Reddit dev-team launch.
     if (req.method === "GET" && path === "/bug-check") return htmlPage(SITE + "/bug-check.html")
+    // KLAVITYKLA-337 — /alternatives/* competitor comparison pages (keystone: marker-io).
+    // Same htmlPage() path as the other marketing pages so __POSTHOG_KEY__ substitution applies.
+    if (req.method === "GET" && path === "/alternatives/marker-io") return htmlPage(SITE + "/alternatives/marker-io.html")
     // ── POST /api/blog/publish — authenticated blog post publish + git push (Plan B path) ──
     // Auth: Authorization: Bearer <BLOG_PUBLISH_TOKEN>. The GH_TOKEN env var is used for the push URL
     // inline (never stored in git config) and must NEVER appear in any log or response body.
