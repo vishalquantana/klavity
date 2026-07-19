@@ -13,7 +13,9 @@ import { pushCommentToLinkedIssues } from "./lib/connectors/comment-sync"
 import { syncFieldsToLinkedIssues } from "./lib/connectors/field-sync"
 import { deriveHealth } from "./lib/connectors/health"
 import { applyReconcileOps, recurrenceFromEvents, pickCitation, type ReconcileOp, type Trait, type TraitEventRow } from "./lib/provenance"
-import { sendOtp, sendLeadAlert, sendTicketAssignmentEmail, sendTicketAssignmentInviteEmail } from "./lib/mail"
+import { sendOtp, sendLeadAlert, sendTicketAssignmentEmail, sendTicketAssignmentInviteEmail, sendMemberInviteEmail } from "./lib/mail"
+// First-class member invites + visibility (JTBD 6.4 / KLAVITYKLA-294) — composes existing tables, no migration.
+import { listProjectInvites, revokeProjectInvite, getPendingInvite } from "./lib/member-invites"
 import { notifyReporterOnFix } from "./lib/fixed-notification"
 import { notifyTicketComment } from "./lib/notify"
 import { guardCaughtForFeedback, latestReceiptForFeedback, sendRegressionCaughtReceipt } from "./lib/regression-receipt"
@@ -5765,17 +5767,94 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         })
       }
 
-      // admin invites a user — legacy alias for the project-scoped invite on the caller's first project
+      // ── first-class member invite (JTBD 6.4 / KLAVITYKLA-294) ──
+      // Admin invites someone by email+role. This is now an explicit, durable, VISIBLE action:
+      //   • project_members carries the durable membership (role + invited_by + invited_at). Because
+      //     login requires an OTP to the invited inbox, the row existing before "accept" is not a
+      //     privilege leak — nobody reaches the project without controlling that mailbox.
+      //   • ticket_assignment_invites carries the invite LIFECYCLE (status pending→accepted, resend
+      //     via last_sent_at). Its on-login accept path flips pending→accepted and preserves the
+      //     invited role (addProjectMember ON CONFLICT DO NOTHING).
+      // A member-invite email is sent (best-effort; emailSent reflects whether SendGrid was reachable
+      // for a config, mirroring notifyTicketAssignee's honesty). Re-inviting an already-pending person
+      // just re-sends (resend). Inviting an already-active member updates their role.
       if (req.method === "POST" && path === "/api/team/invite") {
-        const { email, role } = await req.json()
+        const { email, role, project } = await req.json().catch(() => ({}))
         const inv = String(email || "").trim().toLowerCase()
         if (!inv.includes("@")) return json({ error: "Enter a valid email." }, 400)
-        const proj = await resolveProject(me, null)
+        const proj = await resolveProject(me, project ? String(project) : null)
         if (!proj) return json({ error: "No project." }, 400)
         if (proj.access !== "admin") return json({ error: "Only admins can invite." }, 403)
         const p = await projectById(proj.id)
-        await addProjectMember(proj.id, p!.accountId, inv, role === "admin" ? "admin" : "member", me)
-        return json({ ok: true, members: await membersOfProject(proj.id) })
+        const wantRole = role === "admin" ? "admin" : "member"
+        // Was this person already an active member before we touched anything? (Determines pending vs accepted.)
+        const priorAccess = await projectAccess(inv, proj.id)
+        await addProjectMember(proj.id, p!.accountId, inv, wantRole, me)
+        let status: "pending" | "accepted" = "accepted"
+        let emailSent = false
+        if (!priorAccess) {
+          // New teammate → durable PENDING invite + email until they accept (sign in).
+          status = "pending"
+          await upsertTicketAssignmentInvite(proj.id, inv, me, null)
+          if (process.env.SENDGRID_API_KEY) {
+            emailSent = true
+            void sendMemberInviteEmail({
+              to: inv,
+              projectName: p?.name ?? null,
+              invitedBy: me,
+              role: wantRole,
+              joinUrl: `${BASE.replace(/\/+$/, "")}/login?email=${encodeURIComponent(inv)}&project=${encodeURIComponent(proj.id)}`,
+            }).catch((e: any) => console.warn("member invite email skipped:", e?.message || e))
+          }
+        }
+        return json({ ok: true, invite: { email: inv, role: wantRole, status }, emailSent, members: await membersOfProject(proj.id) })
+      }
+
+      // ── invite visibility: list who's invited + their status (JTBD 6.4 / KLAVITYKLA-294) ──
+      // Any member with project access can see the roster + pending/accepted status. Read-only.
+      if (req.method === "GET" && path === "/api/team/invites") {
+        const proj = await resolveProject(me, url.searchParams.get("project"))
+        if (!proj) return json({ error: "No project." }, 400)
+        return json({ invites: await listProjectInvites(proj.id) })
+      }
+
+      // ── resend a still-pending invite (JTBD 6.4 / KLAVITYKLA-294) — admin only ──
+      if (req.method === "POST" && path === "/api/team/invite/resend") {
+        const { email, project } = await req.json().catch(() => ({}))
+        const inv = String(email || "").trim().toLowerCase()
+        const proj = await resolveProject(me, project ? String(project) : null)
+        if (!proj) return json({ error: "No project." }, 400)
+        if (proj.access !== "admin") return json({ error: "Only admins can resend invites." }, 403)
+        const pending = await getPendingInvite(proj.id, inv)
+        if (!pending) return json({ error: "No pending invite for that email." }, 404)
+        const p = await projectById(proj.id)
+        // Re-stamp last_sent_at (keeps status pending) and re-send the email.
+        await upsertTicketAssignmentInvite(proj.id, inv, me, null)
+        let emailSent = false
+        if (process.env.SENDGRID_API_KEY) {
+          emailSent = true
+          void sendMemberInviteEmail({
+            to: inv,
+            projectName: p?.name ?? null,
+            invitedBy: me,
+            role: pending.role,
+            joinUrl: `${BASE.replace(/\/+$/, "")}/login?email=${encodeURIComponent(inv)}&project=${encodeURIComponent(proj.id)}`,
+          }).catch((e: any) => console.warn("member invite resend email skipped:", e?.message || e))
+        }
+        return json({ ok: true, emailSent, invites: await listProjectInvites(proj.id) })
+      }
+
+      // ── revoke a still-pending invite (JTBD 6.4 / KLAVITYKLA-294) — admin only ──
+      // Only removes PENDING invites (never yanks an accepted/active member — that's a different action).
+      if (req.method === "POST" && path === "/api/team/invite/revoke") {
+        const { email, project } = await req.json().catch(() => ({}))
+        const inv = String(email || "").trim().toLowerCase()
+        const proj = await resolveProject(me, project ? String(project) : null)
+        if (!proj) return json({ error: "No project." }, 400)
+        if (proj.access !== "admin") return json({ error: "Only admins can revoke invites." }, 403)
+        const revoked = await revokeProjectInvite(proj.id, inv)
+        if (!revoked) return json({ error: "No pending invite for that email." }, 404)
+        return json({ ok: true, invites: await listProjectInvites(proj.id) })
       }
 
       // ── account domain (onboarding step 1: tells clients from your own team) ──
