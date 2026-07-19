@@ -5091,8 +5091,17 @@ export type SimRunRow = {
   label: string | null
   errorMsg: string | null
   actorEmail: string | null
+  /** TRUE start of the run (when the work began), NOT the insert time — KLAVITYKLA-371. */
   createdAt: number
+  /** TRUE finish, or null while the run is still in progress. */
   finishedAt: number | null
+  /**
+   * Derived wall-clock duration (finishedAt - createdAt) in ms, or null for an in-progress run.
+   * Exposed so run latency is queryable/observable (KLAVITYKLA-371) — this is what
+   * substantiates or corrects the "~30 seconds" claim and surfaces latency regressions.
+   * Clamped at 0: a clock skew / bad backfill must never report a negative duration.
+   */
+  durationMs: number | null
 }
 
 function rowToSimRun(x: any): SimRunRow {
@@ -5100,6 +5109,8 @@ function rowToSimRun(x: any): SimRunRow {
   try { reactions = x.reactions_json ? JSON.parse(String(x.reactions_json)) : null } catch { reactions = null }
   let simIds: string[] | null = null
   try { simIds = x.sim_ids_json ? JSON.parse(String(x.sim_ids_json)) : null } catch { simIds = null }
+  const createdAt = Number(x.created_at)
+  const finishedAt = x.finished_at != null ? Number(x.finished_at) : null
   return {
     id: String(x.id),
     projectId: String(x.project_id),
@@ -5111,18 +5122,34 @@ function rowToSimRun(x: any): SimRunRow {
     label: x.label != null ? String(x.label) : null,
     errorMsg: x.error_msg != null ? String(x.error_msg) : null,
     actorEmail: x.actor_email != null ? String(x.actor_email) : null,
-    createdAt: Number(x.created_at),
-    finishedAt: x.finished_at != null ? Number(x.finished_at) : null,
+    createdAt,
+    finishedAt,
+    durationMs: finishedAt != null && Number.isFinite(createdAt) ? Math.max(0, finishedAt - createdAt) : null,
   }
 }
 
+/**
+ * Insert a sim_runs row.
+ *
+ * KLAVITYKLA-371: `created_at` is the run's TRUE START, not the insert time. Callers that
+ * insert after the work completes MUST pass `startedAt` — a timestamp captured BEFORE the
+ * work began — otherwise created_at collapses onto the insert moment and the run reports a
+ * 0ms duration (the bug: all production runs read 0.0s).
+ *
+ * `finished_at` is deliberately NOT defaulted to now. Omit it to record an in-progress run
+ * (finished_at stays NULL, durationMs is null) and call `finishSimRun` when the work ends.
+ */
 export async function insertSimRun(input: {
   projectId: string; url: string; simIds?: string[] | null; screenshotId?: string | null
   reactions?: any[] | null; label?: string | null; errorMsg?: string | null
-  actorEmail?: string | null; status?: SimRunStatus; finishedAt?: number | null
+  actorEmail?: string | null; status?: SimRunStatus
+  /** TRUE start of the work. Defaults to now (correct only for insert-then-run callers). */
+  startedAt?: number
+  /** TRUE finish. Omit/null ⇒ run is in progress and finished_at stays NULL. */
+  finishedAt?: number | null
 }): Promise<string> {
   const id = "simrun_" + crypto.randomUUID()
-  const now = Date.now()
+  const now = Number.isFinite(input.startedAt as number) ? (input.startedAt as number) : Date.now()
   await db!.execute({
     sql: `INSERT INTO sim_runs (id,project_id,url,status,sim_ids_json,screenshot_id,reactions_json,label,error_msg,actor_email,created_at,finished_at)
           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -5131,9 +5158,27 @@ export async function insertSimRun(input: {
            input.screenshotId ?? null,
            input.reactions != null ? JSON.stringify(input.reactions) : null,
            input.label ?? null, input.errorMsg ?? null, input.actorEmail ?? null,
-           now, input.finishedAt ?? now],
+           now, input.finishedAt ?? null],
   })
   return id
+}
+
+/**
+ * Close out an in-progress run: stamp the TRUE finish (and optionally the terminal status,
+ * reactions and error). Idempotent-ish — a second call simply overwrites finished_at.
+ * KLAVITYKLA-371.
+ */
+export async function finishSimRun(id: string, input?: {
+  status?: SimRunStatus; reactions?: any[] | null; errorMsg?: string | null; finishedAt?: number
+}): Promise<void> {
+  const finishedAt = Number.isFinite(input?.finishedAt as number) ? (input!.finishedAt as number) : Date.now()
+  const sets: string[] = ["finished_at=?"]
+  const args: any[] = [finishedAt]
+  if (input?.status != null) { sets.push("status=?"); args.push(input.status) }
+  if (input?.reactions !== undefined) { sets.push("reactions_json=?"); args.push(input.reactions != null ? JSON.stringify(input.reactions) : null) }
+  if (input?.errorMsg !== undefined) { sets.push("error_msg=?"); args.push(input.errorMsg ?? null) }
+  args.push(id)
+  await db!.execute({ sql: `UPDATE sim_runs SET ${sets.join(", ")} WHERE id=?`, args })
 }
 
 export async function getSimRun(id: string): Promise<SimRunRow | null> {

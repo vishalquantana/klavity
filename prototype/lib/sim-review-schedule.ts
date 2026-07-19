@@ -68,6 +68,10 @@ async function runOneSchedule(
     url: schedule.targetUrl,
   }
 
+  // KLAVITYKLA-371: true start of this scheduled run, captured before any work (Sim load,
+  // screenshot, reviews) so the sim_runs row records a real duration rather than 0ms.
+  const runStartedAt = Date.now()
+
   try {
     // Load the project's Sims (or subset).
     let allSims = await listPersonas(schedule.projectId)
@@ -139,6 +143,7 @@ async function runOneSchedule(
           actorEmail,
           label: `Scheduled (${schedule.frequency})`,
           status: "done",
+          startedAt: runStartedAt,
           finishedAt: Date.now(),
         })
       } catch (e: any) {

@@ -3789,7 +3789,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               projectId, url: pageUrl,
               simIds: reqSimIds.length ? reqSimIds : null,  // null = all Sims
               screenshotId, reactions: reviews,
-              actorEmail: meR, status: "done", finishedAt: Date.now(),
+              actorEmail: meR, status: "done",
+              // KLAVITYKLA-371: benchStart is captured at request entry, BEFORE any work — this
+              // is the run's true start. Previously created_at defaulted to the insert moment,
+              // so every run recorded a 0ms duration.
+              startedAt: benchStart, finishedAt: Date.now(),
             })
             if (priorRunCount === 0) {
               void capturePosthog(meR ?? "server", "first_sim_run", { project_id: projectId })
@@ -3857,8 +3861,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const prev = await previousSimRunForUrl(run.projectId, run.url, run.createdAt, run.id)
         const diff = diffSimRuns(run.reactions, prev ? prev.reactions : null)
         return json({
-          current: { id: run.id, url: run.url, createdAt: run.createdAt },
-          previous: prev ? { id: prev.id, url: prev.url, createdAt: prev.createdAt } : null,
+          // durationMs surfaced alongside createdAt so run-over-run latency regressions are
+          // visible in the diff view too (KLAVITYKLA-371). null ⇒ run still in progress.
+          current: { id: run.id, url: run.url, createdAt: run.createdAt, finishedAt: run.finishedAt, durationMs: run.durationMs },
+          previous: prev ? { id: prev.id, url: prev.url, createdAt: prev.createdAt, finishedAt: prev.finishedAt, durationMs: prev.durationMs } : null,
           diff,
         })
       }
@@ -8405,6 +8411,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       //   Powers site/onboarding.html — kept UNCHANGED.
       if (req.method === "POST" && path === "/api/sim/preview") {
         try {
+          // KLAVITYKLA-371: capture the true start BEFORE any work (SSRF preflight, screenshot,
+          // Sim reviews) so the sim_runs row records a real duration rather than 0ms.
+          const pvRunStartedAt = Date.now()
           let { url: pvUrl, persona, projectId: pvProjectId } = await req.json()
           pvUrl = String(pvUrl || "").trim()
           if (!pvUrl) return json({ error: "Enter your product's URL." }, 400)
@@ -8503,7 +8512,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   projectId: authenticatedProjectId, url: pvUrl,
                   simIds: null,  // null = all Sims
                   screenshotId, reactions: reviews,
-                  actorEmail: mePv, status: "done", finishedAt: Date.now(),
+                  actorEmail: mePv, status: "done",
+                  startedAt: pvRunStartedAt, finishedAt: Date.now(),
                 })
               } catch (e: any) { console.warn("[sim-preview] sim_runs insert skipped:", e?.message || e) }
             }
