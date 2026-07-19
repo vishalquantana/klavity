@@ -498,3 +498,32 @@ describe("launcher active indicator (KLAVITYKLA-321)", () => {
     expect(css).toContain(".kl-issue-badge{position:absolute;")
   })
 })
+
+// ── White-label branding (KLAVITYKLA-311) ─────────────────────────────────────
+// The right-click context menu shows a "Powered by Klavity" footer (.klm-foot)
+// for free accounts, and hides it when the project's modalConfig has whiteLabel:true
+// (Pro-gated). These tests assert that gate is correctly wired in widget.ts.
+
+describe("white-label: right-click menu footer", () => {
+  it("shows .klm-foot in context menu when whiteLabel is not set (free account default)", async () => {
+    await mountWith({ launcherMode: "full" })
+    const menu = await openContextMenu()
+    const foot = menu.querySelector(".klm-foot")
+    expect(foot).toBeTruthy()
+    expect(foot?.innerHTML).toContain("Klavity")
+  })
+
+  it("hides .klm-foot in context menu when modalConfig.whiteLabel is true (Pro)", async () => {
+    await mountWith({ launcherMode: "full", whiteLabel: true })
+    const menu = await openContextMenu()
+    const foot = menu.querySelector(".klm-foot")
+    expect(foot).toBeNull()
+  })
+
+  it("shows .klm-foot when whiteLabel is explicitly false", async () => {
+    await mountWith({ launcherMode: "full", whiteLabel: false })
+    const menu = await openContextMenu()
+    const foot = menu.querySelector(".klm-foot")
+    expect(foot).toBeTruthy()
+  })
+})
