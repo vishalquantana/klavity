@@ -267,10 +267,12 @@ test("linear createIssue posts graphql and extracts identifier+url", async () =>
   const body = JSON.parse(calls[0][1].body)
   expect(body.variables.t).toBe("Bug")
   expect(body.variables.tm).toBe("TEAM-UUID")
-  expect(r).toEqual({
+  expect(r).toMatchObject({
     externalKey: "ENG-42",
     externalUrl: "https://linear.app/team/issue/ENG-42",
   })
+  // KLA-285: a clean export carries no attachment warning.
+  expect(r.attachmentWarning).toBeFalsy()
 })
 
 test("linear throws on graphql errors", async () => {
