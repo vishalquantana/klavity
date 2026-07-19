@@ -1,6 +1,6 @@
 // Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
 import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution } from "./lib/db"
 import { sanitizeAttr } from "./lib/attr"
 import { issueKeyFor, chooseDedup, humanReportIssueKeyFor } from "./lib/dedup"
 import { classifySimObservation } from "./lib/sim-bug-classify"
@@ -90,6 +90,10 @@ const SECURE = BASE.startsWith("https")
 const DEV_SHOW_OTP = process.env.KLAV_DEV_SHOW_OTP === "1"
 const ENDPOINT = process.env.OPENROUTER_ENDPOINT || "https://openrouter.ai/api/v1/chat/completions"
 const OPS_DAILY_CAP_USD = Number(process.env.OPS_DAILY_CAP_USD || 50)
+// KLAVITYKLA-341 — bounded slice of OPS_DAILY_CAP_USD reserved for the anonymous free-tool AI calls
+// (CRO + bug-check). Default $5/day (~500 calls at DEFAULT_AI_CALL_EST_USD) — enough to absorb a
+// front-page launch spike while guaranteeing paid Sims/AutoSims can never be starved by it.
+const FREETOOL_DAILY_CAP_USD = Number(process.env.KLAV_FREETOOL_DAILY_CAP_USD || 5)
 const SITE = import.meta.dir + "/../site"
 const PUB = import.meta.dir + "/public"
 const REPO_ROOT = import.meta.dir + "/.."
@@ -1644,6 +1648,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (req.method === "GET" && path === "/autosim") return htmlPage(SITE + "/autosim.html")
     if (req.method === "GET" && path === "/pricing") return htmlPage(SITE + "/pricing.html")
     if (req.method === "GET" && path === "/cro") return htmlPage(SITE + "/cro.html")
+    // KLAVITYKLA-341 — QA-flavoured sibling of /cro for a Reddit dev-team launch.
+    if (req.method === "GET" && path === "/bug-check") return htmlPage(SITE + "/bug-check.html")
     // ── POST /api/blog/publish — authenticated blog post publish + git push (Plan B path) ──
     // Auth: Authorization: Bearer <BLOG_PUBLISH_TOKEN>. The GH_TOKEN env var is used for the push URL
     // inline (never stored in git config) and must NEVER appear in any log or response body.
@@ -3656,14 +3662,20 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       return json({ ok: true })
     }
 
-    // ── CRO / Vibe Check free tool — KLAVITYKLA-327 ─────────────────────────────────────────────────
-    // POST /api/cro/analyze — SSRF-guarded page fetch + AI friction analysis. Anonymous (no login).
+    // ── CRO / Vibe Check free tool — KLAVITYKLA-327 (mode=cro, default) ─────────────────────────────
+    // ── Bug Check free tool — KLAVITYKLA-341 (mode=qa) ───────────────────────────────────────────────
+    // POST /api/cro/analyze — SSRF-guarded page fetch + AI analysis. Anonymous (no login).
+    // `mode` in the JSON body selects the prompt/response contract: default/omitted = "cro" (the
+    // ORIGINAL, unchanged friction behaviour — /cro is unaffected), "qa" = breakage-hunting variant
+    // for /bug-check. Both share the same fetch pipeline, SSRF guard, per-IP rate limit, and spend
+    // caps below — only the system prompt and response shape differ by mode.
     if (req.method === "POST" && path === "/api/cro/analyze") {
       const ip = clientIp(req, server)
       if (!rlAllow(`cro:ip:${ip}`, 10, 60_000)) return json({ error: "Too many requests. Please try again in a minute." }, 429)
       const parsed = await readJsonLimited(req, 4_096)
       if (!parsed.ok) return json({ error: parsed.error }, parsed.status)
       const b = parsed.data as Record<string, unknown>
+      const mode: "cro" | "qa" = b.mode === "qa" ? "qa" : "cro"
       let siteUrl = String(b.url ?? "").trim()
       if (!siteUrl) return json({ error: "Enter your site URL." }, 400)
       if (!/^https?:\/\//i.test(siteUrl)) siteUrl = "https://" + siteUrl
@@ -3687,24 +3699,65 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return json({ error: "Couldn't reach that URL. Make sure it's a public https page." }, 400)
       }
       if (siteText.length < 40) return json({ error: "That page didn't have enough text to analyse." }, 400)
-      const sys = "You are a conversion-rate optimisation (CRO) expert reviewing a web page for friction. " +
-        "Analyse the page text and identify SPECIFIC friction points that reduce conversion. " +
-        "For each, provide: a short title (≤8 words), severity (high/medium/low), and a one-sentence fix. " +
-        "Focus on: unclear CTAs, missing social proof, confusing copy, friction in the signup/purchase flow, " +
-        "missing value proposition, and mobile-unfriendly patterns. " +
-        "Respond with ONLY valid JSON: {\"frictions\":[{\"title\":string,\"severity\":\"high\"|\"medium\"|\"low\",\"fix\":string}]} " +
-        "with 4-8 friction items. No prose outside the JSON."
+
+      // KLAVITYKLA-341 LAUNCH-BLOCKING: free-tool daily sub-cap. A bounded slice of the shared
+      // OPS_DAILY_CAP_USD budget, reserved BEFORE (and gating) the LLM call below — a viral Reddit
+      // spike on /bug-check or /cro can only ever consume this slice, never starve paid Sims/
+      // AutoSims of the rest of today's budget. Denial short-circuits before chat() runs, so no
+      // budget (free-tool OR global) is touched by a blocked request.
+      const freetoolEst = DEFAULT_AI_CALL_EST_USD
+      if (!(await tryReserveFreeToolSpend(freetoolEst, FREETOOL_DAILY_CAP_USD))) {
+        console.warn(`[freetool-cap] BLOCKED ${mode} analyze — daily free-tool budget $${FREETOOL_DAILY_CAP_USD} reached (ip=${ip})`)
+        return json({ error: "The scanner is busy right now — please try again in a few minutes." }, 429)
+      }
+
+      const sys = mode === "qa"
+        ? "You are a QA engineer reviewing a live web page for USER-FACING BREAKAGE — things that are visibly " +
+          "broken for a real visitor, not conversion-copy nitpicks. Analyse the page text and identify SPECIFIC " +
+          "breakage: broken/dead links or flows, dead or non-functional-looking buttons, obvious error states " +
+          "(e.g. \"undefined\", \"NaN\", stack traces, 404/500 text leaked into the page), layout/content that " +
+          "looks collapsed or duplicated, empty or placeholder states shown where real content should be, and " +
+          "other signs the page is not working as intended. Do NOT report conversion/marketing friction (that's a " +
+          "different tool) — only report things that look genuinely BROKEN. For each finding give: what broke " +
+          "(short, ≤10 words), where it is (a CSS selector, element description, or the exact visible text near " +
+          "it — ≤80 chars), why a real user would care (one sentence), and a severity (high/medium/low). " +
+          "Respond with ONLY valid JSON: {\"findings\":[{\"what\":string,\"where\":string,\"why\":string," +
+          "\"severity\":\"high\"|\"medium\"|\"low\"}]} with 0-8 findings (0 if the page looks healthy). " +
+          "No prose outside the JSON."
+        : "You are a conversion-rate optimisation (CRO) expert reviewing a web page for friction. " +
+          "Analyse the page text and identify SPECIFIC friction points that reduce conversion. " +
+          "For each, provide: a short title (≤8 words), severity (high/medium/low), and a one-sentence fix. " +
+          "Focus on: unclear CTAs, missing social proof, confusing copy, friction in the signup/purchase flow, " +
+          "missing value proposition, and mobile-unfriendly patterns. " +
+          "Respond with ONLY valid JSON: {\"frictions\":[{\"title\":string,\"severity\":\"high\"|\"medium\"|\"low\",\"fix\":string}]} " +
+          "with 4-8 friction items. No prose outside the JSON."
       let content = ""
       try {
         ;({ content } = await chat(
           [{ role: "system", content: sys }, { role: "user", content: `Page URL: ${siteUrl}\n\nPage text:\n${siteText}` }],
-          800, true, { type: "cro-analyze", email: null },
+          800, true, { type: mode === "qa" ? "bugcheck-analyze" : "cro-analyze", email: null },
         ))
       } catch (e: any) {
-        console.error("[cro/analyze] AI call failed:", e?.message || e)
+        // The reservation above never converted into a real LLM spend — release it back to today's slice.
+        void reconcileFreeToolSpend(freetoolEst, 0).catch(() => {})
+        console.error(`[${mode}/analyze] AI call failed:`, e?.message || e)
         return json({ error: "Analysis failed. Please try again." }, 503)
       }
       const data = parseJSON(content)
+
+      if (mode === "qa") {
+        const findings: Array<{ what: string; where: string; why: string; severity: string }> = (data.findings ?? [])
+          .slice(0, 8)
+          .map((f: any) => ({
+            what: String(f.what ?? "").slice(0, 100),
+            where: String(f.where ?? "").slice(0, 120),
+            why: String(f.why ?? "").slice(0, 200),
+            severity: ["high", "medium", "low"].includes(String(f.severity)) ? String(f.severity) : "medium",
+          }))
+        void trackFunnel(db!, { event: "check_completed", anonId, url: siteUrl, source, referrer, props: { tool: "bugcheck", findings: findings.length } })
+        return json({ findings, url: siteUrl, tool: "bugcheck" })
+      }
+
       const frictions: Array<{ title: string; severity: string; fix: string }> = (data.frictions ?? [])
         .slice(0, 8)
         .map((f: any) => ({
@@ -3712,11 +3765,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           severity: ["high", "medium", "low"].includes(String(f.severity)) ? String(f.severity) : "medium",
           fix: String(f.fix ?? "").slice(0, 200),
         }))
-      void trackFunnel(db!, { event: "check_completed", anonId, url: siteUrl, source, referrer, props: { frictions: frictions.length } })
+      void trackFunnel(db!, { event: "check_completed", anonId, url: siteUrl, source, referrer, props: { tool: "cro", frictions: frictions.length } })
       return json({ frictions, url: siteUrl })
     }
 
-    // POST /api/cro/unlock — capture email to unlock the full report. Anonymous.
+    // POST /api/cro/unlock — capture email to unlock the full report. Anonymous. Shared by /cro and
+    // /bug-check (KLAVITYKLA-341); the `tool` field ("cro" | "bugcheck") segments leads through the
+    // funnel event, the Slack alert text, and the nurture-sequence enrollment.
     if (req.method === "POST" && path === "/api/cro/unlock") {
       const ip = clientIp(req, server)
       if (!rlAllow(`crounlock:ip:${ip}`, 20, 60 * 60_000)) return json({ error: "rate limited" }, 429)
@@ -3729,22 +3784,24 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const anonId = b.anonId ? String(b.anonId).slice(0, 64) : undefined
       const source = b.source ? String(b.source).slice(0, 100) : undefined
       const referrer = b.referrer ? String(b.referrer).slice(0, 500) : undefined
-      void trackFunnel(db!, { event: "lead_captured", anonId, email, url: siteUrl, source, referrer })
+      const tool: "cro" | "bugcheck" = b.tool === "bugcheck" ? "bugcheck" : "cro"
+      void trackFunnel(db!, { event: "lead_captured", anonId, email, url: siteUrl, source, referrer, props: { tool } })
       // Fire-and-forget lead alert (same pattern as widget lead).
       void (async () => {
         try {
           const slackUrl = process.env.SLACK_SIGNUP_WEBHOOK_URL
           if (!slackUrl) return
-          const body = JSON.stringify({ text: `🎯 CRO tool lead: *${email}* analysed \`${siteUrl ?? "unknown"}\` (source: ${source ?? "direct"})` })
+          const toolLabel = tool === "bugcheck" ? "Bug Check" : "CRO"
+          const body = JSON.stringify({ text: `🎯 ${toolLabel} tool lead: *${email}* analysed \`${siteUrl ?? "unknown"}\` (source: ${source ?? "direct"})` })
           await fetch(slackUrl, { method: "POST", headers: { "content-type": "application/json" }, body })
         } catch {}
       })()
       // Fire-and-forget: enroll in nurture sequence + send step 1 immediately.
       void (async () => {
         try {
-          const { enrolled, sequenceId } = await enrollLead(db!, email, { url: siteUrl, source })
+          const { enrolled, sequenceId } = await enrollLead(db!, email, { url: siteUrl, source, tool })
           if (enrolled && process.env.SENDGRID_API_KEY) {
-            const content = buildNurtureEmail(1, { analyzedUrl: siteUrl, baseUrl: BASE })
+            const content = buildNurtureEmail(1, { analyzedUrl: siteUrl, baseUrl: BASE, tool })
             await sendReportAlertEmail([email], content.subject, content.html, content.text)
             await recordNurtureEmailSent(db!, sequenceId, 1)
           }
