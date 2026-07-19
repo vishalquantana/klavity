@@ -1459,7 +1459,10 @@ function autoCopyFeedback(feedbackId: string, projectId: string, actor: string |
           await addTicketExport({
             feedbackId, projectId, connectorId: c.id,
             type: c.type, externalKey: result.externalKey, externalUrl: result.externalUrl,
-            status: "ok", error: null, createdBy: actor,
+            // KLA-285: the export succeeded (status stays "ok" so the already-exported guard and the
+            // timeline both treat it as filed), but if the native screenshot upload degraded to the
+            // body link we record WHY on the row instead of letting it fail invisibly.
+            status: "ok", error: result.attachmentWarning ?? null, createdBy: actor,
           })
           // Record successful outbound heartbeat (fire-and-forget, non-fatal).
           touchConnectorHeartbeat(c.id, { kind: "outbound", success: true })
@@ -6252,12 +6255,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             await addTicketExport({
               feedbackId: fid, projectId: fbRow.projectId, connectorId,
               type: connector.type, externalKey: result.externalKey, externalUrl: result.externalUrl,
-              status: "ok", error: null, createdBy: me,
+              // KLA-285: see auto-copy hook — "ok" export, but a degraded screenshot attach is
+              // recorded rather than swallowed.
+              status: "ok", error: result.attachmentWarning ?? null, createdBy: me,
             })
             // Record successful outbound heartbeat (fire-and-forget, non-fatal).
             touchConnectorHeartbeat(connectorId, { kind: "outbound", success: true })
               .catch((e: any) => console.warn("heartbeat record failed (non-fatal):", e?.message || e))
-            exportResult = { type: connector.type, externalKey: result.externalKey, externalUrl: result.externalUrl, status: "ok", error: null }
+            exportResult = { type: connector.type, externalKey: result.externalKey, externalUrl: result.externalUrl, status: "ok", error: result.attachmentWarning ?? null }
           } catch (e: any) {
             // A10: log the raw error server-side (with a correlation id) and store it on the export row,
             // but return ONLY a generic message + id to the client so guard/internal text can't leak.
