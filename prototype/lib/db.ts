@@ -839,6 +839,24 @@ export async function applySchema(c: Client) {
        created_at INTEGER NOT NULL,
        expires_at INTEGER NOT NULL)`,
     `CREATE INDEX IF NOT EXISTS sso_state_expires_idx ON sso_states (expires_at)`,
+    // AUDIT LOG (KLAVITYKLA-352) — durable record of security/admin-sensitive actions.
+    // NOTE: re-added here after a theirs-wins merge silently dropped Dev1's original CREATE
+    // (audit-log.ts INSERTs/SELECTs this table, so without it every audited action throws
+    // "no such table: audit_log"). Schema is Dev1's exact original + indexes.
+    `CREATE TABLE IF NOT EXISTS audit_log (
+       id TEXT PRIMARY KEY,
+       created_at INTEGER NOT NULL,
+       action TEXT NOT NULL,
+       actor_email TEXT NOT NULL,
+       target_email TEXT,
+       project_id TEXT,
+       account_id TEXT,
+       meta_json TEXT,
+       ip TEXT)`,
+    `CREATE INDEX IF NOT EXISTS audit_log_created_idx ON audit_log (created_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS audit_log_actor_idx ON audit_log (actor_email, created_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS audit_log_project_idx ON audit_log (project_id, created_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS audit_log_action_idx ON audit_log (action, created_at DESC)`,
   ]
   // Boot-time fix: run the whole static CREATE TABLE/INDEX block as ONE batched round-trip instead
   // of ~150 sequential `await c.execute(s)` calls. Against REMOTE Turso those 150 round-trips cost
