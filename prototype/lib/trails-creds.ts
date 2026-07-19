@@ -5,6 +5,7 @@
 import { getTestAccountSecret } from "./test-accounts"
 import { decryptSecret } from "./crypto"
 import { getAutosimAuthConfigEncrypted } from "./db"
+import { testOtpActiveForTestAccounts } from "./test-otp-gate"
 
 export const CRED_RE = /\{\{cred:([a-z0-9_-]{1,40}):(email|password|otp|token)\}\}/g
 export const AUTOSIM_AUTH_CRED_RE = /\{\{autosim_auth:(email|secret|otp|link)\}\}/g
@@ -38,7 +39,8 @@ export const resolveCredRefs: CredResolver = async (projectId, value) => {
       // field === "otp": only works when the test-OTP bypass is active on the server; fail loud
       // otherwise so a misconfigured prod run surfaces the problem immediately. Always validate
       // authShape first so a password-shape account with an :otp ref fails loud (config mistake).
-      if (!process.env.KLAV_TEST_OTP) throw new Error(`{{cred:${name}:otp}} requires KLAV_TEST_OTP to be set`)
+      // KLAVITYKLA-304: env bootstrap OR an unexpired /opsadmin runtime gate.
+      if (!(await testOtpActiveForTestAccounts())) throw new Error(`{{cred:${name}:otp}} requires KLAV_TEST_OTP to be set`)
       if (sec.authShape !== "otp") {
         throw new Error(`test account "${name}" does not have an OTP code (auth_shape: ${sec.authShape})`)
       }
