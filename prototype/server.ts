@@ -92,12 +92,12 @@ import { runDueSchedules, buildProductionDeps } from "./lib/sim-review-schedule"
 import { trackFunnel, CLIENT_INGESTABLE } from "./lib/funnel"
 import { gatherGrowthScorecard } from "./lib/growth-scorecard"
 import { TEST_OTP_CODE, TEST_OTP_DURATIONS_H, testOtpDecision, getTestOtpGate, enableTestOtpGate, disableTestOtpGate, recordTestOtpUse, listTestOtpUses, type TestOtpGate, type TestOtpUse } from "./lib/test-otp-gate"
-import { capturePosthog } from "./lib/posthog"
+import { capturePosthog, posthogReplayEnabled } from "./lib/posthog"
 import { createSimReviewSchedule, listSimReviewSchedules, getSimReviewSchedule, deleteSimReviewSchedule, setSimReviewScheduleEnabled, type SimReviewScheduleFrequency } from "./lib/db"
 import { startSimsDigestScheduler, sendSimsDigest, type SimsDigestDeps, DAY_MS as SIMS_DIGEST_DAY_MS } from "./lib/sims-digest"
 import { sendReportAlertEmail } from "./lib/mail"
 import { diagnoseHeartbeat, renderDeveloperEmail, type HeartbeatSignals } from "./lib/heartbeat-diagnosis"
-import { countRecentFeedback } from "./lib/db"
+import { countRecentFeedback, countUsers } from "./lib/db"
 import { enrollLead, buildNurtureEmail, recordNurtureEmailSent, recordSendgridEvents, startLeadNurtureScheduler } from "./lib/lead-nurture"
 import { extractInventory, extractLinks, verifyLinks, brokenLinkFindings, filterModelFindings, checkedSummary, MAX_LINKS_CHECKED } from "./lib/bugcheck"
 
@@ -809,15 +809,39 @@ async function dashboardPage(): Promise<Response> {
     let version = ""
     try { version = String((await Bun.file(import.meta.dir + "/../package.json").json())?.version || "") } catch { /* fall back to empty */ }
     const raw = await Bun.file(PUB + "/dashboard.html").text()
+    // Keep the __POSTHOG_REPLAY__ placeholder in the cached template — it's substituted
+    // per-response below so the session-replay gate re-evaluates as the user count grows.
     DASHBOARD_HTML = raw.replaceAll("__APP_VERSION__", version).replaceAll("__POSTHOG_KEY__", _PH_KEY)
   }
-  return new Response(DASHBOARD_HTML, { headers: { "content-type": "text/html; charset=utf-8" } })
+  const body = DASHBOARD_HTML.replaceAll("__POSTHOG_REPLAY__", await posthogReplayFlag())
+  return new Response(body, { headers: { "content-type": "text/html; charset=utf-8" } })
 }
 // Serve HTML pages with __POSTHOG_KEY__ substituted from KLAV_POSTHOG_KEY env var and
 // __CAL_BOOKING_URL__ from CAL_BOOKING_URL (KLAVITYKLA-331 — founder booking CTA).
 // Cached per path — refreshes on process restart (i.e. every deploy).
 const _htmlCache = new Map<string, string>()
 const _PH_KEY = process.env.KLAV_POSTHOG_KEY || ""
+// PostHog session replay is gated to roughly the first ~50 tool users (KLAVITYKLA-329).
+// The gate flag ("1"/"0") is substituted into app-page HTML for the client SDK to read.
+// We cache the tool-user count briefly so we don't hit the DB on every page render, while
+// still re-evaluating the gate within a release (the count only grows).
+let _phReplayFlag = "0"
+let _phReplayCheckedAt = 0
+const _PH_REPLAY_TTL_MS = 5 * 60_000
+async function posthogReplayFlag(): Promise<string> {
+  if (!_PH_KEY) return "0"
+  const now = Date.now()
+  if (now - _phReplayCheckedAt > _PH_REPLAY_TTL_MS) {
+    _phReplayCheckedAt = now
+    try {
+      const toolUserCount = await countUsers()
+      _phReplayFlag = posthogReplayEnabled({ hasKey: true, toolUserCount }) ? "1" : "0"
+    } catch {
+      // On any DB hiccup, leave the last known flag rather than flipping recording on/off.
+    }
+  }
+  return _phReplayFlag
+}
 // Default is the founder's 15-minute Cal.com link; override per environment with CAL_BOOKING_URL.
 export const DEFAULT_CAL_BOOKING_URL = "https://cal.com/klavity/15min"
 export function normalizeCalBookingUrl(raw?: string | null): string {
@@ -835,9 +859,12 @@ async function htmlPage(path: string, extraHeaders?: Record<string, string>): Pr
     let out = raw
     if (_PH_KEY) out = out.replaceAll("__POSTHOG_KEY__", _PH_KEY)
     out = out.replaceAll("__CAL_BOOKING_URL__", CAL_BOOKING_URL)
+    // Leave __POSTHOG_REPLAY__ in the cached template; substituted per-response (see below)
+    // so the session-replay volume gate re-evaluates as the tool-user count grows.
     _htmlCache.set(path, out)
   }
-  return new Response(_htmlCache.get(path)!, {
+  const body = _htmlCache.get(path)!.replaceAll("__POSTHOG_REPLAY__", await posthogReplayFlag())
+  return new Response(body, {
     headers: { "content-type": "text/html; charset=utf-8", ...extraHeaders },
   })
 }
