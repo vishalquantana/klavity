@@ -3480,6 +3480,33 @@ export async function accountIdForProject(projectId: string): Promise<string | n
   }
 }
 
+/**
+ * KLAVITYKLA-365 — how many AutoSim/Trail flows this account has CONFIGURED (across all of its
+ * projects). Demo/dogfood seed trails (created_by = "demo@klavity") are excluded so a seeded demo
+ * never looks like a real configured flow.
+ *
+ * Used by (a) the autosimFlows creation quota choke point and (b) the grandfathering branch in
+ * lib/quota.ts, which treats "a Free account that still has a configured flow" as proof that the
+ * flow predates AutoSim being removed from Free.
+ *
+ * Returns 0 on any error — callers must degrade open, never block on a DB hiccup.
+ */
+export async function countAccountAutosimFlows(accountId: string): Promise<number> {
+  try {
+    const r = await db!.execute({
+      sql: `SELECT COUNT(*) AS n FROM trails t
+              JOIN projects p ON p.id = t.project_id
+             WHERE p.account_id = ?
+               AND (t.created_by IS NULL OR t.created_by != ?)`,
+      args: [accountId, "demo@klavity"],
+    })
+    const n = Number((r.rows[0] as any)?.n ?? 0)
+    return Number.isFinite(n) && n > 0 ? n : 0
+  } catch {
+    return 0
+  }
+}
+
 export async function recordAiCall(a: AiCallInsert): Promise<void> {
   const id = "ai_" + crypto.randomUUID()
   const accountId = await accountIdForAiCall(a.projectId, a.accountId, a.actorEmail)

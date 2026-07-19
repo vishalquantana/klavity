@@ -77,13 +77,16 @@ test("PLAN_QUOTAS carries a monthly AutoSim-run cap distinct from the configured
     // Unlimited tiers are null on BOTH keys; metered tiers must allow more runs than they allow
     // configured flows (each flow is expected to run many times a month).
     if (q.autosimFlows == null) expect(q.autosimRunsMonthly).toBeNull()
+    // KLAVITYKLA-365: a tier with NO AutoSim (free) is 0 flows AND 0 runs — the two keys must stay
+    // coherent. Any tier that DOES include AutoSim must allow more runs than configured flows.
+    else if (q.autosimFlows === 0) expect(q.autosimRunsMonthly).toBe(0)
     else expect(q.autosimRunsMonthly!).toBeGreaterThan(q.autosimFlows)
   }
 })
 
 test("monthly AutoSim-run caps increase monotonically up the plan ladder", () => {
   const { free, pro, founding, team, agency, scale, partner } = PLAN_QUOTAS
-  expect(free.autosimRunsMonthly).toBe(10)
+  expect(free.autosimRunsMonthly).toBe(0) // KLAVITYKLA-365: AutoSim removed from Free
   expect(pro.autosimRunsMonthly).toBe(150)
   expect(founding.autosimRunsMonthly!).toBeGreaterThanOrEqual(pro.autosimRunsMonthly!)
   expect(team.autosimRunsMonthly!).toBeGreaterThan(pro.autosimRunsMonthly!)
@@ -94,12 +97,17 @@ test("monthly AutoSim-run caps increase monotonically up the plan ladder", () =>
 
 test("the AutoSim meter compares monthly runs against the monthly run cap, not the flow count", () => {
   // The KLAVITYKLA-309 bug: 12 runs on Free rendered as "12 / 1" (runs vs configured flows).
-  const auto = buildUsageMeters("free", { autosim_walk: 12 }).find((m) => m.key === "autosim")!
-  expect(auto.limit).toBe(PLAN_QUOTAS.free.autosimRunsMonthly)
-  expect(auto.limit).not.toBe(PLAN_QUOTAS.free.autosimFlows)
+  // KLAVITYKLA-365 moved Free to 0/0, so assert the like-for-like mapping on a tier that still
+  // has AutoSim: the denominator must be the monthly RUN cap, never the configured-flow count.
+  const auto = buildUsageMeters("pro", { autosim_walk: 12 }).find((m) => m.key === "autosim")!
+  expect(auto.limit).toBe(PLAN_QUOTAS.pro.autosimRunsMonthly)
+  expect(auto.limit).not.toBe(PLAN_QUOTAS.pro.autosimFlows)
   expect(auto.used).toBe(12)
-  expect(auto.overLimit).toBe(true) // 12 > 10 — still over, but now against a like-for-like cap
-  expect(auto.pct).toBe(100)
+  expect(auto.overLimit).toBe(false) // 12 of 150 — sane, not the old "12 / 5 flows" nonsense
+  // On Free the meter is now a 0-limit line: any run at all reads as over plan.
+  const freeAuto = buildUsageMeters("free", { autosim_walk: 12 }).find((m) => m.key === "autosim")!
+  expect(freeAuto.limit).toBe(0)
+  expect(freeAuto.overLimit).toBe(true)
 })
 
 test("the AutoSim meter stays well under 100% for ordinary run volumes on paid plans", () => {
@@ -267,6 +275,45 @@ test("founding tier normalizes correctly and carries at-or-above-Pro quotas", ()
   expect(founding.autosimRunsMonthly).toBeGreaterThanOrEqual(pro.autosimRunsMonthly!)
   expect(founding.projects === null || founding.projects >= pro.projects!).toBe(true)
   expect(founding.sims === null || founding.sims >= pro.sims!).toBe(true)
+})
+
+// ── KLAVITYKLA-365: Founding Ten gets Team entitlements; AutoSim leaves Free ────────────────────
+
+test("founding carries EXACTLY Team's entitlement values (Founding Ten was sold Team limits)", () => {
+  const founding = PLAN_QUOTAS.founding, team = PLAN_QUOTAS.team
+  expect(founding.projects).toBe(team.projects)
+  expect(founding.sims).toBe(team.sims)
+  expect(founding.simReactionsMonthly).toBe(team.simReactionsMonthly)
+  expect(founding.autosimFlows).toBe(team.autosimFlows)
+  expect(founding.autosimRunsMonthly).toBe(team.autosimRunsMonthly)
+  expect(founding.autosimCadence).toBe(team.autosimCadence)
+  // Concrete values, so a future edit to `team` can't silently drag Founding somewhere unintended.
+  expect(founding.projects).toBeNull()
+  expect(founding.sims).toBe(20)
+  expect(founding.simReactionsMonthly).toBe(2500)
+  expect(founding.autosimFlows).toBe(20)
+  expect(founding.autosimRunsMonthly).toBe(600)
+})
+
+test("the Founding entitlement grant did NOT change the Founding price ($290/yr, annual only)", () => {
+  expect(STRIPE_PRICE_CATALOG.founding.year?.unitAmount).toBe(29000)
+  expect(STRIPE_PRICE_CATALOG.founding.month).toBeUndefined()
+})
+
+test("Free has no AutoSim at all — zero configured flows AND zero monthly runs", () => {
+  expect(PLAN_QUOTAS.free.autosimFlows).toBe(0)
+  expect(PLAN_QUOTAS.free.autosimRunsMonthly).toBe(0)
+  // Everything else on Free is untouched — this ticket only removes AutoSim.
+  expect(PLAN_QUOTAS.free.projects).toBe(1)
+  expect(PLAN_QUOTAS.free.sims).toBe(1)
+  expect(PLAN_QUOTAS.free.simReactionsMonthly).toBe(25)
+})
+
+test("every PAID tier still includes AutoSim (Free is the only zero)", () => {
+  for (const plan of ["pro", "founding", "team", "agency"] as const) {
+    expect(PLAN_QUOTAS[plan].autosimFlows!).toBeGreaterThan(0)
+    expect(PLAN_QUOTAS[plan].autosimRunsMonthly!).toBeGreaterThan(0)
+  }
 })
 
 test("founding is annual-only in the price catalog (no monthly entry) at $290/yr", () => {

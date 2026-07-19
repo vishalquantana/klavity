@@ -12,10 +12,14 @@ import { test, expect, beforeEach, afterEach, mock, spyOn } from "bun:test"
 
 let mockAccountPlan: (id: string) => Promise<string>
 let mockGetAccountUsageMap: (id: string) => Promise<Record<string, number>>
+// KLAVITYKLA-365: how many AutoSim flows the account already has configured. Only consulted on the
+// grandfathering path (Free, autosim_walk, limit 0). Default 0 = a plain Free account.
+let mockCountAccountAutosimFlows: (id: string) => Promise<number>
 
 mock.module("./db", () => ({
   accountPlan: async (id: string) => mockAccountPlan(id),
   getAccountUsageMap: async (id: string) => mockGetAccountUsageMap(id),
+  countAccountAutosimFlows: async (id: string) => mockCountAccountAutosimFlows(id),
   // accountIdForProject is used by checkQuotaForProject — we don't exercise it in these
   // unit tests (we call checkQuota directly); include a passthrough stub so the module loads.
   accountIdForProject: async (_id: string) => null,
@@ -25,6 +29,7 @@ mock.module("./db", () => ({
 
 // ── Import AFTER mocking so the mock is in place ───────────────────────────
 const { checkQuota, quotaEnforcementEnabled } = await import("./quota")
+const { FREE_GRANDFATHERED_AUTOSIM_RUNS_MONTHLY } = await import("./billing")
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -43,6 +48,7 @@ beforeEach(() => {
   setEnforcement(false)
   mockAccountPlan = async () => "free"
   mockGetAccountUsageMap = async () => ({})
+  mockCountAccountAutosimFlows = async () => 0
 })
 
 afterEach(() => {
@@ -121,15 +127,75 @@ test("flag ON, free plan, sim_review at 24/25 (one below limit): allow, not degr
   expect(r.limit).toBe(25)
 })
 
-test("flag ON, free plan, autosim_walk under limit (0/10): allow, not degraded", async () => {
+// KLAVITYKLA-365: Free no longer includes AutoSim, so a Free account WITHOUT a pre-existing flow
+// has a 0 run cap. (allow stays true — checkQuota degrades, it never hard-blocks.)
+test("flag ON, free plan with no pre-existing flow: autosim_walk cap is 0 and degrades", async () => {
   setEnforcement(true)
   mockAccountPlan = async () => "free"
   mockGetAccountUsageMap = async () => ({})
+  mockCountAccountAutosimFlows = async () => 0
   const r = await checkQuota(ACCOUNT, "autosim_walk")
   expect(r.allow).toBe(true)
-  expect(r.degraded).toBe(false)
-  expect(r.usage).toBe(0)
-  expect(r.limit).toBe(10)   // free.autosimRunsMonthly (KLAVITYKLA-359)
+  expect(r.degraded).toBe(true)
+  expect(r.limit).toBe(0)    // free.autosimRunsMonthly (KLAVITYKLA-365)
+})
+
+// ── KLAVITYKLA-365 grandfathering ───────────────────────────────────────────
+// A Free account that ALREADY had a flow configured before AutoSim left Free must keep running it.
+// Because creating a flow on Free is now refused, "still has a configured flow" IS the proof that
+// the flow predates the change — so it falls back to the previous Free run allowance (10).
+
+test("grandfathered: Free account WITH a pre-existing flow keeps the old run allowance (10)", async () => {
+  setEnforcement(true)
+  mockAccountPlan = async () => "free"
+  mockGetAccountUsageMap = async () => ({ autosim_walk: 3 })
+  mockCountAccountAutosimFlows = async () => 1
+  const r = await checkQuota(ACCOUNT, "autosim_walk")
+  expect(r.allow).toBe(true)
+  expect(r.degraded).toBe(false) // 3 of 10 — the existing flow keeps running, undisturbed
+  expect(r.limit).toBe(FREE_GRANDFATHERED_AUTOSIM_RUNS_MONTHLY)
+  expect(r.limit).toBe(10)
+})
+
+test("grandfathering applies ONLY to autosim runs — sim_review on Free is unchanged", async () => {
+  setEnforcement(true)
+  mockAccountPlan = async () => "free"
+  mockGetAccountUsageMap = async () => ({ sim_review: 3 })
+  mockCountAccountAutosimFlows = async () => 1
+  const r = await checkQuota(ACCOUNT, "sim_review")
+  expect(r.limit).toBe(25) // free.simReactionsMonthly — untouched by KLAVITYKLA-365
+})
+
+test("grandfathering does not leak to paid plans (their real cap always wins)", async () => {
+  setEnforcement(true)
+  mockCountAccountAutosimFlows = async () => 1
+  mockGetAccountUsageMap = async () => ({})
+  for (const [plan, cap] of [["pro", 150], ["founding", 600], ["team", 600], ["agency", 1500]] as const) {
+    mockAccountPlan = async () => plan
+    const r = await checkQuota(ACCOUNT, "autosim_walk")
+    expect(r.limit).toBe(cap)
+  }
+})
+
+test("a grandfathered Free flow that blows past even the legacy allowance still only degrades", async () => {
+  setEnforcement(true)
+  mockAccountPlan = async () => "free"
+  mockGetAccountUsageMap = async () => ({ autosim_walk: 40 })
+  mockCountAccountAutosimFlows = async () => 1
+  const r = await checkQuota(ACCOUNT, "autosim_walk")
+  expect(r.allow).toBe(true) // NEVER a hard block
+  expect(r.degraded).toBe(true)
+  expect(r.limit).toBe(10)
+})
+
+test("the flow-count lookup is skipped entirely when the plan's run cap is non-zero", async () => {
+  setEnforcement(true)
+  mockAccountPlan = async () => "pro"
+  mockGetAccountUsageMap = async () => ({})
+  let called = 0
+  mockCountAccountAutosimFlows = async () => { called++; return 1 }
+  await checkQuota(ACCOUNT, "autosim_walk")
+  expect(called).toBe(0)
 })
 
 // KLAVITYKLA-359: autosim_walk is a monthly RUN count, so it must be checked against the monthly
@@ -137,7 +203,9 @@ test("flag ON, free plan, autosim_walk under limit (0/10): allow, not degraded",
 test("autosim_walk is measured against the monthly run cap, not the configured-flow allowance", async () => {
   setEnforcement(true)
   mockGetAccountUsageMap = async () => ({})
-  for (const [plan, runs, flows] of [["free", 10, 1], ["pro", 150, 5], ["team", 600, 20], ["agency", 1500, 50]] as const) {
+  // KLAVITYKLA-365: free is now 0/0 on both keys, so it can't distinguish the two — check the
+  // tiers that still have AutoSim.
+  for (const [plan, runs, flows] of [["pro", 150, 5], ["team", 600, 20], ["agency", 1500, 50]] as const) {
     mockAccountPlan = async () => plan
     const r = await checkQuota(ACCOUNT, "autosim_walk")
     expect(r.limit).toBe(runs)
@@ -195,15 +263,16 @@ test("flag ON, free plan, sim_review over limit (50/25): degraded=true, allow st
   expect(r.limit).toBe(25)
 })
 
-test("flag ON, free plan, autosim_walk over limit (20/10): degraded=true, allow still true", async () => {
+test("flag ON, grandfathered free plan, autosim_walk over limit (20/10): degraded=true, allow still true", async () => {
   setEnforcement(true)
   mockAccountPlan = async () => "free"
   mockGetAccountUsageMap = async () => ({ autosim_walk: 20 })
+  mockCountAccountAutosimFlows = async () => 1 // pre-existing flow → legacy allowance of 10
   const r = await checkQuota(ACCOUNT, "autosim_walk")
   expect(r.allow).toBe(true)
   expect(r.degraded).toBe(true)
   expect(r.reason).toContain("autosim_walk")
-  expect(r.limit).toBe(10)   // free.autosimRunsMonthly
+  expect(r.limit).toBe(10)   // FREE_GRANDFATHERED_AUTOSIM_RUNS_MONTHLY
 })
 
 test("flag ON, pro plan, autosim_walk at limit (150/150): degraded=true", async () => {
