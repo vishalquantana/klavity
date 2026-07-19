@@ -23,7 +23,24 @@ export type PageInventory = { links: number; forms: number; buttons: number; inp
 
 export type PageLink = { href: string; text: string }
 
-export type LinkCheck = { href: string; text: string; status: number | null; ok: boolean }
+/**
+ * Tri-state on purpose (KLAVITYKLA-347). "not ok" is NOT the same as "broken": a lot of perfectly
+ * healthy links answer a datacentre IP with 403/429 (bot walls — Google's Chrome Web Store is the
+ * canonical example), or time out under load. Reporting those as broken is a worse failure than
+ * missing them, because the user can click the link and see it work.
+ */
+export type LinkVerdict = "ok" | "broken" | "inconclusive"
+
+export type LinkCheck = {
+  href: string
+  text: string
+  status: number | null
+  /** True only for a confirmed-good (2xx/3xx) response. Kept for callers that just want health. */
+  ok: boolean
+  verdict: LinkVerdict
+  /** True when the link points off the scanned origin — we can't control those, so we soften them. */
+  external?: boolean
+}
 
 export type BugFinding = { what: string; where: string; why: string; severity: string; evidence?: string }
 
@@ -63,19 +80,62 @@ function decodeEntities(s: string): string {
 }
 
 /**
- * Real anchors from the raw HTML, absolutised against `baseUrl` and deduped by href.
- * Non-navigational schemes (mailto:, tel:, javascript:, #fragment-only) are skipped — there is
- * nothing to HTTP-verify there, and flagging them would recreate the false-positive problem.
+ * Real anchors from a PARSED DOM, absolutised against `baseUrl` and deduped by href.
+ *
+ * KLAVITYKLA-347 — WHY THIS IS NOT A REGEX ANY MORE. The previous implementation regex-matched
+ * `href="..."` over the RAW source, so it "found" links inside <script> bodies. On klavity.in's own
+ * home page, site/index.html builds markup with ordinary JS string concatenation:
+ *
+ *     slot.innerHTML = '<div class="hd-cta-row"><a class="btn" href="' + esc(onboardingHref(url)) + '">'
+ *
+ * …and the scanner dutifully reported `https://klavity.in/'%20+%20esc(onboardingHref(url))%20+%20'`
+ * as a HIGH-severity broken link. That is not a link, it is our own source code. Every JS-heavy app
+ * — i.e. every prospect we're trying to impress — produces this garbage. So we now feed the HTML
+ * through a real HTML tokenizer (HTMLRewriter), which by spec treats <script>/<style> bodies as raw
+ * text and never as markup, and we additionally skip <template>/<noscript> (parsed as markup, but
+ * inert — those anchors are not on the page a visitor sees). Comments are dropped by the parser.
+ *
+ * Non-navigational schemes (mailto:, tel:, javascript:, data:, sms:, #fragment-only) are skipped —
+ * there is nothing to HTTP-verify there, and flagging them would recreate the false-positive problem.
  */
-export function extractLinks(html: string, baseUrl: string, limit = MAX_LINKS_CHECKED): PageLink[] {
+export async function extractLinks(html: string, baseUrl: string, limit = MAX_LINKS_CHECKED): Promise<PageLink[]> {
+  const raw: Array<{ href: string; text: string }> = []
+  let inert = 0
+  let cur: { href: string; text: string } | null = null
+
+  await new HTMLRewriter()
+    .on("template,noscript", {
+      element(el) {
+        inert++
+        el.onEndTag(() => { inert-- })
+      },
+    })
+    .on("a", {
+      element(el) {
+        cur = null
+        if (inert > 0) return
+        const href = el.getAttribute("href")
+        if (href == null) return
+        const node = { href, text: "" }
+        raw.push(node)
+        cur = node
+        el.onEndTag(() => { cur = null })
+      },
+      text(t) {
+        if (cur) cur.text += t.text
+      },
+    })
+    .transform(new Response(html))
+    .text()
+
   const out: PageLink[] = []
   const seen = new Set<string>()
-  const re = /<a\b[^>]*\bhref\s*=\s*("([^"]*)"|'([^']*)'|([^\s">]+))[^>]*>([\s\S]*?)<\/a>/gi
-  let m: RegExpExecArray | null
-  while ((m = re.exec(html))) {
-    const rawHref = decodeEntities(m[2] ?? m[3] ?? m[4] ?? "").trim()
+  for (const node of raw) {
+    // HTMLRewriter already entity-decodes attribute values; decodeEntities is belt-and-braces for
+    // the double-encoded cases (&amp;amp;) that show up in CMS output.
+    const rawHref = decodeEntities(node.href).trim()
     if (!rawHref || rawHref.startsWith("#")) continue
-    if (/^(mailto|tel|javascript|data|sms):/i.test(rawHref)) continue
+    if (/^(mailto|tel|javascript|data|sms|file|ftp):/i.test(rawHref)) continue
     let abs: URL
     try {
       abs = new URL(rawHref, baseUrl)
@@ -87,10 +147,7 @@ export function extractLinks(html: string, baseUrl: string, limit = MAX_LINKS_CH
     const href = abs.toString()
     if (seen.has(href)) continue
     seen.add(href)
-    const text = decodeEntities(m[5].replace(/<[^>]+>/g, " "))
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, 80)
+    const text = node.text.replace(/\s+/g, " ").trim().slice(0, 80)
     out.push({ href, text })
     if (out.length >= limit) break
   }
@@ -98,32 +155,124 @@ export function extractLinks(html: string, baseUrl: string, limit = MAX_LINKS_CH
 }
 
 /**
- * Resolve every link and record what actually came back. A link only counts as broken on a real
- * 4xx/5xx or a connection failure — 2xx/3xx (and anything we couldn't classify) is treated as
- * working, because a false "your link is broken" is the credibility event we're eliminating.
+ * Same-origin pages worth also scanning (KLAVITYKLA-347, BUG 3). We pick from links we already
+ * extracted, so we never invent URLs, and we never leave the entered origin.
  *
- * HEAD first (cheap); some servers answer HEAD with 405/501 or 404 while GET is fine, so those
- * statuses are re-checked with GET before we call anything broken.
+ * Ordering favours the shallowest paths, which in practice are the nav/header/footer destinations
+ * (/pricing, /docs, /blog) rather than deep permalinks — the pages a prospect would actually click.
+ * Assets and non-HTML endpoints are excluded so we don't burn the budget fetching a PDF.
+ */
+const NON_PAGE_EXT = /\.(?:png|jpe?g|gif|svg|webp|avif|ico|css|js|mjs|json|xml|txt|pdf|zip|gz|mp4|webm|woff2?|ttf|eot|rss|atom)$/i
+
+export function sameOriginCrawlTargets(links: PageLink[], baseUrl: string, max: number): string[] {
+  let base: URL
+  try {
+    base = new URL(baseUrl)
+  } catch {
+    return []
+  }
+  const basePath = base.pathname.replace(/\/+$/, "")
+  const candidates: Array<{ href: string; depth: number }> = []
+  const seen = new Set<string>()
+  for (const l of links) {
+    let u: URL
+    try {
+      u = new URL(l.href)
+    } catch {
+      continue
+    }
+    if (u.origin !== base.origin) continue
+    if (NON_PAGE_EXT.test(u.pathname)) continue
+    const norm = u.origin + u.pathname.replace(/\/+$/, "")
+    if (norm === base.origin + basePath) continue // the page we already scanned
+    if (seen.has(norm)) continue
+    seen.add(norm)
+    candidates.push({ href: u.toString(), depth: u.pathname.split("/").filter(Boolean).length })
+  }
+  candidates.sort((a, b) => a.depth - b.depth)
+  return candidates.slice(0, max).map((c) => c.href)
+}
+
+/**
+ * A browser-shaped User-Agent. KLAVITYKLA-347: sending "KlavityBot/1.0" got us 403'd by bot walls
+ * (Google's Chrome Web Store returned 403 to the bot UA while the link works fine in a browser),
+ * and we then reported the customer's WORKING link as dead. We are doing exactly what a visitor's
+ * browser does — a single GET of a page they linked to — so we identify as one.
+ */
+const BROWSER_UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) " +
+  "Chrome/126.0.0.0 Safari/537.36 KlavityLinkCheck/1.0 (+https://klavity.in)"
+
+/**
+ * Statuses that tell us NOTHING about whether the link works for a human. Bot walls, method
+ * restrictions, rate limits, auth walls and origin hiccups all land here. Never reported.
+ */
+function statusVerdict(status: number): LinkVerdict {
+  // The only statuses that mean "this resource is genuinely not there".
+  if (status === 404 || status === 410) return "broken"
+  if (status < 400) return "ok"
+  // 401/403 (auth or bot wall), 405 (method), 408/429 (throttle), 5xx (transient origin) — all
+  // routinely returned to datacentre IPs for links that work perfectly in a browser.
+  return "inconclusive"
+}
+
+/**
+ * A thrown fetch error only counts as broken when the HOST ITSELF does not exist (DNS failure) —
+ * that is a real dead end no visitor can reach. Timeouts, TLS handshake failures and connection
+ * resets are frequently anti-bot behaviour or transient, so they stay inconclusive.
+ */
+function errorVerdict(err: unknown): LinkVerdict {
+  const blob = `${(err as any)?.code ?? ""} ${(err as any)?.message ?? ""}`.toLowerCase()
+  if (/enotfound|eai_again|dns|getaddrinfo|unknown host|name not resolved/.test(blob)) return "broken"
+  return "inconclusive"
+}
+
+/**
+ * Resolve every link and record what actually came back.
+ *
+ * KLAVITYKLA-347 rewrote the policy here. Previously ANY non-2xx/3xx — or any thrown error — was
+ * reported to the user as a broken link. That produced the worst possible failure mode for a tool
+ * whose whole job is to demonstrate our quality: telling a prospect their working link is dead.
+ * Now a link is only ever reported broken on an UNAMBIGUOUS signal (404/410, or the host not
+ * resolving). Everything else is `inconclusive` and is silently not reported.
+ *
+ * We use GET with a browser User-Agent and follow redirects, because that is what a visitor does.
+ * (HEAD is cheaper but is exactly what bot walls and CDNs mishandle, which is how we got here.)
  */
 export async function verifyLinks(
   links: PageLink[],
   fetcher: (url: string, init: RequestInit) => Promise<Response>,
-  opts: { concurrency?: number; timeoutMs?: number } = {},
+  opts: { concurrency?: number; timeoutMs?: number; baseUrl?: string } = {},
 ): Promise<LinkCheck[]> {
   const concurrency = opts.concurrency ?? 6
-  const timeoutMs = opts.timeoutMs ?? 5_000
+  const timeoutMs = opts.timeoutMs ?? 8_000
   const results: LinkCheck[] = new Array(links.length)
   let next = 0
 
-  const headers = { "user-agent": "KlavityBot/1.0 (+https://klavity.in)" }
-  async function probe(url: string, method: "HEAD" | "GET"): Promise<number | null> {
+  let baseOrigin: string | null = null
+  try {
+    baseOrigin = opts.baseUrl ? new URL(opts.baseUrl).origin : null
+  } catch { /* leave null — everything is then treated as same-origin-unknown */ }
+
+  const headers = {
+    "user-agent": BROWSER_UA,
+    accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "accept-language": "en-US,en;q=0.9",
+  }
+
+  async function probe(url: string): Promise<{ status: number | null; verdict: LinkVerdict }> {
     try {
-      const res = await fetcher(url, { method, headers, redirect: "follow", signal: AbortSignal.timeout(timeoutMs) })
+      const res = await fetcher(url, {
+        method: "GET",
+        headers,
+        redirect: "follow",
+        signal: AbortSignal.timeout(timeoutMs),
+      })
       // Drain so sockets close promptly; we only care about the status.
       await res.body?.cancel().catch(() => {})
-      return res.status
-    } catch {
-      return null
+      return { status: res.status, verdict: statusVerdict(res.status) }
+    } catch (err) {
+      return { status: null, verdict: errorVerdict(err) }
     }
   }
 
@@ -132,11 +281,12 @@ export async function verifyLinks(
       const i = next++
       if (i >= links.length) return
       const link = links[i]
-      let status = await probe(link.href, "HEAD")
-      // HEAD is unreliable on a lot of real hosts — confirm any failure with a GET before we
-      // ever tell a user their link is broken.
-      if (status === null || status >= 400) status = await probe(link.href, "GET")
-      results[i] = { href: link.href, text: link.text, status, ok: status !== null && status < 400 }
+      const { status, verdict } = await probe(link.href)
+      let external = false
+      try {
+        external = baseOrigin != null && new URL(link.href).origin !== baseOrigin
+      } catch { /* unparseable can't happen here — extractLinks already normalised */ }
+      results[i] = { href: link.href, text: link.text, status, ok: verdict === "ok", verdict, external }
     }
   }
 
@@ -144,17 +294,24 @@ export async function verifyLinks(
   return results
 }
 
-/** Findings for links that genuinely failed — the only broken-link claims we ever emit. */
+/**
+ * Findings for links that UNAMBIGUOUSLY failed — the only broken-link claims we ever emit.
+ * `inconclusive` checks produce nothing at all.
+ *
+ * External links are reported at MEDIUM, not HIGH. We can't control someone else's domain, a
+ * third-party 404 is usually a vendor moving a page rather than the customer's bug, and being
+ * loudly wrong about another company's site is the most embarrassing way for this tool to fail.
+ */
 export function brokenLinkFindings(checks: LinkCheck[]): BugFinding[] {
   return checks
-    .filter((c) => !c.ok)
+    .filter((c) => c.verdict === "broken")
     .map((c) => ({
       what: `Broken link${c.text ? ` "${c.text}"` : ""}`.slice(0, 100),
       where: c.href.slice(0, 120),
       why: c.status === null
-        ? "The link didn't respond, so a visitor clicking it hits a dead end."
+        ? "The link's domain doesn't resolve, so a visitor clicking it hits a dead end."
         : `The link returns HTTP ${c.status}, so a visitor clicking it hits an error page.`,
-      severity: "high",
+      severity: c.external ? "medium" : "high",
     }))
 }
 
@@ -222,10 +379,10 @@ export function filterModelFindings(findings: BugFinding[], already: BugFinding[
 }
 
 /** Human-readable "here's what we checked" line for the empty/success state. */
-export function checkedSummary(inv: PageInventory, linksVerified: number): string {
-  const parts: string[] = []
-  parts.push(linksVerified === 1 ? "resolved 1 link" : `resolved ${linksVerified} links`)
-  parts.push(inv.forms === 1 ? "1 form" : `${inv.forms} forms`)
-  parts.push(inv.buttons === 1 ? "1 button" : `${inv.buttons} buttons`)
-  return `We ${parts[0]}, and inspected ${parts[1]} and ${parts[2]}.`
+export function checkedSummary(inv: PageInventory, linksVerified: number, pages = 1): string {
+  const links = linksVerified === 1 ? "resolved 1 link" : `resolved ${linksVerified} links`
+  const forms = inv.forms === 1 ? "1 form" : `${inv.forms} forms`
+  const buttons = inv.buttons === 1 ? "1 button" : `${inv.buttons} buttons`
+  const scope = pages > 1 ? `We read ${pages} pages, ` : "We "
+  return `${scope}${links}, and inspected ${forms} and ${buttons}.`
 }

@@ -43,7 +43,7 @@ afterAll(() => { linkServer?.stop(true) })
 
 test("BUG 1: a link that actually returns 200 is NEVER reported as broken", async () => {
   const html = `<html><body><a href="/ok">GitHub &#8599;</a></body></html>`
-  const links = extractLinks(html, LINK_BASE)
+  const links = await extractLinks(html, LINK_BASE)
   expect(links.length).toBe(1)
   expect(links[0].href).toBe(`${LINK_BASE}/ok`)
   const checks = await verifyLinks(links, (u, init) => fetch(u, init))
@@ -54,7 +54,7 @@ test("BUG 1: a link that actually returns 200 is NEVER reported as broken", asyn
 
 test("BUG 1: a link that really 404s IS reported, with the verified status in the reason", async () => {
   const html = `<a href="${LINK_BASE}/gone">Docs</a>`
-  const checks = await verifyLinks(extractLinks(html, LINK_BASE), (u, init) => fetch(u, init))
+  const checks = await verifyLinks(await extractLinks(html, LINK_BASE), (u, init) => fetch(u, init))
   expect(checks[0].ok).toBe(false)
   const findings = brokenLinkFindings(checks)
   expect(findings.length).toBe(1)
@@ -64,13 +64,13 @@ test("BUG 1: a link that really 404s IS reported, with the verified status in th
 })
 
 test("BUG 1: a 3xx redirect to a working page counts as healthy, not broken", async () => {
-  const checks = await verifyLinks(extractLinks(`<a href="/moved">Blog</a>`, LINK_BASE), (u, init) => fetch(u, init))
+  const checks = await verifyLinks(await extractLinks(`<a href="/moved">Blog</a>`, LINK_BASE), (u, init) => fetch(u, init))
   expect(checks[0].ok).toBe(true)
   expect(brokenLinkFindings(checks)).toEqual([])
 })
 
-test("BUG 1: a host that rejects HEAD but serves GET is confirmed with GET before being called broken", async () => {
-  const checks = await verifyLinks(extractLinks(`<a href="/headhostile">Pricing</a>`, LINK_BASE), (u, init) => fetch(u, init))
+test("BUG 1: a HEAD-hostile host is healthy — we probe with GET, which is what a visitor does", async () => {
+  const checks = await verifyLinks(await extractLinks(`<a href="/headhostile">Pricing</a>`, LINK_BASE), (u, init) => fetch(u, init))
   expect(checks[0].ok).toBe(true)
   expect(brokenLinkFindings(checks)).toEqual([])
 })
@@ -114,7 +114,7 @@ test("BUG 3: a healthy page still produces a concrete 'here is what we checked' 
 
 // ── Link extraction hygiene ───────────────────────────────────────────────────────────────────
 
-test("extractLinks skips mailto/tel/javascript/fragment hrefs and de-dupes", () => {
+test("extractLinks skips mailto/tel/javascript/fragment hrefs and de-dupes", async () => {
   const html = `
     <a href="mailto:a@b.com">Mail</a>
     <a href="tel:+1">Call</a>
@@ -122,23 +122,23 @@ test("extractLinks skips mailto/tel/javascript/fragment hrefs and de-dupes", () 
     <a href="#top">Top</a>
     <a href="/dup">Dup</a>
     <a href="/dup#frag">Dup again</a>`
-  const links = extractLinks(html, "https://example.com")
+  const links = await extractLinks(html, "https://example.com")
   expect(links.map((l) => l.href)).toEqual(["https://example.com/dup"])
 })
 
-test("extractLinks caps the number of links resolved per scan", () => {
+test("extractLinks caps the number of links resolved per scan", async () => {
   const html = Array.from({ length: 40 }, (_, i) => `<a href="/p${i}">P${i}</a>`).join("")
-  expect(extractLinks(html, "https://example.com").length).toBe(12)
+  expect((await extractLinks(html, "https://example.com")).length).toBe(12)
 })
 
-test("verifyLinks treats a connection failure as broken, not as healthy", async () => {
+test("verifyLinks reports a NON-EXISTENT DOMAIN (DNS failure) as broken", async () => {
   const checks = await verifyLinks(
     [{ href: "https://example.com/x", text: "X" }],
-    async () => { throw new Error("ECONNREFUSED") },
+    async () => { throw Object.assign(new Error("getaddrinfo ENOTFOUND example.com"), { code: "ENOTFOUND" }) },
   )
-  expect(checks[0].ok).toBe(false)
+  expect(checks[0].verdict).toBe("broken")
   expect(checks[0].status).toBe(null)
-  expect(brokenLinkFindings(checks)[0].why).toContain("didn't respond")
+  expect(brokenLinkFindings(checks)[0].why).toContain("doesn't resolve")
 })
 
 
@@ -184,4 +184,185 @@ test("filterModelFindings drops ungrounded findings but keeps grounded ones", ()
 test("filterModelFindings without pageText skips grounding (back-compat for non-qa callers)", () => {
   const findings = [f({ what: "Something", evidence: "not on the page at all" })]
   expect(filterModelFindings(findings, []).length).toBe(1)
+})
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// KLAVITYKLA-347 — founder-reported quality defects, reproduced live on klavity.in.
+//
+//   BUG 1  A regex over the RAW source treated JS string fragments inside <script> as anchors, so
+//          the scan reported our OWN SOURCE CODE as a HIGH-severity broken link.
+//   BUG 2  Any non-2xx (403 bot wall) or any thrown error (timeout) was reported as "broken",
+//          telling prospects their working links were dead.
+//   BUG 3  Only the entered page was scanned.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+import { sameOriginCrawlTargets } from "./lib/bugcheck"
+
+// ── BUG 1: hrefs that only exist inside JavaScript are not links ───────────────────────────────
+
+test("BUG 1 (regression): an href inside a <script> string is NOT extracted as a link", async () => {
+  // VERBATIM construct from site/index.html:717 — the exact source line that produced the
+  // reported false positive `https://klavity.in/'%20+%20esc(onboardingHref(url))%20+%20'`.
+  const html = `<html><body>
+    <a href="/pricing">Pricing</a>
+    <script>
+      slot.innerHTML = '<div class="hd-cta-row"><a class="btn btn-indigo" href="' + esc(onboardingHref(url)) + '">Start free</a></div>'
+    </script>
+  </body></html>`
+  const links = await extractLinks(html, "https://klavity.in")
+  expect(links.map((l) => l.href)).toEqual(["https://klavity.in/pricing"])
+  // The specific garbage URL the founder saw must not appear at all.
+  expect(links.some((l) => l.href.includes("onboardingHref"))).toBe(false)
+})
+
+test("BUG 1 (regression): hrefs in <style>, <template>, <noscript> and comments are not links", async () => {
+  const html = `<html><body>
+    <a href="/real">Real</a>
+    <style>a[href="/fake-css"] { color: red }</style>
+    <template><a href="/fake-template">T</a></template>
+    <noscript><a href="/fake-noscript">N</a></noscript>
+    <!-- <a href="/fake-comment">C</a> -->
+  </body></html>`
+  const links = await extractLinks(html, "https://example.com")
+  expect(links.map((l) => l.href)).toEqual(["https://example.com/real"])
+})
+
+test("BUG 1 (regression): relative, root-relative, protocol-relative and absolute hrefs all resolve", async () => {
+  const html = `
+    <a href="about">Rel</a>
+    <a href="/docs">Root</a>
+    <a href="//cdn.example.org/x">Proto</a>
+    <a href="https://other.test/y">Abs</a>
+    <a href="../up">Up</a>`
+  const links = await extractLinks(html, "https://example.com/blog/post")
+  expect(links.map((l) => l.href)).toEqual([
+    "https://example.com/blog/about",
+    "https://example.com/docs",
+    "https://cdn.example.org/x",
+    "https://other.test/y",
+    "https://example.com/up",
+  ])
+})
+
+test("BUG 1 (regression): mailto:, tel:, javascript:, data: and #fragments are skipped", async () => {
+  const html = `
+    <a href="mailto:hi@klavity.in">Email</a>
+    <a href="tel:+61400000000">Call</a>
+    <a href="javascript:void(0)">JS</a>
+    <a href="data:text/html,x">Data</a>
+    <a href="sms:+61400000000">SMS</a>
+    <a href="#pricing">Jump</a>
+    <a href="">Empty</a>
+    <a>No href</a>
+    <a href="/keep">Keep</a>`
+  const links = await extractLinks(html, "https://klavity.in")
+  expect(links.map((l) => l.href)).toEqual(["https://klavity.in/keep"])
+})
+
+// ── BUG 2: only unambiguous failures are reported ──────────────────────────────────────────────
+
+const one = (href: string) => [{ href, text: "Chrome Web Store" }]
+
+test("BUG 2 (regression): a 403 bot wall is INCONCLUSIVE, never reported as broken", async () => {
+  // Reproduces the reported false positive: chromewebstore.google.com 403s a datacentre GET but
+  // works perfectly in a browser.
+  const checks = await verifyLinks(
+    one("https://chromewebstore.google.com/detail/klavity"),
+    async () => new Response("blocked", { status: 403 }),
+  )
+  expect(checks[0].verdict).toBe("inconclusive")
+  expect(brokenLinkFindings(checks)).toEqual([])
+})
+
+test("BUG 2 (regression): a timeout is INCONCLUSIVE, never reported as broken", async () => {
+  const checks = await verifyLinks(
+    one("https://slow.test/x"),
+    async () => { throw Object.assign(new Error("The operation timed out."), { name: "TimeoutError" }) },
+  )
+  expect(checks[0].verdict).toBe("inconclusive")
+  expect(brokenLinkFindings(checks)).toEqual([])
+})
+
+test("BUG 2 (regression): 405/429/500/401 are all INCONCLUSIVE, never reported as broken", async () => {
+  for (const status of [401, 405, 408, 429, 500, 502, 503]) {
+    const checks = await verifyLinks(one(`https://x.test/${status}`), async () => new Response("", { status }))
+    expect(checks[0].verdict).toBe("inconclusive")
+    expect(brokenLinkFindings(checks)).toEqual([])
+  }
+})
+
+test("BUG 2 (regression): 404 and 410 ARE reported as broken", async () => {
+  for (const status of [404, 410]) {
+    const checks = await verifyLinks(one(`https://x.test/${status}`), async () => new Response("", { status }))
+    expect(checks[0].verdict).toBe("broken")
+    expect(brokenLinkFindings(checks).length).toBe(1)
+  }
+})
+
+test("BUG 2 (regression): a TLS/connection reset is INCONCLUSIVE, not broken", async () => {
+  const checks = await verifyLinks(
+    one("https://x.test/tls"),
+    async () => { throw Object.assign(new Error("socket connection was closed unexpectedly"), { code: "ECONNRESET" }) },
+  )
+  expect(checks[0].verdict).toBe("inconclusive")
+  expect(brokenLinkFindings(checks)).toEqual([])
+})
+
+test("BUG 2: link checks use a browser User-Agent and GET, not a bot HEAD", async () => {
+  let seenMethod = "", seenUA = ""
+  await verifyLinks(one("https://x.test/ua"), async (_u, init) => {
+    seenMethod = String(init.method)
+    seenUA = String((init.headers as Record<string, string>)["user-agent"])
+    return new Response("", { status: 200 })
+  })
+  expect(seenMethod).toBe("GET")
+  expect(seenUA).toContain("Mozilla/5.0")
+})
+
+test("BUG 2: a broken EXTERNAL link is medium severity; a broken OWN-SITE link stays high", async () => {
+  const checks = await verifyLinks(
+    [
+      { href: "https://klavity.in/gone", text: "Docs" },
+      { href: "https://third-party.test/gone", text: "Partner" },
+    ],
+    async () => new Response("", { status: 404 }),
+    { baseUrl: "https://klavity.in/" },
+  )
+  const findings = brokenLinkFindings(checks)
+  expect(findings.find((f) => f.where.includes("klavity.in"))!.severity).toBe("high")
+  expect(findings.find((f) => f.where.includes("third-party"))!.severity).toBe("medium")
+})
+
+// ── BUG 3: bounded same-origin crawl ───────────────────────────────────────────────────────────
+
+test("BUG 3: crawl targets are same-origin only, deduped, and exclude the entered page", async () => {
+  const links = await extractLinks(`
+    <a href="/pricing">Pricing</a>
+    <a href="/docs">Docs</a>
+    <a href="/">Home</a>
+    <a href="/pricing/">Pricing again</a>
+    <a href="https://twitter.com/klavity">Twitter</a>
+    <a href="/logo.png">Logo</a>
+    <a href="/paper.pdf">Paper</a>`, "https://klavity.in/")
+  const targets = sameOriginCrawlTargets(links, "https://klavity.in/", 4)
+  expect(targets).toEqual(["https://klavity.in/pricing", "https://klavity.in/docs"])
+})
+
+test("BUG 3: crawl target count is hard-capped", async () => {
+  const html = Array.from({ length: 20 }, (_, i) => `<a href="/p${i}">P${i}</a>`).join("")
+  const links = await extractLinks(html, "https://klavity.in/", 50)
+  expect(sameOriginCrawlTargets(links, "https://klavity.in/", 4).length).toBe(4)
+})
+
+test("BUG 3: shallow (nav/footer) paths are preferred over deep permalinks", async () => {
+  const links = await extractLinks(`
+    <a href="/blog/2026/07/some-long-post-slug">Deep</a>
+    <a href="/pricing">Pricing</a>`, "https://klavity.in/")
+  expect(sameOriginCrawlTargets(links, "https://klavity.in/", 1)).toEqual(["https://klavity.in/pricing"])
+})
+
+test("BUG 3: the checked-summary reports how many pages were read", () => {
+  const inv = { links: 9, forms: 1, buttons: 3, inputs: 2 }
+  expect(checkedSummary(inv, 9, 5)).toContain("5 pages")
+  expect(checkedSummary(inv, 9, 1)).not.toContain("pages,")
 })
