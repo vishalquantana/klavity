@@ -39,6 +39,7 @@
   <div class="ok" id="ok"></div>
   <div class="err" id="err"></div>
 </div>
+<script src="/otp-input.js"></script>
 <script>
 const qs = new URLSearchParams(location.search)
 const projectId = qs.get("project") || ""
@@ -66,20 +67,6 @@ function showCodeStep(email, testOtp){
     : "Enter the code we sent to " + email + "."
   $("emailStep").classList.add("hide"); $("codeStep").classList.remove("hide")
   $("code").value = ""; $("code").focus()
-}
-
-// 30s cooldown so the resend link can't be hammered.
-let resendTimer = 0
-function startResendCooldown(){
-  let left = 30
-  $("resendBtn").disabled = true
-  $("resendBtn").textContent = "Resend in " + left + "s"
-  clearInterval(resendTimer)
-  resendTimer = setInterval(() => {
-    left -= 1
-    if (left <= 0){ clearInterval(resendTimer); $("resendBtn").disabled = false; $("resendBtn").textContent = "Resend code" }
-    else $("resendBtn").textContent = "Resend in " + left + "s"
-  }, 1000)
 }
 
 async function mintAndFinish(){
@@ -129,29 +116,43 @@ $("sendBtn").onclick = async () => {
   if (!data) return
   // Genuine send failure (not test-OTP) — don't strand the user on a code field.
   if (!data.testOtp && data.emailed === false) return err("We couldn't send your code right now. Please try again.")
-  showCodeStep(email, !!data.testOtp); startResendCooldown()
-}
-$("resendBtn").onclick = async () => {
-  if ($("resendBtn").disabled) return
-  err(""); const email = $("email").value.trim().toLowerCase()
-  if (!email.includes("@")) return err("Enter a valid email.")
-  const data = await requestCode(email)
-  if (!data) return
-  if (!data.testOtp && data.emailed === false) return err("We couldn't send your code right now. Please try again.")
-  ok(data.testOtp ? "Test mode — enter your test sign-in code." : "New code sent to " + email + "."); startResendCooldown()
+  showCodeStep(email, !!data.testOtp); otp.startResendCooldown()
 }
 $("changeBtn").onclick = () => {
-  err(""); ok(""); clearInterval(resendTimer); pendingHost = ""
-  $("resendBtn").disabled = false; $("resendBtn").textContent = "Resend code"
+  err(""); ok(""); otp.stopResendCooldown(); pendingHost = ""
   $("codeStep").classList.add("hide"); $("addStep").classList.add("hide"); $("emailStep").classList.remove("hide")
   $("sub").textContent = "Sign in to bring your Sims onto this page."
   $("email").focus(); $("email").select()
 }
-$("verifyBtn").onclick = async () => {
+
+// Verify the entered code. Shared by the Verify button and the OTP helper (auto-submit / Enter).
+async function verifyNow(){
   err(""); const email = $("email").value.trim().toLowerCase(); const code = $("code").value.trim()
   if (code.length < 4) return err("Enter the 6-digit code.")
   const r = await jf("/api/auth/verify", { method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({ email, code }) })
   if (!r.ok) return err(r.data.error || "Invalid or expired code.")
   await mintAndFinish()
 }
+$("verifyBtn").onclick = verifyNow
+
+// Unified OTP input UX (sanitise, paste-to-fill, auto-submit, Enter) + resend cooldown.
+const otp = window.KlavityOTP.mount({
+  input: $("code"),
+  length: 6,
+  onComplete: verifyNow,
+  errorEl: $("err"),
+  resend: {
+    el: $("resendBtn"),
+    cooldownSecs: 30,
+    onResend: async () => {
+      err(""); const email = $("email").value.trim().toLowerCase()
+      if (!email.includes("@")) { err("Enter a valid email."); return false }
+      const data = await requestCode(email)
+      if (!data) return false
+      if (!data.testOtp && data.emailed === false) { err("We couldn't send your code right now. Please try again."); return false }
+      ok(data.testOtp ? "Test mode — enter your test sign-in code." : "New code sent to " + email + ".")
+      return true
+    },
+  },
+})
 </script></body></html>
