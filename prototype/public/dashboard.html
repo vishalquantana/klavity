@@ -1380,6 +1380,18 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .wp-ext{margin-top:18px;padding-top:16px;border-top:1px solid var(--line,#e6e6ec)}
 .wp-ext-t{font-weight:700;font-size:14px}
 @media (min-width:760px){.wp-config-preview{display:flex;gap:20px;flex-wrap:wrap}.wp-config{flex:1;min-width:300px}}
+/* KLAVITYKLA-313: past_due grace-degrade banner. Amber (warning, not fatal) during grace; deepens to
+   rose once grace expires and premium actions are restricted. */
+.pastdue-banner{display:flex;align-items:center;gap:12px;padding:12px 16px;margin-bottom:16px;border:1px solid rgba(217,119,6,.4);border-radius:12px;background:rgba(217,119,6,.09);color:inherit;text-decoration:none;font-size:14px;transition:transform .15s ease}
+.pastdue-banner:hover{transform:translateY(-1px)}
+.pastdue-banner.expired{border-color:rgba(219,39,119,.45);background:rgba(219,39,119,.09)}
+.pastdue-banner .pd-ico{flex:none;display:flex;color:var(--amber,#d97706)}
+.pastdue-banner.expired .pd-ico{color:var(--rose,#db2777)}
+.pastdue-banner .pd-txt{min-width:0}
+.pastdue-banner .pd-txt b{font-weight:600}
+.pastdue-banner .pd-go{margin-left:auto;flex:none;font-weight:600;color:var(--amber,#d97706)}
+.pastdue-banner.expired .pd-go{color:var(--rose,#db2777)}
+.pastdue-banner.hide{display:none}
 /* ===== triage banner + triage inbox rows ===== */
 .triage-banner{display:flex;align-items:center;gap:12px;padding:12px 16px;margin-bottom:14px;border:1px solid var(--indigo,#6366f1);border-radius:12px;background:rgba(99,102,241,.08);color:inherit;text-decoration:none;font-size:14px}
 .triage-banner .tb-go{margin-left:auto;font-weight:600;color:var(--indigo,#6366f1)}
@@ -1549,6 +1561,11 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       <p class="lead" id="lead">Gathering what your Sims have been finding…</p>
     </div>
   </div>
+
+  <!-- KLAVITYKLA-313: past_due grace-degrade banner. Shown on every view (data-view omitted) when the
+       account's subscription is past_due — populated by _wirePlan from GET /api/account/plan's `grace`.
+       During grace it reassures + counts down; after grace it warns premium actions are restricted. -->
+  <a id="pastDueBanner" class="pastdue-banner hide" href="#settings" onclick="try{openPlanDrawer()}catch(e){}"></a>
 
   <!-- B.6 unified Regression alarm banner — populated by renderRegressionBanner() when the shared
        regression stream carries an un-dismissed event (memory / sim-reopen / guard). -->
@@ -7155,11 +7172,33 @@ window.openPlanDrawer = openPlanDrawer
     })
     box.innerHTML = html
   }
+  // KLAVITYKLA-313: grace-degrade banner for a past_due subscription. During grace we reassure and
+  // count down; once grace expires we warn that adding new premium resources is paused until billing
+  // is fixed. Read access + existing work are never blocked — this is a nudge, not a wall.
+  function renderPastDue(grace){
+    var box = $("pastDueBanner"); if (!box) return
+    if (!grace || !grace.pastDue) { box.classList.add("hide"); box.classList.remove("expired"); return }
+    box.classList.remove("hide")
+    var ico = '<span class="pd-ico">' + window.kicon("triangle-alert",{size:18}) + '</span>'
+    var go = '<span class="pd-go">Update billing ' + window.kicon("chevron-right",{size:14}) + '</span>'
+    var msg
+    if (grace.restrictPremium) {
+      box.classList.add("expired")
+      msg = '<span class="pd-txt"><b>Your payment is past due.</b> Reports and your existing work stay available, but adding new Sims or projects is paused until billing is updated.</span>'
+    } else {
+      box.classList.remove("expired")
+      var days = Math.max(0, Number(grace.daysRemaining) || 0)
+      var when = days <= 0 ? 'soon' : (days === 1 ? '1 day' : days + ' days')
+      msg = '<span class="pd-txt"><b>Your last payment did not go through.</b> Everything keeps working for ' + when + ' &mdash; update your billing to avoid interruption.</span>'
+    }
+    box.innerHTML = ico + msg + go
+  }
   async function refresh(){
     try {
       var r = await fetch("/api/account/plan"); if (!r.ok) return
       var d = await r.json()
       lbl.textContent = pretty[d.plan] || d.plan || "Free"
+      renderPastDue(d.grace)
       if (statusLbl) statusLbl.textContent = d.billing && d.billing.billingStatus ? "(" + d.billing.billingStatus + ")" : ""
       if (quotaNote) quotaNote.textContent = quotaText(d.quotas)
       if (portalBtn) portalBtn.style.display = d.billing && d.billing.stripeCustomerId ? "" : "none"

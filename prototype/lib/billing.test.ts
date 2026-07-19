@@ -13,7 +13,9 @@ import {
   planFromPrice,
   planFromPriceId,
   PLAN_QUOTAS,
+  PAST_DUE_GRACE_DAYS,
   quotasForPlan,
+  resolveBillingGrace,
   STRIPE_PRICE_CATALOG,
   STRIPE_PRICE_IDS,
   verifyStripeWebhook,
@@ -342,4 +344,70 @@ test("normalizes Stripe intervals and verifies signed webhook payloads", async (
   await expect(verifyStripeWebhook(raw, header.replace(/.$/, "0"), "whsec_test")).rejects.toThrow()
   const oldHeader = await stripeSig(raw, "whsec_test", Math.floor(Date.now() / 1000) - 10_000)
   await expect(verifyStripeWebhook(raw, oldHeader, "whsec_test")).rejects.toThrow()
+})
+
+// ── KLAVITYKLA-313: past_due grace-degrade ───────────────────────────────────────────────────────
+const DAY = 24 * 60 * 60 * 1000
+
+test("resolveBillingGrace: non-past_due statuses never restrict", () => {
+  for (const s of [null, undefined, "active", "canceled", "checkout_completed", "unpaid"]) {
+    const g = resolveBillingGrace(s as any, Date.now())
+    expect(g.pastDue).toBe(false)
+    expect(g.inGrace).toBe(false)
+    expect(g.graceExpired).toBe(false)
+    expect(g.restrictPremium).toBe(false)
+    expect(g.daysRemaining).toBe(0)
+    expect(g.graceEndsAt).toBeNull()
+  }
+})
+
+test("resolveBillingGrace: past_due within window stays in grace with no restriction", () => {
+  const now = 1_000_000_000_000
+  const since = now - 2 * DAY // 2 days into a 7-day window
+  const g = resolveBillingGrace("past_due", since, now)
+  expect(g.pastDue).toBe(true)
+  expect(g.inGrace).toBe(true)
+  expect(g.graceExpired).toBe(false)
+  expect(g.restrictPremium).toBe(false)
+  expect(g.daysRemaining).toBe(5) // 7 - 2
+  expect(g.graceEndsAt).toBe(since + PAST_DUE_GRACE_DAYS * DAY)
+})
+
+test("resolveBillingGrace: past_due after the window expires and restricts premium", () => {
+  const now = 1_000_000_000_000
+  const since = now - (PAST_DUE_GRACE_DAYS + 1) * DAY
+  const g = resolveBillingGrace("past_due", since, now)
+  expect(g.pastDue).toBe(true)
+  expect(g.inGrace).toBe(false)
+  expect(g.graceExpired).toBe(true)
+  expect(g.restrictPremium).toBe(true)
+  expect(g.daysRemaining).toBe(0)
+})
+
+test("resolveBillingGrace: boundary — exactly at grace end is expired (msLeft <= 0)", () => {
+  const now = 1_000_000_000_000
+  const since = now - PAST_DUE_GRACE_DAYS * DAY // window ends exactly now
+  const g = resolveBillingGrace("past_due", since, now)
+  expect(g.inGrace).toBe(false)
+  expect(g.restrictPremium).toBe(true)
+})
+
+test("resolveBillingGrace: missing/zero anchor grants a full grace window (never instant-expire)", () => {
+  const now = 1_000_000_000_000
+  for (const bad of [null, undefined, 0, -5, NaN]) {
+    const g = resolveBillingGrace("past_due", bad as any, now)
+    expect(g.inGrace).toBe(true)
+    expect(g.restrictPremium).toBe(false)
+    expect(g.daysRemaining).toBe(PAST_DUE_GRACE_DAYS)
+    expect(g.graceEndsAt).toBe(now + PAST_DUE_GRACE_DAYS * DAY)
+  }
+})
+
+test("resolveBillingGrace: custom graceDays honored; invalid falls back to default", () => {
+  const now = 1_000_000_000_000
+  const since = now - 1 * DAY
+  expect(resolveBillingGrace("past_due", since, now, 3).daysRemaining).toBe(2)
+  // invalid graceDays → default window
+  expect(resolveBillingGrace("past_due", now, now, 0).daysRemaining).toBe(PAST_DUE_GRACE_DAYS)
+  expect(resolveBillingGrace("past_due", now, now, -1).daysRemaining).toBe(PAST_DUE_GRACE_DAYS)
 })

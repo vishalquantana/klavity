@@ -83,7 +83,7 @@ import { publishBlogPost, SLUG_RE, type PublishInput } from "./lib/blog-publish"
 import { getExtractModel } from "./lib/extract-model"
 import { parseJSON } from "./lib/parse-json"
 import { EXTRACT_SYS as EXTRACT_SYS_PROMPT, normalizeExtractedPersonas } from "./lib/extract-pipeline"
-import { billingEnforcementEnabled, buildAgencyClientReport, buildProjectUsage, buildUsageMeters, createStripeCheckoutSession, createStripePortalSession, intervalFromPrice, isAgencyEntitled, normalizeInterval, normalizePlan, PLAN_QUOTAS, planFromPrice, quotasForPlan, retrieveStripeSubscription, verifyStripeWebhook } from "./lib/billing"
+import { billingEnforcementEnabled, buildAgencyClientReport, buildProjectUsage, buildUsageMeters, createStripeCheckoutSession, createStripePortalSession, intervalFromPrice, isAgencyEntitled, normalizeInterval, normalizePlan, PLAN_QUOTAS, planFromPrice, quotasForPlan, resolveBillingGrace, retrieveStripeSubscription, verifyStripeWebhook } from "./lib/billing"
 import { sanitizeInsight } from "./lib/extract-sanitize"
 import { runAutosimAuthProbe } from "./lib/autosim-auth-probe"
 import { generateAuthPrompt } from "./lib/autosim-auth-prompt"
@@ -1127,9 +1127,21 @@ async function resolveProject(email: string, requested?: string | null): Promise
 // points (POST /api/projects, POST /api/personas). `count` is a lazy getter so the counting query
 // only runs when enforcement is actually on. A null quota = unlimited. Returns the 402 payload to
 // send (caller wraps in json()/wjson() to keep the right CORS behavior per route), or null to allow.
-async function quotaExceeded(accountId: string, kind: "projects" | "sims", count: () => Promise<number>): Promise<{ error: string; code: "quota_exceeded"; upgradeUrl: string } | null> {
+async function quotaExceeded(accountId: string, kind: "projects" | "sims", count: () => Promise<number>): Promise<{ error: string; code: "quota_exceeded" | "past_due"; upgradeUrl: string } | null> {
   if (!billingEnforcementEnabled()) return null
-  const plan = normalizePlan(await accountPlan(accountId))
+  const billing = await accountBillingState(accountId)
+  // KLAVITYKLA-313: grace-degrade past_due. Creating new premium resources (projects/Sims) is a
+  // premium action — restrict it ONLY once the grace window has elapsed. Read access + core stay
+  // open (this choke point never gates reads), and during grace the account behaves normally.
+  const grace = resolveBillingGrace(billing.billingStatus, billing.billingUpdatedAt)
+  if (grace.restrictPremium) {
+    return {
+      error: "Your subscription payment is past due — update your billing to add more.",
+      code: "past_due",
+      upgradeUrl: "/dashboard?billing=past_due",
+    }
+  }
+  const plan = normalizePlan(billing.plan)
   const limit = PLAN_QUOTAS[plan][kind]
   if (limit == null) return null
   if ((await count()) < limit) return null
@@ -6120,6 +6132,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           plan: billing.plan,
           unlimited: await isAccountUnlimited(active.workspaceId),
           billing,
+          // KLAVITYKLA-313: past_due grace-degrade state (banner + days-remaining live here). Benign
+          // "no restriction" state for any non-past_due account.
+          grace: resolveBillingGrace(billing.billingStatus, billing.billingUpdatedAt),
           quotas: quotasForPlan(billing.plan),
           publishableKey: process.env.STRIPE_PUBLISHABLE_KEY || null,
         })
