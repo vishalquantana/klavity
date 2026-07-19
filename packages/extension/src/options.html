@@ -101,13 +101,15 @@ input::placeholder,textarea::placeholder{color:var(--paper-faint)}
             <button type="button" id="klav-signout" class="secondary" style="flex:0 0 auto;width:auto;">Sign out</button>
           </div>
           <div class="section" style="margin-top:14px;">
-            <h2>Personal Plane connection <small style="color:var(--paper-faint);font-weight:400;">(synced to your account; leave blank to use your team's)</small></h2>
-            <label>API Token</label><input id="pers-token" type="password" placeholder="•••• leave blank to keep existing">
-            <label>Host</label><input id="pers-host" type="url" placeholder="https://api.plane.so">
-            <label>Workspace Slug</label><input id="pers-workspace" placeholder="acme">
-            <label>Project ID</label><input id="pers-projectId" placeholder="proj_abc123">
-            <button type="button" id="pers-save" class="secondary" style="margin-top:12px;">Save personal connection</button>
-            <div id="pers-result" class="testresult"></div>
+            <h2>Issue tracker</h2>
+            <p style="color:var(--paper-faint);font-size:13px;line-height:1.5;margin:0 0 12px;">
+              Plane, Jira, Linear, GitHub and webhooks are now set up once per project under
+              Connectors in the Klavity dashboard, so your whole team sees the same configuration.
+              The old per-person connection here has been retired &mdash; any connection you saved
+              was moved to your project&rsquo;s Connectors automatically.
+            </p>
+            <a id="pers-connectors-link" class="secondary" target="_blank" rel="noopener"
+               style="display:inline-block;text-decoration:none;text-align:center;">Open Connectors settings</a>
           </div>
         </div>
         <div id="klav-msg" class="testresult"></div>

@@ -1,6 +1,6 @@
 // Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
 import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, getIntegration, setIntegration, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution } from "./lib/db"
 import { sanitizeAttr } from "./lib/attr"
 import { issueKeyFor, chooseDedup, humanReportIssueKeyFor } from "./lib/dedup"
 import { classifySimObservation } from "./lib/sim-bug-classify"
@@ -20,7 +20,6 @@ import { SCREENSHOTS, resolveScreenshotConfig, mbLabel } from "./lib/screenshot-
 import { buildIssueHtml, escapeHtml, sanitizeClientContext, clientContextLines } from "./lib/feedback"
 import { encryptSecret, decryptSecret } from "./lib/crypto"
 import { createTestAccount, listTestAccounts, getTestAccountById, getTestAccountByName, deleteTestAccount, isTestAccountEmail, getTestAccountRefs, rotateTestAccountSecret } from "./lib/test-accounts"
-import { planeConfigFromForm, redactPlane, type PlaneStored } from "./lib/connection"
 import { assertSafeUrl } from "./lib/url-guard"
 import { safeFetch } from "./lib/safe-fetch"
 import { extConfigVersion, type ExtProjectConfig } from "./lib/ext-config-version"
@@ -2530,35 +2529,18 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           try { const parsed = JSON.parse(replayRaw); if (Array.isArray(parsed) && parsed.length) replayEvents = parsed } catch { /* ignore bad replay */ }
         }
 
-        // Resolve the Plane connection: Bearer (personal → team) else forwarded direct creds.
-        let planeToken = "", planeWorkspace = "", planeProject = "", planeHost = "https://api.plane.so"
+        // KLAVITYKLA-288: the legacy inline Plane push is GONE. Every external filing now flows
+        // through the connector system (auto-copy on triage-accept / explicit export), which is the
+        // only surface the dashboard can see and manage. Consequences:
+        //   • personal (scope='user') and team (scope='project') `integrations` rows are no longer
+        //     read here — they were migrated to connectors (migrateConnectorsPlane*, lib/db.ts);
+        //   • form-forwarded creds (plane_token / plane_workspace / plane_project_id / plane_host)
+        //     from the extension's old "direct mode" are accepted by the parser but IGNORED — we
+        //     never make an outbound tracker call from this endpoint;
+        //   • the double-file guard that used to skip the inline push when an auto-copy Plane
+        //     connector existed is deleted with the path it guarded.
+        // A tracker connection remains OPTIONAL: Klavity owns the feedback, Plane is a downstream sink.
         const email = await bearerEmail(req)
-        if (email) {
-          const proj = await resolveProject(email, url.searchParams.get("project"))
-          const stored = (await getIntegration("user", email)) || (proj ? await getIntegration("project", proj.id) : null)
-          if (stored?.config?.token_enc) {
-            // Guard: if the project already has a migrated auto-copy Plane connector, the
-            // fire-and-forget hook (below) will handle the Plane push. Loading creds here
-            // would cause double-filing — one from the legacy inline push, one from the hook.
-            const hasPlaneConnector = proj
-              ? (await listAutoCopyConnectors(proj.id)).some(c => c.type === "plane")
-              : false
-            if (!hasPlaneConnector) {
-              planeToken = await decryptSecret(stored.config.token_enc)
-              planeWorkspace = stored.config.workspace; planeProject = stored.config.projectId
-              planeHost = (stored.config.host || "https://api.plane.so").replace(/\/+$/, "")
-            }
-          }
-        }
-        if (!planeToken) { // direct mode (Phase 1): creds forwarded in the form
-          planeToken = String(form.get("plane_token") || "")
-          planeWorkspace = String(form.get("plane_workspace") || "")
-          planeProject = String(form.get("plane_project_id") || "")
-          planeHost = String(form.get("plane_host") || "https://api.plane.so").replace(/\/+$/, "")
-        }
-        // A tracker connection is OPTIONAL. Klavity owns the feedback; Plane is a downstream sink.
-        // Missing creds → we still persist below and return 200-saved (no 400).
-        const planeConnected = !!(planeToken && planeWorkspace && planeProject)
 
         // Upload screenshots to object storage. Caps/MIME/ACL come from the central screenshot config
         // (lib/screenshot-config.ts) instead of scattered literals.
@@ -2810,77 +2792,20 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         }
 
         // Always return success. Auto-copy (if enabled) fires on triage-accept (PATCH status→open),
-        // not here. Legacy direct-Plane mode: if the caller provided Plane creds directly (no session),
-        // still attempt the Plane push for backward-compat with the extension's direct mode.
-        if (!planeConnected) {
-          // Success-screen deep link: ONLY authed reporters (extension Bearer / logged-in session)
-          // get a dashboard URL — anonymous widget end-users on a customer's site have no dashboard
-          // access, so handing them a link would be useless (and leak our app structure). They get
-          // just the reference id to quote to support. The dashboard has no per-ticket route yet, so
-          // the deepest stable link is the Tickets board of the submitting project.
-          const dashBase = baseOrigin || reqOrigin
-          const linkProject = String(form.get("project_id") || "") || url.searchParams.get("project") || ""
-          const issueUrl = (!anonActor && feedbackId && dashBase)
-            ? `${dashBase}/dashboard${linkProject ? `?project=${encodeURIComponent(linkProject)}` : ""}#tickets`
-            : ""
-          return wjson({ id: feedbackId ?? "", saved: true, ...(knownDuplicate ? { known: true, deduped: true } : {}), ...(issueUrl ? { issue_url: issueUrl } : {}), ...(recurrenceMem ? { recurrence: recurrenceMem } : {}) })
-        }
-        if (knownDuplicate) {
-          return wjson({ id: feedbackId ?? "", saved: true, known: true, deduped: true, ...(recurrenceMem ? { recurrence: recurrenceMem } : {}) })
-        }
-
-        // R8: append the Sim citation line to the issue body when this feedback cites a trait.
-        const citeLine = citation ? citationLine({ sourceQuote: citation.sourceQuote, speaker: citation.speaker, sourceDate: citation.sourceDate, recurrence: citation.recurrence }) : null
-        const description_html = buildIssueHtml(description, pageUrl, imageUrls, clientContext, sourceReferrer) +
-          (citeLine ? `<p><em>${escapeHtml(citeLine)}</em></p>` : "")
-        // SSRF guard (H2): the Plane host can arrive from untrusted form input (direct mode is
-        // unauthenticated). Block requests to internal/loopback/link-local addresses — including the
-        // cloud metadata IP — and require https so the X-API-Key isn't sent in plaintext. Self-hosted
-        // public Plane instances over https still pass.
-        // SSRF guard must run BEFORE any outbound fetch — assertSafeUrl is preserved.
-        // A rejected/unsafe host is now non-fatal: feedback was already persisted above.
-        try { await assertSafeUrl(planeHost) }
-        catch (e: any) {
-          console.warn("tracker host rejected (non-fatal):", e?.message || e)
-          return wjson({ id: feedbackId ?? "", saved: true, ...(knownDuplicate ? { known: true, deduped: true } : {}), ...(recurrenceMem ? { recurrence: recurrenceMem } : {}) })
-        }
-        // Use safeFetch so redirects are validated per-hop too (a public host that 3xx-redirects to an
-        // internal/loopback target would otherwise bypass the one-shot assertSafeUrl above). The same
-        // KLAV_TEST_ALLOW_LOOPBACK hatch the connectors use applies for the localhost-receiver tests.
-        // Wrapped non-fatal: a tracker/SSRF rejection or network failure must never fail the user's submission.
-        let res: Response
-        try {
-          res = await safeFetch(`${planeHost}/api/v1/workspaces/${planeWorkspace}/projects/${planeProject}/issues/`, {
-            method: "POST",
-            headers: { "X-API-Key": planeToken, "Content-Type": "application/json" },
-            body: JSON.stringify({ name: `[Klavity] ${description.slice(0, 180)}`, description_html }),
-          }, { allowLoopbackInTest: true })
-        } catch (fetchErr: any) {
-          console.error("Plane fetch failed (non-fatal):", fetchErr?.message || fetchErr)
-          return wjson({ id: feedbackId ?? "", saved: true, ...(knownDuplicate ? { known: true, deduped: true } : {}), ...(recurrenceMem ? { recurrence: recurrenceMem } : {}) })
-        }
-        if (!res.ok) { console.error(`Plane API error ${res.status}: ${(await res.text()).slice(0, 300)}`); return wjson({ id: feedbackId ?? "", saved: true, ...(knownDuplicate ? { known: true, deduped: true } : {}), ...(recurrenceMem ? { recurrence: recurrenceMem } : {}) }) }
-
-        const data: any = await res.json()
-        const webBase = planeHost === "https://api.plane.so" ? "https://app.plane.so" : planeHost
-        const issueId = String(data.id ?? "")
-        const seq = data.sequence_id != null ? String(data.sequence_id) : ""
-        const issueUrl = `${webBase}/${planeWorkspace}/projects/${planeProject}/issues/${issueId ? issueId + "/" : ""}`
-
-        // Backfill the tracker issue onto the persisted row (best-effort, never fails the request).
-        if (db && feedbackId) {
-          try { await updateFeedbackTracker(feedbackId, seq || issueId || null, issueUrl) }
-          catch (e: any) { console.error("feedback tracker backfill (non-fatal):", e?.message || e) }
-        }
-
-        return wjson({
-          id: issueId,
-          // Omit jira_key when Plane gives no sequence_id, so the extension's `?? id` fallback fires.
-          ...(seq ? { jira_key: seq } : {}),
-          issue_url: issueUrl,
-          ...(knownDuplicate ? { known: true, deduped: true } : {}),
-          ...(recurrenceMem ? { recurrence: recurrenceMem } : {}),
-        })
+        // not here — there is no longer any inline external filing on this endpoint (KLAVITYKLA-288),
+        // so this is the ONE exit for a successful submission.
+        //
+        // Success-screen deep link: ONLY authed reporters (extension Bearer / logged-in session)
+        // get a dashboard URL — anonymous widget end-users on a customer's site have no dashboard
+        // access, so handing them a link would be useless (and leak our app structure). They get
+        // just the reference id to quote to support. The dashboard has no per-ticket route yet, so
+        // the deepest stable link is the Tickets board of the submitting project.
+        const dashBase = baseOrigin || reqOrigin
+        const linkProject = String(form.get("project_id") || "") || url.searchParams.get("project") || ""
+        const issueUrl = (!anonActor && feedbackId && dashBase)
+          ? `${dashBase}/dashboard${linkProject ? `?project=${encodeURIComponent(linkProject)}` : ""}#tickets`
+          : ""
+        return wjson({ id: feedbackId ?? "", saved: true, ...(knownDuplicate ? { known: true, deduped: true } : {}), ...(issueUrl ? { issue_url: issueUrl } : {}), ...(recurrenceMem ? { recurrence: recurrenceMem } : {}) })
       } catch (e: any) {
         return json(oops(e, "feedback"), 500)
       }
@@ -5705,42 +5630,21 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return json({ token: extToken })
       }
 
-      // project (team) connection — read by any member, written by project admins
-      if (path === "/api/integration") {
-        const proj = await resolveProject(me, url.searchParams.get("project"))
-        if (!proj) return json({ error: "No project." }, 400)
-        if (req.method === "GET") {
-          const cur = await getIntegration("project", proj.id)
-          return json({ integration: cur?.integration ?? null, config: cur ? redactPlane(cur.config) : null })
-        }
-        if (req.method === "POST") {
-          if (proj.access !== "admin") return json({ error: "Only admins can set the team connection." }, 403)
-          const form = await req.formData()
-          const cfg = planeConfigFromForm(form) as PlaneStored
-          const tok = String(form.get("token") || "")
-          const existing = await getIntegration("project", proj.id)
-          cfg.token_enc = tok ? await encryptSecret(tok) : (existing?.config?.token_enc ?? "")
-          if (!cfg.token_enc) return json({ error: "Token is required." }, 400)
-          await setIntegration("project", proj.id, "plane", cfg)
-          return json({ ok: true, config: redactPlane(cfg) })
-        }
-      }
-      // personal connection — the logged-in user, synced to their account
-      if (path === "/api/integration/personal") {
-        if (req.method === "GET") {
-          const cur = await getIntegration("user", me)
-          return json({ integration: cur?.integration ?? null, config: cur ? redactPlane(cur.config) : null })
-        }
-        if (req.method === "POST") {
-          const form = await req.formData()
-          const cfg = planeConfigFromForm(form) as PlaneStored
-          const tok = String(form.get("token") || "")
-          const existing = await getIntegration("user", me)
-          cfg.token_enc = tok ? await encryptSecret(tok) : (existing?.config?.token_enc ?? "")
-          if (!cfg.token_enc) return json({ error: "Token is required." }, 400)
-          await setIntegration("user", me, "plane", cfg)
-          return json({ ok: true, config: redactPlane(cfg) })
-        }
+      // ── RETIRED (KLAVITYKLA-288): the legacy inline Plane connection endpoints. ──
+      // /api/integration (project/team) and /api/integration/personal (per-user, extension-only) used to
+      // store a Plane workspace/project/token in the `integrations` table, which POST /api/feedback then
+      // pushed to inline. That whole path is gone: Plane is now just another connector, managed in the
+      // dashboard, so what a user configures is what the dashboard shows.
+      // Existing rows were folded into connectors by migrateConnectorsPlane / migrateConnectorsPlanePersonal
+      // (lib/db.ts). These endpoints answer 410 Gone with a pointer rather than 404, so an old extension
+      // build gets an actionable message instead of a silent failure. Writes are refused outright — the
+      // integrations table must not gain new rows that nothing reads.
+      if (path === "/api/integration" || path === "/api/integration/personal") {
+        return json({
+          error: "The Plane connection moved to Connectors. Open Settings → Connectors in the Klavity dashboard to manage it.",
+          retired: true,
+          connectors_url: `${BASE}/dashboard#connectors`,
+        }, 410)
       }
       // admin invites a user — legacy alias for the project-scoped invite on the caller's first project
       if (req.method === "POST" && path === "/api/team/invite") {
