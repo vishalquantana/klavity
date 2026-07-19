@@ -2606,8 +2606,14 @@ async function load() {
     try { localStorage.setItem(DASH_LAST_KEY, data.active.id) } catch (e) {}
     // KLAVITYKLA-299: silently update the URL so it reflects the active project even when
     // the user landed on /dashboard without a ?project= param (bookmarkable; back/forward safe).
+    // KLAVITYKLA-187 fix: keep the CURRENT path (e.g. /sim/new) and its other query params —
+    // hard-coding "/dashboard?project=" silently navigated the user off /sim/new.
     if (!activeProjectParam()) {
-      try { history.replaceState(null, "", "/dashboard?project=" + encodeURIComponent(data.active.id)) } catch (e) {}
+      try {
+        const u = new URL(location.href)
+        u.searchParams.set("project", data.active.id)
+        history.replaceState(null, "", u.pathname + u.search + u.hash)
+      } catch (e) {}
     }
   }
 }
@@ -8146,14 +8152,30 @@ load()
   // KLAVITYKLA-187: the Add-a-Sim surface is addressable at /sim/new so it behaves like a
   // dedicated page (shareable URL, Back closes it) while reusing this modal's logic.
   const SIM_NEW_PATH="/sim/new";
-  const PANE_ORDER={describe:"describe",site:"site",call:"call"};
+  // Prototype-free allowlist: a plain object literal let Object.prototype keys ("constructor",
+  // "toString", …) pass validation, so ?mode=constructor was accepted. Object.create(null) +
+  // an own-property check via paneOf() makes the allowlist real.
+  const PANE_ORDER=Object.assign(Object.create(null),{describe:"describe",site:"site",call:"call"});
+  function paneOf(mode){ return (typeof mode==="string"&&Object.prototype.hasOwnProperty.call(PANE_ORDER,mode))?PANE_ORDER[mode]:"describe"; }
   function atSimNew(){ try{ return location.pathname===SIM_NEW_PATH||location.pathname===SIM_NEW_PATH+"/"; }catch(e){ return false; } }
-  function simNewUrl(mode){ return SIM_NEW_PATH+((mode&&mode!=="describe")?("?mode="+encodeURIComponent(mode)):""); }
-  function currentMode(){ try{ return PANE_ORDER[new URLSearchParams(location.search).get("mode")]||"describe"; }catch(e){ return "describe"; } }
-  function selectPane(mode){ const b=ov.querySelector('.sm-seg button[data-pane="'+(PANE_ORDER[mode]||"describe")+'"]'); if(b) b.click(); }
+  // Carry the active ?project= through so a shared /sim/new link creates the Sim against the
+  // SAME project the sharer was in, not whatever project the recipient happens to default to.
+  function simNewUrl(mode){
+    const qs=new URLSearchParams();
+    if(mode&&mode!=="describe") qs.set("mode",mode);
+    try{ const p=activeProjectParam(); if(p) qs.set("project",p); }catch(e){}
+    const s=qs.toString();
+    return SIM_NEW_PATH+(s?("?"+s):"");
+  }
+  // Where close() lands when the surface was deep-linked (no history entry of ours to pop).
+  function simNewFallbackUrl(){
+    try{ const p=activeProjectParam(); return "/dashboard"+(p?("?project="+encodeURIComponent(p)):""); }catch(e){ return "/dashboard"; }
+  }
+  function currentMode(){ try{ return paneOf(new URLSearchParams(location.search).get("mode")); }catch(e){ return "describe"; } }
+  function selectPane(mode){ const b=ov.querySelector('.sm-seg button[data-pane="'+paneOf(mode)+'"]'); if(b) b.click(); }
   // Pure UI: reveal the surface + preselect a tab, WITHOUT touching history.
   function openSimSurface(mode){
-    mode=PANE_ORDER[mode]||"describe";
+    mode=paneOf(mode);
     const first=!(state&&state.sims&&state.sims.length);
     $("simHd").textContent=first?"Bring your first Sim to life":"Add a Sim";
     // Prefill the site URL from the project when known — one less hop to a first Sim reaction.
@@ -8168,7 +8190,13 @@ load()
   // fromPop=true means popstate already moved history — don't touch it again.
   function close(fromPop){
     ov.classList.remove("show"); document.body.style.overflow=""; hideSuccessPanel();
-    if(!fromPop&&atSimNew()){ try{ history.replaceState(null,"",simNewReturnUrl||"/dashboard"); }catch(e){} }
+    // If WE pushed the /sim/new entry, pop it with history.back() so the browser Back button
+    // isn't left pointing at an entry that just re-opens the surface (replaceState made Back
+    // look like a no-op). Deep-link hits (no pushed entry) still replace, so Back leaves the app.
+    if(!fromPop&&atSimNew()){
+      if(simNewReturnUrl){ simNewReturnUrl=null; try{ history.back(); }catch(e){} }
+      else { try{ history.replaceState(null,"",simNewFallbackUrl()); }catch(e){} }
+    }
     simNewReturnUrl=null;
     if(simAdded){ simAdded=false; load(); }
   }
@@ -8184,7 +8212,7 @@ load()
 
   // exposed openers — navigate to the dedicated /sim/new page, then reveal the surface.
   window.openSimModal=function(mode){
-    mode=PANE_ORDER[mode]||"describe";
+    mode=paneOf(mode);
     if(!atSimNew()){
       simNewReturnUrl=location.pathname+location.search+location.hash;
       try{ history.pushState(null,"",simNewUrl(mode)); }catch(e){}
@@ -8199,7 +8227,7 @@ load()
     let want=false, mode="describe";
     try{
       const qp=new URLSearchParams(location.search);
-      if(atSimNew()){ want=true; mode=PANE_ORDER[qp.get("mode")]||"describe"; }
+      if(atSimNew()){ want=true; mode=paneOf(qp.get("mode")); }
       else if(qp.get("create-sim")==="1"||location.hash==="#create-sim"){ want=true; }
     }catch(e){}
     if(!want) return;
