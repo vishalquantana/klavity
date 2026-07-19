@@ -1,5 +1,6 @@
 // Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
 import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
+import { buildMemberExport, membersToCsv, MEMBER_EXPORT_FIELDS } from "./lib/member-export"
 import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions } from "./lib/db"
 import { sanitizeAttr } from "./lib/attr"
 import { deriveActivation, type ActivationSignals } from "./lib/activation"
@@ -5711,6 +5712,37 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           connectors_url: `${BASE}/dashboard#connectors`,
         }, 410)
       }
+      // ── member-roster export WITH POLICY (JTBD 5.8 / KLAVITYKLA-287) ──────────────────────────────
+      // Data-governance export: only an effective admin (owner/admin) may export; the file carries ONLY
+      // the allow-listed, PII-minimized field set (email, role, joined_at, status). The export is
+      // recorded on the activity feed as an audit event. CSV by default, ?format=json for JSON.
+      if (req.method === "GET" && path === "/api/team/export") {
+        const proj = await resolveProject(me, url.searchParams.get("project"))
+        if (!proj) return json({ error: "No project." }, 400)
+        const result = buildMemberExport(proj.access, await membersOfProject(proj.id))
+        if (!result.ok) return json({ error: result.error }, result.status)
+        const format = (url.searchParams.get("format") || "csv").toLowerCase()
+        // Audit trail (best-effort — never fail the export on a logging hiccup).
+        await insertActivity({
+          projectId: proj.id, type: "member_export", actorEmail: me,
+          meta: { count: result.rows.length, fields: [...MEMBER_EXPORT_FIELDS], format },
+        }).catch((e: any) => console.warn("member_export activity skipped:", e?.message || e))
+        if (format === "json") {
+          return json(
+            { project: proj.id, fields: [...MEMBER_EXPORT_FIELDS], members: result.rows },
+            200,
+            { "Content-Disposition": `attachment; filename="klavity-members-${proj.id}.json"` },
+          )
+        }
+        return new Response(membersToCsv(result.rows), {
+          status: 200,
+          headers: {
+            "content-type": "text/csv; charset=utf-8",
+            "Content-Disposition": `attachment; filename="klavity-members-${proj.id}.csv"`,
+          },
+        })
+      }
+
       // admin invites a user — legacy alias for the project-scoped invite on the caller's first project
       if (req.method === "POST" && path === "/api/team/invite") {
         const { email, role } = await req.json()
