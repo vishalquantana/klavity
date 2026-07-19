@@ -14,7 +14,7 @@ beforeAll(async () => { const db = reconnectDb("file:" + file); await applySchem
 
 import type { AuthorModel } from "./trails-author-model"
 import type { AuthorCheckpoint } from "./trails-author"
-const { authorTrail, createAuthorSession, updateAuthorSession, getAuthorSession, runAuthorNow, NEEDS_AUTH_RESUME_TTL_MS } = await import("./trails-author")
+const { authorTrail, createAuthorSession, updateAuthorSession, getAuthorSession, listStalledAuthorSessions, runAuthorNow, NEEDS_AUTH_RESUME_TTL_MS } = await import("./trails-author")
 const { _resetAuthorAdmissionForTest, _resetWalkPoolForTest } = await import("./trails-browser")
 
 // authorTrail tests launch a real browser — only run when KLAV_E2E=1
@@ -305,4 +305,102 @@ test("runAuthorNow atomically marks a claimed prior session as resuming", async 
   expect(prior!.status).toBe("resuming")
   expect(prior!.resumedBy).toBe(out.sessionId)
   expect((await getAuthorSession(proj, out.sessionId))!.resumedFrom).toBe(priorId)
+})
+
+// ── KLA-270: surface resumable partial drafts — listStalledAuthorSessions persist→list round-trip ──
+// The /autosims authoring UI reads GET /api/trails/author/stalled (backed by listStalledAuthorSessions)
+// to show sessions the user left mid-way. These tests pin the exact rows that surface so the UI can
+// reload the saved checkpoint state and continue rather than restart.
+describe("KLA-270 listStalledAuthorSessions — resumable partial drafts", () => {
+  const cp = (domHash: string): AuthorCheckpoint => ({
+    traj: [{ action: "click", actionValue: "#go", url: FIXTURE_URL, domHash }],
+    history: ["navigate /", "click #go — ok"],
+    stepIdx: 3, llmCalls: 4, costUsd: 0.02, lastUrl: FIXTURE_URL,
+  })
+
+  async function setUpdatedAt(proj: string, id: string, ts: number) {
+    await (await import("./db")).db!.execute({
+      sql: "UPDATE author_sessions SET updated_at=? WHERE project_id=? AND id=?",
+      args: [ts, proj, id],
+    })
+  }
+
+  test("a stalled session with a checkpoint surfaces AND its saved state round-trips", async () => {
+    const proj = "proj_kla270_stalled"
+    const id = await createAuthorSession(proj, { name: "Checkout flow", objective: "buy a thing", baseUrl: FIXTURE_URL })
+    await updateAuthorSession(proj, id, { checkpoint: cp("stalled"), status: "stalled", stallReason: "hit budget cap" })
+
+    const list = await listStalledAuthorSessions(proj)
+    expect(list).toHaveLength(1)
+    const s = list[0]
+    expect(s.id).toBe(id)
+    expect(s.status).toBe("stalled")
+    expect(s.name).toBe("Checkout flow")
+    expect(s.objective).toBe("buy a thing")
+    // The saved drive-state must come back intact so a resume continues from step 3, not step 0.
+    expect(s.checkpoint).not.toBeNull()
+    expect(s.checkpoint!.stepIdx).toBe(3)
+    expect(s.checkpoint!.costUsd).toBe(0.02)
+    expect(s.checkpoint!.lastUrl).toBe(FIXTURE_URL)
+    expect(s.checkpoint!.traj).toHaveLength(1)
+    expect(s.checkpoint!.history).toEqual(["navigate /", "click #go — ok"])
+  })
+
+  test("a needs_auth session (paused at a sign-in wall) is resumable too", async () => {
+    const proj = "proj_kla270_needsauth"
+    const id = await createAuthorSession(proj, { name: "Settings", objective: "open settings", baseUrl: FIXTURE_URL })
+    await updateAuthorSession(proj, id, { checkpoint: cp("needsauth"), status: "needs_auth", stallReason: "auth gate" })
+    const list = await listStalledAuthorSessions(proj)
+    expect(list.map(x => x.id)).toContain(id)
+  })
+
+  test("a stalled session with only a partial-draft trailId (no checkpoint) still surfaces", async () => {
+    const proj = "proj_kla270_partialdraft"
+    const id = await createAuthorSession(proj, { name: "Partial", objective: "half done", baseUrl: FIXTURE_URL })
+    await updateAuthorSession(proj, id, { trailId: "trail_partial_123", status: "stalled", stallReason: "stopped early" })
+    const list = await listStalledAuthorSessions(proj)
+    expect(list).toHaveLength(1)
+    expect(list[0].id).toBe(id)
+    expect(list[0].trailId).toBe("trail_partial_123")
+    expect(list[0].checkpoint).toBeNull()
+  })
+
+  test("running and crystallized sessions do NOT surface as resumable", async () => {
+    const proj = "proj_kla270_terminal"
+    const running = await createAuthorSession(proj, { name: "live", objective: "x", baseUrl: FIXTURE_URL })
+    await updateAuthorSession(proj, running, { checkpoint: cp("running"), status: "running" })
+    const done = await createAuthorSession(proj, { name: "done", objective: "x", baseUrl: FIXTURE_URL })
+    await updateAuthorSession(proj, done, { checkpoint: cp("done"), status: "crystallized", trailId: "trail_done" })
+    const list = await listStalledAuthorSessions(proj)
+    expect(list).toHaveLength(0)
+  })
+
+  test("a stalled session with neither checkpoint nor draft does NOT surface", async () => {
+    const proj = "proj_kla270_empty"
+    const id = await createAuthorSession(proj, { name: "empty", objective: "x", baseUrl: FIXTURE_URL })
+    await updateAuthorSession(proj, id, { status: "stalled", stallReason: "nothing recorded" })
+    const list = await listStalledAuthorSessions(proj)
+    expect(list).toHaveLength(0)
+  })
+
+  test("a stalled session past the recency window ages out of the resumable list", async () => {
+    const proj = "proj_kla270_old"
+    const id = await createAuthorSession(proj, { name: "ancient", objective: "x", baseUrl: FIXTURE_URL })
+    await updateAuthorSession(proj, id, { checkpoint: cp("old"), status: "stalled", stallReason: "long ago" })
+    expect(await listStalledAuthorSessions(proj)).toHaveLength(1)
+    await setUpdatedAt(proj, id, Date.now() - NEEDS_AUTH_RESUME_TTL_MS - 60_000)
+    expect(await listStalledAuthorSessions(proj)).toHaveLength(0)
+  })
+
+  test("resumable list is newest-first", async () => {
+    const proj = "proj_kla270_order"
+    const older = await createAuthorSession(proj, { name: "older", objective: "x", baseUrl: FIXTURE_URL })
+    await updateAuthorSession(proj, older, { checkpoint: cp("older"), status: "stalled", stallReason: "a" })
+    const newer = await createAuthorSession(proj, { name: "newer", objective: "x", baseUrl: FIXTURE_URL })
+    await updateAuthorSession(proj, newer, { checkpoint: cp("newer"), status: "stalled", stallReason: "b" })
+    await setUpdatedAt(proj, older, Date.now() - 5_000)
+    await setUpdatedAt(proj, newer, Date.now() - 1_000)
+    const list = await listStalledAuthorSessions(proj)
+    expect(list.map(x => x.id)).toEqual([newer, older])
+  })
 })
