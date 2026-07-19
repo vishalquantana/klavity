@@ -88,6 +88,7 @@ import { sanitizeInsight } from "./lib/extract-sanitize"
 import { runAutosimAuthProbe } from "./lib/autosim-auth-probe"
 import { generateAuthPrompt } from "./lib/autosim-auth-prompt"
 import { mintProjectShareToken, revokeProjectShareToken, resolveProjectShareToken, gatherProjectStatusData } from "./lib/project-status-portal"
+import { gatherGuardedFlowsReport } from "./lib/guarded-flows-report"
 import { runDueSchedules, buildProductionDeps } from "./lib/sim-review-schedule"
 import { trackFunnel, CLIENT_INGESTABLE } from "./lib/funnel"
 import { gatherGrowthScorecard } from "./lib/growth-scorecard"
@@ -4385,6 +4386,35 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return json(data, 200, { "cache-control": "no-store", "x-robots-tag": "noindex, nofollow" })
       } catch (e) {
         return json(oops(e, "shared-project-data"), 500)
+      }
+    }
+    // ── Monthly Guarded Flows report (KLAVITYKLA-279 / JTBD 4.15) ─────────────────────────────────
+    // GET /shared/project/:token/flows-report            — serve the read-only monthly report HTML
+    // GET /shared/project/:token/flows-report/data?month=YYYY-MM — monthly summary JSON
+    // Reuses the project's existing client share token (same link that opens the status portal).
+    // Token format-guarded (64-hex); 404 on bad/unknown token; noindex + no-store; no PII / cross-project.
+    const flowsReportPageMatch = path.match(/^\/shared\/project\/([a-f0-9]{64})\/flows-report$/)
+    if (req.method === "GET" && flowsReportPageMatch) {
+      if (!rlAllow("shareproj:flowspage:" + clientIp(req, server), 120, 60_000)) return new Response("Rate limited", { status: 429 })
+      const projectId = await resolveProjectShareToken(flowsReportPageMatch[1])
+      if (!projectId) return new Response("Not found", { status: 404 })
+      const _frPath = PUB + "/guarded-flows-report.html"
+      if (!(await Bun.file(_frPath).exists())) return new Response("Not found", { status: 404 })
+      return htmlPage(_frPath, { "x-robots-tag": "noindex, nofollow", "cache-control": "no-store" })
+    }
+
+    const flowsReportDataMatch = path.match(/^\/shared\/project\/([a-f0-9]{64})\/flows-report\/data$/)
+    if (req.method === "GET" && flowsReportDataMatch) {
+      if (!rlAllow("shareproj:flowsdata:" + clientIp(req, server), 120, 60_000)) return new Response("Rate limited", { status: 429 })
+      const projectId = await resolveProjectShareToken(flowsReportDataMatch[1])
+      if (!projectId) return json({ error: "Not found" }, 404)
+      try {
+        const month = url.searchParams.get("month")
+        const data = await gatherGuardedFlowsReport(projectId, month)
+        if (!data) return json({ error: "Not found" }, 404)
+        return json(data, 200, { "cache-control": "no-store", "x-robots-tag": "noindex, nofollow" })
+      } catch (e) {
+        return json(oops(e, "shared-flows-report-data"), 500)
       }
     }
     // ── End Client Status Portal public routes ────────────────────────────────────────────────────
