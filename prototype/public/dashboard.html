@@ -7351,7 +7351,8 @@ window.openPlanDrawer = openPlanDrawer
     var lim = q.quotas
     var projects = lim.projects == null ? "unlimited projects" : lim.projects + " project" + (lim.projects === 1 ? "" : "s")
     var sims = lim.sims == null ? "unlimited Sims" : lim.sims + " Sims"
-    var flows = lim.autosimFlows == null ? "unlimited AutoSim flows" : lim.autosimFlows + " AutoSim flows"
+    // KLAVITYKLA-365: AutoSim is a paid feature — 0 flows reads as "no AutoSim", not "0 AutoSim flows".
+    var flows = lim.autosimFlows == null ? "unlimited AutoSim flows" : lim.autosimFlows === 0 ? "no AutoSim" : lim.autosimFlows + " AutoSim flows"
     return projects + " · " + sims + " · " + flows + " · enforcement " + (q.enforcement ? "on" : "off")
   }
   var esc = function(s){ return String(s==null?"":s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c] }) }
