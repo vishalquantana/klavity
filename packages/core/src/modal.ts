@@ -358,6 +358,7 @@ export function buildModal(
     .klavity-lead button:hover::after, .klavity-cta:hover::after{transform:translateX(100%);}
     .klavity-lead button:disabled{opacity:.5;cursor:not-allowed;}
     .klavity-thanks{font-size:13px;color:var(--kl-fg);margin-bottom:12px;}
+    .klavity-lead-err{font-size:12.5px;color:#f38ba8;margin:-6px 0 14px;line-height:1.4;animation:kl-rise .3s cubic-bezier(.16,1,.3,1) both;}
     .klavity-ref{margin:0 0 18px;font-size:13px;color:var(--kl-muted);display:flex;align-items:center;gap:8px;flex-wrap:wrap;animation:kl-rise .45s cubic-bezier(.16,1,.3,1) .15s both;}
     .klavity-ref code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;background:var(--kl-chip);color:var(--kl-fg);padding:2px 8px;border-radius:6px;user-select:all;}
     .klavity-ref a{color:var(--kl-accent);font-weight:600;text-decoration:underline;text-underline-offset:2px;transition:color .15s ease,transform .15s cubic-bezier(.2,.7,.2,1);display:inline-block;}
@@ -1614,15 +1615,45 @@ export function buildModal(
       input.type = 'email'
       input.placeholder = 'you@company.com'
       const btn = document.createElement('button')
-      btn.textContent = copy.emailLabel
+      const btnLabel = copy.emailLabel
+      btn.textContent = btnLabel
+      // JTBD 1.13 — inline error under the lead form. A dropped lead must be VISIBLE to the visitor
+      // (with a retry) instead of a false "we'll be in touch". Lives right below the input row.
+      const err = document.createElement('div')
+      err.className = 'klavity-lead-err'
+      err.setAttribute('role', 'alert')
+      err.style.display = 'none'
       const submitLead = async () => {
         const email = input.value.trim()
-        if (!email) return
+        // Basic client-side shape check so an obviously-empty/invalid email doesn't round-trip; the
+        // server is still the authority and re-validates. A bad email is a non-silent, retryable state.
+        if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+          err.textContent = 'Please enter a valid email so we can reach you.'
+          err.style.display = 'block'
+          input.focus()
+          return
+        }
         btn.disabled = true
-        try { if (onLead) await onLead(feedbackId, email) } catch { /* swallow — confirm anyway */ }
+        btn.textContent = 'Saving…'
+        err.style.display = 'none'
+        try {
+          if (onLead) await onLead(feedbackId, email)
+        } catch (e) {
+          // Do NOT confirm on failure — the lead was not durably captured. Re-enable so the visitor can
+          // retry (transient network / webhook / server error). Log for telemetry without leaking to UI.
+          try { console.warn('[Klavity] lead capture failed:', (e as Error)?.message || e) } catch {}
+          err.textContent = "Couldn't save your email — please try again."
+          err.style.display = 'block'
+          btn.disabled = false
+          btn.textContent = 'Retry'
+          input.focus()
+          return
+        }
+        // Only reached on a real 2xx + persisted ack from the server.
         const thanks = document.createElement('div')
         thanks.className = 'klavity-thanks'
         thanks.textContent = "Thanks — we'll be in touch."
+        err.remove()
         row.replaceWith(thanks)
         if (!copy.showCta) {
           startAutodismiss()
@@ -1632,6 +1663,7 @@ export function buildModal(
       input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitLead() })
       row.append(input, btn)
       wrap.appendChild(row)
+      wrap.appendChild(err)
     }
 
     if (copy.showCta && copy.ctaUrl) {
