@@ -9,8 +9,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
 <!-- SEO -->
-<title>Klavity Pricing — monetise AI, not plumbing · Klavity</title>
-<meta name="description" content="All bug-reporting plumbing (widget, console logging, replay, unlimited seats & reports) is free forever. Paid plans scale with Sims and AutoSim guarded flows.">
+<title>Pricing — Klavity</title>
+<meta name="description" content="Klavity turns your customer calls into AI personas that browse your real site, file grounded bug reports with evidence into your tracker, and keep re-running your key flows so fixed things stay fixed. The bug reporter is free forever.">
 <link rel="canonical" href="https://klavity.in/pricing">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/favicon.ico" sizes="any">
@@ -19,15 +19,15 @@
 <!-- Open Graph -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Klavity">
-<meta property="og:title" content="Klavity Pricing — monetise AI, not plumbing">
-<meta property="og:description" content="All bug-reporting plumbing is free. You only pay for the AI layer: Sims and AutoSim guarded flows.">
+<meta property="og:title" content="Pricing — Klavity">
+<meta property="og:description" content="Klavity turns your customer calls into AI personas that browse your real site, file grounded bug reports with evidence into your tracker, and keep re-running your key flows so fixed things stay fixed.">
 <meta property="og:url" content="https://klavity.in/pricing">
 <meta property="og:image" content="https://klavity.in/og.png">
 
 <!-- Twitter -->
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Klavity Pricing — monetise AI, not plumbing">
-<meta name="twitter:description" content="All bug-reporting plumbing is free. You only pay for the AI layer: Sims and AutoSim guarded flows.">
+<meta name="twitter:title" content="Pricing — Klavity">
+<meta name="twitter:description" content="Klavity turns your customer calls into AI personas that browse your real site, file grounded bug reports with evidence into your tracker, and keep re-running your key flows so fixed things stay fixed.">
 <meta name="twitter:image" content="https://klavity.in/og.png">
 
 <!-- Fonts (exact link from site/index.html) -->
@@ -410,18 +410,18 @@
   "mainEntity": [
     {
       "@type": "Question",
-      "name": "What counts as an AutoSim flow?",
+      "name": "What do the plan limits actually mean?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "An AutoSim flow (or Trail) is a recorded critical path in your product (such as checkout or user registration) that Klavity tests on a schedule. Maintenance actions like creating, editing, and manually verifying a flow do not count against your limits—only active, scheduled runs do."
+        "text": "There are four numbers on every plan. Projects is how many separate sites or apps you can watch. Sims is how many customer personas you can keep active at once — each one is built from a call transcript you give us. Page reviews is how many times a month those Sims can look at a page and write up what they find; a Sim walking eight pages of your site uses eight of them. Flow runs is how many times a month we re-run your saved flows, like checkout or sign-up, to check that something that was fixed has stayed fixed. Free includes 1 project, 1 Sim and 25 page reviews a month, and does not include saved flows. Everything is counted per account, not per person, and adding team members is free on every plan."
       }
     },
     {
       "@type": "Question",
-      "name": "What happens if we hit our reaction or flow limits?",
+      "name": "What is a repeat-checked flow?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Quota enforcement is not yet active — we are shipping enforcement gently and will announce before any hard limits go live. When it does land, our intent is to degrade cadence gracefully (e.g. daily runs slow to weekly) rather than hard-stop, and we will never silently bill overages."
+        "text": "A flow is a path through your product that you cannot afford to have broken — checkout, sign-up, inviting a teammate. You save it once, and Klavity walks it again on a schedule so a regression gets caught and filed rather than reported by a customer. Creating, editing and manually trying a flow are free; only the scheduled runs count against your monthly limit."
       }
     },
     {
@@ -429,15 +429,23 @@
       "name": "What counts as a page review?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "A page review (what our billing calls a Sim reaction) occurs when one of your active client-persona Sims reviews a page (triggered automatically by URL changes or manual consent) to inspect changes, write notes, or file issues. Extra page reviews are kept cheap based on local LLM COGS."
+        "text": "One page review is one of your Sims looking at one page and writing up what it found — a note, a question, or a bug report with evidence attached. It happens when the Sim moves to a new page, or when you ask it to look at the page you are on. Extra page reviews are cheap, because a review costs us very little to run."
       }
     },
     {
       "@type": "Question",
-      "name": "Can we export our AutoSim flows?",
+      "name": "What happens if we go over a limit?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Klavity is open-core and we strongly oppose vendor lock-in. AutoSim flows are stored as structured steps in an open schema. One-click export to standard Playwright test scripts is on the roadmap — contact us if this is a blocker."
+        "text": "Nothing sudden, and nothing you did not agree to. We are not enforcing limits yet, and we will tell you before we start. When we do, we plan to slow things down gently — daily runs become weekly, for example — rather than cut you off mid-month. We will never quietly charge you for going over."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can we take our flows with us if we leave?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes — that is the point of being open source. Your flows are stored as plain, readable steps in an open format. One-click export to standard Playwright test scripts is on the roadmap; email us if that is holding you back and we will help you get them out."
       }
     }
   ]
@@ -470,10 +478,10 @@
   <!-- ── HERO ────────────────────────────────────────────────────────────── -->
   <section class="pricing-hero">
     <div class="wrap">
-      <p class="eyebrow reveal" style="--d:0s">Transparent, predictable scaling</p>
-      <h1 class="reveal" style="--d:.06s;max-width:22ch;margin:0 auto">Monetise AI, not plumbing.</h1>
+      <p class="eyebrow reveal" style="--d:0s">Simple pricing, no surprises</p>
+      <h1 class="reveal" style="--d:.06s;max-width:22ch;margin:0 auto">Your customer calls become your QA team.</h1>
       <p class="reveal" style="--d:.12s;margin:22px auto 0;max-width:60ch;font-size:18px;color:var(--paper-dim)">
-        We believe bug-reporting plumbing should be free. That's why Snap's widget, integrations, All-Walks console capture, and unlimited seats are free forever. You only pay for active Sims and AutoSim guarded flows.
+        Klavity builds AI personas from your real customer call transcripts and sends them through your live site — including the pages no one has visited yet. Everything they find is filed with evidence straight into Jira, Linear, GitHub or Plane, and the flows that matter get re-run so fixed things stay fixed.
       </p>
       
       <!-- Billing Toggle -->
@@ -489,20 +497,61 @@
 
   <!-- ── PRICING CARDS ───────────────────────────────────────────────────── -->
   <section class="wrap">
+
+    <!-- ── THE FOUNDING TEN (KLAVITYKLA-368: moved ABOVE the tier grid — it is the
+         offer we actually want people to take. Entitlements below mirror
+         PLAN_QUOTAS.founding in prototype/lib/billing.ts, which KLAVITYKLA-365 set
+         equal to Team. Canonical name on this page: "Founding Ten". ── -->
+    <div class="founding-band reveal">
+      <span class="founding-ribbon">Ten teams, then it closes</span>
+      <div class="founding-lead">
+        <div class="plan-name" style="color:var(--amber, #d98324)">The Founding Ten</div>
+        <div class="plan-price-wrap" style="margin-bottom:10px">
+          <span class="plan-price-currency">$</span>
+          <span class="plan-price" style="font-size:38px">29</span>
+          <span class="plan-price-period">/ month — $290 billed yearly, locked for life</span>
+        </div>
+        <div class="plan-desc">Ten teams, set up by hand by the founder, price grandfathered forever.</div>
+      </div>
+      <ul class="plan-features-list">
+        <li>
+          <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          <span><strong>Snap</strong> — the bug reporter, free for everyone</span>
+        </li>
+        <li>
+          <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          <span><strong>Sims</strong> — personas built from your calls. 20 Sims, 2,500 page reviews a month, unlimited projects.</span>
+        </li>
+        <li>
+          <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          <span><strong>AutoSim as it stabilises</strong> — 20 repeat-checked flows, 600 runs a month, re-run on every deploy or hourly.</span>
+        </li>
+        <li>
+          <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          <span><strong>A direct line to the founder</strong>, and a vote on what ships next</span>
+        </li>
+      </ul>
+      <div class="founding-cta-wrap">
+        <a class="btn btn-primary" href="/onboarding?plan=founding">Join the Founding Ten</a>
+        <span class="founding-cta-note">If Klavity doesn't find you a real bug worth fixing in the first 30 days, you don't pay — and we'll tell you ourselves if it didn't.</span>
+      </div>
+    </div>
+
     <p class="qa-cost-anchor reveal" style="--d:.2s">Your first QA hire costs $60,000 a year. Klavity's Team plan is $99 a month.</p>
     <div class="pricing-grid auto-stagger">
 
       <!-- Free -->
       <div class="card pricing-card reveal">
         <div class="plan-name">Free</div>
-        <div class="plan-desc">For developers trying AI bug finding and maintenance.</div>
+        <div class="plan-desc">For trying Klavity on one site. The bug reporter, plus one Sim.</div>
         <div class="plan-price-wrap">
           <span class="plan-price-currency">$</span>
           <span class="plan-price" data-price-free>0</span>
           <span class="plan-price-period">/ month</span>
         </div>
         <a class="btn btn-ghost plan-btn" href="/onboarding">Get started for free</a>
-        
+        <p class="plan-value-anchor">Paste a URL and your first Sim walks the site in minutes.</p>
+
         <div class="plan-features-title">Includes</div>
         <ul class="plan-features-list">
           <li>
@@ -511,11 +560,7 @@
           </li>
           <li>
             <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-            <span><strong>1</strong> active Sim <span style="color:var(--paper-faint)">(25 page reviews/mo)</span></span>
-          </li>
-          <li>
-            <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-            <span><strong>1</strong> AutoSim flow <span style="color:var(--paper-faint)">(weekly runs)</span></span>
+            <span><strong>1</strong> Sim <span style="color:var(--paper-faint)">(25 page reviews a month)</span></span>
           </li>
           <li>
             <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
@@ -536,9 +581,9 @@
           <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--indigo)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
         </div>
         <div class="positioning-content">
-          <h3>Why is the core plumbing free?</h3>
+          <h3>Why is the bug reporter free?</h3>
           <p>
-            Category standards like Marker.io charge up to $199/month just to capture console logs, record screens, and sync bug reports. We believe collaborative bug reporting is basic plumbing. Klavity offers the entire Snap suite—including widgets, extensions, two-way sync, and unlimited reporters—free forever. We only charge for our unique AI agent layers (Sims and AutoSims).
+            Tools like Marker.io charge up to $199 a month just to record a screen, capture browser errors and push a bug report into your tracker. We think that part should not cost anything. So Snap — the widget, the browser extension, two-way sync with your tracker, and as many reporters as you like — is free forever, on every plan. We only charge for the AI: the Sims that walk your site, and the flows they re-run to make sure fixed things stay fixed.
           </p>
         </div>
       </div>
@@ -546,7 +591,7 @@
       <!-- Pro -->
       <div class="card pricing-card reveal">
         <div class="plan-name">Pro</div>
-        <div class="plan-desc">For freelancers and small teams seeking continuous automated coverage.</div>
+        <div class="plan-desc">For freelancers and small teams who want their key flows re-checked every day.</div>
         <div class="plan-price-wrap">
           <span class="plan-price-currency">$</span>
           <span class="plan-price" id="pricePro" data-monthly="29" data-annual="24">29</span>
@@ -562,15 +607,11 @@
           </li>
           <li>
             <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-            <span><strong>5</strong> active Sims <span style="color:var(--paper-faint)">(500 page reviews/mo)</span></span>
+            <span><strong>5</strong> Sims <span style="color:var(--paper-faint)">(500 page reviews a month)</span></span>
           </li>
           <li>
             <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-            <span><strong>5</strong> AutoSim flows <span style="color:var(--paper-faint)">(daily runs)</span></span>
-          </li>
-          <li>
-            <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-            <span>Removable branding <span class="cs-tag">Coming soon</span></span>
+            <span><strong>5</strong> repeat-checked flows <span style="color:var(--paper-faint)">(150 runs a month, re-run daily)</span></span>
           </li>
           <li>
             <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
@@ -582,7 +623,7 @@
       <!-- Team -->
       <div class="card pricing-card featured reveal">
         <div class="plan-name" style="color:var(--indigo-text)">Team</div>
-        <div class="plan-desc">For engineering organizations needing robust, scheduled flow verification.</div>
+        <div class="plan-desc">For engineering teams who want every deploy checked against the flows that matter.</div>
         <div class="plan-price-wrap">
           <span class="plan-price-currency">$</span>
           <span class="plan-price" id="priceTeam" data-monthly="99" data-annual="82">99</span>
@@ -599,15 +640,15 @@
           </li>
           <li>
             <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-            <span><strong>20</strong> active Sims <span style="color:var(--paper-faint)">(2,500 page reviews/mo)</span></span>
+            <span><strong>20</strong> Sims <span style="color:var(--paper-faint)">(2,500 page reviews a month)</span></span>
           </li>
           <li>
             <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-            <span><strong>20</strong> AutoSim flows <span style="color:var(--paper-faint)">(hourly &amp; CI/CD)</span></span>
+            <span><strong>20</strong> repeat-checked flows <span style="color:var(--paper-faint)">(600 runs a month, re-run on every deploy or hourly)</span></span>
           </li>
           <li>
             <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-            <span>Google &amp; Microsoft SSO <span class="cs-tag">Coming soon</span></span>
+            <span>Priority support</span>
           </li>
         </ul>
       </div>
@@ -615,7 +656,7 @@
       <!-- Scale -->
       <div class="card pricing-card reveal">
         <div class="plan-name">Scale</div>
-        <div class="plan-desc">For enterprises requiring custom scale, security controls, and support.</div>
+        <div class="plan-desc">For larger companies that need custom limits, security controls and support.</div>
         <div class="plan-price-wrap">
           <span class="plan-price" style="font-size:38px">Custom</span>
         </div>
@@ -625,19 +666,15 @@
         <ul class="plan-features-list">
           <li>
             <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-            <span><strong>Custom</strong> Sims and reaction scale</span>
+            <span><strong>Custom</strong> Sims and page-review limits</span>
           </li>
           <li>
             <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-            <span><strong>Custom</strong> AutoSim flows <span style="color:var(--paper-faint)">($5/extra flow)</span></span>
+            <span><strong>Custom</strong> repeat-checked flows <span style="color:var(--paper-faint)">($5 per extra flow)</span></span>
           </li>
           <li>
             <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-            <span>SAML &amp; SCIM SSO integration <span class="cs-tag">Coming soon</span></span>
-          </li>
-          <li>
-            <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-            <span>Audit logs &amp; data masking <span class="cs-tag">Coming soon</span></span>
+            <span>Dedicated contact and a support agreement</span>
           </li>
           <li>
             <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
@@ -646,39 +683,6 @@
         </ul>
       </div>
 
-    </div>
-
-    <!-- ── FOUNDING TEAM BAND (GTM: first 10 paid teams as supporters;
-         $290/yr annual-only, quotas = Pro — billing.ts catalog) ── -->
-    <div class="founding-band reveal">
-      <span class="founding-ribbon">Limited to the first 10 teams</span>
-      <div class="founding-lead">
-        <div class="plan-name" style="color:var(--amber, #d98324)">Founding Team</div>
-        <div class="plan-price-wrap" style="margin-bottom:10px">
-          <span class="plan-price-currency">$</span>
-          <span class="plan-price" style="font-size:38px">290</span>
-          <span class="plan-price-period">/ year, billed annually</span>
-        </div>
-        <div class="plan-desc">Back Klavity early. Help shape the product and lock in founding pricing before it is gone.</div>
-      </div>
-      <ul class="plan-features-list">
-        <li>
-          <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-          <span><strong>Everything in Pro</strong> — 5 projects, 5 Sims, 5 AutoSim flows</span>
-        </li>
-        <li>
-          <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-          <span><strong>Price locked forever</strong> — your rate never goes up</span>
-        </li>
-        <li>
-          <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-          <span><strong>Direct line to the founder</strong> — your feedback steers the roadmap</span>
-        </li>
-      </ul>
-      <div class="founding-cta-wrap">
-        <a class="btn btn-primary" href="/onboarding?plan=founding">Become a founding team</a>
-        <span class="founding-cta-note">One plan. One price. 10 spots.</span>
-      </div>
     </div>
   </section>
 
@@ -700,7 +704,7 @@
           
           <!-- Section: Snap Core Features -->
           <tr class="group-row">
-            <td colspan="5">Snap Bug Reporting (Core Plumbing)</td>
+            <td colspan="5">Bug reporting — free on every plan</td>
           </tr>
           <tr>
             <td class="feature-name">Widget &amp; Extension</td>
@@ -717,103 +721,113 @@
             <td class="feature-val"><svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg> Unlimited</td>
           </tr>
           <tr>
-            <td class="feature-name">Seats &amp; External Reporters</td>
+            <td class="feature-name">Team members &amp; outside reporters</td>
             <td class="feature-val"><strong>Unlimited</strong></td>
             <td class="feature-val"><strong>Unlimited</strong></td>
             <td class="feature-val"><strong>Unlimited</strong></td>
             <td class="feature-val"><strong>Unlimited</strong></td>
           </tr>
           <tr>
-            <td class="feature-name">Session Replay &amp; Console Capture</td>
+            <td class="feature-name">Screen recording &amp; browser error capture</td>
             <td class="feature-val"><svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg> Included</td>
             <td class="feature-val"><svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg> Included</td>
             <td class="feature-val"><svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg> Included</td>
             <td class="feature-val"><svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg> Included</td>
           </tr>
           <tr>
-            <td class="feature-name">Widget Branding</td>
+            <td class="feature-name">Klavity badge on the widget</td>
             <td class="feature-val">"Powered by Klavity"</td>
-            <td class="feature-val">Removable <span class="cs-tag">Coming soon</span></td>
-            <td class="feature-val">Removable <span class="cs-tag">Coming soon</span></td>
-            <td class="feature-val">Removable <span class="cs-tag">Coming soon</span></td>
+            <td class="feature-val">Removable <sup>*</sup></td>
+            <td class="feature-val">Removable <sup>*</sup></td>
+            <td class="feature-val">Removable <sup>*</sup></td>
           </tr>
-          
+
           <!-- Section: AI Features -->
           <tr class="group-row">
-            <td colspan="5">AI QA Agents &amp; Test Maintenance</td>
+            <td colspan="5">Sims and repeat-checked flows</td>
           </tr>
           <tr>
-            <td class="feature-name">Active Projects</td>
+            <td class="feature-name">Projects</td>
             <td class="feature-val">1 project</td>
             <td class="feature-val">5 projects</td>
             <td class="feature-val"><strong>Unlimited</strong></td>
             <td class="feature-val"><strong>Unlimited</strong></td>
           </tr>
           <tr>
-            <td class="feature-name">Active Sims</td>
+            <td class="feature-name">Sims</td>
             <td class="feature-val">1 Sim</td>
             <td class="feature-val">5 Sims</td>
             <td class="feature-val">20 Sims</td>
             <td class="feature-val">Custom</td>
           </tr>
           <tr>
-            <td class="feature-name">Sim Reaction Allowance</td>
+            <td class="feature-name">Page reviews included</td>
             <td class="feature-val">25 / month</td>
             <td class="feature-val">500 / month</td>
             <td class="feature-val">2,500 / month</td>
             <td class="feature-val">Custom</td>
           </tr>
           <tr>
-            <td class="feature-name">AutoSim Guarded Flows</td>
-            <td class="feature-val">1 flow</td>
+            <td class="feature-name">Repeat-checked flows</td>
+            <td class="feature-val">—</td>
             <td class="feature-val">5 flows</td>
             <td class="feature-val">20 flows</td>
             <td class="feature-val">Custom</td>
           </tr>
           <tr>
-            <td class="feature-name">AutoSim Execution Cadence</td>
-            <td class="feature-val">Weekly runs</td>
-            <td class="feature-val">Daily runs</td>
-            <td class="feature-val">Hourly / CI / Deploy</td>
+            <td class="feature-name">Flow runs included</td>
+            <td class="feature-val">—</td>
+            <td class="feature-val">150 / month</td>
+            <td class="feature-val">600 / month</td>
             <td class="feature-val">Custom</td>
           </tr>
-          
+          <tr>
+            <td class="feature-name">How often flows are re-run</td>
+            <td class="feature-val">—</td>
+            <td class="feature-val">Daily</td>
+            <td class="feature-val">On every deploy, or hourly</td>
+            <td class="feature-val">Custom</td>
+          </tr>
+
           <!-- Section: Enterprise & Security -->
           <tr class="group-row">
-            <td colspan="5">SSO, Security &amp; Hosting</td>
+            <td colspan="5">Sign-on, security and hosting</td>
           </tr>
           <tr>
-            <td class="feature-name">Single Sign-On (SSO)</td>
+            <td class="feature-name">Single sign-on</td>
             <td class="feature-val">—</td>
             <td class="feature-val">—</td>
-            <td class="feature-val">Google &amp; Microsoft <span class="cs-tag">Coming soon</span></td>
-            <td class="feature-val">SAML / SCIM / OIDC <span class="cs-tag">Coming soon</span></td>
+            <td class="feature-val">Google &amp; Microsoft <sup>*</sup></td>
+            <td class="feature-val">SAML / SCIM / OIDC <sup>*</sup></td>
           </tr>
           <tr>
-            <td class="feature-name">Data Masking &amp; PI Filter</td>
+            <td class="feature-name">Hiding personal data in reports</td>
             <td class="feature-val">—</td>
             <td class="feature-val">—</td>
-            <td class="feature-val">Standard <span class="cs-tag">Coming soon</span></td>
-            <td class="feature-val">Custom / Custom Rules <span class="cs-tag">Coming soon</span></td>
+            <td class="feature-val">Standard <sup>*</sup></td>
+            <td class="feature-val">Custom rules <sup>*</sup></td>
           </tr>
           <tr>
-            <td class="feature-name">Self-Hosted Support</td>
+            <td class="feature-name">Run Klavity on your own servers</td>
             <td class="feature-val">—</td>
             <td class="feature-val">—</td>
             <td class="feature-val">—</td>
             <td class="feature-val"><svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg> Optional</td>
           </tr>
           <tr>
-            <td class="feature-name">Support SLA</td>
+            <td class="feature-name">Support</td>
             <td class="feature-val">Best effort</td>
             <td class="feature-val">Email support</td>
             <td class="feature-val">Priority support</td>
-            <td class="feature-val">Dedicated TAM &amp; SLA</td>
+            <td class="feature-val">Dedicated contact &amp; support agreement</td>
           </tr>
           
         </tbody>
       </table>
     </div>
+    <p style="color:var(--paper-faint);font-size:13px;margin-top:14px">
+      <sup>*</sup> Not built yet. Removing the Klavity badge, single sign-on, and hiding personal data in reports are on the roadmap and are not part of what you get today. We would rather say so here than let you find out after you pay.
+    </p>
   </section>
 
   <!-- ── FAQ SECTION ────────────────────────────────────────────────────── -->
@@ -823,30 +837,37 @@
     
     <div class="faq-grid">
       <details class="card">
-        <summary style="font-family:var(--display);font-weight:540;font-size:18px;cursor:pointer">What counts as an AutoSim flow?</summary>
+        <summary style="font-family:var(--display);font-weight:540;font-size:18px;cursor:pointer">What do the plan limits actually mean?</summary>
         <p style="color:var(--paper-dim);font-size:15px;margin:10px 0 0">
-          An AutoSim flow (or Trail) is a recorded critical path in your product (such as checkout or user registration) that Klavity tests on a schedule. Maintenance actions like creating, editing, and manually verifying a flow do not count against your limits—only active, scheduled runs do.
+          There are four numbers on every plan. <strong>Projects</strong> is how many separate sites or apps you can watch. <strong>Sims</strong> is how many customer personas you can keep active at once — each one is built from a call transcript you give us. <strong>Page reviews</strong> is how many times a month those Sims can look at a page and write up what they find; a Sim walking eight pages of your site uses eight of them. <strong>Flow runs</strong> is how many times a month we re-run your saved flows, like checkout or sign-up, to check that something that was fixed has stayed fixed. Free includes 1 project, 1 Sim and 25 page reviews a month, and does not include saved flows. Everything is counted per account, not per person, and adding team members is free on every plan.
         </p>
       </details>
-      
+
       <details class="card">
-        <summary style="font-family:var(--display);font-weight:540;font-size:18px;cursor:pointer">What happens if we hit our reaction or flow limits?</summary>
+        <summary style="font-family:var(--display);font-weight:540;font-size:18px;cursor:pointer">What is a repeat-checked flow?</summary>
         <p style="color:var(--paper-dim);font-size:15px;margin:10px 0 0">
-          Quota enforcement is not yet active — we are shipping enforcement gently and will announce before any hard limits go live. When it does land, our intent is to degrade cadence gracefully (e.g. daily runs slow to weekly) rather than hard-stop, and we will never silently bill overages.
+          A flow is a path through your product that you cannot afford to have broken — checkout, sign-up, inviting a teammate. You save it once, and Klavity walks it again on a schedule so a regression gets caught and filed rather than reported by a customer. Creating, editing and manually trying a flow are free; only the scheduled runs count against your monthly limit.
         </p>
       </details>
 
       <details class="card">
         <summary style="font-family:var(--display);font-weight:540;font-size:18px;cursor:pointer">What counts as a page review?</summary>
         <p style="color:var(--paper-dim);font-size:15px;margin:10px 0 0">
-          A page review (what our billing calls a Sim reaction) occurs when one of your active client-persona Sims reviews a page (triggered automatically by URL changes or manual consent) to inspect changes, write notes, or file issues. Extra page reviews are kept cheap based on local LLM COGS.
+          One page review is one of your Sims looking at one page and writing up what it found — a note, a question, or a bug report with evidence attached. It happens when the Sim moves to a new page, or when you ask it to look at the page you are on. Extra page reviews are cheap, because a review costs us very little to run.
         </p>
       </details>
 
       <details class="card">
-        <summary style="font-family:var(--display);font-weight:540;font-size:18px;cursor:pointer">Can we export our AutoSim flows?</summary>
+        <summary style="font-family:var(--display);font-weight:540;font-size:18px;cursor:pointer">What happens if we go over a limit?</summary>
         <p style="color:var(--paper-dim);font-size:15px;margin:10px 0 0">
-          Klavity is open-core and we strongly oppose vendor lock-in. AutoSim flows are stored as structured steps in an open schema. One-click export to standard Playwright test scripts is on the roadmap — <a href="mailto:hello@quantana.com.au?subject=Klavity%20Scale%20plan%20inquiry" style="color:var(--indigo-text)">contact us</a> if this is a blocker.
+          Nothing sudden, and nothing you did not agree to. We are not enforcing limits yet, and we will tell you before we start. When we do, we plan to slow things down gently — daily runs become weekly, for example — rather than cut you off mid-month. We will never quietly charge you for going over.
+        </p>
+      </details>
+
+      <details class="card">
+        <summary style="font-family:var(--display);font-weight:540;font-size:18px;cursor:pointer">Can we take our flows with us if we leave?</summary>
+        <p style="color:var(--paper-dim);font-size:15px;margin:10px 0 0">
+          Yes — that is the point of being open source. Your flows are stored as plain, readable steps in an open format. One-click export to standard Playwright test scripts is on the roadmap; <a href="mailto:hello@quantana.com.au?subject=Klavity%20Scale%20plan%20inquiry" style="color:var(--indigo-text)">email us</a> if that is holding you back and we will help you get them out.
         </p>
       </details>
     </div>
