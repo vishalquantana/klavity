@@ -78,6 +78,7 @@ import { createLabel, listLabels, updateLabel, deleteLabel, attachLabel, detachL
 import { suggestLabelsForFeedback, draftTitleForFeedback, fallbackDraftTitle } from "./lib/label-suggest"
 import { validateAssertionDraft, normalizeCheckpointInput } from "./lib/assertion-spec"
 import { buildRecurrenceMemory, listProjectRecurringIssues } from "./lib/recurrence-memory"
+import { findKnownIssue } from "./lib/known-issue"
 import { publishBlogPost, SLUG_RE, type PublishInput } from "./lib/blog-publish"
 import { getExtractModel } from "./lib/extract-model"
 import { parseJSON } from "./lib/parse-json"
@@ -2130,6 +2131,25 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         accent: p.accent ?? null,
       }))
       return wjson({ sims })
+    }
+
+    // ── /api/widget/known-check — anonymous, project-scoped, CORS-gated pre-submit "known issue"
+    // lookup (KLAVITYKLA-241, JTBD A.11). Given the reporter's in-progress composer text, returns the
+    // closest matching known/recurring issue for the project (reusing the same char-trigram similarity
+    // the server-side dedup uses), so the composer can show "Already reported — status: X" BEFORE
+    // submit. Read-only; never writes. Rate-limited per IP. No match (or no DB) → { match: null }.
+    if (req.method === "POST" && path === "/api/widget/known-check") {
+      if (!rlAllow(`wknown:ip:${clientIp(req, server)}`, 120, 60_000)) return wjson({ error: "rate limited" }, 429)
+      let body: any = null
+      try { body = await req.json() } catch { return wjson({ error: "invalid" }, 400) }
+      const projectId = String(body?.project || "")
+      const text = String(body?.text || "").slice(0, 5000)
+      if (!projectId) return wjson({ error: "project required" }, 400)
+      if (!db) return wjson({ match: null })
+      const proj = await projectById(projectId)
+      if (!proj) return wjson({ error: "not found" }, 404)
+      const match = await findKnownIssue(db, projectId, text)
+      return wjson({ match })
     }
 
     // ── inbound two-way status sync (G4): external tracker → Klavity ticket ──
