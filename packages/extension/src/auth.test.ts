@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import {
   backendBase, pickProject, trySilentLogin, requestCode, verifyCode,
-  isSignedIn, signOut, getSelectedProjectId, setSelectedProjectId,
+  isSignedIn, signOut, getSelectedProjectId, setSelectedProjectId, isSignedOutExplicitly,
 } from './auth'
 
 // ── In-memory fake chrome ──────────────────────────────────────────────
@@ -116,7 +116,38 @@ describe('isSignedIn / signOut / selected project', () => {
     expect(c.sync.klavSettings.klavToken).toBe('')
     expect(c.sync.klavSettings.connectionMode).toBe('direct')
     expect(c.local.klavConfig).toBeUndefined()
-    expect(c.local.klavSelectedProjectId).toBeUndefined()
+    expect(c.local.klavSims).toBeUndefined()
+  })
+  it('signOut keeps the selected project so it survives a later re-login', async () => {
+    const c = makeChrome({ cookie: 'sess_123' }); ;(globalThis as any).chrome = c
+    c.local.klavSelectedProjectId = 'p_charantra'
+    await signOut()
+    expect(c.local.klavSelectedProjectId).toBe('p_charantra')
+    await trySilentLogin({ force: true })
+    expect(await getSelectedProjectId()).toBe('p_charantra')
+  })
+  it('signOut suppresses the cookie silent re-login (KLAVITYKLA-322)', async () => {
+    const c = makeChrome({ cookie: 'sess_123' }); ;(globalThis as any).chrome = c
+    await signOut()
+    expect(await isSignedOutExplicitly()).toBe(true)
+    expect(await trySilentLogin()).toBe(false)
+    expect(c.sync.klavSettings.klavToken).toBe('')
+  })
+  it('an explicit (forced) silent login still works and clears the signed-out flag', async () => {
+    const c = makeChrome({ cookie: 'sess_123' }); ;(globalThis as any).chrome = c
+    await signOut()
+    expect(await trySilentLogin({ force: true })).toBe(true)
+    expect(c.sync.klavSettings.klavToken).toBe('sess_123')
+    expect(await isSignedOutExplicitly()).toBe(false)
+    // and a later popup open silently re-logs in again
+    expect(await trySilentLogin()).toBe(true)
+  })
+  it('verifyCode clears the signed-out flag', async () => {
+    const c = makeChrome(); ;(globalThis as any).chrome = c
+    ;(globalThis as any).fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true, token: 'sess_v' }) })
+    await signOut()
+    await verifyCode('a@b.com', '123456')
+    expect(await isSignedOutExplicitly()).toBe(false)
   })
   it('remembers the selected project id', async () => {
     const c = makeChrome(); ;(globalThis as any).chrome = c
