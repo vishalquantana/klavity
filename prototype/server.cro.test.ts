@@ -83,6 +83,8 @@ beforeAll(async () => {
       KLAV_TEST_ALLOW_LOOPBACK: "1",
       SENDGRID_API_KEY: "",
       KLAV_MAIL_FROM: "",
+      // KLAVITYKLA-331 — booking CTA URL injected into the free-tool pages.
+      CAL_BOOKING_URL: "https://cal.com/test-founder/15min",
     },
     stdout: "ignore",
     stderr: "ignore",
@@ -146,6 +148,43 @@ test("POST /api/track: rejects unknown events", async () => {
   })
   expect(res.status).toBe(400)
 })
+
+// ── Founder booking CTA — KLAVITYKLA-331 ─────────────────────────────────────────────────────────
+
+test("POST /api/track: booking_cta_clicked is accepted and persisted with props", async () => {
+  const anonId = "anon_book_" + RUN
+  const res = await fetch(`${BASE}/api/track`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      event: "booking_cta_clicked",
+      anonId,
+      url: "https://example.com/pricing",
+      props: { tool: "cro", placement: "unlocked_report" },
+    }),
+  })
+  expect(res.status).toBe(200)
+
+  await Bun.sleep(300)
+  const rows = await raw.execute({
+    sql: "SELECT props_json FROM funnel_events WHERE anon_id=? AND event='booking_cta_clicked'",
+    args: [anonId],
+  })
+  expect(rows.rows.length).toBeGreaterThan(0)
+  expect(JSON.parse(String((rows.rows[0] as any).props_json))).toEqual({ tool: "cro", placement: "unlocked_report" })
+})
+
+for (const route of ["/cro", "/bug-check"]) {
+  test(`GET ${route}: serves the booking CTA with CAL_BOOKING_URL substituted`, async () => {
+    const res = await fetch(`${BASE}${route}`)
+    expect(res.status).toBe(200)
+    const html = await res.text()
+    expect(html).toContain("Book 15 min with the founder")
+    // The env value must actually be injected — the placeholder must not leak to the browser.
+    expect(html).toContain('href="https://cal.com/test-founder/15min"')
+    expect(html).not.toContain("__CAL_BOOKING_URL__")
+  })
+}
 
 // ── /api/cro/analyze ─────────────────────────────────────────────────────────────────────────────
 
