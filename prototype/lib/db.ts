@@ -379,6 +379,13 @@ export async function applySchema(c: Client) {
     // separate row keyed by day so the two caps never contend on the same UPDATE.
     `CREATE TABLE IF NOT EXISTS daily_freetool_spend (
        day TEXT PRIMARY KEY, reserved_usd REAL NOT NULL DEFAULT 0)`,
+    // PER-TENANT AI BUDGET OVERRIDES (KLAVITYKLA-314) — optional per-account override of the default
+    // daily AI budget that lives UNDER the global OPS_DAILY_CAP_USD. One row per account that has a
+    // custom budget; accounts WITHOUT a row fall back to the env default (KLAV_TENANT_DAILY_BUDGET_USD).
+    // A tenant's spend-in-window is computed from ai_calls (SUM cost_usd for today), so no per-tenant
+    // reservation ledger is needed here — this table only holds the (rare) explicit override.
+    `CREATE TABLE IF NOT EXISTS tenant_ai_budgets (
+       account_id TEXT PRIMARY KEY, daily_budget_usd REAL NOT NULL, updated_at INTEGER NOT NULL)`,
     // USAGE METERS (KLAVITYKLA-305) — billable value-metric counters. MEASUREMENT ONLY: this ledger
     // COUNTS the billable events (meter = Sims + guarded AutoSim flows) per account, per billing
     // period (UTC month 'YYYY-MM'), per metric type (e.g. 'sim_review', 'autosim_walk'). It never
@@ -3258,7 +3265,7 @@ function aiFeatureFor(type: string, feature?: string | null): string {
   return raw || "unknown"
 }
 
-async function accountIdForAiCall(projectId?: string | null, accountId?: string | null, actorEmail?: string | null): Promise<string | null> {
+export async function accountIdForAiCall(projectId?: string | null, accountId?: string | null, actorEmail?: string | null): Promise<string | null> {
   if (accountId) return accountId
   try {
     if (projectId) {
@@ -3621,6 +3628,43 @@ export async function reconcileFreeToolSpend(estUsd: number, actualUsd: number):
 export async function reservedFreeToolSpend(): Promise<number> {
   const r = await db!.execute({ sql: "SELECT reserved_usd FROM daily_freetool_spend WHERE day=?", args: [utcDay()] })
   return r.rows.length ? Number((r.rows[0] as any).reserved_usd) : 0
+}
+
+// ── per-tenant AI budget (KLAVITYKLA-314) ────────────────────────────────────────────────────────
+// A tenant's (account's) AI spend today, summed from the real ai_calls ledger. Same UTC-day window
+// as the global daily cap (date('now')). Used by lib/tenant-budget.ts to gate a single tenant's AI
+// consumption so one account can never exhaust the whole global OPS_DAILY_CAP_USD.
+export async function tenantTodaySpend(accountId: string): Promise<number> {
+  if (!accountId) return 0
+  const r = await db!.execute({
+    sql: `SELECT COALESCE(SUM(cost_usd),0) AS cost FROM ai_calls
+          WHERE account_id = ? AND date(created_at/1000,'unixepoch') = date('now')`,
+    args: [accountId],
+  })
+  return Number((r.rows[0] as any).cost)
+}
+
+// Read an account's explicit daily-budget override (null → account uses the env default).
+export async function getTenantBudgetOverride(accountId: string): Promise<number | null> {
+  if (!accountId) return null
+  const r = await db!.execute({ sql: "SELECT daily_budget_usd FROM tenant_ai_budgets WHERE account_id=?", args: [accountId] })
+  if (!r.rows.length) return null
+  const v = Number((r.rows[0] as any).daily_budget_usd)
+  return Number.isFinite(v) ? v : null
+}
+
+// Upsert (or clear, when budgetUsd is null) an account's explicit daily-budget override.
+export async function setTenantBudgetOverride(accountId: string, budgetUsd: number | null): Promise<void> {
+  if (!accountId) return
+  if (budgetUsd == null || !Number.isFinite(budgetUsd) || budgetUsd < 0) {
+    await db!.execute({ sql: "DELETE FROM tenant_ai_budgets WHERE account_id=?", args: [accountId] })
+    return
+  }
+  await db!.execute({
+    sql: `INSERT INTO tenant_ai_budgets (account_id, daily_budget_usd, updated_at) VALUES (?,?,?)
+          ON CONFLICT(account_id) DO UPDATE SET daily_budget_usd=excluded.daily_budget_usd, updated_at=excluded.updated_at`,
+    args: [accountId, budgetUsd, Date.now()],
+  })
 }
 
 // ── model mix (/opsadmin) ── persisted weighted model selection, stored in schema_meta. ──
