@@ -171,7 +171,7 @@ let serverProc: ReturnType<typeof Bun.spawn>
 let base: string
 
 beforeAll(async () => {
-  serverPort = 47200 + Math.floor(Math.random() * 600)
+  serverPort = 48600 + Math.floor(Math.random() * 300)
   base = `http://localhost:${serverPort}`
 
   serverProc = Bun.spawn(["bun", "run", "server.ts"], {
