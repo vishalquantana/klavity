@@ -2034,6 +2034,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         headers: { "content-type": "text/css; charset=utf-8", "cache-control": "public, max-age=86400" },
       })
     }
+    // ── canonical AutoSims copy (KLAVITYKLA-269) — single source of truth for the hero/banner
+    // strings shared by /autosims (trails.html) and the dashboard AutoSims view. ──
+    if (req.method === "GET" && path === "/vendor/autosims-copy.js") {
+      return new Response(Bun.file(PUB + "/vendor/autosims-copy.js"), {
+        headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "public, max-age=86400" },
+      })
+    }
     // ── vendored session-replay PLAYER (Trails Walk + ticket replay scrubber) ──
     // Served under NEUTRAL filenames (klv-view.*): ad-blockers (uBlock/EasyPrivacy/Brave) block ANY URL
     // containing "rrweb"/"record", which silently broke replay for a large share of real users. The old

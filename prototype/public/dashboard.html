@@ -12,6 +12,8 @@
 <!-- Guided tour: vendored driver.js v1.6.0 (MIT) — local files, CSP-safe (no CDN) -->
 <link rel="stylesheet" href="/vendor/driver.css" />
 <script src="/vendor/driver.min.js" defer></script>
+<!-- KLAVITYKLA-269: canonical AutoSims copy shared with the standalone /autosims page -->
+<script src="/vendor/autosims-copy.js"></script>
 <script src="/icons.generated.js"></script>
 <style>
 :root{--ink:#f5f3ee;--ink-2:#ffffff;--ink-3:#efeae0;--paper:#19140f;--paper-dim:#574f45;--paper-faint:#706560;--indigo:#6366f1;--indigo-deep:#4f46e5;--amber:#d98324;--rose:#db2777;--green:#0f9d6b;--line:rgba(25,20,15,.12);
@@ -2228,7 +2230,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         <!-- Precision banner: only shown when real precision data exists (not the dead '—' state) -->
         <div class="banner" id="precBanner" style="display:none">
           <div>
-            <div class="lbl">Precision · legit-bug rate</div>
+            <div class="lbl" id="precLbl">Signal quality · % of real bugs found</div>
             <div class="pct" id="precPct">—</div>
           </div>
           <div class="sub" id="precSub"></div>
@@ -8816,7 +8818,7 @@ load()
   }
   async function load(){
     var d=await loadData()
-    if(!d){var lEl=$("asLead");if(lEl)lEl.textContent="Couldn't load AutoSims.";return}
+    if(!d){var lEl=$("asLead");if(lEl)lEl.textContent=((typeof window!=="undefined"&&window.KLAV_AUTOSIMS_COPY&&window.KLAV_AUTOSIMS_COPY.loadError))||"Couldn't load AutoSims.";return}
     await render(d)
   }
   // ── Health board helpers (KLA-268) ─────────────────────────────────────────
@@ -8882,7 +8884,10 @@ load()
     }
   }
   async function render(d){
-    var lEl=$("asLead");if(lEl)lEl.textContent="Your AutoSims run on a schedule and flag regressions before your users do."
+    // KLAVITYKLA-269: canonical AutoSims copy, single-sourced from /vendor/autosims-copy.js.
+    var AS_COPY=(typeof window!=="undefined"&&window.KLAV_AUTOSIMS_COPY)||{}
+    var lEl=$("asLead");if(lEl)lEl.textContent=AS_COPY.lead||"Your AutoSims run on a schedule and flag regressions before your users do."
+    var pLbl=$("precLbl");if(pLbl&&AS_COPY.precisionLabel)pLbl.textContent=AS_COPY.precisionLabel
     renderTrails(d)
     renderHealthBoard(d)
     if(typeof ciRender==="function")ciRender()
