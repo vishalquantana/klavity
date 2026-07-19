@@ -222,6 +222,57 @@ export function isAgencyEntitled(plan: string | null | undefined, unlimited = fa
   return unlimited || p === "agency" || p === "scale" || p === "partner"
 }
 
+// ── past_due grace-degrade (KLAVITYKLA-313) ─────────────────────────────────────────────────────
+// When a subscription's billing_status flips to "past_due" (a renewal charge failed; Stripe is still
+// Smart-Retrying), we DO NOT hard-lock the account. Instead we grace-degrade: keep read access + core
+// working, show a banner, and only restrict premium metered actions once a grace window elapses. This
+// is the "don't punish a customer for a card that expired" promise (JTBD 8.9). Pure — no DB — so the
+// entitlement path, routes, and the UI can all share one predicate.
+export const PAST_DUE_GRACE_DAYS = 7
+const GRACE_DAY_MS = 24 * 60 * 60 * 1000
+
+export type BillingGraceState = {
+  status: string | null
+  pastDue: boolean          // billing_status === "past_due"
+  inGrace: boolean          // pastDue AND still within the grace window
+  graceExpired: boolean     // pastDue AND the grace window has elapsed
+  daysRemaining: number     // whole days left in grace (0 when not past_due or expired)
+  graceEndsAt: number | null // ms epoch the grace window ends (null when not past_due)
+  restrictPremium: boolean  // true ONLY once grace has expired — the signal to degrade premium actions
+}
+
+// resolveBillingGrace — given the stored billing_status and the timestamp it last changed
+// (billing_updated_at, which is stamped when the account flipped to past_due), compute the grace
+// state. `now` and `graceDays` are injectable for tests. Any non-past_due status returns a benign
+// "no restriction" state, so callers can invoke this unconditionally.
+export function resolveBillingGrace(
+  billingStatus: string | null | undefined,
+  since: number | null | undefined,
+  now: number = Date.now(),
+  graceDays: number = PAST_DUE_GRACE_DAYS,
+): BillingGraceState {
+  const status = billingStatus != null ? String(billingStatus) : null
+  if (status !== "past_due") {
+    return { status, pastDue: false, inGrace: false, graceExpired: false, daysRemaining: 0, graceEndsAt: null, restrictPremium: false }
+  }
+  const days = Number.isFinite(graceDays) && graceDays > 0 ? graceDays : PAST_DUE_GRACE_DAYS
+  // Anchor the window at when the account went past_due; fall back to `now` if we have no timestamp
+  // (a missing anchor should grant the full grace window, never instantly expire it).
+  const anchor = Number.isFinite(Number(since)) && Number(since) > 0 ? Number(since) : now
+  const graceEndsAt = anchor + days * GRACE_DAY_MS
+  const msLeft = graceEndsAt - now
+  const inGrace = msLeft > 0
+  return {
+    status,
+    pastDue: true,
+    inGrace,
+    graceExpired: !inGrace,
+    daysRemaining: inGrace ? Math.ceil(msLeft / GRACE_DAY_MS) : 0,
+    graceEndsAt,
+    restrictPremium: !inGrace,
+  }
+}
+
 export function normalizeInterval(interval: string | null | undefined): BillingInterval {
   return interval === "year" || interval === "annual" ? "year" : "month"
 }
