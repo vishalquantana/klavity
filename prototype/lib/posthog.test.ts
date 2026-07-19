@@ -1,6 +1,6 @@
 // Tests for the PostHog server-side capture helper — KLAVITYKLA-335.
 import { expect, test, afterEach } from "bun:test"
-import { capturePosthog } from "./posthog"
+import { capturePosthog, posthogReplayEnabled, POSTHOG_REPLAY_USER_CAP } from "./posthog"
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -157,4 +157,39 @@ test("first_bug_filed: does NOT fire when existing count > 1", async () => {
     await maybeCaptureFirstBugFiled(async () => 42, "proj_1", "extension", capturePosthog)
   })
   expect(fetchCallCount).toBe(0)
+})
+
+// ── session-replay gate (KLAVITYKLA-329) ────────────────────────────────────────
+
+test("posthogReplayEnabled: off when no PostHog key configured", () => {
+  expect(posthogReplayEnabled({ hasKey: false, toolUserCount: 0 })).toBe(false)
+})
+
+test("posthogReplayEnabled: on for early users under the cap", () => {
+  expect(posthogReplayEnabled({ hasKey: true, toolUserCount: 0 })).toBe(true)
+  expect(posthogReplayEnabled({ hasKey: true, toolUserCount: 1 })).toBe(true)
+  expect(posthogReplayEnabled({ hasKey: true, toolUserCount: POSTHOG_REPLAY_USER_CAP - 1 })).toBe(true)
+})
+
+test("posthogReplayEnabled: off once the cap is reached (boundary is exclusive)", () => {
+  expect(posthogReplayEnabled({ hasKey: true, toolUserCount: POSTHOG_REPLAY_USER_CAP })).toBe(false)
+  expect(posthogReplayEnabled({ hasKey: true, toolUserCount: POSTHOG_REPLAY_USER_CAP + 1 })).toBe(false)
+  expect(posthogReplayEnabled({ hasKey: true, toolUserCount: 1000 })).toBe(false)
+})
+
+test("posthogReplayEnabled: default cap is 50", () => {
+  expect(POSTHOG_REPLAY_USER_CAP).toBe(50)
+  expect(posthogReplayEnabled({ hasKey: true, toolUserCount: 49 })).toBe(true)
+  expect(posthogReplayEnabled({ hasKey: true, toolUserCount: 50 })).toBe(false)
+})
+
+test("posthogReplayEnabled: honours a custom cap override", () => {
+  expect(posthogReplayEnabled({ hasKey: true, toolUserCount: 9, cap: 10 })).toBe(true)
+  expect(posthogReplayEnabled({ hasKey: true, toolUserCount: 10, cap: 10 })).toBe(false)
+})
+
+test("posthogReplayEnabled: off for invalid/negative counts (fail closed)", () => {
+  expect(posthogReplayEnabled({ hasKey: true, toolUserCount: -1 })).toBe(false)
+  expect(posthogReplayEnabled({ hasKey: true, toolUserCount: NaN })).toBe(false)
+  expect(posthogReplayEnabled({ hasKey: true, toolUserCount: Infinity })).toBe(false)
 })
