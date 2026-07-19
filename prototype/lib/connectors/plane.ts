@@ -1,5 +1,42 @@
-import type { Connector, TicketPayload, ExportResult, CommentSyncResult } from "./index"
+import type { Connector, TicketPayload, ExportResult, CommentSyncResult, FieldUpdate, FieldSyncResult } from "./index"
 import { safeFetch } from "../safe-fetch"
+
+// JTBD 5.7: Plane has a native `priority` field whose enum ("urgent"|"high"|"medium"|"low"|"none")
+// lines up 1:1 with Klavity's values, so we can set it directly. Returns null for an unset/unknown
+// priority so the caller omits the field.
+function planePriority(priority: string | null | undefined): string | null {
+  switch (priority) {
+    case "urgent":
+    case "high":
+    case "medium":
+    case "low":
+      return priority
+    default:
+      return null
+  }
+}
+
+// Resolve a Plane issue UUID from an externalKey that may be a sequence_id ("42") or already a UUID.
+// Plane's issue-scoped endpoints (comments, PATCH) require the UUID. Best-effort: on any failure
+// return the ref unchanged (it may already be a UUID from createIssue when sequence_id was null).
+async function resolvePlaneIssueId(
+  host: string, workspace: string, project_id: string, token: string, ref: string,
+): Promise<string> {
+  if (!/^\d+$/.test(ref)) return ref
+  try {
+    const listRes = await safeFetch(
+      `${host}/api/v1/workspaces/${workspace}/projects/${project_id}/issues/?sequence_id=${ref}`,
+      { method: "GET", headers: { "X-API-Key": token } },
+      { allowLoopbackInTest: true },
+    )
+    if (listRes.ok) {
+      const data = await listRes.json()
+      const results = Array.isArray(data) ? data : (data?.results ?? [])
+      if (results.length > 0 && results[0].id) return String(results[0].id)
+    }
+  } catch { /* fall through and use the ref as-is */ }
+  return ref
+}
 
 export const planeConnector: Connector = {
   type: "plane",
@@ -46,6 +83,9 @@ export const planeConnector: Connector = {
         body: JSON.stringify({
           name: ticket.title,
           description_html: descriptionHtml,
+          // JTBD 5.7: Plane's priority enum matches Klavity's 1:1, so set it natively. Omit when
+          // unset/unknown (Plane defaults to "none").
+          ...(planePriority(ticket.priority) ? { priority: planePriority(ticket.priority) } : {}),
         }),
       },
       { allowLoopbackInTest: true },
@@ -238,6 +278,52 @@ export const planeConnector: Connector = {
       const json = await res.json().catch(() => null)
       const externalCommentId = json?.id ? String(json.id) : null
       return { ok: true, externalCommentId }
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    }
+  },
+
+  // updateIssue (JTBD 5.7): PATCH the Plane issue's native `priority` to mirror the ticket's current
+  // priority. Labels are NOT synced natively: Plane applies labels by UUID (not name), which needs a
+  // version-dependent per-label lookup — the classification is instead carried in the issue
+  // description at create time. Priority is the field that has a clean native mapping, so that is
+  // what we keep in sync. Best-effort — never throws.
+  //   PATCH {host}/api/v1/workspaces/{ws}/projects/{proj}/issues/{issue_id}/
+  //   Body: { "priority": "high" }
+  async updateIssue(
+    externalIssueRef: string,
+    fields: FieldUpdate,
+    cfg: Record<string, string>,
+  ): Promise<FieldSyncResult> {
+    try {
+      const host = cfg.host?.replace(/\/$/, "") || "https://api.plane.so"
+      const { workspace, project_id, token } = cfg
+      if (!workspace || !project_id || !token) {
+        return { ok: false, error: "plane updateIssue: missing workspace/project_id/token in config" }
+      }
+
+      const pri = planePriority(fields.priority)
+      // Nothing natively syncable (priority unset/unknown, labels can't be name-applied) → no-op OK.
+      if (!pri) return { ok: true }
+
+      const issueId = await resolvePlaneIssueId(host, workspace, project_id, token, externalIssueRef)
+      const url = `${host}/api/v1/workspaces/${workspace}/projects/${project_id}/issues/${issueId}/`
+      // SSRF guard (H3): host is user-supplied → safeFetch validates before sending the token.
+      const res = await safeFetch(
+        url,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", "X-API-Key": token },
+          body: JSON.stringify({ priority: pri }),
+        },
+        { allowLoopbackInTest: true },
+      )
+
+      if (!res.ok) {
+        const text = (await res.text().catch(() => "")).slice(0, 200)
+        return { ok: false, error: `plane issue PATCH HTTP ${res.status}: ${text}` }
+      }
+      return { ok: true }
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) }
     }

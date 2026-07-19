@@ -1,5 +1,23 @@
-import type { Connector, TicketPayload, ExportResult, CommentSyncResult } from "./index"
+import type { Connector, TicketPayload, ExportResult, CommentSyncResult, FieldUpdate, FieldSyncResult } from "./index"
 import { safeFetch } from "../safe-fetch"
+
+// JTBD 5.7: map Klavity priority (urgent/high/medium/low) onto Jira's default priority scheme
+// names (Highest/High/Medium/Low/Lowest). Jira's create/edit APIs set priority by name. Returns
+// null when there's no priority or no mapping, so the caller omits the field entirely.
+function jiraPriorityName(priority: string | null | undefined): string | null {
+  switch (priority) {
+    case "urgent": return "Highest"
+    case "high": return "High"
+    case "medium": return "Medium"
+    case "low": return "Low"
+    default: return null
+  }
+}
+
+// Jira labels cannot contain whitespace — collapse spaces to underscores and drop anything empty.
+function jiraLabels(labels: string[] | undefined): string[] {
+  return (labels ?? []).map((l) => l.trim().replace(/\s+/g, "_")).filter(Boolean)
+}
 
 // Build an Atlassian Document Format (ADF) doc wrapping plain text.
 function toAdf(text: string): object {
@@ -62,11 +80,13 @@ export const jiraConnector: Connector = {
             issuetype: { name: issueType },
             summary: ticket.title,
             description: toAdf(ticket.body),
-            // JTBD 2.16: Jira supports a native `labels` field (array of strings). Jira labels
-            // cannot contain whitespace, so collapse spaces to underscores; drop anything that
-            // ends up empty. Omit the field entirely when there are no labels.
-            ...(ticket.labels?.length
-              ? { labels: ticket.labels.map((l) => l.trim().replace(/\s+/g, "_")).filter(Boolean) }
+            // JTBD 2.16: Jira supports a native `labels` field (array of strings, no whitespace).
+            // Omit the field entirely when there are no labels.
+            ...(jiraLabels(ticket.labels).length ? { labels: jiraLabels(ticket.labels) } : {}),
+            // JTBD 5.7: Jira has a native `priority` field, set by name. Only include it when we
+            // have a mapping; sending an unknown priority name would fail the whole create.
+            ...(jiraPriorityName(ticket.priority)
+              ? { priority: { name: jiraPriorityName(ticket.priority) } }
               : {}),
           },
         }),
@@ -176,6 +196,54 @@ export const jiraConnector: Connector = {
       const json = await res.json().catch(() => null)
       const externalCommentId = json?.id != null ? String(json.id) : null
       return { ok: true, externalCommentId }
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    }
+  },
+
+  // updateIssue (JTBD 5.7): PUT the Jira issue's labels + priority to mirror the ticket's current
+  // classification/priority. Both are native Jira fields. Jira's edit endpoint returns 204 with an
+  // empty body on success. Best-effort — never throws.
+  //   PUT {host}/rest/api/3/issue/{issueKey}
+  //   Body: { "fields": { "labels": [...], "priority": { "name": "High" } } }
+  async updateIssue(
+    externalIssueRef: string,
+    fields: FieldUpdate,
+    cfg: Record<string, string>,
+  ): Promise<FieldSyncResult> {
+    try {
+      const { host, email, token } = cfg
+      if (!host || !email || !token) {
+        return { ok: false, error: "jira updateIssue: missing host/email/token in config" }
+      }
+
+      const url = `${host.replace(/\/$/, "")}/rest/api/3/issue/${externalIssueRef}`
+      const credentials = Buffer.from(`${email}:${token}`).toString("base64")
+
+      const jFields: Record<string, unknown> = { labels: jiraLabels(fields.labels) }
+      const priName = jiraPriorityName(fields.priority)
+      if (priName) jFields.priority = { name: priName }
+
+      // SSRF guard (H3): host is user-supplied → safeFetch validates before sending credentials.
+      const res = await safeFetch(
+        url,
+        {
+          method: "PUT",
+          headers: {
+            "Authorization": `Basic ${credentials}`,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+          },
+          body: JSON.stringify({ fields: jFields }),
+        },
+        { allowLoopbackInTest: true },
+      )
+
+      if (!res.ok) {
+        const text = (await res.text().catch(() => "")).slice(0, 200)
+        return { ok: false, error: `jira issue PUT HTTP ${res.status}: ${text}` }
+      }
+      return { ok: true }
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) }
     }

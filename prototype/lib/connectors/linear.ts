@@ -1,7 +1,19 @@
-import type { Connector, TicketPayload, ExportResult, CommentSyncResult } from "./index"
+import type { Connector, TicketPayload, ExportResult, CommentSyncResult, FieldUpdate, FieldSyncResult } from "./index"
 import { safeFetch } from "../safe-fetch"
 
 const LINEAR_API = "https://api.linear.app/graphql"
+
+// JTBD 5.7: Linear priority is an integer (0 none, 1 urgent, 2 high, 3 medium, 4 low). Map
+// Klavity's values onto it. Returns null for unset/unknown so the caller omits the field.
+function linearPriority(priority: string | null | undefined): number | null {
+  switch (priority) {
+    case "urgent": return 1
+    case "high": return 2
+    case "medium": return 3
+    case "low": return 4
+    default: return null
+  }
+}
 
 // ── Native screenshot attachment (ENHANCEMENT, never required) ───────────────────
 //
@@ -126,9 +138,11 @@ export const linearConnector: Connector = {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          // JTBD 5.7: Linear has a native `priority` Int on issueCreate. Include it only when we
+          // have a mapping so an unset priority leaves Linear's default (0/none) untouched.
           query:
-            "mutation($t:String!,$d:String!,$tm:String!){ issueCreate(input:{title:$t,description:$d,teamId:$tm}){ issue { identifier url } } }",
-          variables: { t: ticket.title, d: description, tm: team_id },
+            "mutation($t:String!,$d:String!,$tm:String!,$p:Int){ issueCreate(input:{title:$t,description:$d,teamId:$tm,priority:$p}){ issue { identifier url } } }",
+          variables: { t: ticket.title, d: description, tm: team_id, p: linearPriority(ticket.priority) },
         }),
       },
       { allowHosts: ["linear.app"] },
@@ -249,6 +263,52 @@ export const linearConnector: Connector = {
 
       const externalCommentId = commentJson?.data?.commentCreate?.comment?.id ?? null
       return { ok: true, externalCommentId: externalCommentId ? String(externalCommentId) : null }
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    }
+  },
+
+  // updateIssue (JTBD 5.7): mutate the Linear issue's native `priority` Int to mirror the ticket's
+  // current priority. Labels are NOT synced natively: Linear applies labels by UUID (labelIds), not
+  // name, which needs a version-dependent per-label lookup — the classification is carried in the
+  // issue description at create time instead. issueUpdate accepts the human identifier (e.g. "ENG-42")
+  // directly as the id arg, so no separate resolve round-trip is needed. Best-effort — never throws.
+  async updateIssue(
+    externalIssueRef: string,
+    fields: FieldUpdate,
+    cfg: Record<string, string>,
+  ): Promise<FieldSyncResult> {
+    try {
+      const { api_key } = cfg
+      if (!api_key) return { ok: false, error: "linear updateIssue: missing api_key in config" }
+
+      const pri = linearPriority(fields.priority)
+      // Nothing natively syncable (priority unset/unknown, labels can't be name-applied) → no-op OK.
+      if (pri == null) return { ok: true }
+
+      const res = await safeFetch(
+        LINEAR_API,
+        {
+          method: "POST",
+          headers: { "Authorization": api_key, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            query:
+              "mutation($id:String!,$p:Int!){ issueUpdate(id:$id,input:{priority:$p}){ success } }",
+            variables: { id: externalIssueRef, p: pri },
+          }),
+        },
+        { allowHosts: ["linear.app"] },
+      )
+
+      if (!res.ok) {
+        const text = (await res.text().catch(() => "")).slice(0, 200)
+        return { ok: false, error: `linear issueUpdate HTTP ${res.status}: ${text}` }
+      }
+      const json = await res.json().catch(() => null)
+      if (json?.errors?.length) {
+        return { ok: false, error: `linear issueUpdate GraphQL: ${json.errors[0]?.message ?? "unknown"}` }
+      }
+      return { ok: true }
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) }
     }
