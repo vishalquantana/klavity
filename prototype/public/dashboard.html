@@ -538,6 +538,19 @@ body[data-view="recurring"] .grid>.card[data-view~="recurring"]{grid-column:1/-1
 .ri-chips{display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex-shrink:0}
 .ri-regression{font-family:var(--mono);font-size:9px;letter-spacing:.07em;text-transform:uppercase;padding:3px 8px;border-radius:20px;background:rgba(219,39,119,.14);color:var(--rose);display:inline-flex;align-items:center;gap:4px}
 .ri-count{font-family:var(--mono);font-size:10px;letter-spacing:.05em;padding:3px 9px;border-radius:20px;background:rgba(99,102,241,.12);color:var(--indigo)}
+/* KLAVITYKLA-236: amplified recurrence impact chip — visual weight escalates with the pattern.
+   l1 notice (indigo) → l2 persistent (amber) → l3 chronic (rose) → l4 regression alarm. */
+.ri-impact{font-size:10px;font-weight:700;letter-spacing:.02em;padding:3px 10px;border-radius:20px;display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.ri-impact svg{width:12px;height:12px;flex-shrink:0}
+.ri-impact.l1{background:rgba(99,102,241,.12);color:var(--indigo)}
+.ri-impact.l2{background:rgba(217,131,36,.15);color:var(--amber)}
+.ri-impact.l3{background:rgba(219,39,119,.15);color:var(--rose)}
+.ri-impact.l4{background:rgba(219,39,119,.28);color:#fff;box-shadow:0 0 0 1px rgba(219,39,119,.55)}
+/* KLAVITYKLA-236: regressions get a row-level trust-damage flag, not a quiet chip. */
+.ri-regr-flag{display:flex;align-items:center;gap:8px;background:rgba(219,39,119,.10);border:1px solid rgba(219,39,119,.32);border-left:3px solid var(--rose);border-radius:9px;padding:8px 12px;font-size:12.5px;font-weight:600;color:var(--rose);line-height:1.4}
+.ri-regr-flag svg{flex-shrink:0}
+.ri-regr-flag .ri-regr-sub{font-weight:400;font-size:11.5px;color:var(--paper-faint)}
+.ri-item.is-regression{background:rgba(219,39,119,.035);border-radius:10px;padding-left:12px;padding-right:12px;margin:0 -12px}
 .ri-meta{font-size:12px;color:var(--paper-faint);line-height:1.5}
 .ri-summary{font-size:12.5px;color:var(--paper-dim);font-style:italic;border-left:2px solid var(--line);padding-left:10px}
 .ri-ticket-link{font-family:var(--mono);font-size:10px;letter-spacing:.04em;padding:3px 8px;border-radius:20px;background:var(--ink-3);color:var(--paper-faint);text-decoration:none;display:inline-flex;align-items:center;gap:4px;transition:background var(--mi-dur) ease,color var(--mi-dur) ease,transform var(--mi-press-dur)}
@@ -2920,6 +2933,18 @@ function guardStatusLabel(status) {
 }
 
 // ── Recurring Issues view — lazy-loaded when the tab is first activated ──
+// KLAVITYKLA-236: client-side mirror of lib/recurrence-memory.ts recurrenceImpact().
+// The server sends item.impact; this is a graceful fallback when that field is absent.
+function recurImpactFallback(count, regressed) {
+  const n = Math.max(1, Math.floor(Number(count) || 1))
+  if (regressed) {
+    const level = n >= 3 ? 4 : 3
+    return { level, tier: "regression", headline: n >= 2 ? `Broke again after being fixed · ${n}×` : "Broke again after being fixed", regressed: true, count: n }
+  }
+  if (n >= 5) return { level: 3, tier: "chronic", headline: `Chronic issue · reported ${n}×`, regressed: false, count: n }
+  if (n >= 3) return { level: 2, tier: "persistent", headline: `Keeps coming back · ${n}×`, regressed: false, count: n }
+  return { level: 1, tier: "recurring", headline: "Reported again", regressed: false, count: n }
+}
 let _recurringLoaded = false
 async function renderRecurringIssues() {
   if (_recurringLoaded) return
@@ -2944,11 +2969,17 @@ async function renderRecurringIssues() {
     el.innerHTML = items.map(item => {
       const pri = item.priority
       const priChip = pri ? `<span class="chip sev-${esc(pri)}">${esc(pri)}</span>` : ""
-      const regChip = item.regressed
-        ? `<span class="ri-regression">${kicon('triangle-alert',{size:11})} Regression</span>`
+      // KLAVITYKLA-236: amplify recurrence into a trust-weighted impact chip that escalates
+      // with the pattern, instead of a flat "reported N×" tally. impact comes from the server
+      // (recurrenceImpact); recurImpactFallback keeps it working if that field is absent.
+      const imp = item.impact || recurImpactFallback(item.count, item.regressed)
+      const impIco = imp.regressed ? kicon('triangle-alert',{size:12}) : kicon('refresh-cw',{size:12})
+      const impactChip = (item.count >= 2 || item.regressed)
+        ? `<span class="ri-impact l${imp.level}" title="${esc(imp.headline)}">${impIco} ${esc(imp.headline)}</span>`
         : ""
-      const countChip = item.count >= 2
-        ? `<span class="ri-count">reported ${item.count}×</span>`
+      // Regressions carry a prominent row-level flag — the north-star complaint made loud.
+      const regFlag = item.regressed
+        ? `<div class="ri-regr-flag">${kicon('triangle-alert',{size:15})}<span>Trust broken — this was marked fixed, then came back${item.resolvedAt ? `<span class="ri-regr-sub"> · fixed ${esc(ago(item.resolvedAt))}, back ${esc(ago(item.lastSeenAt))}</span>` : ""}</span></div>`
         : ""
       const title = esc(item.title || item.occurrences?.[0]?.title || "Untitled issue")
       const firstSeen = item.firstSeenAt ? ago(item.firstSeenAt) : ""
@@ -2956,7 +2987,6 @@ async function renderRecurringIssues() {
       const metaParts = []
       if (firstSeen) metaParts.push("First seen " + firstSeen)
       if (lastSeen && lastSeen !== firstSeen) metaParts.push("last seen " + lastSeen)
-      if (item.regressed && item.resolvedAt) metaParts.push("resolved " + ago(item.resolvedAt) + " → resurfaced")
       if (item.citedSimName) metaParts.push("filed by " + esc(item.citedSimName))
       // B.10: "guard: Confirmed" links to the Guards board (its own view). Never expose the internal
       // status words (candidate/validated/enforced) — map them to the plain-language guard stages.
@@ -2973,10 +3003,11 @@ async function renderRecurringIssues() {
       const guardLink = (fid && item.expectationStatus !== "enforced")
         ? `<a class="ri-guard-link" href="#tickets" data-ri-ticket="${esc(fid)}" onclick="riOpenTicket(event)" title="Turn this into an enforceable guard">${kicon('shield',{size:11})} Guard this</a>`
         : ""
-      return `<div class="ri-item">
+      return `<div class="ri-item${item.regressed ? " is-regression" : ""}">
+        ${regFlag}
         <div class="ri-head">
           <div class="ri-title">${title}</div>
-          <div class="ri-chips">${regChip}${countChip}${priChip}${ticketLink}${guardLink}</div>
+          <div class="ri-chips">${impactChip}${priChip}${ticketLink}${guardLink}</div>
         </div>
         ${metaParts.length ? `<div class="ri-meta">${metaParts.join(" · ")}</div>` : ""}
         ${item.summary ? `<div class="ri-summary">${esc(item.summary)}</div>` : ""}

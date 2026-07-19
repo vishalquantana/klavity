@@ -41,6 +41,7 @@ export type RecurrenceOccurrence = {
 export type ProjectRecurringIssue = RecurrenceMemory & {
   title: string | null
   priority: string | null
+  impact: RecurrenceImpact   // KLAVITYKLA-236: amplified trust-weight, not a bare count
 }
 
 /** ordinal(2) → "2nd", ordinal(11) → "11th", ordinal(21) → "21st" */
@@ -54,6 +55,51 @@ export function ordinal(n: number): string {
     case 3: return `${n}rd`
     default: return `${n}th`
   }
+}
+
+// ── KLAVITYKLA-236: Amplify recurrence, don't count it (JTBD A.5) ──────────────
+// A raw tally ("reported 5×") reads as a shrug. The trust wound is what recurrence
+// *means*: a promise that keeps breaking. This pure helper escalates a recurring
+// issue into an impact tier so the UI can shout louder as the pattern deepens —
+// and puts "broke again after we fixed it" (the north-star complaint) at the top.
+export type RecurrenceImpactTier = "recurring" | "persistent" | "chronic" | "regression"
+export type RecurrenceImpact = {
+  level: 1 | 2 | 3 | 4       // visual escalation: 1 = notice, 4 = alarm
+  tier: RecurrenceImpactTier
+  headline: string           // amplified, trust-weighted line — never a bare number
+  score: number              // ranking weight; higher surfaces first
+  regressed: boolean
+  count: number
+}
+
+/**
+ * Derive the amplified impact of a recurring/regressed issue. Pure — testable
+ * without a DB, and mirrored inline in dashboard.html for graceful client-side
+ * fallback. A regression (fixed → broke again) always outranks a mere repeat.
+ */
+export function recurrenceImpact(input: { count: number; regressed: boolean }): RecurrenceImpact {
+  const count = Math.max(1, Math.floor(Number(input.count) || 1))
+  const regressed = !!input.regressed
+  if (regressed) {
+    // A fix that came undone is the deepest wound — always top of the pile,
+    // and it stings harder each time it happens.
+    const level: 3 | 4 = count >= 3 ? 4 : 3
+    return {
+      level,
+      tier: "regression",
+      headline: count >= 2 ? `Broke again after being fixed · ${count}×` : "Broke again after being fixed",
+      score: 10_000 + count * 100,
+      regressed,
+      count,
+    }
+  }
+  if (count >= 5) {
+    return { level: 3, tier: "chronic", headline: `Chronic issue · reported ${count}×`, score: 500 + count * 100, regressed, count }
+  }
+  if (count >= 3) {
+    return { level: 2, tier: "persistent", headline: `Keeps coming back · ${count}×`, score: 300 + count * 100, regressed, count }
+  }
+  return { level: 1, tier: "recurring", headline: "Reported again", score: 100 + count * 100, regressed, count }
 }
 
 /** Build the human-readable summary string. Pure — testable without a DB. */
@@ -127,12 +173,14 @@ export async function listProjectRecurringIssues(
       ...memory,
       title: titleFromRow(first),
       priority: (first.priority ?? first.severity) != null ? String(first.priority ?? first.severity) : null,
+      impact: recurrenceImpact({ count: memory.count, regressed: memory.regressed }),
     })
   }
 
+  // KLAVITYKLA-236: rank by amplified impact (regressions and deeper patterns rise),
+  // then by recency. This keeps the trust-damage at the top instead of just the tally.
   out.sort((a, b) => {
-    if (Number(b.regressed) !== Number(a.regressed)) return Number(b.regressed) - Number(a.regressed)
-    if (b.count !== a.count) return b.count - a.count
+    if (b.impact.score !== a.impact.score) return b.impact.score - a.impact.score
     return b.lastSeenAt - a.lastSeenAt
   })
   return out.slice(0, limit)
