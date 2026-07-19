@@ -55,7 +55,7 @@ import { runWalkNow } from "./lib/trails-trigger"
 import { startTrailScheduler, isValidCron } from "./lib/trails-scheduler"
 import { startCrashReaper } from "./lib/trails-reaper"
 import { runAuthorNow, getAuthorSession, getActiveAuthorSession, listStalledAuthorSessions, listNeedsAuthSessionsForAutoResume, AUTOSIM_DEADLINE_MS_DEFAULT } from "./lib/trails-author"
-import { WalkBusyError, cancelCurrentWalk, cancelCurrentAuthor, PdfBusyError } from "./lib/trails-browser"
+import { WalkBusyError, cancelCurrentWalk, cancelCurrentAuthor, PdfBusyError, walkPoolStats } from "./lib/trails-browser"
 import { mintShareToken, resolveShareToken, renderWalkPdf, revokeShareToken, listShareTokens, extendShareToken, recordShareView, checkSharePasscode } from "./lib/trails-share"
 import { gatherWalkReport } from "./lib/trails-report"
 import { liveWatchSseResponse, openLiveWatchStream } from "./lib/trails-live-watch"
@@ -1652,6 +1652,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
     if (req.method === "GET" && path === "/api/health") {
       return json({ ok: true, db: !!db })
+    }
+
+    // KLAVITYKLA-346 — busy-check for the zero-downtime autodeploy drain step. The deploy polls this on
+    // the OLD slot before stopping it; `busy: 0` means no AutoSim/Sim/author/PDF work is in flight and
+    // the slot is safe to stop. Intentionally cheap (in-memory counters), no auth (loopback-only signal).
+    if (req.method === "GET" && path === "/api/health/busy") {
+      const s = walkPoolStats()
+      return json({ ok: true, busy: s.busy, idle: s.busy === 0, ...s })
     }
 
     if (req.method === "POST" && path === "/api/billing/webhook") {

@@ -1,5 +1,5 @@
 import { test, expect, beforeEach } from "bun:test"
-import { withWalkSlot, withAuthorSlot, withPdfSlot, isWalkInFlight, WalkBusyError, AuthorBusyError, PdfBusyError, CHROMIUM_PROD_ARGS, cancelCurrentWalk, setCurrentWalkRunId, getCurrentWalkAbortSignal, currentWalkRunId, _resetWalkPoolForTest, _resetAuthorAdmissionForTest, _resetPdfAdmissionForTest } from "./trails-browser"
+import { withWalkSlot, withAuthorSlot, withPdfSlot, isWalkInFlight, WalkBusyError, AuthorBusyError, PdfBusyError, CHROMIUM_PROD_ARGS, cancelCurrentWalk, setCurrentWalkRunId, getCurrentWalkAbortSignal, currentWalkRunId, walkPoolStats, _resetWalkPoolForTest, _resetAuthorAdmissionForTest, _resetPdfAdmissionForTest } from "./trails-browser"
 
 // Isolate pool state between tests. Use a very short PDF timeout so timeout tests run fast.
 beforeEach(() => { _resetWalkPoolForTest(3, 10); _resetAuthorAdmissionForTest(); _resetPdfAdmissionForTest(5000) })
@@ -9,6 +9,36 @@ test("withWalkSlot runs the fn and clears the slot after", async () => {
   const r = await withWalkSlot(async () => { expect(isWalkInFlight()).toBe(true); return 42 })
   expect(r).toBe(42)
   expect(isWalkInFlight()).toBe(false)
+})
+
+// ── KLAVITYKLA-346: walkPoolStats busy-check (deploy drain) ─────────────────────
+
+test("walkPoolStats reports idle when nothing is in flight", () => {
+  const s = walkPoolStats()
+  expect(s.busy).toBe(0)
+  expect(s.activeWalks).toBe(0)
+  expect(s.queuedWalks).toBe(0)
+  expect(s.authorActive).toBe(false)
+  expect(s.pdfActive).toBe(false)
+})
+
+test("walkPoolStats.busy counts in-flight AND queued walks, then returns to 0", async () => {
+  _resetWalkPoolForTest(1, 5)
+  let rel!: () => void
+  const gate = new Promise<void>((r) => { rel = r })
+
+  const s1 = withWalkSlot(async () => { await gate; return "s1" }) // takes the 1 slot
+  const s2 = withWalkSlot(async () => "s2")                        // queues behind it
+  await Promise.resolve(); await Promise.resolve()
+
+  const mid = walkPoolStats()
+  expect(mid.activeWalks).toBe(1)
+  expect(mid.queuedWalks).toBe(1)
+  expect(mid.busy).toBe(2)
+
+  rel()
+  await Promise.all([s1, s2])
+  expect(walkPoolStats().busy).toBe(0)
 })
 
 // ── Pool concurrency tests ─────────────────────────────────────────────────────
