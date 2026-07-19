@@ -190,6 +190,35 @@ h1 .ind{color:var(--indigo)}
 .hero-cta{display:flex; gap:14px; flex-wrap:wrap; align-items:center}
 .hero-note{margin-top:18px; font-size:13.5px; color:var(--paper-faint); display:flex; align-items:center; gap:8px}
 
+/* ── zero-signup hero demo (paste URL → live AI customer review) ── */
+.hd-hidden{display:none !important}
+.hero-demo{max-width:560px}
+.hd-field{display:flex; gap:10px; flex-wrap:wrap}
+.hd-field input{flex:1 1 220px; min-width:0; background:var(--ink-2); border:1px solid var(--line); border-radius:11px; padding:10px 14px; font-family:var(--body); font-size:14.5px; color:var(--paper); transition:border-color 150ms ease}
+.hd-field input:focus{outline:none; border-color:var(--indigo)}
+.hd-field input::placeholder{color:var(--paper-faint)}
+.hd-err{margin-top:8px; font-size:13px; color:var(--rose-text); display:none}
+.hd-err.on{display:block}
+.hd-loading,.hd-wait{display:flex; align-items:center; gap:9px; margin-top:12px; font-size:13.5px; color:var(--paper-dim)}
+.hd-spin{width:13px; height:13px; flex:none; border-radius:50%; border:2px solid var(--line); border-top-color:var(--indigo); animation:hdspin .8s linear infinite}
+@keyframes hdspin{to{transform:rotate(360deg)}}
+.hd-eta{color:var(--paper-faint); font-size:12px}
+.hd-cast{display:flex; flex-direction:column; gap:8px; margin-top:14px}
+.hd-sim{display:flex; align-items:flex-start; gap:10px; background:var(--ink-2); border:1px solid var(--line); border-radius:12px; padding:10px 12px}
+.hd-av{width:30px; height:30px; flex:none; border-radius:50%; display:grid; place-items:center; font-family:var(--mono); font-weight:700; font-size:10px; color:#fff}
+.hd-nm{font-family:var(--display); font-weight:600; font-size:14.5px}
+.hd-nm .hd-rl{font-family:var(--mono); font-weight:500; font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--paper-faint); margin-left:8px}
+.hd-sum{font-size:12.5px; color:var(--paper-dim); line-height:1.45; margin-top:2px}
+.hd-catch{margin-top:12px; border-left:3px solid var(--indigo); padding:2px 0 2px 12px}
+.hd-catch-hd{font-family:var(--mono); font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--indigo-text); margin-bottom:5px}
+.hd-obs{font-family:var(--display); font-style:italic; font-size:15.5px; line-height:1.45}
+.hd-meta{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:6px; font-size:12px; color:var(--paper-faint)}
+.hd-sent{font-family:var(--mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase; padding:2px 8px; border-radius:20px}
+.hd-sent.bad{background:rgba(232,132,154,.14); color:var(--rose-text)}
+.hd-sent.good{background:rgba(159,214,160,.14); color:var(--green-text)}
+.hd-sent.neu{background:rgba(139,139,245,.14); color:var(--indigo-text)}
+.hd-cta-row{display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-top:14px}
+
 /* two co-equal product entry points in the hero (Snap · Sims) */
 .hero-entries{display:grid; grid-template-columns:1fr 1fr; gap:14px; margin:30px 0 24px}
 .hentry{position:relative; background:var(--ink-2); border:1px solid var(--line); border-top:3px solid var(--c); border-radius:14px; padding:15px 16px 14px; display:flex; flex-direction:column; gap:8px; transition:transform 150ms ease, border-color 150ms ease, box-shadow 150ms ease}
@@ -556,8 +585,20 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         </div>
       </div>
 
-      <div class="hero-cta reveal d5">
+      <div class="hero-cta reveal d5" id="heroCtaRow">
         <a id="hero-primary-cta" class="btn btn-indigo" href="/onboarding">See your site through your customers' eyes</a>
+      </div>
+      <!-- Zero-signup aha: paste a URL right here — an AI customer reviews it live.
+           JS swaps this in for the plain CTA link above; with JS disabled the <a>
+           stays as the default path. Endpoints anonymous since round 1 (ANON_AI_DEMO_ROUTES). -->
+      <div class="hero-demo reveal d5 hd-hidden" id="heroDemo">
+        <div class="hd-field">
+          <input id="hdUrl" type="url" placeholder="yourproduct.com" autocomplete="url" aria-label="Your product URL" onkeydown="if(event.key==='Enter'){event.preventDefault();hdFetch()}" />
+          <button type="button" class="btn btn-indigo" id="hdGo" onclick="hdFetch()">Watch a customer review it</button>
+        </div>
+        <div class="hd-err" id="hdErr" role="alert"></div>
+        <div class="hd-loading hd-hidden" id="hdLoading" aria-live="polite"><span class="hd-spin"></span><span id="hdLoadTxt">Opening your page…</span><span class="hd-eta">usually ~30s</span></div>
+        <div id="hdResult" aria-live="polite"></div>
       </div>
       <div class="hero-note reveal d5"><span class="mono" style="color:var(--green)">●</span> Paste your URL — an AI customer reviews your site in ~30s. Free, no credit card.</div>
     </div>
@@ -610,6 +651,127 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     </div>
   </div></div>
 </header>
+
+<script>
+// ── Zero-signup aha: paste a URL, watch an AI customer review it — in the hero. ──
+// Mirrors onboarding step-0 (uhFetch / klavPreviewReact): POST /api/persona/site {url}
+// → personas, then POST /api/sim/preview {url, persona} → one live reaction.
+// Anonymous since round 1 (ANON_AI_DEMO_ROUTES). Fails soft to /onboarding — never a dead end.
+(function () {
+  var demo = document.getElementById('heroDemo');
+  if (!demo) return;
+  // JS is running: swap the plain CTA link for the live demo (the <a> stays for noscript).
+  demo.classList.remove('hd-hidden');
+  var ctaRow = document.getElementById('heroCtaRow');
+  if (ctaRow) ctaRow.classList.add('hd-hidden');
+
+  function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+  function hostOf(u) { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (e) { return u; } }
+  function onboardingHref(u) { return u ? '/onboarding?url=' + encodeURIComponent(u) : '/onboarding'; }
+
+  var ACCENTS = ['#6366f1', '#e8843a', '#0f9d6b', '#db2777', '#8b5cf6'];
+  function accentFor(name) { var h = 0; for (var i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xffffffff; return ACCENTS[Math.abs(h) % ACCENTS.length]; }
+  function initialsOf(n) { return String(n || '').trim().split(/\s+/).slice(0, 2).map(function (w) { return w[0] || ''; }).join('').toUpperCase() || 'S'; }
+
+  // Persona generation takes ~10-20s — staged wait copy while we hold attention.
+  var WAIT_LINES = ['Opening your page…', 'Meeting your customers…'];
+  var waitTimer = null, waitIx = 0;
+  function setLoading(on) {
+    var lo = document.getElementById('hdLoading'), go = document.getElementById('hdGo'), txt = document.getElementById('hdLoadTxt');
+    if (lo) lo.classList.toggle('hd-hidden', !on);
+    if (go) { go.disabled = on; go.textContent = on ? 'Reading…' : 'Watch a customer review it'; }
+    if (waitTimer) { clearInterval(waitTimer); waitTimer = null; }
+    if (on) {
+      waitIx = 0;
+      if (txt) txt.textContent = WAIT_LINES[0];
+      waitTimer = setInterval(function () { waitIx = Math.min(waitIx + 1, WAIT_LINES.length - 1); if (txt) txt.textContent = WAIT_LINES[waitIx]; }, 6000);
+    }
+  }
+  // Errors always carry the onboarding path alongside — graceful fallback, never a dead end.
+  function showErr(msg, url) {
+    var err = document.getElementById('hdErr');
+    if (!err) return;
+    err.innerHTML = esc(msg) + ' <a href="' + esc(onboardingHref(url)) + '" style="color:var(--indigo-text);font-weight:600">Get started free →</a>';
+    err.classList.add('on');
+  }
+  function renderCast(url, personas) {
+    var r = document.getElementById('hdResult'); if (!r) return;
+    var cards = personas.slice(0, 3).map(function (p) {
+      // Accent is LLM-inferred from the pasted page: only trust it if it is a plain hex colour.
+      var acc = /^#[0-9a-fA-F]{3,8}$/.test(String(p.accent || '')) ? p.accent : accentFor(p.name || '');
+      return '<div class="hd-sim"><span class="hd-av" style="background:' + esc(acc) + '">' + esc(p.initials || initialsOf(p.name)) + '</span>'
+        + '<div><div class="hd-nm">' + esc(p.name || 'Sim') + '<span class="hd-rl">' + esc(p.role || '') + '</span></div>'
+        + (p.summary ? '<div class="hd-sum">' + esc(p.summary) + '</div>' : '')
+        + '</div></div>';
+    }).join('');
+    r.innerHTML = '<div class="hd-cast">' + cards + '</div><div id="hdCatch"></div><div id="hdCtaSlot"></div>';
+  }
+  function renderCta(url) {
+    var slot = document.getElementById('hdCtaSlot'); if (!slot) return;
+    slot.innerHTML = '<div class="hd-cta-row"><a class="btn btn-indigo" href="' + esc(onboardingHref(url)) + '">Meet your full cast + save this finding — Get started free</a></div>';
+  }
+  function sentClass(s) { return (s === 'frustrated' || s === 'confused') ? 'bad' : (s === 'satisfied' || s === 'delighted') ? 'good' : 'neu'; }
+
+  async function previewReact(url, personas) {
+    var node = document.getElementById('hdCatch'); if (!node) return;
+    var persona = (personas && personas[0]) || null;
+    var pname = (persona && persona.name) || 'A customer';
+    var lines = [esc(pname) + ' is opening your page…', esc(pname) + ' is reading it…', 'Writing up what stood out…'];
+    var ix = 0;
+    function paint() { node.innerHTML = '<div class="hd-wait"><span class="hd-spin"></span>' + lines[ix] + ' <span class="hd-eta">usually ~20s</span></div>'; }
+    paint();
+    var t = setInterval(function () { ix = Math.min(ix + 1, lines.length - 1); paint(); }, 6000);
+    try {
+      var res = await fetch('/api/sim/preview', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: url, persona: persona }) });
+      if (!res.ok) throw 0;
+      var d = await res.json(); var rx = d && d.reaction;
+      if (!rx || !rx.observation) throw 0;
+      var sent = String(rx.sentiment || 'neutral');
+      node.innerHTML = '<div class="hd-catch"><div class="hd-catch-hd">' + esc(pname) + ' caught something on ' + esc(hostOf(url)) + '</div>'
+        + '<div class="hd-obs">\u201C' + esc(rx.observation) + '\u201D</div>'
+        + '<div class="hd-meta"><span class="hd-sent ' + sentClass(sent) + '">' + esc(sent) + '</span>'
+        + (rx.targetDescription ? '<span>' + esc(rx.targetDescription) + '</span>' : '') + '</div></div>';
+    } catch (e) {
+      // Fail soft: the cast is already on screen; the CTA below still carries the URL through.
+      node.innerHTML = '<div class="hd-catch"><div class="hd-catch-hd">' + esc(pname) + ' is ready to react — meet the full cast to see it</div></div>';
+    } finally {
+      clearInterval(t);
+      // A re-submit may have replaced the result markup while we were in flight;
+      // only render the CTA if OUR slot is still the live one (avoids a stale-URL CTA).
+      if (node.isConnected) renderCta(url);
+    }
+  }
+
+  window.hdFetch = async function () {
+    var inp = document.getElementById('hdUrl'), err = document.getElementById('hdErr'), r = document.getElementById('hdResult');
+    if (!inp || !err) return;
+    // Enter on the input bypasses the disabled button — ignore re-submits mid-flight.
+    var goBtn = document.getElementById('hdGo');
+    if (goBtn && goBtn.disabled) return;
+    err.textContent = ''; err.classList.remove('on'); if (r) r.innerHTML = '';
+    var raw = inp.value.trim();
+    if (!raw) { showErr('Enter your product URL.', ''); inp.focus(); return; }
+    var url = raw;
+    if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+    setLoading(true);
+    try {
+      var res = await fetch('/api/persona/site', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: url }) });
+      var data = {}; try { data = await res.json(); } catch (e) {}
+      if (!res.ok) {
+        // 429 = the anonymous demo is rate-limited — friendly copy, still not a dead end.
+        showErr(res.status === 429 ? (data.error || 'Lots of founders are trying this right now — give it a minute.') : (data.error || 'Could not read that URL — try another.'), url);
+        return;
+      }
+      var personas = data.personas || [];
+      if (!personas.length) { showErr('No customers came back for that page — try another URL.', url); return; }
+      renderCast(url, personas);
+      previewReact(url, personas);
+    } catch (e) {
+      showErr('Network error — please try again.', url);
+    } finally { setLoading(false); }
+  };
+})();
+</script>
 
 <!-- ════════════ PRODUCT ARC (Snap → Sims → AutoSim) ════════════ -->
 <!-- Scoped under .parc so it never collides with the page's own styles. -->
@@ -1025,9 +1187,18 @@ tg.onclick = () => tourOn ? stop() : start();
 updateToggle();
 addEventListener('scroll', reposition, { passive: true });
 addEventListener('resize', reposition);
-// Roaming reviewer Sims auto-play the page-review tour shortly after load (respects
-// prefers-reduced-motion via the `reduce` guard). Re-enabled per KLA-40.
-if (!reduce) setTimeout(() => { if (!tourOn) start(); }, 4600);
+// Roaming reviewer Sims auto-play the page-review tour (respects prefers-reduced-motion
+// via the `reduce` guard). GTM round 2: auto-start only once the visitor scrolls past the
+// fold — the hero's live URL demo owns first attention. The opt-in toggle still works
+// immediately either way.
+if (!reduce) {
+  const armTour = () => {
+    if (scrollY < innerHeight * 0.7) return;
+    removeEventListener('scroll', armTour);
+    setTimeout(() => { if (!tourOn) start(); }, 800);
+  };
+  addEventListener('scroll', armTour, { passive: true });
+}
 </script>
 {SNIP}
 <script>

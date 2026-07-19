@@ -68,7 +68,7 @@ import { publishBlogPost, SLUG_RE, type PublishInput } from "./lib/blog-publish"
 import { getExtractModel } from "./lib/extract-model"
 import { parseJSON } from "./lib/parse-json"
 import { EXTRACT_SYS as EXTRACT_SYS_PROMPT, normalizeExtractedPersonas } from "./lib/extract-pipeline"
-import { createStripeCheckoutSession, createStripePortalSession, intervalFromPrice, normalizeInterval, planFromPrice, quotasForPlan, retrieveStripeSubscription, verifyStripeWebhook } from "./lib/billing"
+import { billingEnforcementEnabled, createStripeCheckoutSession, createStripePortalSession, intervalFromPrice, normalizeInterval, normalizePlan, PLAN_QUOTAS, planFromPrice, quotasForPlan, retrieveStripeSubscription, verifyStripeWebhook } from "./lib/billing"
 import { sanitizeInsight } from "./lib/extract-sanitize"
 import { runAutosimAuthProbe } from "./lib/autosim-auth-probe"
 import { mintProjectShareToken, revokeProjectShareToken, resolveProjectShareToken, gatherProjectStatusData } from "./lib/project-status-portal"
@@ -946,6 +946,26 @@ async function resolveProject(email: string, requested?: string | null): Promise
     if (a) return { id: p.id, access: a }
   }
   return null
+}
+
+// ── KLA-306/307: flag-gated free-plan quota enforcement ────────────────────────────────────────
+// ONLY active when KLAV_BILLING_ENFORCEMENT=1 (default OFF — shipping this changes NO prod
+// behavior). Checks the account plan's PLAN_QUOTAS limit for one metric at the two creation choke
+// points (POST /api/projects, POST /api/personas). `count` is a lazy getter so the counting query
+// only runs when enforcement is actually on. A null quota = unlimited. Returns the 402 payload to
+// send (caller wraps in json()/wjson() to keep the right CORS behavior per route), or null to allow.
+async function quotaExceeded(accountId: string, kind: "projects" | "sims", count: () => Promise<number>): Promise<{ error: string; code: "quota_exceeded"; upgradeUrl: string } | null> {
+  if (!billingEnforcementEnabled()) return null
+  const plan = normalizePlan(await accountPlan(accountId))
+  const limit = PLAN_QUOTAS[plan][kind]
+  if (limit == null) return null
+  if ((await count()) < limit) return null
+  const noun = kind === "projects" ? (limit === 1 ? "project" : "projects") : (limit === 1 ? "Sim" : "Sims")
+  return {
+    error: `Your ${plan} plan includes ${limit} ${noun} — upgrade to add more.`,
+    code: "quota_exceeded",
+    upgradeUrl: "/dashboard?upgrade=pro",
+  }
 }
 
 // ── /api/sim/review dedupe cache (§5: promote the klav_dev_react_* hash). In-process LRU-ish set keyed
@@ -2762,6 +2782,20 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             p.role.trim().toLowerCase().replace(/\s+/g, " ") === normIncomingRole
           )
           if (dupe) return wjson({ persona: dupe, existing: true }, 200)
+
+          // KLA-307: flag-gated Sim quota (no-op unless KLAV_BILLING_ENFORCEMENT=1). This POST is
+          // the single server-side Sim creation choke point (every Add-a-Sim flow lands here; PUT is
+          // edit-only), so enforcing here covers them all. Count Sims across ALL of the account's
+          // projects — the account is the billing unit. Checked AFTER the dedup guard: returning an
+          // already-existing Sim never counts as creation.
+          const homeProj = await projectById(wid)
+          const simQuota = homeProj ? await quotaExceeded(homeProj.accountId, "sims", async () => {
+            const accountProjects = (await listProjects(me2)).filter((p) => p.accountId === homeProj.accountId)
+            let n = 0
+            for (const p of accountProjects) n += p.id === wid ? existing.length : (await listPersonas(p.id)).length
+            return n
+          }) : null
+          if (simQuota) return wjson(simQuota, 402)
 
           const id = "sim_" + crypto.randomUUID()
           const v3 = v3PersonaFields(body)
@@ -5541,9 +5575,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const parsed = await readJsonLimited(req, 8 * 1024)
         if (!parsed.ok) return json({ error: parsed.error }, parsed.status)
         const plan = String(parsed.data?.plan || "")
-        const interval = normalizeInterval(String(parsed.data?.interval || "month"))
         if (plan === "scale") return json({ error: "Scale is sales-assisted. Contact vishal@quantana.com.au." }, 400)
-        if (plan !== "pro" && plan !== "team") return json({ error: "Choose Pro or Team." }, 400)
+        if (plan !== "pro" && plan !== "team" && plan !== "founding") return json({ error: "Choose Pro, Team, or Founding." }, 400)
+        // Founding Team is annual-only (STRIPE_PRICE_CATALOG.founding has no "month" entry) — force
+        // the interval to "year" regardless of what the client sent so checkout can never miss the
+        // catalog. Pro/Team keep the caller's choice.
+        const interval = plan === "founding" ? "year" : normalizeInterval(String(parsed.data?.interval || "month"))
         const billing = await accountBillingState(active.workspaceId)
         const session = await createStripeCheckoutSession({
           accountId: active.workspaceId,
@@ -6083,6 +6120,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const active = ms[0]
         if (!active) return json({ error: "No account." }, 400)
         if ((await roleIn(active.workspaceId, me)) !== "admin") return json({ error: "Only owners/admins can create projects." }, 403)
+        // KLA-306: flag-gated project quota (no-op unless KLAV_BILLING_ENFORCEMENT=1).
+        const projQuota = await quotaExceeded(active.workspaceId, "projects", async () =>
+          (await listProjects(me)).filter((p) => p.accountId === active.workspaceId).length)
+        if (projQuota) return json(projQuota, 402)
         const body = await req.json().catch(() => ({}))
         const name = String(body.name || "").trim()
         if (!name) return json({ error: "Project name is required." }, 400)

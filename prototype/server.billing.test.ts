@@ -459,3 +459,40 @@ test("a non-klavity checkout.session.completed (no account_id, unmappable price)
   const acct = await raw.execute({ sql: "SELECT id FROM accounts WHERE owner_email=?", args: [WALI_BUYER_EMAIL] })
   expect(acct.rows.length).toBe(0)
 })
+
+// ── GTM round 2: Founding Team buyable self-serve ───────────────────────────────────────────────
+
+test("POST /api/billing/checkout accepts plan=founding and coerces the interval to year", async () => {
+  // Deliberately send interval:"month" — founding is annual-only, so the server must force "year"
+  // rather than reject or fall through to a missing catalog entry.
+  const r = await authed("/api/billing/checkout", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ plan: "founding", interval: "month" }),
+  })
+  // NOT the 400 "Choose ..." plan rejection — the mock Stripe backend serves the session fine.
+  expect(r.status).toBe(200)
+  const body = await r.json()
+  expect(body.url).toBe("https://checkout.stripe.test/session")
+
+  // The coerced interval is observable via the checkout_started funnel row.
+  await Bun.sleep(300)
+  const rows = await raw.execute({
+    sql: "SELECT props_json FROM funnel_events WHERE account_id=? AND event='checkout_started' ORDER BY created_at DESC LIMIT 1",
+    args: [ACCOUNT],
+  })
+  expect(rows.rows.length).toBeGreaterThan(0)
+  const props = JSON.parse(String((rows.rows[0] as any).props_json))
+  expect(props.plan).toBe("founding")
+  expect(props.interval).toBe("year")
+})
+
+test("POST /api/billing/checkout still rejects unknown plans, with Founding in the copy", async () => {
+  const r = await authed("/api/billing/checkout", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ plan: "basic", interval: "month" }),
+  })
+  expect(r.status).toBe(400)
+  expect((await r.json()).error).toBe("Choose Pro, Team, or Founding.")
+})
