@@ -73,6 +73,7 @@ import { seedDemoTrails } from "./lib/trails-demo-seed"
 import { listExpectations, getExpectation, setExpectationStatus, setExpectationEnforced, demoteExpectationToValidated, setExpectationAwaitingTrail, resumeAwaitingTrailExpectations, upsertExpectationFromTicket } from "./lib/expectations-db"
 import { pickDefaultTrail, type TrailForPick } from "./lib/expectations"
 import { enrichExpectation } from "./lib/expectations-enrich"
+import { simSourceRef, buildExpectationOracle, type SimIdentity } from "./lib/sims-oracle"
 import { getTrailStepById } from "./lib/trails"
 import { nearMissSummary } from "./lib/expectations-nearmiss"
 import { createLabel, listLabels, updateLabel, deleteLabel, attachLabel, detachLabel, labelsForFeedback, labelsForFeedbackBatch, setSuggestedLabels, getSuggestedLabels } from "./lib/db"
@@ -4921,6 +4922,35 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         },
       }
 
+      // KLA-274 (JTBD 4.10): resolve a "sim" source ref (a feedback id) → the Sim (persona) that
+      // acts as the ORACLE for the expected behaviour: feedback.sim_id → personas.name/role. Cached
+      // per-request; best-effort — any miss/error degrades to null so the row simply has no oracle.
+      const simRefCache = new Map<string, SimIdentity | null>()
+      const getSimForRef = async (feedbackId: string): Promise<SimIdentity | null> => {
+        if (simRefCache.has(feedbackId)) return simRefCache.get(feedbackId)!
+        let out: SimIdentity | null = null
+        try {
+          const fb = await db!.execute({ sql: "SELECT sim_id FROM feedback WHERE project_id=? AND id=?", args: [projE.id, feedbackId] })
+          const simId = fb.rows.length ? (fb.rows[0] as any).sim_id : null
+          if (simId) {
+            const p = await db!.execute({ sql: "SELECT name, role FROM personas WHERE id=? AND project_id=?", args: [String(simId), projE.id] })
+            const row = p.rows.length ? (p.rows[0] as any) : null
+            out = { simId: String(simId), simName: row?.name != null ? String(row.name) : null, simRole: row?.role != null ? String(row.role) : null }
+          }
+        } catch { out = null }
+        simRefCache.set(feedbackId, out)
+        return out
+      }
+      // Attach the Sims-as-oracle verdict to an enriched row when a Sim vouches for it. Never throws.
+      const attachOracle = async <T extends { status: any; title: string; sourceRefs?: any }>(r: T): Promise<T> => {
+        try {
+          const ref = simSourceRef(r.sourceRefs)
+          if (!ref) return r
+          const oracle = buildExpectationOracle(r as any, await getSimForRef(ref.id))
+          return oracle ? { ...r, oracle } : r
+        } catch { return r }
+      }
+
       // GET /api/expectations?project=&status= — list expectations for the project, optionally filtered.
       if (req.method === "GET" && path === "/api/expectations") {
         const rawStatus = url.searchParams.get("status")
@@ -4936,7 +4966,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // B.10: enrich each row so the Guards board shows Trail name + step position and progress
         // hints without a follow-up fetch per card. Best-effort — never let one bad row break the list.
         const enrichedRows = await Promise.all(rows.map((r) => enrichExpectation(r, expEnrichLookups).catch(() => r)))
-        return json({ expectations: enrichedRows })
+        // KLA-274: attach the Sims-as-oracle verdict (what the Sim expects vs what happened).
+        const withOracle = await Promise.all(enrichedRows.map((r) => attachOracle(r)))
+        return json({ expectations: withOracle })
       }
 
       // GET /api/expectations/near-misses?project=&days= — KLA-251 (B.11): cross-source-matching
@@ -4962,7 +4994,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const exp = await getExpectation(db!, expId)
         if (!exp || exp.projectId !== projE.id) return json({ error: "not found" }, 404)
         const enriched = await enrichExpectation(exp, expEnrichLookups)
-        return json({ expectation: enriched })
+        return json({ expectation: await attachOracle(enriched) })
       }
 
       // POST /api/expectations/:id/enforce — draft an assertion (calls LLM). Persists nothing.

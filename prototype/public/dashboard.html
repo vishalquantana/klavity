@@ -9196,7 +9196,24 @@ load()
     }
     // B.10: enriched source evidence — links to the originating report/finding + grounded quote.
     html+=expSourcesHtml(exp)
+    // KLA-274 (JTBD 4.10): Sims-as-oracle — surface WHICH Sim expects this behaviour and how the
+    // expectation currently stands (what the Sim expects vs what happened).
+    if(exp.oracle)html+=oracleLineHtml(exp.oracle)
     return html
+  }
+  // KLA-274: render the "Oracle: <Sim> expects this · <standing>" line for an expectation card.
+  function oracleLineHtml(o){
+    if(!o)return''
+    var tones={guarded:'var(--green)',confirmed:'var(--indigo)',watching:'var(--paper-faint)',dropped:'var(--paper-faint)'}
+    var tone=tones[o.standing]||'var(--paper-faint)'
+    var name=esc(o.simName||'A Sim')
+    var role=o.simRole?(' <span style="opacity:.65">('+esc(o.simRole)+')</span>'):''
+    var lbl=esc(o.standingLabel||'')
+    return '<div class="ec-oracle" style="margin-top:6px;font-size:11px;color:var(--paper-faint);display:flex;align-items:center;gap:5px;flex-wrap:wrap" title="'+esc(o.verdict||'This Sim is the oracle for the expected behaviour')+'">'
+      +kicon('sparkles',{size:11})
+      +'<span>Oracle: <strong style="color:var(--paper)">'+name+'</strong>'+role+' expects this</span>'
+      +(lbl?'<span style="color:'+tone+';font-weight:600">· '+lbl+'</span>':'')
+      +'</div>'
   }
   // B.10: open a card's source (report → Tickets view; finding → AutoSims view).
   function expGoSource(ev){

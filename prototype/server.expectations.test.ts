@@ -740,3 +740,50 @@ test("B.10 list GET returns enriched rows (linkedTrail on the guarded one, progr
   expect(cand.progress?.ready).toBe(false)
   expect(Array.isArray(cand.sources)).toBe(true)
 })
+
+// ── KLA-274 (JTBD 4.10): Sims-as-oracle ───────────────────────────────────────────────────────
+// A "sim"-kind source ref is a feedback id; feedback.sim_id → personas gives the Sim that acts as
+// the ORACLE for the expected behaviour. The list/single GET must attach an `oracle` verdict.
+// personas + feedback aren't in the base harness DDL — the SERVER's applySchema creates the canonical
+// tables at boot, so we seed them from rawClient in a beforeAll that runs AFTER the boot hook.
+const ORACLE_SIM_ID = `sim_oracle_${ts}`
+const ORACLE_FB_ID = `fb_oracle_${ts}`
+const EXP_ORACLE_ID = `exp_oracle_${ts}`
+beforeAll(async () => {
+  await rawExec(`INSERT INTO personas (id, project_id, name, role, type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [ORACLE_SIM_ID, PROJECT_ID, "Busy Buyer", "shopper", "client", NOW, NOW])
+  await rawExec(`INSERT INTO feedback (id, project_id, sim_id, observation, url_path, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+    [ORACLE_FB_ID, PROJECT_ID, ORACLE_SIM_ID, "Cart total didn't update", "/cart", NOW])
+  await rawExec(
+    `INSERT INTO expectations (id, project_id, title, area, url_path, status, source_refs_json, corroboration_json, dedup_key, enforced_step_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [EXP_ORACLE_ID, PROJECT_ID, "Cart total updates when qty changes", "cart", "/cart", "validated",
+      JSON.stringify([{ kind: "sim", id: ORACLE_FB_ID }]),
+      JSON.stringify({ snap: false, sim: true, recurrence: 2 }),
+      `dedup_oracle_${ts}`, null, NOW, NOW])
+})
+
+test("KLA-274 list GET attaches the Sims-as-oracle verdict (feedback.sim_id → persona)", async () => {
+  const r = await api("GET", `/api/expectations?project=${PROJECT_ID}&status=validated`, null, ADMIN_SID)
+  expect(r.status).toBe(200)
+  const rows = (await r.json()).expectations as any[]
+  const row = rows.find((e) => e.id === EXP_ORACLE_ID)
+  expect(row).toBeDefined()
+  expect(row.oracle).toBeTruthy()
+  expect(row.oracle.simId).toBe(ORACLE_SIM_ID)
+  expect(row.oracle.simName).toBe("Busy Buyer")
+  expect(row.oracle.simRole).toBe("shopper")
+  expect(row.oracle.standing).toBe("confirmed")
+  expect(row.oracle.expects).toBe("Cart total updates when qty changes")
+  expect(row.oracle.verdict).toContain("Busy Buyer expects:")
+})
+
+test("KLA-274 single GET attaches the oracle; a non-sim row has none", async () => {
+  const withSim = await api("GET", `/api/expectations/${EXP_ORACLE_ID}?project=${PROJECT_ID}`, null, ADMIN_SID)
+  expect(withSim.status).toBe(200)
+  expect((await withSim.json()).expectation.oracle?.simName).toBe("Busy Buyer")
+  // EXP_VALIDATED_ID carries a sim ref ("sim1") but no matching feedback row exists → unresolved
+  // Sim → no oracle field (best-effort join degrades cleanly).
+  const noSim = await api("GET", `/api/expectations/${EXP_VALIDATED_ID}?project=${PROJECT_ID}`, null, ADMIN_SID)
+  expect(noSim.status).toBe(200)
+  expect((await noSim.json()).expectation.oracle).toBeUndefined()
+})
