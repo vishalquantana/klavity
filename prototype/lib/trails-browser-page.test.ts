@@ -43,6 +43,20 @@ describe.if(RUN_BROWSER)("PlaywrightPage adapter (default)", () => {
     expect(snap).toContain('heading "Sign up"')
   })
 
+  test("krefSnapshot shows fill STATE (length only) after a fill — never the value", async () => {
+    // criticalpath1 stall regression: without a fill signal the model re-types forever because the
+    // snapshot's accessible name is just the placeholder. Length-only keeps resolved {{cred:...}}
+    // secrets out of LLM context.
+    const page = await handle.newPage()
+    await page.goto(FIXTURE, 20_000)
+    expect(await page.krefSnapshot()).not.toContain("{filled:")
+    await page.fill("#email", "secret-cred@example.com", 5_000)
+    const snap = await page.krefSnapshot()
+    expect(snap).toContain('textbox "Email"')
+    expect(snap).toContain("{filled: 23 chars}")
+    expect(snap).not.toContain("secret-cred@example.com")
+  })
+
   test("count / stableSelector / fingerprint", async () => {
     const page = await handle.newPage()
     await page.goto(FIXTURE, 20_000)
