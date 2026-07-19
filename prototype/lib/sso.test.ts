@@ -8,6 +8,10 @@ import {
   buildAuthorizationUrl,
   exchangeCode,
   verifyIdToken,
+  validateSsoDomain,
+  isPublicEmailDomain,
+  verifyDomainOwnership,
+  ssoDomainTxtValue,
   type OidcDiscovery,
   type SsoDeps,
 } from "./sso"
@@ -363,4 +367,208 @@ test("verifyIdToken: accepts array audience containing client_id", async () => {
     makeDeps({}),
   )
   expect(claims.email).toBe("alice@acme.example")
+})
+
+// ════════════════════════════════════════════════════════════════════════════
+// KLAVITYKLA-9 SECURITY REGRESSION TESTS
+//
+// The shipped SSO feature had an authentication bypass: any account owner could set
+// allowedDomain to a domain they did not own, point it at their own IdP, and have the
+// callback mint a GLOBAL email-keyed session for whatever email that IdP asserted.
+// The tests below pin each leg of that attack shut.
+// ════════════════════════════════════════════════════════════════════════════
+
+const VERIFY_TOKEN = "a".repeat(32)
+
+/** Mock DNS resolver: returns the given TXT record sets per host. */
+function makeResolver(zone: Record<string, string[][]>) {
+  return async (host: string): Promise<string[][]> => {
+    if (!(host in zone)) throw Object.assign(new Error("queryTxt ENOTFOUND"), { code: "ENOTFOUND" })
+    return zone[host]
+  }
+}
+
+// ── (c) Public email domains can never be federated ──────────────────────────
+
+test("SECURITY: public mailbox domains are rejected as allowedDomain", () => {
+  const publicDomains = [
+    "gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com",
+    "yahoo.com", "icloud.com", "aol.com", "proton.me", "protonmail.com",
+  ]
+  for (const d of publicDomains) {
+    expect(isPublicEmailDomain(d)).toBe(true)
+    // The whole point: configuring gmail.com would grant a session as ANY Gmail user.
+    expect(validateSsoDomain(d)).toMatch(/Public email providers/)
+  }
+})
+
+test("SECURITY: public-domain check is case- and whitespace-insensitive", () => {
+  expect(validateSsoDomain("  GMail.COM  ")).toMatch(/Public email providers/)
+  expect(isPublicEmailDomain("GMAIL.COM")).toBe(true)
+})
+
+test("validateSsoDomain: accepts a normal corporate domain", () => {
+  expect(validateSsoDomain("acme.com")).toBeNull()
+  expect(validateSsoDomain("sso.acme.co.uk")).toBeNull()
+})
+
+test("validateSsoDomain: rejects malformed / single-label domains", () => {
+  for (const bad of ["", "   ", "localhost", "acme", "-acme.com", "acme-.com", "acme..com", "acme.c", "a".repeat(300) + ".com"]) {
+    expect(validateSsoDomain(bad)).not.toBeNull()
+  }
+})
+
+// ── (a) An unowned/unverified domain cannot be proven ────────────────────────
+
+test("SECURITY: verifyDomainOwnership fails when no TXT record exists (attacker claims victim.com)", async () => {
+  // The core takeover attempt: attacker configures allowedDomain=victim.com but of course
+  // cannot publish DNS on it. Ownership must NOT be provable.
+  const ok = await verifyDomainOwnership("victim.com", VERIFY_TOKEN, {
+    resolveTxt: makeResolver({}),
+  })
+  expect(ok).toBe(false)
+})
+
+test("SECURITY: verifyDomainOwnership fails when TXT record holds a DIFFERENT token", async () => {
+  const ok = await verifyDomainOwnership("victim.com", VERIFY_TOKEN, {
+    resolveTxt: makeResolver({ "victim.com": [[ssoDomainTxtValue("b".repeat(32))]] }),
+  })
+  expect(ok).toBe(false)
+})
+
+test("SECURITY: verifyDomainOwnership fails closed when DNS errors", async () => {
+  const ok = await verifyDomainOwnership("victim.com", VERIFY_TOKEN, {
+    resolveTxt: async () => { throw new Error("SERVFAIL") },
+  })
+  expect(ok).toBe(false)
+})
+
+test("SECURITY: verifyDomainOwnership refuses a public domain even with a matching TXT record", async () => {
+  // Belt-and-braces: even if someone could publish TXT on gmail.com, it stays ineligible.
+  const ok = await verifyDomainOwnership("gmail.com", VERIFY_TOKEN, {
+    resolveTxt: makeResolver({ "gmail.com": [[ssoDomainTxtValue(VERIFY_TOKEN)]] }),
+  })
+  expect(ok).toBe(false)
+})
+
+test("SECURITY: verifyDomainOwnership rejects an empty/short verify token", async () => {
+  const zone = makeResolver({ "acme.com": [[ssoDomainTxtValue("")]] })
+  expect(await verifyDomainOwnership("acme.com", "", { resolveTxt: zone })).toBe(false)
+  expect(await verifyDomainOwnership("acme.com", "short", { resolveTxt: zone })).toBe(false)
+})
+
+// ── (e) Happy path: a genuinely owned domain verifies ────────────────────────
+
+test("verifyDomainOwnership: succeeds with the exact TXT record on the apex", async () => {
+  const ok = await verifyDomainOwnership("acme.com", VERIFY_TOKEN, {
+    resolveTxt: makeResolver({
+      "acme.com": [["some-other-record"], [ssoDomainTxtValue(VERIFY_TOKEN)]],
+    }),
+  })
+  expect(ok).toBe(true)
+})
+
+test("verifyDomainOwnership: succeeds via the _klavity subdomain", async () => {
+  const ok = await verifyDomainOwnership("acme.com", VERIFY_TOKEN, {
+    resolveTxt: makeResolver({ "_klavity.acme.com": [[ssoDomainTxtValue(VERIFY_TOKEN)]] }),
+  })
+  expect(ok).toBe(true)
+})
+
+test("verifyDomainOwnership: joins chunked TXT strings before comparing", async () => {
+  const value = ssoDomainTxtValue(VERIFY_TOKEN)
+  const ok = await verifyDomainOwnership("acme.com", VERIFY_TOKEN, {
+    resolveTxt: makeResolver({ "acme.com": [[value.slice(0, 10), value.slice(10)]] }),
+  })
+  expect(ok).toBe(true)
+})
+
+// ── (b) email_verified must be true ──────────────────────────────────────────
+
+test("SECURITY: verifyIdToken rejects email_verified:false", async () => {
+  const jwt = await validJwt({ email_verified: false })
+  await expect(
+    verifyIdToken(
+      { idToken: jwt, jwksUri: `${ISSUER}/.well-known/jwks.json`, issuer: ISSUER, clientId: CLIENT_ID, nonce: "my-nonce" },
+      makeDeps({}),
+    ),
+  ).rejects.toThrow(/email_verified is not true/)
+})
+
+test("SECURITY: verifyIdToken rejects a MISSING email_verified claim", async () => {
+  // Absent must be treated as unverified, not as "probably fine".
+  const jwt = await validJwt({ email_verified: undefined })
+  await expect(
+    verifyIdToken(
+      { idToken: jwt, jwksUri: `${ISSUER}/.well-known/jwks.json`, issuer: ISSUER, clientId: CLIENT_ID, nonce: "my-nonce" },
+      makeDeps({}),
+    ),
+  ).rejects.toThrow(/email_verified is not true/)
+})
+
+test("SECURITY: verifyIdToken rejects a truthy-but-not-true email_verified (string \"true\")", async () => {
+  const jwt = await validJwt({ email_verified: "true" })
+  await expect(
+    verifyIdToken(
+      { idToken: jwt, jwksUri: `${ISSUER}/.well-known/jwks.json`, issuer: ISSUER, clientId: CLIENT_ID, nonce: "my-nonce" },
+      makeDeps({}),
+    ),
+  ).rejects.toThrow(/email_verified is not true/)
+})
+
+// ── (d) exp is mandatory ─────────────────────────────────────────────────────
+
+test("SECURITY: verifyIdToken rejects a token with NO exp claim (never-expiring token)", async () => {
+  const jwt = await validJwt({ exp: undefined })
+  await expect(
+    verifyIdToken(
+      { idToken: jwt, jwksUri: `${ISSUER}/.well-known/jwks.json`, issuer: ISSUER, clientId: CLIENT_ID, nonce: "my-nonce" },
+      makeDeps({}),
+    ),
+  ).rejects.toThrow(/missing required 'exp' claim/)
+})
+
+test("SECURITY: verifyIdToken rejects a non-numeric exp claim", async () => {
+  const jwt = await validJwt({ exp: "9999999999" })
+  await expect(
+    verifyIdToken(
+      { idToken: jwt, jwksUri: `${ISSUER}/.well-known/jwks.json`, issuer: ISSUER, clientId: CLIENT_ID, nonce: "my-nonce" },
+      makeDeps({}),
+    ),
+  ).rejects.toThrow(/missing required 'exp' claim/)
+})
+
+// ── Discovery issuer binding ─────────────────────────────────────────────────
+
+test("SECURITY: fetchOidcDiscovery rejects a doc whose issuer differs from the configured one", async () => {
+  const deps = makeDeps({ discoveryOverride: { issuer: "https://evil-idp.example" } })
+  await expect(fetchOidcDiscovery(ISSUER, deps)).rejects.toThrow(/discovery issuer mismatch/)
+})
+
+test("fetchOidcDiscovery: tolerates a trailing-slash difference in the issuer", async () => {
+  const doc = await fetchOidcDiscovery(`${ISSUER}/`, makeDeps({}))
+  expect(doc.issuer).toBe(ISSUER)
+})
+
+// ── (e) Happy path end-to-end through the token verifier ─────────────────────
+
+test("HAPPY PATH: verified domain + email_verified:true + exp present still logs in", async () => {
+  // Domain ownership proven...
+  expect(
+    await verifyDomainOwnership("acme.example", VERIFY_TOKEN, {
+      resolveTxt: makeResolver({ "acme.example": [[ssoDomainTxtValue(VERIFY_TOKEN)]] }),
+    }),
+  ).toBe(true)
+  expect(validateSsoDomain("acme.example")).toBeNull()
+
+  // ...and a well-formed token from the configured IdP is accepted.
+  const jwt = await validJwt({ email: "alice@acme.example", email_verified: true })
+  const claims = await verifyIdToken(
+    { idToken: jwt, jwksUri: `${ISSUER}/.well-known/jwks.json`, issuer: ISSUER, clientId: CLIENT_ID, nonce: "my-nonce" },
+    makeDeps({}),
+  )
+  expect(claims.email).toBe("alice@acme.example")
+  expect(claims.email_verified).toBe(true)
+  // And the email domain matches the verified allowedDomain — the check the callback makes.
+  expect(claims.email.split("@")[1]).toBe("acme.example")
 })

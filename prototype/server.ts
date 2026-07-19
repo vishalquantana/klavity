@@ -109,8 +109,8 @@ import { diagnoseHeartbeat, renderDeveloperEmail, type HeartbeatSignals } from "
 import { countRecentFeedback, countUsers } from "./lib/db"
 import { enrollLead, buildNurtureEmail, recordNurtureEmailSent, recordSendgridEvents, startLeadNurtureScheduler } from "./lib/lead-nurture"
 import { extractInventory, extractLinks, verifyLinks, brokenLinkFindings, filterModelFindings, checkedSummary, MAX_LINKS_CHECKED } from "./lib/bugcheck"
-import { fetchOidcDiscovery, buildAuthorizationUrl, exchangeCode, verifyIdToken, type OidcDiscovery, type OidcClaims } from "./lib/sso"
-import { getAccountOidcConfig, upsertAccountOidcConfig, deleteAccountOidcConfig, findAccountByOidcDomain, createSsoState, consumeSsoState, ensureAccountMember } from "./lib/db"
+import { fetchOidcDiscovery, buildAuthorizationUrl, exchangeCode, verifyIdToken, validateSsoDomain, verifyDomainOwnership, ssoDomainTxtValue, SSO_DOMAIN_TXT_PREFIX, type OidcDiscovery, type OidcClaims } from "./lib/sso"
+import { getAccountOidcConfig, upsertAccountOidcConfig, deleteAccountOidcConfig, findAccountByOidcDomain, markOidcDomainVerified, createSsoState, consumeSsoState, ensureAccountMember } from "./lib/db"
 
 const KEY = process.env.OPENROUTER_API_KEY
 const MODEL = process.env.KLAV_MODEL || "google/gemini-2.5-flash"
@@ -2571,19 +2571,39 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       return json({ error: "Not found" }, 404)
     }
 
+    // PRE-EXISTING BUG (found while fixing KLAVITYKLA-9): this block sits ~1900 lines ABOVE the
+    // `const me = await sessionEmail(req)` declaration, so every reference to `me` here hit the
+    // temporal dead zone and threw "Cannot access 'me' before initialization" — i.e. all three
+    // authenticated /api/sso/config routes returned 500, always. Resolve the session locally
+    // (only for SSO paths, so no extra DB round-trip on any other request).
+    const ssoMe = path.startsWith("/api/sso/") ? await sessionEmail(req) : null
+
     if (req.method === "GET" && path === "/api/sso/config") {
-      if (!db || !me) return json({ error: "Unauthorized" }, 401)
-      const memberships = await membershipsFor(me)
+      if (!db || !ssoMe) return json({ error: "Unauthorized" }, 401)
+      const memberships = await membershipsFor(ssoMe)
       const adminMship = memberships.find((m) => m.role === "owner" || m.role === "admin")
       if (!adminMship) return json({ error: "Forbidden" }, 403)
       const cfg = await getAccountOidcConfig(adminMship.workspaceId)
       if (!cfg) return json({ enabled: false })
-      return json({ enabled: true, issuer: cfg.issuer, clientId: cfg.clientId, allowedDomain: cfg.allowedDomain })
+      return json({
+        enabled: true,
+        issuer: cfg.issuer,
+        clientId: cfg.clientId,
+        allowedDomain: cfg.allowedDomain,
+        domainVerified: cfg.domainVerifiedAt != null,
+        // Instructions the admin needs to prove they own the domain. Until the TXT record is
+        // published and POST /api/sso/verify-domain succeeds, SSO login for it is refused.
+        domainVerification: cfg.domainVerifiedAt != null || !cfg.domainVerifyToken ? null : {
+          recordType: "TXT",
+          name: cfg.allowedDomain,
+          value: ssoDomainTxtValue(cfg.domainVerifyToken),
+        },
+      })
     }
 
     if (req.method === "POST" && path === "/api/sso/config") {
-      if (!db || !me) return json({ error: "Unauthorized" }, 401)
-      const memberships = await membershipsFor(me)
+      if (!db || !ssoMe) return json({ error: "Unauthorized" }, 401)
+      const memberships = await membershipsFor(ssoMe)
       const adminMship = memberships.find((m) => m.role === "owner" || m.role === "admin")
       if (!adminMship) return json({ error: "Forbidden" }, 403)
       const body = await req.json()
@@ -2593,21 +2613,59 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const allowedDomain = String(body.allowedDomain || "").trim().toLowerCase()
       if (!issuer || !clientId || !clientSecret || !allowedDomain)
         return json({ error: "issuer, clientId, clientSecret and allowedDomain are required" }, 400)
-      if (!/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/i.test(allowedDomain))
-        return json({ error: "allowedDomain must be a valid domain name (e.g. acme.com)" }, 400)
+      // Syntactic validity + public-mailbox blocklist. Ownership itself is proven separately
+      // via DNS TXT (POST /api/sso/verify-domain) — saving a config grants NOTHING on its own.
+      const domainErr = validateSsoDomain(allowedDomain)
+      if (domainErr) return json({ error: domainErr }, 400)
       try {
         await fetchOidcDiscovery(issuer, {})
       } catch (err: any) {
         return json({ error: `Cannot reach OIDC discovery endpoint: ${err.message}` }, 400)
       }
       const enc = await encryptSecret(clientSecret)
-      await upsertAccountOidcConfig(adminMship.workspaceId, issuer, clientId, enc, allowedDomain, me)
-      return json({ ok: true })
+      const newVerifyToken = token()
+      await upsertAccountOidcConfig(adminMship.workspaceId, issuer, clientId, enc, allowedDomain, ssoMe, newVerifyToken)
+      const saved = await getAccountOidcConfig(adminMship.workspaceId)
+      const verified = saved?.domainVerifiedAt != null
+      return json({
+        ok: true,
+        domainVerified: verified,
+        domainVerification: verified || !saved?.domainVerifyToken ? null : {
+          recordType: "TXT",
+          name: allowedDomain,
+          value: ssoDomainTxtValue(saved.domainVerifyToken),
+          instructions: `Publish a TXT record on ${allowedDomain} (or _klavity.${allowedDomain}) with this exact value, then POST /api/sso/verify-domain. SSO login is refused until the domain is verified.`,
+        },
+      })
+    }
+
+    // Prove domain ownership: POST /api/sso/verify-domain — looks for the
+    // klavity-sso-verify=<token> TXT record on the configured allowedDomain.
+    if (req.method === "POST" && path === "/api/sso/verify-domain") {
+      if (!db || !ssoMe) return json({ error: "Unauthorized" }, 401)
+      const memberships = await membershipsFor(ssoMe)
+      const adminMship = memberships.find((m) => m.role === "owner" || m.role === "admin")
+      if (!adminMship) return json({ error: "Forbidden" }, 403)
+      const cfg = await getAccountOidcConfig(adminMship.workspaceId)
+      if (!cfg) return json({ error: "No SSO config to verify" }, 404)
+      if (cfg.domainVerifiedAt != null) return json({ ok: true, domainVerified: true })
+      if (!cfg.domainVerifyToken) return json({ error: "Re-save the SSO config to get a verification token" }, 409)
+      const ok = await verifyDomainOwnership(cfg.allowedDomain, cfg.domainVerifyToken)
+      if (!ok) {
+        return json({
+          ok: false,
+          domainVerified: false,
+          error: `No matching ${SSO_DOMAIN_TXT_PREFIX} TXT record found on ${cfg.allowedDomain}. DNS changes can take a few minutes to propagate.`,
+          expected: { recordType: "TXT", name: cfg.allowedDomain, value: ssoDomainTxtValue(cfg.domainVerifyToken) },
+        }, 400)
+      }
+      await markOidcDomainVerified(adminMship.workspaceId, cfg.allowedDomain)
+      return json({ ok: true, domainVerified: true })
     }
 
     if (req.method === "DELETE" && path === "/api/sso/config") {
-      if (!db || !me) return json({ error: "Unauthorized" }, 401)
-      const memberships = await membershipsFor(me)
+      if (!db || !ssoMe) return json({ error: "Unauthorized" }, 401)
+      const memberships = await membershipsFor(ssoMe)
       const adminMship = memberships.find((m) => m.role === "owner" || m.role === "admin")
       if (!adminMship) return json({ error: "Forbidden" }, 403)
       await deleteAccountOidcConfig(adminMship.workspaceId)
@@ -2619,6 +2677,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (!db) return new Response("SSO not available", { status: 503 })
       const domain = (url.searchParams.get("domain") || "").toLowerCase().trim()
       if (!domain) return redirect("/login?error=sso_missing_domain")
+      // Reject public mailbox domains / malformed input before touching the DB.
+      if (validateSsoDomain(domain)) return redirect("/login?error=sso_domain_not_eligible")
+      // findAccountByOidcDomain only returns DNS-verified configs. An account that saved
+      // allowedDomain without proving ownership gets nothing here.
       const cfg = await findAccountByOidcDomain(domain)
       if (!cfg) return redirect("/login?error=sso_not_configured")
       let discovery: OidcDiscovery
@@ -2638,7 +2700,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         state,
         nonce,
       })
-      return redirect(authUrl)
+      // Bind the flow to THIS browser (login-CSRF defence): the callback requires the same
+      // state value back in an httpOnly cookie, so an attacker cannot feed a victim a
+      // pre-baked callback URL and silently log them into the attacker's IdP identity.
+      return redirect(authUrl, {
+        "Set-Cookie": cookie("klav_sso_state", state, 10 * 60, SECURE),
+      })
     }
 
     // SSO callback: GET /auth/sso/callback?code=...&state=...
@@ -2649,15 +2716,27 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const code = url.searchParams.get("code") || ""
       const state = url.searchParams.get("state") || ""
       if (!code || !state) return redirect("/login?error=sso_invalid_response")
+      // Login-CSRF: the state must match the pre-auth cookie set when THIS browser started the
+      // flow. Consume the state row regardless so a mismatched attempt still burns it.
+      const stateCookie = parseCookies(req.headers.get("cookie"))["klav_sso_state"] || ""
+      const clearSsoStateCookie = clearCookie("klav_sso_state", SECURE)
       const ssoState = await consumeSsoState(state)
-      if (!ssoState) return redirect("/login?error=sso_state_expired")
+      if (!stateCookie || stateCookie !== state)
+        return redirect("/login?error=sso_state_mismatch", { "Set-Cookie": clearSsoStateCookie })
+      if (!ssoState) return redirect("/login?error=sso_state_expired", { "Set-Cookie": clearSsoStateCookie })
       const cfg = await getAccountOidcConfig(ssoState.accountId)
-      if (!cfg) return redirect("/login?error=sso_not_configured")
+      if (!cfg) return redirect("/login?error=sso_not_configured", { "Set-Cookie": clearSsoStateCookie })
+      // Re-check verification at callback time — the domain may have been changed or the
+      // config re-saved (which resets the flag) while this flow was in flight.
+      if (cfg.domainVerifiedAt == null)
+        return redirect("/login?error=sso_domain_unverified", { "Set-Cookie": clearSsoStateCookie })
+      if (validateSsoDomain(cfg.allowedDomain))
+        return redirect("/login?error=sso_domain_not_eligible", { "Set-Cookie": clearSsoStateCookie })
       let discovery: OidcDiscovery
       try {
         discovery = await fetchOidcDiscovery(cfg.issuer, {})
       } catch {
-        return redirect("/login?error=sso_config_error")
+        return redirect("/login?error=sso_config_error", { "Set-Cookie": clearSsoStateCookie })
       }
       let claims: OidcClaims
       try {
@@ -2679,22 +2758,34 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             issuer: cfg.issuer,
             clientId: cfg.clientId,
             nonce: ssoState.nonce,
+            requireEmailVerified: true,
           },
           {},
         )
       } catch (err: any) {
         console.error("SSO callback error:", err?.message)
-        return redirect("/login?error=sso_auth_failed")
+        // Surface the unverified-email case distinctly so admins can diagnose it.
+        if (String(err?.message || "").includes("email_verified"))
+          return redirect("/login?error=sso_email_unverified", { "Set-Cookie": clearSsoStateCookie })
+        return redirect("/login?error=sso_auth_failed", { "Set-Cookie": clearSsoStateCookie })
       }
-      // Validate the email matches the configured allowed domain.
+      // Belt-and-braces: verifyIdToken already enforces this, but the session minted below is
+      // GLOBAL and email-keyed, so never take an unverified address on trust.
+      if (claims.email_verified !== true)
+        return redirect("/login?error=sso_email_unverified", { "Set-Cookie": clearSsoStateCookie })
+      // Validate the email matches the configured (and DNS-verified) allowed domain.
       const emailDomain = (claims.email.split("@")[1] ?? "").toLowerCase()
-      if (emailDomain !== cfg.allowedDomain) return redirect("/login?error=sso_domain_mismatch")
+      if (emailDomain !== cfg.allowedDomain)
+        return redirect("/login?error=sso_domain_mismatch", { "Set-Cookie": clearSsoStateCookie })
       // Upsert user and ensure they're a member of the SSO account.
       await upsertUser(claims.email)
       await ensureAccountMember(ssoState.accountId, claims.email)
       const sid = token()
       await createSession(sid, claims.email, Date.now() + SESSION_DAYS * 86400 * 1000)
-      return redirect("/dashboard", { "Set-Cookie": cookie("klav_session", sid, SESSION_DAYS * 86400, SECURE) })
+      const headers = new Headers({ Location: "/dashboard" })
+      headers.append("Set-Cookie", cookie("klav_session", sid, SESSION_DAYS * 86400, SECURE))
+      headers.append("Set-Cookie", clearSsoStateCookie)
+      return new Response(null, { status: 302, headers })
     }
 
     // ── GDPR: data export (Art. 15/20) ── authenticated (cookie OR bearer); acts on the caller's OWN
