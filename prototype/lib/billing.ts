@@ -1,19 +1,39 @@
 export type BillingPlan = "free" | "pro" | "team" | "agency" | "founding" | "scale" | "partner"
 export type BillingInterval = "month" | "year"
 
+// ── KLAVITYKLA-379: the upmarket ladder (founder decision 2026-07-20) ───────────────────────────
 // "founding" (Founding Team) is an annual-only supporter tier sold exclusively via a hosted Stripe
 // Payment Link (see STRIPE_PRICE_IDS below) — it has no "month" entry, hence Partial<...> here.
-export const STRIPE_PRICE_CATALOG: Record<Exclude<BillingPlan, "free" | "scale" | "partner">, Partial<Record<BillingInterval, { lookupKey: string; unitAmount: number; label: string }>>> = {
+//
+// Free $0 · Solo $49/mo · Team $249/mo · Scale $599/mo (PUBLISHED) · Founding Ten $490/yr.
+// Annual = two months free (10× monthly) on every self-serve tier, unchanged.
+//
+// NOTE ON THE "SOLO" RENAME: "Pro" became the customer-facing name "Solo", but the internal PLAN
+// SLUG stays `pro` — it is the value stored in the accounts table, sent to Stripe metadata, and
+// carried by every existing subscription. Only the DISPLAY name changed (see PLAN_DISPLAY_NAMES
+// below). Do NOT rename the slug; there is no migration and none is wanted.
+export const STRIPE_PRICE_CATALOG: Record<Exclude<BillingPlan, "free" | "partner">, Partial<Record<BillingInterval, { lookupKey: string; unitAmount: number; label: string }>>> = {
   founding: {
-    year: { lookupKey: "klavity_founding_annual_290", unitAmount: 29000, label: "Klavity Founding Team" },
+    year: { lookupKey: "klavity_founding_annual_490", unitAmount: 49000, label: "Klavity Founding Team" },
   },
   pro: {
-    month: { lookupKey: "klavity_pro_monthly_29", unitAmount: 2900, label: "Klavity Pro" },
-    year: { lookupKey: "klavity_pro_annual_290", unitAmount: 29000, label: "Klavity Pro" },
+    month: { lookupKey: "klavity_solo_monthly_49", unitAmount: 4900, label: "Klavity Solo" },
+    year: { lookupKey: "klavity_solo_annual_490", unitAmount: 49000, label: "Klavity Solo" },
   },
   team: {
-    month: { lookupKey: "klavity_team_monthly_99", unitAmount: 9900, label: "Klavity Team" },
-    year: { lookupKey: "klavity_team_annual_990", unitAmount: 99000, label: "Klavity Team" },
+    month: { lookupKey: "klavity_team_monthly_249", unitAmount: 24900, label: "Klavity Team" },
+    year: { lookupKey: "klavity_team_annual_2490", unitAmount: 249000, label: "Klavity Team" },
+  },
+  // Scale (KLAVITYKLA-379): the price is now PUBLISHED ($599/mo) instead of "Custom", because nine
+  // of sixteen AI-QA competitors hide theirs and publishing wins the "<product> pricing" search
+  // lane. The catalog entry exists so the number has ONE source of truth that the pricing page and
+  // the dashboard both quote. Self-serve checkout is still intentionally CLOSED for scale (see the
+  // narrower plan union on ensureStripePrice / createStripeCheckoutSession and the explicit reject
+  // in /api/billing/checkout): scale grants unlimited quotas, so it stays sales-assisted. True
+  // enterprise (SSO/SAML, self-host, SLA) remains contact-us on top of this published floor.
+  scale: {
+    month: { lookupKey: "klavity_scale_monthly_599", unitAmount: 59900, label: "Klavity Scale" },
+    year: { lookupKey: "klavity_scale_annual_5990", unitAmount: 599000, label: "Klavity Scale" },
   },
   // Agency (KLAVITYKLA-310): for agencies/consultancies running Klavity across many CLIENT sites.
   // Each client is a project — the plan lifts the per-account project cap and adds the per-client
@@ -24,10 +44,50 @@ export const STRIPE_PRICE_CATALOG: Record<Exclude<BillingPlan, "free" | "scale" 
   },
 }
 
+// ── SUPERSEDED lookup keys (KLAVITYKLA-379) ────────────────────────────────────────────────────
+// Repricing does NOT delete the old Stripe prices — Stripe prices are immutable, so every existing
+// subscriber is still billed against the price object (and lookup_key) they signed up on. The
+// catalog above only governs what a NEW checkout creates; these are the retired keys, kept
+// resolvable so a webhook for a grandfathered subscriber still maps to the right {plan, interval}
+// instead of silently returning null and dropping them to `free`.
+//
+// NEVER remove an entry from this map. Add to it every time a price is retired.
+export const SUPERSEDED_LOOKUP_KEYS: Record<string, { plan: BillingPlan; interval: BillingInterval }> = {
+  // Founding Ten at $290/yr — superseded by klavity_founding_annual_490 on 2026-07-20.
+  klavity_founding_annual_290: { plan: "founding", interval: "year" },
+  // "Pro" at $29/mo · $290/yr — superseded by the Solo $49/mo · $490/yr keys.
+  klavity_pro_monthly_29: { plan: "pro", interval: "month" },
+  klavity_pro_annual_290: { plan: "pro", interval: "year" },
+  // Team at $99/mo · $990/yr — superseded by the $249/mo · $2,490/yr keys.
+  klavity_team_monthly_99: { plan: "team", interval: "month" },
+  klavity_team_annual_990: { plan: "team", interval: "year" },
+}
+
+// ── Customer-facing plan DISPLAY names (KLAVITYKLA-379) ────────────────────────────────────────
+// The keys here are the internal plan SLUGS (what lives in the DB, in Stripe metadata and in every
+// API payload). The values are what a human is allowed to see. These two deliberately disagree for
+// `pro`, which is displayed as "Solo": the ladder was renamed for customers without touching any
+// stored value, so no migration was needed and existing subscriptions kept working untouched.
+// Render plan names through planDisplayName() — never print a raw slug at a customer.
+export const PLAN_DISPLAY_NAMES: Record<BillingPlan, string> = {
+  free: "Free",
+  pro: "Solo", // slug stays `pro` — display only. See the note above.
+  team: "Team",
+  agency: "Agency",
+  founding: "Founding Ten",
+  scale: "Scale",
+  partner: "Partner · Unlimited",
+}
+
+export function planDisplayName(plan: string | null | undefined): string {
+  return PLAN_DISPLAY_NAMES[normalizePlan(plan)]
+}
+
 // founding gets TEAM-level entitlements (KLAVITYKLA-365). The Founding Ten offer promises Team
-// limits at the $290/yr Founding price — this is an ENTITLEMENT grant only; the price catalog and
-// the live Stripe price id are untouched. (It previously mirrored Pro, which under-delivered
-// against what Founding buyers were sold; the pricing page in KLA-368 advertises Team limits.)
+// limits at the $490/yr Founding price (KLAVITYKLA-379) — with ONE deliberate exception, the
+// AutoSim cadence; see the margin note on PLAN_QUOTAS.founding below. (It previously mirrored Pro,
+// which under-delivered against what Founding buyers were sold; the pricing page in KLA-368
+// advertises Team limits.)
 //
 // AutoSim is a PAID feature (KLAVITYKLA-365): free.autosimFlows = 0 and free.autosimRunsMonthly = 0.
 // Free accounts may not CONFIGURE a new AutoSim flow. Accounts that already had a flow configured
@@ -52,8 +112,19 @@ export const STRIPE_PRICE_CATALOG: Record<Exclude<BillingPlan, "free" | "scale" 
 export const PLAN_QUOTAS: Record<BillingPlan, { projects: number | null; sims: number | null; simReactionsMonthly: number | null; autosimFlows: number | null; autosimRunsMonthly: number | null; autosimCadence: string }> = {
   free: { projects: 1, sims: 1, simReactionsMonthly: 25, autosimFlows: 0, autosimRunsMonthly: 0, autosimCadence: "none" },
   pro: { projects: 5, sims: 5, simReactionsMonthly: 500, autosimFlows: 5, autosimRunsMonthly: 150, autosimCadence: "daily" },
-  // KLAVITYKLA-365: founding === team entitlements (Founding Ten buyers were promised Team limits).
-  founding: { projects: null, sims: 20, simReactionsMonthly: 2500, autosimFlows: 20, autosimRunsMonthly: 600, autosimCadence: "on-deploy/hourly" },
+  // KLAVITYKLA-365: founding gets Team's LIMITS (Founding Ten buyers were promised Team limits).
+  //
+  // KLAVITYKLA-379 — DO NOT "FIX" THIS BACK TO HOURLY. 
+  // founding matches team on every LIMIT above, but its cadence is deliberately "daily", NOT
+  // "on-deploy/hourly". KLA-365 originally copied Team byte-for-byte including the hourly cadence,
+  // which is loss-making AND the Founding price is locked FOR LIFE:
+  //   20 flows × hourly ≈ 14,400 replays/mo ≈ $72/mo (at ~$0.005/replay, measured via the ai_calls
+  //   ledger), plus 2,500 page reviews at $17–50/mo  →  $90–120/mo COGS
+  //   against $490/yr = $40.83/mo revenue. Every founding customer would lose money, permanently.
+  // Daily cadence removes ~95% of that exposure, keeps the offer genuinely generous, and leaves
+  // hourly/on-deploy as a real upsell into paid Team. Revisit only when KLAVITYKLA-364 has
+  // instrumented the true per-replay cost — not before, and not on vibes.
+  founding: { projects: null, sims: 20, simReactionsMonthly: 2500, autosimFlows: 20, autosimRunsMonthly: 600, autosimCadence: "daily" },
   team: { projects: null, sims: 20, simReactionsMonthly: 2500, autosimFlows: 20, autosimRunsMonthly: 600, autosimCadence: "on-deploy/hourly" },
   // Agency (KLAVITYKLA-310): unlimited client projects; Sims/AutoSim allowances above Team so an
   // agency can cover many clients without immediately hitting Scale.
@@ -324,7 +395,8 @@ export function planFromLookupKey(lookupKey: string | null | undefined): Billing
   for (const [plan, intervals] of Object.entries(STRIPE_PRICE_CATALOG)) {
     if (Object.values(intervals).some((entry) => entry?.lookupKey === key)) return plan as BillingPlan
   }
-  return null
+  // KLAVITYKLA-379: fall back to retired keys so grandfathered subscribers keep resolving.
+  return SUPERSEDED_LOOKUP_KEYS[key]?.plan ?? null
 }
 
 export function intervalFromLookupKey(lookupKey: string | null | undefined): BillingInterval | null {
@@ -335,7 +407,8 @@ export function intervalFromLookupKey(lookupKey: string | null | undefined): Bil
       if (entry?.lookupKey === key) return interval as BillingInterval
     }
   }
-  return null
+  // KLAVITYKLA-379: retired keys still carry a valid interval.
+  return SUPERSEDED_LOOKUP_KEYS[key]?.interval ?? null
 }
 
 // ── Live Stripe price ID → plan/interval (KLAVITYKLA-336) ──────────────────────────────────────
@@ -345,12 +418,16 @@ export function intervalFromLookupKey(lookupKey: string | null | undefined): Bil
 // catalog — PUBLIC identifiers, not secrets — safe to hardcode. Keep in lockstep with the Stripe
 // Dashboard if a price is ever repriced (Stripe prices are immutable; a repriced plan gets a new ID).
 export const STRIPE_PRICE_IDS: Record<string, { plan: Exclude<BillingPlan, "free" | "scale" | "partner">; interval: BillingInterval }> = {
-  // Founding Team — annual only, $290/yr
+  // Founding Team — annual only, $490/yr (KLAVITYKLA-379). This is the live Payment Link price.
   price_1TuhSqDWQd30h1DiyqjXQ3NC: { plan: "founding", interval: "year" },
-  // Pro — $29/mo, $290/yr
+  // ── SUPERSEDED price IDs (KLAVITYKLA-379 reprice) ──
+  // These are the OLD "Pro" $29/mo·$290/yr and Team $99/mo·$990/yr price objects. Stripe prices are
+  // immutable, so anyone who subscribed before the reprice is still billed against these IDs and
+  // their webhooks still arrive carrying them. They MUST keep resolving or a grandfathered customer
+  // silently drops to `free`. New checkouts never touch these — ensureStripePrice resolves the new
+  // catalog lookup keys and creates fresh price objects, which resolve via the lookup_key fallback.
   price_1TuhSrDWQd30h1DivfC0EMKT: { plan: "pro", interval: "month" },
   price_1TuhSrDWQd30h1DiTy9eSe5p: { plan: "pro", interval: "year" },
-  // Team — $99/mo, $990/yr
   price_1TuhSsDWQd30h1DiU5g7VDZo: { plan: "team", interval: "month" },
   price_1TuhStDWQd30h1DiRzJCtPsF: { plan: "team", interval: "year" },
 }
