@@ -1,0 +1,114 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Screenshot vs. Screen Recording: Which Bug Evidence? · Klavity</title>
+<meta name="description" content="Screenshots freeze one moment; recordings capture a sequence. Use a screenshot for visual bugs, a recording for timing bugs — and attach the console too.">
+<link rel="canonical" href="https://klavity.in/blog/screenshot-vs-screen-recording-bug-evidence">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="Screenshot vs. Screen Recording: Which Bug Evidence?"><meta property="og:description" content="Screenshots freeze one moment; recordings capture a sequence. Use a screenshot for visual bugs, a recording for timing bugs — and attach the console too.">
+<meta property="og:url" content="https://klavity.in/blog/screenshot-vs-screen-recording-bug-evidence"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Screenshot vs. Screen Recording: Which Bug Evidence?"><meta name="twitter:description" content="Screenshots freeze one moment; recordings capture a sequence. Use a screenshot for visual bugs, a recording for timing bugs — and attach the console too."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Screenshot vs. Screen Recording: Which Bug Evidence?","description":"Screenshots freeze one moment; recordings capture a sequence. Use a screenshot for visual bugs, a recording for timing bugs — and attach the console too.","datePublished":"2026-07-19","dateModified":"2026-07-19","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/screenshot-vs-screen-recording-bug-evidence","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"Screenshot vs. Screen Recording: Which Bug Evidence?","item":"https://klavity.in/blog/screenshot-vs-screen-recording-bug-evidence"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/screenshot-vs-screen-recording-bug-evidence"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Should I use a screenshot or a screen recording for a bug report?","acceptedAnswer":{"@type":"Answer","text":"Use a screenshot when the bug is fully visible in one frame, such as a broken layout, a wrong value, or an error message. Use a screen recording when the bug only makes sense as a sequence — a state that changes, an animation that stutters, or an error that appears after several steps. When in doubt, a short annotated screenshot is faster for a developer to review than a video."}},{"@type":"Question","name":"Is a screen recording enough to fix a bug?","acceptedAnswer":{"@type":"Answer","text":"Rarely. A recording shows the symptom but not the cause — it does not include the console error, the failed network request, the DOM state, or the browser and OS version. Reproduction usually stalls without that technical context, so attach it alongside the video rather than relying on the recording alone."}},{"@type":"Question","name":"How long should a bug report screen recording be?","acceptedAnswer":{"@type":"Answer","text":"Keep it to the shortest clip that shows the problem, typically well under a minute. Start recording just before the last reproducing action and stop right after the bug appears. Long recordings force reviewers to scrub for the relevant moment, which slows triage."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Compare · 2026-07-19</div>
+    <h1>Screenshot vs. Screen Recording: Which Bug Evidence?</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>Attach a screenshot when the bug is visible in one frame (wrong layout, error message, incorrect value) and a screen recording when it depends on a sequence or timing (a state change, a race, an intermittent glitch). Neither format captures the console errors, network requests, or environment a developer needs to reproduce — so pair whichever you choose with that technical context.</div>
+    <div class="prose"><p>Attach a <strong>screenshot</strong> when the bug is fully visible in a single frame — a broken layout, an error message, a wrong value on screen. Attach a <strong>screen recording</strong> when the bug only makes sense as a sequence — a state that changes, an animation that stutters, or an error that appears after several steps. Both are visual evidence of a symptom, so whichever you pick, pair it with the technical context (console, network, environment) a developer actually needs to reproduce the problem.</p>
+
+<h2>Screenshot vs. screen recording: which should you attach?</h2>
+<p>The deciding question is simple: <em>can the whole bug be seen in one frame?</em> If yes, use a screenshot. If the bug is only understandable by watching something happen over time, use a recording.</p>
+<ul>
+<li><strong>Screenshot</strong> — best for static, visible defects. It is small, loads instantly, can be annotated with arrows and boxes, and lets a reviewer grasp the issue in seconds without pressing play.</li>
+<li><strong>Screen recording</strong> — best for sequences and timing. It preserves the order of actions, the exact moment something breaks, and behavior that is hard to describe in words.</li>
+</ul>
+<p>Most bugs are visible in one frame, so a screenshot is the right default. Reach for a recording only when a still image would lose the information that matters.</p>
+
+<h2>When to use a screenshot for a bug report</h2>
+<p>A screenshot is the fastest, most reviewable evidence for anything that holds still. Use one when the defect is:</p>
+<ol>
+<li><strong>A layout or styling problem</strong> — misaligned elements, overlapping text, a component that renders off-screen or at the wrong size.</li>
+<li><strong>A wrong or missing value</strong> — an incorrect total, a stale label, a field that shows the wrong data.</li>
+<li><strong>A visible error state</strong> — an error banner, a broken image, a validation message that appears when it shouldn't.</li>
+<li><strong>A copy or content bug</strong> — a typo, an untranslated string, a truncated sentence.</li>
+</ol>
+<p>Annotate before you send. A single arrow or highlighted box tells the reviewer exactly where to look, which removes the back-and-forth of "which part is wrong?"</p>
+
+<h2>When to use a screen recording</h2>
+<p>A recording earns its larger file size when the bug cannot be frozen into one image. Use one when the defect is:</p>
+<ol>
+<li><strong>A multi-step reproduction</strong> — the bug only appears after a specific sequence of clicks, and the order matters.</li>
+<li><strong>A timing or animation issue</strong> — a transition that jumps, a loader that never resolves, content that flashes and disappears.</li>
+<li><strong>An intermittent glitch</strong> — something that happens fast and is hard to catch; a recording lets you play it back frame by frame.</li>
+<li><strong>A state change</strong> — a value that updates incorrectly in response to an action, where the before-and-after both matter.</li>
+</ol>
+<p>Keep it short. Start recording just before the final reproducing action and stop as soon as the bug appears. A trimmed clip under a minute is far more useful than a five-minute video the reviewer has to scrub through.</p>
+
+<h2>What both screenshots and recordings miss</h2>
+<p>This is the point most bug reports get wrong: visual evidence shows the <em>symptom</em>, not the <em>cause</em>. A screenshot of an error banner and a video of a failing checkout look convincing, but a developer still can't reproduce either one without answers to questions the pixels don't contain:</p>
+<ul>
+<li><strong>What threw?</strong> The console error and stack trace, which no image captures.</li>
+<li><strong>What did the server return?</strong> The failed network request — its URL, status code, and response body.</li>
+<li><strong>What was the state?</strong> The exact URL, the logged-in user or role, and any relevant local or session data.</li>
+<li><strong>Where did it happen?</strong> The browser, version, operating system, and viewport size.</li>
+</ul>
+<p>Without these, a visually perfect report still lands in the "cannot reproduce" pile. The screenshot or recording answers <em>what happened</em>; this context answers <em>why</em>.</p>
+
+<h2>How to combine visual and technical evidence</h2>
+<p>The strongest bug reports don't choose between formats — they layer the right visual on top of complete technical context. A repeatable approach:</p>
+<ol>
+<li><strong>Pick the visual by the bug's nature</strong> — screenshot for a still defect, recording for a sequence. Don't record what a screenshot can show.</li>
+<li><strong>Annotate or trim</strong> — mark the exact spot on a screenshot, or cut the recording down to the reproducing moment.</li>
+<li><strong>Attach the console and network</strong> — include the error and stack trace, plus any failed requests with their status and response. This is what turns "I see it too" into "I found it."</li>
+<li><strong>Record the environment</strong> — browser, version, OS, viewport, URL, and user role, so the developer can match your setup.</li>
+<li><strong>Write the steps in order</strong> — numbered actions, expected result, actual result. The visual confirms the steps; it doesn't replace them.</li>
+</ol>
+<p>Doing this by hand for every bug is tedious, which is exactly why so many reports arrive with a screenshot and nothing else. In-app tools close that gap by capturing the visual and the technical context together at the moment the bug is flagged. That's the model behind <a href="/snap">Klavity Snap</a> — a right-click bug report bundles the screenshot, console, network log, and environment into one ticket, so the person reporting doesn't have to remember what the developer will need. For the full anatomy of a report that gets acted on, see <a href="/blog/how-to-write-a-bug-report-developers-act-on">how to write a bug report developers will actually act on</a>.</p>
+
+<h2>The bottom line</h2>
+<p>Screenshot or screen recording isn't really the question — it's a two-second decision based on whether the bug fits in one frame. The question that determines whether the bug gets fixed is whether you attached the console, network, and environment alongside it. Choose the visual that shows the symptom clearly, then give the developer everything they need to find the cause.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Attach a screenshot for anything visible in a single frame</li><li>Record only when the bug is a sequence or timing issue</li><li>Always include console errors and network requests too</li><li>Annotate and trim so reviewers find the moment fast</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Should I use a screenshot or a screen recording for a bug report?</summary><p>Use a screenshot when the bug is fully visible in one frame, such as a broken layout, a wrong value, or an error message. Use a screen recording when the bug only makes sense as a sequence — a state that changes, an animation that stutters, or an error that appears after several steps. When in doubt, a short annotated screenshot is faster for a developer to review than a video.</p></details><details><summary>Is a screen recording enough to fix a bug?</summary><p>Rarely. A recording shows the symptom but not the cause — it does not include the console error, the failed network request, the DOM state, or the browser and OS version. Reproduction usually stalls without that technical context, so attach it alongside the video rather than relying on the recording alone.</p></details><details><summary>How long should a bug report screen recording be?</summary><p>Keep it to the shortest clip that shows the problem, typically well under a minute. Start recording just before the last reproducing action and stop right after the bug appears. Long recordings force reviewers to scrub for the relevant moment, which slows triage.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
