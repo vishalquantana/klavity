@@ -2154,29 +2154,40 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
            with reports found, guarded-flow pass rate and regressions caught. Populated by _wirePlan
            from GET /api/account/agency-report; hidden for non-Agency accounts. -->
       <div id="billingAgency" style="margin:0 0 14px"></div>
-      <!-- GTM round 2: Founding Team offer — annual-only Pro at the locked founding price. The
-           server forces interval to "year" for plan:"founding" (see /api/billing/checkout). -->
+      <!-- GTM round 2: Founding Team offer — annual-only, at the locked founding price. The server
+           forces interval to "year" for plan:"founding" (see /api/billing/checkout).
+           KLAVITYKLA-379: $490/yr. Entitlements mirror PLAN_QUOTAS.founding = Team LIMITS but a
+           DAILY AutoSim cadence (hourly is loss-making at a lifetime-locked price) — keep this copy
+           in lockstep with prototype/lib/billing.ts and site/pricing.html. -->
       <div id="foundingRibbon" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;border:1px solid rgba(139,92,246,.35);background:linear-gradient(135deg,rgba(99,102,241,.10),rgba(139,92,246,.08));border-radius:8px;padding:10px 14px;margin-bottom:12px">
         <div style="flex:1;min-width:220px">
-          <div style="font-weight:700;font-size:13.5px">Founding Team — $290/yr</div>
-          <div class="muted" style="font-size:12px;margin-top:2px">Everything in Pro, price locked forever, direct line to the founder.</div>
+          <div style="font-weight:700;font-size:13.5px">Founding Team — $490/yr</div>
+          <div class="muted" style="font-size:12px;margin-top:2px">Team limits with daily flow runs, price locked forever, direct line to the founder.</div>
         </div>
         <button class="btn btn-indigo btn-sm billingCheckout" data-plan="founding" data-interval="year">Join as a founder</button>
       </div>
       <div id="billingPlans" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:14px">
         <div style="border:1px solid rgba(243,236,225,.14);border-radius:8px;padding:12px">
-          <div style="font-weight:700">Pro</div>
-          <div class="muted" style="font-size:12px;margin:4px 0 10px">$29/mo · $290/yr</div>
+          <div style="font-weight:700">Solo</div>
+          <div class="muted" style="font-size:12px;margin:4px 0 10px">$49/mo · $490/yr</div>
           <button class="btn btn-indigo btn-sm billingCheckout" data-plan="pro" data-interval="month">Monthly</button>
           <button class="btn btn-sm billingCheckout" data-plan="pro" data-interval="year">Annual</button>
         </div>
         <div style="border:1px solid rgba(243,236,225,.14);border-radius:8px;padding:12px">
           <div style="font-weight:700">Team</div>
-          <div class="muted" style="font-size:12px;margin:4px 0 10px">$99/mo · $990/yr</div>
+          <div class="muted" style="font-size:12px;margin:4px 0 10px">$249/mo · $2,490/yr</div>
           <button class="btn btn-indigo btn-sm billingCheckout" data-plan="team" data-interval="month">Monthly</button>
           <button class="btn btn-sm billingCheckout" data-plan="team" data-interval="year">Annual</button>
         </div>
-        <div style="border:1px solid rgba(243,236,225,.14);border-radius:8px;padding:12px">
+        <!-- KLAVITYKLA-379 PRICE COLLISION — soft-gated, do not un-hide without a founder decision.
+             KLAVITYKLA-310 set Agency at $249/mo. KLAVITYKLA-379 then moved Team to $249/mo, so the
+             two tiers now cost EXACTLY the same and rendered side by side as two indistinguishable
+             $249 cards. The upmarket ladder in the marketing brief does not mention Agency at all,
+             and this ticket was explicitly told not to invent a new Agency price — so rather than
+             show a confusing duplicate, the card is hidden from self-serve and revealed ONLY to
+             accounts already entitled to Agency (so existing subscribers keep their upgrade path).
+             Resolve by either repricing Agency or folding it into Team. -->
+        <div id="billingPlanAgency" style="display:none;border:1px solid rgba(243,236,225,.14);border-radius:8px;padding:12px">
           <div style="font-weight:700">Agency</div>
           <div class="muted" style="font-size:12px;margin:4px 0 10px">$249/mo · $2,490/yr · unlimited client sites</div>
           <button class="btn btn-indigo btn-sm billingCheckout" data-plan="agency" data-interval="month">Monthly</button>
@@ -2184,7 +2195,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         </div>
         <div style="border:1px solid rgba(243,236,225,.14);border-radius:8px;padding:12px">
           <div style="font-weight:700">Scale</div>
-          <div class="muted" style="font-size:12px;margin:4px 0 10px">Sales-assisted, custom terms</div>
+          <div class="muted" style="font-size:12px;margin:4px 0 10px">$599/mo · custom limits, SSO &amp; SLA on request</div>
           <a class="btn btn-sm" href="mailto:vishal@quantana.com.au?subject=Klavity%20Scale%20plan">Contact sales</a>
         </div>
       </div>
@@ -7342,7 +7353,10 @@ window.openPlanDrawer = openPlanDrawer
 
 // Plan & partner-code redemption (Settings → Plan & access).
 ;(function _wirePlan(){
-  var pretty = { free:"Free", pro:"Pro", team:"Team", agency:"Agency", scale:"Scale", partner:"Partner · Unlimited" }
+  // KLAVITYKLA-379: keys are internal plan SLUGS, values are customer-facing DISPLAY names.
+  // `pro` deliberately displays as "Solo" — the slug was NOT renamed, so no migration was needed.
+  // Mirrors PLAN_DISPLAY_NAMES in prototype/lib/billing.ts; keep the two in lockstep.
+  var pretty = { free:"Free", pro:"Solo", team:"Team", agency:"Agency", scale:"Scale", partner:"Partner · Unlimited" }
   var lbl = $("planLabel"), area = $("redeemArea"), btn = $("redeemBtn"), inp = $("redeemCode"), msg = $("redeemMsg")
   var statusLbl = $("billingStatusLabel"), quotaNote = $("billingQuotaNote"), billingMsg = $("billingMsg"), portalBtn = $("billingPortalBtn")
   if (!lbl) return
@@ -7475,6 +7489,10 @@ window.openPlanDrawer = openPlanDrawer
       try { var ur = await fetch("/api/account/usage"); if (ur.ok){ var ud = await ur.json(); renderUsage(ud.meters); renderProjects(ud) } } catch(e){}
       // Agency per-client rollup — only Agency/unlimited accounts are entitled (endpoint 403s otherwise).
       var agencyEntitled = d.unlimited || d.plan === "agency" || d.plan === "scale" || d.plan === "partner"
+      // KLAVITYKLA-379: the Agency plan card collides on price with Team ($249/mo both). Only show
+      // it to accounts already entitled to Agency — never as a self-serve duplicate of Team.
+      var agencyCard = $("billingPlanAgency")
+      if (agencyCard) agencyCard.style.display = agencyEntitled ? "" : "none"
       if (agencyEntitled){
         try { var ar = await fetch("/api/account/agency-report"); if (ar.ok){ var ad = await ar.json(); renderAgency(ad) } } catch(e){}
       } else { renderAgency(null) }

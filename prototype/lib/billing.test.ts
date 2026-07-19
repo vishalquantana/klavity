@@ -13,6 +13,8 @@ import {
   planFromPrice,
   planFromPriceId,
   PLAN_QUOTAS,
+  PLAN_DISPLAY_NAMES,
+  planDisplayName,
   PAST_DUE_GRACE_DAYS,
   quotasForPlan,
   resolveBillingGrace,
@@ -28,11 +30,12 @@ async function stripeSig(raw: string, secret: string, ts = Math.floor(Date.now()
   return `t=${ts},v1=${hex}`
 }
 
-test("Stripe catalog encodes Pro/Team monthly and two-months-free annual prices", () => {
-  expect(STRIPE_PRICE_CATALOG.pro.month.unitAmount).toBe(2900)
-  expect(STRIPE_PRICE_CATALOG.pro.year.unitAmount).toBe(29000)
-  expect(STRIPE_PRICE_CATALOG.team.month.unitAmount).toBe(9900)
-  expect(STRIPE_PRICE_CATALOG.team.year.unitAmount).toBe(99000)
+test("Stripe catalog encodes Solo/Team monthly and two-months-free annual prices", () => {
+  // KLAVITYKLA-379 ladder: Solo $49/mo (slug stays `pro`), Team $249/mo.
+  expect(STRIPE_PRICE_CATALOG.pro.month.unitAmount).toBe(4900)
+  expect(STRIPE_PRICE_CATALOG.pro.year.unitAmount).toBe(49000)
+  expect(STRIPE_PRICE_CATALOG.team.month.unitAmount).toBe(24900)
+  expect(STRIPE_PRICE_CATALOG.team.year.unitAmount).toBe(249000)
   expect(planFromLookupKey(STRIPE_PRICE_CATALOG.team.year.lookupKey)).toBe("team")
   expect(intervalFromLookupKey(STRIPE_PRICE_CATALOG.pro.year.lookupKey)).toBe("year")
 })
@@ -279,24 +282,35 @@ test("founding tier normalizes correctly and carries at-or-above-Pro quotas", ()
 
 // ── KLAVITYKLA-365: Founding Ten gets Team entitlements; AutoSim leaves Free ────────────────────
 
-test("founding carries EXACTLY Team's entitlement values (Founding Ten was sold Team limits)", () => {
+test("founding matches Team on every LIMIT, but its AutoSim cadence is daily — not hourly", () => {
   const founding = PLAN_QUOTAS.founding, team = PLAN_QUOTAS.team
+  // Limits: identical to Team. The Founding Ten were sold "everything in Team".
   expect(founding.projects).toBe(team.projects)
   expect(founding.sims).toBe(team.sims)
   expect(founding.simReactionsMonthly).toBe(team.simReactionsMonthly)
   expect(founding.autosimFlows).toBe(team.autosimFlows)
   expect(founding.autosimRunsMonthly).toBe(team.autosimRunsMonthly)
-  expect(founding.autosimCadence).toBe(team.autosimCadence)
   // Concrete values, so a future edit to `team` can't silently drag Founding somewhere unintended.
   expect(founding.projects).toBeNull()
   expect(founding.sims).toBe(20)
   expect(founding.simReactionsMonthly).toBe(2500)
   expect(founding.autosimFlows).toBe(20)
   expect(founding.autosimRunsMonthly).toBe(600)
+
+  // KLAVITYKLA-379 — the ONE deliberate divergence from Team. This assertion exists to stop
+  // somebody "restoring parity" and re-shipping a permanent loss.
+  //
+  // KLA-365 set founding.autosimCadence to Team's "on-deploy/hourly". At 20 flows that is ~14,400
+  // replays/mo ≈ $72/mo, plus 2,500 page reviews at $17–50/mo → $90–120/mo COGS, against a
+  // $490/yr ($40.83/mo) price that is LOCKED FOR LIFE. Daily cadence removes ~95% of the exposure
+  // and keeps hourly as a genuine upsell into paid Team.
+  expect(founding.autosimCadence).toBe("daily")
+  expect(founding.autosimCadence).not.toBe(team.autosimCadence)
+  expect(team.autosimCadence).toBe("on-deploy/hourly")
 })
 
-test("the Founding entitlement grant did NOT change the Founding price ($290/yr, annual only)", () => {
-  expect(STRIPE_PRICE_CATALOG.founding.year?.unitAmount).toBe(29000)
+test("the Founding entitlement grant did NOT change the Founding price ($490/yr, annual only)", () => {
+  expect(STRIPE_PRICE_CATALOG.founding.year?.unitAmount).toBe(49000)
   expect(STRIPE_PRICE_CATALOG.founding.month).toBeUndefined()
 })
 
@@ -316,8 +330,8 @@ test("every PAID tier still includes AutoSim (Free is the only zero)", () => {
   }
 })
 
-test("founding is annual-only in the price catalog (no monthly entry) at $290/yr", () => {
-  expect(STRIPE_PRICE_CATALOG.founding.year?.unitAmount).toBe(29000)
+test("founding is annual-only in the price catalog (no monthly entry) at $490/yr", () => {
+  expect(STRIPE_PRICE_CATALOG.founding.year?.unitAmount).toBe(49000)
   expect(STRIPE_PRICE_CATALOG.founding.month).toBeUndefined()
 })
 
@@ -328,12 +342,80 @@ test("PLAN_QUOTAS covers every BillingPlan value (type exhaustiveness holds at r
   }
 })
 
-test("Founding/Pro/Team catalog amounts stay correct", () => {
-  expect(STRIPE_PRICE_CATALOG.founding.year?.unitAmount).toBe(29000)
-  expect(STRIPE_PRICE_CATALOG.pro.month?.unitAmount).toBe(2900)
-  expect(STRIPE_PRICE_CATALOG.pro.year?.unitAmount).toBe(29000)
-  expect(STRIPE_PRICE_CATALOG.team.month?.unitAmount).toBe(9900)
-  expect(STRIPE_PRICE_CATALOG.team.year?.unitAmount).toBe(99000)
+test("Founding/Solo/Team catalog amounts stay correct", () => {
+  expect(STRIPE_PRICE_CATALOG.founding.year?.unitAmount).toBe(49000)
+  expect(STRIPE_PRICE_CATALOG.pro.month?.unitAmount).toBe(4900)
+  expect(STRIPE_PRICE_CATALOG.pro.year?.unitAmount).toBe(49000)
+  expect(STRIPE_PRICE_CATALOG.team.month?.unitAmount).toBe(24900)
+  expect(STRIPE_PRICE_CATALOG.team.year?.unitAmount).toBe(249000)
+})
+
+// ── KLAVITYKLA-379: the upmarket ladder ────────────────────────────────────────────────────────
+
+test("the published ladder is Free $0 / Solo $49 / Team $249 / Scale $599 / Founding $490per year", () => {
+  expect(STRIPE_PRICE_CATALOG.pro.month!.unitAmount).toBe(4900)      // Solo
+  expect(STRIPE_PRICE_CATALOG.team.month!.unitAmount).toBe(24900)    // Team
+  expect(STRIPE_PRICE_CATALOG.scale.month!.unitAmount).toBe(59900)   // Scale — now PUBLISHED
+  expect(STRIPE_PRICE_CATALOG.founding.year!.unitAmount).toBe(49000) // Founding Ten
+  expect(STRIPE_PRICE_CATALOG.founding.month).toBeUndefined()        // annual-only
+})
+
+test("annual is two months free (10x monthly) on every tier that sells both intervals", () => {
+  for (const plan of ["pro", "team", "agency", "scale"] as const) {
+    const entry = STRIPE_PRICE_CATALOG[plan]
+    expect(entry.year!.unitAmount).toBe(entry.month!.unitAmount * 10)
+  }
+})
+
+test("the Founding lookup key is the _490 one; the _290 key is superseded but still resolves", () => {
+  expect(STRIPE_PRICE_CATALOG.founding.year!.lookupKey).toBe("klavity_founding_annual_490")
+  // An EXISTING $290/yr founding subscriber must keep resolving — Stripe prices are immutable, so
+  // their webhooks still carry the retired key. Dropping them here would silently demote them.
+  expect(planFromLookupKey("klavity_founding_annual_290")).toBe("founding")
+  expect(intervalFromLookupKey("klavity_founding_annual_290")).toBe("year")
+  expect(planFromPrice({ id: "price_unrecognized", lookup_key: "klavity_founding_annual_290" })).toBe("founding")
+})
+
+test("every superseded lookup key still resolves to its original plan and interval", () => {
+  const retired: Array<[string, string, "month" | "year"]> = [
+    ["klavity_founding_annual_290", "founding", "year"],
+    ["klavity_pro_monthly_29", "pro", "month"],
+    ["klavity_pro_annual_290", "pro", "year"],
+    ["klavity_team_monthly_99", "team", "month"],
+    ["klavity_team_annual_990", "team", "year"],
+  ]
+  for (const [key, plan, interval] of retired) {
+    expect(planFromLookupKey(key)).toBe(plan as any)
+    expect(intervalFromLookupKey(key)).toBe(interval)
+  }
+  // The retired keys are NOT in the live catalog — new checkouts must never use them.
+  const live = Object.values(STRIPE_PRICE_CATALOG).flatMap((i) => Object.values(i).map((e) => e!.lookupKey))
+  for (const [key] of retired) expect(live).not.toContain(key)
+})
+
+test("the old live Stripe price IDs still resolve, so grandfathered subscribers are not demoted", () => {
+  expect(planFromPriceId("price_1TuhSrDWQd30h1DivfC0EMKT")).toBe("pro")
+  expect(planFromPriceId("price_1TuhSsDWQd30h1DiU5g7VDZo")).toBe("team")
+  expect(planFromPriceId("price_1TuhSqDWQd30h1DiyqjXQ3NC")).toBe("founding")
+})
+
+test("Solo is a DISPLAY name only — the plan slug stays `pro` everywhere", () => {
+  expect(planDisplayName("pro")).toBe("Solo")
+  expect(PLAN_DISPLAY_NAMES.pro).toBe("Solo")
+  // The slug is untouched: normalizePlan still round-trips `pro`, and "solo" is NOT a valid slug
+  // (it normalizes to free like any other unknown string). No DB/Stripe migration was needed.
+  expect(normalizePlan("pro")).toBe("pro")
+  expect(normalizePlan("solo")).toBe("free")
+  expect(STRIPE_PRICE_CATALOG.pro.month!.lookupKey).toContain("solo") // label/key may say solo…
+  expect(PLAN_QUOTAS.pro).toBeDefined()                               // …but the slug key is `pro`
+})
+
+test("every plan slug has a customer-facing display name", () => {
+  for (const plan of ["free", "pro", "team", "agency", "founding", "scale", "partner"] as const) {
+    expect(PLAN_DISPLAY_NAMES[plan]).toBeTruthy()
+    expect(planDisplayName(plan)).toBe(PLAN_DISPLAY_NAMES[plan])
+  }
+  expect(planDisplayName("not-a-plan")).toBe("Free")
 })
 
 // ── KLAVITYKLA-310: Agency tier + per-client usage & outcomes rollup ────────────────────────────
