@@ -234,8 +234,12 @@ test("GET /bug-check serves the bug-check tool page with the required copy", asy
   const res = await fetch(`${BASE}/bug-check`)
   expect(res.status).toBe(200)
   const html = await res.text()
-  expect(html).toContain("What's broken in your app right now?")
-  expect(html).toContain("Klavity's AI users walk it like real customers")
+  // The hero used to promise "Klavity's AI users walk it like real customers" over a page that
+  // only ran a static HTML scan. The walk-through now genuinely runs, so the copy states it
+  // plainly — and the /api/simwalk assertion below is what keeps the claim honest: if the walk
+  // wiring is ever removed, this test fails rather than quietly leaving a false promise up.
+  expect(html).toContain("Watch AI customers walk your app")
+  expect(html).toContain("/api/simwalk")
   expect(html).toContain("Run the free scan")
   expect(html).toContain("We only fetch publicly reachable pages, we don't log in, and we don't store your page content.")
   expect(html).toContain("Want this on every deploy?")

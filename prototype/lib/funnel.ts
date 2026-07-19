@@ -16,6 +16,10 @@ export const FUNNEL_EVENTS = [
   // KLAVITYKLA-331 — founder booking CTA on the unlocked report / nurture email.
   "booking_cta_clicked",
   "meeting_booked",
+  // The /bug-check Sim walk-through played all the way through. The walk is the free tool's hook
+  // and the delight IS the conversion mechanism, so "did they actually watch it" is the signal that
+  // tells us whether the hook is doing its job — measured against unlock/signup downstream.
+  "simwalk_completed",
 ] as const
 
 export type FunnelEvent = (typeof FUNNEL_EVENTS)[number]
@@ -24,7 +28,10 @@ export type FunnelEvent = (typeof FUNNEL_EVENTS)[number]
 // Server owns the conversion events (check_completed onward) so they can't be spoofed.
 // booking_cta_clicked is a pure intent signal fired from the page (KLAVITYKLA-331) — spoofing it
 // buys nothing, and there is no server-side hook for a link click.
-export const CLIENT_INGESTABLE: readonly string[] = ["check_started", "booking_cta_clicked"] as const
+// simwalk_completed joins them for the same reason: it is a pure engagement signal with no
+// server-side hook (the server cannot know the client finished playing the animation), and
+// spoofing it buys an attacker nothing — it gates no conversion event.
+export const CLIENT_INGESTABLE: readonly string[] = ["check_started", "booking_cta_clicked", "simwalk_completed"] as const
 
 export interface FunnelParams {
   event: FunnelEvent

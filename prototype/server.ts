@@ -39,6 +39,7 @@ import { safeFetch } from "./lib/safe-fetch"
 import { extConfigVersion, type ExtProjectConfig } from "./lib/ext-config-version"
 import { verifyTurnstile, turnstileEnabled, turnstileSiteKey } from "./lib/turnstile"
 import { screenshotUrl, authedScreenshotUrl, projectHasHeadlessAuth, defaultPreviewPersona } from "./lib/sim-preview"
+import { assembleWalk } from "./lib/sim-walk"
 import { publishRegressionEvent, listRegressionEvents, acknowledgeRegressionEvent } from "./lib/regression-events"
 import { buildAssertUserPrompt } from "./lib/assertion-spec"
 import { judgeWalk } from "./lib/trails-judge"
@@ -249,6 +250,17 @@ if (db && process.env.TRAILS_DEMO_PROJECT_ID) {
 // for both /api/extract and /api/transcripts). Alias it locally so all existing callsites
 // below that reference EXTRACT_SYS continue to work unchanged.
 const EXTRACT_SYS = EXTRACT_SYS_PROMPT
+
+// Site-text → cast of Sims. Shared VERBATIM by /api/persona/site (onboarding + homepage aha) and
+// /api/simwalk (the /bug-check walk-through), so a prospect meets the same Sims wherever they land.
+// `countPhrase` is the only knob: the walk-through wants a slightly larger cast than the aha.
+function personaSiteSys(countPhrase: string): string {
+  return "From the text of a product's public web page, infer " + countPhrase + " DISTINCT believable user personas (\"Sims\") who would use or evaluate it, grounded in what the page actually says (audience, pricing, features). Invent plausible first+last names and roles. " +
+    "Classify each on two axes: simClass (\"user\" = actually OPERATES the product hands-on, feedback skews UI/interaction; " +
+    "\"client\" = evaluates OVERALL outcomes and business results, feedback skews feature/workflow/strategy — only assign \"client\" when the persona clearly describes an executive, buyer, or outcome-judging stakeholder) " +
+    "and side (\"external\" = customer/partner outside the team; \"internal\" = on the product/company team). " +
+    "Respond with ONLY a JSON object, no prose: {\"personas\":[{\"name\":string,\"role\":string,\"simClass\":\"user\"|\"client\",\"side\":\"external\"|\"internal\",\"initials\":string(2 uppercase letters),\"accent\":string(hex colour like #6366f1),\"summary\":string,\"insights\":[{\"kind\":\"pain\"|\"want\"|\"love\",\"text\":string,\"quote\":string}]}]} with " + countPhrase + " personas, each with exactly 3 insights; each quote is a short first-person line that persona might say."
+}
 
 const REACT_SYS =
   "You ARE the given user persona, reviewing a screenshot of a product page as if really using it. " +
@@ -1704,6 +1716,39 @@ function analyzeCacheSet(key: string, body: any, props: Record<string, unknown>)
   }
   analyzeCache.set(key, { at: Date.now(), body, props })
 }
+
+// ── Sim walk-through cache (/api/simwalk) ────────────────────────────────────────────────────────
+// SEPARATE from analyzeCache on purpose. A walk body carries a full-page JPEG (hundreds of KB of
+// base64), so the 500-entry analyzeCache bound would be hundreds of megabytes of resident images.
+// A small ring is all the value there is anyway: the point is that a launch spike on one URL, and a
+// user re-running their own URL, cost one set of model calls rather than one per visitor.
+const SIMWALK_CACHE_TTL_MS = 10 * 60 * 1000
+const SIMWALK_CACHE_MAX = 12
+const simWalkCache = new Map<string, { at: number; body: any }>()
+function simWalkCacheGet(url: string): any | null {
+  const hit = simWalkCache.get(url)
+  if (!hit) return null
+  if (Date.now() - hit.at > SIMWALK_CACHE_TTL_MS) { simWalkCache.delete(url); return null }
+  return hit.body
+}
+function simWalkCacheSet(url: string, body: any) {
+  if (simWalkCache.size >= SIMWALK_CACHE_MAX) {
+    const oldest = simWalkCache.keys().next().value
+    if (oldest !== undefined) simWalkCache.delete(oldest)
+  }
+  simWalkCache.set(url, { at: Date.now(), body })
+}
+// Cast size for a walk-through. Each Sim is one extra VISION call per uncached walk, so this is the
+// single biggest cost lever on the free tool — 3 is the smallest cast that reads as a group of
+// people rather than one bot with a name. Tunable down (never blindly up) via env.
+const SIMWALK_SIMS = Math.min(Math.max(Number(process.env.KLAV_SIMWALK_SIMS ?? 3) || 3, 1), 4)
+// How many speech bubbles the scene plays. Beyond ~8 the prospect leaves before reaching the
+// verified findings underneath, which are the substance the walk is selling.
+const SIMWALK_MAX_BEATS = 8
+// Walks per IP per minute. Deliberately tighter than /cro/analyze's 10: a walk drives a real
+// headless browser AND one vision call per Sim, so it is the most expensive anonymous surface we
+// expose. Env-tunable so integration tests can exercise the limiter and the pipeline separately.
+const SIMWALK_PER_MIN = Math.max(Number(process.env.KLAV_SIMWALK_PER_MIN ?? 3) || 3, 1)
 
 // Legacy AI demo endpoints (/api/persona/brief, /api/extract, /api/react) — each makes an LLM call but
 // had no per-user throttle or input cap (only the daily $ cap). Bound them per user/hour + size.
@@ -4484,6 +4529,139 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         }))
       void trackFunnel(db!, { event: "check_completed", anonId, url: siteUrl, source, referrer, props: { tool: "cro", frictions: frictions.length } })
       return json({ frictions, url: siteUrl })
+    }
+
+    // ── POST /api/simwalk — the /bug-check Sim walk-through (anonymous, no signup) ────────────────
+    //
+    // WHAT THIS IS FOR. /bug-check's headline promises "Klavity's AI users walk it like real
+    // customers". Until now the free tool ran a static HTML scan, so the promise was marketing.
+    // This endpoint makes it literal: infer a cast of Sims from the prospect's own page, capture
+    // that page full-height in a real browser, and run each Sim's VISION reaction over it — the
+    // same reactToPage pipeline paying projects use. The client plays the result back as a
+    // scrolling walk-through with speech bubbles anchored to each reaction's region.
+    //
+    // ONE CAPTURE, SHARED. The model and the browser MUST see the same image: reaction regions are
+    // normalised 0..1 against whatever was shown to the model, so a separate display capture would
+    // silently mis-anchor every bubble. Hence one full-page shot, returned to the client verbatim.
+    //
+    // COST. Uncached this is 1 text call (cast) + N vision calls (N = SIMWALK_SIMS, default 3) on
+    // top of the existing single bug-check analyze call. Every one of them is reserved against the
+    // SAME FREETOOL_DAILY_CAP_USD slice as /cro and /bug-check, so a viral spike still cannot eat
+    // more than the free-tool budget. The 10-minute result cache means a spike on one URL costs one
+    // set of calls total, and a user re-running their own URL costs nothing.
+    if (req.method === "POST" && path === "/api/simwalk") {
+      const ip = clientIp(req, server)
+      // Tighter than /cro/analyze (10/min): a walk drives a real headless browser AND N vision
+      // calls, so it is the most expensive anonymous thing we expose.
+      if (!rlAllow(`simwalk:ip:${ip}`, SIMWALK_PER_MIN, 60_000)) return json({ error: "Too many walk-throughs from here — please try again in a minute." }, 429, { "Retry-After": "60" })
+      if (aiDemoLimited(null, req, server)) return json({ error: "Too many requests. Please wait and try again." }, 429, { "Retry-After": "3600" })
+      const parsed = await readJsonLimited(req, 4_096)
+      if (!parsed.ok) return json({ error: parsed.error }, parsed.status)
+      const b = parsed.data as Record<string, unknown>
+      let walkUrl = String(b.url ?? "").trim()
+      if (!walkUrl) return json({ error: "Enter your site URL." }, 400)
+      if (!/^https?:\/\//i.test(walkUrl)) walkUrl = "https://" + walkUrl
+
+      const walkCached = simWalkCacheGet(walkUrl)
+      if (walkCached) return json({ ...walkCached, cached: true })
+
+      // Step 1 — read the page as TEXT to infer the cast. Also doubles as the SSRF preflight and
+      // the reachability check: safeFetch rejects private/loopback hosts and validates each redirect
+      // hop, so we never point a real browser at something the guard would have refused.
+      let walkText = ""
+      try {
+        const res = await safeFetch(walkUrl, { headers: { "user-agent": "KlavitySimBot/1.0 (+https://klavity.in)" }, signal: AbortSignal.timeout(8_000) }, { allowLoopbackInTest: true })
+        if (!res.ok) return json({ error: `Couldn't reach that page (HTTP ${res.status}).` }, 400)
+        walkText = (await res.text())
+          .slice(0, 300_000)
+          .replace(/<script[\s\S]*?<\/script>/gi, " ")
+          .replace(/<style[\s\S]*?<\/style>/gi, " ")
+          .replace(/<[^>]+>/g, " ")
+          .replace(/&[a-z#0-9]+;/gi, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, AI_DEMO_MAX_CHARS)
+      } catch {
+        return json({ error: "Couldn't reach that URL. Make sure it's a public https page." }, 400)
+      }
+      if (walkText.length < 40) return json({ error: "That page didn't have enough text for Sims to read." }, 400)
+
+      // Reserve the WHOLE walk's estimated spend up front, before any model call. Reserving per-call
+      // would let a walk start, spend on the cast, then get denied halfway through and strand the
+      // user with a half-played scene — pay-or-don't-start is the honest behaviour here.
+      const walkSims = SIMWALK_SIMS
+      const walkEst = DEFAULT_AI_CALL_EST_USD * (1 + walkSims)
+      if (!(await tryReserveFreeToolSpend(walkEst, FREETOOL_DAILY_CAP_USD))) {
+        console.warn(`[freetool-cap] BLOCKED simwalk — daily free-tool budget $${FREETOOL_DAILY_CAP_USD} reached (ip=${ip})`)
+        return json({ error: "The Sims are busy right now — please try again in a few minutes." }, 429)
+      }
+      // Anything that throws past this point must hand the reservation back, or a burst of failures
+      // silently burns the whole day's free-tool budget without a single model call landing.
+      let walkSpent = 0
+      try {
+        // Step 2 — the cast.
+        let castPersonas: any[] = []
+        try {
+          const { content } = await chat(
+            [{ role: "system", content: personaSiteSys(String(walkSims)) },
+             { role: "user", content: "Page URL: " + walkUrl + "\n\nPage text:\n" + walkText }],
+            1600, true, { type: "persona", feature: "simwalk", email: null },
+          )
+          walkSpent += DEFAULT_AI_CALL_EST_USD
+          castPersonas = (parseJSON(content).personas || []).slice(0, walkSims)
+        } catch (e: any) {
+          console.error("[simwalk] cast generation failed:", e?.message || e)
+          return json({ error: "Couldn't work out who your customers are from that page — the scan below still ran." }, 503)
+        }
+        if (!castPersonas.length) return json({ error: "No Sims came back for that page — the scan below still ran." }, 503)
+
+        // Step 3 — ONE full-page capture, shared by the model and the client.
+        let walkShot: { imageB64: string; mediaType: "image/jpeg" }
+        try {
+          walkShot = await screenshotUrl(walkUrl, { fullPage: true, quality: 62, navTimeoutMs: 20_000, shotTimeoutMs: 20_000, settleMs: 1_200 })
+        } catch (e: any) {
+          console.warn("[simwalk] screenshot failed:", e?.message || e)
+          return json({ error: "Couldn't open that page in a browser to walk it. The scan below still ran." }, 503)
+        }
+        // A very long page can produce an image too big to send to a vision model. Refusing is
+        // better than silently truncating: a truncated image would make every region wrong.
+        if (walkShot.imageB64.length > AI_DEMO_MAX_IMG_B64) {
+          return json({ error: "That page is too tall for the Sims to walk in one pass. The scan below still ran." }, 503)
+        }
+
+        // Step 4 — every Sim reacts to the SAME capture, concurrently. One Sim failing must not sink
+        // the scene: a walk with two of three Sims talking is still a walk.
+        const batches = await Promise.all(castPersonas.map(async (persona: any) => {
+          try {
+            const rr = await reactToPage(persona, walkShot.imageB64, walkShot.mediaType, walkUrl, { email: null })
+            walkSpent += DEFAULT_AI_CALL_EST_USD
+            return { persona, reactions: rr.data?.reactions || [] }
+          } catch (e: any) {
+            console.warn("[simwalk] sim reaction failed:", e?.message || e)
+            return { persona, reactions: [] }
+          }
+        }))
+
+        const walk = assembleWalk(batches, { maxBeats: SIMWALK_MAX_BEATS })
+        if (!walk.beats.length) return json({ error: "The Sims couldn't finish reading that page. The scan below still ran." }, 503)
+
+        const body = {
+          url: walkUrl,
+          screenshot: { b64: walkShot.imageB64, mediaType: walkShot.mediaType },
+          cast: walk.cast,
+          beats: walk.beats,
+          anchored: walk.anchored,
+        }
+        simWalkCacheSet(walkUrl, body)
+        console.log(`[simwalk] url=${walkUrl} sims=${walk.cast.length} beats=${walk.beats.length} anchored=${walk.anchored}`)
+        return json(body)
+      } catch (e: any) {
+        console.error("[simwalk] failed:", e?.message || e)
+        return json({ error: "The walk-through couldn't run. The scan below still ran." }, 503)
+      } finally {
+        // Settle the reservation against what actually ran (a denied/failed walk gives it all back).
+        void reconcileFreeToolSpend(walkEst, walkSpent).catch(() => {})
+      }
     }
 
     // POST /api/cro/unlock — capture email to unlock the full report. Anonymous. Shared by /cro and
@@ -8467,11 +8645,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (text.length < 40) return json({ error: "That page didn't have enough text to read." }, 400)
           // simClass: "user" = operates the product hands-on; "client" = judges outcomes/business results.
           // Site-inferred Sims default to "user" unless the page clearly targets exec/buyer audiences.
-          const sys = "From the text of a product's public web page, infer 2-3 DISTINCT believable user personas (\"Sims\") who would use or evaluate it, grounded in what the page actually says (audience, pricing, features). Invent plausible first+last names and roles. " +
-            "Classify each on two axes: simClass (\"user\" = actually OPERATES the product hands-on, feedback skews UI/interaction; " +
-            "\"client\" = evaluates OVERALL outcomes and business results, feedback skews feature/workflow/strategy — only assign \"client\" when the persona clearly describes an executive, buyer, or outcome-judging stakeholder) " +
-            "and side (\"external\" = customer/partner outside the team; \"internal\" = on the product/company team). " +
-            "Respond with ONLY a JSON object, no prose: {\"personas\":[{\"name\":string,\"role\":string,\"simClass\":\"user\"|\"client\",\"side\":\"external\"|\"internal\",\"initials\":string(2 uppercase letters),\"accent\":string(hex colour like #6366f1),\"summary\":string,\"insights\":[{\"kind\":\"pain\"|\"want\"|\"love\",\"text\":string,\"quote\":string}]}]} with 2-3 personas, each with exactly 3 insights; each quote is a short first-person line that persona might say."
+          const sys = personaSiteSys("2-3")
           const { content, usage } = await chat([{ role: "system", content: sys }, { role: "user", content: "Page URL: " + siteUrl + "\n\nPage text:\n" + text }], 1600, true, { type: "persona", email: meS })
           const data = parseJSON(content)
           // Ensure simClass/side are always set on each persona: default to "user"/"external" for site-inferred Sims.
