@@ -817,6 +817,25 @@ export async function applySchema(c: Client) {
      )`,
     `CREATE INDEX IF NOT EXISTS pcr_code_idx ON partner_code_redemptions (code, redeemed_at)`,
     `CREATE INDEX IF NOT EXISTS pcr_account_idx ON partner_code_redemptions (account_id, redeemed_at)`,
+    // ── KLAVITYKLA-352: Security audit log — immutable, append-only record of security-sensitive
+    // actions (login, member invite/revoke, role change, connector config, GDPR export/erasure,
+    // project/account deletion). Never updated or deleted by application code.
+    // meta_json carries action-specific context (e.g. { role:'admin', from:'member' }).
+    // ip is the client IP at action time (null for server-side actions).
+    `CREATE TABLE IF NOT EXISTS audit_log (
+       id TEXT PRIMARY KEY,
+       created_at INTEGER NOT NULL,
+       action TEXT NOT NULL,
+       actor_email TEXT NOT NULL,
+       target_email TEXT,
+       project_id TEXT,
+       account_id TEXT,
+       meta_json TEXT,
+       ip TEXT)`,
+    `CREATE INDEX IF NOT EXISTS audit_log_created_idx ON audit_log (created_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS audit_log_actor_idx ON audit_log (actor_email, created_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS audit_log_project_idx ON audit_log (project_id, created_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS audit_log_action_idx ON audit_log (action, created_at DESC)`,
   ]
   // Boot-time fix: run the whole static CREATE TABLE/INDEX block as ONE batched round-trip instead
   // of ~150 sequential `await c.execute(s)` calls. Against REMOTE Turso those 150 round-trips cost
