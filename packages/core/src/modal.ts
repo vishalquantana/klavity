@@ -94,6 +94,16 @@ export interface SuccessCopy {
   showCta: boolean
 }
 
+// KLAVITYKLA-241 (JTBD A.11): a known/recurring issue matched against the reporter's in-progress prose.
+// Returned by onCheckKnown so the composer can render a pre-submit "we already know about this" ack.
+export interface KnownIssueMatch {
+  title: string          // short display title of the known issue
+  statusLabel: string    // human status ("open", "in progress", "fixed", "reopened", ...)
+  count?: number         // total occurrences (≥2 means recurring)
+  regressed?: boolean    // true when the issue was fixed then broke again
+  headline?: string      // optional amplified recurrence headline ("Keeps coming back · 3x")
+}
+
 export interface ModalCallbacks {
   // Each capture callback may return a raw dataUrl (legacy) or { dataUrl, quality } (JTBD 1.9). The quality
   // tag drives the thumbnail badge + the "Retake sharp" affordance. onCaptureFull is 'rendered'/'wireframe'
@@ -116,6 +126,13 @@ export interface ModalCallbacks {
   // (or null if cancelled). The selector rides along as annotations.selector so the finding is pinned to
   // the exact DOM node. Widget-only — the extension omits it (no button rendered), preserving parity.
   onPickElement?: () => Promise<string | null>
+  // KLAVITYKLA-241 (JTBD A.11): optional pre-submit known-issue check. When provided, the composer
+  // calls it (debounced) as the reporter types a description. Given the current text, it resolves the
+  // closest matching known/recurring issue for this project — or null when nothing matches. On a match,
+  // an inline acknowledgment appears above Submit ("Already reported — status: X") so the user isn't
+  // filing a duplicate blind; they can still submit (their report bumps the known issue's recurrence)
+  // or dismiss the note. Widget/host-only — the extension omits it, preserving parity.
+  onCheckKnown?: (description: string) => Promise<KnownIssueMatch | null>
   onSubmit: (payload: {
     type: ReportType
     description: string
@@ -361,6 +378,18 @@ export function buildModal(
     .klavity-desc-hint{display:flex;align-items:center;gap:6px;margin:-8px 0 14px;font-size:12.5px;color:var(--kl-muted);line-height:1.4;}
     .klavity-desc-hint[hidden]{display:none;}
     .klavity-desc-hint .icon{color:var(--kl-accent);flex:none;}
+    /* KLAVITYKLA-241 (JTBD A.11): pre-submit "we already know about this" acknowledgment. Appears above
+       Submit when the typed description matches a known/recurring issue. Non-blocking — the user can still
+       submit or dismiss. Uses a muted-info tone (not an error) so it reassures rather than alarms. */
+    .klavity-known{display:flex;align-items:flex-start;gap:8px;margin:-6px 0 14px;padding:10px 12px;font-size:12.5px;line-height:1.45;color:var(--kl-fg);background:color-mix(in srgb,var(--kl-accent) 8%,var(--kl-input-bg));border:1px solid color-mix(in srgb,var(--kl-accent) 30%,var(--kl-border));border-radius:8px;}
+    .klavity-known[hidden]{display:none;}
+    .klavity-known .kl-known-ic{color:var(--kl-accent);flex:none;margin-top:1px;}
+    .klavity-known .kl-known-body{flex:1;min-width:0;}
+    .klavity-known .kl-known-title{font-weight:600;}
+    .klavity-known .kl-known-status{color:var(--kl-accent);font-weight:600;}
+    .klavity-known .kl-known-dismiss{flex:none;background:none;border:none;color:var(--kl-muted);cursor:pointer;font-size:11px;padding:2px 4px;border-radius:6px;line-height:1;text-decoration:underline;}
+    .klavity-known .kl-known-dismiss:hover{color:var(--kl-fg);}
+    .klavity-known .kl-known-dismiss:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
     input.klavity-remail{width:100%;background:var(--kl-input-bg);color:var(--kl-fg);border:1px solid var(--kl-border);border-radius:8px;padding:10px;font-size:14px;margin-bottom:10px;box-sizing:border-box;box-shadow:0 1px 2px rgba(25,20,15,.04);}
     .klavity-submit{width:100%;min-height:40px;padding:12px;background:var(--kl-accent);color:var(--kl-on-accent);border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;}
     .klavity-submit:disabled{opacity:.5;cursor:not-allowed;}
@@ -522,6 +551,7 @@ export function buildModal(
       <div class="klavity-error" id="klavity-err"></div>
       <textarea class="klavity-desc" id="klavity-desc" placeholder="${initialType === 'feature' ? "Describe the feature you'd like..." : 'Describe the bug...'}"></textarea>
       <div class="klavity-desc-hint" id="klavity-desc-hint" hidden>${icon('sparkles', { size: 13 })}<span>No title needed — we'll auto-generate one for you</span></div>
+      ${callbacks.onCheckKnown ? `<div class="klavity-known" id="klavity-known" role="status" aria-live="polite" hidden></div>` : ''}
       ${callbacks.requireEmail ? '<input type="email" class="klavity-remail" id="klavity-remail" placeholder="your@email.com" autocomplete="email">' : ''}
       <button class="klavity-submit" id="klavity-submit" title="Submit (S)" disabled>Submit</button>
       <div class="klavity-progress" id="klavity-progress" role="progressbar" aria-label="Uploading report"><div class="klavity-progress-fill" id="klavity-progress-fill"></div></div>
@@ -847,6 +877,51 @@ export function buildModal(
   }
   desc.addEventListener('input', refreshSubmit)
   remail?.addEventListener('input', refreshSubmit)
+
+  // KLAVITYKLA-241 (JTBD A.11): pre-submit known-issue acknowledgment. As the reporter types, debounce a
+  // lookup for a matching known/recurring issue and, on a hit, surface an inline "Already reported —
+  // status: X" note above Submit. Non-blocking: the user can still submit (their report links to / bumps
+  // the known issue) or dismiss the note. Only wired when the host supplied onCheckKnown (widget/host
+  // path; the extension omits it, preserving parity). A lookup failure never blocks the composer.
+  if (callbacks.onCheckKnown) {
+    const knownEl = modal.querySelector('#klavity-known') as HTMLElement | null
+    const onCheckKnown = callbacks.onCheckKnown
+    let knownTimer: ReturnType<typeof setTimeout> | null = null
+    let knownSeq = 0            // guards against out-of-order async responses
+    let dismissedText = ''      // text the user dismissed the note for — don't re-nag identical text
+    const hideKnown = () => { if (knownEl) { knownEl.hidden = true; knownEl.textContent = '' } }
+    const renderKnown = (m: KnownIssueMatch) => {
+      if (!knownEl) return
+      const lead = m.headline ? escHtml(m.headline) : 'Already reported'
+      knownEl.innerHTML =
+        `<span class="kl-known-ic">${icon('check-circle', { size: 15 })}</span>` +
+        `<div class="kl-known-body"><span class="kl-known-title">${lead}</span> — status: ` +
+        `<span class="kl-known-status">${escHtml(m.statusLabel)}</span>. ` +
+        `We're already tracking "${escHtml(m.title)}". Add your note and submit anyway — it'll be linked.</div>` +
+        `<button type="button" class="kl-known-dismiss" id="klavity-known-dismiss">Dismiss</button>`
+      knownEl.hidden = false
+      knownEl.querySelector('#klavity-known-dismiss')?.addEventListener('click', () => {
+        dismissedText = desc.value.trim()
+        hideKnown()
+      })
+    }
+    const runKnownCheck = async () => {
+      const text = desc.value.trim()
+      if (text.length < 12 || text === dismissedText) { hideKnown(); return }
+      const seq = ++knownSeq
+      try {
+        const match = await onCheckKnown(text)
+        if (seq !== knownSeq) return                       // a newer keystroke superseded this response
+        if (desc.value.trim() === dismissedText) { hideKnown(); return }
+        if (match) renderKnown(match); else hideKnown()
+      } catch { /* best-effort — a lookup failure never blocks the composer */ }
+    }
+    desc.addEventListener('input', () => {
+      if (desc.value.trim() !== dismissedText) dismissedText = ''  // content changed → allow a fresh nudge
+      if (knownTimer) clearTimeout(knownTimer)
+      knownTimer = setTimeout(runKnownCheck, 500)
+    })
+  }
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close() })
   modal.querySelector('#klavity-x')?.addEventListener('click', () => close())
 

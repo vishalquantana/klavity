@@ -543,6 +543,22 @@ async function mount() {
       // hides itself, the picker highlights elements on hover, and the click resolves a robust CSS selector
       // pinned to the report as annotations.selector (the server sanitizer + ticket drawer already read it).
       onPickElement: pickElementOnPage,
+      // KLAVITYKLA-241 (JTBD A.11): pre-submit known-issue check. As the reporter types, ask the backend
+      // whether this project already tracks a matching known/recurring issue; on a hit the composer shows
+      // an inline "Already reported — status: X" note (the user can still submit or dismiss). Best-effort:
+      // any failure resolves null so the composer is never blocked by the lookup.
+      onCheckKnown: async (description: string) => {
+        try {
+          const res = await fetchWithTimeout(cfg.backendUrl + "/api/widget/known-check", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ project: cfg.projectId, text: description, url: location.href }),
+          })
+          if (!res.ok) return null
+          const data = await res.json().catch(() => null)
+          return (data && data.match) ? data.match : null
+        } catch { return null }
+      },
       requireEmail,
       // Pre-compress each screenshot as soon as it's captured (runs while the user types their
       // description). By submit time the Promise is settled → zero compression delay before upload.
