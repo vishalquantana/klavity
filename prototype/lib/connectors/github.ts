@@ -1,5 +1,20 @@
-import type { Connector, TicketPayload, ExportResult, CommentSyncResult, FieldUpdate, FieldSyncResult } from "./index"
+import type { Connector, TicketPayload, ExportResult, CommentSyncResult, FieldUpdate, FieldSyncResult, ImportedIssue } from "./index"
 import { safeFetch } from "../safe-fetch"
+
+// JTBD 5.10: GitHub has no native priority. Our outbound export encodes Klavity priority as a
+// conventional `priority:<value>` label (see githubLabels). On IMPORT we read that convention back so
+// an issue we previously exported (or one a team labelled by hand) keeps its priority; issues with no
+// such label degrade to null (unset). Only the four Klavity values are recognised.
+const KLAVITY_PRIORITIES = new Set(["urgent", "high", "medium", "low"])
+function priorityFromGithubLabels(labels: any): string | null {
+  if (!Array.isArray(labels)) return null
+  for (const l of labels) {
+    const name = typeof l === "string" ? l : String(l?.name ?? "")
+    const m = /^priority:(.+)$/i.exec(name.trim())
+    if (m && KLAVITY_PRIORITIES.has(m[1].toLowerCase())) return m[1].toLowerCase()
+  }
+  return null
+}
 
 // JTBD 5.7: GitHub Issues has no native priority field, so we carry Klavity priority as a
 // conventional `priority:<value>` label alongside the ticket's classification labels. GitHub only
@@ -184,5 +199,59 @@ export const githubConnector: Connector = {
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) }
     }
+  },
+
+  // listIssues (JTBD 5.10): fetch recent repo issues to import as Klavity tickets.
+  //   GET https://api.github.com/repos/{owner}/{repo}/issues?state=all&sort=created&direction=desc&per_page=N
+  // GitHub's issues endpoint also returns PULL REQUESTS (they carry a `pull_request` key) — we skip
+  // those so imports stay issues-only. externalKey is `#${number}` to match createIssue exactly, so
+  // re-import dedupes against ticket_exports. Priority is recovered from a `priority:<x>` label.
+  async listIssues(cfg: Record<string, string>, opts?: { limit?: number }): Promise<ImportedIssue[]> {
+    const { owner, repo, token } = cfg
+    if (!owner || !repo || !token) throw new Error("github listIssues: missing owner/repo/token in config")
+
+    // Clamp to GitHub's page maximum (100); default a sensible recent window.
+    const limit = Math.max(1, Math.min(100, opts?.limit ?? 50))
+    const url = `https://api.github.com/repos/${owner}/${repo}/issues?state=all&sort=created&direction=desc&per_page=${limit}`
+
+    // Host is fixed (api.github.com); owner/repo are user path segments. safeFetch pins to github.com
+    // and re-validates every redirect hop so a crafted owner/repo can't move the request host.
+    const res = await safeFetch(
+      url,
+      {
+        method: "GET",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Accept": "application/vnd.github+json",
+          "User-Agent": "Klavity",
+        },
+      },
+      { allowHosts: ["github.com"] },
+    )
+
+    if (!res.ok) {
+      const text = (await res.text().catch(() => "")).slice(0, 200)
+      console.error(`github listIssues error ${res.status}: ${text}`)
+      throw new Error(`tracker request failed (HTTP ${res.status})`)
+    }
+
+    const json = await res.json()
+    const rows: any[] = Array.isArray(json) ? json : []
+    const out: ImportedIssue[] = []
+    for (const r of rows) {
+      if (r?.pull_request) continue // skip PRs — GitHub lists them alongside issues
+      if (r?.number == null) continue
+      const createdAt = r?.created_at ? Date.parse(String(r.created_at)) : NaN
+      out.push({
+        externalKey: `#${r.number}`,
+        externalUrl: r?.html_url != null ? String(r.html_url) : null,
+        title: String(r?.title ?? `Issue #${r.number}`),
+        body: r?.body != null ? String(r.body) : "",
+        priority: priorityFromGithubLabels(r?.labels),
+        status: r?.state != null ? String(r.state) : null, // "open" | "closed"
+        createdAt: Number.isFinite(createdAt) ? createdAt : Date.now(),
+      })
+    }
+    return out
   },
 }
