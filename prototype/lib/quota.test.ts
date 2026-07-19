@@ -121,7 +121,7 @@ test("flag ON, free plan, sim_review at 24/25 (one below limit): allow, not degr
   expect(r.limit).toBe(25)
 })
 
-test("flag ON, free plan, autosim_walk under limit (0/1): allow, not degraded", async () => {
+test("flag ON, free plan, autosim_walk under limit (0/10): allow, not degraded", async () => {
   setEnforcement(true)
   mockAccountPlan = async () => "free"
   mockGetAccountUsageMap = async () => ({})
@@ -129,7 +129,32 @@ test("flag ON, free plan, autosim_walk under limit (0/1): allow, not degraded", 
   expect(r.allow).toBe(true)
   expect(r.degraded).toBe(false)
   expect(r.usage).toBe(0)
-  expect(r.limit).toBe(1)    // free.autosimFlows
+  expect(r.limit).toBe(10)   // free.autosimRunsMonthly (KLAVITYKLA-359)
+})
+
+// KLAVITYKLA-359: autosim_walk is a monthly RUN count, so it must be checked against the monthly
+// run cap — not autosimFlows, which is the configured-flow allowance.
+test("autosim_walk is measured against the monthly run cap, not the configured-flow allowance", async () => {
+  setEnforcement(true)
+  mockGetAccountUsageMap = async () => ({})
+  for (const [plan, runs, flows] of [["free", 10, 1], ["pro", 150, 5], ["team", 600, 20], ["agency", 1500, 50]] as const) {
+    mockAccountPlan = async () => plan
+    const r = await checkQuota(ACCOUNT, "autosim_walk")
+    expect(r.limit).toBe(runs)
+    expect(r.limit).not.toBe(flows)
+  }
+})
+
+// A run volume that used to trip the old flow-count limit must now pass cleanly.
+test("flag ON, pro plan, 12 autosim walks: not degraded (was over the old flows-based limit of 5)", async () => {
+  setEnforcement(true)
+  mockAccountPlan = async () => "pro"
+  mockGetAccountUsageMap = async () => ({ autosim_walk: 12 })
+  const r = await checkQuota(ACCOUNT, "autosim_walk")
+  expect(r.allow).toBe(true)
+  expect(r.degraded).toBe(false)
+  expect(r.usage).toBe(12)
+  expect(r.limit).toBe(150)
 })
 
 test("flag ON, pro plan, sim_review at 499/500: allow, not degraded", async () => {
@@ -170,25 +195,25 @@ test("flag ON, free plan, sim_review over limit (50/25): degraded=true, allow st
   expect(r.limit).toBe(25)
 })
 
-test("flag ON, free plan, autosim_walk over limit (5/1): degraded=true, allow still true", async () => {
+test("flag ON, free plan, autosim_walk over limit (20/10): degraded=true, allow still true", async () => {
   setEnforcement(true)
   mockAccountPlan = async () => "free"
-  mockGetAccountUsageMap = async () => ({ autosim_walk: 5 })
+  mockGetAccountUsageMap = async () => ({ autosim_walk: 20 })
   const r = await checkQuota(ACCOUNT, "autosim_walk")
   expect(r.allow).toBe(true)
   expect(r.degraded).toBe(true)
   expect(r.reason).toContain("autosim_walk")
-  expect(r.limit).toBe(1)   // free.autosimFlows
+  expect(r.limit).toBe(10)   // free.autosimRunsMonthly
 })
 
-test("flag ON, pro plan, autosim_walk at limit (5/5): degraded=true", async () => {
+test("flag ON, pro plan, autosim_walk at limit (150/150): degraded=true", async () => {
   setEnforcement(true)
   mockAccountPlan = async () => "pro"
-  mockGetAccountUsageMap = async () => ({ autosim_walk: 5 })
+  mockGetAccountUsageMap = async () => ({ autosim_walk: 150 })
   const r = await checkQuota(ACCOUNT, "autosim_walk")
   expect(r.allow).toBe(true)
   expect(r.degraded).toBe(true)
-  expect(r.limit).toBe(5)   // pro.autosimFlows
+  expect(r.limit).toBe(150)  // pro.autosimRunsMonthly
 })
 
 // ── Unlimited plans (scale/partner) → always allow ─────────────────────────

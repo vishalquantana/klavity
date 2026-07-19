@@ -26,16 +26,30 @@ export const STRIPE_PRICE_CATALOG: Record<Exclude<BillingPlan, "free" | "scale" 
 
 // founding mirrors Pro's quotas (same $290/yr price point as Pro annual) — at-or-above Pro per
 // KLAVITYKLA-336. Bump independently later if Founding members should get more.
-export const PLAN_QUOTAS: Record<BillingPlan, { projects: number | null; sims: number | null; simReactionsMonthly: number | null; autosimFlows: number | null; autosimCadence: string }> = {
-  free: { projects: 1, sims: 1, simReactionsMonthly: 25, autosimFlows: 1, autosimCadence: "weekly" },
-  pro: { projects: 5, sims: 5, simReactionsMonthly: 500, autosimFlows: 5, autosimCadence: "daily" },
-  founding: { projects: 5, sims: 5, simReactionsMonthly: 500, autosimFlows: 5, autosimCadence: "daily" },
-  team: { projects: null, sims: 20, simReactionsMonthly: 2500, autosimFlows: 20, autosimCadence: "on-deploy/hourly" },
+//
+// Two DIFFERENT AutoSim allowances live here — don't confuse them (KLAVITYKLA-359):
+//   • autosimFlows        — how many AutoSim/Trail flows you may have CONFIGURED at once (a stock).
+//   • autosimRunsMonthly  — how many AutoSim walks may EXECUTE in a calendar month (a flow).
+// The metered "autosim_walk" counter is a monthly RUN count, so it must be measured against
+// autosimRunsMonthly; measuring it against autosimFlows produced nonsense meters like "12 / 5 flows".
+//
+// autosimRunsMonthly is derived from flows × the plan's cadence, with headroom for manual re-runs:
+//   free   1 flow  × weekly (~4.3 runs/mo)  → 10   (auto-cadence + a few manual pokes)
+//   pro    5 flows × daily  (~30 runs/mo)   → 150  (5 × 30)
+//   team   20 flows × ~daily                → 600  (kept at ~30/flow so an hourly cadence can't
+//                                                   silently blow the unit economics)
+//   agency 50 flows × ~daily                → 1500 (50 × 30)
+// Ratio to simReactionsMonthly stays sane across tiers (~2.5–3.3× reviews per run allowance).
+export const PLAN_QUOTAS: Record<BillingPlan, { projects: number | null; sims: number | null; simReactionsMonthly: number | null; autosimFlows: number | null; autosimRunsMonthly: number | null; autosimCadence: string }> = {
+  free: { projects: 1, sims: 1, simReactionsMonthly: 25, autosimFlows: 1, autosimRunsMonthly: 10, autosimCadence: "weekly" },
+  pro: { projects: 5, sims: 5, simReactionsMonthly: 500, autosimFlows: 5, autosimRunsMonthly: 150, autosimCadence: "daily" },
+  founding: { projects: 5, sims: 5, simReactionsMonthly: 500, autosimFlows: 5, autosimRunsMonthly: 150, autosimCadence: "daily" },
+  team: { projects: null, sims: 20, simReactionsMonthly: 2500, autosimFlows: 20, autosimRunsMonthly: 600, autosimCadence: "on-deploy/hourly" },
   // Agency (KLAVITYKLA-310): unlimited client projects; Sims/AutoSim allowances above Team so an
   // agency can cover many clients without immediately hitting Scale.
-  agency: { projects: null, sims: 50, simReactionsMonthly: 5000, autosimFlows: 50, autosimCadence: "on-deploy/hourly" },
-  scale: { projects: null, sims: null, simReactionsMonthly: null, autosimFlows: null, autosimCadence: "custom" },
-  partner: { projects: null, sims: null, simReactionsMonthly: null, autosimFlows: null, autosimCadence: "unlimited" },
+  agency: { projects: null, sims: 50, simReactionsMonthly: 5000, autosimFlows: 50, autosimRunsMonthly: 1500, autosimCadence: "on-deploy/hourly" },
+  scale: { projects: null, sims: null, simReactionsMonthly: null, autosimFlows: null, autosimRunsMonthly: null, autosimCadence: "custom" },
+  partner: { projects: null, sims: null, simReactionsMonthly: null, autosimFlows: null, autosimRunsMonthly: null, autosimCadence: "unlimited" },
 }
 
 export function billingEnforcementEnabled(): boolean {
@@ -66,7 +80,10 @@ export function buildUsageMeters(plan: string | null | undefined, usage: Record<
   const q = PLAN_QUOTAS[normalizePlan(plan)]
   const defs: Array<{ key: UsageMeterView["key"]; metric: UsageMeterView["metric"]; label: string; limit: number | null }> = [
     { key: "sims", metric: "sim_review", label: "Sim reviews", limit: q.simReactionsMonthly },
-    { key: "autosim", metric: "autosim_walk", label: "AutoSim runs", limit: q.autosimFlows },
+    // KLAVITYKLA-359: autosim_walk is a MONTHLY RUN count, so it goes against autosimRunsMonthly —
+    // the monthly run cap — NOT autosimFlows (the configured-flow allowance). The flows allowance is
+    // still shown as its own line in the plan-limits copy; it is not a denominator for runs.
+    { key: "autosim", metric: "autosim_walk", label: "AutoSim runs", limit: q.autosimRunsMonthly },
   ]
   return defs.map((d) => {
     const raw = Number(usage?.[d.metric])

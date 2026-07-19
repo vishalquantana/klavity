@@ -28,13 +28,19 @@ export type QuotaMetric = "sim_review" | "autosim_walk"
 //
 // PLAN_QUOTAS shape (from billing.ts):
 //   simReactionsMonthly — monthly cap for "sim_review" events
-//   autosimFlows        — monthly cap for "autosim_walk" events
+//   autosimRunsMonthly  — monthly cap for "autosim_walk" events (KLAVITYKLA-359)
+//
+// KLAVITYKLA-359: autosim_walk used to be compared against `autosimFlows`, which is the
+// CONFIGURED-FLOW allowance (a stock), not a monthly run cap (a flow) — so a Free account would
+// have "used up" its quota after a single walk. It now points at the dedicated monthly run cap.
+// This mapping change is strictly MORE permissive at every tier (10 ≥ 1, 150 ≥ 5, 600 ≥ 20,
+// 1500 ≥ 50) and the whole path is still dark behind KLAV_ENFORCE_QUOTA, so nothing new can block.
 //
 // null means unlimited (scale/partner — also handled via planIsUnlimited branch below).
 
 const METRIC_TO_QUOTA_KEY: Record<QuotaMetric, keyof typeof PLAN_QUOTAS[keyof typeof PLAN_QUOTAS]> = {
   sim_review:    "simReactionsMonthly",
-  autosim_walk:  "autosimFlows",
+  autosim_walk:  "autosimRunsMonthly",
 }
 
 // ─── Result type ─────────────────────────────────────────────────────────────

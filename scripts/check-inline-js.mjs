@@ -3,10 +3,17 @@
 // in user-facing HTML fails to parse. Catches the smart-quote corruption class
 // (e.g. `let x = ‘widget’`) that silently killed /onboarding signup on prod.
 // JSON-LD / JSON / src= scripts are skipped. Run: node scripts/check-inline-js.mjs
-import { readFileSync, writeFileSync, readdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, readdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+
+// Per-invocation scratch dir. A FIXED temp path here caused concurrent runs
+// (multi-agent workspace) to clobber each other's file mid-check, producing
+// random bogus SyntaxError FAILs *and* silent FALSE PASSes. Never share it.
+const TMPDIR = mkdtempSync(join(tmpdir(), 'klav-inline-check-'))
+let tmpSeq = 0
+process.on('exit', () => { try { rmSync(TMPDIR, { recursive: true, force: true }) } catch {} })
 
 const DIRS = ['site', 'prototype/public']
 const SCRIPT_RE = /<script([^>]*)>([\s\S]*?)<\/script>/gi
@@ -34,7 +41,7 @@ for (const dir of DIRS) {
         if (isModule) {
           execFileSync('node', ['--input-type=module', '--check'], { input: js, stdio: 'pipe' })
         } else {
-          const tmp = join(tmpdir(), 'klav-inline-check.js')
+          const tmp = join(TMPDIR, `s${tmpSeq++}.js`)
           writeFileSync(tmp, js)
           execFileSync('node', ['--check', tmp], { stdio: 'pipe' })
         }
