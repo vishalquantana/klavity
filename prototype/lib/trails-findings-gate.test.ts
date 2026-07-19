@@ -187,6 +187,36 @@ test("buildTicketFromFinding embeds grounded evidence + heal diff", () => {
   expect(t.klavityUrl).toContain("/trails?project=proj_z")
 })
 
+// ── KLA-231 (JTBD 1.14): evidence-rich auto-file — selector + reproduction + replay receipts ──
+test("findingSelector picks the selector from whichever evidence key a finding class populated", () => {
+  // ambiguous-selector finding → `selector`
+  expect(G.findingSelector({ evidence: { selector: "button.buy" } } as any)).toBe("button.buy")
+  // element-gone finding → fingerprint.domPath (no explicit selector)
+  expect(G.findingSelector({ evidence: { fingerprint: { domPath: "main > form input" } } } as any)).toBe("main > form input")
+  // heal finding → toSelector
+  expect(G.findingSelector({ evidence: { toSelector: "#new-cta" } } as any)).toBe("#new-cta")
+  // nothing locatable → null
+  expect(G.findingSelector({ evidence: {} } as any)).toBeNull()
+})
+
+test("buildTicketFromFinding attaches selector + reproduction receipts; replay line only when a recording exists", () => {
+  const finding = {
+    id: "find_2", projectId: "proj_z", runId: "walk_9", stepId: "tstep_1", trailId: "trl_1",
+    kind: "regression", title: "Add-to-cart selector ambiguous",
+    evidence: { selector: "button.add", matchCount: 3 },
+    groundQuote: null, confidence: 1, dedupKey: "k2", recurrence: 1, status: "queued",
+    connectorRef: null, connectorError: null, createdAt: 1, updatedAt: 1,
+  } as any
+  // Without a replay: selector + reproduction link present, no replay line.
+  const noReplay = G.buildTicketFromFinding(finding, "https://klavity.in")
+  expect(noReplay.body).toContain("Selector: button.add")
+  expect(noReplay.body).toContain("/api/trails/walks/walk_9/report.pdf")
+  expect(noReplay.body).not.toContain("Session replay")
+  // With a replay: the session-replay link is emitted too.
+  const withReplay = G.buildTicketFromFinding(finding, "https://klavity.in", { hasReplay: true })
+  expect(withReplay.body).toContain("Session replay: https://klavity.in/api/trails/walks/walk_9/replay")
+})
+
 test("realFiler returns null when the project has no auto-copy connector", async () => {
   const r = await G.realFiler("proj_no_connector", { id: "find_x" } as any)
   expect(r).toBeNull()

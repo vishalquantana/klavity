@@ -1268,6 +1268,16 @@ async function feedbackToTicketPayload(fb: any, project: { id: string; name?: st
       if (tl) lines.push(tl)
     } catch (e: any) { console.warn("occurrence timeline for export skipped (non-fatal):", e?.message || e) }
   }
+  // KLA-231 (JTBD 1.14): session-replay link — the widget/SDK attaches a rolling rrweb buffer to
+  // reports, so an auto-filed ticket should point at the recording (played in the ticket drawer) when
+  // one exists. Best-effort: a replay lookup failure must never block the export.
+  if (fb.id) {
+    try {
+      const pid = String(fb.projectId || project.id)
+      const withReplay = await feedbackIdsWithReplay(pid, [String(fb.id)])
+      if (withReplay.has(String(fb.id))) lines.push(`Session replay: ${BASE}/dashboard?project=${pid}&ticket=${fb.id}`)
+    } catch (e: any) { console.warn("replay link for export skipped (non-fatal):", e?.message || e) }
+  }
   lines.push("Filed by Klavity")
   const body = lines.join("\n\n")
   return {
@@ -4854,9 +4864,16 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const data = await trailsDashboardData(projectId)
           // Annotate each recent Walk with whether it has a saved rrweb replay (one project-scoped
           // query) so the dashboard shows the "▶ Replay" affordance only where there's a recording.
-          const haveReplay = await runsWithReplay(projectId, data.recentWalks.map((w) => w.id))
+          // KLA-231: also cover the review-queue findings' runIds in the same lookup so each
+          // finding-evidence card can show a "Session replay" link only where a recording exists.
+          const replayRunIds = Array.from(new Set([
+            ...data.recentWalks.map((w) => w.id),
+            ...data.queue.map((f) => f.runId).filter(Boolean),
+          ]))
+          const haveReplay = await runsWithReplay(projectId, replayRunIds)
           const recentWalks = data.recentWalks.map((w) => ({ ...w, hasReplay: haveReplay.has(w.id) }))
-          return json({ email: meT, project: { id: projectId, role: resolved.access }, ...data, recentWalks })
+          const queue = data.queue.map((f) => ({ ...f, hasReplay: haveReplay.has(f.runId) }))
+          return json({ email: meT, project: { id: projectId, role: resolved.access }, ...data, recentWalks, queue })
         } catch (e) {
           return json(oops(e, "trails-dashboard"), 500)
         }
