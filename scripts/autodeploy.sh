@@ -106,6 +106,11 @@ flip_caddy() {
 [ -x "$BUN_BIN" ]        || { log "missing bun binary at $BUN_BIN"; exit 1; }
 
 cd "$REPO"
+# Under systemd, HOME may be unset and the checkout is owned by the deploy user, so git
+# refuses with "dubious ownership". Pin HOME and mark the repo safe so git ops work headless.
+export HOME="${HOME:-/root}"
+git config --global --add safe.directory "$REPO" 2>/dev/null || true
+
 previous="$(git rev-parse HEAD)"
 
 git fetch -q origin master
