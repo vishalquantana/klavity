@@ -62,47 +62,94 @@ export const planeConnector: Connector = {
     const seqId: string | null = json.sequence_id != null ? String(json.sequence_id) : null
 
     // ── Native screenshot attachment (pure ENHANCEMENT) ─────────────────────────────
-    // ASSUMED Plane attachment API — NEEDS E2E VERIFICATION against the actual deployed
-    // Plane version; falls back to the permanent body link if wrong.
-    //   Endpoint: POST {host}/api/v1/workspaces/{workspace}/projects/{project_id}/issues/{id}/issue-attachments/
-    //   Auth:     X-API-Key: {token}
-    //   Body:     multipart/form-data — field `asset` = Blob(bytes, contentType) + filename.
-    //             We let fetch set the multipart Content-Type boundary (do NOT set it manually).
+    // KLA-285 (JTBD 5.6): VERIFIED E2E 2026-07-19 against self-hosted Plane at plane.quantana.top
+    // (workspace qbuilder). Plane does NOT accept a direct multipart upload on this endpoint — the
+    // previous implementation POSTed `multipart/form-data` with an `asset` field and got a flat
+    // `HTTP 400 {"error":"Invalid request.","status":false}` every single time, so EVERY Plane
+    // export silently degraded to the body link. The real API is a 3-step presigned-S3 flow:
     //
-    // Plane's public REST attachment API is version-dependent and NOT fully stable, so the
-    // ENTIRE step is wrapped in try/catch and SWALLOWED on any failure: the issue already
-    // exists and its body carries a permanent signed fallback link to every screenshot, so a
-    // failed/absent upload must NEVER throw or alter the returned {externalKey, externalUrl}.
+    //   step 1  POST {host}/api/v1/workspaces/{ws}/projects/{proj}/issues/{id}/issue-attachments/
+    //           headers: X-API-Key, Content-Type: application/json
+    //           body:    { name, type, size }          ← JSON metadata only, NOT the bytes
+    //           → 200 { asset_id, attachment: { …, is_uploaded: false }, upload_data: { url, fields } }
+    //
+    //   step 2  POST upload_data.url  (an S3-compatible bucket endpoint)
+    //           body: multipart/form-data = every upload_data.fields entry, THEN `file` LAST.
+    //           → 204. S3 enforces the presigned policy, which pins content-length-range to exactly
+    //             the `size` declared in step 1 — a mismatch fails with EntityTooLarge (observed).
+    //             So `size` MUST be att.bytes.byteLength, never a recomputed or approximate value.
+    //
+    //   step 3  PATCH {…}/issue-attachments/{asset_id}/  body {}  → 204, flips is_uploaded: true.
+    //           WITHOUT this the row stays is_uploaded:false and Plane omits it from the issue's
+    //           attachment list entirely — i.e. skipping step 3 looks exactly like never uploading.
+    //
+    // The whole thing is best-effort: the issue already exists and its body carries a permanent
+    // signed fallback link to every screenshot, so a failure must NEVER throw or alter the returned
+    // {externalKey, externalUrl}. It is no longer SILENT though — see attachmentWarning (KLA-285).
+    const attachFailures: string[] = []
     if (ticket.attachments?.length) {
       const attachUrl = `${host}/api/v1/workspaces/${workspace}/projects/${project_id}/issues/${id}/issue-attachments/`
       for (const att of ticket.attachments) {
         try {
-          const form = new FormData()
-          // `asset` is the best-documented field name; some Plane builds expect `file`.
-          form.append("asset", new Blob([att.bytes], { type: att.contentType }), att.filename)
-          // Best-known metadata the API may require alongside the binary.
-          form.append(
-            "attributes",
-            JSON.stringify({ name: att.filename, type: att.contentType, size: att.bytes.byteLength }),
-          )
-
-          const aRes = await safeFetch(
+          // step 1 — reserve an asset and get the presigned POST form.
+          const reserveRes = await safeFetch(
             attachUrl,
             {
               method: "POST",
-              // NOTE: no Content-Type header — fetch derives the multipart boundary from FormData.
-              headers: { "X-API-Key": token },
-              body: form,
+              headers: { "Content-Type": "application/json", "X-API-Key": token },
+              body: JSON.stringify({
+                name: att.filename,
+                type: att.contentType,
+                size: att.bytes.byteLength,
+              }),
             },
             { allowLoopbackInTest: true },
           )
+          if (!reserveRes.ok) {
+            const text = (await reserveRes.text().catch(() => "")).slice(0, 200)
+            throw new Error(`reserve HTTP ${reserveRes.status}: ${text}`)
+          }
+          const reserve = await reserveRes.json()
+          const assetId: string | undefined = reserve?.asset_id
+          const uploadUrl: string | undefined = reserve?.upload_data?.url
+          const uploadFields: Record<string, string> = reserve?.upload_data?.fields ?? {}
+          if (!assetId || !uploadUrl) throw new Error("reserve returned no asset_id/upload_data.url")
 
-          if (!aRes.ok) {
-            const text = (await aRes.text().catch(() => "")).slice(0, 200)
-            console.warn(`plane attachment upload failed ${aRes.status}: ${text} (falling back to body link)`)
+          // step 2 — presigned POST of the raw bytes. Field order matters to S3: the policy fields
+          // must all precede `file`, and no Content-Type header may be set manually (fetch derives
+          // the multipart boundary).
+          const form = new FormData()
+          for (const [k, v] of Object.entries(uploadFields)) form.append(k, String(v))
+          form.append("file", new Blob([att.bytes], { type: att.contentType }), att.filename)
+
+          const putRes = await safeFetch(
+            uploadUrl,
+            { method: "POST", body: form },
+            { allowLoopbackInTest: true },
+          )
+          if (!putRes.ok) {
+            const text = (await putRes.text().catch(() => "")).slice(0, 200)
+            throw new Error(`storage upload HTTP ${putRes.status}: ${text}`)
+          }
+
+          // step 3 — mark uploaded, else Plane hides the attachment from the issue.
+          const commitRes = await safeFetch(
+            `${attachUrl}${assetId}/`,
+            {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json", "X-API-Key": token },
+              body: JSON.stringify({}),
+            },
+            { allowLoopbackInTest: true },
+          )
+          if (!commitRes.ok) {
+            const text = (await commitRes.text().catch(() => "")).slice(0, 200)
+            throw new Error(`commit HTTP ${commitRes.status}: ${text}`)
           }
         } catch (e) {
-          console.warn(`plane attachment upload error for ${att.filename}: ${String(e)} (falling back to body link)`)
+          const reason = e instanceof Error ? e.message : String(e)
+          console.warn(`plane attachment upload failed for ${att.filename}: ${reason} (falling back to body link)`)
+          attachFailures.push(`${att.filename}: ${reason}`)
         }
       }
     }
@@ -112,7 +159,13 @@ export const planeConnector: Connector = {
     const externalUrl = `${webBase}/${workspace}/projects/${project_id}/issues/${id}`
     const externalKey = seqId ?? id
 
-    return { externalKey, externalUrl }
+    return {
+      externalKey,
+      externalUrl,
+      attachmentWarning: attachFailures.length
+        ? `screenshot attach failed (${attachFailures.length}/${ticket.attachments?.length ?? 0}) — link included in body: ${attachFailures.join("; ").slice(0, 300)}`
+        : null,
+    }
   },
 
   // addComment: POST a comment on the Plane issue identified by externalIssueRef.
