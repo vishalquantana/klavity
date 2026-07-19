@@ -2624,6 +2624,74 @@ async function tgDismiss(ids) {
   return res
 }
 
+// JTBD 2.8: move keyboard focus to a triage row; clears the previous highlight and
+// optionally scrolls the new row into view. Updates _tgFocus so re-renders stay in sync.
+function tgSetFocus(id, scroll) {
+  const host = $("triageList"); if (!host) return
+  host.querySelectorAll(".tg-row.tg-focus").forEach(r => r.classList.remove("tg-focus"))
+  _tgFocus = id || null
+  if (!id) return
+  const row = tgRowById(id); if (!row) return
+  row.classList.add("tg-focus")
+  if (scroll) row.scrollIntoView({ behavior: "smooth", block: "nearest" })
+}
+
+// JTBD 2.8: show an undo toast after dismissing N triage reports. Calls restoreFn
+// when the reviewer clicks Undo, then hides the toast. Auto-dismisses after 5 s.
+let _tgToastTimer = null
+function tgUndoToast(count, restoreFn) {
+  let toast = $("tgDismissToast")
+  if (!toast) { toast = document.createElement("div"); toast.id = "tgDismissToast"; document.body.appendChild(toast) }
+  toast.className = "tg-toast"
+  if (_tgToastTimer) { clearTimeout(_tgToastTimer); _tgToastTimer = null }
+  toast.innerHTML = `<span class="tg-toast-msg">${kicon("check-circle",{size:15})} ${count} report${count === 1 ? "" : "s"} dismissed</span><button class="tg-toast-undo" type="button">${kicon("refresh-cw",{size:13})} Undo</button>`
+  toast.classList.add("show")
+  toast.querySelector(".tg-toast-undo").addEventListener("click", async () => {
+    toast.classList.remove("show")
+    if (_tgToastTimer) { clearTimeout(_tgToastTimer); _tgToastTimer = null }
+    if (restoreFn) await restoreFn()
+  })
+  _tgToastTimer = setTimeout(() => { toast.classList.remove("show") }, 5000)
+}
+
+// JTBD 2.8: expand / collapse the inline evidence panel for a triage row.
+// Lazily fetches the full ticket record on first open so reviewers see screenshot,
+// observation, grounding quote and suggested-bug context before deciding.
+async function tgToggleExpand(row, t) {
+  const btn = row.querySelector(".tg-expand-btn")
+  const panel = row.querySelector(".tg-evidence")
+  if (!btn || !panel) return
+  const opening = panel.classList.contains("hide")
+  panel.classList.toggle("hide", !opening)
+  btn.classList.toggle("open", opening)
+  btn.setAttribute("aria-expanded", String(opening))
+  if (!opening) return
+  // Already loaded — just reveal.
+  if (panel.getAttribute("data-loaded")) return
+  panel.setAttribute("data-loaded", "1")
+  panel.innerHTML = `<div class="muted" style="font-size:12px">Loading evidence…</div>`
+  let full = t
+  try {
+    const r = await fetch("/api/feedback/" + encodeURIComponent(String(t.id)), { credentials: "include" })
+    if (r.ok) { const d = await r.json(); if (d && d.report) full = { ...t, ...d.report } }
+  } catch { /* fall back to inline t */ }
+  const parts = []
+  const obs = full.observation && full.observation.trim() !== (full.title || "").trim() ? full.observation : null
+  if (obs) parts.push(`<div class="tg-ev-obs">${esc(obs)}</div>`)
+  const bug = full.suggestedBug
+  if (bug && (bug.title || bug.body)) {
+    parts.push(`<div class="tg-ev-bug">${bug.title ? `<div style="font-weight:600;margin-bottom:3px">${kicon("bug",{size:13})} ${esc(bug.title)}</div>` : ""}${bug.body ? `<div style="font-size:12px;color:var(--paper-dim)">${esc(bug.body)}</div>` : ""}</div>`)
+  }
+  if (full.sourceQuote) parts.push(`<div class="tg-ev-quote">“${esc(full.sourceQuote)}”</div>`)
+  const meta = [full.urlPath && esc(full.urlPath), full.sourceReferrer && ("Referrer: " + esc(full.sourceReferrer))].filter(Boolean).join(" · ")
+  if (meta) parts.push(`<div class="tg-ev-meta muted" style="font-size:11px">${meta}</div>`)
+  if (full.screenshotId) {
+    parts.push(`<div class="tg-ev-shot tg-shot" data-shot="${esc(String(full.screenshotId))}" title="Open screenshot" style="width:100%;height:140px"><div class="tg-shot-ph">${kicon("image",{size:20})}</div></div>`)
+  }
+  panel.innerHTML = parts.length ? parts.join("") : `<div class="muted" style="font-size:12px">No additional evidence.</div>`
+  if (full.screenshotId) loadTriageShots(panel)
+}
+
 // JTBD 3.10: render the whole New-reports view — the sentiment + Sim filter bar, then the rows that
 // pass both filters. Called on load and after every filter change so the two stay in lockstep.
 function renderTriageView() {
