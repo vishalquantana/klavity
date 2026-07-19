@@ -1,6 +1,7 @@
 import { DEFAULT_SETTINGS } from '@klavity/core'
 import type { KlavitySettings } from '@klavity/core'
 import { trySilentLogin, requestCode, verifyCode, isSignedIn, isSignedOutExplicitly, getConfig, getSelectedProjectId, setSelectedProjectId, pickProject, signOut } from './auth'
+import { mountOtpInput } from '@klavity/core/otp-input'
 
 interface Sim { id: string; name: string; role: string; accent: string; initials: string; enabled: boolean }
 interface Recent { type: string; desc: string; issueKey: string; issueUrl: string; ts: number }
@@ -46,27 +47,48 @@ const errEl = $('auth-err')
 
 function setErr(msg: string) { errEl.textContent = msg }
 
+// Unified OTP input UX (digit-only, paste-to-fill, auto-submit, Enter) + resend cooldown —
+// the same @klavity/core/otp-input helper the web login/widget-connect screens use.
+const otp = mountOtpInput({
+  input: codeEl,
+  length: 6,
+  errorEl: errEl,
+  onComplete: () => { if (stage === 'code') submitEl.click() },
+  resend: {
+    el: resendEl,
+    cooldownSecs: 30,
+    onResend: async () => {
+      setErr('')
+      const r = await requestCode(pendingEmail)
+      if (!r.ok) { setErr(r.error || 'Could not resend code.'); return false }
+      $('auth-sub').textContent = `New code sent to ${pendingEmail}. It expires in 10 minutes.`
+      codeEl.value = ''; codeEl.focus()
+      return true
+    },
+  },
+})
+
 // Move to the code-entry stage: hide email, show code + resend/change-email, hide the
 // secondary "site login" path (only relevant before a code is requested), arm the cooldown.
 function goCodeStage() {
   stage = 'code'
   emailEl.classList.add('hidden')
   codeEl.classList.remove('hidden')
-  codeEl.value = ''
+  otp.clear()
   codeEl.focus()
   submitEl.textContent = 'Verify'
   codeActionsEl.classList.remove('hidden')
   silentEl.classList.add('hidden')
   $('auth-sub').textContent = `We emailed a code to ${pendingEmail}. It expires in 10 minutes.`
-  startResendCooldown(30)
+  otp.startResendCooldown(30)
 }
 
 // Back to the email stage (from "Change email"), resetting everything.
 function goEmailStage() {
   stage = 'email'
   setErr('')
-  if (resendTimer) { clearInterval(resendTimer); resendTimer = undefined }
-  codeEl.value = ''
+  otp.stopResendCooldown()
+  otp.clear()
   codeEl.classList.add('hidden')
   emailEl.classList.remove('hidden')
   emailEl.focus()
@@ -74,24 +96,6 @@ function goEmailStage() {
   codeActionsEl.classList.add('hidden')
   silentEl.classList.remove('hidden')
   $('auth-sub').textContent = "Enter your email and we'll send a 6-digit code."
-}
-
-let resendTimer: ReturnType<typeof setInterval> | undefined
-function startResendCooldown(secs: number) {
-  resendEl.classList.add('disabled')
-  let left = secs
-  const tick = () => {
-    if (left <= 0) {
-      resendEl.textContent = 'Resend code'
-      resendEl.classList.remove('disabled')
-      if (resendTimer) { clearInterval(resendTimer); resendTimer = undefined }
-      return
-    }
-    resendEl.textContent = `Resend in ${left}s`
-    left--
-  }
-  tick()
-  resendTimer = setInterval(tick, 1000)
 }
 
 submitEl.addEventListener('click', async () => {
@@ -111,25 +115,9 @@ submitEl.addEventListener('click', async () => {
     const r = await verifyCode(pendingEmail, code)
     submitEl.disabled = false
     submitEl.textContent = 'Verify'
-    if (!r.ok) { setErr(r.error || 'Invalid or expired code.'); codeEl.value = ''; codeEl.focus(); return }
+    if (!r.ok) { setErr(r.error || 'Invalid or expired code.'); otp.clear(); codeEl.focus(); return }
     showApp()
   }
-})
-
-resendEl.addEventListener('click', async (e) => {
-  e.preventDefault()
-  if (resendEl.classList.contains('disabled')) return
-  setErr('')
-  resendEl.classList.add('disabled'); resendEl.textContent = 'Sending…'
-  const r = await requestCode(pendingEmail)
-  if (!r.ok) {
-    setErr(r.error || 'Could not resend code.')
-    resendEl.classList.remove('disabled'); resendEl.textContent = 'Resend code'
-    return
-  }
-  $('auth-sub').textContent = `New code sent to ${pendingEmail}. It expires in 10 minutes.`
-  codeEl.value = ''; codeEl.focus()
-  startResendCooldown(30)
 })
 
 changeEmailEl.addEventListener('click', (e) => { e.preventDefault(); goEmailStage() })

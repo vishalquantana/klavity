@@ -21,6 +21,7 @@
     "./integrations/backend": "./src/integrations/backend.ts",
     "./modal": "./src/modal.ts",
     "./modal-theme": "./src/modal-theme.ts",
+    "./otp-input": "./src/otp-input.ts",
     "./icons": "./src/icons.ts"
   },
   "scripts": {
