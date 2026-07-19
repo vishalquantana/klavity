@@ -7,6 +7,7 @@ import { classifySimObservation } from "./lib/sim-bug-classify"
 import { getConnector, listConnectorTypes, type TicketPayload, type TicketAttachment } from "./lib/connectors/index"
 import { inboundSupported, verifyGithubSignature, verifyLinearSignature, extractExternalKey, mapExternalStatus } from "./lib/connectors/inbound"
 import { pushCommentToLinkedIssues } from "./lib/connectors/comment-sync"
+import { syncFieldsToLinkedIssues } from "./lib/connectors/field-sync"
 import { deriveHealth } from "./lib/connectors/health"
 import { applyReconcileOps, recurrenceFromEvents, pickCitation, type ReconcileOp, type Trait, type TraitEventRow } from "./lib/provenance"
 import { sendOtp, sendLeadAlert, sendTicketAssignmentEmail, sendTicketAssignmentInviteEmail } from "./lib/mail"
@@ -1448,6 +1449,31 @@ function priorityMeetsThreshold(effectivePriority: string | null | undefined, co
 // writes plane_issue_key/url back onto the feedback row.
 // effectivePriority: caller may pass the priority from the same PATCH request (which may update
 // priority and status together). If omitted, the value is read from the persisted row.
+// KLAVITYKLA-286 (JTBD 5.7): fire outbound labels/priority sync for a ticket that already has export
+// records. Fire-and-forget wrapper around syncFieldsToLinkedIssues — it resolves the ticket's CURRENT
+// full label set + priority and pushes them to every linked external issue. Never throws into the
+// caller's edit path; field-sync catches all errors and records them as activity events.
+//   effectivePriority: pass the priority from the same PATCH (when priority + something else change
+//   together); omit to read the persisted row's priority.
+function syncTicketFields(feedbackId: string, projectId: string, actor: string | null, effectivePriority?: string | null): void {
+  void (async () => {
+    try {
+      // Resolve current priority: caller-supplied (same edit) wins, else the persisted row.
+      let priority: string | null
+      if (effectivePriority !== undefined) priority = effectivePriority ?? null
+      else {
+        const fb = await feedbackById(projectId, feedbackId).catch(() => null)
+        priority = fb?.priority ?? null
+      }
+      const labels = (await labelsForFeedback(feedbackId).catch(() => []))
+        .map((l: any) => String(l.name)).filter(Boolean)
+      await syncFieldsToLinkedIssues(projectId, feedbackId, { labels, priority }, { actorEmail: actor })
+    } catch (e: any) {
+      console.warn("[field-sync] syncTicketFields top-level error (non-fatal):", e?.message || e)
+    }
+  })()
+}
+
 function autoCopyFeedback(feedbackId: string, projectId: string, actor: string | null, effectivePriority?: string | null): void {
   void (async () => {
     try {
@@ -6004,6 +6030,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               feedbackId: fid,
               meta: { from: fbRow.priority, to: meta.priority },
             }).catch((e: any) => console.warn("ticket priority activity skipped:", e?.message || e)))
+            // KLAVITYKLA-286 (JTBD 5.7): mirror the new priority to any linked external issues.
+            // Fire-and-forget; pass the just-updated priority so the sync uses the merged value.
+            syncTicketFields(fid, fbRow.projectId, me, meta.priority ?? null)
           }
           // JTBD 2.15: track whether the assignment notification email actually went out so the
           // response can warn the assigning UI when it was silently skipped (SENDGRID_API_KEY unset).
@@ -6253,12 +6282,18 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const projectLabels = await listLabels(fbRow.projectId)
           if (!projectLabels.find(l => l.id === labelId)) return json({ error: "Label not found in this project." }, 404)
           await attachLabel(labelId, fid)
+          // KLAVITYKLA-286 (JTBD 5.7): mirror the ticket's now-current label set to linked external
+          // issues. Fire-and-forget; syncTicketFields re-reads the full label set after the attach.
+          syncTicketFields(fid, fbRow.projectId, me)
           return json({ ok: true })
         }
 
         // DELETE /api/feedback/:id/labels/:labelId — detach label from ticket
         if (req.method === "DELETE" && isLabels && labelIdParam) {
           await detachLabel(labelIdParam, fid)
+          // KLAVITYKLA-286 (JTBD 5.7): mirror the ticket's now-current label set to linked external
+          // issues after removal. Fire-and-forget.
+          syncTicketFields(fid, fbRow.projectId, me)
           return json({ ok: true })
         }
 
