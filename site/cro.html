@@ -87,7 +87,11 @@ body{font-family:var(--font-sans,'Inter',system-ui,sans-serif);background:#f9faf
 .cta-section h4{font-weight:700;font-size:1rem;margin-bottom:.4rem}
 .cta-section p{font-size:.88rem;color:#6b7280;margin-bottom:1rem}
 .btn-cta{display:inline-block;background:var(--accent);color:#fff;border-radius:.6rem;padding:.6rem 1.25rem;font-weight:700;font-size:.9rem;text-decoration:none;transition:background .15s,transform .1s}
-.btn-cta:hover{background:var(--accent-dark)}
+.btn-cta:hover{background:var(--accent-dark);transform:scale(1.02)}
+.btn-cta:active{transform:scale(.97)}
+.booking-line{margin-top:.85rem;font-size:.85rem;color:#6b7280}
+.booking-link{color:var(--accent);font-weight:600;text-decoration:none;border-bottom:1px solid transparent;transition:border-color .15s,color .15s}
+.booking-link:hover{color:var(--accent-dark);border-bottom-color:currentColor}
 .trust{display:flex;justify-content:center;gap:1.5rem;flex-wrap:wrap;margin-top:2.5rem;padding-top:2.5rem;border-top:1px solid #e5e7eb}
 .trust-item{display:flex;align-items:center;gap:.4rem;font-size:.85rem;color:#6b7280}
 .faq{max-width:640px;margin:3rem auto;padding:0 1.5rem 3rem}
@@ -139,6 +143,7 @@ body{font-family:var(--font-sans,'Inter',system-ui,sans-serif);background:#f9faf
         <h4>Keep friction away permanently</h4>
         <p>Klavity's Sims analyse your product continuously — catching issues before your customers do.</p>
         <a href="/onboarding" class="btn-cta">Start free — no credit card</a>
+        <p class="booking-line">Rather talk it through? <a href="__CAL_BOOKING_URL__" id="booking-cta" class="booking-link" target="_blank" rel="noopener">Book 15 min with the founder</a></p>
       </div>
     </div>
 
@@ -322,6 +327,19 @@ body{font-family:var(--font-sans,'Inter',system-ui,sans-serif);background:#f9faf
       unlockBtn.textContent = "Unlock report"
     }
   })
+
+  // KLAVITYKLA-331 — founder booking CTA. Fire-and-forget funnel event; the link still
+  // navigates normally even if the beacon fails.
+  const bookingCta = document.getElementById("booking-cta")
+  if (bookingCta) {
+    bookingCta.addEventListener("click", function () {
+      void fetch(BASE + "/api/track", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ event: "booking_cta_clicked", anonId, url: analysedUrl || location.href, source, referrer, props: { tool: "cro", placement: "unlocked_report" } }),
+      }).catch(function () {})
+    })
+  }
 
   function escHtml(str) {
     return String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
