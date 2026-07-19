@@ -101,7 +101,8 @@ import { diagnoseHeartbeat, renderDeveloperEmail, type HeartbeatSignals } from "
 import { countRecentFeedback, countUsers } from "./lib/db"
 import { enrollLead, buildNurtureEmail, recordNurtureEmailSent, recordSendgridEvents, startLeadNurtureScheduler } from "./lib/lead-nurture"
 import { extractInventory, extractLinks, verifyLinks, brokenLinkFindings, filterModelFindings, checkedSummary, MAX_LINKS_CHECKED } from "./lib/bugcheck"
-import { logAudit, queryAuditLog, auditRowsToCsv, type AuditAction } from "./lib/audit-log"
+import { fetchOidcDiscovery, buildAuthorizationUrl, exchangeCode, verifyIdToken, type OidcDiscovery, type OidcClaims } from "./lib/sso"
+import { getAccountOidcConfig, upsertAccountOidcConfig, deleteAccountOidcConfig, findAccountByOidcDomain, createSsoState, consumeSsoState, ensureAccountMember } from "./lib/db"
 
 const KEY = process.env.OPENROUTER_API_KEY
 const MODEL = process.env.KLAV_MODEL || "google/gemini-2.5-flash"
@@ -2543,6 +2544,139 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const sid = parseCookies(req.headers.get("cookie"))["klav_session"]
       if (sid && db) await deleteSession(sid).catch(() => {})
       return json({ ok: true }, 200, { "Set-Cookie": clearCookie("klav_session", SECURE) })
+    }
+
+    // ── Enterprise SSO — OIDC (KLAVITYKLA-9) ──────────────────────────────────
+    // GET  /api/sso/config      — read current OIDC config (account owner/admin)
+    // POST /api/sso/config      — save/update OIDC config (account owner/admin)
+    // DELETE /api/sso/config    — remove OIDC config (account owner/admin)
+    // GET  /auth/sso/login      — initiate OIDC login (?domain=acme.com)
+    // GET  /auth/sso/callback   — handle IdP callback (?code=&state=)
+
+    if (req.method === "GET" && path === "/api/sso/config") {
+      if (!db || !me) return json({ error: "Unauthorized" }, 401)
+      const memberships = await membershipsFor(me)
+      const adminMship = memberships.find((m) => m.role === "owner" || m.role === "admin")
+      if (!adminMship) return json({ error: "Forbidden" }, 403)
+      const cfg = await getAccountOidcConfig(adminMship.workspaceId)
+      if (!cfg) return json({ enabled: false })
+      return json({ enabled: true, issuer: cfg.issuer, clientId: cfg.clientId, allowedDomain: cfg.allowedDomain })
+    }
+
+    if (req.method === "POST" && path === "/api/sso/config") {
+      if (!db || !me) return json({ error: "Unauthorized" }, 401)
+      const memberships = await membershipsFor(me)
+      const adminMship = memberships.find((m) => m.role === "owner" || m.role === "admin")
+      if (!adminMship) return json({ error: "Forbidden" }, 403)
+      const body = await req.json()
+      const issuer = String(body.issuer || "").trim()
+      const clientId = String(body.clientId || "").trim()
+      const clientSecret = String(body.clientSecret || "").trim()
+      const allowedDomain = String(body.allowedDomain || "").trim().toLowerCase()
+      if (!issuer || !clientId || !clientSecret || !allowedDomain)
+        return json({ error: "issuer, clientId, clientSecret and allowedDomain are required" }, 400)
+      if (!/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/i.test(allowedDomain))
+        return json({ error: "allowedDomain must be a valid domain name (e.g. acme.com)" }, 400)
+      try {
+        await fetchOidcDiscovery(issuer, {})
+      } catch (err: any) {
+        return json({ error: `Cannot reach OIDC discovery endpoint: ${err.message}` }, 400)
+      }
+      const enc = await encryptSecret(clientSecret)
+      await upsertAccountOidcConfig(adminMship.workspaceId, issuer, clientId, enc, allowedDomain, me)
+      return json({ ok: true })
+    }
+
+    if (req.method === "DELETE" && path === "/api/sso/config") {
+      if (!db || !me) return json({ error: "Unauthorized" }, 401)
+      const memberships = await membershipsFor(me)
+      const adminMship = memberships.find((m) => m.role === "owner" || m.role === "admin")
+      if (!adminMship) return json({ error: "Forbidden" }, 403)
+      await deleteAccountOidcConfig(adminMship.workspaceId)
+      return json({ ok: true })
+    }
+
+    // Initiate SSO: GET /auth/sso/login?domain=acme.com
+    if (req.method === "GET" && path === "/auth/sso/login") {
+      if (!db) return new Response("SSO not available", { status: 503 })
+      const domain = (url.searchParams.get("domain") || "").toLowerCase().trim()
+      if (!domain) return redirect("/login?error=sso_missing_domain")
+      const cfg = await findAccountByOidcDomain(domain)
+      if (!cfg) return redirect("/login?error=sso_not_configured")
+      let discovery: OidcDiscovery
+      try {
+        discovery = await fetchOidcDiscovery(cfg.issuer, {})
+      } catch {
+        return redirect("/login?error=sso_idp_unreachable")
+      }
+      const state = token()
+      const nonce = token()
+      const redirectUri = `${BASE}/auth/sso/callback`
+      await createSsoState(state, cfg.accountId, nonce, Date.now() + 10 * 60 * 1000)
+      const authUrl = buildAuthorizationUrl({
+        authorizationEndpoint: discovery.authorization_endpoint,
+        clientId: cfg.clientId,
+        redirectUri,
+        state,
+        nonce,
+      })
+      return redirect(authUrl)
+    }
+
+    // SSO callback: GET /auth/sso/callback?code=...&state=...
+    if (req.method === "GET" && path === "/auth/sso/callback") {
+      if (!db) return redirect("/login?error=sso_not_available")
+      const errorParam = url.searchParams.get("error")
+      if (errorParam) return redirect(`/login?error=${encodeURIComponent("SSO error: " + errorParam)}`)
+      const code = url.searchParams.get("code") || ""
+      const state = url.searchParams.get("state") || ""
+      if (!code || !state) return redirect("/login?error=sso_invalid_response")
+      const ssoState = await consumeSsoState(state)
+      if (!ssoState) return redirect("/login?error=sso_state_expired")
+      const cfg = await getAccountOidcConfig(ssoState.accountId)
+      if (!cfg) return redirect("/login?error=sso_not_configured")
+      let discovery: OidcDiscovery
+      try {
+        discovery = await fetchOidcDiscovery(cfg.issuer, {})
+      } catch {
+        return redirect("/login?error=sso_config_error")
+      }
+      let claims: OidcClaims
+      try {
+        const clientSecret = await decryptSecret(cfg.clientSecretEnc)
+        const { idToken } = await exchangeCode(
+          {
+            tokenEndpoint: discovery.token_endpoint,
+            clientId: cfg.clientId,
+            clientSecret,
+            code,
+            redirectUri: `${BASE}/auth/sso/callback`,
+          },
+          {},
+        )
+        claims = await verifyIdToken(
+          {
+            idToken,
+            jwksUri: discovery.jwks_uri,
+            issuer: cfg.issuer,
+            clientId: cfg.clientId,
+            nonce: ssoState.nonce,
+          },
+          {},
+        )
+      } catch (err: any) {
+        console.error("SSO callback error:", err?.message)
+        return redirect("/login?error=sso_auth_failed")
+      }
+      // Validate the email matches the configured allowed domain.
+      const emailDomain = (claims.email.split("@")[1] ?? "").toLowerCase()
+      if (emailDomain !== cfg.allowedDomain) return redirect("/login?error=sso_domain_mismatch")
+      // Upsert user and ensure they're a member of the SSO account.
+      await upsertUser(claims.email)
+      await ensureAccountMember(ssoState.accountId, claims.email)
+      const sid = token()
+      await createSession(sid, claims.email, Date.now() + SESSION_DAYS * 86400 * 1000)
+      return redirect("/dashboard", { "Set-Cookie": cookie("klav_session", sid, SESSION_DAYS * 86400, SECURE) })
     }
 
     // ── GDPR: data export (Art. 15/20) ── authenticated (cookie OR bearer); acts on the caller's OWN
