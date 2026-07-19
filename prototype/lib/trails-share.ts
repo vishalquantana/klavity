@@ -219,7 +219,7 @@ export async function renderWalkPdf(
   projectId: string,
   runId: string,
   baseUrl: string,
-  opts?: { replayUrl?: string },
+  opts?: { replayUrl?: string; dataTransform?: (d: any) => any },
 ): Promise<Uint8Array> {
   // Module-level injectable seam (set via _setPdfRendererForTests in unit tests)
   if (_customPdfRenderer) return _customPdfRenderer(projectId, runId, baseUrl)
@@ -239,8 +239,9 @@ export async function renderWalkPdf(
   const { withPdfSlot, CHROMIUM_PROD_ARGS } = await import("./trails-browser")
   const { chromium } = await import("playwright")
 
-  const data = await gatherWalkReport(projectId, runId)
-  if (!data) throw new Error("walk not found or access denied")
+  const rawData = await gatherWalkReport(projectId, runId)
+  if (!rawData) throw new Error("walk not found or access denied")
+  const data = opts?.dataTransform ? opts.dataTransform(rawData) : rawData
 
   const html = renderWalkReportHtml(data, { baseUrl, generatedAt: Date.now(), replayUrl: opts?.replayUrl })
 
