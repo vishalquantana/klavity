@@ -14,6 +14,8 @@ import {
   isLinkBreakageClaim,
   filterModelFindings,
   checkedSummary,
+  isGrounded,
+  MIN_EVIDENCE_LEN,
 } from "./lib/bugcheck"
 
 let linkServer: ReturnType<typeof Bun.serve>
@@ -137,4 +139,49 @@ test("verifyLinks treats a connection failure as broken, not as healthy", async 
   expect(checks[0].ok).toBe(false)
   expect(checks[0].status).toBe(null)
   expect(brokenLinkFindings(checks)[0].why).toContain("didn't respond")
+})
+
+
+// ── KLAVITYKLA-342 FALSE POSITIVES: evidence grounding ────────────────────────────────────────
+// A finding only ships if it quotes text that provably exists on the fetched page.
+
+const PAGE = "Acme Dashboard\nWelcome back. Your last sync was undefined. NaN active users."
+const f = (over: Partial<Parameters<typeof isGrounded>[0]> = {}) =>
+  ({ what: "w", where: "x", why: "y", severity: "medium", ...over }) as Parameters<typeof isGrounded>[0]
+
+test("isGrounded: a verbatim quote from the page grounds the finding", () => {
+  expect(isGrounded(f({ evidence: "last sync was undefined" }), PAGE)).toBe(true)
+})
+
+test("isGrounded: whitespace/case differences still ground (models reflow text)", () => {
+  expect(isGrounded(f({ evidence: "Last   Sync\n was UNDEFINED" }), PAGE)).toBe(true)
+})
+
+test("isGrounded: a fabricated quote does NOT ground — this is the false-positive gate", () => {
+  expect(isGrounded(f({ evidence: "Payment declined - please retry" }), PAGE)).toBe(false)
+})
+
+test("isGrounded: a missing or empty evidence field does not ground", () => {
+  expect(isGrounded(f(), PAGE)).toBe(false)
+  expect(isGrounded(f({ evidence: "   " }), PAGE)).toBe(false)
+})
+
+test("isGrounded: a too-short quote is rejected even though it occurs on the page", () => {
+  // "NaN" IS on the page, but a 3-char quote grounds by coincidence, not by evidence.
+  expect("NaN".length).toBeLessThan(MIN_EVIDENCE_LEN)
+  expect(isGrounded(f({ evidence: "NaN" }), PAGE)).toBe(false)
+})
+
+test("filterModelFindings drops ungrounded findings but keeps grounded ones", () => {
+  const findings = [
+    f({ what: "Sync shows undefined", evidence: "last sync was undefined" }),
+    f({ what: "Checkout button fails to submit", evidence: "Payment declined" }),
+  ]
+  const kept = filterModelFindings(findings, [], PAGE)
+  expect(kept.map((k) => k.what)).toEqual(["Sync shows undefined"])
+})
+
+test("filterModelFindings without pageText skips grounding (back-compat for non-qa callers)", () => {
+  const findings = [f({ what: "Something", evidence: "not on the page at all" })]
+  expect(filterModelFindings(findings, []).length).toBe(1)
 })
