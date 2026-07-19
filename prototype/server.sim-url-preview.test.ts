@@ -232,15 +232,17 @@ test("missing url field returns 400 'Enter your product URL'", async () => {
   expect(body.error).toMatch(/enter your product/i)
 }, 10000)
 
-// TEST 6: Unauthenticated call → 401 (all /api/* routes require a session)
-// /api/sim/preview is inside the session-gated /api/* block. Callers on the onboarding
-// page always have a session (they completed OTP before reaching /onboarding).
-// This test confirms the auth gate is present as a security invariant.
-test("unauthenticated call to /api/sim/preview returns 401 (session-gated route)", async () => {
+// TEST 6: Unauthenticated call is EXEMPT from the /api/* login gate (pre-signup aha).
+// /api/sim/preview powers site/onboarding.html step 0 BEFORE signup, so the blanket gate
+// allowlists it; protection comes from the endpoint's own guards (aiDemoLimited per-IP
+// throttle + SSRF safeFetch + payload caps). A loopback URL proves the request reached
+// the handler (SSRF 400) rather than dying at the gate (401).
+test("unauthenticated call to /api/sim/preview is not login-gated (pre-signup aha)", async () => {
   const r = await fetch(`${BASE}/api/sim/preview`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url: "https://example.com/" }),
+    body: JSON.stringify({ url: "http://127.0.0.1:1" }),
   })
-  expect(r.status).toBe(401)
+  expect(r.status).not.toBe(401)
+  expect(r.status).toBe(400)
 }, 10000)

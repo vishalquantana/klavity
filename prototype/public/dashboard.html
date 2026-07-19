@@ -44,6 +44,11 @@ a{color:inherit;text-decoration:none}
 .side .nv .ct{margin-left:auto;font-size:11px;color:var(--paper-faint);font-family:var(--mono)}
 /* app version pinned to the sidebar footer (bottom-left); margin-top:auto pushes it below the nav */
 .side-version{margin-top:auto;padding:12px 11px 2px;font-family:var(--mono);font-size:10px;letter-spacing:.04em;color:var(--paper-faint);user-select:text}
+/* compact upgrade pill for free accounts — sits under the brand, opens the Plan & billing drawer */
+.side-plan-pill{display:flex;align-items:center;gap:5px;margin:0 4px 10px;padding:6px 11px;border:1px solid rgba(99,102,241,.35);border-radius:999px;background:rgba(99,102,241,.08);color:var(--paper-dim);font-size:11.5px;font-weight:500;font-family:var(--body);cursor:pointer;width:fit-content;transition:transform .15s ease,border-color .15s ease,background .15s ease,color .15s ease}
+.side-plan-pill b{color:var(--indigo);font-weight:700}
+.side-plan-pill:hover{transform:var(--mi-lift);border-color:var(--indigo);background:rgba(99,102,241,.14);color:var(--paper)}
+.side-plan-pill:active{transform:var(--mi-press)}
 .content{flex:1 1 auto;min-width:0}
 /* view switching — show only blocks tagged for the active view */
 body[data-view="overview"] [data-view]:not([data-view~="overview"]),
@@ -352,6 +357,7 @@ a.exp-card .ec-src-chip,.exp-card a.ec-src-chip{cursor:pointer}
   .bar-brand{display:flex}
   .side .nv{width:auto;white-space:nowrap}
   .side .nv .ct{display:none}
+  .side-plan-pill{white-space:nowrap;margin:0 0 0 4px;flex:none;align-self:center}
   .side-version{display:none}
   .bar-in,.wrap{margin-left:0}
   .bar-in{padding:0 12px;gap:8px}
@@ -1485,6 +1491,8 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   <aside class="side" aria-label="Dashboard sections">
     <!-- Brand at the very top of the sidebar -->
     <div class="brand"><span class="spark">K</span>Klavity</div>
+    <!-- P0 upgrade surface: shown only for free accounts (wired by _wirePlan) — opens Plan & billing -->
+    <button type="button" class="side-plan-pill hide" id="planPill" aria-label="You are on the Free plan — see upgrade options" onclick="openPlanDrawer()">Free plan · <b>Upgrade</b></button>
     <button class="nv active" data-go="overview"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1" ry="1" /> <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /> <path d="M12 11h4" /> <path d="M12 16h4" /> <path d="M8 11h.01" /> <path d="M8 16h.01" /></svg></span>Overview</button>
     <!-- Snap / report-widget install — first nav item after Overview so it's immediately discoverable -->
     <button class="nv" data-go="snap"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 9l5 12 1.8-5.2L21 14Z"/><path d="M7.2 2.2 8 5.1"/><path d="m5.1 7.2-2.9-.8"/><path d="M14 4.1 12 6"/><path d="m6 12-1.9 2"/></svg></span>Snap <span class="cl-path-tag" style="margin-left:2px;font-size:9px;padding:2px 5px">widget</span></button>
@@ -1552,13 +1560,14 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       <li id="clFirstReport">
         <div>
           <div class="cl-step-t">File your first bug report</div>
-          <div class="cl-step-d">Click the widget button on your site and send a test report — it lands in <a href="#triage" onclick="setView('triage');return false">New reports</a>, ready to accept as a bug or dismiss.</div>
+          <div class="cl-step-d">Click the widget button on your site — or try it right here, the widget is live on this page. Your report lands in <a href="#triage" onclick="setView('triage');return false">New reports</a>, ready to accept as a bug or dismiss.</div>
+          <div class="cl-step-d" style="margin-top:8px"><button class="btn btn-indigo btn-sm" id="clTestReportBtn" type="button">Send a test report now</button></div>
         </div>
       </li>
       <li id="clSeeReact">
         <div>
-          <div class="cl-step-t">See a Sim react to a page</div>
-          <div class="cl-step-d">Paste your URL and meet your AI Sims — <button class="cl-step-d" style="background:none;border:none;padding:0;color:var(--indigo);cursor:pointer;font-size:inherit;font-family:inherit;text-decoration:none" onclick="openSimModalSite()">Try it from your site →</button></div>
+          <div class="cl-step-t">Get Sims suggested from your site, then run their first review</div>
+          <div class="cl-step-d">We read your page and suggest AI Sims — pick one and it reviews your site right away. <button class="cl-step-d" style="background:none;border:none;padding:0;color:var(--indigo);cursor:pointer;font-size:inherit;font-family:inherit;text-decoration:none" onclick="openSimModalSite()">Try it from your site →</button></div>
         </div>
       </li>
       <li id="clSims">
@@ -1891,7 +1900,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           <label>Secondary <input type="color" id="kl-secondary" value="#f59e0b"></label>
           <label>Background <input type="color" id="kl-bg" value="#ffffff"></label>
           <label>Font <input type="text" id="kl-font" placeholder="system-ui, sans-serif" maxlength="120"></label>
-          <p id="kl-pro-note" style="display:none;font-size:12px;opacity:.7">Custom colors require a Pro plan.</p>
+          <p id="kl-pro-note" style="display:none;font-size:12px;opacity:.7">Custom colors require a Pro plan — <a href="#settings" style="color:var(--indigo)" onclick="openPlanDrawer();return false">upgrade</a>.</p>
         </div>
         <label>Thank-you message
           <input type="text" id="kl-thankyou" maxlength="140" placeholder="Filed as KLAV-123 (default)">
@@ -2961,7 +2970,9 @@ function render(fromCache) {
   const admin = role === "admin"
   $("wsName").textContent = active ? active.name : "—"
   $("who").textContent = state.email
-  $("hello").innerHTML = "Welcome back"
+  // Genuinely-fresh signal (same as the guided tour): 0 Sims + 0 feedback = first-ever session.
+  const freshHello = !((state.sims || []).length) && !((state.counts || {}).feedback || 0)
+  $("hello").innerHTML = freshHello ? "Welcome to Klavity" : "Welcome back"
   $("lead").innerHTML = active
     ? `You're ${admin ? "an <b>Admin</b>" : "a <b>User</b>"} of <b>${esc(active.name)}</b>.`
     : "Create your first Sim to get started."
@@ -3031,8 +3042,6 @@ function render(fromCache) {
 function renderChecklist() {
   const el = $("checklist")
   if (!el) return
-  const hasSims = (state.sims || []).length > 0
-  const counts = state.counts || {}
   // KLAVITYKLA-301 step 1: "See a Sim react" ticks only when a real Sim reaction/feedback row
   // exists (sim_id IS NOT NULL feedback). The server exposes this as state.hasSimReaction.
   // Fall back to the old heuristic for backwards-compat (e.g. old server without the field).
@@ -3041,9 +3050,10 @@ function renderChecklist() {
     : (state.saying || []).some(s => s.source === 'feedback')
   // "File first finding" = any human (non-Sim) feedback has been triaged as a bug ticket
   const hasHumanReport = (state.tickets || []).some(t => !t.simName)
-  // "Connect" = widget heartbeat or any feedback flowing OR extension used
+  // "Install the widget" ticks strictly on the widget heartbeat — a green tick must mean a real
+  // install, never Sims-only or extension activity (self-ping filtering makes the signal honest).
   const widgetSeen = !!(state.widgetStatus && state.widgetStatus.lastSeen)
-  const connected = widgetSeen || (counts.feedback || 0) > 0 || hasSims
+  const connected = widgetSeen
   // KLAVITYKLA-301 step 4: "Add real Sim from call" ticks only when a transcript-sourced Sim
   // exists. The server exposes this as state.hasTranscriptSim. Null = old server → keep unticked
   // for safety (never false-tick from described/from-site Sims).
@@ -3096,6 +3106,35 @@ function renderChecklist() {
   // Step 3, widget path: show the real embed snippet for THIS project so it's copy-paste ready.
   const snip = $("embedSnippet")
   if (snip && pid) snip.textContent = embedSnippet(pid)
+  // Live install confirmation: while "Waiting for your site…" shows, poll the heartbeat probe.
+  if (!widgetSeen && !el.classList.contains("hide")) startWidgetStatusPoll()
+}
+window.renderChecklist = renderChecklist   // called from setView so the poll restarts on Overview
+
+// ── Live "Widget detected" flip — polls GET /api/projects/:id/widget-status (~3s, one indexed row
+//    read server-side) while the checklist or Snap view shows "Waiting for your site…". On the first
+//    heartbeat it updates state.widgetStatus and re-renders both chips in place (the .ok class flip
+//    plays the existing frpop animation). Stops itself once seen or when neither view is watching. ──
+let _wsPollTimer = null
+function stopWidgetStatusPoll() { if (_wsPollTimer) { clearInterval(_wsPollTimer); _wsPollTimer = null } }
+function startWidgetStatusPoll() {
+  if (_wsPollTimer) return
+  _wsPollTimer = setInterval(async () => {
+    if (state && state.widgetStatus && state.widgetStatus.lastSeen) { stopWidgetStatusPoll(); return }
+    const view = document.body.getAttribute("data-view")
+    const cl = $("checklist")
+    const watching = view === "snap" || (view === "overview" && cl && !cl.classList.contains("hide"))
+    if (!watching) { stopWidgetStatusPoll(); return }   // view unmounted → stop; renderers restart us
+    const pid = curProjId(); if (!pid) return
+    let d = null
+    try { const r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/widget-status"); if (r.ok) d = await r.json() } catch (e) {}
+    if (d && d.seen) {
+      stopWidgetStatusPoll()
+      state.widgetStatus = { host: d.host, lastSeen: d.last_seen_at || new Date().toISOString() }
+      renderChecklist()      // flips clWidgetDetect + ticks step 1 (frpop plays on the .ok flip)
+      renderSnapView()       // flips the Snap-view chip in place
+    }
+  }, 3000)
 }
 
 // ── First-report celebration — one-time dismissible callout when the project's FIRST feedback
@@ -3217,6 +3256,31 @@ $("checklistDismiss") && ($("checklistDismiss").onclick = () => {
   try { localStorage.setItem("klavChecklistDismissed", "1") } catch (e) {}
   const el = $("checklist"); if (el) el.classList.add("hide")
 })
+// Zero-install first report: the real widget is mounted on THIS page (mountReportWidget), so the
+// checklist button opens its composer directly via the public JS API (window.Klavity.open).
+$("clTestReportBtn") && ($("clTestReportBtn").onclick = () => {
+  mountReportWidget()                     // no-op if already mounted
+  const tryOpen = () => {
+    // Klavity.open() is a silent no-op until mount() finishes — the widget host element in the
+    // DOM is the reliable "mounted" signal (same guard as onboarding's openWidgetComposer).
+    if (!document.getElementById("klavity-widget-host")) return false
+    if (!(window.Klavity && typeof window.Klavity.open === "function")) return false
+    if (!window.__klavTestReportWired && typeof window.Klavity.on === "function") {
+      window.__klavTestReportWired = true
+      window.Klavity.on("submit", () => {
+        klavToast('Test report received — <a href="#triage" style="color:var(--indigo)" onclick="setView(\'triage\');return false">review it in New reports</a>')
+        refreshAll()                      // triage count + checklist tick update without a reload
+      })
+    }
+    window.Klavity.open("bug")
+    return true
+  }
+  // The widget bundle loads async — on a cold click, retry briefly until its API exists.
+  if (!tryOpen()) {
+    let tries = 0
+    const t = setInterval(() => { if (tryOpen() || ++tries > 32) clearInterval(t) }, 250)   // ~8s, matches onboarding's deadline
+  }
+})
 // ── Snap view: populate snippet + wire copy/detect buttons ──
 function renderSnapView() {
   const pid = curProjId()
@@ -3236,6 +3300,7 @@ function renderSnapView() {
     } else {
       det.classList.remove("ok")
       dtxt.textContent = "Waiting for your site… paste the snippet, then reload your page"
+      startWidgetStatusPoll()   // live install confirmation while this view is watching
     }
   }
 }
@@ -5001,6 +5066,18 @@ function bulkResultToast(count, label, failures, undoFields, projId, prior, onDo
 // JTBD 2.15: when an assignment response reports the notification email was silently skipped
 // (assigneeEmailSent === false — SendGrid unconfigured server-side), show a visible amber warning
 // so nobody assumes the assignee was notified. Reuses the shared .tg-toast surface.
+// Generic one-line toast on the shared .tg-toast surface — green check by default, amber warn
+// variant. msgHtml is trusted caller-built markup (links allowed); escape any user data upstream.
+let _klavToastTimer = null
+function klavToast(msgHtml, warn) {
+  let toast = $("klavToast")
+  if (!toast) { toast = document.createElement("div"); toast.id = "klavToast"; document.body.appendChild(toast) }
+  toast.className = "tg-toast" + (warn ? " tg-toast-warn" : "")
+  if (_klavToastTimer) { clearTimeout(_klavToastTimer); _klavToastTimer = null }
+  toast.innerHTML = `<span class="tg-toast-msg">${kicon(warn ? 'triangle-alert' : 'check-circle', { size: 15 })} ${msgHtml}</span>`
+  toast.classList.add("show")
+  _klavToastTimer = setTimeout(() => { toast.classList.remove("show") }, 8000)
+}
 let _assignWarnTimer = null
 function assignEmailWarnToast(msg) {
   let toast = $("assignWarnToast")
@@ -6617,6 +6694,15 @@ async function loadTrailsAutofile() {
   }
 }
 
+// P0 upgrade surface: open Settings and expand the Plan & billing drawer (mirrors checklistUrlLink).
+// Used by the sidebar plan pill, the Pro-note link and the ?upgrade= / klav-plan-intent deep links.
+function openPlanDrawer() {
+  if (typeof setView === "function") setView("settings")
+  const d = $("planDrawer")
+  if (d) { d.setAttribute("open", ""); d.scrollIntoView({ behavior: "smooth", block: "start" }) }
+}
+window.openPlanDrawer = openPlanDrawer
+
 // Plan & partner-code redemption (Settings → Plan & access).
 ;(function _wirePlan(){
   var pretty = { free:"Free", pro:"Pro", team:"Team", scale:"Scale", partner:"Partner · Unlimited" }
@@ -6640,8 +6726,12 @@ async function loadTrailsAutofile() {
       if (quotaNote) quotaNote.textContent = quotaText(d.quotas)
       if (portalBtn) portalBtn.style.display = d.billing && d.billing.stripeCustomerId ? "" : "none"
       if (d.unlimited && area) { area.innerHTML = '<p class="muted" style="font-size:13px">✓ Unlimited access is active on this account.</p>' }
+      // Sidebar plan pill: free accounts only — a compact, always-visible path to the plan drawer.
+      var pill = $("planPill")
+      if (pill) pill.classList.toggle("hide", !!(d.unlimited || (d.plan && d.plan !== "free")))
     } catch(e){}
   }
+  window.refreshPlan = refresh   // billing=success return refetches through this
   refresh()
   document.querySelectorAll(".billingCheckout").forEach(function(b){
     b.addEventListener("click", async function(){
@@ -6678,6 +6768,34 @@ async function loadTrailsAutofile() {
     } catch(e){ if(msg){ msg.style.color="var(--rose)"; msg.textContent="Network error." } }
     finally { btn.disabled = false; btn.textContent = "Redeem" }
   })
+})()
+
+// P0 upgrade deep links: onboarding (and pricing pages) land here with ?upgrade=pro|team or a
+// sessionStorage 'klav-plan-intent' — open the Plan & billing drawer and clear the intent.
+;(function _planIntent(){
+  var want = null
+  try { want = new URLSearchParams(location.search).get("upgrade") } catch(e){}
+  try { if (!want) want = sessionStorage.getItem("klav-plan-intent") } catch(e){}
+  if (want !== "pro" && want !== "team") return
+  try { sessionStorage.removeItem("klav-plan-intent") } catch(e){}
+  try { var u = new URL(location.href); u.searchParams.delete("upgrade"); history.replaceState(null, "", u.pathname + u.search + u.hash) } catch(e){}
+  // Defer past the sidebar view-switch script (runs later in the document) so setView exists.
+  setTimeout(openPlanDrawer, 400)
+})()
+
+// Stripe checkout return: /dashboard?billing=success|cancelled (see /api/billing/checkout URLs).
+;(function _billingReturn(){
+  var v = null
+  try { v = new URLSearchParams(location.search).get("billing") } catch(e){}
+  if (v !== "success" && v !== "cancelled") return
+  try { var u = new URL(location.href); u.searchParams.delete("billing"); history.replaceState(null, "", u.pathname + u.search + u.hash) } catch(e){}
+  if (v === "success") {
+    setTimeout(function(){ klavToast("Your plan is live") }, 400)
+    // Stripe webhooks can lag the redirect by a beat — refetch now and once more shortly after.
+    if (window.refreshPlan) { window.refreshPlan(); setTimeout(function(){ window.refreshPlan() }, 4000) }
+  } else {
+    setTimeout(function(){ klavToast("Checkout cancelled — your plan is unchanged. Come back any time.", true) }, 400)
+  }
 })()
 
 $("inviteBtn") && ($("inviteBtn").onclick = async () => {
@@ -6801,6 +6919,8 @@ load()
     if(v==='autosims'){if(typeof window.initTrailsView==='function')window.initTrailsView();}
     if(v==='tickets'){if(typeof renderTicketsView==='function')renderTicketsView();}
     if(v==='snap'){if(typeof window.renderSnapView==='function')window.renderSnapView();}
+    // Returning to Overview re-runs the checklist so the widget-status poll restarts (it self-stops on other views).
+    if(v==='overview'){if(typeof window.renderChecklist==='function')window.renderChecklist();}
     if(v==='guards'){if(typeof window.loadExpectations==='function')window.loadExpectations();}
   }
   normalizeSidebar();
@@ -7236,7 +7356,8 @@ load()
   window.openSimModal=function(){
     const first=!(state&&state.sims&&state.sims.length);
     $("simHd").textContent=first?"Bring your first Sim to life":"Add a Sim";
-    out.innerHTML=""; out.style.display=""; $("smBrief").value=""; $("smUrl").value=""; $("smTx").value="";
+    // Prefill the site URL from the project when known — one less hop to a first Sim reaction.
+    out.innerHTML=""; out.style.display=""; $("smBrief").value=""; $("smUrl").value=(state&&state.active&&state.active.siteUrl)||""; $("smTx").value="";
     hideSuccessPanel();
     ov.querySelector('.sm-seg button[data-pane="describe"]').click();
     ov.classList.add("show"); document.body.style.overflow="hidden"; setTimeout(()=>$("smBrief").focus(),60);

@@ -108,7 +108,6 @@ input.code{font-family:var(--mono);font-size:24px;letter-spacing:.5em;text-align
 /* ── A1: demo beat ── */
 .demo-beat{max-width:700px;margin:0 auto 36px;background:linear-gradient(135deg,rgba(219,39,119,.08),rgba(99,102,241,.06));border:1px solid rgba(219,39,119,.22);border-radius:20px;padding:26px 28px;position:relative;text-align:left}
 .demo-beat .db-eyebrow{font-family:var(--mono);font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--rose);font-weight:600;margin-bottom:10px;display:flex;align-items:center;gap:7px}
-.demo-beat .db-eyebrow .db-dot{width:8px;height:8px;border-radius:50%;background:var(--rose);animation:dbpulse 2s ease infinite}
 .demo-beat .db-scene{background:var(--ink-2);border:1px solid var(--line);border-radius:13px;padding:16px;margin-bottom:14px}
 .demo-beat .db-row{display:flex;align-items:flex-start;gap:12px}
 .demo-beat .db-av{width:34px;height:34px;border-radius:9px;background:#e8843a;color:#fff;font-weight:700;font-size:13px;display:grid;place-items:center;flex-shrink:0}
@@ -122,7 +121,6 @@ input.code{font-family:var(--mono);font-size:24px;letter-spacing:.5em;text-align
 .demo-beat .db-catch .db-ct{font-size:12.5px;font-weight:600;color:var(--paper);margin-bottom:4px}
 .demo-beat .db-catch .db-cd{font-size:12px;color:var(--paper-dim)}
 .demo-beat .db-cta{display:flex;justify-content:center;margin-top:4px}
-@keyframes dbpulse{0%,100%{opacity:.4}50%{opacity:1}}
 
 /* ── A2: URL Sims hero ── */
 .url-hero{max-width:620px;margin:0 auto 10px}
@@ -299,7 +297,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 
         <!-- ── A1: Demo aha beat — baked, zero input ── -->
         <div class="demo-beat" role="region" aria-label="Demo: a Sim catches a bug pre-launch">
-          <div class="db-eyebrow"><span class="db-dot"></span>Live demo · Acme Finance</div>
+          <div class="db-eyebrow">Example · Acme Finance</div>
           <div class="db-scene">
             <div class="db-row">
               <div class="db-av">PR</div>
@@ -328,7 +326,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
             <button class="btn btn-indigo" id="uhGo" onclick="uhFetch()">Meet your Sims →</button>
           </div>
           <div class="uh-err" id="uhErr"></div>
-          <div class="hide" id="uhLoading"><div class="uh-loading"><span class="uh-spin"></span>Reading your page…</div></div>
+          <div class="hide" id="uhLoading"><div class="uh-loading"><span class="uh-spin"></span><span id="uhLoadTxt">Opening your page…</span><span style="color:var(--paper-faint)">· usually ~20s</span></div></div>
           <div id="uhResult"></div>
         </div>
 
@@ -481,7 +479,18 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         <div class="panel">
           <div class="kicker">Step 3 of 3 · bring your customers in</div>
           <h2>Who should <em>review it?</em></h2>
-          <p class="sub">Start from a real customer call, or drop in a ready-made review team if you don't have a transcript yet. Either way, you'll meet them in the Studio next.</p>
+          <p class="sub" id="s3sub">Start from a real customer call, or drop in a ready-made review team if you don't have a transcript yet. Either way, you'll meet them in the Studio next.</p>
+          <!-- Aha carry-through: when step 0 built Sims from THEIR site, the primary path is seeing
+               those Sims' first review in New reports — not Sim-authoring jargon. Hidden when the
+               user skipped step 0 (no stashed personas). -->
+          <div class="hide" id="ahaPrimary">
+            <div class="tile sel" id="ahaPrimaryTile" role="button" tabindex="0" onclick="gotoAhaReview()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();gotoAhaReview()}">
+              <div class="ti"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z" /></svg></div>
+              <h3 id="ahaPrimaryHd">Your Sims — see their first review →</h3>
+              <p>The Sims we built from your site are already on it — their first review lands in New reports on your dashboard.</p>
+            </div>
+            <div style="font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);margin:18px 0 12px">Richer Sims later</div>
+          </div>
           <div class="tiles">
             <div class="tile sel" id="intentTranscript" onclick="pickIntent('transcript')"><div class="ti"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" /> <path d="M14 2v4a2 2 0 0 0 2 2h4" /> <path d="M10 9H8" /> <path d="M16 13H8" /> <path d="M16 17H8" /></svg></div><h3>From a customer call</h3><p>Upload a transcript (Zoom / Meet / Loom). We turn each speaker into a Sim, based on what they actually said.</p></div>
             <div class="tile" id="intentHats" onclick="pickIntent('hats')"><div class="ti"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5" /> <path d="M9 18h6" /> <path d="M10 22h4" /></svg></div><h3>The Six Thinking Hats</h3><p>A balanced review team — facts, feelings, optimism, risks, ideas, process — that works on any page, no transcript needed.</p>
@@ -527,19 +536,33 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 // reaction) and render the catch into the .uh-catch slot. Fails soft — never shows an error here.
 (function(){
   function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
-  function softNote(node,pname){ node.innerHTML='<b>'+esc(pname)+'</b> is ready to react — run a review in the dashboard to hear what your Sims think.' }
+  // "New reports" = the dashboard triage view (#triage is its existing deep link).
+  function dashTriageHref(){ var pid=(typeof projectId!=='undefined'&&projectId)?projectId:null; return '/dashboard'+(pid?'?project='+encodeURIComponent(pid):'')+'#triage' }
+  function softNote(node,pname){ node.innerHTML='<b>'+esc(pname)+'</b> is ready to react — <a href="'+dashTriageHref()+'" style="color:var(--indigo);font-weight:600">open New reports in your dashboard →</a>' }
   window.klavPreviewReact = async function(url, personas){
     var r=document.getElementById('uhResult'); if(!r) return
     var persona=(personas&&personas[0])||null
     var pname=(persona&&persona.name)||'A customer'
     var node=r.querySelector('.uh-catch')
     if(!node){ node=document.createElement('div'); node.className='uh-catch'; r.appendChild(node) }
-    node.innerHTML='<span class="uh-live-dot"></span>'+esc(pname)+' is opening your page and reacting…'
+    // The preview can take up to ~40s — rotate staged progress lines client-side while we wait.
+    var waitLines=[esc(pname)+' is opening your page…','Taking a screenshot…',esc(pname)+' is reading it…','Writing up what bugs them…']
+    var waitIx=0
+    function paintWait(){ node.innerHTML='<span class="uh-live-dot"></span>'+waitLines[waitIx]+' <span style="color:var(--paper-faint);font-size:12px">usually ~20s</span>' }
+    paintWait()
+    var waitTimer=setInterval(function(){ waitIx=Math.min(waitIx+1,waitLines.length-1); paintWait() },5000)
     try{
       var res=await fetch('/api/sim/preview',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({url:url,persona:persona})})
       if(!res.ok) throw 0
       var d=await res.json(); var rx=d&&d.reaction
       if(!rx||!(rx.observation||rx.title)){ softNote(node,pname); return }
+      // Aha carry-through: keep the reaction alongside the stashed personas so post-signup
+      // steps can reference what the Sim already found on THEIR site.
+      try{
+        var st=JSON.parse(localStorage.getItem('klav-aha-preview')||'{}')||{}
+        st.reactionText=String(rx.observation||rx.title||'')
+        localStorage.setItem('klav-aha-preview',JSON.stringify(st))
+      }catch(e){}
       var sent=String(rx.sentiment||'neutral')
       var cls=sent==='critical'?'crit':sent==='positive'?'pos':'neu'
       var word=sent==='critical'?'caught something':sent==='positive'?'liked it':'noticed'
@@ -548,6 +571,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         +(rx.title?'<div class="uh-rx-title">'+esc(rx.title)+'</div>':'')
         +'<div class="uh-rx-obs">“'+esc(rx.observation||rx.title)+'”</div></div>'
     }catch(e){ softNote(node,pname) }
+    finally{ clearInterval(waitTimer) }
   }
 })();
 </script>
@@ -561,10 +585,19 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   function accentFor(name){ var h=0; for(var i=0;i<name.length;i++) h=(h*31+name.charCodeAt(i))&0xffffffff; return ACCENT_COLORS[Math.abs(h)%ACCENT_COLORS.length] }
   function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') }
 
+  // Persona generation takes ~10-20s — rotate staged progress lines client-side while we wait.
+  var UH_WAIT_LINES=['Opening your page…','Taking a screenshot…','Reading what is on the page…','Sketching your customers…']
+  var uhWaitTimer=null, uhWaitIx=0
   function uhSetLoading(on){
-    var lo=document.getElementById('uhLoading'), go=document.getElementById('uhGo')
+    var lo=document.getElementById('uhLoading'), go=document.getElementById('uhGo'), txt=document.getElementById('uhLoadTxt')
     if(lo) lo.classList.toggle('hide',!on)
     if(go){ go.disabled=on; go.textContent=on?'Reading…':'Meet your Sims →' }
+    if(uhWaitTimer){ clearInterval(uhWaitTimer); uhWaitTimer=null }
+    if(on){
+      uhWaitIx=0
+      if(txt) txt.textContent=UH_WAIT_LINES[0]
+      uhWaitTimer=setInterval(function(){ uhWaitIx=Math.min(uhWaitIx+1,UH_WAIT_LINES.length-1); if(txt) txt.textContent=UH_WAIT_LINES[uhWaitIx] },4000)
+    }
   }
 
   function uhShowPersonas(url, personas){
@@ -572,6 +605,16 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     if(!personas||!personas.length){ r.innerHTML='<p style="font-size:13px;color:var(--rose);margin-top:10px">No Sims came back — try a different URL.</p>'; return }
     // A5: first-catch hook — if any Sim returned, mark that the user reached their first Sim reaction
     try{ localStorage.setItem('klav-aha-sims-seen','1') }catch(e){}
+    // Aha carry-through: stash so signup can persist these Sims into the new project and
+    // step 3 can link straight to their first review. klavPreviewReact fills reactionText.
+    try{ localStorage.setItem('klav-aha-preview', JSON.stringify({ url: url, personas: personas, reactionText: '', ts: Date.now() })) }catch(e){}
+    // Friction: prefill step 1 from the URL the user already typed (still editable there).
+    try{
+      var host=new URL(url).hostname.replace(/^www\./,'')
+      var dm=document.getElementById('domain'); if(dm && !dm.value.trim()) dm.value=host
+      var pn=document.getElementById('projectName')
+      if(pn && !pn.value.trim()) pn.value=host.split('.')[0].split(/[-_]+/).map(function(w){ return w?w.charAt(0).toUpperCase()+w.slice(1):'' }).join(' ')
+    }catch(e){}
     var simsHtml = personas.map(function(p){
       var acc=p.accent||accentFor(p.name||'')
       var init=p.initials||initials(p.name||'')
@@ -580,7 +623,11 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         +'<div class="uh-rl">'+esc(p.role||'')+'</div></div>'
     }).join('')
     var firstSim = personas[0]
-    var catchNote = firstSim ? '<div class="uh-catch"><b>'+esc(firstSim.name)+'</b> and '+(personas.length-1)+' other'+(personas.length>2?'s':'')+' are reading your page now \u2014 they\'ll react in character when you run a review in the dashboard. <span class="uh-sentiment">\u2728 your Sims</span></div>' : ''
+    var pid=(typeof projectId!=='undefined'&&projectId)?projectId:null
+    var reviewsAt = pid
+      ? '<a href="/dashboard?project='+encodeURIComponent(pid)+'#triage" style="color:var(--indigo);font-weight:600">New reports</a>'
+      : '<b>New reports</b> as soon as you create your project'
+    var catchNote = firstSim ? '<div class="uh-catch"><b>'+esc(firstSim.name)+'</b> and '+(personas.length-1)+' other'+(personas.length>2?'s':'')+' are reading your page now \u2014 their first review lands in '+reviewsAt+'. <span class="uh-sentiment">\u2728 your Sims</span></div>' : ''
     r.innerHTML = '<div class="uh-success">'
       +'<div><div class="uh-label">Your customers, read from your page</div><div class="uh-sims">'+simsHtml+'</div></div>'
       +(catchNote)
@@ -641,6 +688,20 @@ let projectId = null          // resolved after sign-in (the user's default proj
 let intent = 'transcript'     // step-3 choice: 'transcript' | 'hats'
 let goal = null               // goal fork: 'snap' (bug reports first) | 'sims' (AI review first)
 
+// Buy intent from /pricing (?plan=pro|team): stash it and carry it to every dashboard exit
+// as &upgrade=<plan> (the dashboard opens the plan drawer). The Studio exit goes to /app
+// instead — there we deliberately leave the 'klav-plan-intent' sessionStorage key in place
+// and the dashboard reads it on its next visit.
+let planIntent = null
+try {
+  const _plan = new URL(window.location.href).searchParams.get('plan')
+  if (_plan === 'pro' || _plan === 'team') { planIntent = _plan; sessionStorage.setItem('klav-plan-intent', _plan) }
+  else {
+    const _saved = sessionStorage.getItem('klav-plan-intent')
+    if (_saved === 'pro' || _saved === 'team') planIntent = _saved
+  }
+} catch(e){}
+
 // ── Goal fork ────────────────────────────────────────────────────────────────
 // Snap  = 2-step flow (create project → add the widget), ends at /dashboard reports.
 // Sims  = the full 3-step path (create → add to site → pick Sims → Studio).
@@ -689,9 +750,17 @@ function widgetSnippetText(){ return '<script src="https://klavity.in/widget.js"
 function renderWidgetSnippet(){
   var s = document.getElementById('snipPid'); if (s) s.textContent = projectId || 'YOUR_PROJECT_ID'
   // Also deep-link the "Skip for now" exit at the onboarding project, so /dashboard opens
-  // the project created in step 1 rather than the account default (KLAVITYKLA-47).
+  // the project created in step 1 rather than the account default (KLAVITYKLA-47), and
+  // carry any pricing-page buy intent so the dashboard can open the plan drawer.
   var a = document.getElementById('skipToDash')
-  if (a && projectId) a.href = '/dashboard?project=' + encodeURIComponent(projectId) + (goal ? '&goal=' + encodeURIComponent(goal) : '')
+  if (a) {
+    var q = new URLSearchParams()
+    if (projectId) q.set('project', projectId)
+    if (goal) q.set('goal', goal)
+    if (typeof planIntent !== 'undefined' && planIntent) q.set('upgrade', planIntent)
+    var qs = q.toString()
+    a.href = '/dashboard' + (qs ? '?' + qs : '')
+  }
 }
 ;(function(){
   var cp = document.getElementById('copySnippet'); if (!cp) return
@@ -718,6 +787,8 @@ function paint(){
   })
   // Widget live-detect: poll only while step 2's widget section is visible.
   if (typeof syncWidgetPoll === 'function') syncWidgetPoll()
+  // Step 3: show the "see their first review" primary exit when step-0 aha personas exist.
+  if (cur === 3) syncAhaPrimary()
   window.scrollTo(0, 0)
 }
 function go(n){ cur = n; paint() }
@@ -772,6 +843,13 @@ async function verifyCode(){
       method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ email, code, attribution: _attr })
     })
     if (!v.ok) { err.textContent = v.data.error || 'Invalid or expired code.'; return }
+    // Bind the wizard to the project the server ensured for THIS signup. Never guess from
+    // /api/projects here — invite-holders can have admin roles on OTHER tenants' projects,
+    // and the newest-admin heuristic would bind renames/personas/snippet to the wrong one.
+    if (v.data && v.data.projectId) {
+      projectId = v.data.projectId
+      try { sessionStorage.setItem('klav-onboarding-project', projectId) } catch(e){}
+    }
     // signed in (cookie set). Resolve the default project, then set its name to the chosen project name.
     await applyProjectName()
     go(2)
@@ -779,13 +857,25 @@ async function verifyCode(){
   finally { btn.disabled = false; btn.textContent = 'Verify & create →' }
 }
 
+// The step-0 aha stash ({url, personas, reactionText, ts}) — survives a reload between the
+// hero preview and OTP verify, and feeds the step-3 "see their first review" exit.
+// Expires after 2h: a stale stash from an earlier visit must never leak an OLD site's
+// personas/preview into a project created later, or show a stale step-3 tile.
+function ahaStash(){
+  try {
+    const st = JSON.parse(localStorage.getItem('klav-aha-preview') || 'null')
+    if (!st || !st.ts || (Date.now() - st.ts) > 2 * 60 * 60 * 1000) return null
+    return st
+  } catch(e){ return null }
+}
+
 // Persist aha personas (generated in the hero URL step) into the newly-created project.
-// Called fire-and-forget after projectId is resolved. Best-effort — never blocks the flow.
-// Uses the POST /api/personas dedup guard so re-running onboarding never creates duplicates.
+// Awaited after projectId is resolved so the follow-up /api/sim/preview lands on Sims that
+// already exist. Uses the POST /api/personas dedup guard so re-running never duplicates.
 async function persistAhaPersonas(){
-  const ps = window._ahaPersonas
+  let ps = window._ahaPersonas
+  if (!ps || !ps.length) { const st = ahaStash(); ps = (st && st.personas) || null }
   if (!projectId || !ps || !ps.length) return
-  window._ahaPersonas = null // consume once; prevent double-persist
   for (var i = 0; i < ps.length; i++) {
     try {
       await jsonFetch('/api/personas?project=' + encodeURIComponent(projectId), {
@@ -793,17 +883,29 @@ async function persistAhaPersonas(){
       })
     } catch(e) { /* best-effort per-persona */ }
   }
+  window._ahaPersonas = null // consume only after the POSTs, so an early failure can retry
 }
 
-// Find the user's default project and rename it to the chosen name (best-effort — never blocks the flow).
+// Rename the signup's project to the chosen name (best-effort — never blocks the flow).
 async function applyProjectName(){
   const name = $('projectName').value.trim()
   try {
-    const { ok, data } = await jsonFetch('/api/projects', { headers:{'accept':'application/json'} })
-    if (!ok || !data.projects || !data.projects.length) return
-    projectId = (data.projects.filter(p => p.role === 'admin').pop() || data.projects[0]).id
+    if (!projectId) {
+      // Fallback heuristic — ONLY when /api/auth/verify didn't return a projectId.
+      const { ok, data } = await jsonFetch('/api/projects', { headers:{'accept':'application/json'} })
+      if (!ok || !data.projects || !data.projects.length) return
+      projectId = (data.projects.filter(p => p.role === 'admin').pop() || data.projects[0]).id
+    }
     renderWidgetSnippet()
-    persistAhaPersonas().catch(function(){}) // fire-and-forget: persists aha personas into the new project
+    await persistAhaPersonas()
+    // Aha carry-through: run a PERSISTED review of their step-0 URL so a real first review
+    // is waiting in this project's New reports (fire-and-forget — never blocks the flow).
+    const st = ahaStash()
+    if (st && st.url) {
+      jsonFetch('/api/sim/preview', {
+        method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ url: st.url, projectId: projectId })
+      }).catch(function(){})
+    }
     if (name) {
       await jsonFetch('/api/projects/' + encodeURIComponent(projectId) + '/rename', {
         method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ name })
@@ -846,6 +948,7 @@ function finishToReports(){
   const q = new URLSearchParams()
   if (projectId) q.set('project', projectId)
   q.set('goal', 'snap')
+  if (typeof planIntent !== 'undefined' && planIntent) q.set('upgrade', planIntent)
   window.location.href = '/dashboard?' + q.toString()
 }
 
@@ -1024,6 +1127,28 @@ async function removeUrl(id){
   if (ok) { monitored = (data.monitoredUrls || []).map(m => ({ id: m.id, urlPattern: m.urlPattern })); renderChips() }
 }
 
+// ── Step 3: aha carry-through primary exit ("see their first review" in New reports) ──
+function syncAhaPrimary(){
+  const wrap = $('ahaPrimary'); if (!wrap) return
+  const st = ahaStash()
+  const has = !!(st && st.personas && st.personas.length)
+  wrap.classList.toggle('hide', !has)
+  if (!has) return
+  let host = ''
+  try { host = new URL(st.url).hostname.replace(/^www\./,'') } catch(e){}
+  $('ahaPrimaryHd').textContent = 'Your Sims from ' + (host || 'your site') + ' — see their first review →'
+  setText('s3sub', 'Your Sims are already reviewing your site — or build richer Sims from a real customer call. You can meet them in the Studio any time.')
+}
+function gotoAhaReview(){
+  // New reports = the dashboard triage view; #triage is its existing deep link.
+  const q = new URLSearchParams()
+  if (projectId) q.set('project', projectId)
+  if (goal) q.set('goal', goal)
+  if (typeof planIntent !== 'undefined' && planIntent) q.set('upgrade', planIntent)
+  const qs = q.toString()
+  window.location.href = '/dashboard' + (qs ? '?' + qs : '') + '#triage'
+}
+
 // ── Step 3: pick starting Sims + hand off into the Studio ──
 function pickIntent(which){
   intent = which
@@ -1034,6 +1159,8 @@ function openStudio(){
   // Transcript → /app#add-transcript ; Hats → /app?starter=hats (studio reads either, light handoff).
   // Carry the onboarding project id (KLAVITYKLA-47): without it the Studio opens the account's
   // default project, so starter Sims + saved reviews land in the WRONG project. Query goes before #hash.
+  // Buy intent (?plan=) is NOT appended here — this exit goes to /app, not /dashboard; the
+  // 'klav-plan-intent' sessionStorage key stays set and the dashboard reads it on its next visit.
   const params = []
   if (projectId) params.push('project=' + encodeURIComponent(projectId))
   if (goal) params.push('goal=' + encodeURIComponent(goal))
@@ -1065,7 +1192,12 @@ async function bootstrap(){
       $('email').value = me.data.email
       const pr = await jsonFetch('/api/projects', { headers:{'accept':'application/json'}, signal: ctrl.signal })
       if (pr.ok && pr.data.projects && pr.data.projects.length){
-        const own = pr.data.projects.filter(p => p.role === 'admin').pop() || pr.data.projects[0]
+        // Prefer the project bound at OTP verify (this signup's project); the newest-admin
+        // heuristic is only a fallback and can pick another tenant's project for invitees.
+        let saved = null
+        try { saved = sessionStorage.getItem('klav-onboarding-project') } catch(e){}
+        const own = (saved && pr.data.projects.find(p => p.id === saved))
+          || pr.data.projects.filter(p => p.role === 'admin').pop() || pr.data.projects[0]
         projectId = own.id
         renderWidgetSnippet()
         if (!$('projectName').value.trim()) $('projectName').value = own.name || ''

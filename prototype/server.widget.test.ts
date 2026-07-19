@@ -378,3 +378,51 @@ test("widget-status flips seen:false → seen:true (with host) after a widget pi
   expect(j.host).toBe("app.acme.com")
   expect(Number(j.last_seen_at)).toBeGreaterThan(0)
 })
+
+// ── Self-ping poisoning guard: the dashboard/onboarding pages mount /widget.js themselves
+//    (dogfooding), so a ping whose Origin is the app's OWN host must be acknowledged but NOT
+//    recorded — otherwise "Widget detected" flips green with zero real install. ──
+
+test("a self-ping (Origin = app's own host) does not satisfy install verification; a foreign ping does", async () => {
+  // Fresh project with NO pings, so earlier ping tests can't contaminate it.
+  const P3 = `proj_selfping_${ts}`
+  await rawExec(
+    `INSERT INTO projects (id, account_id, name, status, review_mode, review_budget_daily, observability_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [P3, ACCOUNT_ID, "Self Ping Project", "active", "auto", 200, "named", NOW, NOW],
+  )
+  await rawExec(
+    `INSERT INTO project_members (id, project_id, email, project_role, invited_by, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+    [`pm_sp_${ts}`, P3, ADMIN_EMAIL, "admin", null, NOW],
+  )
+
+  // Widget auto-mounted on our own dashboard phones home with our own Origin…
+  const selfPing = await fetch(base + "/api/widget/ping", {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: base },
+    body: JSON.stringify({ project_id: P3 }),
+  })
+  // …it's acknowledged (the widget never sees an error)…
+  expect(selfPing.status).toBe(200)
+  expect((await selfPing.json()).ok).toBe(true)
+
+  // …but NOT recorded: the install chip stays "undetected".
+  let r = await fetch(base + "/api/projects/" + P3 + "/widget-status", { headers: { cookie: sessionCookie } })
+  expect(r.status).toBe(200)
+  let j = await r.json()
+  expect(j.seen).toBe(false)
+  expect(j.host).toBeNull()
+
+  // A ping from a real customer domain still records as before.
+  const foreignPing = await fetch(base + "/api/widget/ping", {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: "https://real-install.example.com" },
+    body: JSON.stringify({ project_id: P3 }),
+  })
+  expect(foreignPing.status).toBe(200)
+
+  r = await fetch(base + "/api/projects/" + P3 + "/widget-status", { headers: { cookie: sessionCookie } })
+  expect(r.status).toBe(200)
+  j = await r.json()
+  expect(j.seen).toBe(true)
+  expect(j.host).toBe("real-install.example.com")
+})
