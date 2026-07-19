@@ -274,8 +274,16 @@ body{font-family:var(--font-sans,'Inter',system-ui,sans-serif);background:#f9faf
       setLoading(false)
 
       if (!findings.length) {
-        resultsHeader.textContent = "No obvious breakage found — this page looks healthy! 🎉"
+        // KLAVITYKLA-342: an empty scan is a RESULT, not a dead end. Say what was actually
+        // checked so a first-time visitor can trust the zero instead of reading it as "broken tool".
+        const checked = data.checked || {}
+        resultsHeader.textContent = "Nothing broken found on " + new URL(analysedUrl).hostname
+        const li = document.createElement("li")
+        li.className = "finding-item low"
+        li.innerHTML = '<div class="finding-title">Here is what we checked</div>' +
+          '<div class="finding-why">' + escHtml(checked.summary || "We walked this page's links, forms and buttons and found no user-facing breakage.") + "</div>"
         findingList.innerHTML = ""
+        findingList.appendChild(li)
       } else {
         resultsHeader.textContent = `Found ${findings.length} issue${findings.length === 1 ? "" : "s"} on ${new URL(analysedUrl).hostname}`
         // Show first 2 fully, rest blurred (unlock gate)

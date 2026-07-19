@@ -70,10 +70,13 @@ beforeAll(async () => {
     port: 0,
     fetch() {
       return new Response(
+        // The <a> is deliberately WORKING (this stub answers 200 on every path) — KLAVITYKLA-342
+        // asserts the model's "broken link" claim about it is dropped after real verification.
         `<html><head><title>Acme App</title></head><body>
           <h1>Acme Dashboard</h1>
           <p>Welcome back. Your last sync was undefined. NaN active users.</p>
-          <button>Continue</button>
+          <a href="/github">GitHub</a>
+          <form><input name="email"><button>Continue</button></form>
         </body></html>`,
         { headers: { "content-type": "text/html" } },
       )
@@ -91,6 +94,9 @@ beforeAll(async () => {
   const fakeFindings = JSON.stringify({
     findings: [
       { what: HOSTILE_WHAT, where: HOSTILE_WHERE, why: "A user cannot complete the primary action.", severity: "high" },
+      // KLAVITYKLA-342: the exact false positive from the launch smoke test — a hallucinated
+      // broken-link claim about a link that actually resolves 200. Must never reach the user.
+      { what: 'Broken link "GitHub"', where: "Header navigation", why: "The link leads nowhere.", severity: "high" },
       { what: "Sync status shows literal \"undefined\"", where: "text near \"last sync\"", why: "Looks broken/unfinished to a visiting user.", severity: "medium" },
       { what: "Active-user count shows NaN", where: "text near \"active users\"", why: "Undermines trust in the product.", severity: "low" },
     ],
@@ -250,6 +256,46 @@ test("POST /api/cro/analyze mode=cro (explicit): identical to default", async ()
   expect(res.status).toBe(200)
   const body = await res.json()
   expect(Array.isArray(body.frictions)).toBe(true)
+})
+
+// ── KLAVITYKLA-342: false positives + determinism + explicit empty state ───────────────────────
+
+test("POST /api/cro/analyze mode=qa: a model 'broken link' claim about a link that resolves 200 is DROPPED, and the response reports what was checked", async () => {
+  const res = await fetch(`${BASE}/api/cro/analyze`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ url: `${PAGE_BASE}/fp`, anonId: "anon_fp_" + RUN, mode: "qa" }),
+  })
+  expect(res.status).toBe(200)
+  const body = await res.json()
+  // The stub model DID claim 'Broken link "GitHub"'. The link resolves 200, so no link claim survives.
+  const linkClaims = body.findings.filter((f: any) => /link/i.test(f.what) && /broken|dead|404/i.test(f.what))
+  expect(linkClaims).toEqual([])
+  // Non-link findings from the model are untouched.
+  expect(body.findings.some((f: any) => f.what.includes("undefined"))).toBe(true)
+  // Explicit "here's what we checked" payload (Bug 3).
+  expect(body.checked).toBeTruthy()
+  expect(body.checked.links).toBeGreaterThan(0)
+  expect(body.checked.forms).toBeGreaterThan(0)
+  expect(typeof body.checked.summary).toBe("string")
+  expect(body.checked.summary.length).toBeGreaterThan(0)
+})
+
+test("POST /api/cro/analyze mode=qa: scanning the same URL twice returns an IDENTICAL result (no 0 / 8 / 0 flapping)", async () => {
+  const url = `${PAGE_BASE}/determinism`
+  const call = async () => {
+    const r = await fetch(`${BASE}/api/cro/analyze`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url, anonId: "anon_det_" + RUN, mode: "qa" }),
+    })
+    expect(r.status).toBe(200)
+    return await r.json()
+  }
+  const first = await call()
+  const second = await call()
+  expect(second.findings).toEqual(first.findings)
+  expect(second.checked).toEqual(first.checked)
 })
 
 // ── XSS: hostile fetched-page content echoed by the AI must render safely ──────────────────────
