@@ -187,5 +187,12 @@
     "excerpt": "A minimal reproducible example (MRE) is the smallest self-contained code and steps that reliably trigger a bug. Here's how to build one that gets it fixed.",
     "category": "Learn",
     "date": "2026-07-18"
+  },
+  {
+    "slug": "screenshot-vs-screen-recording-bug-evidence",
+    "title": "Screenshot vs. Screen Recording: Which Bug Evidence?",
+    "excerpt": "Screenshots freeze one moment; recordings capture a sequence. Use a screenshot for visual bugs, a recording for timing bugs — and attach the console too.",
+    "category": "Compare",
+    "date": "2026-07-19"
   }
 ]
