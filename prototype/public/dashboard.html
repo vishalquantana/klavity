@@ -7143,6 +7143,10 @@ load()
   }
   // ── Post-add success panel ──
   const successEl=$("smSuccess");
+  // The active project's site URL for run-now prefills. NOTE: this definition was lost in a
+  // merge while the call at the prefill site survived, so showSuccessPanel threw and the
+  // success panel never rendered — keep helper and call together.
+  function projSiteUrl(){ return (state&&state.active&&state.active.siteUrl)||""; }
   function showSuccessPanel(addedName,addedCount,merged){
     // Update heading to reflect single vs. multiple
     const title=$("smSuccessTitle");

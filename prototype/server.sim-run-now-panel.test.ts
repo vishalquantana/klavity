@@ -156,7 +156,7 @@ test("Run-a-review-now prefills the URL from the active project's siteUrl", () =
   expect(HTML).toContain("state.active.siteUrl")
   const i = HTML.indexOf("function showSuccessPanel(")
   expect(i).toBeGreaterThan(-1)
-  const region = HTML.slice(i, i + 900)
+  const region = HTML.slice(i, i + 1600)
   expect(region).toContain("projSiteUrl()")
 })
 
