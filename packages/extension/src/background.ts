@@ -1,5 +1,6 @@
 import type { BackgroundMessage, ContentMessage, KlavitySettings, KlavConfig, ReportType } from '@klavity/core'
 import { findProjectForUrl } from './project-url'
+import { onSettingsChanged } from './config-flush'
 import { DEFAULT_SETTINGS } from '@klavity/core'
 import { dispatchSubmit } from '@klavity/core/submit'
 import { submitReport as jiraSubmit } from '@klavity/core/integrations/jira'
@@ -377,6 +378,13 @@ chrome.runtime.onInstalled.addListener(() => {
   void reconcileDynamicScripts() // refresh registrations (e.g. file paths after an update)
 })
 chrome.runtime.onStartup?.addListener?.(() => { void setupContextMenus(); void syncConfig() })
+
+// Changing the Backend URL in Options must invalidate the klavConfig cache (and the
+// in-memory copy every open content script holds) — otherwise the extension keeps
+// calling the OLD backend until a manual storage.clear() + reload (KLAVITYKLA-320).
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  void onSettingsChanged(changes, areaName, { broadcastConfig, syncConfig })
+})
 
 // SPA backstop (P3b): the content script watches history in-page, but some SPA route
 // changes only surface to the platform via tabs.onUpdated. When a monitored tab's URL
