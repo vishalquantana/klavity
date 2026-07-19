@@ -65,6 +65,10 @@ export async function initDb() {
     await db!.execute("ALTER TABLE projects ADD COLUMN autosim_auth_status TEXT NOT NULL DEFAULT 'unregistered'").catch((e: any) => console.warn("projects.autosim_auth_status ALTER skipped:", e?.message || e))
   if (!_initCols.get("accounts")?.has("plan"))
     await db!.execute("ALTER TABLE accounts ADD COLUMN plan TEXT NOT NULL DEFAULT 'free'").catch((e: any) => console.warn("accounts.plan ALTER skipped:", e?.message || e))
+  // KLA-297: explicit onboarding-completed flag (ms epoch). Replaces inferring "has been through
+  // setup" from the OPTIONAL accounts.domain field.
+  if (!_initCols.get("accounts")?.has("onboarded_at"))
+    await db!.execute("ALTER TABLE accounts ADD COLUMN onboarded_at INTEGER").catch((e: any) => console.warn("accounts.onboarded_at ALTER skipped:", e?.message || e))
   for (const [col, def] of accountBillingColumns) {
     if (!_initCols.get("accounts")?.has(col))
       await db!.execute(`ALTER TABLE accounts ADD COLUMN ${col} ${def}`).catch((e: any) => console.warn(`accounts.${col} ALTER skipped:`, e?.message || e))
@@ -79,6 +83,7 @@ export async function initDb() {
   await migrateConnectorsPlane(db)
   await backfillTriageV1(db)
   await backfillTrailStatus(db)
+  await backfillOnboardedAt(db)
   await sweepOrphanedWalks(db)
   await sweepOrphanedAuthorSessions(db)
   console.log("✓ Turso connected, schema ready")
@@ -994,6 +999,9 @@ export async function applySchema(c: Client) {
     if (needCol("accounts", col)) await c.execute(`ALTER TABLE accounts ADD COLUMN ${col} ${def}`)
       .catch((e: any) => console.warn(`accounts.${col} ALTER skipped:`, e?.message || e))
   }
+  // KLA-297: explicit onboarding-completed flag (ms epoch, NULL = wizard not finished).
+  if (needCol("accounts", "onboarded_at")) await c.execute("ALTER TABLE accounts ADD COLUMN onboarded_at INTEGER")
+    .catch((e: any) => console.warn("accounts.onboarded_at ALTER skipped:", e?.message || e))
   if (needCol("projects", "billing_plan")) await c.execute("ALTER TABLE projects ADD COLUMN billing_plan TEXT NOT NULL DEFAULT 'free'")
     .catch((e: any) => console.warn("projects.billing_plan ALTER skipped:", e?.message || e))
   if (needCol("projects", "billing_status")) await c.execute("ALTER TABLE projects ADD COLUMN billing_status TEXT")
@@ -1535,6 +1543,45 @@ export async function hasAnyMembership(email: string): Promise<boolean> {
 export async function setAccountDomain(accountId: string, domain: string): Promise<void> {
   if (!db) return
   await db.execute({ sql: "UPDATE accounts SET domain=? WHERE id=?", args: [domain || null, accountId] })
+}
+
+// ── KLA-297: explicit onboarding-completed flag ──────────────────────────────────────────────
+// Before this, "has this account been through setup?" was inferred from accounts.domain — but the
+// wizard labels that field "Your website · optional", so the signal was wrong in BOTH directions:
+// skip it and every /onboarding visit restarted the wizard; fill it and the wizard was unreachable
+// forever. onboarded_at (ms epoch, NULL = not finished) is set once, at a wizard EXIT.
+export async function markAccountOnboarded(accountId: string, at = Date.now()): Promise<void> {
+  if (!db) return
+  // COALESCE keeps the FIRST completion timestamp — deliberate re-entry (?again=1) must not
+  // rewrite when this account originally finished setup.
+  await db.execute({ sql: "UPDATE accounts SET onboarded_at=COALESCE(onboarded_at,?) WHERE id=?", args: [at, accountId] })
+}
+
+export async function isAccountOnboarded(accountId: string): Promise<boolean> {
+  if (!db) return false
+  const r = await db.execute({ sql: "SELECT onboarded_at FROM accounts WHERE id=?", args: [accountId] })
+  return r.rows.length > 0 && (r.rows[0] as any).onboarded_at != null
+}
+
+// One-shot backfill so no CURRENTLY-onboarded account suddenly gets thrown back into the wizard
+// on the deploy that introduces onboarded_at. "Already onboarded" = the old domain signal, OR
+// demonstrable prior activity (any feedback in any of the account's projects) — which catches the
+// users the domain heuristic was wrong about (they finished the wizard but skipped the optional
+// website field). Stamped with created_at: an honest "we don't know exactly when, but before now".
+export async function backfillOnboardedAt(c: Client): Promise<{ backfilled: number }> {
+  const migKey = "accounts_onboarded_at_backfill_kla297"
+  const already = await c.execute({ sql: "SELECT key FROM schema_migrations WHERE key=?", args: [migKey] })
+  if (already.rows.length) return { backfilled: 0 }
+  const r = await c.execute({
+    sql: `UPDATE accounts SET onboarded_at = created_at
+          WHERE onboarded_at IS NULL
+            AND ( (domain IS NOT NULL AND TRIM(domain) <> '')
+               OR id IN (SELECT p.account_id FROM projects p JOIN feedback f ON f.project_id = p.id) )`,
+  })
+  const backfilled = Number(r.rowsAffected ?? 0)
+  await c.execute({ sql: "INSERT INTO schema_migrations (key, applied_at) VALUES (?, ?)", args: [migKey, Date.now()] })
+  console.log(`[backfillOnboardedAt] marked ${backfilled} pre-existing account(s) onboarded`)
+  return { backfilled }
 }
 
 // `attr` (optional): the signing-up user's sanitized first-touch attribution (KLAVITYKLA-324),

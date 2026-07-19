@@ -762,6 +762,16 @@ function renderWidgetSnippet(){
     a.href = '/dashboard' + (qs ? '?' + qs : '')
   }
 }
+// The Snap-only "Skip for now" exit is a plain link, but it IS a completed wizard run — stamp the
+// onboarding flag before navigating so these users aren't restarted at the wizard next visit.
+;(function(){
+  var a = document.getElementById('skipToDash'); if (!a) return
+  a.addEventListener('click', function(ev){
+    if (a.dataset.marked) return
+    ev.preventDefault()
+    markOnboarded().then(function(){ a.dataset.marked = '1'; window.location.href = a.href })
+  })
+})()
 ;(function(){
   var cp = document.getElementById('copySnippet'); if (!cp) return
   cp.addEventListener('click', function(){
@@ -798,6 +808,16 @@ async function jsonFetch(url, opts){
   let data = {}
   try { data = await r.json() } catch(e){}
   return { ok: r.ok, status: r.status, data }
+}
+
+// ── Onboarding-completed flag (KLA-297) ──
+// The server used to infer "already onboarded" from the OPTIONAL website field, so users who
+// skipped it got the wizard restarted on every /onboarding visit. Stamp an explicit flag at every
+// wizard EXIT instead. Fire-and-forget with a short cap: never hold up the exit navigation, and a
+// logged-out/failed call just leaves the flag unset (worst case: wizard shows again, as today).
+function markOnboarded(){
+  const call = jsonFetch('/api/account/onboarded', { method:'POST' }).catch(function(){})
+  return Promise.race([call, new Promise(function(res){ setTimeout(res, 1200) })])
 }
 
 // ── Step 1a: request OTP (real signup) ──
@@ -951,7 +971,8 @@ function updateS2Cta(){
 
 // Snap goal ends at the dashboard with the project + goal in the query so it opens the
 // right project's reports (and can tailor its own first-run hints to the goal).
-function finishToReports(){
+async function finishToReports(){
+  await markOnboarded()
   const q = new URLSearchParams()
   if (projectId) q.set('project', projectId)
   q.set('goal', 'snap')
@@ -1220,7 +1241,8 @@ function pickIntent(which){
   $('intentTranscript').classList.toggle('sel', which === 'transcript')
   $('intentHats').classList.toggle('sel', which === 'hats')
 }
-function openStudio(){
+async function openStudio(){
+  await markOnboarded()
   // Transcript → /app#add-transcript ; Hats → /app?starter=hats (studio reads either, light handoff).
   // Carry the onboarding project id (KLAVITYKLA-47): without it the Studio opens the account's
   // default project, so starter Sims + saved reviews land in the WRONG project. Query goes before #hash.
