@@ -264,7 +264,7 @@ body{font-family:var(--font-sans,'Inter',system-ui,sans-serif);background:#f9faf
           li.innerHTML = `
             <div class="friction-title" style="${isVisible ? "" : "filter:blur(4px);user-select:none"}">
               ${escHtml(f.title)}
-              <span class="severity-chip ${f.severity}">${severityLabel(f.severity)}</span>
+              <span class="severity-chip ${escHtml(f.severity)}">${escHtml(severityLabel(f.severity))}</span>
             </div>
             <div class="friction-fix" style="${isVisible ? "" : "filter:blur(4px);user-select:none"}">→ ${escHtml(f.fix)}</div>
           `
