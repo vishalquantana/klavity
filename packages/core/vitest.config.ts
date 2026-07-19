@@ -8,6 +8,7 @@ export default defineConfig({
       ['tests/voice-input.test.ts', 'jsdom'],
       ['../../site/kit.icon.test.mjs', 'jsdom'],
       ['../../site/attr.test.mjs', 'jsdom'],
+      ['../../site/bug-check-xss.test.mjs', 'jsdom'],
       ['src/mask-numbers.test.ts', 'jsdom'],
     ],
     // Fixed origin for jsdom-environment tests that need a stable location.hostname (attr.test.mjs
