@@ -3361,6 +3361,53 @@ export async function getAccountUsageMap(
   return out
 }
 
+// ── Per-project usage + cost breakdown (KLAVITYKLA-276) ─────────────────────────────────────────
+// Read-only reporting for the customer-facing billing drawer: which project consumed the metered
+// value-metric allowance, and what each project cost in AI spend today. Both are pure reads over
+// the same ledgers the account-level meters/budget use — no enforcement here.
+
+export type ProjectUsageRow = { projectId: string; name: string | null; metric: string; count: number }
+
+// Per-project current-period usage breakdown for an account: one row per (project, metric). The
+// project name is joined from `projects` (null when the project row is gone or usage was recorded
+// with an empty project_id — i.e. "unattributed"). Read-only.
+export async function getAccountUsageByProject(
+  accountId: string,
+  opts: { period?: string } = {},
+): Promise<ProjectUsageRow[]> {
+  const period = opts.period ?? usagePeriod()
+  const r = await db!.execute({
+    sql: `SELECT u.project_id AS pid, p.name AS name, u.metric AS metric, COALESCE(SUM(u.count),0) AS n
+          FROM usage_meters u LEFT JOIN projects p ON p.id = u.project_id
+          WHERE u.account_id = ? AND u.period = ?
+          GROUP BY u.project_id, u.metric
+          ORDER BY u.project_id, u.metric`,
+    args: [accountId, period],
+  })
+  return r.rows.map((x: any) => ({
+    projectId: String(x.pid ?? ""),
+    name: x.name != null ? String(x.name) : null,
+    metric: String(x.metric),
+    count: Number(x.n),
+  }))
+}
+
+export type ProjectSpendRow = { projectId: string; cost: number }
+
+// Per-project AI spend TODAY (UTC day, same window as the tenant daily budget) for an account,
+// summed from the ai_calls ledger and grouped by project_id ('' when the call had no project).
+// Read-only.
+export async function tenantTodaySpendByProject(accountId: string): Promise<ProjectSpendRow[]> {
+  if (!accountId) return []
+  const r = await db!.execute({
+    sql: `SELECT COALESCE(project_id,'') AS pid, COALESCE(SUM(cost_usd),0) AS cost FROM ai_calls
+          WHERE account_id = ? AND date(created_at/1000,'unixepoch') = date('now')
+          GROUP BY COALESCE(project_id,'')`,
+    args: [accountId],
+  })
+  return r.rows.map((x: any) => ({ projectId: String(x.pid ?? ""), cost: Number(x.cost) }))
+}
+
 // Resolve the account that owns a given project. Used by quota.ts and any other module that
 // has a projectId but needs an accountId. Returns null if the project is not found.
 export async function accountIdForProject(projectId: string): Promise<string | null> {

@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
 import {
+  buildProjectUsage,
   buildUsageMeters,
   intervalFromLookupKey,
   intervalFromPrice,
@@ -89,6 +90,76 @@ test("buildUsageMeters defaults missing/garbage metric counts to zero", () => {
 test("buildUsageMeters normalizes unknown plan strings to Free limits", () => {
   const sims = buildUsageMeters("mystery" as any, { sim_review: 10 }).find((m) => m.key === "sims")!
   expect(sims.limit).toBe(25)
+})
+
+// ── KLAVITYKLA-276: per-project usage + cost breakdown ──────────────────────────────────────────
+test("buildProjectUsage merges usage + spend rows into one row per project", () => {
+  const rows = buildProjectUsage(
+    [
+      { projectId: "p1", name: "Alpha", metric: "sim_review", count: 12 },
+      { projectId: "p1", name: "Alpha", metric: "autosim_walk", count: 3 },
+      { projectId: "p2", name: "Beta", metric: "sim_review", count: 2 },
+    ],
+    [
+      { projectId: "p1", cost: 0.42 },
+      { projectId: "p2", cost: 0.05 },
+    ],
+  )
+  const p1 = rows.find((r) => r.projectId === "p1")!
+  const p2 = rows.find((r) => r.projectId === "p2")!
+  expect(p1.name).toBe("Alpha")
+  expect(p1.simReviews).toBe(12)
+  expect(p1.autosimWalks).toBe(3)
+  expect(p1.costToday).toBeCloseTo(0.42)
+  expect(p2.simReviews).toBe(2)
+  expect(p2.autosimWalks).toBe(0)
+  expect(p2.costToday).toBeCloseTo(0.05)
+})
+
+test("buildProjectUsage sorts busiest (most metered activity) project first, then cost", () => {
+  const rows = buildProjectUsage(
+    [
+      { projectId: "quiet", name: "Quiet", metric: "sim_review", count: 1 },
+      { projectId: "busy", name: "Busy", metric: "sim_review", count: 40 },
+    ],
+    [{ projectId: "quiet", cost: 9 }],
+  )
+  expect(rows[0].projectId).toBe("busy")
+})
+
+test("buildProjectUsage labels unattributed ('' project) and cost-only projects", () => {
+  const rows = buildProjectUsage(
+    [{ projectId: "", name: null, metric: "autosim_walk", count: 4 }],
+    [{ projectId: "orphan", cost: 0.1 }],
+  )
+  const unattributed = rows.find((r) => r.projectId === "")!
+  expect(unattributed.name).toBe("Unattributed")
+  expect(unattributed.autosimWalks).toBe(4)
+  // a project that only appears in spend rows (no usage) still shows up, named by its id
+  const orphan = rows.find((r) => r.projectId === "orphan")!
+  expect(orphan.name).toBe("orphan")
+  expect(orphan.costToday).toBeCloseTo(0.1)
+  expect(orphan.simReviews).toBe(0)
+})
+
+test("buildProjectUsage ignores garbage counts/costs and fills a name from a later row", () => {
+  const rows = buildProjectUsage(
+    [
+      { projectId: "p1", name: null, metric: "sim_review", count: NaN as any },
+      { projectId: "p1", name: "RealName", metric: "autosim_walk", count: -5 },
+    ],
+    [{ projectId: "p1", cost: NaN as any }],
+  )
+  const p1 = rows[0]
+  expect(p1.name).toBe("RealName")
+  expect(p1.simReviews).toBe(0)
+  expect(p1.autosimWalks).toBe(0)
+  expect(p1.costToday).toBe(0)
+})
+
+test("buildProjectUsage tolerates empty inputs", () => {
+  expect(buildProjectUsage()).toEqual([])
+  expect(buildProjectUsage([], [])).toEqual([])
 })
 
 // ── KLAVITYKLA-336: live price-ID resolver ──────────────────────────────────────────────────────
