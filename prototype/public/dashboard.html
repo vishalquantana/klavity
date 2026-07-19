@@ -1026,6 +1026,9 @@ details.drawer .drawer-in{padding:0 22px 22px}
 .conn-edit-hint{font-size:11.5px;color:var(--amber);margin-bottom:10px}
 .conn-help{font-size:12px;color:var(--paper-faint)}
 .conn-help a{color:var(--indigo);text-decoration:none}
+/* outcome-first banner (KLAVITYKLA-284): states the OUTCOME the fields below unlock */
+.conn-outcome{grid-column:1/-1;display:flex;align-items:flex-start;gap:8px;padding:11px 13px;margin-bottom:4px;background:linear-gradient(135deg,rgba(99,102,241,.12),rgba(139,92,246,.05));border:1px solid rgba(139,139,245,.3);border-radius:10px;font-size:12.5px;line-height:1.5;color:var(--paper)}
+.conn-outcome .icon,.conn-outcome svg{flex-shrink:0;margin-top:1px;color:var(--indigo)}
 
 /* test-accounts section */
 .tacc-list{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
@@ -1853,7 +1856,8 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       </div>
       <!-- Admin: connectors list + add form -->
       <div id="connAdmin" class="hide">
-        <div class="flbl" style="margin-bottom:10px">External destinations <span class="muted">(optional — push copies to other trackers)</span></div>
+        <div class="flbl" style="margin-bottom:2px">Send your bugs straight into your team's tracker</div>
+        <div class="muted" style="font-size:12.5px;margin-bottom:10px">Connect GitHub, Jira, Linear or Plane and every bug your users report shows up there as an issue — with repro steps, screenshots and console logs attached. No copy-paste.</div>
         <div id="connList" class="conn-list"></div>
         <div id="connAddWrap" class="conn-add hide">
           <div class="conn-add-head">
@@ -1867,17 +1871,17 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           <div id="connNewFields" class="conn-fields"></div>
           <div style="display:flex;align-items:center;gap:12px">
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
-              <input type="checkbox" id="connNewAutoCopy" /> Auto-copy new tickets
+              <input type="checkbox" id="connNewAutoCopy" /> Auto-file every new bug here (no manual copy)
             </label>
           </div>
           <div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-            <button class="btn btn-indigo btn-sm" id="connSaveNew">Add destination</button>
+            <button class="btn btn-indigo btn-sm" id="connSaveNew">Connect tracker</button>
             <button class="btn btn-ghost btn-sm" id="connTestNew">Test connection</button>
             <span class="msg" id="connAddMsg" style="margin:0"></span>
           </div>
           <div class="conn-result hide" id="connAddTestResult"></div>
         </div>
-        <button class="btn btn-ghost btn-sm" id="connAddBtn" style="margin-top:8px">+ Add destination</button>
+        <button class="btn btn-ghost btn-sm" id="connAddBtn" style="margin-top:8px">+ Connect a tracker</button>
         <div class="msg" id="connMsg"></div>
       </div>
       <!-- Non-admin: read-only note -->
@@ -6132,7 +6136,7 @@ function renderConnectors(admin) {
   const listEl = $("connList")
   if (!listEl) return
   if (!conns.length) {
-    listEl.innerHTML = `<div class="muted" style="padding:4px 2px;font-size:13px">No external destinations yet. Add one below to push copies of Klavity tickets to Jira, Plane, GitHub, Linear, or a webhook.</div>`
+    listEl.innerHTML = `<div class="muted" style="padding:4px 2px;font-size:13px">Not connected yet — your bugs live only in Klavity. Connect a tracker below and they'll auto-appear in Jira, Plane, GitHub or Linear as issues, so your team fixes them where they already work.</div>`
   } else {
     listEl.innerHTML = ""
     conns.forEach(c => {
@@ -6280,7 +6284,7 @@ function resetConnForm() {
   $("connNewName").value = ""
   $("connNewAutoCopy").checked = false
   $("connNewFields").innerHTML = ""
-  $("connSaveNew").textContent = "Add destination"
+  $("connSaveNew").textContent = "Connect tracker"
   $("connAddMsg").textContent = ""
   $("connAddTestResult") && $("connAddTestResult").classList.add("hide")
 }
@@ -6292,6 +6296,20 @@ const CONN_HELP = {
   github: { where: "GitHub → Settings → Developer settings → Personal access tokens (needs repo scope)", url: "https://github.com/settings/tokens" },
   jira:   { where: "Atlassian account → Security → Create and manage API tokens", url: "https://id.atlassian.com/manage-profile/security/api-tokens" },
   linear: { where: "Linear → Settings → API → Personal API keys", url: "https://linear.app/settings/api" },
+}
+
+// Outcome-first setup (KLAVITYKLA-284): before the raw credential fields, spell out the OUTCOME the
+// user is buying — "your bugs auto-appear in <tracker> as issues" — so setup reads as a promise, not a
+// form. Keyed by connector type; falls back to a generic line for any type not listed here.
+const CONN_OUTCOME = {
+  github: "Every bug your users report auto-appears in GitHub as an issue — repro steps, screenshots and console logs attached. Fix them where your code already lives.",
+  jira:   "Every bug your users report auto-appears in Jira as an issue — repro steps, screenshots and console logs attached. Your team triages them in the board they already use.",
+  linear: "Every bug your users report auto-appears in Linear as an issue — repro steps, screenshots and console logs attached. Straight into your team's cycle.",
+  plane:  "Every bug your users report auto-appears in Plane as an issue — repro steps, screenshots and console logs attached. No copy-paste between tools.",
+  webhook:"Every bug your users report is POSTed to your endpoint as JSON — repro steps, screenshots and console logs included. Wire it into anything.",
+}
+function connOutcomeLine(type) {
+  return CONN_OUTCOME[type] || "Every bug your users report is pushed to this destination automatically — nothing to copy by hand."
 }
 
 // Render the connector field inputs into the shared add/edit form.
@@ -6338,7 +6356,10 @@ function renderConnectorFields(type, editConfig) {
     ? `<div class="conn-help field-full">Where do I find this? <a href="${esc(help.url)}" target="_blank" rel="noopener">${esc(help.where)} →</a></div>`
     : ""
 
-  fieldsEl.innerHTML = helpHtml + fieldsHtml + syncPanel
+  // Outcome-first banner (KLAVITYKLA-284): lead with what connecting achieves, above the credentials.
+  const outcomeHtml = `<div class="conn-outcome field-full">${kicon('zap',{size:15})}<span>${esc(connOutcomeLine(type))}</span></div>`
+
+  fieldsEl.innerHTML = outcomeHtml + helpHtml + fieldsHtml + syncPanel
   const cp = $("syncUrlCopy")
   if (cp) cp.onclick = () => {
     const u = $("syncUrl").textContent
