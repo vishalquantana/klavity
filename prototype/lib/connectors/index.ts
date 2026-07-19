@@ -58,6 +58,24 @@ export type CommentSyncResult = {
   error?: string
 }
 
+// JTBD 5.7 (KLAVITYKLA-286): the FULL desired state of the fields we keep in sync with the
+// external issue after the initial export. Both keys are always the CURRENT Klavity values (not a
+// delta) so an adapter that encodes a field into a shared native slot (e.g. GitHub packs priority
+// into a `priority:<x>` label) can rebuild the complete set without clobbering the others.
+//   - labels:   Klavity label display names (may be empty = "no labels").
+//   - priority: one of "urgent" | "high" | "medium" | "low" | null (null = unset/cleared).
+export type FieldUpdate = {
+  labels: string[]
+  priority: string | null
+}
+
+// Result of pushing an outbound field (labels/priority) update to an external tracker.
+export type FieldSyncResult = {
+  ok: boolean
+  // Human-readable error description (server-side only, never echoed to clients).
+  error?: string
+}
+
 export type ConnectorField = {
   key: string
   label: string
@@ -95,6 +113,27 @@ export interface Connector {
     meta: { authorEmail?: string | null; klavityCommentId?: string },
     cfg: Record<string, string>,
   ): Promise<CommentSyncResult>
+
+  /**
+   * JTBD 5.7 (KLAVITYKLA-286): sync a ticket's labels/priority to an already-linked external issue
+   * AFTER the initial export, when they are later edited in Klavity. Follows the same outbound,
+   * best-effort pattern as addComment: field-sync.ts binds real deps and calls this for every
+   * successful export; the adapter maps each field to the provider's native slot where one exists
+   * (Plane/Jira/Linear priority, GitHub/Jira labels) and falls back gracefully otherwise.
+   *
+   * @param externalIssueRef  The externalKey stored in ticket_exports (issue number/key/UUID).
+   * @param fields            The FULL current {labels, priority} desired state (not a delta).
+   * @param cfg               Decrypted connector config (same shape as createIssue receives).
+   *
+   * Implementations MUST be non-throwing: catch their own errors and return { ok: false, error }.
+   * Optional so a connector that cannot update fields (or an external fake in tests) may omit it;
+   * field-sync.ts skips any adapter without it.
+   */
+  updateIssue?(
+    externalIssueRef: string,
+    fields: FieldUpdate,
+    cfg: Record<string, string>,
+  ): Promise<FieldSyncResult>
 }
 
 // ── Registry ───────────────────────────────────────────────────────────────────

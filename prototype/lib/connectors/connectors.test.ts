@@ -413,24 +413,74 @@ test("plane createIssue carries labels in the issue description_html", async () 
   expect(body.description_html).toContain("Labels: Regression, UX polish")
 })
 
-test("github createIssue attaches labels natively as a string array", async () => {
+test("github createIssue attaches labels natively as a string array (with priority label)", async () => {
   const calls: any[] = []
   globalThis.fetch = mock(async (u: any, o: any) => {
     calls.push([u, o]); return new Response(JSON.stringify({ number: 3, html_url: "https://gh/i/3" }), { status: 201 })
   }) as any
   await getConnector("github")!.createIssue(TICKET_WITH_LABELS, { owner: "o", repo: "r", token: "t" })
   const body = JSON.parse(calls[0][1].body)
-  expect(body.labels).toEqual(["Regression", "UX polish"])
+  // JTBD 5.7: GitHub has no native priority field, so priority "high" rides along as a
+  // `priority:high` label appended after the classification labels.
+  expect(body.labels).toEqual(["Regression", "UX polish", "priority:high"])
 })
 
-test("github createIssue omits labels field when there are none", async () => {
+test("github createIssue omits labels field when there are neither labels nor priority", async () => {
   const calls: any[] = []
   globalThis.fetch = mock(async (u: any, o: any) => {
     calls.push([u, o]); return new Response(JSON.stringify({ number: 4, html_url: "https://gh/i/4" }), { status: 201 })
   }) as any
-  await getConnector("github")!.createIssue(TICKET, { owner: "o", repo: "r", token: "t" })
+  await getConnector("github")!.createIssue({ ...TICKET, priority: null }, { owner: "o", repo: "r", token: "t" })
   const body = JSON.parse(calls[0][1].body)
   expect(body.labels).toBeUndefined()
+})
+
+// ── JTBD 5.7: exports carry Klavity priority (native field where the provider has one) ───────────
+
+test("github createIssue carries priority as a priority:<value> label when there are no labels", async () => {
+  const calls: any[] = []
+  globalThis.fetch = mock(async (u: any, o: any) => {
+    calls.push([u, o]); return new Response(JSON.stringify({ number: 5, html_url: "https://gh/i/5" }), { status: 201 })
+  }) as any
+  await getConnector("github")!.createIssue(TICKET, { owner: "o", repo: "r", token: "t" })
+  expect(JSON.parse(calls[0][1].body).labels).toEqual(["priority:high"])
+})
+
+test("plane createIssue sets native priority (1:1 enum)", async () => {
+  const calls: any[] = []
+  globalThis.fetch = mock(async (u: any, o: any) => {
+    calls.push([u, o]); return new Response(JSON.stringify({ id: "i1", sequence_id: 8 }), { status: 201 })
+  }) as any
+  await getConnector("plane")!.createIssue(TICKET, { host: "https://api.plane.so", workspace: "ws", project_id: "p", token: "t" })
+  expect(JSON.parse(calls[0][1].body).priority).toBe("high")
+})
+
+test("jira createIssue maps priority to native name (high → High)", async () => {
+  const calls: any[] = []
+  globalThis.fetch = mock(async (u: any, o: any) => {
+    calls.push([u, o]); return new Response(JSON.stringify({ key: "PROJ-77" }), { status: 201 })
+  }) as any
+  await getConnector("jira")!.createIssue(TICKET, { host: "https://my.atlassian.net", email: "e", token: "t", project_key: "PROJ" })
+  expect(JSON.parse(calls[0][1].body).fields.priority).toEqual({ name: "High" })
+})
+
+test("linear createIssue maps priority to native int (high → 2)", async () => {
+  const calls: any[] = []
+  globalThis.fetch = mock(async (u: any, o: any) => {
+    calls.push([u, o])
+    return new Response(JSON.stringify({ data: { issueCreate: { issue: { identifier: "ENG-1", url: "u" } } } }), { status: 200 })
+  }) as any
+  await getConnector("linear")!.createIssue(TICKET, { api_key: "k", team_id: "tm" })
+  expect(JSON.parse(calls[0][1].body).variables.p).toBe(2)
+})
+
+test("webhook createIssue carries priority in the structured ticket payload", async () => {
+  const calls: any[] = []
+  globalThis.fetch = mock(async (u: any, o: any) => {
+    calls.push([u, o]); return new Response(JSON.stringify({ id: "wh_2" }), { status: 200 })
+  }) as any
+  await getConnector("webhook")!.createIssue(TICKET, { url: "https://webhook.site/abc" })
+  expect(JSON.parse(calls[0][1].body).ticket.priority).toBe("high")
 })
 
 test("jira createIssue attaches labels natively, collapsing spaces to underscores", async () => {
