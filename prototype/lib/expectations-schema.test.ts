@@ -11,7 +11,8 @@ test("expectations table exists with expected columns", async () => {
   // KLA-242: source_ticket_id — ticket this guard was created from
   // KLA-243: saves_count — number of times this guard caught a regression
   // B.13: source_quote / source_quote_verified / source_quote_ref — the originating grounded quote
+  // B.5: awaiting_trail — validated-but-unenforceable, waiting for a covering Trail
   expect(names).toEqual(
-    ["area","corroboration_json","created_at","dedup_key","enforced_step_id","id","project_id","saves_count","source_quote","source_quote_ref","source_quote_verified","source_refs_json","source_ticket_id","status","title","updated_at","url_path"].sort()
+    ["area","awaiting_trail","corroboration_json","created_at","dedup_key","enforced_step_id","id","project_id","saves_count","source_quote","source_quote_ref","source_quote_verified","source_refs_json","source_ticket_id","status","title","updated_at","url_path"].sort()
   )
 })

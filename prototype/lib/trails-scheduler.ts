@@ -77,6 +77,22 @@ export function wallClockInZone(ms: number, tz: string): { year: number; month: 
   }
 }
 
+/** KLA-277: a UTC instant's calendar fields in the target zone, in cron-field naming. */
+export function zonedParts(date: Date, tz: string): { min: number; hour: number; dom: number; mon: number; dow: number } {
+  const w = wallClockInZone(date.getTime(), tz)
+  return { min: w.minute, hour: w.hour, dom: w.day, mon: w.month, dow: w.weekday }
+}
+
+/**
+ * KLA-277: does `expr` fire at `date` when interpreted in IANA `tz`? No/invalid tz falls back to
+ * the historical UTC-cron interpretation so legacy rows keep firing.
+ */
+export function cronMatchesTz(expr: string, date: Date, tz?: string | null): boolean {
+  if (!tz) return cronMatches(expr, date)
+  try { return cronMatchesWall(expr, wallClockInZone(date.getTime(), tz)) }
+  catch { return cronMatches(expr, date) }
+}
+
 /** Does `expr` fire at the given wall-clock (in the schedule's tz)? Mirrors cronMatches field logic. */
 function cronMatchesWall(expr: string, w: { minute: number; hour: number; day: number; month: number; weekday: number }): boolean {
   const parts = expr.trim().split(/\s+/)

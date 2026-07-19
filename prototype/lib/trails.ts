@@ -1,5 +1,6 @@
 import { db } from "./db"
-import type { Trail, TrailEnvironment, TrailStep, TrailStatus, StepAction, Fingerprint, TrailViewport, Checkpoint } from "./trails-types"
+import type { Trail, TrailEnvironment, TrailStep, TrailStatus, StepAction, Fingerprint, TrailViewport, Checkpoint, PersonaVerdict } from "./trails-types"
+import type { WalkJudgment } from "./trails-judge"
 import { computeFindingSeverity } from "./trails-findings-severity"
 import { normalizeTrailViewport, parseTrailViewportJson } from "./trails-viewport"
 
