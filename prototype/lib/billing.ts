@@ -24,8 +24,15 @@ export const STRIPE_PRICE_CATALOG: Record<Exclude<BillingPlan, "free" | "scale" 
   },
 }
 
-// founding mirrors Pro's quotas (same $290/yr price point as Pro annual) — at-or-above Pro per
-// KLAVITYKLA-336. Bump independently later if Founding members should get more.
+// founding gets TEAM-level entitlements (KLAVITYKLA-365). The Founding Ten offer promises Team
+// limits at the $290/yr Founding price — this is an ENTITLEMENT grant only; the price catalog and
+// the live Stripe price id are untouched. (It previously mirrored Pro, which under-delivered
+// against what Founding buyers were sold; the pricing page in KLA-368 advertises Team limits.)
+//
+// AutoSim is a PAID feature (KLAVITYKLA-365): free.autosimFlows = 0 and free.autosimRunsMonthly = 0.
+// Free accounts may not CONFIGURE a new AutoSim flow. Accounts that already had a flow configured
+// before this change are GRANDFATHERED so their existing flow keeps running — see
+// FREE_GRANDFATHERED_AUTOSIM_RUNS_MONTHLY below and lib/quota.ts.
 //
 // Two DIFFERENT AutoSim allowances live here — don't confuse them (KLAVITYKLA-359):
 //   • autosimFlows        — how many AutoSim/Trail flows you may have CONFIGURED at once (a stock).
@@ -34,16 +41,19 @@ export const STRIPE_PRICE_CATALOG: Record<Exclude<BillingPlan, "free" | "scale" 
 // autosimRunsMonthly; measuring it against autosimFlows produced nonsense meters like "12 / 5 flows".
 //
 // autosimRunsMonthly is derived from flows × the plan's cadence, with headroom for manual re-runs:
-//   free   1 flow  × weekly (~4.3 runs/mo)  → 10   (auto-cadence + a few manual pokes)
+//   free   0 flows × none                   → 0    (AutoSim is a paid feature — KLAVITYKLA-365;
+//                                                   pre-existing Free flows are grandfathered to
+//                                                   FREE_GRANDFATHERED_AUTOSIM_RUNS_MONTHLY)
 //   pro    5 flows × daily  (~30 runs/mo)   → 150  (5 × 30)
 //   team   20 flows × ~daily                → 600  (kept at ~30/flow so an hourly cadence can't
 //                                                   silently blow the unit economics)
 //   agency 50 flows × ~daily                → 1500 (50 × 30)
 // Ratio to simReactionsMonthly stays sane across tiers (~2.5–3.3× reviews per run allowance).
 export const PLAN_QUOTAS: Record<BillingPlan, { projects: number | null; sims: number | null; simReactionsMonthly: number | null; autosimFlows: number | null; autosimRunsMonthly: number | null; autosimCadence: string }> = {
-  free: { projects: 1, sims: 1, simReactionsMonthly: 25, autosimFlows: 1, autosimRunsMonthly: 10, autosimCadence: "weekly" },
+  free: { projects: 1, sims: 1, simReactionsMonthly: 25, autosimFlows: 0, autosimRunsMonthly: 0, autosimCadence: "none" },
   pro: { projects: 5, sims: 5, simReactionsMonthly: 500, autosimFlows: 5, autosimRunsMonthly: 150, autosimCadence: "daily" },
-  founding: { projects: 5, sims: 5, simReactionsMonthly: 500, autosimFlows: 5, autosimRunsMonthly: 150, autosimCadence: "daily" },
+  // KLAVITYKLA-365: founding === team entitlements (Founding Ten buyers were promised Team limits).
+  founding: { projects: null, sims: 20, simReactionsMonthly: 2500, autosimFlows: 20, autosimRunsMonthly: 600, autosimCadence: "on-deploy/hourly" },
   team: { projects: null, sims: 20, simReactionsMonthly: 2500, autosimFlows: 20, autosimRunsMonthly: 600, autosimCadence: "on-deploy/hourly" },
   // Agency (KLAVITYKLA-310): unlimited client projects; Sims/AutoSim allowances above Team so an
   // agency can cover many clients without immediately hitting Scale.
@@ -51,6 +61,20 @@ export const PLAN_QUOTAS: Record<BillingPlan, { projects: number | null; sims: n
   scale: { projects: null, sims: null, simReactionsMonthly: null, autosimFlows: null, autosimRunsMonthly: null, autosimCadence: "custom" },
   partner: { projects: null, sims: null, simReactionsMonthly: null, autosimFlows: null, autosimRunsMonthly: null, autosimCadence: "unlimited" },
 }
+
+/**
+ * KLAVITYKLA-365 — grandfathering allowance for Free accounts that ALREADY had an AutoSim flow
+ * configured when AutoSim was removed from Free.
+ *
+ * Removing AutoSim from Free must not retroactively break somebody's working flow. Because
+ * free.autosimFlows is now 0, NO new flow can be created on Free — therefore any Free account that
+ * still has a configured (non-demo) flow necessarily created it BEFORE this change. That invariant
+ * is what identifies a grandfathered account; no migration or flag column is needed.
+ *
+ * For those accounts the monthly AutoSim-run cap falls back to the previous Free allowance (10)
+ * instead of 0, so their existing flow and its scheduled runs keep executing unchanged.
+ */
+export const FREE_GRANDFATHERED_AUTOSIM_RUNS_MONTHLY = 10
 
 export function billingEnforcementEnabled(): boolean {
   return process.env.KLAV_BILLING_ENFORCEMENT === "1"
