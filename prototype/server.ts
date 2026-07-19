@@ -58,7 +58,7 @@ import { runSimReviews, decodeDataUrl as decodeDataUrlLib, splitUrl as splitUrlL
 import { trailsDashboardData, walkTrends } from "./lib/trails-dashboard"
 import { dashboardTrends, dashboardTrendDrill, TREND_SERIES, type TrendSeries } from "./lib/dashboard-trends"
 import { fileFindingById, dismissFinding, realFiler } from "./lib/trails-findings-gate"
-import { getReplay, runsWithReplay } from "./lib/trails-replay"
+import { getReplay, runsWithReplay, findingReplayOffsets } from "./lib/trails-replay"
 import { saveFeedbackReplay, getFeedbackReplay, feedbackIdsWithReplay, pruneOldFeedbackReplays } from "./lib/feedback-replay"
 import { listRunSteps, listTrails, getTrail, getWalk, setTrailStatus, listTrailSteps, insertAssertStep, deleteTrailStep, updateTrailStep, reorderTrailSteps, updateTrail, countRunSteps, countTrailSteps, listTrailRunHistory, listFindings, recordFinding, getWalkJudgment, type TrailPatch, type StepPatch, resumeWalk, listWalksPaged } from "./lib/trails"
 import { runWalkNow } from "./lib/trails-trigger"
@@ -5157,7 +5157,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           ]))
           const haveReplay = await runsWithReplay(projectId, replayRunIds)
           const recentWalks = data.recentWalks.map((w) => ({ ...w, hasReplay: haveReplay.has(w.id) }))
-          const queue = data.queue.map((f) => ({ ...f, hasReplay: haveReplay.has(f.runId) }))
+          // KLAVITYKLA-221 (JTBD 7.9): resolve each finding → the run_step idx it was raised at, so the
+          // dashboard can open the Walk replay player already seeked to that exact moment (not step 0).
+          const replayOffsets = await findingReplayOffsets(projectId, data.queue)
+          const queue = data.queue.map((f) => ({ ...f, hasReplay: haveReplay.has(f.runId), replayStepIdx: replayOffsets.get(f.id) ?? null }))
           return json({ email: meT, project: { id: projectId, role: resolved.access }, ...data, recentWalks, queue })
         } catch (e) {
           return json(oops(e, "trails-dashboard"), 500)
