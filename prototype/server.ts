@@ -82,6 +82,7 @@ import { mintProjectShareToken, revokeProjectShareToken, resolveProjectShareToke
 import { runDueSchedules, buildProductionDeps } from "./lib/sim-review-schedule"
 import { trackFunnel, CLIENT_INGESTABLE } from "./lib/funnel"
 import { gatherGrowthScorecard } from "./lib/growth-scorecard"
+import { TEST_OTP_CODE, TEST_OTP_DURATIONS_H, testOtpDecision, getTestOtpGate, enableTestOtpGate, disableTestOtpGate, recordTestOtpUse, listTestOtpUses, type TestOtpGate, type TestOtpUse } from "./lib/test-otp-gate"
 import { capturePosthog } from "./lib/posthog"
 import { createSimReviewSchedule, listSimReviewSchedules, getSimReviewSchedule, deleteSimReviewSchedule, setSimReviewScheduleEnabled, type SimReviewScheduleFrequency } from "./lib/db"
 import { startSimsDigestScheduler, sendSimsDigest, type SimsDigestDeps, DAY_MS as SIMS_DIGEST_DAY_MS } from "./lib/sims-digest"
@@ -770,6 +771,7 @@ function renderOpsAdmin(d: {
   recent: { id: string; createdAt: number; type: string; model: string; actorEmail: string | null; projectId: string | null; inputTokens: number | null; outputTokens: number | null; costUsd: number | null; ok: boolean }[]
   today: number; cap: number; offset: number
   modelMix: { choices: { id: string; label: string; price: string; weight: number; pct: number }[] }
+  testOtp: { gate: TestOtpGate; uses: TestOtpUse[]; envOn: boolean; envEmails: string }
 }): string {
   const maxDaily = Math.max(0.0001, ...d.daily.map(x => x.cost))
   const bars = d.daily.slice().reverse().map(x => {
@@ -787,6 +789,23 @@ function renderOpsAdmin(d: {
   const prev = d.offset > 0 ? `<a href="/opsadmin?offset=${Math.max(0, d.offset - 50)}">← newer</a>` : ""
   const next = d.recent.length === 50 ? `<a href="/opsadmin?offset=${d.offset + 50}">older →</a>` : ""
   const todayPct = Math.min(100, Math.round((d.today / Math.max(0.0001, d.cap)) * 100))
+  // ── Test-OTP gate (KLAVITYKLA-304) ── runtime toggle + expiry + bypass-login audit view.
+  const tGate = d.testOtp.gate
+  const tActive = tGate.enabledUntil > Date.now()
+  const tUntil = tActive ? new Date(tGate.enabledUntil).toISOString().replace("T", " ").slice(0, 19) + " UTC" : ""
+  const tMinsLeft = tActive ? Math.max(1, Math.round((tGate.enabledUntil - Date.now()) / 60000)) : 0
+  const tStatus = tActive
+    ? `<b style="color:#f59e0b">ENABLED</b> until ${escapeHtml(tUntil)} (${tMinsLeft} min left)`
+    : `<b style="color:#22c55e">Disabled</b>`
+  const tEmails = tGate.emails.length ? tGate.emails.map(escapeHtml).join(", ") : "—"
+  const tDurOpts = TEST_OTP_DURATIONS_H.map((h) => `<option value="${h}">${h} hour${h === 1 ? "" : "s"}</option>`).join("")
+  const tUseRows = d.testOtp.uses.map((u) => {
+    const when = new Date(u.createdAt).toISOString().replace("T", " ").slice(0, 19)
+    return `<tr><td>${escapeHtml(when)}</td><td>${escapeHtml(u.email)}</td><td>${escapeHtml(u.via)}</td><td>${escapeHtml(u.ip || "\u2014")}</td></tr>`
+  }).join("") || `<tr><td colspan="4">No bypass logins recorded</td></tr>`
+  const tEnvNote = d.testOtp.envOn
+    ? `<p class="sub" style="margin:8px 0 0;color:#f59e0b">KLAV_TEST_OTP is ALSO set in the environment (allowlist: ${escapeHtml(d.testOtp.envEmails || "none")}). That bootstrap override never expires and can only be removed by editing the env — use it for local dev only.</p>`
+    : `<p class="sub" style="margin:8px 0 0">KLAV_TEST_OTP is not set in the environment. This toggle is the only way the bypass can be active here.</p>`
   return `<!doctype html><html><head><meta charset="utf-8"><title>Klavity Ops</title>
 <style>
   :root{--bg:#0b0c10;--card:#15171e;--ink:#e8eaf0;--mut:#9aa3b2;--line:#262a35;--accent:#6366f1}
@@ -819,6 +838,7 @@ function renderOpsAdmin(d: {
   <div class="tabs">
     <button class="tab-btn active" onclick="switchTab('ai')">AI Credits</button>
     <button class="tab-btn" onclick="switchTab('growth')">Growth</button>
+    <button class="tab-btn" onclick="switchTab('testotp')">Test-OTP${tActive ? " \u25cf" : ""}</button>
   </div>
   <div id="tab-ai">
   <div class="cards">
@@ -858,16 +878,37 @@ function renderOpsAdmin(d: {
       </div>
     </div>
   </div><!-- /tab-growth -->
+  <div id="tab-testotp" style="display:none">
+    <div class="panel">
+      <h2>Test-OTP gate</h2>
+      <p class="sub" style="margin:-4px 0 12px">When enabled, the fixed code <code>${escapeHtml(TEST_OTP_CODE)}</code> logs in any allowlisted email (and any registered Test Account email) without an emailed code. Always time-boxed: it turns itself off at the expiry with no restart.</p>
+      <div style="margin-bottom:14px">Status: ${tStatus}<br><span class="sub">Allowlist: ${tEmails}</span></div>
+      <form method="POST" action="/opsadmin/test-otp">
+        <input type="hidden" name="action" value="enable">
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <input type="text" name="emails" placeholder="tester@example.com, other@example.com" value="${escapeHtml(tGate.emails.join(", "))}" style="flex:1;min-width:260px;background:#0b0c10;color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:8px 10px">
+          <select name="hours" style="background:#0b0c10;color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:8px 10px">${tDurOpts}</select>
+          <button type="submit">${tActive ? "Extend / update" : "Enable"}</button>
+        </div>
+      </form>
+      ${tActive ? `<form method="POST" action="/opsadmin/test-otp" style="margin-top:10px"><input type="hidden" name="action" value="disable"><button type="submit" style="background:#374151">Disable now</button></form>` : ""}
+      ${tEnvNote}
+    </div>
+    <div class="panel"><h2>[TEST-OTP-USED] recent bypass logins</h2>
+      <table><thead><tr><th>When (UTC)</th><th>Email</th><th>Via</th><th>IP</th></tr></thead><tbody>${tUseRows}</tbody></table>
+    </div>
+  </div><!-- /tab-testotp -->
 </div>
 <script>
 var _growthLoaded=false;
+var _tabs=['ai','growth','testotp'];
 function switchTab(t){
-  var ai=document.getElementById('tab-ai'),gr=document.getElementById('tab-growth');
-  ai.style.display=t==='ai'?'':'none';
-  gr.style.display=t==='growth'?'':'none';
   var btns=document.querySelectorAll('.tab-btn');
-  btns[0].classList.toggle('active',t==='ai');
-  btns[1].classList.toggle('active',t==='growth');
+  for(var i=0;i<_tabs.length;i++){
+    var el=document.getElementById('tab-'+_tabs[i]);
+    if(el)el.style.display=_tabs[i]===t?'':'none';
+    if(btns[i])btns[i].classList.toggle('active',_tabs[i]===t);
+  }
   if(t==='growth'&&!_growthLoaded){_growthLoaded=true;_loadGrowth();}
 }
 async function _loadGrowth(){
@@ -2086,9 +2127,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // account email, skip rate-limiting and skip sending a real OTP email entirely. AutoSim
         // login Trails use the fixed code 666666 (accepted by /api/auth/verify below), so running
         // many login Trails in succession never exhausts the 5/email/15min request rate limit.
-        const testOtpAllow = (process.env.KLAV_TEST_OTP_EMAILS ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean)
-        if (process.env.KLAV_TEST_OTP && (testOtpAllow.includes(e) || await isTestAccountEmail(e))) {
-          console.warn(`[TEST-OTP-REQUEST] email=${e} — test-OTP active: skipping rate limit + email send, advancing client to code entry`)
+        // KLAVITYKLA-304: the gate is now runtime-checked (env bootstrap OR an /opsadmin toggle with
+        // a required auto-expiry) rather than read once at boot.
+        const reqDecision = await testOtpDecision(e, () => isTestAccountEmail(e))
+        if (reqDecision.allowed) {
+          console.warn(`[TEST-OTP-REQUEST] email=${e} via=${reqDecision.via} — test-OTP active: skipping rate limit + email send, advancing client to code entry`)
           // testOtp:true tells the login page to advance to the code field even though no email was
           // sent (emailed:false), instead of showing "we couldn't send your code" and dead-ending.
           return json({ ok: true, emailed: false, testOtp: true })
@@ -2126,27 +2169,29 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const failEmailKey = `otpfail:e:${e}`
         if (rlCount(failKey) >= OTP_FAIL_MAX || rlCount(failEmailKey) >= OTP_FAIL_EMAIL_MAX)
           return json({ error: "Too many attempts. Please wait a few minutes and try again." }, 429, { "Retry-After": "900" })
-        // ── TEST-OTP bypass (gated: KLAV_TEST_OTP env + per-email allowlist OR test account DB) ──
-        // Fixed code 666666 is accepted ONLY when:
-        //   (a) KLAV_TEST_OTP env var is set/truthy (OFF by default in production), AND
-        //   (b) the email is listed in KLAV_TEST_OTP_EMAILS (comma-separated allowlist) OR is
-        //       a registered test account login_email in the DB (so AutoSim login Trails never need
-        //       KLAV_TEST_OTP_EMAILS to be manually kept in sync with test accounts).
-        // Any other email, or when the env is unset, 666666 is rejected by the normal verifyOtp path.
-        // This is server-env-gated only — no URL param or header can enable it.
-        const TEST_OTP_CODE = "666666"
-        const testOtpEnabled = !!process.env.KLAV_TEST_OTP && c === TEST_OTP_CODE
-        const testOtpAllowlist = (process.env.KLAV_TEST_OTP_EMAILS ?? "")
-          .split(",").map((s) => s.trim().toLowerCase()).filter(Boolean)
-        const testOtpGranted = testOtpEnabled && (testOtpAllowlist.includes(e) || await isTestAccountEmail(e))
+        // ── TEST-OTP bypass (gated: env bootstrap OR the /opsadmin runtime toggle) ──
+        // Fixed code 666666 is accepted ONLY when the code matches AND testOtpDecision grants it:
+        //   (a) KLAV_TEST_OTP env var is set/truthy (local dev + CI bootstrap; OFF in production), OR
+        //   (b) an ops admin enabled the runtime gate from /opsadmin and it hasn't expired yet
+        //       (KLAVITYKLA-304 — checked per request, so it auto-disables with no restart), AND
+        //   the email is on the matching allowlist OR is a registered test account login_email in
+        //   the DB (so AutoSim login Trails never need the allowlist kept manually in sync).
+        // Any other email, or with both gates off, 666666 is rejected by the normal verifyOtp path.
+        // This is server-side-gated only — no URL param or header can enable it.
+        const testOtpDec = c === TEST_OTP_CODE
+          ? await testOtpDecision(e, () => isTestAccountEmail(e))
+          : { allowed: false, via: null as null | string }
+        const testOtpGranted = testOtpDec.allowed
         if (!(testOtpGranted || await verifyOtp(e, c))) {
           rlRecord(failKey, OTP_FAIL_WINDOW)
           rlRecord(failEmailKey, OTP_FAIL_EMAIL_WINDOW)
           return json({ error: "Invalid or expired code." }, 401)
         }
         if (testOtpGranted) {
-          // Loud audit trail so test-OTP usage is always visible in logs.
-          console.warn(`[TEST-OTP-USED] email=${e} accepted test bypass code (KLAV_TEST_OTP active) — audit this if unexpected`)
+          // Loud audit trail so test-OTP usage is always visible in logs — plus a durable row so the
+          // /opsadmin Test-OTP panel can list recent bypass logins without shell access.
+          console.warn(`[TEST-OTP-USED] email=${e} accepted test bypass code (via=${testOtpDec.via}) — audit this if unexpected`)
+          await recordTestOtpUse(e, String(testOtpDec.via ?? "unknown"), vIp)
         }
         // Successful verify clears BOTH the per-(email,IP) and the per-email counters.
         rlClear(failKey)
@@ -4167,7 +4212,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const weights = await getActiveWeights()
       const pct = weightsToPct(weights, MODEL_CHOICE_IDS)
       const modelMix = { choices: MODEL_CHOICES.map(c => ({ id: c.id, label: c.label, price: c.price, weight: Number(weights[c.id]) || 0, pct: pct[c.id] })) }
-      const html = renderOpsAdmin({ totals, daily, byProject, byTypeModel, recent, today, cap: OPS_DAILY_CAP_USD, offset, modelMix })
+      const [testOtpGate, testOtpUses] = await Promise.all([getTestOtpGate(), listTestOtpUses(50)])
+      const testOtp = {
+        gate: testOtpGate, uses: testOtpUses,
+        envOn: !!process.env.KLAV_TEST_OTP, envEmails: process.env.KLAV_TEST_OTP_EMAILS ?? "",
+      }
+      const html = renderOpsAdmin({ totals, daily, byProject, byTypeModel, recent, today, cap: OPS_DAILY_CAP_USD, offset, modelMix, testOtp })
       return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } })
     }
     if (req.method === "GET" && path === "/api/opsadmin/cost-summary") {
@@ -4179,6 +4229,26 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (req.method === "GET" && path === "/api/opsadmin/growth") {
       if (!me || !isOpsAdmin(me)) return new Response("Not found", { status: 404 })
       return json(await gatherGrowthScorecard(db!))
+    }
+    // KLAVITYKLA-304: enable/disable the Test-OTP bypass from the UI (no SSH, no restart). Enabling
+    // ALWAYS carries an expiry — there is no "on forever" option, so it can't be left on by accident.
+    if (req.method === "POST" && path === "/opsadmin/test-otp") {
+      if (!me || !isOpsAdmin(me)) return new Response("Not found", { status: 404 }) // hide route from non-ops
+      const form = await req.formData()
+      const action = String(form.get("action") || "")
+      try {
+        if (action === "disable") {
+          const g = await disableTestOtpGate(me)
+          console.warn(`[TEST-OTP-GATE] disabled by ${me}`)
+          void g
+        } else {
+          const g = await enableTestOtpGate(String(form.get("emails") || ""), Number(form.get("hours") || 0), me)
+          console.warn(`[TEST-OTP-GATE] enabled by ${me} for ${g.emails.join(",")} until ${new Date(g.enabledUntil).toISOString()}`)
+        }
+      } catch (err: any) {
+        return new Response(escapeHtml(err?.message || "Could not update the Test-OTP gate."), { status: 400, headers: { "content-type": "text/plain; charset=utf-8" } })
+      }
+      return redirect("/opsadmin")
     }
     if (req.method === "POST" && path === "/opsadmin/model-mix") {
       if (!me || !isOpsAdmin(me)) return new Response("Not found", { status: 404 }) // hide route from non-ops

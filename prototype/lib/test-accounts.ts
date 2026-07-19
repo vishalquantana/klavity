@@ -4,6 +4,7 @@
 // KLA-103: auth_shape field supports "password" (email+password) and "otp" (email+OTP bypass).
 import { db } from "./db"
 import { encryptSecret, decryptSecret } from "./crypto"
+import { testOtpActiveForTestAccounts } from "./test-otp-gate"
 
 export type AuthShape = "password" | "otp" | "token"
 
@@ -94,7 +95,8 @@ export async function getTestAccountSecret(
   if (authShape === "otp") {
     // OTP bypass: the caller must have KLAV_TEST_OTP=1 enabled. We surface the fixed code so the
     // runner can fill the OTP field without accessing live email. Fail-loud if bypass is not active.
-    if (process.env.KLAV_TEST_OTP !== "1") {
+    // KLAVITYKLA-304: either the env bootstrap OR an unexpired /opsadmin runtime gate counts.
+    if (process.env.KLAV_TEST_OTP !== "1" && !(await testOtpActiveForTestAccounts())) {
       throw new Error(`test account "${name}" uses OTP auth but KLAV_TEST_OTP is not enabled`)
     }
     const otpCode = process.env.KLAV_TEST_OTP_CODE || "666666"
