@@ -39,6 +39,14 @@ export type TicketPayload = {
 export type ExportResult = {
   externalKey: string | null
   externalUrl: string | null
+  // KLA-285 (JTBD 5.6): native screenshot attachment is an ENHANCEMENT — a failed upload must never
+  // fail the export, because the issue body always carries the permanent signed fallback link. But it
+  // must not degrade INVISIBLY either: the screenshot is the most persuasive part of a Klavity ticket,
+  // and previously a silent fallback was only discoverable by opening the external issue by hand.
+  // Connectors set this to a short human-readable reason when one or more attachments did not attach
+  // natively; the caller records it on the ticket_exports row (status stays "ok") so it shows on the
+  // export timeline as "exported, screenshot attach failed — link included in body".
+  attachmentWarning?: string | null
 }
 
 // Result of pushing an outbound comment to an external tracker.
