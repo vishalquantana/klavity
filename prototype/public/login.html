@@ -122,6 +122,17 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 <script>
 const $ = (id) => document.getElementById(id)
 let email = ""
+// KLAVITYKLA-229 (JTBD 1.12): if a login gate sent the user here mid-action it rides in on ?next=.
+// Capture it now (before the email→code steps mutate nothing in the URL) and persist to
+// sessionStorage so the intent survives a refresh, then replay it through verify. Same-origin
+// rooted paths only — never "//host" or a scheme — so a hostile ?next= can't open-redirect us.
+let resumeNext = ""
+try {
+  const raw = new URLSearchParams(location.search).get("next")
+  const safe = raw && raw[0] === "/" && raw[1] !== "/" && raw[1] !== "\\" && raw.length <= 512 ? raw : ""
+  resumeNext = safe || sessionStorage.getItem("klavResumeNext") || ""
+  if (safe) sessionStorage.setItem("klavResumeNext", safe)
+} catch (e) {}
 try {
   const invitedEmail = new URLSearchParams(location.search).get("email")
   if (invitedEmail && invitedEmail.includes("@")) {
@@ -210,8 +221,9 @@ async function verifyNow() {
   verifying = true
   $("verifyBtn").disabled = true; $("verifyBtn").textContent = "Verifying…"; msg("codeMsg", "Verifying…", true)
   try {
-    const d = await post("/api/auth/verify", { email, code })
+    const d = await post("/api/auth/verify", { email, code, next: resumeNext || undefined })
     if (d.error) throw new Error(d.error)
+    try { sessionStorage.removeItem("klavResumeNext") } catch (e) {}
     location.href = d.redirect || "/dashboard"
   } catch (e) {
     msg("codeMsg", e.message)
