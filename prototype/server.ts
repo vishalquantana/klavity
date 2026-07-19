@@ -1837,7 +1837,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       } catch (e: any) { console.error("img stream failed:", e?.message || e); return new Response("Not found", { status: 404 }) }
     }
     if (req.method === "GET" && path === "/sitemap.xml") {
-      const core = ["/", "/snap", "/sims", "/autosim", "/blog", "/privacy", "/terms"]
+      const core = ["/", "/snap", "/sims", "/autosim", "/blog", "/alternatives/marker-io", "/privacy", "/terms"]
       let blog: Array<{ slug: string; date: string }> = []
       try { blog = JSON.parse(await Bun.file(SITE + "/blog/index.json").text()) } catch { /* no posts yet */ }
       const urls = [
