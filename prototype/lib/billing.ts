@@ -140,9 +140,11 @@ async function stripeRequest(path: string, params: URLSearchParams, method = "PO
   return body
 }
 
-export async function ensureStripePrice(plan: "pro" | "team", interval: BillingInterval): Promise<string> {
-  // pro/team always define both month + year (only "founding" is annual-only) — safe to assert.
-  const entry = STRIPE_PRICE_CATALOG[plan][interval]!
+export async function ensureStripePrice(plan: "pro" | "team" | "founding", interval: BillingInterval): Promise<string> {
+  // pro/team define both month + year; "founding" is annual-only (the checkout route forces its
+  // interval to "year"), so guard instead of asserting.
+  const entry = STRIPE_PRICE_CATALOG[plan][interval]
+  if (!entry) throw new Error(`No ${plan} price for interval "${interval}"`)
   const lookup = new URLSearchParams()
   lookup.append("lookup_keys[]", entry.lookupKey)
   lookup.set("active", "true")
@@ -169,7 +171,7 @@ export async function ensureStripePrice(plan: "pro" | "team", interval: BillingI
 export async function createStripeCheckoutSession(input: {
   accountId: string
   email: string
-  plan: "pro" | "team"
+  plan: "pro" | "team" | "founding"
   interval: BillingInterval
   successUrl: string
   cancelUrl: string

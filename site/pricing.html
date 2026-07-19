@@ -301,6 +301,60 @@
   .pricing-grid .positioning-section {
     grid-column: 1 / -1;
   }
+  /* Founding Team band — GTM: collect the first 10 paid teams as supporters.
+     Full-width highlighted band below the 4-tier grid; amber accent so it
+     reads as a distinct limited offer rather than a fifth tier. */
+  .founding-band {
+    position: relative;
+    background: linear-gradient(135deg, rgba(217,131,36,0.10), rgba(99,102,241,0.05));
+    border: 1px solid rgba(217,131,36,0.35);
+    border-radius: 20px;
+    padding: 36px 32px 32px;
+    margin: -40px 0 80px;
+    display: flex;
+    gap: 32px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .founding-ribbon {
+    position: absolute;
+    top: -12px;
+    left: 28px;
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    background: var(--amber, #d98324);
+    color: #fff;
+    padding: 4px 12px;
+    border-radius: 12px;
+    white-space: nowrap;
+  }
+  .founding-lead {
+    flex: 1;
+    min-width: 240px;
+  }
+  .founding-lead .plan-desc {
+    min-height: 0;
+    margin-bottom: 0;
+  }
+  .founding-band .plan-features-list {
+    flex: 1;
+    min-width: 240px;
+  }
+  .founding-cta-wrap {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: center;
+  }
+  .founding-cta-note {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--paper-faint);
+  }
   .qa-cost-anchor {
     text-align: center;
     max-width: 56ch;
@@ -548,6 +602,39 @@
         </ul>
       </div>
 
+    </div>
+
+    <!-- ── FOUNDING TEAM BAND (GTM: first 10 paid teams as supporters;
+         $290/yr annual-only, quotas = Pro — billing.ts catalog) ── -->
+    <div class="founding-band reveal">
+      <span class="founding-ribbon">Limited to the first 10 teams</span>
+      <div class="founding-lead">
+        <div class="plan-name" style="color:var(--amber, #d98324)">Founding Team</div>
+        <div class="plan-price-wrap" style="margin-bottom:10px">
+          <span class="plan-price-currency">$</span>
+          <span class="plan-price" style="font-size:38px">290</span>
+          <span class="plan-price-period">/ year, billed annually</span>
+        </div>
+        <div class="plan-desc">Back Klavity early. Help shape the product and lock in founding pricing before it is gone.</div>
+      </div>
+      <ul class="plan-features-list">
+        <li>
+          <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          <span><strong>Everything in Pro</strong> — 5 projects, 5 Sims, 5 AutoSim flows</span>
+        </li>
+        <li>
+          <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          <span><strong>Price locked forever</strong> — your rate never goes up</span>
+        </li>
+        <li>
+          <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          <span><strong>Direct line to the founder</strong> — your feedback steers the roadmap</span>
+        </li>
+      </ul>
+      <div class="founding-cta-wrap">
+        <a class="btn btn-primary" href="/onboarding?plan=founding">Become a founding team</a>
+        <span class="founding-cta-note">One plan. One price. 10 spots.</span>
+      </div>
     </div>
   </section>
 
