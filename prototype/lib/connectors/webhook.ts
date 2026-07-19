@@ -1,4 +1,4 @@
-import type { Connector, TicketPayload, ExportResult, CommentSyncResult } from "./index"
+import type { Connector, TicketPayload, ExportResult, CommentSyncResult, FieldUpdate, FieldSyncResult } from "./index"
 import { safeFetch } from "../safe-fetch"
 
 export const webhookConnector: Connector = {
@@ -96,6 +96,44 @@ export const webhookConnector: Connector = {
       } catch { /* non-JSON 2xx is fine */ }
 
       return { ok: true, externalCommentId }
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    }
+  },
+
+  // updateIssue (JTBD 5.7): POST a field-update event to the same webhook URL so the receiver can
+  // mirror the ticket's current labels/priority. Body carries event:"update" to distinguish it from
+  // new-issue ("createIssue") and comment ("addComment") events. Best-effort — never throws.
+  async updateIssue(
+    externalIssueRef: string,
+    fields: FieldUpdate,
+    cfg: Record<string, string>,
+  ): Promise<FieldSyncResult> {
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" }
+      if (cfg.secret) headers["X-Klavity-Signature"] = cfg.secret
+
+      // SSRF guard: same as createIssue — cfg.url is fully user-supplied.
+      const res = await safeFetch(
+        cfg.url,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            event: "update",
+            externalIssueRef,
+            labels: fields.labels,
+            priority: fields.priority,
+          }),
+        },
+        { allowLoopbackInTest: true },
+      )
+
+      if (!res.ok) {
+        const text = (await res.text().catch(() => "")).slice(0, 200)
+        return { ok: false, error: `webhook update POST HTTP ${res.status}: ${text}` }
+      }
+      return { ok: true }
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) }
     }

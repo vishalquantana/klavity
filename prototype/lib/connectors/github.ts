@@ -1,5 +1,16 @@
-import type { Connector, TicketPayload, ExportResult, CommentSyncResult } from "./index"
+import type { Connector, TicketPayload, ExportResult, CommentSyncResult, FieldUpdate, FieldSyncResult } from "./index"
 import { safeFetch } from "../safe-fetch"
+
+// JTBD 5.7: GitHub Issues has no native priority field, so we carry Klavity priority as a
+// conventional `priority:<value>` label alongside the ticket's classification labels. GitHub only
+// applies labels that already exist in the repo (unknown ones are silently ignored, never an error),
+// so this is safe whether or not the repo defines priority labels. Returns the FULL desired label
+// set (content labels + optional priority label) because GitHub replaces labels wholesale on update.
+function githubLabels(labels: string[] | undefined, priority: string | null | undefined): string[] {
+  const out = [...(labels ?? [])]
+  if (priority) out.push(`priority:${priority}`)
+  return out
+}
 
 export const githubConnector: Connector = {
   type: "github",
@@ -38,13 +49,17 @@ export const githubConnector: Connector = {
           "User-Agent": "Klavity",
           "Content-Type": "application/json",
         },
-        // JTBD 2.16: GitHub accepts labels natively as an array of strings. GitHub will only
-        // apply labels that already exist in the repo; unknown ones are ignored (never an error),
-        // so passing Klavity's label names is safe. Omit the field entirely when there are none.
+        // JTBD 2.16 + 5.7: GitHub accepts labels natively as an array of strings, so we pass
+        // Klavity's classification labels AND (since GitHub has no native priority field) the
+        // priority carried as a `priority:<value>` label. Unknown labels are ignored (never an
+        // error). Omit the field entirely when there are neither labels nor a priority.
         body: JSON.stringify({
           title: ticket.title,
           body: ticket.body,
-          ...(ticket.labels?.length ? { labels: ticket.labels } : {}),
+          ...((): { labels?: string[] } => {
+            const ls = githubLabels(ticket.labels, ticket.priority)
+            return ls.length ? { labels: ls } : {}
+          })(),
         }),
       },
       { allowHosts: ["github.com"] },
@@ -119,6 +134,53 @@ export const githubConnector: Connector = {
       const json = await res.json().catch(() => null)
       const externalCommentId = json?.id != null ? String(json.id) : null
       return { ok: true, externalCommentId }
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    }
+  },
+
+  // updateIssue (JTBD 5.7): PATCH the GitHub issue's labels to mirror the ticket's current
+  // classification + priority. GitHub replaces the label set wholesale, so we send the FULL desired
+  // set (githubLabels merges content labels with the priority label). Best-effort — never throws.
+  //   PATCH https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}
+  //   Body: { "labels": [...] }
+  async updateIssue(
+    externalIssueRef: string,
+    fields: FieldUpdate,
+    cfg: Record<string, string>,
+  ): Promise<FieldSyncResult> {
+    try {
+      const { owner, repo, token } = cfg
+      if (!owner || !repo || !token) {
+        return { ok: false, error: "github updateIssue: missing owner/repo/token in config" }
+      }
+
+      const issueNumber = externalIssueRef.replace(/^#/, "")
+      if (!issueNumber || !/^\d+$/.test(issueNumber)) {
+        return { ok: false, error: `github updateIssue: invalid externalIssueRef "${externalIssueRef}"` }
+      }
+
+      const url = `https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}`
+      const res = await safeFetch(
+        url,
+        {
+          method: "PATCH",
+          headers: {
+            "Authorization": `Bearer ${token}`,
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "Klavity",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ labels: githubLabels(fields.labels, fields.priority) }),
+        },
+        { allowHosts: ["github.com"] },
+      )
+
+      if (!res.ok) {
+        const text = (await res.text().catch(() => "")).slice(0, 200)
+        return { ok: false, error: `github issue PATCH HTTP ${res.status}: ${text}` }
+      }
+      return { ok: true }
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) }
     }
