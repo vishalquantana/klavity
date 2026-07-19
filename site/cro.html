@@ -113,15 +113,15 @@ body{font-family:var(--font-sans,'Inter',system-ui,sans-serif);background:#f9faf
   <p>Paste any landing page URL. Get an AI-powered friction audit in seconds — free, no login required.</p>
 
   <div class="tool-card">
-    <form id="cro-form">
+    <form id="cro-form" novalidate>
       <div class="form-row">
-        <input type="url" id="site-url" class="url-input" placeholder="https://yoursite.com/pricing" autocomplete="url" required>
+        <input type="text" inputmode="url" id="site-url" class="url-input" placeholder="https://yoursite.com/pricing" autocomplete="url" aria-label="Landing page address to analyse" aria-describedby="error-msg" required>
         <button type="submit" id="analyze-btn" class="btn-analyze">
           <span class="spinner" id="spinner"></span>
           <span id="btn-label">Analyse free</span>
         </button>
       </div>
-      <div class="error-msg" id="error-msg"></div>
+      <div class="error-msg" id="error-msg" role="alert" aria-live="polite"></div>
       <div id="status"></div>
     </form>
 
@@ -150,7 +150,7 @@ body{font-family:var(--font-sans,'Inter',system-ui,sans-serif);background:#f9faf
     <div class="trust">
       <div class="trust-item"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>Free, no login</div>
       <div class="trust-item"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>AI-powered analysis</div>
-      <div class="trust-item"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>Results in &lt;30 seconds</div>
+      <div class="trust-item"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>Results in minutes</div>
     </div>
   </div>
 </div>
@@ -227,10 +227,41 @@ body{font-family:var(--font-sans,'Inter',system-ui,sans-serif);background:#f9faf
     return { high: "High", medium: "Medium", low: "Low" }[s] || s
   }
 
+  // --- free-tool URL normalisation (shared verbatim with site/bug-check.html) ---
+  // The input used to be type="url", so the BROWSER rejected a bare domain
+  // ("klavity.in") with a native "Please enter a URL." tooltip before any JS
+  // ran — the scan simply never fired. The field is now type="text" and the
+  // form is novalidate; we normalise here exactly like the onboarding aha flow
+  // (prepend https:// when there is no scheme) and report problems inline.
+  function normalizeUrl(raw) {
+    const s = String(raw == null ? "" : raw).trim()
+    if (!s) return { ok: false, error: "Enter a web address to scan — for example example.com" }
+    const bad = "That doesn't look like a web address. Try example.com"
+    let candidate = s
+    if (!/^https?:\/\//i.test(candidate)) {
+      // a non-http scheme (javascript:, data:, file:, ftp:…) is never a scannable
+      // page — reject rather than blindly gluing https:// in front of it
+      if (/^[a-z][a-z0-9+.-]*:\/\//i.test(candidate) || /^(javascript|data|mailto|vbscript|blob|file):/i.test(candidate)) return { ok: false, error: bad }
+      candidate = "https://" + candidate
+    }
+    let u
+    try { u = new URL(candidate) } catch { return { ok: false, error: bad } }
+    if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i.test(u.hostname)) {
+      return { ok: false, error: bad }
+    }
+    return { ok: true, url: candidate }
+  }
+
   form.addEventListener("submit", async function (e) {
     e.preventDefault()
-    const rawUrl = urlInput.value.trim()
-    if (!rawUrl) return
+    const normalized = normalizeUrl(urlInput.value)
+    if (!normalized.ok) {
+      showError(normalized.error)
+      urlInput.focus()
+      return
+    }
+    const rawUrl = normalized.url
+    urlInput.value = rawUrl
 
     setLoading(true)
     resultsEl.style.display = "none"
