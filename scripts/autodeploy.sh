@@ -18,7 +18,10 @@
 # Requires the one-time ZDT setup (deploy/zdt-setup.sh) — same as prod-deploy.sh --zero-downtime.
 set -euo pipefail
 
-REPO="${KLAV_REPO:-/opt/klav/klav-snap}"
+# Default the repo root to this script's parent dir (…/scripts/autodeploy.sh -> repo root),
+# so it works regardless of where the checkout lives (prod flattens it at /opt/klav, not
+# /opt/klav/klav-snap). Override with KLAV_REPO if needed.
+REPO="${KLAV_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 BUN_BIN="${BUN_BIN:-/home/klav/.bun/bin/bun}"
 HEALTH_ATTEMPTS="${KLAV_HEALTH_ATTEMPTS:-20}"
 HEALTH_SLEEP="${KLAV_HEALTH_SLEEP:-2}"
@@ -104,9 +107,17 @@ flip_caddy() {
 
 cd "$REPO"
 previous="$(git rev-parse HEAD)"
-log "deploying origin/master from ${previous:0:12}"
 
 git fetch -q origin master
+target="$(git rev-parse origin/master)"
+# Nothing new on origin/master -> exit silently. This loop runs every ~12s; without this
+# guard it would ZDT-flip the blue/green slots on EVERY tick (constant restarts). Only
+# deploy when there is an actual new commit to ship.
+if [ "$previous" = "$target" ]; then
+  exit 0
+fi
+log "deploying origin/master ${target:0:12} from ${previous:0:12}"
+
 git reset -q --hard origin/master
 log "checked out $(git rev-parse HEAD | cut -c1-12); installing prototype dependencies"
 ( cd "$REPO/prototype" && "$BUN_BIN" install )
