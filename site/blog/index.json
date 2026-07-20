@@ -194,5 +194,12 @@
     "excerpt": "Screenshots freeze one moment; recordings capture a sequence. Use a screenshot for visual bugs, a recording for timing bugs — and attach the console too.",
     "category": "Compare",
     "date": "2026-07-19"
+  },
+  {
+    "slug": "root-cause-analysis-for-bugs",
+    "title": "Root Cause Analysis for Bugs: A Step-by-Step Guide",
+    "excerpt": "Root cause analysis finds why a bug happened, not just what broke. Here's a repeatable process: reproduce, narrow, ask why, and lock the fix with a test.",
+    "category": "Guides",
+    "date": "2026-07-20"
   }
 ]
