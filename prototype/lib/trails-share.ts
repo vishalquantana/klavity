@@ -14,7 +14,7 @@ type PdfRenderer = (
   projectId: string,
   runId: string,
   baseUrl: string,
-  opts?: { replayUrl?: string; dataTransform?: (d: any) => any },
+  opts?: { replayUrl?: string; dataTransform?: (d: any) => any; withholdScreenshots?: boolean },
 ) => Promise<Uint8Array>
 
 let _customPdfRenderer: PdfRenderer | null = null
@@ -224,7 +224,9 @@ export async function renderWalkPdf(
   projectId: string,
   runId: string,
   baseUrl: string,
-  opts?: { replayUrl?: string; dataTransform?: (d: any) => any },
+  // KLAVITYKLA-363: withholdScreenshots tells the gatherer not to embed screenshot bytes at all
+  // (set by the routes whenever piiMasking is on). Runs OUTSIDE withPdfSlot, same as dataTransform.
+  opts?: { replayUrl?: string; dataTransform?: (d: any) => any; withholdScreenshots?: boolean },
 ): Promise<Uint8Array> {
   // Module-level injectable seam (set via _setPdfRendererForTests in unit tests).
   // opts is forwarded so a stub can assert what transform the ROUTE handed us.
@@ -242,7 +244,7 @@ export async function renderWalkPdf(
     let payload = ""
     try {
       const { gatherWalkReport } = await import("./trails-report")
-      const rawData = await gatherWalkReport(projectId, runId)
+      const rawData = await gatherWalkReport(projectId, runId, { withholdScreenshots: opts?.withholdScreenshots })
       if (rawData) {
         const data = opts?.dataTransform ? opts.dataTransform(rawData) : rawData
         payload = " " + JSON.stringify(data)
@@ -260,7 +262,7 @@ export async function renderWalkPdf(
   const { withPdfSlot, CHROMIUM_PROD_ARGS } = await import("./trails-browser")
   const { chromium } = await import("playwright")
 
-  const rawData = await gatherWalkReport(projectId, runId)
+  const rawData = await gatherWalkReport(projectId, runId, { withholdScreenshots: opts?.withholdScreenshots })
   if (!rawData) throw new Error("walk not found or access denied")
   const data = opts?.dataTransform ? opts.dataTransform(rawData) : rawData
 

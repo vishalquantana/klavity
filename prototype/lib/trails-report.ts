@@ -2,6 +2,7 @@
 // Pure: no DOM dependencies, no <script> in output, all strings HTML-escaped.
 import type { Trail, Walk, RunStep, Finding, WalkJudgment } from "./trails-types"
 import { resolveBranding, brandingFooterHtml, type ResolvedBranding } from "./trails-branding"
+import { SCREENSHOT_WITHHELD_NOTICE } from "./data-masking"
 
 // ---------------------------------------------------------------------------
 // Exported types
@@ -30,7 +31,7 @@ export interface WalkReportData {
 export async function gatherWalkReport(
   projectId: string,
   runId: string,
-  opts?: { presign?: (key: string) => string; replayUrl?: string },
+  opts?: { presign?: (key: string) => string; replayUrl?: string; withholdScreenshots?: boolean },
 ): Promise<WalkReportData | null> {
   const { getWalk, listRunSteps, listFindings, getTrail, getWalkJudgment } = await import("./trails")
 
@@ -47,6 +48,12 @@ export async function gatherWalkReport(
     const ev = rs.evidence as Record<string, unknown> | null
     const key = ev?.screenshotKey as string | undefined
     if (key) {
+      // KLAVITYKLA-363: under PII masking the image is withheld, so don't resolve it at all —
+      // never fetch the bytes we're only going to throw away. maskWalkReportData enforces the
+      // same thing again downstream for any caller that skips this option.
+      if (opts?.withholdScreenshots) {
+        return { ...rs, screenshotError: SCREENSHOT_WITHHELD_NOTICE }
+      }
       const shot = await resolveReportScreenshot(key, opts)
       return { ...rs, ...shot }
     }

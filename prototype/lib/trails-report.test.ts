@@ -356,6 +356,27 @@ test("(gather-6) presign throwing does not break gather — step just has no scr
   }
 })
 
+test("(gather-363a) withholdScreenshots never resolves the image — presign is not even called", async () => {
+  const { runId } = await seedWalk("proj_g363a", { withKey: true })
+  let presignCalls = 0
+  const countingPresign = (key: string) => { presignCalls++; return `https://s3.example/${key}` }
+  const result = await gatherWalkReport("proj_g363a", runId, { presign: countingPresign, withholdScreenshots: true })
+  expect(presignCalls).toBe(0) // KLAVITYKLA-363: no fetch we're only going to throw away
+  const stepWithKey = result!.steps.find((s) => (s.evidence as any)?.screenshotKey)
+  expect(stepWithKey!.screenshotUrl).toBeUndefined()
+  expect(stepWithKey!.screenshotError).toContain("Screenshot withheld")
+})
+
+test("(gather-363b) withholdScreenshots OFF is byte-identical to today (default unchanged)", async () => {
+  const { runId } = await seedWalk("proj_g363b", { withKey: true })
+  const presign = (key: string) => `https://s3.example/${key}?token=abc`
+  const on = await gatherWalkReport("proj_g363b", runId, { presign })
+  const off = await gatherWalkReport("proj_g363b", runId, { presign, withholdScreenshots: false })
+  expect(JSON.stringify(off!.steps)).toBe(JSON.stringify(on!.steps))
+  expect(off!.steps.find((s) => (s.evidence as any)?.screenshotKey)!.screenshotUrl)
+    .toBe("https://s3.example/shots/key123.jpg?token=abc")
+})
+
 test("(gather-7) findings are filtered to the walk's runId only", async () => {
   const projectId = "proj_g7"
   const { trailId, runId } = await seedWalk(projectId)

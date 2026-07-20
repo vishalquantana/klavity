@@ -113,6 +113,15 @@ await rawExec(`INSERT INTO project_members (id, project_id, email, project_role,
 await rawExec(`INSERT INTO sessions (id, email, created_at, expires_at) VALUES (?, ?, ?, ?)`, [ADMIN_SID, ADMIN_EMAIL, NOW, NOW + 86400_000])
 await rawExec(`INSERT INTO sessions (id, email, created_at, expires_at) VALUES (?, ?, ?, ?)`, [OTHER_SID, OTHER_EMAIL, NOW, NOW + 86400_000])
 
+// ── PII fixtures used by the seeder (must be defined before seedWalk runs) ──
+const PII_EMAIL = "priya.sharma@clientco.com"
+const PII_PHONE = "415-555-0100"
+const PII_IP = "203.0.113.42"
+const SAFE_SELECTOR = "#api_reference_guide_container"
+// A screenshot pointer unique enough that its presence/absence in a response is unambiguous.
+const SHOT_KEY = `shots/${ts}/step-0-CONFIDENTIAL.png`
+const WITHHELD = "Screenshot withheld"
+
 // ── Lib seeding ───────────────────────────────────────────────────────────────
 process.env.KLAV_SECRET = TEST_SECRET
 process.env.TURSO_DATABASE_URL = "file:" + srvDbFile
@@ -130,7 +139,9 @@ async function seedWalk(): Promise<{ runId: string; trailId: string }> {
   await T.setTrailStatus(PROJECT_ID, trailId, "active")
   const stepId = await T.addTrailStep(PROJECT_ID, trailId, { idx: 0, action: "click" })
   const runId = await T.startWalk(PROJECT_ID, trailId)
-  await T.addRunStep(PROJECT_ID, { runId, trailId, stepId, idx: 0, tier: "cache", verdict: "green", confidence: 1 })
+  await T.addRunStep(PROJECT_ID, { runId, trailId, stepId, idx: 0, tier: "cache", verdict: "green", confidence: 1,
+    // KLAVITYKLA-363: a step WITH a screenshot, so the screenshot-withholding choke points are observable.
+    evidence: { action: "click", selector: SAFE_SELECTOR, screenshotKey: SHOT_KEY } })
   await T.finishWalk(PROJECT_ID, runId, { status: "green", llmCalls: 1 })
   return { runId, trailId }
 }
@@ -140,11 +151,6 @@ const { runId: WALK_RUN_ID } = await seedWalk()
 // ── PII fixtures ──────────────────────────────────────────────────────────────
 // A finding whose title / ground quote / evidence all carry real-looking PII, plus a CSS selector
 // that MUST survive masking intact (M3: over-masking corrupts the report).
-const PII_EMAIL = "priya.sharma@clientco.com"
-const PII_PHONE = "415-555-0100"
-const PII_IP = "203.0.113.42"
-const SAFE_SELECTOR = "#api_reference_guide_container"
-
 const PII_FINDING_ID = `find_mask_${ts}`
 await rawExec(
   `INSERT INTO findings (id, project_id, run_id, trail_id, kind, title, evidence_json, ground_quote, confidence, dedup_key, recurrence, status, created_at, updated_at)
@@ -388,4 +394,77 @@ test("GET /api/team/export — roster is UNMASKED when piiMasking is off", async
     headers: { cookie: adminCookie },
   })).json()
   expect(members.map((m: any) => m.email)).toContain(MEMBER_A)
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// KLAVITYKLA-363 — SCREENSHOT redaction.
+//
+// Text masking was cosmetic: `[EMAIL]` in the prose with the same address plainly visible in the
+// screenshot directly above it. Under masking the image is now WITHHELD entirely (see
+// SCREENSHOT_WITHHELD_NOTICE in lib/data-masking.ts for why withhold beats blur/OCR here), and the
+// S3 pointer that would let anyone re-fetch it is stripped too.
+//
+// The discriminator on every surface is SHOT_KEY: present when masking is off, absent when on.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test("363: PUBLIC pdf withholds the screenshot AND its S3 pointer when piiMasking is on", async () => {
+  await setMasking(true)
+  const { pdfUrl } = await mintShare()
+  const body = await (await fetch(pdfUrl)).text() // unauthenticated, as a client would fetch it
+  expect(body).not.toContain(SHOT_KEY)
+  expect(body).not.toContain("data:image/")
+  expect(body).toContain(WITHHELD)
+})
+
+test("363: PUBLIC pdf embeds the screenshot exactly as before when piiMasking is off", async () => {
+  await setMasking(false)
+  const { pdfUrl } = await mintShare()
+  const body = await (await fetch(pdfUrl)).text()
+  expect(body).toContain(SHOT_KEY)
+  expect(body).not.toContain(WITHHELD)
+})
+
+test("363: PUBLIC share json withholds the screenshot pointer when piiMasking is on", async () => {
+  await setMasking(true)
+  const { url: shareUrl } = await mintShare()
+  const raw = JSON.stringify(await (await fetch(shareUrl + "/data")).json())
+  expect(raw).not.toContain(SHOT_KEY)
+  expect(raw).not.toContain("data:image/")
+})
+
+test("363: PUBLIC share json is UNCHANGED when piiMasking is off", async () => {
+  await setMasking(false)
+  const { url: shareUrl } = await mintShare()
+  const raw = JSON.stringify(await (await fetch(shareUrl + "/data")).json())
+  expect(raw).toContain(SHOT_KEY)
+})
+
+test("363: AUTHED report.pdf withholds the screenshot when piiMasking is on", async () => {
+  await setMasking(true)
+  const body = await (await fetch(`${base}/api/trails/walks/${WALK_RUN_ID}/report.pdf?project=${pid}`, {
+    headers: { cookie: adminCookie },
+  })).text()
+  expect(body).not.toContain(SHOT_KEY)
+  expect(body).not.toContain("data:image/")
+  expect(body).toContain(WITHHELD)
+})
+
+test("363: AUTHED report.pdf is UNCHANGED when piiMasking is off", async () => {
+  await setMasking(false)
+  const body = await (await fetch(`${base}/api/trails/walks/${WALK_RUN_ID}/report.pdf?project=${pid}`, {
+    headers: { cookie: adminCookie },
+  })).text()
+  expect(body).toContain(SHOT_KEY)
+  expect(body).not.toContain(WITHHELD)
+})
+
+test("363: masking still redacts TEXT alongside the withheld screenshot (both halves, one report)", async () => {
+  await setMasking(true)
+  const { pdfUrl } = await mintShare()
+  const body = await (await fetch(pdfUrl)).text()
+  expect(body).not.toContain(PII_EMAIL)   // text redaction still works…
+  expect(body).toContain("[EMAIL]")
+  expect(body).not.toContain(SHOT_KEY)    // …and is no longer contradicted by the image
+  expect(body).toContain(SAFE_SELECTOR)   // and the report is still readable (M3 not regressed)
+  await setMasking(false)
 })

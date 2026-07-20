@@ -5022,8 +5022,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // authenticated download, so it applies the identical dataTransform. (Masking runs OUTSIDE
         // withPdfSlot, inside renderWalkPdf — see KLA-59; the transform never holds the PDF slot.)
         const projCfgShare = await getProjectModalConfig(resolved.projectId)
-        const shareTransform = isMaskingEnabled(projCfgShare) ? maskWalkReportData : undefined
-        const pdfBytes = await renderWalkPdf(resolved.projectId, resolved.runId, BASE, { replayUrl, dataTransform: shareTransform })
+        // KLAVITYKLA-363: text redaction is cosmetic if the screenshot beside it still shows the
+        // same data, so under masking the screenshots are WITHHELD (not embedded) as well.
+        const shareMasked = isMaskingEnabled(projCfgShare)
+        const shareTransform = shareMasked ? maskWalkReportData : undefined
+        const pdfBytes = await renderWalkPdf(resolved.projectId, resolved.runId, BASE, { replayUrl, dataTransform: shareTransform, withholdScreenshots: shareMasked })
         const shortId = resolved.runId.slice(0, 8)
         return new Response(pdfBytes, {
           headers: {
@@ -6159,8 +6162,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const replayUrl = replaySet.has(runId) ? BASE + "/api/trails/walks/" + runId + "/replay" : undefined
           // PII masking: apply redaction to the gathered report data when enabled for this project.
           const projCfgPdf = await getProjectModalConfig(projectId)
-          const dataTransform = isMaskingEnabled(projCfgPdf) ? maskWalkReportData : undefined
-          const pdfBytes = await renderWalkPdf(projectId, runId, BASE, { replayUrl, dataTransform })
+          // KLAVITYKLA-363: screenshots are withheld under masking too — see the share route.
+          const pdfMasked = isMaskingEnabled(projCfgPdf)
+          const dataTransform = pdfMasked ? maskWalkReportData : undefined
+          const pdfBytes = await renderWalkPdf(projectId, runId, BASE, { replayUrl, dataTransform, withholdScreenshots: pdfMasked })
           const shortId = runId.slice(0, 8)
           return new Response(pdfBytes as unknown as BodyInit, {
             headers: {

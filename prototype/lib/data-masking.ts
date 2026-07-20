@@ -250,6 +250,50 @@ export function maskMemberExportRow(row: MemberExportRowLike): MemberExportRowLi
   return { ...row, email: maskEmailPartial(row.email) }
 }
 
+// ---------------------------------------------------------------------------
+// Screenshot redaction (KLAVITYKLA-363)
+// ---------------------------------------------------------------------------
+//
+// WHY WE WITHHOLD RATHER THAN REDACT REGIONS: text masking is cosmetic while the
+// screenshot beside it still shows the same address verbatim. We have no image
+// library in the dependency tree (deps are @anthropic-ai/sdk, @libsql/client,
+// rrweb, zod), so pixel-level blurring would mean a new dependency, and OCR-based
+// region redaction would mean a per-report ML cost AND a partial redaction that
+// LOOKS safe while leaking whatever the detector missed. A withheld screenshot is
+// strictly better than a leaked one and is honest about what happened.
+//
+// A CSS `filter: blur()` on the <img> was rejected too: the raw base64 bytes would
+// still be embedded in the report HTML (and plausibly in the PDF's image objects),
+// so "no raw bytes reach the surface" would be false.
+export const SCREENSHOT_WITHHELD_NOTICE = "Screenshot withheld — PII masking is on for this project."
+
+// Evidence keys that point at (or carry) screenshot bytes. Stripped under masking
+// so neither the pixels nor the S3 pointer to them survive onto a shared surface.
+const SCREENSHOT_EVIDENCE_KEYS = [
+  "screenshotKey", "screenshotUrl", "screenshotDataUrl", "screenshotBase64", "screenshot",
+]
+
+function stripScreenshotRefs(ev: Record<string, unknown> | null): Record<string, unknown> | null {
+  if (ev == null) return ev
+  const out: Record<string, unknown> = { ...ev }
+  for (const k of SCREENSHOT_EVIDENCE_KEYS) delete out[k]
+  return out
+}
+
+// Remove any resolved screenshot (base64 data URL or presigned URL) from a report
+// step and leave a clearly-labelled placeholder in its place.
+function withholdStepScreenshot<S extends { evidence: Record<string, unknown> | null; [k: string]: unknown }>(s: S): S {
+  const ev = s.evidence as Record<string, unknown> | null
+  const hadShot =
+    s.screenshotUrl != null ||
+    s.screenshotError != null ||
+    (ev != null && SCREENSHOT_EVIDENCE_KEYS.some((k) => ev[k] != null))
+  const out = { ...s, evidence: stripScreenshotRefs(ev) } as Record<string, unknown>
+  delete out.screenshotUrl
+  if (hadShot) out.screenshotError = SCREENSHOT_WITHHELD_NOTICE
+  return out as S
+}
+
 // Structural type for WalkReportData fields we need to mask.
 // Avoids a static import of trails-report (which has DB/FS deps).
 type MaskableWalkReport = {
@@ -271,7 +315,12 @@ type MaskableWalkReport = {
   [k: string]: unknown
 }
 
-// Redact PII from free-text fields (finding titles, evidence blobs, judgment rationale).
+// Redact PII from free-text fields (finding titles, evidence blobs, judgment rationale)
+// AND withhold every screenshot (KLAVITYKLA-363 — see SCREENSHOT_WITHHELD_NOTICE above).
+//
+// This is the LAST line of defence: gatherWalkReport is also told to skip resolving
+// screenshot bytes when masking is on (so we never pay the S3 fetch), but any caller
+// that only applies this transform still gets an image-free report.
 export function maskWalkReportData<T extends MaskableWalkReport>(data: T): T {
   return {
     ...data,
@@ -279,12 +328,12 @@ export function maskWalkReportData<T extends MaskableWalkReport>(data: T): T {
       ...f,
       title: maskPii(f.title),
       groundQuote: f.groundQuote != null ? maskPii(f.groundQuote) : null,
-      evidence: f.evidence != null ? maskDeep(f.evidence) : null,
+      evidence: f.evidence != null ? maskDeep(stripScreenshotRefs(f.evidence)) : null,
     })),
-    steps: data.steps.map((s) => ({
-      ...s,
-      evidence: s.evidence != null ? maskDeep(s.evidence) : null,
-    })),
+    steps: data.steps.map((s) => {
+      const withheld = withholdStepScreenshot(s)
+      return { ...withheld, evidence: withheld.evidence != null ? maskDeep(withheld.evidence) : null }
+    }),
     judgment: data.judgment
       ? {
           ...data.judgment,
