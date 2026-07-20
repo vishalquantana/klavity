@@ -106,7 +106,12 @@ import { runDueSchedules, buildProductionDeps } from "./lib/sim-review-schedule"
 import { trackFunnel, CLIENT_INGESTABLE } from "./lib/funnel"
 import { gatherGrowthScorecard } from "./lib/growth-scorecard"
 import { TEST_OTP_CODE, TEST_OTP_DURATIONS_H, testOtpDecision, getTestOtpGate, enableTestOtpGate, disableTestOtpGate, recordTestOtpUse, listTestOtpUses, type TestOtpGate, type TestOtpUse } from "./lib/test-otp-gate"
-import { capturePosthog, posthogReplayEnabled } from "./lib/posthog"
+import { capturePosthog, posthogReplayEnabled, captureBugFiled, captureSimRunCompleted, planTierForProject } from "./lib/posthog"
+import { accountIdForProject, accountPlan } from "./lib/db"
+// KLAVITYKLA-372: resolving the plan tier for a volume event needs two DB reads; doing them
+// on the request path to decorate an analytics event would be absurd, so the whole emit
+// (lookup + POST) runs inside a voided async closure off the response path.
+const PLAN_LOOKUP_DEPS = { accountIdForProject, accountPlan }
 import { createSimReviewSchedule, listSimReviewSchedules, getSimReviewSchedule, deleteSimReviewSchedule, setSimReviewScheduleEnabled, type SimReviewScheduleFrequency } from "./lib/db"
 import { startSimsDigestScheduler, sendSimsDigest, type SimsDigestDeps, DAY_MS as SIMS_DIGEST_DAY_MS } from "./lib/sims-digest"
 import { sendReportAlertEmail } from "./lib/mail"
@@ -3262,6 +3267,25 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   }
                 }
               }
+              // KLAVITYKLA-372 — per-occurrence `bug_filed`. Placed AFTER the dedupe/new
+              // if-else and outside both branches so there is exactly ONE emit per accepted
+              // submission: the dedupe branch and the insert branch are mutually exclusive
+              // and neither can fall through to the other. Gated on `feedbackId` so it fires
+              // only when a row was actually persisted — every failure path above either
+              // returns early or leaves feedbackId falsy, so a rejected/errored submission
+              // emits nothing. Voided: a PostHog outage must not touch the response.
+              if (feedbackId) {
+                const filedId = feedbackId
+                const filedSource = anonWidgetAllowed ? "widget" : (simId ? "sim" : "extension")
+                const filedDeduped = knownDuplicate
+                void (async () => {
+                  const plan = await planTierForProject(projectId, PLAN_LOOKUP_DEPS)
+                  await captureBugFiled(actor ?? "anonymous", {
+                    projectId, feedbackId: filedId, source: filedSource, deduped: filedDeduped,
+                    priority, sentiment, hasScreenshot: !!screenshotId, plan,
+                  })
+                })().catch(() => {})
+              }
               // Reporter email (from the widget's "log in or email" gate): persist as the contact so
               // it shows in the dashboard and drives notify-on-fix. Fires on new + deduped rows.
               if (feedbackId && validReporterEmail) {
@@ -3871,6 +3895,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
         // Persist a lightweight sim_runs record for run history and dashboard correlation.
         // Best-effort — a record failure never fails the HTTP response.
+        let persistedRunId: string | null = null
+        let persistedRunFinishedAt = 0
         if (db) {
           try {
             // PostHog activation: first_sim_run — check BEFORE inserting the new row.
@@ -3878,7 +3904,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               sql: "SELECT COUNT(*) AS n FROM sim_runs WHERE project_id=?",
               args: [projectId],
             }).then((r: any) => Number(r.rows[0]?.n ?? 0)).catch(() => 1)
-            await insertSimRun({
+            persistedRunFinishedAt = Date.now()
+            persistedRunId = await insertSimRun({
               projectId, url: pageUrl,
               simIds: reqSimIds.length ? reqSimIds : null,  // null = all Sims
               screenshotId, reactions: reviews,
@@ -3886,7 +3913,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               // KLAVITYKLA-371: benchStart is captured at request entry, BEFORE any work — this
               // is the run's true start. Previously created_at defaulted to the insert moment,
               // so every run recorded a 0ms duration.
-              startedAt: benchStart, finishedAt: Date.now(),
+              startedAt: benchStart, finishedAt: persistedRunFinishedAt,
             })
             if (priorRunCount === 0) {
               void capturePosthog(meR ?? "server", "first_sim_run", { project_id: projectId })
@@ -3896,6 +3923,23 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const benchRunInsertAt = Date.now()
 
         const { simCount, totalObservations } = buildSimRunSummary(reviews)
+        // KLAVITYKLA-372 — per-occurrence `sim_run_completed`. Emitted once, keyed off the id
+        // returned by a SUCCESSFUL insertSimRun: if the review threw we never reach here, and
+        // if the persist threw persistedRunId stays null, so failed runs emit nothing. The
+        // sim_run_id doubles as a natural dedupe key in PostHog. duration_ms uses the same
+        // true start/finish pair written to the row (KLAVITYKLA-371), so the event and the DB
+        // can never disagree. Voided — analytics never delays or breaks the response.
+        if (persistedRunId) {
+          const runId = persistedRunId
+          const runDurationMs = persistedRunFinishedAt - benchStart
+          void (async () => {
+            const plan = await planTierForProject(projectId, PLAN_LOOKUP_DEPS)
+            await captureSimRunCompleted(meR ?? "server", {
+              projectId, simRunId: runId, trigger: "manual", durationMs: runDurationMs,
+              simCount, observationCount: totalObservations, status: "done", plan,
+            })
+          })().catch(() => {})
+        }
         const timing = {
           bodyMs: benchBodyReadAt - benchStart,
           gatesMs: benchGatesAt - benchBodyReadAt,

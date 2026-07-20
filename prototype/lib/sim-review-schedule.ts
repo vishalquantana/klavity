@@ -22,8 +22,10 @@
 import type { Client } from "@libsql/client"
 import {
   listDueSimReviewSchedules, touchSimReviewScheduleRan, listPersonas,
-  insertScreenshot, insertSimRun, type SimReviewScheduleRow,
+  insertScreenshot, insertSimRun, accountIdForProject, accountPlan,
+  type SimReviewScheduleRow,
 } from "./db"
+import { captureSimRunCompleted, planTierForProject } from "./posthog"
 import { runSimReviews, splitUrl, buildSimRunSummary } from "./sim-review"
 import { authedScreenshotUrl } from "./sim-preview"
 import { safeFetch } from "./safe-fetch"
@@ -132,8 +134,10 @@ async function runOneSchedule(
 
     // Persist a sim_runs record so the dashboard shows run history.
     let simRunId: string | null = null
+    let runFinishedAt = 0
     if (deps.db) {
       try {
+        runFinishedAt = Date.now()
         simRunId = await insertSimRun({
           projectId: schedule.projectId,
           url: schedule.targetUrl,
@@ -144,7 +148,7 @@ async function runOneSchedule(
           label: `Scheduled (${schedule.frequency})`,
           status: "done",
           startedAt: runStartedAt,
-          finishedAt: Date.now(),
+          finishedAt: runFinishedAt,
         })
       } catch (e: any) {
         console.warn("[sim-schedule] sim_runs insert skipped:", e?.message || e)
@@ -155,6 +159,22 @@ async function runOneSchedule(
     await touchSimReviewScheduleRan(schedule.id, nowMs, schedule.frequency)
 
     const { simCount, totalObservations } = buildSimRunSummary(reviews)
+    // KLAVITYKLA-372 — per-occurrence `sim_run_completed` for the SCHEDULED trigger. Same
+    // rule as the manual path: keyed off a non-null id from a successful insertSimRun, so a
+    // failed schedule run (which returns from the catch below, never reaching here) and a
+    // failed persist both emit nothing. One schedule fire ⇒ at most one event; the tick's
+    // own re-entrancy is already bounded by touchSimReviewScheduleRan advancing next_run_at.
+    if (simRunId) {
+      const runId = simRunId
+      void (async () => {
+        const plan = await planTierForProject(schedule.projectId, { accountIdForProject, accountPlan })
+        await captureSimRunCompleted(actorEmail || "server", {
+          projectId: schedule.projectId, simRunId: runId, trigger: "scheduled",
+          durationMs: runFinishedAt - runStartedAt,
+          simCount, observationCount: totalObservations, status: "done", plan,
+        })
+      })().catch(() => {})
+    }
     console.log(`[sim-schedule] schedule=${schedule.id} project=${schedule.projectId} url=${schedule.targetUrl} sims=${simCount} obs=${totalObservations}`)
     return { ...base, simCount, totalObservations, simRunId }
   } catch (e: any) {
