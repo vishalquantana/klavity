@@ -67,6 +67,32 @@ test('a CREATE TABLE mentioned in a comment does NOT count as a declaration', ()
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
+// ── Self-poisoning regression #2: a TEST FIXTURE must never count as a declaration ──
+// This one was live: THIS file's own fixture above contains the literal
+// `CREATE TABLE IF NOT EXISTS audit_log (id TEXT)`. Because collectCreatedTables walked the
+// whole repo including scripts/, that fixture "declared" audit_log for the REAL tree — so
+// deleting the real CREATE from prototype/lib/db.ts still exited 0. The gate was blind to
+// the exact incident it was written for. Verified by hand before and after the fix.
+test('a CREATE inside a *.test.mjs fixture does NOT count as a real declaration', () => {
+  const root = fixture({
+    'prototype/lib/db.ts': 'export const s = []',
+    'prototype/lib/audit-log.ts': 'await db.execute({ sql: `SELECT * FROM audit_log` })',
+    // a fixture file that merely *mentions* the CREATE, exactly like this test file does
+    'scripts/check-db-integrity.test.mjs':
+      "const f = { 'prototype/lib/db.ts': '`CREATE TABLE IF NOT EXISTS audit_log (id TEXT)`' }",
+  })
+  try {
+    expect(checkTree(root).missing.map((m) => m.table)).toEqual(['audit_log'])
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+test('the real repo does NOT get its audit_log declaration from a test fixture', () => {
+  // Belt-and-braces on the live tree: the ONLY thing that may declare audit_log is real
+  // schema under prototype/, never scripts/*.test.*.
+  expect(collectCreatedTables(REPO).has('audit_log')).toBe(true)
+  expect(collectCreatedTables(join(REPO, 'scripts')).has('audit_log')).toBe(false)
+})
+
 // ── False-positive filters ──────────────────────────────────────────────────
 
 test('English prose in comments is not read as a table reference', () => {
