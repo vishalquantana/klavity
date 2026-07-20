@@ -148,6 +148,26 @@ EOF
     rm -rf "$tmpd"
     return 1
   fi
+  # MERGE-EATEN-BINDING GATE (KLAVITYKLA-354). TS2304 = "cannot find name": the call site
+  # survived a -X theirs merge but its import/definition did NOT. This ships a feature that
+  # is DEAD at runtime (ReferenceError) while still parsing and booting, so neither the
+  # TS1xxx gate nor boot_smoke catches it. Real case 2026-07-20: server.ts kept 14 logAudit()
+  # call sites but lost `import { logAudit } from "./lib/audit-log"` — the KLAVITYKLA-352
+  # audit-log feature was dead on master for days.
+  # Gate on NET-NEW only (head > base), exactly like TS1xxx: an absolute "zero TS2304" gate
+  # would have blocked EVERY branch touching server.ts while that pre-existing breakage stood,
+  # i.e. it would have wedged the whole train. Net-new can never deadlock.
+  local nf_head nf_base
+  nf_head=$(grep -cE "error TS2304" "$tmpd/head.log" 2>/dev/null); nf_head=${nf_head:-0}
+  nf_base=$(grep -cE "error TS2304" "$tmpd/base.log" 2>/dev/null); nf_base=${nf_base:-0}
+  if [ "$nf_head" -gt "$nf_base" ]; then
+    log "!!! INTEGRITY GATE: $b introduced UNRESOLVED NAMES (TS2304 ${nf_base} -> ${nf_head}) — a merge-eaten import/definition; the feature would ship DEAD. Reverting; the branch must rebase onto master."
+    diff <(grep -E "error TS2304" "$tmpd/base.log" 2>/dev/null | sed -E 's/\([0-9]+,[0-9]+\)/()/' | sort) \
+         <(grep -E "error TS2304" "$tmpd/head.log" 2>/dev/null | sed -E 's/\([0-9]+,[0-9]+\)/()/' | sort) 2>/dev/null \
+      | grep '^>' | head -10 | while IFS= read -r l; do log "  ${l#> }"; done
+    rm -rf "$tmpd"
+    return 1
+  fi
   n_head=$(grep -c "error TS" "$tmpd/head.log" 2>/dev/null); n_head=${n_head:-0}
   n_base=$(grep -c "error TS" "$tmpd/base.log" 2>/dev/null); n_base=${n_base:-0}
   if [ "$n_head" -gt "$n_base" ]; then
@@ -160,6 +180,93 @@ EOF
   fi
   [ "$n_base" -gt 0 ] && log "tsc gate: tolerated ${n_base} pre-existing error(s) in changed files (no net increase)"
   rm -rf "$tmpd"
+  return 0
+}
+
+# --- Repo integrity guards (KLAVITYKLA-354) -------------------------------
+# Run the standalone checkers against the AS-MERGED tree. Each is also runnable by hand:
+#   node scripts/check-db-integrity.mjs   node scripts/check-no-emoji.mjs   node scripts/check-inline-js.mjs
+# On failure sets the GLOBAL $GUARD_WHY to a short reason token and returns 1.
+# NOTE: it must NOT be called in a command substitution — log() writes to stdout, so $(...)
+# would swallow every gate message into the variable instead of the merge-train log.
+# Fail-OPEN if node is unavailable — never wedge the train on a missing toolchain.
+GUARD_WHY=""
+repo_integrity_guards(){
+  local pre="$1" out rc why=""
+  GUARD_WHY=""
+  command -v node >/dev/null 2>&1 || { log "integrity guards: node unavailable — skipping"; return 0; }
+
+  # 1) DB SCHEMA (the KLAVITYKLA-352 audit_log case): every table the backend reads/writes
+  #    must have a CREATE somewhere. A -X theirs merge silently dropped
+  #    `CREATE TABLE IF NOT EXISTS audit_log` from db.ts while lib/audit-log.ts kept
+  #    INSERTing into it → "no such table: audit_log" on every audited action.
+  if [ -f scripts/check-db-integrity.mjs ]; then
+    out=$(node scripts/check-db-integrity.mjs 2>&1); rc=$?
+    if [ "$rc" -ne 0 ]; then
+      why="$why db-schema"
+      echo "$out" | head -12 | while IFS= read -r l; do log "  ${l}"; done
+    fi
+  fi
+
+  # 2) UNRESOLVED BINDINGS across the WHOLE backend program (server.ts + prototype/lib/**).
+  #    This is NOT redundant with typecheck_changed_ts: that one only compiles the files a
+  #    branch CHANGED, so a branch that deletes an export from lib/db.ts never re-checks
+  #    server.ts. And prototype/tsconfig.json does not include server.ts at all, so a plain
+  #    `tsc --noEmit` is blind to the most merge-contended file in the repo (verified via
+  #    --listFiles). check-ts-bindings.mjs passes the file set explicitly and ASSERTS server.ts
+  #    is in the program. Real case: server.ts lost its ./lib/audit-log import → every login
+  #    threw ReferenceError, while the server still booted clean (b0e70882).
+  if [ -f scripts/check-ts-bindings.mjs ]; then
+    out=$(node scripts/check-ts-bindings.mjs 2>&1); rc=$?
+    if [ "$rc" -eq 2 ]; then
+      # Could not verify (no tsc / server.ts not in program). Fail OPEN but LOUDLY: a wedged
+      # train is worse than a missed check, and the orchestrator watches these logs.
+      log "!!! ts-bindings gate COULD NOT RUN — check skipped for $b (investigate):"
+      echo "$out" | head -4 | while IFS= read -r l; do log "  ${l}"; done
+    elif [ "$rc" -ne 0 ]; then
+      # Block only on a NET INCREASE vs origin/master. An absolute "zero TS2304" gate would
+      # have blocked EVERY branch during the hours master carried the eaten audit-log import,
+      # i.e. it would have wedged the whole train. Net-new can never deadlock.
+      local head_n base_n bwt
+      head_n=$(echo "$out" | grep -c "error TS2304"); head_n=${head_n:-0}
+      base_n=0
+      bwt="$(mktemp -d)/ts-bindings-base"
+      if git worktree add -q --detach "$bwt" origin/master 2>/dev/null; then
+        base_n=$(node scripts/check-ts-bindings.mjs "$bwt" 2>&1 | grep -c "error TS2304"); base_n=${base_n:-0}
+        git worktree remove --force "$bwt" 2>/dev/null || true
+      fi
+      if [ "$head_n" -gt "$base_n" ]; then
+        log "!!! ts-bindings: $b introduced UNRESOLVED NAMES (TS2304 ${base_n} -> ${head_n}) — a merge-eaten import/definition. The feature would ship DEAD (ReferenceError at call time; the server still boots, so boot-smoke will NOT catch it)."
+        why="$why ts-bindings"
+        echo "$out" | grep "error TS2304" | head -12 | while IFS= read -r l; do log "  ${l}"; done
+      else
+        log "ts-bindings: tolerated ${head_n} pre-existing TS2304 (baseline ${base_n}) — no net increase"
+      fi
+    fi
+  fi
+
+  # 3) EMOJI GUARD — cheap (~0.1s), always run.
+  if [ -f scripts/check-no-emoji.mjs ]; then
+    out=$(node scripts/check-no-emoji.mjs 2>&1); rc=$?
+    if [ "$rc" -ne 0 ]; then
+      why="$why emoji-guard"
+      echo "$out" | head -8 | while IFS= read -r l; do log "  ${l}"; done
+    fi
+  fi
+
+  # 4) INLINE-JS GUARD (smart-quote corruption in inline <script>) — ~5s, so only run it
+  #    when the merge actually touched HTML under site/ or prototype/public/ (its only inputs).
+  #    Keeps the per-branch gate cheap enough for a 90s loop.
+  if [ -f scripts/check-inline-js.mjs ] \
+     && git diff --name-only "$pre"..HEAD -- 'site/*.html' 'prototype/public/*.html' 2>/dev/null | grep -q .; then
+    out=$(node scripts/check-inline-js.mjs 2>&1); rc=$?
+    if [ "$rc" -ne 0 ]; then
+      why="$why inline-js"
+      echo "$out" | head -8 | while IFS= read -r l; do log "  ${l}"; done
+    fi
+  fi
+
+  [ -n "$why" ] && { GUARD_WHY="$why"; return 1; }
   return 0
 }
 
@@ -191,6 +298,10 @@ for b in $(git for-each-ref --format='%(refname:short)' refs/heads/ | grep -E '^
     if ! typecheck_changed_ts "$pre"; then
       why="$why tsc-noEmit"
     fi
+    # 4) repo-wide integrity guards on the as-merged tree: referenced-table audit + emoji +
+    #    inline-JS. Per-branch (not once at the end) so a bad branch is dropped while every
+    #    good branch in the same cycle still ships.
+    repo_integrity_guards "$pre" || why="$why$GUARD_WHY"
     if [ -n "$why" ]; then
       log "!!! INTEGRITY GATE BLOCKED $b — reverting (stale-base regressed:$why). Branch must rebase onto master."
       git reset -q --hard "$pre"
