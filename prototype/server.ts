@@ -8,6 +8,10 @@ import { logAudit, queryAuditLog, auditRowsToCsv, type AuditAction } from "./lib
 import { buildMemberExport, membersToCsv, MEMBER_EXPORT_FIELDS } from "./lib/member-export"
 import { isMaskingEnabled, maskMemberExportRow, maskDeep, maskWalkReportData } from "./lib/data-masking"
 import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows } from "./lib/db"
+import { countFoundingAccounts } from "./lib/db"
+// KLAVITYKLA-366 — the Founding Ten spot counter. One cached source of truth behind the public
+// pricing band, the in-app ribbon, and the server-side refusal of an 11th founding checkout.
+import { getFoundingSpots, decideFoundingCheckout, foundingRibbonLabel, foundingSpotsLabel, foundingStateToken, computeFoundingSpots } from "./lib/founding"
 import { checkTenantBudget, tenantBudgetEnforcementEnabled, tenantBudgetRemaining, TenantBudgetExceededError } from "./lib/tenant-budget"
 import { sanitizeAttr } from "./lib/attr"
 import { deriveActivation, type ActivationSignals } from "./lib/activation"
@@ -840,7 +844,10 @@ async function dashboardPage(): Promise<Response> {
     // per-response below so the session-replay gate re-evaluates as the user count grows.
     DASHBOARD_HTML = raw.replaceAll("__APP_VERSION__", version).replaceAll("__POSTHOG_KEY__", _PH_KEY)
   }
-  const body = DASHBOARD_HTML.replaceAll("__POSTHOG_REPLAY__", await posthogReplayFlag())
+  let body = DASHBOARD_HTML.replaceAll("__POSTHOG_REPLAY__", await posthogReplayFlag())
+  // KLAVITYKLA-366: the in-app Founding ribbon must respect the same sold-out state as the website
+  // — the app may never keep promoting an offer we have publicly closed.
+  if (body.includes("__FOUNDING_STATE__")) body = await substituteFoundingPlaceholders(body)
   return new Response(body, { headers: { "content-type": "text/html; charset=utf-8" } })
 }
 // Serve HTML pages with __POSTHOG_KEY__ substituted from KLAV_POSTHOG_KEY env var and
@@ -890,10 +897,32 @@ async function htmlPage(path: string, extraHeaders?: Record<string, string>): Pr
     // so the session-replay volume gate re-evaluates as the tool-user count grows.
     _htmlCache.set(path, out)
   }
-  const body = _htmlCache.get(path)!.replaceAll("__POSTHOG_REPLAY__", await posthogReplayFlag())
+  let body = _htmlCache.get(path)!.replaceAll("__POSTHOG_REPLAY__", await posthogReplayFlag())
+  // KLAVITYKLA-366: pages carrying the Founding band get the spot count substituted per response
+  // (the template stays cached with placeholders intact). Server-rendered rather than fetched from
+  // the client on purpose — a JS-disabled or slow visitor must never see a founding CTA we've
+  // already closed, and there is no spinner state to get stuck in.
+  if (body.includes("__FOUNDING_STATE__")) body = await substituteFoundingPlaceholders(body)
   return new Response(body, {
     headers: { "content-type": "text/html; charset=utf-8", ...extraHeaders },
   })
+}
+// Resolve the cached spot count and fill the three placeholders. Any failure inside
+// getFoundingSpots already degrades to "unknown", which renders the offer with NO number and the
+// timeless ribbon — so this never throws a marketing page.
+async function substituteFoundingPlaceholders(body: string): Promise<string> {
+  const spots = await getFoundingSpots(countFoundingAccounts)
+  // Every value here is server-generated from fixed copy plus an integer, so it cannot carry markup
+  // — escaping anyway so this stays safe if the labels ever become data-driven. Function-form
+  // replacements so a "$" in future copy can't be read as a replacement pattern.
+  const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!)
+  const subs: Record<string, string> = {
+    __FOUNDING_STATE__: foundingStateToken(spots),
+    __FOUNDING_RIBBON__: esc(foundingRibbonLabel(spots)),
+    // Empty string when unknown — the .founding-spots :empty rule collapses the line entirely.
+    __FOUNDING_SPOTS_LINE__: esc(foundingSpotsLabel(spots)),
+  }
+  return body.replace(/__FOUNDING_(?:STATE|RIBBON|SPOTS_LINE)__/g, (m) => subs[m] ?? "")
 }
 function redirect(loc: string, headers: Record<string, string> = {}) { return new Response(null, { status: 302, headers: { Location: loc, ...headers } }) }
 // KLAVITYKLA-229 (JTBD 1.12): resume intent after a login gate. `safeNext` accepts ONLY a
@@ -6259,6 +6288,27 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     }
 
     if (path.startsWith("/api/")) {
+      // KLAVITYKLA-366 — GET /api/founding/spots is deliberately ANONYMOUS: it returns exactly the
+      // public marketing number that is already printed on /pricing, nothing account-scoped. Served
+      // from the same 60s cache the pricing page uses, so scraping it costs no extra DB reads.
+      // Placed above the login gate so it stays readable to a logged-out visitor.
+      if (req.method === "GET" && path === "/api/founding/spots") {
+        const spots = await getFoundingSpots(countFoundingAccounts)
+        return json(
+          {
+            total: spots.total,
+            // `remaining` is null — never 0, never "undefined" — when we can't determine it. Clients
+            // must check `known` and render the offer WITHOUT a number rather than guessing.
+            remaining: spots.remaining,
+            soldOut: spots.soldOut,
+            known: spots.known,
+            label: foundingSpotsLabel(spots),
+          },
+          200,
+          { "cache-control": "public, max-age=60" },
+        )
+      }
+
       // ANON_AI_DEMO_ROUTES power the pre-signup onboarding aha and are safe anonymously
       // (own rate limit + SSRF guard + caps) — their handlers below re-derive auth themselves.
       if (!me && !ANON_AI_DEMO_ROUTES.has(`${req.method} ${path}`)) return needLogin()
@@ -6868,6 +6918,18 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // catalog. Pro/Team keep the caller's choice.
         const interval = plan === "founding" ? "year" : normalizeInterval(String(parsed.data?.interval || "month"))
         const billing = await accountBillingState(active.workspaceId)
+        // KLAVITYKLA-366 — enforce the ten-spot cap HERE, not just visually. A visual-only limit is
+        // a promise we can't keep: this endpoint is reachable directly, so without this check
+        // someone could buy in as spot 11 and we would owe them a locked-for-life price we had
+        // publicly closed. Counted FRESH (not from the 60s display cache) because two people can
+        // check out inside one TTL window. Fails closed when the count is unavailable — see
+        // decideFoundingCheckout for why unknown is the one place we don't degrade gracefully.
+        if (plan === "founding") {
+          let taken: number | null = null
+          try { taken = await countFoundingAccounts() } catch { taken = null }
+          const decision = decideFoundingCheckout({ taken, currentPlan: billing.plan })
+          if (!decision.allowed) return json({ error: decision.error, soldOut: computeFoundingSpots(taken).soldOut }, decision.status)
+        }
         const session = await createStripeCheckoutSession({
           accountId: active.workspaceId,
           email: me,

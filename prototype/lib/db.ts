@@ -2147,6 +2147,36 @@ export async function countUsers(): Promise<number> {
   return Number((r.rows[0] as any)?.n || 0)
 }
 
+/**
+ * KLAVITYKLA-366 — how many of the ten Founding Ten spots are actually taken.
+ *
+ * `accounts.plan` is the ENTITLEMENT source of truth (it is what PLAN_QUOTAS is keyed off and what
+ * the Stripe webhook writes), so it — not Stripe — is what we count. That keeps the public "spots
+ * left" number free of a Stripe round trip per pageview.
+ *
+ * Churned founders free their spot: an account whose subscription ended is excluded. We match on
+ * billing_status rather than deleting the plan because a `canceled` row keeps its plan slug until
+ * the period end sweep runs, and we would otherwise keep the offer closed against a seat nobody
+ * holds. NULL billing_status is COUNTED — the first founders are set up by hand by the founder and
+ * may have no Stripe row at all.
+ *
+ * Throws on a DB error rather than returning 0 — callers (lib/founding.ts) must be able to tell
+ * "zero spots taken" apart from "we don't know", and a silent 0 would advertise ten free spots
+ * during an outage.
+ */
+export async function countFoundingAccounts(): Promise<number> {
+  if (!db) throw new Error("countFoundingAccounts: no database connection")
+  const r = await db.execute({
+    sql: `SELECT COUNT(*) AS n FROM accounts
+           WHERE plan = 'founding'
+             AND (billing_status IS NULL
+                  OR billing_status NOT IN ('canceled', 'cancelled', 'incomplete_expired', 'unpaid'))`,
+  })
+  const n = Number((r.rows[0] as any)?.n)
+  if (!Number.isFinite(n) || n < 0) throw new Error("countFoundingAccounts: unusable count")
+  return n
+}
+
 // How many times a given code has been redeemed (for per-code cap enforcement/reporting).
 export async function countPartnerCodeRedemptions(code: string): Promise<number> {
   const r = await db!.execute({

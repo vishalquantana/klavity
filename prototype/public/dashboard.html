@@ -657,6 +657,12 @@ body[data-view="recurring"] .grid>.card[data-view~="recurring"]{grid-column:1/-1
 .btn-sm{padding:7px 13px;font-size:13px}
 .msg{font-size:12.5px;color:var(--green);margin-top:8px;min-height:16px}
 .muted{color:var(--paper-faint);font-size:13px}
+/* KLAVITYKLA-366 — Founding Ten sold out: hide the in-app offer entirely (the ribbon carries an
+   inline display:flex, hence !important). No dead CTA, no "0 spots left" button that still takes
+   checkouts. #foundingSpots collapses when the count is unavailable so we never show a blank line
+   or the literal placeholder. */
+#foundingRibbon[data-founding-state="soldout"]{display:none!important}
+#foundingSpots:empty{display:none}
 .hide{display:none}
 
 /* "what your sims are saying" feed — capped so it never dominates the page */
@@ -2159,10 +2165,15 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
            KLAVITYKLA-379: $490/yr. Entitlements mirror PLAN_QUOTAS.founding = Team LIMITS but a
            DAILY AutoSim cadence (hourly is loss-making at a lifetime-locked price) — keep this copy
            in lockstep with prototype/lib/billing.ts and site/pricing.html. -->
-      <div id="foundingRibbon" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;border:1px solid rgba(139,92,246,.35);background:linear-gradient(135deg,rgba(99,102,241,.10),rgba(139,92,246,.08));border-radius:8px;padding:10px 14px;margin-bottom:12px">
+      <!-- KLAVITYKLA-366: data-founding-state is SERVER-substituted (see substituteFoundingPlaceholders
+           in server.ts). When it resolves to "soldout" the whole ribbon is hidden by CSS — the app
+           must not promote an offer the website has closed, and there must be no dead "Join as a
+           founder" button. The spots line is empty when the count is unavailable, and collapses. -->
+      <div id="foundingRibbon" data-founding-state="__FOUNDING_STATE__" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;border:1px solid rgba(139,92,246,.35);background:linear-gradient(135deg,rgba(99,102,241,.10),rgba(139,92,246,.08));border-radius:8px;padding:10px 14px;margin-bottom:12px">
         <div style="flex:1;min-width:220px">
-          <div style="font-weight:700;font-size:13.5px">Founding Team — $490/yr</div>
+          <div style="font-weight:700;font-size:13.5px">Founding Team — $490/yr <span class="muted" style="font-weight:400">vs Team at $249/mo</span></div>
           <div class="muted" style="font-size:12px;margin-top:2px">Team limits with daily flow runs, price locked forever, direct line to the founder.</div>
+          <div id="foundingSpots" style="font-size:12px;font-weight:700;margin-top:4px">__FOUNDING_SPOTS_LINE__</div>
         </div>
         <button class="btn btn-indigo btn-sm billingCheckout" data-plan="founding" data-interval="year">Join as a founder</button>
       </div>

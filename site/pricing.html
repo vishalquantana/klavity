@@ -359,6 +359,62 @@
     font-size: 11px;
     color: var(--paper-faint);
   }
+  /* KLAVITYKLA-366 — standard-price anchor + honest spot counter.
+     The anchor lines carry the contrast ($2,988/yr vs $490/yr) and are never hidden: the offer
+     only means something next to the price it displaces. */
+  .founding-anchor {
+    font-size: 13px;
+    color: var(--paper-dim);
+    margin-bottom: 4px;
+  }
+  .founding-anchor s {
+    opacity: 0.65;
+  }
+  .founding-anchor-save {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--amber, #d98324);
+    margin-bottom: 8px;
+  }
+  /* The live count. Server-substituted; EMPTY when unavailable, and :empty collapses it so the
+     band reads as a complete offer with no number rather than showing a gap or a spinner. */
+  .founding-spots {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--paper);
+    margin-bottom: 8px;
+  }
+  .founding-spots:empty {
+    display: none;
+  }
+  /* Exactly one CTA block renders. Default (no/unknown state attribute) is OPEN — degrading to a
+     live offer is correct; the server-side check in /api/billing/checkout is what actually stops
+     an 11th sale, so a stale "open" page can never oversell. */
+  .founding-when-soldout {
+    display: none;
+  }
+  .founding-band[data-founding-state="soldout"] .founding-when-open {
+    display: none;
+  }
+  .founding-band[data-founding-state="soldout"] .founding-when-soldout {
+    display: flex;
+  }
+  /* Sold out: drop the amber urgency treatment so a closed offer stops shouting. */
+  .founding-band[data-founding-state="soldout"] {
+    background: rgba(243, 236, 225, 0.03);
+    border-color: rgba(243, 236, 225, 0.14);
+  }
+  .founding-band[data-founding-state="soldout"] .founding-ribbon {
+    background: var(--paper-faint, #6b6b6b);
+  }
+  .founding-soldout-line {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--paper-dim);
+  }
   .qa-cost-anchor {
     text-align: center;
     max-width: 56ch;
@@ -502,15 +558,23 @@
          offer we actually want people to take. Entitlements below mirror
          PLAN_QUOTAS.founding in prototype/lib/billing.ts, which KLAVITYKLA-365 set
          equal to Team. Canonical name on this page: "Founding Ten". ── -->
-    <div class="founding-band reveal">
-      <span class="founding-ribbon">Ten teams, then it closes</span>
+    <div class="founding-band reveal" data-founding-state="__FOUNDING_STATE__">
+      <span class="founding-ribbon">__FOUNDING_RIBBON__</span>
       <div class="founding-lead">
         <div class="plan-name" style="color:var(--amber, #d98324)">The Founding Ten</div>
+        <!-- KLAVITYKLA-366: the STANDARD price is the anchor and stays visible in every state —
+             the pitch is the contrast, not the discount in isolation. -->
+        <div class="founding-anchor">Team is <s>$2,988 a year</s> at $249 a month. The Founding Ten pay:</div>
         <div class="plan-price-wrap" style="margin-bottom:10px">
           <span class="plan-price-currency">$</span>
           <span class="plan-price" style="font-size:38px">41</span>
           <span class="plan-price-period">/ month — $490 billed yearly, locked for life</span>
         </div>
+        <div class="founding-anchor-save">84% off the standard price, forever.</div>
+        <!-- Server-substituted, and EMPTY when the count is unavailable (see lib/founding.ts).
+             An empty span collapses via :empty — we show the offer without a number rather than a
+             wrong number or a spinner. Never animated: a stale honest number beats an animated lie. -->
+        <div class="founding-spots">__FOUNDING_SPOTS_LINE__</div>
         <div class="plan-desc">Ten teams, set up by hand by the founder, price grandfathered forever.</div>
       </div>
       <ul class="plan-features-list">
@@ -531,9 +595,16 @@
           <span><strong>A direct line to the founder</strong>, and a vote on what ships next</span>
         </li>
       </ul>
-      <div class="founding-cta-wrap">
+      <!-- Two mutually exclusive CTA states, both present in the markup so the server only has to
+           set data-founding-state (KLAVITYKLA-366). CSS picks one; there is never a dead button. -->
+      <div class="founding-cta-wrap founding-when-open">
         <a class="btn btn-primary" href="/onboarding?plan=founding">Join the Founding Ten</a>
         <span class="founding-cta-note">If Klavity doesn't find you a real bug worth fixing in the first 30 days, you don't pay — and we'll tell you ourselves if it didn't.</span>
+      </div>
+      <div class="founding-cta-wrap founding-when-soldout">
+        <div class="founding-soldout-line">All ten spots are taken.</div>
+        <a class="btn btn-primary" href="/onboarding?plan=team">Start on Team — $249/mo</a>
+        <span class="founding-cta-note">Same limits, hourly flow runs instead of daily. The founding price is closed for good.</span>
       </div>
     </div>
 
