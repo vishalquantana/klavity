@@ -48,6 +48,10 @@ declare const Bun: any;
 declare const Buffer: any;
 declare const console: any;
 declare const fetch: any;
+// Bun implements HTMLRewriter as an ambient global (bugcheck.ts uses it, and it is correctly
+// never imported anywhere). Without this it reports as TS2304 — a false positive, which is the
+// one failure mode that would make this gate useless: a gate that cries wolf gets ignored.
+declare const HTMLRewriter: any;
 declare const setTimeout: any;
 declare const clearTimeout: any;
 declare const setInterval: any;

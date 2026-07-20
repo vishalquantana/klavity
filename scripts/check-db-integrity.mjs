@@ -146,6 +146,14 @@ export function createdInSql(sql) {
 export function collectCreatedTables(root) {
   const created = new Set()
   for (const file of walk(root, CREATE_EXTS)) {
+    // A CREATE inside a TEST file is a fixture, not real schema. Skipping these is not
+    // cosmetic — it is what makes this gate work at all. THIS FILE'S OWN test fixture
+    // contains the literal `CREATE TABLE IF NOT EXISTS audit_log (id TEXT)`, which
+    // "declared" audit_log repo-wide and made the gate silently blind to the exact
+    // incident it exists to catch (verified: deleting the real CREATE from db.ts still
+    // exited 0 before this filter). Self-poisoning by fixture — same class as the
+    // comment-poisoning bug below, one layer up.
+    if (/\.test\.[mc]?[jt]sx?$/.test(file) || /\.spec\.[mc]?[jt]sx?$/.test(file)) continue
     let text
     try { text = readFileSync(file, 'utf8') } catch { continue }
     if (!/CREATE\s/i.test(text) && !/ALTER\s+TABLE/i.test(text)) continue
