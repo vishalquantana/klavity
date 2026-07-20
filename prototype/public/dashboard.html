@@ -316,7 +316,7 @@ a.exp-card .ec-src-chip,.exp-card a.ec-src-chip{cursor:pointer}
 .dr-step-del{flex-shrink:0;background:none;border:none;cursor:pointer;color:var(--paper-faint);padding:2px 4px;border-radius:6px;font-size:14px;line-height:1;transition:color .15s,transform var(--mi-dur) var(--mi-ease)}
 .dr-step-del:hover{color:var(--rose);transform:var(--mi-lift)}
 .dr-step-del:active{transform:var(--mi-press)}
-.dr-foot{display:flex;gap:10px;align-items:center;padding-top:14px;border-top:1px solid var(--line)}
+.dr-foot{display:flex;gap:10px;align-items:center;padding-top:14px;border-top:1px solid var(--line);flex-wrap:wrap}
 .dr-err{font-size:13px;color:var(--rose);margin-top:8px}
 .dr-err.hide{display:none}
 .err{font-size:13px;color:var(--rose);margin-top:6px;min-height:16px}
@@ -342,6 +342,36 @@ a.exp-card .ec-src-chip,.exp-card a.ec-src-chip{cursor:pointer}
 .shm-acts{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .shm-ext-sel{font-family:var(--mono);font-size:11px;padding:5px 8px;border-radius:8px;border:1px solid var(--line);background:var(--ink);color:var(--paper-dim);cursor:pointer;transition:border-color var(--mi-dur) var(--mi-ease)}
 .shm-ext-sel:hover{border-color:var(--indigo)}
+/* KLAVITYKLA-374: parity ports from /autosims (trails.html) — keep these selectors in sync. */
+/* KLA-270: resumable / partial-draft banner — stalled authoring sessions the user left mid-way. */
+.resume-banner{background:linear-gradient(135deg,rgba(217,131,36,.12),rgba(217,131,36,.04));border:1px solid rgba(217,131,36,.34);border-radius:18px;padding:18px 22px;margin-bottom:22px}
+.resume-banner .rb-head{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--amber);margin-bottom:4px}
+.resume-banner .rb-sub{color:var(--paper-dim);font-size:13px;margin-bottom:8px;max-width:60ch}
+.rd-row{display:flex;align-items:center;gap:12px;justify-content:space-between;padding:12px 0;border-top:1px solid var(--line)}
+.rd-main{min-width:0}
+.rd-name{font-size:14px;font-weight:600;margin-bottom:3px}
+.rd-meta{font-family:var(--mono);font-size:11px;color:var(--paper-faint);display:flex;gap:10px;flex-wrap:wrap}
+.rd-reason{color:var(--paper-dim);font-size:12.5px;margin-top:4px;max-width:62ch}
+.rd-err{color:var(--rose);font-family:var(--mono);font-size:11px;margin-top:6px}
+.rd-act{flex-shrink:0;display:flex;align-items:center;gap:8px}
+.rd-resume{font-family:var(--body);font-weight:600;font-size:13px;padding:8px 14px;border-radius:9px;border:none;cursor:pointer;color:#fff;background:linear-gradient(135deg,#a9a9ff,var(--indigo));transition:transform .1s}
+[data-theme="dark"] .rd-resume{color:#0c0a08}
+.rd-resume:active{transform:translateY(1px)}
+.rd-resume:disabled{opacity:.6;cursor:default}
+.rd-link{font-family:var(--mono);font-size:11px;color:var(--indigo);border:1px solid var(--line);padding:7px 12px;border-radius:9px}
+.rd-link:hover{border-color:var(--indigo)}
+/* KLAVITYKLA-275: draft step reorder arrows */
+.dr-step-move{display:flex;flex-direction:column;gap:2px;flex-shrink:0;margin-top:1px}
+.dr-step-mv{background:none;border:none;cursor:pointer;color:var(--paper-faint);padding:1px 3px;border-radius:5px;font-size:11px;line-height:1;transition:color .15s,transform var(--mi-dur) var(--mi-ease)}
+.dr-step-mv:hover:not(:disabled){color:var(--indigo);transform:var(--mi-lift)}
+.dr-step-mv:active:not(:disabled){transform:var(--mi-press)}
+.dr-step-mv:disabled{opacity:.25;cursor:default}
+/* KLAVITYKLA-275: re-verify verdict pill inline in the modal footer */
+.dr-verify-msg{font-family:var(--mono);font-size:11px;color:var(--paper-faint);display:inline-flex;align-items:center;gap:6px}
+.dr-verdict{font-family:var(--mono);font-size:9px;letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;border-radius:20px}
+.dr-verdict.green{background:rgba(15,157,107,.14);color:var(--green)}
+.dr-verdict.amber{background:rgba(217,131,36,.16);color:var(--amber)}
+.dr-verdict.red{background:rgba(219,39,119,.14);color:var(--rose)}
 .shm-btn{font-family:var(--mono);font-size:10px;letter-spacing:.04em;padding:5px 10px;border-radius:9px;border:1px solid var(--line);background:transparent;color:var(--paper-dim);cursor:pointer;transition:transform var(--mi-dur) var(--mi-ease),border-color var(--mi-dur) var(--mi-ease),color var(--mi-dur) var(--mi-ease)}
 .shm-btn:hover:not(:disabled){border-color:var(--indigo);color:var(--paper);transform:var(--mi-lift)}
 .shm-btn:active:not(:disabled){transform:var(--mi-press)}
@@ -2346,6 +2376,8 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           <span style="font-size:13.5px;color:#a15f00;flex:1"><b>Your Sims are waiting at the door.</b> One or more walks hit a login screen and paused. Give your Sims a key so they can keep exploring.</span>
           <a id="needsAuthLink" href="/autosims/auth" style="flex-shrink:0;background:#d98324;color:#fff;font-size:12px;font-weight:700;padding:7px 14px;border-radius:9px;text-decoration:none;white-space:nowrap">Give it a key</a>
         </div>
+        <!-- KLA-270 / KLAVITYKLA-374: resumable stalled-draft banner (ported from /autosims) -->
+        <div class="resume-banner" id="resumeBanner" style="display:none"></div>
         <!-- Precision banner: only shown when real precision data exists (not the dead '—' state) -->
         <div class="banner" id="precBanner" style="display:none">
           <div>
@@ -2353,6 +2385,16 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
             <div class="pct" id="precPct">—</div>
           </div>
           <div class="sub" id="precSub"></div>
+        </div>
+        <!-- KLA-216 / KLAVITYKLA-374: schedule-health coverage. The server has always sent
+             `coverage` on /api/trails/dashboard but the dashboard had no consumer — only /autosims
+             rendered it. Ported so the redirect doesn't drop it. -->
+        <div class="banner" id="covBanner" style="display:none">
+          <div>
+            <div class="lbl">Schedule health · scheduled walks that ran</div>
+            <div class="pct" id="covPct">—</div>
+          </div>
+          <div class="sub" id="covSub"></div>
         </div>
         <div class="card" style="margin-bottom:18px">
           <h2>AutoSims <span class="count" id="trailsCount">0</span></h2>
@@ -8658,12 +8700,14 @@ load()
     <div class="dr-body" id="drBody">
       <div class="dr-trail-name" id="drName"></div>
       <div class="dr-trail-url" id="drUrl"></div>
-      <p class="dr-hint">Review the authored steps. Edit any text or URL inline, or delete steps that look wrong, then Activate.</p>
+      <p class="dr-hint">These are the steps AutoSim recorded. Edit any text or URL inline by clicking it, use the arrows to reorder a step, and delete steps that look wrong. Re-verify to re-run the edited flow live, then Activate to start scheduling this AutoSim.</p>
       <div class="dr-steps" id="drSteps"></div>
     </div>
     <div class="dr-foot">
       <button class="btn btn-indigo" id="drActivate">Activate AutoSim</button>
+      <button class="btn btn-ghost" id="drReverify" title="Re-run the edited steps live to confirm the flow still passes before activating">Re-verify</button>
       <button class="btn btn-ghost" id="drCancel">Cancel</button>
+      <span class="dr-verify-msg" id="drVerifyMsg"></span>
       <span class="dr-err hide" id="drErr"></span>
     </div>
   </div>
@@ -8905,7 +8949,20 @@ load()
   }
 
   // ── Draft Review modal ────────────────────────────────────────────────────
-  var drState={trailId:null}
+  var drState={trailId:null,steps:[]}
+  // KLAVITYKLA-275: re-verify state + verdict pill (handler is wired in initTrailsView).
+  var drVerifying=false
+  function drVerdictHtml(status){
+    var s=String(status||"")
+    var label=s==="green"?"passed":(s==="amber"?"adapted":(s==="red"?"failed":s))
+    var cls=(s==="green"||s==="amber"||s==="red")?s:"amber"
+    return '<span class="dr-verdict '+cls+'">'+esc(label)+'</span>'
+  }
+  function drVerifyDone(){
+    drVerifying=false
+    var btn=$("drReverify");if(btn){btn.disabled=false;btn.innerHTML="Re-verify"}
+    $("drActivate").disabled=false
+  }
   function drStepLabel(action){return{navigate:"navigate",click:"click",type:"type",select:"select",assert:"assert",wait:"wait"}[action]||action}
   function drStepSub(step){var fp=step.target||{};var name=fp.accessibleName||fp.text||fp.role||fp.testId||"";if(step.action==="navigate"||step.action==="assert"||step.action==="wait")return "";if(step.action==="type"||step.action==="select")return name?'"'+name+'"':(fp.domPath?fp.domPath:"");return fp.domPath?fp.domPath:""}
   function drStepEditable(action){return action==="navigate"||action==="type"||action==="select"||action==="assert"||action==="wait"}
@@ -8923,20 +8980,56 @@ load()
     var r=await fetch("/api/trails/"+encodeURIComponent(trailId)+"/steps/"+encodeURIComponent(stepId)+qs,{method:"DELETE"})
     if(r.ok){
       cardEl.style.transition="opacity .2s";cardEl.style.opacity="0"
-      setTimeout(function(){if(cardEl.parentNode)cardEl.parentNode.removeChild(cardEl)
-        var cards=$("drSteps").querySelectorAll(".dr-step")
-        cards.forEach(function(c,i){var n=c.querySelector(".dr-step-n");if(n)n.textContent=String(i+1)})
+      setTimeout(function(){
+        // KLAVITYKLA-275: drop from the in-memory list and re-render so numbers, move-button
+        // disabled state, and the reorder payload all stay consistent.
+        drState.steps=(drState.steps||[]).filter(function(s){return s.id!==stepId})
+        renderDrSteps(drState.steps)
       },200)
     }else{cardEl.style.borderColor="var(--rose)";setTimeout(function(){cardEl.style.borderColor=""},900)}
   }
+  // KLAVITYKLA-275: persist the current on-screen step order to the server (draft-only). Reads the
+  // order straight from drState.steps (kept in sync by move/delete). On failure the caller reverts
+  // the in-memory swap and re-renders so the UI never drifts from the persisted order.
+  async function drPersistOrder(){
+    var trailId=drState.trailId;if(!trailId)return false
+    var pid=projParam();var qs=pid?"?project="+encodeURIComponent(pid):""
+    try{
+      var r=await fetch("/api/trails/"+encodeURIComponent(trailId)+"/steps/reorder"+qs,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({order:drState.steps.map(function(s){return s.id})})})
+      return r.ok
+    }catch(e){return false}
+  }
+  // Move the step at `i` by `dir` (-1 up / +1 down): swap in drState.steps, re-render, then persist.
+  async function drMoveStep(i,dir){
+    var j=i+dir;if(j<0||j>=drState.steps.length)return
+    var arr=drState.steps
+    var tmp=arr[i];arr[i]=arr[j];arr[j]=tmp
+    renderDrSteps(arr)
+    var ok=await drPersistOrder()
+    if(!ok){
+      var t2=arr[i];arr[i]=arr[j];arr[j]=t2
+      renderDrSteps(arr)
+      var msg=$("drVerifyMsg");if(msg){msg.style.color="var(--rose)";msg.textContent="Couldn't save the new order"}
+    }
+  }
   function renderDrSteps(steps){
+    drState.steps=steps||[]
     var el=$("drSteps")
     if(!steps||!steps.length){el.innerHTML='<div style="color:var(--paper-faint);font-size:13px;padding:12px 0">No steps authored yet.</div>';return}
     el.innerHTML=""
     steps.forEach(function(s,i){
       var action=String(s.action||"");var sub=drStepSub(s);var editable=drStepEditable(action)
-      var card=document.createElement("div");card.className="dr-step"
+      var card=document.createElement("div");card.className="dr-step";card.dataset.stepId=s.id
       var numSpan=document.createElement("span");numSpan.className="dr-step-n";numSpan.textContent=String(i+1);card.appendChild(numSpan)
+      // KLAVITYKLA-275: reorder controls (up / down)
+      var mv=document.createElement("div");mv.className="dr-step-move"
+      var up=document.createElement("button");up.className="dr-step-mv";up.type="button";up.innerHTML="&#9650;"
+      up.title="Move step up";up.setAttribute("aria-label","Move step "+(i+1)+" up");up.disabled=i===0
+      up.onclick=function(){drMoveStep(i,-1)}
+      var down=document.createElement("button");down.className="dr-step-mv";down.type="button";down.innerHTML="&#9660;"
+      down.title="Move step down";down.setAttribute("aria-label","Move step "+(i+1)+" down");down.disabled=i===steps.length-1
+      down.onclick=function(){drMoveStep(i,1)}
+      mv.appendChild(up);mv.appendChild(down);card.appendChild(mv)
       var body=document.createElement("div");body.className="dr-step-body"
       var badge=document.createElement("span");badge.className="dr-step-action "+action;badge.textContent=drStepLabel(action);body.appendChild(badge)
       if(editable){
@@ -8971,6 +9064,8 @@ load()
     drState.trailId=trailId;var pid=projParam();var qs=pid?"?project="+encodeURIComponent(pid):""
     $("drName").textContent="Loading…";$("drUrl").textContent="";$("drSteps").innerHTML=""
     $("drErr").textContent="";$("drErr").classList.add("hide")
+    $("drVerifyMsg").textContent="";$("drVerifyMsg").style.color=""
+    $("drReverify").disabled=false;$("drReverify").innerHTML="Re-verify";drVerifying=false
     $("drActivate").disabled=false;$("drActivate").textContent="Activate AutoSim"
     $("drBg").classList.add("open")
     var r;try{r=await fetch("/api/trails/"+encodeURIComponent(trailId)+"/steps"+qs)}
@@ -9006,7 +9101,7 @@ load()
       var isDraft=t.status==="draft";var isPaused=t.status==="paused"
       var wrap=document.createElement("div");wrap.className="trail-wrap"
       var row=document.createElement("div");row.className="trail"+(isPaused?" paused":"")
-      var schedChip=t.schedule?'<span class="schedule-chip">'+kicon("clock",{size:9})+" "+esc(friendlySchedule(t.schedule))+"</span>":""
+      var schedChip=t.schedule?'<span class="schedule-chip">'+kicon("clock",{size:9})+" "+esc(friendlySchedule(t.schedule,t.scheduleTz))+"</span>":""
       var vp=t.viewport?((t.viewport.preset?t.viewport.preset+" ":"")+t.viewport.width+"×"+t.viewport.height):"default viewport"
       var html='<div class="body"><div class="t" data-trail-name-el="'+esc(t.id)+'">'+esc(t.name)+'</div><div class="d">'+esc(t.baseUrl)+" · "+esc(vp)+"</div></div>"
       html+=schedChip+'<span class="run-msg"></span><span class="heal-diff" data-heal="'+esc(t.id)+'" style="display:none"></span>'
@@ -9031,7 +9126,8 @@ load()
       var pauseLabel=isPaused?(kicon("play",{size:12})+" Resume"):(kicon("pause",{size:12})+" Pause")
       menu.innerHTML='<button data-rename="'+esc(t.id)+'">'+kicon("pencil",{size:12})+" Rename</button>"
         +'<button data-toggle-pause="'+esc(t.id)+'" data-paused="'+String(isPaused)+'">'+pauseLabel+"</button>"
-        +'<button data-set-schedule="'+esc(t.id)+'" data-schedule="'+esc(t.schedule||"")+'">'+kicon("clock",{size:12})+" Set schedule</button>"
+        +'<button data-set-schedule="'+esc(t.id)+'" data-schedule="'+esc(t.schedule||"")+'" data-schedule-tz="'+esc(t.scheduleTz||"")+'">'+kicon("clock",{size:12})+" Set schedule</button>"
+        +'<button data-archive="'+esc(t.id)+'">'+kicon("archive",{size:12})+" Archive</button>"
       wrap.appendChild(row);wrap.appendChild(menu);tEl.appendChild(wrap)
       if(w&&v==="amber"){
         healDiffFor(w.id).then(function(diff){
@@ -9100,39 +9196,80 @@ load()
     tEl.querySelectorAll("button[data-set-schedule]").forEach(function(btn){
       btn.onclick=function(e){
         e.stopPropagation();var id=btn.getAttribute("data-set-schedule");var current=btn.getAttribute("data-schedule")||""
+        var currentTz=btn.getAttribute("data-schedule-tz")||""
         var menu=document.getElementById("km-"+id);if(menu)menu.classList.remove("open")
-        openSchedModal(id,current)
+        openSchedModal(id,current,currentTz)
+      }
+    })
+    // Archive trail (KLA-160 — ported to the dashboard in KLAVITYKLA-374)
+    tEl.querySelectorAll("button[data-archive]").forEach(function(btn){
+      btn.onclick=async function(){
+        var id=btn.getAttribute("data-archive")
+        var menu=document.getElementById("km-"+id);if(menu)menu.classList.remove("open")
+        if(!confirm("Archive this AutoSim? It will be hidden from your main list, but you can find and restore it from the Archived view at any time."))return
+        try{
+          var r=await fetch("/api/trails/"+encodeURIComponent(id)+projQ(),{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({status:"archived"})})
+          if(r.ok){
+            // Reload to reflect state change — archived trails are filtered out of the main list.
+            var d2=await loadData();if(d2)render(d2)
+          }else{
+            var d3=await r.json().catch(function(){return{}});alert(d3.error||"Could not archive trail")
+          }
+        }catch(e){}
       }
     })
   }
 
-  // ── KLA-159: Schedule timezone helpers ─────────────────────────────────────────
-  function localToUtcCron(frequency, hour, minute, localDows) {
+  // ── KLA-277 (JTBD 4.13): DST-safe schedule builder ─────────────────────────────
+  // KLAVITYKLA-374: the dashboard used to PRE-CONVERT to UTC via localToUtcCron() and send no
+  // timezone, which bakes today's UTC offset in at save time and drifts by an hour across a DST
+  // transition. It now matches /autosims: emit a LOCAL wall-clock cron and send the browser's IANA
+  // timezone alongside it, so the server recomputes the UTC fire instant per occurrence.
+  //
+  // The two halves MUST stay swapped together. Sending scheduleTz while still pre-converting to UTC
+  // would double-convert and corrupt live schedules; localToUtcCron is therefore deleted, not left
+  // callable. Rows saved before this change have NO scheduleTz, so every read path below branches on
+  // tz presence and falls back to the legacy UTC interpretation for them — they are not reinterpreted.
+  function localCron(frequency, hour, minute, localDows) {
     if (frequency === "hourly") return "0 * * * *"
-    if (frequency === "daily") {
-      var d = new Date()
-      d.setHours(hour, minute, 0, 0)
-      return d.getUTCMinutes() + " " + d.getUTCHours() + " * * *"
-    }
+    if (frequency === "daily") return minute + " " + hour + " * * *"
     if (frequency === "weekly") {
-      var utcDows = []
-      var utcHour = 0
-      var utcMin = 0
-      localDows.forEach(function(dow) {
-        var d = new Date()
-        d.setHours(hour, minute, 0, 0)
-        var currentDow = d.getDay()
-        d.setDate(d.getDate() + (dow - currentDow))
-        utcDows.push(d.getUTCDay())
-        utcHour = d.getUTCHours()
-        utcMin = d.getUTCMinutes()
-      })
-      var uniqueUtcDows = utcDows.filter(function(v, i, self) { return self.indexOf(v) === i }).sort(function(a, b) { return a - b })
-      return utcMin + " " + utcHour + " * * " + uniqueUtcDows.join(",")
+      var uniq = localDows.filter(function(v, i, self){ return self.indexOf(v) === i }).sort(function(a,b){ return a - b })
+      return minute + " " + hour + " * * " + uniq.join(",")
     }
     return ""
   }
+  // Render a stored local-wall-clock cron directly (no UTC conversion — the tz is stored separately).
+  function friendlyLocalCron(cron) {
+    var parts = (cron || "").trim().split(/\s+/)
+    if (parts.length !== 5) return ""
+    var min = parseInt(parts[0], 10) || 0, hourStr = parts[1], dowStr = parts[4]
+    var pad = function(n){ return n < 10 ? "0" + n : n }
+    if (hourStr === "*") return "Hourly"
+    var hour = parseInt(hourStr, 10) || 0
+    var timeStr = pad(hour) + ":" + pad(min)
+    if (dowStr === "*") return "Daily · " + timeStr
+    var labels = { 1: "Mon", 2: "Tue", 3: "Wed", 4: "Thu", 5: "Fri", 6: "Sat", 0: "Sun" }
+    var order = [1, 2, 3, 4, 5, 6, 0]
+    var wanted = dowStr.split(",").map(function(x){ return parseInt(x, 10) })
+    var days = []
+    order.forEach(function(d){ if (wanted.indexOf(d) !== -1) days.push(labels[d]) })
+    return "Weekly · " + days.join(",") + " · " + timeStr
+  }
+  // Parse a LOCAL wall-clock cron directly (no UTC conversion) for rows saved with a stored tz.
+  function localCronToFields(cron){
+    var parts = (cron || "").trim().split(/\s+/)
+    if (parts.length !== 5) return { frequency: "daily", hour: 9, minute: 0, weekdays: [] }
+    var min = parseInt(parts[0], 10) || 0, hourStr = parts[1], dowStr = parts[4]
+    if (hourStr === "*") return { frequency: "hourly", hour: 9, minute: 0, weekdays: [] }
+    var hour = parseInt(hourStr, 10) || 0
+    if (dowStr === "*") return { frequency: "daily", hour: hour, minute: min, weekdays: [] }
+    var days = dowStr.split(",").map(function(x){ return parseInt(x, 10) })
+      .filter(function(v, i, self){ return self.indexOf(v) === i }).sort(function(a,b){ return a - b })
+    return { frequency: "weekly", hour: hour, minute: min, weekdays: days }
+  }
 
+  // ── KLA-159: legacy UTC read path — still used for pre-tz rows ─────────────────
   function utcCronToLocal(cron) {
     var parts = (cron || "").trim().split(/\s+/)
     if (parts.length !== 5) {
@@ -9162,8 +9299,10 @@ load()
     return { frequency: "weekly", hour: localHour, minute: localMin, weekdays: uniqueLocalDows }
   }
 
-  function friendlySchedule(cron) {
+  function friendlySchedule(cron, tz) {
     if (!cron) return ""
+    // KLA-277: rows saved with a stored timezone hold a LOCAL wall-clock cron — render it directly.
+    if (tz) return friendlyLocalCron(cron)
     var localVals = utcCronToLocal(cron)
     var pad = function(n) { return n < 10 ? "0" + n : n }
     var timeStr = pad(localVals.hour) + ":" + pad(localVals.minute)
@@ -9225,10 +9364,12 @@ load()
     $("schedLocalHint").textContent = hint
   }
 
-  function openSchedModal(trailId,current){
+  function openSchedModal(trailId,current,tz){
     schedState.trailId=trailId
     $("schedErr").textContent=""
-    var localVals = utcCronToLocal(current)
+    // KLA-277: a stored tz means `current` is a LOCAL cron — parse it directly; otherwise fall back
+    // to the legacy UTC→local conversion for pre-tz rows.
+    var localVals = tz ? localCronToFields(current) : utcCronToLocal(current)
     $("schedFreq").value = localVals.frequency
     var pad = function(n) { return n < 10 ? "0" + n : n }
     $("schedTime").value = pad(localVals.hour) + ":" + pad(localVals.minute)
@@ -9329,10 +9470,12 @@ load()
   }
   function openShareMgr(){$("shmBg").classList.add("open");loadShareLinks()}
   function closeShareMgr(){$("shmBg").classList.remove("open")}
-  async function saveSchedule(expr){
+  async function saveSchedule(expr,tz){
     var id=schedState.trailId;if(!id)return
     var pid=projParam();var qs=pid?"?project="+encodeURIComponent(pid):""
-    var body=JSON.stringify({schedule:expr||null});var r
+    // KLA-277: send the browser's IANA timezone with the local-wall-clock cron so the server can
+    // recompute the UTC fire instant per occurrence (DST-safe). Clearing sends scheduleTz:null.
+    var body=JSON.stringify(expr?{schedule:expr,scheduleTz:tz||null}:{schedule:null});var r
     try{r=await fetch("/api/trails/"+encodeURIComponent(id)+qs,{method:"PATCH",headers:{"content-type":"application/json"},body})}
     catch(e){$("schedErr").textContent="Network error";return}
     if(!r.ok){var d=await r.json().catch(function(){return{}});$("schedErr").textContent=d.error||"Couldn't save schedule";return}
@@ -9432,6 +9575,21 @@ load()
       if(precBanner)precBanner.style.display=""
       $("precPct").textContent=Math.round(p.precision*100)+"%"
       $("precSub").textContent=p.filed+" filed · "+p.dismissed+" dismissed — the share of reviewed findings that were real bugs."
+    }
+    // KLA-216: schedule-health coverage — only claim "guarded" when we can prove it ran.
+    var cov=d.coverage||{}
+    var covBanner=$("covBanner")
+    if(covBanner){
+      if(cov.scheduled>0){
+        covBanner.style.display=""
+        $("covPct").textContent=cov.coverage==null?"—":Math.round(cov.coverage*100)+"%"
+        var covMsg=cov.ran+" of "+cov.scheduled+" scheduled walks ran in the last 7 days"
+        var missedTotal=(cov.skipped||0)+(cov.missed||0)
+        covMsg+=missedTotal>0?(" — "+missedTotal+" did not (see skipped/missed rows below)."):" — fully guarded."
+        $("covSub").textContent=covMsg
+      }else{
+        covBanner.style.display="none"
+      }
     }
     var walks=d.recentWalks||[];$("walksCount").textContent=String(walks.length)
     var vAll=$("walksViewAll");if(vAll)vAll.href="/autosims/walks"+projQ()
@@ -10108,6 +10266,86 @@ load()
     }catch(e){}
   }
 
+  // ── KLA-270 / KLAVITYKLA-374: resume a stalled authoring session from its saved checkpoint ─────
+  // Opens the authoring modal with the original context, kicks the server to continue the drive from
+  // the persisted checkpoint (POST /api/trails/author/:id/resume), then live-polls the resumed
+  // session. Without this, closing the tab mid-authoring was a dead end on the dashboard.
+  async function startResume(session, btn, errEl){
+    if(btn){btn.disabled=true;btn.textContent="Resuming..."}
+    if(errEl)errEl.textContent=""
+    var rr
+    try{rr=await fetch("/api/trails/author/"+encodeURIComponent(session.id)+"/resume"+projQ(),{method:"POST"})}
+    catch(e){if(btn){btn.disabled=false;btn.textContent="Resume"}if(errEl)errEl.textContent="Network error — try again.";return}
+    if(!rr.ok){
+      var e2=await rr.json().catch(function(){return{}})
+      if(btn){btn.disabled=false;btn.textContent="Resume"}
+      if(errEl)errEl.textContent=e2.error||("Couldn't resume ("+rr.status+")")
+      return
+    }
+    var rd=await rr.json()
+    // Reflect the original context so the user sees what's being continued, then watch it live.
+    document.getElementById("ntName").value=session.name||""
+    document.getElementById("ntUrl").value=session.baseUrl||""
+    document.getElementById("ntObj").value=session.objective||""
+    document.getElementById("ntGo").disabled=true
+    var box=document.getElementById("ntProgress")
+    box.innerHTML='<div class="nt-live">Resuming AutoSim from checkpoint...</div>'
+    document.getElementById("ntBg").classList.add("show")
+    loadResumableDrafts() // refresh the banner (this session is now running, not stalled)
+    pollAuthor(rd.sessionId,box)
+  }
+
+  // Surface partial drafts / stalled authoring sessions so the user can pick up where they left off
+  // instead of starting over. Best-effort: any failure just hides the banner.
+  async function loadResumableDrafts(){
+    var banner=document.getElementById("resumeBanner")
+    if(!banner)return
+    var sessions=[]
+    try{
+      var r=await fetch("/api/trails/author/stalled"+projQ())
+      if(!r.ok){banner.style.display="none";return}
+      var d=await r.json()
+      sessions=(d.sessions||[]).filter(function(s){return s.status==="stalled"||s.status==="needs_auth"})
+    }catch(e){banner.style.display="none";return}
+    if(!sessions.length){banner.style.display="none";return}
+
+    var rows=sessions.map(function(s,i){
+      var steps=(s.checkpoint&&typeof s.checkpoint.stepIdx==="number")?s.checkpoint.stepIdx
+              :(Array.isArray(s.steps)?s.steps.length:0)
+      var when=s.updatedAt?new Date(s.updatedAt).toLocaleString():""
+      var reason=humanizeStall(s.stallReason)||(s.status==="needs_auth"?"Paused at a sign-in wall.":"AutoSim stopped part-way.")
+      var meta='<div class="rd-meta">'
+        +'<span>'+esc(steps)+(steps===1?" step recorded":" steps recorded")+'</span>'
+        +(when?'<span>'+esc(when)+'</span>':"")
+        +(s.trailId?'<span>'+kicon("file-text",{size:10})+' partial draft saved</span>':"")
+        +'</div>'
+      var act=(s.status==="needs_auth")
+        ?'<a class="rd-link" href="/autosims/auth'+esc(projQ())+'">'+kicon("lock",{size:10})+' Sign in &amp; resume</a>'
+        :'<button class="rd-resume" data-rd="'+esc(String(i))+'">'+kicon("play",{size:11})+' Resume</button>'
+      return '<div class="rd-row">'
+        +'<div class="rd-main">'
+          +'<div class="rd-name">'+esc(s.name||"Untitled AutoSim")+'</div>'
+          +meta
+          +'<div class="rd-reason">'+esc(reason)+'</div>'
+          +'<div class="rd-err" id="rdErr'+esc(String(i))+'"></div>'
+        +'</div>'
+        +'<div class="rd-act">'+act+'</div>'
+      +'</div>'
+    }).join("")
+
+    banner.innerHTML='<div class="rb-head">'+kicon("rotate-cw",{size:11})+' Pick up where you left off</div>'
+      +'<div class="rb-sub">These AutoSims stopped part-way. Resume to continue from the last saved checkpoint instead of starting over.</div>'
+      +rows
+    banner.style.display=""
+
+    banner.querySelectorAll(".rd-resume").forEach(function(btn){
+      btn.addEventListener("click",function(){
+        var i=Number(btn.getAttribute("data-rd"))
+        startResume(sessions[i],btn,document.getElementById("rdErr"+i))
+      })
+    })
+  }
+
   // ── Init: wire up all bindings (called once when autosims view first activates) ──
   var _inited=false
   window.initTrailsView=function(){
@@ -10124,6 +10362,47 @@ load()
     $("drClose").onclick=closeDraftReview
     $("drCancel").onclick=closeDraftReview
     $("drBg").onclick=function(e){if(e.target===$("drBg"))closeDraftReview()}
+    // KLAVITYKLA-275 / KLAVITYKLA-374: Re-verify — re-run the (edited) draft flow live from the
+    // review screen and show the verdict inline, so an edited draft isn't activated unverified.
+    // A draft walk is a Verification Walk: it captures evidence but files no findings (server-side
+    // draft-gate), so this is a safe "does it still pass?" check before Activate.
+    $("drReverify").onclick=async function(){
+      var trailId=drState.trailId;if(!trailId||drVerifying)return
+      var pid=projParam();var qs=pid?"?project="+encodeURIComponent(pid):""
+      var btn=$("drReverify");var msg=$("drVerifyMsg")
+      drVerifying=true
+      btn.disabled=true;$("drActivate").disabled=true
+      btn.innerHTML=kicon("loader",{size:12})+" Re-verifying…"
+      msg.style.color="";msg.textContent=""
+      $("drErr").textContent="";$("drErr").classList.add("hide")
+      var runId=null
+      try{
+        var r=await fetch("/api/trails/"+encodeURIComponent(trailId)+"/walk"+qs,{method:"POST",headers:{"content-type":"application/json"},body:"{}"})
+        if(r.status===409){msg.style.color="var(--amber)";msg.textContent="A walk is already running — try again shortly.";drVerifyDone();return}
+        if(!r.ok){msg.style.color="var(--rose)";msg.textContent="Couldn't start the walk.";drVerifyDone();return}
+        var b=await r.json().catch(function(){return{}})
+        runId=b.runId
+      }catch(e){msg.style.color="var(--rose)";msg.textContent="Network error.";drVerifyDone();return}
+
+      // Poll /progress until the walk leaves 'running' (mirrors runTrail's phased poll: 80×1.5s + grace).
+      var POLL_GRACE_MS=90000,gracePhaseStarted=0
+      for(var i=0;;i++){
+        var inGrace=i>=80
+        await new Promise(function(res){setTimeout(res,inGrace?3000:1500)})
+        if(inGrace&&gracePhaseStarted===0)gracePhaseStarted=Date.now()
+        var prog=null
+        try{var pr=await fetch("/api/trails/walks/"+encodeURIComponent(runId)+"/progress"+qs);if(pr.ok)prog=await pr.json().catch(function(){return null})}catch(e){}
+        if(prog&&prog.status!=="running"){
+          msg.style.color=""
+          msg.innerHTML='Re-verify: '+drVerdictHtml(prog.status)
+            +' <a href="/autosims/walk/'+encodeURIComponent(runId)+projQ()+'" style="color:var(--indigo)">view walk</a>'
+          drVerifyDone();return
+        }
+        if(prog&&prog.totalSteps>0){msg.style.color="";msg.textContent="Re-verifying… step "+prog.stepsDone+"/"+prog.totalSteps}
+        if(inGrace&&Date.now()-gracePhaseStarted>POLL_GRACE_MS){msg.style.color="var(--amber)";msg.textContent="Still running — check the walk detail.";break}
+      }
+      drVerifyDone()
+    }
     $("drActivate").onclick=async function(){
       var trailId=drState.trailId;if(!trailId)return
       var pid=projParam();var qs=pid?"?project="+encodeURIComponent(pid):""
@@ -10207,9 +10486,10 @@ load()
       $("schedSave").disabled = true
       var originalText = $("schedSave").textContent
       $("schedSave").textContent = "Saving..."
-      var expr = localToUtcCron(freq, hour, minute, Array.from(selectedSchedDays))
+      var expr = localCron(freq, hour, minute, Array.from(selectedSchedDays))
+      var tz = (Intl.DateTimeFormat().resolvedOptions().timeZone) || null
       try {
-        await saveSchedule(expr)
+        await saveSchedule(expr, tz)
       } finally {
         $("schedSave").disabled = false
         $("schedSave").textContent = originalText
@@ -10293,7 +10573,7 @@ load()
     }
 
     // kick off data load
-    loadAccounts();load();loadExpectations();reattachActiveAuthorSession()
+    loadAccounts();load();loadExpectations();reattachActiveAuthorSession();loadResumableDrafts()
   }
   // expose openWizard for inline onclick="openWizard()" in onboarding HTML
   window.openWizard=openWizard
