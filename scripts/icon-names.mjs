@@ -26,4 +26,7 @@ export const ICON_NAMES = [
   'chevron-left', 'chevron-right',
   // B4 fix: clock used by schedule-chip in AutoSims view; loader used by run/cancel spinners
   'clock', 'loader',
+  // KLAVITYKLA-374: 'archive' was referenced by the Archive kebab action on /autosims but was never
+  // registered, so kicon('archive') rendered nothing and warned. Registering it fixes both surfaces.
+  'archive',
 ];
