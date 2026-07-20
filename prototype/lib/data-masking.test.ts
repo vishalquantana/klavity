@@ -438,3 +438,67 @@ describe("maskWalkReportData", () => {
     expect(sampleData.steps[0].evidence!.description).toContain("alice@corp.com")
   })
 })
+
+// ---------------------------------------------------------------------------
+// KLAVITYKLA-363 — screenshot withholding inside maskWalkReportData
+// ---------------------------------------------------------------------------
+describe("maskWalkReportData — screenshot withholding", () => {
+  const RAW_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg=="
+
+  const withShots = () => ({
+    steps: [
+      {
+        id: "s1",
+        screenshotUrl: RAW_DATA_URL,
+        evidence: { description: "typed alice@corp.com", screenshotKey: "shots/secret-1.png" },
+      },
+      { id: "s2", screenshotUrl: "https://bucket.example/presigned?sig=abc", evidence: { screenshotKey: "shots/secret-2.png" } },
+      { id: "s3", evidence: null },
+    ],
+    findings: [
+      { id: "f1", title: "t", groundQuote: null, evidence: { screenshotKey: "shots/secret-3.png", note: "n" } },
+    ],
+    judgment: null,
+  })
+
+  test("strips the embedded base64 screenshot from every step", () => {
+    const out = maskWalkReportData(withShots())
+    expect(JSON.stringify(out)).not.toContain("data:image/")
+    for (const s of out.steps) expect((s as any).screenshotUrl).toBeUndefined()
+  })
+
+  test("strips the presigned screenshot URL too", () => {
+    const out = maskWalkReportData(withShots())
+    expect(JSON.stringify(out)).not.toContain("bucket.example")
+  })
+
+  test("strips the S3 screenshotKey pointer from step AND finding evidence", () => {
+    const raw = JSON.stringify(maskWalkReportData(withShots()))
+    expect(raw).not.toContain("shots/secret-1.png")
+    expect(raw).not.toContain("shots/secret-2.png")
+    expect(raw).not.toContain("shots/secret-3.png")
+  })
+
+  test("leaves an honest, clearly-labelled placeholder where a screenshot was", () => {
+    const out = maskWalkReportData(withShots())
+    expect((out.steps[0] as any).screenshotError).toContain("Screenshot withheld")
+    expect((out.steps[1] as any).screenshotError).toContain("Screenshot withheld")
+  })
+
+  test("does NOT invent a placeholder for a step that never had a screenshot", () => {
+    const out = maskWalkReportData(withShots())
+    expect((out.steps[2] as any).screenshotError).toBeUndefined()
+  })
+
+  test("still masks the surrounding text while withholding the image", () => {
+    const out = maskWalkReportData(withShots())
+    expect((out.steps[0].evidence as any).description).toContain("[EMAIL]")
+  })
+
+  test("does not mutate the caller's data", () => {
+    const data = withShots()
+    maskWalkReportData(data)
+    expect(data.steps[0].screenshotUrl).toBe(RAW_DATA_URL)
+    expect((data.steps[0].evidence as any).screenshotKey).toBe("shots/secret-1.png")
+  })
+})
