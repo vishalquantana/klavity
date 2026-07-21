@@ -142,10 +142,11 @@ test("autosims-walks.html static: has live refresh (setInterval)", () => {
 
 // ── Route tests ───────────────────────────────────────────────────────────────
 
-test("GET /autosims/walks serves the All Walks page for a session; anon redirects to /login", async () => {
+// KLA-374: /autosims/walks now 301-redirects to /dashboard?view=autosims for authed users.
+test("GET /autosims/walks redirects to /dashboard?view=autosims for a session; anon redirects to /login", async () => {
   const authed = await fetch(`${base}/autosims/walks`, { headers: { cookie: adminCookie }, redirect: "manual" })
-  expect(authed.status).toBe(200)
-  expect(await authed.text()).toContain("All Walks")
+  expect(authed.status).toBe(301)
+  expect(authed.headers.get("location")).toBe("/dashboard?view=autosims")
   const anon = await fetch(`${base}/autosims/walks`, { redirect: "manual" })
   expect(anon.status).toBe(302)
 })

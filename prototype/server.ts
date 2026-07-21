@@ -4843,8 +4843,15 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const qs = url.search || ""
       return new Response(null, { status: 301, headers: { Location: "/autosims" + qs } })
     }
-    if (req.method === "GET" && path === "/autosims") return me ? htmlPage(PUB + "/trails.html") : loginGate(path, url.search)
-    if (req.method === "GET" && path === "/autosims/walks") return me ? htmlPage(PUB + "/autosims-walks.html") : loginGate(path, url.search)
+    // KLA-374: all autosims list features ported to dashboard; redirect permanently to dashboard autosims panel.
+    if (req.method === "GET" && path === "/autosims") {
+      if (!me) return loginGate(path, url.search)
+      return new Response(null, { status: 301, headers: { Location: "/dashboard?view=autosims" } })
+    }
+    if (req.method === "GET" && path === "/autosims/walks") {
+      if (!me) return loginGate(path, url.search)
+      return new Response(null, { status: 301, headers: { Location: "/dashboard?view=autosims" } })
+    }
     if (req.method === "GET" && /^\/autosims\/walk\/[^/]+$/.test(path)) return me ? htmlPage(PUB + "/autosims-walk.html") : loginGate(path, url.search)
     // AT2 auth setup router — "Give your Sims a key" (KLAVITYKLA-267)
     if (req.method === "GET" && path === "/autosims/auth") return me ? htmlPage(PUB + "/auth-router.html") : loginGate(path, url.search)

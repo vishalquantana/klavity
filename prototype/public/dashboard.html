@@ -7667,6 +7667,16 @@ window.openPlanDrawer = openPlanDrawer
   }
 })()
 
+// KLA-374: ?view=autosims deep-link — /autosims now redirects here; switch to autosims panel.
+;(function _viewParam(){
+  var v = null
+  try { v = new URLSearchParams(location.search).get("view") } catch(e){}
+  if (v !== "autosims") return
+  try { var u = new URL(location.href); u.searchParams.delete("view"); history.replaceState(null, "", u.pathname + u.search + u.hash) } catch(e){}
+  // Defer past the sidebar view-switch IIFE (which defines setView) so it exists when we call it.
+  setTimeout(function(){ if (typeof setView === "function") setView("autosims") }, 300)
+})()
+
 $("inviteBtn") && ($("inviteBtn").onclick = async () => {
   const email = $("inviteEmail").value.trim()
   if (!email.includes("@")) { $("inviteMsg").textContent = "Enter a valid email."; $("inviteMsg").style.color="var(--rose)"; return }
