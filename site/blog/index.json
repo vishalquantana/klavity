@@ -201,5 +201,12 @@
     "excerpt": "Root cause analysis finds why a bug happened, not just what broke. Here's a repeatable process: reproduce, narrow, ask why, and lock the fix with a test.",
     "category": "Guides",
     "date": "2026-07-20"
+  },
+  {
+    "slug": "where-ai-qa-automation-helps",
+    "title": "Where AI QA Automation Actually Helps (and Where It Doesn't)",
+    "excerpt": "AI QA automation is strongest at mechanical work — generating tests, repairing selectors, triaging reports — and weakest at deciding what to test.",
+    "category": "Insights",
+    "date": "2026-07-21"
   }
 ]
