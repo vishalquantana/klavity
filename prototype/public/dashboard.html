@@ -391,8 +391,9 @@ a.exp-card .ec-src-chip,.exp-card a.ec-src-chip{cursor:pointer}
 .wiz-step-label{font-family:var(--mono);font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:20px}
 .wiz-desc{font-size:14px;color:var(--paper-dim);line-height:1.55;margin-bottom:18px}
 .wiz-field{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600;color:var(--paper-dim);margin-bottom:10px}
-.wiz-field input,.wiz-field textarea{background:var(--ink);border:1px solid var(--line);border-radius:9px;color:var(--paper);font-family:var(--body);font-size:14px;padding:10px 13px;outline:none;width:100%;resize:vertical}
-.wiz-field input:focus,.wiz-field textarea:focus{border-color:var(--indigo)}
+.wiz-field input,.wiz-field textarea,.wiz-field select{background:var(--ink);border:1px solid var(--line);border-radius:9px;color:var(--paper);font-family:var(--body);font-size:14px;padding:10px 13px;outline:none;width:100%;resize:vertical;appearance:none}
+.wiz-field select{cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236b7280'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:32px}
+.wiz-field input:focus,.wiz-field textarea:focus,.wiz-field select:focus{border-color:var(--indigo)}
 .wiz-sim-scroll{display:flex;flex-direction:column;gap:8px;max-height:210px;overflow-y:auto;padding:2px 0}
 .wiz-sim-opt{display:flex;align-items:flex-start;gap:11px;padding:11px 13px;background:var(--ink);border:1px solid var(--line);border-radius:12px;cursor:pointer;transition:border-color var(--mi-dur) var(--mi-ease)}
 .wiz-sim-opt:hover{border-color:var(--indigo)}
@@ -8594,6 +8595,16 @@ load()
       <p class="wiz-desc">Where should the AutoSim open its browser?</p>
       <label class="wiz-field">Start URL<input id="wizUrl" type="url" placeholder="https://yourapp.com/login" autocomplete="url" /></label>
       <p class="hint">Use a staging or production URL.</p>
+      <label class="wiz-field">Screen size
+        <select id="wizViewport">
+          <option value="desktop">Desktop 1280×720</option>
+          <option value="mobile">Mobile 390×844</option>
+        </select>
+      </label>
+      <label class="wiz-field">Test account <span style="font-weight:400;color:var(--paper-faint)">(optional)</span>
+        <select id="wizAcc"><option value="">(none — public pages only)</option></select>
+      </label>
+      <p class="hint">If your AutoSim needs to log in, pick a saved test account and Klavity fills the credentials automatically. Add test accounts in Settings.</p>
     </div>
     <div id="wiz3" class="wiz-panel" style="display:none">
       <p class="wiz-desc">Describe what the AutoSim should do, step by step.</p>
@@ -8613,6 +8624,8 @@ load()
         <div class="wiz-rev-row"><span class="wiz-rev-label">Name</span><span class="wiz-rev-val" id="wizRevName"></span></div>
         <div class="wiz-rev-row"><span class="wiz-rev-label">URL</span><span class="wiz-rev-val" id="wizRevUrl"></span></div>
         <div class="wiz-rev-row wiz-rev-obj"><span class="wiz-rev-label">Objective</span><span class="wiz-rev-val" id="wizRevObj"></span></div>
+        <div class="wiz-rev-row"><span class="wiz-rev-label">Screen</span><span class="wiz-rev-val" id="wizRevViewport"></span></div>
+        <div class="wiz-rev-row"><span class="wiz-rev-label">Account</span><span class="wiz-rev-val" id="wizRevAcc"></span></div>
         <div class="wiz-rev-row"><span class="wiz-rev-label">Reviewer</span><span class="wiz-rev-val" id="wizRevSim"></span></div>
       </div>
     </div>
@@ -10051,7 +10064,11 @@ load()
       if(!pid2)return
       var r=await fetch("/api/projects/"+encodeURIComponent(pid2)+"/test-accounts");if(!r.ok)return
       var d=await r.json();var sel=$("ntAcc");sel.length=1
-      ;(d.accounts||[]).forEach(function(a){var o=document.createElement("option");o.value=a.name;o.textContent=a.name+" ("+a.loginEmail+")";sel.appendChild(o)})
+      var wizAccSel=document.getElementById("wizAcc");if(wizAccSel)wizAccSel.length=1
+      ;(d.accounts||[]).forEach(function(a){
+        var o=document.createElement("option");o.value=a.name;o.textContent=a.name+" ("+a.loginEmail+")";sel.appendChild(o)
+        if(wizAccSel){var o2=document.createElement("option");o2.value=a.name;o2.textContent=a.name+" ("+a.loginEmail+")";wizAccSel.appendChild(o2)}
+      })
     }catch(e){}
   }
   function stepLine(s,sid){
@@ -10192,6 +10209,10 @@ load()
     document.getElementById("wizRevName").textContent=document.getElementById("wizName").value.trim()||"(untitled)"
     document.getElementById("wizRevUrl").textContent=document.getElementById("wizUrl").value.trim()
     document.getElementById("wizRevObj").textContent=document.getElementById("wizObj").value.trim()
+    var vpSel=document.getElementById("wizViewport");var vpVal=vpSel?vpSel.value:"desktop"
+    document.getElementById("wizRevViewport").textContent=vpVal==="mobile"?"Mobile 390×844":"Desktop 1280×720"
+    var accSel=document.getElementById("wizAcc");var accVal=accSel?accSel.value:""
+    document.getElementById("wizRevAcc").textContent=accVal||"(none — public pages)"
     var checked=document.querySelector("input[name=\"wizSim\"]:checked")
     document.getElementById("wizRevSim").textContent=(checked&&checked.value)?checked.value:"Default reviewer"
   }
@@ -10522,8 +10543,10 @@ load()
       var name=document.getElementById("wizName").value.trim()
       var objective=document.getElementById("wizObj").value.trim()
       var baseUrl=document.getElementById("wizUrl").value.trim()
+      var vpSel2=document.getElementById("wizViewport");var viewport=vpSel2?vpSel2.value:"desktop"
+      var accSel2=document.getElementById("wizAcc");var testAccount=(accSel2&&accSel2.value)?accSel2.value:undefined
       document.getElementById("ntName").value=name;document.getElementById("ntUrl").value=baseUrl;document.getElementById("ntObj").value=objective
-      var body={name:name,objective:objective,base_url:baseUrl,viewport:"desktop",sim_name:simName}
+      var body={name:name,objective:objective,base_url:baseUrl,viewport:viewport,test_account:testAccount,sim_name:simName}
       try {
         var r=await fetch("/api/trails/author"+projQ(),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)})
         if(!r.ok){var e=await r.json().catch(function(){return{}});box.innerHTML='<div class="nt-stall">'+esc(e.error||r.statusText)+"</div>";document.getElementById("wizNav").style.display="";btn.disabled=false;btn.textContent="Try again";return}
