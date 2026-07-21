@@ -1223,8 +1223,48 @@ async function drPersistOrder(){
   } catch(e){ return false }
 }
 
+// KLAVITYKLA-275 fix: a textarea's onblur PATCH is in flight while a move-arrow click is being
+// handled (mousedown blurs, click fires before the PATCH resolves). Re-rendering from drState here
+// would paint STALE values and drop the user's edit, so every re-render waits on the pending edit.
+var drPendingEdit = null
+function drSettlePendingEdit(){ return drPendingEdit || Promise.resolve() }
+
+// Reorder/delete must be inert while a Re-verify walk is running: the walk pinned the OLD
+// step_version, so reordering mid-walk bumps the version and the walk paints a verdict for an order
+// that is no longer on screen.
+function drStepControlsLocked(){ return drVerifying }
+function drSetStepControlsDisabled(disabled){
+  var el = $("drSteps"); if (!el) return
+  var btns = el.querySelectorAll(".dr-step-mv, .dr-step-del")
+  for (var k = 0; k < btns.length; k++){
+    var b = btns[k]
+    if (disabled){
+      b.disabled = true
+      b.title = "Locked while Re-verify is running"
+    } else {
+      // restore: move buttons re-derive their edge-disabled state from position
+      b.disabled = b.classList.contains("dr-step-mv") ? (b.dataset.edge === "1") : false
+      b.title = b.classList.contains("dr-step-del") ? "Remove this step" : (b.dataset.dir === "-1" ? "Move step up" : "Move step down")
+    }
+  }
+}
+
+// Serialize reorder POSTs: rapid arrow clicks used to issue overlapping requests where the
+// last-to-FINISH won, which could persist an order the user never saw. Each move now queues behind
+// the previous one.
+var drReorderChain = Promise.resolve()
+
 // Move the step at `i` by `dir` (-1 up / +1 down): swap in drState.steps, re-render, then persist.
-async function drMoveStep(i, dir){
+function drMoveStep(i, dir){
+  if (drStepControlsLocked()) return drReorderChain
+  drReorderChain = drReorderChain.then(function(){ return drMoveStepNow(i, dir) })
+  return drReorderChain
+}
+
+async function drMoveStepNow(i, dir){
+  if (drStepControlsLocked()) return
+  // Let any in-flight inline edit land before we re-render from drState.
+  await drSettlePendingEdit()
   var j = i + dir
   if (j < 0 || j >= drState.steps.length) return
   var arr = drState.steps
@@ -1267,12 +1307,16 @@ function renderDrSteps(steps){
     var up = document.createElement("button")
     up.className = "dr-step-mv"; up.type = "button"; up.innerHTML = "&#9650;"
     up.title = "Move step up"; up.setAttribute("aria-label", "Move step " + (i + 1) + " up")
-    up.disabled = i === 0
+    up.dataset.dir = "-1"; up.dataset.edge = (i === 0) ? "1" : "0"
+    up.disabled = (i === 0) || drStepControlsLocked()
+    if (drStepControlsLocked()) up.title = "Locked while Re-verify is running"
     up.onclick = function(){ drMoveStep(i, -1) }
     var down = document.createElement("button")
     down.className = "dr-step-mv"; down.type = "button"; down.innerHTML = "&#9660;"
     down.title = "Move step down"; down.setAttribute("aria-label", "Move step " + (i + 1) + " down")
-    down.disabled = i === steps.length - 1
+    down.dataset.dir = "1"; down.dataset.edge = (i === steps.length - 1) ? "1" : "0"
+    down.disabled = (i === steps.length - 1) || drStepControlsLocked()
+    if (drStepControlsLocked()) down.title = "Locked while Re-verify is running"
     down.onclick = function(){ drMoveStep(i, 1) }
     mv.appendChild(up); mv.appendChild(down)
     card.appendChild(mv)
@@ -1307,11 +1351,13 @@ function renderDrSteps(steps){
         var oldVal = drStepEditValue(s)
         if (newVal === oldVal) return
         statusEl.textContent = "Saving…"
-        drSaveStep(drState.trailId, s.id, action, newVal).then(function(ok){
+        // Publish the in-flight save so a move-arrow click (which fired this blur via mousedown)
+        // waits for it before re-rendering from drState — otherwise it repaints the OLD value.
+        drPendingEdit = drSaveStep(drState.trailId, s.id, action, newVal).then(function(ok){
           if (ok){ s.actionValue = (action !== "assert") ? newVal : s.actionValue; if (action === "assert" && s.checkpoint) s.checkpoint.description = newVal; statusEl.textContent = "Saved" }
           else statusEl.textContent = "Save failed"
           setTimeout(function(){ statusEl.textContent = "" }, 1800)
-        })
+        }).catch(function(){ statusEl.textContent = "Save failed" }).then(function(){ drPendingEdit = null })
       }
       // allow Enter to blur (commit) on single-line fields
       if (action !== "assert"){
@@ -1343,7 +1389,9 @@ function renderDrSteps(steps){
     delBtn.title = "Remove this step"
     delBtn.setAttribute("aria-label", "Delete step " + (i + 1))
     delBtn.textContent = "×"
-    delBtn.onclick = function(){ drDeleteStep(drState.trailId, s.id, card) }
+    delBtn.disabled = drStepControlsLocked()
+    if (drStepControlsLocked()) delBtn.title = "Locked while Re-verify is running"
+    delBtn.onclick = function(){ if (drStepControlsLocked()) return; drDeleteStep(drState.trailId, s.id, card) }
     card.appendChild(delBtn)
 
     el.appendChild(card)
@@ -1351,6 +1399,9 @@ function renderDrSteps(steps){
 }
 
 async function openDraftReview(trailId){
+  drGen++            // invalidate any poll left over from a previously-open trail
+  drPendingEdit = null
+  drReorderChain = Promise.resolve()
   drState.trailId = trailId
   drState.steps = []
   var pid = projParam(); var qs = pid ? "?project=" + encodeURIComponent(pid) : ""
@@ -1374,6 +1425,10 @@ async function openDraftReview(trailId){
 }
 
 function closeDraftReview(){
+  // Cancel any in-flight Re-verify poll: bumping the generation makes the orphaned loop abandon
+  // itself instead of writing its verdict into whatever trail is opened next (KLAVITYKLA-275).
+  drGen++
+  drVerifying = false
   closeModal("drBg")
 }
 
@@ -1384,6 +1439,20 @@ $("drCancel").onclick = closeDraftReview
 // the verdict inline. A draft walk is a Verification Walk: it captures evidence but files no
 // findings (server-side draft-gate), so this is a safe "does it still pass?" check before Activate.
 var drVerifying = false
+// KLAVITYKLA-275 fix: generation token. Bumped on every modal open/close so an orphaned poll loop
+// from a previously-open trail can never write its verdict into the footer of the trail now shown.
+var drGen = 0
+// A walk that is 'running' is not done; 'paused' (waiting on a secret) and 'needs_auth' (stopped at
+// an auth gate) are also NOT terminal verdicts — they're wall-pauses that need an operator, which is
+// the common case for any logged-in flow. Only a Verdict ends the poll.
+function drIsTerminal(status){
+  var s = String(status || "")
+  return s === "green" || s === "amber" || s === "red"
+}
+function drIsPaused(status){
+  var s = String(status || "")
+  return s === "paused" || s === "needs_auth"
+}
 function drVerdictHtml(status){
   var s = String(status || "")
   var label = s === "green" ? "passed" : (s === "amber" ? "adapted" : (s === "red" ? "failed" : s))
@@ -1392,45 +1461,63 @@ function drVerdictHtml(status){
 }
 $("drReverify").onclick = async function(){
   var trailId = drState.trailId; if (!trailId || drVerifying) return
+  var myGen = drGen
   var pid = projParam(); var qs = pid ? "?project=" + encodeURIComponent(pid) : ""
   var btn = $("drReverify"); var msg = $("drVerifyMsg")
   drVerifying = true
   btn.disabled = true; $("drActivate").disabled = true
+  drSetStepControlsDisabled(true)
   btn.innerHTML = kicon('loader',{size:12})+' Re-verifying…'
   msg.style.color = ""; msg.textContent = ""
   $("drErr").textContent = ""; $("drErr").classList.add("hide")
   var runId = null
   try {
     var r = await fetch("/api/trails/" + encodeURIComponent(trailId) + "/walk" + qs, { method:"POST", headers:{ "content-type":"application/json" }, body:"{}" })
-    if (r.status === 409){ msg.style.color = "var(--amber)"; msg.textContent = "A walk is already running — try again shortly."; drVerifyDone(); return }
-    if (!r.ok){ msg.style.color = "var(--rose)"; msg.textContent = "Couldn't start the walk."; drVerifyDone(); return }
+    if (drGen !== myGen) return
+    if (r.status === 409){ msg.style.color = "var(--amber)"; msg.textContent = "A walk is already running — try again shortly."; drVerifyDone(myGen); return }
+    if (!r.ok){ msg.style.color = "var(--rose)"; msg.textContent = "Couldn't start the walk."; drVerifyDone(myGen); return }
     var b = await r.json().catch(function(){ return {} })
     runId = b.runId
-  } catch(e){ msg.style.color = "var(--rose)"; msg.textContent = "Network error."; drVerifyDone(); return }
+  } catch(e){ if (drGen !== myGen) return; msg.style.color = "var(--rose)"; msg.textContent = "Network error."; drVerifyDone(myGen); return }
 
   // Poll /progress until the walk leaves 'running' (mirrors runTrail's phased poll: 80×1.5s + grace).
   var POLL_GRACE_MS = 90000, gracePhaseStarted = 0
   for (var i = 0; ; i++){
     var inGrace = i >= 80
     await new Promise(function(res){ setTimeout(res, inGrace ? 3000 : 1500) })
+    // Cancellation: the modal was closed (or reopened on another trail) while we slept. Abandon the
+    // loop WITHOUT touching the DOM — otherwise trail A's verdict lands in trail B's footer.
+    if (drGen !== myGen) return
     if (inGrace && gracePhaseStarted === 0) gracePhaseStarted = Date.now()
     var prog = null
     try { var pr = await fetch("/api/trails/walks/" + encodeURIComponent(runId) + "/progress" + qs); if (pr.ok) prog = await pr.json().catch(function(){ return null }) } catch(e){}
-    if (prog && prog.status !== "running"){
+    if (drGen !== myGen) return
+    if (prog && drIsTerminal(prog.status)){
       msg.style.color = ""
       msg.innerHTML = 'Re-verify: ' + drVerdictHtml(prog.status)
         + ' <a href="/autosims/walk/' + encodeURIComponent(runId) + projQ() + '" style="color:var(--indigo)">view walk</a>'
-      drVerifyDone(); return
+      drVerifyDone(myGen); return
+    }
+    if (prog && drIsPaused(prog.status)){
+      // Wall-pause: the walk stopped for auth/a secret and needs an operator. This is NOT a verdict
+      // — say so and point at the walk detail where the prompt lives, instead of reporting a result.
+      msg.style.color = "var(--amber)"
+      msg.innerHTML = (prog.status === "needs_auth" ? 'Re-verify paused — the flow hit a login wall. ' : 'Re-verify paused — the walk needs a secret. ')
+        + '<a href="/autosims/walk/' + encodeURIComponent(runId) + projQ() + '" style="color:var(--indigo)">open the walk to continue</a>'
+      drVerifyDone(myGen); return
     }
     if (prog && prog.totalSteps > 0){ msg.style.color = ""; msg.textContent = 'Re-verifying… step ' + prog.stepsDone + '/' + prog.totalSteps }
     if (inGrace && Date.now() - gracePhaseStarted > POLL_GRACE_MS){ msg.style.color = "var(--amber)"; msg.textContent = "Still running — check the walk detail."; break }
   }
-  drVerifyDone()
+  drVerifyDone(myGen)
 }
-function drVerifyDone(){
+// `gen` guards against a stale loop re-enabling the buttons of a DIFFERENT trail's modal.
+function drVerifyDone(gen){
+  if (gen !== undefined && gen !== drGen) return
   drVerifying = false
   var btn = $("drReverify"); if (btn){ btn.disabled = false; btn.innerHTML = "Re-verify" }
   $("drActivate").disabled = false
+  drSetStepControlsDisabled(false)
 }
 
 $("drActivate").onclick = async function(){
