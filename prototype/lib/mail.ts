@@ -65,7 +65,7 @@ export function otpEmailHtml(code: string): string {
 // Email OTP via SendGrid (raw API; no SDK). Requires a VERIFIED sender.
 export async function sendOtp(to: string, code: string) {
   const key = process.env.SENDGRID_API_KEY
-  const from = process.env.KLAV_MAIL_FROM || "klav@quantana.com.au"
+  const from = process.env.KLAV_MAIL_FROM || "noreply@klavity.in"
   if (!key) throw new Error("SENDGRID_API_KEY not set")
   const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
     method: "POST",
@@ -88,7 +88,7 @@ export async function sendOtp(to: string, code: string) {
 // member addresses aren't exposed to each other in the To header).
 export async function sendReportAlertEmail(to: string[], subject: string, html: string, text: string) {
   const key = process.env.SENDGRID_API_KEY
-  const from = process.env.KLAV_MAIL_FROM || "klav@quantana.com.au"
+  const from = process.env.KLAV_MAIL_FROM || "noreply@klavity.in"
   if (!key) throw new Error("SENDGRID_API_KEY not set")
   if (!to.length) return
   const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
@@ -109,7 +109,7 @@ export async function sendReportAlertEmail(to: string[], subject: string, html: 
 
 export async function sendLeadAlert(to: string, lead: { email: string; description: string; pageUrl: string; referrer?: string; projectName: string; feedbackUrl: string }) {
   const key = process.env.SENDGRID_API_KEY
-  const from = process.env.KLAV_MAIL_FROM || "klav@quantana.com.au"
+  const from = process.env.KLAV_MAIL_FROM || "noreply@klavity.in"
   if (!key) throw new Error("SENDGRID_API_KEY not set")
   const esc = (s: string) => s.replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c] as string))
   const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
@@ -139,7 +139,7 @@ export async function sendFixedNotification(
   ticket: { title: string; projectName: string; ticketUrl: string },
 ) {
   const key = process.env.SENDGRID_API_KEY
-  const from = process.env.KLAV_MAIL_FROM || "klav@quantana.com.au"
+  const from = process.env.KLAV_MAIL_FROM || "noreply@klavity.in"
   if (!key) throw new Error("SENDGRID_API_KEY not set")
   const esc = (s: string) => s.replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c] as string))
   const subject = `Fixed: ${ticket.title}`
@@ -186,7 +186,7 @@ function escMail(s: string): string {
 
 export async function sendTicketAssignmentEmail(input: TicketAssignmentEmail) {
   const key = process.env.SENDGRID_API_KEY
-  const from = process.env.KLAV_MAIL_FROM || "klav@quantana.com.au"
+  const from = process.env.KLAV_MAIL_FROM || "noreply@klavity.in"
   if (!key) throw new Error("SENDGRID_API_KEY not set")
   const project = input.projectName ? ` in ${input.projectName}` : ""
   const actor = input.assignedBy ? ` by ${input.assignedBy}` : ""
@@ -233,7 +233,7 @@ export type MemberInviteEmail = {
 
 export async function sendMemberInviteEmail(input: MemberInviteEmail) {
   const key = process.env.SENDGRID_API_KEY
-  const from = process.env.KLAV_MAIL_FROM || "klav@quantana.com.au"
+  const from = process.env.KLAV_MAIL_FROM || "noreply@klavity.in"
   if (!key) throw new Error("SENDGRID_API_KEY not set")
   const project = input.projectName ? ` to ${input.projectName}` : ""
   const actor = input.invitedBy ? ` by ${input.invitedBy}` : ""
@@ -270,7 +270,7 @@ export type TicketAssignmentInviteEmail = TicketAssignmentEmail & {
 
 export async function sendTicketAssignmentInviteEmail(input: TicketAssignmentInviteEmail) {
   const key = process.env.SENDGRID_API_KEY
-  const from = process.env.KLAV_MAIL_FROM || "klav@quantana.com.au"
+  const from = process.env.KLAV_MAIL_FROM || "noreply@klavity.in"
   if (!key) throw new Error("SENDGRID_API_KEY not set")
   const project = input.projectName ? ` to ${input.projectName}` : ""
   const actor = input.assignedBy ? ` by ${input.assignedBy}` : ""
