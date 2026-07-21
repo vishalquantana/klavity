@@ -7429,14 +7429,16 @@ window.openPlanDrawer = openPlanDrawer
     if (!meters || !meters.length){ box.innerHTML = ""; return }
     var html = '<div style="font-weight:600;font-size:12px;margin-bottom:8px">Usage this month</div>'
     meters.forEach(function(m){
-      var rightTxt = m.unlimited ? "Unlimited" : (m.used + " / " + m.limit + (m.overLimit ? " · over plan" : ""))
+      // Enforcement ships dark (KLAV_ENFORCE_QUOTA off), so hitting the allowance does NOT block
+      // anything yet — surface it as an amber heads-up, not a red failure state.
+      var rightTxt = m.unlimited ? "Unlimited" : (m.used + " / " + m.limit + (m.overLimit ? " · at plan limit" : ""))
       html += '<div style="margin-bottom:10px">'
         + '<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;margin-bottom:4px">'
         + '<span>' + esc(m.label) + '</span>'
-        + '<span class="muted"' + (m.overLimit ? ' style="color:var(--rose)"' : '') + '>' + esc(rightTxt) + '</span></div>'
+        + '<span class="muted"' + (m.overLimit ? ' style="color:var(--amber)"' : '') + '>' + esc(rightTxt) + '</span></div>'
       if (!m.unlimited){
         var width = Math.max(0, Math.min(100, Number(m.pct) || 0))
-        var bg = m.overLimit ? 'var(--rose)' : 'linear-gradient(90deg,var(--indigo),var(--green))'
+        var bg = m.overLimit ? 'var(--amber)' : 'linear-gradient(90deg,var(--indigo),var(--green))'
         html += '<div style="background:var(--ink-3);border-radius:999px;height:6px;overflow:hidden">'
           + '<div style="height:100%;border-radius:999px;width:' + width + '%;background:' + bg + ';transition:width .4s ease"></div>'
           + '</div>'

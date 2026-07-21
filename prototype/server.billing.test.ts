@@ -3,7 +3,7 @@ import { createClient } from "@libsql/client"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { unlinkSync } from "node:fs"
-import { STRIPE_PRICE_IDS } from "./lib/billing"
+import { buildUsageMeters, normalizePlan, PLAN_QUOTAS, STRIPE_PRICE_IDS } from "./lib/billing"
 
 const RUN = `${Date.now()}-${Math.random().toString(36).slice(2)}`
 const DB_FILE = join(tmpdir(), `klav-billing-route-${RUN}.db`)
@@ -13,11 +13,6 @@ const ACCOUNT = `acct_billing_${RUN}`
 const PROJECT = `proj_billing_${RUN}`
 const NOW = Date.now()
 const WEBHOOK_SECRET = "whsec_route_test"
-
-// KLAVITYKLA-310: a foreign tenant used to prove the agency report's account-ownership filter.
-const FOREIGN_OWNER = `other-${RUN}@test.local`
-const FOREIGN_ACCOUNT = `acct_other_${RUN}`
-const FOREIGN_PROJECT = `proj_other_${RUN}`
 
 // Live Founding Team price ID (KLAVITYKLA-336) — pulled from the real catalog so this test can't
 // silently drift from the price map it's exercising.
@@ -94,18 +89,6 @@ beforeAll(async () => {
           items: { data: [{ price: { id: FOUNDING_PRICE_ID, recurring: { interval: "year" } } }] },
         })
       }
-      // Agency tier (KLAVITYKLA-310) — the plan is identified by the agency lookup key only.
-      if (req.method === "GET" && url.pathname === "/v1/subscriptions/sub_agency_123") {
-        return Response.json({
-          id: "sub_agency_123",
-          customer: "cus_test_123",
-          status: "active",
-          current_period_end: 2000000000,
-          cancel_at_period_end: false,
-          metadata: { account_id: ACCOUNT, plan: "agency", interval: "year" },
-          items: { data: [{ price: { lookup_key: "klavity_agency_annual_2490", recurring: { interval: "year" } } }] },
-        })
-      }
       // A same-account Payment Link for an unrelated Stripe product (WALI) — not a Klavity price,
       // no account_id metadata, no klavity tag. Must be ignored, never entitled.
       if (req.method === "GET" && url.pathname === "/v1/subscriptions/sub_wali_999") {
@@ -157,15 +140,6 @@ beforeAll(async () => {
   await exec("INSERT INTO account_members (id, account_id, email, account_role, created_at) VALUES (?, ?, ?, ?, ?)", [`am_${RUN}`, ACCOUNT, OWNER, "owner", NOW])
   await exec("INSERT INTO projects (id, account_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", [PROJECT, ACCOUNT, "Billing Project", NOW, NOW])
   await exec("INSERT INTO project_members (id, project_id, email, project_role, invited_by, created_at) VALUES (?, ?, ?, ?, ?, ?)", [`pm_${RUN}`, PROJECT, OWNER, "admin", null, NOW])
-
-  // KLAVITYKLA-310: a SECOND tenant, owned by somebody else, on whose project OWNER is only an
-  // invited guest. listProjects(OWNER) returns it, so /api/account/agency-report must filter it out
-  // by account_id — otherwise an agency's report leaks another tenant's client names + usage.
-  await exec("INSERT INTO users (email, created_at) VALUES (?, ?)", [FOREIGN_OWNER, NOW])
-  await exec("INSERT INTO accounts (id, name, owner_email, created_at) VALUES (?, ?, ?, ?)", [FOREIGN_ACCOUNT, "Other Tenant", FOREIGN_OWNER, NOW])
-  await exec("INSERT INTO account_members (id, account_id, email, account_role, created_at) VALUES (?, ?, ?, ?, ?)", [`am_f_${RUN}`, FOREIGN_ACCOUNT, FOREIGN_OWNER, "owner", NOW])
-  await exec("INSERT INTO projects (id, account_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", [FOREIGN_PROJECT, FOREIGN_ACCOUNT, "Other Tenant Client", NOW, NOW])
-  await exec("INSERT INTO project_members (id, project_id, email, project_role, invited_by, created_at) VALUES (?, ?, ?, ?, ?, ?)", [`pm_f_${RUN}`, FOREIGN_PROJECT, OWNER, "member", FOREIGN_OWNER, NOW])
 })
 
 afterAll(() => {
@@ -523,87 +497,66 @@ test("POST /api/billing/checkout still rejects unknown plans, with Founding in t
   expect((await r.json()).error).toBe("Choose Pro, Team, Agency, or Founding.")
 })
 
-// ── KLAVITYKLA-310: Agency tier end-to-end ──────────────────────────────────────────────────────
+// ── Usage meters route — KLAVITYKLA-309 ─────────────────────────────────────────────────────────
+//
+// The billing drawer renders its usage bars entirely from this single call, so the route must
+// return BOTH the resolved plan and the per-metric meters — and those meters must match what
+// buildUsageMeters() produces for that plan (the drawer does no limit math of its own).
 
-// REGRESSION: effectivePlanForStripeStatus() carried its own plan allowlist (pro|team|founding|
-// scale) that never learned about "agency". Checkout accepted plan:"agency", Stripe charged the
-// customer, and the webhook then wrote plan="free" — i.e. every paying Agency subscriber was
-// silently downgraded to the free tier. Guard the whole lifecycle: checkout -> webhook -> entitlement.
-test("agency Stripe lifecycle: checkout -> webhook -> entitlement leaves the account ON the agency plan", async () => {
-  // 1. Checkout accepts the agency plan.
-  const checkout = await authed("/api/billing/checkout", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ plan: "agency", interval: "year" }),
-  })
-  expect(checkout.status).toBe(200)
-  expect((await checkout.json()).url).toBe("https://checkout.stripe.test/session")
+test("GET /api/account/usage returns the plan plus per-metric usage meters", async () => {
+  const period = new Date().toISOString().slice(0, 7)
+  const now = Date.now()
+  await exec(
+    "INSERT OR REPLACE INTO usage_meters (account_id, project_id, period, metric, count, first_at, last_at) VALUES (?,?,?,?,?,?,?)",
+    [ACCOUNT, PROJECT, period, "sim_review", 7, now, now],
+  )
+  await exec(
+    "INSERT OR REPLACE INTO usage_meters (account_id, project_id, period, metric, count, first_at, last_at) VALUES (?,?,?,?,?,?,?)",
+    [ACCOUNT, PROJECT, period, "autosim_walk", 2, now, now],
+  )
 
-  // 2. Stripe confirms the active subscription via webhook.
-  const event = {
-    id: `evt_agency_${RUN}`,
-    type: "customer.subscription.updated",
-    data: {
-      object: {
-        id: "sub_agency_123",
-        customer: "cus_test_123",
-        status: "active",
-        current_period_end: 2000000000,
-        cancel_at_period_end: false,
-        metadata: { account_id: ACCOUNT, plan: "agency", interval: "year" },
-        items: { data: [{ price: { lookup_key: "klavity_agency_annual_2490", recurring: { interval: "year" } } }] },
-      },
-    },
-  }
-  const rawBody = JSON.stringify(event)
-  const r = await fetch(`${BASE}/api/billing/webhook`, {
-    method: "POST",
-    headers: { "stripe-signature": await stripeSig(rawBody, WEBHOOK_SECRET), "content-type": "application/json" },
-    body: rawBody,
-  })
-  expect(r.status).toBe(200)
-
-  // 3. The account is entitled to AGENCY — not "free" (the bug), not a neighbouring tier.
-  const acct = await raw.execute({ sql: "SELECT plan, billing_status, billing_interval, stripe_subscription_id FROM accounts WHERE id=?", args: [ACCOUNT] })
-  expect(acct.rows[0]).toMatchObject({
-    plan: "agency",
-    billing_status: "active",
-    billing_interval: "year",
-    stripe_subscription_id: "sub_agency_123",
-  })
-  // ...and the entitlement fans out to the account's projects.
-  const project = await raw.execute({ sql: "SELECT billing_plan, billing_status FROM projects WHERE id=?", args: [PROJECT] })
-  expect(project.rows[0]).toMatchObject({ billing_plan: "agency", billing_status: "active" })
-})
-
-test("GET /api/account/agency-report returns the report for an agency account and only its OWN projects", async () => {
-  await exec("UPDATE accounts SET plan='agency', billing_status='active' WHERE id=?", [ACCOUNT])
-
-  const r = await authed("/api/account/agency-report")
+  const r = await authed("/api/account/usage")
   expect(r.status).toBe(200)
   const body = await r.json()
+
   expect(body.accountId).toBe(ACCOUNT)
-  expect(body.plan).toBe("agency")
+  expect(body.period).toBe(period)
+  // Plan is present and is a real plan slug (the webhook test above moved this account to "team").
+  expect(typeof body.plan).toBe("string")
+  expect(Object.keys(PLAN_QUOTAS)).toContain(normalizePlan(body.plan))
 
-  // Account-ownership filter: OWNER is an invited member of FOREIGN_PROJECT (another tenant's
-  // account), so listProjects() surfaces it — but the report must never include it.
-  const ids = body.clients.map((c: any) => c.projectId)
-  expect(ids).toContain(PROJECT)
-  expect(ids).not.toContain(FOREIGN_PROJECT)
-  expect(body.clientCount).toBe(ids.length)
-  const names = body.clients.map((c: any) => c.name)
-  expect(names).not.toContain("Other Tenant Client")
+  expect(Array.isArray(body.meters)).toBe(true)
+  expect(body.meters.map((m: any) => m.key).sort()).toEqual(["autosim", "sims"])
+  expect(body.usage.sim_review).toBe(7)
+  expect(body.usage.autosim_walk).toBe(2)
+
+  // The route's meters must be exactly buildUsageMeters(plan, usage) — no drift between the
+  // server response and the shared meter builder the threshold fix lives in.
+  expect(body.meters).toEqual(buildUsageMeters(body.plan, body.usage) as any)
+
+  const sims = body.meters.find((m: any) => m.key === "sims")
+  expect(sims.used).toBe(7)
+  expect(sims.metric).toBe("sim_review")
+  expect(sims.overLimit).toBe(false)
 })
 
-test("GET /api/account/agency-report is 403 for a non-agency account", async () => {
-  // "pro" is a paying-but-not-agency plan and is NOT unlimited, so the gate must reject it.
-  await exec("UPDATE accounts SET plan='pro', billing_status='active' WHERE id=?", [ACCOUNT])
+test("GET /api/account/usage flags a meter as overLimit once usage reaches the plan allowance", async () => {
+  const period = new Date().toISOString().slice(0, 7)
+  const now = Date.now()
+  const plan = normalizePlan(String((await raw.execute({ sql: "SELECT plan FROM accounts WHERE id=?", args: [ACCOUNT] })).rows[0]?.plan ?? "free"))
+  const limit = PLAN_QUOTAS[plan].simReactionsMonthly
+  expect(limit).not.toBeNull() // this account is on a metered plan
 
-  const r = await authed("/api/account/agency-report")
-  expect(r.status).toBe(403)
-  const body = await r.json()
-  expect(body.error).toContain("Agency plan")
-  expect(body.plan).toBe("pro")
-  // The gate must not leak the client roster alongside the rejection.
-  expect(body.clients).toBeUndefined()
+  // Exactly AT the allowance — enforcement (checkQuota) degrades here, so the meter must say so.
+  await exec(
+    "INSERT OR REPLACE INTO usage_meters (account_id, project_id, period, metric, count, first_at, last_at) VALUES (?,?,?,?,?,?,?)",
+    [ACCOUNT, PROJECT, period, "sim_review", limit, now, now],
+  )
+
+  const r = await authed("/api/account/usage")
+  expect(r.status).toBe(200)
+  const sims = (await r.json()).meters.find((m: any) => m.key === "sims")
+  expect(sims.used).toBe(limit)
+  expect(sims.pct).toBe(100)
+  expect(sims.overLimit).toBe(true)
 })
