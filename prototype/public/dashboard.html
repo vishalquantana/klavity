@@ -8787,13 +8787,7 @@ load()
       var Replayer=window.rrweb&&window.rrweb.Replayer
       if(!Replayer)throw new Error("rrweb.Replayer not available")
       var host=$("playerHost")
-      var replayer=new Replayer(events,{root:host,skipInactive:true,showWarning:false,showDebug:false,mouseTail:true})
-      // B2 fix: rrweb creates an internal iframe with sandbox="allow-same-origin" only.
-      // Without allow-scripts the player's own injected handlers inside the iframe are
-      // blocked, causing a blank frame.  We keep allow-same-origin for same-origin cookie
-      // access and add allow-scripts so the player can initialize.  We do NOT add
-      // allow-top-navigation / allow-forms / allow-popups to limit the attack surface.
-      try{var _rf=host.querySelector("iframe");if(_rf&&_rf.sandbox&&!_rf.sandbox.contains("allow-scripts")){_rf.setAttribute("sandbox",_rf.getAttribute("sandbox")+" allow-scripts")}}catch(_){}
+      var replayer=new Replayer(events,{root:host,skipInactive:true,showWarning:false,showDebug:false,mouseTail:true,UNSAFE_replayCanvas:true})
       replayState.player=replayer;replayer.play()
       $("replayNote").textContent="Chapter "+(i+1)+" of "+replayState.segments.length+" · "+(seg.url||"")
     }catch(e){$("replayNote").textContent="Could not start the player for this chapter."}
