@@ -175,3 +175,17 @@ export function computeSelector(el: Element | null | undefined, root?: SelectorR
 
   return parts.join(" > ") || el.tagName.toLowerCase()
 }
+
+/**
+ * Short, human-readable snippet describing a picked element for the ticket drawer (KLAVITYKLA-371).
+ * Preference order: aria-label > placeholder > visible text > bare tag name. Capped at 80 chars.
+ * Returns a string like "<button> Save changes" or "<input>" when no text is available.
+ */
+export function describeElement(el: Element): string {
+  const tag = el.tagName.toLowerCase()
+  const ariaLabel = el.getAttribute("aria-label") || ""
+  const placeholder = (el as HTMLInputElement).placeholder || ""
+  const inner = ((el as HTMLElement).innerText || el.textContent || "").replace(/\s+/g, " ").trim()
+  const label = (ariaLabel || placeholder || inner).trim().slice(0, 80)
+  return label ? `<${tag}> ${label}` : `<${tag}>`
+}

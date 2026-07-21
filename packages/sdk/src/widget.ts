@@ -1,14 +1,14 @@
 // packages/sdk/src/widget.ts
 import { injectSimStyles } from "@klavity/core/sim"
 import { safeToPng, safeToPngWithScale, safeToPngWithQuality } from "./capture"
-import { buildModal, installRegionDrag, type ModalController } from "@klavity/core/modal"
+import { buildModal, installRegionDrag, type ModalController, type PickedTarget } from "@klavity/core/modal"
 import { cropDataUrl, type Rect } from "@klavity/core/crop"
 import { planScrollStitch, clampCaptureHeight } from "./sharp-capture"
 import { type CaptureBuffers } from "@klavity/core/capture"
 import { installCaptureContext, buildCaptureContext } from "./capture-context"
 import type { ReportContext, ReportIdentity } from "@klavity/core"
 import { parseScriptConfig, isFirstParty, buildFeedbackForm, successCopy, compressScreenshot } from "./widget-lib"
-import { computeSelector } from "./element-selector"
+import { computeSelector, describeElement } from "./element-selector"
 import { getTurnstileToken } from "./load-turnstile"
 import { icon } from "@klavity/core/icons"
 import { createSessionReplay, type SessionReplay } from "./session-replay"
@@ -21,11 +21,12 @@ const TOKEN_KEY = "klavity_widget_token"
 const WIDGET_FETCH_TIMEOUT_MS = 15_000
 const SIM_REVIEW_FETCH_TIMEOUT_MS = 45_000
 
-// KLAVITYKLA-228 (JTBD 1.11): on-page element picker. Mounts a lightweight highlight overlay that tracks
-// the element under the cursor; on click it computes a robust unique CSS selector to pin onto the report
-// as annotations.selector. Esc cancels. Resolves the selector string, or null when cancelled/unavailable.
-// The highlight/label/banner are pointer-events:none so elementFromPoint always reads the page beneath.
-function pickElementOnPage(): Promise<string | null> {
+// KLAVITYKLA-228/371 (JTBD 1.11): on-page element picker. Mounts a lightweight highlight overlay that
+// tracks the element under the cursor; on click it computes a robust unique CSS selector + captures a
+// human-readable text snippet (aria-label / placeholder / visible text) to pin onto the report as
+// annotations.selector + annotations.selectorText. Esc cancels. The highlight/label/banner are
+// pointer-events:none so elementFromPoint always reads the page beneath.
+function pickElementOnPage(): Promise<PickedTarget | null> {
   return new Promise((resolve) => {
     if (typeof document === "undefined" || !document.body) return resolve(null)
     const box = document.createElement("div")
@@ -66,7 +67,7 @@ function pickElementOnPage(): Promise<string | null> {
       if (!el || isOurs(el)) return
       highlight(el)
     }
-    const cleanup = (result: string | null) => {
+    const cleanup = (result: PickedTarget | null) => {
       document.removeEventListener("mousemove", onMove, true)
       document.removeEventListener("click", onClick, true)
       document.removeEventListener("keydown", onKey, true)
@@ -78,7 +79,8 @@ function pickElementOnPage(): Promise<string | null> {
       const el = document.elementFromPoint(e.clientX, e.clientY)
       if (!el || isOurs(el)) return
       e.preventDefault(); e.stopPropagation()
-      cleanup(computeSelector(el))
+      const selector = computeSelector(el)
+      cleanup(selector ? { selector, text: describeElement(el) } : null)
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); cleanup(null) }
