@@ -275,6 +275,43 @@ test("reorderTrailSteps rejects a mismatched id set and writes nothing", async (
   expect((await T.getTrail("proj_R", id))!.stepVersion).toBe(before)
 })
 
+// KLAVITYKLA-275 fix: the docblock promised all-or-nothing, but only the VALIDATION was atomic —
+// the N idx UPDATEs plus the step_version bump were separate awaited statements, so a failure or a
+// concurrently-starting walk could observe a half-reordered trail. They now go out as one batch.
+test("reorderTrailSteps writes the idx updates and the version bump in a single transaction", async () => {
+  const src = await Bun.file(new URL("./trails.ts", import.meta.url)).text()
+  const start = src.indexOf("export async function reorderTrailSteps")
+  expect(start).toBeGreaterThan(-1)
+  const body = src.slice(start, src.indexOf("\nexport ", start + 10))
+  // one batched write, not a loop of awaited executes
+  expect(body).toContain('db!.batch(')
+  expect(body).toContain('"write"')
+  expect(body).not.toMatch(/for \([^)]*\) \{\s*await db!\.execute/)
+  // the version bump rides in the SAME batch (it must not be a separate statement after it)
+  expect(body).toContain("step_version = step_version + 1")
+  expect(body).not.toContain("await bumpStepVersion")
+})
+
+test("reorderTrailSteps leaves a large reorder fully consistent (no partial idx assignment)", async () => {
+  const id = await T.createTrail("proj_RA", { name: "ReorderAtomic", baseUrl: "https://ra.test/" })
+  const ids: string[] = []
+  for (let i = 0; i < 8; i++) {
+    ids.push(await T.addTrailStep("proj_RA", id, { idx: i, action: "click", actionValue: "s" + i }))
+  }
+  const before = (await T.getTrail("proj_RA", id))!.stepVersion
+
+  const reversed = [...ids].reverse()
+  expect(await T.reorderTrailSteps("proj_RA", id, reversed)).toBe(true)
+
+  const steps = await T.listTrailSteps("proj_RA", id)
+  expect(steps.map((s) => s.id)).toEqual(reversed)
+  // every idx is distinct and densely 0..n-1 — a partial write would leave duplicates/holes
+  expect(steps.map((s) => s.idx)).toEqual([0, 1, 2, 3, 4, 5, 6, 7])
+  expect(new Set(steps.map((s) => s.idx)).size).toBe(8)
+  // exactly one version bump for the whole reorder
+  expect((await T.getTrail("proj_RA", id))!.stepVersion).toBe(before + 1)
+})
+
 test("Walk.trailVersion is pinned to Trail.stepVersion at walk start and does not change when steps are later edited", async () => {
   const id = await T.createTrail("proj_V", { name: "VerWalk", baseUrl: "https://v.test/" })
   await T.addTrailStep("proj_V", id, { idx: 0, action: "navigate", actionValue: "https://v.test/" })

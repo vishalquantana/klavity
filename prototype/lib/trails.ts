@@ -683,10 +683,18 @@ export async function reorderTrailSteps(projectId: string, trailId: string, orde
   if (new Set(orderedIds).size !== orderedIds.length) return false // duplicate id
   const currentIds = new Set(current.map((s) => s.id))
   for (const id of orderedIds) if (!currentIds.has(id)) return false // unknown / cross-trail id
-  for (let i = 0; i < orderedIds.length; i++) {
-    await db!.execute({ sql: `UPDATE trail_steps SET idx=? WHERE id=? AND project_id=?`, args: [i, orderedIds[i], projectId] })
-  }
-  await bumpStepVersion(projectId, trailId)
+  // All-or-nothing for real: the N idx writes AND the step_version bump go out as ONE transaction,
+  // so a mid-flight failure can never leave a half-reordered trail (or a bumped version with the
+  // old order) visible to a concurrently-starting walk.
+  const stmts = orderedIds.map((id, i) => ({
+    sql: `UPDATE trail_steps SET idx=? WHERE id=? AND project_id=?`,
+    args: [i, id, projectId] as unknown[],
+  }))
+  stmts.push({
+    sql: `UPDATE trails SET step_version = step_version + 1, updated_at = ? WHERE project_id = ? AND id = ?`,
+    args: [Date.now(), projectId, trailId] as unknown[],
+  })
+  await db!.batch(stmts as any, "write")
   return true
 }
 
