@@ -4858,7 +4858,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (!rlAllow("sharewalkpage:" + clientIp(req, server), 120, 60_000)) return new Response("Rate limited", { status: 429 })
       const resolved = await resolveShareToken(sharedWalkPageMatch[1])
       if (!resolved) return new Response("Not found", { status: 404 })
-      return htmlPage(PUB + "/autosims-walk-report.html")
+      // KLA-329: shared walk is public/unauthenticated — strip PostHog so we never track
+      // or session-record visitors who have not consented to Klavity's analytics.
+      const _swRaw = await Bun.file(PUB + "/autosims-walk-report.html").text()
+      return new Response(_swRaw.replaceAll("__POSTHOG_KEY__", "").replaceAll("__POSTHOG_REPLAY__", "0"), {
+        headers: { "content-type": "text/html; charset=utf-8" },
+      })
     }
 
     // GET /shared/walk/:token/data — token-scoped walk metadata, steps, replay availability, and findings.
@@ -5067,7 +5072,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (!projectId) return new Response("Not found", { status: 404 })
       const _psPath = PUB + "/project-status.html"
       if (!(await Bun.file(_psPath).exists())) return new Response("Not found", { status: 404 })
-      return htmlPage(_psPath, { "x-robots-tag": "noindex, nofollow", "cache-control": "no-store" })
+      // KLA-329: shared project status is public/unauthenticated — strip PostHog so we never track
+      // or session-record external stakeholders who have not consented to Klavity's analytics.
+      const _psRaw = await Bun.file(_psPath).text()
+      return new Response(_psRaw.replaceAll("__POSTHOG_KEY__", "").replaceAll("__POSTHOG_REPLAY__", "0"), {
+        headers: { "content-type": "text/html; charset=utf-8", "x-robots-tag": "noindex, nofollow", "cache-control": "no-store" },
+      })
     }
 
     const sharedProjectDataMatch = path.match(/^\/shared\/project\/([a-f0-9]{64})\/data$/)
