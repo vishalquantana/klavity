@@ -15,8 +15,8 @@
 // The PLAN_QUOTAS source-of-truth lives in lib/billing.ts (already shipped). This file maps
 // the billing quota keys onto the UsageMeterMetric names so the two stay in sync.
 
-import { normalizePlan, PLAN_QUOTAS, METRIC_TO_QUOTA_KEY, type QuotaMetric } from "./billing"
-import { accountPlan, accountIdForProject, getAccountUsageMap } from "./db"
+import { normalizePlan, PLAN_QUOTAS, METRIC_TO_QUOTA_KEY, FREE_GRANDFATHERED_AUTOSIM_RUNS_MONTHLY, type QuotaMetric } from "./billing"
+import { accountPlan, accountIdForProject, getAccountUsageMap, countAccountAutosimFlows } from "./db"
 
 // ─── Supported metered metrics ───────────────────────────────────────────────
 //
@@ -90,8 +90,22 @@ export async function checkQuota(
     const plan = normalizePlan(rawPlan)
     const quotas = PLAN_QUOTAS[plan]
     const quotaKey = METRIC_TO_QUOTA_KEY[metric]
-    const limit: number | null = (quotas as any)[quotaKey] ?? null
+    let limit: number | null = (quotas as any)[quotaKey] ?? null
     const usage = usageMap[metric] ?? 0
+
+    // ── KLAVITYKLA-365 grandfathering ────────────────────────────────────────
+    // AutoSim was removed from Free (autosimFlows = 0, autosimRunsMonthly = 0). A zero run cap
+    // would degrade EVERY walk for a Free account that already had a flow configured before the
+    // change — exactly the thing we promised not to break.
+    //
+    // Because creating a flow on Free is now refused (autosimFlows = 0), a Free account that still
+    // HAS a configured non-demo flow can only have created it before the change. That is the
+    // grandfathering proof: no migration, no flag column. Such accounts fall back to the previous
+    // Free monthly run allowance so their existing flow and its scheduled runs keep executing.
+    if (metric === "autosim_walk" && limit === 0) {
+      const existingFlows = await countAccountAutosimFlows(accountId)
+      if (existingFlows > 0) limit = FREE_GRANDFATHERED_AUTOSIM_RUNS_MONTHLY
+    }
 
     // ── Unlimited plan (scale/partner) → always allow ────────────────────────
     if (limit === null) {

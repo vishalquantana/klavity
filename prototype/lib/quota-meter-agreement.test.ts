@@ -19,6 +19,7 @@ mock.module("./db", () => ({
   accountPlan: async (id: string) => mockAccountPlan(id),
   getAccountUsageMap: async (id: string) => mockGetAccountUsageMap(id),
   accountIdForProject: async (_id: string) => null,
+  countAccountAutosimFlows: async (_id: string) => 0,
   usagePeriod: () => new Date().toISOString().slice(0, 7),
 }))
 
@@ -37,7 +38,9 @@ afterEach(() => {
 test("quota.ts re-exports billing.ts's METRIC_TO_QUOTA_KEY (no duplicated mapping)", () => {
   // Identity, not deep-equality: two separate object literals would silently drift.
   expect(QUOTA_MAP).toBe(BILLING_MAP)
-  expect(BILLING_MAP).toEqual({ sim_review: "simReactionsMonthly", autosim_walk: "autosimFlows" })
+  // KLAVITYKLA-359: autosim_walk points at autosimRunsMonthly (monthly run cap), not autosimFlows
+  // (configured-flow stock) — same mapping that checkQuota enforces against.
+  expect(BILLING_MAP).toEqual({ sim_review: "simReactionsMonthly", autosim_walk: "autosimRunsMonthly" })
 })
 
 test("buildUsageMeters reads each metric's limit through the shared mapping", () => {
