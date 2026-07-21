@@ -56,6 +56,7 @@ import { notifyNewSignup } from "./lib/signup-alert"
 import { notifyNewReport } from "./lib/report-alert"
 import { notifyBudgetResumeRequest } from "./lib/budget-resume-alert"
 import { reportError } from "./lib/error-alert"
+import { autoTicketError } from "./lib/error-autoticket"
 import { validateModalConfigInput, resolveModalConfig } from "../packages/core/src/modal-theme"
 import { MODEL_CHOICES, MODEL_CHOICE_IDS, DEFAULT_WEIGHTS, pickModel, parseWeightsForm, weightsToPct } from "./lib/models"
 import { AsyncLocalStorage } from "node:async_hooks"
@@ -815,6 +816,7 @@ function oops(e: unknown, label: string): { error: string; id: string } {
   const message = (e as any)?.message || String(e) || "unknown error"
   console.error(`[${label} ${id}]`, message)
   void reportError({ where: "backend", message, traceId: id, route: label, stack: (e as any)?.stack })
+  void autoTicketError({ where: "backend", message, traceId: id, route: label, stack: (e as any)?.stack }).catch(() => {})
   return { error: "Something went wrong. Please try again.", id }
 }
 // Widget-scoped json: always attaches WIDGET_CORS so every response (success AND error) is
@@ -2269,6 +2271,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const traceId = b.traceId ? String(b.traceId).slice(0, 40) : undefined
       // fire-and-forget — never blocks the browser
       void reportError({ where: "frontend", message, route: url || undefined, traceId, stack })
+      void autoTicketError({ where: "frontend", message, route: url || undefined, traceId, stack }).catch(() => {})
       return json({ ok: true })
     }
 
