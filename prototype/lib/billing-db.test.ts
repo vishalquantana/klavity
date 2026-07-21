@@ -26,6 +26,72 @@ test("setAccountPlan mirrors the effective plan onto projects", async () => {
   expect((r.rows[0] as any).billing_plan).toBe("pro")
 })
 
+test("grace anchor does not reset when billing_status stays past_due (KLAVITYKLA-313)", async () => {
+  // Seed the account as already past_due with an anchor 5 days ago
+  const fiveDaysAgo = Date.now() - 5 * 24 * 60 * 60 * 1000
+  await db!.execute({
+    sql: "UPDATE accounts SET billing_status=?, billing_updated_at=? WHERE id=?",
+    args: ["past_due", fiveDaysAgo, ACCOUNT],
+  })
+  await db!.execute({
+    sql: "UPDATE projects SET billing_status=?, billing_updated_at=? WHERE account_id=?",
+    args: ["past_due", fiveDaysAgo, ACCOUNT],
+  })
+
+  // Simulate a Stripe retry event that keeps status as past_due (same status)
+  await updateAccountBillingState(ACCOUNT, {
+    plan: "pro",
+    stripeCustomerId: "cus_grace",
+    stripeSubscriptionId: "sub_grace",
+    billingStatus: "past_due",
+    billingInterval: "month",
+    billingCurrentPeriodEnd: Date.now() + 86400000,
+    billingCancelAtPeriodEnd: false,
+  })
+
+  const state = await accountBillingState(ACCOUNT)
+  // billing_updated_at must NOT have moved — the grace window anchor is preserved
+  expect(state.billingUpdatedAt).toBe(fiveDaysAgo)
+
+  // Verify projects table also preserves the anchor
+  const projRow = await db!.execute({
+    sql: "SELECT billing_updated_at FROM projects WHERE account_id=?",
+    args: [ACCOUNT],
+  })
+  expect(Number((projRow.rows[0] as any).billing_updated_at)).toBe(fiveDaysAgo)
+})
+
+test("grace anchor DOES reset when billing_status changes (past_due → active)", async () => {
+  // Set up past_due anchor in the past
+  const anchorTs = Date.now() - 10 * 24 * 60 * 60 * 1000
+  await db!.execute({
+    sql: "UPDATE accounts SET billing_status=?, billing_updated_at=? WHERE id=?",
+    args: ["past_due", anchorTs, ACCOUNT],
+  })
+  await db!.execute({
+    sql: "UPDATE projects SET billing_status=?, billing_updated_at=? WHERE account_id=?",
+    args: ["past_due", anchorTs, ACCOUNT],
+  })
+
+  const beforeCall = Date.now()
+  // Stripe payment succeeds — status transitions to active
+  await updateAccountBillingState(ACCOUNT, {
+    plan: "pro",
+    stripeCustomerId: "cus_grace",
+    stripeSubscriptionId: "sub_grace",
+    billingStatus: "active",
+    billingInterval: "month",
+    billingCurrentPeriodEnd: Date.now() + 86400000,
+    billingCancelAtPeriodEnd: false,
+  })
+  const afterCall = Date.now()
+
+  const state = await accountBillingState(ACCOUNT)
+  // billing_updated_at must have been refreshed to now (status changed)
+  expect(state.billingUpdatedAt).toBeGreaterThanOrEqual(beforeCall)
+  expect(state.billingUpdatedAt).toBeLessThanOrEqual(afterCall)
+})
+
 test("updateAccountBillingState persists Stripe metadata and mirrors project status", async () => {
   await updateAccountBillingState(ACCOUNT, {
     plan: "team",
