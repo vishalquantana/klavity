@@ -2646,12 +2646,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // KLAVITYKLA-229 (JTBD 1.12): resume the intent the user was chasing when the login gate
         // interrupted them, instead of dumping them on the dashboard. Precedence: an accepted ticket
         // assignment invite (strongest, deep-links to the ticket) > a captured safe `next` path >
-        // the funnel default (new users → onboarding, returning users → dashboard). `next` is
-        // re-validated server-side so a tampered value can never become an open redirect.
+        // the funnel default. `next` is re-validated server-side so a tampered value can never
+        // become an open redirect.
+        // A BRAND-NEW user must still see /onboarding first — a gated deep link is not a licence to
+        // skip account setup — so for wasNew the intent is carried FORWARD as /onboarding?next=…
+        // (resumed after the wizard) rather than replacing onboarding.
         const resumeNext = safeNext(next)
         const dest = firstInvite
           ? `/dashboard?project=${encodeURIComponent(firstInvite.projectId)}${firstInvite.feedbackId ? `&ticket=${encodeURIComponent(firstInvite.feedbackId)}` : ""}#tickets`
-          : resumeNext || (wasNew ? "/onboarding" : "/dashboard")
+          : wasNew
+            ? "/onboarding" + (resumeNext ? "?next=" + encodeURIComponent(resumeNext) : "")
+            : resumeNext || "/dashboard"
         return json({ ok: true, redirect: dest, token: sid, projectId: defaultProjectId }, 200, { "Set-Cookie": cookie("klav_session", sid, SESSION_DAYS * 86400, SECURE) })
       } catch (err: any) { return json(oops(err, "auth"), 500) }
     }
@@ -4827,10 +4832,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     // KLAVITYKLA-229: GET gates remember the intended destination via ?next= so verify can resume it.
     const needLogin = () => (req.method === "GET" ? loginGate(path, url.search) : json({ error: "Sign in to continue." }, 401))
 
-    if (req.method === "GET" && path === "/dashboard") return me ? await dashboardPage() : redirect("/login")
+    if (req.method === "GET" && path === "/dashboard") return me ? await dashboardPage() : loginGate(path, url.search)
     // KLAVITYKLA-187: dedicated Sim-creation page. Serves the dashboard app; the client opens
     // the Add-a-Sim surface when the path is /sim/new. `?mode=describe|site|call` preselects a tab.
-    if (req.method === "GET" && (path === "/sim/new" || path === "/sim/new/")) return me ? await dashboardPage() : redirect("/login")
+    if (req.method === "GET" && (path === "/sim/new" || path === "/sim/new/")) return me ? await dashboardPage() : loginGate(path, url.search)
     if (req.method === "GET" && path === "/trails") {
       const qs = url.search || ""
       return new Response(null, { status: 301, headers: { Location: "/autosims" + qs } })
