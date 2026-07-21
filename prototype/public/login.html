@@ -126,12 +126,33 @@ let email = ""
 // Capture it now (before the email→code steps mutate nothing in the URL) and persist to
 // sessionStorage so the intent survives a refresh, then replay it through verify. Same-origin
 // rooted paths only — never "//host" or a scheme — so a hostile ?next= can't open-redirect us.
+// The stash is TTL'd (30 min) and dropped whenever /login is opened WITHOUT a ?next=, so an
+// abandoned OTP can never silently teleport a later, unrelated login to a stale destination.
+const RESUME_TTL_MS = 30 * 60 * 1000
 let resumeNext = ""
 try {
   const raw = new URLSearchParams(location.search).get("next")
   const safe = raw && raw[0] === "/" && raw[1] !== "/" && raw[1] !== "\\" && raw.length <= 512 ? raw : ""
-  resumeNext = safe || sessionStorage.getItem("klavResumeNext") || ""
-  if (safe) sessionStorage.setItem("klavResumeNext", safe)
+  if (safe) {
+    resumeNext = safe
+    sessionStorage.setItem("klavResumeNext", JSON.stringify({ v: safe, t: Date.now() }))
+  } else {
+    // No fresh intent in the URL — this is a plain /login visit, so any prior intent is stale:
+    // drop it rather than silently redirecting this login somewhere the user didn't ask for.
+    sessionStorage.removeItem("klavResumeNext")
+  }
+} catch (e) {}
+// Defence in depth: if anything ever restores the stash, honour it only while it is fresh.
+function readResumeStash() {
+  try {
+    const rec = JSON.parse(sessionStorage.getItem("klavResumeNext") || "null")
+    if (!rec || typeof rec.v !== "string" || typeof rec.t !== "number") return ""
+    if (Date.now() - rec.t > RESUME_TTL_MS) { sessionStorage.removeItem("klavResumeNext"); return "" }
+    return rec.v
+  } catch (e) { return "" }
+}
+try {
+  if (!resumeNext) resumeNext = readResumeStash()
 } catch (e) {}
 try {
   const invitedEmail = new URLSearchParams(location.search).get("email")

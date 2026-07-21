@@ -10,6 +10,9 @@
 //      rejected server-side and falls back to the funnel default — no open redirect.
 //   4. GET /login?next=<safe> while ALREADY signed in resumes there instead of /dashboard;
 //      an unsafe next falls back to /dashboard.
+//   5. A BRAND-NEW user still gets /onboarding even when they arrived via a gated deep link —
+//      the intent is carried forward as /onboarding?next=<intent>, never used to skip setup.
+//   6. login.html TTLs the sessionStorage intent stash and clears it on a next-less /login load.
 
 import { test, expect, beforeAll, afterAll } from "bun:test"
 import { tmpdir } from "node:os"
@@ -85,7 +88,39 @@ test("login gate preserves the querystring of the intended destination", async (
   expect(r.headers.get("location")).toBe("/login?next=" + encodeURIComponent("/inbox?project=abc"))
 })
 
+// Regression: a theirs-wins merge reverted /dashboard and /sim/new to a bare redirect("/login"),
+// silently dropping the intent of every shared deep link. Both must go through loginGate.
+test("GET /sim/new?mode=site while logged out keeps the mode in ?next=", async () => {
+  const r = await fetch(`${BASE}/sim/new?mode=site`, { redirect: "manual" })
+  expect(r.status).toBe(302)
+  expect(r.headers.get("location")).toBe("/login?next=" + encodeURIComponent("/sim/new?mode=site"))
+})
+
+test("GET /sim/new/ (trailing slash) while logged out also captures intent", async () => {
+  const r = await fetch(`${BASE}/sim/new/`, { redirect: "manual" })
+  expect(r.status).toBe(302)
+  expect(r.headers.get("location")).toBe("/login?next=" + encodeURIComponent("/sim/new/"))
+})
+
+test("no logged-out GET gate drops intent with a bare /login redirect", async () => {
+  for (const p of ["/dashboard", "/sim/new?mode=site", "/inbox", "/autosims", "/sim-runs", "/app"]) {
+    const r = await fetch(`${BASE}${p}`, { redirect: "manual" })
+    expect(r.status).toBe(302)
+    expect(r.headers.get("location")).toStartWith("/login?next=")
+  }
+})
+
 // ── 2. verify honors a safe next ─────────────────────────────────────────────
+
+// Regression: a gated deep link must NOT let a brand-new account skip /onboarding. This is the
+// FIRST verify for EMAIL, so wasNew is true — the intent rides along as ?next= instead of winning.
+test("a brand-new user with a next still lands on /onboarding, intent carried forward", async () => {
+  const r = await verify(EMAIL, TEST_OTP_CODE, "/sim/new?mode=site")
+  expect(r.status).toBe(200)
+  const body = await r.json()
+  expect(body.ok).toBe(true)
+  expect(body.redirect).toBe("/onboarding?next=" + encodeURIComponent("/sim/new?mode=site"))
+})
 
 test("verify resumes a safe same-origin next path", async () => {
   const r = await verify(EMAIL, TEST_OTP_CODE, "/inbox?project=xyz")
@@ -131,4 +166,27 @@ test("GET /login?next=<safe> while signed in resumes there; unsafe falls back to
   })
   expect(unsafe.status).toBe(302)
   expect(unsafe.headers.get("location")).toBe("/dashboard")
+})
+
+// ── 5/6. login.html intent stash hygiene ─────────────────────────────────────
+// Regression: the stash used to persist forever and survive a next-less /login load, so an
+// abandoned OTP could silently teleport a much later login to a stale destination. Asserted
+// against the served page so a rebuild/merge that drops the guard fails here.
+
+test("login.html TTLs the resume stash and clears it when /login has no ?next=", async () => {
+  const html = await (await fetch(`${BASE}/login`)).text()
+  // TTL exists and is bounded (not "forever").
+  expect(html).toContain("RESUME_TTL_MS")
+  const ttl = html.match(/RESUME_TTL_MS\s*=\s*([0-9*\s]+)/)
+  expect(ttl).toBeTruthy()
+  // eslint-disable-next-line no-eval
+  const ttlMs = eval(ttl![1])
+  expect(ttlMs).toBeGreaterThan(0)
+  expect(ttlMs).toBeLessThanOrEqual(60 * 60 * 1000)
+  // The no-next branch drops the stash.
+  expect(html).toContain('sessionStorage.removeItem("klavResumeNext")')
+  // The stash is written timestamped, not as a bare path.
+  expect(html).toContain('JSON.stringify({ v: safe, t: Date.now() })')
+  // Any restore is TTL-checked.
+  expect(html).toMatch(/Date\.now\(\)\s*-\s*rec\.t\s*>\s*RESUME_TTL_MS/)
 })
