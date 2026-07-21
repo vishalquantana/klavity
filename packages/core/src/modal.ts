@@ -94,6 +94,16 @@ export interface SuccessCopy {
   showCta: boolean
 }
 
+// KLAVITYKLA-371 (JTBD 1.11 enhancement): a reporter-picked element target. Carries both the CSS
+// selector (machine-usable AutoSim assert feedstock) and a human-readable text snippet (for the
+// ticket drawer). Returned by onPickElement so the host can include text alongside the selector.
+export interface PickedTarget {
+  /** Robust CSS selector: prefers #id, then stable class chain, else nth-of-type path from body. */
+  selector: string
+  /** Short human snippet: element tag + its visible text/label (up to 80 chars). */
+  text: string
+}
+
 // KLAVITYKLA-241 (JTBD A.11): a known/recurring issue matched against the reporter's in-progress prose.
 // Returned by onCheckKnown so the composer can render a pre-submit "we already know about this" ack.
 export interface KnownIssueMatch {
@@ -120,12 +130,13 @@ export interface ModalCallbacks {
   // is the getDisplayMedia screen-share; on the extension it's the captureVisibleTab full-page capture. The
   // host hides its own UI during the capture (same as the Sharp button). Absent → no retake affordance.
   onRetakeSharp?: () => Promise<CaptureResult>
-  // KLAVITYKLA-228 (JTBD 1.11): optional on-page element picker. When provided, a "Pick element" button
-  // appears in the capture actions row. Clicking it hides the composer and invokes this callback, which
-  // lets the reporter click the broken element on the live page; it resolves a robust unique CSS selector
-  // (or null if cancelled). The selector rides along as annotations.selector so the finding is pinned to
-  // the exact DOM node. Widget-only — the extension omits it (no button rendered), preserving parity.
-  onPickElement?: () => Promise<string | null>
+  // KLAVITYKLA-228/371 (JTBD 1.11): optional on-page element picker. When provided, a "Pick element"
+  // button appears in the capture actions row. Clicking it hides the composer and invokes this callback,
+  // which lets the reporter click the broken element on the live page; it resolves a PickedTarget
+  // ({ selector, text }) so the report carries both a machine-usable CSS selector (AutoSim feedstock)
+  // and a human-readable snippet (shown in the chip + ticket drawer), or null if cancelled.
+  // Widget-only — the extension omits it (no button rendered), preserving parity.
+  onPickElement?: () => Promise<PickedTarget | null>
   // KLAVITYKLA-241 (JTBD A.11): optional pre-submit known-issue check. When provided, the composer
   // calls it (debounced) as the reporter types a description. Given the current text, it resolves the
   // closest matching known/recurring issue for this project — or null when nothing matches. On a match,
@@ -218,9 +229,10 @@ export function buildModal(
   // Structured markup per screenshot index { w, h, shapes } so the ticket can re-render a
   // toggleable/zoomable overlay instead of baking the drawing into the uploaded image.
   const annotationsByIndex: Record<number, any> = {}
-  // KLAVITYKLA-228: a CSS selector for an element the reporter pinned via the on-page picker. Rides on the
-  // annotations payload as `annotations.selector` (top level) so the ticket links the finding to the DOM node.
-  let pickedSelector: string | null = null
+  // KLAVITYKLA-228/371: picked element from the on-page picker. Carries selector + human text snippet.
+  // Rides on the annotations payload as `selector` + `selectorText` (top level) so the ticket links
+  // the finding to the DOM node and the drawer can show the human-readable label alongside the selector.
+  let pickedTarget: PickedTarget | null = null
   // KLAVITYKLA-217: serialize the FULL per-image markup map (not just screenshot #0). The wire shape
   // stays backward-compatible — the index-0 entry's fields ({ w, h, shapes, … }) are hoisted to the top
   // level so existing single-image consumers (server sanitizer + ticket drawer) keep working unchanged,
@@ -229,7 +241,7 @@ export function buildModal(
   const buildAnnotationsPayload = (): any => {
     const keys = Object.keys(annotationsByIndex)
     // Nothing drawn AND no pinned element → no overlay payload at all.
-    if (!keys.length && !pickedSelector) return null
+    if (!keys.length && !pickedTarget) return null
     const out: any = {}
     if (keys.length) {
       const byIndex: Record<string, any> = {}
@@ -237,8 +249,8 @@ export function buildModal(
       const base = annotationsByIndex[0] ?? annotationsByIndex[Number(keys[0])] ?? {}
       Object.assign(out, base, { byIndex })
     }
-    // KLAVITYKLA-228: pin the picked element selector at the top level (server sanitizer + drawer read it there).
-    if (pickedSelector) out.selector = pickedSelector
+    // KLAVITYKLA-228/371: pin selector + human snippet at the top level (server sanitizer + drawer).
+    if (pickedTarget) { out.selector = pickedTarget.selector; out.selectorText = pickedTarget.text }
     return out
   }
   let currentType = initialType
@@ -365,6 +377,7 @@ export function buildModal(
     .klavity-pickinfo[hidden]{display:none;}
     .klavity-pickinfo .kl-pick-ic{color:var(--kl-accent);display:inline-flex;flex:none;}
     .klavity-pickinfo code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--kl-fg);background:var(--kl-chip);padding:2px 6px;border-radius:6px;max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .klavity-pickinfo .kl-pick-txt{font-size:11px;color:var(--kl-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px;}
     .klavity-pickinfo .kl-pick-clear{background:none;border:none;color:var(--kl-muted);cursor:pointer;font-size:11px;text-decoration:underline;padding:2px 2px;border-radius:5px;}
     .klavity-pickinfo .kl-pick-clear:hover{color:var(--kl-fg);}
     .klavity-pickinfo .kl-pick-clear:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
@@ -1196,22 +1209,26 @@ export function buildModal(
     }
   }
 
-  // ── Element picker (KLAVITYKLA-228 / JTBD 1.11) ─────────────────────────────────────────────
+  // ── Element picker (KLAVITYKLA-228/371 / JTBD 1.11) ─────────────────────────────────────────
   // Mirrors the region-capture flow: hide the composer, hand control to the host's on-page picker,
-  // and pin the resolved selector onto the report as annotations.selector. The picked selector is
-  // reflected as a small "Element pinned" chip (with a one-tap Clear) under the actions row.
+  // and pin the resolved PickedTarget (selector + text snippet) onto the report. The picked target is
+  // reflected as a small chip (with a one-tap Clear) under the actions row, showing both the selector
+  // and the element's human-readable label so the reporter can confirm what was captured.
   const pickBtn = shadowRoot.getElementById('klavity-pick') as HTMLButtonElement | null
   const pickInfo = shadowRoot.getElementById('klavity-pickinfo') as HTMLElement | null
   const reflectPicked = () => {
     if (pickBtn) {
-      pickBtn.classList.toggle('kl-active', !!pickedSelector)
-      if (pickedSelector) pickBtn.setAttribute('aria-pressed', 'true'); else pickBtn.removeAttribute('aria-pressed')
+      pickBtn.classList.toggle('kl-active', !!pickedTarget)
+      if (pickedTarget) pickBtn.setAttribute('aria-pressed', 'true'); else pickBtn.removeAttribute('aria-pressed')
     }
     if (!pickInfo) return
-    if (!pickedSelector) { pickInfo.hidden = true; pickInfo.innerHTML = ''; return }
+    if (!pickedTarget) { pickInfo.hidden = true; pickInfo.innerHTML = ''; return }
     pickInfo.hidden = false
-    pickInfo.innerHTML = `<span class="kl-pick-ic">${icon('mouse-pointer-2', { size: 13 })}</span><span>Element pinned:</span><code title="${escHtml(pickedSelector)}">${escHtml(pickedSelector)}</code><button type="button" class="kl-pick-clear" id="klavity-pick-clear">Clear</button>`
-    pickInfo.querySelector('#klavity-pick-clear')?.addEventListener('click', () => { pickedSelector = null; reflectPicked() })
+    const { selector, text } = pickedTarget
+    // Use escHtml on both selector and text (user-page values) so HTML chars can't escape the shadow DOM.
+    const textFrag = text ? `<span class="kl-pick-txt">${escHtml(text)}</span>` : ''
+    pickInfo.innerHTML = `<span class="kl-pick-ic">${icon('mouse-pointer-2', { size: 13 })}</span><span>Element pinned:</span><code title="${escHtml(selector)}">${escHtml(selector)}</code>${textFrag}<button type="button" class="kl-pick-clear" id="klavity-pick-clear">Clear</button>`
+    pickInfo.querySelector('#klavity-pick-clear')?.addEventListener('click', () => { pickedTarget = null; reflectPicked() })
   }
   if (pickBtn && callbacks.onPickElement) {
     pickBtn.onclick = async () => {
@@ -1221,8 +1238,8 @@ export function buildModal(
       document.removeEventListener('keydown', escHandler, { capture: true })
       host.style.display = 'none'
       try {
-        const sel = await callbacks.onPickElement!()
-        if (sel) { pickedSelector = sel; reflectPicked() }
+        const result = await callbacks.onPickElement!()
+        if (result) { pickedTarget = result; reflectPicked() }
       } catch { /* picker failure must never break the composer */ }
       finally {
         document.addEventListener('keydown', escHandler, { capture: true })

@@ -19,7 +19,7 @@ const Sl = /* @__PURE__ */ (() => {
   );
   return () => (e += 1, `u${t()}${e}`);
 })();
-function mt(e) {
+function gt(e) {
   const t = [];
   for (let r = 0, n = e.length; r < n; r++)
     t.push(e[r]);
@@ -27,7 +27,7 @@ function mt(e) {
 }
 let Pt = null;
 function qo(e = {}) {
-  return Pt || (e.includeStyleProperties ? (Pt = e.includeStyleProperties, Pt) : (Pt = mt(window.getComputedStyle(document.documentElement)), Pt));
+  return Pt || (e.includeStyleProperties ? (Pt = e.includeStyleProperties, Pt) : (Pt = gt(window.getComputedStyle(document.documentElement)), Pt));
 }
 function Rr(e, t) {
   const n = (e.ownerDocument.defaultView || window).getComputedStyle(e).getPropertyValue(t);
@@ -210,7 +210,7 @@ async function jl(e, t, r) {
   if (Ho(t))
     return t;
   let s = [];
-  return Wl(e) && e.assignedNodes ? s = mt(e.assignedNodes()) : _e(e, HTMLIFrameElement) && (!((n = e.contentDocument) === null || n === void 0) && n.body) ? s = mt(e.contentDocument.body.childNodes) : s = mt(((i = e.shadowRoot) !== null && i !== void 0 ? i : e).childNodes), s.length === 0 || _e(e, HTMLVideoElement) || await s.reduce((l, d) => l.then(() => Fr(d, r)).then((o) => {
+  return Wl(e) && e.assignedNodes ? s = gt(e.assignedNodes()) : _e(e, HTMLIFrameElement) && (!((n = e.contentDocument) === null || n === void 0) && n.body) ? s = gt(e.contentDocument.body.childNodes) : s = gt(((i = e.shadowRoot) !== null && i !== void 0 ? i : e).childNodes), s.length === 0 || _e(e, HTMLVideoElement) || await s.reduce((l, d) => l.then(() => Fr(d, r)).then((o) => {
     o && t.appendChild(o);
   }), Promise.resolve()), t;
 }
@@ -331,7 +331,7 @@ async function nc(e, t) {
   });
 }
 async function ic(e, t) {
-  const n = mt(e.childNodes).map((i) => Ko(i, t));
+  const n = gt(e.childNodes).map((i) => Ko(i, t));
   await Promise.all(n).then(() => e);
 }
 async function Ko(e, t) {
@@ -392,7 +392,7 @@ async function oc(e, t) {
   return e.forEach((i) => {
     if ("cssRules" in i)
       try {
-        mt(i.cssRules || []).forEach((s, l) => {
+        gt(i.cssRules || []).forEach((s, l) => {
           if (s.type === CSSRule.IMPORT_RULE) {
             let d = l + 1;
             const o = s.href, p = Yi(o).then((a) => Ki(a, t)).then((a) => Xi(a).forEach((h) => {
@@ -421,7 +421,7 @@ async function oc(e, t) {
   }), Promise.all(n).then(() => (e.forEach((i) => {
     if ("cssRules" in i)
       try {
-        mt(i.cssRules || []).forEach((s) => {
+        gt(i.cssRules || []).forEach((s) => {
           r.push(s);
         });
       } catch (s) {
@@ -435,7 +435,7 @@ function ac(e) {
 async function lc(e, t) {
   if (e.ownerDocument == null)
     throw new Error("Provided element is not within a Document");
-  const r = mt(e.ownerDocument.styleSheets), n = await oc(r, t);
+  const r = gt(e.ownerDocument.styleSheets), n = await oc(r, t);
   return ac(n);
 }
 function Xo(e) {
@@ -540,7 +540,8 @@ const mc = {
   "chevron-left": '<path d="m15 18-6-6 6-6" />',
   "chevron-right": '<path d="m9 18 6-6-6-6" />',
   clock: '<path d="M12 6v6l4 2" /> <circle cx="12" cy="12" r="10" />',
-  loader: '<path d="M12 2v4" /> <path d="m16.2 7.8 2.9-2.9" /> <path d="M18 12h4" /> <path d="m16.2 16.2 2.9 2.9" /> <path d="M12 18v4" /> <path d="m4.9 19.1 2.9-2.9" /> <path d="M2 12h4" /> <path d="m4.9 4.9 2.9 2.9" />'
+  loader: '<path d="M12 2v4" /> <path d="m16.2 7.8 2.9-2.9" /> <path d="M18 12h4" /> <path d="m16.2 16.2 2.9 2.9" /> <path d="M12 18v4" /> <path d="m4.9 19.1 2.9-2.9" /> <path d="M2 12h4" /> <path d="m4.9 4.9 2.9 2.9" />',
+  archive: '<rect width="20" height="5" x="2" y="3" rx="1" /> <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" /> <path d="M10 12h4" />'
 };
 function gc(e) {
   return e.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -910,7 +911,7 @@ function Pc(e, t, r) {
     }
   });
 }
-function wt(e) {
+function pt(e) {
   return e.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 function ns(e) {
@@ -951,14 +952,14 @@ function $c(e, t, r = {}) {
   const m = () => {
     const C = Object.keys(u);
     if (!C.length && !c) return null;
-    const L = {};
+    const I = {};
     if (C.length) {
       const T = {};
       for (const N of C) T[N] = u[N];
       const O = u[0] ?? u[Number(C[0])] ?? {};
-      Object.assign(L, O, { byIndex: T });
+      Object.assign(I, O, { byIndex: T });
     }
-    return c && (L.selector = c), L;
+    return c && (I.selector = c.selector, I.selectorText = c.text), I;
   };
   let f = e, g = 0, k = null, b = t.replayState === "attached", w = null;
   const S = document.createElement("style");
@@ -1074,6 +1075,7 @@ function $c(e, t, r = {}) {
     .klavity-pickinfo[hidden]{display:none;}
     .klavity-pickinfo .kl-pick-ic{color:var(--kl-accent);display:inline-flex;flex:none;}
     .klavity-pickinfo code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--kl-fg);background:var(--kl-chip);padding:2px 6px;border-radius:6px;max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .klavity-pickinfo .kl-pick-txt{font-size:11px;color:var(--kl-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px;}
     .klavity-pickinfo .kl-pick-clear{background:none;border:none;color:var(--kl-muted);cursor:pointer;font-size:11px;text-decoration:underline;padding:2px 2px;border-radius:5px;}
     .klavity-pickinfo .kl-pick-clear:hover{color:var(--kl-fg);}
     .klavity-pickinfo .kl-pick-clear:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
@@ -1239,7 +1241,7 @@ function $c(e, t, r = {}) {
         <button class="bug ${e === "bug" ? "active" : ""}"><span class="kl-cap-ic">${J("bug")}</span>Bug</button>
         <button class="feat ${e === "feature" ? "active" : ""}"><span class="kl-cap-ic">${J("lightbulb")}</span>Feature</button>
       </div>
-      <div class="klavity-page">${J("map-pin")} ${typeof window < "u" ? wt(window.location.pathname) : ""}</div>
+      <div class="klavity-page">${J("map-pin")} ${typeof window < "u" ? pt(window.location.pathname) : ""}</div>
       ${t.replayState ? `<div class="klavity-proof"><span class="klavity-chip ${t.replayState === "attached" ? "kl-chip-on" : "kl-chip-off"}" id="klavity-replay-chip">${ns(t.replayState)}</span></div>` : ""}
       <div class="klavity-actions">
         ${t.onCaptureSharp ? `<button id="klavity-sharp" aria-describedby="klavity-sharp-tip"><span class="kl-cap-ic">${J("app-window")}</span><span class="kl-sharp-label">Screen</span><span class="kl-info-badge" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></span><span id="klavity-sharp-tip" class="klavity-info-pop" role="tooltip">Screen grabs the <b>whole page — every image, pixel-perfect</b> using your browser's screen-share. Your browser will ask you to <b>share this tab</b>.</span></button>` : ""}
@@ -1270,7 +1272,7 @@ function $c(e, t, r = {}) {
   if (M && A) {
     const C = document.createElement("div");
     C.className = "kl-float-tip", C.setAttribute("role", "tooltip"), C.innerHTML = A.innerHTML, l.appendChild(C);
-    const L = () => {
+    const I = () => {
       const O = M.getBoundingClientRect(), N = Math.min(228, window.innerWidth - 16), D = 8, W = window.innerWidth, V = window.innerHeight, F = O.left + O.width / 2 - N / 2, U = Math.max(D, Math.min(F, W - N - D));
       C.style.left = U + "px", C.style.top = "-9999px", C.style.visibility = "hidden", C.style.display = "block";
       const B = C.offsetHeight;
@@ -1278,12 +1280,12 @@ function $c(e, t, r = {}) {
       let $ = O.bottom + 8;
       $ + B + D > V && ($ = O.top - B - 8), $ = Math.max(D, Math.min($, V - B - D)), C.style.top = $ + "px", C.classList.add("kl-show");
     }, T = () => C.classList.remove("kl-show");
-    M.addEventListener("mouseenter", L), M.addEventListener("mouseleave", T), M.addEventListener("focus", L), M.addEventListener("blur", T);
+    M.addEventListener("mouseenter", I), M.addEventListener("mouseleave", T), M.addEventListener("focus", I), M.addEventListener("blur", T);
   }
   function R(C) {
     b = C === "attached", Q();
-    const L = l.getElementById("klavity-replay-chip");
-    L && (L.classList.toggle("kl-chip-on", C === "attached"), L.classList.toggle("kl-chip-off", C !== "attached"), L.innerHTML = ns(C));
+    const I = l.getElementById("klavity-replay-chip");
+    I && (I.classList.toggle("kl-chip-on", C === "attached"), I.classList.toggle("kl-chip-off", C !== "attached"), I.innerHTML = ns(C));
   }
   const j = {
     shadowRoot: l,
@@ -1292,7 +1294,7 @@ function $c(e, t, r = {}) {
     setReplayState: R
   };
   function z() {
-    const C = l.getElementById("klavity-strip"), L = l.getElementById("klavity-counter");
+    const C = l.getElementById("klavity-strip"), I = l.getElementById("klavity-counter");
     C.innerHTML = "", d.forEach((T, O) => {
       const N = document.createElement("div");
       N.className = "klavity-thumb", O === g && N.classList.add("kl-thumb-active");
@@ -1316,7 +1318,7 @@ function $c(e, t, r = {}) {
       const F = p[O];
       if (F) {
         const U = Nc[F], B = document.createElement("span");
-        if (B.className = "klavity-qb kl-q-" + F, B.title = F === "real-pixel" ? "Pixel-perfect capture (every image included)" : F === "wireframe" ? "Wireframe fallback — layout only, images not captured. Retake for a sharp shot." : "Rendered capture — some cross-origin images may be missing. Retake for a sharp shot.", B.innerHTML = J(U.iconName, { size: 10 }) + '<span class="klavity-qb-t">' + wt(U.label) + "</span>", N.appendChild(B), U.degraded && t.onRetakeSharp) {
+        if (B.className = "klavity-qb kl-q-" + F, B.title = F === "real-pixel" ? "Pixel-perfect capture (every image included)" : F === "wireframe" ? "Wireframe fallback — layout only, images not captured. Retake for a sharp shot." : "Rendered capture — some cross-origin images may be missing. Retake for a sharp shot.", B.innerHTML = J(U.iconName, { size: 10 }) + '<span class="klavity-qb-t">' + pt(U.label) + "</span>", N.appendChild(B), U.degraded && t.onRetakeSharp) {
           const $ = document.createElement("button");
           $.type = "button", $.className = "klavity-retake", $.innerHTML = J("zap", { size: 11 }) + "<span>Retake sharp</span>", $.title = "Recapture this shot at full pixel quality", $.addEventListener("click", (K) => {
             K.stopPropagation(), se(O, $);
@@ -1328,27 +1330,27 @@ function $c(e, t, r = {}) {
         U.className = "klavity-retake-note", U.textContent = "Markup cleared for the retake.", N.appendChild(U);
       }
       C.appendChild(N);
-    }), L.textContent = `${d.length}/5 images`, Q(), ml();
+    }), I.textContent = `${d.length}/5 images`, Q(), ml();
   }
   function E(C) {
-    const L = l.getElementById("klavity-err");
-    L && (L.textContent = C, L.style.display = "block");
+    const I = l.getElementById("klavity-err");
+    I && (I.textContent = C, I.style.display = "block");
   }
   function Te() {
     const C = l.getElementById("klavity-err");
     C && (C.style.display = "none");
   }
-  function ye(C, L) {
+  function ye(C, I) {
     if (d.length >= a) {
       E(`You can attach up to ${a} images.`);
       return;
     }
-    Te(), d.push(C), o.push(t.compressImage ? t.compressImage(C) : Promise.resolve(C)), p.push(L), z();
+    Te(), d.push(C), o.push(t.compressImage ? t.compressImage(C) : Promise.resolve(C)), p.push(I), z();
   }
   const ie = /* @__PURE__ */ new Set();
-  async function se(C, L) {
+  async function se(C, I) {
     if (!(me || !t.onRetakeSharp)) {
-      Y(!0), L.classList.add("kl-loading"), s.style.display = "none";
+      Y(!0), I.classList.add("kl-loading"), s.style.display = "none";
       try {
         const T = i ? hr(document.body) : null;
         let O;
@@ -1372,30 +1374,30 @@ function $c(e, t, r = {}) {
   }
   async function ve(C) {
     Te();
-    for (const L of C) {
+    for (const I of C) {
       if (d.length >= a) {
         E(`You can attach up to ${a} images.`);
         break;
       }
-      if (!he(L)) {
-        E(`"${L.name}" isn't an image — only image files can be attached.`);
+      if (!he(I)) {
+        E(`"${I.name}" isn't an image — only image files can be attached.`);
         continue;
       }
-      if (L.size > h) {
-        E(`"${L.name}" is too large — images must be under ${Math.round(h / 1024 / 1024)} MB.`);
+      if (I.size > h) {
+        E(`"${I.name}" is too large — images must be under ${Math.round(h / 1024 / 1024)} MB.`);
         continue;
       }
       try {
-        ye(await Dc(L));
+        ye(await Dc(I));
       } catch {
-        E(`Couldn't add "${L.name}". Please try a different image.`);
+        E(`Couldn't add "${I.name}". Please try a different image.`);
       }
     }
   }
   let le = null;
   function Z() {
     var T;
-    le == null || le(), w && (clearTimeout(w), w = null), document.removeEventListener("keydown", xe, { capture: !0 }), document.removeEventListener("paste", I);
+    le == null || le(), w && (clearTimeout(w), w = null), document.removeEventListener("keydown", xe, { capture: !0 }), document.removeEventListener("paste", L);
     try {
       (T = t.onClose) == null || T.call(t);
     } catch {
@@ -1406,8 +1408,8 @@ function $c(e, t, r = {}) {
       return;
     }
     C.classList.add("kl-closing");
-    const L = () => s.remove();
-    C.addEventListener("animationend", L, { once: !0 }), setTimeout(L, 700);
+    const I = () => s.remove();
+    C.addEventListener("animationend", I, { once: !0 }), setTimeout(I, 700);
   }
   function xe(C) {
     if (C.key === "Escape") {
@@ -1415,19 +1417,19 @@ function $c(e, t, r = {}) {
       return;
     }
     if ((C.key === "s" || C.key === "S") && !C.metaKey && !C.ctrlKey && !C.altKey) {
-      const L = C.target;
-      if (L && (L.tagName === "INPUT" || L.tagName === "TEXTAREA" || L.isContentEditable) || l.querySelector(".kl-edtb")) return;
+      const I = C.target;
+      if (I && (I.tagName === "INPUT" || I.tagName === "TEXTAREA" || I.isContentEditable) || l.querySelector(".kl-edtb")) return;
       const T = l.getElementById("klavity-submit");
       T && !T.disabled && (C.preventDefault(), C.stopPropagation(), T.click());
     }
   }
   document.addEventListener("keydown", xe, { capture: !0 });
-  const I = (C) => {
+  const L = (C) => {
     if (!C.clipboardData) return;
-    const L = Array.from(C.clipboardData.items).filter((T) => T.type.startsWith("image/")).map((T) => T.getAsFile()).filter((T) => !!T);
-    L.length && ve(L);
+    const I = Array.from(C.clipboardData.items).filter((T) => T.type.startsWith("image/")).map((T) => T.getAsFile()).filter((T) => !!T);
+    I.length && ve(I);
   };
-  document.addEventListener("paste", I);
+  document.addEventListener("paste", L);
   const Pe = y.querySelector(".bug"), Se = y.querySelector(".feat"), at = () => {
     const C = y.querySelector("#klavity-desc");
     C && (C.placeholder = f === "feature" ? "Describe the feature you'd like..." : "Describe the bug...");
@@ -1442,15 +1444,15 @@ function $c(e, t, r = {}) {
     ke.disabled = C && !fe() || !H(), je && (je.hidden = !(C && fe()));
   };
   if (oe.addEventListener("input", Q), Ce == null || Ce.addEventListener("input", Q), t.onCheckKnown) {
-    const C = y.querySelector("#klavity-known"), L = t.onCheckKnown;
+    const C = y.querySelector("#klavity-known"), I = t.onCheckKnown;
     let T = null, O = 0, N = "";
     const D = () => {
       C && (C.hidden = !0, C.textContent = "");
     }, W = (F) => {
       var B;
       if (!C) return;
-      const U = F.headline ? wt(F.headline) : "Already reported";
-      C.innerHTML = `<span class="kl-known-ic">${J("check-circle", { size: 15 })}</span><div class="kl-known-body"><span class="kl-known-title">${U}</span> — status: <span class="kl-known-status">${wt(F.statusLabel)}</span>. We're already tracking "${wt(F.title)}". Add your note and submit anyway — it'll be linked.</div><button type="button" class="kl-known-dismiss" id="klavity-known-dismiss">Dismiss</button>`, C.hidden = !1, (B = C.querySelector("#klavity-known-dismiss")) == null || B.addEventListener("click", () => {
+      const U = F.headline ? pt(F.headline) : "Already reported";
+      C.innerHTML = `<span class="kl-known-ic">${J("check-circle", { size: 15 })}</span><div class="kl-known-body"><span class="kl-known-title">${U}</span> — status: <span class="kl-known-status">${pt(F.statusLabel)}</span>. We're already tracking "${pt(F.title)}". Add your note and submit anyway — it'll be linked.</div><button type="button" class="kl-known-dismiss" id="klavity-known-dismiss">Dismiss</button>`, C.hidden = !1, (B = C.querySelector("#klavity-known-dismiss")) == null || B.addEventListener("click", () => {
         N = oe.value.trim(), D();
       });
     }, V = async () => {
@@ -1461,7 +1463,7 @@ function $c(e, t, r = {}) {
       }
       const U = ++O;
       try {
-        const B = await L(F);
+        const B = await I(F);
         if (U !== O) return;
         if (oe.value.trim() === N) {
           D();
@@ -1481,22 +1483,22 @@ function $c(e, t, r = {}) {
   const ce = () => Array.from(y.querySelectorAll(".klavity-actions button:not(#klavity-voice)"));
   let me = !1;
   const Y = (C) => {
-    me = C, ce().forEach((L) => {
-      L.disabled = C;
+    me = C, ce().forEach((I) => {
+      I.disabled = C;
     }), C ? ke.disabled = !0 : Q();
   }, Ze = (C) => {
-    ce().forEach((L) => {
-      L.classList.remove("kl-active"), L.removeAttribute("aria-pressed");
+    ce().forEach((I) => {
+      I.classList.remove("kl-active"), I.removeAttribute("aria-pressed");
     }), C && (C.classList.add("kl-active"), C.setAttribute("aria-pressed", "true"));
-  }, yt = y.querySelector("#klavity-voice");
-  if (yt) {
-    const C = new Ir(), L = 81.68, T = 15e3, O = yt.querySelector(".kl-vring-prog");
+  }, bt = y.querySelector("#klavity-voice");
+  if (bt) {
+    const C = new Ir(), I = 81.68, T = 15e3, O = bt.querySelector(".kl-vring-prog");
     let N = 0, D = 0, W = !1;
     const V = () => {
       D = Date.now();
       const U = () => {
         const B = Date.now() - D, $ = Math.min(B / 18e4, 1);
-        if (O == null || O.setAttribute("stroke-dashoffset", String($ * L)), B >= 18e4 - T && yt.classList.add("kl-voice-warn"), B >= 18e4) {
+        if (O == null || O.setAttribute("stroke-dashoffset", String($ * I)), B >= 18e4 - T && bt.classList.add("kl-voice-warn"), B >= 18e4) {
           C.stop();
           return;
         }
@@ -1504,7 +1506,7 @@ function $c(e, t, r = {}) {
       };
       N = requestAnimationFrame(U);
     }, F = () => {
-      cancelAnimationFrame(N), O == null || O.setAttribute("stroke-dashoffset", String(L)), yt.classList.remove("kl-voice-warn");
+      cancelAnimationFrame(N), O == null || O.setAttribute("stroke-dashoffset", String(I)), bt.classList.remove("kl-voice-warn");
     };
     C.onTranscript = (U) => {
       const B = oe.value;
@@ -1518,9 +1520,9 @@ function $c(e, t, r = {}) {
         $ && ($.textContent = "", $.style.opacity = "1", $.style.transition = "");
       }, 4e3);
     }, C.onStop = () => {
-      W = !1, yt.classList.remove("kl-voice-rec"), F();
-    }, yt.addEventListener("click", () => {
-      W ? C.stop() : (W = !0, yt.classList.add("kl-voice-rec"), C.start(), V());
+      W = !1, bt.classList.remove("kl-voice-rec"), F();
+    }, bt.addEventListener("click", () => {
+      W ? C.stop() : (W = !0, bt.classList.add("kl-voice-rec"), C.start(), V());
     }), le = () => {
       W && C.stop();
     };
@@ -1529,8 +1531,8 @@ function $c(e, t, r = {}) {
     if (me || ke.disabled) return;
     const C = oe.value.trim();
     Y(!0), ke.textContent = "Uploading…";
-    const L = l.getElementById("klavity-err");
-    L.style.display = "none";
+    const I = l.getElementById("klavity-err");
+    I.style.display = "none";
     const T = l.getElementById("klavity-progress"), O = l.getElementById("klavity-progress-fill");
     T && O && (T.classList.add("show"), O.style.transition = "none", O.style.width = "8%", O.offsetWidth, O.style.transition = "width 10s cubic-bezier(.05,.7,.2,1)", requestAnimationFrame(() => {
       O.style.width = "90%";
@@ -1559,7 +1561,7 @@ function $c(e, t, r = {}) {
         F.appendChild(U), v.remove(), l.appendChild(F), setTimeout(Z, n.thankYou ? 2600 : B ? 4e3 : 1500);
       }
     } catch (W) {
-      D(), L.textContent = W.message, L.style.display = "block", ke.textContent = "Submit", Y(!1);
+      D(), I.textContent = W.message, I.style.display = "block", ke.textContent = "Submit", Y(!1);
     }
   });
   const Xt = y.querySelector("#klavity-full");
@@ -1569,8 +1571,8 @@ function $c(e, t, r = {}) {
       try {
         const C = i ? hr(document.body) : null;
         try {
-          const { dataUrl: L, quality: T } = Jt(await t.onCaptureFull());
-          ye(L, T), Ze(Xt);
+          const { dataUrl: I, quality: T } = Jt(await t.onCaptureFull());
+          ye(I, T), Ze(Xt);
         } finally {
           C == null || C();
         }
@@ -1580,7 +1582,7 @@ function $c(e, t, r = {}) {
       }
     }
   }), M && t.onCaptureSharp) {
-    const C = M.querySelector(".kl-sharp-label"), L = async () => {
+    const C = M.querySelector(".kl-sharp-label"), I = async () => {
       if (me) return;
       Y(!0), M.classList.add("kl-loading"), s.style.display = "none";
       const T = C ?? M, O = T.textContent;
@@ -1603,7 +1605,7 @@ function $c(e, t, r = {}) {
       }
     };
     M.addEventListener("click", () => {
-      L();
+      I();
     });
   }
   const Fi = y.querySelector("#klavity-file"), Ui = y.querySelector("#klavity-upload");
@@ -1614,8 +1616,8 @@ function $c(e, t, r = {}) {
     }
     Fi.click();
   }), Fi.addEventListener("change", async (C) => {
-    const L = C.target, T = L.files ? Array.from(L.files) : [];
-    if (L.value = "", T.length) {
+    const I = C.target, T = I.files ? Array.from(I.files) : [];
+    if (I.value = "", T.length) {
       const O = d.length;
       await ve(T), d.length > O && Ze(Ui);
     }
@@ -1625,12 +1627,12 @@ function $c(e, t, r = {}) {
     me || (Y(!0), document.removeEventListener("keydown", xe, { capture: !0 }), s.style.display = "none", _c(async (C) => {
       document.addEventListener("keydown", xe, { capture: !0 });
       try {
-        const L = i ? hr(document.body) : null;
+        const I = i ? hr(document.body) : null;
         let T;
         try {
           T = await t.onRegionCapture(C);
         } finally {
-          L == null || L();
+          I == null || I();
         }
         if (T) {
           const { dataUrl: O, quality: N } = Jt(T);
@@ -1644,16 +1646,17 @@ function $c(e, t, r = {}) {
     }));
   });
   const At = l.getElementById("klavity-pick"), Tt = l.getElementById("klavity-pickinfo"), Bi = () => {
-    var C;
-    if (At && (At.classList.toggle("kl-active", !!c), c ? At.setAttribute("aria-pressed", "true") : At.removeAttribute("aria-pressed")), !!Tt) {
-      if (!c) {
-        Tt.hidden = !0, Tt.innerHTML = "";
-        return;
-      }
-      Tt.hidden = !1, Tt.innerHTML = `<span class="kl-pick-ic">${J("mouse-pointer-2", { size: 13 })}</span><span>Element pinned:</span><code title="${wt(c)}">${wt(c)}</code><button type="button" class="kl-pick-clear" id="klavity-pick-clear">Clear</button>`, (C = Tt.querySelector("#klavity-pick-clear")) == null || C.addEventListener("click", () => {
-        c = null, Bi();
-      });
+    var O;
+    if (At && (At.classList.toggle("kl-active", !!c), c ? At.setAttribute("aria-pressed", "true") : At.removeAttribute("aria-pressed")), !Tt) return;
+    if (!c) {
+      Tt.hidden = !0, Tt.innerHTML = "";
+      return;
     }
+    Tt.hidden = !1;
+    const { selector: C, text: I } = c, T = I ? `<span class="kl-pick-txt">${pt(I)}</span>` : "";
+    Tt.innerHTML = `<span class="kl-pick-ic">${J("mouse-pointer-2", { size: 13 })}</span><span>Element pinned:</span><code title="${pt(C)}">${pt(C)}</code>${T}<button type="button" class="kl-pick-clear" id="klavity-pick-clear">Clear</button>`, (O = Tt.querySelector("#klavity-pick-clear")) == null || O.addEventListener("click", () => {
+      c = null, Bi();
+    });
   };
   At && t.onPickElement && (At.onclick = async () => {
     if (!me) {
@@ -1667,20 +1670,20 @@ function $c(e, t, r = {}) {
       }
     }
   });
-  function bt(C, L = 15) {
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${L}" height="${L}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-0.125em">${C}</svg>`;
+  function vt(C, I = 15) {
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${I}" height="${I}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-0.125em">${C}</svg>`;
   }
   function fl() {
-    const C = (T, O, N, D) => `<button type="button" class="kl-htool" data-tool="${T}" title="${O} (${D.toUpperCase()})" aria-label="${O}">${N}<span class="kl-hk">${D.toUpperCase()}</span></button>`, L = (T) => `<button type="button" class="kl-hcolor" data-color="${T}" style="background:${T}" title="${T}" aria-label="Colour ${T}"></button>`;
-    return C("pen", "Pen", J("pencil", { size: 15 }), "p") + C("line", "Line", bt('<line x1="5" y1="19" x2="19" y2="5"/>'), "l") + C("rect", "Rectangle", J("square", { size: 15 }), "r") + C("circle", "Circle", bt('<circle cx="12" cy="12" r="9"/>'), "o") + C("arrow", "Arrow", bt('<line x1="5" y1="19" x2="19" y2="5"/><polyline points="10 5 19 5 19 14"/>'), "a") + C("text", "Text", bt('<path d="M5 6h14M12 6v13M9 19h6"/>'), "t") + C("count", "Numbers", bt('<circle cx="12" cy="12" r="9"/><text x="12" y="16" text-anchor="middle" font-size="11" font-weight="700" fill="currentColor" stroke="none">1</text>'), "c") + C("crop", "Crop", bt('<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>'), "k") + '<span class="kl-hsep"></span>' + L("#ef4444") + L("#f97316") + L("#3b82f6") + L("#111827") + // Contextual text options — shown only while the Text tool is active (toggled in selectTool).
-    `<span class="kl-htextopts" id="kl-hero-textopts" hidden><span class="kl-hsep"></span><span class="kl-hlabel">Outline</span><button type="button" class="kl-hopt kl-on" data-outline="black" title="Black outline"><span class="kl-osq" style="background:#111"></span></button><button type="button" class="kl-hopt" data-outline="white" title="White outline"><span class="kl-osq" style="background:#fff;border:1px solid #999"></span></button><button type="button" class="kl-hopt" data-outline="none" title="No outline">None</button><span class="kl-hlabel">Size</span><button type="button" class="kl-hopt" data-size="18" title="Small">S</button><button type="button" class="kl-hopt kl-on" data-size="26" title="Medium">M</button><button type="button" class="kl-hopt" data-size="40" title="Large">L</button></span><span class="kl-hsep"></span><button type="button" class="kl-htbtn" id="kl-hero-undo" title="Undo (⌘Z)" aria-label="Undo">${bt('<path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/>', 14)}</button><button type="button" class="kl-htbtn" id="kl-hero-clear" title="Clear" aria-label="Clear">${J("trash-2", { size: 14 })}</button><span class="kl-hgrow"></span><span class="kl-hhint">P pen · L line · R rect · O circle · T text · C numbers · K crop</span>`;
+    const C = (T, O, N, D) => `<button type="button" class="kl-htool" data-tool="${T}" title="${O} (${D.toUpperCase()})" aria-label="${O}">${N}<span class="kl-hk">${D.toUpperCase()}</span></button>`, I = (T) => `<button type="button" class="kl-hcolor" data-color="${T}" style="background:${T}" title="${T}" aria-label="Colour ${T}"></button>`;
+    return C("pen", "Pen", J("pencil", { size: 15 }), "p") + C("line", "Line", vt('<line x1="5" y1="19" x2="19" y2="5"/>'), "l") + C("rect", "Rectangle", J("square", { size: 15 }), "r") + C("circle", "Circle", vt('<circle cx="12" cy="12" r="9"/>'), "o") + C("arrow", "Arrow", vt('<line x1="5" y1="19" x2="19" y2="5"/><polyline points="10 5 19 5 19 14"/>'), "a") + C("text", "Text", vt('<path d="M5 6h14M12 6v13M9 19h6"/>'), "t") + C("count", "Numbers", vt('<circle cx="12" cy="12" r="9"/><text x="12" y="16" text-anchor="middle" font-size="11" font-weight="700" fill="currentColor" stroke="none">1</text>'), "c") + C("crop", "Crop", vt('<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>'), "k") + '<span class="kl-hsep"></span>' + I("#ef4444") + I("#f97316") + I("#3b82f6") + I("#111827") + // Contextual text options — shown only while the Text tool is active (toggled in selectTool).
+    `<span class="kl-htextopts" id="kl-hero-textopts" hidden><span class="kl-hsep"></span><span class="kl-hlabel">Outline</span><button type="button" class="kl-hopt kl-on" data-outline="black" title="Black outline"><span class="kl-osq" style="background:#111"></span></button><button type="button" class="kl-hopt" data-outline="white" title="White outline"><span class="kl-osq" style="background:#fff;border:1px solid #999"></span></button><button type="button" class="kl-hopt" data-outline="none" title="No outline">None</button><span class="kl-hlabel">Size</span><button type="button" class="kl-hopt" data-size="18" title="Small">S</button><button type="button" class="kl-hopt kl-on" data-size="26" title="Medium">M</button><button type="button" class="kl-hopt" data-size="40" title="Large">L</button></span><span class="kl-hsep"></span><button type="button" class="kl-htbtn" id="kl-hero-undo" title="Undo (⌘Z)" aria-label="Undo">${vt('<path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/>', 14)}</button><button type="button" class="kl-htbtn" id="kl-hero-clear" title="Clear" aria-label="Clear">${J("trash-2", { size: 14 })}</button><span class="kl-hgrow"></span><span class="kl-hhint">P pen · L line · R rect · O circle · T text · C numbers · K crop</span>`;
   }
   function Zr() {
     k && (document.removeEventListener("keydown", k, { capture: !0 }), k = null);
   }
   function qi() {
-    const C = l.getElementById("klavity-hero-stage"), L = l.getElementById("klavity-hero-tools");
-    L && (L.innerHTML = ""), C && (C.innerHTML = `<div class="kl-hero-empty">${J("image", { size: 34 })}<span>Capture or upload a screenshot to start marking it up</span></div>`), Zr();
+    const C = l.getElementById("klavity-hero-stage"), I = l.getElementById("klavity-hero-tools");
+    I && (I.innerHTML = ""), C && (C.innerHTML = `<div class="kl-hero-empty">${J("image", { size: 34 })}<span>Capture or upload a screenshot to start marking it up</span></div>`), Zr();
   }
   function ml() {
     if (d.length === 0) {
@@ -1689,7 +1692,7 @@ function $c(e, t, r = {}) {
     }
     g >= d.length && (g = d.length - 1), g < 0 && (g = 0), yl(g);
   }
-  function gl(C, L, T, O, N) {
+  function gl(C, I, T, O, N) {
     const D = d[C];
     if (!D) return;
     const W = new Image();
@@ -1700,7 +1703,7 @@ function $c(e, t, r = {}) {
       V.width = Math.max(1, Math.round(O)), V.height = Math.max(1, Math.round(N));
       const F = V.getContext("2d");
       if (!F) return;
-      F.drawImage(W, L, T, O, N, 0, 0, V.width, V.height);
+      F.drawImage(W, I, T, O, N, 0, 0, V.width, V.height);
       let U;
       try {
         U = V.toDataURL("image/png");
@@ -1709,23 +1712,23 @@ function $c(e, t, r = {}) {
       }
       d[C] = U, o[C] = t.compressImage ? t.compressImage(U) : Promise.resolve(U);
       const B = ($ = u[C]) == null ? void 0 : $.shapes;
-      Array.isArray(B) && B.length ? u[C] = { w: V.width, h: V.height, shapes: Pc(B, -L, -T) } : delete u[C], z();
+      Array.isArray(B) && B.length ? u[C] = { w: V.width, h: V.height, shapes: Pc(B, -I, -T) } : delete u[C], z();
     }, W.src = D;
   }
   function yl(C) {
     var F, U, B;
-    const L = l.getElementById("klavity-hero-stage"), T = l.getElementById("klavity-hero-tools");
-    if (!L || !T) return;
+    const I = l.getElementById("klavity-hero-stage"), T = l.getElementById("klavity-hero-tools");
+    if (!I || !T) return;
     const O = d[C];
     if (!O) {
       qi();
       return;
     }
-    Zr(), L.innerHTML = "";
+    Zr(), I.innerHTML = "";
     const N = document.createElement("canvas");
     N.width = 1, N.height = 1, N.style.cssText = "display:block;max-width:100%;max-height:100%;object-fit:contain;cursor:crosshair;touch-action:none;background:#fff;border-radius:8px;box-shadow:0 12px 40px rgba(0,0,0,.5);";
     const D = new Ji(N, O), W = (F = u[C]) == null ? void 0 : F.shapes;
-    Array.isArray(W) && W.forEach(($) => D.shapes.push({ ...$ })), L.appendChild(N);
+    Array.isArray(W) && W.forEach(($) => D.shapes.push({ ...$ })), I.appendChild(N);
     const V = new Image();
     V.onload = () => {
       !document.body.contains(s) || g !== C || d[C] !== O || (N.width = V.naturalWidth || 1, N.height = V.naturalHeight || 1, D.redraw());
@@ -1737,10 +1740,10 @@ function $c(e, t, r = {}) {
         D.shapes.length ? u[C] = { w: N.width, h: N.height, shapes: D.shapes.map((_) => ({ ..._ })) } : delete u[C];
       }, tt = (_) => {
         $ = _, T.querySelectorAll("[data-tool]").forEach((q) => q.classList.toggle("kl-on", q.dataset.tool === _)), Ee && (Ee.hidden = _ !== "text");
-      }, vt = (_, q) => {
+      }, wt = (_, q) => {
         K = _, T.querySelectorAll("[data-color]").forEach((ue) => ue.classList.toggle("kl-on", ue === q));
       };
-      T.querySelectorAll("[data-tool]").forEach((_) => _.addEventListener("click", () => tt(_.dataset.tool))), T.querySelectorAll("[data-color]").forEach((_) => _.addEventListener("click", () => vt(_.dataset.color, _))), T.querySelectorAll("[data-outline]").forEach((_) => _.addEventListener("click", () => {
+      T.querySelectorAll("[data-tool]").forEach((_) => _.addEventListener("click", () => tt(_.dataset.tool))), T.querySelectorAll("[data-color]").forEach((_) => _.addEventListener("click", () => wt(_.dataset.color, _))), T.querySelectorAll("[data-outline]").forEach((_) => _.addEventListener("click", () => {
         Re = _.dataset.outline, T.querySelectorAll("[data-outline]").forEach((q) => q.classList.toggle("kl-on", q === _));
       })), T.querySelectorAll("[data-size]").forEach((_) => _.addEventListener("click", () => {
         Be = Number(_.dataset.size), T.querySelectorAll("[data-size]").forEach((q) => q.classList.toggle("kl-on", q === _));
@@ -1748,7 +1751,7 @@ function $c(e, t, r = {}) {
         D.undo(), be();
       }), (B = T.querySelector("#kl-hero-clear")) == null || B.addEventListener("click", () => {
         D.clearAll(), be();
-      }), tt($), vt(K, T.querySelector("[data-color]"));
+      }), tt($), wt(K, T.querySelector("[data-color]"));
       const He = (_) => {
         const q = N.getBoundingClientRect(), ue = Math.min(q.width / N.width, q.height / N.height) || 1, ct = N.width * ue, ut = N.height * ue, dt = (q.width - ct) / 2, cr = (q.height - ut) / 2;
         return { x: (_.clientX - q.left - dt) / ue, y: (_.clientY - q.top - cr) / ue };
@@ -1757,7 +1760,7 @@ function $c(e, t, r = {}) {
       N.addEventListener("pointerdown", (_) => {
         const q = He(_);
         if (De = q.x, ze = q.y, $ === "crop") {
-          nt = !0, G = { x: _.clientX, y: _.clientY }, Oe = document.createElement("div"), Oe.style.cssText = "position:absolute;border:2px dashed #6c63ff;background:rgba(108,99,255,.14);pointer-events:none;z-index:6;left:0;top:0;width:0;height:0;", L.appendChild(Oe);
+          nt = !0, G = { x: _.clientX, y: _.clientY }, Oe = document.createElement("div"), Oe.style.cssText = "position:absolute;border:2px dashed #6c63ff;background:rgba(108,99,255,.14);pointer-events:none;z-index:6;left:0;top:0;width:0;height:0;", I.appendChild(Oe);
           return;
         }
         if ($ === "text") {
@@ -1783,7 +1786,7 @@ function $c(e, t, r = {}) {
             return;
           }
           if ($ === "crop" && Oe) {
-            const q = L.getBoundingClientRect(), ue = Math.min(G.x, _.clientX), ct = Math.min(G.y, _.clientY), ut = Math.max(G.x, _.clientX), dt = Math.max(G.y, _.clientY);
+            const q = I.getBoundingClientRect(), ue = Math.min(G.x, _.clientX), ct = Math.min(G.y, _.clientY), ut = Math.max(G.x, _.clientX), dt = Math.max(G.y, _.clientY);
             Oe.style.left = ue - q.left + "px", Oe.style.top = ct - q.top + "px", Oe.style.width = ut - ue + "px", Oe.style.height = dt - ct + "px";
           }
         }
@@ -1818,11 +1821,11 @@ function $c(e, t, r = {}) {
     }
   }
   function bl(C) {
-    const L = d[C], T = new Image();
+    const I = d[C], T = new Image();
     T.onload = () => {
       const O = document.createElement("canvas");
       O.width = T.naturalWidth, O.height = T.naturalHeight;
-      const N = new Ji(O, L);
+      const N = new Ji(O, I);
       N.redraw();
       const D = document.createElement("div");
       D.style.cssText = "position:fixed;inset:0;background:#000;z-index:2147483647;display:flex;flex-direction:column;pointer-events:all;";
@@ -1861,7 +1864,7 @@ function $c(e, t, r = {}) {
       }
       const K = () => Math.max(1, V.clientWidth - 24) / O.width, Be = () => Math.min(Math.max(1, V.clientWidth - 24) / O.width, Math.max(1, V.clientHeight - 24) / O.height), Re = O.height / O.width > Math.max(1, V.clientHeight) / Math.max(1, V.clientWidth);
       $(Re ? K() : Be()), W.querySelector("#klavity-zoom-in").addEventListener("click", () => $(U * 1.25)), W.querySelector("#klavity-zoom-out").addEventListener("click", () => $(U / 1.25)), W.querySelector("#klavity-fit-width").addEventListener("click", () => $(K())), W.querySelector("#klavity-fit-page").addEventListener("click", () => $(Be()));
-      let Ee = "rect", be = "#ef4444", tt = !1, vt = [], He = 0, rt = 0;
+      let Ee = "rect", be = "#ef4444", tt = !1, wt = [], He = 0, rt = 0;
       function nt(G) {
         Ee = G, W.querySelectorAll("[data-tool]").forEach((re) => {
           const _ = re.dataset.tool === G;
@@ -1891,7 +1894,7 @@ function $c(e, t, r = {}) {
         document.removeEventListener("keydown", ze, { capture: !0 }), D.remove();
       }
       document.addEventListener("keydown", ze, { capture: !0 }), nt(Ee), W.querySelector("#klavity-save-ann").addEventListener("click", async () => {
-        N.shapes.length ? (u[C] = { w: O.width, h: O.height, shapes: N.shapes.map((G) => ({ ...G })) }, d[C] = L) : delete u[C], lt(), z();
+        N.shapes.length ? (u[C] = { w: O.width, h: O.height, shapes: N.shapes.map((G) => ({ ...G })) }, d[C] = I) : delete u[C], lt(), z();
       }), W.querySelector("#klavity-cancel-ann").addEventListener("click", () => lt());
       function Oe(G) {
         const re = O.getBoundingClientRect();
@@ -1900,7 +1903,7 @@ function $c(e, t, r = {}) {
       O.addEventListener("pointerdown", (G) => {
         tt = !0;
         const re = Oe(G);
-        if ({ x: He, y: rt } = re, Ee === "pen" && (vt = [re]), Ee === "text") {
+        if ({ x: He, y: rt } = re, Ee === "pen" && (wt = [re]), Ee === "text") {
           tt = !1;
           const _ = document.createElement("input");
           _.style.cssText = `position:fixed;left:${G.clientX}px;top:${G.clientY}px;background:transparent;border:1px dashed ${be};color:${be};font-size:16px;outline:none;z-index:9999999;min-width:80px;`, document.body.appendChild(_), _.focus(), _.addEventListener("blur", () => {
@@ -1910,16 +1913,16 @@ function $c(e, t, r = {}) {
           });
         }
       }), O.addEventListener("pointermove", (G) => {
-        tt && Ee === "pen" && vt.push(Oe(G));
+        tt && Ee === "pen" && wt.push(Oe(G));
       }), O.addEventListener("pointerup", (G) => {
         if (!tt) return;
         tt = !1;
         const re = Oe(G);
-        Ee === "pen" && vt.length > 1 ? N.addShape({ type: "pen", color: be, points: vt }) : Ee === "rect" ? N.addShape({ type: "rect", color: be, x: Math.min(He, re.x), y: Math.min(rt, re.y), w: Math.abs(re.x - He), h: Math.abs(re.y - rt) }) : Ee === "circle" ? N.addShape({ type: "circle", color: be, x: (He + re.x) / 2, y: (rt + re.y) / 2, rx: Math.abs(re.x - He) / 2, ry: Math.abs(re.y - rt) / 2 }) : Ee === "arrow" && N.addShape({ type: "arrow", color: be, x1: He, y1: rt, x2: re.x, y2: re.y });
+        Ee === "pen" && wt.length > 1 ? N.addShape({ type: "pen", color: be, points: wt }) : Ee === "rect" ? N.addShape({ type: "rect", color: be, x: Math.min(He, re.x), y: Math.min(rt, re.y), w: Math.abs(re.x - He), h: Math.abs(re.y - rt) }) : Ee === "circle" ? N.addShape({ type: "circle", color: be, x: (He + re.x) / 2, y: (rt + re.y) / 2, rx: Math.abs(re.x - He) / 2, ry: Math.abs(re.y - rt) / 2 }) : Ee === "arrow" && N.addShape({ type: "arrow", color: be, x1: He, y1: rt, x2: re.x, y2: re.y });
       });
-    }, T.src = L;
+    }, T.src = I;
   }
-  function vl(C, L, T) {
+  function vl(C, I, T) {
     const { copy: O, onLead: N } = T;
     y.innerHTML = "";
     const D = document.createElement("div");
@@ -1936,7 +1939,7 @@ function $c(e, t, r = {}) {
       U.textContent = "Filed as";
       const B = document.createElement("code");
       B.textContent = is(C), F.append(U, B);
-      const $ = ss(L);
+      const $ = ss(I);
       if ($) {
         const K = document.createElement("a");
         K.href = $, K.target = "_blank", K.rel = "noopener", K.textContent = "View in dashboard", F.appendChild(K);
@@ -2006,8 +2009,8 @@ function $c(e, t, r = {}) {
   }
   return t.autoCaptureOnOpen && setTimeout(() => {
     t.onCaptureFull().then((C) => {
-      const { dataUrl: L, quality: T } = Jt(C);
-      ye(L, T), Ze(Xt);
+      const { dataUrl: I, quality: T } = Jt(C);
+      ye(I, T), Ze(Xt);
     }).catch(() => {
     });
   }, 200), j;
@@ -4662,31 +4665,31 @@ function ed() {
   As = 1;
   const e = 39, t = 34, r = 92, n = 47, i = 10, s = 32, l = 12, d = 9, o = 13, p = 91, a = 93, h = 40, u = 41, c = 123, m = 125, f = 59, g = 42, k = 58, b = 64, w = /[\t\n\f\r "#'()/;[\\\]{}]/g, S = /[\t\n\f\r !"#'():;@[\\\]{}]|\/(?=\*)/g, v = /.[\r\n"'(/\\]/, y = /[\da-f]/i;
   return vn = function(M, A = {}) {
-    let R = M.css.valueOf(), j = A.ignoreErrors, z, E, Te, ye, ie, se, he, ve, le, Z, xe = R.length, I = 0, Pe = [], Se = [];
+    let R = M.css.valueOf(), j = A.ignoreErrors, z, E, Te, ye, ie, se, he, ve, le, Z, xe = R.length, L = 0, Pe = [], Se = [];
     function at() {
-      return I;
+      return L;
     }
     function oe(H) {
-      throw M.error("Unclosed " + H, I);
+      throw M.error("Unclosed " + H, L);
     }
     function ke() {
-      return Se.length === 0 && I >= xe;
+      return Se.length === 0 && L >= xe;
     }
     function Ce(H) {
       if (Se.length) return Se.pop();
-      if (I >= xe) return;
+      if (L >= xe) return;
       let fe = H ? H.ignoreUnclosed : !1;
-      switch (z = R.charCodeAt(I), z) {
+      switch (z = R.charCodeAt(L), z) {
         case i:
         case s:
         case d:
         case o:
         case l: {
-          E = I;
+          E = L;
           do
             E += 1, z = R.charCodeAt(E);
           while (z === s || z === i || z === d || z === o || z === l);
-          Z = ["space", R.slice(I, E)], I = E - 1;
+          Z = ["space", R.slice(L, E)], L = E - 1;
           break;
         }
         case p:
@@ -4697,64 +4700,64 @@ function ed() {
         case f:
         case u: {
           let Q = String.fromCharCode(z);
-          Z = [Q, Q, I];
+          Z = [Q, Q, L];
           break;
         }
         case h: {
-          if (ve = Pe.length ? Pe.pop()[1] : "", le = R.charCodeAt(I + 1), ve === "url" && le !== e && le !== t && le !== s && le !== i && le !== d && le !== l && le !== o) {
-            E = I;
+          if (ve = Pe.length ? Pe.pop()[1] : "", le = R.charCodeAt(L + 1), ve === "url" && le !== e && le !== t && le !== s && le !== i && le !== d && le !== l && le !== o) {
+            E = L;
             do {
               if (se = !1, E = R.indexOf(")", E + 1), E === -1)
                 if (j || fe) {
-                  E = I;
+                  E = L;
                   break;
                 } else
                   oe("bracket");
               for (he = E; R.charCodeAt(he - 1) === r; )
                 he -= 1, se = !se;
             } while (se);
-            Z = ["brackets", R.slice(I, E + 1), I, E], I = E;
+            Z = ["brackets", R.slice(L, E + 1), L, E], L = E;
           } else
-            E = R.indexOf(")", I + 1), ye = R.slice(I, E + 1), E === -1 || v.test(ye) ? Z = ["(", "(", I] : (Z = ["brackets", ye, I, E], I = E);
+            E = R.indexOf(")", L + 1), ye = R.slice(L, E + 1), E === -1 || v.test(ye) ? Z = ["(", "(", L] : (Z = ["brackets", ye, L, E], L = E);
           break;
         }
         case e:
         case t: {
-          Te = z === e ? "'" : '"', E = I;
+          Te = z === e ? "'" : '"', E = L;
           do {
             if (se = !1, E = R.indexOf(Te, E + 1), E === -1)
               if (j || fe) {
-                E = I + 1;
+                E = L + 1;
                 break;
               } else
                 oe("string");
             for (he = E; R.charCodeAt(he - 1) === r; )
               he -= 1, se = !se;
           } while (se);
-          Z = ["string", R.slice(I, E + 1), I, E], I = E;
+          Z = ["string", R.slice(L, E + 1), L, E], L = E;
           break;
         }
         case b: {
-          w.lastIndex = I + 1, w.test(R), w.lastIndex === 0 ? E = R.length - 1 : E = w.lastIndex - 2, Z = ["at-word", R.slice(I, E + 1), I, E], I = E;
+          w.lastIndex = L + 1, w.test(R), w.lastIndex === 0 ? E = R.length - 1 : E = w.lastIndex - 2, Z = ["at-word", R.slice(L, E + 1), L, E], L = E;
           break;
         }
         case r: {
-          for (E = I, ie = !0; R.charCodeAt(E + 1) === r; )
+          for (E = L, ie = !0; R.charCodeAt(E + 1) === r; )
             E += 1, ie = !ie;
           if (z = R.charCodeAt(E + 1), ie && z !== n && z !== s && z !== i && z !== d && z !== o && z !== l && (E += 1, y.test(R.charAt(E)))) {
             for (; y.test(R.charAt(E + 1)); )
               E += 1;
             R.charCodeAt(E + 1) === s && (E += 1);
           }
-          Z = ["word", R.slice(I, E + 1), I, E], I = E;
+          Z = ["word", R.slice(L, E + 1), L, E], L = E;
           break;
         }
         default: {
-          z === n && R.charCodeAt(I + 1) === g ? (E = R.indexOf("*/", I + 2) + 1, E === 0 && (j || fe ? E = R.length : oe("comment")), Z = ["comment", R.slice(I, E + 1), I, E], I = E) : (S.lastIndex = I + 1, S.test(R), S.lastIndex === 0 ? E = R.length - 1 : E = S.lastIndex - 2, Z = ["word", R.slice(I, E + 1), I, E], Pe.push(Z), I = E);
+          z === n && R.charCodeAt(L + 1) === g ? (E = R.indexOf("*/", L + 2) + 1, E === 0 && (j || fe ? E = R.length : oe("comment")), Z = ["comment", R.slice(L, E + 1), L, E], L = E) : (S.lastIndex = L + 1, S.test(R), S.lastIndex === 0 ? E = R.length - 1 : E = S.lastIndex - 2, Z = ["word", R.slice(L, E + 1), L, E], Pe.push(Z), L = E);
           break;
         }
       }
-      return I++, Z;
+      return L++, Z;
     }
     function je(H) {
       Se.push(H);
@@ -6958,31 +6961,31 @@ function md() {
   oo = 1;
   const e = 39, t = 34, r = 92, n = 47, i = 10, s = 32, l = 12, d = 9, o = 13, p = 91, a = 93, h = 40, u = 41, c = 123, m = 125, f = 59, g = 42, k = 58, b = 64, w = /[\t\n\f\r "#'()/;[\\\]{}]/g, S = /[\t\n\f\r !"#'():;@[\\\]{}]|\/(?=\*)/g, v = /.[\r\n"'(/\\]/, y = /[\da-f]/i;
   return Vn = function(M, A = {}) {
-    let R = M.css.valueOf(), j = A.ignoreErrors, z, E, Te, ye, ie, se, he, ve, le, Z, xe = R.length, I = 0, Pe = [], Se = [];
+    let R = M.css.valueOf(), j = A.ignoreErrors, z, E, Te, ye, ie, se, he, ve, le, Z, xe = R.length, L = 0, Pe = [], Se = [];
     function at() {
-      return I;
+      return L;
     }
     function oe(H) {
-      throw M.error("Unclosed " + H, I);
+      throw M.error("Unclosed " + H, L);
     }
     function ke() {
-      return Se.length === 0 && I >= xe;
+      return Se.length === 0 && L >= xe;
     }
     function Ce(H) {
       if (Se.length) return Se.pop();
-      if (I >= xe) return;
+      if (L >= xe) return;
       let fe = H ? H.ignoreUnclosed : !1;
-      switch (z = R.charCodeAt(I), z) {
+      switch (z = R.charCodeAt(L), z) {
         case i:
         case s:
         case d:
         case o:
         case l: {
-          E = I;
+          E = L;
           do
             E += 1, z = R.charCodeAt(E);
           while (z === s || z === i || z === d || z === o || z === l);
-          Z = ["space", R.slice(I, E)], I = E - 1;
+          Z = ["space", R.slice(L, E)], L = E - 1;
           break;
         }
         case p:
@@ -6993,64 +6996,64 @@ function md() {
         case f:
         case u: {
           let Q = String.fromCharCode(z);
-          Z = [Q, Q, I];
+          Z = [Q, Q, L];
           break;
         }
         case h: {
-          if (ve = Pe.length ? Pe.pop()[1] : "", le = R.charCodeAt(I + 1), ve === "url" && le !== e && le !== t && le !== s && le !== i && le !== d && le !== l && le !== o) {
-            E = I;
+          if (ve = Pe.length ? Pe.pop()[1] : "", le = R.charCodeAt(L + 1), ve === "url" && le !== e && le !== t && le !== s && le !== i && le !== d && le !== l && le !== o) {
+            E = L;
             do {
               if (se = !1, E = R.indexOf(")", E + 1), E === -1)
                 if (j || fe) {
-                  E = I;
+                  E = L;
                   break;
                 } else
                   oe("bracket");
               for (he = E; R.charCodeAt(he - 1) === r; )
                 he -= 1, se = !se;
             } while (se);
-            Z = ["brackets", R.slice(I, E + 1), I, E], I = E;
+            Z = ["brackets", R.slice(L, E + 1), L, E], L = E;
           } else
-            E = R.indexOf(")", I + 1), ye = R.slice(I, E + 1), E === -1 || v.test(ye) ? Z = ["(", "(", I] : (Z = ["brackets", ye, I, E], I = E);
+            E = R.indexOf(")", L + 1), ye = R.slice(L, E + 1), E === -1 || v.test(ye) ? Z = ["(", "(", L] : (Z = ["brackets", ye, L, E], L = E);
           break;
         }
         case e:
         case t: {
-          Te = z === e ? "'" : '"', E = I;
+          Te = z === e ? "'" : '"', E = L;
           do {
             if (se = !1, E = R.indexOf(Te, E + 1), E === -1)
               if (j || fe) {
-                E = I + 1;
+                E = L + 1;
                 break;
               } else
                 oe("string");
             for (he = E; R.charCodeAt(he - 1) === r; )
               he -= 1, se = !se;
           } while (se);
-          Z = ["string", R.slice(I, E + 1), I, E], I = E;
+          Z = ["string", R.slice(L, E + 1), L, E], L = E;
           break;
         }
         case b: {
-          w.lastIndex = I + 1, w.test(R), w.lastIndex === 0 ? E = R.length - 1 : E = w.lastIndex - 2, Z = ["at-word", R.slice(I, E + 1), I, E], I = E;
+          w.lastIndex = L + 1, w.test(R), w.lastIndex === 0 ? E = R.length - 1 : E = w.lastIndex - 2, Z = ["at-word", R.slice(L, E + 1), L, E], L = E;
           break;
         }
         case r: {
-          for (E = I, ie = !0; R.charCodeAt(E + 1) === r; )
+          for (E = L, ie = !0; R.charCodeAt(E + 1) === r; )
             E += 1, ie = !ie;
           if (z = R.charCodeAt(E + 1), ie && z !== n && z !== s && z !== i && z !== d && z !== o && z !== l && (E += 1, y.test(R.charAt(E)))) {
             for (; y.test(R.charAt(E + 1)); )
               E += 1;
             R.charCodeAt(E + 1) === s && (E += 1);
           }
-          Z = ["word", R.slice(I, E + 1), I, E], I = E;
+          Z = ["word", R.slice(L, E + 1), L, E], L = E;
           break;
         }
         default: {
-          z === n && R.charCodeAt(I + 1) === g ? (E = R.indexOf("*/", I + 2) + 1, E === 0 && (j || fe ? E = R.length : oe("comment")), Z = ["comment", R.slice(I, E + 1), I, E], I = E) : (S.lastIndex = I + 1, S.test(R), S.lastIndex === 0 ? E = R.length - 1 : E = S.lastIndex - 2, Z = ["word", R.slice(I, E + 1), I, E], Pe.push(Z), I = E);
+          z === n && R.charCodeAt(L + 1) === g ? (E = R.indexOf("*/", L + 2) + 1, E === 0 && (j || fe ? E = R.length : oe("comment")), Z = ["comment", R.slice(L, E + 1), L, E], L = E) : (S.lastIndex = L + 1, S.test(R), S.lastIndex === 0 ? E = R.length - 1 : E = S.lastIndex - 2, Z = ["word", R.slice(L, E + 1), L, E], Pe.push(Z), L = E);
           break;
         }
       }
-      return I++, Z;
+      return L++, Z;
     }
     function je(H) {
       Se.push(H);
@@ -9079,7 +9082,7 @@ function Nr(e) {
   }
   return r(e, t);
 }
-function pt(e, t, r) {
+function ht(e, t, r) {
   let n, i;
   return e ? (e.ownerNode ? n = t.getId(e.ownerNode) : i = r.getId(e), {
     styleId: i,
@@ -9094,7 +9097,7 @@ function Jd({ styleSheetRuleCb: e, mirror: t, stylesheetManager: r }, { win: n }
   n.CSSStyleSheet.prototype.insertRule = new Proxy(i, {
     apply: te(
       (a, h, u) => {
-        const [c, m] = u, { id: f, styleId: g } = pt(
+        const [c, m] = u, { id: f, styleId: g } = ht(
           h,
           t,
           r.styleMirror
@@ -9114,7 +9117,7 @@ function Jd({ styleSheetRuleCb: e, mirror: t, stylesheetManager: r }, { win: n }
   n.CSSStyleSheet.prototype.deleteRule = new Proxy(s, {
     apply: te(
       (a, h, u) => {
-        const [c] = u, { id: m, styleId: f } = pt(
+        const [c] = u, { id: m, styleId: f } = ht(
           h,
           t,
           r.styleMirror
@@ -9133,7 +9136,7 @@ function Jd({ styleSheetRuleCb: e, mirror: t, stylesheetManager: r }, { win: n }
   n.CSSStyleSheet.prototype.replace && (l = n.CSSStyleSheet.prototype.replace, n.CSSStyleSheet.prototype.replace = new Proxy(l, {
     apply: te(
       (a, h, u) => {
-        const [c] = u, { id: m, styleId: f } = pt(
+        const [c] = u, { id: m, styleId: f } = ht(
           h,
           t,
           r.styleMirror
@@ -9150,7 +9153,7 @@ function Jd({ styleSheetRuleCb: e, mirror: t, stylesheetManager: r }, { win: n }
   n.CSSStyleSheet.prototype.replaceSync && (d = n.CSSStyleSheet.prototype.replaceSync, n.CSSStyleSheet.prototype.replaceSync = new Proxy(d, {
     apply: te(
       (a, h, u) => {
-        const [c] = u, { id: m, styleId: f } = pt(
+        const [c] = u, { id: m, styleId: f } = ht(
           h,
           t,
           r.styleMirror
@@ -9177,7 +9180,7 @@ function Jd({ styleSheetRuleCb: e, mirror: t, stylesheetManager: r }, { win: n }
       {
         apply: te(
           (u, c, m) => {
-            const [f, g] = m, { id: k, styleId: b } = pt(
+            const [f, g] = m, { id: k, styleId: b } = ht(
               c.parentStyleSheet,
               t,
               r.styleMirror
@@ -9204,7 +9207,7 @@ function Jd({ styleSheetRuleCb: e, mirror: t, stylesheetManager: r }, { win: n }
       {
         apply: te(
           (u, c, m) => {
-            const [f] = m, { id: g, styleId: k } = pt(
+            const [f] = m, { id: g, styleId: k } = ht(
               c.parentStyleSheet,
               t,
               r.styleMirror
@@ -9280,7 +9283,7 @@ function Zd({
         const [h, u, c] = p;
         if (r.has(h))
           return s.apply(o, [h, u, c]);
-        const { id: m, styleId: f } = pt(
+        const { id: m, styleId: f } = ht(
           (a = o.parentRule) == null ? void 0 : a.parentStyleSheet,
           t,
           n.styleMirror
@@ -9307,7 +9310,7 @@ function Zd({
         const [h] = p;
         if (r.has(h))
           return l.apply(o, [h]);
-        const { id: u, styleId: c } = pt(
+        const { id: u, styleId: c } = ht(
           (a = o.parentRule) == null ? void 0 : a.parentStyleSheet,
           t,
           n.styleMirror
@@ -10392,7 +10395,7 @@ try {
   console.debug("Unable to override Array.from", e);
 }
 const Ve = Su();
-function gt(e = {}) {
+function yt(e = {}) {
   const {
     emit: t,
     checkoutEveryNms: r,
@@ -10491,7 +10494,7 @@ function gt(e = {}) {
       (me || Y) && Er(!0);
     }
   };
-  const I = (H) => {
+  const L = (H) => {
     ge({
       type: ne.IncrementalSnapshot,
       data: {
@@ -10518,11 +10521,11 @@ function gt(e = {}) {
       ...H
     }
   }), oe = new mp({
-    mutationCb: I,
+    mutationCb: L,
     adoptedStyleSheetCb: at
   }), ke = new sp({
     mirror: Ve,
-    mutationCb: I,
+    mutationCb: L,
     stylesheetManager: oe,
     recordCrossOriginIframes: x,
     wrappedEmit: ge
@@ -10545,7 +10548,7 @@ function gt(e = {}) {
     dataURLOptions: w
   });
   const je = new op({
-    mutationCb: I,
+    mutationCb: L,
     scrollCb: Pe,
     bypassOptions: {
       blockClass: i,
@@ -10629,7 +10632,7 @@ function gt(e = {}) {
       var me;
       return te(ip)(
         {
-          mutationCb: I,
+          mutationCb: L,
           mousemoveCb: (Y, Ze) => ge({
             type: ne.IncrementalSnapshot,
             data: {
@@ -10789,7 +10792,7 @@ function gt(e = {}) {
     console.warn(H);
   }
 }
-gt.addCustomEvent = (e, t) => {
+yt.addCustomEvent = (e, t) => {
   if (!$r)
     throw new Error("please add custom event after start recording");
   ge({
@@ -10800,20 +10803,20 @@ gt.addCustomEvent = (e, t) => {
     }
   });
 };
-gt.freezePage = () => {
+yt.freezePage = () => {
   Ct.forEach((e) => e.freeze());
 };
-gt.takeFullSnapshot = (e) => {
+yt.takeFullSnapshot = (e) => {
   if (!$r)
     throw new Error("please take full snapshot after start recording");
   Er(e);
 };
-gt.mirror = Ve;
+yt.mirror = Ve;
 var To;
 (function(e) {
   e[e.NotStarted = 0] = "NotStarted", e[e.Running = 1] = "Running", e[e.Stopped = 2] = "Stopped";
 })(To || (To = {}));
-const { addCustomEvent: sh } = gt, { freezePage: oh } = gt, { takeFullSnapshot: ah } = gt, li = 2, yp = 4;
+const { addCustomEvent: sh } = yt, { freezePage: oh } = yt, { takeFullSnapshot: ah } = yt, li = 2, yp = 4;
 class bp {
   constructor(t) {
     ur(this, "events", []);
@@ -10885,7 +10888,7 @@ function vp(e, t = {}) {
 const Ha = "klav-sims-live", Va = "klav-sims-overlay", Po = "klav-sims-ext-css";
 let Ue = null, St = null, $e = null, qt = null;
 const _r = /* @__PURE__ */ new Map(), We = /* @__PURE__ */ new Map();
-let Ga = 0, et = !1, Et = null, jt = null, lr = !1, Ie = null, Zt = null, ht = null, ft = null, Ye = null, Mt = null, Ge = null, Qe = null, Ke = null, Wt = null;
+let Ga = 0, et = !1, Et = null, jt = null, lr = !1, Ie = null, Zt = null, ft = null, mt = null, Ye = null, Mt = null, Ge = null, Qe = null, Ke = null, Wt = null;
 const Dr = /* @__PURE__ */ new Set();
 function wp(e) {
   return String(e || "").trim().toLowerCase().replace(/\s+/g, " ");
@@ -11376,7 +11379,7 @@ function Dp(e, t = [], r = {}) {
   const s = document.createElement("div");
   s.className = "ksl-root", n.appendChild(s), Ke = document.createElement("div"), Ke.className = "ksl-sr", Ke.id = "ksl-announcer", Ke.setAttribute("aria-live", "polite"), Ke.setAttribute("aria-atomic", "true"), s.appendChild(Ke), Ie = document.createElement("button"), Ie.type = "button", Ie.className = "ksl-launcher", Ie.setAttribute("aria-label", "Open Sims feedback panel"), Ie.addEventListener("click", () => zp());
   const l = document.createElement("span");
-  l.className = "ksl-pill", Zt = document.createElement("span"), Zt.className = "ksl-pill-avatars", ht = document.createElement("span"), ht.className = "ksl-pill-txt", l.append(Zt, ht), ft = document.createElement("span"), ft.className = "ksl-pill-badge", ft.hidden = !0, Ie.append(l, ft), s.appendChild(Ie), i.slice(0, 3).forEach((h) => {
+  l.className = "ksl-pill", Zt = document.createElement("span"), Zt.className = "ksl-pill-avatars", ft = document.createElement("span"), ft.className = "ksl-pill-txt", l.append(Zt, ft), mt = document.createElement("span"), mt.className = "ksl-pill-badge", mt.hidden = !0, Ie.append(l, mt), s.appendChild(Ie), i.slice(0, 3).forEach((h) => {
     const u = _r.get(h.id);
     u && Zt.appendChild(tl(u, 26));
   }), Ye = document.createElement("section"), Ye.className = "ksl-panel", Ye.setAttribute("aria-label", "Sims feedback"), Ye.setAttribute("role", "dialog");
@@ -11406,7 +11409,7 @@ function nl() {
 }
 function Kt() {
   const e = nl();
-  ht && (lr && e.total === 0 ? ht.innerHTML = "Your Sims are reviewing…" : e.total === 0 ? ht.innerHTML = "Sims are watching this page" : ht.innerHTML = `<b>${e.total}</b> finding${e.total === 1 ? "" : "s"} from your Sims`), ft && (ft.hidden = e.high === 0, ft.textContent = `${e.high} high`), et && il(e);
+  ft && (lr && e.total === 0 ? ft.innerHTML = "Your Sims are reviewing…" : e.total === 0 ? ft.innerHTML = "Sims are watching this page" : ft.innerHTML = `<b>${e.total}</b> finding${e.total === 1 ? "" : "s"} from your Sims`), mt && (mt.hidden = e.high === 0, mt.textContent = `${e.high} high`), et && il(e);
 }
 function il(e) {
   Mt && (e.total === 0 ? Mt.innerHTML = lr ? "Your Sims are reviewing this page…" : "No findings yet — your Sims are watching." : Mt.innerHTML = `<b>${e.total}</b> finding${e.total === 1 ? "" : "s"} from <b>${e.sims}</b> Sim${e.sims === 1 ? "" : "s"}` + (e.high > 0 ? ` · <span class="ksl-hi">${e.high} high</span>` : "")), Fp();
@@ -11596,7 +11599,7 @@ function Gp(e, t, r) {
   }
 }
 function gi() {
-  mi(), We.clear(), Ga = 0, _r.clear(), Dr.clear(), et = !1, Et = null, jt = null, lr = !1, qt == null || qt.abort(), qt = null, Ie = null, Zt = null, ht = null, ft = null, Ye = null, Mt = null, Ge = null, Qe = null, Ke = null, $e == null || $e.remove(), $e = null, Ue == null || Ue.remove(), Ue = null, St = null, Ka(!1);
+  mi(), We.clear(), Ga = 0, _r.clear(), Dr.clear(), et = !1, Et = null, jt = null, lr = !1, qt == null || qt.abort(), qt = null, Ie = null, Zt = null, ft = null, mt = null, Ye = null, Mt = null, Ge = null, Qe = null, Ke = null, $e == null || $e.remove(), $e = null, Ue == null || Ue.remove(), Ue = null, St = null, Ka(!1);
 }
 const Mr = {
   deploy: Dp,
@@ -11831,7 +11834,7 @@ function hl(e = {}) {
     plane: { ..._t.plane, ...e.plane }
   }, rh(), nh(), !Vt)
     try {
-      Vt = vp(gt);
+      Vt = vp(yt);
     } catch {
       Vt = null;
     }
