@@ -13,5 +13,6 @@ if git show-ref --quiet "refs/heads/feat/$slug"; then
 else
   git worktree add -b "feat/$slug" "$wt" origin/master
 fi
+(cd "$wt/prototype" && bun install --frozen-lockfile) 2>&1 | tail -3
 echo "✅ Worktree ready: $(cd "$wt" && pwd)  (branch feat/$slug)"
 echo "   Work + commit on this branch only. The orchestrator merges & deploys automatically."
