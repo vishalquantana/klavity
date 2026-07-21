@@ -15,33 +15,23 @@
 // The PLAN_QUOTAS source-of-truth lives in lib/billing.ts (already shipped). This file maps
 // the billing quota keys onto the UsageMeterMetric names so the two stay in sync.
 
-import { normalizePlan, PLAN_QUOTAS, FREE_GRANDFATHERED_AUTOSIM_RUNS_MONTHLY } from "./billing"
-import { accountPlan, accountIdForProject, getAccountUsageMap, countAccountAutosimFlows } from "./db"
+import { normalizePlan, PLAN_QUOTAS, METRIC_TO_QUOTA_KEY, type QuotaMetric } from "./billing"
+import { accountPlan, accountIdForProject, getAccountUsageMap } from "./db"
 
 // ─── Supported metered metrics ───────────────────────────────────────────────
-
-// UsageMeterMetric is defined in db.ts; re-declare here for the narrowed type so callers can
-// import just from this module.
-export type QuotaMetric = "sim_review" | "autosim_walk"
-
-// ─── Metric → plan quota key mapping ─────────────────────────────────────────
+//
+// Both the metric union and the metric → PLAN_QUOTAS key mapping live in lib/billing.ts alongside
+// PLAN_QUOTAS itself (single source of truth), so the customer-facing meters (buildUsageMeters)
+// and this enforcement path can never read different limits. Re-exported here for callers that
+// only import from this module.
 //
 // PLAN_QUOTAS shape (from billing.ts):
 //   simReactionsMonthly — monthly cap for "sim_review" events
-//   autosimRunsMonthly  — monthly cap for "autosim_walk" events (KLAVITYKLA-359)
+//   autosimFlows        — monthly cap for "autosim_walk" events
 //
-// KLAVITYKLA-359: autosim_walk used to be compared against `autosimFlows`, which is the
-// CONFIGURED-FLOW allowance (a stock), not a monthly run cap (a flow) — so a Free account would
-// have "used up" its quota after a single walk. It now points at the dedicated monthly run cap.
-// This mapping change is strictly MORE permissive at every tier (10 ≥ 1, 150 ≥ 5, 600 ≥ 20,
-// 1500 ≥ 50) and the whole path is still dark behind KLAV_ENFORCE_QUOTA, so nothing new can block.
-//
-// null means unlimited (scale/partner — also handled via planIsUnlimited branch below).
-
-const METRIC_TO_QUOTA_KEY: Record<QuotaMetric, keyof typeof PLAN_QUOTAS[keyof typeof PLAN_QUOTAS]> = {
-  sim_review:    "simReactionsMonthly",
-  autosim_walk:  "autosimRunsMonthly",
-}
+// null means unlimited (scale/partner — also handled via the limit === null branch below).
+export type { QuotaMetric }
+export { METRIC_TO_QUOTA_KEY }
 
 // ─── Result type ─────────────────────────────────────────────────────────────
 
@@ -100,22 +90,8 @@ export async function checkQuota(
     const plan = normalizePlan(rawPlan)
     const quotas = PLAN_QUOTAS[plan]
     const quotaKey = METRIC_TO_QUOTA_KEY[metric]
-    let limit: number | null = (quotas as any)[quotaKey] ?? null
+    const limit: number | null = (quotas as any)[quotaKey] ?? null
     const usage = usageMap[metric] ?? 0
-
-    // ── KLAVITYKLA-365 grandfathering ────────────────────────────────────────
-    // AutoSim was removed from Free (autosimFlows = 0, autosimRunsMonthly = 0). A zero run cap
-    // would degrade EVERY walk for a Free account that already had a flow configured before the
-    // change — exactly the thing we promised not to break.
-    //
-    // Because creating a flow on Free is now refused (autosimFlows = 0), a Free account that still
-    // HAS a configured non-demo flow can only have created it before the change. That is the
-    // grandfathering proof: no migration, no flag column. Such accounts fall back to the previous
-    // Free monthly run allowance so their existing flow and its scheduled runs keep executing.
-    if (metric === "autosim_walk" && limit === 0) {
-      const existingFlows = await countAccountAutosimFlows(accountId)
-      if (existingFlows > 0) limit = FREE_GRANDFATHERED_AUTOSIM_RUNS_MONTHLY
-    }
 
     // ── Unlimited plan (scale/partner) → always allow ────────────────────────
     if (limit === null) {
