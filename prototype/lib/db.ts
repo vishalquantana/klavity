@@ -2265,7 +2265,7 @@ export async function updateAccountBillingState(
             billing_interval=?,
             billing_current_period_end=?,
             billing_cancel_at_period_end=?,
-            billing_updated_at=?
+            billing_updated_at=CASE WHEN (billing_status IS NOT ?) THEN ? ELSE billing_updated_at END
           WHERE id=?`,
     args: [
       String(state.plan || "free"),
@@ -2275,13 +2275,14 @@ export async function updateAccountBillingState(
       state.billingInterval ?? null,
       state.billingCurrentPeriodEnd ?? null,
       state.billingCancelAtPeriodEnd ? 1 : 0,
+      state.billingStatus ?? null,
       now,
       accountId,
     ],
   })
   await db!.execute({
-    sql: "UPDATE projects SET billing_plan=?, billing_status=?, billing_updated_at=? WHERE account_id=?",
-    args: [String(state.plan || "free"), state.billingStatus ?? null, now, accountId],
+    sql: "UPDATE projects SET billing_plan=?, billing_status=?, billing_updated_at=CASE WHEN (billing_status IS NOT ?) THEN ? ELSE billing_updated_at END WHERE account_id=?",
+    args: [String(state.plan || "free"), state.billingStatus ?? null, state.billingStatus ?? null, now, accountId],
   })
 }
 
