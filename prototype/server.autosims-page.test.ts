@@ -117,10 +117,11 @@ test("trails.html: Trails card heading has id=trailsCardHead for zero-trail gati
 
 // ── Route tests ───────────────────────────────────────────────────────────────
 
-test("GET /autosims serves the AutoSims page for a session; anon redirects to /login", async () => {
+// KLA-374: /autosims now 301-redirects to /dashboard?view=autosims for authed users.
+test("GET /autosims redirects to /dashboard?view=autosims for a session; anon redirects to /login", async () => {
   const authed = await fetch(`${base}/autosims`, { headers: { cookie: adminCookie }, redirect: "manual" })
-  expect(authed.status).toBe(200)
-  expect(await authed.text()).toContain("AutoSims")
+  expect(authed.status).toBe(301)
+  expect(authed.headers.get("location")).toBe("/dashboard?view=autosims")
   const anon = await fetch(`${base}/autosims`, { redirect: "manual" })
   expect(anon.status).toBe(302)
 })
