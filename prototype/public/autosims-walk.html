@@ -353,7 +353,7 @@ function playChapter(i){
     var Replayer=window.rrweb && window.rrweb.Replayer
     if(!Replayer) throw new Error("rrweb.Replayer not available")
     var host=$("playerHost")
-    var replayer=new Replayer(events,{root:host,skipInactive:true,showWarning:false,showDebug:false,mouseTail:true})
+    var replayer=new Replayer(events,{root:host,skipInactive:true,showWarning:false,showDebug:false,mouseTail:true,UNSAFE_replayCanvas:true})
     replayState.player=replayer
     replayer.play()
     $("rnote").textContent="Chapter "+(i+1)+" of "+replayState.segments.length+" \xb7 "+(seg.url||"")

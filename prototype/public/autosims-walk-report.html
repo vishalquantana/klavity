@@ -157,7 +157,7 @@ function playChapter(i){
     var Replayer=window.rrweb&&window.rrweb.Replayer;if(!Replayer)throw new Error("rrweb unavailable")
     var events=(seg.events||[]).slice();if(events.length<2)throw new Error("too few replay events")
     var host=$("playerHost")
-    state.player=new Replayer(events,{root:host,skipInactive:true,showWarning:false,showDebug:false,mouseTail:true})
+    state.player=new Replayer(events,{root:host,skipInactive:true,showWarning:false,showDebug:false,mouseTail:true,UNSAFE_replayCanvas:true})
     state.player.play();$("replayNote").textContent="Chapter "+(i+1)+" of "+state.segments.length+" \xb7 "+(seg.url||"")
     attachPlayerControls(state.player,host)
   }catch(e){$("replayNote").textContent="Could not play this chapter."}
