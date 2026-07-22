@@ -208,5 +208,12 @@
     "excerpt": "AI QA automation is strongest at mechanical work — generating tests, repairing selectors, triaging reports — and weakest at deciding what to test.",
     "category": "Insights",
     "date": "2026-07-21"
+  },
+  {
+    "slug": "how-to-reduce-bug-reopen-rate",
+    "title": "How to Reduce Your Bug Reopen Rate and Why It Happens",
+    "excerpt": "A high bug reopen rate means fixes aren't sticking. Here's what causes reopens, how to calculate the rate, and the workflow changes that stop them.",
+    "category": "Insights",
+    "date": "2026-07-22"
   }
 ]
