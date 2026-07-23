@@ -184,3 +184,43 @@ test("Run-a-review-now offers a 'View all in Sims' landing so results are visibl
   const region = HTML.slice(i, i + 300)
   expect(region).toContain('setView("sims")')
 })
+
+// =============================================================================
+// KLAVITYKLA-388: site-mode Add-all must funnel into "Run a review now"
+// =============================================================================
+
+test("resetRunNow is DEFINED (guard against the merge-eaten definition recurring)", () => {
+  // showSuccessPanel() calls resetRunNow(); if that definition is dropped by a theirs-wins merge
+  // (as it had been), the panel throws a ReferenceError at runtime and never renders — the exact
+  // "Add all N Sims" dead-end. This asserts the definition and its call site both exist.
+  expect(HTML).toContain("function resetRunNow(")
+  expect(HTML).toContain("resetRunNow();")
+})
+
+test("success panel prefills the run-now URL with the site the user JUST used (not only projSiteUrl)", () => {
+  // genSite() stashes the entered URL in lastSiteUrl; showSuccessPanel() must prefer it so the
+  // From-your-site Add/Add-all runs the first review on that exact site even when the project has
+  // no configured site_url yet (first-Sim onboarding).
+  expect(HTML).toContain("lastSiteUrl=v;")
+  const i = HTML.indexOf("function showSuccessPanel(")
+  const region = HTML.slice(i, i + 1600)
+  expect(region).toContain("lastSiteUrl||projSiteUrl()")
+  // The heading offers to run the review on the recognised site.
+  expect(region).toContain("run their first review on ")
+})
+
+test("running the review re-renders the checklist so step 3 (clSeeReact) ticks without a refresh", () => {
+  const i = HTML.indexOf("async function runReviewNow(")
+  const region = HTML.slice(i, i + 2800)
+  // On a persisted review, mark the reaction flag and re-render the checklist.
+  expect(region).toContain("state.hasSimReaction=true")
+  expect(region).toContain("window.renderChecklist()")
+})
+
+test("success panel offers a 'Go to dashboard' secondary exit", () => {
+  expect(HTML).toContain('id="smSuccessDash"')
+  const i = HTML.indexOf('$("smSuccessDash").onclick')
+  expect(i).toBeGreaterThan(-1)
+  const region = HTML.slice(i, i + 200)
+  expect(region).toContain('setView("overview")')
+})
