@@ -28,6 +28,8 @@ export interface Trajectory {
   createdBy?: string
   steps: TrajectoryStep[]
   objectiveVerified?: boolean | null
+  /** KLAVITYKLA-149: the Sim persona picked as the Trail's judge/reviewer in the authoring wizard. */
+  judgePersonaId?: string | null
 }
 
 export interface CrystallizeResult {
@@ -90,6 +92,7 @@ export async function crystallize(projectId: string, traj: Trajectory): Promise<
     authorKind: traj.authorKind ?? "llm",
     createdBy: traj.createdBy,
     objectiveVerified: traj.objectiveVerified,
+    judgePersonaId: traj.judgePersonaId ?? null,
   })
 
   const stepIds: string[] = []

@@ -6081,6 +6081,18 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           catch (e: any) { return json({ error: e?.message || "Invalid viewport" }, 400) }
         }
         const testAccount = body.test_account ? String(body.test_account) : undefined
+        // KLAVITYKLA-149: the wizard's "Who reviews it?" step sends the picked Sim as `sim_name`
+        // (the persona's name, or id as a fallback). Resolve it to a persona id here and thread it
+        // through so it lands on the crystallized Trail as its judge persona — previously this field
+        // was silently dropped, making a whole wizard step theater. Empty/absent => default reviewer.
+        const simName = body.sim_name ? String(body.sim_name).trim() : ""
+        let judgePersonaId: string | null = null
+        if (simName) {
+          const personas = await listPersonas(projectId)
+          const match = personas.find((p) => p.name === simName) || personas.find((p) => p.id === simName)
+          if (!match) return json({ error: `unknown reviewer Sim "${simName}"` }, 400)
+          judgePersonaId = match.id
+        }
         if (!name) return json({ error: "name required" }, 400)
         if (objective.length < 10 || objective.length > 2000) return json({ error: "objective must be 10-2000 chars" }, 400)
         if (!/^https?:\/\//.test(baseUrl) || baseUrl.length > 500) return json({ error: "base_url must be an http(s) URL" }, 400)
@@ -6097,7 +6109,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           }
         }
         try {
-          const { sessionId } = await runAuthorNow(projectId, { name, objective, baseUrl, viewport, testAccountName: testAccount, createdBy: meT })
+          const { sessionId } = await runAuthorNow(projectId, { name, objective, baseUrl, viewport, testAccountName: testAccount, createdBy: meT, judgePersonaId })
           return json({ sessionId }, 202)
         } catch (e) {
           if (e instanceof WalkBusyError) return json({ error: "An AutoSim is already running — try again shortly." }, 409)
@@ -6144,6 +6156,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             const { sessionId } = await runAuthorNow(projectId, {
               name: prior.name, objective: prior.objective, baseUrl: prior.baseUrl,
               viewport: null, testAccountName: prior.testAccount ?? undefined, createdBy: meT,
+              judgePersonaId: prior.judgePersonaId ?? null,
             }, { resumeSessionId: priorId })
             return json({ sessionId }, 202)
           } catch (e) {

@@ -94,7 +94,7 @@ function analysisCheckpointDescription(objective: string): string {
     : "Analysis objective completed"
 }
 
-export interface AuthorRequest { name: string; objective: string; baseUrl: string; viewport?: TrailViewport | string | null; testAccountName?: string; createdBy?: string }
+export interface AuthorRequest { name: string; objective: string; baseUrl: string; viewport?: TrailViewport | string | null; testAccountName?: string; createdBy?: string; /** KLAVITYKLA-149: id of the Sim persona picked as the Trail's judge/reviewer in the wizard's "Who reviews it?" step. */ judgePersonaId?: string | null }
 export interface AuthorStepLog { idx: number; op: string; selector: string | null; value: string | null; url: string; rationale: string; ok: boolean; error?: string; screenshotKey?: string; krefSnapshot?: string }
 export interface AuthorOutcome {
   status: "crystallized" | "stalled" | "failed" | "needs_auth"
@@ -260,6 +260,7 @@ export async function authorTrail(
           name: req.name, intent: req.objective, baseUrl: req.baseUrl,
           viewport: normalizeTrailViewport(req.viewport), authorKind: "llm",
           createdBy: req.createdBy, steps: traj,
+          judgePersonaId: req.judgePersonaId ?? null,
         }
         const r = await crystallize(projectId, partialTrajectory)
         await setTrailStatus(projectId, r.trailId, "draft")
@@ -625,7 +626,7 @@ export async function authorTrail(
     }
     await closeHandle()
     if (!traj.length) return { status: "stalled", trailId: null, verificationRunId: null, verificationVerdict: null, steps: log, stallReason: "model finished without performing any step", llmCalls, costUsd, objectiveVerified }
-    const trajectory: Trajectory = { name: req.name, intent: req.objective, baseUrl: req.baseUrl, viewport, authorKind: "llm", createdBy: req.createdBy, steps: traj, objectiveVerified }
+    const trajectory: Trajectory = { name: req.name, intent: req.objective, baseUrl: req.baseUrl, viewport, authorKind: "llm", createdBy: req.createdBy, steps: traj, objectiveVerified, judgePersonaId: req.judgePersonaId ?? null }
     const { trailId } = await crystallize(projectId, trajectory)
     await setTrailStatus(projectId, trailId, "draft")
     // Verification Walk: zero-LLM rehearsal; draft status suppresses findings (Task 4), but pass
@@ -672,15 +673,17 @@ export interface AuthorSession {
   /** KLA-57: latest drive-state checkpoint (traj+history+cost+url). Null until first step. */
   checkpoint: AuthorCheckpoint | null
   objectiveVerified: boolean | null
+  /** KLAVITYKLA-149: wizard-picked judge/reviewer Sim persona id (carried onto the crystallized Trail). */
+  judgePersonaId: string | null
 }
 
 export async function createAuthorSession(projectId: string, req: AuthorRequest, resumedFrom?: string | null, idOverride?: string): Promise<string> {
   const id = idOverride ?? "auth_" + crypto.randomUUID()
   const now = Date.now()
   await db!.execute({
-    sql: `INSERT INTO author_sessions (id,project_id,name,objective,base_url,test_account,status,created_by,resumed_from,created_at,updated_at,objective_verified)
-          VALUES (?,?,?,?,?,?,'running',?,?,?,?,0)`,
-    args: [id, projectId, req.name, req.objective, req.baseUrl, req.testAccountName ?? null, req.createdBy ?? null, resumedFrom ?? null, now, now],
+    sql: `INSERT INTO author_sessions (id,project_id,name,objective,base_url,test_account,status,created_by,resumed_from,created_at,updated_at,objective_verified,judge_persona_id)
+          VALUES (?,?,?,?,?,?,'running',?,?,?,?,0,?)`,
+    args: [id, projectId, req.name, req.objective, req.baseUrl, req.testAccountName ?? null, req.createdBy ?? null, resumedFrom ?? null, now, now, req.judgePersonaId ?? null],
   })
   return id
 }
@@ -721,6 +724,7 @@ function rowToAuthorSession(row: any): AuthorSession {
     resumedBy: row.resumed_by ? String(row.resumed_by) : null,
     checkpoint,
     objectiveVerified: row.objective_verified == null ? null : !!row.objective_verified,
+    judgePersonaId: row.judge_persona_id ? String(row.judge_persona_id) : null,
   }
 }
 
@@ -967,6 +971,7 @@ export async function autoResumeNeedsAuthSessions(
         viewport: null,
         testAccountName: prior.testAccount ?? undefined,
         createdBy: prior.createdBy ?? undefined,
+        judgePersonaId: prior.judgePersonaId ?? null,
       }, { resumeSessionId: prior.id })
       result.resumed.push({ fromSessionId: prior.id, sessionId })
     } catch (e: any) {
