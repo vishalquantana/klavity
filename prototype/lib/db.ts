@@ -5724,12 +5724,14 @@ export async function createSsoState(
 export async function consumeSsoState(
   state: string,
 ): Promise<{ accountId: string; nonce: string } | null> {
+  // Atomic consume: DELETE ... RETURNING burns the row and hands back its columns in a single
+  // statement, so two concurrent callers for the same state can never both see it — SQLite serializes
+  // the writes and exactly one DELETE matches a row. (Prior SELECT-then-DELETE had a race window.)
   const r = await db!.execute({
-    sql: "SELECT account_id, nonce, expires_at FROM sso_states WHERE state=?",
+    sql: "DELETE FROM sso_states WHERE state=? RETURNING account_id, nonce, expires_at",
     args: [state],
   })
   if (!r.rows.length) return null
-  await db!.execute({ sql: "DELETE FROM sso_states WHERE state=?", args: [state] })
   const row = r.rows[0] as any
   if (Number(row.expires_at) < Date.now()) return null
   return { accountId: String(row.account_id), nonce: String(row.nonce) }
