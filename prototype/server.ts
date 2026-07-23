@@ -7,7 +7,7 @@ import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
 import { logAudit, queryAuditLog, auditRowsToCsv, type AuditAction } from "./lib/audit-log"
 import { buildMemberExport, membersToCsv, MEMBER_EXPORT_FIELDS } from "./lib/member-export"
 import { isMaskingEnabled, maskMemberExportRow, maskDeep, maskWalkReportData } from "./lib/data-masking"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, publicReportStatus, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, publicReportStatus, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, EXPORT_POLICIES, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows } from "./lib/db"
 import { countFoundingAccounts } from "./lib/db"
 // KLAVITYKLA-366 — the Founding Ten spot counter. One cached source of truth behind the public
 // pricing band, the in-app ribbon, and the server-side refusal of an 11th founding checkout.
@@ -1822,6 +1822,50 @@ function autoCopyFeedback(feedbackId: string, projectId: string, actor: string |
       console.error("auto-copy hook (non-fatal):", err?.message || err)
     }
   })().catch((err: any) => console.error("auto-copy hook outer (non-fatal):", err?.message || err))
+}
+
+// ── KLAVITYKLA-287 (JTBD 5.8): shared single-connector manual export ──────────────────────────────
+// Factored out of the POST /api/feedback/:id/export handler so both the direct-export path AND the
+// admin approval of a member's export request run byte-identical export logic (decrypt → createIssue
+// → record ticket_export row → heartbeat). Returns the client-safe export result plus the row id
+// (so an approval can link the export_requests row to the ticket_exports row). Never throws.
+async function runManualExport(
+  fbRow: any, connector: any, actor: string,
+): Promise<{ exportResult: { type: string; externalKey: string | null; externalUrl: string | null; status: "ok" | "failed"; error: string | null }; exportId: string | null }> {
+  const adapter = getConnector(connector.type)
+  if (!adapter) {
+    return { exportResult: { type: connector.type, externalKey: null, externalUrl: null, status: "failed", error: "Unknown connector type." }, exportId: null }
+  }
+  const decryptedConfig: Record<string, string> = { ...connector.config }
+  for (const f of adapter.fields) {
+    if (f.secret && connector.config[f.key]) {
+      try { decryptedConfig[f.key] = await decryptSecret(connector.config[f.key]) }
+      catch { decryptedConfig[f.key] = "" }
+    }
+  }
+  const exportSimName = await resolveSimName(fbRow.projectId, fbRow.simId)
+  const payload = await feedbackToTicketPayload(fbRow, { id: fbRow.projectId }, exportSimName)
+  try {
+    const result = await adapter.createIssue(payload, decryptedConfig)
+    const exportId = await addTicketExport({
+      feedbackId: fbRow.id, projectId: fbRow.projectId, connectorId: connector.id,
+      type: connector.type, externalKey: result.externalKey, externalUrl: result.externalUrl,
+      status: "ok", error: result.attachmentWarning ?? null, createdBy: actor,
+    })
+    touchConnectorHeartbeat(connector.id, { kind: "outbound", success: true })
+      .catch((e: any) => console.warn("heartbeat record failed (non-fatal):", e?.message || e))
+    return { exportResult: { type: connector.type, externalKey: result.externalKey, externalUrl: result.externalUrl, status: "ok", error: result.attachmentWarning ?? null }, exportId }
+  } catch (e: any) {
+    const o = oops(e, "export")
+    const exportId = await addTicketExport({
+      feedbackId: fbRow.id, projectId: fbRow.projectId, connectorId: connector.id,
+      type: connector.type, externalKey: null, externalUrl: null,
+      status: "failed", error: (e as any)?.message || "Export failed", createdBy: actor,
+    })
+    touchConnectorHeartbeat(connector.id, { kind: "outbound", success: false, error: (e as any)?.message || "Export failed" })
+      .catch((err: any) => console.warn("heartbeat record failed (non-fatal):", err?.message || err))
+    return { exportResult: { type: connector.type, externalKey: null, externalUrl: null, status: "failed", error: `${o.error} (ref ${o.id})` }, exportId }
+  }
 }
 
 // Anonymous feedback rate limits (per hour). Per-IP guards a single abuser; per-project caps the
@@ -7186,12 +7230,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
       // ── Ticket management: PATCH /api/feedback/:id and POST /api/feedback/:id/export ──
       // Resolve the feedback's project via feedbackById across accessible projects.
-      const feedbackIdMatch = path.match(/^\/api\/feedback\/([^/]+?)(\/export|\/replay|\/memory|\/merge|\/split|\/comments|\/timeline|\/activity|\/regression-receipt|\/labels(?:\/([^/]+))?|\/suggest-labels)?$/)
+      const feedbackIdMatch = path.match(/^\/api\/feedback\/([^/]+?)(\/export-request|\/export|\/replay|\/memory|\/merge|\/split|\/comments|\/timeline|\/activity|\/regression-receipt|\/labels(?:\/([^/]+))?|\/suggest-labels)?$/)
       if (feedbackIdMatch) {
         const fid = feedbackIdMatch[1]
         const feedbackSubroute = feedbackIdMatch[2]?.replace(/\/labels\/[^/]+$/, "/labels") || ""
         const labelIdParam = feedbackIdMatch[3] || null
         const isExport = feedbackSubroute === "/export"
+        const isExportRequest = feedbackSubroute === "/export-request"
         const isReplay = feedbackSubroute === "/replay"
         const isMemory = feedbackSubroute === "/memory"
         const isComments = feedbackSubroute === "/comments"
@@ -7569,9 +7614,20 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           return json({ ok: true, newFeedbackId: result.newFeedbackId, sourceRecurrenceCount: result.sourceRecurrenceCount })
         }
 
-        // POST /api/feedback/:id/export — admin only
+        // POST /api/feedback/:id/export — KLAVITYKLA-287 (JTBD 5.8): policy-gated (was admin-only).
+        // The per-project export_policy decides who may export DIRECTLY:
+        //   admins_only     → only admins (unchanged default behavior)
+        //   members_export  → admins + members
+        //   members_request → admins directly; members must go through /export-request (403 here)
         if (req.method === "POST" && isExport) {
-          if (fbAccess !== "admin") return json({ error: "Only project admins can export tickets." }, 403)
+          const policy = await getExportPolicy(fbRow.projectId)
+          const mayExportDirectly = fbAccess === "admin" || policy === "members_export"
+          if (!mayExportDirectly) {
+            if (policy === "members_request") {
+              return json({ error: "Members can't export directly on this project — request an export and an admin will approve it.", exportPolicy: policy, requestable: true }, 403)
+            }
+            return json({ error: "Only project admins can export tickets on this project.", exportPolicy: policy }, 403)
+          }
           const body = await req.json().catch(() => ({}))
           const connectorId = String(body.connectorId || "")
           if (!connectorId) return json({ error: "connectorId is required." }, 400)
@@ -7600,47 +7656,30 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             }
           }
 
-          // Decrypt secret fields before calling createIssue
-          const decryptedConfig: Record<string, string> = { ...connector.config }
-          for (const f of adapter.fields) {
-            if (f.secret && connector.config[f.key]) {
-              try { decryptedConfig[f.key] = await decryptSecret(connector.config[f.key]) }
-              catch { decryptedConfig[f.key] = "" }
-            }
-          }
-
-          const exportSimName = await resolveSimName(fbRow.projectId, fbRow.simId)
-          const payload = await feedbackToTicketPayload(fbRow, { id: fbRow.projectId }, exportSimName)
-          let exportResult: { type: string; externalKey: string | null; externalUrl: string | null; status: "ok" | "failed"; error: string | null }
-
-          try {
-            const result = await adapter.createIssue(payload, decryptedConfig)
-            await addTicketExport({
-              feedbackId: fid, projectId: fbRow.projectId, connectorId,
-              type: connector.type, externalKey: result.externalKey, externalUrl: result.externalUrl,
-              // KLA-285: see auto-copy hook — "ok" export, but a degraded screenshot attach is
-              // recorded rather than swallowed.
-              status: "ok", error: result.attachmentWarning ?? null, createdBy: me,
-            })
-            // Record successful outbound heartbeat (fire-and-forget, non-fatal).
-            touchConnectorHeartbeat(connectorId, { kind: "outbound", success: true })
-              .catch((e: any) => console.warn("heartbeat record failed (non-fatal):", e?.message || e))
-            exportResult = { type: connector.type, externalKey: result.externalKey, externalUrl: result.externalUrl, status: "ok", error: result.attachmentWarning ?? null }
-          } catch (e: any) {
-            // A10: log the raw error server-side (with a correlation id) and store it on the export row,
-            // but return ONLY a generic message + id to the client so guard/internal text can't leak.
-            const o = oops(e, "export")
-            await addTicketExport({
-              feedbackId: fid, projectId: fbRow.projectId, connectorId,
-              type: connector.type, externalKey: null, externalUrl: null,
-              status: "failed", error: (e as any)?.message || "Export failed", createdBy: me,
-            })
-            // Record failed outbound heartbeat (fire-and-forget, non-fatal).
-            touchConnectorHeartbeat(connectorId, { kind: "outbound", success: false, error: (e as any)?.message || "Export failed" })
-              .catch((err: any) => console.warn("heartbeat record failed (non-fatal):", err?.message || err))
-            exportResult = { type: connector.type, externalKey: null, externalUrl: null, status: "failed", error: `${o.error} (ref ${o.id})` }
-          }
+          const { exportResult } = await runManualExport(fbRow, connector, me)
           return json({ ok: true, export: exportResult })
+        }
+
+        // POST /api/feedback/:id/export-request — KLAVITYKLA-287: a member raises an export request an
+        // admin approves. ONLY valid when the project's policy is 'members_request'. Admins never need
+        // this (they export directly); on the other policies a request is meaningless.
+        if (req.method === "POST" && isExportRequest) {
+          const policy = await getExportPolicy(fbRow.projectId)
+          if (policy !== "members_request") {
+            return json({ error: policy === "members_export" ? "This project lets members export directly — no request needed." : "Export requests are not enabled on this project.", exportPolicy: policy }, 400)
+          }
+          if (fbAccess === "admin") return json({ error: "Admins can export directly — no request needed." }, 400)
+          const body = await req.json().catch(() => ({}))
+          const connectorId = String(body.connectorId || "")
+          if (!connectorId) return json({ error: "connectorId is required." }, 400)
+          const connector = await getConnectorById(fbRow.projectId, connectorId)
+          if (!connector) return json({ error: "Connector not found." }, 404)
+          const request = await createExportRequest({ projectId: fbRow.projectId, feedbackId: fid, connectorId, requestedBy: me })
+          await insertActivity({
+            projectId: fbRow.projectId, type: "export_requested", actorEmail: me, feedbackId: fid,
+            meta: { connectorId, connectorName: connector.name, requestId: request.id },
+          }).catch((e: any) => console.warn("export_requested activity skipped:", e?.message || e))
+          return json({ ok: true, request: { id: request.id, connectorId, connectorName: connector.name, status: request.status } }, 201)
         }
 
         // GET /api/feedback/:id/labels — list labels on this ticket
@@ -7763,7 +7802,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return json({ project: { id: created.id, name: created.name, accountId: created.accountId, status: created.status, siteUrl: created.siteUrl, role: "admin" } }, 201)
       }
       // Project detail + members (projectAccess-gated) and project-scoped invite (R4) + monitored-urls (P3b) + connectors.
-      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/branding|\/triage|\/tickets(?:\/bulk)?|\/recurring|\/replays|\/widget-status|\/heartbeat-diagnosis(?:\/email)?|\/share-token|\/labels(?:\/[^/]+)?|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/test)?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send|\/trails-autofile|\/regression-events(?:\/[^/]+\/ack)?)?$/)
+      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/branding|\/triage|\/tickets(?:\/bulk)?|\/recurring|\/replays|\/widget-status|\/heartbeat-diagnosis(?:\/email)?|\/share-token|\/labels(?:\/[^/]+)?|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/test)?|\/export-policy|\/export-requests(?:\/[^/]+\/(?:approve|reject))?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send|\/trails-autofile|\/regression-events(?:\/[^/]+\/ack)?)?$/)
       if (projMatch) {
         const pid = projMatch[1]
         const sub = projMatch[2] || ""
@@ -7954,10 +7993,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const cidMatch = sub.match(/^\/connectors\/([^/]+)$/)
           const cid = cidMatch ? cidMatch[1] : null
 
-          // GET /api/projects/:id/connectors — list (redacted) + type catalog
+          // GET /api/projects/:id/connectors — list (redacted) + type catalog. Member-readable
+          // (only projectAccess-gated), so members SEE which destinations exist (KLAVITYKLA-287 req 4).
+          // exportPolicy rides along so the dashboard can decide who gets the Copy-to / Request UI.
           if (req.method === "GET" && !cid) {
             const rows = await listConnectors(pid)
-            return json({ connectors: rows.map(connectorToClient), types: listConnectorTypes() })
+            return json({ connectors: rows.map(connectorToClient), types: listConnectorTypes(), exportPolicy: await getExportPolicy(pid) })
           }
 
           // POST /api/projects/:id/connectors — create (admin only)
@@ -8035,6 +8076,81 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             return json({ ok: true })
           }
 
+          return json({ error: "Not found" }, 404)
+        }
+
+        // ── KLAVITYKLA-287 (JTBD 5.8): export policy + member export requests ──────────────────────
+        // POST /api/projects/:pid/export-policy — set the per-project manual-export policy (admin only).
+        if (sub === "/export-policy") {
+          if (req.method === "GET") {
+            return json({ exportPolicy: await getExportPolicy(pid), policies: EXPORT_POLICIES })
+          }
+          if (req.method === "POST") {
+            if (access !== "admin") return json({ error: "Only project admins can change the export policy." }, 403)
+            const body = await req.json().catch(() => ({}))
+            const raw = String(body.policy ?? "")
+            if (!(EXPORT_POLICIES as readonly string[]).includes(raw)) {
+              return json({ error: `policy must be one of: ${EXPORT_POLICIES.join(", ")}.` }, 400)
+            }
+            await setExportPolicy(pid, raw)
+            logAudit({ action: "export_policy_set", actorEmail: me, projectId: pid, ip: clientIp(req, server), meta: { policy: raw } })
+            return json({ ok: true, exportPolicy: normalizeExportPolicy(raw) })
+          }
+          return json({ error: "Method not allowed" }, 405)
+        }
+
+        // Export requests — admins see pending member requests and approve (one-click export) / reject.
+        if (sub.startsWith("/export-requests")) {
+          if (access !== "admin") return json({ error: "Only project admins can manage export requests." }, 403)
+          const reqActionMatch = sub.match(/^\/export-requests\/([^/]+)\/(approve|reject)$/)
+
+          // GET /api/projects/:pid/export-requests — list pending, enriched with ticket title + destination.
+          if (req.method === "GET" && !reqActionMatch) {
+            const pending = await listPendingExportRequests(pid)
+            const connectors = await listConnectors(pid)
+            const connName = (cid: string) => connectors.find((c) => c.id === cid)?.name ?? null
+            const out = []
+            for (const r of pending) {
+              const fb = await feedbackById(pid, r.feedbackId).catch(() => null)
+              out.push({
+                id: r.id, feedbackId: r.feedbackId, connectorId: r.connectorId,
+                connectorName: connName(r.connectorId), requestedBy: r.requestedBy, createdAt: r.createdAt,
+                ticketTitle: fb ? (fb.observation ?? fb.suggestedBug?.title ?? null) : null,
+              })
+            }
+            return json({ requests: out })
+          }
+
+          // POST /api/projects/:pid/export-requests/:rid/approve — perform the export, then resolve.
+          // POST /api/projects/:pid/export-requests/:rid/reject   — dismiss without exporting.
+          if (req.method === "POST" && reqActionMatch) {
+            const rid = reqActionMatch[1]
+            const action = reqActionMatch[2] as "approve" | "reject"
+            const request = await getExportRequestById(rid)
+            if (!request || request.projectId !== pid) return json({ error: "Export request not found." }, 404)
+            if (request.status !== "pending") return json({ error: `Request already ${request.status}.` }, 409)
+
+            if (action === "reject") {
+              const ok = await resolveExportRequest(rid, "rejected", me)
+              if (!ok) return json({ error: "Request already resolved." }, 409)
+              await insertActivity({ projectId: pid, type: "export_rejected", actorEmail: me, feedbackId: request.feedbackId, meta: { requestId: rid } })
+                .catch((e: any) => console.warn("export_rejected activity skipped:", e?.message || e))
+              return json({ ok: true, status: "rejected" })
+            }
+
+            // approve → run the export against the requested connector, then link + resolve.
+            const fb = await feedbackById(pid, request.feedbackId)
+            if (!fb) return json({ error: "Ticket no longer exists." }, 404)
+            const connector = await getConnectorById(pid, request.connectorId)
+            if (!connector) return json({ error: "Connector no longer exists." }, 404)
+            const { exportResult, exportId } = await runManualExport(fb, connector, me)
+            await resolveExportRequest(rid, "approved", me, exportId)
+            await insertActivity({
+              projectId: pid, type: "export_approved", actorEmail: me, feedbackId: request.feedbackId,
+              meta: { requestId: rid, requestedBy: request.requestedBy, connectorId: request.connectorId, status: exportResult.status },
+            }).catch((e: any) => console.warn("export_approved activity skipped:", e?.message || e))
+            return json({ ok: true, status: "approved", export: exportResult })
+          }
           return json({ error: "Not found" }, 404)
         }
 

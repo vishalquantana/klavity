@@ -1011,6 +1011,10 @@ details.drawer .drawer-in{padding:0 22px 22px}
 .tkt-copy{display:flex;align-items:center;gap:8px;margin-top:4px}
 .tkt-copy select{appearance:none;background:var(--ink-2);border:1px solid var(--line);border-radius:8px;padding:7px 28px 7px 10px;color:var(--paper);font-family:var(--body);font-size:13px;outline:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center}
 .tkt-copy select:focus{border-color:var(--indigo)}
+/* KLAVITYKLA-287: pending member export-request rows in ticket detail */
+.tkt-export-reqs{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+.export-req-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--ink-2)}
+.export-req-txt{font-size:12.5px;color:var(--paper-faint)}
 .tkt-err{font-size:12px;color:var(--rose)}
 .tkt-msg{font-size:12px;color:var(--paper-faint)}
 .tkt-gap{margin-top:4px}
@@ -2006,9 +2010,28 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         </div>
         <button class="btn btn-ghost btn-sm" id="connAddBtn" style="margin-top:8px">+ Connect a tracker</button>
         <div class="msg" id="connMsg"></div>
+        <!-- KLAVITYKLA-287 (JTBD 5.8): who may export a ticket to these destinations -->
+        <div id="exportPolicyWrap" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line)">
+          <div class="flbl" style="margin-bottom:2px">Who can export tickets</div>
+          <div class="muted" style="font-size:12.5px;margin-bottom:8px">Controls the "Copy to…" action on each ticket. Members are teammates without the admin role.</div>
+          <select id="exportPolicySel" style="background:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--paper);font-family:var(--body);font-size:13px;outline:none">
+            <option value="admins_only">Admins only (default)</option>
+            <option value="members_export">Members can export directly</option>
+            <option value="members_request">Members request; an admin approves</option>
+          </select>
+          <span class="msg" id="exportPolicyMsg" style="margin-left:8px"></span>
+        </div>
+        <!-- Pending member export requests (members_request mode) -->
+        <div id="exportReqWrap" class="hide" style="margin-top:14px">
+          <div class="flbl" style="margin-bottom:6px">Pending export requests</div>
+          <div id="exportReqList" class="conn-list"></div>
+        </div>
       </div>
-      <!-- Non-admin: read-only note -->
-      <div id="connUser" class="hide muted">Only admins can configure external tracker connections.</div>
+      <!-- Non-admin: read-only destinations + policy note (KLAVITYKLA-287 req 4) -->
+      <div id="connUser" class="hide">
+        <div class="flbl" style="margin-bottom:2px">Where your team's bugs are sent</div>
+        <div id="connUserList" class="muted" style="font-size:12.5px">Loading destinations…</div>
+      </div>
     </div>
   </details>
 
@@ -4582,11 +4605,37 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
           }</span>`
     ).join("") + legacyBadge
 
-    // Copy-to dropdown: only if admin and there are connectors
+    // Copy-to dropdown — KLAVITYKLA-287 (JTBD 5.8): gated by the per-project export policy.
+    //   admin OR members_export → export directly ("Copy to…")
+    //   member + members_request → raise a request ("Request export") an admin approves
+    //   member + admins_only     → read-only: SEE the destinations, but no export/request control
     const projectConnectors = state._connectors || []
-    const copySelect = admin && projectConnectors.length
-      ? `<select class="copy-sel">${projectConnectors.map(c => `<option value="${esc(c.id)}">${esc(c.name)} (${esc(c.type)})</option>`).join("")}</select>
+    const exportPolicy = state._exportPolicy || "admins_only"
+    const canExportDirect = admin || exportPolicy === "members_export"
+    const canRequestExport = !admin && exportPolicy === "members_request"
+    const connOptions = projectConnectors.map(c => `<option value="${esc(c.id)}">${esc(c.name)} (${esc(c.type)})</option>`).join("")
+    let copySelect = ""
+    if (projectConnectors.length) {
+      if (canExportDirect) {
+        copySelect = `<select class="copy-sel">${connOptions}</select>
          <button class="btn btn-ghost btn-sm copy-btn">Copy to…</button>`
+      } else if (canRequestExport) {
+        copySelect = `<select class="copy-sel">${connOptions}</select>
+         <button class="btn btn-ghost btn-sm req-export-btn" title="Request an admin export this ticket to the destination">Request export</button>`
+      } else {
+        // member + admins_only — surface destinations read-only so they know where bugs go.
+        copySelect = `<div class="muted" style="font-size:12px">Destinations (admin-exported): ${projectConnectors.map(c => esc(c.name) + " (" + esc(c.type) + ")").join(", ")}</div>`
+      }
+    }
+    // Admin: any pending member export requests for THIS ticket, with one-click approve/reject.
+    const pendingReqs = admin ? (state._exportRequests || []).filter(r => r.feedbackId === ticketId) : []
+    const pendingReqHtml = pendingReqs.length
+      ? `<div class="tkt-export-reqs">${pendingReqs.map(r =>
+          `<div class="export-req-row" data-req="${esc(r.id)}">
+             <span class="export-req-txt">${esc(r.requestedBy)} requested export to <b>${esc(r.connectorName || r.connectorId)}</b></span>
+             <button class="btn btn-indigo btn-sm req-approve-btn" data-req="${esc(r.id)}">Approve</button>
+             <button class="btn btn-ghost btn-sm req-reject-btn" data-req="${esc(r.id)}">Reject</button>
+           </div>`).join("")}</div>`
       : ""
 
     // In single-ticket view the header shows: title, severity, sentiment, simName, url·date.
@@ -4663,6 +4712,7 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
         ${curStatus === "done" ? `<button class="btn btn-ghost btn-sm guard-fix-btn" type="button" title="Turn this fix into an enforceable guard that catches regressions">${kicon('shield')} Guard this fix</button>` : ""}
         ${(curStatus === "done" && t.guardCaught) ? `<button class="btn btn-ghost btn-sm regr-receipt-btn${t.receiptSent ? " btn-indigo" : ""}" type="button" title="Email the original reporter a forwardable 'caught & fixed before it reached your users' receipt"${t.receiptSent ? " disabled" : ""}>${kicon('mail-check')} ${t.receiptSent ? "Receipt sent" : "Send regression-caught receipt"}</button>` : ""}
       </div>
+      ${pendingReqHtml}
       <div class="tkt-gap tkt-copy">${copySelect}</div>
       <div class="tkt-err hide tkt-err-el"></div>
       <div class="tkt-msg hide tkt-msg-el"></div>`
@@ -4899,6 +4949,57 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
         try { await runExport(connectorId, {}) } finally { copyBtn.disabled = false }
       })
     }
+
+    // KLAVITYKLA-287: member "Request export" — POST an export request an admin approves.
+    const reqExportBtn = detailEl.querySelector(".req-export-btn")
+    if (reqExportBtn) {
+      reqExportBtn.addEventListener("click", async (ev) => {
+        ev.stopPropagation()
+        const sel = detailEl.querySelector(".copy-sel")
+        const connectorId = sel ? sel.value : null
+        if (!connectorId) return
+        reqExportBtn.disabled = true
+        try {
+          const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/export-request", {
+            method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ connectorId })
+          }).catch(() => null)
+          const d = r ? await r.json().catch(() => ({})) : {}
+          if (d.ok) { reqExportBtn.textContent = "Requested"; reqExportBtn.classList.add("btn-indigo"); showTktMsg(detailEl, "Export requested — an admin will approve it.", false) }
+          else { reqExportBtn.disabled = false; showTktMsg(detailEl, d.error || "Couldn't request export.", true) }
+        } catch { reqExportBtn.disabled = false }
+      })
+    }
+
+    // KLAVITYKLA-287: admin approve/reject of a pending member export request (one-click).
+    detailEl.querySelectorAll(".req-approve-btn, .req-reject-btn").forEach(btn => {
+      btn.addEventListener("click", async (ev) => {
+        ev.stopPropagation()
+        const rid = btn.getAttribute("data-req")
+        const isApprove = btn.classList.contains("req-approve-btn")
+        if (!rid) return
+        btn.disabled = true
+        const orig = btn.textContent
+        btn.textContent = isApprove ? "Approving…" : "Rejecting…"
+        try {
+          const r = await fetch(projPath("/export-requests/" + encodeURIComponent(rid) + "/" + (isApprove ? "approve" : "reject")), {
+            method: "POST", headers: { "content-type": "application/json" }
+          }).catch(() => null)
+          const d = r ? await r.json().catch(() => ({})) : {}
+          if (d.ok) {
+            // Drop the resolved request from state + row; refresh the ticket so a new export badge shows.
+            state._exportRequests = (state._exportRequests || []).filter(x => x.id !== rid)
+            const row = btn.closest(".export-req-row"); if (row) row.remove()
+            if (isApprove && d.export && d.export.status === "failed") showTktMsg(detailEl, "Approved, but the export failed: " + (d.export.error || "unknown"), true)
+            else showTktMsg(detailEl, isApprove ? "Approved and exported." : "Request rejected.", false)
+            if (isApprove && typeof onChange === "function") onChange()
+          } else {
+            btn.disabled = false; btn.textContent = orig
+            showTktMsg(detailEl, d.error || "Couldn't resolve request.", true)
+          }
+        } catch { btn.disabled = false; btn.textContent = orig }
+      })
+    })
 
     detailEl.querySelectorAll(".exp-retry").forEach(btn => {
       btn.addEventListener("click", async (ev) => {
@@ -6529,6 +6630,17 @@ async function loadConnectors(admin) {
     const d = await r.json()
     state._connectors = d.connectors || []
     connectorTypes = d.types || []
+    // KLAVITYKLA-287: export policy rides along the (member-readable) connectors list.
+    state._exportPolicy = d.exportPolicy || "admins_only"
+    // Admins additionally load pending member export requests to surface + approve.
+    if (admin) {
+      try {
+        const rr = await fetch(projPath("/export-requests"))
+        state._exportRequests = rr.ok ? ((await rr.json()).requests || []) : []
+      } catch { state._exportRequests = [] }
+    } else {
+      state._exportRequests = []
+    }
     renderConnectors(admin)
   } catch {}
   finally { kbar.done() }
@@ -6634,6 +6746,94 @@ function renderConnectors(admin) {
     tsel.innerHTML = `<option value="">— select type —</option>` + connectorTypes.map(t =>
       `<option value="${esc(t.type)}">${esc(t.label)}</option>`
     ).join("")
+  }
+
+  // ── KLAVITYKLA-287 (JTBD 5.8): export policy control + member destinations + pending requests ──
+  const policy = state._exportPolicy || "admins_only"
+  if (admin) {
+    const polSel = $("exportPolicySel")
+    if (polSel) {
+      polSel.value = policy
+      // .onchange (not addEventListener) so re-renders don't stack duplicate handlers.
+      polSel.onchange = async () => {
+        const msg = $("exportPolicyMsg")
+        const newPolicy = polSel.value
+        const r = await fetch(projPath("/export-policy"), {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ policy: newPolicy })
+        }).catch(() => null)
+        const d = r ? await r.json().catch(() => ({})) : {}
+        if (d.ok) {
+          state._exportPolicy = d.exportPolicy || newPolicy
+          if (msg) { msg.style.color = "var(--green)"; msg.textContent = "Saved" }
+          renderConnectors(true)
+        } else if (msg) { msg.style.color = "var(--rose)"; msg.textContent = (d && d.error) || "Couldn't save." }
+      }
+    }
+    // Pending requests only matter in members_request mode.
+    const reqWrap = $("exportReqWrap")
+    const reqList = $("exportReqList")
+    const reqs = state._exportRequests || []
+    if (reqWrap) reqWrap.classList.toggle("hide", !(policy === "members_request"))
+    if (reqList) {
+      if (!reqs.length) {
+        reqList.innerHTML = `<div class="muted" style="font-size:12.5px">No pending requests.</div>`
+      } else {
+        reqList.innerHTML = ""
+        reqs.forEach(rq => {
+          const row = document.createElement("div")
+          row.className = "conn-row"
+          row.innerHTML = `<div class="conn-row-head" style="gap:8px;flex-wrap:wrap">
+            <span class="conn-name">${esc(rq.ticketTitle || rq.feedbackId)}</span>
+            <span class="conn-type">${esc(rq.connectorName || rq.connectorId)}</span>
+            <span class="muted" style="font-size:12px">by ${esc(rq.requestedBy)}</span>
+          </div>
+          <div class="conn-row-actions">
+            <button class="btn btn-indigo btn-sm" data-approve="${esc(rq.id)}">Approve &amp; export</button>
+            <button class="btn btn-ghost btn-sm" data-reject="${esc(rq.id)}">Reject</button>
+          </div>
+          <div class="conn-result hide" data-req-result="${esc(rq.id)}"></div>`
+          reqList.appendChild(row)
+        })
+        const resolveReq = async (rid, action, btn) => {
+          const resEl = reqList.querySelector(`[data-req-result="${cssAttr(rid)}"]`)
+          btn.disabled = true
+          const r = await fetch(projPath("/export-requests/" + encodeURIComponent(rid) + "/" + action), {
+            method: "POST", headers: { "content-type": "application/json" }
+          }).catch(() => null)
+          const d = r ? await r.json().catch(() => ({})) : {}
+          if (d.ok) {
+            state._exportRequests = (state._exportRequests || []).filter(x => x.id !== rid)
+            renderConnectors(true)
+          } else {
+            btn.disabled = false
+            if (resEl) showConnResult(resEl, "err", esc((d && d.error) || "Couldn't resolve."))
+          }
+        }
+        reqList.querySelectorAll("button[data-approve]").forEach(b =>
+          b.addEventListener("click", () => resolveReq(b.getAttribute("data-approve"), "approve", b)))
+        reqList.querySelectorAll("button[data-reject]").forEach(b =>
+          b.addEventListener("click", () => resolveReq(b.getAttribute("data-reject"), "reject", b)))
+      }
+    }
+  } else {
+    // Non-admin members: read-only list of destinations + what the policy lets them do.
+    const userList = $("connUserList")
+    if (userList) {
+      const policyNote = policy === "members_export"
+        ? "You can export tickets to these destinations from any ticket."
+        : policy === "members_request"
+        ? "Use “Request export” on a ticket to ask an admin to send it to one of these."
+        : "Only admins can export tickets. These are where your team's bugs are sent:"
+      if (!conns.length) {
+        userList.innerHTML = `No external trackers are connected yet — bugs live in Klavity. ${esc(policyNote)}`
+      } else {
+        userList.innerHTML = `<div style="margin-bottom:6px">${esc(policyNote)}</div>` +
+          `<ul style="margin:0;padding-left:18px">` +
+          conns.map(c => `<li>${esc(c.name)} <span class="conn-type" style="margin-left:4px">${esc(c.type)}</span></li>`).join("") +
+          `</ul>`
+      }
+    }
   }
 }
 

@@ -1236,6 +1236,36 @@ export async function applySchema(c: Client) {
     .catch((e: any) => console.warn("ai_calls_run_idx skipped:", e?.message || e))
   if (needCol("trail_runs", "replay_cost_usd")) await c.execute("ALTER TABLE trail_runs ADD COLUMN replay_cost_usd REAL")
     .catch((e: any) => console.warn("trail_runs.replay_cost_usd ALTER skipped:", e?.message || e))
+  // KLAVITYKLA-287 (JTBD 5.8): per-project manual-export policy. 'admins_only' (default, current
+  // behavior) | 'members_export' (members export directly) | 'members_request' (members raise an
+  // export request an admin approves). Appended at the VERY END of applySchema (idempotent needCol);
+  // "projects" is NOT in ALTERED_TABLES' introspection set, so query the column set directly here.
+  {
+    const cols = (await loadTableColumns(c, ["projects"])).get("projects") ?? new Set<string>()
+    if (!cols.has("export_policy")) {
+      await c.execute("ALTER TABLE projects ADD COLUMN export_policy TEXT NOT NULL DEFAULT 'admins_only'")
+        .catch((e: any) => console.warn("projects.export_policy ALTER skipped:", e?.message || e))
+    }
+  }
+  // KLAVITYKLA-287: export_requests — a member's pending request to export a ticket to a connector,
+  // surfaced to admins for one-click approval. status: 'pending' | 'approved' | 'rejected'.
+  // export_id links to the ticket_exports row produced on approval (NULL until approved).
+  await c.execute(`CREATE TABLE IF NOT EXISTS export_requests (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    feedback_id TEXT NOT NULL,
+    connector_id TEXT NOT NULL,
+    requested_by TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    resolved_by TEXT,
+    export_id TEXT,
+    created_at INTEGER NOT NULL,
+    resolved_at INTEGER
+  )`).catch((e: any) => console.warn("export_requests CREATE skipped:", e?.message || e))
+  await c.execute("CREATE INDEX IF NOT EXISTS export_req_proj_idx ON export_requests (project_id, status, created_at)")
+    .catch((e: any) => console.warn("export_req_proj_idx skipped:", e?.message || e))
+  await c.execute("CREATE INDEX IF NOT EXISTS export_req_fb_idx ON export_requests (feedback_id, status)")
+    .catch((e: any) => console.warn("export_req_fb_idx skipped:", e?.message || e))
 }
 
 // ── schema_meta helpers ──
@@ -1678,6 +1708,15 @@ export type ProjectRow = {
   instructionsMd?: string | null
   trailsAutofileEnabled: boolean
   siteUrl: string | null
+  // KLAVITYKLA-287 (JTBD 5.8): who may manually export a ticket to an external tracker.
+  // 'admins_only' (default) | 'members_export' | 'members_request'.
+  exportPolicy: string
+}
+export const EXPORT_POLICIES = ["admins_only", "members_export", "members_request"] as const
+export type ExportPolicy = (typeof EXPORT_POLICIES)[number]
+export function normalizeExportPolicy(v: unknown): ExportPolicy {
+  const s = String(v ?? "")
+  return (EXPORT_POLICIES as readonly string[]).includes(s) ? (s as ExportPolicy) : "admins_only"
 }
 function rowToProject(x: any): ProjectRow {
   return {
@@ -1694,6 +1733,7 @@ function rowToProject(x: any): ProjectRow {
     instructionsMd: x.instructions_md != null ? String(x.instructions_md) : undefined,
     trailsAutofileEnabled: !!x.trails_autofile_enabled,
     siteUrl: x.site_url != null ? String(x.site_url) : null,
+    exportPolicy: normalizeExportPolicy(x.export_policy),
   }
 }
 
@@ -4794,6 +4834,75 @@ export async function findPriorSuccessfulExport(
     args: [feedbackId, connectorId],
   })
   return r.rows.length ? rowToTicketExport(r.rows[0]) : null
+}
+
+// ── KLAVITYKLA-287 (JTBD 5.8): per-project export policy + member export requests ──
+export async function getExportPolicy(projectId: string): Promise<ExportPolicy> {
+  const p = await projectById(projectId)
+  return normalizeExportPolicy(p?.exportPolicy)
+}
+export async function setExportPolicy(projectId: string, policy: string): Promise<void> {
+  await db!.execute({
+    sql: "UPDATE projects SET export_policy=?, updated_at=? WHERE id=?",
+    args: [normalizeExportPolicy(policy), Date.now(), projectId],
+  })
+}
+
+export type ExportRequestRow = {
+  id: string; projectId: string; feedbackId: string; connectorId: string
+  requestedBy: string; status: "pending" | "approved" | "rejected"
+  resolvedBy: string | null; exportId: string | null
+  createdAt: number; resolvedAt: number | null
+}
+function rowToExportRequest(x: any): ExportRequestRow {
+  return {
+    id: String(x.id), projectId: String(x.project_id), feedbackId: String(x.feedback_id),
+    connectorId: String(x.connector_id), requestedBy: String(x.requested_by),
+    status: String(x.status) as ExportRequestRow["status"],
+    resolvedBy: x.resolved_by != null ? String(x.resolved_by) : null,
+    exportId: x.export_id != null ? String(x.export_id) : null,
+    createdAt: Number(x.created_at), resolvedAt: x.resolved_at != null ? Number(x.resolved_at) : null,
+  }
+}
+// Create a pending export request. Idempotent-ish: if a pending request already exists for the
+// same (feedback, connector, requester) it is returned instead of duplicated.
+export async function createExportRequest(x: {
+  projectId: string; feedbackId: string; connectorId: string; requestedBy: string
+}): Promise<ExportRequestRow> {
+  const existing = await db!.execute({
+    sql: `SELECT * FROM export_requests WHERE feedback_id=? AND connector_id=? AND requested_by=? AND status='pending' ORDER BY created_at DESC LIMIT 1`,
+    args: [x.feedbackId, x.connectorId, x.requestedBy],
+  })
+  if (existing.rows.length) return rowToExportRequest(existing.rows[0])
+  const id = "exreq_" + crypto.randomUUID()
+  await db!.execute({
+    sql: `INSERT INTO export_requests (id,project_id,feedback_id,connector_id,requested_by,status,created_at)
+          VALUES (?,?,?,?,?,'pending',?)`,
+    args: [id, x.projectId, x.feedbackId, x.connectorId, x.requestedBy, Date.now()],
+  })
+  return (await getExportRequestById(id))!
+}
+export async function getExportRequestById(id: string): Promise<ExportRequestRow | null> {
+  const r = await db!.execute({ sql: "SELECT * FROM export_requests WHERE id=?", args: [id] })
+  return r.rows.length ? rowToExportRequest(r.rows[0]) : null
+}
+export async function listPendingExportRequests(projectId: string): Promise<ExportRequestRow[]> {
+  const r = await db!.execute({
+    sql: `SELECT * FROM export_requests WHERE project_id=? AND status='pending' ORDER BY created_at ASC`,
+    args: [projectId],
+  })
+  return r.rows.map(rowToExportRequest)
+}
+// Resolve a request (approve/reject). Guarded on status='pending' so two admins can't double-approve;
+// returns true only if this call performed the transition.
+export async function resolveExportRequest(
+  id: string, status: "approved" | "rejected", resolvedBy: string, exportId?: string | null
+): Promise<boolean> {
+  const r = await db!.execute({
+    sql: `UPDATE export_requests SET status=?, resolved_by=?, export_id=?, resolved_at=? WHERE id=? AND status='pending'`,
+    args: [status, resolvedBy, exportId ?? null, Date.now(), id],
+  })
+  return (r.rowsAffected ?? 0) > 0
 }
 
 // INBOUND two-way sync (G4): reverse-map an external tracker issue back to its Klavity export.
