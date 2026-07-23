@@ -94,6 +94,10 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 .find .kind.amber_heal{background:rgba(217,131,36,.16);color:var(--amber)}
 .find .kind.visual{background:rgba(99,102,241,.14);color:var(--indigo)}
 .find .conf{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--paper-faint)}
+/* KLA-87: recurrence badge — escalates amber→rose as a finding recurs across walks, so the queue
+   reads high-recurrence regressions first (mirrors the recurrence×kind ORDER BY in listFindings). */
+.find .recur{font-family:var(--mono);font-size:9px;letter-spacing:.04em;text-transform:uppercase;padding:3px 7px;border-radius:20px;background:rgba(217,131,36,.16);color:var(--amber);font-weight:600}
+.find .recur.hot{background:rgba(219,39,119,.16);color:var(--rose)}
 .find .ft{font-size:14.5px;font-weight:600;line-height:1.4}
 .find .quote{font-size:13px;color:var(--paper-dim);margin-top:6px;border-left:2px solid var(--line);padding-left:10px;line-height:1.45}
 .find .diff{font-family:var(--mono);font-size:12px;color:var(--paper-faint);margin-top:8px;background:var(--ink-3);padding:7px 10px;border-radius:8px;overflow-x:auto}
@@ -2307,15 +2311,26 @@ function renderQueue(queue){
     const rationale = ev.rationale || f.groundQuote || ""
     const fromSel = ev.fromSelector, toSel = ev.toSelector
     const shotUrl = ev.screenshotUrl || null
+    // KLA-87: a finding stamped with a screenshotKey shares its (runId, stepId) with the run_step
+    // that holds the same key, so the existing walk-step screenshot route serves the failure image.
+    const shotKey = ev.screenshotKey || null
+    const rec = Number(f.recurrence) || 1
     const card = document.createElement("div")
     card.className = "find"
-    let html = '<div class="top"><span class="kind '+esc(f.kind)+'">'+esc(f.kind)+'</span><span class="conf">conf '+esc(f.confidence)+'</span></div>'
+    // KLA-87: recurrence badge (×N seen), rose once it recurs ≥5× — surfaces the "keeps breaking" signal.
+    const recBadge = rec > 1 ? '<span class="recur'+(rec>=5?' hot':'')+'" title="Seen '+esc(rec)+' times across walks">&times;'+esc(rec)+' recurring</span>' : ''
+    let html = '<div class="top"><span class="kind '+esc(f.kind)+'">'+esc(f.kind)+'</span>'+recBadge+'<span class="conf">conf '+esc(f.confidence)+'</span></div>'
     html += '<div class="ft">'+esc(f.title)+'</div>'
     if (rationale) html += '<div class="quote">'+esc(rationale)+'</div>'
     if (fromSel || toSel) html += '<div class="diff">'+esc(fromSel || "(none)")+' &rarr; '+esc(toSel || "(none)")+'</div>'
     if (shotUrl) {
       const label = ev.screenshotLabel ? esc(ev.screenshotLabel) : "Screenshot"
       html += '<div class="evidence"><img src="'+esc(shotUrl)+'" alt="'+esc(label)+'"></div>'
+    } else if (shotKey && f.runId && f.stepId) {
+      const pid = projParam()
+      const qs = pid ? "?project="+encodeURIComponent(pid) : ""
+      const src = '/api/trails/walks/'+encodeURIComponent(f.runId)+'/steps/'+encodeURIComponent(f.stepId)+'/screenshot'+qs
+      html += '<div class="evidence"><img src="'+esc(src)+'" alt="Failure screenshot" loading="lazy">Failure screenshot</div>'
     } else if (!shotUrl && f.runId) {
       const pid = projParam()
       const qs = pid ? "?project="+encodeURIComponent(pid) : ""

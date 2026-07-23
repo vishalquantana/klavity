@@ -201,6 +201,41 @@ test("listFindings filters by status; setFindingStatus transitions and records c
   expect((await T.listFindings("proj_A", { status: "queued" })).some((x) => x.id === f.id)).toBe(false)
 })
 
+test("KLA-87: listFindings orders by recurrence × kind severity (severe / high-recurrence first)", async () => {
+  const P = "proj_ORD87"
+  const trail = await T.createTrail(P, { name: "Order", baseUrl: "https://app.test/" })
+  const walk = await T.startWalk(P, trail)
+  // Record findings with controlled kind + recurrence. recordFinding bumps recurrence on repeat
+  // dedupKey, so N calls → recurrence N. Rank = kind_weight (regression 3 / amber_heal 2 / visual 1)
+  // × recurrence. Expected scores: amber×3=6 > visual×5=5 > regression×1=3 > visual×1=1.
+  const bump = async (kind: "regression" | "visual" | "amber_heal", dedupKey: string, times: number) => {
+    let last: Awaited<ReturnType<typeof T.recordFinding>> | undefined
+    for (let i = 0; i < times; i++) {
+      last = await T.recordFinding(P, { runId: walk, trailId: trail, kind, title: `${kind} ${dedupKey}`, confidence: 0.8, dedupKey })
+    }
+    return last!
+  }
+  const reg = await bump("regression", "o-reg", 1) // 3 × 1 = 3
+  const amb = await bump("amber_heal", "o-amb", 3) // 2 × 3 = 6
+  const vhi = await bump("visual", "o-vhi", 5)      // 1 × 5 = 5
+  const vlo = await bump("visual", "o-vlo", 1)      // 1 × 1 = 1
+  const ids = (await T.listFindings(P)).map((f) => f.id)
+  expect(ids).toEqual([amb.id, vhi.id, reg.id, vlo.id])
+})
+
+test("KLA-87: recordFinding persists a screenshotKey in evidence; listFindings surfaces it for the queue", async () => {
+  const P = "proj_SHOT87"
+  const trail = await T.createTrail(P, { name: "Shot", baseUrl: "https://app.test/" })
+  const walk = await T.startWalk(P, trail)
+  const f = await T.recordFinding(P, {
+    runId: walk, trailId: trail, stepId: "step_x", kind: "regression", title: "Checkout button gone",
+    confidence: 0.9, dedupKey: "shot-evidence-1",
+    evidence: { reason: "element_gone", screenshotKey: "trails/shot_abc.jpg" },
+  })
+  const found = (await T.listFindings(P)).find((x) => x.id === f.id)
+  expect((found?.evidence as any)?.screenshotKey).toBe("trails/shot_abc.jpg")
+})
+
 // ── KLA-92: Trail step versioning ──
 
 test("Trail.stepVersion starts at 1 and increments on addTrailStep", async () => {

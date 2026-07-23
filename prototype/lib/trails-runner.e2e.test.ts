@@ -329,6 +329,44 @@ test("(vi) an ambiguous selector (matches >1 elements) fails RED with reason=amb
   expect(ctrlSummary.verdict).toBe("green")
 }, 30000)
 
+test("(vi-b) KLA-87: a queued finding carries the failure screenshotKey when stepShots is on", async () => {
+  const projectId = "proj_kla87_shotkey"
+  const traj = {
+    name: "Ambiguous click (shot)",
+    intent: "click a duplicated button",
+    baseUrl: "https://app.test/",
+    authorKind: "llm" as const,
+    createdBy: "agent@klavity",
+    steps: [
+      { action: "click" as const, url: "https://app.test/", domHash: "da",
+        target: { role: "button", text: "Action A", resolvedSelector: ".dup-btn" } },
+    ],
+  }
+  const { trailId } = await crystallize(projectId, traj)
+  await T.setTrailStatus(projectId, trailId, "active")
+
+  let uploads = 0
+  const fakeUploader = async (_b: Uint8Array, _ct: string): Promise<{ key: string }> => {
+    uploads++
+    return { key: "shot_finding_" + uploads }
+  }
+
+  const summary = await walkTrail(projectId, trailId, {
+    fixtureUrl: fixtureUrl("checkout-mockup-ambiguous.html"),
+    stepShots: true,
+    shotUploader: fakeUploader,
+  })
+  expect(summary.verdict).toBe("red")
+
+  // KLA-87: the recorded finding must carry a failure screenshotKey in its evidence so the review
+  // queue can render a thumbnail next to it (previously the key lived only in run_step evidence).
+  const findings = await T.listFindings(projectId)
+  const f = findings.find((x) => x.dedupKey.includes("ambiguous_selector"))
+  expect(f).toBeTruthy()
+  expect((f!.evidence as any)?.screenshotKey).toMatch(/^shot_finding_\d+$/)
+  expect(uploads).toBeGreaterThanOrEqual(1)
+}, 30000)
+
 test("(vii) inline go(N) wizard transition regression is tagged RED after fallback", async () => {
   const projectId = "proj_inline_go"
   const traj = {

@@ -544,6 +544,25 @@ async function maybeCaptureShot(page: Page, opts: WalkOptions): Promise<{ bytes:
   }
 }
 
+// KLA-87: capture + upload ONE screenshot synchronously on a finding (RED) path and return its S3
+// key, so the failure image can be stamped into the finding's evidence and surfaced next to it in
+// the review queue. The happy-path queue deliberately keeps S3 I/O off the step deadline; findings
+// are terminal failures where a single bounded, best-effort upload is worth having the key inline.
+// Returns undefined when stepShots is disabled or on ANY capture/upload failure — never throws, so
+// it can never turn a finding into a walk error. Gated on stepShots so default-off callers pay $0.
+async function captureFindingShotKey(page: Page, opts: WalkOptions): Promise<string | undefined> {
+  if (!opts.stepShots) return undefined
+  try {
+    const shot = await maybeCaptureShot(page, opts)
+    if (!shot) return undefined
+    const uploader = opts.shotUploader ?? defaultShotUploader
+    const { key } = await uploader(shot.bytes, shot.contentType)
+    return key || undefined
+  } catch {
+    return undefined
+  }
+}
+
 export interface StepShotUploadQueue {
   enqueue: (runStepId: string, bytes: Uint8Array, contentType: string) => boolean
   drain: () => Promise<void>
@@ -1221,10 +1240,12 @@ async function runOneStep(
       // exactly which selector to fix, then fail this step RED immediately.
       const title = `Selector matched ${e.matchCount} elements instead of one — AutoSim can't tell which "${e.selector}" to act on. Update the Trail to target a unique element.`
       if (!opts.suppressFindings) {
+        // KLA-87: attach the failure screenshot to the finding so the review queue can show it.
+        const shotKey = await captureFindingShotKey(page, opts)
         await recordFinding(projectId, {
           runId, trailId, stepId: step.id,
           kind: "regression", title,
-          evidence: tagRedEvidence(failureKindForExpectationFailure(), { selector: e.selector, matchCount: e.matchCount, stepAction: step.action }),
+          evidence: tagRedEvidence(failureKindForExpectationFailure(), { selector: e.selector, matchCount: e.matchCount, stepAction: step.action, ...(shotKey ? { screenshotKey: shotKey } : {}) }),
           confidence: 1.0,
           dedupKey: `ambiguous_selector:${trailId}:${step.id}`,
           contentSig: contentSigFor({ kind: "regression", selector: e.selector, urlPath: page.url() }),
@@ -1272,9 +1293,11 @@ async function runOneStep(
         const targetName = fp?.accessibleName ?? fp?.text ?? step.action
         const roleHint = step.target?.role ? ` (${step.target.role})` : ""
         const title = `Can't find "${targetName}"${roleHint} on the page — the element may have been removed or renamed.`
+        // KLA-87: attach the failure screenshot to the finding so the review queue can show it.
+        const shotKey = await captureFindingShotKey(page, opts)
         await recordFinding(projectId, {
           runId, trailId, stepId: step.id, kind: "regression", title,
-          evidence: tagRedEvidence(failureKindForExpectationFailure(), { reason: "element_gone", fingerprint: fp, cachedSelector, action: step.action, pageUrl: stepPageUrl }),
+          evidence: tagRedEvidence(failureKindForExpectationFailure(), { reason: "element_gone", fingerprint: fp, cachedSelector, action: step.action, pageUrl: stepPageUrl, ...(shotKey ? { screenshotKey: shotKey } : {}) }),
           // B.13: groundQuote is a synthesized diagnostic (self-referential title), NOT a verbatim
           // page-text quote — mark unverified so external tickets relabel it "Reason:" not "Grounded:".
           groundQuote: title, groundQuoteVerified: false, confidence: 0.7,
@@ -1396,9 +1419,11 @@ async function runOneStep(
       const title = isAssert
         ? `Check failed — "${step.checkpoint?.description ?? fp?.accessibleName ?? fp?.text ?? "expected condition"}" was not met on the page.`
         : `Could not complete ${humanStepDescription(step.action, fp?.accessibleName)} — the interaction failed after retrying.`
+      // KLA-87: attach the failure screenshot to the finding so the review queue can show it.
+      const shotKey = await captureFindingShotKey(page, opts)
       await recordFinding(projectId, {
         runId, trailId, stepId: step.id, kind: "regression", title,
-        evidence: tagRedEvidence(failureKindForExpectationFailure(), { reason: isAssert ? "checkpoint_failed" : "action_failed", action: step.action, selector: resolved.selector, checkpoint: step.checkpoint?.description ?? null, pageUrl: stepPageUrl }),
+        evidence: tagRedEvidence(failureKindForExpectationFailure(), { reason: isAssert ? "checkpoint_failed" : "action_failed", action: step.action, selector: resolved.selector, checkpoint: step.checkpoint?.description ?? null, pageUrl: stepPageUrl, ...(shotKey ? { screenshotKey: shotKey } : {}) }),
         // B.13: self-referential title, not verified page text → unverified.
         groundQuote: title, groundQuoteVerified: false, confidence: 0.8,
         dedupKey: `${trailId}:${step.id}:${isAssert ? "checkpoint-failed" : "action-failed"}`,
@@ -1502,10 +1527,14 @@ async function runVisionTier2(
   if (isAssert) {
     const targetLabel = fp?.accessibleName ?? fp?.text ?? step.checkpoint?.description ?? step.action
     const title = `"${targetLabel}" is no longer on the page — this check can't pass because the element it was looking for has disappeared.`
+    // KLA-87: capture ONE failure screenshot and stamp its key into BOTH the finding evidence and
+    // the run_step, so the review queue can render it via the existing walk-step screenshot route.
+    let shotKey: string | undefined
     if (!opts.suppressFindings) {
+      shotKey = await captureFindingShotKey(page, opts)
       await recordFinding(projectId, {
         runId, trailId, stepId: step.id, kind: "regression", title,
-        evidence: tagRedEvidence(failureKindForExpectationFailure(), { reason: "checkpoint_gone", target: fp, pageUrl: opts.fixtureUrl, checkpoint: step.checkpoint?.description ?? null }),
+        evidence: tagRedEvidence(failureKindForExpectationFailure(), { reason: "checkpoint_gone", target: fp, pageUrl: opts.fixtureUrl, checkpoint: step.checkpoint?.description ?? null, ...(shotKey ? { screenshotKey: shotKey } : {}) }),
         // B.13: self-referential title, not verified page text → unverified.
         groundQuote: title, groundQuoteVerified: false, confidence: 1,
         dedupKey: `${trailId}:${step.id}:checkpoint-gone`,
@@ -1518,7 +1547,7 @@ async function runVisionTier2(
     await addStepRun({
       runId, trailId, stepId: step.id, idx: step.idx,
       tier: "vision", verdict: "red", confidence: 1, diagnosis: "regression", healed: false,
-      evidence: tagRedEvidence(failureKindForExpectationFailure(), { reason: "checkpoint_gone", target: fp, cachedSelector, needsVision: false, checkpoint: step.checkpoint?.description ?? null, recordedStep: recordedStep(cachedSelector, fp) }),
+      evidence: tagRedEvidence(failureKindForExpectationFailure(), { reason: "checkpoint_gone", target: fp, cachedSelector, needsVision: false, checkpoint: step.checkpoint?.description ?? null, recordedStep: recordedStep(cachedSelector, fp), ...(shotKey ? { screenshotKey: shotKey } : {}) }),
     })
     return { tier: "vision", verdict: "red", healed: false, llmCalls: 0, failureKind: failureKindForExpectationFailure() }
   }
@@ -1575,10 +1604,14 @@ async function runVisionTier2(
   if (decision.outcome === "regression") {
     const goneName = fp?.accessibleName ?? fp?.text ?? step.action
     const title = `"${goneName}" no longer exists on the page — AutoSim inspected the page visually and confirmed the element is gone.`
+    // KLA-87: capture ONE failure screenshot and stamp its key into BOTH the finding evidence and
+    // the run_step, so the review queue can render it via the existing walk-step screenshot route.
+    let shotKey: string | undefined
     if (!opts.suppressFindings) {
+      shotKey = await captureFindingShotKey(page, opts)
       await recordFinding(projectId, {
         runId, trailId, stepId: step.id, kind: "regression", title,
-        evidence: tagRedEvidence(failureKindForExpectationFailure(), { rationale: decision.rationale, target: fp, pageUrl: opts.fixtureUrl, domExcerpt }),
+        evidence: tagRedEvidence(failureKindForExpectationFailure(), { rationale: decision.rationale, target: fp, pageUrl: opts.fixtureUrl, domExcerpt, ...(shotKey ? { screenshotKey: shotKey } : {}) }),
         // B.13: the vision rationale is the model's explanation, not a verbatim page-text quote → unverified.
         groundQuote: decision.rationale, groundQuoteVerified: false, confidence: decision.confidence,
         dedupKey: `${trailId}:${step.id}:gone`,
@@ -1589,7 +1622,7 @@ async function runVisionTier2(
     await addStepRun({
       runId, trailId, stepId: step.id, idx: step.idx,
       tier: "vision", verdict: "red", confidence: decision.confidence, diagnosis: "regression", healed: false,
-      evidence: tagRedEvidence(failureKindForExpectationFailure(), { reason: "vision_regression", classification: result.classification, rationale: decision.rationale, target: fp, needsVision: false, checkpoint: step.checkpoint?.description ?? null, recordedStep: recordedStep(cachedSelector, fp) }),
+      evidence: tagRedEvidence(failureKindForExpectationFailure(), { reason: "vision_regression", classification: result.classification, rationale: decision.rationale, target: fp, needsVision: false, checkpoint: step.checkpoint?.description ?? null, recordedStep: recordedStep(cachedSelector, fp), ...(shotKey ? { screenshotKey: shotKey } : {}) }),
     })
     return { tier: "vision", verdict: "red", healed: false, llmCalls: 1, failureKind: failureKindForExpectationFailure() }
   }
