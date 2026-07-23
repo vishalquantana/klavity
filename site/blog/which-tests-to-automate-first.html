@@ -1,0 +1,102 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to Decide Which Tests to Automate First: A Framework · Klavity</title>
+<meta name="description" content="You can't automate every test at once. Score each candidate on frequency, stability, manual cost, and business risk, then automate the top of the list first.">
+<link rel="canonical" href="https://klavity.in/blog/which-tests-to-automate-first">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="How to Decide Which Tests to Automate First: A Framework"><meta property="og:description" content="You can't automate every test at once. Score each candidate on frequency, stability, manual cost, and business risk, then automate the top of the list first.">
+<meta property="og:url" content="https://klavity.in/blog/which-tests-to-automate-first"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="How to Decide Which Tests to Automate First: A Framework"><meta name="twitter:description" content="You can't automate every test at once. Score each candidate on frequency, stability, manual cost, and business risk, then automate the top of the list first."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"How to Decide Which Tests to Automate First: A Framework","description":"You can't automate every test at once. Score each candidate on frequency, stability, manual cost, and business risk, then automate the top of the list first.","datePublished":"2026-07-23","dateModified":"2026-07-23","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/which-tests-to-automate-first","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Decide Which Tests to Automate First: A Framework","item":"https://klavity.in/blog/which-tests-to-automate-first"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/which-tests-to-automate-first"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Should I aim for 100% test automation?","acceptedAnswer":{"@type":"Answer","text":"No. Some tests cost more to automate and maintain than they save, and some checks — visual polish, first-run UX, exploratory judgment — are cheaper and better done by a person. Aim to automate the stable, repetitive, high-value checks and keep humans on the rest."}},{"@type":"Question","name":"What is the single best predictor that a test should be automated?","acceptedAnswer":{"@type":"Answer","text":"How often you'd otherwise run it by hand. A check you repeat every release or every deploy pays back its automation cost fastest, provided the underlying behavior is stable enough that the test won't break on every UI tweak."}},{"@type":"Question","name":"How do I stop automated tests from becoming a maintenance burden?","acceptedAnswer":{"@type":"Answer","text":"Prioritize stable flows, use resilient selectors, and adopt self-healing tests that repair broken locators when the UI changes so a renamed button doesn't fail the whole suite. Maintenance cost is a factor in the priority score, not an afterthought."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-07-23</div>
+    <h1>How to Decide Which Tests to Automate First: A Framework</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>Automate tests in order of return: run frequency times manual cost times business risk, divided by build-and-maintain cost. That means high-frequency, stable, expensive-to-check flows that guard critical paths get automated first; one-off, unstable, or low-risk checks wait or stay manual.</div>
+    <div class="prose"><p>Automate the tests that run most often, stay stable across releases, are slow or tedious to verify by hand, and guard your highest-risk user flows — in roughly that order. Prioritizing this way front-loads the return on your automation effort, because a test's value is approximately its manual execution cost multiplied by how often you would otherwise run it, divided by what it costs to build and maintain. Score every candidate test on those factors and automate from the top of the list down.</p>
+
+<h2>Why you can't automate every test at once</h2>
+<p>Automation is not free. Each test costs engineering time to write, and — often the bigger number — ongoing time to maintain as the product changes. If you try to automate everything, you spend that budget on low-value checks and slow suites before you cover the flows that would actually catch a costly regression.</p>
+<p>The goal is not maximum coverage. It is maximum <em>return</em> per hour of automation effort. That means treating your list of candidate tests as a backlog to be ranked, not a checklist to be exhausted.</p>
+
+<h2>What makes a test worth automating first</h2>
+<p>Four properties raise a test's priority. The first three raise its value; the fourth lowers its cost.</p>
+<ol>
+<li><strong>Run frequency.</strong> How often would you execute this check by hand if it weren't automated? A smoke test you run on every deploy pays back far faster than one you run once a quarter. Frequency is the strongest single predictor of automation value.</li>
+<li><strong>Manual cost per run.</strong> A check that takes 20 seconds to eyeball is cheap to keep manual. One that requires setting up test data, walking through eight screens, and comparing values is expensive every single time — and expensive-per-run is exactly what automation is good at eliminating.</li>
+<li><strong>Business risk.</strong> What breaks if this path fails silently? Login, checkout, payment, and data-integrity flows carry outsized risk; a tooltip's wording does not. Weight the flows where a bug costs revenue, trust, or data.</li>
+<li><strong>Stability of the behavior.</strong> A flow whose UI and logic change every sprint will break its test every sprint, driving maintenance cost up. Stable, settled behavior is cheap to automate; churny, half-designed features are not — automate them once they stop moving.</li>
+</ol>
+
+<h2>A simple scoring framework for automation priority</h2>
+<p>Turn the four properties into a rough score you can sort by. You do not need precision — you need a defensible order.</p>
+<ol>
+<li><strong>List the candidates.</strong> Pull every repeatable check your team performs: regression passes, smoke tests, critical user journeys, edge cases you keep re-verifying after fixes.</li>
+<li><strong>Score each factor 1–5.</strong> Rate frequency, manual cost, and business risk from low (1) to high (5). Then rate <em>maintenance cost</em> from low (1) to high (5) separately — this one works against automation.</li>
+<li><strong>Compute a priority number.</strong> Use <em>(frequency × manual cost × business risk) ÷ maintenance cost</em>. High-value, low-upkeep tests float to the top; expensive-to-maintain checks sink even if their value is decent.</li>
+<li><strong>Automate down the list.</strong> Start at the top and work down until you exhaust your automation budget for this cycle. Everything below the line stays manual — on purpose, and revisited next cycle.</li>
+</ol>
+<p>A worked example: an end-to-end checkout test scored frequency 5 (every deploy), manual cost 5 (multi-step, needs test data), risk 5 (revenue), maintenance 2 (stable flow) lands at 62.5 — automate it now. A settings-page label check at frequency 2, manual cost 1, risk 1, maintenance 1 lands at 2 — leave it manual. The gap between them is the whole point.</p>
+
+<h2>Which tests to automate last — or never</h2>
+<p>Some checks are legitimately better left to a human, and forcing them into a suite wastes budget and adds flakiness:</p>
+<ul>
+<li><strong>One-off verifications.</strong> If you'll run it once to confirm a fix, just run it. Convert it to an automated <a href="/blog/turn-a-bug-into-a-regression-test">regression test</a> only if the bug is likely to recur.</li>
+<li><strong>Rapidly changing UI.</strong> Automating a feature that's still being redesigned means rewriting the test weekly. Wait for it to settle.</li>
+<li><strong>Subjective and exploratory checks.</strong> Visual polish, tone, and "does this feel right" are human judgments. Exploratory testing finds the bugs you didn't think to script — automation can't replace that.</li>
+<li><strong>Rarely-hit, low-risk paths.</strong> A test that runs twice a year to guard a cosmetic corner rarely earns its maintenance cost.</li>
+</ul>
+
+<h2>How to keep the priority list from going stale</h2>
+<p>The ranking is a snapshot, not a law. A feature that shipped last quarter is now high-frequency; a flow you deprecated is now zero-risk. Two habits keep the list honest:</p>
+<ol>
+<li><strong>Re-score each release.</strong> Frequency and business risk drift as usage and the product change. A quick pass every release keeps you automating what matters now, not what mattered six months ago.</li>
+<li><strong>Drive down maintenance cost so more tests qualify.</strong> The denominator in the score is not fixed. Resilient selectors and <a href="/autosim">self-healing end-to-end tests</a> that auto-repair broken locators when the UI shifts lower maintenance cost across the board — which pulls more tests above the automation line without extra upkeep.</li>
+</ol>
+<p>One more compounding source of candidates: the bugs your users actually hit. When a real report comes in through <a href="/snap">in-app bug reporting</a> with the steps, console, and network state attached, you get a reproducible case that's often worth locking in as an automated regression test — a data-driven way to keep the top of your priority list pointed at the paths that break in the wild.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Rank candidates by (frequency × manual cost × business risk) ÷ (build + maintenance cost)</li><li>Automate high-frequency, stable, critical-path flows before anything else</li><li>Leave one-off, fast-changing, or low-risk checks manual until they stabilize</li><li>Recount the priority list every release — frequency and risk shift over time</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Should I aim for 100% test automation?</summary><p>No. Some tests cost more to automate and maintain than they save, and some checks — visual polish, first-run UX, exploratory judgment — are cheaper and better done by a person. Aim to automate the stable, repetitive, high-value checks and keep humans on the rest.</p></details><details><summary>What is the single best predictor that a test should be automated?</summary><p>How often you'd otherwise run it by hand. A check you repeat every release or every deploy pays back its automation cost fastest, provided the underlying behavior is stable enough that the test won't break on every UI tweak.</p></details><details><summary>How do I stop automated tests from becoming a maintenance burden?</summary><p>Prioritize stable flows, use resilient selectors, and adopt self-healing tests that repair broken locators when the UI changes so a renamed button doesn't fail the whole suite. Maintenance cost is a factor in the priority score, not an afterthought.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
