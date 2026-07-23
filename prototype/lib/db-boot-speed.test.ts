@@ -96,6 +96,7 @@ describe("applySchema — established DB boot speed", () => {
       ["expectations",    "source_ticket_id"],   // KLA-242: guard-this-fix ticket back-link
       ["author_sessions", "checkpoint_json"],
       ["author_sessions", "objective_verified"],
+      ["author_sessions", "judge_persona_id"],  // KLAVITYKLA-149: wizard-picked reviewer Sim
       ["walk_share_tokens", "revoked_at"],
       ["walk_share_tokens", "passcode_hash"],   // KLA-210 (JTBD 7.5): share-manager passcode gate
       ["walk_share_tokens", "last_viewed_at"],  // KLA-210 (JTBD 7.5): view signal

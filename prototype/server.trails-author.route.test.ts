@@ -102,6 +102,7 @@ process.env.TURSO_AUTH_TOKEN = ""
 const { reconnectDb, applySchema } = await import("./lib/db")
 const { crystallize } = await import("./lib/trails-crystallize")
 const { setTrailStatus, getTrail } = await import("./lib/trails")
+const { createAuthorSession, getAuthorSession } = await import("./lib/trails-author")
 
 // Initialize the shared db singleton to point at the test DB.
 const _db = reconnectDb("file:" + srvDbFile)
@@ -215,6 +216,38 @@ test("validation: objective 10-2000 chars, base_url http(s), unknown test_accoun
   expect(bad2.status).toBe(400)
   const bad3 = await fetch(`${base}/api/trails/author?project=${pid}`, { method: "POST", headers: { cookie: adminCookie, "content-type": "application/json" }, body: JSON.stringify({ name: "x", objective: "a".repeat(20), base_url: "https://a.b", test_account: "ghost" }) })
   expect(bad3.status).toBe(400)
+})
+
+// KLAVITYKLA-149: the wizard's "Who reviews it?" step (`sim_name`) must NOT be silently dropped.
+// An unknown reviewer Sim is rejected with 400 — proving the field is read server-side. (A valid one
+// is exercised at the lib layer below, since a browserless POST cannot run the crystallize drive.)
+test("sim_name: unknown reviewer Sim → 400 (field is honored, not dropped)", async () => {
+  const bad = await fetch(`${base}/api/trails/author?project=${pid}`, {
+    method: "POST", headers: { cookie: adminCookie, "content-type": "application/json" },
+    body: JSON.stringify({ name: "x", objective: "a".repeat(20), base_url: "https://a.b", sim_name: "Nonexistent Reviewer" }),
+  })
+  expect(bad.status).toBe(400)
+  expect((await bad.json()).error).toContain("Nonexistent Reviewer")
+})
+
+// KLAVITYKLA-149: a picked reviewer Sim rides the trajectory into the crystallized Trail as its
+// judge persona (reused by the Judge-voice selector + run judge), so the wizard step is no longer theater.
+test("crystallize persists judgePersonaId from the trajectory onto the Trail", async () => {
+  const personaId = `persona_jp_${ts}`
+  await rawExec(`INSERT INTO personas (id, project_id, name, type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`, [personaId, pid, "Picky Reviewer", "client", NOW, NOW])
+  const { trailId } = await crystallize(pid, { ...tinyTrajectory(), judgePersonaId: personaId })
+  const trail = await getTrail(pid, trailId)
+  expect(trail!.judgePersonaId).toBe(personaId)
+})
+
+// KLAVITYKLA-149: the reviewer survives a resume — createAuthorSession stores judge_persona_id so a
+// resumed drive re-crystallizes with the same judge persona instead of dropping it.
+test("createAuthorSession round-trips judgePersonaId (survives resume)", async () => {
+  const personaId = `persona_sess_${ts}`
+  await rawExec(`INSERT INTO personas (id, project_id, name, type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`, [personaId, pid, "Session Reviewer", "client", NOW, NOW])
+  const sid = await createAuthorSession(pid, { name: "s", objective: "log in and reach dashboard", baseUrl: "https://example.com", judgePersonaId: personaId })
+  const s = await getAuthorSession(pid, sid)
+  expect(s!.judgePersonaId).toBe(personaId)
 })
 
 test("approve: draft→active once; second approve 409; cross-project 404; unauth 401", async () => {
