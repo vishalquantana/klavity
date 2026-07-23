@@ -2956,6 +2956,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const form = await req.formData()
         const description = String(form.get("description") || "").trim()
         const pageUrl = String(form.get("page_url") || "")
+        // KLAVITYKLA-256: quarantine the bare /app Studio DEMO funnel. That funnel reviews a MOCK
+        // "Acme Finance" dashboard and files against the sentinel host studio.klavity.local. Such saves
+        // must NEVER interleave with real client findings in the project's New-reports triage. Tag them
+        // source="studio-demo" (persisted) — honored from the client flag AND independently detected from
+        // the sentinel host server-side (defense in depth: a demo save can't be laundered into the real
+        // inbox even if the client flag is stripped). listTriageFeedback excludes this source by default.
+        const STUDIO_DEMO_SOURCE = "studio-demo"
+        const STUDIO_DEMO_HOST = "studio.klavity.local"
+        const isStudioDemo = String(form.get("source") || "") === STUDIO_DEMO_SOURCE ||
+          (() => { try { return new URL(pageUrl).host === STUDIO_DEMO_HOST } catch { return false } })()
+        const feedbackSourceTag = isStudioDemo ? STUDIO_DEMO_SOURCE : null
         // Source attribution: where the visitor came FROM (document.referrer of the embed page). Capped;
         // kept only if it parses as an http(s) URL so a junk/oversized value never poisons the row/ticket.
         const referrerRaw = String(form.get("referrer") || "").trim().slice(0, 500)
@@ -3264,6 +3275,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   planeIssueKey: null, planeIssueUrl: null,
                   issueKey: newIssueKey,
                   clientContext, annotations,
+                  // KLAVITYKLA-256: persist the sandbox tag so the demo funnel's mock findings are
+                  // excluded from the real New-reports triage listing.
+                  source: feedbackSourceTag,
                 })
                 if (priorFeedbackCount === 0 && feedbackId) {
                   const fbSource = anonWidgetAllowed ? "widget" : (simId ? "sim" : "extension")

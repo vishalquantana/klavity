@@ -4807,9 +4807,14 @@ export async function computeDashboardInsights(projectId: string) {
 // All un-triaged ("new") feedback for a project, newest first — feeds the Triage inbox.
 export async function listTriageFeedback(projectId: string): Promise<any[]> {
   const r = await db!.execute({
+    // KLAVITYKLA-256: exclude the bare /app Studio DEMO funnel's sandbox saves (source='studio-demo').
+    // Those file mock "Acme Finance" findings against studio.klavity.local and must never interleave
+    // with real client findings in the New-reports triage.
     sql: `SELECT f.*, p.name AS sim_name FROM feedback f
           LEFT JOIN personas p ON p.id = f.sim_id
-          WHERE f.project_id=? AND f.status='new' ORDER BY f.created_at DESC LIMIT 200`,
+          WHERE f.project_id=? AND f.status='new'
+            AND (f.source IS NULL OR f.source <> 'studio-demo')
+          ORDER BY f.created_at DESC LIMIT 200`,
     args: [projectId],
   })
   // JTBD 2.8: the triage inbox now expands each row inline to full evidence (screenshot, replay,
@@ -4878,8 +4883,10 @@ export async function listInboxForProjects(
 
   // 1. Count new reports per project in the time window
   const countR = await db!.execute({
+    // KLAVITYKLA-256: sandbox demo saves (source='studio-demo') are excluded from the New-reports count.
     sql: `SELECT project_id, COUNT(*) AS cnt FROM feedback
           WHERE project_id IN (${ph}) AND status='new' AND created_at >= ?
+            AND (source IS NULL OR source <> 'studio-demo')
           GROUP BY project_id`,
     args: [...projectIds, since],
   })
@@ -4909,6 +4916,7 @@ export async function listInboxForProjects(
             SELECT *, ROW_NUMBER() OVER (PARTITION BY project_id ORDER BY created_at DESC) AS rn
             FROM feedback
             WHERE project_id IN (${ph}) AND status='new' AND created_at >= ?
+              AND (source IS NULL OR source <> 'studio-demo')
           ) WHERE rn <= ?`,
     args: [...projectIds, since, topN],
   })
