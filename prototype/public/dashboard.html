@@ -2980,6 +2980,42 @@ function renderTriageFilters() {
     if (ids.length) tgDismiss(ids)
   })
 }
+// KLAVITYKLA-384: restore the bulk-action bar for the New-reports triage inbox. The
+// definition was dropped by a theirs-wins merge while the call sites survived (2986/3029),
+// so renderTriageItems threw "renderTriageBulkBar is not defined". Restored from 3e5debc9.
+function renderTriageBulkBar() {
+  let bar = $("tgBulkBar")
+  const n = _tgSelected.size
+  const host = $("triageList")
+  if (!bar) {
+    bar = document.createElement("div")
+    bar.id = "tgBulkBar"; bar.className = "bulk-bar tg-bulk-bar"
+    const card = host ? host.closest(".card") : null
+    if (card && host) card.insertBefore(bar, host)
+  }
+  if (!n) { bar.classList.remove("show"); bar.innerHTML = ""; return }
+  const priOpts = ["urgent","high","medium","low"].map(p => `<option value="${p}"${p==="medium"?" selected":""}>${p}</option>`).join("")
+  bar.innerHTML =
+    `<span class="bulk-count">${n} selected</span>` +
+    `<span class="bulk-sep"></span>` +
+    `<span class="bulk-lbl">Priority:</span>` +
+    `<select class="bulk-sel" id="tgBulkPri">${priOpts}</select>` +
+    `<button class="btn btn-indigo btn-sm" id="tgBulkAccept" type="button">Accept as bugs</button>` +
+    `<button class="btn btn-ghost btn-sm" id="tgBulkDismiss" type="button">Dismiss</button>` +
+    `<span class="bulk-sep"></span>` +
+    `<button class="btn btn-ghost btn-sm" id="tgBulkClear" type="button" style="font-size:12px">Clear</button>`
+  bar.classList.add("show")
+  bar.querySelector("#tgBulkAccept").addEventListener("click", () => {
+    const pri = bar.querySelector("#tgBulkPri").value
+    tgAccept([..._tgSelected], pri)
+  })
+  bar.querySelector("#tgBulkDismiss").addEventListener("click", () => tgDismiss([..._tgSelected]))
+  bar.querySelector("#tgBulkClear").addEventListener("click", () => {
+    _tgSelected.clear()
+    if (host) host.querySelectorAll(".tg-row").forEach(r => { r.classList.remove("tg-selected"); const c = r.querySelector(".tg-cb"); if (c) c.checked = false })
+    renderTriageBulkBar()
+  })
+}
 function renderTriageItems(items) {
   const host = $("triageList"); if (!host) return
   if (!items.length) {
