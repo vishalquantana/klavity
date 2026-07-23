@@ -700,7 +700,7 @@ export async function applySchema(c: Client) {
        verification_run_id TEXT, verification_verdict TEXT,
        llm_calls INTEGER NOT NULL DEFAULT 0, cost_usd REAL NOT NULL DEFAULT 0,
        created_by TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
-       objective_verified INTEGER, resumed_by TEXT)`,
+       objective_verified INTEGER, resumed_by TEXT, judge_persona_id TEXT)`,
     `CREATE INDEX IF NOT EXISTS author_sess_proj_idx ON author_sessions (project_id, created_at)`,
     // ── One-time guarded migrations (C1 etc.) use this table instead of schema_meta so the
     // migration namespace is separate from runtime KV. ──
@@ -1040,6 +1040,9 @@ export async function applySchema(c: Client) {
     .catch((e: any) => console.warn("author_sessions.resumed_from ALTER skipped:", e?.message || e))
   if (needCol("author_sessions", "resumed_by")) await c.execute("ALTER TABLE author_sessions ADD COLUMN resumed_by TEXT")
     .catch((e: any) => console.warn("author_sessions.resumed_by ALTER skipped:", e?.message || e))
+  // KLAVITYKLA-149: persist the wizard-picked judge/reviewer Sim so it survives a resume and lands on the crystallized Trail.
+  if (needCol("author_sessions", "judge_persona_id")) await c.execute("ALTER TABLE author_sessions ADD COLUMN judge_persona_id TEXT")
+    .catch((e: any) => console.warn("author_sessions.judge_persona_id ALTER skipped:", e?.message || e))
   if (needCol("trails", "objective_verified")) await c.execute("ALTER TABLE trails ADD COLUMN objective_verified INTEGER")
     .catch((e: any) => console.warn("trails.objective_verified ALTER skipped:", e?.message || e))
   if (needCol("author_sessions", "objective_verified")) await c.execute("ALTER TABLE author_sessions ADD COLUMN objective_verified INTEGER")
