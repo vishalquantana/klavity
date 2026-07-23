@@ -598,8 +598,17 @@ export async function listFindings(
   const args: (string | number)[] = [projectId]
   if (opts?.status) { where.push("status=?"); args.push(opts.status) }
   if (opts?.runId) { where.push("run_id=?"); args.push(opts.runId) }
+  // KLA-87: surface the findings that matter most first. Rank by recurrence × kind severity —
+  // a bug seen many times, or a hard regression, should sit at the top of the review queue rather
+  // than whatever was merely touched last. kind_weight mirrors trails-findings-severity ordering
+  // (regression 3 > amber_heal 2 > visual 1). updated_at DESC is the final tiebreak so equal-rank
+  // findings still read newest-first (preserves the old behavior within a rank bucket).
   const r = await db!.execute({
-    sql: `SELECT * FROM findings WHERE project_id=?${where.length ? " AND " + where.join(" AND ") : ""} ORDER BY updated_at DESC LIMIT ? OFFSET ?`,
+    sql: `SELECT * FROM findings WHERE project_id=?${where.length ? " AND " + where.join(" AND ") : ""}
+          ORDER BY
+            (CASE kind WHEN 'regression' THEN 3 WHEN 'amber_heal' THEN 2 ELSE 1 END) * MAX(recurrence, 1) DESC,
+            updated_at DESC
+          LIMIT ? OFFSET ?`,
     args: [...args, limit, offset],
   })
   return r.rows.map(rowToFinding)
