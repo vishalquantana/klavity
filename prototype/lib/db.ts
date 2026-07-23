@@ -1224,6 +1224,18 @@ export async function applySchema(c: Client) {
     .catch((e: any) => console.warn("walk_artifact_trail_idx skipped:", e?.message || e))
   await c.execute("CREATE INDEX IF NOT EXISTS walk_artifact_run_idx ON walk_artifacts(project_id, run_id, kind)")
     .catch((e: any) => console.warn("walk_artifact_run_idx skipped:", e?.message || e))
+  // KLAVITYKLA-364: per-AutoSim-replay COGS instrumentation. A replay is deterministic (Tier-0 cached
+  // selector, ZERO LLM calls); the only billable calls in a walk are Tier-1 self-heals logged as
+  // ai_calls type='reheal'. So true cost-per-replay = SUM(cost_usd) of that run's reheal rows.
+  //   • ai_calls.run_id  — links a reheal call to the walk/trail_run that produced it (NULL on legacy
+  //     rows and on non-walk calls). Indexed so the per-run SUM is cheap.
+  //   • trail_runs.replay_cost_usd — the measured $/replay for that run, summed + stamped by finishWalk.
+  if (needCol("ai_calls", "run_id")) await c.execute("ALTER TABLE ai_calls ADD COLUMN run_id TEXT")
+    .catch((e: any) => console.warn("ai_calls.run_id ALTER skipped:", e?.message || e))
+  await c.execute("CREATE INDEX IF NOT EXISTS ai_calls_run_idx ON ai_calls (run_id) WHERE run_id IS NOT NULL")
+    .catch((e: any) => console.warn("ai_calls_run_idx skipped:", e?.message || e))
+  if (needCol("trail_runs", "replay_cost_usd")) await c.execute("ALTER TABLE trail_runs ADD COLUMN replay_cost_usd REAL")
+    .catch((e: any) => console.warn("trail_runs.replay_cost_usd ALTER skipped:", e?.message || e))
 }
 
 // ── schema_meta helpers ──
@@ -3367,6 +3379,9 @@ export type AiCallInsert = {
   type: string; model: string; actorEmail?: string | null; projectId?: string | null
   accountId?: string | null; feature?: string | null
   inputTokens?: number | null; outputTokens?: number | null; costUsd?: number | null; ok?: boolean
+  // KLAVITYKLA-364: optional linkage to the walk/replay run that produced this call. Set for
+  // Tier-1 self-heal ('reheal') calls so per-replay COGS = SUM(cost_usd) over one run_id.
+  runId?: string | null
 }
 export type AiCallRow = {
   id: string; createdAt: number; type: string; model: string
@@ -3570,10 +3585,10 @@ export async function recordAiCall(a: AiCallInsert): Promise<void> {
   const accountId = await accountIdForAiCall(a.projectId, a.accountId, a.actorEmail)
   const feature = aiFeatureFor(a.type, a.feature)
   await db!.execute({
-    sql: `INSERT INTO ai_calls (id,created_at,type,model,account_id,feature,actor_email,project_id,input_tokens,output_tokens,cost_usd,ok)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+    sql: `INSERT INTO ai_calls (id,created_at,type,model,account_id,feature,actor_email,project_id,input_tokens,output_tokens,cost_usd,ok,run_id)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [id, Date.now(), a.type, a.model, accountId, feature, a.actorEmail ?? null, a.projectId ?? null,
-           a.inputTokens ?? null, a.outputTokens ?? null, a.costUsd ?? null, a.ok === false ? 0 : 1],
+           a.inputTokens ?? null, a.outputTokens ?? null, a.costUsd ?? null, a.ok === false ? 0 : 1, a.runId ?? null],
   })
 }
 
@@ -3612,6 +3627,47 @@ export async function opsByTypeModel(): Promise<{ type: string; model: string; c
     `SELECT type, model, COALESCE(SUM(cost_usd),0) AS cost, COUNT(*) AS calls
      FROM ai_calls GROUP BY type, model ORDER BY cost DESC`)
   return r.rows.map((x: any) => ({ type: String(x.type), model: String(x.model), cost: Number(x.cost), calls: Number(x.calls) }))
+}
+
+// KLAVITYKLA-364: measured cost of a single AutoSim REPLAY. A replay makes ZERO LLM calls unless a
+// step's cached selector fails and a Tier-1 self-heal fires (ai_calls type='reheal'). The true
+// $/replay for a run is therefore the sum of that run's reheal costs (0 for a fully-cached replay).
+export async function sumRunRehealCostUsd(runId: string): Promise<number> {
+  const r = await db!.execute({
+    sql: `SELECT COALESCE(SUM(cost_usd),0) AS cost FROM ai_calls WHERE run_id=? AND type='reheal'`,
+    args: [runId],
+  })
+  return Number((r.rows[0] as any).cost)
+}
+
+// KLAVITYKLA-364: /opsadmin replay-COGS rollup. Confirms the ~$0.005/replay planning assumption with
+// MEASURED data before the Founding Ten cohort is offered an hourly cadence. Aggregates over finished
+// walks in the window that have a stamped replay_cost_usd (i.e. instrumented runs). "reheals" = walks
+// that actually incurred a self-heal cost; the rest replayed deterministically at $0.
+export async function opsReplayCogs(days = 30): Promise<{
+  days: number; runs: number; runsWithReheal: number; totalCost: number; avgCost: number; maxCost: number
+}> {
+  const clampedDays = Math.max(1, Math.min(366, Math.floor(Number(days) || 30)))
+  const sinceMs = Date.now() - clampedDays * 86400000
+  const r = await db!.execute({
+    sql: `SELECT COUNT(*) AS runs,
+                 COALESCE(SUM(replay_cost_usd),0) AS total_cost,
+                 COALESCE(AVG(replay_cost_usd),0) AS avg_cost,
+                 COALESCE(MAX(replay_cost_usd),0) AS max_cost,
+                 COALESCE(SUM(CASE WHEN replay_cost_usd > 0 THEN 1 ELSE 0 END),0) AS with_reheal
+          FROM trail_runs
+          WHERE finished_at IS NOT NULL AND finished_at >= ? AND replay_cost_usd IS NOT NULL`,
+    args: [sinceMs],
+  })
+  const x = r.rows[0] as any
+  return {
+    days: clampedDays,
+    runs: Number(x.runs),
+    runsWithReheal: Number(x.with_reheal),
+    totalCost: Number(x.total_cost),
+    avgCost: Number(x.avg_cost),
+    maxCost: Number(x.max_cost),
+  }
 }
 
 export async function opsTenantCostSummary(days = 30): Promise<{

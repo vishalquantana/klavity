@@ -12,7 +12,7 @@ export interface VisionResult {
   found: boolean; selector: string | null; confidence: number
   classification: "moved" | "restyled" | "removed" | "unknown"; rationale: string
 }
-export type VisionResolver = (input: VisionInput, ctx?: { projectId?: string | null; email?: string | null; weights?: Record<string, number> }) => Promise<VisionResult>
+export type VisionResolver = (input: VisionInput, ctx?: { projectId?: string | null; email?: string | null; weights?: Record<string, number>; runId?: string | null }) => Promise<VisionResult>
 
 export interface VisionDecision {
   outcome: "heal" | "regression" | "amber_low_conf"
@@ -118,6 +118,7 @@ export const openRouterVisionResolver: VisionResolver = async (input, ctx) => {
   const recordFailure = async () => {
     await recordAiCall({
       type: "reheal", feature: "heal", model, projectId: ctx?.projectId ?? null, actorEmail: ctx?.email ?? null,
+      runId: ctx?.runId ?? null,
       inputTokens: null, outputTokens: null, costUsd: 0, ok: false,
     }).catch(() => {})
   }
@@ -163,6 +164,7 @@ export const openRouterVisionResolver: VisionResolver = async (input, ctx) => {
     // successes with ok=1, errors with ok=false (KLA-123).
     await recordAiCall({
       type: "reheal", feature: "heal", model, projectId: ctx?.projectId ?? null, actorEmail: ctx?.email ?? null,
+      runId: ctx?.runId ?? null,
       inputTokens: typeof u.prompt_tokens === "number" ? u.prompt_tokens : null,
       outputTokens: typeof u.completion_tokens === "number" ? u.completion_tokens : null,
       costUsd: cost || null,

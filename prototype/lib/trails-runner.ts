@@ -1556,7 +1556,9 @@ async function runVisionTier2(
       target: fp ?? {},
       candidateSelectors,
     }
-    result = await opts.vision!(visionInput, { projectId, weights: opts.visionWeights })
+    // KLAVITYKLA-364: pass runId so the reheal's ai_calls row is attributable to THIS replay run —
+    // finishWalk later sums those rows into trail_runs.replay_cost_usd (measured $/replay).
+    result = await opts.vision!(visionInput, { projectId, weights: opts.visionWeights, runId })
     decision = decideFromVision(result, gate)
   } catch (e) {
     await addStepRun({
