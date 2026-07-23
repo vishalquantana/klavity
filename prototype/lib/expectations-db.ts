@@ -60,6 +60,34 @@ export async function listExpectations(c: Client, projectId: string, status?: Ex
   return r.rows.map(rowTo)
 }
 
+/**
+ * KLAVITYKLA-72: bounded candidate set for upsertExpectation's lexical near-duplicate fallback.
+ * The old path loaded the project's ENTIRE expectations table on every ingest (O(n) per finding as
+ * history accumulates). The lexical matcher only compares titles, so we bound the candidate set to
+ * the rows most likely to match:
+ *   • same `area` (plus area-less legacy rows), when an area is known — the strongest lexical prior;
+ *   • otherwise the most-recently-updated rows.
+ * Capped at EXP_MATCH_CANDIDATES_MAX ordered by updated_at DESC so the scan stays O(1) in size.
+ */
+export const EXP_MATCH_CANDIDATES_MAX = 200
+
+export async function listExpectationMatchCandidates(
+  c: Client,
+  projectId: string,
+  area: string | null,
+): Promise<ExpectationRow[]> {
+  const r = area
+    ? await c.execute({
+        sql: "SELECT * FROM expectations WHERE project_id=? AND (area=? OR area IS NULL) ORDER BY updated_at DESC LIMIT ?",
+        args: [projectId, area, EXP_MATCH_CANDIDATES_MAX],
+      })
+    : await c.execute({
+        sql: "SELECT * FROM expectations WHERE project_id=? ORDER BY updated_at DESC LIMIT ?",
+        args: [projectId, EXP_MATCH_CANDIDATES_MAX],
+      })
+  return r.rows.map(rowTo)
+}
+
 export async function upsertExpectation(c: Client, input: {
   projectId: string; title: string; area?: string | null; urlPath?: string | null; dedupKey: string; source: SourceRef
   /** KLA-242: feedback ticket id when created via "Guard this fix" */
@@ -77,7 +105,9 @@ export async function upsertExpectation(c: Client, input: {
   // matchExpectation(...) (≥ 0.82 accept behavior unchanged) — the extra return is the set of
   // DECLINED pairs in the near-miss band, which we log for cross-source-matching measurement.
   if (!existing) {
-    const all = await listExpectations(c, input.projectId)
+    // KLAVITYKLA-72: bound the lexical-fallback candidate set (same-area / most-recent) instead of
+    // loading ALL project expectations on every ingest.
+    const all = await listExpectationMatchCandidates(c, input.projectId, input.area ?? null)
     const cands = all.map((e) => ({ id: e.id, title: e.title }))
     const { matchId, nearMisses } = matchExpectationWithNearMisses({ title: input.title }, cands)
     if (matchId) {

@@ -13,7 +13,7 @@
 //     auto-copy decrypt loop in server.ts (getConnector(type).createIssue + decryptSecret per secret field).
 
 import type { Finding } from "./trails-types"
-import { listFindings, setFindingConnectorError, setFindingStatus, getRunStepEvidence } from "./trails"
+import { listFindings, findFindingById, findingsByRunId, setFindingConnectorError, setFindingStatus, getRunStepEvidence } from "./trails"
 import { listAutoCopyConnectors, projectById } from "./db"
 import { getConnector, type TicketPayload, type TicketAttachment } from "./connectors/index"
 import { decryptSecret } from "./crypto"
@@ -81,7 +81,8 @@ export async function processWalkFindings(
   runId: string,
   deps: { filer: Filer; threshold?: number },
 ): Promise<{ autoFiled: string[]; queued: string[] }> {
-  const findings = (await listFindings(projectId)).filter((f) => f.runId === runId && f.status === "queued")
+  // KLAVITYKLA-72: narrow per-run query instead of a whole-project scan + JS filter.
+  const findings = await findingsByRunId(projectId, runId, { status: "queued" })
   const autoFiled: string[] = []
   const queued: string[] = []
   for (const f of findings) {
@@ -131,7 +132,8 @@ export async function maybeAutoFileWalkFindings(
   // processWalkFindings already applies decideFindingAction per finding; by calling it here we auto-file
   // the high-confidence regression findings and leave the subjective ones queued for human review.
   // Fast-path: skip the filer entirely if there are no auto-fileable findings for this run.
-  const queued = (await listFindings(projectId)).filter((f) => f.runId === runId && f.status === "queued")
+  // KLAVITYKLA-72: narrow per-run query instead of a whole-project scan + JS filter.
+  const queued = await findingsByRunId(projectId, runId, { status: "queued" })
   const hasGuardCaught = queued.some((f) => decideFindingAction(f) === "auto_file")
   if (!hasGuardCaught) return { autoFiled: [], queued: [] }
 
@@ -147,7 +149,8 @@ export async function fileFindingById(
   findingId: string,
   deps: { filer: Filer },
 ): Promise<{ ok: boolean; connectorRef?: string }> {
-  const f = (await listFindings(projectId)).find((x) => x.id === findingId)
+  // KLAVITYKLA-72: narrow single-finding lookup instead of a whole-project scan + JS find.
+  const f = await findFindingById(projectId, findingId)
   if (!f || f.status !== "queued") return { ok: false }
   const r = await deps.filer(projectId, f).catch((err) => ({
     connectorError: connectorFailureMessage("manual file threw", err),
@@ -166,7 +169,8 @@ export async function fileFindingById(
 // Returns true if it transitioned to dismissed; false (no-op) for missing/foreign/non-queued ids so the
 // route can answer 404 instead of a misleading 200.
 export async function dismissFinding(projectId: string, findingId: string): Promise<boolean> {
-  const f = (await listFindings(projectId)).find((x) => x.id === findingId)
+  // KLAVITYKLA-72: narrow single-finding lookup instead of a whole-project scan + JS find.
+  const f = await findFindingById(projectId, findingId)
   if (!f || f.status !== "queued") return false
   await setFindingStatus(projectId, findingId, "dismissed")
   return true
