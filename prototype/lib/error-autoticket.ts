@@ -163,38 +163,65 @@ export async function autoTicketError(info: ErrorInfo): Promise<void> {
   try {
     const signature = errorTicketSignature(info)
     const now = Date.now()
-    const existing = await db.execute({ sql: "SELECT * FROM error_tickets WHERE signature=?", args: [signature] })
-    if (existing.rows.length) {
-      const row = existing.rows[0] as any as ErrorTicketRow
+
+    // KLAVITYKLA-389: reserve the signature row atomically BEFORE filing the Plane issue.
+    // The old flow was SELECT-then-INSERT: two errors with the same signature arriving together
+    // both saw no row, both filed a Plane ticket (duplicates, e.g. KLA-382/383), and the second
+    // INSERT threw "UNIQUE constraint failed: error_tickets.signature" — after 3 such throws
+    // auto-ticketing flipped to DOWN and stopped filing entirely. ON CONFLICT DO NOTHING lets
+    // exactly one caller win the row; rowsAffected===0 means someone else already owns it.
+    const claim = await db.execute({
+      sql: `INSERT INTO error_tickets (signature,ticket_key,ticket_url,count,first_seen,last_seen)
+            VALUES (?,?,?,?,?,?)
+            ON CONFLICT(signature) DO NOTHING`,
+      args: [signature, null, null, 1, now, now],
+    })
+
+    if (claim.rowsAffected === 0) {
+      // Recurrence: another caller already reserved (and is filing / has filed) this signature.
+      // Bump the count and, once the ticket exists, leave a throttled "seen again" comment.
+      const existing = await db.execute({ sql: "SELECT * FROM error_tickets WHERE signature=?", args: [signature] })
+      const row = existing.rows[0] as any as ErrorTicketRow | undefined
       await db.execute({
         sql: "UPDATE error_tickets SET count=count+1, last_seen=? WHERE signature=?",
         args: [now, signature],
       })
-      await addSeenAgainComment(row, info, now)
+      if (row) await addSeenAgainComment(row, info, now)
+      consecutiveFailures = 0
       return
     }
 
-    const result = await planeConnector.createIssue(
-      {
-        title: `[${info.where}] ${info.message.slice(0, 120)}`,
-        body: issueBody(info, signature, now),
-        priority: info.status && info.status >= 500 ? "high" : "medium",
-        url: info.route || null,
-        simName: null,
-        createdAt: now,
-        klavityUrl: info.route || "",
-      },
-      {
-        host: planeHost(),
-        workspace: planeWorkspace(),
-        project_id: planeProject(),
-        token: process.env.KLAV_TICKETS_PLANE_KEY!,
-      },
-    )
+    // We won the claim → file the Plane issue and backfill its key/url onto the reserved row.
+    let result
+    try {
+      result = await planeConnector.createIssue(
+        {
+          title: `[${info.where}] ${info.message.slice(0, 120)}`,
+          body: issueBody(info, signature, now),
+          priority: info.status && info.status >= 500 ? "high" : "medium",
+          url: info.route || null,
+          simName: null,
+          createdAt: now,
+          klavityUrl: info.route || "",
+        },
+        {
+          host: planeHost(),
+          workspace: planeWorkspace(),
+          project_id: planeProject(),
+          token: process.env.KLAV_TICKETS_PLANE_KEY!,
+        },
+      )
+    } catch (fileErr) {
+      // Filing failed — release the reservation (only if still unfiled) so a later occurrence
+      // can retry instead of being permanently blocked by an orphaned, ticketless row.
+      await db
+        .execute({ sql: "DELETE FROM error_tickets WHERE signature=? AND ticket_url IS NULL", args: [signature] })
+        .catch(() => undefined)
+      throw fileErr
+    }
     await db.execute({
-      sql: `INSERT INTO error_tickets (signature,ticket_key,ticket_url,count,first_seen,last_seen)
-            VALUES (?,?,?,?,?,?)`,
-      args: [signature, result.externalKey ?? null, result.externalUrl ?? null, 1, now, now],
+      sql: "UPDATE error_tickets SET ticket_key=?, ticket_url=? WHERE signature=?",
+      args: [result.externalKey ?? null, result.externalUrl ?? null, signature],
     })
     consecutiveFailures = 0
   } catch (err: any) {

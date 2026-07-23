@@ -102,6 +102,22 @@ describe("error auto-ticketing", () => {
     expect(Number(r[0].count)).toBe(2)
   })
 
+  // KLAVITYKLA-389 regression: two identical errors arriving simultaneously used to both pass
+  // the SELECT (no row yet), both file a Plane ticket (duplicate, e.g. KLA-382/383), and the
+  // second INSERT threw "UNIQUE constraint failed: error_tickets.signature" — which flipped
+  // auto-ticketing to DOWN. The reserve-first claim must collapse them to a single ticket.
+  test("concurrent identical errors file one ticket, count 2, no UNIQUE-constraint failure", async () => {
+    const { calls } = makePlaneFetch()
+    const info = { where: "backend" as const, message: "Concurrent boom", route: "extract" }
+
+    await Promise.all([autoTicketError(info), autoTicketError(info)])
+
+    expect(calls.filter((c) => c.url.endsWith("/issues/"))).toHaveLength(1)
+    const r = await rows()
+    expect(r).toHaveLength(1)
+    expect(Number(r[0].count)).toBe(2)
+  })
+
   test("repeat after an hour adds a seen-again comment without duplicating the issue", async () => {
     const { calls } = makePlaneFetch()
     const info = { where: "backend" as const, message: "Hourly duplicate", route: "extract" }
