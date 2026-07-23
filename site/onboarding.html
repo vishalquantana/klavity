@@ -393,25 +393,25 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         <div class="panel">
           <div class="kicker amber" id="s2kick">Step 2 of 3 · add to your site</div>
           <h2>Add Klavity to your <em>site.</em></h2>
-          <p class="sub" id="s2sub">The widget puts a one-click bug button on every page your visitors see — no extra apps needed. If you also want AI Sims reviewing your product live, connect the browser extension too.</p>
+          <p class="sub" id="s2sub">Klavity puts a one-click bug button on every page your visitors see — no extra apps needed. If you also want AI customer personas reviewing your product live, add the Klavity Chrome add-on too.</p>
 
           <!-- ── Two paths: widget (primary) + extension (secondary). Hidden on the Snap goal. ── -->
           <div class="tiles" id="installTiles">
             <div class="tile sel" id="widgetTile" onclick="selectInstall('widget')">
               <div class="ti">&lt;/&gt;</div>
-              <h3>Add the bug-report widget</h3>
-              <p>One small piece of code on your site — visitors report bugs with a single click, no extension needed.</p>
+              <h3>Add the bug-report button</h3>
+              <p>One small piece of code on your site — visitors report bugs with a single click, no add-on needed.</p>
             </div>
             <div class="tile" id="chromeTile" onclick="selectInstall('extension')">
               <div class="ti"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z" /></svg></div>
-              <h3>Connect the browser extension</h3>
-              <p>For live AI Sim reviews on your pages. Works alongside the widget.</p>
+              <h3>Connect the Klavity Chrome add-on</h3>
+              <p>For live AI customer-persona reviews on your pages. Works alongside the bug button.</p>
             </div>
           </div>
 
           <!-- ── Widget section (shown by default) ── -->
           <div id="widgetSection" style="margin-top:14px">
-            <pre style="margin:0;background:var(--ink-2);border:1px solid var(--line);border-radius:10px;padding:12px;font-family:var(--mono);font-size:11.5px;line-height:1.55;overflow:auto;white-space:pre-wrap;word-break:break-all">&lt;script src="https://klavity.in/widget.js" data-project="<span id="snipPid">YOUR_PROJECT_ID</span>" defer&gt;&lt;/script&gt;</pre>
+            <pre style="margin:0;background:var(--ink-2);border:1px solid var(--line);border-radius:10px;padding:12px;font-family:var(--mono);font-size:11.5px;line-height:1.55;overflow:auto;white-space:pre-wrap;word-break:break-all">&lt;script src="<span id="snipHost">https://klavity.in</span>/widget.js" data-project="<span id="snipPid">YOUR_PROJECT_ID</span>" defer&gt;&lt;/script&gt;</pre>
             <div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap">
               <button type="button" id="copySnippet" style="background:var(--ink-2);border:1px solid var(--line);border-radius:8px;padding:7px 12px;color:var(--paper);font-family:var(--body);font-size:12.5px;cursor:pointer">Copy code</button>
               <span style="color:var(--paper-faint);font-size:11.5px">Paste this once — it shows on every page automatically.</span>
@@ -452,7 +452,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
             </div>
             <!-- URL input for Sim monitoring — only relevant with the extension -->
             <div style="margin-top:16px">
-              <div style="font-family:var(--mono);font-size:11px;color:var(--paper-faint);margin-bottom:8px">Which pages should your Sims watch? (paste your site address)</div>
+              <div style="font-family:var(--mono);font-size:11px;color:var(--paper-faint);margin-bottom:8px">Which pages should your AI customer personas watch? (paste your site address)</div>
               <div class="urlrow">
                 <input class="in" id="urlInput" aria-label="Your site URL" placeholder="yoursite.com" onkeydown="if(event.key==='Enter')addUrl()" />
                 <button id="onb-add-url" class="btn btn-ghost" onclick="addUrl()">Add</button>
@@ -468,7 +468,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
             <span class="skip" id="s2skip" onclick="s2SkipLater()">Set up later</span>
           </div>
           <!-- Snap goal: an optional forward door into the Sims step (hidden for the Sims goal). -->
-          <div class="hide" id="s2AddSims" style="margin-top:16px"><span class="snap-fwd" role="button" tabindex="0" onclick="go(3)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();go(3)}">Want AI reviews too? Add Sims →</span></div>
+          <div class="hide" id="s2AddSims" style="margin-top:16px"><span class="snap-fwd" role="button" tabindex="0" onclick="go(3)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();go(3)}">Want AI reviews too? Add AI customer personas →</span></div>
         </div>
       </div>
     </div>
@@ -479,21 +479,21 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         <div class="panel">
           <div class="kicker">Step 3 of 3 · bring your customers in</div>
           <h2>Who should <em>review it?</em></h2>
-          <p class="sub" id="s3sub">Start from a real customer call, or drop in a ready-made review team if you don't have a transcript yet. Either way, you'll meet them in the Studio next.</p>
+          <p class="sub" id="s3sub">Start from a real customer call, or drop in a ready-made review team if you don't have a customer call to draw from yet. Either way, you'll meet them in the Studio next.</p>
           <!-- Aha carry-through: when step 0 built Sims from THEIR site, the primary path is seeing
                those Sims' first review in New reports — not Sim-authoring jargon. Hidden when the
                user skipped step 0 (no stashed personas). -->
           <div class="hide" id="ahaPrimary">
             <div class="tile sel" id="ahaPrimaryTile" role="button" tabindex="0" onclick="gotoAhaReview()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();gotoAhaReview()}">
               <div class="ti"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z" /></svg></div>
-              <h3 id="ahaPrimaryHd">Your Sims — see their first review →</h3>
-              <p>The Sims we built from your site are already on it — their first review lands in New reports on your dashboard.</p>
+              <h3 id="ahaPrimaryHd">Your AI customer personas — see their first review →</h3>
+              <p>The AI customer personas we built from your site are already on it — their first review lands in New reports on your dashboard.</p>
             </div>
-            <div style="font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);margin:18px 0 12px">Richer Sims later</div>
+            <div style="font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);margin:18px 0 12px">Richer AI personas later</div>
           </div>
           <div class="tiles">
-            <div class="tile sel" id="intentTranscript" onclick="pickIntent('transcript')"><div class="ti"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" /> <path d="M14 2v4a2 2 0 0 0 2 2h4" /> <path d="M10 9H8" /> <path d="M16 13H8" /> <path d="M16 17H8" /></svg></div><h3>From a customer call</h3><p>Upload a transcript (Zoom / Meet / Loom). We turn each speaker into a Sim, based on what they actually said.</p></div>
-            <div class="tile" id="intentHats" onclick="pickIntent('hats')"><div class="ti"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5" /> <path d="M9 18h6" /> <path d="M10 22h4" /></svg></div><h3>The Six Thinking Hats</h3><p>A balanced review team — facts, feelings, optimism, risks, ideas, process — that works on any page, no transcript needed.</p>
+            <div class="tile sel" id="intentTranscript" onclick="pickIntent('transcript')"><div class="ti"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" /> <path d="M14 2v4a2 2 0 0 0 2 2h4" /> <path d="M10 9H8" /> <path d="M16 13H8" /> <path d="M16 17H8" /></svg></div><h3>From a customer call</h3><p>Upload a written record of the call (Zoom / Meet / Loom). We turn each speaker into an AI customer persona, based on what they actually said.</p></div>
+            <div class="tile" id="intentHats" onclick="pickIntent('hats')"><div class="ti"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5" /> <path d="M9 18h6" /> <path d="M10 22h4" /></svg></div><h3>The Six Thinking Hats</h3><p>A balanced review team — facts, feelings, optimism, risks, ideas, process — that works on any page, no customer call needed.</p>
               <div class="hatdots">
                 <span class="hd" style="background:#3b82f6">BL</span>
                 <span class="hd" style="background:#fff;color:#19140f;border:1px solid rgba(0,0,0,.18)">WH</span>
@@ -728,8 +728,8 @@ function applyGoal(){
   // step-2 copy + install options adapt to the goal
   const sub = $('s2sub')
   if (sub) sub.textContent = isSnap
-    ? 'Drop one snippet on your site and every visitor gets a one-click bug button — clean, detailed tickets land in your dashboard automatically. No extra apps.'
-    : 'The widget puts a one-click bug button on every page your visitors see — no extra apps needed. If you also want AI Sims reviewing your product live, connect the browser extension too.'
+    ? 'Drop one small piece of code on your site and every visitor gets a one-click bug button — clean, detailed tickets land in your dashboard automatically. No extra apps.'
+    : 'Klavity puts a one-click bug button on every page your visitors see — no extra apps needed. If you also want AI customer personas reviewing your product live, add the Klavity Chrome add-on too.'
   const tiles = $('installTiles')
   if (tiles) tiles.classList.toggle('hide', isSnap)   // Snap = widget only, no path choice
   if (isSnap){ installPath = 'widget'; if ($('widgetSection')) $('widgetSection').classList.remove('hide'); if ($('extSection')) $('extSection').classList.add('hide') }
@@ -746,9 +746,12 @@ function chooseGoal(g){
 }
 
 // Fill the embed snippet with the real project ID so users never hand-edit it.
-function widgetSnippetText(){ return '<script src="https://klavity.in/widget.js" data-project="' + (projectId || 'YOUR_PROJECT_ID') + '" defer><\/script>' }
+function widgetSnippetText(){ return '<script src="' + location.origin + '/widget.js" data-project="' + (projectId || 'YOUR_PROJECT_ID') + '" defer><\/script>' }
 function renderWidgetSnippet(){
   var s = document.getElementById('snipPid'); if (s) s.textContent = projectId || 'YOUR_PROJECT_ID'
+  // Keep the visible snippet's host in step with the copied one (location.origin), so
+  // self-hosters get a snippet pointing at their own host — matching Settings behavior.
+  var h = document.getElementById('snipHost'); if (h) h.textContent = location.origin
   // Also deep-link the "Skip for now" exit at the onboarding project, so /dashboard opens
   // the project created in step 1 rather than the account default (KLAVITYKLA-47), and
   // carry any pricing-page buy intent so the dashboard can open the plan drawer.
@@ -1139,7 +1142,7 @@ async function connectExtension(){
       })
     })
     if (resp && resp.ok) {
-      msg.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg> Extension connected — your Sims can now watch the pages you listed.'
+      msg.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg> Add-on connected — your AI customer personas can now watch the pages you listed.'
       extConnected = true
       updateS2Cta()
     }
@@ -1149,12 +1152,12 @@ async function connectExtension(){
 
 // ── Platform install guide ──
 const PLAT_STEPS = {
-  shopify: '<ol><li>In your Shopify admin, go to <b>Online Store → Themes</b></li><li>Click <b>Edit code</b> on your active theme</li><li>Open <code>layout/theme.liquid</code></li><li>Paste the snippet just before <code>&lt;/body&gt;</code> at the bottom of the file</li><li>Click <b>Save</b></li></ol>',
-  webflow: '<ol><li>In Webflow, open <b>Project Settings</b> (gear icon, top-left)</li><li>Click the <b>Custom Code</b> tab</li><li>Paste the snippet in the <b>Footer Code</b> box</li><li>Click <b>Save Changes</b>, then <b>Publish</b> your site</li></ol>',
-  squarespace: '<ol><li>In Squarespace, go to <b>Settings → Advanced → Code Injection</b></li><li>Paste the snippet in the <b>Footer</b> box</li><li>Click <b>Save</b></li></ol>',
-  wix: '<ol><li>In Wix, go to <b>Settings → Custom Code</b></li><li>Click <b>+ Add Custom Code</b></li><li>Paste the snippet, set placement to <b>Body — End of tag</b></li><li>Select <b>All Pages</b>, then click <b>Apply</b> and <b>Save</b></li></ol>',
-  react: '<ol><li><b>Plain React / Vite / CRA:</b> paste the snippet just before <code>&lt;/body&gt;</code> in your <code>index.html</code> (it lives outside the React tree, so no component changes)</li><li><b>Next.js (pages router):</b> add it inside <code>&lt;body&gt;</code> in <code>pages/_document</code></li><li><b>Next.js (app router):</b> add it in <code>app/layout</code> inside <code>&lt;body&gt;</code> — or use <code>&lt;Script src="https://klavity.in/widget.js" data-project="YOUR_PROJECT_ID" strategy="afterInteractive" /&gt;</code></li><li><b>Any SPA, no HTML access:</b> inject it once at startup: <code>var s=document.createElement(\'script\');s.src=\'https://klavity.in/widget.js\';s.setAttribute(\'data-project\',\'YOUR_PROJECT_ID\');s.defer=true;document.body.appendChild(s)</code></li></ol>',
-  other: '<ol><li>Open your page\'s HTML and find <code>&lt;/body&gt;</code> near the bottom</li><li>Paste the snippet on the line just before it</li><li>Save and publish — done</li></ol><p style="margin-top:8px;font-size:12px;color:var(--paper-faint)">WordPress: Appearance → Theme File Editor → footer.php → paste before <code>&lt;/body&gt;</code></p>'
+  shopify: '<ol><li>In your Shopify admin, go to <b>Online Store → Themes</b></li><li>Click <b>Edit code</b> on your active theme</li><li>Open <code>layout/theme.liquid</code> — the main theme file</li><li>Paste the code just before <code>&lt;/body&gt;</code> at the bottom of the file</li><li>Click <b>Save</b></li></ol>',
+  webflow: '<ol><li>In Webflow, open <b>Project Settings</b> (gear icon, top-left)</li><li>Click the <b>Custom Code</b> tab</li><li>Paste the code in the <b>Footer Code</b> box</li><li>Click <b>Save Changes</b>, then <b>Publish</b> your site</li></ol>',
+  squarespace: '<ol><li>In Squarespace, go to <b>Settings → Advanced → Code Injection</b> (its extra-code area)</li><li>Paste the code in the <b>Footer</b> box</li><li>Click <b>Save</b></li></ol>',
+  wix: '<ol><li>In Wix, go to <b>Settings → Custom Code</b></li><li>Click <b>+ Add Custom Code</b></li><li>Paste the code, set placement to <b>Body — End of tag</b> (loads at the bottom of every page)</li><li>Select <b>All Pages</b>, then click <b>Apply</b> and <b>Save</b></li></ol>',
+  react: '<ol><li><b>Plain React / Vite / CRA:</b> paste the code just before <code>&lt;/body&gt;</code> in your <code>index.html</code> (it lives outside the React tree, so no component changes)</li><li><b>Next.js (pages router):</b> add it inside <code>&lt;body&gt;</code> in <code>pages/_document</code></li><li><b>Next.js (app router):</b> add it in <code>app/layout</code> inside <code>&lt;body&gt;</code> — or use <code>&lt;Script src="KLAVITY_HOST/widget.js" data-project="YOUR_PROJECT_ID" strategy="afterInteractive" /&gt;</code></li><li><b>Any SPA, no HTML access:</b> inject it once at startup: <code>var s=document.createElement(\'script\');s.src=\'KLAVITY_HOST/widget.js\';s.setAttribute(\'data-project\',\'YOUR_PROJECT_ID\');s.defer=true;document.body.appendChild(s)</code></li></ol>',
+  other: '<ol><li>Open your page\'s HTML and find <code>&lt;/body&gt;</code> near the bottom</li><li>Paste the code on the line just before it</li><li>Save and publish — done</li></ol><p style="margin-top:8px;font-size:12px;color:var(--paper-faint)">WordPress: Appearance → Theme File Editor → <code>footer.php</code> (the footer file in your theme) → paste before <code>&lt;/body&gt;</code></p>'
 }
 let platOpen = false
 let curPlat = 'shopify'
@@ -1167,7 +1170,7 @@ function togglePlatforms() {
 function showPlat(name, btn) {
   curPlat = name
   // Personalize guides: show the founder's real project id inside code examples once known.
-  $('platDesc').innerHTML = (PLAT_STEPS[name] || '').replace(/YOUR_PROJECT_ID/g, esc(projectId || 'YOUR_PROJECT_ID'))
+  $('platDesc').innerHTML = (PLAT_STEPS[name] || '').replace(/KLAVITY_HOST/g, esc(location.origin)).replace(/YOUR_PROJECT_ID/g, esc(projectId || 'YOUR_PROJECT_ID'))
   if (btn) Array.from($('platTabs').children).forEach(b => b.classList.toggle('act', b === btn))
 }
 
@@ -1197,12 +1200,12 @@ function normalizePattern(v){
 async function addUrl(){
   const err = $('s2err'); err.textContent = ''
   const pattern = normalizePattern($('urlInput').value)
-  if (!pattern) { err.textContent = 'Enter a URL pattern (e.g. app.acme.com/*).'; return }
+  if (!pattern) { err.textContent = 'Enter a web address (e.g. app.acme.com/*).'; return }
   if (!projectId) { err.textContent = 'Project not ready yet — finish step 1 first.'; return }
   const { ok, data } = await jsonFetch('/api/projects/' + encodeURIComponent(projectId) + '/monitored-urls', {
     method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ urlPattern: pattern })
   })
-  if (!ok) { err.textContent = data.error || 'Could not add that pattern.'; return }
+  if (!ok) { err.textContent = data.error || 'Could not add that web address.'; return }
   monitored = (data.monitoredUrls || []).map(m => ({ id: m.id, urlPattern: m.urlPattern }))
   $('urlInput').value = ''
   renderChips()
