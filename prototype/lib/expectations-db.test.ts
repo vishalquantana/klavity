@@ -2,7 +2,7 @@
 import { test, expect } from "bun:test"
 import { createClient } from "@libsql/client"
 import { applySchema } from "./db"
-import { upsertExpectation, listExpectations, getExpectation, setExpectationEnforced, setExpectationStatus, demoteExpectationToValidated, SOURCE_REFS_MAX } from "./expectations-db"
+import { upsertExpectation, listExpectations, listExpectationMatchCandidates, getExpectation, setExpectationEnforced, setExpectationStatus, demoteExpectationToValidated, SOURCE_REFS_MAX, EXP_MATCH_CANDIDATES_MAX } from "./expectations-db"
 import { listNearMisses, nearMissSummary } from "./expectations-nearmiss"
 
 async function fresh() { const c = createClient({ url: "file::memory:" }); await applySchema(c); return c }
@@ -107,6 +107,56 @@ test("duplicate source id is not stored twice (exact-id dedup within source refs
   // Same id should appear only once.
   const idsWithFbDup = got!.sourceRefs.filter((r) => r.id === "fb_dup")
   expect(idsWithFbDup.length).toBe(1)
+})
+
+// ── KLAVITYKLA-72: lexical fallback candidate set is bounded, not the whole project table ────
+
+test("KLA-72: listExpectationMatchCandidates bounds to same-area (+ area-less) rows, not the whole project", async () => {
+  const c = await fresh()
+  await upsertExpectation(c, { projectId: "p1", title: "Checkout total wrong", area: "checkout", dedupKey: "a1", source: { kind: "snap", id: "s1" } })
+  await upsertExpectation(c, { projectId: "p1", title: "Legacy no-area issue", dedupKey: "a2", source: { kind: "snap", id: "s2" } }) // area null
+  await upsertExpectation(c, { projectId: "p1", title: "Onboarding finish gone", area: "onboarding", dedupKey: "a3", source: { kind: "snap", id: "s3" } })
+
+  const cands = await listExpectationMatchCandidates(c, "p1", "checkout")
+  const titles = cands.map((e) => e.title)
+  // Same-area + area-less rows are in scope; the unrelated "onboarding" row is excluded.
+  expect(titles).toContain("Checkout total wrong")
+  expect(titles).toContain("Legacy no-area issue")
+  expect(titles).not.toContain("Onboarding finish gone")
+
+  // With no area known, we fall back to the most-recent rows across the project.
+  const anyArea = await listExpectationMatchCandidates(c, "p1", null)
+  expect(anyArea.length).toBe(3)
+})
+
+test("KLA-72: the lexical fallback query is capped by LIMIT (no unbounded full-table scan)", async () => {
+  const c = await fresh()
+  await upsertExpectation(c, { projectId: "p1", title: "Seed one", area: "billing", dedupKey: "seed1", source: { kind: "snap", id: "s0" } })
+
+  // Spy on the client for the duration of an upsert that must take the lexical fallback path
+  // (distinct dedupKey, no exact match) and assert the candidate query carried a LIMIT.
+  const sqls: string[] = []
+  const orig = c.execute.bind(c)
+  ;(c as any).execute = (arg: any) => { sqls.push(typeof arg === "string" ? arg : arg.sql); return orig(arg) }
+  try {
+    await upsertExpectation(c, { projectId: "p1", title: "A totally different billing thing", area: "billing", dedupKey: "seed2", source: { kind: "snap", id: "s1" } })
+  } finally {
+    ;(c as any).execute = orig
+  }
+  // The lexical-fallback candidate SELECT (ORDER BY updated_at) is now LIMIT-bounded; the removed
+  // whole-table scan ordered by updated_at with NO limit.
+  const candQueries = sqls.filter((s) => /select\s+\*\s+from\s+expectations/i.test(s) && /order\s+by\s+updated_at/i.test(s))
+  expect(candQueries.length).toBeGreaterThan(0)
+  expect(candQueries.every((s) => /limit\s+\?/i.test(s))).toBe(true)
+  expect(EXP_MATCH_CANDIDATES_MAX).toBeGreaterThan(0)
+})
+
+test("KLA-72: same-area lexical near-duplicate still collapses through the bounded candidate set", async () => {
+  const c = await fresh()
+  await upsertExpectation(c, { projectId: "p1", title: "Finish button missing on onboarding", area: "onboarding", dedupKey: "k1", source: { kind: "sim", id: "s1" } })
+  const e = await upsertExpectation(c, { projectId: "p1", title: "Finish button is missing on onboarding", area: "onboarding", dedupKey: "k2", source: { kind: "snap", id: "s2" } })
+  expect((await listExpectations(c, "p1")).length).toBe(1) // collapsed, not duplicated
+  expect(e.status).toBe("validated")
 })
 
 // ── KLA-251 (B.11): declined near-miss logging is wired through upsertExpectation ────────────

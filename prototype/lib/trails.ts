@@ -600,6 +600,37 @@ export async function listFindings(
 const DEFAULT_FINDINGS_LIMIT = 500
 const MAX_FINDINGS_LIMIT = 10_000
 
+// KLAVITYKLA-72: narrow single-finding lookup — WHERE id=? (project-scoped) instead of loading the
+// whole project findings table and JS `.find()`-ing for one row. O(1) index hit vs O(n) per finding.
+// Callers (fileFindingById / dismissFinding) that previously did `listFindings(projectId).find(...)`
+// use this so they no longer scan the whole project once finding history accumulates.
+export async function findFindingById(projectId: string, id: string): Promise<Finding | null> {
+  const r = await db!.execute({
+    sql: `SELECT * FROM findings WHERE project_id=? AND id=? LIMIT 1`,
+    args: [projectId, id],
+  })
+  return r.rows.length ? rowToFinding(r.rows[0]) : null
+}
+
+// KLAVITYKLA-72: narrow per-run lookup — WHERE run_id=? bounds the scan to one walk's findings
+// instead of loading every finding in the project and JS-filtering by runId. Optional status filter
+// pushes the `status='queued'` predicate into SQL too. Ordered by created_at so processing is stable.
+// Deliberately does NOT touch listFindings' ORDER BY / limits (KLA-87 owns those).
+export async function findingsByRunId(
+  projectId: string,
+  runId: string,
+  opts?: { status?: FindingStatus },
+): Promise<Finding[]> {
+  const where = ["project_id=?", "run_id=?"]
+  const args: (string | number)[] = [projectId, runId]
+  if (opts?.status) { where.push("status=?"); args.push(opts.status) }
+  const r = await db!.execute({
+    sql: `SELECT * FROM findings WHERE ${where.join(" AND ")} ORDER BY created_at ASC`,
+    args,
+  })
+  return r.rows.map(rowToFinding)
+}
+
 export async function setFindingStatus(projectId: string, id: string, status: FindingStatus, connectorRef?: string): Promise<void> {
   try {
     await db!.execute({

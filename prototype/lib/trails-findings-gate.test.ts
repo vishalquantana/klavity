@@ -316,6 +316,89 @@ test("maybeAutoFileWalkFindings: below-threshold regression stays queued even wh
   expect(after?.status).toBe("queued")
 })
 
+// ── KLAVITYKLA-72: narrow finding queries — no whole-project scan per finding ─────
+// The findings ops used to `listFindings(projectId)` (full project table scan, ORDER BY updated_at)
+// then JS-filter for one runId / findingId. These assert the narrow queries return the right rows and
+// that the rewired callers hit run_id=? / id=? predicates instead of scanning the whole project.
+
+// Capture every SQL statement run on the shared client for the duration of `fn`.
+async function captureSql<T>(fn: () => Promise<T>): Promise<{ result: T; sqls: string[] }> {
+  const sqls: string[] = []
+  const orig = db.execute.bind(db)
+  db.execute = ((arg: any) => { sqls.push(typeof arg === "string" ? arg : arg.sql); return orig(arg) }) as any
+  try { return { result: await fn(), sqls } }
+  finally { db.execute = orig }
+}
+
+// The whole-project findings scan we removed: SELECT * FROM findings ... ORDER BY updated_at.
+const isProjectFindingsScan = (sql: string) =>
+  /select\s+\*\s+from\s+findings/i.test(sql) && /order\s+by\s+updated_at/i.test(sql)
+
+test("findFindingById returns the right row; null for missing id or foreign project", async () => {
+  const proj = "proj_kla72_byid"
+  const walk = await T.startWalk(proj, "trl_byid")
+  const f = await T.recordFinding(proj, { runId: walk, trailId: "trl_byid", kind: "regression", title: "target", confidence: 0.95, dedupKey: "byid_1" })
+  const hit = await T.findFindingById(proj, f.id)
+  expect(hit?.id).toBe(f.id)
+  expect(hit?.title).toBe("target")
+  expect(await T.findFindingById(proj, "find_nope")).toBeNull()
+  expect(await T.findFindingById("proj_other", f.id)).toBeNull()
+})
+
+test("findingsByRunId returns only that run's findings, not the rest of the project", async () => {
+  const proj = "proj_kla72_byrun"
+  const walkA = await T.startWalk(proj, "trl_a")
+  const walkB = await T.startWalk(proj, "trl_b")
+  const a1 = await T.recordFinding(proj, { runId: walkA, trailId: "trl_a", kind: "regression", title: "a1", confidence: 0.95, dedupKey: "br_a1" })
+  const a2 = await T.recordFinding(proj, { runId: walkA, trailId: "trl_a", kind: "amber_heal", title: "a2", confidence: 0.7, dedupKey: "br_a2" })
+  await T.recordFinding(proj, { runId: walkB, trailId: "trl_b", kind: "regression", title: "b1", confidence: 0.95, dedupKey: "br_b1" })
+
+  const forA = await T.findingsByRunId(proj, walkA)
+  expect(new Set(forA.map((f) => f.id))).toEqual(new Set([a1.id, a2.id]))
+  // Status filter is pushed into SQL.
+  const queuedRegOnly = await T.findingsByRunId(proj, walkA, { status: "queued" })
+  expect(queuedRegOnly.map((f) => f.id).sort()).toEqual([a1.id, a2.id].sort())
+  await T.setFindingStatus(proj, a1.id, "dismissed")
+  const stillQueued = await T.findingsByRunId(proj, walkA, { status: "queued" })
+  expect(stillQueued.map((f) => f.id)).toEqual([a2.id])
+})
+
+test("processWalkFindings uses a run-scoped query, not a whole-project findings scan", async () => {
+  const proj = "proj_kla72_scan"
+  const target = await T.startWalk(proj, "trl_target")
+  const other = await T.startWalk(proj, "trl_other")
+  const t1 = await T.recordFinding(proj, { runId: target, trailId: "trl_target", kind: "regression", title: "target reg", confidence: 0.95, dedupKey: "scan_t1" })
+  const o1 = await T.recordFinding(proj, { runId: other, trailId: "trl_other", kind: "regression", title: "other reg", confidence: 0.95, dedupKey: "scan_o1" })
+
+  const filer = async () => ({ connectorRef: "plane:PROJ-72" })
+  const { result: res, sqls } = await captureSql(() => G.processWalkFindings(proj, target, { filer }))
+
+  // Only the target run's finding was processed; the other run is untouched.
+  expect(res.autoFiled).toEqual([t1.id])
+  expect((await T.findFindingById(proj, o1.id))?.status).toBe("queued")
+  // The rewired caller queried by run_id and never ran the whole-project findings scan.
+  expect(sqls.some((s) => /from\s+findings/i.test(s) && /run_id=\?/i.test(s))).toBe(true)
+  expect(sqls.some(isProjectFindingsScan)).toBe(false)
+})
+
+test("fileFindingById / dismissFinding query by id, not a whole-project findings scan", async () => {
+  const proj = "proj_kla72_idscan"
+  const walk = await T.startWalk(proj, "trl_idscan")
+  const f = await T.recordFinding(proj, { runId: walk, trailId: "trl_idscan", kind: "amber_heal", title: "review", confidence: 0.7, dedupKey: "idscan_1" })
+  const g = await T.recordFinding(proj, { runId: walk, trailId: "trl_idscan", kind: "amber_heal", title: "review2", confidence: 0.7, dedupKey: "idscan_2" })
+
+  const filer = async () => ({ connectorRef: "plane:PROJ-73" })
+  const filed = await captureSql(() => G.fileFindingById(proj, f.id, { filer }))
+  expect(filed.result.ok).toBe(true)
+  expect(filed.sqls.some((s) => /from\s+findings/i.test(s) && /id=\?/i.test(s))).toBe(true)
+  expect(filed.sqls.some(isProjectFindingsScan)).toBe(false)
+
+  const dismissed = await captureSql(() => G.dismissFinding(proj, g.id))
+  expect(dismissed.result).toBe(true)
+  expect(dismissed.sqls.some((s) => /from\s+findings/i.test(s) && /id=\?/i.test(s))).toBe(true)
+  expect(dismissed.sqls.some(isProjectFindingsScan)).toBe(false)
+})
+
 // Legacy test kept for back-compat: flag ON auto-files high-confidence regression, leaves low queued.
 test("maybeAutoFileWalkFindings: flag ON auto-files high-confidence regression, leaves low-confidence queued", async () => {
   const proj = "proj_autofile_on"
