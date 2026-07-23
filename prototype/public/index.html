@@ -54,7 +54,14 @@
   /* Demo dashboard inside stage */
   .dnav { background: white; border-bottom: 1px solid #e5e5ea; padding: 0 16px; height: 42px; display: flex; align-items: center; gap: 0; }
   .dlogo { width: 20px; height: 20px; border-radius: 5px; background: #6366f1; margin-right: 8px; }
-  .dbrand { font-size: 13px; font-weight: 700; color: #1d1d1f; margin-right: 24px; }
+  .dbrand { font-size: 13px; font-weight: 700; color: #1d1d1f; margin-right: 10px; }
+  /* KLAVITYKLA-256: "Mock demo" badge on the sandbox dashboard's nav bar. */
+  .demo-badge { font-family: var(--mono, ui-monospace, monospace); font-size: 9px; letter-spacing: .06em; text-transform: uppercase; font-weight: 700; color: #b45309; background: rgba(217,131,36,.14); border: 1px solid rgba(217,131,36,.4); border-radius: 5px; padding: 2px 7px; margin-right: 20px; }
+  /* KLAVITYKLA-256: sandbox banner atop the bare /app demo funnel. Spans the full grid row. */
+  .sandbox-banner { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; padding: 11px 15px; border: 1px solid rgba(217,131,36,.34); background: rgba(217,131,36,.07); border-radius: 12px; }
+  .sandbox-chip { flex: none; font-family: var(--mono, ui-monospace, monospace); font-size: 10px; letter-spacing: .07em; text-transform: uppercase; font-weight: 700; color: #b45309; background: rgba(217,131,36,.16); border: 1px solid rgba(217,131,36,.4); border-radius: 6px; padding: 4px 9px; }
+  .sandbox-text { font-size: 12.5px; line-height: 1.5; color: var(--paper-dim, #6e6e73); }
+  .sandbox-text strong { color: var(--paper, #1d1d1f); font-weight: 650; }
   .dni { padding: 0 12px; height: 42px; display: flex; align-items: center; font-size: 12px; color: #6e6e73; border-bottom: 2px solid transparent; }
   .dni.on { color: #6366f1; border-bottom-color: #6366f1; font-weight: 600; }
   .dbody { padding: 16px; color:#1d1d1f; }
@@ -531,6 +538,13 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   </div>
 
   <div class="grid">
+    <!-- KLAVITYKLA-256: SANDBOX label for the bare /app demo funnel. This whole .grid is hidden in
+         the real 3-pane Studio (.wrap.ss-active > .grid{display:none}), so the banner only ever shows
+         on the mock-dashboard demo, never in a real project view. -->
+    <div class="sandbox-banner" id="sandboxBanner" role="note">
+      <span class="sandbox-chip">Sandbox demo</span>
+      <span class="sandbox-text">You're reviewing a <strong>mock “Acme Finance” dashboard</strong> — not your real project. Anything you save here is kept in a demo sandbox and never appears in your project's reports.</span>
+    </div>
     <!-- ===== STEP 1 — Add a Sim ===== -->
     <div class="panel lane" id="lane1">
       <div class="lhead"><span class="ln">1</span><h2>Add a Sim</h2><span class="pill" id="p1"></span></div>
@@ -581,7 +595,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
             <!-- demo dashboard -->
             <div id="demo">
               <div class="dnav">
-                <div class="dlogo"></div><span class="dbrand">Acme Finance</span>
+                <div class="dlogo"></div><span class="dbrand">Acme Finance</span><span class="demo-badge">Mock demo</span>
                 <div class="dni on">Overview</div><div class="dni">Reports</div><div class="dni">Approvals</div>
               </div>
               <div class="dbody">
@@ -1885,6 +1899,11 @@ async function fileDraft(d){
   const fd = new FormData()
   fd.append("description", draftDescription(d))
   fd.append("page_url", "https://studio.klavity.local/acme-finance/overview")
+  // KLAVITYKLA-256: this is the bare /app SANDBOX demo funnel reviewing a MOCK Acme Finance
+  // dashboard — never a real page. Tag the save as source="studio-demo" so the server quarantines
+  // it out of the real project's New-reports triage (see /api/feedback + listTriageFeedback). The
+  // real 3-pane Studio (?sim=) files through a different path and is unaffected.
+  fd.append("source", "studio-demo")
   fd.append("observation", d.rx.observation || "")
   if (d.rx.sentiment) fd.append("sentiment", d.rx.sentiment)
   const simId = d.sim && (d.sim._id || d.sim.id)
