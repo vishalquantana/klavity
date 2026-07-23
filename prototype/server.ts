@@ -7,7 +7,7 @@ import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
 import { logAudit, queryAuditLog, auditRowsToCsv, type AuditAction } from "./lib/audit-log"
 import { buildMemberExport, membersToCsv, MEMBER_EXPORT_FIELDS } from "./lib/member-export"
 import { isMaskingEnabled, maskMemberExportRow, maskDeep, maskWalkReportData } from "./lib/data-masking"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, publicReportStatus, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, publicReportStatus, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows } from "./lib/db"
 import { countFoundingAccounts } from "./lib/db"
 // KLAVITYKLA-366 — the Founding Ten spot counter. One cached source of truth behind the public
 // pricing band, the in-app ribbon, and the server-side refusal of an 11th founding checkout.
@@ -1035,6 +1035,7 @@ function renderOpsAdmin(d: {
   daily: { day: string; cost: number; calls: number }[]
   byProject: { projectId: string | null; projectName: string | null; cost: number; calls: number }[]
   byTypeModel: { type: string; model: string; cost: number; calls: number }[]
+  replayCogs: { days: number; runs: number; runsWithReheal: number; totalCost: number; avgCost: number; maxCost: number }
   recent: { id: string; createdAt: number; type: string; model: string; actorEmail: string | null; projectId: string | null; inputTokens: number | null; outputTokens: number | null; costUsd: number | null; ok: boolean }[]
   today: number; cap: number; offset: number
   modelMix: { choices: { id: string; label: string; price: string; weight: number; pct: number }[] }
@@ -1070,6 +1071,15 @@ function renderOpsAdmin(d: {
     const when = new Date(u.createdAt).toISOString().replace("T", " ").slice(0, 19)
     return `<tr><td>${escapeHtml(when)}</td><td>${escapeHtml(u.email)}</td><td>${escapeHtml(u.via)}</td><td>${escapeHtml(u.ip || "\u2014")}</td></tr>`
   }).join("") || `<tr><td colspan="4">No bypass logins recorded</td></tr>`
+  // ── Replay COGS (KLAVITYKLA-364) ── measured $/replay = summed Tier-1 self-heal cost per run.
+  const rc = d.replayCogs
+  const ASSUMED_REPLAY_USD = 0.005
+  const rcHealPct = rc.runs > 0 ? Math.round((rc.runsWithReheal / rc.runs) * 100) : 0
+  const rcVerdict = rc.runs === 0
+    ? `<span class="sub">No instrumented replays in the last ${rc.days}d yet — measurement starts on the next walk.</span>`
+    : rc.avgCost <= ASSUMED_REPLAY_USD
+      ? `<b style="color:#22c55e">CONFIRMED</b> measured avg ${fmtUsd(rc.avgCost)} ≤ assumed ${fmtUsd(ASSUMED_REPLAY_USD)}/replay`
+      : `<b style="color:#f59e0b">HIGHER than assumed</b> measured avg ${fmtUsd(rc.avgCost)} &gt; assumed ${fmtUsd(ASSUMED_REPLAY_USD)}/replay`
   const tEnvNote = d.testOtp.envOn
     ? `<p class="sub" style="margin:8px 0 0;color:#f59e0b">KLAV_TEST_OTP is ALSO set in the environment (allowlist: ${escapeHtml(d.testOtp.envEmails || "none")}). That bootstrap override never expires and can only be removed by editing the env — use it for local dev only.</p>`
     : `<p class="sub" style="margin:8px 0 0">KLAV_TEST_OTP is not set in the environment. This toggle is the only way the bypass can be active here.</p>`
@@ -1131,6 +1141,17 @@ function renderOpsAdmin(d: {
   <div class="panel"><h2>Daily spend (30d)</h2><div class="chart">${bars || '<span class="sub">No data</span>'}</div></div>
   <div class="panel"><h2>By project</h2><table><thead><tr><th>Project</th><th class="r">Cost</th><th class="r">Calls</th></tr></thead><tbody>${projRows}</tbody></table></div>
   <div class="panel"><h2>By type &amp; model</h2><table><thead><tr><th>Type</th><th>Model</th><th class="r">Cost</th><th class="r">Calls</th></tr></thead><tbody>${tmRows}</tbody></table></div>
+  <div class="panel"><h2>Replay COGS — measured $/replay (last ${rc.days}d)</h2>
+    <p class="sub" style="margin:-4px 0 12px">A replay makes ZERO LLM calls unless a cached selector fails and a Tier-1 self-heal fires. Measured cost-per-replay = summed <code>reheal</code> cost per run (0 for a fully-cached deterministic replay). Confirms the ${fmtUsd(ASSUMED_REPLAY_USD)}/replay planning assumption before offering hourly cadence to the Founding Ten.</p>
+    <table><tbody>
+      <tr><td>Instrumented replays</td><td class="r">${rc.runs}</td></tr>
+      <tr><td>Replays that self-healed (incurred cost)</td><td class="r">${rc.runsWithReheal} (${rcHealPct}%)</td></tr>
+      <tr><td>Total reheal cost</td><td class="r">${fmtUsd(rc.totalCost)}</td></tr>
+      <tr><td><b>Avg cost / replay</b></td><td class="r"><b>${fmtUsd(rc.avgCost)}</b></td></tr>
+      <tr><td>Max cost of a single replay</td><td class="r">${fmtUsd(rc.maxCost)}</td></tr>
+    </tbody></table>
+    <p class="sub" style="margin:12px 0 0">Assumption check: ${rcVerdict}</p>
+  </div>
   <div class="panel"><h2>Recent calls</h2><table><thead><tr><th>When (UTC)</th><th>Type</th><th>Actor</th><th>Project</th><th class="r">In/Out tok</th><th class="r">Cost</th></tr></thead><tbody>${recRows}</tbody></table>
     <div class="pager">${prev}${next}</div>
   </div>
@@ -5256,8 +5277,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (req.method === "GET" && path === "/opsadmin") {
       if (!me || !isOpsAdmin(me)) return new Response("Not found", { status: 404 }) // hide route from non-ops
       const offset = Math.max(0, Number(url.searchParams.get("offset") || 0) || 0)
-      const [totals, daily, byProject, byTypeModel, recent, today] = await Promise.all([
-        opsTotals(), opsDaily(30), opsByProject(), opsByTypeModel(), opsRecentCalls(50, offset), opsTodaySpend(),
+      const [totals, daily, byProject, byTypeModel, recent, today, replayCogs] = await Promise.all([
+        opsTotals(), opsDaily(30), opsByProject(), opsByTypeModel(), opsRecentCalls(50, offset), opsTodaySpend(), opsReplayCogs(30),
       ])
       const weights = await getActiveWeights()
       const pct = weightsToPct(weights, MODEL_CHOICE_IDS)
@@ -5267,7 +5288,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         gate: testOtpGate, uses: testOtpUses,
         envOn: !!process.env.KLAV_TEST_OTP, envEmails: process.env.KLAV_TEST_OTP_EMAILS ?? "",
       }
-      const html = renderOpsAdmin({ totals, daily, byProject, byTypeModel, recent, today, cap: OPS_DAILY_CAP_USD, offset, modelMix, testOtp })
+      const html = renderOpsAdmin({ totals, daily, byProject, byTypeModel, recent, today, replayCogs, cap: OPS_DAILY_CAP_USD, offset, modelMix, testOtp })
       return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } })
     }
     if (req.method === "GET" && path === "/api/opsadmin/cost-summary") {

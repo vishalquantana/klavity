@@ -112,6 +112,9 @@ export interface Walk {
   summary: Record<string, unknown> | null; startedAt: number; finishedAt: number | null
   /** KLA-93: name of the environment this walk ran against. Null = default (trail.baseUrl). */
   environmentName: string | null
+  /** KLAVITYKLA-364: measured cost-per-replay ($) = SUM of this run's Tier-1 self-heal (reheal)
+   *  ai_calls. 0 for a fully-cached deterministic replay; null on legacy/unfinished runs. */
+  replayCostUsd: number | null
 }
 
 export interface RunStep {

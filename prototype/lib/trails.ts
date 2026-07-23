@@ -223,6 +223,7 @@ function rowToWalk(r: any): Walk {
     summary: pj<Record<string, unknown>>(r.summary_json),
     startedAt: Number(r.started_at), finishedAt: r.finished_at == null ? null : Number(r.finished_at),
     environmentName: r.environment_name ?? null,
+    replayCostUsd: r.replay_cost_usd == null ? null : Number(r.replay_cost_usd),
   }
 }
 
@@ -305,9 +306,16 @@ export async function mergeRunStepEvidence(projectId: string, runStepId: string,
 }
 
 export async function finishWalk(projectId: string, runId: string, input: { status: Verdict; llmCalls: number; summary?: Record<string, unknown> }): Promise<void> {
+  // KLAVITYKLA-364: stamp the MEASURED cost-per-replay. A replay makes zero LLM calls unless a cached
+  // selector fails and a Tier-1 self-heal fires (ai_calls type='reheal', linked by run_id). Summing
+  // this run's reheal costs is the true $/replay (0 for a fully-cached deterministic replay). Computed
+  // in the same UPDATE so it's atomic with finish and needs no second write.
   await db!.execute({
-    sql: `UPDATE trail_runs SET status=?, llm_calls=?, summary_json=?, finished_at=? WHERE project_id=? AND id=?`,
-    args: [input.status, input.llmCalls, j(input.summary), Date.now(), projectId, runId],
+    sql: `UPDATE trail_runs
+          SET status=?, llm_calls=?, summary_json=?, finished_at=?,
+              replay_cost_usd = COALESCE((SELECT SUM(cost_usd) FROM ai_calls WHERE run_id=? AND type='reheal'), 0)
+          WHERE project_id=? AND id=?`,
+    args: [input.status, input.llmCalls, j(input.summary), Date.now(), runId, projectId, runId],
   })
 }
 
