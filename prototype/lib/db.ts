@@ -4634,6 +4634,46 @@ export async function feedbackById(projectId: string, id: string): Promise<any |
   }
 }
 
+// KLAVITYKLA-214 (JTBD 1.3): resolve a PUBLIC report reference to the minimal, anonymous-safe status
+// facts for the no-login /r/:ref status page. Accepts either the full "fb_<uuid>" id OR the shortened
+// human-quotable form "fb_<8hex>" that the widget success card shows ("Filed as fb_1a2b3c4d", see
+// displayRef in packages/core/src/modal.ts). Anonymous-safety is enforced HERE, at the data layer: the
+// SELECT lists ONLY status + created_at + recurrence_count, so reporter emails, notes, screenshots,
+// assignee, observation, URL, and every other project internal are structurally impossible to leak
+// through the public page regardless of how the route renders. An ambiguous short ref (>1 match on the
+// 32-bit prefix) resolves to null → the page returns a safe 404 rather than guessing a stranger's row.
+export type PublicReportStatus = { status: string; createdAt: number; recurrenceCount: number }
+export async function publicReportStatus(ref: string): Promise<PublicReportStatus | null> {
+  const raw = String(ref || "").trim().toLowerCase()
+  const isFull = /^fb_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(raw)
+  const isShort = /^fb_[0-9a-f]{8}$/.test(raw)
+  if (!isFull && !isShort) return null
+  let rows: any[]
+  if (isFull) {
+    const r = await db!.execute({
+      sql: "SELECT status, created_at, recurrence_count FROM feedback WHERE id=? LIMIT 2",
+      args: [raw],
+    })
+    rows = r.rows as any[]
+  } else {
+    // Prefix match on the 8-hex short form; a real id continues with "-" then the rest of the uuid.
+    // Escape the literal "_" in "fb_" so LIKE treats it as a character, not the single-char wildcard.
+    const pattern = raw.replace(/_/g, "\\_") + "-%"
+    const r = await db!.execute({
+      sql: "SELECT status, created_at, recurrence_count FROM feedback WHERE id LIKE ? ESCAPE '\\' LIMIT 2",
+      args: [pattern],
+    })
+    rows = r.rows as any[]
+  }
+  if (rows.length !== 1) return null
+  const x = rows[0]
+  return {
+    status: x.status != null ? String(x.status) : "open",
+    createdAt: Number(x.created_at),
+    recurrenceCount: Math.max(1, Number(x.recurrence_count ?? 1)),
+  }
+}
+
 export async function addTicketExport(
   x: Omit<TicketExportRow, "id" | "createdAt">
 ): Promise<string> {

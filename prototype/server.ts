@@ -7,7 +7,7 @@ import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
 import { logAudit, queryAuditLog, auditRowsToCsv, type AuditAction } from "./lib/audit-log"
 import { buildMemberExport, membersToCsv, MEMBER_EXPORT_FIELDS } from "./lib/member-export"
 import { isMaskingEnabled, maskMemberExportRow, maskDeep, maskWalkReportData } from "./lib/data-masking"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, publicReportStatus, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows } from "./lib/db"
 import { countFoundingAccounts } from "./lib/db"
 // KLAVITYKLA-366 — the Founding Ten spot counter. One cached source of truth behind the public
 // pricing band, the in-app ribbon, and the server-side refusal of an 11th founding checkout.
@@ -930,6 +930,86 @@ async function substituteFoundingPlaceholders(body: string): Promise<string> {
     __FOUNDING_SPOTS_LINE__: esc(foundingSpotsLabel(spots)),
   }
   return body.replace(/__FOUNDING_(?:STATE|RIBBON|SPOTS_LINE)__/g, (m) => subs[m] ?? "")
+}
+// ── Public report status page (KLAVITYKLA-214 / JTBD 1.3) ───────────────────────────────────────
+// A widget reporter is shown "Filed as fb_1a2b3c4d" but that reference was checkable nowhere. These
+// helpers render a MINIMAL, no-login progress ladder for GET /r/:ref. Everything shown is derived from
+// the three anonymous-safe fields publicReportStatus() returns (status, submitted date, merged count)
+// — there is no reporter email, note, screenshot, assignee, or project internal anywhere on the page.
+// Self-contained HTML, inline <style> only (CSP allows style-src 'unsafe-inline'), and ZERO inline JS
+// so the check-inline-js guard stays green and the page renders with scripting disabled.
+const _RS_ESC = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!)
+type ReportStage = { index: number; label: string; terminal: boolean; dismissed: boolean }
+// Map the ticket's real lifecycle status onto the 4-stage public ladder.
+// received (0) → triaged (1) → in progress (2) → fixed (3). "dismissed" is a terminal
+// "reviewed & closed" that stops at triaged (we never claim a fix that didn't happen).
+function reportStage(status: string): ReportStage {
+  const s = String(status || "").toLowerCase()
+  if (s === "new") return { index: 0, label: "Received", terminal: false, dismissed: false }
+  if (s === "in_progress") return { index: 2, label: "In progress", terminal: false, dismissed: false }
+  if (s === "done" || s === "resolved" || s === "closed" || s === "fixed") return { index: 3, label: "Fixed", terminal: true, dismissed: false }
+  if (s === "dismissed") return { index: 1, label: "Reviewed", terminal: true, dismissed: true }
+  return { index: 1, label: "Triaged", terminal: false, dismissed: false } // "open" and any unknown
+}
+const _RS_STYLE = `:root{color-scheme:dark}*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;
+background:#0b0b12;color:#e7e7ee;font:15px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+.card{width:100%;max-width:440px;background:#14141d;border:1px solid #262636;border-radius:16px;padding:28px 26px;box-shadow:0 12px 40px rgba(0,0,0,.35)}
+.brand{font-size:13px;font-weight:700;letter-spacing:.02em;color:#a78bfa;margin:0 0 18px}
+h1{font-size:19px;margin:0 0 4px;font-weight:650}
+.ref{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;color:#c9c9d6;background:#1d1d2a;padding:2px 8px;border-radius:6px}
+.meta{color:#8b8b9c;font-size:13px;margin:6px 0 0}
+.merged{margin:14px 0 0;padding:9px 12px;background:#1a1730;border:1px solid #33285e;border-radius:10px;color:#c4b5fd;font-size:13px;font-weight:600}
+.ladder{list-style:none;margin:22px 0 0;padding:0}
+.step{display:flex;align-items:center;gap:12px;padding:9px 0;color:#6f6f80}
+.step .dot{flex:0 0 auto;width:18px;height:18px;border-radius:50%;border:2px solid #33334a;background:transparent}
+.step.done .dot{background:#a78bfa;border-color:#a78bfa}
+.step.current .dot{background:#a78bfa;border-color:#a78bfa;box-shadow:0 0 0 4px rgba(167,139,250,.22)}
+.step.done,.step.current{color:#e7e7ee}
+.step.current{font-weight:650}
+.step.dismissed .dot{background:#6b7280;border-color:#6b7280;box-shadow:none}
+.note{margin:20px 0 0;color:#8b8b9c;font-size:12px}
+a{color:#a78bfa}`
+function renderReportStatusPage(ref: string, s: PublicReportStatus): string {
+  const stage = reportStage(s.status)
+  const submitted = new Date(s.createdAt).toISOString().slice(0, 10) // YYYY-MM-DD (no precise time leak)
+  const steps = ["Received", "Triaged", "In progress", "Fixed"]
+  const items = steps.map((label, i) => {
+    let cls = i < stage.index ? "done" : i === stage.index ? "current" : ""
+    if (stage.terminal && i <= stage.index) cls = i === stage.index ? "current" : "done"
+    if (stage.dismissed && i === stage.index) cls = "dismissed"
+    // A dismissed report never lights the "Fixed" rung; a fixed one lights every rung.
+    const shown = stage.dismissed && i === stage.index ? "Reviewed" : label
+    return `<li class="step ${cls}"><span class="dot"></span><span>${_RS_ESC(shown)}</span></li>`
+  }).join("")
+  const merged = s.recurrenceCount > 1
+    ? `<div class="merged">${s.recurrenceCount} reports merged into this</div>` : ""
+  const note = stage.dismissed
+    ? `<p class="note">This report was reviewed and closed.</p>`
+    : `<p class="note">This page updates as the report moves forward. Bookmark it to check back.</p>`
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Report status</title><style>${_RS_STYLE}</style></head>
+<body><main class="card">
+<p class="brand">KLAVITY</p>
+<h1>Report <span class="ref">${_RS_ESC(ref)}</span></h1>
+<p class="meta">Submitted ${_RS_ESC(submitted)}${merged ? "" : ""}</p>
+${merged}
+<ul class="ladder">${items}</ul>
+${note}
+</main></body></html>`
+}
+function renderReportNotFound(): string {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Report not found</title><style>${_RS_STYLE}</style></head>
+<body><main class="card">
+<p class="brand">KLAVITY</p>
+<h1>Report not found</h1>
+<p class="meta">We couldn't find a report with that reference. Check the reference and try again.</p>
+</main></body></html>`
 }
 function redirect(loc: string, headers: Record<string, string> = {}) { return new Response(null, { status: 302, headers: { Location: loc, ...headers } }) }
 // KLAVITYKLA-229 (JTBD 1.12): resume intent after a login gate. `safeNext` accepts ONLY a
@@ -5068,6 +5148,23 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     }
 
     // ── Client Status Portal (KLAVITYKLA-205) ────────────────────────────────────────────────────
+    // ── GET /r/:ref — public, no-login report status page (KLAVITYKLA-214 / JTBD 1.3) ──
+    // Turns the "Filed as fb_1a2b3c4d" reference a widget reporter is shown into a checkable page:
+    // a minimal received → triaged → in progress → fixed ladder driven by the ticket's real status,
+    // plus "N reports merged into this" when the report deduped onto an existing ticket. Accepts the
+    // shortened quotable ref OR the full fb_<uuid>. Anonymous-safe by construction — publicReportStatus()
+    // selects only status/date/merged-count, so no email/notes/screenshot/assignee/internal can leak.
+    // Unknown or malformed ref → a bare 404 page (no info, no stack). noindex + no-store; rate-limited.
+    const reportRefMatch = path.match(/^\/r\/([A-Za-z0-9_-]{1,80})$/)
+    if (req.method === "GET" && reportRefMatch) {
+      if (!rlAllow("report:status:" + clientIp(req, server), 120, 60_000)) return new Response("Rate limited", { status: 429 })
+      const headers = { "content-type": "text/html; charset=utf-8", "x-robots-tag": "noindex, nofollow", "cache-control": "no-store" }
+      let status: PublicReportStatus | null = null
+      try { status = await publicReportStatus(reportRefMatch[1]) } catch { status = null }
+      if (!status) return new Response(renderReportNotFound(), { status: 404, headers })
+      return new Response(renderReportStatusPage(reportRefMatch[1], status), { status: 200, headers })
+    }
+
     // GET /shared/project/:token       — serve the read-only project status HTML (no auth)
     // GET /shared/project/:token/data  — return JSON portal data (no auth)
     // Token format: 64-char lowercase hex (32 random bytes); 404 on bad/unknown token.
