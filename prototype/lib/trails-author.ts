@@ -102,6 +102,124 @@ export interface AuthorOutcome {
   verificationVerdict: "green" | "amber" | "red" | null
   steps: AuthorStepLog[]; stallReason: string | null; llmCalls: number; costUsd: number
   objectiveVerified?: boolean | null
+  /**
+   * KLAVITYKLA-116: on a RED verification of a just-authored Trail, a plain-language diagnosis of the
+   * most likely cause (selector-drift / state-dependence / timing-flake) plus a suggested remedy, so a
+   * red is never handed to the reviewer bare. Null on green/amber. Best-effort — never blocks the run.
+   */
+  redCause?: RedCauseDiagnosis | null
+}
+
+// ── KLAVITYKLA-116: RED verification diagnosis ────────────────────────────────────────────────────
+// A just-authored Trail crystallizes green (replayed clean), amber (healed / inconclusive) or red
+// (authoring succeeded but the zero-LLM replay failed). A red is usually one of three things, and the
+// reviewer needs to know WHICH before they either waste a re-verify or wrongly dismiss a real break:
+//   • selector-drift    — the recorded selector no longer matches (fragile/changed markup), not a bug
+//   • state-dependence  — the flow consumed one-time state while authoring (e.g. "account exists")
+//   • timing-flake      — a transient timeout / navigation / network hiccup (non-determinism)
+// classifyRedCause() step-aligns the failing walk step to the authoring log and picks the most likely
+// cause from the RED reasons + captured browser evidence. Pure + deterministic → unit-tested.
+export type RedCauseKind = "selector-drift" | "state-dependence" | "timing-flake" | "unknown"
+
+export interface RedCauseDiagnosis {
+  kind: RedCauseKind
+  /** idx of the failing step. The walk and the authoring log are step-aligned, so this indexes both. null if undeterminable. */
+  stepIdx: number | null
+  /** the failing step as it was authored, e.g. `click #submit`, for context. null if no aligned author-log entry. */
+  authoredStep: string | null
+  /** plain-language explanation of the most likely cause. */
+  explanation: string
+  /** one-line suggested remedy the UI surfaces alongside the Re-verify / Re-author actions. */
+  remedy: string
+}
+
+/** Narrow view of a WalkSummary (lib/trails-runner) — only the fields the classifier reads. */
+export interface RedCauseWalkInput {
+  steps?: Array<{ idx: number; verdict: string; healed?: boolean; failureKind?: string }>
+  reasons?: string[]
+  failureKind?: string
+  evidence?: {
+    consoleLogs?: Array<{ level?: string; text?: string }>
+    pageErrors?: Array<{ message?: string }>
+    failedRequests?: Array<{ url?: string; method?: string; failure?: string }>
+    failedResponses?: Array<{ url?: string; method?: string; status?: number }>
+  } | null
+}
+
+// One-time-state signals: the replay diverged because authoring consumed state (created an account,
+// used a token, etc.). Strongest signal — checked first because the error text is usually explicit.
+const RED_STATE_RE = /already\s+(exist|register|taken|been|present|logged|signed|have|in\s+use|created)|duplicate|is\s+taken|in\s+use|account\s+(already\s+)?exists|email\s+(already|exists|taken|is\s+taken)|username.*taken|conflict|has\s+already/i
+// Transient/timing signals: a slow nav, a network failure, a deadline — non-determinism, not a break.
+const RED_TIMING_RE = /timeout|timed\s+out|timing|too\s+slow|navigation|net::|network|connection|econn|socket|transient|flake|deadline|took\s+too\s+long|not\s+settle|didn.?t\s+settle|exceeded|no\s+response/i
+// Locator signals: the element couldn't be found / acted on — the recorded selector drifted.
+const RED_SELECTOR_RE = /not\s+found|no\s+(such\s+)?element|couldn.?t\s+find|could\s+not\s+find|unable\s+to\s+(find|locate)|locator|selector|not\s+visible|detached|element\s+is\s+not|missing\s+element|0\s+elements?|no\s+matching|waiting\s+for\s+(selector|locator)|did\s+not\s+resolve/i
+
+const RED_INTERACTION_OPS = new Set(["click", "type", "select", "hover", "assert", "clearField", "keyPress"])
+
+/**
+ * KLAVITYKLA-116: classify WHY a just-authored Trail's verification walk went red. Pure function so it
+ * can be unit-tested without a browser/DB. `walk` is the WalkSummary (structurally); `authorLog` is the
+ * step-aligned authoring drive log. Returns the most likely cause + a plain-language explanation and a
+ * concrete remedy. Falls back to "unknown" with a re-verify-first remedy when no signal is decisive.
+ */
+export function classifyRedCause(
+  walk: RedCauseWalkInput,
+  authorLog: Array<{ idx: number; op: string; selector: string | null; value: string | null; rationale?: string }>,
+): RedCauseDiagnosis {
+  const steps = walk.steps ?? []
+  // Failing step = first RED walk step (fall back to first AMBER, then null). idx aligns to the author log.
+  const failing = steps.find((s) => String(s.verdict) === "red") ?? steps.find((s) => String(s.verdict) === "amber") ?? null
+  const stepIdx = failing ? failing.idx : null
+  const authored = stepIdx != null ? (authorLog.find((a) => a.idx === stepIdx) ?? null) : null
+  const authoredStep = authored
+    ? `${authored.op}${authored.selector ? " " + authored.selector : ""}${authored.value ? ` = "${String(authored.value).slice(0, 40)}"` : ""}`
+    : null
+
+  const ev = walk.evidence ?? undefined
+  const evLines = [
+    ...(ev?.pageErrors ?? []).map((e) => e?.message ?? ""),
+    ...(ev?.consoleLogs ?? []).filter((c) => (c?.level ?? "error") === "error").map((c) => c?.text ?? ""),
+  ].filter(Boolean)
+  const hasNetFail = !!(ev?.failedRequests?.length) || !!(ev?.failedResponses?.some((r) => (r?.status ?? 0) >= 500))
+  const anyHealed = steps.some((s) => !!s.healed)
+  const text = [...(walk.reasons ?? []), ...evLines, authored?.rationale ?? "", authored?.value ?? ""].join(" \n ")
+
+  // Precedence: an explicit state-conflict signal is strongest, then a clear transient/timing signal,
+  // then a locator signal (or a healed step / an interaction step whose selector is the obvious suspect).
+  let kind: RedCauseKind
+  if (RED_STATE_RE.test(text)) kind = "state-dependence"
+  else if (RED_TIMING_RE.test(text) || hasNetFail) kind = "timing-flake"
+  else if (RED_SELECTOR_RE.test(text) || anyHealed || (authored != null && RED_INTERACTION_OPS.has(authored.op) && !!authored.selector)) kind = "selector-drift"
+  else kind = "unknown"
+
+  const at = stepIdx != null ? `step ${stepIdx}` : "the failing step"
+  const At = at.charAt(0).toUpperCase() + at.slice(1)
+  const doing = authoredStep ? ` (${authoredStep})` : ""
+  const snippet = (walk.reasons?.find(Boolean) ?? evLines[0] ?? "").replace(/\s+/g, " ").trim().slice(0, 160)
+  const because = snippet ? ` — "${snippet}"` : ""
+
+  let explanation: string
+  let remedy: string
+  switch (kind) {
+    case "state-dependence":
+      explanation = `The replay hit a state that differed from authoring at ${at}${doing}${because}. The flow consumed one-time state while it was being authored (e.g. an account that now already exists), so a clean replay diverges. This is usually not a broken feature.`
+      remedy = `Reset the test data or point the Trail at a fresh test account, then Re-verify. If the flow legitimately depends on prior state, Re-author from the failing step against a clean environment.`
+      break
+    case "timing-flake":
+      explanation = `${At}${doing} failed on a timing or transient signal${because}. A slow navigation or a network hiccup is more likely than a genuine break — i.e. non-determinism, not a regression.`
+      remedy = `Re-verify once — transient failures usually pass on a second run. If it reds again on Re-verify, treat it as a real break rather than a flake.`
+      break
+    case "selector-drift":
+      explanation = `The replay couldn't reliably find or act on the element at ${at}${doing}${because}. The page markup likely shifted between authoring and replay, so the recorded selector no longer matches — a fragile-selector / locator-drift issue rather than a broken feature.`
+      remedy = `Re-author from the failing step so AutoSim re-locates the element with a fresh selector, or edit the step's target. If it passes on Re-verify, it was a one-time drift.`
+      break
+    default:
+      explanation = `The verification replay went red at ${at}${doing}${because}, but the cause isn't clear-cut from the diagnostics: it could be a one-time flake or a real break.`
+      remedy = `Re-verify to tell a flake from a real break. If it reds again, Re-author from the failing step to rebuild it against the current page.`
+      break
+  }
+
+  return { kind, stepIdx, authoredStep, explanation, remedy }
 }
 
 /** KLA-57: Checkpoint — partial drive state persisted after each step so a stalled run is resumable. */
@@ -651,7 +769,15 @@ export async function authorTrail(
     }
     // I1: skip means "inconclusive / no steps ran" — map to amber, not red, so an empty
     // Verification Walk never looks like a regression to the reviewer.
-    return { status: "crystallized", trailId, verificationRunId: v.runId, verificationVerdict: v.verdict === "skip" ? "amber" : v.verdict, steps: log, stallReason: null, llmCalls, costUsd, objectiveVerified }
+    const mappedVerdict = v.verdict === "skip" ? "amber" : v.verdict
+    // KLAVITYKLA-116: a bare RED gives the reviewer no way to tell flake from real breakage. Step-align
+    // the failing walk step to the authoring log and attach a plain-language cause + remedy. Best-effort:
+    // a classifier throw must never turn a crystallized outcome into a failure.
+    let redCause: RedCauseDiagnosis | null = null
+    if (mappedVerdict === "red") {
+      try { redCause = classifyRedCause(v as RedCauseWalkInput, log) } catch (e) { console.warn("[trails-author] red-cause classify failed:", String((e as any)?.message || e)) }
+    }
+    return { status: "crystallized", trailId, verificationRunId: v.runId, verificationVerdict: mappedVerdict, redCause, steps: log, stallReason: null, llmCalls, costUsd, objectiveVerified }
   } catch (e: any) {
     await closeHandle()
     return { status: "failed", trailId: null, verificationRunId: null, verificationVerdict: null, steps: log, stallReason: String(e?.message || e), llmCalls, costUsd, objectiveVerified }
@@ -675,6 +801,8 @@ export interface AuthorSession {
   objectiveVerified: boolean | null
   /** KLAVITYKLA-149: wizard-picked judge/reviewer Sim persona id (carried onto the crystallized Trail). */
   judgePersonaId: string | null
+  /** KLAVITYKLA-116: RED-verification diagnosis (cause + remedy). Null unless the verification walk went red. */
+  redCause: RedCauseDiagnosis | null
 }
 
 export async function createAuthorSession(projectId: string, req: AuthorRequest, resumedFrom?: string | null, idOverride?: string): Promise<string> {
@@ -688,7 +816,7 @@ export async function createAuthorSession(projectId: string, req: AuthorRequest,
   return id
 }
 
-export async function updateAuthorSession(projectId: string, id: string, patch: Partial<Pick<AuthorSession, "status" | "steps" | "stallReason" | "trailId" | "verificationRunId" | "verificationVerdict" | "llmCalls" | "costUsd" | "checkpoint" | "objectiveVerified">>): Promise<void> {
+export async function updateAuthorSession(projectId: string, id: string, patch: Partial<Pick<AuthorSession, "status" | "steps" | "stallReason" | "trailId" | "verificationRunId" | "verificationVerdict" | "llmCalls" | "costUsd" | "checkpoint" | "objectiveVerified" | "redCause">>): Promise<void> {
   const sets: string[] = ["updated_at=?"]; const args: any[] = [Date.now()]
   if (patch.status !== undefined) { sets.push("status=?"); args.push(patch.status) }
   if (patch.steps !== undefined) { sets.push("steps_json=?"); args.push(JSON.stringify(patch.steps)) }
@@ -700,6 +828,7 @@ export async function updateAuthorSession(projectId: string, id: string, patch: 
   if (patch.llmCalls !== undefined) { sets.push("llm_calls=?"); args.push(patch.llmCalls) }
   if (patch.costUsd !== undefined) { sets.push("cost_usd=?"); args.push(patch.costUsd) }
   if (patch.checkpoint !== undefined) { sets.push("checkpoint_json=?"); args.push(patch.checkpoint === null ? null : JSON.stringify(patch.checkpoint)) }
+  if (patch.redCause !== undefined) { sets.push("red_cause_json=?"); args.push(patch.redCause === null ? null : JSON.stringify(patch.redCause)) }
   args.push(projectId, id)
   await db!.execute({ sql: `UPDATE author_sessions SET ${sets.join(",")} WHERE project_id=? AND id=?`, args })
 }
@@ -709,6 +838,8 @@ function rowToAuthorSession(row: any): AuthorSession {
   try { steps = JSON.parse(String(row.steps_json || "[]")) } catch {}
   let checkpoint: AuthorCheckpoint | null = null
   try { if (row.checkpoint_json) checkpoint = JSON.parse(String(row.checkpoint_json)) } catch {}
+  let redCause: RedCauseDiagnosis | null = null
+  try { if (row.red_cause_json) redCause = JSON.parse(String(row.red_cause_json)) } catch {}
   return {
     id: String(row.id), projectId: String(row.project_id), name: String(row.name), objective: String(row.objective),
     baseUrl: String(row.base_url), testAccount: row.test_account ? String(row.test_account) : null,
@@ -725,6 +856,7 @@ function rowToAuthorSession(row: any): AuthorSession {
     checkpoint,
     objectiveVerified: row.objective_verified == null ? null : !!row.objective_verified,
     judgePersonaId: row.judge_persona_id ? String(row.judge_persona_id) : null,
+    redCause,
   }
 }
 
@@ -922,6 +1054,7 @@ export async function runAuthorNow(
         verificationRunId: out.verificationRunId, verificationVerdict: out.verificationVerdict,
         llmCalls: out.llmCalls, costUsd: out.costUsd,
         objectiveVerified: out.objectiveVerified,
+        redCause: out.redCause ?? null,
       })
     } catch (e: any) {
       await updateAuthorSession(projectId, sessionId, { status: "failed", stallReason: String(e?.message || e) }).catch(() => {})

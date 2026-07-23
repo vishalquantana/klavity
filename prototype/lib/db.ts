@@ -1047,6 +1047,9 @@ export async function applySchema(c: Client) {
     .catch((e: any) => console.warn("trails.objective_verified ALTER skipped:", e?.message || e))
   if (needCol("author_sessions", "objective_verified")) await c.execute("ALTER TABLE author_sessions ADD COLUMN objective_verified INTEGER")
     .catch((e: any) => console.warn("author_sessions.objective_verified ALTER skipped:", e?.message || e))
+  // KLAVITYKLA-116: plain-language diagnosis (cause + remedy) attached to a RED verification walk.
+  if (needCol("author_sessions", "red_cause_json")) await c.execute("ALTER TABLE author_sessions ADD COLUMN red_cause_json TEXT")
+    .catch((e: any) => console.warn("author_sessions.red_cause_json ALTER skipped:", e?.message || e))
   // KLA-77: cross-trail finding dedup — content signature column so the same broken element
   // surfaced from two different Trails collapses to ONE finding with a recurrence bump.
   if (needCol("findings", "content_sig")) await c.execute("ALTER TABLE findings ADD COLUMN content_sig TEXT")

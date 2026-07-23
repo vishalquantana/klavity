@@ -242,6 +242,17 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 .nt-done{font-family:var(--mono);font-size:13px;color:var(--green);margin-top:8px;padding:8px 10px;background:rgba(15,157,107,.08);border-radius:8px}
 .nt-stall{font-family:var(--mono);font-size:13px;color:var(--rose);margin-top:8px;padding:8px 10px;background:rgba(219,39,119,.08);border-radius:8px}
 .v-true{color:var(--green)}.v-false{color:var(--rose)}
+/* KLAVITYKLA-116: RED-verification diagnosis card + re-verify/re-author actions */
+.author-red-cause{margin-top:8px;padding:10px 12px;border-radius:8px;background:rgba(217,131,36,.08);border:1px solid rgba(217,131,36,.28);font-family:var(--sans,inherit)}
+.author-red-cause .arc-head{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--amber);font-weight:600}
+.author-red-cause .arc-head .muted{font-weight:400}
+.author-red-cause .arc-body{font-size:12.5px;line-height:1.5;color:var(--ink-3,inherit);margin-top:6px}
+.author-red-cause .arc-remedy{display:flex;align-items:flex-start;gap:6px;font-size:12.5px;line-height:1.5;color:var(--green);margin-top:8px}
+.author-red-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px}
+.author-red-actions .btn{transition:transform .15s ease,background .15s ease}
+.author-red-actions .btn:hover{transform:translateY(-1px)}
+.author-red-actions .btn:active{transform:scale(.97)}
+.author-red-msg{font-family:var(--mono);font-size:11px;color:var(--paper-faint,inherit);margin-top:2px;width:100%}
 
 /* draft pill */
 .pill.pill-draft{background:rgba(139,139,245,.14);color:var(--indigo)}
@@ -2688,6 +2699,100 @@ function humanizeStall(reason){
   return reason
 }
 
+// ── KLAVITYKLA-116: RED verification guidance — cause + remedy + one-click re-verify / re-author ──
+// A just-authored Trail can crystallize RED (authoring drove clean, but the zero-LLM replay failed).
+// The server step-aligns the failing step to the authoring log and attaches a plain-language cause
+// (selector-drift / state-dependence / timing-flake) + remedy in `s.redCause`. We render that card and
+// offer two one-click actions wired to existing machinery: Re-verify (POST /api/trails/:id/walk, the
+// same Verification Walk the draft-review "Re-verify" uses) and Re-author (re-run POST /api/trails/author
+// with the same objective, which re-drives the flow to re-locate elements / re-establish state).
+var AUTHOR_RED_KIND_LABEL = { "selector-drift":"Selector drift", "state-dependence":"State dependence", "timing-flake":"Timing / flake", "unknown":"Unclear" }
+function authorRedCauseHtml(s){
+  var rc = s && s.redCause
+  var v = String((s && s.verificationVerdict) || "").toLowerCase()
+  if(v !== "red" || !rc) return ""
+  var label = AUTHOR_RED_KIND_LABEL[rc.kind] || "Unclear"
+  var at = (rc.stepIdx !== null && rc.stepIdx !== undefined)
+    ? ' <span class="muted">at step ' + esc(String(rc.stepIdx)) + (rc.authoredStep ? ' — ' + esc(String(rc.authoredStep)) : '') + '</span>'
+    : ''
+  return '<div class="author-red-cause">'
+    + '<div class="arc-head">' + kicon('search',{size:12}) + ' Likely cause: <b>' + esc(label) + '</b>' + at + '</div>'
+    + '<div class="arc-body">' + esc(String(rc.explanation || '')) + '</div>'
+    + '<div class="arc-remedy">' + kicon('lightbulb',{size:12}) + ' <span>' + esc(String(rc.remedy || '')) + '</span></div>'
+    + '<div class="author-red-actions">'
+    +   '<button class="btn btn-ghost" id="arcReverify" data-trail="' + esc(s.trailId || '') + '">' + kicon('refresh-cw',{size:12}) + ' Re-verify</button>'
+    +   '<button class="btn btn-ghost" id="arcReauthor">' + kicon('rotate-cw',{size:12}) + ' Re-author from failing step</button>'
+    +   '<span class="author-red-msg" id="arcMsg"></span>'
+    + '</div>'
+    + '</div>'
+}
+// Wire the two actions. `rePoll(newSessionId)` re-attaches the poller for a fresh author session in the
+// same UI surface (differs between the modal and the wizard), so re-author flows back into the caller.
+function wireAuthorRedActions(s, rePoll){
+  var reverify = document.getElementById("arcReverify")
+  var reauthor = document.getElementById("arcReauthor")
+  var msg = document.getElementById("arcMsg")
+  if(reverify) reverify.addEventListener("click", function(){ authorReverify(s, reverify, reauthor, msg) })
+  if(reauthor) reauthor.addEventListener("click", function(){ authorReauthor(s, reverify, reauthor, msg, rePoll) })
+}
+// Re-verify: re-run the draft's Verification Walk and report the fresh verdict inline. Reuses the
+// draft-review poll helpers (drIsTerminal / drIsPaused / drVerdictHtml).
+async function authorReverify(s, reverify, reauthor, msg){
+  var trailId = (reverify && reverify.dataset.trail) || s.trailId
+  if(!trailId){ if(msg){ msg.style.color = "var(--rose)"; msg.textContent = "No draft to re-verify." } return }
+  if(reverify) reverify.disabled = true
+  if(reauthor) reauthor.disabled = true
+  if(msg){ msg.style.color = ""; msg.innerHTML = kicon('loader',{size:11}) + ' Re-verifying…' }
+  var runId = null
+  try {
+    var r = await fetch("/api/trails/" + encodeURIComponent(trailId) + "/walk" + projQ(), { method:"POST", headers:{ "content-type":"application/json" }, body:"{}" })
+    if(r.status === 409){ if(msg){ msg.style.color = "var(--amber)"; msg.textContent = "A walk is already running — try again shortly." } authorReverifyDone(reverify, reauthor); return }
+    if(!r.ok){ if(msg){ msg.style.color = "var(--rose)"; msg.textContent = "Couldn't start the walk." } authorReverifyDone(reverify, reauthor); return }
+    var b = await r.json().catch(function(){ return {} })
+    runId = b.runId
+  } catch(e){ if(msg){ msg.style.color = "var(--rose)"; msg.textContent = "Network error." } authorReverifyDone(reverify, reauthor); return }
+  for(var i = 0; i < 120; i++){
+    await new Promise(function(res){ setTimeout(res, 2000) })
+    var prog = null
+    try { var pr = await fetch("/api/trails/walks/" + encodeURIComponent(runId) + "/progress" + projQ()); if(pr.ok) prog = await pr.json().catch(function(){ return null }) } catch(e){}
+    if(prog && drIsTerminal(prog.status)){
+      if(msg){ msg.style.color = ""; msg.innerHTML = 'Re-verify: ' + drVerdictHtml(prog.status)
+        + ' <a href="/autosims/walk/' + encodeURIComponent(runId) + projQ() + '" style="color:var(--indigo)">view walk</a>' }
+      authorReverifyDone(reverify, reauthor); return
+    }
+    if(prog && drIsPaused(prog.status)){
+      if(msg){ msg.style.color = "var(--amber)"; msg.innerHTML = (prog.status === "needs_auth" ? 'Re-verify paused — the flow hit a login wall. ' : 'Re-verify paused — the walk needs a secret. ')
+        + '<a href="/autosims/walk/' + encodeURIComponent(runId) + projQ() + '" style="color:var(--indigo)">open the walk to continue</a>' }
+      authorReverifyDone(reverify, reauthor); return
+    }
+    if(prog && prog.totalSteps > 0 && msg){ msg.style.color = ""; msg.textContent = 'Re-verifying… step ' + prog.stepsDone + '/' + prog.totalSteps }
+  }
+  if(msg){ msg.style.color = "var(--amber)"; msg.textContent = "Still running — check the walk detail." }
+  authorReverifyDone(reverify, reauthor)
+}
+function authorReverifyDone(reverify, reauthor){
+  if(reverify) reverify.disabled = false
+  if(reauthor) reauthor.disabled = false
+}
+// Re-author: re-run the LLM authoring drive with the same objective. This re-locates elements and
+// re-establishes state from scratch — the fix for a selector-drift or state-dependence red.
+async function authorReauthor(s, reverify, reauthor, msg, rePoll){
+  if(reauthor) reauthor.disabled = true
+  if(reverify) reverify.disabled = true
+  if(msg){ msg.style.color = ""; msg.innerHTML = kicon('loader',{size:11}) + ' Re-authoring…' }
+  var body = { name: s.name, objective: s.objective, base_url: s.baseUrl }
+  if(s.testAccount) body.test_account = s.testAccount
+  try {
+    var r = await fetch("/api/trails/author" + projQ(), { method:"POST", headers:{ "content-type":"application/json" }, body: JSON.stringify(body) })
+    if(!r.ok){ var e = await r.json().catch(function(){ return {} }); if(msg){ msg.style.color = "var(--rose)"; msg.textContent = e.error || "Couldn't re-author." } if(reauthor) reauthor.disabled = false; if(reverify) reverify.disabled = false; return }
+    var d = await r.json()
+    if(typeof rePoll === "function") rePoll(d.sessionId)
+  } catch(e){
+    if(msg){ msg.style.color = "var(--rose)"; msg.textContent = "Network error starting re-author." }
+    if(reauthor) reauthor.disabled = false; if(reverify) reverify.disabled = false
+  }
+}
+
 async function pollAuthor(sessionId, box){
   for(var i = 0; i < 200; i++){
     await new Promise(function(res){ setTimeout(res, 2000) })
@@ -2701,15 +2806,19 @@ async function pollAuthor(sessionId, box){
       var pdfLink = vRunId ? ('<a class="walk-pdf-btn" href="' + esc('/api/trails/walks/' + encodeURIComponent(vRunId) + '/report.pdf' + projQ()) + '" target="_blank" rel="noopener" style="margin-left:8px">' + kicon('file-text',{size:10}) + ' PDF</a>') : ""
       var v = String(s.verificationVerdict || "").toLowerCase()
       var vGuidance = ""
-      if (v === "red" || v === "false") vGuidance = ' <span class="muted">— AutoSim couldn\'t replay deterministically; review the PDF before activating.</span>'
+      // KLAVITYKLA-116: when a red carries a structured diagnosis, the richer card below replaces the
+      // one-line muted hint; keep the terse hint only as a fallback (no redCause attached).
+      if ((v === "red" || v === "false") && !s.redCause) vGuidance = ' <span class="muted">— AutoSim couldn\'t replay deterministically; review the PDF before activating.</span>'
       else if (v === "amber") vGuidance = ' <span class="muted">— healed but unconfirmed; review the findings queue or activate to enable enforcement.</span>'
       box.innerHTML = html +
         '<div class="nt-done">AutoSim created (draft). Verification walk: <b class="v-' + esc(s.verificationVerdict || "") + '">' + esc(String(s.verificationVerdict || "?").toUpperCase()) + "</b>" + vGuidance + "</div>" +
+        authorRedCauseHtml(s) +
         '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px">' +
         '<button class="btn btn-indigo" id="ntApprove" data-trail="' + esc(s.trailId) + '">Looks right - activate</button>' +
         pdfLink +
         (vRunId ? '<button class="walk-share-btn" id="ntShare" style="margin-left:0">'+kicon('link',{size:10})+' Share</button><span id="ntShareMsg" class="walk-share-msg"></span>' : '') +
         '</div>'
+      wireAuthorRedActions(s, function(newSessionId){ box.innerHTML = '<div class="nt-live">Re-authoring AutoSim…</div>'; pollAuthor(newSessionId, box) })
       var ap = document.getElementById("ntApprove")
       ap.addEventListener("click", async function(){
         ap.disabled = true; ap.textContent = "Activating..."
@@ -2907,11 +3016,14 @@ async function wizPollAuthor(sessionId, box, createBtn) {
       var pdfLink = vRunId ? ('<a class="walk-pdf-btn" href="' + esc("/api/trails/walks/" + encodeURIComponent(vRunId) + "/report.pdf" + projQ()) + '" target="_blank" rel="noopener" style="margin-left:4px">' + kicon("file-text",{size:10}) + " PDF</a>") : ""
       var v = String(s.verificationVerdict || "").toLowerCase()
       var vGuidance = ""
-      if (v === "red" || v === "false") vGuidance = " — AutoSim couldn’t replay deterministically; review the PDF before activating."
+      // KLAVITYKLA-116: the structured red-cause card below supersedes the terse hint when present.
+      if ((v === "red" || v === "false") && !s.redCause) vGuidance = " — AutoSim couldn’t replay deterministically; review the PDF before activating."
       else if (v === "amber") vGuidance = " — healed but unconfirmed; check the findings queue after activating."
       box.innerHTML = html
         + '<div class="nt-done">Walk recorded. Verification: <b class="v-' + esc(s.verificationVerdict || "") + '">' + esc(String(s.verificationVerdict || "?").toUpperCase()) + "</b>" + esc(vGuidance) + "</div>"
+        + authorRedCauseHtml(s)
         + '<div class="wiz-approve-row"><button class="btn btn-indigo" id="wizApprove" data-trail="' + esc(s.trailId) + '">Activate AutoSim</button>' + pdfLink + "</div>"
+      wireAuthorRedActions(s, function(newSessionId){ box.innerHTML = '<div class="nt-live">Re-authoring AutoSim…</div>'; wizPollAuthor(newSessionId, box, createBtn) })
       var ap = document.getElementById("wizApprove")
       ap.addEventListener("click", async function() {
         ap.disabled = true; ap.textContent = "Activating…"
