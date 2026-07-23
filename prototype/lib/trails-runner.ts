@@ -9,7 +9,11 @@
 //
 // Project-scoped: projectId is the first arg of every persisted call and every query.
 import type { Browser, BrowserContext, Page, Locator } from "playwright"
-import { acquirePlaywrightBrowser, playwrightContextOptionsForTrailViewport, startCdpScreencast, BrowserLaunchError, type PlaywrightBrowserHandle } from "./trails-browser-page"
+import { acquirePlaywrightBrowser, playwrightContextOptionsForTrailViewport, startCdpScreencast, BrowserLaunchError, harRecordContextOptions, applyHarReplay, startContextTracing, stopContextTracing, type PlaywrightBrowserHandle } from "./trails-browser-page"
+import { getHarForTrail, saveWalkArtifact } from "./trails-har"
+import { mkdtemp, writeFile, readFile, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join as joinPath } from "node:path"
 import { uploadScreenshotMeta } from "./s3"
 import type { FailureKind, Fingerprint, Tier, Verdict, TrailStep } from "./trails-types"
 import { expandModuleSteps } from "./trails-modules"
@@ -151,6 +155,59 @@ export interface WalkOptions {
    * DB-poll/HTTP path is used when this is absent and the walk must pause for a human response.
    */
   secretResolver?: (ctx: { stepIdx: number; actionValue: string | null }) => Promise<string>
+
+  // ── KLAVITYKLA-126: AutoSim environment determinism + trace artifact (all OPT-IN, DEFAULT-OFF) ──
+  /**
+   * Enable HAR-based network determinism for this Trail. When on, the runner RECORDS a HAR on the
+   * FIRST GREEN walk of the trail (persisted via walk_artifacts) and, on every subsequent walk where a
+   * HAR already exists, REPLAYS network from it (Playwright context.routeFromHAR) so the same trail can
+   * no longer green/red on live backend state alone. Record and replay are mutually exclusive per walk
+   * (a trail with a stored HAR replays; one without records on its next green). Falls back to the
+   * KLAV_AUTOSIM_HAR=1 env flag so prod opt-in needs no caller change. All HAR I/O is best-effort:
+   * a record/replay failure logs a warning and the walk proceeds against live network, unchanged.
+   */
+  har?: boolean
+  /**
+   * routeFromHAR miss policy when `har` replay is active. 'fallback' (default) lets an unmatched
+   * request hit the live network; 'abort' is strict determinism (unmatched → network error). Falls
+   * back to KLAV_AUTOSIM_HAR_NOTFOUND=abort.
+   */
+  harNotFound?: "abort" | "fallback"
+  /**
+   * Enable a Playwright trace (screenshots + DOM snapshots + actions) for this walk, stored alongside
+   * walk replays in walk_artifacts (kind='trace') and openable via `npx playwright show-trace`. Falls
+   * back to the KLAV_AUTOSIM_TRACE=1 env flag. Best-effort: a tracing failure never changes the verdict.
+   */
+  trace?: boolean
+}
+
+/**
+ * KLAVITYKLA-126: resolve the opt-in environment-determinism flags for a walk. Pure + exported so the
+ * record-vs-replay decision is unit-testable without a browser. Precedence: explicit WalkOptions win,
+ * else the KLAV_AUTOSIM_* env flag. `harExists` (did this Trail already record a HAR?) picks record vs
+ * replay: a trail with a stored HAR replays from it; one without records on its next green walk.
+ */
+export interface WalkArtifactPlan {
+  harRecordMode: boolean
+  harReplayMode: boolean
+  traceEnabled: boolean
+  harNotFound: "abort" | "fallback"
+}
+export function planWalkArtifacts(
+  opts: Pick<WalkOptions, "har" | "trace" | "harNotFound">,
+  harExists: boolean,
+  env: Record<string, string | undefined> = process.env,
+): WalkArtifactPlan {
+  const harEnabled = opts.har ?? (env.KLAV_AUTOSIM_HAR === "1")
+  const traceEnabled = opts.trace ?? (env.KLAV_AUTOSIM_TRACE === "1")
+  const harNotFound: "abort" | "fallback" =
+    opts.harNotFound ?? (env.KLAV_AUTOSIM_HAR_NOTFOUND === "abort" ? "abort" : "fallback")
+  return {
+    harRecordMode: harEnabled && !harExists,
+    harReplayMode: harEnabled && harExists,
+    traceEnabled,
+    harNotFound,
+  }
 }
 
 export interface WalkStepSummary {
@@ -659,23 +716,105 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
     liveWatchEnded = true
     endLiveWatchRun(projectId, runId, message)
   }
-  if (opts.replay || contextOptions) {
+
+  // ── KLAVITYKLA-126: environment-determinism artifacts (opt-in HAR record/replay + Playwright trace).
+  // Decide record-vs-replay ONCE up front (record on first green when no HAR yet; replay when one
+  // exists). All artifact I/O is best-effort: a failure logs + falls back to unchanged live behavior.
+  let harExists = false
+  const harEnabledEarly = opts.har ?? (process.env.KLAV_AUTOSIM_HAR === "1")
+  if (harEnabledEarly) {
+    try { harExists = (await getHarForTrail(projectId, trailId)) != null } catch { harExists = false }
+  }
+  const artifactPlan = planWalkArtifacts(opts, harExists)
+  const artifactsActive = artifactPlan.harRecordMode || artifactPlan.harReplayMode || artifactPlan.traceEnabled
+  let artifactDir: string | null = null
+  let harRecordPath: string | null = null
+  let harReplayPath: string | null = null
+  let tracePath: string | null = null
+  let tracingStarted = false
+  let sawSuccessfulFinish = false
+  if (artifactsActive) {
     try {
-      context = await browser.newContext(contextOptions as any)
+      artifactDir = await mkdtemp(joinPath(tmpdir(), "klav-autosim-artifact-"))
+      if (artifactPlan.harRecordMode) harRecordPath = joinPath(artifactDir, "record.har")
+      if (artifactPlan.traceEnabled) tracePath = joinPath(artifactDir, "trace.zip")
+      if (artifactPlan.harReplayMode) {
+        // Materialize the stored HAR to a temp file so routeFromHAR can read it.
+        const harBytes = await getHarForTrail(projectId, trailId)
+        if (harBytes && harBytes.byteLength > 0) {
+          harReplayPath = joinPath(artifactDir, "replay.har")
+          await writeFile(harReplayPath, harBytes)
+        }
+      }
+    } catch (e) {
+      console.warn("[trails-artifact] artifact temp setup failed, walking without HAR/trace:", String(e))
+      artifactDir = null; harRecordPath = null; harReplayPath = null; tracePath = null
+    }
+  }
+
+  const needContext = opts.replay || contextOptions || artifactsActive
+  if (needContext) {
+    try {
+      // Merge viewport options with the HAR-record option (recordHar must be set at newContext time).
+      const mergedContextOptions = {
+        ...(contextOptions ?? {}),
+        ...(harRecordPath ? harRecordContextOptions(harRecordPath) : {}),
+      }
+      context = await browser.newContext(mergedContextOptions as any)
     } catch (e) {
       console.warn("[trails-context] browser context setup failed, walking with a default page:", String(e))
       context = null
+      harRecordPath = null; tracePath = null
+    }
+    // KLA-126: install HAR replay + start tracing on the fresh context (best-effort; never fail a walk).
+    if (context && harReplayPath) {
+      try { await applyHarReplay(context, harReplayPath, artifactPlan.harNotFound) }
+      catch (e) { console.warn("[trails-har] routeFromHAR replay setup failed (continuing live):", String(e)) }
+    }
+    if (context && artifactPlan.traceEnabled) {
+      try { await startContextTracing(context); tracingStarted = true }
+      catch (e) { console.warn("[trails-trace] tracing.start failed (continuing without trace):", String(e)) }
     }
     if (context && opts.replay) {
       try {
         capture = await setupReplayCapture(context)
       } catch (e) {
         console.warn("[trails-replay] capture setup failed, walking without replay:", String(e))
-        if (!contextOptions) { try { await context.close() } catch {}; context = null }
+        // Only tear the context down if nothing else still needs it (viewport / HAR / tracing).
+        if (!contextOptions && !artifactsActive) { try { await context.close() } catch {}; context = null }
         capture = null
       }
     } else {
       capture = null
+    }
+  }
+
+  // KLAVITYKLA-126: finalize env-determinism artifacts. Best-effort: never changes the walk verdict.
+  // Order matters — stop tracing (writes the zip) and CLOSE the context (flushes the recorded HAR to
+  // disk) BEFORE reading either file back. HAR is persisted ONLY on a clean GREEN finish (first-green
+  // baseline); the trace is persisted on any completed walk (green/red) for debugging.
+  const finalizeArtifacts = async () => {
+    if (!artifactsActive) return
+    try {
+      if (context && tracingStarted && tracePath) {
+        try { await stopContextTracing(context, tracePath) } catch (e) { console.warn("[trails-trace] tracing.stop failed:", String(e)) }
+      }
+      if (context) { try { await context.close() } catch {} } // flush recorded HAR to disk
+      context = null
+      if (tracePath) {
+        try {
+          const bytes = await readFile(tracePath)
+          if (bytes.byteLength > 0) await saveWalkArtifact({ projectId, kind: "trace", runId, bytes })
+        } catch (e) { console.warn("[trails-trace] trace persist failed:", String(e)) }
+      }
+      if (harRecordPath && sawSuccessfulFinish && walkVerdict === "green") {
+        try {
+          const bytes = await readFile(harRecordPath)
+          if (bytes.byteLength > 0) await saveWalkArtifact({ projectId, kind: "har", trailId, runId, bytes })
+        } catch (e) { console.warn("[trails-har] HAR persist failed:", String(e)) }
+      }
+    } finally {
+      if (artifactDir) { try { await rm(artifactDir, { recursive: true, force: true }) } catch {} }
     }
   }
 
@@ -815,6 +954,8 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
         console.warn("[trails-replay] saveReplay failed:", String(e))
       }
     }
+    // KLAVITYKLA-126: mark a clean finish so the first-green HAR baseline is recorded only here.
+    sawSuccessfulFinish = true
     return { runId, verdict: walkVerdict, llmCalls, steps: stepSummaries, healedCount, reasons: redReasons, ...(walkFailureKind ? { failureKind: walkFailureKind } : {}), ...(evSummary ? { evidence: evSummary } : {}) }
   } catch (e) {
     // Anything thrown (e.g. an unreachable fixtureUrl) must STILL finalize the run — never leave it
@@ -843,6 +984,9 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
       try { await stopLiveScreencast() } catch {}
     }
     closeLiveWatch()
+    // KLAVITYKLA-126: stop tracing + flush/persist HAR + trace BEFORE closing the browser (the context
+    // must still be alive to write the artifacts to disk). No-op when no artifact flag is active.
+    await finalizeArtifacts()
     await bh.close()
     if (shotUploads) await shotUploads.drain()
   }

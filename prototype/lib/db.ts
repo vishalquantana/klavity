@@ -1200,6 +1200,27 @@ export async function applySchema(c: Client) {
     if (needCol("accounts", col)) await c.execute(`ALTER TABLE accounts ADD COLUMN ${col} ${def}`)
       .catch((e: any) => console.warn(`accounts.${col} ALTER skipped:`, e?.message || e))
   }
+  // KLAVITYKLA-126 (AutoSim environment determinism + trace artifact): walk_artifacts — opt-in,
+  // flag-gated HAR + Playwright-trace blobs, stored gzipped exactly like walk_replays
+  // (artifact_gz = base64(gzip(raw file bytes))). kind='har' rows are keyed for reuse by TRAIL
+  // (recorded on the first GREEN walk, then replayed via context.routeFromHAR on later walks so the
+  // same trail can't green/red on live backend state alone); kind='trace' rows are per-RUN debug
+  // artifacts (screenshots+snapshots) opened in `npx playwright show-trace`. Idempotent CREATE,
+  // appended at the VERY END of applySchema per the additive-migration rule.
+  await c.execute(`CREATE TABLE IF NOT EXISTS walk_artifacts (
+       id TEXT PRIMARY KEY,
+       project_id TEXT NOT NULL,
+       trail_id TEXT,
+       run_id TEXT,
+       kind TEXT NOT NULL,
+       artifact_gz TEXT NOT NULL,
+       byte_size INTEGER,
+       created_at INTEGER NOT NULL
+     )`).catch((e: any) => console.warn("walk_artifacts CREATE skipped:", e?.message || e))
+  await c.execute("CREATE INDEX IF NOT EXISTS walk_artifact_trail_idx ON walk_artifacts(project_id, trail_id, kind, created_at)")
+    .catch((e: any) => console.warn("walk_artifact_trail_idx skipped:", e?.message || e))
+  await c.execute("CREATE INDEX IF NOT EXISTS walk_artifact_run_idx ON walk_artifacts(project_id, run_id, kind)")
+    .catch((e: any) => console.warn("walk_artifact_run_idx skipped:", e?.message || e))
 }
 
 // ── schema_meta helpers ──

@@ -864,3 +864,49 @@ async function connectRemotePuppeteer(cdpBase: string, _opts: AcquireOpts): Prom
   const browser = await puppeteer.connect({ browserWSEndpoint: cdpBase, defaultViewport: null })
   return new PuppeteerHandle(browser, async () => {}, "remote")
 }
+
+// ── KLAVITYKLA-126: environment-determinism artifacts (HAR record/replay + Playwright tracing) ──────
+// Thin, dependency-free wrappers over Playwright's BrowserContext APIs so the Playwright/CDP layer
+// stays the single place that touches recordHar / routeFromHAR / tracing. All are gated + best-effort
+// at the call site (trails-runner): default walk behavior is byte-identical when the flags are off.
+
+/**
+ * Context option to RECORD a HAR to `harPath`. Merge this into the object passed to
+ * `browser.newContext(...)` (before any navigation). `content:'embed'` inlines response bodies so the
+ * HAR is self-contained (no sidecar files) and routeFromHAR can serve them back later; `mode:'full'`
+ * records the complete request/response (not just timing), which replay needs.
+ */
+export function harRecordContextOptions(harPath: string): Record<string, unknown> {
+  return { recordHar: { path: harPath, content: "embed", mode: "full" } }
+}
+
+/**
+ * REPLAY all network for a context from a previously recorded HAR (true network determinism: the same
+ * Trail can no longer green/red on live backend state). Call right after newContext, before goto.
+ *   notFound:'fallback' (default) — unmatched requests still hit the live network (safe).
+ *   notFound:'abort'              — strict determinism: an unmatched request becomes a network error.
+ * update:false — never re-record over the baseline while replaying.
+ */
+export async function applyHarReplay(
+  context: import("playwright").BrowserContext,
+  harPath: string,
+  notFound: "abort" | "fallback" = "fallback",
+): Promise<void> {
+  await context.routeFromHAR(harPath, { url: "**/*", notFound, update: false })
+}
+
+/**
+ * Start Playwright tracing (screenshots + DOM snapshots) on a context. `sources:false` keeps the trace
+ * lean (no app source embedding). Pair with stopContextTracing to write the zip.
+ */
+export async function startContextTracing(context: import("playwright").BrowserContext): Promise<void> {
+  await context.tracing.start({ screenshots: true, snapshots: true, sources: false })
+}
+
+/** Stop tracing and write the trace zip to `tracePath` (openable via `npx playwright show-trace`). */
+export async function stopContextTracing(
+  context: import("playwright").BrowserContext,
+  tracePath: string,
+): Promise<void> {
+  await context.tracing.stop({ path: tracePath })
+}
