@@ -8179,6 +8179,7 @@ load()
       </div>
       <div class="sm-success-foot">
         <button class="btn btn-ghost btn-sm" id="smSuccessBack" type="button">Add another Sim</button>
+        <button class="btn btn-ghost btn-sm" id="smSuccessDash" type="button">Go to dashboard</button>
       </div>
     </div>
   </div>
@@ -8235,6 +8236,11 @@ load()
   // Maps pane name → simSource value sent to POST /api/personas.
   const PANE_TO_SOURCE = { describe: 'describe', site: 'from-site', call: 'transcript' };
   let lastSimSource = 'describe'; // default to the first tab
+  // KLAVITYKLA-388: remember the exact URL the user just typed into "From your site" so the
+  // post-add success panel can funnel straight into "Run a review now" on THAT site — the
+  // project often has no configured site_url yet during first-Sim onboarding, so projSiteUrl()
+  // alone would leave the run box empty and dead-end the flow.
+  let lastSiteUrl = '';
   function showSims(arr){
     lastSims=arr||[];
     if(!lastSims.length){ out.innerHTML=`<div class="sm-err">No Sims came back — try rephrasing.</div>`; return; }
@@ -8262,6 +8268,7 @@ load()
   async function genSite(){
     const v=$("smUrl").value.trim(); if(!v){ fail("Enter your product’s URL."); return; }
     think("Reading "+v+"…");
+    lastSiteUrl=v; // KLAVITYKLA-388: carry into the run-now prefill after Add / Add-all
     lastSimSource=PANE_TO_SOURCE["site"]||"from-site";
     try{ const d=await postJSON("/api/persona/site",{url:v}); showSims(d.personas||[]); }catch(e){ fail(e.message); }
   }
@@ -8278,20 +8285,42 @@ load()
   // merge while the call at the prefill site survived, so showSuccessPanel threw and the
   // success panel never rendered — keep helper and call together.
   function projSiteUrl(){ return (state&&state.active&&state.active.siteUrl)||""; }
+  // KLAVITYKLA-388: restore the run-now reset helper. Like projSiteUrl before it (see comment
+  // above), this definition was lost in a theirs-wins merge while its call site below survived —
+  // so showSuccessPanel() threw a ReferenceError and the post-add success panel NEVER rendered.
+  // That was the site-mode "Add all N Sims" dead-end. Clears the run-now block to a clean state
+  // before we prefill it. (Inline JS isn't type-checked, so tsc/tests didn't surface this.)
+  function resetRunNow(){
+    const inp=$("smRunUrl"), msg=$("smRunMsg"), res=$("smRunResults"), saved=$("smRunSaved"), spin=$("smRunSpin"), go=$("smRunGo");
+    if(inp) inp.value="";
+    if(msg) msg.textContent="";
+    if(res) res.innerHTML="";
+    if(saved) saved.classList.remove("show");
+    if(spin) spin.classList.remove("show");
+    if(go) go.disabled=false;
+  }
+  // Pretty host for the run-now prompt copy ("…on acme.com?"). Never throws on junk input.
+  function runNowHost(u){ try{ return new URL(/^https?:\/\//i.test(u)?u:"https://"+u).hostname.replace(/^www\./,""); }catch(e){ return ""; } }
   function showSuccessPanel(addedName,addedCount,merged){
-    // Update heading to reflect single vs. multiple
+    // KLAVITYKLA-388: prefer the URL the user JUST used in "From your site" so the site-mode
+    // Add / Add-all funnels straight into running their first review on that exact site; fall
+    // back to the project's configured site_url via projSiteUrl() for describe/call flows.
+    const runNowUrl=lastSiteUrl||projSiteUrl();
+    const host=runNowHost(runNowUrl);
+    // Update heading to reflect single vs. multiple (and the run-on-your-site funnel when known).
     const title=$("smSuccessTitle");
     if(title){
       // JTBD 3.10: a single duplicate-merge gets an explicit "already exists" heading so the user
       // knows nothing new was created; new adds and batches keep the "ready to work" framing.
       if(merged&&(!addedCount||addedCount<=1)) title.textContent=(addedName?""+addedName+" already exists":"That Sim already exists")+" — merged into your existing one";
+      else if(host) title.textContent=((addedCount&&addedCount>1)?"Your cast is ready":(addedName?""+addedName+" is ready":"Your Sim is ready"))+" — run their first review on "+host+"?";
       else if(addedCount&&addedCount>1) title.textContent="Your Sims are ready — now put them to work";
       else title.textContent=(addedName?""+addedName+" is ready":"Your Sim is ready")+" — now put them to work";
     }
-    // Prefill the run-now URL with the project's site URL when known (empty otherwise).
+    // Prefill the run-now URL with the site the user just used (or the project's configured site).
     resetRunNow();
     const runUrl=$("smRunUrl");
-    if(runUrl && !runUrl.value) runUrl.value=projSiteUrl();
+    if(runUrl && !runUrl.value) runUrl.value=runNowUrl;
     // Hide the result cards while keeping them in the DOM (so close() still triggers load())
     out.style.display="none";
     successEl.classList.add("show");
@@ -8344,6 +8373,11 @@ load()
       if(!reviews.length){ if(res) res.innerHTML='<div class="sup-none">Your Sims reviewed the page but had no new observations. Try a different page.</div>'; }
       else if(res) res.innerHTML=renderRunReactions(reviews);
       if(d.persisted&&saved) saved.classList.add("show");
+      // KLAVITYKLA-388: a real Sim reaction row now exists server-side, so tick checklist step 3
+      // ("See a Sim react") immediately — no manual refresh. state.hasSimReaction is the flag
+      // renderChecklist() reads; the persisted review makes it honestly true (it reflects that a
+      // review actually ran, not merely that Sims were added).
+      if(d.persisted){ if(typeof state!=="undefined"&&state) state.hasSimReaction=true; if(typeof window.renderChecklist==="function") window.renderChecklist(); }
     }catch(e){
       if(spin) spin.classList.remove("show");
       if(go) go.disabled=false;
@@ -8373,6 +8407,13 @@ load()
     close();
     if(typeof setView==="function") setView("autosims");
     if(typeof window.initTrailsView==="function") window.initTrailsView();
+  };
+  // KLAVITYKLA-388: secondary exit — leave the modal and land on the dashboard overview (where
+  // the checklist lives, now with step 3 ticked if a review ran). Complements the primary
+  // "Run a review now" CTA above.
+  $("smSuccessDash").onclick=function(){
+    close();
+    if(typeof setView==="function") setView("overview");
   };
   // "Add another Sim" back button: hide success panel, reset to create state
   $("smSuccessBack").onclick=function(){
