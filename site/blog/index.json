@@ -215,5 +215,12 @@
     "excerpt": "A high bug reopen rate means fixes aren't sticking. Here's what causes reopens, how to calculate the rate, and the workflow changes that stop them.",
     "category": "Insights",
     "date": "2026-07-22"
+  },
+  {
+    "slug": "which-tests-to-automate-first",
+    "title": "How to Decide Which Tests to Automate First: A Framework",
+    "excerpt": "You can't automate every test at once. Score each candidate on frequency, stability, manual cost, and business risk, then automate the top of the list first.",
+    "category": "Guides",
+    "date": "2026-07-23"
   }
 ]
