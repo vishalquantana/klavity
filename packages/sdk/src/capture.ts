@@ -63,6 +63,8 @@ function isBlockedCrossOriginImg(node: Node): boolean {
  *  - a cross-origin <iframe>: its document can't be read/serialised, so it renders blank regardless.
  * We intentionally do NOT prune `visibility:hidden` (a descendant may set `visibility:visible`) nor zero-size
  * boxes (`overflow:visible` children can paint outside them) — those could change the visible result.
+ * (KLAVITYKLA-393 listed zero-size as a prune target; we deliberately keep it — correctness over the
+ * marginal node-count win. `opacity:0` is pruned instead, since it can't be re-opaqued by a descendant.)
  */
 export function isUncapturable(node: Node): boolean {
   const el = node as HTMLElement
