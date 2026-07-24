@@ -1,4 +1,4 @@
-import { toPng } from 'html-to-image'
+import { safeToPng } from './capture'
 import { icon } from '@klavity/core/icons'
 import type { KlavitySettings, ReportType, SubmitReportPayload, IntegrationConfig, ReportIdentity } from '@klavity/core'
 import { DEFAULT_SETTINGS } from '@klavity/core'
@@ -34,18 +34,11 @@ function coerceStrings(obj: Record<string, unknown>): Record<string, string> {
 }
 
 async function capturePageDataUrl(): Promise<string> {
-  return toPng(document.body, {
-    cacheBust: true,
-    pixelRatio: 1,
-    skipFonts: true,
-    filter: (node) => {
-      if ((node as HTMLElement).id === 'klavity-sdk-host') return false
-      if (node.nodeName === 'IMG') {
-        const src = (node as HTMLImageElement).src ?? ''
-        if (src && !src.startsWith(window.location.origin) && !src.startsWith('data:')) return false
-      }
-      return true
-    },
+  // Route through the shared resilient renderer (modern-screenshot + CSP-safe cross-origin skip + DOM prune
+  // + fetch-free wireframe fallback). safeToPng already excludes cross-origin <img>, so we only add the
+  // host-node filter here. KLAVITYKLA-393.
+  return safeToPng(document.body, {
+    filter: (node) => (node as HTMLElement).id !== 'klavity-sdk-host',
   })
 }
 
