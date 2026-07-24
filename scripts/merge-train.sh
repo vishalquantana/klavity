@@ -266,6 +266,36 @@ repo_integrity_guards(){
     fi
   fi
 
+  # 5) INLINE-DEFS GUARD (KLAVITYKLA-390) — a BARE inline-JS call `foo(...)` whose DEFINITION was
+  #    merge-eaten while the call site survived. This is a DIFFERENT class from #4: the script is
+  #    valid syntax (so check-inline-js.mjs's parse gate passes) and inline <script> is not
+  #    type-checked (so tsc / check-ts-bindings.mjs are blind to it). Both `renderTriageBulkBar`
+  #    and `resetRunNow` reached prod as ReferenceError-at-click-time exactly this way. Same input
+  #    surface as #4 (site/ + prototype/public/ HTML), so run it under the same "HTML changed" gate.
+  #    Block only on a NET INCREASE vs origin/master (like the tsc / ts-bindings gates) so a stray
+  #    future heuristic false-positive degrades to "no net increase" instead of wedging the train.
+  if [ -f scripts/check-inline-defs.mjs ] \
+     && git diff --name-only "$pre"..HEAD -- 'site/*.html' 'prototype/public/*.html' 2>/dev/null | grep -q .; then
+    out=$(node scripts/check-inline-defs.mjs 2>&1); rc=$?
+    if [ "$rc" -ne 0 ]; then
+      local head_n base_n bwt
+      head_n=$(echo "$out" | grep -c "UNDEFINED-CALL"); head_n=${head_n:-0}
+      base_n=0
+      bwt="$(mktemp -d)/inline-defs-base"
+      if git worktree add -q --detach "$bwt" origin/master 2>/dev/null; then
+        base_n=$(node scripts/check-inline-defs.mjs "$bwt/prototype/public" "$bwt/site" 2>&1 | grep -c "UNDEFINED-CALL"); base_n=${base_n:-0}
+        git worktree remove --force "$bwt" 2>/dev/null || true
+      fi
+      if [ "$head_n" -gt "$base_n" ]; then
+        log "!!! inline-defs: $b introduced BARE CALL(S) to an undefined inline function (UNDEFINED-CALL ${base_n} -> ${head_n}) — a merge-eaten inline definition. The page throws ReferenceError at call/click time; valid syntax so the inline-js parse gate AND tsc both miss it."
+        why="$why inline-defs"
+        echo "$out" | grep "^FAIL" | head -8 | while IFS= read -r l; do log "  ${l}"; done
+      else
+        log "inline-defs: tolerated ${head_n} pre-existing undefined inline call(s) (baseline ${base_n}) — no net increase"
+      fi
+    fi
+  fi
+
   [ -n "$why" ] && { GUARD_WHY="$why"; return 1; }
   return 0
 }
