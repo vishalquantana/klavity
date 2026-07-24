@@ -1486,8 +1486,12 @@ export function buildModal(
       const TOOL_KEYS: Record<string, string> = { p: 'pen', l: 'line', r: 'rect', o: 'circle', a: 'arrow', t: 'text', c: 'count', k: 'crop' }
       heroKeyHandler = (e: KeyboardEvent) => {
         if (!document.body.contains(host)) { detachHeroKeys(); return }
-        const el = e.target as HTMLElement | null
-        if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return
+        // This is a document-level listener but the modal (Describe textarea, the Text-tool input, etc.)
+        // lives in a shadow root — so e.target is RETARGETED to the shadow host (a DIV), not the focused
+        // field. Use composedPath()[0] to see the real innermost target, else typing in any field triggers
+        // the single-key tool shortcuts (e.g. "r" selects Rect) and preventDefault eats the character.
+        const el = ((typeof e.composedPath === 'function' && e.composedPath()[0]) || e.target) as HTMLElement | null
+        if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) return
         if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); annotator.undo(); persist(); return }
         if (e.metaKey || e.ctrlKey || e.altKey) return
         const k = e.key.toLowerCase()

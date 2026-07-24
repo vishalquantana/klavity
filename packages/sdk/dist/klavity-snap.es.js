@@ -2450,8 +2450,8 @@ function qu(e, t, r = {}) {
           nn();
           return;
         }
-        const q = $.target;
-        if (q && (q.tagName === "INPUT" || q.tagName === "TEXTAREA" || q.isContentEditable)) return;
+        const q = typeof $.composedPath == "function" && $.composedPath()[0] || $.target;
+        if (q && (q.tagName === "INPUT" || q.tagName === "TEXTAREA" || q.tagName === "SELECT" || q.isContentEditable)) return;
         if (($.metaKey || $.ctrlKey) && $.key.toLowerCase() === "z") {
           $.preventDefault(), D.undo(), be();
           return;
