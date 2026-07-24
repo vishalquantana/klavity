@@ -17,6 +17,16 @@ import { SimsLive, type LiveObservation } from "./sims-live"  // side-effecting:
 import { startSimsWatch, type SimsWatchController } from "./sims-watch"
 
 const HOST_ID = "klavity-widget-host"
+// Screenshot capture filter: exclude ALL Klavity-injected chrome so the widget never captures
+// itself. The launcher host carries HOST_ID; the composer host (built in @klavity/core modal.ts)
+// and other overlays are a SEPARATE full-viewport host on document.body marked data-klavity-ui.
+// This matters since the capture renderer traverses shadow DOM — an id-only check on the launcher
+// left the open composer visible in Full-Page shots. Returns true to KEEP a node, false to drop it.
+const notKlavityChrome = (n: Node): boolean => {
+  const el = n as HTMLElement
+  if (el.id === HOST_ID) return false
+  return !(typeof el.getAttribute === "function" && el.getAttribute("data-klavity-ui") != null)
+}
 const TOKEN_KEY = "klavity_widget_token"
 const WIDGET_FETCH_TIMEOUT_MS = 15_000
 const SIM_REVIEW_FETCH_TIMEOUT_MS = 45_000
@@ -300,6 +310,7 @@ async function mount() {
 
   const host = document.createElement("div")
   host.id = HOST_ID
+  host.setAttribute("data-klavity-ui", "launcher")
   host.style.cssText = "position:fixed;right:18px;bottom:18px;z-index:2147483646;pointer-events:none"
   document.body.appendChild(host)
   const root = host.attachShadow({ mode: "open" })
@@ -526,11 +537,11 @@ async function mount() {
       // JTBD 1.9: report the capture-quality tag so the composer badges the thumbnail — 'rendered' on the
       // html-to-image path, 'wireframe' when it fell back to the fetch-free painter. Degraded shots get the
       // one-tap "Retake sharp" (getDisplayMedia real-pixel path via onRetakeSharp below).
-      onCaptureFull: async () => safeToPngWithQuality(document.body, { filter: (n) => (n as HTMLElement).id !== HOST_ID }),
+      onCaptureFull: async () => safeToPngWithQuality(document.body, { filter: notKlavityChrome }),
       onRegionCapture: async (rect) => {
         // Crop the selected VIEWPORT rect out of a full-page capture. Pass the capture's scale so the rect
         // lands correctly even when the fetch-free fallback downscaled a tall page (otherwise → black).
-        const { dataUrl, scale, quality } = await safeToPngWithScale(document.body, { filter: (n) => (n as HTMLElement).id !== HOST_ID })
+        const { dataUrl, scale, quality } = await safeToPngWithScale(document.body, { filter: notKlavityChrome })
         return { dataUrl: await cropDataUrl(dataUrl, rect, window.scrollX, window.scrollY, scale), quality }
       },
       // Sharp capture: real tab pixels via getDisplayMedia (no CORS issues, captures cross-origin images) +
@@ -939,7 +950,7 @@ async function mount() {
       // Full-page capture (CSP/CORS-resilient), then crop to the selected VIEWPORT rect (cropDataUrl adds
       // the scroll offset). Pass the capture's scale so the crop is correct even when the fetch-free
       // fallback downscaled a tall page. Best-effort: if capture fails, still open the composer to retry.
-      const { dataUrl, scale, quality } = await safeToPngWithScale(document.body, { filter: (n) => (n as HTMLElement).id !== HOST_ID })
+      const { dataUrl, scale, quality } = await safeToPngWithScale(document.body, { filter: notKlavityChrome })
       shot = await cropDataUrl(dataUrl, rect, window.scrollX, window.scrollY, scale)
       shotQuality = quality
     } catch { /* fall back to an empty composer */ }
@@ -1017,7 +1028,7 @@ async function mount() {
       backendUrl: cfg.backendUrl,
       projectId: cfg.projectId,
       simIds: simIds === 'all' ? undefined : simIds,
-      captureViewport: () => safeToPng(document.body, { skipFonts: true, filter: (n) => (n as HTMLElement).id !== HOST_ID }),
+      captureViewport: () => safeToPng(document.body, { skipFonts: true, filter: notKlavityChrome }),
       bearerToken: getToken() || undefined,
     })
     // BOOT: fire an immediate review so Sims react to the current page right away (not only on next scroll).
@@ -1037,7 +1048,7 @@ async function mount() {
         height: window.innerHeight || 1,
       }
       const shot = await Promise.race([
-        safeToPng(document.body, { skipFonts: true, filter: (n) => (n as HTMLElement).id !== HOST_ID }),
+        safeToPng(document.body, { skipFonts: true, filter: notKlavityChrome }),
         new Promise<never>((_, rej) => setTimeout(() => rej(new Error("capture timeout")), 10_000)),
       ])
       const captureMs = benchNow() - captureStart

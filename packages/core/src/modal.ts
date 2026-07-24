@@ -210,6 +210,10 @@ export function buildModal(
   let maskOn = !!(cfg.maskNumbers)
   // Create shadow host
   const host = document.createElement('div')
+  // Mark as Klavity chrome so screenshot capture can exclude it. This host is a separate
+  // full-viewport div on document.body (not inside the launcher host), and modern-screenshot
+  // traverses shadow DOM — without this marker the open composer renders into its own capture.
+  host.setAttribute('data-klavity-ui', 'composer')
   host.style.cssText = 'position:fixed;inset:0;z-index:2147483647;pointer-events:none;'
   const shadowRoot = host.attachShadow({ mode: 'open' })
   document.body.appendChild(host)
