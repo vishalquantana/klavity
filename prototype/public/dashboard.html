@@ -2104,8 +2104,8 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         <p style="font-size:12px;opacity:.7;margin-top:-4px">How an end-user is identified before a report is accepted. <b>Require email</b> = no Klavity account needed, they just type an email (and become a lead). <b>Anonymous</b> = max conversion. <b>Require login</b> = locked down.</p>
         <label>Launcher display
           <select id="kl-launcher-mode">
-            <option value="full">Full — icon + label (default)</option>
-            <option value="icon">Icon only — no label</option>
+            <option value="icon" selected>Icon only — no label (default)</option>
+            <option value="full">Full — icon + label</option>
             <option value="hidden">Hidden — right-click only, no button</option>
             <option value="custom">Custom — use my own label text</option>
           </select>
@@ -2115,8 +2115,15 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
             <input type="text" id="kl-launcher-text" maxlength="60" placeholder="e.g. Give feedback">
           </label>
         </div>
+        <label>Launcher icon
+          <select id="kl-launcher-icon">
+            <option value="lightbulb" selected>Lightbulb (default)</option>
+            <option value="bug">Bug</option>
+          </select>
+        </label>
+        <p style="font-size:12px;opacity:.7;margin-top:-4px">The glyph shown on the floating launcher button.</p>
         <label>Launcher color
-          <input type="color" id="kl-launcher-icon-color" value="#5b5bf0">
+          <input type="color" id="kl-launcher-icon-color" value="#6366f1">
         </label>
         <p style="font-size:12px;opacity:.7;margin-top:-4px">Controls the background color of the floating launcher button.</p>
         <label>Right-click menu
@@ -2146,7 +2153,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
             <label class="wp-toggle"><input type="checkbox" id="wp-thanks-toggle"> Show thank-you</label>
           </div>
           <div class="wp-stage">
-            <div class="wp-launcher"><span data-ki="message-circle"></span> Report a bug</div>
+            <div class="wp-launcher"><span data-ki="lightbulb"></span> Report a bug</div>
             <div class="wp-modal" id="wp-root">
               <div id="wp-body">
                 <div class="wp-row">
@@ -7372,13 +7379,15 @@ function renderWidgetPreview() {
   // Reflect launcher mode in the live preview launcher pill
   const launcher = document.querySelector(".wp-launcher")
   if (launcher) {
-    const lMode = $("kl-launcher-mode") ? $("kl-launcher-mode").value : "full"
-    const lColor = $("kl-launcher-icon-color") ? $("kl-launcher-icon-color").value : "#5b5bf0"
+    const lMode = $("kl-launcher-mode") ? $("kl-launcher-mode").value : "icon"
+    const lColor = $("kl-launcher-icon-color") ? $("kl-launcher-icon-color").value : "#6366f1"
+    const lIcon = $("kl-launcher-icon") ? $("kl-launcher-icon").value : "lightbulb"
     const lText = ($("kl-launcher-text") && $("kl-launcher-text").value.trim()) || "Report a bug"
     launcher.style.display = lMode === "hidden" ? "none" : ""
     launcher.style.background = lColor
+    let lIconHtml = ""; try { lIconHtml = kicon(lIcon) } catch (x) { lIconHtml = "" }
     if (lMode === "icon") {
-      launcher.innerHTML = '<span data-ki="bug"></span>'
+      launcher.innerHTML = lIconHtml
       launcher.style.borderRadius = "50%"
       launcher.style.padding = "10px"
       launcher.style.width = "40px"
@@ -7386,7 +7395,7 @@ function renderWidgetPreview() {
       launcher.style.justifyContent = "center"
     } else {
       const label = lMode === "custom" ? lText : "Report a bug"
-      launcher.innerHTML = '<span data-ki="bug"></span> ' + label
+      launcher.innerHTML = lIconHtml + " " + label
       launcher.style.borderRadius = ""
       launcher.style.padding = ""
       launcher.style.width = ""
@@ -7416,7 +7425,7 @@ async function loadAppearance() {
     const lmSel = $("kl-launcher-mode")
     if (lmSel) lmSel.addEventListener("change", syncLauncher)
     // Live preview re-renders as any appearance field changes (before saving).
-    ;["kl-theme","kl-primary","kl-secondary","kl-bg","kl-font","kl-thankyou","kl-mode","kl-cta","kl-launcher-icon-color","kl-launcher-text","kl-mask-numbers"].forEach(id => {
+    ;["kl-theme","kl-primary","kl-secondary","kl-bg","kl-font","kl-thankyou","kl-mode","kl-cta","kl-launcher-icon-color","kl-launcher-icon","kl-launcher-text","kl-mask-numbers"].forEach(id => {
       const el = $(id); if (el) { el.addEventListener("input", renderWidgetPreview); el.addEventListener("change", renderWidgetPreview) }
     })
     const wpT = $("wp-thanks-toggle"); if (wpT) wpT.addEventListener("change", renderWidgetPreview)
@@ -7435,12 +7444,15 @@ async function loadAppearance() {
         body.font = $("kl-font").value
       }
       // Launcher display settings (all plans)
-      const lmVal = $("kl-launcher-mode") ? $("kl-launcher-mode").value : "full"
+      const lmVal = $("kl-launcher-mode") ? $("kl-launcher-mode").value : "icon"
       body.launcherMode = lmVal
       const ltVal = ($("kl-launcher-text") && $("kl-launcher-text").value.trim()) || ""
       if (ltVal) body.launcherText = ltVal
-      const licVal = $("kl-launcher-icon-color") ? $("kl-launcher-icon-color").value : "#5b5bf0"
-      if (licVal && licVal !== "#5b5bf0") body.launcherIconColor = licVal
+      const licVal = $("kl-launcher-icon-color") ? $("kl-launcher-icon-color").value : "#6366f1"
+      if (licVal && licVal !== "#6366f1") body.launcherIconColor = licVal
+      // Launcher glyph — only send when it differs from the default so configs stay small.
+      const liVal = $("kl-launcher-icon") ? $("kl-launcher-icon").value : "lightbulb"
+      if (liVal && liVal !== "lightbulb") body.launcherIcon = liVal
       // Right-click menu mode (all plans). Only send non-default so existing projects keep 'full'.
       const rcVal = $("kl-rightclick-mode") ? $("kl-rightclick-mode").value : "full"
       if (rcVal && rcVal !== "full") body.rightClickMode = rcVal
@@ -7478,6 +7490,7 @@ async function loadAppearance() {
     if (c.launcherMode && $("kl-launcher-mode")) $("kl-launcher-mode").value = c.launcherMode
     if (c.launcherText && $("kl-launcher-text")) $("kl-launcher-text").value = c.launcherText
     if (c.launcherIconColor && $("kl-launcher-icon-color")) $("kl-launcher-icon-color").value = c.launcherIconColor
+    if (c.launcherIcon && $("kl-launcher-icon")) $("kl-launcher-icon").value = c.launcherIcon
     if ($("kl-rightclick-mode")) $("kl-rightclick-mode").value = c.rightClickMode || "full"
     if ($("kl-mask-numbers")) $("kl-mask-numbers").checked = !!c.maskNumbers
     syncLauncher()

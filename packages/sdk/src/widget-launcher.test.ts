@@ -345,12 +345,15 @@ describe("launcherMode: full", () => {
     expect(btn.style.borderRadius).toBe("999px")
   })
 
-  it("defaults to 'Report a bug' when launcherMode is omitted entirely", async () => {
-    // No launcherMode in modalConfig → widget.ts defaults to 'full'.
+  it("defaults to the icon-only launcher (no label) when launcherMode is omitted entirely", async () => {
+    // No launcherMode in modalConfig → widget.ts now defaults to the softer 'icon' mode:
+    // a circular icon button with no text label (previously the 'Report a bug' pill).
     await mountWith({})
     const btn = launcherButton()
-    expect(btn.textContent).toContain("Report a bug")
-    expect(btn.style.borderRadius).toBe("999px")
+    expect(btn.textContent?.trim()).toBe("")
+    expect(btn.style.borderRadius).toBe("50%")
+    // Default glyph is the lightbulb, not the literal bug.
+    expect(btn.innerHTML).toContain("<svg")
   })
 })
 
@@ -395,17 +398,53 @@ describe("launcherIconColor", () => {
   })
 
   it("uses the default brand colour when launcherIconColor is omitted", async () => {
-    // widget.ts default launcherIconColor = '#5b5bf0' → rgb(91, 91, 240).
+    // widget.ts default launcherIconColor = '#6366f1' → rgb(99, 102, 241).
     await mountWith({ launcherMode: "icon" })
     const btn = launcherButton()
-    expect(btn.style.backgroundColor).toBe("rgb(91, 91, 240)")
+    expect(btn.style.backgroundColor).toBe("rgb(99, 102, 241)")
   })
 
   it("ignores an invalid hex and falls back to the default colour", async () => {
     // The config resolver drops invalid hex; the widget then keeps its default.
     await mountWith({ launcherMode: "icon", launcherIconColor: "not-a-hex" })
     const btn = launcherButton()
-    expect(btn.style.backgroundColor).toBe("rgb(91, 91, 240)")
+    expect(btn.style.backgroundColor).toBe("rgb(99, 102, 241)")
+  })
+})
+
+// ── 5b. launcherIcon selects the glyph (lightbulb default, bug opt-in) ─────────
+// The default launcher glyph is the friendlier lightbulb; admins can switch it back to the
+// literal bug. Distinguish the two by a path fragment unique to each Lucide icon.
+const LIGHTBULB_PATH = "M9 18h6"   // unique to the lightbulb glyph
+const BUG_PATH = "M12 20v-9"       // unique to the bug glyph
+
+describe("launcherIcon", () => {
+  it("defaults to the lightbulb glyph when launcherIcon is omitted", async () => {
+    await mountWith({ launcherMode: "icon" })
+    const btn = launcherButton()
+    expect(btn.innerHTML).toContain(LIGHTBULB_PATH)
+    expect(btn.innerHTML).not.toContain(BUG_PATH)
+  })
+
+  it("renders the bug glyph when launcherIcon is 'bug'", async () => {
+    await mountWith({ launcherMode: "icon", launcherIcon: "bug" })
+    const btn = launcherButton()
+    expect(btn.innerHTML).toContain(BUG_PATH)
+    expect(btn.innerHTML).not.toContain(LIGHTBULB_PATH)
+  })
+
+  it("uses the chosen glyph in the full pill too", async () => {
+    stubMatchMedia(false)
+    await mountWith({ launcherMode: "full", launcherIcon: "bug" })
+    const btn = launcherButton()
+    expect(btn.textContent).toContain("Report a bug")
+    expect(btn.innerHTML).toContain(BUG_PATH)
+  })
+
+  it("ignores an invalid launcherIcon and keeps the lightbulb default", async () => {
+    await mountWith({ launcherMode: "icon", launcherIcon: "banana" as any })
+    const btn = launcherButton()
+    expect(btn.innerHTML).toContain(LIGHTBULB_PATH)
   })
 })
 

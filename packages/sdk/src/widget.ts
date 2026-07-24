@@ -364,10 +364,14 @@ async function mount() {
   // Public Turnstile site key (from the config fetch). When set, the composer renders a Turnstile
   // challenge on the anonymous submit path so dropping the email gate doesn't open a spam hole.
   let turnstileSiteKey = ""
-  // Launcher display settings (from modalConfig)
-  let launcherMode: 'hidden' | 'icon' | 'full' | 'custom' = 'full'
+  // Launcher display settings (from modalConfig).
+  // Default is the softer icon-only launcher: a muted-indigo lightbulb, no text label. It reads as
+  // "share feedback / an idea" rather than the louder "Report a bug" pill. Admins can still switch to
+  // the full pill, hide it, pick their own label/color, or swap the glyph back to 'bug' via config.
+  let launcherMode: 'hidden' | 'icon' | 'full' | 'custom' = 'icon'
   let launcherText = 'Report a bug'
-  let launcherIconColor = '#5b5bf0'
+  let launcherIconColor = '#6366f1'
+  let launcherIcon: 'lightbulb' | 'bug' = 'lightbulb'
   // Right-click (context-menu) takeover mode (from modalConfig). Default 'full' preserves the
   // current behavior for existing projects. 'reportOnly' hides Sims actions from everyone; 'off'
   // leaves the native context menu untouched (no takeover at all).
@@ -388,6 +392,9 @@ async function mount() {
       }
       if (typeof modalConfig.launcherIconColor === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(modalConfig.launcherIconColor)) {
         launcherIconColor = modalConfig.launcherIconColor
+      }
+      if (modalConfig.launcherIcon === 'lightbulb' || modalConfig.launcherIcon === 'bug') {
+        launcherIcon = modalConfig.launcherIcon
       }
       if (modalConfig.rightClickMode && ['full', 'reportOnly', 'off'].includes(modalConfig.rightClickMode)) {
         rightClickMode = modalConfig.rightClickMode
@@ -461,7 +468,7 @@ async function mount() {
       ".kl-active-dot{flex:0 0 auto;width:7px;height:7px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 2px rgba(34,197,94,.28);animation:kl-active-settle .45s cubic-bezier(0.2, 0.7, 0.2, 1) 1;}" +
       ".kl-issue-badge{position:absolute;top:-7px;left:-7px;min-width:17px;height:17px;border-radius:9px;background:#ef4444;color:#fff;font-size:9.5px;font-weight:700;padding:0 4px;display:none;align-items:center;justify-content:center;border:2px solid #fff;font-family:system-ui,sans-serif;line-height:1;}" +
       ".kl-launcher-btn{transition:transform 0.15s cubic-bezier(0.2, 0.7, 0.2, 1), background 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;will-change:transform;}" +
-      ".kl-launcher-btn:hover{transform:translateY(-1px) scale(1.02);filter:brightness(1.06);box-shadow:0 10px 28px rgba(91,91,240,.45);}" +
+      ".kl-launcher-btn:hover{transform:translateY(-1px) scale(1.02);filter:brightness(1.04);box-shadow:0 8px 20px rgba(79,70,229,.26);}" +
       ".kl-launcher-btn:active{transform:scale(0.97);transition-duration:0.08s;}" +
       "@media (prefers-reduced-motion: reduce){.kl-active-dot{animation:none}.kl-launcher-btn{transition:none!important;transform:none!important;}}"
     root.appendChild(a)
@@ -495,12 +502,12 @@ async function mount() {
     const collapse = (launcherMode === 'full' || launcherMode === 'custom') && mq.matches
     const effective = collapse ? 'icon' : launcherMode
     if (effective === 'icon') {
-      reportBtn.innerHTML = icon('bug')
-      reportBtn.style.cssText = `position:relative;border:0;border-radius:50%;padding:10px;background:${launcherIconColor};color:#fff;font-weight:600;font-size:13px;cursor:pointer;box-shadow:0 8px 24px rgba(91,91,240,.32);display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;pointer-events:auto`
+      reportBtn.innerHTML = icon(launcherIcon)
+      reportBtn.style.cssText = `position:relative;border:0;border-radius:50%;padding:10px;background:${launcherIconColor};color:#fff;font-weight:600;font-size:13px;cursor:pointer;box-shadow:0 6px 16px rgba(79,70,229,.18);display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;pointer-events:auto`
     } else {
       const label = launcherMode === 'custom' ? launcherText : 'Report a bug'
-      reportBtn.innerHTML = `${icon('bug')} ${label}`
-      reportBtn.style.cssText = `position:relative;border:0;border-radius:999px;padding:10px 16px;background:${launcherIconColor};color:#fff;font-weight:600;font-size:13px;cursor:pointer;box-shadow:0 8px 24px rgba(91,91,240,.32);display:inline-flex;align-items:center;gap:7px;pointer-events:auto`
+      reportBtn.innerHTML = `${icon(launcherIcon)} ${label}`
+      reportBtn.style.cssText = `position:relative;border:0;border-radius:999px;padding:10px 16px;background:${launcherIconColor};color:#fff;font-weight:600;font-size:13px;cursor:pointer;box-shadow:0 6px 16px rgba(79,70,229,.18);display:inline-flex;align-items:center;gap:7px;pointer-events:auto`
     }
     // Re-attach the JS-owned indicator nodes wiped by the innerHTML overwrite. The active dot goes
     // FIRST in the flow so it sits just left of the bug icon; in icon-only mode (44px circle) there
