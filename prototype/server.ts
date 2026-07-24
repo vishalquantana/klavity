@@ -2348,8 +2348,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
     // ── embeddable widget bundle ──
     if (req.method === "GET" && path === "/widget.js") {
+      // no-cache (NOT no-store): the browser MAY keep a copy but MUST revalidate every load, so a fresh
+      // deploy propagates to embedded widgets immediately instead of sitting stale for up to 5 minutes.
+      // Bun.file sets Last-Modified/ETag, so unchanged loads return a cheap 304 rather than re-downloading.
+      // Previously `public, max-age=300` cached it for 5 min with no revalidation → "widget didn't refresh".
       return new Response(Bun.file("../packages/sdk/dist/klavity-widget.iife.js"), {
-        headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "public, max-age=300" },
+        headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache, must-revalidate" },
       })
     }
 
