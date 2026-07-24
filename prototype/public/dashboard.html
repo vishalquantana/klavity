@@ -1121,6 +1121,15 @@ details.drawer .drawer-in{padding:0 22px 22px}
 /* outcome-first banner (KLAVITYKLA-284): states the OUTCOME the fields below unlock */
 .conn-outcome{grid-column:1/-1;display:flex;align-items:flex-start;gap:8px;padding:11px 13px;margin-bottom:4px;background:linear-gradient(135deg,rgba(99,102,241,.12),rgba(139,92,246,.05));border:1px solid rgba(139,139,245,.3);border-radius:10px;font-size:12.5px;line-height:1.5;color:var(--paper)}
 .conn-outcome .icon,.conn-outcome svg{flex-shrink:0;margin-top:1px;color:var(--indigo)}
+/* URL-paste autofill (KLAVITYKLA-392): one field to fill the raw creds from a project URL */
+.conn-urlpaste{grid-column:1/-1;padding:11px 13px;margin-bottom:2px;background:var(--ink-2);border:1px dashed var(--line);border-radius:10px}
+.conn-urlpaste .flbl{display:flex;align-items:center;gap:6px}
+.conn-urlpaste input{width:100%;background:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--paper);font-family:var(--body);font-size:13px;outline:none;transition:border-color var(--mi-dur) var(--mi-ease)}
+.conn-urlpaste input:focus{border-color:var(--indigo)}
+.conn-urlpaste-hint{font-size:11.5px;color:var(--paper-faint);margin-top:6px;line-height:1.45}
+.conn-urlpaste-hint.err{color:var(--amber)}
+.conn-field-hint{font-size:11px;color:var(--paper-faint);margin-top:4px;line-height:1.45}
+input.conn-autofilled{border-color:var(--indigo)!important;box-shadow:0 0 0 2px rgba(99,102,241,.22);transition:box-shadow .5s ease,border-color .5s ease}
 
 /* test-accounts section */
 .tacc-list{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
@@ -6915,6 +6924,98 @@ function connOutcomeLine(type) {
   return CONN_OUTCOME[type] || "Every bug your users report is pushed to this destination automatically — nothing to copy by hand."
 }
 
+// KLAVITYKLA-392: "Paste your project URL" autofill. A founder has their tracker's
+// project page open — one URL contains host + workspace + project id. Only types whose
+// raw fields a URL can MEANINGFULLY fill are listed here. Linear is intentionally absent:
+// its fields are api_key + team_id (a UUID) and a URL only exposes the human team KEY.
+const CONN_URL_PASTE = {
+  plane: {
+    label: "Plane",
+    example: "https://plane.example.com/workspace/projects/<uuid>/issues/",
+  },
+  jira: {
+    label: "Jira",
+    example: "https://yourorg.atlassian.net/jira/software/projects/PROJ/…",
+  },
+}
+
+// Per-field clarifying hints rendered under the raw input (KLAVITYKLA-392 item 4).
+const CONN_FIELD_HINT = {
+  plane: { host: "The server origin — https://api.plane.so for Plane Cloud, or your self-hosted origin like https://plane.example.com" },
+  jira:  { host: "Your Atlassian site origin, e.g. https://yourorg.atlassian.net" },
+}
+
+// Client mirror of prototype/lib/connectors/url-parse.ts (kept in lockstep; that
+// module's tests pin the rules). Returns raw connector-field keys the URL implies;
+// anything it can't determine is left ABSENT. Junk / non-URLs → {}.
+function connUrlToUrl(raw) {
+  if (!raw) return null
+  let s = String(raw).trim()
+  if (!s) return null
+  if (!/^https?:\/\//i.test(s)) s = "https://" + s
+  let u
+  try { u = new URL(s) } catch (e) { return null }
+  if (!u.hostname.includes(".")) return null
+  return u
+}
+function connUrlSegments(u) {
+  return u.pathname.split("/").filter(Boolean).map(s => { try { return decodeURIComponent(s) } catch (e) { return s } })
+}
+function connUrlOrigin(u) { return u.protocol + "//" + u.host }
+function parseConnectorUrl(type, raw) {
+  const u = connUrlToUrl(raw)
+  if (!u) return {}
+  const parts = connUrlSegments(u)
+  if (type === "plane") {
+    const out = { host: connUrlOrigin(u) }
+    const pi = parts.indexOf("projects")
+    if (pi > 0) out.workspace = parts[pi - 1]
+    if (pi >= 0 && parts[pi + 1] && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(parts[pi + 1])) out.project_id = parts[pi + 1]
+    return out
+  }
+  if (type === "jira") {
+    const out = { host: connUrlOrigin(u) }
+    const keyRe = /^[A-Za-z][A-Za-z0-9]{0,29}$/
+    let key = null
+    const bi = parts.indexOf("browse")
+    if (bi >= 0 && parts[bi + 1]) { const k = parts[bi + 1].replace(/-\d+$/, ""); if (keyRe.test(k)) key = k.toUpperCase() }
+    if (!key) { const pi = parts.indexOf("projects"); if (pi >= 0 && parts[pi + 1] && keyRe.test(parts[pi + 1])) key = parts[pi + 1].toUpperCase() }
+    if (key) out.project_key = key
+    return out
+  }
+  return {}
+}
+
+// Apply a pasted URL: fill the matching raw fields, flash them, and update the hint.
+// Never blocks manual entry — an unreadable paste just shows a subtle nudge.
+function applyConnUrlPaste(type, inp) {
+  const hint = $("connUrlPasteHint")
+  const raw = (inp.value || "").trim()
+  const defaultHint = inp.getAttribute("data-default-hint") || ""
+  if (!raw) { if (hint) { hint.classList.remove("err"); hint.textContent = defaultHint } return }
+  const parsed = parseConnectorUrl(type, raw)
+  const keys = Object.keys(parsed)
+  const fieldsEl = $("connNewFields")
+  let filled = 0
+  keys.forEach(k => {
+    const field = fieldsEl && fieldsEl.querySelector('input[data-fkey="' + cssAttr(k) + '"]')
+    if (field) {
+      field.value = parsed[k]
+      filled++
+      field.classList.add("conn-autofilled")
+      setTimeout(() => field.classList.remove("conn-autofilled"), 900)
+    }
+  })
+  if (!hint) return
+  if (!filled) {
+    hint.classList.add("err")
+    hint.textContent = "Couldn't read that URL — fill the fields below by hand."
+  } else {
+    hint.classList.remove("err")
+    hint.textContent = "Filled " + filled + " field" + (filled > 1 ? "s" : "") + " — add your API key below to finish. Edit anything by hand if needed."
+  }
+}
+
 // Render the connector field inputs into the shared add/edit form.
 // `editConfig` pre-fills non-secret values; in edit mode secret fields stay blank
 // and show PERSISTENT helper text "Leave blank to keep the saved value".
@@ -6930,10 +7031,13 @@ function renderConnectorFields(type, editConfig) {
     const val = (!f.secret && cfg[f.key] != null) ? ` value="${esc(cfg[f.key])}"` : ""
     const ph = ` placeholder="${esc(f.placeholder || "")}"`
     const hint = (isEdit && f.secret) ? `<div class="conn-edit-hint">Leave blank to keep the saved value</div>` : ""
+    const fhTxt = (CONN_FIELD_HINT[type] || {})[f.key]
+    const fieldHint = fhTxt ? `<div class="conn-field-hint">${esc(fhTxt)}</div>` : ""
     return `<div${full}><label class="flbl">${esc(f.label)}${f.required ? " *" : ""}</label>
       ${hint}
       <input type="${f.secret ? "password" : "text"}" data-fkey="${esc(f.key)}"${ph}${val}
         style="width:100%;background:var(--ink-2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--paper);font-family:var(--body);font-size:13px;outline:none" />
+      ${fieldHint}
     </div>`
   }).join("")
 
@@ -6962,7 +7066,30 @@ function renderConnectorFields(type, editConfig) {
   // Outcome-first banner (KLAVITYKLA-284): lead with what connecting achieves, above the credentials.
   const outcomeHtml = `<div class="conn-outcome field-full">${kicon('zap',{size:15})}<span>${esc(connOutcomeLine(type))}</span></div>`
 
-  fieldsEl.innerHTML = outcomeHtml + helpHtml + fieldsHtml + syncPanel
+  // URL-paste autofill (KLAVITYKLA-392): one field that derives the raw creds below from the
+  // tracker's project URL. Shown only for types we can meaningfully fill (Plane, Jira).
+  const paste = CONN_URL_PASTE[type]
+  const pasteDefaultHint = "We'll read host, workspace and project from the URL — you just add your API key. Fields stay editable below."
+  const pasteHtml = paste ? `<div class="conn-urlpaste field-full">
+      <label class="flbl">${kicon('link',{size:14})} Paste your ${esc(paste.label)} project URL <span class="muted" style="font-weight:400;font-size:11px">— optional shortcut</span></label>
+      <input type="text" id="connUrlPaste" autocomplete="off" spellcheck="false" placeholder="${esc(paste.example)}" data-default-hint="${esc(pasteDefaultHint)}" />
+      <div class="conn-urlpaste-hint" id="connUrlPasteHint">${esc(pasteDefaultHint)}</div>
+    </div>` : ""
+
+  fieldsEl.innerHTML = outcomeHtml + pasteHtml + helpHtml + fieldsHtml + syncPanel
+
+  // Wire the paste field: fill on paste + on blur, and clear the error nudge as the user edits.
+  const pasteInp = $("connUrlPaste")
+  if (pasteInp) {
+    const run = () => applyConnUrlPaste(type, pasteInp)
+    pasteInp.addEventListener("paste", () => setTimeout(run, 0))
+    pasteInp.addEventListener("blur", run)
+    pasteInp.addEventListener("input", () => {
+      const h = $("connUrlPasteHint")
+      if (h && h.classList.contains("err")) { h.classList.remove("err"); h.textContent = pasteInp.getAttribute("data-default-hint") || "" }
+    })
+  }
+
   const cp = $("syncUrlCopy")
   if (cp) cp.onclick = () => {
     const u = $("syncUrl").textContent
