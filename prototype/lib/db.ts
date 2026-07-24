@@ -1040,16 +1040,10 @@ export async function applySchema(c: Client) {
     .catch((e: any) => console.warn("author_sessions.resumed_from ALTER skipped:", e?.message || e))
   if (needCol("author_sessions", "resumed_by")) await c.execute("ALTER TABLE author_sessions ADD COLUMN resumed_by TEXT")
     .catch((e: any) => console.warn("author_sessions.resumed_by ALTER skipped:", e?.message || e))
-  // KLAVITYKLA-149: persist the wizard-picked judge/reviewer Sim so it survives a resume and lands on the crystallized Trail.
-  if (needCol("author_sessions", "judge_persona_id")) await c.execute("ALTER TABLE author_sessions ADD COLUMN judge_persona_id TEXT")
-    .catch((e: any) => console.warn("author_sessions.judge_persona_id ALTER skipped:", e?.message || e))
   if (needCol("trails", "objective_verified")) await c.execute("ALTER TABLE trails ADD COLUMN objective_verified INTEGER")
     .catch((e: any) => console.warn("trails.objective_verified ALTER skipped:", e?.message || e))
   if (needCol("author_sessions", "objective_verified")) await c.execute("ALTER TABLE author_sessions ADD COLUMN objective_verified INTEGER")
     .catch((e: any) => console.warn("author_sessions.objective_verified ALTER skipped:", e?.message || e))
-  // KLAVITYKLA-116: plain-language diagnosis (cause + remedy) attached to a RED verification walk.
-  if (needCol("author_sessions", "red_cause_json")) await c.execute("ALTER TABLE author_sessions ADD COLUMN red_cause_json TEXT")
-    .catch((e: any) => console.warn("author_sessions.red_cause_json ALTER skipped:", e?.message || e))
   // KLA-77: cross-trail finding dedup — content signature column so the same broken element
   // surfaced from two different Trails collapses to ONE finding with a recurrence bump.
   if (needCol("findings", "content_sig")) await c.execute("ALTER TABLE findings ADD COLUMN content_sig TEXT")
@@ -1266,6 +1260,13 @@ export async function applySchema(c: Client) {
     .catch((e: any) => console.warn("export_req_proj_idx skipped:", e?.message || e))
   await c.execute("CREATE INDEX IF NOT EXISTS export_req_fb_idx ON export_requests (feedback_id, status)")
     .catch((e: any) => console.warn("export_req_fb_idx skipped:", e?.message || e))
+  // KLAVITYKLA-149: persist the wizard-picked judge/reviewer Sim so it survives a resume and lands on the
+  // crystallized Trail. (Relocated to the end of applySchema per the append-only migration rule.)
+  if (needCol("author_sessions", "judge_persona_id")) await c.execute("ALTER TABLE author_sessions ADD COLUMN judge_persona_id TEXT")
+    .catch((e: any) => console.warn("author_sessions.judge_persona_id ALTER skipped:", e?.message || e))
+  // KLAVITYKLA-116: plain-language diagnosis (cause + remedy) attached to a RED verification walk.
+  if (needCol("author_sessions", "red_cause_json")) await c.execute("ALTER TABLE author_sessions ADD COLUMN red_cause_json TEXT")
+    .catch((e: any) => console.warn("author_sessions.red_cause_json ALTER skipped:", e?.message || e))
 }
 
 // ── schema_meta helpers ──
