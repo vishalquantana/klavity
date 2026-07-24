@@ -222,5 +222,12 @@
     "excerpt": "You can't automate every test at once. Score each candidate on frequency, stability, manual cost, and business risk, then automate the top of the list first.",
     "category": "Guides",
     "date": "2026-07-23"
+  },
+  {
+    "slug": "what-is-regression-testing",
+    "title": "What Is Regression Testing? Types and When to Run It",
+    "excerpt": "Regression testing re-runs existing tests after any change to confirm working features still work. Here are the types and when to run each.",
+    "category": "Learn",
+    "date": "2026-07-24"
   }
 ]

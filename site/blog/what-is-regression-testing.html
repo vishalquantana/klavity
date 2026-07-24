@@ -1,0 +1,102 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What Is Regression Testing? Types and When to Run It · Klavity</title>
+<meta name="description" content="Regression testing re-runs existing tests after any change to confirm working features still work. Here are the types and when to run each.">
+<link rel="canonical" href="https://klavity.in/blog/what-is-regression-testing">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="What Is Regression Testing? Types and When to Run It"><meta property="og:description" content="Regression testing re-runs existing tests after any change to confirm working features still work. Here are the types and when to run each.">
+<meta property="og:url" content="https://klavity.in/blog/what-is-regression-testing"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="What Is Regression Testing? Types and When to Run It"><meta name="twitter:description" content="Regression testing re-runs existing tests after any change to confirm working features still work. Here are the types and when to run each."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"What Is Regression Testing? Types and When to Run It","description":"Regression testing re-runs existing tests after any change to confirm working features still work. Here are the types and when to run each.","datePublished":"2026-07-24","dateModified":"2026-07-24","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/what-is-regression-testing","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"What Is Regression Testing? Types and When to Run It","item":"https://klavity.in/blog/what-is-regression-testing"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/what-is-regression-testing"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is the difference between regression testing and retesting?","acceptedAnswer":{"@type":"Answer","text":"Retesting verifies that a specific bug you just fixed is actually gone by re-running the exact reproduction steps. Regression testing is broader: it re-runs the surrounding suite to confirm the fix (or any other change) didn't break something else. You almost always do both — retest the fix, then regression-test the area around it."}},{"@type":"Question","name":"How often should you run regression tests?","acceptedAnswer":{"@type":"Answer","text":"Run a fast regression subset on every pull request or merge, and a full regression pass before each release. If a change touches shared code — authentication, payments, a core data model — expand the subset to cover everything downstream of it rather than trusting a fixed list."}},{"@type":"Question","name":"Can regression testing be automated?","acceptedAnswer":{"@type":"Answer","text":"Yes, and it is the single best QA activity to automate because it is repetitive, runs on every change, and follows fixed steps. Manual regression testing does not scale past a handful of releases. Automate the stable, high-value paths first and keep exploratory testing manual."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Learn · 2026-07-24</div>
+    <h1>What Is Regression Testing? Types and When to Run It</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>Regression testing re-runs your existing test suite after any code change to confirm that features that used to work still work. The trigger is change of any kind — a bug fix, a new feature, a dependency bump, or a config edit — because each one can silently break something unrelated.</div>
+    <div class="prose"><p>Regression testing is re-running your existing tests after a change to confirm that features which already worked still work. The word "regression" means a feature has slipped backward from working to broken, and this kind of testing exists to catch that slip before your users do. The trigger is always <em>change</em> — a bug fix, a new feature, a library upgrade, or a config edit — because any change can break something in code you never touched.</p>
+<h2>What does regression testing actually do?</h2>
+<p>It answers one question: did this change break anything that used to work? A regression suite is the set of checks you keep re-running to answer that question over and over, release after release. Unlike a one-off test written to verify a new feature, a regression test is meant to live forever and run on every future change.</p>
+<p>Three concrete things make regression testing worth the effort:</p>
+<ul>
+<li><strong>It catches side effects.</strong> Most breakages aren't in the code you edited — they're in code that quietly depended on it. A change to a shared date formatter can break invoices, exports, and email templates at once. Only a broad re-run finds that.</li>
+<li><strong>It protects fixed bugs.</strong> A bug that was fixed but never covered by a test will eventually come back when someone refactors nearby. A regression test freezes the fix in place.</li>
+<li><strong>It builds release confidence.</strong> The point of a green regression run is not zero risk — it's knowing exactly which behaviors you have verified, so you can ship without guessing.</li>
+</ul>
+<h2>What are the types of regression testing?</h2>
+<p>"Regression testing" is an umbrella term. In practice teams run one of a few scopes depending on how risky the change is:</p>
+<ol>
+<li><strong>Full regression.</strong> Re-run the entire suite. Reserve it for releases, major dependency upgrades, or changes to shared infrastructure where the blast radius is hard to predict.</li>
+<li><strong>Partial (selective) regression.</strong> Re-run only the tests related to the changed area plus its known dependents. This is the everyday mode for pull requests, and choosing the subset well is the whole skill.</li>
+<li><strong>Smoke regression.</strong> A thin slice of critical-path tests — can users log in, load the dashboard, and complete the core action — run first and fast to reject obviously broken builds before deeper testing.</li>
+<li><strong>Unit-level regression.</strong> The fast checks around individual functions that run on every save and every commit. They catch the narrowest breakages earliest and cheapest.</li>
+</ol>
+<h2>When should you run regression tests?</h2>
+<p>Tie the run to the change, not to the calendar. A practical cadence:</p>
+<ol>
+<li><strong>On every pull request:</strong> run a selective regression subset plus the smoke tests, so no change merges without proof it didn't break the critical paths.</li>
+<li><strong>Before every release:</strong> run the full suite, because a release bundles many changes whose combined effects no single PR run has verified together.</li>
+<li><strong>After a dependency or config change:</strong> treat upgrades and infrastructure edits as high-risk and widen the scope — these break things in places code review rarely predicts.</li>
+<li><strong>After every bug fix:</strong> retest the specific fix, then run the regression tests around it to confirm the fix didn't introduce a new problem nearby.</li>
+</ol>
+<h2>How do you choose which tests to re-run?</h2>
+<p>You can't re-run everything on every commit forever — suites get slow and people start skipping them. The way to keep regression testing useful is to select by <em>change impact</em>:</p>
+<ol>
+<li><strong>Map the change to its dependents.</strong> Ask what code, data, and UI paths consume the thing you edited, and pull their tests into the run — not just the tests for the file you touched.</li>
+<li><strong>Weight by risk and traffic.</strong> Always include the paths that most users hit and the ones that cost the most when they break, like sign-in and checkout, even if the change looks unrelated.</li>
+<li><strong>Grow the suite from real bugs.</strong> Every time a bug escapes to production, add a test for it. Over time your regression suite becomes a memory of every way the product has broken before. See <a href="/blog/turn-a-bug-into-a-regression-test">how to turn a bug into a regression test that sticks</a>.</li>
+</ol>
+<h2>Why regression suites break — and self-healing tests</h2>
+<p>The hidden tax of automated regression testing is maintenance. When the UI changes, tests fail not because the feature broke but because a selector moved or a button was renamed. Teams that let this rot end up ignoring red builds, which defeats the purpose. Two habits keep a suite trustworthy:</p>
+<ul>
+<li><strong>Fix flakiness at the root.</strong> A test that fails intermittently teaches people to hit "re-run" instead of investigate, and a real regression eventually hides inside the noise.</li>
+<li><strong>Reduce brittle selectors.</strong> Tests tied to fragile CSS paths or auto-generated IDs break on cosmetic UI edits that changed no behavior at all.</li>
+</ul>
+<p>This is where <a href="/autosim">self-healing end-to-end tests</a> help: when a selector moves, the test repairs its own locator instead of failing the whole run, so a renamed button doesn't turn into a false regression. It removes the maintenance drag that makes teams abandon regression testing in the first place — and when a change is a genuine break rather than a moved element, the failure that surfaces is a real one worth acting on. When those real failures do appear, capturing full evidence — steps, environment, console, and network — with <a href="/snap">right-click bug reports</a> keeps the fix loop short.</p>
+<h2>The bottom line</h2>
+<p>Regression testing is the discipline of proving that change didn't cost you working features. Run a fast subset on every pull request, a full pass before every release, and grow the suite from every real bug you find. Automate the stable paths, keep the suite honest by killing flakiness, and regression testing shifts from a release-day scramble to a quiet, continuous safety net.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Run a fast regression subset on every PR and a full pass before each release</li><li>Select tests by change impact, not a fixed checklist that never grows</li><li>Turn every fixed bug into a permanent regression test so it can't return</li><li>Automate stable, high-traffic paths first; keep exploratory testing manual</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What is the difference between regression testing and retesting?</summary><p>Retesting verifies that a specific bug you just fixed is actually gone by re-running the exact reproduction steps. Regression testing is broader: it re-runs the surrounding suite to confirm the fix (or any other change) didn't break something else. You almost always do both — retest the fix, then regression-test the area around it.</p></details><details><summary>How often should you run regression tests?</summary><p>Run a fast regression subset on every pull request or merge, and a full regression pass before each release. If a change touches shared code — authentication, payments, a core data model — expand the subset to cover everything downstream of it rather than trusting a fixed list.</p></details><details><summary>Can regression testing be automated?</summary><p>Yes, and it is the single best QA activity to automate because it is repetitive, runs on every change, and follows fixed steps. Manual regression testing does not scale past a handful of releases. Automate the stable, high-value paths first and keep exploratory testing manual.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
