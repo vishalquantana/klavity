@@ -4,6 +4,11 @@ export const ALLOWED_THEMES: ModalTheme[] = ['light', 'dark', 'glass', 'neon', '
 export type LauncherMode = 'hidden' | 'icon' | 'full' | 'custom'
 export const ALLOWED_LAUNCHER_MODES: LauncherMode[] = ['hidden', 'icon', 'full', 'custom']
 
+// Which glyph the floating launcher shows. Default is the friendlier 'lightbulb' (reads as
+// "share feedback / an idea"); 'bug' keeps the original literal bug for teams who prefer it.
+export type LauncherIcon = 'lightbulb' | 'bug'
+export const ALLOWED_LAUNCHER_ICONS: LauncherIcon[] = ['lightbulb', 'bug']
+
 // Right-click (context-menu) takeover mode — lets an agency embed the widget on a client's
 // production domain without hijacking every end-user's native menu or leaking Sims jargon.
 //   full       — current behavior: Klavity menu on right-click; Sims actions gated to members.
@@ -22,6 +27,7 @@ export interface ModalConfig {
   launcherMode?: LauncherMode
   launcherText?: string
   launcherIconColor?: string
+  launcherIcon?: LauncherIcon
   rightClickMode?: RightClickMode
   maskNumbers?: boolean
   /** Pro-gated: when true, hides the "Powered by Klavity" footer on the widget menu and modal success screen. */
@@ -91,6 +97,9 @@ export function resolveModalConfig(raw: unknown): ModalConfig & { theme: ModalTh
   if (lt) out.launcherText = lt
   const lic = hex(r.launcherIconColor)
   if (lic) out.launcherIconColor = lic
+  if (typeof r.launcherIcon === 'string' && (ALLOWED_LAUNCHER_ICONS as string[]).includes(r.launcherIcon)) {
+    out.launcherIcon = r.launcherIcon as LauncherIcon
+  }
   if (typeof r.rightClickMode === 'string' && (ALLOWED_RIGHT_CLICK_MODES as string[]).includes(r.rightClickMode)) {
     out.rightClickMode = r.rightClickMode as RightClickMode
   }
@@ -152,6 +161,9 @@ export function validateModalConfigInput(body: unknown, opts: { isPro: boolean }
   if (lt) config.launcherText = lt
   const lic = hex(body.launcherIconColor)
   if (lic) config.launcherIconColor = lic
+  if (typeof body.launcherIcon === 'string' && (ALLOWED_LAUNCHER_ICONS as string[]).includes(body.launcherIcon)) {
+    config.launcherIcon = body.launcherIcon as LauncherIcon
+  }
   if (typeof body.rightClickMode === 'string' && (ALLOWED_RIGHT_CLICK_MODES as string[]).includes(body.rightClickMode)) {
     config.rightClickMode = body.rightClickMode as RightClickMode
   }
