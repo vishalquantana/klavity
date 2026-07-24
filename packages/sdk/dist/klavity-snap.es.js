@@ -1585,7 +1585,7 @@ function qu(e, t, r = {}) {
   const n = ba(r);
   let i = !!n.maskNumbers;
   const o = document.createElement("div");
-  o.style.cssText = "position:fixed;inset:0;z-index:2147483647;pointer-events:none;";
+  o.setAttribute("data-klavity-ui", "composer"), o.style.cssText = "position:fixed;inset:0;z-index:2147483647;pointer-events:none;";
   const l = o.attachShadow({ mode: "open" });
   document.body.appendChild(o);
   let d = [], a = [], p = [];
