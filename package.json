@@ -8,7 +8,8 @@
     "test": "pnpm -r test",
     "build": "pnpm -r build",
     "check:emoji": "node scripts/check-no-emoji.mjs",
-    "check:inline-js": "node scripts/check-inline-js.mjs"
+    "check:inline-js": "node scripts/check-inline-js.mjs",
+    "check:inline-defs": "node scripts/check-inline-defs.mjs"
   },
   "workspaces": [
     "packages/*"
