@@ -229,5 +229,12 @@
     "excerpt": "Regression testing re-runs existing tests after any change to confirm working features still work. Here are the types and when to run each.",
     "category": "Learn",
     "date": "2026-07-24"
+  },
+  {
+    "slug": "what-is-visual-regression-testing",
+    "title": "What Is Visual Regression Testing? A Practical Guide",
+    "excerpt": "Visual regression testing compares screenshots of your UI before and after a change to catch layout, spacing, and color bugs functional tests can't see.",
+    "category": "Learn",
+    "date": "2026-07-25"
   }
 ]

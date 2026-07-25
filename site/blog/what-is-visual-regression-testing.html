@@ -1,0 +1,109 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What Is Visual Regression Testing? A Practical Guide · Klavity</title>
+<meta name="description" content="Visual regression testing compares screenshots of your UI before and after a change to catch layout, spacing, and color bugs functional tests can't see.">
+<link rel="canonical" href="https://klavity.in/blog/what-is-visual-regression-testing">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="What Is Visual Regression Testing? A Practical Guide"><meta property="og:description" content="Visual regression testing compares screenshots of your UI before and after a change to catch layout, spacing, and color bugs functional tests can't see.">
+<meta property="og:url" content="https://klavity.in/blog/what-is-visual-regression-testing"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="What Is Visual Regression Testing? A Practical Guide"><meta name="twitter:description" content="Visual regression testing compares screenshots of your UI before and after a change to catch layout, spacing, and color bugs functional tests can't see."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"What Is Visual Regression Testing? A Practical Guide","description":"Visual regression testing compares screenshots of your UI before and after a change to catch layout, spacing, and color bugs functional tests can't see.","datePublished":"2026-07-25","dateModified":"2026-07-25","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/what-is-visual-regression-testing","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"What Is Visual Regression Testing? A Practical Guide","item":"https://klavity.in/blog/what-is-visual-regression-testing"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/what-is-visual-regression-testing"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is the difference between visual regression testing and functional testing?","acceptedAnswer":{"@type":"Answer","text":"Functional testing checks behavior — does clicking submit send the form? Visual regression testing checks appearance — does the page still look right after the change? A functional test can pass while the layout is visibly broken, because assertions on the DOM don't see rendered pixels. The two are complementary, not substitutes."}},{"@type":"Question","name":"Why do visual regression tests become flaky?","acceptedAnswer":{"@type":"Answer","text":"Most flakiness comes from non-deterministic rendering: anti-aliasing differences between machines, font rendering across operating systems, animations captured mid-frame, and dynamic content like timestamps or carousels. You fix it by pinning the browser and viewport, disabling animations, freezing time, and masking regions that are expected to change."}},{"@type":"Question","name":"Do I need a separate tool for visual regression testing?","acceptedAnswer":{"@type":"Answer","text":"Not always. Playwright and Cypress both support screenshot snapshot assertions natively, which is enough for component and page-level checks. Dedicated services add hosted baseline storage, a review UI for approving diffs, and cross-browser rendering — useful once your suite grows past a few dozen snapshots and multiple people review changes."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Learn · 2026-07-25</div>
+    <h1>What Is Visual Regression Testing? A Practical Guide</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>Visual regression testing captures a screenshot of a page or component, compares it against an approved baseline image, and flags any pixel or perceptual difference for review. It catches the class of UI bugs functional tests miss entirely — a button that shifted, a layout that broke on one breakpoint, a color that changed — because DOM assertions verify structure, not appearance.</div>
+    <div class="prose"><p>Visual regression testing is an automated QA technique that catches unintended changes to a user interface by comparing screenshots of your app before and after a code change. A tool renders each page or component, captures an image, and compares it against an approved baseline; any difference above a set threshold is flagged for a person to approve or reject. It catches the visual bugs functional tests miss &mdash; a shifted button, a broken breakpoint, a color that changed &mdash; because assertions on the DOM verify structure, not how the page actually looks.</p>
+
+<h2>How does visual regression testing work?</h2>
+<p>Every visual regression tool follows the same four-step loop. Understanding the loop is more useful than memorizing any one tool, because the failure modes live between the steps.</p>
+<ol>
+<li><strong>Capture a baseline.</strong> Render the page or component in a controlled browser and save the screenshot as the approved &ldquo;golden&rdquo; image. This baseline is the definition of correct, so it should come from a state you have actually reviewed.</li>
+<li><strong>Render the candidate.</strong> On the next run &mdash; usually in CI on a pull request &mdash; render the same view from the new code and capture a fresh screenshot under identical conditions.</li>
+<li><strong>Diff the two images.</strong> The tool compares the candidate to the baseline and produces a difference map, typically highlighting changed pixels in a bright color so a reviewer can see exactly what moved.</li>
+<li><strong>Decide.</strong> If the difference is below the configured threshold, the test passes silently. If it exceeds the threshold, the test fails and a human reviews the diff, then either approves it as the new baseline or files it as a bug.</li>
+</ol>
+<p>The critical detail is step four: a visual regression tool never decides on its own whether a change is a bug or an improvement. It only decides whether something <em>changed</em>. The judgment stays with a person, which is why a good review UI matters as much as a good diff engine.</p>
+
+<h2>Pixel, perceptual, and AI-based comparison</h2>
+<p>Not all image comparison is the same, and picking the wrong mode is the fastest route to a flaky suite. There are three common approaches:</p>
+<ul>
+<li><strong>Exact pixel comparison</strong> flags any pixel that differs at all. It is the strictest and the most brittle &mdash; a one-pixel anti-aliasing difference between two machines fails the test even though nothing meaningful changed.</li>
+<li><strong>Perceptual comparison</strong> allows a tolerance for differences the human eye wouldn't notice, such as anti-aliasing at text edges or sub-pixel font rendering. This is the sensible default for most teams and is what Playwright's screenshot assertions and libraries like pixelmatch use under the hood.</li>
+<li><strong>AI or layout-aware comparison</strong> tries to understand the structure of the page &mdash; that a block of text reflowed rather than the whole page shifting &mdash; and reports changes in terms of components rather than raw pixels. It reduces false positives on dynamic content but adds cost and a dependency on the vendor's model.</li>
+</ul>
+<p>Start with perceptual comparison and a modest threshold. Move to layout-aware comparison only if false positives from reflowing content are drowning out the real signal.</p>
+
+<h2>How to stop visual regression tests from being flaky</h2>
+<p>Flaky visual tests are the number one reason teams abandon this technique, and nearly every cause is non-deterministic rendering rather than a real bug. Fix the environment before you touch thresholds:</p>
+<ol>
+<li><strong>Pin the rendering environment.</strong> Run captures in the same browser version, the same viewport size, and the same device pixel ratio every time &mdash; ideally in a container so a developer's Retina laptop and the CI runner produce identical output. This single change eliminates most cross-machine noise.</li>
+<li><strong>Disable animations and transitions.</strong> A screenshot taken mid-transition captures a random frame. Inject CSS that sets animation and transition durations to zero before capturing.</li>
+<li><strong>Freeze time and randomness.</strong> Timestamps, relative dates (&ldquo;2 minutes ago&rdquo;), and randomized content each produce a new image on every run. Mock the clock and seed any randomness so the render is deterministic.</li>
+<li><strong>Mask dynamic regions.</strong> For content you genuinely can't freeze &mdash; a live feed, an ad slot, a user avatar &mdash; tell the tool to ignore that rectangle rather than letting it fail the whole snapshot.</li>
+<li><strong>Wait for a stable state.</strong> Capture only after fonts have loaded, images have decoded, and network activity has settled. Screenshotting too early records a half-rendered page and diffs against it forever.</li>
+</ol>
+<p>Once the environment is deterministic, keep the threshold tight. A loose threshold hides exactly the small shifts &mdash; a few pixels of misalignment &mdash; that visual regression testing exists to catch.</p>
+
+<h2>Visual regression testing vs. functional testing</h2>
+<p>These two techniques catch different bugs and neither replaces the other. A functional test asks &ldquo;did the right thing happen?&rdquo; A visual regression test asks &ldquo;does it still look right?&rdquo; Consider a CSS change that accidentally sets a submit button's color to match its background. Every functional test still passes &mdash; the button is in the DOM, it is clickable, the form submits &mdash; but the button is now invisible to users. Only a visual check catches it.</p>
+<p>The reverse is also true: a visual test can pass while a data-loading bug leaves the page looking perfect but wired to the wrong endpoint. Use functional and end-to-end tests to verify behavior, and layer visual regression on top to protect appearance. For a refresher on the broader category, see our guide on <a href="/blog/what-is-regression-testing">what regression testing is</a>.</p>
+
+<h2>When should you use visual regression testing?</h2>
+<p>Visual regression testing pays off fastest in a few specific situations:</p>
+<ul>
+<li><strong>Design systems and component libraries.</strong> When one shared component renders in hundreds of places, a snapshot per component catches a change that would otherwise ripple silently across the whole app.</li>
+<li><strong>Responsive layouts.</strong> Bugs that only appear at one breakpoint are invisible in a single desktop screenshot. Capture each critical view at mobile, tablet, and desktop widths.</li>
+<li><strong>Framework and dependency upgrades.</strong> A CSS framework bump or a browser update can subtly restyle everything. A visual suite is the cheapest way to see the blast radius before it ships.</li>
+</ul>
+<p>It is a poor fit for pages dominated by unpredictable content, or for very early-stage UI that changes on every commit &mdash; you'll spend more time re-approving baselines than catching bugs.</p>
+
+<h2>Where visual regression fits with self-healing tests</h2>
+<p>Visual regression testing and end-to-end testing share a weakness: both break when the UI changes, even when the change is intentional. A renamed class or a restructured layout can fail a functional selector and shift a screenshot at the same time, producing two failures for one edit. This is where <a href="/autosim">self-healing end-to-end tests</a> help &mdash; they adapt selectors automatically when the UI moves, so your suite spends its failures on real regressions instead of routine markup churn. Pairing behavior-level self-healing tests with appearance-level visual checks gives you coverage of both what the app does and how it looks, without a maintenance tax on either.</p>
+<p>And when a visual diff does surface a genuine bug, the fix still needs a clear report. A one-off <a href="/snap">in-app bug report</a> that ships the screenshot, the exact URL, the viewport, and the console state turns &ldquo;this looks off&rdquo; into a ticket a developer can reproduce on the first try.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Capture baselines in a pinned browser, viewport, and device pixel ratio so diffs come from real changes, not the machine.</li><li>Disable animations, freeze time, and mask dynamic regions before comparing to kill the top sources of flakiness.</li><li>Use visual regression to complement functional tests, not replace them — one checks appearance, the other behavior.</li><li>Review and approve every diff intentionally; a rubber-stamped baseline silently accepts the bug you were testing for.</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What is the difference between visual regression testing and functional testing?</summary><p>Functional testing checks behavior — does clicking submit send the form? Visual regression testing checks appearance — does the page still look right after the change? A functional test can pass while the layout is visibly broken, because assertions on the DOM don't see rendered pixels. The two are complementary, not substitutes.</p></details><details><summary>Why do visual regression tests become flaky?</summary><p>Most flakiness comes from non-deterministic rendering: anti-aliasing differences between machines, font rendering across operating systems, animations captured mid-frame, and dynamic content like timestamps or carousels. You fix it by pinning the browser and viewport, disabling animations, freezing time, and masking regions that are expected to change.</p></details><details><summary>Do I need a separate tool for visual regression testing?</summary><p>Not always. Playwright and Cypress both support screenshot snapshot assertions natively, which is enough for component and page-level checks. Dedicated services add hosted baseline storage, a review UI for approving diffs, and cross-browser rendering — useful once your suite grows past a few dozen snapshots and multiple people review changes.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
