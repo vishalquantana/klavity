@@ -1,0 +1,106 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What Is a Smoke Test? Definition, Uses, and Examples · Klavity</title>
+<meta name="description" content="A smoke test is a small, fast set of checks that confirms a build's critical paths work — login, boot, core flows — before any deeper testing runs.">
+<link rel="canonical" href="https://klavity.in/blog/what-is-a-smoke-test">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="What Is a Smoke Test? Definition, Uses, and Examples"><meta property="og:description" content="A smoke test is a small, fast set of checks that confirms a build's critical paths work — login, boot, core flows — before any deeper testing runs.">
+<meta property="og:url" content="https://klavity.in/blog/what-is-a-smoke-test"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="What Is a Smoke Test? Definition, Uses, and Examples"><meta name="twitter:description" content="A smoke test is a small, fast set of checks that confirms a build's critical paths work — login, boot, core flows — before any deeper testing runs."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"What Is a Smoke Test? Definition, Uses, and Examples","description":"A smoke test is a small, fast set of checks that confirms a build's critical paths work — login, boot, core flows — before any deeper testing runs.","datePublished":"2026-07-26","dateModified":"2026-07-26","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/what-is-a-smoke-test","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"What Is a Smoke Test? Definition, Uses, and Examples","item":"https://klavity.in/blog/what-is-a-smoke-test"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/what-is-a-smoke-test"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is the difference between smoke testing and sanity testing?","acceptedAnswer":{"@type":"Answer","text":"Smoke testing broadly verifies that the critical functions of a whole build work, usually automated and run on every build. Sanity testing is a narrow, often manual check that one specific change or bug fix behaves as expected, without re-testing everything else. In short: smoke tests breadth on a new build; sanity tests depth on a specific change."}},{"@type":"Question","name":"Is smoke testing manual or automated?","acceptedAnswer":{"@type":"Answer","text":"Both exist, but smoke tests are ideally automated so they run on every build without human effort. Manual smoke passes are still common before a demo, or when automation doesn't yet cover a newly built area."}},{"@type":"Question","name":"How long should a smoke test take?","acceptedAnswer":{"@type":"Answer","text":"A few minutes at most. The whole point is a fast gate: if your smoke suite takes longer than your team is willing to wait on every build, people will skip it. Aim for under five minutes and roughly 5–20 checks."}},{"@type":"Question","name":"Should smoke tests run in production?","acceptedAnswer":{"@type":"Answer","text":"Yes — run a read-mostly smoke test after every production deploy to catch config, secret, and infrastructure failures that pre-deploy tests can't see. Use safe, idempotent checks like health endpoints and a synthetic login, and avoid mutating real customer data."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Learn · 2026-07-26</div>
+    <h1>What Is a Smoke Test? Definition, Uses, and Examples</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>A smoke test is a small, fast suite that verifies a build's critical paths — boot, login, and a core create/read flow — before any deeper testing begins. If the smoke test fails, reject the build immediately; there's no point running a full regression on software that can't even log in. Keep it under roughly 20 checks and a few minutes, and run it on every build and after every deploy.</div>
+    <div class="prose"><p>A smoke test is a small, fast set of checks that confirms a build's most critical functions work before anyone spends time on deeper testing. If the smoke test fails, the build is rejected immediately — there is no point running a full regression suite on software that can't log in or load its home page. Smoke tests are typically automated, run on every build, and finish in minutes.</p>
+
+<h2>Why is it called a smoke test?</h2>
+<p>The term comes from hardware and electronics: power on a new circuit board and watch whether it literally smokes. If smoke appears, the unit is dead and any detailed testing is pointless. Software borrowed the metaphor — a smoke test is the "does it even turn on?" check. You'll also see it called <em>build verification testing</em> (BVT) or a <em>build acceptance test</em>, because a passing smoke test is what earns a build the right to be tested further.</p>
+
+<h2>What does a smoke test check?</h2>
+<p>A good smoke suite covers the handful of paths that, if broken, make the rest of the product untestable or worthless. One check per critical feature — breadth, not depth. A typical web-app smoke suite verifies:</p>
+<ol>
+<li><strong>The application boots</strong> — the app starts and the home or login page renders without a fatal error.</li>
+<li><strong>Authentication works</strong> — a user can log in and reach an authenticated page.</li>
+<li><strong>The core create/read path works</strong> — the primary object of your product (an order, a document, a message) can be created and then viewed.</li>
+<li><strong>Critical integrations respond</strong> — the payment provider, database, or any dependency the core flow relies on returns a healthy response.</li>
+<li><strong>No fatal errors on the main screens</strong> — key pages load without uncaught JavaScript errors or HTTP 500s.</li>
+</ol>
+<p>If any of these break, the build is ship-blocking. Keep the suite to roughly 5–20 checks: a "smoke test" that takes 30 minutes is no longer a smoke test.</p>
+
+<h2>Smoke testing vs. regression testing</h2>
+<p>They answer different questions and run at different times:</p>
+<ul>
+<li><strong>Scope:</strong> smoke is breadth-first — one check per critical feature. <a href="/blog/what-is-regression-testing">Regression testing</a> is depth-first — many cases per feature, including edge cases.</li>
+<li><strong>Trigger:</strong> smoke runs on every build or deploy as a gate. Regression runs before a release or on a nightly schedule.</li>
+<li><strong>Speed:</strong> smoke finishes in minutes; a full regression suite can take hours.</li>
+<li><strong>Purpose:</strong> smoke answers "is this build even worth testing?" Regression answers "did we break anything that used to work?"</li>
+</ul>
+<p>Put simply: the smoke test is the gate, and regression is the full inspection you run once the gate passes.</p>
+
+<h2>When should you run a smoke test?</h2>
+<ol>
+<li><strong>On every CI build</strong> — before the expensive full suite, so a broken build fails in two minutes instead of forty.</li>
+<li><strong>After every deploy</strong> — a post-deploy smoke test against the live environment catches config, secret, and infrastructure breaks that unit tests can't see.</li>
+<li><strong>Before a demo or release</strong> — a quick smoke pass confirms the critical path is intact before anyone watches.</li>
+<li><strong>After a dependency or infra change</strong> — a new database, a new API version, or a rotated certificate all warrant a fresh smoke run.</li>
+</ol>
+
+<h2>How to keep a smoke suite fast and trustworthy</h2>
+<p>A smoke test only works as a gate if people trust it. Four practices keep it healthy:</p>
+<ol>
+<li><strong>Cap the count and the runtime.</strong> Pick the smallest set of checks that proves the product is alive, and give the suite a hard time budget. Growth is the enemy of a smoke test.</li>
+<li><strong>Assert outcomes, not implementation.</strong> Check "the dashboard shows the signed-in user's name," not a brittle CSS selector three levels deep. Outcome-based checks survive routine UI changes.</li>
+<li><strong>Fix flakiness the day it appears.</strong> A smoke test that fails randomly gets ignored, which defeats the entire purpose of a gate. Broken selectors after a UI change are the most common cause; <a href="/autosim">self-healing end-to-end tests</a> re-anchor to stable attributes so the gate stays green when only the markup moved, not the behavior.</li>
+<li><strong>Make failures loud and specific.</strong> A failed smoke test should name exactly which critical path is down — "login returned 500" — so on-call can act without opening a debugger.</li>
+</ol>
+
+<h2>The bottom line</h2>
+<p>A smoke test is your product's heartbeat check: a few minutes of breadth-first verification that answers whether a build is alive enough to test further. Keep it small, keep it fast, keep it green, and put it in front of every build and every deploy. When one does fail, the follow-up matters just as much — capture the failing state (URL, console, network) so the fix ships in the same session instead of a "cannot reproduce" round-trip.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Gate every CI build on a smoke suite before the full regression run</li><li>Keep the smoke suite under ~20 checks and a few minutes</li><li>Cover boot, login, and one core create/read path at minimum</li><li>Run a read-only smoke pass after every production deploy</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What is the difference between smoke testing and sanity testing?</summary><p>Smoke testing broadly verifies that the critical functions of a whole build work, usually automated and run on every build. Sanity testing is a narrow, often manual check that one specific change or bug fix behaves as expected, without re-testing everything else. In short: smoke tests breadth on a new build; sanity tests depth on a specific change.</p></details><details><summary>Is smoke testing manual or automated?</summary><p>Both exist, but smoke tests are ideally automated so they run on every build without human effort. Manual smoke passes are still common before a demo, or when automation doesn't yet cover a newly built area.</p></details><details><summary>How long should a smoke test take?</summary><p>A few minutes at most. The whole point is a fast gate: if your smoke suite takes longer than your team is willing to wait on every build, people will skip it. Aim for under five minutes and roughly 5–20 checks.</p></details><details><summary>Should smoke tests run in production?</summary><p>Yes — run a read-mostly smoke test after every production deploy to catch config, secret, and infrastructure failures that pre-deploy tests can't see. Use safe, idempotent checks like health endpoints and a synthetic login, and avoid mutating real customer data.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

@@ -236,5 +236,12 @@
     "excerpt": "Visual regression testing compares screenshots of your UI before and after a change to catch layout, spacing, and color bugs functional tests can't see.",
     "category": "Learn",
     "date": "2026-07-25"
+  },
+  {
+    "slug": "what-is-a-smoke-test",
+    "title": "What Is a Smoke Test? Definition, Uses, and Examples",
+    "excerpt": "A smoke test is a small, fast set of checks that confirms a build's critical paths work — login, boot, core flows — before any deeper testing runs.",
+    "category": "Learn",
+    "date": "2026-07-26"
   }
 ]
