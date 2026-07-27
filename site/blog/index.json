@@ -243,5 +243,12 @@
     "excerpt": "A smoke test is a small, fast set of checks that confirms a build's critical paths work — login, boot, core flows — before any deeper testing runs.",
     "category": "Learn",
     "date": "2026-07-26"
+  },
+  {
+    "slug": "how-to-write-a-bug-report-title",
+    "title": "How to Write a Bug Report Title That Speeds Up Triage",
+    "excerpt": "A good bug title states what breaks, where, and under what condition in one line. Here's a formula, before/after examples, and mistakes to avoid.",
+    "category": "Guides",
+    "date": "2026-07-27"
   }
 ]
