@@ -1,0 +1,107 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to Write Steps to Reproduce a Bug Anyone Can Follow · Klavity</title>
+<meta name="description" content="Vague repro steps are why bugs bounce back as 'cannot reproduce.' Here's how to write steps to reproduce anyone can follow — one action per line, with state and data.">
+<link rel="canonical" href="https://klavity.in/blog/how-to-write-steps-to-reproduce-a-bug">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="How to Write Steps to Reproduce a Bug Anyone Can Follow"><meta property="og:description" content="Vague repro steps are why bugs bounce back as 'cannot reproduce.' Here's how to write steps to reproduce anyone can follow — one action per line, with state and data.">
+<meta property="og:url" content="https://klavity.in/blog/how-to-write-steps-to-reproduce-a-bug"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="How to Write Steps to Reproduce a Bug Anyone Can Follow"><meta name="twitter:description" content="Vague repro steps are why bugs bounce back as 'cannot reproduce.' Here's how to write steps to reproduce anyone can follow — one action per line, with state and data."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"How to Write Steps to Reproduce a Bug Anyone Can Follow","description":"Vague repro steps are why bugs bounce back as 'cannot reproduce.' Here's how to write steps to reproduce anyone can follow — one action per line, with state and data.","datePublished":"2026-07-28","dateModified":"2026-07-28","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/how-to-write-steps-to-reproduce-a-bug","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Write Steps to Reproduce a Bug Anyone Can Follow","item":"https://klavity.in/blog/how-to-write-steps-to-reproduce-a-bug"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/how-to-write-steps-to-reproduce-a-bug"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"How many steps to reproduce should a bug report have?","acceptedAnswer":{"@type":"Answer","text":"As many as it takes to reach the bug from a known starting point, but no more. Trim every step that doesn't change the outcome by removing it and re-testing. A good report is often 3–8 numbered lines: most bugs don't need twenty steps, and the ones that do usually hide two or three that don't matter."}},{"@type":"Question","name":"What's the difference between steps to reproduce and a minimal reproducible example?","acceptedAnswer":{"@type":"Answer","text":"Steps to reproduce describe the actions a person takes in the running product. A minimal reproducible example (MRE) is the smallest self-contained code and data that triggers the same bug in isolation. Steps to reproduce come first; you distill them into an MRE when the bug lives in code you can extract."}},{"@type":"Question","name":"Do I need to include the environment in the steps?","acceptedAnswer":{"@type":"Answer","text":"Yes, but keep it separate from the numbered actions. Put the browser, OS, app version, account, and any feature flags in their own line above the steps. A step list that silently depends on a specific browser or a beta flag is why the same steps 'work on my machine.'"}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-07-28</div>
+    <h1>How to Write Steps to Reproduce a Bug Anyone Can Follow</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>Write steps to reproduce as a numbered list where each line is a single observable action, starting from a known state (the exact URL, account, and data) and ending with the expected vs. actual result. If a step needs a paragraph, it's really several steps — split it.</div>
+    <div class="prose"><p>To write steps to reproduce a bug, list the exact actions a developer must take to see it, as a numbered sequence where each line is one observable action. Start from a known state — the precise URL, the account, and the data on screen — and end with the expected result versus what actually happened. The test of a good step list is simple: hand it to someone who has never seen the bug, and they hit it on the first try.</p>
+
+<h2>What are steps to reproduce?</h2>
+<p>Steps to reproduce (often shortened to "repro steps" or "STR") are the ordered actions that reliably trigger a bug in a running product. They are the single most important field in a bug report, because a developer cannot fix what they cannot see happen. Everything else in the report — severity, screenshots, logs — exists to support the moment when someone follows the steps and watches the bug appear.</p>
+<p>Good repro steps are deterministic: the same actions produce the same failure every time. When they aren't — when a bug shows up "sometimes" — the steps are missing a variable. Something about the state, the data, the timing, or the environment is doing quiet work that the list doesn't name yet.</p>
+
+<h2>Why do reproduction steps fail?</h2>
+<p>Most repro steps fail for one of a few predictable reasons, and naming them makes them easy to avoid:</p>
+<ul>
+<li><strong>They start in the middle.</strong> "Click submit and it errors" assumes the reader is already on the right page, logged into the right account, with the right data entered. The reader isn't. Bugs live in state, and state has to be built from a known starting point.</li>
+<li><strong>They bundle several actions into one line.</strong> "Fill out the form and save" is at least four actions. If the bug is in the third one, a compound step hides exactly where things go wrong.</li>
+<li><strong>They describe intent, not actions.</strong> "Try to check out" tells the reader what you wanted, not what you did. "Click <em>Place order</em>" is reproducible; "try to check out" is a guess.</li>
+<li><strong>They omit the state you can't type.</strong> The specific account, the record with 400 line items, the feature flag that was on, the tab that had been open for an hour. These don't fit neatly in a numbered list, so they get dropped — and they're often the whole reason the bug exists.</li>
+</ul>
+<p>That last category is the leading cause of the dreaded <a href="/blog/reduce-cannot-reproduce-bug-tickets">"cannot reproduce"</a> resolution: the steps are technically correct, but the environment they ran in wasn't captured.</p>
+
+<h2>How do you write steps to reproduce a bug?</h2>
+<p>Use this sequence every time. It works for a two-line UI glitch and a ten-line data-corruption bug alike.</p>
+<ol>
+<li><strong>State the starting point.</strong> Before step 1, write the exact URL, the account or role you're signed in as, and the relevant data on screen. "Logged in as a Free-tier user on <em>/dashboard/settings</em> with two saved projects" tells the reader where to stand.</li>
+<li><strong>Write one action per line.</strong> Each numbered step should be a single thing a person does and can observe: click, type, scroll, wait, navigate. If a step contains the word "and," it's probably two steps.</li>
+<li><strong>Use exact labels, not descriptions.</strong> Name the button, menu item, or field the way it appears in the UI — <em>Place order</em>, not "the checkout button." Quote the exact text you typed if the input matters.</li>
+<li><strong>Mark the failure step.</strong> Point to the specific step where the bug appears, so the reader knows when to start watching closely rather than scanning the whole sequence.</li>
+<li><strong>State expected vs. actual, separately.</strong> "Expected: the order confirms and the cart clears. Actual: the page spins for 30 seconds, then shows a blank screen." Two sentences, no ambiguity about what "broken" means.</li>
+<li><strong>Trim what doesn't matter.</strong> Delete each step and re-run. If the bug still happens, that step was noise. What survives is the minimal path — the version that respects the reader's time.</li>
+</ol>
+
+<h2>Steps to reproduce: a bad example and a good one</h2>
+<p>Here is a report that will bounce back with questions:</p>
+<p><em>"Saving a project doesn't work. It just errors out. Happens a lot."</em></p>
+<p>Nothing here is reproducible. Which account? What project? What error? How often is "a lot"? Now the same bug, written to be followed:</p>
+<ul>
+<li><strong>Environment:</strong> Chrome 126, macOS 14, app v2.4.1, logged in as a Free-tier user.</li>
+<li><strong>Starting point:</strong> On <em>/projects/new</em> with the create-project form open.</li>
+<li><strong>1.</strong> Type <em>"Q3 launch"</em> in the Project name field.</li>
+<li><strong>2.</strong> Leave the Description field empty.</li>
+<li><strong>3.</strong> Click <em>Create project</em>. <strong>← bug appears here</strong></li>
+<li><strong>Expected:</strong> The project is created and you land on its overview page.</li>
+<li><strong>Actual:</strong> A red toast reads "Something went wrong" and the project is not created. Reproduces every time when Description is empty.</li>
+</ul>
+<p>The second version does the developer's investigation for them: it isolates the trigger (empty Description on the Free tier) and states the exact failure. That's often enough to jump straight to a fix.</p>
+
+<h2>How to capture the state your steps can't describe</h2>
+<p>Some of the most important context in a bug simply can't be written as a step. The console error, the failing network request, the browser version, the exact DOM state at the moment of failure — a person filing a bug rarely thinks to collect these, and typing them by hand is slow and error-prone. This is the gap that turns a correct step list into an unreproducible one.</p>
+<p>The reliable fix is to capture that state at the moment the bug happens rather than reconstructing it later. In-app and right-click bug reporting tools do this automatically: <a href="/snap">Klavity Snap</a> attaches a screenshot, the console log, network activity, and the environment to the report the instant a person flags a bug, so the evidence your written steps depend on ships with them instead of getting lost. Your numbered steps say <em>what to do</em>; the attached state proves <em>where you were standing</em> when it broke.</p>
+<p>Write the steps for a human to follow, capture the state a machine can record, and "cannot reproduce" stops being the reflex answer. For the full report format that surrounds these steps, see our guide on <a href="/blog/how-to-write-a-bug-report-developers-act-on">writing a bug report developers will act on</a>.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Start every step list from a known state: exact URL, account, and data</li><li>Write one observable action per numbered line, no compound steps</li><li>End with expected result vs. actual result, stated separately</li><li>Capture state you can't type out — console, network, version — as attached evidence</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>How many steps to reproduce should a bug report have?</summary><p>As many as it takes to reach the bug from a known starting point, but no more. Trim every step that doesn't change the outcome by removing it and re-testing. A good report is often 3–8 numbered lines: most bugs don't need twenty steps, and the ones that do usually hide two or three that don't matter.</p></details><details><summary>What's the difference between steps to reproduce and a minimal reproducible example?</summary><p>Steps to reproduce describe the actions a person takes in the running product. A minimal reproducible example (MRE) is the smallest self-contained code and data that triggers the same bug in isolation. Steps to reproduce come first; you distill them into an MRE when the bug lives in code you can extract.</p></details><details><summary>Do I need to include the environment in the steps?</summary><p>Yes, but keep it separate from the numbered actions. Put the browser, OS, app version, account, and any feature flags in their own line above the steps. A step list that silently depends on a specific browser or a beta flag is why the same steps 'work on my machine.'</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
