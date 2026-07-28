@@ -250,5 +250,12 @@
     "excerpt": "A good bug title states what breaks, where, and under what condition in one line. Here's a formula, before/after examples, and mistakes to avoid.",
     "category": "Guides",
     "date": "2026-07-27"
+  },
+  {
+    "slug": "how-to-write-steps-to-reproduce-a-bug",
+    "title": "How to Write Steps to Reproduce a Bug Anyone Can Follow",
+    "excerpt": "Vague repro steps are why bugs bounce back as 'cannot reproduce.' Here's how to write steps to reproduce anyone can follow — one action per line, with state and data.",
+    "category": "Guides",
+    "date": "2026-07-28"
   }
 ]
