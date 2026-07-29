@@ -257,5 +257,12 @@
     "excerpt": "Vague repro steps are why bugs bounce back as 'cannot reproduce.' Here's how to write steps to reproduce anyone can follow — one action per line, with state and data.",
     "category": "Guides",
     "date": "2026-07-28"
+  },
+  {
+    "slug": "how-to-reproduce-an-intermittent-bug",
+    "title": "How to Reproduce an Intermittent Bug: A Practical Guide",
+    "excerpt": "Intermittent bugs don't fail every time, so they slip past tests and bounce back as 'cannot reproduce.' Here's how to make one happen on demand.",
+    "category": "Guides",
+    "date": "2026-07-29"
   }
 ]

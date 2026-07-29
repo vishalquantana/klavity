@@ -1,0 +1,109 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to Reproduce an Intermittent Bug: A Practical Guide · Klavity</title>
+<meta name="description" content="Intermittent bugs don't fail every time, so they slip past tests and bounce back as 'cannot reproduce.' Here's how to make one happen on demand.">
+<link rel="canonical" href="https://klavity.in/blog/how-to-reproduce-an-intermittent-bug">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="How to Reproduce an Intermittent Bug: A Practical Guide"><meta property="og:description" content="Intermittent bugs don't fail every time, so they slip past tests and bounce back as 'cannot reproduce.' Here's how to make one happen on demand.">
+<meta property="og:url" content="https://klavity.in/blog/how-to-reproduce-an-intermittent-bug"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="How to Reproduce an Intermittent Bug: A Practical Guide"><meta name="twitter:description" content="Intermittent bugs don't fail every time, so they slip past tests and bounce back as 'cannot reproduce.' Here's how to make one happen on demand."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"How to Reproduce an Intermittent Bug: A Practical Guide","description":"Intermittent bugs don't fail every time, so they slip past tests and bounce back as 'cannot reproduce.' Here's how to make one happen on demand.","datePublished":"2026-07-29","dateModified":"2026-07-29","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/how-to-reproduce-an-intermittent-bug","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Reproduce an Intermittent Bug: A Practical Guide","item":"https://klavity.in/blog/how-to-reproduce-an-intermittent-bug"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/how-to-reproduce-an-intermittent-bug"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Why does an intermittent bug happen sometimes but not always?","acceptedAnswer":{"@type":"Answer","text":"Because a variable you aren't controlling changes between runs — the order of async operations, a specific data value, a cache being warm or cold, a race between two requests, or a difference in environment. The bug isn't random; it's conditional on inputs you haven't identified yet."}},{"@type":"Question","name":"What's the difference between an intermittent bug and a flaky test?","acceptedAnswer":{"@type":"Answer","text":"A flaky test passes and fails without the product changing — the fault is usually in the test (timing, shared state, order). An intermittent bug is a real product defect that only triggers under certain conditions. A flaky test can be hiding a real intermittent bug, so investigate before you add a retry."}},{"@type":"Question","name":"How many times should I re-run to confirm a fix worked?","acceptedAnswer":{"@type":"Answer","text":"Enough to make the original failure statistically unlikely to have been missed. If the bug reproduced roughly 1 in 10 times before, a handful of runs proves nothing — run it in a loop dozens of times after the fix, ideally with the exact trigger you isolated, before calling it resolved."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-07-29</div>
+    <h1>How to Reproduce an Intermittent Bug: A Practical Guide</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>Reproduce an intermittent bug by treating it as a variable you haven't controlled yet: capture full state from a real occurrence, list the hidden inputs (timing, data, concurrency, environment), then force each one until the failure becomes reliable. The goal is a repeatable trigger, not a lucky repeat.</div>
+    <div class="prose"><p>To reproduce an intermittent bug, stop treating it as random and start treating it as conditional on an input you haven't controlled yet. Capture the complete state the one time it does fail, list the hidden variables that could differ between runs — timing, data, concurrency, cache state, and environment — then deliberately force each one until the failure becomes reliable. The moment you can trigger it on demand, it's no longer intermittent; it's just a bug with a fix.</p>
+
+<h2>Why do intermittent bugs happen at all?</h2>
+<p>An intermittent bug isn't a coin flip. It fails when a specific combination of conditions lines up, and passes when they don't. The reason it feels random is that the deciding condition is invisible in the normal report: the failure depended on something that wasn't written down.</p>
+<p>Almost every intermittent failure traces back to one of five uncontrolled inputs:</p>
+<ul>
+<li><strong>Timing and order</strong> — two async operations finish in an order you didn't guarantee, so sometimes B reads state before A has written it.</li>
+<li><strong>Data</strong> — a specific value (an empty list, a null field, an emoji in a name, a very large number) hits a path most records never touch.</li>
+<li><strong>Concurrency</strong> — two requests, tabs, or workers touch the same resource and race for it.</li>
+<li><strong>Cache and state carry-over</strong> — the bug appears only on a cold cache, or only after a previous action left stale state behind.</li>
+<li><strong>Environment</strong> — a slower network, a different browser, a specific screen size, or a timezone that shifts a date across a boundary.</li>
+</ul>
+<p>Your job isn't to catch the bug in the act again by luck. It's to figure out which of these is the deciding variable, then take control of it.</p>
+
+<h2>How do I reproduce an intermittent bug step by step?</h2>
+<p>Work from evidence outward, isolating one variable at a time so you never confuse yourself with two changes at once.</p>
+<ol>
+<li><strong>Capture everything the first time it fails.</strong> You may not see it again for hours, so treat the first occurrence as precious. Record the exact URL and app state, the console log, the network requests and their responses, the timestamp, the browser and OS, the logged-in user, and the input data that was on screen. A right-click, in-app <a href="/snap">bug report</a> that grabs the screenshot, console, and network trace in one action is worth more here than any written description, because it freezes the state before it's gone.</li>
+<li><strong>Write down what was different this time.</strong> Compare the failing occurrence to a normal one. Was the list empty? Was it the first request after login? Was the network slow? Did a background job run? Any difference, however small, is a candidate variable.</li>
+<li><strong>Form one hypothesis.</strong> Pick the single most likely deciding variable and state it as a testable claim: "this fails when the cart is empty," or "this fails when the save and the navigation fire within the same tick."</li>
+<li><strong>Force that variable.</strong> Make the suspected condition happen every time instead of waiting for it. Seed the exact data. Add an artificial delay to skew the timing. Throttle the network in dev tools. Clear the cache before each run. Open two tabs and act in both.</li>
+<li><strong>Loop it.</strong> Run the exact path many times in a row. If your hypothesis is right, the failure rate jumps from occasional to near-constant. If nothing changes, the variable was wrong — revert it and test the next one.</li>
+<li><strong>Lock the trigger.</strong> Once it fails reliably, write down the minimal sequence that causes it. That trigger is both your reproduction and your future regression test.</li>
+</ol>
+
+<h2>What techniques force a variable to reproduce?</h2>
+<p>Each of the five inputs has a concrete way to pin it down:</p>
+<ul>
+<li><strong>Timing:</strong> insert deliberate delays or breakpoints between the two operations you suspect are racing. If reordering them by hand makes the bug reliable, timing is the cause.</li>
+<li><strong>Data:</strong> reproduce with the <em>exact</em> record from production, not a fresh test row. Copy the real payload from the captured network request — the failing value is usually something a hand-typed test would never enter.</li>
+<li><strong>Concurrency:</strong> fire the same action twice in quick succession, or run it from two sessions at once. Race conditions that never show up in single-threaded clicking surface immediately under parallel load.</li>
+<li><strong>Cache and carry-over:</strong> alternate runs — one on a fresh session, one after performing the prior action — to see whether leftover state is the trigger.</li>
+<li><strong>Environment:</strong> throttle the network, switch browsers, resize the viewport, or change the system clock to cross a midnight or DST boundary. Environment bugs vanish the instant you test only on your own fast machine.</li>
+</ul>
+<p>The discipline that matters most: <strong>change one thing at a time.</strong> If you throttle the network and seed new data and open a second tab all at once, a reproduction tells you nothing about which one mattered.</p>
+
+<h2>How do I confirm the fix actually worked?</h2>
+<p>An intermittent bug is uniquely good at looking fixed. If it failed roughly one run in ten, then ten clean runs after your change prove almost nothing — that's exactly what you'd expect by chance even with no fix at all. Confirmation has to be quantitative.</p>
+<ol>
+<li><strong>Reproduce reliably first.</strong> You can't verify a fix for a bug you can only trigger sometimes. Getting to a near-100% trigger is the prerequisite, not an optional nicety.</li>
+<li><strong>Run the trigger in a loop, many times, before and after.</strong> Establish the failure rate with the fix reverted, apply the fix, and run the same loop again. A drop from frequent failures to zero across dozens of runs is real evidence; a couple of green runs is not.</li>
+<li><strong>Encode the trigger as a regression test.</strong> The minimal sequence you isolated is the test. For conditions a script can drive — seeded data, forced timing, throttled network — a self-repairing end-to-end test keeps that guard alive as the UI changes. See how <a href="/autosim">AutoSim</a> turns a reproduction into a durable end-to-end test.</li>
+</ol>
+
+<h2>When should I stop chasing and escalate?</h2>
+<p>Some intermittent bugs resist reproduction because the deciding variable lives on the server, in a third-party service, or in infrastructure you can't see from the client. If you've captured several real occurrences and none share an obvious client-side condition, shift the investigation to logs and traces on the backend rather than clicking more.</p>
+<p>This is also where captured evidence pays off twice. When you can't reproduce it yourself, a set of complete reports from different real users — each carrying its own console, network, and state — lets you diff the occurrences and find the shared condition without ever triggering it locally. The bug that's impossible to reproduce on your machine is often obvious across five well-captured reports. That's the case for capturing rich evidence on <em>every</em> report by default, not just the ones you're actively hunting.</p>
+<p>For more on capturing state so failures don't slip away, read <a href="/blog">how to reduce 'cannot reproduce' tickets</a> and <a href="/blog">how to fix flaky end-to-end tests</a>.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Capture full state on the first real occurrence — you may not get it again</li><li>List hidden inputs: timing, data, concurrency, cache, and environment</li><li>Force one variable at a time until the failure becomes reliable</li><li>Re-run in a loop to confirm the fix, not just once</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Why does an intermittent bug happen sometimes but not always?</summary><p>Because a variable you aren't controlling changes between runs — the order of async operations, a specific data value, a cache being warm or cold, a race between two requests, or a difference in environment. The bug isn't random; it's conditional on inputs you haven't identified yet.</p></details><details><summary>What's the difference between an intermittent bug and a flaky test?</summary><p>A flaky test passes and fails without the product changing — the fault is usually in the test (timing, shared state, order). An intermittent bug is a real product defect that only triggers under certain conditions. A flaky test can be hiding a real intermittent bug, so investigate before you add a retry.</p></details><details><summary>How many times should I re-run to confirm a fix worked?</summary><p>Enough to make the original failure statistically unlikely to have been missed. If the bug reproduced roughly 1 in 10 times before, a handful of runs proves nothing — run it in a loop dozens of times after the fix, ideally with the exact trigger you isolated, before calling it resolved.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
