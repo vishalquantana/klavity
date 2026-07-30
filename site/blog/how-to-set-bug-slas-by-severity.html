@@ -1,0 +1,106 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to Set Bug SLAs by Severity: A Practical Guide · Klavity</title>
+<meta name="description" content="A bug SLA sets a response and resolution target for each severity level. Here's how to define tiers, set realistic targets, and keep them honest.">
+<link rel="canonical" href="https://klavity.in/blog/how-to-set-bug-slas-by-severity">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="How to Set Bug SLAs by Severity: A Practical Guide"><meta property="og:description" content="A bug SLA sets a response and resolution target for each severity level. Here's how to define tiers, set realistic targets, and keep them honest.">
+<meta property="og:url" content="https://klavity.in/blog/how-to-set-bug-slas-by-severity"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="How to Set Bug SLAs by Severity: A Practical Guide"><meta name="twitter:description" content="A bug SLA sets a response and resolution target for each severity level. Here's how to define tiers, set realistic targets, and keep them honest."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"How to Set Bug SLAs by Severity: A Practical Guide","description":"A bug SLA sets a response and resolution target for each severity level. Here's how to define tiers, set realistic targets, and keep them honest.","datePublished":"2026-07-30","dateModified":"2026-07-30","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/how-to-set-bug-slas-by-severity","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Set Bug SLAs by Severity: A Practical Guide","item":"https://klavity.in/blog/how-to-set-bug-slas-by-severity"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/how-to-set-bug-slas-by-severity"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What's the difference between a response SLA and a resolution SLA?","acceptedAnswer":{"@type":"Answer","text":"The response SLA is the time to acknowledge and triage a bug — confirm it's real, set a severity, and assign an owner. The resolution SLA is the time to ship a fix or an accepted workaround. Response should be short and consistent across all severities; resolution should scale with severity."}},{"@type":"Question","name":"Should SLAs be based on severity or priority?","acceptedAnswer":{"@type":"Answer","text":"The resolution clock should be driven by severity (how badly the product is broken) combined with priority (how soon it must be fixed given business context). Severity sets the default tier; priority lets you fast-track or defer a specific bug. Never let a single loud stakeholder override the tier without a documented reason."}},{"@type":"Question","name":"When does the SLA clock start?","acceptedAnswer":{"@type":"Answer","text":"Start it when a reproducible report exists — one with steps, environment, and evidence — not when a vague complaint lands. If half your intake is unreproducible, your resolution SLA measures your triage backlog, not your fix speed. Capturing complete evidence at report time is the single biggest lever on hitting resolution targets."}},{"@type":"Question","name":"What happens when we miss an SLA?","acceptedAnswer":{"@type":"Answer","text":"A missed SLA should trigger an escalation, not a penalty. Route the bug to a lead, re-check severity, and record why it slipped. Track breach rate per tier over time: a consistently breached tier means the target is unrealistic or the tier is over-subscribed, and the fix is to re-baseline the target, not to blame the team."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-07-30</div>
+    <h1>How to Set Bug SLAs by Severity: A Practical Guide</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>A bug SLA pairs each severity level with two clocks: a response target (when someone acknowledges and triages the bug) and a resolution target (when it's fixed or has an accepted workaround). Set response times you can meet every time, keep resolution targets tied to severity — not to who shouted loudest — and measure the clock from a reproducible report, not a vague complaint.</div>
+    <div class="prose"><p>A bug SLA (service-level agreement) sets two targets for each severity level: a <strong>response target</strong> — how long until someone acknowledges and triages the bug — and a <strong>resolution target</strong> — how long until it's fixed or has an accepted workaround. A workable SLA keeps the response window short and identical across severities so triage never stalls, then scales the resolution window by severity so the bugs that break the product most get fixed first. The clock only means something if it starts from a reproducible report, not a vague complaint.</p>
+
+<h2>What is a bug SLA?</h2>
+<p>A bug SLA is a written commitment that pairs each severity level with time targets. It exists to make triage decisions predictable: instead of arguing about every incoming bug, the team agrees once on what "critical" means, how fast a critical bug gets a response, and how fast it gets fixed. Everything after that is just applying the rule.</p>
+<p>Two clocks matter, and teams routinely conflate them:</p>
+<ul>
+<li><strong>Response time</strong> — the gap between a bug landing and a human acknowledging it, confirming it's real, assigning a severity, and giving it an owner. This is a triage commitment.</li>
+<li><strong>Resolution time</strong> — the gap between that acknowledgement and a shipped fix or an accepted workaround. This is an engineering commitment.</li>
+</ul>
+<p>Keeping them separate lets you promise something you can actually deliver on the response side (a quick, reliable acknowledgement) without pretending every bug can be fixed on the same timeline.</p>
+
+<h2>How many severity tiers should a bug SLA have?</h2>
+<p>Four tiers is the practical sweet spot: enough resolution to tell a data-loss bug apart from a cosmetic one, few enough that people can classify without a decision tree. A common structure:</p>
+<ol>
+<li><strong>Critical (S1)</strong> — the product is down, data is being lost or corrupted, or a core flow is completely blocked for many users. There is no workaround.</li>
+<li><strong>High (S2)</strong> — a major feature is broken or a common flow fails, but a workaround exists or only a subset of users is affected.</li>
+<li><strong>Medium (S3)</strong> — a feature misbehaves in a noticeable but non-blocking way; users can complete the task with friction.</li>
+<li><strong>Low (S4)</strong> — cosmetic issues, minor copy errors, or edge cases that don't affect the main task.</li>
+</ol>
+<p>Severity measures how badly the product is broken; it is not the same as priority, which is how soon you choose to fix it given business context. A rare crash can be high severity but low priority; a cosmetic bug on your pricing page can be low severity but high priority. If your team blurs these two, that's the first thing to fix — see <a href="/blog/severity-vs-priority-how-to-classify-a-bug">severity vs. priority</a> for how to classify each independently.</p>
+
+<h2>How do you set realistic SLA targets?</h2>
+<p>Don't copy someone else's numbers. Set targets from your own data and your on-call reality, then tighten them as you improve. Two principles keep targets honest:</p>
+<ol>
+<li><strong>Response targets should be short and the same for every tier.</strong> Whether a bug is critical or cosmetic, someone should look at it quickly — because you can't know it's cosmetic until you've triaged it. A uniform, achievable response window (measured in hours, not days) means severity is assigned fast and the resolution clock starts on time.</li>
+<li><strong>Resolution targets should scale with severity and match your actual capacity.</strong> A critical resolution target implies you can interrupt work and ship a fix on that timeline — only commit to what your release process and on-call coverage genuinely support. If you can't hot-fix on a weekend, don't write an SLA that assumes you can.</li>
+</ol>
+<p>The right way to pick a resolution number: look at how long your fixes for that tier <em>actually</em> took over the last quarter, take a percentile you can hit most of the time (not your best-ever case), and set the target there. Then make it stricter as the number improves. A target you meet 90% of the time is a real commitment; a target you meet 40% of the time is a wish that erodes trust every time it's missed.</p>
+
+<h2>When does the SLA clock start?</h2>
+<p>This is where most bug SLAs quietly break. If you start the resolution clock the moment a vague message arrives — "the checkout is weird" — then a large share of your SLA time is spent chasing the reporter for steps, environment, and evidence. Your resolution metric ends up measuring your triage backlog, not your engineering speed.</p>
+<p>Start the clock when a <strong>reproducible report</strong> exists: exact steps, the environment (browser, OS, build, account state), and evidence — a screenshot, the console output, and the failing network request. When that arrives with the bug, triage takes minutes and the fix timeline is honest. When it doesn't, you're paying for the reporter's missing context out of your SLA budget.</p>
+<p>This is the single biggest lever on hitting resolution targets, and it's an intake problem, not a fix-speed problem. In-app bug reporting tools like <a href="/snap">Klavity Snap</a> attach the URL, console, network activity, and environment automatically when someone files a bug from inside the product, so reports arrive reproducible by default and the clock starts on real, actionable work instead of a back-and-forth.</p>
+
+<h2>How do you enforce an SLA without turning it into a blame machine?</h2>
+<p>An SLA is a routing tool, not a stick. Build three habits around it:</p>
+<ol>
+<li><strong>Escalate on breach, don't punish.</strong> When a bug approaches or crosses its resolution target, auto-route it to a lead who re-checks severity and either reassigns, re-scopes, or re-tiers it. The goal is to unstick the bug, not to find someone to blame.</li>
+<li><strong>Track breach rate per tier, not per person.</strong> If one tier is breached constantly, the target is wrong or that tier is over-subscribed — both are process signals. Re-baseline the number instead of leaning on the team to sprint against an impossible clock.</li>
+<li><strong>Review the SLA on a cadence.</strong> Revisit targets each quarter against actual resolution times. As your evidence quality and triage improve, tighten the targets; if a target has been unmet for two straight quarters, it's fiction — fix it.</li>
+</ol>
+<p>Pair this with a clean triage process so bugs reach the right tier quickly in the first place; see <a href="/blog/how-to-triage-a-bug-backlog">how to triage a bug backlog</a> for a repeatable flow that keeps the SLA meaningful.</p>
+
+<h2>Putting it together</h2>
+<p>A bug SLA that works has four properties: <strong>a short, uniform response target</strong> so triage never stalls; <strong>severity-scaled resolution targets</strong> set from your own historical data at a percentile you can actually hit; <strong>a clock that starts on a reproducible report</strong> so the metric measures fixing, not chasing; and <strong>a breach process that escalates and re-baselines</strong> instead of assigning blame. Get those four right and the SLA stops being a number you dread and becomes the rule that decides, automatically, which bug gets worked first.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Give each severity two clocks: a response target and a resolution target</li><li>Keep response times short and identical across severities so triage never stalls</li><li>Start the SLA clock only when a reproducible report exists</li><li>Track breach rate per tier and re-baseline targets you can't consistently meet</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What's the difference between a response SLA and a resolution SLA?</summary><p>The response SLA is the time to acknowledge and triage a bug — confirm it's real, set a severity, and assign an owner. The resolution SLA is the time to ship a fix or an accepted workaround. Response should be short and consistent across all severities; resolution should scale with severity.</p></details><details><summary>Should SLAs be based on severity or priority?</summary><p>The resolution clock should be driven by severity (how badly the product is broken) combined with priority (how soon it must be fixed given business context). Severity sets the default tier; priority lets you fast-track or defer a specific bug. Never let a single loud stakeholder override the tier without a documented reason.</p></details><details><summary>When does the SLA clock start?</summary><p>Start it when a reproducible report exists — one with steps, environment, and evidence — not when a vague complaint lands. If half your intake is unreproducible, your resolution SLA measures your triage backlog, not your fix speed. Capturing complete evidence at report time is the single biggest lever on hitting resolution targets.</p></details><details><summary>What happens when we miss an SLA?</summary><p>A missed SLA should trigger an escalation, not a penalty. Route the bug to a lead, re-check severity, and record why it slipped. Track breach rate per tier over time: a consistently breached tier means the target is unrealistic or the tier is over-subscribed, and the fix is to re-baseline the target, not to blame the team.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
