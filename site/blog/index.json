@@ -264,5 +264,12 @@
     "excerpt": "Intermittent bugs don't fail every time, so they slip past tests and bounce back as 'cannot reproduce.' Here's how to make one happen on demand.",
     "category": "Guides",
     "date": "2026-07-29"
+  },
+  {
+    "slug": "how-to-set-bug-slas-by-severity",
+    "title": "How to Set Bug SLAs by Severity: A Practical Guide",
+    "excerpt": "A bug SLA sets a response and resolution target for each severity level. Here's how to define tiers, set realistic targets, and keep them honest.",
+    "category": "Guides",
+    "date": "2026-07-30"
   }
 ]
