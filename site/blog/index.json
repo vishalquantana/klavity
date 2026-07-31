@@ -271,5 +271,12 @@
     "excerpt": "A bug SLA sets a response and resolution target for each severity level. Here's how to define tiers, set realistic targets, and keep them honest.",
     "category": "Guides",
     "date": "2026-07-30"
+  },
+  {
+    "slug": "selenium-vs-playwright-e2e-framework",
+    "title": "Selenium vs. Playwright: Choosing an E2E Test Framework",
+    "excerpt": "Selenium and Playwright both automate browser E2E tests but differ on setup, speed, and flakiness. Here's how to choose the right one.",
+    "category": "Compare",
+    "date": "2026-07-31"
   }
 ]
