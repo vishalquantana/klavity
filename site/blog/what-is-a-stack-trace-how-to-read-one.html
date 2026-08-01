@@ -1,0 +1,119 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What Is a Stack Trace? How to Read One to Find a Bug · Klavity</title>
+<meta name="description" content="A stack trace is the ordered list of function calls that led to an error. Here's how to read one top-to-bottom to find the exact line that broke.">
+<link rel="canonical" href="https://klavity.in/blog/what-is-a-stack-trace-how-to-read-one">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="What Is a Stack Trace? How to Read One to Find a Bug"><meta property="og:description" content="A stack trace is the ordered list of function calls that led to an error. Here's how to read one top-to-bottom to find the exact line that broke.">
+<meta property="og:url" content="https://klavity.in/blog/what-is-a-stack-trace-how-to-read-one"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="What Is a Stack Trace? How to Read One to Find a Bug"><meta name="twitter:description" content="A stack trace is the ordered list of function calls that led to an error. Here's how to read one top-to-bottom to find the exact line that broke."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"What Is a Stack Trace? How to Read One to Find a Bug","description":"A stack trace is the ordered list of function calls that led to an error. Here's how to read one top-to-bottom to find the exact line that broke.","datePublished":"2026-08-01","dateModified":"2026-08-01","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/what-is-a-stack-trace-how-to-read-one","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"What Is a Stack Trace? How to Read One to Find a Bug","item":"https://klavity.in/blog/what-is-a-stack-trace-how-to-read-one"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/what-is-a-stack-trace-how-to-read-one"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"How do you read a stack trace?","acceptedAnswer":{"@type":"Answer","text":"Start at the top. The first line is the error type and message; the frames below it are the call stack, ordered from where the error was thrown (top) back to the program's entry point (bottom). Scan down to the first frame that references your own source file rather than a library or the runtime — that is usually the line to fix."}},{"@type":"Question","name":"What's the difference between a stack trace and an error message?","acceptedAnswer":{"@type":"Answer","text":"The error message is one line that says what went wrong (for example, 'TypeError: Cannot read properties of undefined'). The stack trace is the sequence of function calls that shows where and how it went wrong. You need both: the message tells you the failure, the trace tells you the location and the path that got there."}},{"@type":"Question","name":"Why does my stack trace point to the wrong line?","acceptedAnswer":{"@type":"Answer","text":"Usually because the code is minified or transpiled, so line numbers refer to the built bundle, not your source. A source map maps built lines back to original ones. Async operations, error re-throwing, and swallowed exceptions can also shift the true origin, so read the whole trace rather than trusting only the top frame."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Learn · 2026-08-01</div>
+    <h1>What Is a Stack Trace? How to Read One to Find a Bug</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>A stack trace is the ordered list of active function calls at the moment a program threw an error, printed innermost-call-first. To find the bug fast, read from the top and stop at the first frame that points to your own code — that line, and the error message above it, are almost always where the fix belongs.</div>
+    <div class="prose"><p>A stack trace is the ordered list of function calls that were active at the exact moment a program threw an error. It is printed innermost-call-first: the top line is the error itself, and each line below is the function that called the one above it, all the way back to where the program started. Read correctly, a stack trace tells you not just <em>what</em> broke but the precise line where it broke and the path the code took to get there.</p>
+
+<h2>What is a stack trace?</h2>
+<p>When code runs, the language keeps a &ldquo;call stack&rdquo; &mdash; a record of which function is running, which function called it, and so on. When something throws an error, the runtime captures a snapshot of that stack and prints it. That snapshot is the stack trace.</p>
+<p>Each entry in the trace is called a <strong>frame</strong>, and a frame almost always contains three things:</p>
+<ul>
+<li><strong>The function name</strong> &mdash; what was executing (or <code>&lt;anonymous&gt;</code> if it was an unnamed callback).</li>
+<li><strong>The file</strong> &mdash; which source file the function lives in.</li>
+<li><strong>The location</strong> &mdash; a line and often a column number, written as <code>file.js:42:17</code>.</li>
+</ul>
+<p>The frames are stacked in reverse order of calling: the function that actually threw the error is at the top, and the program's entry point is at the bottom.</p>
+
+<h2>How to read a stack trace</h2>
+<p>The fastest way to turn a trace into a fix is a fixed, repeatable scan. It takes well under a minute once it's a habit.</p>
+<ol>
+<li><strong>Read the top line first.</strong> This is the error type and message &mdash; for example, <code>TypeError: Cannot read properties of undefined (reading 'id')</code>. The type tells you the category of failure and the message often names the exact variable or property involved.</li>
+<li><strong>Move down to the first frame.</strong> The line immediately under the message is where the error was actually thrown. Note the file and line number.</li>
+<li><strong>Find the first frame in your own code.</strong> If the top frames point into a library, a framework, or the runtime, keep scanning down until you hit a file you wrote. That boundary &mdash; where the trace crosses from library code into your code &mdash; is usually where the real bug lives, because it's the last decision your code made before handing bad input to the library.</li>
+<li><strong>Follow the chain downward if needed.</strong> If the top frame is a small, generic helper called from many places, walk down the trace to see which caller passed the bad value. The trace is a map of exactly how the program arrived at the failure.</li>
+</ol>
+
+<h2>Which line in a stack trace actually matters?</h2>
+<p>Most traces have far more frames than you need. The two that matter almost every time are:</p>
+<ul>
+<li><strong>The error message at the top</strong> &mdash; it names the failure and frequently the offending value.</li>
+<li><strong>The topmost frame that lives in your own source</strong> &mdash; not <code>node_modules</code>, not the runtime, not framework internals.</li>
+</ul>
+<p>A useful rule: the deeper frames (near the bottom) tell you the <em>context</em> &mdash; the request, the route, the button click that started it all. The upper frames tell you the <em>cause</em>. When you're hunting a fix, start from the cause end. When you're trying to reproduce, the context end tells you the entry point to trigger.</p>
+
+<h2>Reading a JavaScript stack trace: a worked example</h2>
+<p>Here is a typical browser stack trace:</p>
+<ul>
+<li><code>TypeError: Cannot read properties of undefined (reading 'name')</code></li>
+<li><code>&nbsp;&nbsp;at renderUser (profile.js:88:22)</code></li>
+<li><code>&nbsp;&nbsp;at ProfilePage (profile.js:41:9)</code></li>
+<li><code>&nbsp;&nbsp;at renderWithHooks (react-dom.js:14985:18)</code></li>
+<li><code>&nbsp;&nbsp;at mountIndeterminateComponent (react-dom.js:17811:13)</code></li>
+</ul>
+<p>Reading it: the error is a <code>TypeError</code>, and the message says something tried to read <code>.name</code> on a value that was <code>undefined</code>. The first frame, <code>renderUser (profile.js:88:22)</code>, is the throw site &mdash; and it's your file, so that's the line to open. The frame below shows it was called from <code>ProfilePage</code>. The two library frames (<code>react-dom.js</code>) are just the framework machinery that ran your component; they're noise for this bug. The fix is almost certainly at <code>profile.js:88</code>: some user object arrived <code>undefined</code>, and the code assumed it wouldn't.</p>
+
+<h2>Why your stack trace points to the wrong line</h2>
+<p>Sometimes the line number in the trace doesn't match what you see in your editor. The common causes are worth knowing before you waste time in the wrong file:</p>
+<ol>
+<li><strong>Minified or bundled code.</strong> Production JavaScript is often compressed into a single line, so the trace shows something like <code>bundle.js:1:84213</code>. A <strong>source map</strong> maps that position back to your original file and line; most browser devtools apply it automatically when the map is available.</li>
+<li><strong>Transpiled or compiled code.</strong> TypeScript, JSX, and other build steps shift line numbers between source and output. Again, source maps are the fix.</li>
+<li><strong>Async gaps.</strong> With promises, <code>await</code>, timers, and event handlers, the frame that scheduled the work may not appear above the frame that ran it, so the trace can look shorter than the real logical path. Modern runtimes stitch async traces together, but older or heavily-transformed code may not.</li>
+<li><strong>Re-thrown or swallowed errors.</strong> If code catches an error and throws a new one, the trace can point at the re-throw site instead of the original cause. Look for a wrapped or &ldquo;caused by&rdquo; section, and preserve the original error when you re-throw.</li>
+</ol>
+
+<h2>How to include a stack trace in a bug report</h2>
+<p>A stack trace is one of the highest-value pieces of evidence you can attach to a bug, because it points a developer straight at the failing line. To make it usable:</p>
+<ol>
+<li><strong>Copy the whole trace, not a screenshot of two lines.</strong> The full text is searchable and complete; a cropped screenshot loses the frames that show the path in.</li>
+<li><strong>Include the error message verbatim.</strong> Don't paraphrase &ldquo;something about undefined&rdquo; &mdash; the exact type and message are what a developer greps for.</li>
+<li><strong>Pair it with the console and network state.</strong> The trace tells you where; the surrounding <a href="/blog/browser-console-errors-signal-vs-noise-in-qa-triage">console errors</a> and failed requests often tell you why the input was bad in the first place.</li>
+<li><strong>Note whether it reproduces.</strong> A trace from a one-off is still useful, but tag intermittent ones so triage weights them correctly.</li>
+</ol>
+<p>This is exactly the kind of context that's easy to lose when a bug is reported after the fact. <a href="/snap">Klavity Snap</a> captures the stack trace, console, network requests, and environment at the moment someone flags a bug &mdash; so the report arrives with the frame that matters already attached, not reconstructed from memory. If you're standardizing how your team files bugs, a stack trace should be a required field, right next to the steps and the <a href="/blog/what-is-a-minimal-reproducible-example">minimal reproducible example</a>.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Read top-to-bottom: the top frame is where the error was thrown</li><li>Find the first frame in your own code — skip library and runtime frames</li><li>Keep the error type and message; they narrow the cause before you open the file</li><li>Ship the full trace with the bug report, plus the console and network state</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>How do you read a stack trace?</summary><p>Start at the top. The first line is the error type and message; the frames below it are the call stack, ordered from where the error was thrown (top) back to the program's entry point (bottom). Scan down to the first frame that references your own source file rather than a library or the runtime — that is usually the line to fix.</p></details><details><summary>What's the difference between a stack trace and an error message?</summary><p>The error message is one line that says what went wrong (for example, 'TypeError: Cannot read properties of undefined'). The stack trace is the sequence of function calls that shows where and how it went wrong. You need both: the message tells you the failure, the trace tells you the location and the path that got there.</p></details><details><summary>Why does my stack trace point to the wrong line?</summary><p>Usually because the code is minified or transpiled, so line numbers refer to the built bundle, not your source. A source map maps built lines back to original ones. Async operations, error re-throwing, and swallowed exceptions can also shift the true origin, so read the whole trace rather than trusting only the top frame.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
