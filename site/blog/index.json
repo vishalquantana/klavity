@@ -278,5 +278,12 @@
     "excerpt": "Selenium and Playwright both automate browser E2E tests but differ on setup, speed, and flakiness. Here's how to choose the right one.",
     "category": "Compare",
     "date": "2026-07-31"
+  },
+  {
+    "slug": "what-is-a-stack-trace-how-to-read-one",
+    "title": "What Is a Stack Trace? How to Read One to Find a Bug",
+    "excerpt": "A stack trace is the ordered list of function calls that led to an error. Here's how to read one top-to-bottom to find the exact line that broke.",
+    "category": "Learn",
+    "date": "2026-08-01"
   }
 ]
