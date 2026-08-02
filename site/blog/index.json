@@ -285,5 +285,12 @@
     "excerpt": "A stack trace is the ordered list of function calls that led to an error. Here's how to read one top-to-bottom to find the exact line that broke.",
     "category": "Learn",
     "date": "2026-08-01"
+  },
+  {
+    "slug": "smoke-testing-vs-sanity-testing",
+    "title": "Smoke Testing vs. Sanity Testing: What's the Difference?",
+    "excerpt": "Smoke testing checks whether a build is stable enough to test at all. Sanity testing verifies a specific fix works. Here's when to run each.",
+    "category": "Compare",
+    "date": "2026-08-02"
   }
 ]

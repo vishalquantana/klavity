@@ -1,0 +1,103 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Smoke Testing vs. Sanity Testing: What's the Difference? · Klavity</title>
+<meta name="description" content="Smoke testing checks whether a build is stable enough to test at all. Sanity testing verifies a specific fix works. Here's when to run each.">
+<link rel="canonical" href="https://klavity.in/blog/smoke-testing-vs-sanity-testing">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="Smoke Testing vs. Sanity Testing: What's the Difference?"><meta property="og:description" content="Smoke testing checks whether a build is stable enough to test at all. Sanity testing verifies a specific fix works. Here's when to run each.">
+<meta property="og:url" content="https://klavity.in/blog/smoke-testing-vs-sanity-testing"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Smoke Testing vs. Sanity Testing: What's the Difference?"><meta name="twitter:description" content="Smoke testing checks whether a build is stable enough to test at all. Sanity testing verifies a specific fix works. Here's when to run each."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Smoke Testing vs. Sanity Testing: What's the Difference?","description":"Smoke testing checks whether a build is stable enough to test at all. Sanity testing verifies a specific fix works. Here's when to run each.","datePublished":"2026-08-02","dateModified":"2026-08-02","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/smoke-testing-vs-sanity-testing","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"Smoke Testing vs. Sanity Testing: What's the Difference?","item":"https://klavity.in/blog/smoke-testing-vs-sanity-testing"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/smoke-testing-vs-sanity-testing"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Is smoke testing done before or after sanity testing?","acceptedAnswer":{"@type":"Answer","text":"Smoke testing usually comes first. It runs against a fresh build to confirm the core paths work and the build is worth testing at all. Sanity testing comes later, after a specific bug fix or minor change lands on an already-stable build, to confirm that one area behaves correctly."}},{"@type":"Question","name":"Is smoke or sanity testing a subset of regression testing?","acceptedAnswer":{"@type":"Answer","text":"Sanity testing is often treated as a focused subset of regression testing, aimed at the code that just changed and its immediate neighbors. Smoke testing is broader and shallower and is usually considered its own gate, run before regression testing begins."}},{"@type":"Question","name":"Should smoke and sanity tests be automated?","acceptedAnswer":{"@type":"Answer","text":"Smoke tests are the best automation candidate: they run on every build, cover the same critical paths, and rarely change, so a scripted suite in CI pays off quickly. Sanity checks are frequently ad-hoc and tied to a specific change, so they are often run manually — though repeatable ones are worth promoting into your regression suite."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Compare · 2026-08-02</div>
+    <h1>Smoke Testing vs. Sanity Testing: What's the Difference?</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>Smoke testing is wide and shallow: it runs the critical paths on every new build to decide whether the build is stable enough to test further. Sanity testing is narrow and deep: it verifies one specific change or bug fix without breaking nearby features. Run the smoke test first to accept the build, then run a sanity test after a targeted change.</div>
+    <div class="prose"><p>Smoke testing and sanity testing both decide whether it's worth investing in deeper QA, but they answer different questions. <strong>Smoke testing</strong> is a wide, shallow pass over a new build's most critical paths to confirm the build is stable enough to test at all. <strong>Sanity testing</strong> is a narrow, deep check that a specific change or bug fix works as intended without breaking the features around it. In practice you run a smoke test first to accept the build, then run a sanity test after a targeted change.</p>
+
+<h2>What is smoke testing?</h2>
+<p>Smoke testing (sometimes called build verification testing) is a quick, broad check that the core functionality of a new build works. The name comes from hardware testing: power on the device and see if it smokes. If a login, a checkout, or the main dashboard is broken, the build fails the smoke test and goes back to the developers before QA wastes time on it.</p>
+<p>The defining traits of a smoke test:</p>
+<ol>
+<li><strong>Wide and shallow.</strong> It touches many features but tests none of them deeply — one happy-path check per critical flow.</li>
+<li><strong>Runs on every build.</strong> A smoke test is a gate, so it runs each time a new build is produced, ideally automatically in CI.</li>
+<li><strong>Fast and scripted.</strong> Because it repeats constantly, a good smoke suite is documented, automated, and finishes in minutes.</li>
+</ol>
+
+<h2>What is sanity testing?</h2>
+<p>Sanity testing is a focused check performed after a minor change — usually a bug fix or a small feature tweak — on a build that is already known to be stable. Instead of covering everything, it verifies that the specific thing you changed now behaves correctly and that closely related functionality still works.</p>
+<p>The defining traits of a sanity test:</p>
+<ol>
+<li><strong>Narrow and deep.</strong> It exercises one area thoroughly, including the edge cases around the change, rather than skimming the whole product.</li>
+<li><strong>Runs after a targeted change.</strong> You reach for a sanity test when a fix lands and you need to confirm it before running a full regression pass.</li>
+<li><strong>Often unscripted.</strong> Sanity checks are frequently ad-hoc and tied to the exact change, so they lean on a tester's judgment more than a fixed script.</li>
+</ol>
+
+<h2>Smoke testing vs. sanity testing: the key differences</h2>
+<p>The two tests differ on four axes that make it easy to tell them apart:</p>
+<ul>
+<li><strong>Purpose.</strong> Smoke testing verifies overall build stability; sanity testing verifies that a specific change works.</li>
+<li><strong>Scope.</strong> Smoke is broad and shallow (breadth); sanity is narrow and deep (depth).</li>
+<li><strong>Timing.</strong> Smoke runs on every new build up front; sanity runs after a minor change to an already-stable build.</li>
+<li><strong>Form.</strong> Smoke is typically scripted and automated; sanity is typically ad-hoc and manual.</li>
+</ul>
+<p>A useful shorthand: smoke testing asks <em>"is this build worth testing?"</em> while sanity testing asks <em>"did this change do what we wanted, and only that?"</em> Both are gates that let you fail fast — they exist so you don't pour hours of regression effort into a build that was never going to survive it.</p>
+
+<h2>When should you run each?</h2>
+<p>Slot them into your QA flow like this:</p>
+<ol>
+<li><strong>New build arrives → smoke test.</strong> Run the automated smoke suite in CI. If a critical path is broken, reject the build immediately and skip everything downstream.</li>
+<li><strong>Bug fix or small change lands → sanity test.</strong> On a build that already passed smoke, verify the changed area deeply before committing to a full pass.</li>
+<li><strong>Sanity passes → regression test.</strong> Once the targeted change checks out, run your broader <a href="/blog/what-is-regression-testing">regression suite</a> to catch side effects elsewhere.</li>
+</ol>
+<p>Sanity testing is often described as a subset of regression testing focused on recent changes, while smoke testing sits earlier as its own build-acceptance gate. They are complementary, not interchangeable.</p>
+
+<h2>How this maps to modern, automated QA</h2>
+<p>Smoke tests are the highest-value thing to automate because they run on every build and rarely change — a small, fast, end-to-end suite covering login, core navigation, and one or two revenue paths catches most catastrophic breakages before a human looks at the build. The catch is maintenance: when a selector or flow changes, a brittle smoke suite starts failing on the test rather than the product, and teams learn to ignore it.</p>
+<p>That's the failure mode <a href="/autosim">AutoSim</a> is built to prevent. Self-healing end-to-end tests repair broken selectors automatically when the UI shifts, so your smoke suite keeps guarding the critical paths instead of flaking out. And when a sanity check does surface a real regression, <a href="/snap">Snap</a> captures the screenshot, console, and network evidence in one click so the fix round-trips fast. Keep the discipline — smoke first, sanity after — and let automation carry the parts that repeat.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Run a smoke test on every new build before spending time on deeper QA.</li><li>Use sanity testing to verify one specific fix and its neighbors after a small change.</li><li>Automate smoke tests in CI; keep them fast, wide, and shallow.</li><li>Promote any sanity check you repeat into your regression suite.</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Is smoke testing done before or after sanity testing?</summary><p>Smoke testing usually comes first. It runs against a fresh build to confirm the core paths work and the build is worth testing at all. Sanity testing comes later, after a specific bug fix or minor change lands on an already-stable build, to confirm that one area behaves correctly.</p></details><details><summary>Is smoke or sanity testing a subset of regression testing?</summary><p>Sanity testing is often treated as a focused subset of regression testing, aimed at the code that just changed and its immediate neighbors. Smoke testing is broader and shallower and is usually considered its own gate, run before regression testing begins.</p></details><details><summary>Should smoke and sanity tests be automated?</summary><p>Smoke tests are the best automation candidate: they run on every build, cover the same critical paths, and rarely change, so a scripted suite in CI pays off quickly. Sanity checks are frequently ad-hoc and tied to a specific change, so they are often run manually — though repeatable ones are worth promoting into your regression suite.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
