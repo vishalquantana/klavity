@@ -1,0 +1,100 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to Find the Commit That Introduced a Bug (git bisect) · Klavity</title>
+<meta name="description" content="git bisect finds the exact commit that introduced a bug by binary-searching your history. Here's how to run it, script it, and skip broken builds.">
+<link rel="canonical" href="https://klavity.in/blog/find-the-commit-that-introduced-a-bug-git-bisect">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="How to Find the Commit That Introduced a Bug (git bisect)"><meta property="og:description" content="git bisect finds the exact commit that introduced a bug by binary-searching your history. Here's how to run it, script it, and skip broken builds.">
+<meta property="og:url" content="https://klavity.in/blog/find-the-commit-that-introduced-a-bug-git-bisect"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="How to Find the Commit That Introduced a Bug (git bisect)"><meta name="twitter:description" content="git bisect finds the exact commit that introduced a bug by binary-searching your history. Here's how to run it, script it, and skip broken builds."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"How to Find the Commit That Introduced a Bug (git bisect)","description":"git bisect finds the exact commit that introduced a bug by binary-searching your history. Here's how to run it, script it, and skip broken builds.","datePublished":"2026-08-03","dateModified":"2026-08-03","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/find-the-commit-that-introduced-a-bug-git-bisect","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Find the Commit That Introduced a Bug (git bisect)","item":"https://klavity.in/blog/find-the-commit-that-introduced-a-bug-git-bisect"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/find-the-commit-that-introduced-a-bug-git-bisect"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"How many tests does git bisect need?","acceptedAnswer":{"@type":"Answer","text":"About log2(N). Because each test halves the remaining range, a span of 1,000 commits resolves in roughly 10 steps and 10,000 commits in about 14. That is why bisect beats reading diffs one by one."}},{"@type":"Question","name":"What does 'git bisect skip' do?","acceptedAnswer":{"@type":"Answer","text":"It tells Git the current commit can't be tested — it won't build, or the feature didn't exist yet — so Git picks a nearby commit instead of counting it as good or bad. If skips leave a range Git can't fully resolve, it reports the smallest set of commits that could be the first bad one."}},{"@type":"Question","name":"Can git bisect run without me testing each commit by hand?","acceptedAnswer":{"@type":"Answer","text":"Yes. `git bisect run <cmd>` runs your command at each step and reads its exit code: 0 means good, 1–124 (except 125) means bad, and 125 means skip. Point it at a test, a build, or a one-line repro script and it finds the first bad commit unattended."}},{"@type":"Question","name":"How do I turn the bug git bisect found into a permanent test?","acceptedAnswer":{"@type":"Answer","text":"Write the repro from your bisect run as a failing test, confirm it fails before the fix and passes after, and add it to your suite so the regression can't return. See our guide on turning a bug into a regression test."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-08-03</div>
+    <h1>How to Find the Commit That Introduced a Bug (git bisect)</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>git bisect binary-searches your commit history to find the exact commit that introduced a bug. Mark one known-good and one known-bad commit, and Git checks out the midpoint for you to test; each answer halves the range, so 1,000 commits take about 10 tests. Automate it with `git bisect run &lt;script&gt;` to find the culprit hands-free.</div>
+    <div class="prose"><p><strong>git bisect finds the exact commit that introduced a bug by binary-searching your history.</strong> You mark one commit where the bug is absent (<em>good</em>) and one where it's present (<em>bad</em>), and Git repeatedly checks out the midpoint for you to test. Each verdict halves the range, so a 1,000-commit span narrows to the culprit in about 10 tests instead of reading every diff. When the search ends, Git prints the first commit where the bug appears — the change to inspect.</p>
+
+<h2>When should you use git bisect?</h2>
+<p>Reach for bisect when a bug used to be absent and now isn't, and you can reliably tell &ldquo;buggy&rdquo; from &ldquo;fine&rdquo; at any commit. That covers most regressions: a feature that broke between releases, a test that started failing, a performance cliff, or output that changed. It is far faster than skimming diffs because it doesn't care how many commits are in range — the work grows with the <em>logarithm</em> of the range, not its length.</p>
+<p>Bisect is a poor fit when you can't consistently reproduce the bug (a flaky failure will send the search down the wrong branch), when every commit in range is broken for unrelated reasons, or when the bug was never introduced by a commit at all — a data or environment change, for example. In those cases, fix reproducibility first, then bisect.</p>
+
+<h2>How to run git bisect step by step</h2>
+<p>The manual loop is three commands to start and one verdict per step:</p>
+<ol>
+<li><strong>Start the session.</strong> Run <code>git bisect start</code>. Git now expects you to bracket the range.</li>
+<li><strong>Mark the current (broken) commit bad.</strong> Run <code>git bisect bad</code> with no argument to mark <code>HEAD</code>, or <code>git bisect bad &lt;rev&gt;</code> for a specific commit or tag.</li>
+<li><strong>Mark a known-good commit.</strong> Run <code>git bisect good &lt;rev&gt;</code> — often the last release tag where the bug was absent, e.g. <code>git bisect good v2.3.0</code>. Git checks out the midpoint automatically.</li>
+<li><strong>Test and report.</strong> Reproduce your check at the checked-out commit, then run <code>git bisect good</code> or <code>git bisect bad</code>. Git jumps to the next midpoint and tells you how many steps remain.</li>
+<li><strong>Repeat until it names the culprit.</strong> When one commit is left, Git prints <em>&ldquo;&lt;sha&gt; is the first bad commit&rdquo;</em> with the full message and diff.</li>
+<li><strong>End the session.</strong> Run <code>git bisect reset</code> to return to the branch you started on.</li>
+</ol>
+<p>Keep your verdicts honest. One wrong &ldquo;good&rdquo; or &ldquo;bad&rdquo; poisons the whole search — Git will confidently point at the wrong commit — so if you're unsure, don't guess.</p>
+
+<h2>How do I skip a commit that won't build?</h2>
+<p>Sometimes the commit Git lands on can't be tested: it won't compile, the feature doesn't exist there yet, or a dependency is mid-migration. Marking it good or bad would be a lie. Instead run <code>git bisect skip</code>, and Git picks a nearby untested commit. You can skip a whole range with a revision expression, for example <code>git bisect skip v2.1..v2.1.3</code>.</p>
+<p>If skipped commits leave a gap Git can't fully resolve, it won't guess — it reports the smallest set of commits that could each be the first bad one, and you inspect those by hand. That honesty is the point: bisect narrows the search even when part of your history is untestable.</p>
+
+<h2>Automate the search with git bisect run</h2>
+<p>The real speed-up is handing the testing to a script. <code>git bisect run &lt;command&gt;</code> executes your command at every step and reads its exit code:</p>
+<ul>
+<li><strong>0</strong> — the commit is <em>good</em>.</li>
+<li><strong>1&ndash;124 or 126&ndash;127</strong> — the commit is <em>bad</em>.</li>
+<li><strong>125</strong> — <em>skip</em> this commit (can't be tested).</li>
+<li><strong>128 and above</strong> — abort the bisect (treat as a hard error).</li>
+</ul>
+<p>So the whole run becomes: <code>git bisect start; git bisect bad; git bisect good v2.3.0; git bisect run npm test -- path/to/failing.test.ts</code>. Git walks the history unattended and stops on the first bad commit. Two tips make this reliable:</p>
+<ol>
+<li><strong>Write the tightest repro you can.</strong> A single failing test or a one-line script that exits non-zero on the bug is faster and less flaky than the full suite. Have it exit <code>125</code> when the build fails so those commits are skipped, not blamed.</li>
+<li><strong>Make it deterministic.</strong> A flaky repro turns bisect into a coin flip. Pin seeds, mock the network, and remove timing races before you start — the same discipline that keeps a normal test suite trustworthy.</li>
+</ol>
+
+<h2>What to do after git bisect finds the commit</h2>
+<p>Finding the commit is the start of root-cause work, not the end. Read the diff to understand <em>why</em> it broke the behavior rather than reverting on reflex — the offending line may be correct and merely have exposed a latent bug elsewhere. For a structured way to go from &ldquo;this commit&rdquo; to &ldquo;this cause,&rdquo; see our <a href="/blog/root-cause-analysis-for-bugs">root cause analysis guide</a>.</p>
+<p>Then close the loop so the same regression can't return: convert your bisect repro into a test that fails before the fix and passes after, following <a href="/blog/turn-a-bug-into-a-regression-test">how to turn a bug into a regression test</a>. If UI selectors keep drifting and breaking those tests, <a href="/autosim">self-healing end-to-end tests</a> can repair the brittle parts so your regression coverage survives refactors — and future bisect runs stay honest because the test itself stays green until real behavior changes.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Start with `git bisect start`, then mark a bad and a good commit to open the search range</li><li>Return a decisive verdict at each step — good, bad, or skip — and never guess</li><li>Automate the whole search with `git bisect run &lt;script&gt;` using exit code 125 to skip</li><li>Convert the culprit commit into a regression test so the bug can't silently return</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>How many tests does git bisect need?</summary><p>About log2(N). Because each test halves the remaining range, a span of 1,000 commits resolves in roughly 10 steps and 10,000 commits in about 14. That is why bisect beats reading diffs one by one.</p></details><details><summary>What does 'git bisect skip' do?</summary><p>It tells Git the current commit can't be tested — it won't build, or the feature didn't exist yet — so Git picks a nearby commit instead of counting it as good or bad. If skips leave a range Git can't fully resolve, it reports the smallest set of commits that could be the first bad one.</p></details><details><summary>Can git bisect run without me testing each commit by hand?</summary><p>Yes. `git bisect run &lt;cmd&gt;` runs your command at each step and reads its exit code: 0 means good, 1–124 (except 125) means bad, and 125 means skip. Point it at a test, a build, or a one-line repro script and it finds the first bad commit unattended.</p></details><details><summary>How do I turn the bug git bisect found into a permanent test?</summary><p>Write the repro from your bisect run as a failing test, confirm it fails before the fix and passes after, and add it to your suite so the regression can't return. See our guide on turning a bug into a regression test.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
