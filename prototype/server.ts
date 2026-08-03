@@ -121,7 +121,8 @@ import { countRecentFeedback, countUsers } from "./lib/db"
 import { enrollLead, buildNurtureEmail, recordNurtureEmailSent, recordSendgridEvents, startLeadNurtureScheduler } from "./lib/lead-nurture"
 import { extractInventory, extractLinks, verifyLinks, brokenLinkFindings, filterModelFindings, checkedSummary, sameOriginCrawlTargets, MAX_LINKS_CHECKED } from "./lib/bugcheck"
 import { fetchOidcDiscovery, buildAuthorizationUrl, exchangeCode, verifyIdToken, validateSsoDomain, verifyDomainOwnership, ssoDomainTxtValue, SSO_DOMAIN_TXT_PREFIX, type OidcDiscovery, type OidcClaims } from "./lib/sso"
-import { getAccountOidcConfig, upsertAccountOidcConfig, deleteAccountOidcConfig, findAccountByOidcDomain, markOidcDomainVerified, createSsoState, consumeSsoState, ensureAccountMember } from "./lib/db"
+import { getAccountOidcConfig, upsertAccountOidcConfig, deleteAccountOidcConfig, findAccountByOidcDomain, markOidcDomainVerified, getAccountSamlConfig, upsertAccountSamlConfig, deleteAccountSamlConfig, findAccountBySamlDomain, markSamlDomainVerified, createSsoState, consumeSsoState, ensureAccountMember } from "./lib/db"
+import { fetchIdpMetadata, parseIdpMetadata, validateIdpMetadata, buildAuthnRequestUrl, validateSamlResponse, type SamlIdpMetadata, type SamlIdentity } from "./lib/saml"
 
 const KEY = process.env.OPENROUTER_API_KEY
 const MODEL = process.env.KLAV_MODEL || "google/gemini-2.5-flash"
@@ -134,6 +135,10 @@ const DEV_SHOW_OTP = process.env.KLAV_DEV_SHOW_OTP === "1"
 // route 404s unless this is explicitly enabled, so the feature can never be reached on an
 // environment that has not deliberately opted in.
 const SSO_ENABLED = ["1", "true"].includes((process.env.KLAV_SSO_ENABLED || "").trim().toLowerCase())
+// SAML SP entity ID — fixed, app-wide (unlike OIDC's per-account IdP-issued clientId), the
+// value every configured IdP is told to trust. Conventionally doubles as its own metadata URL;
+// serving that document isn't wired up yet (KLAVITYKLA-9 SAML follow-up, later step).
+const SAML_SP_ENTITY_ID = `${BASE}/saml/metadata`
 const ENDPOINT = process.env.OPENROUTER_ENDPOINT || "https://openrouter.ai/api/v1/chat/completions"
 const OPS_DAILY_CAP_USD = Number(process.env.OPS_DAILY_CAP_USD || 50)
 // KLAVITYKLA-341 — bounded slice of OPS_DAILY_CAP_USD reserved for the anonymous free-tool AI calls
@@ -2826,8 +2831,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     // GET  /auth/sso/callback   — handle IdP callback (?code=&state=)
     //
     // KILL SWITCH: the whole surface is gated behind KLAV_SSO_ENABLED (default OFF). When the flag
-    // is not set these are indistinguishable from routes that do not exist.
-    if (!SSO_ENABLED && (path.startsWith("/api/sso/") || path.startsWith("/auth/sso/"))) {
+    // is not set these are indistinguishable from routes that do not exist. Widened to also cover
+    // the future SAML routes (KLAVITYKLA-9 SAML follow-up) — same flag, same all-or-nothing gate,
+    // so SAML never becomes reachable on an environment that hasn't opted into Enterprise SSO.
+    if (!SSO_ENABLED && (path.startsWith("/api/sso/") || path.startsWith("/auth/sso/")
+        || path.startsWith("/api/saml/") || path.startsWith("/auth/saml/"))) {
       return json({ error: "Not found" }, 404)
     }
 
@@ -2837,6 +2845,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     // authenticated /api/sso/config routes returned 500, always. Resolve the session locally
     // (only for SSO paths, so no extra DB round-trip on any other request).
     const ssoMe = path.startsWith("/api/sso/") ? await sessionEmail(req) : null
+    // Sibling of ssoMe for the future SAML config routes (KLAVITYKLA-9 SAML follow-up) — same
+    // reasoning, scoped to its own path prefix so it doesn't add a DB round-trip to any other
+    // request. Deliberately a separate variable rather than widening ssoMe's own condition, so
+    // the existing OIDC `/api/sso/*` behavior above is never touched.
+    const samlMe = path.startsWith("/api/saml/") ? await sessionEmail(req) : null
 
     if (req.method === "GET" && path === "/api/sso/config") {
       if (!db || !ssoMe) return json({ error: "Unauthorized" }, 401)
@@ -2932,6 +2945,126 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       return json({ ok: true })
     }
 
+    // ── Enterprise SSO — SAML (KLAVITYKLA-9 follow-up) ────────────────────────
+    // GET/POST /api/saml/config — read/save current SAML config (account owner/admin). Mirror
+    // GET/POST /api/sso/config above; DELETE /api/saml/config, POST /api/saml/verify-domain,
+    // and the login/ACS routes land in later steps.
+    if (req.method === "GET" && path === "/api/saml/config") {
+      if (!db || !samlMe) return json({ error: "Unauthorized" }, 401)
+      const memberships = await membershipsFor(samlMe)
+      const adminMship = memberships.find((m) => m.role === "owner" || m.role === "admin")
+      if (!adminMship) return json({ error: "Forbidden" }, 403)
+      const cfg = await getAccountSamlConfig(adminMship.workspaceId)
+      if (!cfg) return json({ enabled: false })
+      return json({
+        enabled: true,
+        entityId: cfg.entityId,
+        ssoUrl: cfg.ssoUrl,
+        allowedDomain: cfg.allowedDomain,
+        domainVerified: cfg.domainVerifiedAt != null,
+        // Instructions the admin needs to prove they own the domain. Until the TXT record is
+        // published and POST /api/saml/verify-domain succeeds, SAML login for it is refused.
+        domainVerification: cfg.domainVerifiedAt != null || !cfg.domainVerifyToken ? null : {
+          txtName: cfg.allowedDomain,
+          txtValue: ssoDomainTxtValue(cfg.domainVerifyToken),
+        },
+      })
+    }
+
+    if (req.method === "POST" && path === "/api/saml/config") {
+      if (!db || !samlMe) return json({ error: "Unauthorized" }, 401)
+      const memberships = await membershipsFor(samlMe)
+      const adminMship = memberships.find((m) => m.role === "owner" || m.role === "admin")
+      if (!adminMship) return json({ error: "Forbidden" }, 403)
+      const body = await req.json()
+      const allowedDomain = String(body.allowedDomain || "").trim().toLowerCase()
+      if (!allowedDomain) return json({ error: "allowedDomain is required" }, 400)
+      // Syntactic validity + public-mailbox blocklist. Ownership itself is proven separately
+      // via DNS TXT (POST /api/saml/verify-domain) — saving a config grants NOTHING on its own.
+      const domainErr = validateSsoDomain(allowedDomain)
+      if (domainErr) return json({ error: domainErr }, 400)
+
+      // Three ways to supply the IdP's details: a metadata URL, pasted metadata XML, or the
+      // three raw fields directly — mirrors how OIDC's POST /api/sso/config takes issuer/
+      // clientId directly, with an added metadata-convenience path SAML admins commonly expect.
+      const metadataUrl = String(body.metadataUrl || "").trim()
+      const metadataXml = String(body.metadataXml || "").trim()
+      let meta: SamlIdpMetadata
+      try {
+        if (metadataUrl) {
+          meta = await fetchIdpMetadata(metadataUrl, {})
+        } else if (metadataXml) {
+          meta = parseIdpMetadata(metadataXml)
+        } else {
+          const entityId = String(body.entityId || "").trim()
+          const ssoUrl = String(body.ssoUrl || "").trim()
+          const x509Cert = String(body.x509Cert || "").trim()
+          if (!entityId || !ssoUrl || !x509Cert) {
+            return json({ error: "entityId, ssoUrl and x509Cert are required (or provide metadataUrl / metadataXml)" }, 400)
+          }
+          meta = { entityId, ssoUrl, certificates: [x509Cert] }
+        }
+      } catch (err: any) {
+        return json({ error: `Cannot read SAML IdP metadata: ${err.message}` }, 400)
+      }
+      const metaErr = validateIdpMetadata(meta)
+      if (metaErr) return json({ error: metaErr }, 400)
+
+      const newVerifyToken = token()
+      // Phase 2's account_saml_configs stores a single x509_cert column; metadata mid key-rotation
+      // can carry more than one certificate, so only the first is persisted today (documented
+      // limitation from lib/saml.ts's SamlIdpMetadata.certificates, not fixed here).
+      await upsertAccountSamlConfig(adminMship.workspaceId, meta.entityId, meta.ssoUrl, meta.certificates[0], allowedDomain, samlMe, newVerifyToken)
+      const saved = await getAccountSamlConfig(adminMship.workspaceId)
+      const verified = saved?.domainVerifiedAt != null
+      return json({
+        ok: true,
+        domainVerified: verified,
+        domainVerification: verified || !saved?.domainVerifyToken ? null : {
+          recordType: "TXT",
+          name: allowedDomain,
+          value: ssoDomainTxtValue(saved.domainVerifyToken),
+          instructions: `Publish a TXT record on ${allowedDomain} (or _klavity.${allowedDomain}) with this exact value, then POST /api/saml/verify-domain. SAML login is refused until the domain is verified.`,
+        },
+      })
+    }
+
+    // Prove domain ownership: POST /api/saml/verify-domain — looks for the
+    // klavity-sso-verify=<token> TXT record on the configured allowedDomain. Mirrors
+    // POST /api/sso/verify-domain above line-for-line, against the SAML config instead.
+    if (req.method === "POST" && path === "/api/saml/verify-domain") {
+      if (!db || !samlMe) return json({ error: "Unauthorized" }, 401)
+      const memberships = await membershipsFor(samlMe)
+      const adminMship = memberships.find((m) => m.role === "owner" || m.role === "admin")
+      if (!adminMship) return json({ error: "Forbidden" }, 403)
+      const cfg = await getAccountSamlConfig(adminMship.workspaceId)
+      if (!cfg) return json({ error: "No SSO config to verify" }, 404)
+      if (cfg.domainVerifiedAt != null) return json({ ok: true, domainVerified: true })
+      if (!cfg.domainVerifyToken) return json({ error: "Re-save the SSO config to get a verification token" }, 409)
+      const ok = await verifyDomainOwnership(cfg.allowedDomain, cfg.domainVerifyToken)
+      if (!ok) {
+        return json({
+          ok: false,
+          domainVerified: false,
+          error: `No matching ${SSO_DOMAIN_TXT_PREFIX} TXT record found on ${cfg.allowedDomain}. DNS changes can take a few minutes to propagate.`,
+          expected: { recordType: "TXT", name: cfg.allowedDomain, value: ssoDomainTxtValue(cfg.domainVerifyToken) },
+        }, 400)
+      }
+      await markSamlDomainVerified(adminMship.workspaceId, cfg.allowedDomain)
+      return json({ ok: true, domainVerified: true })
+    }
+
+    // Mirrors DELETE /api/sso/config above — deletes unconditionally (idempotent no-op if no
+    // SAML config exists), same as the OIDC route.
+    if (req.method === "DELETE" && path === "/api/saml/config") {
+      if (!db || !samlMe) return json({ error: "Unauthorized" }, 401)
+      const memberships = await membershipsFor(samlMe)
+      const adminMship = memberships.find((m) => m.role === "owner" || m.role === "admin")
+      if (!adminMship) return json({ error: "Forbidden" }, 403)
+      await deleteAccountSamlConfig(adminMship.workspaceId)
+      return json({ ok: true })
+    }
+
     // Initiate SSO: GET /auth/sso/login?domain=acme.com
     if (req.method === "GET" && path === "/auth/sso/login") {
       if (!db) return new Response("SSO not available", { status: 503 })
@@ -2965,6 +3098,43 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // pre-baked callback URL and silently log them into the attacker's IdP identity.
       return redirect(authUrl, {
         "Set-Cookie": cookie("klav_sso_state", state, 10 * 60, SECURE),
+      })
+    }
+
+    // Initiate SAML SSO: GET /auth/saml/login?domain=acme.com. Mirrors GET /auth/sso/login
+    // above; no discovery-fetch step is needed here since the IdP's SSO URL and signing cert
+    // are already stored at config time (unlike OIDC, which needs a live discovery call).
+    if (req.method === "GET" && path === "/auth/saml/login") {
+      if (!db) return new Response("SSO not available", { status: 503 })
+      const domain = (url.searchParams.get("domain") || "").toLowerCase().trim()
+      if (!domain) return redirect("/login?error=sso_missing_domain")
+      // Reject public mailbox domains / malformed input before touching the DB.
+      if (validateSsoDomain(domain)) return redirect("/login?error=sso_domain_not_eligible")
+      // findAccountBySamlDomain only returns DNS-verified configs. An account that saved
+      // allowedDomain without proving ownership gets nothing here.
+      const cfg = await findAccountBySamlDomain(domain)
+      if (!cfg) return redirect("/login?error=sso_not_configured")
+      // Reused as both the AuthnRequest ID and the RelayState — the SAML equivalent of OIDC's
+      // `state` above, single value doing double duty the same way. nonce stays "" for SAML:
+      // there's no OIDC-nonce equivalent, and the InResponseTo/replay binding lives in the
+      // signed assertion itself (validated in lib/saml.ts), not in this column.
+      const requestId = token()
+      await createSsoState(requestId, cfg.accountId, "", Date.now() + 10 * 60 * 1000)
+      const authUrl = await buildAuthnRequestUrl({
+        spEntityId: SAML_SP_ENTITY_ID,
+        acsUrl: `${BASE}/auth/saml/callback`,
+        idpSsoUrl: cfg.ssoUrl,
+        idpCert: cfg.x509Cert,
+        requestId,
+        relayState: requestId,
+      })
+      // Same login-CSRF defence as OIDC above: the callback requires the same value back in an
+      // httpOnly cookie, so an attacker cannot feed a victim a pre-baked callback URL.
+      // SameSite=None (not Lax): unlike OIDC's GET redirect callback, the IdP delivers this via
+      // a cross-site HTTP-POST (the SAML POST binding) — a Lax cookie is never sent on a
+      // cross-site POST, so the callback's cookie check would fail for every real login.
+      return redirect(authUrl, {
+        "Set-Cookie": cookie("klav_sso_state", requestId, 10 * 60, SECURE, "None"),
       })
     }
 
@@ -3042,6 +3212,62 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       await ensureAccountMember(ssoState.accountId, claims.email)
       const sid = token()
       await createSession(sid, claims.email, Date.now() + SESSION_DAYS * 86400 * 1000)
+      const headers = new Headers({ Location: "/dashboard" })
+      headers.append("Set-Cookie", cookie("klav_session", sid, SESSION_DAYS * 86400, SECURE))
+      headers.append("Set-Cookie", clearSsoStateCookie)
+      return new Response(null, { status: 302, headers })
+    }
+
+    // SAML ACS: POST /auth/saml/callback (SAMLResponse + RelayState form fields). Mirrors
+    // GET /auth/sso/callback above; POST-bound (not GET/query-string) because that's how the
+    // SAML HTTP-POST binding delivers the assertion, and no discovery/token-exchange step is
+    // needed since the IdP's details are already stored (see GET /auth/saml/login).
+    if (req.method === "POST" && path === "/auth/saml/callback") {
+      if (!db) return redirect("/login?error=sso_not_available")
+      const form = await req.formData()
+      const samlResponse = String(form.get("SAMLResponse") || "")
+      const relayState = String(form.get("RelayState") || "")
+      if (!samlResponse || !relayState) return redirect("/login?error=sso_invalid_response")
+      // Login-CSRF: RelayState must match the pre-auth cookie set when THIS browser started the
+      // flow. Consume the state row regardless so a mismatched attempt still burns it.
+      const stateCookie = parseCookies(req.headers.get("cookie"))["klav_sso_state"] || ""
+      const clearSsoStateCookie = clearCookie("klav_sso_state", SECURE)
+      const ssoState = await consumeSsoState(relayState)
+      if (!stateCookie || stateCookie !== relayState)
+        return redirect("/login?error=sso_state_mismatch", { "Set-Cookie": clearSsoStateCookie })
+      if (!ssoState) return redirect("/login?error=sso_state_expired", { "Set-Cookie": clearSsoStateCookie })
+      const cfg = await getAccountSamlConfig(ssoState.accountId)
+      if (!cfg) return redirect("/login?error=sso_not_configured", { "Set-Cookie": clearSsoStateCookie })
+      // Re-check verification at callback time — the domain may have been changed or the
+      // config re-saved (which resets the flag) while this flow was in flight.
+      if (cfg.domainVerifiedAt == null)
+        return redirect("/login?error=sso_domain_unverified", { "Set-Cookie": clearSsoStateCookie })
+      if (validateSsoDomain(cfg.allowedDomain))
+        return redirect("/login?error=sso_domain_not_eligible", { "Set-Cookie": clearSsoStateCookie })
+      let identity: SamlIdentity
+      try {
+        identity = await validateSamlResponse({
+          spEntityId: SAML_SP_ENTITY_ID,
+          acsUrl: `${BASE}/auth/saml/callback`,
+          idpEntityId: cfg.entityId,
+          idpCert: cfg.x509Cert,
+          samlResponse,
+          relayState,
+          expectedInResponseTo: relayState,
+        })
+      } catch (err: any) {
+        console.error("SAML callback error:", err?.message)
+        return redirect("/login?error=sso_auth_failed", { "Set-Cookie": clearSsoStateCookie })
+      }
+      // Validate the email matches the configured (and DNS-verified) allowed domain.
+      const emailDomain = (identity.email.split("@")[1] ?? "").toLowerCase()
+      if (emailDomain !== cfg.allowedDomain)
+        return redirect("/login?error=sso_domain_mismatch", { "Set-Cookie": clearSsoStateCookie })
+      // Upsert user and ensure they're a member of the SSO account.
+      await upsertUser(identity.email)
+      await ensureAccountMember(ssoState.accountId, identity.email)
+      const sid = token()
+      await createSession(sid, identity.email, Date.now() + SESSION_DAYS * 86400 * 1000)
       const headers = new Headers({ Location: "/dashboard" })
       headers.append("Set-Cookie", cookie("klav_session", sid, SESSION_DAYS * 86400, SECURE))
       headers.append("Set-Cookie", clearSsoStateCookie)
