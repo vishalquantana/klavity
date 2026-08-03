@@ -9,8 +9,11 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.2",
     "@libsql/client": "^0.17.4",
+    "@node-saml/node-saml": "^5.1.0",
+    "@xmldom/xmldom": "0.8.13",
     "rrweb": "^2.0.1",
     "rrweb-player": "^2.0.1",
+    "xpath": "0.0.34",
     "zod": "^4.4.3"
   },
   "devDependencies": {
