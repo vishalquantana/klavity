@@ -31,8 +31,12 @@ export function isOpsAdmin(email: string | null | undefined): boolean {
   return list.includes(email.toLowerCase())
 }
 
-export function cookie(name: string, val: string, maxAge: number, secure: boolean): string {
-  return `${name}=${val}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure ? "; Secure" : ""}`
+// sameSite defaults to "Lax" — every existing caller (OIDC's callback is a cross-site top-level
+// GET redirect, which Lax already covers) keeps its exact current behavior. SAML's ACS binding
+// is a cross-site POST, which Lax cookies are NOT sent on — its login route passes "None"
+// explicitly for the klav_sso_state cookie so it actually arrives at the callback.
+export function cookie(name: string, val: string, maxAge: number, secure: boolean, sameSite: "Lax" | "None" = "Lax"): string {
+  return `${name}=${val}; Path=/; HttpOnly; SameSite=${sameSite}; Max-Age=${maxAge}${secure ? "; Secure" : ""}`
 }
 export function clearCookie(name: string, secure: boolean): string {
   return `${name}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure ? "; Secure" : ""}`

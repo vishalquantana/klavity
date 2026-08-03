@@ -842,6 +842,23 @@ export async function applySchema(c: Client) {
        created_by TEXT,
        created_at INTEGER NOT NULL,
        updated_at INTEGER NOT NULL)`,
+    // PER-ACCOUNT SAML CONFIG (KLAVITYKLA-9 follow-up) — mirrors account_oidc_configs above, one
+    // row per account that has enabled SAML SSO. x509_cert is the IdP's PUBLIC signing certificate
+    // (not encrypted — unlike client_secret_enc it needs integrity, not confidentiality, which the
+    // existing owner/admin-only write path already provides). allowed_domain / domain_verify_token /
+    // domain_verified_at implement the SAME DNS-TXT domain-ownership proof as OIDC; allowed_domain
+    // is NOT trusted until domain_verified_at is set — otherwise any account could claim victim.com.
+    `CREATE TABLE IF NOT EXISTS account_saml_configs (
+       account_id TEXT PRIMARY KEY,
+       entity_id TEXT NOT NULL,
+       sso_url TEXT NOT NULL,
+       x509_cert TEXT NOT NULL,
+       allowed_domain TEXT NOT NULL,
+       domain_verify_token TEXT,
+       domain_verified_at INTEGER,
+       created_by TEXT,
+       created_at INTEGER NOT NULL,
+       updated_at INTEGER NOT NULL)`,
     // SSO STATES — short-lived anti-CSRF state+nonce pairs for the OIDC authorization-code flow.
     // One row per initiated login; consumed (deleted) on callback. Auto-expires in 10 minutes.
     `CREATE TABLE IF NOT EXISTS sso_states (
@@ -5950,6 +5967,116 @@ export async function findAccountByOidcDomain(
   return { accountId: String(row.account_id), ...rowToOidcConfig(row) }
 }
 
+// ── Enterprise SSO — SAML (KLAVITYKLA-9 follow-up) ──────────────────────────
+// CRUD for account_saml_configs. Mirrors the OIDC CRUD above 1:1 — same invariants, same
+// domain-ownership gating, just swapped credential fields (entity_id/sso_url/x509_cert instead
+// of issuer/client_id/client_secret_enc). sso_states/createSsoState/consumeSsoState are shared
+// with OIDC unmodified — SAML's AuthnRequest ID plays the same role OIDC's `state` does.
+
+export type AccountSamlConfig = {
+  entityId: string
+  ssoUrl: string
+  x509Cert: string
+  allowedDomain: string
+  domainVerifyToken: string | null
+  /** ms epoch when DNS-TXT ownership of allowedDomain was proven; null = NOT verified. */
+  domainVerifiedAt: number | null
+}
+
+function rowToSamlConfig(row: any): AccountSamlConfig {
+  return {
+    entityId: String(row.entity_id),
+    ssoUrl: String(row.sso_url),
+    x509Cert: String(row.x509_cert),
+    allowedDomain: String(row.allowed_domain),
+    domainVerifyToken: row.domain_verify_token == null ? null : String(row.domain_verify_token),
+    domainVerifiedAt: row.domain_verified_at == null ? null : Number(row.domain_verified_at),
+  }
+}
+
+const SAML_COLS =
+  "entity_id, sso_url, x509_cert, allowed_domain, domain_verify_token, domain_verified_at"
+
+export async function getAccountSamlConfig(accountId: string): Promise<AccountSamlConfig | null> {
+  const r = await db!.execute({
+    sql: `SELECT ${SAML_COLS} FROM account_saml_configs WHERE account_id=?`,
+    args: [accountId],
+  })
+  if (!r.rows.length) return null
+  return rowToSamlConfig(r.rows[0])
+}
+
+/**
+ * Saves the config. Changing allowed_domain RESETS domain_verified_at to NULL and stores the
+ * new verify token — otherwise an account could verify a domain it owns and then swap in
+ * victim.com while keeping the verified flag.
+ */
+export async function upsertAccountSamlConfig(
+  accountId: string,
+  entityId: string,
+  ssoUrl: string,
+  x509Cert: string,
+  allowedDomain: string,
+  createdBy: string,
+  domainVerifyToken: string,
+): Promise<void> {
+  const now = Date.now()
+  await db!.execute({
+    sql: `INSERT INTO account_saml_configs
+            (account_id, entity_id, sso_url, x509_cert, allowed_domain,
+             domain_verify_token, domain_verified_at, created_by, created_at, updated_at)
+          VALUES (?,?,?,?,?,?,NULL,?,?,?)
+          ON CONFLICT(account_id) DO UPDATE SET
+            entity_id=excluded.entity_id, sso_url=excluded.sso_url,
+            x509_cert=excluded.x509_cert, allowed_domain=excluded.allowed_domain,
+            domain_verify_token=CASE
+              WHEN account_saml_configs.allowed_domain = excluded.allowed_domain
+                   AND account_saml_configs.domain_verify_token IS NOT NULL
+              THEN account_saml_configs.domain_verify_token
+              ELSE excluded.domain_verify_token END,
+            domain_verified_at=CASE
+              WHEN account_saml_configs.allowed_domain = excluded.allowed_domain
+              THEN account_saml_configs.domain_verified_at
+              ELSE NULL END,
+            updated_at=excluded.updated_at`,
+    args: [accountId, entityId, ssoUrl, x509Cert, allowedDomain, domainVerifyToken, createdBy, now, now],
+  })
+}
+
+/** Marks the account's CURRENT allowed_domain as DNS-verified. Domain-scoped so a concurrent
+ *  domain change can never be retro-verified by an in-flight check. */
+export async function markSamlDomainVerified(accountId: string, allowedDomain: string): Promise<boolean> {
+  const r = await db!.execute({
+    sql: "UPDATE account_saml_configs SET domain_verified_at=?, updated_at=? WHERE account_id=? AND allowed_domain=?",
+    args: [Date.now(), Date.now(), accountId, allowedDomain.toLowerCase()],
+  })
+  return (r.rowsAffected ?? 0) > 0
+}
+
+export async function deleteAccountSamlConfig(accountId: string): Promise<void> {
+  await db!.execute({
+    sql: "DELETE FROM account_saml_configs WHERE account_id=?",
+    args: [accountId],
+  })
+}
+
+/**
+ * Looks up the SAML config serving `domain`. Only returns VERIFIED configs — an unverified
+ * allowed_domain must never be able to start a login (that was the takeover primitive).
+ */
+export async function findAccountBySamlDomain(
+  domain: string,
+): Promise<(AccountSamlConfig & { accountId: string }) | null> {
+  const r = await db!.execute({
+    sql: `SELECT account_id, ${SAML_COLS} FROM account_saml_configs
+          WHERE allowed_domain=? AND domain_verified_at IS NOT NULL`,
+    args: [domain.toLowerCase()],
+  })
+  if (!r.rows.length) return null
+  const row = r.rows[0] as any
+  return { accountId: String(row.account_id), ...rowToSamlConfig(row) }
+}
+
 export async function createSsoState(
   state: string,
   accountId: string,
@@ -5965,12 +6092,13 @@ export async function createSsoState(
 export async function consumeSsoState(
   state: string,
 ): Promise<{ accountId: string; nonce: string } | null> {
+  // Atomic single-statement consume: DELETE...RETURNING means at most one concurrent caller
+  // can ever get a row back for a given state, closing the SELECT-then-DELETE race window.
   const r = await db!.execute({
-    sql: "SELECT account_id, nonce, expires_at FROM sso_states WHERE state=?",
+    sql: "DELETE FROM sso_states WHERE state=? RETURNING account_id, nonce, expires_at",
     args: [state],
   })
   if (!r.rows.length) return null
-  await db!.execute({ sql: "DELETE FROM sso_states WHERE state=?", args: [state] })
   const row = r.rows[0] as any
   if (Number(row.expires_at) < Date.now()) return null
   return { accountId: String(row.account_id), nonce: String(row.nonce) }
