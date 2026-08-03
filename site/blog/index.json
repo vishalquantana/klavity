@@ -292,5 +292,12 @@
     "excerpt": "Smoke testing checks whether a build is stable enough to test at all. Sanity testing verifies a specific fix works. Here's when to run each.",
     "category": "Compare",
     "date": "2026-08-02"
+  },
+  {
+    "slug": "find-the-commit-that-introduced-a-bug-git-bisect",
+    "title": "How to Find the Commit That Introduced a Bug (git bisect)",
+    "excerpt": "git bisect finds the exact commit that introduced a bug by binary-searching your history. Here's how to run it, script it, and skip broken builds.",
+    "category": "Guides",
+    "date": "2026-08-03"
   }
 ]
