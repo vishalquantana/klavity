@@ -299,5 +299,12 @@
     "excerpt": "git bisect finds the exact commit that introduced a bug by binary-searching your history. Here's how to run it, script it, and skip broken builds.",
     "category": "Guides",
     "date": "2026-08-03"
+  },
+  {
+    "slug": "how-to-capture-a-har-file-for-a-bug-report",
+    "title": "How to Capture a HAR File for a Bug Report (Step by Step)",
+    "excerpt": "A HAR file is a JSON log of every network request your browser made. Here's how to capture one, sanitize it, and attach it to a bug report.",
+    "category": "Guides",
+    "date": "2026-08-04"
   }
 ]

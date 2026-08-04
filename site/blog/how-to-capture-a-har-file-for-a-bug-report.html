@@ -1,0 +1,100 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to Capture a HAR File for a Bug Report (Step by Step) · Klavity</title>
+<meta name="description" content="A HAR file is a JSON log of every network request your browser made. Here's how to capture one, sanitize it, and attach it to a bug report.">
+<link rel="canonical" href="https://klavity.in/blog/how-to-capture-a-har-file-for-a-bug-report">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="How to Capture a HAR File for a Bug Report (Step by Step)"><meta property="og:description" content="A HAR file is a JSON log of every network request your browser made. Here's how to capture one, sanitize it, and attach it to a bug report.">
+<meta property="og:url" content="https://klavity.in/blog/how-to-capture-a-har-file-for-a-bug-report"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="How to Capture a HAR File for a Bug Report (Step by Step)"><meta name="twitter:description" content="A HAR file is a JSON log of every network request your browser made. Here's how to capture one, sanitize it, and attach it to a bug report."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"How to Capture a HAR File for a Bug Report (Step by Step)","description":"A HAR file is a JSON log of every network request your browser made. Here's how to capture one, sanitize it, and attach it to a bug report.","datePublished":"2026-08-04","dateModified":"2026-08-04","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/how-to-capture-a-har-file-for-a-bug-report","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Capture a HAR File for a Bug Report (Step by Step)","item":"https://klavity.in/blog/how-to-capture-a-har-file-for-a-bug-report"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/how-to-capture-a-har-file-for-a-bug-report"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a HAR file used for in a bug report?","acceptedAnswer":{"@type":"Answer","text":"A HAR file records every network request and response the browser made — URLs, methods, status codes, request and response headers, payloads, and timing. It lets a developer see the exact API call that failed and its response body, without needing to reproduce the bug themselves."}},{"@type":"Question","name":"Is it safe to share a HAR file?","acceptedAnswer":{"@type":"Answer","text":"Not by default. HAR files capture cookies, Authorization headers, session tokens, and full request/response bodies in plain text. Anyone with the file can potentially replay an authenticated session. Sanitize the file — or capture without response bodies — before attaching it to a public ticket or support portal."}},{"@type":"Question","name":"How do I open and read a HAR file?","acceptedAnswer":{"@type":"Answer","text":"A HAR file is plain JSON, so any text editor opens it, but it's easier to read by dragging it back into the Chrome or Firefox Network tab, or into a HAR viewer. Filter to failed requests first (4xx/5xx), then read the status, timing, and response body of each."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-08-04</div>
+    <h1>How to Capture a HAR File for a Bug Report (Step by Step)</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>A HAR (HTTP Archive) file is a JSON log of every request and response your browser made during a session. To capture one, open DevTools, go to the Network tab, enable Preserve log, reproduce the bug, then right-click and Save all as HAR with content. Always strip cookies and Authorization headers before sharing it.</div>
+    <div class="prose"><p>A HAR (HTTP Archive) file is a JSON log of every network request and response your browser made during a session. To capture one, open your browser's developer tools, switch to the <strong>Network</strong> tab, enable <strong>Preserve log</strong>, reproduce the bug, then right-click any request and choose <em>Save all as HAR with content</em>. Attaching that file to a bug report lets a developer see the exact API calls, status codes, payloads, and timings behind a failure — often without having to reproduce it themselves.</p>
+
+<h2>What is a HAR file?</h2>
+<p>HAR stands for HTTP Archive. It is an open JSON format that browsers and network tools use to export a full record of HTTP traffic. Each entry in the file describes one request/response pair: the URL and method, request and response headers, cookies, the payload sent, the body returned, the status code, and detailed timing (DNS, connect, wait, receive). Because it captures the network layer that a screenshot cannot show, a HAR file answers the question a screenshot leaves open: <em>which call failed, and what did the server actually send back?</em></p>
+<p>That makes it especially useful for bugs that live below the UI — a form that silently doesn't save, a page stuck on a spinner, a 500 that surfaces as a blank component, or an intermittent timeout. The visible symptom is one thing; the failing request is the evidence.</p>
+
+<h2>How to capture a HAR file in Chrome or Edge</h2>
+<p>Chrome and Edge share the same DevTools, so the steps are identical.</p>
+<ol>
+<li><strong>Open DevTools.</strong> Press F12 (or Ctrl+Shift+I / Cmd+Option+I) and click the <strong>Network</strong> tab.</li>
+<li><strong>Enable Preserve log.</strong> Tick the <em>Preserve log</em> checkbox at the top of the Network panel. Without it, any page navigation or redirect wipes the entries you just captured — the single most common reason a HAR ends up empty.</li>
+<li><strong>Reload and reproduce.</strong> Refresh the page so the initial load is recorded, then perform the exact steps that trigger the bug. Watch the request list fill in.</li>
+<li><strong>Export.</strong> Right-click anywhere in the request list and choose <em>Save all as HAR with content</em>, or click the download (↓) icon in the Network toolbar. "With content" is what includes the response bodies.</li>
+<li><strong>Save and label the file.</strong> Give it a name that ties it to the ticket, e.g. <code>checkout-500-2026-08-04.har</code>.</li>
+</ol>
+
+<h2>How to capture a HAR file in Firefox and Safari</h2>
+<p><strong>Firefox:</strong> Open DevTools (F12), select the <strong>Network</strong> tab, reproduce the issue, then right-click any request row and choose <em>Save All As HAR</em>. Firefox preserves logs across navigation by default, but confirm the trash/clear icon wasn't clicked mid-session.</p>
+<p><strong>Safari:</strong> First enable the Develop menu (Settings → Advanced → "Show features for web developers"). Open Web Inspector (Cmd+Option+I), go to the <strong>Network</strong> tab, reproduce the bug, then click the <em>Export</em> button to save a HAR. Safari's export includes response bodies by default.</p>
+
+<h2>What to check before you attach a HAR file</h2>
+<p>This is the step most guides skip, and it matters more than the capture itself. A HAR file records traffic verbatim — including anything that authenticates you.</p>
+<ol>
+<li><strong>Assume it contains live credentials.</strong> HAR files capture <code>Cookie</code> and <code>Authorization</code> headers, bearer tokens, CSRF tokens, and any secrets in request or response bodies, all in plain text. In a widely reported October 2023 incident, attackers used session tokens found in HAR files uploaded to a vendor's support portal to hijack authenticated sessions. Treat any HAR you didn't sanitize as a password you just pasted into a ticket.</li>
+<li><strong>Sanitize or scope the capture.</strong> Strip cookies, auth headers, and personal data before sharing — either by editing the JSON, running it through a HAR sanitizer, or unchecking response bodies if the developer only needs headers and status codes.</li>
+<li><strong>Share it privately.</strong> Attach HAR files to the internal ticket, not a public issue or forum thread, and delete them once the bug is resolved.</li>
+</ol>
+
+<h2>How to read a HAR file to find the bug</h2>
+<p>You don't have to parse JSON by hand. Drag the file back into the Chrome or Firefox Network tab (or a HAR viewer) and it renders like a live session. Then work top-down:</p>
+<ol>
+<li><strong>Filter to failures first.</strong> Sort or filter by status and look at 4xx and 5xx responses. A 401/403 points at auth or permissions; a 404 at a wrong URL or missing resource; a 500 at a server error whose response body often names the cause.</li>
+<li><strong>Read the response body of the failing call.</strong> This is where the actual error message usually lives — the field that was rejected, the validation that failed, the stack the API returned.</li>
+<li><strong>Check timing for the slow ones.</strong> A request that succeeded but took several seconds in the <em>Waiting (TTFB)</em> phase explains a "the app is slow" report better than any screenshot.</li>
+</ol>
+
+<h2>How to attach a HAR file to a bug report</h2>
+<p>A HAR is strongest as one layer of evidence, not the whole report. The reports developers act on fastest pair three things: exact <a href="/blog/how-to-write-steps-to-reproduce-a-bug">steps to reproduce</a>, a screenshot or recording of the symptom, and the network + console evidence. The HAR covers the last of those in depth — but a developer still needs to know what they were <em>supposed</em> to see, and what they got instead.</p>
+<p>The friction is that capturing all of this by hand — DevTools open, Preserve log ticked, HAR exported, console copied, then sanitized — is a lot of steps to ask of a non-technical reporter, and most skip it. That's the gap in-app tools close. <a href="/snap">Klavity Snap</a> lets anyone file a bug with a right-click, and it attaches the screenshot, console errors, and network activity automatically — so the evidence a HAR file provides ships with every report, without asking the reporter to open DevTools. For a fuller breakdown of which requests actually matter, see <a href="/blog/capturing-network-requests-for-bug-reports">capturing network requests for bug reports</a>.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Enable Preserve log before reproducing so redirects and navigation don't clear the capture</li><li>Use Save all as HAR with content to include response bodies developers need</li><li>Strip cookies, Authorization headers, and tokens before sharing — HAR files carry live credentials</li><li>Attach the HAR alongside a screenshot and console log, not instead of them</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What is a HAR file used for in a bug report?</summary><p>A HAR file records every network request and response the browser made — URLs, methods, status codes, request and response headers, payloads, and timing. It lets a developer see the exact API call that failed and its response body, without needing to reproduce the bug themselves.</p></details><details><summary>Is it safe to share a HAR file?</summary><p>Not by default. HAR files capture cookies, Authorization headers, session tokens, and full request/response bodies in plain text. Anyone with the file can potentially replay an authenticated session. Sanitize the file — or capture without response bodies — before attaching it to a public ticket or support portal.</p></details><details><summary>How do I open and read a HAR file?</summary><p>A HAR file is plain JSON, so any text editor opens it, but it's easier to read by dragging it back into the Chrome or Firefox Network tab, or into a HAR viewer. Filter to failed requests first (4xx/5xx), then read the status, timing, and response body of each.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
