@@ -10,18 +10,28 @@
 // quota.degraded for every case, plus that the metric → PLAN_QUOTAS mapping is literally one
 // shared object rather than two copies.
 
-import { test, expect, afterEach, mock } from "bun:test"
+import { test, expect, afterEach, afterAll, spyOn } from "bun:test"
+import * as db from "./db"
 
 let mockAccountPlan: (id: string) => Promise<string>
 let mockGetAccountUsageMap: (id: string) => Promise<Record<string, number>>
 
-mock.module("./db", () => ({
-  accountPlan: async (id: string) => mockAccountPlan(id),
-  getAccountUsageMap: async (id: string) => mockGetAccountUsageMap(id),
-  accountIdForProject: async (_id: string) => null,
-  countAccountAutosimFlows: async (_id: string) => 0,
-  usagePeriod: () => new Date().toISOString().slice(0, 7),
-}))
+// spyOn (not mock.module) — see lib/quota.test.ts for the full explanation. mock.module replaces
+// "./db" in Bun's process-wide module registry for the rest of the `bun test` run; this file did
+// that with no restore at all, so it silently corrupted every later test file that imports "./db"
+// in the same suite run (usage-meters.test.ts among them). spyOn's per-function, self-restoring
+// design (mockRestore()) fixes this without ever replacing the whole module.
+const accountPlanSpy = spyOn(db, "accountPlan").mockImplementation(async (id: string) => mockAccountPlan(id))
+const getAccountUsageMapSpy = spyOn(db, "getAccountUsageMap").mockImplementation(async (id: string) => mockGetAccountUsageMap(id))
+const accountIdForProjectSpy = spyOn(db, "accountIdForProject").mockImplementation(async (_id: string) => null)
+const countAccountAutosimFlowsSpy = spyOn(db, "countAccountAutosimFlows").mockImplementation(async (_id: string) => 0)
+
+afterAll(() => {
+  accountPlanSpy.mockRestore()
+  getAccountUsageMapSpy.mockRestore()
+  accountIdForProjectSpy.mockRestore()
+  countAccountAutosimFlowsSpy.mockRestore()
+})
 
 const { checkQuota, METRIC_TO_QUOTA_KEY: QUOTA_MAP } = await import("./quota")
 import type { QuotaMetric } from "./billing"
