@@ -243,13 +243,17 @@ describe("widget Sims dock consolidation", () => {
     expect(firstVisible.classList.contains("klm-card")).toBe(true)
   })
 
-  // Regression: on a cross-origin customer site with no widget token, deploying Sims must run the
-  // connect handshake FIRST — it must NOT fire a /api/sim/review that would silently 401, leaving the
-  // Sims floating but doing nothing (the reported bug).
-  it("prompts to connect and fires NO review when Sims are deployed cross-origin without a token", async () => {
+  // Regression: on a cross-origin customer site with no widget token, Sims actions must not be
+  // shown at all — this is what actually prevents the original silent-401 bug (deploying without
+  // being connected would silently 401 on /api/sim/review): there is no button to click in the
+  // first place, rather than a click leading to a connect prompt. The connect-handshake-before-
+  // review flow this test previously exercised directly is now structurally unreachable for a
+  // true anonymous visitor: showSims (added the very next day — "client-safe end-user menu",
+  // JTBD 1.6) requires firstParty || a token, so "cross-origin AND no token" can never satisfy
+  // it. The connect-handshake flow itself is still covered once a token exists — see the two
+  // tests below, which exercise the with-token path directly.
+  it("hides Sims actions entirely on a cross-origin site with no widget token (no silent 401 surface)", async () => {
     nextWidgetSims = [{ id: "sim_one", name: "Sarah Chen", initials: "SC", accent: "#6366f1" }]
-    const openSpy = vi.fn(() => ({ closed: true, close: vi.fn() }))
-    vi.stubGlobal("open", openSpy)
 
     await mountWith({ launcherMode: "full" })
     const fetchFn = globalThis.fetch as unknown as ReturnType<typeof vi.fn>
@@ -258,16 +262,11 @@ describe("widget Sims dock consolidation", () => {
     const deployCard = Array.from(menu.querySelectorAll(".klm-card")).find(
       (el) => (el.textContent || "").includes("Deploy all Sims"),
     ) as HTMLElement | undefined
-    expect(deployCard).toBeTruthy()
-    deployCard!.click()
+    expect(deployCard).toBeUndefined()
 
-    // The connect popup is opened (widget-connect handshake mints a bearer token)…
-    await waitUntil(() => openSpy.mock.calls.length > 0)
-    expect(String(openSpy.mock.calls[0][0])).toContain("/widget-connect")
-
-    // …and NO sim review was ever attempted, so there is no silent 401.
-    const reviewCalls = fetchFn.mock.calls.filter((c: unknown[]) => String(c[0]).includes("/api/sim/review"))
-    expect(reviewCalls.length).toBe(0)
+    // Not just hidden — never even fetched, so there's nothing to silently 401 on.
+    const simsCalls = fetchFn.mock.calls.filter((c: unknown[]) => String(c[0]).includes("/api/widget/sims"))
+    expect(simsCalls.length).toBe(0)
   })
 
   // With a token already present, deploy proceeds straight to review (no connect popup).
@@ -297,6 +296,10 @@ describe("widget Sims dock consolidation", () => {
   })
 
   it("renders context-menu Sim chips as circles when Sims are available", async () => {
+    // The Sim-chip preview row is a Sims surface (widget.ts: "only show it when Sims actions are
+    // allowed") — a token is required to reach it in a non-first-party test context, same as the
+    // "deploys and reviews directly" test above.
+    localStorage.setItem("klavity_widget_token", "ext_live_token")
     nextWidgetSims = [
       { id: "sim_one", name: "Sarah Chen", initials: "SC", accent: "#6366f1" },
       { id: "sim_two", name: "Devon Moore", initials: "DM", accent: "#ef4444" },

@@ -3,12 +3,20 @@
 // Tests for checkQuota() and quotaEnforcementEnabled().
 // All DB calls are mocked so no real DB is needed.
 
-import { test, expect, beforeEach, afterEach, mock, spyOn } from "bun:test"
+import { test, expect, beforeEach, afterEach, afterAll, spyOn } from "bun:test"
+import * as db from "./db"
 
 // ── Module-level mocks ──────────────────────────────────────────────────────
 //
-// We mock the two db functions that checkQuota() depends on so tests are
-// hermetic. Use bun:test's mock.module for deterministic module isolation.
+// Spy on (not replace-the-whole-module-for) just the specific "./db" functions checkQuota()
+// depends on, so every other export (applySchema, reconnectDb, usagePeriod, ...) stays the real
+// implementation, untouched, for the entire process. mock.module() was tried here first and
+// rejected: it replaces "./db" globally for the rest of the `bun test` process, not just this
+// file, and every other test file that imports "./db" (e.g. usage-meters.test.ts) silently
+// inherited this file's mock when run in the same suite — restoring it via mock.module() again
+// afterward did not reliably fix that (confirmed by direct testing). spyOn's per-function,
+// self-restoring design (mockRestore()) avoids replacing the module at all, so there is nothing
+// broad to leak in the first place.
 
 let mockAccountPlan: (id: string) => Promise<string>
 let mockGetAccountUsageMap: (id: string) => Promise<Record<string, number>>
@@ -16,18 +24,21 @@ let mockGetAccountUsageMap: (id: string) => Promise<Record<string, number>>
 // grandfathering path (Free, autosim_walk, limit 0). Default 0 = a plain Free account.
 let mockCountAccountAutosimFlows: (id: string) => Promise<number>
 
-mock.module("./db", () => ({
-  accountPlan: async (id: string) => mockAccountPlan(id),
-  getAccountUsageMap: async (id: string) => mockGetAccountUsageMap(id),
-  countAccountAutosimFlows: async (id: string) => mockCountAccountAutosimFlows(id),
-  // accountIdForProject is used by checkQuotaForProject — we don't exercise it in these
-  // unit tests (we call checkQuota directly); include a passthrough stub so the module loads.
-  accountIdForProject: async (_id: string) => null,
-  // Everything else in db.ts used by other imports at module scope:
-  usagePeriod: () => new Date().toISOString().slice(0, 7),
-}))
+const accountPlanSpy = spyOn(db, "accountPlan").mockImplementation(async (id: string) => mockAccountPlan(id))
+const getAccountUsageMapSpy = spyOn(db, "getAccountUsageMap").mockImplementation(async (id: string) => mockGetAccountUsageMap(id))
+const countAccountAutosimFlowsSpy = spyOn(db, "countAccountAutosimFlows").mockImplementation(async (id: string) => mockCountAccountAutosimFlows(id))
+// accountIdForProject is used by checkQuotaForProject — we don't exercise it in these unit tests
+// (we call checkQuota directly); stub it too so nothing calls the real (unconfigured) DB.
+const accountIdForProjectSpy = spyOn(db, "accountIdForProject").mockImplementation(async (_id: string) => null)
 
-// ── Import AFTER mocking so the mock is in place ───────────────────────────
+afterAll(() => {
+  accountPlanSpy.mockRestore()
+  getAccountUsageMapSpy.mockRestore()
+  countAccountAutosimFlowsSpy.mockRestore()
+  accountIdForProjectSpy.mockRestore()
+})
+
+// ── Import AFTER the spies are installed so checkQuota's own imports see them ──────
 const { checkQuota, quotaEnforcementEnabled } = await import("./quota")
 const { FREE_GRANDFATHERED_AUTOSIM_RUNS_MONTHLY } = await import("./billing")
 
