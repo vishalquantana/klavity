@@ -306,5 +306,12 @@
     "excerpt": "A HAR file is a JSON log of every network request your browser made. Here's how to capture one, sanitize it, and attach it to a bug report.",
     "category": "Guides",
     "date": "2026-08-04"
+  },
+  {
+    "slug": "turn-a-support-ticket-into-a-bug-report",
+    "title": "How to Turn a Support Ticket Into a Bug Report Devs Fix",
+    "excerpt": "Support tickets describe a feeling; bug reports describe a mechanism. Here is how to convert one into the other so developers can fix it.",
+    "category": "Guides",
+    "date": "2026-08-05"
   }
 ]
