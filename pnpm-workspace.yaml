@@ -5,5 +5,17 @@ allowBuilds:
 # Force a single patched esbuild everywhere: clears both the dev-server CORS advisory
 # (GHSA-67mh-4wv8-2f99, ≤0.24.2) and the Windows dev-server file-read advisory
 # (GHSA-g7r4-m6w7-qqqr, 0.27.3–0.28.0). 0.25.x is safe from both.
+# brace-expansion: clears the DoS-via-unbounded-intermediate-arrays advisory
+# (GHSA-rgw5-rvv9-x895, >=2.0.0 <2.1.4) pulled in transitively via
+# packages/core > @vitest/coverage-v8 > test-exclude > glob > minimatch. 2.1.4 is the
+# last patched release on the 2.x line (avoids a major-version jump for a deep transitive dep).
+# postcss: clears the sourceMappingURL path-traversal advisory (GHSA-r28c-9q8g-f849,
+# <=8.5.17) pulled in transitively via packages/core's vitest/vite dev toolchain.
+# undici: clears the cross-user cache-disclosure advisory (GHSA-4cwx-7wf7-3272,
+# >=7.0.0 <7.29.0) pulled in transitively via packages/core's jsdom test environment.
+# Both are dev-only (test tooling), never shipped, but pnpm audit doesn't distinguish.
 overrides:
   esbuild: "0.25.12"
+  brace-expansion: "2.1.4"
+  postcss: "8.5.18"
+  undici: "7.29.0"
