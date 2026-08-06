@@ -313,5 +313,12 @@
     "excerpt": "Support tickets describe a feeling; bug reports describe a mechanism. Here is how to convert one into the other so developers can fix it.",
     "category": "Guides",
     "date": "2026-08-05"
+  },
+  {
+    "slug": "how-to-write-resilient-test-selectors",
+    "title": "How to Write Resilient Test Selectors That Don't Break",
+    "excerpt": "Brittle selectors are the top cause of false test failures. Here's the locator priority order that survives UI changes, plus the anti-patterns to drop.",
+    "category": "Guides",
+    "date": "2026-08-06"
   }
 ]
