@@ -95,6 +95,21 @@ describe('Annotator', () => {
     expect(a.computeLineWidth()).toBe(3)
   })
 
+  it('strokeScale multiplies the line width (toolbar Width control)', () => {
+    // Use a wide canvas so the base width isn't clamped at the min(3) floor, proving the multiply.
+    const wide = makeCanvas(); ;(wide as any).width = 4000
+    const a = new Annotator(wide, 'data:image/png;base64,img')
+    expect(a.strokeScale).toBe(1)          // default = medium
+    const base = a.computeLineWidth()       // 4000/400 = 10
+    expect(base).toBe(10)
+    a.strokeScale = 1.8                      // "L"
+    expect(a.computeLineWidth()).toBeCloseTo(18)
+    a.strokeScale = 0.6                      // "S"
+    expect(a.computeLineWidth()).toBeCloseTo(6)
+    a.strokeScale = 2.8                      // "XL"
+    expect(a.computeLineWidth()).toBeCloseTo(28)
+  })
+
   it('save returns a data URL', async () => {
     const a = new Annotator(makeCanvas(), 'data:image/png;base64,img')
     const result = await a.save()
