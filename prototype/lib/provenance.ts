@@ -1,3 +1,5 @@
+import { offsetToTime, type ParsedLine } from "./transcript-parse"
+
 // P3a provenance core — PURE, LLM-free, DB-free reconcile logic.
 // `applyReconcileOps` takes a Sim's current ACTIVE trait set + a list of structured ops
 // (the shape an LLM reconcile call would emit, but this function never calls an LLM) and
@@ -21,6 +23,7 @@ export type Trait = {
   srcTranscriptId: string
   srcQuote: string
   srcQuoteOffset: number | null
+  srcQuoteTs?: number | null
   srcSpeaker: string | null
   srcVerified?: boolean | null
   createdAt: number
@@ -59,6 +62,7 @@ export type ReconcileCtx = {
   transcriptId: string
   sourceDate: number
   rawText?: string | null
+  lines?: ParsedLine[] | null
   now?: number
   newId?: () => string // injectable for deterministic tests
 }
@@ -80,6 +84,7 @@ export type TraitEventRow = {
   afterText: string | null
   quote: string
   quoteOffset: number | null
+  quoteTs?: number | null
   verified?: boolean | null
   speaker: string | null
   sourceDate: number
@@ -193,6 +198,8 @@ export function applyReconcileOps(
   const newId = ctx.newId ?? defaultNewId
   const traitWrites: TraitWrite[] = []
   const traitEvents: TraitEventRow[] = []
+  const tsFor = (offset: number | null): number | null =>
+    ctx.lines ? offsetToTime(ctx.lines, offset) : null
 
   // working copy keyed by id; we mutate clones, never the inputs.
   const byId = new Map<string, Trait>()
@@ -216,6 +223,7 @@ export function applyReconcileOps(
     afterText,
     quote: g.quote,
     quoteOffset: g.offset,
+    quoteTs: tsFor(g.offset),
     verified: g.verified,
     speaker: o.speaker ?? null,
     sourceDate: ctx.sourceDate,
@@ -240,6 +248,7 @@ export function applyReconcileOps(
     srcTranscriptId: ctx.transcriptId,
     srcQuote: g.quote,
     srcQuoteOffset: g.offset,
+    srcQuoteTs: tsFor(g.offset),
     srcVerified: g.verified,
     srcSpeaker: o.speaker ?? null,
     createdAt: now,
@@ -275,6 +284,7 @@ export function applyReconcileOps(
         targetActive.srcTranscriptId = ctx.transcriptId
         targetActive.srcQuote = g.quote
         targetActive.srcQuoteOffset = g.offset
+        targetActive.srcQuoteTs = tsFor(g.offset)
         targetActive.srcVerified = g.verified
         targetActive.srcSpeaker = o.speaker ?? null
         targetActive.updatedAt = now
@@ -296,6 +306,7 @@ export function applyReconcileOps(
         targetActive.srcTranscriptId = ctx.transcriptId
         targetActive.srcQuote = g.quote
         targetActive.srcQuoteOffset = g.offset
+        targetActive.srcQuoteTs = tsFor(g.offset)
         targetActive.srcVerified = g.verified
         targetActive.srcSpeaker = o.speaker ?? null
         targetActive.updatedAt = now
