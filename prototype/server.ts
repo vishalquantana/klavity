@@ -7,7 +7,7 @@ import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
 import { logAudit, queryAuditLog, auditRowsToCsv, type AuditAction } from "./lib/audit-log"
 import { buildMemberExport, membersToCsv, MEMBER_EXPORT_FIELDS } from "./lib/member-export"
 import { isMaskingEnabled, maskMemberExportRow, maskDeep, maskWalkReportData } from "./lib/data-masking"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, publicReportStatus, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, EXPORT_POLICIES, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, publicReportStatus, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, EXPORT_POLICIES, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows } from "./lib/db"
 import { countFoundingAccounts } from "./lib/db"
 // KLAVITYKLA-366 — the Founding Ten spot counter. One cached source of truth behind the public
 // pricing band, the in-app ribbon, and the server-side refusal of an 11th founding checkout.
@@ -23,7 +23,7 @@ import { pushCommentToLinkedIssues } from "./lib/connectors/comment-sync"
 import { syncFieldsToLinkedIssues } from "./lib/connectors/field-sync"
 import { importExternalIssues } from "./lib/connectors/import"
 import { deriveHealth } from "./lib/connectors/health"
-import { applyReconcileOps, recurrenceFromEvents, pickCitation, type ReconcileOp, type Trait, type TraitEventRow } from "./lib/provenance"
+import { applyReconcileOps, recurrenceFromEvents, pickCitation, groundQuote, type ReconcileOp, type Trait, type TraitEventRow } from "./lib/provenance"
 import { parseTranscript, speakersFromLines, offsetToTime, formatTs } from "./lib/transcript-parse"
 import { sendOtp, sendLeadAlert, sendTicketAssignmentEmail, sendTicketAssignmentInviteEmail, sendMemberInviteEmail } from "./lib/mail"
 // First-class member invites + visibility (JTBD 6.4 / KLAVITYKLA-294) — composes existing tables, no migration.
@@ -4570,6 +4570,65 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           usage: { extract: extractUsage, reconcile: reconcileUsages },
         }, 201)
       } catch (e: any) { return json(oops(e, "transcript"), 500) }
+    }
+
+    // ── transcripts → preview (Task 6) — compute enrichment ops WITHOUT persisting; stash for /apply ──
+    // Mirrors the auth/project guards of POST /api/transcripts exactly. Only DB write is the stash
+    // (insertPendingTranscript) — no transcripts/sim_traits/trait_events writes here.
+    if (req.method === "POST" && path === "/api/transcripts/preview") {
+      const me = (await sessionEmail(req)) || (await bearerEmail(req))
+      if (!me) return json({ error: "Sign in to continue." }, 401)
+      const proj = await resolveProject(me, url.searchParams.get("project"))
+      if (!proj) return json({ error: "No project." }, 400)
+      const projectId = proj.id
+      try {
+        const body = await req.json().catch(() => ({}))
+        const text = String(body.transcript || "").trim()
+        const title = body.title ? String(body.title).trim() : null
+        if (text.length < 20) return json({ error: "Add transcript text first." }, 400)
+
+        const lines = parseTranscript(text)
+        const sourceDate = Date.now()
+        const { data } = await extractPersonas(text, { email: me, projectId })
+        const personas: any[] = Array.isArray(data?.personas) ? data.personas : []
+        const sims = (await listPersonas(projectId)).map((p) => ({ id: p.id, name: p.name, role: p.role }))
+
+        const groups: any[] = []
+        const stash: any[] = []
+        let gi = 0
+        for (const p of personas) {
+          if (p.simClass !== "client" && p.type !== "client") { gi++; continue } // only client speakers become/enrich Sims
+          const match = matchPersonaToSim({ name: String(p?.name || ""), role: p?.role ? String(p.role) : undefined }, sims)
+          if (match && "simId" in match) {
+            const current = await listTraits(match.simId, { activeOnly: true })
+            const { ops } = await reconcileSim(current, text, { email: me, projectId })
+            const opsOut = ops.map((o, oi) => {
+              const g = groundQuote(text, o.quote)
+              const tsSeconds = offsetToTime(lines, g.offset)
+              return {
+                opId: `${gi}:${oi}`, op: o.op, kind: o.kind, text: o.text, quote: g.quote,
+                tsSeconds, tsLabel: formatTs(tsSeconds), speaker: o.speaker ?? null,
+              }
+            })
+            const sim = sims.find((s) => s.id === match.simId)
+            groups.push({ kind: "existing", simId: match.simId, simName: sim?.name || p.name, ops: opsOut })
+            stash.push({ kind: "existing", groupIndex: gi, simId: match.simId, ops })
+          } else {
+            const insights = Array.isArray(p.insights) ? p.insights : []
+            const insightsOut = insights.map((ins: any, oi: number) => {
+              const g = groundQuote(text, ins.quote)
+              const tsSeconds = offsetToTime(lines, g.offset)
+              return { opId: `${gi}:${oi}`, kind: ins.kind, text: ins.text, quote: g.quote, tsSeconds, tsLabel: formatTs(tsSeconds) }
+            })
+            groups.push({ kind: "new", proposalId: `new_${gi}`, proposedName: p.name, role: p.role, insights: insightsOut })
+            stash.push({ kind: "new", groupIndex: gi, proposalId: `new_${gi}`, persona: p })
+          }
+          gi++
+        }
+
+        const previewId = await insertPendingTranscript(projectId, { rawText: text, title, sourceDate, lines, groups: stash })
+        return json({ previewId, groups }, 200)
+      } catch (e: any) { return json(oops(e, "transcript-preview"), 500) }
     }
 
     // ── Sim evolution timeline (P3a step 3) — project-scoped; cookie OR Bearer; admin or member. ──
