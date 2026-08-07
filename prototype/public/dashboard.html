@@ -3408,12 +3408,20 @@ function loadTriageShots(host) {
     box.setAttribute("data-loaded", "1")
     const id = box.getAttribute("data-shot")
     try {
-      const r = await fetch("/api/screenshots/" + encodeURIComponent(id))
+      // List preview → request the lightweight thumbnail variant (server falls back to the full image
+      // when this shot has no thumb). Click opens the full-resolution image, fetched on demand.
+      const r = await fetch("/api/screenshots/" + encodeURIComponent(id) + "?thumb=1")
       const d = await r.json().catch(() => ({}))
       if (d.url) {
         const img = document.createElement("img"); img.src = d.url; img.alt = "Sim screenshot"; img.loading = "lazy"
         box.innerHTML = ""; box.appendChild(img)
-        box.addEventListener("click", () => window.open(d.url, "_blank", "noopener"))
+        box.addEventListener("click", async () => {
+          try {
+            const fr = await fetch("/api/screenshots/" + encodeURIComponent(id))
+            const fd = await fr.json().catch(() => ({}))
+            window.open(fd.url || d.url, "_blank", "noopener")
+          } catch { window.open(d.url, "_blank", "noopener") }
+        })
       } else { box.innerHTML = `<div class="tg-shot-ph" title="${esc(d.error || "unavailable")}">—</div>`; box.style.cursor = "default" }
     } catch { box.innerHTML = `<div class="tg-shot-ph">!</div>`; box.style.cursor = "default" }
   })
@@ -5355,12 +5363,20 @@ async function loadOccShot(item) {
   box.setAttribute("data-loaded", "1")
   const id = box.getAttribute("data-shot")
   try {
-    const r = await fetch("/api/screenshots/" + encodeURIComponent(id))
+    // Small per-occurrence preview → thumbnail variant (falls back to full image server-side). Click
+    // opens the full-resolution image, fetched on demand.
+    const r = await fetch("/api/screenshots/" + encodeURIComponent(id) + "?thumb=1")
     const d = await r.json().catch(() => ({}))
     if (d.url) {
       const img = document.createElement("img")
       img.src = d.url; img.alt = "Occurrence screenshot"
-      img.addEventListener("click", () => window.open(d.url, "_blank", "noopener"))
+      img.addEventListener("click", async () => {
+        try {
+          const fr = await fetch("/api/screenshots/" + encodeURIComponent(id))
+          const fd = await fr.json().catch(() => ({}))
+          window.open(fd.url || d.url, "_blank", "noopener")
+        } catch { window.open(d.url, "_blank", "noopener") }
+      })
       box.innerHTML = ""; box.appendChild(img)
     } else { box.remove() }
   } catch { box.remove() }

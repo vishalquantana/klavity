@@ -7,7 +7,7 @@ import { planScrollStitch, clampCaptureHeight } from "./sharp-capture"
 import { type CaptureBuffers } from "@klavity/core/capture"
 import { installCaptureContext, buildCaptureContext } from "./capture-context"
 import type { ReportContext, ReportIdentity } from "@klavity/core"
-import { parseScriptConfig, isFirstParty, buildFeedbackForm, successCopy, compressScreenshot } from "./widget-lib"
+import { parseScriptConfig, isFirstParty, buildFeedbackForm, successCopy, compressScreenshot, buildThumbnail } from "./widget-lib"
 import { computeSelector, describeElement } from "./element-selector"
 import { getTurnstileToken } from "./load-turnstile"
 import { icon } from "@klavity/core/icons"
@@ -1168,6 +1168,11 @@ export async function submitFeedback(
   // Compress screenshots (PNG → JPEG, downscale very wide ones) so the upload is fast. Best-effort,
   // parallel; each falls back to its original on failure.
   const screenshots = await Promise.all(payload.screenshots.map((s) => compressScreenshot(s)))
+  // Thumbnails: a tiny (≤320px, low-quality JPEG) variant per screenshot so the dashboard list loads a
+  // lightweight preview instead of the full image. Index-aligned 1:1 with `screenshots` (compressScreenshot
+  // falls back to its input on failure, so every entry is a valid image — worst case the thumb equals the
+  // full image and simply yields no speed-up). Generated from the compressed source to reuse its decode.
+  const screenshotThumbs = await Promise.all(screenshots.map((s) => buildThumbnail(s)))
   const fd = buildFeedbackForm({
     type: payload.type,
     // JTBD 1.10: a screenshot-only report carries no typed prose — send an EMPTY description (not a bare
@@ -1178,6 +1183,7 @@ export async function submitFeedback(
     referrer: payload.referrer,
     projectId: cfg.projectId,
     screenshots,
+    screenshotThumbs,
     context: payload.context,
     replayEvents: payload.replayEvents,
     // KLAVITYKLA-217: forward the full per-image annotation map so markup on every screenshot reaches

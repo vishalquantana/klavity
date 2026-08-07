@@ -129,7 +129,41 @@ export async function compressScreenshot(dataUrl: string, opts: { maxWidth?: num
   }
 }
 
-export function buildFeedbackForm(input: { type?: string; description: string; pageUrl: string; referrer?: string; projectId: string; screenshots: string[]; context?: ReportContext; replayEvents?: unknown[]; annotations?: any }): FormData {
+// Build a small preview thumbnail (default ≤320px wide, low-quality JPEG) from a screenshot data URL.
+// Unlike compressScreenshot this ALWAYS downscales — it does not skip JPEG input — because the source is
+// typically the already-compressed full screenshot and we still want a much smaller preview. Best-effort:
+// returns the original data URL unchanged on any failure or if the "thumb" didn't actually come out
+// smaller (so the caller always gets a valid image at that index).
+export async function buildThumbnail(dataUrl: string, opts: { maxWidth?: number; quality?: number } = {}): Promise<string> {
+  const maxWidth = opts.maxWidth ?? 320
+  const quality = opts.quality ?? 0.6
+  if (typeof document === "undefined" || !dataUrl.startsWith("data:image/")) return dataUrl
+  try {
+    const img = await new Promise<HTMLImageElement>((res, rej) => {
+      const i = new Image()
+      i.onload = () => res(i)
+      i.onerror = rej
+      i.src = dataUrl
+    })
+    const nw = img.naturalWidth, nh = img.naturalHeight
+    if (!nw || !nh) return dataUrl
+    const scale = nw > maxWidth ? maxWidth / nw : 1
+    const w = Math.round(nw * scale), h = Math.round(nh * scale)
+    const canvas = document.createElement("canvas")
+    canvas.width = w; canvas.height = h
+    const ctx = canvas.getContext("2d")
+    if (!ctx) return dataUrl
+    ctx.fillStyle = "#fff" // opaque matte (JPEG has no alpha)
+    ctx.fillRect(0, 0, w, h)
+    ctx.drawImage(img, 0, 0, w, h)
+    const out = canvas.toDataURL("image/jpeg", quality)
+    return out.length < dataUrl.length ? out : dataUrl
+  } catch {
+    return dataUrl
+  }
+}
+
+export function buildFeedbackForm(input: { type?: string; description: string; pageUrl: string; referrer?: string; projectId: string; screenshots: string[]; screenshotThumbs?: string[]; context?: ReportContext; replayEvents?: unknown[]; annotations?: any }): FormData {
   // Use the shared serializer (packages/core/integrations/backend) for all common fields so that
   // extension + widget stay in parity by construction — a new shared field added in buildFeedbackFormData
   // appears in BOTH paths automatically (prevents drift like KLAVITYKLA-208).
@@ -148,6 +182,13 @@ export function buildFeedbackForm(input: { type?: string; description: string; p
   // Screenshots: widget receives data URLs (html-to-image), so we convert inline.
   // Extension path fetches blobs via fetch(dataUrl) in submitReport instead.
   for (const s of input.screenshots) fd.append("screenshots", dataUrlToBlob(s), "screenshot.png")
+  // Thumbnails: one small JPEG per screenshot (same index order) so the dashboard list loads a
+  // lightweight preview instead of the full-resolution original. Best-effort — only appended when the
+  // caller generated a thumb for that index; the server pairs by index and tolerates missing entries,
+  // so a partial set (or none) simply falls back to the full image for those shots.
+  if (input.screenshotThumbs) {
+    for (const t of input.screenshotThumbs) fd.append("screenshot_thumbs", dataUrlToBlob(t), "thumb.jpg")
+  }
   // Annotation overlay (KLAVITYKLA-1 / KLAVITYKLA-217): structured markup { w, h, shapes, byIndex } so the
   // ticket can re-render a toggleable/zoomable highlight on EVERY annotated screenshot (not just #1). The
   // top-level shapes carry screenshot #0 (backward compat); `byIndex` maps each image index → its markup.
