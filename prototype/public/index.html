@@ -406,9 +406,38 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .ss-trait-ctl button:hover{color:var(--paper);border-color:var(--line-2)}
 .ss-trait-edit textarea{width:100%;font-family:var(--body);font-size:14px;color:var(--paper);background:var(--ink-3);border:1px solid var(--indigo-soft);border-radius:9px;padding:8px 10px;outline:none}
 .ss-mini-row{display:flex;gap:6px;margin-top:8px}
-.ss-mini-btn{font-family:var(--body);font-size:11.5px;font-weight:600;border-radius:8px;padding:5px 11px;cursor:pointer;border:1px solid var(--line)}
+.ss-mini-btn{font-family:var(--body);font-size:11.5px;font-weight:600;border-radius:8px;padding:5px 11px;cursor:pointer;border:1px solid var(--line);transition:transform .15s var(--mi-ease,cubic-bezier(.2,.7,.3,1)),border-color .15s,filter .15s}
+.ss-mini-btn:hover{transform:scale(1.02);border-color:var(--indigo-soft)}
+.ss-mini-btn:active{transform:scale(.97)}
 .ss-mini-btn.primary{color:#fff;background:var(--indigo-deep);border-color:var(--indigo-deep)}
+.ss-mini-btn.primary:hover{filter:brightness(1.06)}
 .ss-mini-btn.ghost{color:var(--paper-dim);background:transparent}
+.ss-mini-btn:disabled{opacity:.6;cursor:default;transform:none}
+
+/* Task 9 — transcript preview-and-approve panel */
+.ss-pv-wrap{max-width:none}
+.ss-pv-group{border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:12px;background:var(--ink-3)}
+.ss-pv-ghead{font-family:var(--body);font-size:13px;font-weight:700;color:var(--paper);margin-bottom:8px}
+.ss-pv-proposal{display:flex;align-items:center;gap:8px;cursor:pointer}
+.ss-pv-ops{display:flex;flex-direction:column;gap:8px}
+.ss-pv-op{display:flex;align-items:flex-start;gap:9px;padding:8px 10px;border-radius:9px;border:1px solid var(--line);background:var(--ink-2);cursor:pointer;transition:border-color .15s,background .15s}
+.ss-pv-op:hover{border-color:var(--indigo-soft);background:color-mix(in srgb,var(--indigo) 6%,var(--ink-2))}
+.ss-pv-op input[type=checkbox]{margin-top:3px;accent-color:var(--indigo);width:14px;height:14px;flex:none}
+.ss-pv-opbody{flex:1;min-width:0}
+.ss-pv-opline{display:flex;align-items:center;gap:7px;margin-bottom:4px}
+.ss-pv-ts{font-family:var(--mono);font-size:10px;color:var(--paper-faint);background:var(--ink-3);border:1px solid var(--line);border-radius:5px;padding:1px 6px}
+.ss-pv-optext{font-size:13px;color:var(--paper);line-height:1.5}
+.ss-pv-opquote{font-style:italic;font-size:11.5px;color:var(--paper-dim);margin-top:4px}
+.ss-op-add{color:var(--green);background:color-mix(in srgb,var(--green) 14%,transparent);border:1px solid color-mix(in srgb,var(--green) 35%,transparent)}
+.ss-op-reopen{color:var(--blue);background:color-mix(in srgb,var(--blue) 14%,transparent);border:1px solid color-mix(in srgb,var(--blue) 35%,transparent)}
+
+/* Transcript tab — per-line dialog with a fixed-width muted time column */
+.ss-tr-lines{display:flex;flex-direction:column;gap:0}
+.ss-tr-line{display:flex;align-items:baseline;gap:9px;padding:4px 6px;border-radius:6px;font-size:12.5px;line-height:1.6}
+.ss-hl-line{background:color-mix(in srgb,var(--amber) 10%,transparent)}
+.ss-tr-ts{font-family:var(--mono);font-size:10px;color:var(--paper-faint);width:46px;flex:none;text-align:right}
+.ss-tr-speaker{font-weight:700;color:var(--paper-dim);flex:none}
+.ss-tr-linetext{color:var(--paper-dim);white-space:pre-wrap;word-break:break-word}
 
 .ss-c2-empty{padding:60px 26px;color:var(--paper-faint);font-size:14px;max-width:46ch}
 .ss-newform{background:var(--ink-2);border:1px solid var(--indigo-soft);border-radius:14px;padding:14px 16px;margin:12px 16px}
@@ -1210,23 +1239,96 @@ function ssOpenTranscriptUpload() {
     const text = ($("ssTxText").value || "").trim()
     if (text.length < 20) { ssToast("Add transcript text first."); return }
     const title = ($("ssTxTitle").value || "").trim() || null
-    const btn = $("ssTxSave"); btn.disabled = true; btn.textContent = "Extracting…"
+    const btn = $("ssTxSave"); btn.disabled = true; btn.textContent = "Analyzing…"
     try {
-      const r = await fetch(pq('/api/transcripts'), {
+      const r = await fetch(pq('/api/transcripts/preview'), {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ transcript: text, title }),
       })
       const d = await r.json().catch(() => ({}))
-      if (!r.ok || !d.transcriptId) throw new Error(d.error || "upload failed")
-      const n = Array.isArray(d.matched) ? d.matched.length : 0
-      ssToast(`Extracted → matched ${n} sim${n === 1 ? "" : "s"}`)
+      if (!r.ok || !d.previewId) throw new Error(d.error || "preview failed")
+      ssRenderTranscriptPreview(d)
+    } catch (e) {
+      btn.disabled = false; btn.textContent = "Extract & match"
+      ssToast("Preview failed: " + e.message)
+    }
+  }
+}
+
+// ── Task 9: preview-and-approve — render the grouped reconcile-ops preview returned by
+// /api/transcripts/preview, let the user tick/untick individual ops + new-person proposals,
+// then POST the approved subset to /api/transcripts/apply. All checkboxes default CHECKED.
+const SS_OPLABEL = { add: "Add", reinforce: "Reinforce", refine: "Refine", contradict: "Contradict", supersede: "Supersede", reopen: "Reopen" }
+function ssRenderTranscriptPreview(d) {
+  const col = $("ssCol2"); if (!col) return
+  const groups = Array.isArray(d.groups) ? d.groups : []
+  const groupsHtml = groups.map((g, gi) => {
+    if (g.kind === "existing") {
+      const n = (g.ops || []).length
+      const opsHtml = (g.ops || []).map(o => `<label class="ss-pv-op">
+          <input type="checkbox" class="ss-pv-opchk" data-opid="${esc(o.opId)}" checked />
+          <div class="ss-pv-opbody">
+            <div class="ss-pv-opline"><span class="ss-opbadge ss-op-${esc(o.op)}">${esc(SS_OPLABEL[o.op] || o.op)}</span>${o.tsLabel ? `<span class="ss-pv-ts">${esc(o.tsLabel)}</span>` : ""}</div>
+            <div class="ss-pv-optext">${esc(o.text || "")}</div>
+            ${o.quote ? `<div class="ss-pv-opquote">“${esc(o.quote)}”</div>` : ""}
+          </div>
+        </label>`).join("")
+      return `<div class="ss-pv-group" data-gkind="existing">
+          <div class="ss-pv-ghead">${esc(g.simName || "Sim")} — ${n} change${n === 1 ? "" : "s"}</div>
+          <div class="ss-pv-ops">${opsHtml || `<div class="ss-muted">No changes detected.</div>`}</div>
+        </div>`
+    }
+    // kind === "new"
+    const insightsHtml = (g.insights || []).map(ins => `<label class="ss-pv-op">
+        <input type="checkbox" class="ss-pv-opchk" data-opid="${esc(ins.opId)}" data-proposal="${esc(g.proposalId)}" checked />
+        <div class="ss-pv-opbody">
+          <div class="ss-pv-opline"><span class="ss-opbadge ss-op-add">${esc(SS_KINDLABEL[String(ins.kind || "").toUpperCase()] || ins.kind)}</span>${ins.tsLabel ? `<span class="ss-pv-ts">${esc(ins.tsLabel)}</span>` : ""}</div>
+          <div class="ss-pv-optext">${esc(ins.text || "")}</div>
+          ${ins.quote ? `<div class="ss-pv-opquote">“${esc(ins.quote)}”</div>` : ""}
+        </div>
+      </label>`).join("")
+    return `<div class="ss-pv-group" data-gkind="new">
+        <div class="ss-pv-ghead">
+          <label class="ss-pv-proposal">
+            <input type="checkbox" class="ss-pv-propchk" data-proposalid="${esc(g.proposalId)}" checked />
+            New person: ${esc(g.proposedName || "Unnamed")} — create Sim?
+          </label>
+        </div>
+        <div class="ss-pv-ops">${insightsHtml || `<div class="ss-muted">No insights detected.</div>`}</div>
+      </div>`
+  }).join("")
+
+  col.innerHTML = `<div class="ss-scroll"><div class="ss-c2-pad">
+    <div class="ss-newform ss-pv-wrap">
+      <div class="ss-c1-top" style="margin-bottom:10px"><h2 style="font-family:var(--display);font-size:18px">Review transcript changes</h2></div>
+      ${groupsHtml || `<div class="ss-muted">Nothing to review — no matching sims or new people found.</div>`}
+      <div class="ss-mini-row">
+        <button class="ss-mini-btn primary" id="ssPvApprove">Approve selected</button>
+        <button class="ss-mini-btn ghost" id="ssPvCancel">Cancel</button>
+      </div>
+    </div>
+  </div></div>`
+
+  $("ssPvCancel").onclick = () => { if (ssActiveSim) renderPersonaDetail(ssActiveSim); else { const c = $("ssCol2"); if (c) c.innerHTML = "" } }
+  $("ssPvApprove").onclick = async () => {
+    const approvedOpIds = Array.from(col.querySelectorAll(".ss-pv-opchk:checked")).map(el => el.dataset.opid)
+    const approvedProposalIds = Array.from(col.querySelectorAll(".ss-pv-propchk:checked")).map(el => el.dataset.proposalid)
+    const btn = $("ssPvApprove"); btn.disabled = true; btn.textContent = "Applying…"
+    try {
+      const r = await fetch(pq('/api/transcripts/apply'), {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ previewId: d.previewId, approvedOpIds, approvedProposalIds }),
+      })
+      const res = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(res.error || "apply failed")
+      ssToast(`Applied ${res.applied.ops} change${res.applied.ops === 1 ? "" : "s"}` + (res.applied.newSims ? `, ${res.applied.newSims} new Sim${res.applied.newSims === 1 ? "" : "s"}` : ""))
       ssTxMap = {}                       // invalidate transcript cache
       await renderSimList(ssActiveSim ? (ssActiveSim._id || ssActiveSim.id) : null)
       if (ssActiveSim) renderPersonaDetail(ssActiveSim)
       else { const c = $("ssCol2"); if (c) c.innerHTML = "" }
     } catch (e) {
-      btn.disabled = false; btn.textContent = "Extract & match"
-      ssToast("Upload failed: " + e.message)
+      btn.disabled = false; btn.textContent = "Approve selected"
+      ssToast("Apply failed: " + e.message)
     }
   }
 }
@@ -1692,12 +1794,42 @@ async function ssRenderTranscriptTab(trait) {
     const r = await fetch(pq(`/api/transcripts/${encodeURIComponent(txid)}`))
     const d = await r.json().catch(() => ({}))
     if (!r.ok) throw new Error(d.error || "load failed")
-    const raw = d.rawText || "(no text)"
     const rawEl = $("ssTrRaw"); if (!rawEl) return
-    rawEl.innerHTML = ssHighlightQuote(raw, trait.srcQuote)
+    if (Array.isArray(d.lines) && d.lines.length) {
+      rawEl.innerHTML = ssRenderTranscriptLines(d.lines, trait.srcQuote)
+    } else {
+      const raw = d.rawText || "(no text)"
+      rawEl.innerHTML = ssHighlightQuote(raw, trait.srcQuote)
+    }
   } catch (e) {
     const rawEl = $("ssTrRaw"); if (rawEl) rawEl.innerHTML = `<span class="ss-muted">Couldn't load transcript: ${esc(e.message)}</span>`
   }
+}
+
+// mm:ss / h:mm:ss for a tsSeconds value; "" when null/undefined. Mirrors lib/transcript-parse.ts formatTs.
+function fmtTs(sec) {
+  if (sec == null) return ""
+  const s = Math.max(0, Math.floor(sec))
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const ss = s % 60
+  const pad = n => String(n).padStart(2, "0")
+  return h > 0 ? `${h}:${pad(m)}:${pad(ss)}` : `${m}:${pad(ss)}`
+}
+
+// Dialog view: one row per parsed line — a muted fixed-width time column (blank when the line
+// has no timestamp), the speaker, then the line text. Highlights the line containing srcQuote.
+function ssRenderTranscriptLines(lines, quote) {
+  const q = quote ? String(quote) : null
+  return `<div class="ss-tr-lines">` + lines.map(ln => {
+    const hit = q && ln.text && ln.text.indexOf(q) >= 0
+    const textHtml = hit ? ssHighlightQuote(ln.text, q) : esc(ln.text || "")
+    return `<div class="ss-tr-line${hit ? " ss-hl-line" : ""}">
+        <span class="ss-tr-ts">${esc(fmtTs(ln.tsSeconds))}</span>
+        ${ln.speaker ? `<span class="ss-tr-speaker">${esc(ln.speaker)}:</span>` : ""}
+        <span class="ss-tr-linetext">${textHtml}</span>
+      </div>`
+  }).join("") + `</div>`
 }
 
 // Escape rawText, then wrap the first occurrence of the quote in a <mark>-style highlight.

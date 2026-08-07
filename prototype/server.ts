@@ -4898,7 +4898,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (!projT2) return json({ error: "No project." }, 400)
       const tr = await transcriptById(projT2.id, txMatch[1])
       if (!tr) return json({ error: "Not found" }, 404)
-      return json({ id: tr.id, title: tr.title, rawText: tr.rawText, sourceDate: tr.sourceDate, addedBy: tr.addedBy, speakers: tr.speakers })
+      return json({ id: tr.id, title: tr.title, rawText: tr.rawText, sourceDate: tr.sourceDate, addedBy: tr.addedBy, speakers: tr.speakers, lines: tr.lines })
     }
 
     // Public widget appearance config (non-sensitive; project-scoped). Lets the widget theme itself pre-auth.
