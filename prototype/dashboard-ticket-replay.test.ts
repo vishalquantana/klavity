@@ -17,7 +17,9 @@ const html = readFileSync(join(import.meta.dir, "public", "dashboard.html"), "ut
 
 // Known-duplicate ids that are NOT a bug: two mutually-exclusive render templates in the same
 // JS block emit the same live-view <img>. Only one is ever in the DOM at a time.
-const KNOWN_DUPLICATE_IDS = new Set(["ntLiveFrame"])
+// ntLiveFrame + ntLivePh live in two mutually-exclusive author-drive templates (pollAuthor +
+// wizPollAuthor); only one is ever mounted at a time, so the static duplicate is intentional.
+const KNOWN_DUPLICATE_IDS = new Set(["ntLiveFrame", "ntLivePh"])
 
 test("dashboard.html has no duplicate element ids (static markup + JS-built templates)", () => {
   const counts = new Map<string, number>()

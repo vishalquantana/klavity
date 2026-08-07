@@ -419,7 +419,18 @@ export async function authorTrail(
         ? await bounded(page.screenshotJpeg(60, 15_000), 20_000, "screenshot")
         : ""
       // KLA-150: publish live frame so the UI can show what the AI sees before deciding.
-      if (screenshotB64) try { opts.onLiveFrame?.(`data:image/jpeg;base64,${screenshotB64}`) } catch {}
+      // In text-first mode the model gets no screenshot (token savings), but the interactive
+      // authoring wizard still expects a real-time preview — so when a live viewer is attached
+      // (opts.onLiveFrame is only wired from the wizard drive) capture a lightweight frame purely
+      // for the live view. It is NEVER fed to the model, so the text-first token win is preserved.
+      if (screenshotB64) {
+        try { opts.onLiveFrame?.(`data:image/jpeg;base64,${screenshotB64}`) } catch {}
+      } else if (opts.onLiveFrame) {
+        try {
+          const liveShot = await bounded(page.screenshotJpeg(45, 8_000), 12_000, "live-frame")
+          if (liveShot) opts.onLiveFrame(`data:image/jpeg;base64,${liveShot}`)
+        } catch {}
+      }
       const dom = await bounded(page.krefSnapshot(), 15_000, "snapshot capture")
       // No-op stagnation guard: if the page URL + DOM hash hasn't changed since the last iteration
       // the previous action had no visible effect (e.g. re-typing the same field value, clicking
@@ -754,7 +765,7 @@ export async function authorTrail(
     try {
       v = await (opts.verificationWalk ?? walkTrail)(projectId, trailId, {
         fixtureUrl: req.baseUrl, suppressFindings: true, credResolver, deadlineMs: 180_000,
-        launchArgs, headless: opts.headless,
+        launchArgs, headless: opts.headless, replay: true,
         ...(vision ? { vision } : {}),
       })
     } catch (verificationErr: any) {

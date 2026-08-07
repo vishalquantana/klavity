@@ -296,8 +296,11 @@ a.exp-card .ec-src-chip,.exp-card a.ec-src-chip{cursor:pointer}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
 .nt-done{font-family:var(--mono);font-size:13px;color:var(--green);margin-top:8px;padding:8px 10px;background:rgba(15,157,107,.08);border-radius:8px}
 .nt-stall{font-family:var(--mono);font-size:13px;color:var(--rose);margin-top:8px;padding:8px 10px;background:rgba(219,39,119,.08);border-radius:8px}
-.nt-live-view{margin:6px 0 4px;border-radius:6px;overflow:hidden;background:var(--ink-3);border:1px solid var(--line);max-height:220px;display:flex;align-items:center;justify-content:center}
-.nt-live-view img{width:100%;display:block;max-height:220px;object-fit:contain}
+.nt-live-view{margin:6px 0 4px;border-radius:6px;overflow:hidden;background:var(--ink-3);border:1px solid var(--line);min-height:160px;max-height:60vh;display:flex;align-items:center;justify-content:center;position:relative;aspect-ratio:16/10}
+.nt-live-view img{width:100%;height:100%;display:block;object-fit:contain}
+.nt-live-ph{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:18px;text-align:center;color:var(--muted);font-size:12px}
+.nt-live-ph .nt-live-spin{width:22px;height:22px;border:2px solid var(--line);border-top-color:var(--accent,#6366f1);border-radius:50%;animation:nt-live-spin 0.8s linear infinite}
+@keyframes nt-live-spin{to{transform:rotate(360deg)}}
 .v-true{color:var(--green)}.v-false{color:var(--rose)}
 #drBg .modal{max-width:660px;max-height:88vh;display:flex;flex-direction:column}
 #drBg .dr-body{overflow-y:auto;flex:1;margin:0 -4px;padding:0 4px}
@@ -10531,7 +10534,7 @@ load()
     try{
       _ntSse=new EventSource("/api/trails/author/"+encodeURIComponent(sid)+"/live"+projQ())
       _ntSse.addEventListener("frame",function(e){
-        try{var d=JSON.parse(e.data);if(d.dataUrl){var el=document.getElementById("ntLiveFrame");if(el)el.src=d.dataUrl}}catch{}
+        try{var d=JSON.parse(e.data);if(d.dataUrl){var el=document.getElementById("ntLiveFrame");if(el){el.src=d.dataUrl;el.style.display="";var ph=document.getElementById("ntLivePh");if(ph)ph.style.display="none"}}}catch{}
       })
       _ntSse.addEventListener("end",stopAuthorLive)
       _ntSse.onerror=function(){stopAuthorLive()}
@@ -10567,7 +10570,7 @@ load()
         var ntLimit=s.limitMs?fmtSec(Math.round(s.limitMs/1000)):"";
         var ntTimeStr=ntElapsed?(ntElapsed+(ntLimit?" / "+ntLimit+" max":"")):"";
         box.innerHTML=html
-          +'<div class="nt-live-view"><img id="ntLiveFrame" alt="Live view" /></div>'
+          +'<div class="nt-live-view"><div class="nt-live-ph" id="ntLivePh"><div class="nt-live-spin"></div><div>Waiting for the live browser…</div></div><img id="ntLiveFrame" alt="Live view" style="display:none" /></div>'
           +'<div class="nt-live">AutoSim is driving…'+(ntTimeStr?' <span class="muted" style="font-size:11px">('+esc(ntTimeStr)+')</span>':'')+'</div>'
           +'<div style="margin-top:6px"><button class="btn btn-ghost" id="ntCancelRun" style="font-size:11px;padding:3px 10px">Cancel</button></div>'
         startAuthorLive(sessionId)
@@ -10682,7 +10685,7 @@ load()
         var wzLimit=s.limitMs?fmtSec(Math.round(s.limitMs/1000)):"";
         var wzTimeStr=wzElapsed?(wzElapsed+(wzLimit?" / "+wzLimit+" max":"")):"";
         box.innerHTML=html
-          +'<div class="nt-live-view"><img id="ntLiveFrame" alt="Live view" /></div>'
+          +'<div class="nt-live-view"><div class="nt-live-ph" id="ntLivePh"><div class="nt-live-spin"></div><div>Waiting for the live browser…</div></div><img id="ntLiveFrame" alt="Live view" style="display:none" /></div>'
           +'<div class="nt-live">AutoSim is driving…'+(wzTimeStr?' <span class="muted" style="font-size:11px">('+esc(wzTimeStr)+')</span>':'')+'</div>'
           +'<div style="margin-top:6px"><button class="btn btn-ghost" id="wizCancelRun" style="font-size:11px;padding:3px 10px">Cancel</button></div>'
         startAuthorLive(sessionId)

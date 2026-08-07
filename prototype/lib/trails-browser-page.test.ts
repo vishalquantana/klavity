@@ -357,15 +357,26 @@ describe("createSteelSession", () => {
     globalThis.fetch = realFetch
   })
 
-  test("sends STEEL_REGION in the create body", async () => {
+  test("sends STEEL_REGION + session timeout in the create body", async () => {
     process.env.STEEL_REGION = "lax"
     const captured: { body?: string } = {}
     mockCreate({ id: "s3", region: "lax" }, captured)
     await createSteelSession("wss://connect.steel.dev", "KEY123")
     expect(captured.body).toContain("lax")
-    expect(JSON.parse(captured.body!)).toEqual({ region: "lax" })
+    // Session timeout defaults to the 5m drive deadline + 60s headroom so the app deadline fires first.
+    expect(JSON.parse(captured.body!)).toEqual({ region: "lax", timeout: 360000 })
     globalThis.fetch = realFetch
     delete process.env.STEEL_REGION
+  })
+
+  test("session timeout tracks AUTOSIM_MAX_MS (+60s headroom, clamped)", async () => {
+    process.env.AUTOSIM_MAX_MS = "600000"
+    const captured: { body?: string } = {}
+    mockCreate({ id: "s4", region: "iad" }, captured)
+    await createSteelSession("wss://connect.steel.dev", "KEY123")
+    expect(JSON.parse(captured.body!).timeout).toBe(660000)
+    globalThis.fetch = realFetch
+    delete process.env.AUTOSIM_MAX_MS
   })
 
   test("throws BrowserLaunchError on non-ok session create", async () => {

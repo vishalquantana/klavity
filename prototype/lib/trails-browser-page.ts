@@ -528,7 +528,13 @@ const STEEL_CONNECT_TIMEOUT_MS = Number(process.env.STEEL_CONNECT_TIMEOUT_MS) ||
 export async function createSteelSession(cdpBase: string, key: string): Promise<SteelSession> {
   const apiUrl = process.env.STEEL_API_URL ?? "https://api.steel.dev"
   const region = process.env.STEEL_REGION // e.g. "lax" (Los Angeles) or "iad" (Washington DC)
-  const body = JSON.stringify(region ? { region } : {})
+  // Steel's default session timeout is 300000ms (5m). Without this, a Steel browser dies at 5m even
+  // when the app-side drive deadline (AUTOSIM_MAX_MS) is longer, so long runs get cut off by a dead
+  // socket rather than a clean stall. Match the session timeout to the drive deadline + 60s headroom
+  // so the app's deadline always fires first. Clamp to Steel's [60s, 6h] range.
+  const driveMs = Number(process.env.AUTOSIM_MAX_MS) || 300_000
+  const sessionTimeout = Math.min(6 * 60 * 60_000, Math.max(60_000, driveMs + 60_000))
+  const body = JSON.stringify({ ...(region ? { region } : {}), timeout: sessionTimeout })
   const res = await fetch(`${apiUrl}/v1/sessions`, {
     method: "POST", headers: { "Steel-Api-Key": key, "Content-Type": "application/json" }, body,
   })
