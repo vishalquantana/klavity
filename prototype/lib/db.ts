@@ -906,6 +906,7 @@ export async function applySchema(c: Client) {
     "feedback", "projects", "accounts", "trails", "trail_runs",
     "trail_steps", "walk_share_tokens", "findings", "author_sessions",
     "ai_calls", "autosim_auth_probe_queue", "expectations", "users",
+    "screenshots",
   ]
   const _cols = await loadTableColumns(c, ALTERED_TABLES)
   const needCol = (table: string, col: string) => !(_cols.get(table)?.has(col) ?? false)
@@ -1000,6 +1001,11 @@ export async function applySchema(c: Client) {
   // KLA-94: opt-in auto-file flag. When enabled AND a finding meets the confidence/severity threshold,
   // the walk executor automatically creates a ticket via the project's connector. Default OFF (back-compat).
   if (needCol("projects", "trails_autofile_enabled")) await c.execute("ALTER TABLE projects ADD COLUMN trails_autofile_enabled INTEGER NOT NULL DEFAULT 0").catch((e) => console.warn("projects.trails_autofile_enabled ALTER skipped:", e?.message || e))
+  // Thumbnail variant key: a small (≤~320px) client-generated JPEG stored alongside the full screenshot
+  // so the dashboard list loads a lightweight preview via /api/screenshots/:id?thumb=1 instead of the
+  // full-resolution original. Nullable — older rows and Sim/AutoSim screenshots (no client canvas) fall
+  // back to the full image, so absence degrades gracefully.
+  if (needCol("screenshots", "thumb_key")) await c.execute("ALTER TABLE screenshots ADD COLUMN thumb_key TEXT").catch((e) => console.warn("screenshots.thumb_key ALTER skipped:", e?.message || e))
 
   // KLA-117: optional per-Trail viewport/device config for AutoSim walks.
   if (needCol("trails", "viewport_json"))
@@ -2771,15 +2777,16 @@ export async function deletePersona(id: string, projectId: string) {
 export type ScreenshotInsert = {
   id?: string; projectId?: string | null; s3Key: string; bucket: string; contentType: string
   acl?: string; bytes?: number | null; ownerEmail?: string | null; expiresAt?: number | null
+  thumbKey?: string | null
 }
 export async function insertScreenshot(s: ScreenshotInsert): Promise<string> {
   // Caller may pre-supply the id (so it can mint the permanent /img signed link before insert).
   const id = s.id ?? "shot_" + crypto.randomUUID()
   await db!.execute({
-    sql: `INSERT INTO screenshots (id,project_id,s3_key,bucket,content_type,acl,bytes,owner_email,expires_at,created_at)
-          VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    sql: `INSERT INTO screenshots (id,project_id,s3_key,bucket,content_type,acl,bytes,owner_email,expires_at,created_at,thumb_key)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
     args: [id, s.projectId ?? null, s.s3Key, s.bucket, s.contentType, s.acl ?? "private",
-           s.bytes ?? null, s.ownerEmail ?? null, s.expiresAt ?? null, Date.now()],
+           s.bytes ?? null, s.ownerEmail ?? null, s.expiresAt ?? null, Date.now(), s.thumbKey ?? null],
   })
   return id
 }
@@ -2787,7 +2794,7 @@ export async function insertScreenshot(s: ScreenshotInsert): Promise<string> {
 export type ScreenshotRow = {
   id: string; projectId: string | null; s3Key: string; bucket: string
   contentType: string; acl: string; bytes: number | null; ownerEmail: string | null
-  expiresAt: number | null; createdAt: number
+  expiresAt: number | null; createdAt: number; thumbKey: string | null
 }
 // Look up one screenshot ledger row by id (for the membership-checked signed-URL endpoint).
 export async function screenshotById(id: string): Promise<ScreenshotRow | null> {
@@ -2800,6 +2807,7 @@ export async function screenshotById(id: string): Promise<ScreenshotRow | null> 
     acl: String(x.acl || "private"), bytes: x.bytes != null ? Number(x.bytes) : null,
     ownerEmail: x.owner_email != null ? String(x.owner_email) : null,
     expiresAt: x.expires_at != null ? Number(x.expires_at) : null, createdAt: Number(x.created_at),
+    thumbKey: x.thumb_key != null ? String(x.thumb_key) : null,
   }
 }
 
