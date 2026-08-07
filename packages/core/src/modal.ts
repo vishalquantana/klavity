@@ -275,7 +275,11 @@ export function buildModal(
     @keyframes kl-genie-out{from{opacity:1;transform:translateY(0) scaleX(1) scaleY(1)}to{opacity:0;transform:translateY(180px) scaleX(.04) scaleY(.06)}}
     @keyframes kl-ov{from{opacity:0}to{opacity:1}}
     .klavity-overlay{position:fixed;inset:0;background:var(--kl-overlay);display:flex;align-items:center;justify-content:center;pointer-events:all;animation:kl-ov .3s ease both;}
-    .klavity-modal{position:relative;overflow:hidden;isolation:isolate;background:var(--kl-glow,transparent),var(--kl-bg);color:var(--kl-fg);border-radius:var(--kl-radius);padding:0;width:92vw;max-width:min(1160px,92vw);max-height:94vh;box-shadow:0 0 0 1px var(--kl-border),var(--kl-shadow);font-family:var(--kl-font,system-ui,sans-serif);-webkit-font-smoothing:antialiased;-webkit-backdrop-filter:var(--kl-backdrop);backdrop-filter:var(--kl-backdrop);transform-origin:bottom center;animation:kl-genie-in .6s cubic-bezier(.16,1,.3,1) both;display:grid;grid-template-columns:minmax(0,1fr) 384px;}
+    /* height:94vh (definite, not just max-height) + grid-template-rows:minmax(0,1fr) so the row has a
+       resolved height. This is what makes the hero canvas's object-fit:contain actually shrink a tall
+       screenshot to fit (KLAVITYKLA-402) instead of the tall image blowing out the row and pushing the
+       right-pane Submit button below the clipped fold. min-height:0 tracks let both panes scroll internally. */
+    .klavity-modal{position:relative;overflow:hidden;isolation:isolate;background:var(--kl-glow,transparent),var(--kl-bg);color:var(--kl-fg);border-radius:var(--kl-radius);padding:0;width:92vw;max-width:min(1160px,92vw);height:94vh;max-height:94vh;box-shadow:0 0 0 1px var(--kl-border),var(--kl-shadow);font-family:var(--kl-font,system-ui,sans-serif);-webkit-font-smoothing:antialiased;-webkit-backdrop-filter:var(--kl-backdrop);backdrop-filter:var(--kl-backdrop);transform-origin:bottom center;animation:kl-genie-in .6s cubic-bezier(.16,1,.3,1) both;display:grid;grid-template-columns:minmax(0,1fr) 384px;grid-template-rows:minmax(0,1fr);}
     /* Image-hero two-pane layout: big annotatable screenshot on the left, controls on the right. */
     .kl-hero{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--kl-hero-bg,#0e1424);}
     .kl-hero-tools{display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:8px 14px;min-height:48px;border-bottom:1px solid rgba(255,255,255,.06);}
@@ -283,8 +287,11 @@ export function buildModal(
     .kl-hero-empty{display:flex;flex-direction:column;align-items:center;gap:12px;color:#7d879f;font-size:13.5px;font-weight:500;text-align:center;max-width:260px;line-height:1.5;}
     .kl-hero-empty svg{opacity:.6;}
     .kl-side{display:flex;flex-direction:column;min-width:0;border-left:1px solid var(--kl-border);padding:22px 20px;overflow-y:auto;}
-    .kl-side>.klavity-submit{margin-top:auto;}
-    @media (max-width:760px){.klavity-modal{grid-template-columns:1fr;width:96vw;max-height:96vh;}.kl-hero{max-height:44vh;}.kl-side{overflow-y:visible;border-left:none;border-top:1px solid var(--kl-border);}}
+    /* margin-top:auto pins Submit to the bottom when the composer is short; position:sticky keeps it in
+       view when the composer scrolls (long forms / small viewports) so Submit is ALWAYS reachable
+       (KLAVITYKLA-402). The -12px top shadow gutter blends content scrolling up beneath the button. */
+    .kl-side>.klavity-submit{margin-top:auto;position:sticky;bottom:0;box-shadow:0 -12px 14px -8px var(--kl-bg);}
+    @media (max-width:760px){.klavity-modal{grid-template-columns:1fr;grid-template-rows:auto auto;height:auto;max-height:96vh;width:96vw;}.kl-hero{max-height:44vh;}.kl-side{overflow-y:visible;border-left:none;border-top:1px solid var(--kl-border);}.kl-side>.klavity-submit{position:static;box-shadow:none;}}
     /* Hero annotation toolbar — always-on tools over the image. Tap targets ≥36px for touch. */
     .kl-htool,.kl-htbtn{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;min-width:38px;height:38px;padding:0 8px;border:1px solid transparent;border-radius:9px;background:transparent;color:#cfd5ea;cursor:pointer;line-height:1;transition:transform .12s ease,background .12s ease;}
     .kl-htool .kl-hk{font-size:9px;font-weight:700;opacity:.5;}
@@ -364,7 +371,7 @@ export function buildModal(
     .klavity-retake-note{margin-top:4px;font-size:9.5px;line-height:1.3;color:var(--kl-muted);text-wrap:pretty;}
     @media (prefers-reduced-motion: reduce){.klavity-retake{transition:none!important;}.klavity-retake.kl-loading{animation:none;}}
     .klavity-actions{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;}
-    .klavity-actions button{flex:1 1 auto;min-width:76px;min-height:40px;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px;background:var(--kl-chip);color:var(--kl-fg);border:none;border-radius:8px;cursor:pointer;font-size:12px;line-height:1;}
+    .klavity-actions button{position:relative;flex:1 1 auto;min-width:76px;min-height:40px;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px;background:var(--kl-chip);color:var(--kl-fg);border:none;border-radius:8px;cursor:pointer;font-size:12px;line-height:1;}
     .klavity-actions .kl-cap-ic,.klavity-toggle .kl-cap-ic{display:inline-flex;align-items:center;justify-content:center;flex:none;transition:transform .2s cubic-bezier(.34,1.56,.64,1);line-height:1;}
     .klavity-actions .kl-cap-ic svg,.klavity-toggle .kl-cap-ic svg{display:block;width:15px;height:15px;vertical-align:middle;margin:0;}
     .klavity-actions button:hover .kl-cap-ic,.klavity-toggle button:hover .kl-cap-ic,.klavity-actions button:focus-visible .kl-cap-ic,.klavity-toggle button:focus-visible .kl-cap-ic{transform:scale(1.14) rotate(-6deg);}
@@ -478,7 +485,9 @@ export function buildModal(
        Hovering the entire Screen button shows the floating tooltip (KLA-15/KLA-26/KLA-31). ── */
     #klavity-sharp{flex:1.4;}
     /* Faded (i) circle inside the Screen button — lights up on button hover to signal "info here". */
-    .kl-info-badge{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;flex:none;opacity:0.4;transition:opacity .15s ease;}
+    /* Absolutely-positioned in the button's top-right corner so it never consumes flex-row width and
+       can't overflow the button edge (the "Screen (i)" overflow). Button is position:relative. */
+    .kl-info-badge{position:absolute;top:3px;right:4px;display:inline-flex;align-items:center;justify-content:center;width:12px;height:12px;opacity:0.4;transition:opacity .15s ease;pointer-events:none;}
     .klavity-actions button:hover .kl-info-badge,.klavity-actions button:focus-visible .kl-info-badge{opacity:0.85;}
     /* .klavity-info-pop is kept in markup for its text; visibility is JS-driven via .kl-float-tip so
        the tooltip is rendered outside the overflow:hidden modal and is never clipped. */
@@ -1273,6 +1282,13 @@ export function buildModal(
       t('crop', 'Crop', heroGlyph('<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>'), 'k') +
       `<span class="kl-hsep"></span>` +
       c('#ef4444') + c('#f97316') + c('#3b82f6') + c('#111827') +
+      // Line-width control (applies to pen/line/rect/circle/arrow strokes via Annotator.strokeScale).
+      `<span class="kl-hsep"></span>` +
+      `<span class="kl-hlabel">Width</span>` +
+      `<button type="button" class="kl-hopt" data-stroke="0.6" title="Thin stroke" aria-label="Thin stroke">S</button>` +
+      `<button type="button" class="kl-hopt kl-on" data-stroke="1" title="Medium stroke" aria-label="Medium stroke">M</button>` +
+      `<button type="button" class="kl-hopt" data-stroke="1.8" title="Thick stroke" aria-label="Thick stroke">L</button>` +
+      `<button type="button" class="kl-hopt" data-stroke="2.8" title="Extra-thick stroke" aria-label="Extra-thick stroke">XL</button>` +
       // Contextual text options — shown only while the Text tool is active (toggled in selectTool).
       `<span class="kl-htextopts" id="kl-hero-textopts" hidden>` +
         `<span class="kl-hsep"></span>` +
@@ -1289,7 +1305,7 @@ export function buildModal(
       `<button type="button" class="kl-htbtn" id="kl-hero-undo" title="Undo (⌘Z)" aria-label="Undo">${heroGlyph('<path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/>', 14)}</button>` +
       `<button type="button" class="kl-htbtn" id="kl-hero-clear" title="Clear" aria-label="Clear">${icon('trash-2', { size: 14 })}</button>` +
       `<span class="kl-hgrow"></span>` +
-      `<span class="kl-hhint">P pen · L line · R rect · O circle · T text · C numbers · K crop</span>`
+      `<span class="kl-hhint">P pen · L line · R rect · O circle · T text · C numbers · K crop · scroll to zoom · shift-drag to pan</span>`
     )
   }
 
@@ -1403,6 +1419,11 @@ export function buildModal(
         textSize = Number((b as HTMLElement).dataset.size)
         tools.querySelectorAll<HTMLElement>('[data-size]').forEach(el => el.classList.toggle('kl-on', el === b))
       }))
+      tools.querySelectorAll('[data-stroke]').forEach(b => b.addEventListener('click', () => {
+        annotator.strokeScale = Number((b as HTMLElement).dataset.stroke) || 1
+        tools.querySelectorAll<HTMLElement>('[data-stroke]').forEach(el => el.classList.toggle('kl-on', el === b))
+        annotator.redraw()
+      }))
       tools.querySelector('#kl-hero-undo')?.addEventListener('click', () => { annotator.undo(); persist() })
       tools.querySelector('#kl-hero-clear')?.addEventListener('click', () => { annotator.clearAll(); persist() })
       selectTool(activeTool)
@@ -1417,13 +1438,52 @@ export function buildModal(
         const offX = (r.width - dispW) / 2, offY = (r.height - dispH) / 2
         return { x: (e.clientX - r.left - offX) / s, y: (e.clientY - r.top - offY) / s }
       }
+      // ── Wheel-zoom + Shift-drag pan on the hero image. Zoom is a uniform translate()+scale() transform,
+      //    so toImg()'s getBoundingClientRect math keeps annotation coordinates correct at any zoom.
+      //    Scroll to zoom toward the cursor; Shift+drag to pan when zoomed; double-click resets. ──
+      let zoom = 1, panX = 0, panY = 0, home: DOMRect | null = null
+      const clampZoom = (v: number) => Math.min(6, Math.max(1, v))
+      const applyZoomTransform = () => {
+        if (zoom === 1) { panX = 0; panY = 0; canvas.style.transform = ''; canvas.style.cursor = 'crosshair'; return }
+        canvas.style.transformOrigin = '0 0'
+        canvas.style.transform = `translate(${panX}px,${panY}px) scale(${zoom})`
+        canvas.style.cursor = 'grab'
+      }
+      const zoomToward = (clientX: number, clientY: number, factor: number) => {
+        // Capture the untransformed "home" rect while at zoom 1 so cursor-anchored math has a fixed origin.
+        if (zoom === 1) { const t = canvas.style.transform; canvas.style.transform = ''; home = canvas.getBoundingClientRect(); canvas.style.transform = t }
+        if (!home) return
+        const prev = zoom
+        zoom = clampZoom(zoom * factor)
+        if (zoom === prev) return
+        // Keep the image point under the cursor stationary: solve the new pan from cursor invariance.
+        const lx = (clientX - home.left - panX) / prev
+        const ly = (clientY - home.top - panY) / prev
+        panX = clientX - home.left - zoom * lx
+        panY = clientY - home.top - zoom * ly
+        applyZoomTransform()
+      }
+      stage.addEventListener('wheel', (e) => {
+        if (activeTool === 'crop') return
+        e.preventDefault()
+        zoomToward(e.clientX, e.clientY, e.deltaY < 0 ? 1.18 : 1 / 1.18)
+      }, { passive: false })
+      stage.addEventListener('dblclick', () => { zoom = 1; applyZoomTransform() })
       // Numbered-pin counter continues from any pins already on this image.
       let countN = annotator.shapes.reduce((m, s: any) => s.type === 'count' ? Math.max(m, s.n) : m, 0)
       let drawing = false, startX = 0, startY = 0, penPoints: Array<{ x: number; y: number }> = []
+      // Shift-drag pan state (only active while zoomed in).
+      let panning = false, panSX = 0, panSY = 0, panBaseX = 0, panBaseY = 0
       // Crop drag state: a dashed overlay box tracks the selection in stage-relative pixels.
       let cropBox: HTMLDivElement | null = null
       let cropClient = { x: 0, y: 0 }
       canvas.addEventListener('pointerdown', (e) => {
+        // Shift+drag pans the zoomed image instead of drawing.
+        if (e.shiftKey && zoom > 1) {
+          panning = true; panSX = e.clientX; panSY = e.clientY; panBaseX = panX; panBaseY = panY
+          canvas.style.cursor = 'grabbing'; try { canvas.setPointerCapture(e.pointerId) } catch { /* noop */ }
+          e.preventDefault(); return
+        }
         const pt = toImg(e); startX = pt.x; startY = pt.y
         if (activeTool === 'crop') {
           drawing = true
@@ -1452,6 +1512,7 @@ export function buildModal(
         if (activeTool === 'pen') penPoints = [pt]
       })
       canvas.addEventListener('pointermove', (e) => {
+        if (panning) { panX = panBaseX + (e.clientX - panSX); panY = panBaseY + (e.clientY - panSY); applyZoomTransform(); canvas.style.cursor = 'grabbing'; return }
         if (!drawing) return
         if (activeTool === 'pen') { penPoints.push(toImg(e)); return }
         if (activeTool === 'crop' && cropBox) {
@@ -1465,6 +1526,7 @@ export function buildModal(
         }
       })
       canvas.addEventListener('pointerup', (e) => {
+        if (panning) { panning = false; canvas.style.cursor = zoom > 1 ? 'grab' : 'crosshair'; try { canvas.releasePointerCapture(e.pointerId) } catch { /* noop */ } return }
         if (!drawing) return
         drawing = false
         const pt = toImg(e)

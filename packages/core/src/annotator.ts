@@ -4,6 +4,8 @@ export class Annotator {
   readonly shapes: Shape[] = []
   private canvas: HTMLCanvasElement
   private imageDataUrl: string
+  /** Stroke-thickness multiplier set by the toolbar line-width control (thin=0.6, medium=1, thick=1.8, xl=2.8). */
+  strokeScale = 1
 
   constructor(canvas: HTMLCanvasElement, imageDataUrl: string) {
     this.canvas = canvas
@@ -11,7 +13,7 @@ export class Annotator {
   }
 
   computeLineWidth(): number {
-    return Math.max(3, this.canvas.width / 400)
+    return Math.max(3, this.canvas.width / 400) * this.strokeScale
   }
 
   computeFontSize(): number {
