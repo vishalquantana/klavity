@@ -364,6 +364,7 @@ export function applyReconcileOps(
         targetResolved.srcTranscriptId = ctx.transcriptId
         targetResolved.srcQuote = g.quote
         targetResolved.srcQuoteOffset = g.offset
+        targetResolved.srcQuoteTs = tsFor(g.offset)
         targetResolved.srcVerified = g.verified
         targetResolved.srcSpeaker = o.speaker ?? null
         targetResolved.updatedAt = now
