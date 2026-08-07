@@ -30,6 +30,8 @@ export interface Trajectory {
   objectiveVerified?: boolean | null
   /** KLAVITYKLA-149: the Sim persona picked as the Trail's judge/reviewer in the authoring wizard. */
   judgePersonaId?: string | null
+  /** File-upload fixtures for `upload` steps: attachment NAME → storage ref. Persisted on the Trail. */
+  attachments?: Record<string, { key: string; filename: string; contentType?: string }> | null
 }
 
 export interface CrystallizeResult {
@@ -93,6 +95,7 @@ export async function crystallize(projectId: string, traj: Trajectory): Promise<
     createdBy: traj.createdBy,
     objectiveVerified: traj.objectiveVerified,
     judgePersonaId: traj.judgePersonaId ?? null,
+    attachments: traj.attachments ?? null,
   })
 
   const stepIds: string[] = []

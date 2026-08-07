@@ -2,7 +2,11 @@
 
 export type TrailStatus = "draft" | "active" | "paused" | "archived"
 export type AuthorKind = "llm" | "human" | "mixed"
-export type StepAction = "navigate" | "click" | "type" | "select" | "assert" | "wait" | "hover" | "keyPress" | "clearField" | "callModule" | "pauseForSecret"
+// waitForSelector: wait for an element to appear/settle (dynamic content — e.g. a chatbot reply
+//   rendering after a send) instead of a blind fixed-ms `wait`.
+// upload: attach a fixture file to a file input (<input type=file>). The actionValue is the
+//   attachment NAME; the trail carries a name→storageKey manifest that the runner re-fetches.
+export type StepAction = "navigate" | "click" | "type" | "select" | "assert" | "wait" | "waitForSelector" | "upload" | "hover" | "keyPress" | "clearField" | "callModule" | "pauseForSecret"
 export type Tier = "cache" | "candidate" | "vision" | "none"
 export type Verdict = "green" | "amber" | "red" | "skip"
 export type FailureKind = "crash" | "regression"
@@ -56,6 +60,11 @@ export interface Trail {
   objectiveVerified?: boolean | null
   /** KLA-93: named environments (e.g. staging, prod). Empty = only baseUrl is available. */
   environments: TrailEnvironment[]
+  /**
+   * File-upload fixtures for `upload` steps: attachment NAME → storage ref. Persisted so scheduled
+   * and verification walks can re-fetch the bytes and replay the upload. Null/absent = no uploads.
+   */
+  attachments?: Record<string, { key: string; filename: string; contentType?: string }> | null
 }
 
 

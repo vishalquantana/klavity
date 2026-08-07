@@ -231,6 +231,10 @@ export interface BrowserPage {
   hover(selector: string, timeoutMs: number): Promise<void>
   keyPress(selector: string, key: string, timeoutMs: number): Promise<void>
   clearField(selector: string, timeoutMs: number): Promise<void>
+  /** Set files on an <input type=file>. `files` are absolute local paths. */
+  setInputFiles(selector: string, files: string[], timeoutMs: number): Promise<void>
+  /** Wait for a selector to become visible (dynamic content — e.g. a chatbot reply). */
+  waitForSelector(selector: string, timeoutMs: number): Promise<void>
   assertVisible(selector: string, timeoutMs: number): Promise<void>
   assertTextEquals(selector: string, value: string, timeoutMs: number): Promise<void>
   assertTextContains(selector: string, text: string, timeoutMs: number): Promise<void>
@@ -283,6 +287,8 @@ class PlaywrightPage implements BrowserPage {
   async hover(selector: string, timeoutMs: number) { await this.page.locator(selector).hover({ timeout: timeoutMs }) }
   async keyPress(selector: string, key: string, timeoutMs: number) { await this.page.locator(selector).press(key, { timeout: timeoutMs }) }
   async clearField(selector: string, timeoutMs: number) { await this.page.locator(selector).clear({ timeout: timeoutMs }) }
+  async setInputFiles(selector: string, files: string[], timeoutMs: number) { await this.page.locator(selector).setInputFiles(files, { timeout: timeoutMs }) }
+  async waitForSelector(selector: string, timeoutMs: number) { await this.page.locator(selector).first().waitFor({ state: "visible", timeout: timeoutMs }) }
   async assertVisible(selector: string, timeoutMs: number) { await this.page.locator(selector).waitFor({ state: "visible", timeout: timeoutMs }) }
   async assertTextEquals(selector: string, value: string, timeoutMs: number) {
     const locator = this.page.locator(selector)
@@ -395,6 +401,12 @@ class PuppeteerPage implements BrowserPage {
     await el.click({ clickCount: 3 }).catch(() => {})
     await this.page.keyboard.press("Backspace")
   }
+  async setInputFiles(selector: string, files: string[], timeoutMs: number) {
+    const el = await this.page.waitForSelector(selector, { timeout: timeoutMs })
+    if (!el) throw new Error(`setInputFiles: selector "${selector}" not found`)
+    await (el as any).uploadFile(...files)
+  }
+  async waitForSelector(selector: string, timeoutMs: number) { await this.page.waitForSelector(selector, { visible: true, timeout: timeoutMs }) }
   async assertVisible(selector: string, timeoutMs: number) { await this.page.waitForSelector(selector, { visible: true, timeout: timeoutMs }) }
   async assertTextEquals(selector: string, value: string, timeoutMs: number) {
     const el = await this.page.waitForSelector(selector, { visible: true, timeout: timeoutMs })

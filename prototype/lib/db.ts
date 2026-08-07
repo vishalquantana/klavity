@@ -1044,6 +1044,9 @@ export async function applySchema(c: Client) {
   // KLA-73: persona-judged walks — which persona judges this Trail's results.
   if (needCol("trails", "judge_persona_id")) await c.execute("ALTER TABLE trails ADD COLUMN judge_persona_id TEXT").catch((e: any) =>
     console.warn("trails.judge_persona_id ALTER skipped:", e?.message || e))
+  // File-upload fixtures: name→storageKey manifest so scheduled/verification walks can replay uploads.
+  if (needCol("trails", "attachments_json")) await c.execute("ALTER TABLE trails ADD COLUMN attachments_json TEXT").catch((e: any) =>
+    console.warn("trails.attachments_json ALTER skipped:", e?.message || e))
   // KLA-73: walk_judgments — one row per (run, persona) judgment session.
   await c.execute(`CREATE TABLE IF NOT EXISTS walk_judgments (
     id TEXT PRIMARY KEY,

@@ -43,6 +43,22 @@ export async function uploadScreenshotMeta(
   return { url: `${ENDPOINT.replace(/\/+$/, '')}/${BUCKET}/${key}`, key, bucket: BUCKET, contentType, acl }
 }
 
+// AutoSim fixture attachments (file-upload steps). Stored PRIVATE under an `attachments/` prefix,
+// keyed by a random id so filenames never collide or leak. The original filename's extension is
+// preserved so the browser sends a sensible content-type when the fixture is uploaded to a file input.
+export type UploadedAttachment = { key: string; bucket: string; filename: string; contentType: string }
+export async function uploadAttachment(
+  bytes: ArrayBuffer | Uint8Array,
+  filename: string,
+  contentType: string,
+): Promise<UploadedAttachment> {
+  const extMatch = /\.([A-Za-z0-9]{1,8})$/.exec(filename)
+  const ext = extMatch ? extMatch[1].toLowerCase() : 'bin'
+  const key = s3Key(`${FOLDER}/attachments`, Date.now(), crypto.randomUUID(), ext)
+  await getClient().write(key, bytes, { acl: 'private', type: contentType || 'application/octet-stream' })
+  return { key, bucket: BUCKET, filename, contentType: contentType || 'application/octet-stream' }
+}
+
 // Delete one object by key. Used by the data-retention sweep (C1) and GDPR erasure (C2) to remove the
 // underlying S3 bytes when a screenshots ledger row is deleted. Best-effort: callers should catch/log.
 export async function deleteObject(key: string): Promise<void> {
