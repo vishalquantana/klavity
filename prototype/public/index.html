@@ -1301,7 +1301,13 @@ function ssRenderTranscriptPreview(d) {
     </div>
   </div></div>`
 
-  $("ssPvCancel").onclick = () => { if (ssActiveSim) renderPersonaDetail(ssActiveSim); else { const c = $("ssCol2"); if (c) c.innerHTML = "" } }
+  $("ssPvCancel").onclick = () => {
+    fetch(pq('/api/transcripts/discard'), {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ previewId: d.previewId }),
+    }).catch(() => {})
+    if (ssActiveSim) renderPersonaDetail(ssActiveSim); else { const c = $("ssCol2"); if (c) c.innerHTML = "" }
+  }
   $("ssPvApprove").onclick = async () => {
     const approvedOpIds = Array.from(col.querySelectorAll(".ss-pv-opchk:checked")).map(el => el.dataset.opid)
     const approvedProposalIds = Array.from(col.querySelectorAll(".ss-pv-propchk:checked")).map(el => el.dataset.proposalid)
