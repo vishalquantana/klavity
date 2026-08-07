@@ -61,6 +61,8 @@ function makeFakePage(landedUrl: string, showAuthGate: boolean): BrowserPage {
     hover: async () => {},
     keyPress: async () => {},
     clearField: async () => {},
+    setInputFiles: async () => {},
+    waitForSelector: async () => {},
     assertVisible: async () => {},
     assertTextEquals: async () => {},
     assertTextContains: async () => {},

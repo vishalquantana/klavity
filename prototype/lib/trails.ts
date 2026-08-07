@@ -21,6 +21,7 @@ function rowToTrail(r: any): Trail {
     judgePersonaId: r.judge_persona_id ?? null,
     objectiveVerified: r.objective_verified == null ? null : !!r.objective_verified,
     environments: pj<TrailEnvironment[]>(r.environments_json) ?? [],
+    attachments: pj<Record<string, { key: string; filename: string; contentType?: string }>>(r.attachments_json) ?? null,
   }
 }
 
@@ -38,14 +39,14 @@ export function resolveEnvironmentUrl(trail: Trail, environmentName?: string | n
 
 export async function createTrail(
   projectId: string,
-  input: { name: string; intent?: string; baseUrl: string; viewport?: TrailViewport | string | null; authorKind?: Trail["authorKind"]; createdBy?: string; objectiveVerified?: boolean | null; environments?: TrailEnvironment[]; judgePersonaId?: string | null },
+  input: { name: string; intent?: string; baseUrl: string; viewport?: TrailViewport | string | null; authorKind?: Trail["authorKind"]; createdBy?: string; objectiveVerified?: boolean | null; environments?: TrailEnvironment[]; judgePersonaId?: string | null; attachments?: Record<string, { key: string; filename: string; contentType?: string }> | null },
 ): Promise<string> {
   const id = uid("trl_"); const now = Date.now()
   const viewport = normalizeTrailViewport(input.viewport)
   await db!.execute({
-    sql: `INSERT INTO trails (id, project_id, name, intent, base_url, viewport_json, baseline_ref, author_kind, status, created_by, created_at, updated_at, objective_verified, environments_json, judge_persona_id)
-          VALUES (?, ?, ?, ?, ?, ?, NULL, ?, 'draft', ?, ?, ?, ?, ?, ?)`,
-    args: [id, projectId, input.name, input.intent ?? "", input.baseUrl, j(viewport), input.authorKind ?? "human", input.createdBy ?? null, now, now, input.objectiveVerified === undefined ? null : (input.objectiveVerified === null ? null : (input.objectiveVerified ? 1 : 0)), input.environments?.length ? j(input.environments) : null, input.judgePersonaId ?? null],
+    sql: `INSERT INTO trails (id, project_id, name, intent, base_url, viewport_json, baseline_ref, author_kind, status, created_by, created_at, updated_at, objective_verified, environments_json, judge_persona_id, attachments_json)
+          VALUES (?, ?, ?, ?, ?, ?, NULL, ?, 'draft', ?, ?, ?, ?, ?, ?, ?)`,
+    args: [id, projectId, input.name, input.intent ?? "", input.baseUrl, j(viewport), input.authorKind ?? "human", input.createdBy ?? null, now, now, input.objectiveVerified === undefined ? null : (input.objectiveVerified === null ? null : (input.objectiveVerified ? 1 : 0)), input.environments?.length ? j(input.environments) : null, input.judgePersonaId ?? null, input.attachments && Object.keys(input.attachments).length ? j(input.attachments) : null],
   })
   return id
 }

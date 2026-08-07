@@ -65,3 +65,25 @@ test("AUTHOR_SYS mentions all three new ops", () => {
   expect(AUTHOR_SYS).toContain('"keyPress"')
   expect(AUTHOR_SYS).toContain('"clearField"')
 })
+
+test("waitForSelector: valid with selector; stall without selector", () => {
+  expect(parseAuthorAction('{"op":"waitForSelector","selector":".bot-reply","rationale":"wait for reply"}').op).toBe("waitForSelector")
+  expect(parseAuthorAction('{"op":"waitForSelector","rationale":"x"}').op).toBe("stall")
+})
+test("upload: needs BOTH selector and value (the attachment name)", () => {
+  const ok = parseAuthorAction('{"op":"upload","selector":"input[type=file]","value":"receipt.pdf","rationale":"attach"}')
+  expect(ok.op).toBe("upload"); expect(ok.value).toBe("receipt.pdf")
+  expect(parseAuthorAction('{"op":"upload","selector":"input[type=file]","rationale":"x"}').op).toBe("stall") // no value
+  expect(parseAuthorAction('{"op":"upload","value":"receipt.pdf","rationale":"x"}').op).toBe("stall") // no selector
+})
+test("AVAILABLE UPLOADS surfaced only when uploads present", () => {
+  const withUploads = buildAuthorMessages({ objective: "o", pageUrl: "https://a.b", screenshotB64: "", mediaType: "image/jpeg", domSnapshot: "d", history: [], credFields: [], uploads: ["receipt.pdf", "logo.png"] })
+  expect(withUploads[1].content).toContain("AVAILABLE UPLOADS")
+  expect(withUploads[1].content).toContain("receipt.pdf")
+  const noUploads = buildAuthorMessages({ objective: "o", pageUrl: "https://a.b", screenshotB64: "", mediaType: "image/jpeg", domSnapshot: "d", history: [], credFields: [] })
+  expect(noUploads[1].content).not.toContain("AVAILABLE UPLOADS")
+})
+test("AUTHOR_SYS documents the new ops", () => {
+  expect(AUTHOR_SYS).toContain("waitForSelector")
+  expect(AUTHOR_SYS).toContain("upload")
+})

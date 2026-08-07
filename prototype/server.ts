@@ -32,7 +32,7 @@ import { notifyReporterOnFix } from "./lib/fixed-notification"
 import { notifyTicketComment } from "./lib/notify"
 import { guardCaughtForFeedback, latestReceiptForFeedback, sendRegressionCaughtReceipt } from "./lib/regression-receipt"
 import { token, otp, emailAllowed, cookie, clearCookie, parseCookies, isOpsAdmin, projectCookie } from "./lib/auth"
-import { uploadScreenshotMeta, presignGet, deleteObject, getObjectBytes, type UploadedScreenshot } from "./lib/s3"
+import { uploadScreenshotMeta, uploadAttachment, presignGet, deleteObject, getObjectBytes, type UploadedScreenshot } from "./lib/s3"
 import { signImageToken, verifyImageToken } from "./lib/imgsign"
 import { runRetentionSweep } from "./lib/retention"
 import { SCREENSHOTS, resolveScreenshotConfig, mbLabel } from "./lib/screenshot-config"
@@ -6557,6 +6557,26 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       }
 
       // ── AutoSims F1: LLM-drive authoring ──
+      // File-upload fixture: store ONE file for an AutoSim `upload` step and return its ref. The
+      // wizard calls this per attached file, then passes the returned {name,key,filename} into the
+      // author-create body. Private S3; 25MB cap. The bytes are only ever fed to a file input.
+      if (req.method === "POST" && path === "/api/trails/author/attachments") {
+        const len = Number(req.headers.get("content-length") || 0)
+        if (len > 25 * 1024 * 1024) return json({ error: "file too large (max 25MB)" }, 413)
+        let form: FormData
+        try { form = await req.formData() } catch { return json({ error: "expected multipart form-data with a 'file' field" }, 400) }
+        const file = form.get("file")
+        if (!(file instanceof File) || file.size === 0) return json({ error: "no file provided" }, 400)
+        if (file.size > 25 * 1024 * 1024) return json({ error: "file too large (max 25MB)" }, 413)
+        const filename = (file.name || "upload.bin").slice(0, 200)
+        try {
+          const bytes = new Uint8Array(await file.arrayBuffer())
+          const up = await uploadAttachment(bytes, filename, file.type || "application/octet-stream")
+          return json({ name: filename, key: up.key, filename, contentType: up.contentType }, 201)
+        } catch (e) {
+          return json(oops(e, "trails-author-attachment"), 500)
+        }
+      }
       if (req.method === "POST" && path === "/api/trails/author") {
         const body = await req.json().catch(() => ({}))
         const name = String(body.name || "").trim().slice(0, 80)
@@ -6580,8 +6600,22 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (!match) return json({ error: `unknown reviewer Sim "${simName}"` }, 400)
           judgePersonaId = match.id
         }
+        // File-upload fixtures: the wizard uploads each file via /api/trails/author/attachments first,
+        // then sends the returned refs here as `attachments: [{name,key,filename,contentType}]`.
+        // Build the NAME→ref manifest the drive + runner replay against.
+        let attachments: Record<string, { key: string; filename: string; contentType?: string }> | null = null
+        if (Array.isArray((body as any).attachments) && (body as any).attachments.length) {
+          attachments = {}
+          for (const a of (body as any).attachments.slice(0, 10)) {
+            const an = String(a?.name || a?.filename || "").trim().slice(0, 120)
+            const ak = String(a?.key || "").trim()
+            if (!an || !ak) return json({ error: "each attachment needs a name and key" }, 400)
+            attachments[an] = { key: ak, filename: String(a?.filename || an).slice(0, 200), contentType: a?.contentType ? String(a.contentType).slice(0, 120) : undefined }
+          }
+        }
         if (!name) return json({ error: "name required" }, 400)
-        if (objective.length < 10 || objective.length > 2000) return json({ error: "objective must be 10-2000 chars" }, 400)
+        // 4000 chars (was 2000): multi-turn chatbot objectives spell out several conversational turns.
+        if (objective.length < 10 || objective.length > 4000) return json({ error: "objective must be 10-4000 chars" }, 400)
         if (!/^https?:\/\//.test(baseUrl) || baseUrl.length > 500) return json({ error: "base_url must be an http(s) URL" }, 400)
         if (testAccount && !(await getTestAccountByName(projectId, testAccount))) return json({ error: `unknown test account "${testAccount}"` }, 400)
         // KLAVITYKLA-365: configured-flow quota. Authoring is the ONLY path that creates a Trail
@@ -6596,7 +6630,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           }
         }
         try {
-          const { sessionId } = await runAuthorNow(projectId, { name, objective, baseUrl, viewport, testAccountName: testAccount, createdBy: meT, judgePersonaId })
+          const { sessionId } = await runAuthorNow(projectId, { name, objective, baseUrl, viewport, testAccountName: testAccount, createdBy: meT, judgePersonaId, attachments })
           return json({ sessionId }, 202)
         } catch (e) {
           if (e instanceof WalkBusyError) return json({ error: "An AutoSim is already running — try again shortly." }, 409)

@@ -9064,8 +9064,14 @@ load()
     </div>
     <div id="wiz3" class="wiz-panel" style="display:none">
       <p class="wiz-desc">Describe what the AutoSim should do, step by step.</p>
-      <label class="wiz-field">Objective<textarea id="wizObj" rows="5" placeholder="e.g. Log in with my email and password. Create a new project called 'Test Run', open it, verify the name appears, then delete it. Log out."></textarea></label>
-      <p class="hint">Tip: include cleanup steps so every run leaves your data tidy.</p>
+      <label class="wiz-field">Objective<textarea id="wizObj" rows="5" placeholder="e.g. Log in, open the chat widget, ask 'what are your hours?', wait for the reply, then upload my-receipt.pdf in the support form and submit."></textarea></label>
+      <p class="hint">Tip: include cleanup steps so every run leaves your data tidy. For a chatbot, spell out each message and say to wait for the reply before the next.</p>
+      <div class="wiz-field" style="margin-top:4px">
+        <span style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">Files to upload (optional)</span>
+        <input type="file" id="wizUploadInput" multiple style="font-size:12px" />
+        <p class="hint" style="margin-top:4px">Attach any file your flow uploads, then reference it by name in the objective (e.g. "upload my-receipt.pdf"). Max 25MB each.</p>
+        <div id="wizUploadList" style="margin-top:6px;display:flex;flex-direction:column;gap:4px"></div>
+      </div>
     </div>
     <div id="wiz4" class="wiz-panel" style="display:none">
       <p class="wiz-desc">A Sim reviews the Walk and flags issues. Pick one or use the default.</p>
@@ -10615,9 +10621,11 @@ load()
   }
 
   // ── Guided wizard ─────────────────────────────────────────────────────────
-  var wizStep=1;var wizSimsData=[]
+  var wizStep=1;var wizSimsData=[];var wizAttachments=[]
   function openWizard(){
     wizStep=1
+    wizAttachments=[]
+    var ul=document.getElementById("wizUploadList");if(ul)ul.innerHTML=""
     document.getElementById("wizErr").textContent=""
     document.getElementById("wizProgress").style.display="none";document.getElementById("wizProgress").innerHTML=""
     document.getElementById("wizNav").style.display=""
@@ -10978,6 +10986,36 @@ load()
         $("schedClear").textContent = originalText
       }
     }
+    // wizard — file-upload fixtures for `upload` steps
+    function renderWizUploads(){
+      var el=document.getElementById("wizUploadList");if(!el)return
+      el.innerHTML=wizAttachments.map(function(a,i){
+        return '<div style="display:flex;align-items:center;gap:8px;font-size:12px">'+
+          (a.uploading?'<span class="muted">Uploading '+esc(a.name)+'…</span>'
+            :a.error?'<span style="color:#c0392b">'+esc(a.name)+' — '+esc(a.error)+'</span>'
+            :kicon("check",{size:12})+' <span>'+esc(a.name)+'</span>')+
+          (a.uploading?'':'<button class="btn btn-ghost" data-wizrm="'+i+'" style="font-size:11px;padding:2px 8px;margin-left:auto">Remove</button>')+
+        '</div>'
+      }).join("")
+      Array.prototype.forEach.call(el.querySelectorAll("[data-wizrm]"),function(b){b.addEventListener("click",function(){wizAttachments.splice(Number(b.dataset.wizrm),1);renderWizUploads()})})
+    }
+    var wizUploadInput=document.getElementById("wizUploadInput")
+    if(wizUploadInput)wizUploadInput.addEventListener("change",async function(){
+      var files=Array.prototype.slice.call(this.files||[]);this.value=""
+      for(var i=0;i<files.length;i++){
+        var f=files[i]
+        if(wizAttachments.some(function(a){return a.name===f.name})){continue}
+        var entry={name:f.name,filename:f.name,uploading:true};wizAttachments.push(entry);renderWizUploads()
+        try{
+          var fd=new FormData();fd.append("file",f)
+          var r=await fetch("/api/trails/author/attachments"+projQ(),{method:"POST",body:fd})
+          var d=await r.json().catch(function(){return{}})
+          if(!r.ok){entry.uploading=false;entry.error=d.error||("HTTP "+r.status)}
+          else{entry.uploading=false;entry.key=d.key;entry.filename=d.filename||f.name;entry.contentType=d.contentType}
+        }catch(e){entry.uploading=false;entry.error="upload failed"}
+        renderWizUploads()
+      }
+    })
     // wizard
     document.getElementById("wizNext").addEventListener("click",function(){var err=wizValidate(wizStep);var errEl=document.getElementById("wizErr");if(err){errEl.textContent=err;return}errEl.textContent="";wizStep++;wizRender()})
     document.getElementById("wizBack").addEventListener("click",function(){document.getElementById("wizErr").textContent="";if(wizStep>1){wizStep--;wizRender()}})
@@ -10997,6 +11035,7 @@ load()
       var accSel2=document.getElementById("wizAcc");var testAccount=(accSel2&&accSel2.value)?accSel2.value:undefined
       document.getElementById("ntName").value=name;document.getElementById("ntUrl").value=baseUrl;document.getElementById("ntObj").value=objective
       var body={name:name,objective:objective,base_url:baseUrl,viewport:viewport,test_account:testAccount,sim_name:simName}
+      if(wizAttachments.length)body.attachments=wizAttachments.map(function(a){return{name:a.name,key:a.key,filename:a.filename,contentType:a.contentType}})
       try {
         var r=await fetch("/api/trails/author"+projQ(),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)})
         if(!r.ok){var e=await r.json().catch(function(){return{}});box.innerHTML='<div class="nt-stall">'+esc(e.error||r.statusText)+"</div>";document.getElementById("wizNav").style.display="";btn.disabled=false;btn.textContent="Try again";return}

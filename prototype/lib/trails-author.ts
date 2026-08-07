@@ -19,6 +19,7 @@ import type { AuthorModel, AuthorAction, ObjectiveVerifier, ObjectiveVerificatio
 import { ModelCallError, openRouterObjectiveVerifier } from "./trails-author-model"
 import { isKrefSelector } from "./trails-snapshot"
 import type { StepAction, TrailViewport } from "./trails-types"
+import { makeFileResolver, type FileResolver, type AttachmentManifest } from "./trails-attachments"
 import { normalizeTrailViewport } from "./trails-viewport"
 import { configuredVisionResolver, type VisionResolver } from "./trails-vision"
 import { notifyAutosimNeedsAuth } from "./autosim-auth-alert"
@@ -94,7 +95,7 @@ function analysisCheckpointDescription(objective: string): string {
     : "Analysis objective completed"
 }
 
-export interface AuthorRequest { name: string; objective: string; baseUrl: string; viewport?: TrailViewport | string | null; testAccountName?: string; createdBy?: string; /** KLAVITYKLA-149: id of the Sim persona picked as the Trail's judge/reviewer in the wizard's "Who reviews it?" step. */ judgePersonaId?: string | null }
+export interface AuthorRequest { name: string; objective: string; baseUrl: string; viewport?: TrailViewport | string | null; testAccountName?: string; createdBy?: string; /** KLAVITYKLA-149: id of the Sim persona picked as the Trail's judge/reviewer in the wizard's "Who reviews it?" step. */ judgePersonaId?: string | null; /** File-upload fixtures available to `upload` steps: attachment NAME → storage ref. */ attachments?: AttachmentManifest | null }
 export interface AuthorStepLog { idx: number; op: string; selector: string | null; value: string | null; url: string; rationale: string; ok: boolean; error?: string; screenshotKey?: string; krefSnapshot?: string }
 export interface AuthorOutcome {
   status: "crystallized" | "stalled" | "failed" | "needs_auth"
@@ -154,7 +155,7 @@ const RED_TIMING_RE = /timeout|timed\s+out|timing|too\s+slow|navigation|net::|ne
 // Locator signals: the element couldn't be found / acted on — the recorded selector drifted.
 const RED_SELECTOR_RE = /not\s+found|no\s+(such\s+)?element|couldn.?t\s+find|could\s+not\s+find|unable\s+to\s+(find|locate)|locator|selector|not\s+visible|detached|element\s+is\s+not|missing\s+element|0\s+elements?|no\s+matching|waiting\s+for\s+(selector|locator)|did\s+not\s+resolve/i
 
-const RED_INTERACTION_OPS = new Set(["click", "type", "select", "hover", "assert", "clearField", "keyPress"])
+const RED_INTERACTION_OPS = new Set(["click", "type", "select", "hover", "assert", "clearField", "keyPress", "upload", "waitForSelector"])
 
 /**
  * KLAVITYKLA-116: classify WHY a just-authored Trail's verification walk went red. Pure function so it
@@ -238,7 +239,7 @@ export interface AuthorCheckpoint {
   lastUrl: string
 }
 
-const OP2ACTION: Record<string, StepAction> = { navigate: "navigate", click: "click", type: "type", select: "select", assert: "assert", wait: "wait", hover: "hover", keyPress: "keyPress", clearField: "clearField" }
+const OP2ACTION: Record<string, StepAction> = { navigate: "navigate", click: "click", type: "type", select: "select", assert: "assert", wait: "wait", waitForSelector: "waitForSelector", upload: "upload", hover: "hover", keyPress: "keyPress", clearField: "clearField" }
 
 export async function authorTrail(
   projectId: string, req: AuthorRequest,
@@ -284,6 +285,13 @@ export async function authorTrail(
      * Used to fire a throttled founder-style email + Slack alert.
      */
     onNeedsAuth?: (url: string, rationale: string) => void | Promise<void>
+    /**
+     * File-upload fixtures: resolves an attachment NAME (the `upload` op's value) to local file
+     * paths for page.setInputFiles(). Wired by runAuthorNow from the AutoSim's attachment manifest.
+     */
+    fileResolver?: FileResolver
+    /** Names of attached fixtures, surfaced to the model so it can emit a valid `upload` op. */
+    uploadNames?: string[]
   },
 ): Promise<AuthorOutcome> {
   // Text-first is the DEFAULT (bench 2026-07-04: arm B ~50% cheaper, 6/6 green verdicts vs arm A
@@ -476,7 +484,7 @@ export async function authorTrail(
       // Generic (non-ModelCallError) throws are treated as retryable — one network blip must not
       // kill an entire authoring run.
       // KLA-69: hoist modelInput + modelCtx out of inner block so the stall-reroll can reuse them.
-      const modelInput = { objective: req.objective, pageUrl: page.url(), screenshotB64, mediaType: "image/jpeg", domSnapshot: dom, history, credFields }
+      const modelInput = { objective: req.objective, pageUrl: page.url(), screenshotB64, mediaType: "image/jpeg", domSnapshot: dom, history, credFields, uploads: opts.uploadNames }
       const modelCtx = { projectId, email: req.createdBy ?? null, projectInstructions }
       let r!: { action: AuthorAction; costUsd: number }
       {
@@ -623,6 +631,16 @@ export async function authorTrail(
         } else if (a.op === "navigate") {
           await page.goto(a.url!, 20_000)
           traj.push({ action: "navigate", actionValue: a.url!, url: page.url(), domHash: sha256hex(dom) })
+        } else if (a.op === "waitForSelector") {
+          // Wait for dynamic content to appear (e.g. a chatbot reply rendering). Unlike the strict
+          // selector ops below this MUST NOT require exactly-1 match up front — the element may not
+          // exist yet; waitForSelector is precisely the primitive that waits for it to show up.
+          await page.waitForSelector(a.selector!, ACTION_TIMEOUT)
+          let waitSel = a.selector!
+          try { const st = await bounded(page.stableSelector(a.selector!), 8_000, "stable selector"); if (st) waitSel = st } catch {}
+          persistSelector = isKrefSelector(waitSel) ? dekref(waitSel) : waitSel
+          traj.push({ action: "waitForSelector", target: { resolvedSelector: persistSelector } as any, url: page.url(), domHash: sha256hex(dom) })
+          entry.selector = persistSelector
         } else {
           const n = await bounded(page.count(a.selector!), 10_000, "locator.count")
           if (n !== 1) throw new Error(`selector "${a.selector}" matched ${n} elements (need exactly 1)`)
@@ -645,8 +663,14 @@ export async function authorTrail(
           else if (a.op === "hover") await page.hover(a.selector!, ACTION_TIMEOUT)
           else if (a.op === "keyPress") await page.keyPress(a.selector!, a.value ?? "Enter", ACTION_TIMEOUT)
           else if (a.op === "clearField") await page.clearField(a.selector!, ACTION_TIMEOUT)
+          else if (a.op === "upload") {
+            const fname = (a.value ?? "").trim()
+            if (!opts.fileResolver) throw new Error("upload: this AutoSim has no attached file to upload")
+            const paths = await opts.fileResolver(fname)
+            await page.setInputFiles(a.selector!, paths, ACTION_TIMEOUT)
+          }
           traj.push({
-            action: OP2ACTION[a.op], actionValue: a.op === "type" || a.op === "select" || a.op === "keyPress" ? a.value ?? undefined : undefined,
+            action: OP2ACTION[a.op], actionValue: a.op === "type" || a.op === "select" || a.op === "keyPress" || a.op === "upload" ? a.value ?? undefined : undefined,
             target: { ...fp, resolvedSelector: persistSelector },
             checkpoint: a.op === "assert" ? { description: a.checkpoint || a.rationale || "checkpoint" } : undefined,
             url: page.url(), domHash: sha256hex(dom),
@@ -755,7 +779,7 @@ export async function authorTrail(
     }
     await closeHandle()
     if (!traj.length) return { status: "stalled", trailId: null, verificationRunId: null, verificationVerdict: null, steps: log, stallReason: "model finished without performing any step", llmCalls, costUsd, objectiveVerified }
-    const trajectory: Trajectory = { name: req.name, intent: req.objective, baseUrl: req.baseUrl, viewport, authorKind: "llm", createdBy: req.createdBy, steps: traj, objectiveVerified, judgePersonaId: req.judgePersonaId ?? null }
+    const trajectory: Trajectory = { name: req.name, intent: req.objective, baseUrl: req.baseUrl, viewport, authorKind: "llm", createdBy: req.createdBy, steps: traj, objectiveVerified, judgePersonaId: req.judgePersonaId ?? null, attachments: req.attachments ?? null }
     const { trailId } = await crystallize(projectId, trajectory)
     await setTrailStatus(projectId, trailId, "draft")
     // Verification Walk: zero-LLM rehearsal; draft status suppresses findings (Task 4), but pass
@@ -766,6 +790,8 @@ export async function authorTrail(
       v = await (opts.verificationWalk ?? walkTrail)(projectId, trailId, {
         fixtureUrl: req.baseUrl, suppressFindings: true, credResolver, deadlineMs: 180_000,
         launchArgs, headless: opts.headless, replay: true,
+        // Replay any `upload` steps against the same fixtures the drive used.
+        ...(opts.fileResolver ? { fileResolver: opts.fileResolver } : {}),
         ...(vision ? { vision } : {}),
       })
     } catch (verificationErr: any) {
@@ -1026,9 +1052,16 @@ export async function runAuthorNow(
     setCurrentAuthorSessionId(sessionId)
     // KLA-150: open live-watch channel for author session (reuses the walk live-watch infra).
     startLiveWatchRun(projectId, sessionId)
+    // File-upload fixtures: materialize the AutoSim's attachments to temp files for setInputFiles.
+    // Shared by the authoring drive AND the verification walk (via opts.fileResolver). Cleaned up
+    // in the finally below once both have finished with the temp dir.
+    const fileFixtures = (req.attachments && Object.keys(req.attachments).length)
+      ? makeFileResolver(req.attachments)
+      : null
     try {
       const out = await author(projectId, req, {
         model, launchArgs: CHROMIUM_PROD_ARGS,
+        ...(fileFixtures ? { fileResolver: fileFixtures.resolve, uploadNames: Object.keys(req.attachments!) } : {}),
         onStep: (log) => updateAuthorSession(projectId, sessionId, { steps: log }).catch(() => {}),
         // KLA-55: update heartbeat each iteration so the reaper knows this session is alive.
         onHeartbeat: () => touchAuthorHeartbeat(sessionId).catch(() => {}),
@@ -1071,6 +1104,7 @@ export async function runAuthorNow(
       await updateAuthorSession(projectId, sessionId, { status: "failed", stallReason: String(e?.message || e) }).catch(() => {})
     } finally {
       endLiveWatchRun(projectId, sessionId)
+      if (fileFixtures) await fileFixtures.cleanup().catch(() => {})
     }
   }, projectId)) // KLA-266: key the walk queue by project for per-project fairness
 

@@ -25,6 +25,7 @@ import {
 import { touchWalkHeartbeat, db, incrementUsageMeter } from "./db"
 import { checkQuotaForProject } from "./quota"
 import { stepCacheKey } from "./trails-crystallize"
+import { makeFileResolver } from "./trails-attachments"
 import { decideFromVision, type VisionResolver, type VisionInput, type VisionResult, type VisionDecision } from "./trails-vision"
 import { setupReplayCapture, saveReplay, type ReplayCapture } from "./trails-replay"
 import { hasCredRef, resolveCredRefs, type CredResolver } from "./trails-creds"
@@ -155,6 +156,13 @@ export interface WalkOptions {
    * DB-poll/HTTP path is used when this is absent and the walk must pause for a human response.
    */
   secretResolver?: (ctx: { stepIdx: number; actionValue: string | null }) => Promise<string>
+
+  /**
+   * File-upload fixtures: resolves an `upload` step's attachment NAME (step.actionValue) to local
+   * file paths for locator.setInputFiles(). Wired from the trail's attachment manifest so scheduled
+   * and verification walks can replay uploads. Absent → an `upload` step reds with a clear reason.
+   */
+  fileResolver?: (name: string) => Promise<string[]>
 
   // ── KLAVITYKLA-126: AutoSim environment determinism + trace artifact (all OPT-IN, DEFAULT-OFF) ──
   /**
@@ -668,6 +676,13 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
   // Draft-gate (AutoSims F1): draft Trails and explicit Verification Walks never file Findings.
   // Evidence (run_steps) is still captured so the author can review what happened.
   opts = { ...opts, suppressFindings: opts.suppressFindings ?? (trail.status === "draft"), _resolvedCreds: new Set<string>() }
+  // File-upload fixtures: if the caller didn't inject a resolver (scheduled/manual walk) but the trail
+  // has an attachment manifest, build one over it so `upload` steps replay. Cleaned up in the finally.
+  let attachmentFixtures: { resolve: (name: string) => Promise<string[]>; cleanup: () => Promise<void> } | null = null
+  if (!opts.fileResolver && trail.attachments && Object.keys(trail.attachments).length) {
+    attachmentFixtures = makeFileResolver(trail.attachments)
+    opts = { ...opts, fileResolver: attachmentFixtures.resolve }
+  }
   // KLA-106: expand callModule steps inline before walking. Pure DB read, backward-compatible:
   // a trail with no callModule steps is returned unchanged by expandModuleSteps.
   const rawSteps = await listTrailSteps(projectId, trailId)
@@ -1008,6 +1023,7 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
     await finalizeArtifacts()
     await bh.close()
     if (shotUploads) await shotUploads.drain()
+    if (attachmentFixtures) await attachmentFixtures.cleanup().catch(() => {})
   }
 }
 
@@ -1164,6 +1180,29 @@ async function runOneStep(
       evidence: { action: "wait", recordedStep: recordedStep(null, null) },
     })
     return { tier: "none", verdict: "green", healed: false, llmCalls: 0 }
+  }
+  if (step.action === "waitForSelector") {
+    // Wait for dynamic content (e.g. a chatbot reply) to appear. Uses the recorded selector
+    // directly and tolerates multiple matches (first visible wins) — no healing. If it never
+    // appears within opTimeout the flow's expected content is missing → RED regression.
+    const sel = step.target?.resolvedSelector ?? step.actionValue ?? ""
+    const budget = Math.max(0, Math.min(currentTimeout, deadline - Date.now()))
+    try {
+      if (!sel) throw new Error("waitForSelector step has no recorded selector")
+      await page.locator(sel).first().waitFor({ state: "visible", timeout: budget })
+      await addStepRun({
+        runId, trailId, stepId: step.id, idx: step.idx, tier: "none", verdict: "green", confidence: 1, healed: false,
+        evidence: { action: "waitForSelector", selector: sel, recordedStep: recordedStep(sel, null) },
+      })
+      return { tier: "none", verdict: "green", healed: false, llmCalls: 0 }
+    } catch (e: any) {
+      const shotKey = await captureFindingShotKey(page, opts).catch(() => undefined)
+      await addStepRun({
+        runId, trailId, stepId: step.id, idx: step.idx, tier: "none", verdict: "red", confidence: 0, healed: false,
+        evidence: tagRedEvidence(failureKindForExpectationFailure(), { action: "waitForSelector", selector: sel, error: String(e?.message || e), ...(shotKey ? { screenshotKey: shotKey } : {}) }),
+      })
+      return { tier: "none", verdict: "red", healed: false, llmCalls: 0 }
+    }
   }
   if (step.action === "pauseForSecret") {
     // KLA-104: Pause the walk, wait for a secret (OTP/OAuth token) then resume.
@@ -1369,6 +1408,12 @@ async function runOneStep(
         case "clearField":
           await resolved.locator.clear({ timeout: actionTimeout })
           break
+        case "upload": {
+          if (!opts.fileResolver) throw new Error("upload step has no fileResolver — the attached fixture is unavailable")
+          const paths = await opts.fileResolver(step.actionValue ?? "")
+          await resolved.locator.setInputFiles(paths, { timeout: actionTimeout })
+          break
+        }
         case "assert": {
           // Hard checkpoint: the element must be visible. Never overridden by healing.
           const kind = (step.checkpoint && step.checkpoint.kind) || "visible"
