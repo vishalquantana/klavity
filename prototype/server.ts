@@ -24,6 +24,7 @@ import { syncFieldsToLinkedIssues } from "./lib/connectors/field-sync"
 import { importExternalIssues } from "./lib/connectors/import"
 import { deriveHealth } from "./lib/connectors/health"
 import { applyReconcileOps, recurrenceFromEvents, pickCitation, type ReconcileOp, type Trait, type TraitEventRow } from "./lib/provenance"
+import { parseTranscript, speakersFromLines, offsetToTime, formatTs } from "./lib/transcript-parse"
 import { sendOtp, sendLeadAlert, sendTicketAssignmentEmail, sendTicketAssignmentInviteEmail, sendMemberInviteEmail } from "./lib/mail"
 // First-class member invites + visibility (JTBD 6.4 / KLAVITYKLA-294) — composes existing tables, no migration.
 import { listProjectInvites, revokeProjectInvite, getPendingInvite } from "./lib/member-invites"
@@ -4450,11 +4451,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (text.length > TRANSCRIPT_MAX_CHARS) return json({ error: `Transcript too large (max ${TRANSCRIPT_MAX_CHARS.toLocaleString()} characters).` }, 413)
         const title = body.title ? String(body.title) : null
         const sourceDate = Number(body.sourceDate || body.source_date) || Date.now()
+        const lines = parseTranscript(text)
 
         // 1) persist the transcript (provenance anchor for every trait it produces).
         const transcriptId = await insertTranscript({
-          projectId, title, rawText: text, sourceDate,
-          speakers: Array.isArray(body.speakers) ? body.speakers.map(String) : null, addedBy: meT,
+          projectId, title, rawText: text, sourceDate, lines,
+          speakers: Array.isArray(body.speakers) ? body.speakers.map(String) : speakersFromLines(lines), addedBy: meT,
         })
         // activity: a transcript was added to the project (actor = adder).
         await insertActivity({ projectId, type: "transcript_added", actorEmail: meT, meta: { transcriptId, title } })
@@ -4510,7 +4512,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             const resolvedTargets = allTraits.filter((t) => reopenIds.has(t.id) && t.status !== "active")
             traitsForApply = [...current, ...resolvedTargets]
           }
-          const res = applyReconcileOps(traitsForApply, ops, { simId, projectId, transcriptId, sourceDate, rawText: text })
+          const res = applyReconcileOps(traitsForApply, ops, { simId, projectId, transcriptId, sourceDate, rawText: text, lines })
           for (const w of res.traitWrites) {
             if (w.mode === "insert") await insertTrait(w.trait)
             else await updateTrait(w.trait)
