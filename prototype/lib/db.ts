@@ -3,6 +3,7 @@ import { createClient, type Client } from "@libsql/client"
 import { insightsFromTraits, type Trait, type TraitKind, type TraitStatus, type TraitEventRow } from "./provenance"
 import { encryptSecret, sha256hex } from "./crypto"
 import type { SanitizedAttr } from "./attr"
+import type { ParsedLine } from "./transcript-parse"
 
 const url = process.env.TURSO_DATABASE_URL
 const authToken = process.env.TURSO_AUTH_TOKEN
@@ -906,7 +907,7 @@ export async function applySchema(c: Client) {
     "feedback", "projects", "accounts", "trails", "trail_runs",
     "trail_steps", "walk_share_tokens", "findings", "author_sessions",
     "ai_calls", "autosim_auth_probe_queue", "expectations", "users",
-    "screenshots",
+    "transcripts",
   ]
   const _cols = await loadTableColumns(c, ALTERED_TABLES)
   const needCol = (table: string, col: string) => !(_cols.get(table)?.has(col) ?? false)
@@ -945,6 +946,11 @@ export async function applySchema(c: Client) {
       )
     }
   }
+  // Weekly-transcript stacking: timestamped quotes + raw parsed lines. INTEGER/TEXT ALTERed
+  // standalone (not via the TEXT-only newTraitCols loop above) for type clarity.
+  if (needCol("sim_traits", "src_quote_ts")) await c.execute("ALTER TABLE sim_traits ADD COLUMN src_quote_ts INTEGER").catch((e: any) => console.warn("sim_traits.src_quote_ts ALTER skipped:", e?.message || e))
+  if (needCol("trait_events", "quote_ts")) await c.execute("ALTER TABLE trait_events ADD COLUMN quote_ts INTEGER").catch((e: any) => console.warn("trait_events.quote_ts ALTER skipped:", e?.message || e))
+  if (needCol("transcripts", "lines_json")) await c.execute("ALTER TABLE transcripts ADD COLUMN lines_json TEXT").catch((e: any) => console.warn("transcripts.lines_json ALTER skipped:", e?.message || e))
   // Global Sims v1 (KLA-global): is_global=1 marks a Sim as available across all sibling projects
   // in the same account. INTEGER NOT NULL DEFAULT 0 so existing rows default to project-scoped
   // without any data migration. Must be done outside the TEXT-only newTraitCols loop.
@@ -4003,6 +4009,7 @@ export async function setModelWeights(weights: Record<string, number>): Promise<
 export type TranscriptRow = {
   id: string; projectId: string; title: string | null; rawText: string
   sourceDate: number; speakers: string[] | null; addedBy: string; createdAt: number
+  lines: ParsedLine[] | null
 }
 function rowToTranscript(x: any): TranscriptRow {
   return {
@@ -4011,19 +4018,22 @@ function rowToTranscript(x: any): TranscriptRow {
     sourceDate: Number(x.source_date),
     speakers: x.speakers_json ? JSON.parse(String(x.speakers_json)) : null,
     addedBy: String(x.added_by), createdAt: Number(x.created_at),
+    lines: x.lines_json ? JSON.parse(String(x.lines_json)) : null,
   }
 }
 export type TranscriptInsert = {
   projectId: string; title?: string | null; rawText: string
   sourceDate: number; speakers?: string[] | null; addedBy: string; id?: string
+  lines?: ParsedLine[] | null
 }
 export async function insertTranscript(t: TranscriptInsert): Promise<string> {
   const id = t.id ?? "tr_" + crypto.randomUUID()
   await db!.execute({
-    sql: `INSERT INTO transcripts (id,project_id,title,raw_text,source_date,speakers_json,added_by,created_at)
-          VALUES (?,?,?,?,?,?,?,?)`,
+    sql: `INSERT INTO transcripts (id,project_id,title,raw_text,source_date,speakers_json,added_by,created_at,lines_json)
+          VALUES (?,?,?,?,?,?,?,?,?)`,
     args: [id, t.projectId, t.title ?? null, t.rawText, t.sourceDate,
-           t.speakers != null ? JSON.stringify(t.speakers) : null, t.addedBy, Date.now()],
+           t.speakers != null ? JSON.stringify(t.speakers) : null, t.addedBy, Date.now(),
+           t.lines != null ? JSON.stringify(t.lines) : null],
   })
   return id
 }
@@ -4063,6 +4073,7 @@ function rowToTrait(x: any): Trait {
     status: String(x.status || "active") as TraitStatus, strength: Number(x.strength ?? 1),
     srcTranscriptId: String(x.src_transcript_id), srcQuote: String(x.src_quote),
     srcQuoteOffset: x.src_quote_offset != null ? Number(x.src_quote_offset) : null,
+    srcQuoteTs: x.src_quote_ts != null ? Number(x.src_quote_ts) : null,
     srcVerified: x.src_verified != null ? Number(x.src_verified) === 1 : null,
     srcSpeaker: x.src_speaker != null ? String(x.src_speaker) : null,
     createdAt: Number(x.created_at), updatedAt: Number(x.updated_at),
@@ -4076,10 +4087,10 @@ function rowToTrait(x: any): Trait {
 // Insert a brand-new trait. Accepts a fully-formed Trait (e.g. a TraitWrite{mode:'insert'}.trait).
 export async function insertTrait(t: Trait): Promise<string> {
   await db!.execute({
-    sql: `INSERT INTO sim_traits (id,sim_id,project_id,kind,text,status,strength,src_transcript_id,src_quote,src_quote_offset,src_verified,src_speaker,area,issue_type,priority,scope,portability,created_at,updated_at)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    sql: `INSERT INTO sim_traits (id,sim_id,project_id,kind,text,status,strength,src_transcript_id,src_quote,src_quote_offset,src_quote_ts,src_verified,src_speaker,area,issue_type,priority,scope,portability,created_at,updated_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [t.id, t.simId, t.projectId, t.kind, t.text, t.status, t.strength,
-           t.srcTranscriptId, t.srcQuote, t.srcQuoteOffset ?? null,
+           t.srcTranscriptId, t.srcQuote, t.srcQuoteOffset ?? null, t.srcQuoteTs ?? null,
            t.srcVerified == null ? null : (t.srcVerified ? 1 : 0),
            t.srcSpeaker ?? null,
            t.area ?? null, t.issueType ?? null, t.priority ?? null,
@@ -4090,9 +4101,9 @@ export async function insertTrait(t: Trait): Promise<string> {
 // Update a trait's mutable columns (text/status/strength/provenance/updatedAt + typed fields) — used by reconcile writes.
 export async function updateTrait(t: Trait): Promise<void> {
   await db!.execute({
-    sql: `UPDATE sim_traits SET kind=?,text=?,status=?,strength=?,src_transcript_id=?,src_quote=?,src_quote_offset=?,src_verified=?,src_speaker=?,area=?,issue_type=?,priority=?,scope=?,portability=?,updated_at=? WHERE id=?`,
+    sql: `UPDATE sim_traits SET kind=?,text=?,status=?,strength=?,src_transcript_id=?,src_quote=?,src_quote_offset=?,src_quote_ts=?,src_verified=?,src_speaker=?,area=?,issue_type=?,priority=?,scope=?,portability=?,updated_at=? WHERE id=?`,
     args: [t.kind, t.text, t.status, t.strength, t.srcTranscriptId, t.srcQuote,
-           t.srcQuoteOffset ?? null, t.srcVerified == null ? null : (t.srcVerified ? 1 : 0),
+           t.srcQuoteOffset ?? null, t.srcQuoteTs ?? null, t.srcVerified == null ? null : (t.srcVerified ? 1 : 0),
            t.srcSpeaker ?? null,
            t.area ?? null, t.issueType ?? null, t.priority ?? null,
            t.scope ?? null, t.portability ?? null, t.updatedAt, t.id],
@@ -4114,10 +4125,10 @@ export async function listTraits(simId: string, opts: { activeOnly?: boolean; pr
 export async function insertTraitEvent(e: TraitEventRow): Promise<string> {
   const id = "tev_" + crypto.randomUUID()
   await db!.execute({
-    sql: `INSERT INTO trait_events (id,trait_id,sim_id,transcript_id,op,before_text,after_text,quote,quote_offset,verified,speaker,source_date,reason,area,issue_type,priority,actor,created_at)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    sql: `INSERT INTO trait_events (id,trait_id,sim_id,transcript_id,op,before_text,after_text,quote,quote_offset,quote_ts,verified,speaker,source_date,reason,area,issue_type,priority,actor,created_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [id, e.traitId, e.simId, e.transcriptId, e.op, e.beforeText ?? null, e.afterText ?? null,
-           e.quote, e.quoteOffset ?? null, e.verified == null ? null : (e.verified ? 1 : 0),
+           e.quote, e.quoteOffset ?? null, e.quoteTs ?? null, e.verified == null ? null : (e.verified ? 1 : 0),
            e.speaker ?? null, e.sourceDate, e.reason ?? null,
            e.area ?? null, e.issueType ?? null, e.priority ?? null, e.actor ?? null, e.createdAt],
   })
@@ -4170,6 +4181,7 @@ function rowToTraitEvent(x: any): TraitEventRow {
     beforeText: x.before_text != null ? String(x.before_text) : null,
     afterText: x.after_text != null ? String(x.after_text) : null,
     quote: String(x.quote), quoteOffset: x.quote_offset != null ? Number(x.quote_offset) : null,
+    quoteTs: x.quote_ts != null ? Number(x.quote_ts) : null,
     verified: x.verified != null ? Number(x.verified) === 1 : null,
     speaker: x.speaker != null ? String(x.speaker) : null,
     sourceDate: Number(x.source_date),
