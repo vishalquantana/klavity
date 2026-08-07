@@ -635,8 +635,9 @@ async function resolveCitations(simId: string | null, citedTraitIds: any, projec
   citedTraitIds: string[]; sourceQuote: string | null; speaker: string | null; sourceTranscriptId: string | null; sourceDate: number | null;
   issueType: string | null; sourceQuoteVerified: boolean | null;
   recurrence: { timesRaised: number; regressed: boolean; firstRaised: number | null; lastRaised: number | null; priorResolvedAt: number | null } | null
+  sourceTime: string | null; sourceTimeKind: "meeting" | "upload"
 }> {
-  const empty = { citedTraitIds: [] as string[], sourceQuote: null, speaker: null, sourceTranscriptId: null, sourceDate: null, issueType: null, sourceQuoteVerified: null, recurrence: null }
+  const empty = { citedTraitIds: [] as string[], sourceQuote: null, speaker: null, sourceTranscriptId: null, sourceDate: null, issueType: null, sourceQuoteVerified: null, recurrence: null, sourceTime: null as string | null, sourceTimeKind: "upload" as const }
   if (!simId || !Array.isArray(citedTraitIds) || !citedTraitIds.length) return empty
 
   // Traits + per-trait events: use the caller's preloaded copy when present (review loops), else
@@ -671,7 +672,17 @@ async function resolveCitations(simId: string | null, citedTraitIds: any, projec
       : await db!.execute({ sql: "SELECT source_date FROM transcripts WHERE id=?", args: [pick.sourceTranscriptId] })
     if (tr.rows.length) sourceDate = Number((tr.rows[0] as any).source_date)
   }
-  return { ...pick, sourceDate }
+
+  // In-meeting timestamp: the chosen (primary) cited trait is the first id in pick.citedTraitIds
+  // (pickCitation sets citedTraitIds = matched.map(...), matched[0] === primary). Non-null srcQuoteTs
+  // means the grounding line carried an in-note time → format it; else fall back to the transcript's
+  // upload date (sourceDate above) and mark kind "upload" so the renderer knows to use that instead.
+  const chosenTrait = pick.citedTraitIds.length ? traits.find((t) => t.id === pick.citedTraitIds[0]) : undefined
+  const srcQuoteTs = chosenTrait?.srcQuoteTs ?? null
+  const sourceTime = srcQuoteTs != null ? formatTs(srcQuoteTs) : null
+  const sourceTimeKind: "meeting" | "upload" = srcQuoteTs != null ? "meeting" : "upload"
+
+  return { ...pick, sourceDate, sourceTime, sourceTimeKind }
 }
 
 // Decide whether a suggested bug duplicates an existing project report. Returns the existing
