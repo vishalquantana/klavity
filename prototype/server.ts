@@ -4592,11 +4592,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const proj = await resolveProject(me, url.searchParams.get("project"))
       if (!proj) return json({ error: "No project." }, 400)
       const projectId = proj.id
+      // Mirrors the legacy POST /api/transcripts rate-limit guard exactly (distinct key prefixes so
+      // preview and legacy don't share a bucket) — this endpoint makes MORE LLM calls than legacy
+      // (extractPersonas + one reconcileSim per matched client persona) and had no guard.
+      if (!rlAllow(`txpv:u:${me}`, TRANSCRIPT_PER_USER, TRANSCRIPT_WINDOW) || !rlAllow(`txpv:p:${projectId}`, TRANSCRIPT_PER_PROJECT, TRANSCRIPT_WINDOW))
+        return json({ error: "Too many transcript submissions. Please wait and try again." }, 429, { "Retry-After": "3600" })
       try {
         const body = await req.json().catch(() => ({}))
         const text = String(body.transcript || "").trim()
         const title = body.title ? String(body.title).trim() : null
         if (text.length < 20) return json({ error: "Add transcript text first." }, 400)
+        if (text.length > TRANSCRIPT_MAX_CHARS) return json({ error: `Transcript too large (max ${TRANSCRIPT_MAX_CHARS.toLocaleString()} characters).` }, 413)
 
         const lines = parseTranscript(text)
         const sourceDate = Date.now()
@@ -4712,6 +4718,24 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         await deletePendingTranscript(previewId)
         return json({ transcriptId, applied: { ops: opsApplied, newSims } }, 200)
       } catch (e: any) { return json(oops(e, "transcript-apply"), 500) }
+    }
+
+    // ── transcripts → discard (Task 9 final-review fix) — best-effort cleanup for an abandoned
+    // preview (user hit Cancel). Mirrors preview/apply's auth+project guards exactly.
+    if (req.method === "POST" && path === "/api/transcripts/discard") {
+      const me = (await sessionEmail(req)) || (await bearerEmail(req))
+      if (!me) return json({ error: "Sign in to continue." }, 401)
+      const proj = await resolveProject(me, url.searchParams.get("project"))
+      if (!proj) return json({ error: "No project." }, 400)
+      const projectId = proj.id
+      try {
+        const body = await req.json().catch(() => ({}))
+        const previewId = String(body.previewId || "")
+        const pending = await getPendingTranscript(projectId, previewId)
+        if (!pending) return json({ ok: true }, 200) // already gone/expired — treat as success
+        await deletePendingTranscript(previewId)
+        return json({ ok: true }, 200)
+      } catch (e: any) { return json(oops(e, "transcript-discard"), 500) }
     }
 
     // ── Sim evolution timeline (P3a step 3) — project-scoped; cookie OR Bearer; admin or member. ──

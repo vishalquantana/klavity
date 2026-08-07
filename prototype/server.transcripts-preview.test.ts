@@ -117,3 +117,17 @@ test("preview rejects too-short transcript", async () => {
   expect(r.status).toBe(400)
   expect(body.error).toMatch(/transcript/i)
 })
+
+test("preview rejects oversized transcript (413, no LLM call)", async () => {
+  // TRANSCRIPT_MAX_CHARS is 100_000 in server.ts — this check runs before extractPersonas, so it
+  // must fire even with OPENROUTER_API_KEY unset (no LLM available in this test process).
+  const oversized = "x".repeat(100_001)
+  const r = await fetch(`${BASE}/api/transcripts/preview?project=${PROJ}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", Cookie: `klav_session=${SID}` },
+    body: JSON.stringify({ transcript: oversized }),
+  })
+  const body = await r.json()
+  expect(r.status).toBe(413)
+  expect(body.error).toMatch(/too large/i)
+})
