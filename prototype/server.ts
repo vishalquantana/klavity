@@ -3486,9 +3486,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // Upload screenshots to object storage. Caps/MIME/ACL come from the central screenshot config
         // (lib/screenshot-config.ts) instead of scattered literals.
         const files = form.getAll("screenshots").filter((f): f is File => f instanceof File).slice(0, SCREENSHOTS.maxFiles)
+        // Optional client-generated thumbnails, index-aligned 1:1 with `screenshots` (widget path). Each is
+        // a small JPEG preview the dashboard list loads instead of the full image. Missing/invalid entries
+        // are tolerated — that shot just falls back to its full-resolution image.
+        const thumbFiles = form.getAll("screenshot_thumbs").filter((f): f is File => f instanceof File)
         const imageUrls: string[] = []
-        const uploaded: Array<UploadedScreenshot & { bytes: number; id: string }> = []
-        for (const f of files) {
+        const uploaded: Array<UploadedScreenshot & { bytes: number; id: string; thumbKey: string | null }> = []
+        for (let fi = 0; fi < files.length; fi++) {
+          const f = files[fi]
           if (f.type && !f.type.startsWith(SCREENSHOTS.allowedTypePrefix)) return wjson({ error: `Screenshot ${f.name} is not an image.` }, 400)
           if (f.size > SCREENSHOTS.maxBytes) return wjson({ error: `Screenshot ${f.name} exceeds ${mbLabel(SCREENSHOTS.maxBytes)}.` }, 400)
           const buf = await f.arrayBuffer()
@@ -3503,8 +3508,20 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           let meta: UploadedScreenshot
           try { meta = await uploadScreenshotMeta(buf, f.type || "image/png", SCREENSHOTS.defaultAcl) }
           catch (upErr: any) { console.error("screenshot upload failed (non-fatal):", upErr?.message || upErr); continue }
+          // Best-effort thumbnail upload for this shot. Only accept a small image (guards against a client
+          // sending a full-size blob under the thumb field). A thumb failure never affects the full shot —
+          // the row is stored with thumb_key null and the dashboard falls back to the full image.
+          let thumbKey: string | null = null
+          const tf = thumbFiles[fi]
+          if (tf && (!tf.type || tf.type.startsWith(SCREENSHOTS.allowedTypePrefix)) && tf.size > 0 && tf.size <= f.size && tf.size <= 1_000_000) {
+            try {
+              const tbuf = await tf.arrayBuffer()
+              const tmeta = await uploadScreenshotMeta(tbuf, tf.type || "image/jpeg", SCREENSHOTS.defaultAcl)
+              thumbKey = tmeta.key
+            } catch (tErr: any) { console.error("thumbnail upload failed (non-fatal):", tErr?.message || tErr) }
+          }
           imageUrls.push(`${BASE}/img/${signImageToken(sid)}`)
-          uploaded.push({ ...meta, bytes: buf.byteLength, id: sid })
+          uploaded.push({ ...meta, bytes: buf.byteLength, id: sid, thumbKey })
         }
 
         // ── persist to our durable ledger (P0) FIRST, always — best-effort, never fails the submission.
@@ -3543,7 +3560,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               // the just-uploaded objects and persist no ledger rows. Retention TTL (if set) stamps expires_at.
               const scfg = resolveScreenshotConfig(await getProjectModalConfig(projectId).catch(() => ({})))
               if (!scfg.enabled) {
-                for (const u of uploaded) { await deleteObject(u.key).catch(() => {}) }
+                for (const u of uploaded) { await deleteObject(u.key).catch(() => {}); if (u.thumbKey) await deleteObject(u.thumbKey).catch(() => {}) }
                 uploaded.length = 0; imageUrls.length = 0
               }
               const shotExpiresAt = scfg.retentionDays > 0 ? Date.now() + scfg.retentionDays * 86400000 : null
@@ -3552,6 +3569,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   id: u.id, projectId, s3Key: u.key, bucket: u.bucket,
                   contentType: u.contentType, acl: u.acl,
                   bytes: u.bytes, ownerEmail: actor, expiresAt: shotExpiresAt,
+                  thumbKey: u.thumbKey,
                 })
               }
               if (uploaded[0]) screenshotId = uploaded[0].id
@@ -4111,13 +4129,19 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (!shot) return json({ error: "Not found." }, 404)
         // Membership check: the screenshot's project must be one the caller can access.
         if (!shot.projectId || !(await projectAccess(meS, shot.projectId))) return json({ error: "No access to this screenshot." }, 403)
+        // ?thumb=1 → serve the lightweight thumbnail variant when one was stored (dashboard list previews).
+        // Falls back to the full image when this shot has no thumb (older rows, Sim/AutoSim captures), so
+        // the caller can always request the thumb and still get a valid image. Thumbs are stored PRIVATE
+        // (their own object) regardless of the full image's acl, so they always go through a presigned GET.
+        const wantThumb = url.searchParams.get("thumb") === "1" && !!shot.thumbKey
         try {
-          if (shot.acl === "public-read") {
+          if (!wantThumb && shot.acl === "public-read") {
             const pub = `${(process.env.S3_ENDPOINT || "").replace(/\/+$/, "")}/${shot.bucket}/${shot.s3Key}`
             return json({ id: shot.id, url: pub, acl: shot.acl })
           }
-          const url = presignGet(shot.s3Key, SCREENSHOTS.presignTtlSec)
-          return json({ id: shot.id, url, acl: shot.acl, expiresInSec: SCREENSHOTS.presignTtlSec })
+          const signedKey = wantThumb ? shot.thumbKey! : shot.s3Key
+          const signed = presignGet(signedKey, SCREENSHOTS.presignTtlSec)
+          return json({ id: shot.id, url: signed, acl: shot.acl, thumb: wantThumb, expiresInSec: SCREENSHOTS.presignTtlSec })
         } catch (e: any) { return json(oops(e, "signurl"), 500) }
       }
     }
