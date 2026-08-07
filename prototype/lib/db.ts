@@ -313,6 +313,9 @@ export async function applySchema(c: Client) {
        id TEXT PRIMARY KEY, project_id TEXT NOT NULL, title TEXT, raw_text TEXT NOT NULL,
        source_date INTEGER NOT NULL, speakers_json TEXT, added_by TEXT NOT NULL, created_at INTEGER NOT NULL)`,
     `CREATE INDEX IF NOT EXISTS transcript_proj_idx ON transcripts (project_id, source_date)`,
+    // PENDING TRANSCRIPTS — short-lived preview stash between /api/transcripts/preview and /apply.
+    `CREATE TABLE IF NOT EXISTS pending_transcripts (
+       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, payload_json TEXT NOT NULL, created_at INTEGER NOT NULL)`,
     // SIM TRAITS — normalized insight w/ provenance (trait_id is the STABLE citation key).
     `CREATE TABLE IF NOT EXISTS sim_traits (
        id TEXT PRIMARY KEY, sim_id TEXT NOT NULL, project_id TEXT NOT NULL,
@@ -4030,6 +4033,29 @@ export async function insertTranscript(t: TranscriptInsert): Promise<string> {
   })
   return id
 }
+// PENDING TRANSCRIPTS — short-lived preview stash between /api/transcripts/preview and /apply.
+export type PendingTranscript = { id: string; projectId: string; payload: any; createdAt: number }
+
+export async function insertPendingTranscript(projectId: string, payload: any): Promise<string> {
+  const id = "pt_" + crypto.randomUUID()
+  await db!.execute({
+    sql: "INSERT INTO pending_transcripts (id,project_id,payload_json,created_at) VALUES (?,?,?,?)",
+    args: [id, projectId, JSON.stringify(payload), Date.now()],
+  })
+  return id
+}
+
+export async function getPendingTranscript(projectId: string, id: string): Promise<PendingTranscript | null> {
+  const r = await db!.execute({ sql: "SELECT * FROM pending_transcripts WHERE id=? AND project_id=?", args: [id, projectId] })
+  if (!r.rows.length) return null
+  const x = r.rows[0]
+  return { id: String(x.id), projectId: String(x.project_id), payload: JSON.parse(String(x.payload_json)), createdAt: Number(x.created_at) }
+}
+
+export async function deletePendingTranscript(id: string): Promise<void> {
+  await db!.execute({ sql: "DELETE FROM pending_transcripts WHERE id=?", args: [id] })
+}
+
 export async function listTranscripts(projectId: string): Promise<TranscriptRow[]> {
   const r = await db!.execute({ sql: "SELECT * FROM transcripts WHERE project_id=? ORDER BY source_date DESC", args: [projectId] })
   return r.rows.map(rowToTranscript)
