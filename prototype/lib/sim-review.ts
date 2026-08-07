@@ -48,6 +48,7 @@ export type ResolveCitationsFn = (
   sourceTranscriptId: string | null; sourceDate: number | null
   issueType: string | null; sourceQuoteVerified: boolean | null
   recurrence: any | null
+  sourceTime: string | null; sourceTimeKind: "meeting" | "upload"
 }>
 
 export interface SimRunOptions {
@@ -353,6 +354,8 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
         sentiment: r?.sentiment ?? null,
         priority: bug?.priority ?? null,
         quote: citation.sourceQuote,
+        sourceTime: citation.sourceTime,
+        sourceTimeKind: citation.sourceTimeKind,
         hash,
         // region: parse model output; accept both "region" (new) and "box" (legacy field name).
         region: parseRegion(r?.region ?? r?.box),

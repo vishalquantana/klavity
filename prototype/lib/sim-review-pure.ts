@@ -65,6 +65,10 @@ export interface SimObservation {
   sentiment: string | null      // positive | negative | neutral (or model values: frustrated etc.)
   priority: string | null       // "urgent"|"high"|"medium"|"low" from bug candidate; null = no bug
   quote: string | null          // verbatim source quote from a trait, if cited
+  sourceTime: string | null     // formatted in-meeting timestamp ("12:45"/"1:02:03") when the cited
+                                 // trait's grounding line carried an in-note time; else null (fall
+                                 // back to the transcript's upload date — see sourceTimeKind)
+  sourceTimeKind: "meeting" | "upload" // "meeting" when sourceTime is set, else "upload"
   hash: string                  // sha256 slice-16 dedup token — stable within a session
   region: ObsRegion | null      // normalised 0..1 bbox of the targeted element; null = page-level
   suggestedBug?: any | null
