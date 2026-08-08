@@ -327,5 +327,12 @@
     "excerpt": "Black-box testing checks behavior through the interface; white-box testing checks internal code paths. Here's how they differ and when to use each.",
     "category": "Compare",
     "date": "2026-08-07"
+  },
+  {
+    "slug": "bug-vs-defect-vs-error-vs-failure",
+    "title": "Bug vs. Defect vs. Error vs. Failure: The Difference",
+    "excerpt": "An error is a human mistake, a defect is the flawed code it produces, and a failure is what a user sees when that defect runs. Here's the chain.",
+    "category": "Compare",
+    "date": "2026-08-08"
   }
 ]
