@@ -334,5 +334,12 @@
     "excerpt": "An error is a human mistake, a defect is the flawed code it produces, and a failure is what a user sees when that defect runs. Here's the chain.",
     "category": "Compare",
     "date": "2026-08-08"
+  },
+  {
+    "slug": "what-is-the-bug-life-cycle",
+    "title": "What Is the Bug Life Cycle? Every Stage, Explained",
+    "excerpt": "The bug life cycle is the states a defect moves through from report to closure: New, Assigned, Open, Fixed, Retest, Closed. Here's each stage's owner.",
+    "category": "Learn",
+    "date": "2026-08-09"
   }
 ]

@@ -1,0 +1,110 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What Is the Bug Life Cycle? Every Stage, Explained · Klavity</title>
+<meta name="description" content="The bug life cycle is the states a defect moves through from report to closure: New, Assigned, Open, Fixed, Retest, Closed. Here's each stage's owner.">
+<link rel="canonical" href="https://klavity.in/blog/what-is-the-bug-life-cycle">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="What Is the Bug Life Cycle? Every Stage, Explained"><meta property="og:description" content="The bug life cycle is the states a defect moves through from report to closure: New, Assigned, Open, Fixed, Retest, Closed. Here's each stage's owner.">
+<meta property="og:url" content="https://klavity.in/blog/what-is-the-bug-life-cycle"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="What Is the Bug Life Cycle? Every Stage, Explained"><meta name="twitter:description" content="The bug life cycle is the states a defect moves through from report to closure: New, Assigned, Open, Fixed, Retest, Closed. Here's each stage's owner."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"What Is the Bug Life Cycle? Every Stage, Explained","description":"The bug life cycle is the states a defect moves through from report to closure: New, Assigned, Open, Fixed, Retest, Closed. Here's each stage's owner.","datePublished":"2026-08-09","dateModified":"2026-08-09","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/what-is-the-bug-life-cycle","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"What Is the Bug Life Cycle? Every Stage, Explained","item":"https://klavity.in/blog/what-is-the-bug-life-cycle"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/what-is-the-bug-life-cycle"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What are the stages of the bug life cycle?","acceptedAnswer":{"@type":"Answer","text":"The core stages are New (just reported), Assigned (given to a developer), Open/In Progress (being fixed), Fixed (code changed, awaiting verification), Retest, Verified, and Closed. Side states include Reopened, Deferred, Duplicate, and Rejected/Not a Bug."}},{"@type":"Question","name":"What is the difference between Closed and Verified?","acceptedAnswer":{"@type":"Answer","text":"Verified means QA re-ran the reproduction steps and confirmed the fix works. Closed means the ticket is done and no further action is expected. Verified is a QA action; Closed is the administrative end state. Many teams close only after verifying."}},{"@type":"Question","name":"What does it mean when a bug is Reopened?","acceptedAnswer":{"@type":"Answer","text":"A bug is Reopened when it was marked Fixed or Closed but the failure still happens on retest — the fix was incomplete, addressed the wrong cause, or a new build reintroduced it. A high reopen rate signals fixes aren't sticking."}},{"@type":"Question","name":"Who moves a bug through the life cycle?","acceptedAnswer":{"@type":"Answer","text":"Ownership shifts by state: the reporter and triage lead handle New and Assigned, developers own Open through Fixed, and QA owns Retest through Verified and Closed. The status field is a handoff signal — it tells the next person the work is theirs."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Learn · 2026-08-09</div>
+    <h1>What Is the Bug Life Cycle? Every Stage, Explained</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>The bug life cycle (or defect life cycle) is the sequence of states a bug moves through from the moment it's reported until it's closed: New → Assigned → Open/In Progress → Fixed → Retest → Verified → Closed, with side branches for Reopened, Deferred, Duplicate, and Rejected. Each state answers one question: whose desk is it on, and what has to happen next.</div>
+    <div class="prose"><p>The <strong>bug life cycle</strong> (also called the defect life cycle) is the set of states a bug moves through from the moment it's reported until it's finally closed. The standard path is <strong>New → Assigned → Open/In Progress → Fixed → Retest → Verified → Closed</strong>, with side branches for bugs that get Reopened, Deferred, marked Duplicate, or Rejected. Each state exists to answer one question: whose desk is the bug on right now, and what has to happen before it moves.</p>
+
+<h2>What are the stages of the bug life cycle?</h2>
+<p>Most trackers implement some variation of these states. The names differ — Jira calls one "In Progress," GitHub calls it an assigned open issue — but the meaning is consistent:</p>
+<ol>
+<li><strong>New</strong> — the bug has just been reported and hasn't been reviewed yet. It carries a title, steps to reproduce, and ideally evidence (screenshot, console, network). Nobody owns the fix yet.</li>
+<li><strong>Assigned</strong> — a triage lead has confirmed the report is valid and handed it to a specific developer. This is where <a href="/blog/severity-vs-priority-how-to-classify-a-bug">severity and priority</a> get set, which decides how soon it's worked.</li>
+<li><strong>Open / In Progress</strong> — the assigned developer is actively investigating or writing the fix. The bug is on the developer's desk.</li>
+<li><strong>Fixed</strong> — the developer has changed the code and believes the bug is resolved, but no one else has confirmed it. "Fixed" is a claim, not a verification.</li>
+<li><strong>Retest / Pending Retest</strong> — the ball is back with QA, who re-runs the original reproduction steps against the new build.</li>
+<li><strong>Verified</strong> — QA ran the steps and the bug no longer reproduces. This is the only state that proves the fix actually works.</li>
+<li><strong>Closed</strong> — the ticket is done and no further action is expected. On healthy teams a bug reaches Closed only after Verified.</li>
+</ol>
+
+<h2>The side states: Reopened, Deferred, Duplicate, and Rejected</h2>
+<p>Not every bug walks the straight path. Four branch states handle the exceptions, and knowing them prevents tickets from silently dying:</p>
+<ul>
+<li><strong>Reopened</strong> — the bug was marked Fixed or Closed, but it still reproduces on retest. The fix was incomplete, targeted the wrong root cause, or a later build reintroduced it. A rising reopen count is the clearest signal your fixes aren't sticking.</li>
+<li><strong>Deferred</strong> — the bug is real and accepted, but the team has decided to fix it later (low priority, or blocked on other work). Deferred is a decision, not a dead end — it should carry a reason.</li>
+<li><strong>Duplicate</strong> — the same defect is already tracked in another ticket. The duplicate is closed with a link to the original so the signal isn't split across two threads.</li>
+<li><strong>Rejected / Not a Bug</strong> — on investigation the reported behavior is intended, a configuration issue, or unreproducible. Rejecting should always include the reason, so the reporter learns why.</li>
+</ul>
+
+<h2>Who owns each stage of the bug life cycle?</h2>
+<p>The most useful way to read the life cycle is as a chain of handoffs. The status field isn't a label describing the bug — it's a signal telling the next person the work is now theirs. Ownership shifts predictably:</p>
+<ul>
+<li><strong>Reporter and triage lead</strong> own <em>New</em> and <em>Assigned</em>. They validate the report, deduplicate it, and set severity and priority.</li>
+<li><strong>Developer</strong> owns <em>Open</em> through <em>Fixed</em>. They reproduce, find the root cause, ship the change, and hand it back.</li>
+<li><strong>QA</strong> owns <em>Retest</em>, <em>Verified</em>, and <em>Closed</em>. The rule that prevents most quality escapes: a developer should never close their own bug. Verification is a separate pair of eyes running the exact steps.</li>
+</ul>
+<p>When a bug stalls, it's almost always because a handoff didn't happen — a Fixed ticket that no one picked up for retest, or a New ticket with no evidence that triage couldn't act on.</p>
+
+<h2>How the life cycle maps to Jira, Linear, and GitHub Issues</h2>
+<p>The concepts are universal; the field names vary by tracker:</p>
+<ul>
+<li><strong>Jira</strong> models the life cycle explicitly as a configurable workflow with named statuses and transition rules — you can enforce that a bug can't reach Done without passing through a QA verification status.</li>
+<li><strong>Linear</strong> groups statuses into stages (Backlog, Todo, In Progress, Done, Canceled) and lets you add custom workflow states per team, so "Fixed" and "Verified" can be distinct steps before Done.</li>
+<li><strong>GitHub Issues</strong> is lighter: an issue is open or closed, and the life cycle is expressed through labels (<em>needs-triage</em>, <em>in-progress</em>, <em>needs-verification</em>) and assignees rather than formal states.</li>
+</ul>
+<p>Whichever tool you use, the discipline is the same: make the state you're in obvious, and make the next required action clear from that state alone.</p>
+
+<h2>How to keep bugs moving through the life cycle</h2>
+<ol>
+<li><strong>Attach evidence at New.</strong> A report with steps, environment, screenshot, console, and network doesn't stall in triage or bounce back as "cannot reproduce." Capturing that state at report time is exactly what in-app tools like <a href="/snap">Klavity Snap</a> automate — a right-click on the bug captures the full context so the ticket starts complete.</li>
+<li><strong>Enforce a verification gate.</strong> Don't allow Fixed → Closed directly. Route every fix through Retest so a second person confirms it against the reproduction steps.</li>
+<li><strong>Track the reopen rate.</strong> Reopened tickets are the honest measure of fix quality. If the rate climbs, the problem is usually root-cause analysis skipped in favor of symptom patching — see <a href="/blog/how-to-reduce-bug-reopen-rate">how to reduce your reopen rate</a>.</li>
+<li><strong>Give every side state a reason.</strong> A Rejected, Deferred, or Duplicate ticket without an explanation erodes trust in the tracker. One sentence — "deferred to next sprint, low priority" — keeps the history usable.</li>
+</ol>
+<p>Done well, the bug life cycle isn't bureaucracy — it's a shared language that tells everyone, at a glance, exactly what's happening to a defect and what has to happen next.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Treat each status as a handoff, not a label — it says whose desk the bug is on</li><li>Never let a developer close their own bug; require a QA Retest to reach Verified</li><li>Track Reopened rate — it's the clearest signal your fixes aren't sticking</li><li>Attach reproduction evidence at New so triage doesn't stall on 'cannot reproduce'</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What are the stages of the bug life cycle?</summary><p>The core stages are New (just reported), Assigned (given to a developer), Open/In Progress (being fixed), Fixed (code changed, awaiting verification), Retest, Verified, and Closed. Side states include Reopened, Deferred, Duplicate, and Rejected/Not a Bug.</p></details><details><summary>What is the difference between Closed and Verified?</summary><p>Verified means QA re-ran the reproduction steps and confirmed the fix works. Closed means the ticket is done and no further action is expected. Verified is a QA action; Closed is the administrative end state. Many teams close only after verifying.</p></details><details><summary>What does it mean when a bug is Reopened?</summary><p>A bug is Reopened when it was marked Fixed or Closed but the failure still happens on retest — the fix was incomplete, addressed the wrong cause, or a new build reintroduced it. A high reopen rate signals fixes aren't sticking.</p></details><details><summary>Who moves a bug through the life cycle?</summary><p>Ownership shifts by state: the reporter and triage lead handle New and Assigned, developers own Open through Fixed, and QA owns Retest through Verified and Closed. The status field is a handoff signal — it tells the next person the work is theirs.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
