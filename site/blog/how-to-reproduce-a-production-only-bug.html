@@ -1,0 +1,98 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to Reproduce a Production-Only Bug That Never Happens Locally · Klavity</title>
+<meta name="description" content="A bug that only appears in production usually traces to a parity gap in data, config, scale, integrations, or user state. Here's how to close it.">
+<link rel="canonical" href="https://klavity.in/blog/how-to-reproduce-a-production-only-bug">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="How to Reproduce a Production-Only Bug That Never Happens Locally"><meta property="og:description" content="A bug that only appears in production usually traces to a parity gap in data, config, scale, integrations, or user state. Here's how to close it.">
+<meta property="og:url" content="https://klavity.in/blog/how-to-reproduce-a-production-only-bug"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="How to Reproduce a Production-Only Bug That Never Happens Locally"><meta name="twitter:description" content="A bug that only appears in production usually traces to a parity gap in data, config, scale, integrations, or user state. Here's how to close it."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"How to Reproduce a Production-Only Bug That Never Happens Locally","description":"A bug that only appears in production usually traces to a parity gap in data, config, scale, integrations, or user state. Here's how to close it.","datePublished":"2026-08-10","dateModified":"2026-08-10","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/how-to-reproduce-a-production-only-bug","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Reproduce a Production-Only Bug That Never Happens Locally","item":"https://klavity.in/blog/how-to-reproduce-a-production-only-bug"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/how-to-reproduce-a-production-only-bug"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Why does a bug happen in production but not locally?","acceptedAnswer":{"@type":"Answer","text":"Because your local environment differs from production in at least one way the code depends on: the data shape, an environment variable or feature flag, request volume and concurrency, a third-party integration, or the specific user's account and permission state. The bug lives in that difference, not in the code path you can see locally."}},{"@type":"Question","name":"How do I reproduce a bug I can only see in production?","acceptedAnswer":{"@type":"Answer","text":"Capture the failing request, URL, environment, and account state from production first — ideally at the exact moment it broke. Then reproduce it against a production-like environment, or bring one production variable at a time into your local setup (real data shape, the same flag values, the same user role) until the bug appears."}},{"@type":"Question","name":"What's the difference between a production-only bug and a flaky bug?","acceptedAnswer":{"@type":"Answer","text":"A production-only bug is deterministic — it reproduces reliably given the right environment and inputs, it just never gets those inputs locally. A flaky bug is non-deterministic: it fails intermittently in the same environment due to timing, order, or races. Production-only bugs are an environment problem; flaky bugs are a timing problem."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-08-10</div>
+    <h1>How to Reproduce a Production-Only Bug That Never Happens Locally</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>A production-only bug almost always traces to a parity gap — your local environment has different data, config, scale, integrations, or user state than production. Reproduce it by capturing the exact production request, environment, and account state at the moment it failed, then recreating that one variable at a time until the bug appears locally.</div>
+    <div class="prose"><p>A bug that only appears in production almost always traces to a <strong>parity gap</strong>: your local environment has different data, configuration, scale, integrations, or user state than production, and the bug lives inside that difference. To reproduce it, capture the exact production request, environment, and account state at the moment it failed, then recreate that one variable at a time locally until the bug appears. The failure is deterministic — you just need to feed your code the inputs production gave it.</p>
+
+<h2>Why does a bug only happen in production?</h2>
+<p>Your code runs the same everywhere. What changes between your laptop and production is the world the code runs in. A production-only bug is your code behaving correctly given an input you never generate locally — a null field a real customer left blank, a feature flag that's on for one account, a payload ten times larger than your seed data. Chasing the code without changing the environment is why these bugs eat days.</p>
+<p>The useful mental shift: don't ask <em>"what's wrong with the code?"</em> Ask <em>"what does production have that my machine doesn't?"</em> That reframes an open-ended debugging session into a short checklist.</p>
+
+<h2>The five parity gaps that cause production-only bugs</h2>
+<p>Almost every production-only bug hides in one of these five differences. Work through them in order — the earlier ones are more common and cheaper to check.</p>
+<ol>
+<li><strong>Data shape.</strong> Real records have nulls, emojis, very long strings, unusual timezones, legacy formats, and volumes your seed data doesn't. A function that works on your three clean test rows can crash on the customer's account with 40,000 orders and one malformed address.</li>
+<li><strong>Config and feature flags.</strong> Environment variables, feature-flag states, and per-tenant settings differ between local, staging, and production. A bug that only hits one customer is often a flag that's on for them and off for you.</li>
+<li><strong>Scale and concurrency.</strong> Pagination limits, timeouts, connection-pool exhaustion, and race conditions only surface under production load or with production-sized datasets. These look intermittent but are usually deterministic once you match the volume.</li>
+<li><strong>Third-party integrations.</strong> Payment providers, auth services, and external APIs behave differently in production than in the sandbox or mock you run locally — different rate limits, response shapes, latency, and error codes.</li>
+<li><strong>User and permission state.</strong> The bug may only exist for a specific role, plan tier, onboarding state, or account age. If you always test as an admin on a fresh account, you'll never see what a read-only user on a two-year-old account sees.</li>
+</ol>
+
+<h2>How to reproduce a production-only bug, step by step</h2>
+<p>Once you know the parity gaps, reproduction becomes a disciplined narrowing process rather than a hunt.</p>
+<ol>
+<li><strong>Capture the failing moment first.</strong> Get the exact URL, the request and response, the console errors, the environment (browser, OS, app version), and which account hit it. Reproduction is impossible without knowing the real inputs — and this is exactly the state a good <a href="/snap">in-app bug report</a> should carry, so you're not reconstructing it from memory.</li>
+<li><strong>Pin down the account and its state.</strong> Identify the specific user, role, plan, and data that triggered it. "It happens for this customer" is a much smaller search space than "it happens in production."</li>
+<li><strong>Reproduce against a production-like environment.</strong> Before touching your laptop, try to trigger it in staging with production-shaped data, or against a copy of the affected account. If it reproduces there, you've confirmed it's environmental, not a fluke.</li>
+<li><strong>Bring one variable local at a time.</strong> Import the real data shape, then flip the flag to match, then match the user role — one change per attempt. The change that makes the bug appear is your root cause.</li>
+<li><strong>Write the reproduction down as a test.</strong> The moment it reproduces, capture the trigger as a failing test so the fix is verifiable and the bug can't silently return.</li>
+</ol>
+
+<h2>When you still can't reproduce it locally</h2>
+<p>Sometimes the production environment simply can't be recreated on a laptop — the concurrency, the data volume, or the integration is the point. When that happens, stop trying to shrink production down and instead debug up in a production-like place:</p>
+<ul>
+<li><strong>Add targeted logging around the failing path</strong> and let the next real occurrence tell you the input values you're missing. One well-placed log line often beats an hour of local guessing.</li>
+<li><strong>Debug in staging with a restored copy</strong> of the affected data and the same flag configuration, so the environment matches without exposing live customer data.</li>
+<li><strong>Instrument the request itself</strong> so the next failure automatically records the state you need — the inputs, the account, the environment — instead of asking the user to reproduce it on demand.</li>
+</ul>
+<p>This is the same principle behind <a href="/blog/reduce-cannot-reproduce-bug-tickets">reducing "cannot reproduce" tickets</a>: the fix is never a better guess, it's capturing more of the real state at the moment things break.</p>
+
+<h2>Prevent the next one</h2>
+<p>Production-only bugs are cheaper to stop than to chase. Seed your local and test environments with production-<em>shaped</em> data — including the ugly edge cases — rather than clean fixtures. Keep feature-flag and config differences between environments small and documented. And capture rich context on every bug report by default, so "only in production" becomes a solved input problem instead of a mystery. Klavity <a href="/snap">Snap</a> attaches the URL, console, network, and environment to each report at the click, which turns most production-only reports into a repro you can act on the same day. For a wider view of the debugging tactics behind this, the <a href="/blog">Klavity blog</a> covers evidence capture, triage, and turning fixes into regression tests.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Capture the failing production request, URL, and account state before you try to reproduce anything.</li><li>Check the five parity gaps: data shape, config and flags, scale and concurrency, third-party integrations, and user or permission state.</li><li>Change one production variable at a time when moving a repro from prod toward local, so you learn which one triggers the bug.</li><li>If it won't reproduce locally, stop guessing and debug against a production-like environment instead.</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Why does a bug happen in production but not locally?</summary><p>Because your local environment differs from production in at least one way the code depends on: the data shape, an environment variable or feature flag, request volume and concurrency, a third-party integration, or the specific user's account and permission state. The bug lives in that difference, not in the code path you can see locally.</p></details><details><summary>How do I reproduce a bug I can only see in production?</summary><p>Capture the failing request, URL, environment, and account state from production first — ideally at the exact moment it broke. Then reproduce it against a production-like environment, or bring one production variable at a time into your local setup (real data shape, the same flag values, the same user role) until the bug appears.</p></details><details><summary>What's the difference between a production-only bug and a flaky bug?</summary><p>A production-only bug is deterministic — it reproduces reliably given the right environment and inputs, it just never gets those inputs locally. A flaky bug is non-deterministic: it fails intermittently in the same environment due to timing, order, or races. Production-only bugs are an environment problem; flaky bugs are a timing problem.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

@@ -341,5 +341,12 @@
     "excerpt": "The bug life cycle is the states a defect moves through from report to closure: New, Assigned, Open, Fixed, Retest, Closed. Here's each stage's owner.",
     "category": "Learn",
     "date": "2026-08-09"
+  },
+  {
+    "slug": "how-to-reproduce-a-production-only-bug",
+    "title": "How to Reproduce a Production-Only Bug That Never Happens Locally",
+    "excerpt": "A bug that only appears in production usually traces to a parity gap in data, config, scale, integrations, or user state. Here's how to close it.",
+    "category": "Guides",
+    "date": "2026-08-10"
   }
 ]
