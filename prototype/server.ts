@@ -31,7 +31,7 @@ import { listProjectInvites, revokeProjectInvite, getPendingInvite } from "./lib
 import { notifyReporterOnFix } from "./lib/fixed-notification"
 import { notifyTicketComment } from "./lib/notify"
 import { guardCaughtForFeedback, latestReceiptForFeedback, sendRegressionCaughtReceipt } from "./lib/regression-receipt"
-import { token, otp, emailAllowed, cookie, clearCookie, parseCookies, isOpsAdmin, projectCookie } from "./lib/auth"
+import { token, otp, emailAllowed, isInternalEmail, cookie, clearCookie, parseCookies, isOpsAdmin, projectCookie } from "./lib/auth"
 import { uploadScreenshotMeta, uploadAttachment, presignGet, deleteObject, getObjectBytes, type UploadedScreenshot } from "./lib/s3"
 import { signImageToken, verifyImageToken } from "./lib/imgsign"
 import { runRetentionSweep } from "./lib/retention"
@@ -1574,6 +1574,10 @@ function connectorToClient(c: any): Record<string, any> {
 const OTP_REQ_WINDOW = 15 * 60 * 1000  // 15 min
 const OTP_REQ_PER_EMAIL = 5            // code requests per email / window
 const OTP_REQ_PER_IP = 30             // code requests per IP / window (shared NAT headroom)
+// Staff (isInternalEmail) get a much roomier budget and skip the shared-office-IP throttle — the
+// per-IP cap kept tripping colleagues behind one NAT. See the /api/auth/request handler.
+const OTP_REQ_INTERNAL_WINDOW = 60 * 60 * 1000  // 1 hour
+const OTP_REQ_INTERNAL_PER_EMAIL = 60           // code requests per internal email / hour
 const OTP_FAIL_WINDOW = 15 * 60 * 1000
 const OTP_FAIL_MAX = 5                 // wrong codes per (email,IP) before lockout
 // IP-INDEPENDENT per-email lockout (H1/A07): the per-(email,IP) counter alone is defeated by an
@@ -2691,10 +2695,21 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           return json({ ok: true, emailed: false, testOtp: true })
         }
         // Throttle issuance per email AND per IP (H1): stops OTP/email bombing and shrinks the window
-        // an attacker has to brute-force a code. Both must pass.
+        // an attacker has to brute-force a code. Staff domains get a roomier per-email budget and are
+        // exempt from the shared-IP cap (one office NAT was tripping the whole team); everyone else
+        // keeps the tight anonymous-abuse limits.
         const reqIp = clientIp(req, server)
-        if (!rlAllow(`otpreq:e:${e}`, OTP_REQ_PER_EMAIL, OTP_REQ_WINDOW) || !rlAllow(`otpreq:ip:${reqIp}`, OTP_REQ_PER_IP, OTP_REQ_WINDOW))
-          return json({ error: "Too many code requests. Please wait a few minutes and try again." }, 429, { "Retry-After": "900" })
+        const internal = isInternalEmail(e)
+        const emailPerWindow = internal ? OTP_REQ_INTERNAL_PER_EMAIL : OTP_REQ_PER_EMAIL
+        const emailWindow = internal ? OTP_REQ_INTERNAL_WINDOW : OTP_REQ_WINDOW
+        const emailOver = !rlAllow(`otpreq:e:${e}`, emailPerWindow, emailWindow)
+        // Staff skip the per-IP cap entirely (one office NAT was tripping the whole team). Everyone
+        // else must also pass the shared-IP limit that guards against anonymous OTP bombing.
+        const ipOver = !emailOver && !internal && !rlAllow(`otpreq:ip:${reqIp}`, OTP_REQ_PER_IP, OTP_REQ_WINDOW)
+        if (emailOver || ipOver) {
+          const retryAfter = String(Math.round((internal ? OTP_REQ_INTERNAL_WINDOW : OTP_REQ_WINDOW) / 1000))
+          return json({ error: "Too many code requests. Please wait and try again." }, 429, { "Retry-After": retryAfter })
+        }
         const invited = await hasAnyMembership(e)
         const pendingAssignmentInvite = invited ? false : await hasPendingTicketAssignmentInvite(e)
         if (!emailAllowed(e) && !invited && !pendingAssignmentInvite) return json({ error: "This email isn't on the access list. Ask an admin to invite you." }, 403)

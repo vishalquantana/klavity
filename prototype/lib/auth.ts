@@ -23,6 +23,18 @@ export function emailAllowed(email: string): boolean {
   return domains.includes(dom)
 }
 
+// Our own staff domains. Internal signers-in get a far more generous OTP request budget and skip
+// the shared-office-IP throttle (see the /api/auth/request handler) — the per-IP limit exists to
+// stop anonymous OTP bombing, which a trusted staff domain behind the access list doesn't warrant.
+// Extra domains can be added via KLAV_INTERNAL_DOMAINS (comma-separated); the defaults always apply.
+const INTERNAL_DOMAINS_DEFAULT = ["quantana.in", "quantana.com.au"]
+export function isInternalEmail(email: string): boolean {
+  const dom = String(email || "").toLowerCase().split("@")[1] || ""
+  if (!dom) return false
+  const extra = (process.env.KLAV_INTERNAL_DOMAINS || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean)
+  return INTERNAL_DOMAINS_DEFAULT.includes(dom) || extra.includes(dom)
+}
+
 // Ops super-admin allowlist for /opsadmin. Distinct from project/account roles. Fail closed:
 // an empty or unset OPS_ADMIN_EMAILS means nobody qualifies.
 export function isOpsAdmin(email: string | null | undefined): boolean {

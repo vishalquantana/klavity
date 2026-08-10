@@ -25,7 +25,7 @@ beforeAll(async () => {
       TURSO_AUTH_TOKEN: "",
       KLAV_SECRET: TEST_SECRET,
       KLAV_BASE_URL: BASE,
-      KLAV_ALLOWED_DOMAINS: "test.local",
+      KLAV_ALLOWED_DOMAINS: "test.local,quantana.in",
       KLAV_DEV_SHOW_OTP: "1",
       SENDGRID_API_KEY: "",
       KLAV_MAIL_FROM: "",
@@ -70,6 +70,28 @@ test("OTP request is throttled per email after 5 in the window (H1)", async () =
   const sixth = await reqCode(email, ip)
   expect(sixth.status).toBe(429)
   expect(sixth.headers.get("retry-after")).toBe("900")
+})
+
+test("internal (staff) email is NOT throttled at the external 5/window limit", async () => {
+  // quantana.in is a staff domain → 60/hour budget. 8 back-to-back requests must all pass
+  // (an external @test.local email 429s on the 6th, per the test above).
+  const email = `staff-${ts}@quantana.in`
+  const ip = "203.0.113.7"
+  for (let i = 0; i < 8; i++) {
+    const r = await reqCode(email, ip)
+    expect(r.status).toBe(200)
+  }
+})
+
+test("internal emails skip the shared-office-IP cap (>30 from one IP still pass)", async () => {
+  // The per-IP cap is 30/window; external traffic 429s past it. Staff are exempt, so 35 requests
+  // across distinct staff emails from ONE office IP all succeed — the scenario that was blocking
+  // the whole team behind a common NAT.
+  const ip = "203.0.113.8"
+  for (let i = 0; i < 35; i++) {
+    const r = await reqCode(`nat-${i}-${ts}@quantana.in`, ip)
+    expect(r.status).toBe(200)
+  }
 })
 
 test("OTP verify locks out after 5 wrong codes for an (email,IP) (H1)", async () => {
