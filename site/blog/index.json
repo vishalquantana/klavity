@@ -348,5 +348,12 @@
     "excerpt": "A bug that only appears in production usually traces to a parity gap in data, config, scale, integrations, or user state. Here's how to close it.",
     "category": "Guides",
     "date": "2026-08-10"
+  },
+  {
+    "slug": "how-to-reduce-escaped-defects",
+    "title": "How to Reduce Escaped Defects Before They Reach Users",
+    "excerpt": "Escaped defects are bugs your users find before you do. Here's how to measure your defect escape rate and close the four gaps that let bugs slip past QA.",
+    "category": "Insights",
+    "date": "2026-08-11"
   }
 ]
