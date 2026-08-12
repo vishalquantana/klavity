@@ -1,0 +1,105 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to Write a Definition of Done for a Bug Fix (Checklist) · Klavity</title>
+<meta name="description" content="A bug isn't fixed when the code changes — it's fixed when it's verified and can't quietly return. Here's a definition-of-done checklist for bug fixes.">
+<link rel="canonical" href="https://klavity.in/blog/definition-of-done-for-a-bug-fix">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="How to Write a Definition of Done for a Bug Fix (Checklist)"><meta property="og:description" content="A bug isn't fixed when the code changes — it's fixed when it's verified and can't quietly return. Here's a definition-of-done checklist for bug fixes.">
+<meta property="og:url" content="https://klavity.in/blog/definition-of-done-for-a-bug-fix"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="How to Write a Definition of Done for a Bug Fix (Checklist)"><meta name="twitter:description" content="A bug isn't fixed when the code changes — it's fixed when it's verified and can't quietly return. Here's a definition-of-done checklist for bug fixes."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"How to Write a Definition of Done for a Bug Fix (Checklist)","description":"A bug isn't fixed when the code changes — it's fixed when it's verified and can't quietly return. Here's a definition-of-done checklist for bug fixes.","datePublished":"2026-08-12","dateModified":"2026-08-12","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/definition-of-done-for-a-bug-fix","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Write a Definition of Done for a Bug Fix (Checklist)","item":"https://klavity.in/blog/definition-of-done-for-a-bug-fix"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/definition-of-done-for-a-bug-fix"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a definition of done for a bug fix?","acceptedAnswer":{"@type":"Answer","text":"It's an explicit, shared checklist every bug fix must satisfy before the ticket moves to Closed — typically: root cause found, fix verified against the original reproduction steps, a regression test added, related paths checked, and the change reviewed. It turns 'done' from an opinion into a repeatable standard."}},{"@type":"Question","name":"How is a definition of done different from acceptance criteria?","acceptedAnswer":{"@type":"Answer","text":"Acceptance criteria are specific to one ticket ('the export button should download a CSV'). A definition of done is a general standard that applies to every fix regardless of the ticket. You need both: acceptance criteria say what to build, the definition of done says what 'finished' means for all of it."}},{"@type":"Question","name":"Does every bug fix need a regression test?","acceptedAnswer":{"@type":"Answer","text":"Nearly always for logic, data, and integration bugs — a fix with no test is a fix that can silently regress. The pragmatic exceptions are one-off environment issues and pure copy changes, but even then note in the ticket why no test was added so the decision is visible rather than skipped by default."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-08-12</div>
+    <h1>How to Write a Definition of Done for a Bug Fix (Checklist)</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>A definition of done for a bug fix is the checklist a fix must clear before the ticket closes: root cause identified, fix verified against the original reproduction, a regression test that fails before the fix and passes after, and related code paths checked. Closing on 'it works on my machine now' without that test is the single biggest driver of reopened bugs.</div>
+    <div class="prose"><p>A <strong>definition of done for a bug fix</strong> is the fixed checklist every fix must clear before the ticket is closed: the root cause is identified, the fix is verified against the original reproduction steps, a regression test that fails before the fix and passes after is committed, related code paths are checked, and the change is reviewed. Without it, “done” means whatever the developer felt at the time — which is why fixes that “worked on my machine” come back as reopened tickets a sprint later.</p>
+
+<p>The point of a definition of done (DoD) is to move the finish line from an opinion to a standard. Acceptance criteria tell you what to build for one ticket; the DoD tells you what <em>finished</em> means for every ticket. Below is a checklist you can adopt, why each item earns its place, and how to make the standard stick instead of becoming boilerplate nobody reads.</p>
+
+<h2>What should be in a definition of done for a bug fix?</h2>
+<p>A good DoD is short enough to actually run every time and strict enough to catch the ways fixes fail. These six items cover the common failure modes without turning every one-line fix into a ceremony:</p>
+<ol>
+<li><strong>Root cause identified, not just the symptom.</strong> You can describe <em>why</em> the bug happened in one sentence. If the fix is “add a null check” but you can't say why the value was null, you've likely patched a symptom and the real defect is still live somewhere upstream.</li>
+<li><strong>Fix verified against the original reproduction.</strong> Someone re-ran the exact steps from the ticket and confirmed the bug is gone — not “the code looks right,” but the actual repro no longer reproduces.</li>
+<li><strong>A regression test that fails before and passes after.</strong> The test must fail on the pre-fix code and pass on the fixed code. A test that passes both ways proves nothing. This is the item that stops the bug from silently returning.</li>
+<li><strong>Related code paths checked.</strong> The same root cause usually has siblings. If a date parser broke on one screen, check every screen that parses dates the same way before you close it.</li>
+<li><strong>Change reviewed by someone else.</strong> A second reader catches the fix that introduces a new bug — the most common reason a “fixed” ticket reopens as a different failure.</li>
+<li><strong>Ticket updated with the resolution.</strong> The commit or PR link, the root cause in plain language, and a note on anything intentionally left out of scope. Future-you triaging a similar bug will thank present-you.</li>
+</ol>
+<p>Keep the list at this altitude. A DoD with twenty checkboxes gets skimmed; one with six gets run.</p>
+
+<h2>Why 'it works now' isn't done</h2>
+<p>The most expensive gap in most teams' DoD is verification-by-eyeball. A developer reads the diff, sees the logic is now correct, and marks the ticket done without ever re-running the failing case. Two things go wrong with this:</p>
+<ul>
+<li><strong>The fix addresses a different case than the one that broke.</strong> The reported bug and the code you changed can look like the same thing while being subtly different inputs. Re-running the original reproduction is the only cheap way to confirm you fixed <em>this</em> bug, not a nearby one.</li>
+<li><strong>Nothing stops it from coming back.</strong> A fix with no test survives exactly until the next refactor touches that code. Then it regresses — and now it's an escaped defect a user finds, not a caught one. Converting the bug into a <a href="/blog/turn-a-bug-into-a-regression-test">regression test that sticks</a> is what makes the fix permanent instead of temporary.</li>
+</ul>
+<p>The rule of thumb: a bug is a claim that some behavior is wrong. A fix is only “done” when you can demonstrate — with a repeatable test, not a memory — that the behavior is now right and will stay right.</p>
+
+<h2>How to make the definition of done actually get used</h2>
+<p>A DoD written in a wiki page nobody opens changes nothing. The trick is to put the checklist where the work already happens so running it is the path of least resistance.</p>
+<ol>
+<li><strong>Put it in the pull-request template.</strong> Add the checklist as literal checkboxes in your PR description template. A reviewer looking at empty boxes is far more likely to ask “where's the regression test?” than a reviewer working from memory.</li>
+<li><strong>Put it in the bug ticket's close transition.</strong> Many trackers let you require fields or a comment when moving a ticket to Closed. Use that transition to prompt for the root cause and the test link, so closing without them takes deliberate effort.</li>
+<li><strong>Make exceptions explicit, not silent.</strong> Some fixes genuinely don't warrant a test — a copy change, a one-off environment fix. Allow the exception, but require a one-line reason in the ticket. “No test: pure copy change” is a decision; a blank checkbox is a skipped step.</li>
+<li><strong>Review your reopen rate against the DoD.</strong> If bugs keep reopening, the reopens tell you which checklist item is being skipped. Track it the same way you'd track any other quality signal — see <a href="/blog/how-to-reduce-bug-reopen-rate">how to reduce your bug reopen rate</a> for the full loop.</li>
+</ol>
+
+<h2>A copy-paste checklist for your bug template</h2>
+<p>Drop this into your PR or ticket template and adapt the wording to your stack:</p>
+<ul>
+<li>[ ] Root cause identified and stated in one sentence</li>
+<li>[ ] Original reproduction steps re-run and confirmed fixed</li>
+<li>[ ] Regression test added — fails on old code, passes on new</li>
+<li>[ ] Sibling code paths with the same root cause checked</li>
+<li>[ ] Change reviewed by a second person</li>
+<li>[ ] Ticket updated with resolution, PR link, and any out-of-scope notes</li>
+</ul>
+<p>Two of these — re-running the original reproduction and confirming a regression test fails-then-passes — depend entirely on having a faithful reproduction in the first place. That's exactly what a rich bug report gives you: when a report ships with the exact steps, the environment, and the evidence attached, verifying the fix and writing the test become mechanical instead of guesswork. Tools like Klavity <a href="/snap">Snap</a> capture that state at report time — the URL, console, and network context — so the person closing the ticket is verifying against reality, not a paraphrase. A definition of done is only as strong as the reproduction it verifies against.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Write one shared definition of done and pin it in your bug template, not in someone's head.</li><li>Require a regression test that fails before the fix and passes after — this is what stops reopens.</li><li>Re-run the original reproduction steps to verify, don't just eyeball the code diff.</li><li>Check sibling code paths the same root cause could affect before you close the ticket.</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What is a definition of done for a bug fix?</summary><p>It's an explicit, shared checklist every bug fix must satisfy before the ticket moves to Closed — typically: root cause found, fix verified against the original reproduction steps, a regression test added, related paths checked, and the change reviewed. It turns 'done' from an opinion into a repeatable standard.</p></details><details><summary>How is a definition of done different from acceptance criteria?</summary><p>Acceptance criteria are specific to one ticket ('the export button should download a CSV'). A definition of done is a general standard that applies to every fix regardless of the ticket. You need both: acceptance criteria say what to build, the definition of done says what 'finished' means for all of it.</p></details><details><summary>Does every bug fix need a regression test?</summary><p>Nearly always for logic, data, and integration bugs — a fix with no test is a fix that can silently regress. The pragmatic exceptions are one-off environment issues and pure copy changes, but even then note in the ticket why no test was added so the decision is visible rather than skipped by default.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
