@@ -355,5 +355,12 @@
     "excerpt": "Escaped defects are bugs your users find before you do. Here's how to measure your defect escape rate and close the four gaps that let bugs slip past QA.",
     "category": "Insights",
     "date": "2026-08-11"
+  },
+  {
+    "slug": "definition-of-done-for-a-bug-fix",
+    "title": "How to Write a Definition of Done for a Bug Fix (Checklist)",
+    "excerpt": "A bug isn't fixed when the code changes — it's fixed when it's verified and can't quietly return. Here's a definition-of-done checklist for bug fixes.",
+    "category": "Guides",
+    "date": "2026-08-12"
   }
 ]
