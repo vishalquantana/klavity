@@ -362,5 +362,12 @@
     "excerpt": "A bug isn't fixed when the code changes — it's fixed when it's verified and can't quietly return. Here's a definition-of-done checklist for bug fixes.",
     "category": "Guides",
     "date": "2026-08-12"
+  },
+  {
+    "slug": "redact-pii-and-secrets-from-bug-reports",
+    "title": "How to Redact PII and Secrets From Bug Report Evidence",
+    "excerpt": "Bug reports capture console logs, network calls, screenshots, and URLs — which routinely carry tokens, cookies, and PII. Here's how to redact them safely.",
+    "category": "Guides",
+    "date": "2026-08-13"
   }
 ]
