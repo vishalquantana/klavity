@@ -369,5 +369,12 @@
     "excerpt": "Bug reports capture console logs, network calls, screenshots, and URLs — which routinely carry tokens, cookies, and PII. Here's how to redact them safely.",
     "category": "Guides",
     "date": "2026-08-13"
+  },
+  {
+    "slug": "how-to-reduce-mean-time-to-resolution-for-bugs",
+    "title": "How to Reduce Mean Time to Resolution (MTTR) for Bugs",
+    "excerpt": "Mean time to resolution (MTTR) measures how long bugs take to fix. The reproduction stage usually dominates it — here's how to shrink each stage.",
+    "category": "Guides",
+    "date": "2026-08-14"
   }
 ]
