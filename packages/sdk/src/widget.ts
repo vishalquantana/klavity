@@ -999,13 +999,15 @@ async function mount() {
 
     document.addEventListener("contextmenu", (e) => {
       if (e.shiftKey || nativePending) { nativePending = false; return }  // pass through to native menu
+      // 'modifier' mode: a contextmenu without Alt is a PLAIN right-click (or the keyboard menu key)
+      // — never preventDefault, so the native browser menu (spellcheck!) opens untouched. This must
+      // run BEFORE drag suppression: justDragged stays true for 400ms after an Alt+right-drag, and a
+      // plain right-click inside that window must still reach the native menu. Alt+right-click on
+      // Windows/Linux reaches here AFTER mouseup (suppressNextMenu already false) with altKey still
+      // set, falls through, and is suppressed below so no second (native) menu opens.
+      if (modifierOnly && !e.altKey) return
       if (regionDrag.suppressNextMenu()) { e.preventDefault(); return }   // pressing or drag — suppress
       if (onOwnUi(e)) return
-      // 'modifier' mode: a contextmenu without Alt is a PLAIN right-click (or the keyboard menu key)
-      // — never preventDefault, so the native browser menu (spellcheck!) opens untouched. Alt+right-
-      // click on Windows/Linux reaches here AFTER mouseup (suppressNextMenu already false) with
-      // altKey still set, falls through, and is suppressed below so no second (native) menu opens.
-      if (modifierOnly && !e.altKey) return
       // Keyboard contextmenu (no preceding mousedown) — pressing is false, show menu immediately.
       e.preventDefault()
       if (!reportArmed) return
