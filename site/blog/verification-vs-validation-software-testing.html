@@ -1,0 +1,120 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Verification vs. Validation: What's the Difference? · Klavity</title>
+<meta name="description" content="Verification asks 'are we building the product right?' Validation asks 'are we building the right product?' Here's how they differ, with examples of each.">
+<link rel="canonical" href="https://klavity.in/blog/verification-vs-validation-software-testing">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="Verification vs. Validation: What's the Difference?"><meta property="og:description" content="Verification asks 'are we building the product right?' Validation asks 'are we building the right product?' Here's how they differ, with examples of each.">
+<meta property="og:url" content="https://klavity.in/blog/verification-vs-validation-software-testing"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Verification vs. Validation: What's the Difference?"><meta name="twitter:description" content="Verification asks 'are we building the product right?' Validation asks 'are we building the right product?' Here's how they differ, with examples of each."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Verification vs. Validation: What's the Difference?","description":"Verification asks 'are we building the product right?' Validation asks 'are we building the right product?' Here's how they differ, with examples of each.","datePublished":"2026-08-15","dateModified":"2026-08-15","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/verification-vs-validation-software-testing","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"Verification vs. Validation: What's the Difference?","item":"https://klavity.in/blog/verification-vs-validation-software-testing"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/verification-vs-validation-software-testing"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Is verification or validation done first?","acceptedAnswer":{"@type":"Answer","text":"Verification runs continuously and early — every review, static-analysis pass, and unit test is verification, starting before a feature is complete. Validation happens once there is something a user can exercise, from an early prototype through acceptance testing before release. In practice they overlap rather than run in strict sequence."}},{"@type":"Question","name":"Is unit testing verification or validation?","acceptedAnswer":{"@type":"Answer","text":"Unit testing is verification. It checks a function against its intended behavior — the specification — without any real user in the loop. Validation requires evaluating the software against actual user needs, which unit tests do not do."}},{"@type":"Question","name":"Can a product pass verification but fail validation?","acceptedAnswer":{"@type":"Answer","text":"Yes, and it is common. Software can meet every requirement in the spec (passes verification) while still solving the wrong problem or being unusable for real users (fails validation). This is why teams that only verify ship technically-correct products nobody wants."}},{"@type":"Question","name":"What's an easy way to remember the difference?","acceptedAnswer":{"@type":"Answer","text":"Verification = 'Are we building the product right?' (against the spec). Validation = 'Are we building the right product?' (against user needs). Boehm's phrasing from the 1980s is still the clearest mnemonic in the industry."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Compare · 2026-08-15</div>
+    <h1>Verification vs. Validation: What's the Difference?</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>Verification checks software against its specification (reviews, static analysis, unit and integration tests) — 'are we building it right?' Validation checks the finished software against real user needs (usability tests, beta programs, acceptance testing) — 'are we building the right thing?' You need both: verification catches defects against the spec, and validation catches the spec itself being wrong.</div>
+    <div class="prose"><p><strong>Verification</strong> asks &ldquo;are we building the product right?&rdquo; &mdash; it checks the software against its specification through reviews, static analysis, and automated tests. <strong>Validation</strong> asks &ldquo;are we building the right product?&rdquo; &mdash; it checks the finished software against real user needs through usability testing, beta programs, and acceptance testing. The one-line difference: verification catches defects against the spec, while validation catches the spec itself being wrong.</p>
+
+<h2>What is verification in software testing?</h2>
+<p>Verification is the process of confirming that software conforms to its specified requirements and design. It answers a narrow, objective question &mdash; does the code do what the documented requirements say it should? &mdash; and it does so without needing a real user in the loop. Every verification activity compares an artifact to a reference that already exists inside the team: a requirement, a design document, a coding standard, or an expected test result.</p>
+<p>Verification is usually cheaper and faster than validation because it can be automated and run early. Common verification activities include:</p>
+<ul>
+<li><strong>Reviews and inspections</strong> &mdash; a human reads code or a design against the requirement it implements.</li>
+<li><strong>Static analysis</strong> &mdash; linters and type checkers confirm the code obeys rules without running it.</li>
+<li><strong>Unit and integration tests</strong> &mdash; automated checks assert that functions and modules produce the expected output for known inputs.</li>
+<li><strong>End-to-end tests</strong> &mdash; scripted flows drive the whole app and assert it still behaves as specified after a change.</li>
+</ul>
+
+<h2>What is validation in software testing?</h2>
+<p>Validation is the process of confirming that the finished software actually meets the needs of the people who use it. It answers a broader, partly subjective question &mdash; does this solve the real problem for the real user, in the way they expect? &mdash; and it requires exercising the product the way a user would. The reference here is not a document your team wrote; it is the user&rsquo;s actual goal, which the spec only approximates.</p>
+<p>Validation is where teams discover that a perfectly-built feature is confusing, unnecessary, or aimed at the wrong job. Common validation activities include:</p>
+<ul>
+<li><strong>Usability testing</strong> &mdash; watching real people attempt real tasks and noting where they get stuck.</li>
+<li><strong>Beta and canary releases</strong> &mdash; shipping to a subset of real users and watching behavior and feedback.</li>
+<li><strong>User acceptance testing (UAT)</strong> &mdash; the customer or product owner confirms the software meets their business need before release.</li>
+<li><strong>Persona-driven review</strong> &mdash; simulating how distinct user types would move through the product to surface mismatches early.</li>
+</ul>
+
+<h2>Verification vs. validation: the key differences</h2>
+<p>The two are complementary, not competing. Here is how they differ across the dimensions that matter in practice:</p>
+<ul>
+<li><strong>Question answered</strong> &mdash; Verification: &ldquo;Did we build it right?&rdquo; Validation: &ldquo;Did we build the right thing?&rdquo;</li>
+<li><strong>Reference point</strong> &mdash; Verification checks against the specification and design. Validation checks against real user needs.</li>
+<li><strong>When it runs</strong> &mdash; Verification runs early and continuously. Validation runs once there is something a user can exercise.</li>
+<li><strong>Who judges</strong> &mdash; Verification is judged by the team and by automated tools. Validation is judged by users, customers, or product owners.</li>
+<li><strong>What it catches</strong> &mdash; Verification catches implementation defects. Validation catches wrong or incomplete requirements.</li>
+</ul>
+<p>The mnemonic most teams use comes from Barry Boehm: verification is &ldquo;Am I building the product right?&rdquo; and validation is &ldquo;Am I building the right product?&rdquo; Keep that framing and you will rarely mislabel an activity.</p>
+
+<h2>Examples of verification and validation</h2>
+<p>Concrete examples make the split obvious. Consider a checkout flow:</p>
+<ol>
+<li><strong>Verification example</strong> &mdash; A unit test asserts that <em>applyDiscount(100, 0.2)</em> returns 80. It confirms the code matches the documented discount rule. No user is involved; the reference is the spec.</li>
+<li><strong>Verification example</strong> &mdash; An end-to-end test drives &ldquo;add to cart &rarr; apply coupon &rarr; pay&rdquo; and asserts the order total on the confirmation page. It confirms the flow still behaves as designed after a code change.</li>
+<li><strong>Validation example</strong> &mdash; A usability session reveals that users abandon checkout because the coupon field is hidden behind an accordion. The code is correct, but the product fails the user&rsquo;s real need. Only validation surfaces this.</li>
+</ol>
+<p>Notice the last case: the checkout passed every verification test and still failed the user. That is the whole reason both disciplines exist.</p>
+
+<h2>Why teams confuse verification and validation (and what it costs)</h2>
+<p>The confusion is understandable &mdash; both involve testing, and a single test run can feel like it covers &ldquo;quality.&rdquo; But treating them as one thing has a predictable cost. Teams that over-invest in verification ship technically-flawless products that miss the user&rsquo;s actual job. Teams that skip verification and lean only on late validation ship buggy software that users bounce off before they can give useful feedback.</p>
+<p>Two failure modes to watch for:</p>
+<ul>
+<li><strong>All verification, no validation</strong> &mdash; green CI, passing acceptance criteria, and a feature nobody adopts. The spec was wrong and nothing checked the spec against reality.</li>
+<li><strong>All validation, no verification</strong> &mdash; frequent user testing on a product that breaks in ways users report as vague frustration rather than reproducible bugs, wasting everyone&rsquo;s time.</li>
+</ul>
+
+<h2>How to run both without doubling the work</h2>
+<p>You do not need two separate QA programs. Layer the two so verification runs automatically and validation runs on a deliberate cadence:</p>
+<ol>
+<li><strong>Automate verification in CI</strong> &mdash; unit, integration, and end-to-end tests on every change, so &ldquo;did we build it right?&rdquo; is answered before merge. <a href="/autosim">Self-healing end-to-end tests</a> keep this layer green even as the UI shifts, so verification does not decay into ignored red builds.</li>
+<li><strong>Validate against personas continuously</strong> &mdash; instead of waiting for a quarterly usability study, simulate how distinct user types move through the product. <a href="/sims">AI personas built from real customer calls</a> exercise the paths your team never takes and flag where the product misses the user&rsquo;s intent.</li>
+<li><strong>Capture reproducible evidence when either fails</strong> &mdash; a failed verification test or a validation finding is only useful if the fix is fast. Attach the exact state &mdash; steps, URL, console, and network &mdash; so nothing lands as &ldquo;cannot reproduce.&rdquo; <a href="/snap">Right-click bug reports</a> package that evidence automatically.</li>
+<li><strong>Feed validation findings back into the spec</strong> &mdash; when validation reveals a wrong requirement, update the spec and add a verification test for the corrected behavior, so the same gap cannot reopen.</li>
+</ol>
+<p>Done this way, verification is the fast automated floor and validation is the deliberate check that the floor is in the right building. For more on splitting automated and human effort, see <a href="/blog">the Klavity blog</a>.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Verify against the spec: reviews, static analysis, unit and integration tests</li><li>Validate against real users: usability tests, beta programs, acceptance testing</li><li>Run both — a passing spec does not mean the right product</li><li>Attach reproducible evidence when either check fails so the fix is fast</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Is verification or validation done first?</summary><p>Verification runs continuously and early — every review, static-analysis pass, and unit test is verification, starting before a feature is complete. Validation happens once there is something a user can exercise, from an early prototype through acceptance testing before release. In practice they overlap rather than run in strict sequence.</p></details><details><summary>Is unit testing verification or validation?</summary><p>Unit testing is verification. It checks a function against its intended behavior — the specification — without any real user in the loop. Validation requires evaluating the software against actual user needs, which unit tests do not do.</p></details><details><summary>Can a product pass verification but fail validation?</summary><p>Yes, and it is common. Software can meet every requirement in the spec (passes verification) while still solving the wrong problem or being unusable for real users (fails validation). This is why teams that only verify ship technically-correct products nobody wants.</p></details><details><summary>What's an easy way to remember the difference?</summary><p>Verification = 'Are we building the product right?' (against the spec). Validation = 'Are we building the right product?' (against user needs). Boehm's phrasing from the 1980s is still the clearest mnemonic in the industry.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
