@@ -113,6 +113,27 @@ describe("installRegionDrag", () => {
     expect(b).not.toHaveBeenCalled(); hB.destroy()
   })
 
+  it("shouldIgnore receives the mousedown event so hosts can gate on modifiers ('modifier' right-click mode)", () => {
+    // Emulates the widget's 'modifier' mode: ignore any right-mousedown WITHOUT Alt held.
+    const onRegion = vi.fn()
+    const onPlainRightClick = vi.fn()
+    const h = installRegionDrag({ onRegion, onPlainRightClick, shouldIgnore: (e) => !e.altKey })
+    // Plain right-click-drag (no Alt) → whole gesture ignored, nothing fires.
+    down(10, 10); move(90, 90); up(90, 90)
+    expect(onRegion).not.toHaveBeenCalled()
+    expect(onPlainRightClick).not.toHaveBeenCalled()
+    expect(h.suppressNextMenu()).toBe(false) // native contextmenu stays free to open
+    // Alt+right-click-drag → captured as usual.
+    document.dispatchEvent(new MouseEvent("mousedown", { button: 2, clientX: 10, clientY: 10, altKey: true, bubbles: true }))
+    move(90, 90); up(90, 90)
+    expect(onRegion).toHaveBeenCalledTimes(1)
+    // Alt+plain right-click → host menu callback fires.
+    document.dispatchEvent(new MouseEvent("mousedown", { button: 2, clientX: 20, clientY: 20, altKey: true, bubbles: true }))
+    up(21, 21)
+    expect(onPlainRightClick).toHaveBeenCalledWith(21, 21)
+    h.destroy()
+  })
+
   it("a drag smaller than minSize does not capture", () => {
     const onRegion = vi.fn()
     const h = installRegionDrag({ onRegion, minSize: 20 })

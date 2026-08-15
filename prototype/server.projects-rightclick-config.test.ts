@@ -1,6 +1,6 @@
 // Task: RIGHT-CLICK MENU config setting (JTBD 1.6 / KLAVITYKLA-220) — server config
 // endpoint coverage. Tests that POST /api/projects/:id/config accepts + persists the
-// rightClickMode field (full | reportOnly | off) into modal_config_json, sanitises bad
+// rightClickMode field (full | reportOnly | modifier | off) into modal_config_json, sanitises bad
 // values (unknown mode) rather than persisting them, and that the public (unauthenticated,
 // CORS-open) GET echoes the persisted value back via resolveModalConfig — so the widget can
 // learn its right-click mode before any auth. Default (omitted) preserves 'full' behavior.
@@ -167,7 +167,7 @@ test("public GET echoes the persisted rightClickMode (widget reads it pre-auth, 
 })
 
 test("each valid rightClickMode is accepted and persisted", async () => {
-  for (const mode of ["full", "reportOnly", "off"] as const) {
+  for (const mode of ["full", "reportOnly", "modifier", "off"] as const) {
     const r = await apiPost(`/api/projects/${PROJECT_ID}/config`, {
       theme: "light",
       rightClickMode: mode,
@@ -176,6 +176,20 @@ test("each valid rightClickMode is accepted and persisted", async () => {
     const mc = await dbModalConfig()
     expect(mc.rightClickMode).toBe(mode)
   }
+})
+
+test("'modifier' mode round-trips through the public GET (QPLNE-21: plain right-click native, Alt+right-click Klavity)", async () => {
+  const r = await apiPost(`/api/projects/${PROJECT_ID}/config`, {
+    theme: "light",
+    rightClickMode: "modifier",
+  }, ADMIN_SID)
+  expect(r.status).toBe(200)
+  const body = await r.json() as any
+  expect(body.ok).toBe(true)
+  expect(body.modalConfig.rightClickMode).toBe("modifier")
+  // The widget's unauthenticated config GET echoes it, so the embed learns the mode pre-auth.
+  const pub = await publicConfig()
+  expect(pub.modalConfig.rightClickMode).toBe("modifier")
 })
 
 test("rightClickMode clears back to default when omitted (partial update)", async () => {

@@ -34,8 +34,10 @@ export interface RegionDragOptions {
   onPlainRightClick?: (x: number, y: number) => void
   /** Ignore presses whose target is the host's own UI (launcher/menu/composer/overlay). */
   isOwnTarget?: (e: MouseEvent) => boolean
-  /** Skip the gesture entirely right now (e.g. the extension yields when the in-page widget is present). */
-  shouldIgnore?: () => boolean
+  /** Skip the gesture entirely right now (e.g. the extension yields when the in-page widget is present).
+   *  Receives the right-mousedown event so hosts can gate on modifiers or the press target
+   *  (e.g. 'modifier' right-click mode only arms on Alt+right-click). */
+  shouldIgnore?: (e: MouseEvent) => boolean
   /** Where to mount the selection rectangle (default document.body). A shadow root isolates it from page CSS. */
   mount?: HTMLElement | ShadowRoot
   /** Pixels of movement before a press becomes a drag (default 6). */
@@ -66,7 +68,7 @@ export function installRegionDrag(opts: RegionDragOptions): RegionDragHandle {
 
   function onDown(e: MouseEvent) {
     if (e.button !== 2 || e.shiftKey) return                 // only plain right-button starts a region
-    if (opts.shouldIgnore?.()) return
+    if (opts.shouldIgnore?.(e)) return
     if (opts.isOwnTarget?.(e)) return                        // don't hijack right-clicks on our own UI
     opts.onRightDown?.()  // dismiss any open menu immediately — before we know if this is a click or drag
     pressing = true

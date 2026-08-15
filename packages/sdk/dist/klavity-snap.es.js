@@ -1399,7 +1399,7 @@ function Wu(e, t = {}) {
   }
   return e;
 }
-const ju = ["light", "dark", "glass", "neon", "custom", "liquid"], Hu = ["hidden", "icon", "full", "custom"], Vu = ["lightbulb", "bug"], Yu = ["full", "reportOnly", "off"], Gu = /^#[0-9a-fA-F]{3,8}$/, Xu = /^[\w \-,'"().]+$/, ks = (e) => typeof e == "object" && e !== null, xr = (e) => typeof e == "string" && Gu.test(e.trim()) ? e.trim() : void 0, xs = (e, t) => typeof e == "string" && e.trim() ? e.trim().slice(0, t) : void 0, Ku = (e) => {
+const ju = ["light", "dark", "glass", "neon", "custom", "liquid"], Hu = ["hidden", "icon", "full", "custom"], Vu = ["lightbulb", "bug"], Yu = ["full", "reportOnly", "modifier", "off"], Gu = /^#[0-9a-fA-F]{3,8}$/, Xu = /^[\w \-,'"().]+$/, ks = (e) => typeof e == "object" && e !== null, xr = (e) => typeof e == "string" && Gu.test(e.trim()) ? e.trim() : void 0, xs = (e, t) => typeof e == "string" && e.trim() ? e.trim().slice(0, t) : void 0, Ku = (e) => {
   if (typeof e != "string") return;
   const t = e.trim().slice(0, 120);
   return t && Xu.test(t) ? t : void 0;

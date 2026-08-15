@@ -373,9 +373,10 @@ async function mount() {
   let launcherIconColor = '#6366f1'
   let launcherIcon: 'lightbulb' | 'bug' = 'lightbulb'
   // Right-click (context-menu) takeover mode (from modalConfig). Default 'full' preserves the
-  // current behavior for existing projects. 'reportOnly' hides Sims actions from everyone; 'off'
-  // leaves the native context menu untouched (no takeover at all).
-  let rightClickMode: 'full' | 'reportOnly' | 'off' = 'full'
+  // current behavior for existing projects. 'reportOnly' hides Sims actions from everyone;
+  // 'modifier' only takes over Alt+right-click so a plain right-click keeps the native browser
+  // menu (spellcheck, paste, …); 'off' leaves the native context menu untouched (no takeover at all).
+  let rightClickMode: 'full' | 'reportOnly' | 'modifier' | 'off' = 'full'
   try {
     const r = await fetchWithTimeout(cfg.backendUrl + "/api/projects/" + encodeURIComponent(cfg.projectId) + "/config")
     if (r.ok) {
@@ -396,7 +397,7 @@ async function mount() {
       if (modalConfig.launcherIcon === 'lightbulb' || modalConfig.launcherIcon === 'bug') {
         launcherIcon = modalConfig.launcherIcon
       }
-      if (modalConfig.rightClickMode && ['full', 'reportOnly', 'off'].includes(modalConfig.rightClickMode)) {
+      if (modalConfig.rightClickMode && ['full', 'reportOnly', 'modifier', 'off'].includes(modalConfig.rightClickMode)) {
         rightClickMode = modalConfig.rightClickMode
       }
     }
@@ -746,10 +747,11 @@ async function mount() {
     const ARROW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>'
     let idx = 0
     // Sims actions ("Deploy all Sims" / "Select Sims…") + the Sim-chip preview row are shown ONLY in
-    // 'full' mode AND only to identified project members (own first-party page, or a signed-in widget
-    // session). Anonymous/unidentified visitors — and every visitor in 'reportOnly' mode — get the
-    // Report/Request/Browser-menu menu without any Sims jargon. (Same identity notion as openReport.)
-    const showSims = rightClickMode === 'full' && (firstParty || !!getToken())
+    // 'full'/'modifier' modes AND only to identified project members (own first-party page, or a
+    // signed-in widget session). Anonymous/unidentified visitors — and every visitor in 'reportOnly'
+    // mode — get the Report/Request/Browser-menu menu without any Sims jargon. ('modifier' only
+    // changes WHEN the takeover happens — Alt+right-click — not what the menu shows.)
+    const showSims = (rightClickMode === 'full' || rightClickMode === 'modifier') && (firstParty || !!getToken())
     // Each action is a compact CARD: icon chip + label + optional desc + arrow/hint.
     // Pass desc="" to render a label-only card (no description line — keeps menu short).
     const card = (iconName: string, label: string, desc: string, opts: { primary?: boolean; muted?: boolean; hint?: string; onClick: () => void }) => {
@@ -897,7 +899,12 @@ async function mount() {
       menu.appendChild(card("users", "Deploy all Sims", "Have every Sim jump in and analyze this page.", { onClick: () => { closeMenu(); void deployAndWatch("all") } }))
       menu.appendChild(card("sparkles", "Select Sims…", "Choose which Sims jump into action.", { onClick: () => { void showSimPicker() } }))
     }
-    menu.appendChild(card("monitor", "Browser menu", "", { muted: true, hint: "⇧ right-click", onClick: () => { nativePending = true; showNativeHint(x, y) } }))
+    // The "Browser menu" escape hatch is redundant in 'modifier' mode — there a PLAIN right-click
+    // already opens the native menu (Klavity only appears on Alt+right-click), so the card + its
+    // "⇧ right-click" hint would just confuse.
+    if (rightClickMode !== 'modifier') {
+      menu.appendChild(card("monitor", "Browser menu", "", { muted: true, hint: "⇧ right-click", onClick: () => { nativePending = true; showNativeHint(x, y) } }))
+    }
     // "Powered by Klavity" footer — hidden for Pro accounts with whiteLabel enabled (KLAVITYKLA-311).
     if (!modalConfig.whiteLabel) {
       const footer = document.createElement("button")
@@ -967,11 +974,17 @@ async function mount() {
   // 'off' mode: install NEITHER the right-click-drag region capture NOR the contextmenu takeover, so
   // the native browser menu is left completely untouched everywhere on the page. 'full'/'reportOnly'
   // both take over the gesture (the menu contents differ, decided in showMenu()).
+  // 'modifier' mode (QPLNE-21): the takeover — menu AND region-drag — arms ONLY on Alt+right-click.
+  // A plain right-click falls through to the native browser menu, so spellcheck suggestions, paste,
+  // etc. keep working everywhere; bug reporting stays one Alt+right-click (or launcher click) away.
+  const modifierOnly = rightClickMode === 'modifier'
   if (rightClickMode !== 'off') {
     const regionDrag = installRegionDrag({
       isOwnTarget: onOwnUi,
       mount: root,                        // draw the selection rectangle inside the widget's shadow root
-      shouldIgnore: () => nativePending,  // skip pressing when next click is for the native menu
+      // Skip pressing when the next click is for the native menu, and — in 'modifier' mode — for any
+      // right-mousedown without Alt held (that press belongs to the native browser menu).
+      shouldIgnore: (e) => nativePending || (modifierOnly && !e.altKey),
       onRightDown: dismissMenuNow,        // close any open menu immediately at mousedown
       onDragStart: dismissMenuNow,        // safety: also dismiss if menu reappeared before threshold
       onPlainRightClick: (x, y) => {
@@ -988,6 +1001,11 @@ async function mount() {
       if (e.shiftKey || nativePending) { nativePending = false; return }  // pass through to native menu
       if (regionDrag.suppressNextMenu()) { e.preventDefault(); return }   // pressing or drag — suppress
       if (onOwnUi(e)) return
+      // 'modifier' mode: a contextmenu without Alt is a PLAIN right-click (or the keyboard menu key)
+      // — never preventDefault, so the native browser menu (spellcheck!) opens untouched. Alt+right-
+      // click on Windows/Linux reaches here AFTER mouseup (suppressNextMenu already false) with
+      // altKey still set, falls through, and is suppressed below so no second (native) menu opens.
+      if (modifierOnly && !e.altKey) return
       // Keyboard contextmenu (no preceding mousedown) — pressing is false, show menu immediately.
       e.preventDefault()
       if (!reportArmed) return

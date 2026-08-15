@@ -13,9 +13,12 @@ export const ALLOWED_LAUNCHER_ICONS: LauncherIcon[] = ['lightbulb', 'bug']
 // production domain without hijacking every end-user's native menu or leaking Sims jargon.
 //   full       — current behavior: Klavity menu on right-click; Sims actions gated to members.
 //   reportOnly — menu shows only Report a Bug / Request a Feature / Browser menu (never Sims).
+//   modifier   — Klavity takes over ONLY Alt+right-click (and Alt+right-drag region capture); a
+//                plain right-click falls through to the native browser menu (spellcheck, paste, …).
+//                Reporting stays reachable via the floating launcher. Menu contents match 'full'.
 //   off        — no context-menu takeover at all; the native browser menu is untouched.
-export type RightClickMode = 'full' | 'reportOnly' | 'off'
-export const ALLOWED_RIGHT_CLICK_MODES: RightClickMode[] = ['full', 'reportOnly', 'off']
+export type RightClickMode = 'full' | 'reportOnly' | 'modifier' | 'off'
+export const ALLOWED_RIGHT_CLICK_MODES: RightClickMode[] = ['full', 'reportOnly', 'modifier', 'off']
 
 export interface ModalConfig {
   theme?: ModalTheme
