@@ -376,5 +376,12 @@
     "excerpt": "Mean time to resolution (MTTR) measures how long bugs take to fix. The reproduction stage usually dominates it — here's how to shrink each stage.",
     "category": "Guides",
     "date": "2026-08-14"
+  },
+  {
+    "slug": "verification-vs-validation-software-testing",
+    "title": "Verification vs. Validation: What's the Difference?",
+    "excerpt": "Verification asks 'are we building the product right?' Validation asks 'are we building the right product?' Here's how they differ, with examples of each.",
+    "category": "Compare",
+    "date": "2026-08-15"
   }
 ]
