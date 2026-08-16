@@ -383,5 +383,12 @@
     "excerpt": "Verification asks 'are we building the product right?' Validation asks 'are we building the right product?' Here's how they differ, with examples of each.",
     "category": "Compare",
     "date": "2026-08-15"
+  },
+  {
+    "slug": "api-testing-vs-ui-testing",
+    "title": "API Testing vs. UI Testing: When to Use Each in QA",
+    "excerpt": "API tests check logic through endpoints; UI tests drive the browser like a real user. API tests run faster and break less; UI tests catch what users see.",
+    "category": "Compare",
+    "date": "2026-08-16"
   }
 ]
