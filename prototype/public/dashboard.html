@@ -1994,6 +1994,16 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   <details class="drawer" id="settingsDrawer" data-view="tickets settings">
     <summary><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" /> <circle cx="12" cy="12" r="3" /></svg> Project settings — bug tracking <span class="caret">›</span></summary>
     <div class="drawer-in">
+      <!-- Workspace name (admin-only rename) -->
+      <div id="wsRenameCard" class="hide" style="border:1px solid var(--line,#e6e4ef);border-radius:12px;padding:14px 16px;margin-bottom:12px;background:#fff">
+        <div class="flbl" style="margin-bottom:6px">Workspace name</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input id="wsNameInput" type="text" maxlength="80" placeholder="Workspace name" autocomplete="off" spellcheck="false" style="flex:1;min-width:180px;padding:8px 10px;border:1px solid var(--line,#d9d6e4);border-radius:8px;font-size:14px" />
+          <button class="btn btn-indigo btn-sm" id="wsNameSave">Save</button>
+          <span id="wsNameMsg" class="muted" style="font-size:12.5px"></span>
+        </div>
+        <div class="muted" style="font-size:12px;margin-top:6px">The name your team sees for this workspace.</div>
+      </div>
       <!-- Klavity Cloud primary card -->
       <div class="conn-cloud">
         <div class="pause-l">
@@ -3446,6 +3456,30 @@ function render(fromCache) {
   const role = active ? active.role : "user"
   const admin = role === "admin"
   $("wsName").textContent = active ? active.name : "—"
+  // Workspace rename (admin-only). Don't clobber the field while the user is mid-edit.
+  $("wsRenameCard").classList.toggle("hide", !admin)
+  if (admin && document.activeElement !== $("wsNameInput")) $("wsNameInput").value = active ? active.name : ""
+  if (admin && !$("wsNameSave").dataset.bound) {
+    $("wsNameSave").dataset.bound = "1"
+    $("wsNameSave").addEventListener("click", async () => {
+      const inp = $("wsNameInput"), msg = $("wsNameMsg"), btn = $("wsNameSave")
+      const name = (inp.value || "").trim()
+      if (!name) { msg.textContent = "Name can't be empty"; return }
+      btn.disabled = true; msg.textContent = "Saving…"
+      try {
+        const r = await fetch("/api/account", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ name }) })
+        const d = await r.json().catch(() => ({}))
+        if (!r.ok) { msg.textContent = d.error || "Couldn't save"; return }
+        inp.value = d.name
+        if (state.active) state.active.name = d.name
+        $("wsName").textContent = d.name
+        msg.textContent = "Saved"
+        setTimeout(() => { if (msg.textContent === "Saved") msg.textContent = "" }, 2500)
+      } catch { msg.textContent = "Network error" }
+      finally { btn.disabled = false }
+    })
+    $("wsNameInput").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("wsNameSave").click() } })
+  }
   $("who").textContent = state.email
   // Genuinely-fresh signal (same as the guided tour): 0 Sims + 0 feedback = first-ever session.
   const freshHello = !((state.sims || []).length) && !((state.counts || {}).feedback || 0)

@@ -2151,6 +2151,12 @@ export async function renameProject(projectId: string, name: string): Promise<Pr
   return projectById(projectId)
 }
 
+// Rename a workspace (account). accounts.name is the workspace's display name (the old `workspaces`
+// table migrated into accounts). Surfaced to the client via membershipsFor → /api/me active.name.
+export async function renameAccount(accountId: string, name: string): Promise<void> {
+  await db!.execute({ sql: "UPDATE accounts SET name=? WHERE id=?", args: [name, accountId] })
+}
+
 export async function getProjectModalConfig(projectId: string): Promise<Record<string, unknown>> {
   const r = await db!.execute({ sql: "SELECT modal_config_json FROM projects WHERE id=?", args: [projectId] })
   if (!r.rows.length) return {}
