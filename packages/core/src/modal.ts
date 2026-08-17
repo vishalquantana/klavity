@@ -844,8 +844,12 @@ export function buildModal(
     if (e.key === 'Escape') { e.stopPropagation(); close(); return }
     // S submits the report — but only when the user isn't typing and no fullscreen editor owns the keys.
     if ((e.key === 's' || e.key === 'S') && !e.metaKey && !e.ctrlKey && !e.altKey) {
-      const el = e.target as HTMLElement | null
-      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return
+      // Real keystrokes are composed:true, so at this document-level capture listener e.target is
+      // RETARGETED to the shadow host — reading it would miss the field the user is typing in and
+      // 's'/'S' would submit mid-word (eating the character). composedPath()[0] is the real focused
+      // element across the shadow boundary (same guard the annotator key handlers below use).
+      const el = ((typeof e.composedPath === 'function' && e.composedPath()[0]) || e.target) as HTMLElement | null
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) return
       if (shadowRoot.querySelector('.kl-edtb')) return // fullscreen markup editor is open
       const btn = shadowRoot.getElementById('klavity-submit') as HTMLButtonElement | null
       if (btn && !btn.disabled) { e.preventDefault(); e.stopPropagation(); btn.click() }
