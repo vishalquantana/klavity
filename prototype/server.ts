@@ -7485,6 +7485,34 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return json({ ok: true, name: clean })
       }
 
+      // ── email the widget install snippet to a developer (onboarding hand-off) ──
+      // A non-technical user who can't install the widget themselves sends the <script> line +
+      // project id to their developer. Admin-only, project-scoped, rate-limited so we're never an
+      // open mailer. emailed:false (never a hard 500) if the mail transport is unavailable.
+      // (KLA re-add: this endpoint was merge-eaten when feat/workspace-rename integrated on a stale
+      // base that pre-dated it — the import + mail fn + onboarding form survived but the handler was
+      // dropped, leaving the form POSTing to a dead route. Restored here.)
+      if (req.method === "POST" && path === "/api/install/email") {
+        const { projectId, email } = await req.json().catch(() => ({}))
+        const pid = String(projectId || "").trim()
+        const to = String(email || "").trim().toLowerCase()
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to) || to.length > 200) return json({ error: "Enter a valid developer email." }, 400)
+        const access = await projectAccess(me, pid)
+        if (access !== "admin") return json({ error: "Admin only." }, 403)
+        const p = await projectById(pid)
+        if (!p) return json({ error: "Unknown project." }, 404)
+        if (!rlAllow(`installmail:${me}`, 10, 60 * 60 * 1000)) return json({ error: "Too many sends — try again later." }, 429)
+        let emailed = false
+        try {
+          await sendInstallInstructionsEmail({
+            to, projectId: pid, widgetHost: new URL(BASE).origin, projectName: p.name, senderEmail: me,
+            dashboardUrl: `${BASE.replace(/\/+$/, "")}/dashboard?project=${encodeURIComponent(pid)}`,
+          })
+          emailed = true
+        } catch (e: any) { console.error("install email failed:", e?.message || e) }
+        return json({ ok: true, emailed })
+      }
+
       // ── onboarding-completed flag (KLA-297) ──
       // Called by the wizard at every EXIT (Open the Studio / Finish → reports / Skip for now), so
       // finishing without filling the optional website field still counts. Any member may set it —
