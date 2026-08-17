@@ -1,7 +1,16 @@
 // BugHerd sub-project A, task 2: fingerprint + create/bump/mask recorder.
 // Hermetic: points module's `db` singleton at a fresh local libsql file by setting
 // TURSO_DATABASE_URL *before* importing ./db (matches db.sso-state.test.ts pattern).
-import { test, expect, beforeAll } from "bun:test"
+//
+// IMPORTANT: do NOT destructure `db` from the module import — that captures a one-time
+// snapshot of the (possibly not-yet-repointed) singleton. bun runs all test files in ONE
+// process and interleaves their top-level `await import`/`beforeAll` scheduling, so another
+// file's reconnectDb() can repoint the shared singleton between this file's own setup and its
+// tests. db.ts's own functions (used by client-error-ticket.ts) always read the *live*
+// singleton, so our local helpers must too: capture the Client returned by our own
+// reconnectDb() call, and re-assert it in beforeEach so cross-file interleaving can never leave
+// us pointed at another file's database for any given test.
+import { test, expect, beforeAll, beforeEach } from "bun:test"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -9,13 +18,19 @@ const file = join(tmpdir(), `klav-clienterrticket-${Date.now()}-${Math.random().
 process.env.TURSO_DATABASE_URL = "file:" + file
 delete process.env.TURSO_AUTH_TOKEN
 
-const { reconnectDb, applySchema, migrateV2, db } = await import("./db")
+const { reconnectDb, applySchema, migrateV2 } = await import("./db")
 const { clientErrorSignature, severityFor, recordClientError } = await import("./client-error-ticket")
 
+let db: any
+
 beforeAll(async () => {
-  const conn = reconnectDb("file:" + file)
-  await applySchema(conn)
-  await migrateV2(conn)
+  db = reconnectDb("file:" + file)
+  await applySchema(db)
+  await migrateV2(db)
+})
+
+beforeEach(() => {
+  db = reconnectDb("file:" + file)
 })
 
 async function getObservation(id: string): Promise<string | null> {
