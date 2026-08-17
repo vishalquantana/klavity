@@ -6,6 +6,7 @@ import { cropDataUrl, type Rect } from "@klavity/core/crop"
 import { planScrollStitch, clampCaptureHeight } from "./sharp-capture"
 import { type CaptureBuffers } from "@klavity/core/capture"
 import { installCaptureContext, buildCaptureContext } from "./capture-context"
+import { installErrorReporter } from "./error-reporter"
 import type { ReportContext, ReportIdentity } from "@klavity/core"
 import { parseScriptConfig, isFirstParty, buildFeedbackForm, successCopy, compressScreenshot, buildThumbnail } from "./widget-lib"
 import { computeSelector, describeElement } from "./element-selector"
@@ -398,6 +399,18 @@ async function mount() {
       }
       if (modalConfig.rightClickMode && ['full', 'reportOnly', 'off'].includes(modalConfig.rightClickMode)) {
         rightClickMode = modalConfig.rightClickMode
+      }
+      // Passive client-error auto-ticketing (BugHerd sub-project A): only mount the error reporter
+      // when the project has explicitly opted in via config. Never throws — a failed/absent config
+      // response simply leaves auto-capture off (see catch below).
+      if (j.autoCaptureErrors === true) {
+        installErrorReporter({
+          backendUrl: cfg.backendUrl,
+          projectId: cfg.projectId,
+          enabled: true,
+          buffers: _buffers,
+          contextSnapshot: () => buildCaptureContext(_buffers, { identity: _identity, metadata: _metadata }),
+        })
       }
     }
   } catch { /* default theme + support mode + email gate */ }
