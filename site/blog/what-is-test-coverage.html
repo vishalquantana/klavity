@@ -1,0 +1,106 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What Is Test Coverage? Types, Metrics, and Its Limits · Klavity</title>
+<meta name="description" content="Test coverage is the percentage of your code executed by tests. Here's how line, branch, and function coverage differ — and why 100% never means bug-free.">
+<link rel="canonical" href="https://klavity.in/blog/what-is-test-coverage">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="What Is Test Coverage? Types, Metrics, and Its Limits"><meta property="og:description" content="Test coverage is the percentage of your code executed by tests. Here's how line, branch, and function coverage differ — and why 100% never means bug-free.">
+<meta property="og:url" content="https://klavity.in/blog/what-is-test-coverage"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="What Is Test Coverage? Types, Metrics, and Its Limits"><meta name="twitter:description" content="Test coverage is the percentage of your code executed by tests. Here's how line, branch, and function coverage differ — and why 100% never means bug-free."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"What Is Test Coverage? Types, Metrics, and Its Limits","description":"Test coverage is the percentage of your code executed by tests. Here's how line, branch, and function coverage differ — and why 100% never means bug-free.","datePublished":"2026-08-17","dateModified":"2026-08-17","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/what-is-test-coverage","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"What Is Test Coverage? Types, Metrics, and Its Limits","item":"https://klavity.in/blog/what-is-test-coverage"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/what-is-test-coverage"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a good test coverage percentage?","acceptedAnswer":{"@type":"Answer","text":"There's no universal number. Many teams treat 70–80% coverage of meaningful code as healthy, but the figure matters less than what it covers: 60% that exercises your critical paths and error handling is worth more than 95% dominated by trivial getters. Set a floor to stop coverage from sliding, not a ceiling to chase."}},{"@type":"Question","name":"What's the difference between line and branch coverage?","acceptedAnswer":{"@type":"Answer","text":"Line coverage counts whether a line of code ran at all. Branch coverage counts whether every outcome of each decision ran — both the true and false side of every if, each case of a switch. A single test can hit 100% line coverage on a conditional while exercising only one branch, so branch coverage is the stricter, more honest measure."}},{"@type":"Question","name":"Does 100% test coverage mean no bugs?","acceptedAnswer":{"@type":"Answer","text":"No. Coverage measures execution, not verification. A test can run a line and still assert nothing about the result, so the line counts as covered while its behavior is unchecked. Coverage also can't catch missing features, wrong requirements, or bugs in code paths you never thought to write a test for."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Learn · 2026-08-17</div>
+    <h1>What Is Test Coverage? Types, Metrics, and Its Limits</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>Test coverage is the percentage of your code that runs while your tests run — measured as line, branch, function, or statement coverage. It tells you what code was executed, not whether a test would actually catch a bug there, so a high number can still hide untested logic and missing assertions.</div>
+    <div class="prose"><p>Test coverage is the percentage of your code that is executed while your test suite runs. It's reported as line, branch, function, or statement coverage, and a coverage tool measures it by instrumenting your code and recording which parts run during tests. Crucially, coverage tells you what code was <em>executed</em> — not whether a test would actually fail if that code broke — so it's a useful gauge of gaps but a poor proxy for quality.</p>
+
+<h2>How is test coverage calculated?</h2>
+<p>A coverage tool instruments your code before the tests run, tracks which lines, branches, or functions execute, and divides what ran by the total available. The basic formula is:</p>
+<ul>
+<li><strong>Coverage %</strong> = (units executed by tests ÷ total units) × 100</li>
+</ul>
+<p>The “unit” changes depending on which metric you ask for. If 180 of a file's 240 executable lines run during your tests, line coverage is 75%. The number is generated automatically — in JavaScript with tools like Istanbul/nyc or Vitest's built-in coverage, in Python with coverage.py, in Java with JaCoCo — and is usually enforced in CI with a minimum threshold that fails the build if coverage drops below it.</p>
+
+<h2>Types of test coverage: line, branch, function, and statement</h2>
+<p>“Coverage” is really four different measurements, and they are not interchangeable. Ordered from weakest to strictest:</p>
+<ol>
+<li><strong>Function coverage</strong> — did each function or method get called at least once? The coarsest signal; a function can be called and still have most of its logic untouched.</li>
+<li><strong>Statement / line coverage</strong> — did each statement or line execute? The most commonly reported number, and the easiest to inflate.</li>
+<li><strong>Branch coverage</strong> — did every outcome of every decision run: both sides of each <em>if</em>, each arm of a <em>switch</em>, each side of a ternary? This is the metric worth watching.</li>
+<li><strong>Condition coverage</strong> — within a compound condition like <em>a &amp;&amp; b</em>, did each sub-condition take both true and false values? The strictest and least often measured.</li>
+</ol>
+<p>Why the distinction matters: consider <em>if (user &amp;&amp; user.isAdmin) grantAccess()</em>. A single test that passes an admin user executes that line, so <strong>line coverage reports 100%</strong> for it. But the <em>false</em> branch — a non-admin, or a missing user — never ran. Branch coverage would report 50% and point straight at the untested path where real bugs hide.</p>
+
+<h2>Why 100% test coverage doesn't mean bug-free</h2>
+<p>Coverage measures execution, not verification, and that gap is where teams get a false sense of safety. Three concrete reasons a green coverage report can still ship bugs:</p>
+<ol>
+<li><strong>Covered is not asserted.</strong> A test can call a function, run every line, and assert nothing about the output. The lines count as covered while their behavior is completely unchecked. Coverage can't tell the difference between a real assertion and a bare function call.</li>
+<li><strong>You can't cover code you didn't write.</strong> Missing error handling, an unhandled null, a forgotten edge case — there's no line to instrument, so coverage stays silent. Coverage only measures the code that exists, never the code that should.</li>
+<li><strong>The bug is in the requirement, not the code.</strong> If the spec is wrong, a fully covered feature faithfully implements the wrong behavior. No coverage metric catches a correct implementation of a bad idea.</li>
+</ol>
+<p>A useful sanity check is <strong>mutation testing</strong>: it deliberately introduces small bugs (flip a <em>&gt;</em> to <em>&gt;=</em>, delete a line) and checks whether any test fails. If your tests still pass after the code is broken, that “covered” code was never really tested — no matter what the percentage said.</p>
+
+<h2>What test coverage percentage should you aim for?</h2>
+<p>There is no universally correct number, and chasing one is how coverage metrics get gamed. What matters far more than the headline figure is <em>where</em> the coverage sits. Practical guidance:</p>
+<ul>
+<li><strong>Cover critical paths first.</strong> Authentication, payments, data writes, and error handling deserve near-complete branch coverage. A checkout flow at 100% and a settings page at 40% is a healthier suite than a flat 80% everywhere.</li>
+<li><strong>Treat a hard threshold as a floor, not a goal.</strong> Setting a CI minimum (say, “don't let coverage fall below its current level”) stops silent regressions. Setting a mandate of 100% pushes engineers to write assertion-free tests just to hit the number.</li>
+<li><strong>Watch the trend, not the absolute.</strong> Coverage dropping five points in a PR is a signal worth a comment; a stable 72% is usually fine. The direction tells you more than the value.</li>
+</ul>
+<p>Many teams land around 70–80% coverage of meaningful code and call that healthy — but read that as a rough resting point, not a target to defend.</p>
+
+<h2>How to use test coverage well: 4 rules</h2>
+<ol>
+<li><strong>Report branch coverage, not just line coverage.</strong> Configure your tool to surface branches so partially-tested conditionals stop hiding behind a green line number.</li>
+<li><strong>Set a floor in CI, review the diff.</strong> Fail the build if coverage regresses, and look at <em>which</em> lines a PR left uncovered rather than only the aggregate percentage.</li>
+<li><strong>Spend coverage where failure is expensive.</strong> Prioritize money, data, auth, and end-to-end user journeys. For those full flows, <a href="/autosim">self-healing end-to-end tests</a> keep coverage of real paths intact even when the UI changes and selectors would otherwise break.</li>
+<li><strong>Close the gap the metric can't see.</strong> Coverage misses the code you didn't think to write. When a real user hits an uncovered path in production, capture it as a reproducible report — steps, console, and network in one shot with <a href="/snap">Snap</a> — and turn that bug into a regression test so the gap closes for good.</li>
+</ol>
+<p>Used this way, coverage becomes a map of what your tests touch rather than a scoreboard to win. For more on how the different test types fit together, see our guide to the <a href="/blog">testing pyramid</a>.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Read coverage as 'what ran,' not 'what's verified' — pair it with real assertions.</li><li>Prefer branch coverage over line coverage; it exposes untested true/false paths.</li><li>Aim coverage at critical paths and error handling, not a blanket percentage.</li><li>Use a coverage floor in CI to prevent regressions, not a number to game.</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What is a good test coverage percentage?</summary><p>There's no universal number. Many teams treat 70–80% coverage of meaningful code as healthy, but the figure matters less than what it covers: 60% that exercises your critical paths and error handling is worth more than 95% dominated by trivial getters. Set a floor to stop coverage from sliding, not a ceiling to chase.</p></details><details><summary>What's the difference between line and branch coverage?</summary><p>Line coverage counts whether a line of code ran at all. Branch coverage counts whether every outcome of each decision ran — both the true and false side of every if, each case of a switch. A single test can hit 100% line coverage on a conditional while exercising only one branch, so branch coverage is the stricter, more honest measure.</p></details><details><summary>Does 100% test coverage mean no bugs?</summary><p>No. Coverage measures execution, not verification. A test can run a line and still assert nothing about the result, so the line counts as covered while its behavior is unchecked. Coverage also can't catch missing features, wrong requirements, or bugs in code paths you never thought to write a test for.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
