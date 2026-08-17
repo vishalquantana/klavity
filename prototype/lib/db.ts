@@ -969,6 +969,10 @@ export async function applySchema(c: Client) {
     ["updated_at", "INTEGER"],
     ["issue_key",             "TEXT"],
     ["recurrence_count",      "INTEGER NOT NULL DEFAULT 1"],
+    // BugHerd sub-project A: stable client-error fingerprint (message+stack hash) so the
+    // error-ingest endpoint (Task 3) can dedupe repeat client errors into one feedback row
+    // instead of filing a new ticket per occurrence.
+    ["signature",             "TEXT"],
     ["recurrence_dates_json", "TEXT"],
     ["last_seen_at",          "INTEGER"],
     ["resolved_at",           "INTEGER"],
@@ -989,6 +993,8 @@ export async function applySchema(c: Client) {
   }
   await c.execute(`CREATE INDEX IF NOT EXISTS feedback_issue_idx ON feedback (project_id, issue_key)`)
     .catch((e: any) => console.warn("feedback_issue_idx skipped:", e?.message || e))
+  await c.execute(`CREATE INDEX IF NOT EXISTS feedback_sig_idx ON feedback (project_id, signature)`)
+    .catch((e: any) => console.warn("feedback_sig_idx skipped:", e?.message || e))
 
   // ── widget-config columns (leadgen integration task-1) ──
   if (needCol("projects", "widget_mode")) await c.execute("ALTER TABLE projects ADD COLUMN widget_mode TEXT NOT NULL DEFAULT 'support'").catch((e) => console.warn("projects.widget_mode ALTER skipped:", e?.message || e))
@@ -999,6 +1005,10 @@ export async function applySchema(c: Client) {
   // email; 'login' = Klavity token required. New DBs get 'anonymous' by default; an existing prod column
   // (created earlier with DEFAULT 'email') is left untouched — createProject sets the value explicitly.
   if (needCol("projects", "widget_report_gate")) await c.execute("ALTER TABLE projects ADD COLUMN widget_report_gate TEXT NOT NULL DEFAULT 'anonymous'").catch((e) => console.warn("projects.widget_report_gate ALTER skipped:", e?.message || e))
+  // BugHerd sub-project A: opt-in client-error auto-capture. When enabled, the widget/SDK
+  // recorder (later task) reports uncaught client errors, deduped via feedback.signature.
+  // Default OFF (back-compat) — projects must explicitly turn this on.
+  if (needCol("projects", "widget_auto_capture_errors")) await c.execute("ALTER TABLE projects ADD COLUMN widget_auto_capture_errors INTEGER NOT NULL DEFAULT 0").catch((e) => console.warn("projects.widget_auto_capture_errors ALTER skipped:", e?.message || e))
   // KLA-102: per-project instructions.md — freeform guidance the author drops in to shape how
   // AutoSim trails are authored for that project (test conventions, environment quirks, etc.).
   if (needCol("projects", "instructions_md")) await c.execute("ALTER TABLE projects ADD COLUMN instructions_md TEXT").catch((e) => console.warn("projects.instructions_md ALTER skipped:", e?.message || e))
@@ -1741,6 +1751,7 @@ export type ProjectRow = {
   createdAt: number; updatedAt: number
   widgetMode: string; widgetCtaUrl: string | null; widgetNotifyEmail: string | null
   widgetReportGate: string
+  widgetAutoCaptureErrors: boolean
   instructionsMd?: string | null
   trailsAutofileEnabled: boolean
   siteUrl: string | null
@@ -1766,6 +1777,7 @@ function rowToProject(x: any): ProjectRow {
     widgetCtaUrl: x.widget_cta_url != null ? String(x.widget_cta_url) : null,
     widgetNotifyEmail: x.widget_notify_email != null ? String(x.widget_notify_email) : null,
     widgetReportGate: ["anonymous", "email", "login"].includes(String(x.widget_report_gate)) ? String(x.widget_report_gate) : "anonymous",
+    widgetAutoCaptureErrors: Number(x.widget_auto_capture_errors) === 1,
     instructionsMd: x.instructions_md != null ? String(x.instructions_md) : undefined,
     trailsAutofileEnabled: !!x.trails_autofile_enabled,
     siteUrl: x.site_url != null ? String(x.site_url) : null,
@@ -2410,12 +2422,12 @@ export async function updateAccountBillingState(
 // ── widget-config helpers (leadgen integration task-1) ──
 const DEFAULT_WIDGET_CTA = "https://klavity.in/onboarding"
 
-export async function getWidgetConfig(projectId: string): Promise<{ mode: string; ctaUrl: string; reportGate: string } | null> {
+export async function getWidgetConfig(projectId: string): Promise<{ mode: string; ctaUrl: string; reportGate: string; autoCaptureErrors: boolean } | null> {
   const p = await projectById(projectId)
   if (!p) return null
   const mode = ["support", "leadgen", "off"].includes(p.widgetMode) ? p.widgetMode : "support"
   const reportGate = ["anonymous", "email", "login"].includes(p.widgetReportGate) ? p.widgetReportGate : "anonymous"
-  return { mode, ctaUrl: p.widgetCtaUrl || DEFAULT_WIDGET_CTA, reportGate }
+  return { mode, ctaUrl: p.widgetCtaUrl || DEFAULT_WIDGET_CTA, reportGate, autoCaptureErrors: !!p.widgetAutoCaptureErrors }
 }
 
 export async function getWidgetNotifyEmail(projectId: string): Promise<string | null> {
@@ -2423,12 +2435,13 @@ export async function getWidgetNotifyEmail(projectId: string): Promise<string | 
   return p?.widgetNotifyEmail || null
 }
 
-export async function setWidgetConfig(projectId: string, cfg: { mode?: string; ctaUrl?: string | null; notifyEmail?: string | null; reportGate?: string }): Promise<void> {
+export async function setWidgetConfig(projectId: string, cfg: { mode?: string; ctaUrl?: string | null; notifyEmail?: string | null; reportGate?: string; autoCaptureErrors?: boolean }): Promise<void> {
   const sets: string[] = [], args: any[] = []
   if (cfg.mode !== undefined) { sets.push("widget_mode=?"); args.push(["support", "leadgen", "off"].includes(cfg.mode) ? cfg.mode : "support") }
   if (cfg.ctaUrl !== undefined) { sets.push("widget_cta_url=?"); args.push(cfg.ctaUrl || null) }
   if (cfg.notifyEmail !== undefined) { sets.push("widget_notify_email=?"); args.push(cfg.notifyEmail || null) }
   if (cfg.reportGate !== undefined) { sets.push("widget_report_gate=?"); args.push(["anonymous", "email", "login"].includes(cfg.reportGate) ? cfg.reportGate : "anonymous") }
+  if (cfg.autoCaptureErrors !== undefined) { sets.push("widget_auto_capture_errors=?"); args.push(cfg.autoCaptureErrors ? 1 : 0) }
   if (!sets.length) return
   sets.push("updated_at=?"); args.push(Date.now()); args.push(projectId)
   await db!.execute({ sql: `UPDATE projects SET ${sets.join(", ")} WHERE id=?`, args })
@@ -2840,6 +2853,7 @@ export type FeedbackInsert = {
   clientContext?: any  // captured ReportContext (console/network/env + identity/metadata), G2/G3/G5
   annotations?: any    // structured markup: { w, h, shapes:Shape[], region?, selector? } — re-rendered as the ticket overlay
   source?: string | null  // KLA-173: 'manual' | 'widget' | null (null → derived from sim_id at read time)
+  signature?: string | null  // BugHerd sub-project A: client-error fingerprint for dedup via findFeedbackBySignature
 }
 
 // Triage gate: new feedback is "new" (needs triage) unless it's a high-priority
@@ -2856,8 +2870,8 @@ export async function insertFeedback(f: FeedbackInsert): Promise<string> {
   await db!.execute({
     sql: `INSERT INTO feedback (id,project_id,sim_id,actor_email,url_host,url_path,source_referrer,observation,sentiment,priority,
           screenshot_id,suggested_bug_json,cited_trait_ids_json,source_quote,source_transcript_id,source_date,
-          plane_issue_key,plane_issue_url,issue_key,recurrence_count,recurrence_dates_json,last_seen_at,client_context_json,annotations_json,source,created_at,status)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          plane_issue_key,plane_issue_url,issue_key,recurrence_count,recurrence_dates_json,last_seen_at,client_context_json,annotations_json,source,signature,created_at,status)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [id, f.projectId, f.simId ?? null, f.actorEmail ?? null, f.urlHost ?? null, f.urlPath ?? null, f.sourceReferrer ?? null,
            f.observation ?? null, f.sentiment ?? null, f.priority ?? null, f.screenshotId ?? null,
            f.suggestedBug != null ? JSON.stringify(f.suggestedBug) : null,
@@ -2867,7 +2881,7 @@ export async function insertFeedback(f: FeedbackInsert): Promise<string> {
            f.issueKey ?? null, 1, JSON.stringify([now]), now,
            f.clientContext != null ? JSON.stringify(f.clientContext) : null,
            f.annotations != null ? JSON.stringify(f.annotations) : null,
-           f.source ?? null, now, status],
+           f.source ?? null, f.signature ?? null, now, status],
   })
   // KLA-200: assign per-project sequential number immediately after insert
   await db!.execute({
@@ -3174,6 +3188,17 @@ export async function listRecentFeedbackForDedup(projectId: string, limit = 50):
     const observation = x.observation != null ? String(x.observation) : ""
     return { id: String(x.id), title: title || observation.slice(0, 120), observation }
   })
+}
+
+// BugHerd sub-project A: look up an existing feedback row by its client-error signature, scoped
+// to the project, so the (later) error-ingest endpoint can dedupe a repeat client error into the
+// same ticket (via bumpFeedbackRecurrence) instead of filing a new one each time it fires.
+export async function findFeedbackBySignature(projectId: string, signature: string): Promise<{ id: string; status: string; recurrenceCount: number } | null> {
+  if (!signature) return null
+  const r = await db!.execute({ sql: "SELECT id, status, recurrence_count FROM feedback WHERE project_id=? AND signature=? ORDER BY created_at ASC LIMIT 1", args: [projectId, signature] })
+  if (!r.rows.length) return null
+  const x = r.rows[0] as any
+  return { id: String(x.id), status: String(x.status), recurrenceCount: Number(x.recurrence_count) || 1 }
 }
 
 export async function bumpFeedbackRecurrence(id: string, atMs: number): Promise<void> {
