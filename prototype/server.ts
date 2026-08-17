@@ -25,7 +25,7 @@ import { importExternalIssues } from "./lib/connectors/import"
 import { deriveHealth } from "./lib/connectors/health"
 import { applyReconcileOps, recurrenceFromEvents, pickCitation, groundQuote, type ReconcileOp, type Trait, type TraitEventRow } from "./lib/provenance"
 import { parseTranscript, speakersFromLines, offsetToTime, formatTs } from "./lib/transcript-parse"
-import { sendOtp, sendLeadAlert, sendTicketAssignmentEmail, sendTicketAssignmentInviteEmail, sendMemberInviteEmail } from "./lib/mail"
+import { sendOtp, sendLeadAlert, sendTicketAssignmentEmail, sendTicketAssignmentInviteEmail, sendMemberInviteEmail, sendInstallInstructionsEmail } from "./lib/mail"
 // First-class member invites + visibility (JTBD 6.4 / KLAVITYKLA-294) — composes existing tables, no migration.
 import { listProjectInvites, revokeProjectInvite, getPendingInvite } from "./lib/member-invites"
 import { notifyReporterOnFix } from "./lib/fixed-notification"
@@ -7468,6 +7468,31 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const { domain } = await req.json().catch(() => ({}))
         await setAccountDomain(active.workspaceId, String(domain || "").trim().toLowerCase())
         return json({ ok: true })
+      }
+
+      // ── email the widget install snippet to a developer (onboarding hand-off) ──
+      // A non-technical user who can't install the widget themselves sends the <script> line +
+      // project id to their developer. Admin-only, project-scoped, rate-limited so we're never an
+      // open mailer. emailed:false (never a hard 500) if the mail transport is unavailable.
+      if (req.method === "POST" && path === "/api/install/email") {
+        const { projectId, email } = await req.json().catch(() => ({}))
+        const pid = String(projectId || "").trim()
+        const to = String(email || "").trim().toLowerCase()
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to) || to.length > 200) return json({ error: "Enter a valid developer email." }, 400)
+        const access = await projectAccess(me, pid)
+        if (access !== "admin") return json({ error: "Admin only." }, 403)
+        const p = await projectById(pid)
+        if (!p) return json({ error: "Unknown project." }, 404)
+        if (!rlAllow(`installmail:${me}`, 10, 60 * 60 * 1000)) return json({ error: "Too many sends — try again later." }, 429)
+        let emailed = false
+        try {
+          await sendInstallInstructionsEmail({
+            to, projectId: pid, widgetHost: new URL(BASE).origin, projectName: p.name, senderEmail: me,
+            dashboardUrl: `${BASE.replace(/\/+$/, "")}/dashboard?project=${encodeURIComponent(pid)}`,
+          })
+          emailed = true
+        } catch (e: any) { console.error("install email failed:", e?.message || e) }
+        return json({ ok: true, emailed })
       }
 
       // ── onboarding-completed flag (KLA-297) ──
