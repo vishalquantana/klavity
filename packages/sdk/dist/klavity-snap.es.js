@@ -2079,8 +2079,8 @@ function rd(e, t, r = {}) {
       return;
     }
     if ((C.key === "s" || C.key === "S") && !C.metaKey && !C.ctrlKey && !C.altKey) {
-      const O = C.target;
-      if (O && (O.tagName === "INPUT" || O.tagName === "TEXTAREA" || O.isContentEditable) || l.querySelector(".kl-edtb")) return;
+      const O = typeof C.composedPath == "function" && C.composedPath()[0] || C.target;
+      if (O && (O.tagName === "INPUT" || O.tagName === "TEXTAREA" || O.tagName === "SELECT" || O.isContentEditable) || l.querySelector(".kl-edtb")) return;
       const N = l.getElementById("klavity-submit");
       N && !N.disabled && (C.preventDefault(), C.stopPropagation(), N.click());
     }
