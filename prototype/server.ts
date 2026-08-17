@@ -7739,10 +7739,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const plan = String(parsed.data?.plan || "")
         if (plan === "scale") return json({ error: "Scale is sales-assisted. Contact vishal@quantana.com.au." }, 400)
         if (plan !== "pro" && plan !== "team" && plan !== "agency" && plan !== "founding") return json({ error: "Choose Pro, Team, Agency, or Founding." }, 400)
-        // Founding Team is annual-only (STRIPE_PRICE_CATALOG.founding has no "month" entry) — force
-        // the interval to "year" regardless of what the client sent so checkout can never miss the
-        // catalog. Pro/Team keep the caller's choice.
-        const interval = plan === "founding" ? "year" : normalizeInterval(String(parsed.data?.interval || "month"))
+        // Founding Team is now MONTHLY ($299/mo, 50% off Scale) — force the interval to "month"
+        // regardless of what the client sent so checkout always resolves the founding.month catalog
+        // entry (klavity_founding_monthly_299). Pro/Team keep the caller's choice.
+        const interval = plan === "founding" ? "month" : normalizeInterval(String(parsed.data?.interval || "month"))
         const billing = await accountBillingState(active.workspaceId)
         // KLAVITYKLA-366 — enforce the ten-spot cap HERE, not just visually. A visual-only limit is
         // a promise we can't keep: this endpoint is reachable directly, so without this check
