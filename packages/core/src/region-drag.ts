@@ -44,6 +44,25 @@ export interface RegionDragOptions {
   minSize?: number
 }
 
+// QPLANE-21: right-clicks on editable targets must fall through to the NATIVE browser context menu,
+// which carries spellcheck corrections ("Add to Dictionary", suggestions) and cut/copy/paste. Detects
+// <input>/<textarea>/<select> and contenteditable — including a right-click that lands on a descendant
+// of an editable region (editability is inherited, so the event target is often a child node).
+export function isEditableTarget(target: EventTarget | null): boolean {
+  const el = target as Element | null
+  if (!el || typeof (el as Element).tagName !== "string") return false
+  const tag = (el as Element).tagName
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true
+  // Prefer the browser's computed editability; fall back to walking up for contenteditable ancestors
+  // (jsdom doesn't compute isContentEditable, so `closest` keeps detection working in tests too).
+  if ((el as HTMLElement).isContentEditable === true) return true
+  if (typeof (el as Element).closest === "function") {
+    const ce = (el as Element).closest("[contenteditable]")
+    if (ce && (ce.getAttribute("contenteditable") || "").toLowerCase() !== "false") return true
+  }
+  return false
+}
+
 export function installRegionDrag(opts: RegionDragOptions): RegionDragHandle {
   const threshold = opts.threshold ?? 6
   const minSize = opts.minSize ?? 8
@@ -68,6 +87,7 @@ export function installRegionDrag(opts: RegionDragOptions): RegionDragHandle {
     if (e.button !== 2 || e.shiftKey) return                 // only plain right-button starts a region
     if (opts.shouldIgnore?.()) return
     if (opts.isOwnTarget?.(e)) return                        // don't hijack right-clicks on our own UI
+    if (isEditableTarget(e.target)) return                   // QPLANE-21: leave native spellcheck/edit menu for fields
     opts.onRightDown?.()  // dismiss any open menu immediately — before we know if this is a click or drag
     pressing = true
     didDrag = false

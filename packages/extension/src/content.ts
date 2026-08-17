@@ -1,5 +1,5 @@
 import type { ContentMessage, BackgroundMessage, ReportType, SubmitReportPayload, KlavConfig, KlavMonitoredProject } from '@klavity/core'
-import { buildModal, installRegionDrag, type ModalController, type CaptureQuality } from '@klavity/core/modal'
+import { buildModal, installRegionDrag, isEditableTarget, type ModalController, type CaptureQuality } from '@klavity/core/modal'
 import { icon } from '@klavity/core/icons'
 import { resolveModalConfig } from '@klavity/core/modal-theme'
 import { installCapture, buildReportContext, type CaptureBuffers } from '@klavity/core/capture'
@@ -545,6 +545,7 @@ function handleContextMenu(e: MouseEvent) {
     nativeMenuPending = false
     return // pass through to native browser menu
   }
+  if (isEditableTarget(e.target)) return // QPLANE-21: native menu carries spellcheck / cut-copy-paste for fields
   if (regionDrag.suppressNextMenu()) { e.preventDefault(); return } // a right-click-drag region just happened
   e.preventDefault()
   showCtxMenu(e.clientX, e.clientY)

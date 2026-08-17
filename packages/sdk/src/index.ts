@@ -4,7 +4,7 @@ import type { KlavitySettings, ReportType, SubmitReportPayload, IntegrationConfi
 import { DEFAULT_SETTINGS } from '@klavity/core'
 import { installCapture, buildReportContext, type CaptureBuffers } from '@klavity/core/capture'
 import { dispatchSubmit } from '@klavity/core/submit'
-import { buildModal } from '@klavity/core/modal'
+import { buildModal, isEditableTarget } from '@klavity/core/modal'
 import { submitReport as jiraSubmit } from '@klavity/core/integrations/jira'
 import { submitReport as linearSubmit } from '@klavity/core/integrations/linear'
 import { submitReport as githubSubmit } from '@klavity/core/integrations/github'
@@ -92,6 +92,7 @@ export function setMetadata(meta: Record<string, unknown> | null) {
 
 function addContextMenu() {
   document.addEventListener('contextmenu', (e) => {
+    if (isEditableTarget(e.target)) return // QPLANE-21: leave native spellcheck / edit menu for fields
     e.preventDefault()
     const menu = document.createElement('div')
     menu.style.cssText = `position:fixed;left:${Math.min(e.clientX, window.innerWidth - 200)}px;top:${Math.min(e.clientY, window.innerHeight - 80)}px;background:#1e1e2e;border:1px solid #45475a;border-radius:8px;padding:4px;z-index:2147483647;box-shadow:0 8px 24px rgba(0,0,0,.4);font-family:system-ui;`

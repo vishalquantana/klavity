@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest"
-import { installRegionDrag } from "./region-drag"
+import { installRegionDrag, isEditableTarget } from "./region-drag"
 
 const down = (x: number, y: number) => document.dispatchEvent(new MouseEvent("mousedown", { button: 2, clientX: x, clientY: y, bubbles: true }))
 const move = (x: number, y: number) => document.dispatchEvent(new MouseEvent("mousemove", { clientX: x, clientY: y, bubbles: true }))
@@ -128,5 +128,61 @@ describe("installRegionDrag", () => {
     move(100, 100); up(100, 100)
     expect(onRegion).not.toHaveBeenCalled()
     h.destroy()
+  })
+})
+
+// QPLANE-21: right-clicking a misspelled word in an editable field must surface the NATIVE browser
+// menu (spellcheck corrections, cut/copy/paste), not Klavity's report menu. The gesture must yield
+// on editable targets so the native contextmenu is never suppressed.
+describe("isEditableTarget", () => {
+  it("is true for INPUT, TEXTAREA, SELECT and contenteditable; false for plain elements / null", () => {
+    const input = document.createElement("input")
+    const textarea = document.createElement("textarea")
+    const select = document.createElement("select")
+    const ce = document.createElement("div"); ce.setAttribute("contenteditable", "true")
+    const plain = document.createElement("div")
+    const off = document.createElement("div"); off.setAttribute("contenteditable", "false")
+    expect(isEditableTarget(input)).toBe(true)
+    expect(isEditableTarget(textarea)).toBe(true)
+    expect(isEditableTarget(select)).toBe(true)
+    expect(isEditableTarget(ce)).toBe(true)
+    expect(isEditableTarget(plain)).toBe(false)
+    expect(isEditableTarget(off)).toBe(false)
+    expect(isEditableTarget(null)).toBe(false)
+  })
+
+  it("is true for a descendant of a contenteditable region (editability is inherited)", () => {
+    const ce = document.createElement("div"); ce.setAttribute("contenteditable", "true")
+    const child = document.createElement("b"); ce.appendChild(child)
+    document.body.appendChild(ce)
+    expect(isEditableTarget(child)).toBe(true)
+    ce.remove()
+  })
+})
+
+describe("installRegionDrag — editable targets pass through to the native menu (QPLANE-21)", () => {
+  it("a right-click on an <input> does NOT engage the gesture, so the native menu is not suppressed", () => {
+    const input = document.createElement("input"); document.body.appendChild(input)
+    const onPlainRightClick = vi.fn(); const onRightDown = vi.fn()
+    const h = installRegionDrag({ onRegion: vi.fn(), onPlainRightClick, onRightDown })
+    input.dispatchEvent(new MouseEvent("mousedown", { button: 2, clientX: 10, clientY: 10, bubbles: true }))
+    // pressing never started → the synchronous contextmenu event will NOT be suppressed
+    expect(h.suppressNextMenu()).toBe(false)
+    expect(onRightDown).not.toHaveBeenCalled()
+    document.dispatchEvent(new MouseEvent("mouseup", { button: 2, clientX: 11, clientY: 11, bubbles: true }))
+    expect(onPlainRightClick).not.toHaveBeenCalled()
+    h.destroy(); input.remove()
+  })
+
+  it("a right-click inside a contenteditable region also yields to the native menu", () => {
+    const ce = document.createElement("div"); ce.setAttribute("contenteditable", "true")
+    const child = document.createElement("span"); ce.appendChild(child); document.body.appendChild(ce)
+    const onPlainRightClick = vi.fn()
+    const h = installRegionDrag({ onRegion: vi.fn(), onPlainRightClick })
+    child.dispatchEvent(new MouseEvent("mousedown", { button: 2, clientX: 10, clientY: 10, bubbles: true }))
+    expect(h.suppressNextMenu()).toBe(false)
+    document.dispatchEvent(new MouseEvent("mouseup", { button: 2, clientX: 10, clientY: 10, bubbles: true }))
+    expect(onPlainRightClick).not.toHaveBeenCalled()
+    h.destroy(); ce.remove()
   })
 })
