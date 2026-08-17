@@ -14,6 +14,7 @@ import { countFoundingAccounts } from "./lib/db"
 import { getFoundingSpots, decideFoundingCheckout, foundingRibbonLabel, foundingSpotsLabel, foundingStateToken, computeFoundingSpots } from "./lib/founding"
 import { checkTenantBudget, tenantBudgetEnforcementEnabled, tenantBudgetRemaining, TenantBudgetExceededError } from "./lib/tenant-budget"
 import { sanitizeAttr } from "./lib/attr"
+import { recordClientError, type ClientError } from "./lib/client-error-ticket"
 import { deriveActivation, type ActivationSignals } from "./lib/activation"
 import { issueKeyFor, chooseDedup, humanReportIssueKeyFor } from "./lib/dedup"
 import { classifySimObservation } from "./lib/sim-bug-classify"
@@ -764,6 +765,7 @@ function isWidgetCorsPath(path: string): boolean {
     case "/api/widget/lead":
     case "/api/widget/sims":
     case "/api/feedback":
+    case "/api/errors":
     case "/api/consent":
     case "/api/sim/review":
     case "/api/personas":
@@ -1586,6 +1588,13 @@ const OTP_FAIL_MAX = 5                 // wrong codes per (email,IP) before lock
 // regardless of source IP, so the email's brute-force surface is bounded end-to-end.
 const OTP_FAIL_EMAIL_WINDOW = 15 * 60 * 1000
 const OTP_FAIL_EMAIL_MAX = 10          // wrong codes per email / window across ALL IPs before lockout
+
+// BugHerd sub-project A (task 3): POST /api/errors ingest caps. Per-IP bounds a single reporter's
+// browser from flooding us; per-project bounds the whole ticket-creation blast radius regardless
+// of how many distinct browsers are affected by an incident.
+const ERRORS_WINDOW = 60 * 60 * 1000
+const ERRORS_ANON_PER_IP = 120
+const ERRORS_PER_PROJECT_HOUR = 50
 
 // LLM-endpoint abuse limits (M5/LLM10). /api/transcripts fires two LLM calls and was previously
 // unbudgeted/unbounded — cap the input size and rate per user+project.
@@ -4030,6 +4039,46 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (await matchMonitored(p.id, rawUrl)) matched.push({ projectId: p.id, name: p.name })
       }
       return json({ projects: matched })
+    }
+
+    // ── BugHerd sub-project A (task 3): passive client-error auto-ticketing ingest. Public,
+    // cross-origin (the widget/extension runs on the customer's own site), project-scoped, and
+    // opt-in — a project must explicitly turn on autoCaptureErrors (Task 4's toggle) before any
+    // error it sends creates or bumps a ticket. Origin is required so a bare curl without an
+    // Origin header (non-browser caller) is rejected outright; unknown project -> 404 without
+    // revealing whether the flag is on/off. Each error is deduped via Task 2's recordClientError
+    // (fingerprint -> existing ticket bump, or a new masked-PII ticket) and a newly-created ticket
+    // fires the SAME connector auto-copy the manual /api/feedback path uses. Rate-capped per IP
+    // (a single flooding browser) and per project (the blast radius of one incident, regardless of
+    // how many browsers hit it) — over the per-project cap, new signatures fold to recurrence-only
+    // instead of minting more tickets (recordClientError's overCap path).
+    if (req.method === "POST" && path === "/api/errors") {
+      const reqOrigin = req.headers.get("origin") || ""
+      if (!reqOrigin) return json({ error: "origin required" }, 400)
+      const body: any = await req.json().catch(() => ({}))
+      const pid = String(body?.projectId || "").trim()
+      const proj = pid ? await projectById(pid) : null
+      if (!proj) return json({ error: "Unknown project." }, 404)
+      const cfg = await getWidgetConfig(pid)
+      if (!cfg || cfg.autoCaptureErrors !== true) return json({ ok: true, created: 0, disabled: true })
+      const ip = clientIp(req, server)
+      if (!rlAllow(`errIp:${ip}`, ERRORS_ANON_PER_IP, ERRORS_WINDOW)) return json({ error: "rate limited" }, 429)
+      const errors: ClientError[] = Array.isArray(body?.errors) ? body.errors.slice(0, 20) : []
+      let created = 0
+      for (const e of errors) {
+        if (!e || typeof e.message !== "string" || typeof e.pageUrl !== "string") continue
+        const overCap = !rlAllow(`errProj:${pid}`, ERRORS_PER_PROJECT_HOUR, ERRORS_WINDOW)
+        try {
+          const res = await recordClientError(pid, e, body?.context || {}, { overCap })
+          if (res.created) { created++; autoCopyFeedback(res.id, pid, null, undefined) }
+        } catch (err: any) {
+          console.error("client-error record failed:", err?.message || err)
+        }
+      }
+      if (errors.length && created === 0) {
+        console.warn(`/api/errors: ${errors.length} error(s) folded to recurrence/cap for ${pid}`)
+      }
+      return json({ ok: true, created })
     }
 
     // ── monitoring consent (P3b) — grant / pause / revoke for the CALLER on a project. Cookie OR Bearer.
