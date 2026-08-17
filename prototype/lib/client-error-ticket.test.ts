@@ -24,6 +24,15 @@ async function getObservation(id: string): Promise<string | null> {
   return row ? String(row.observation) : null
 }
 
+async function countBySignature(projectId: string, signature: string): Promise<number> {
+  const res = await db!.execute({
+    sql: "SELECT COUNT(*) AS n FROM feedback WHERE project_id = ? AND signature = ?",
+    args: [projectId, signature],
+  })
+  const row = res.rows[0] as any
+  return Number(row?.n ?? 0)
+}
+
 test("signature is stable per (project,message,topframe,pageUrl) and project-scoped", () => {
   const e = { kind: "error", message: "x is not a function", stack: "at f (a.js:1:2)\nat g", pageUrl: "https://s.com/a" } as any
   expect(clientErrorSignature("p1", e)).toBe(clientErrorSignature("p1", { ...e, message: "x is not a function " }))
@@ -51,6 +60,23 @@ test("first occurrence creates a fb_ ticket; second bumps recurrence, not a new 
   const b = await recordClientError(pid, e, {}, { atMs: 2000 })
   expect(b.created).toBe(false)
   expect(b.id).toBe(a.id)
+
+  const signature = clientErrorSignature(pid, e)
+  expect(await countBySignature(pid, signature)).toBe(1)
+})
+
+test("overCap drop path: new signature, no prior ticket -> no row inserted", async () => {
+  const pid = "proj_cet3"
+  const e = { kind: "error", message: "over cap boom", stack: "at h", pageUrl: "https://s.com/overcap" } as any
+  const signature = clientErrorSignature(pid, e)
+
+  expect(await countBySignature(pid, signature)).toBe(0)
+
+  const result = await recordClientError(pid, e, {}, { atMs: 1, overCap: true })
+  expect(result.created).toBe(false)
+  expect(result.id).toBe("")
+
+  expect(await countBySignature(pid, signature)).toBe(0)
 })
 
 test("PII in the message is masked before persistence", async () => {
