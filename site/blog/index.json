@@ -390,5 +390,12 @@
     "excerpt": "API tests check logic through endpoints; UI tests drive the browser like a real user. API tests run faster and break less; UI tests catch what users see.",
     "category": "Compare",
     "date": "2026-08-16"
+  },
+  {
+    "slug": "what-is-test-coverage",
+    "title": "What Is Test Coverage? Types, Metrics, and Its Limits",
+    "excerpt": "Test coverage is the percentage of your code executed by tests. Here's how line, branch, and function coverage differ — and why 100% never means bug-free.",
+    "category": "Learn",
+    "date": "2026-08-17"
   }
 ]
