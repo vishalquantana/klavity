@@ -1,7 +1,11 @@
 // BugHerd sub-project A, task 1: DB layer for client-error dedup.
 // Hermetic: points module's `db` singleton at a fresh local libsql file by setting
 // TURSO_DATABASE_URL *before* importing ./db (matches db.sso-state.test.ts pattern).
-import { test, expect, beforeAll } from "bun:test"
+//
+// beforeEach re-asserts reconnectDb() to our own file so that another test file's
+// interleaved top-level setup (bun runs all files in one process) can never leave the
+// shared `db` singleton pointed at a different file's database when one of our tests runs.
+import { test, expect, beforeAll, beforeEach } from "bun:test"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -20,6 +24,10 @@ beforeAll(async () => {
   const db = reconnectDb("file:" + file)
   await applySchema(db)
   await migrateV2(db)
+})
+
+beforeEach(() => {
+  reconnectDb("file:" + file)
 })
 
 test("findFeedbackBySignature returns the row for a project+signature, null otherwise", async () => {
