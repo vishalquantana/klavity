@@ -124,7 +124,13 @@ export const PLAN_QUOTAS: Record<BillingPlan, { projects: number | null; sims: n
   // Daily cadence removes ~95% of that exposure, keeps the offer genuinely generous, and leaves
   // hourly/on-deploy as a real upsell into paid Team. Revisit only when KLAVITYKLA-364 has
   // instrumented the true per-replay cost — not before, and not on vibes.
-  founding: { projects: null, sims: 20, simReactionsMonthly: 2500, autosimFlows: 20, autosimRunsMonthly: 600, autosimCadence: "daily" },
+  // 2026-08-17 pricing refresh: founding is now pitched as 50% off Scale ($299/mo vs $599/mo),
+  // not "84% off Team" — so it grants SCALE-level (unlimited) quota, mirroring the `scale:` entry
+  // below, rather than Team's fixed limits. Cadence is a concrete "on-deploy/hourly" (not scale's
+  // "custom") because founding stays self-serve. NOTE: this reopens the cost exposure the
+  // KLAVITYKLA-379 comment above warned about (unlimited runs at a locked-for-life price) — flagged
+  // for follow-up instrumentation via KLAVITYKLA-364, not resolved here.
+  founding: { projects: null, sims: null, simReactionsMonthly: null, autosimFlows: null, autosimRunsMonthly: null, autosimCadence: "on-deploy/hourly" },
   team: { projects: null, sims: 20, simReactionsMonthly: 2500, autosimFlows: 20, autosimRunsMonthly: 600, autosimCadence: "on-deploy/hourly" },
   // Agency (KLAVITYKLA-310): unlimited client projects; Sims/AutoSim allowances above Team so an
   // agency can cover many clients without immediately hitting Scale.
