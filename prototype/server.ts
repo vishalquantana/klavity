@@ -5001,7 +5001,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (!proj) return json({ error: "Not found." }, 404, WIDGET_CORS)
         // turnstileSiteKey (public by design) tells the widget whether to render a Turnstile challenge
         // on the anonymous submit path. Empty string when Turnstile isn't provisioned → widget skips it.
-        return json({ modalConfig: resolveModalConfig(await getProjectModalConfig(m[1])), widget: (await getWidgetConfig(m[1])) || { mode: "support", ctaUrl: "https://klavity.in/onboarding", reportGate: "anonymous" }, turnstileSiteKey: turnstileSiteKey() }, 200, WIDGET_CORS)
+        return json({ modalConfig: resolveModalConfig(await getProjectModalConfig(m[1])), widget: (await getWidgetConfig(m[1])) || { mode: "support", ctaUrl: "https://klavity.in/onboarding", reportGate: "anonymous", autoCaptureErrors: false }, turnstileSiteKey: turnstileSiteKey() }, 200, WIDGET_CORS)
       }
     }
 
@@ -8758,13 +8758,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             }
             await setProjectModalConfig(pid, nextCfg)
             // Persist widget mode/cta/notify if any were provided (partial update).
-            const hasWidget = body.mode !== undefined || body.cta_url !== undefined || body.notify_email !== undefined || body.report_gate !== undefined
+            // autoCaptureErrors (BugHerd sub-project A, task 4) — passive client-error auto-ticketing
+            // opt-in toggle; mirrors mode/reportGate exactly (admin-gated above, boolean-only).
+            const hasWidget = body.mode !== undefined || body.cta_url !== undefined || body.notify_email !== undefined
+              || body.report_gate !== undefined || body.autoCaptureErrors !== undefined
             if (hasWidget) {
-              const wCfg: { mode?: string; ctaUrl?: string | null; notifyEmail?: string | null; reportGate?: string } = {}
+              const wCfg: { mode?: string; ctaUrl?: string | null; notifyEmail?: string | null; reportGate?: string; autoCaptureErrors?: boolean } = {}
               if (body.mode !== undefined) wCfg.mode = body.mode
               if (body.cta_url !== undefined) wCfg.ctaUrl = body.cta_url
               if (body.notify_email !== undefined) wCfg.notifyEmail = body.notify_email
               if (body.report_gate !== undefined) wCfg.reportGate = body.report_gate
+              if (typeof body.autoCaptureErrors === "boolean") wCfg.autoCaptureErrors = body.autoCaptureErrors
               await setWidgetConfig(pid, wCfg)
             }
             return json({ ok: true, modalConfig: v.config, pro })
