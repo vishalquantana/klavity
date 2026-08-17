@@ -403,7 +403,7 @@ async function mount() {
       // Passive client-error auto-ticketing (BugHerd sub-project A): only mount the error reporter
       // when the project has explicitly opted in via config. Never throws — a failed/absent config
       // response simply leaves auto-capture off (see catch below).
-      if (j.autoCaptureErrors === true) {
+      if (j.widget && j.widget.autoCaptureErrors === true) {
         installErrorReporter({
           backendUrl: cfg.backendUrl,
           projectId: cfg.projectId,
