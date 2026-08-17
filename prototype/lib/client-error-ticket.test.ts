@@ -1,0 +1,67 @@
+// BugHerd sub-project A, task 2: fingerprint + create/bump/mask recorder.
+// Hermetic: points module's `db` singleton at a fresh local libsql file by setting
+// TURSO_DATABASE_URL *before* importing ./db (matches db.sso-state.test.ts pattern).
+import { test, expect, beforeAll } from "bun:test"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+
+const file = join(tmpdir(), `klav-clienterrticket-${Date.now()}-${Math.random().toString(36).slice(2)}.db`)
+process.env.TURSO_DATABASE_URL = "file:" + file
+delete process.env.TURSO_AUTH_TOKEN
+
+const { reconnectDb, applySchema, migrateV2, db } = await import("./db")
+const { clientErrorSignature, severityFor, recordClientError } = await import("./client-error-ticket")
+
+beforeAll(async () => {
+  const conn = reconnectDb("file:" + file)
+  await applySchema(conn)
+  await migrateV2(conn)
+})
+
+async function getObservation(id: string): Promise<string | null> {
+  const res = await db!.execute({ sql: "SELECT observation FROM feedback WHERE id = ?", args: [id] })
+  const row = res.rows[0] as any
+  return row ? String(row.observation) : null
+}
+
+test("signature is stable per (project,message,topframe,pageUrl) and project-scoped", () => {
+  const e = { kind: "error", message: "x is not a function", stack: "at f (a.js:1:2)\nat g", pageUrl: "https://s.com/a" } as any
+  expect(clientErrorSignature("p1", e)).toBe(clientErrorSignature("p1", { ...e, message: "x is not a function " }))
+  expect(clientErrorSignature("p1", { ...e, message: "x is not a function, code 42" }))
+    .toBe(clientErrorSignature("p1", { ...e, message: "x is not a function, code 99" }))
+  expect(clientErrorSignature("p1", e)).not.toBe(clientErrorSignature("p2", e))
+})
+
+test("severity: uncaught error > 5xx network > console.error", () => {
+  expect(severityFor({ kind: "error" } as any)).toBe("high")
+  expect(severityFor({ kind: "unhandledrejection" } as any)).toBe("high")
+  expect(severityFor({ kind: "network", status: 500 } as any)).toBe("medium")
+  expect(severityFor({ kind: "network", status: 0 } as any)).toBe("medium")
+  expect(severityFor({ kind: "network", status: 404 } as any)).toBe("low")
+  expect(severityFor({ kind: "console.error" } as any)).toBe("low")
+})
+
+test("first occurrence creates a fb_ ticket; second bumps recurrence, not a new ticket", async () => {
+  const pid = "proj_cet1"
+  const e = { kind: "error", message: "boom user@x.com", stack: "at f", pageUrl: "https://s.com/p" } as any
+  const a = await recordClientError(pid, e, {}, { atMs: 1000 })
+  expect(a.created).toBe(true)
+  expect(a.id.startsWith("fb_")).toBe(true)
+
+  const b = await recordClientError(pid, e, {}, { atMs: 2000 })
+  expect(b.created).toBe(false)
+  expect(b.id).toBe(a.id)
+})
+
+test("PII in the message is masked before persistence", async () => {
+  const pid = "proj_cet2"
+  const { id } = await recordClientError(
+    pid,
+    { kind: "error", message: "fail for user@example.com", pageUrl: "https://s.com" } as any,
+    {},
+    { atMs: 1 }
+  )
+  const observation = await getObservation(id)
+  expect(observation).not.toBeNull()
+  expect(observation).not.toContain("user@example.com")
+})
