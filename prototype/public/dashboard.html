@@ -2123,6 +2123,11 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           </select>
         </label>
         <p style="font-size:12px;opacity:.7;margin-top:-4px">How an end-user is identified before a report is accepted. <b>Require email</b> = no Klavity account needed, they just type an email (and become a lead). <b>Anonymous</b> = max conversion. <b>Require login</b> = locked down.</p>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:8px;">
+          <input type="checkbox" id="kl-auto-capture-errors" style="accent-color:#6366f1;width:14px;height:14px;">
+          <span style="font-size:13px;">Auto-capture JavaScript errors as tickets</span>
+        </label>
+        <p style="font-size:12px;opacity:.7;margin-top:-4px">Admin only. When on, uncaught JavaScript errors on your site are automatically filed as tickets (deduped by fingerprint) without a user report.</p>
         <label>Launcher display
           <select id="kl-launcher-mode">
             <option value="icon" selected>Icon only — no label (default)</option>
@@ -7498,6 +7503,9 @@ async function loadAppearance() {
     $("kl-save-appearance").addEventListener("click", async function () {
       const isPro = !!($("kl-pro-note") && $("kl-pro-note").dataset.pro === "1")
       const body = { theme: sel.value, thankYou: $("kl-thankyou").value, mode: $("kl-mode").value, cta_url: $("kl-cta").value.trim(), report_gate: $("kl-report-gate") ? $("kl-report-gate").value : "email" }
+      // autoCaptureErrors (BugHerd sub-project A, task 4) — admin-only passive error auto-ticketing toggle.
+      const acChk = $("kl-auto-capture-errors")
+      if (acChk) body.autoCaptureErrors = acChk.checked
       if (sel.value === "custom" && isPro) {
         body.primary = $("kl-primary").value
         body.secondary = $("kl-secondary").value
@@ -7560,6 +7568,15 @@ async function loadAppearance() {
     $("kl-mode").value = w.mode || "support"
     if ($("kl-report-gate")) $("kl-report-gate").value = w.reportGate || "email"
     $("kl-cta").value = w.ctaUrl || ""
+    // autoCaptureErrors (BugHerd sub-project A, task 4) — admin-only; server also enforces this on write.
+    const acRow = $("kl-auto-capture-errors")
+    if (acRow) {
+      acRow.checked = !!w.autoCaptureErrors
+      const isAdminNow = !!(state.active && state.active.role === "admin")
+      acRow.closest("label").style.display = isAdminNow ? "flex" : "none"
+      const acHint = acRow.closest("label").nextElementSibling
+      if (acHint) acHint.style.display = isAdminNow ? "" : "none"
+    }
     // Store isPro on the note element for the save handler to read
     proNote.dataset.pro = isPro ? "1" : "0"
     proNote.style.display = isPro ? "none" : "block"
