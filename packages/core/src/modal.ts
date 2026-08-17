@@ -8,7 +8,7 @@ import { maskNumbers } from './mask-numbers'
 // Re-exported here so the widget + extension can import the shared right-click-drag region gesture from
 // the same module they already use for buildModal (avoids adding a package.json export entry, which the
 // orchestrator's version-stamp ownership could clobber).
-export { installRegionDrag, type RegionDragHandle, type RegionDragOptions } from './region-drag'
+export { installRegionDrag, isEditableTarget, type RegionDragHandle, type RegionDragOptions } from './region-drag'
 
 /** Shift every annotation shape by (dx, dy) — used to rebase markup into a cropped image's new origin.
  *  Pure + coordinate-only so it's unit-testable without a canvas. Returns fresh shape objects. */

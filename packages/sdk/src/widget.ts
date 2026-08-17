@@ -1,7 +1,7 @@
 // packages/sdk/src/widget.ts
 import { injectSimStyles } from "@klavity/core/sim"
 import { safeToPng, safeToPngWithScale, safeToPngWithQuality } from "./capture"
-import { buildModal, installRegionDrag, type ModalController, type PickedTarget } from "@klavity/core/modal"
+import { buildModal, installRegionDrag, isEditableTarget, type ModalController, type PickedTarget } from "@klavity/core/modal"
 import { cropDataUrl, type Rect } from "@klavity/core/crop"
 import { planScrollStitch, clampCaptureHeight } from "./sharp-capture"
 import { type CaptureBuffers } from "@klavity/core/capture"
@@ -986,6 +986,7 @@ async function mount() {
 
     document.addEventListener("contextmenu", (e) => {
       if (e.shiftKey || nativePending) { nativePending = false; return }  // pass through to native menu
+      if (isEditableTarget(e.target)) return                              // QPLANE-21: native menu carries spellcheck for fields
       if (regionDrag.suppressNextMenu()) { e.preventDefault(); return }   // pressing or drag — suppress
       if (onOwnUi(e)) return
       // Keyboard contextmenu (no preceding mousedown) — pressing is false, show menu immediately.
