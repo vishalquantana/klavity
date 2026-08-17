@@ -432,6 +432,16 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
               <button type="button" id="copySnippet" style="background:var(--ink-2);border:1px solid var(--line);border-radius:8px;padding:7px 12px;color:var(--paper);font-family:var(--body);font-size:12.5px;cursor:pointer">Copy code</button>
               <span style="color:var(--paper-faint);font-size:11.5px">Paste this once — it shows on every page automatically.</span>
             </div>
+            <!-- Hand-off: email the install snippet to a developer (POST /api/install/email) -->
+            <div id="sendDevWrap" style="margin-top:12px;border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--ink-2)">
+              <div style="font-size:13px;font-weight:600;color:var(--paper);margin-bottom:2px">Not the one who installs code?</div>
+              <div style="font-size:12.5px;color:var(--paper-dim);margin-bottom:9px">Email the snippet to your developer — they paste one line and you're live.</div>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <input class="in" id="devEmail" type="email" placeholder="developer@yourcompany.com" autocomplete="off" style="flex:1;min-width:200px" />
+                <button type="button" class="btn btn-indigo" id="sendDevBtn" onclick="sendToDeveloper()">Send instructions</button>
+              </div>
+              <div id="sendDevMsg" style="font-size:12.5px;margin-top:7px;color:var(--paper-faint)"></div>
+            </div>
             <!-- Live install check: polls /api/projects/:id/widget-status (~3s) and flips green the
                  moment the widget's heartbeat is seen from the founder's site (or the test below). -->
             <div class="wstatus" id="widgetChip" role="status" aria-live="polite">
@@ -782,6 +792,24 @@ function renderWidgetSnippet(){
     a.href = '/dashboard' + (qs ? '?' + qs : '')
   }
 }
+
+// Hand-off: email the widget install snippet to the user's developer (POST /api/install/email).
+async function sendToDeveloper(){
+  var msg = $('sendDevMsg'), btn = $('sendDevBtn')
+  var email = ($('devEmail').value || '').trim().toLowerCase()
+  if (!email || !email.includes('@')) { msg.style.color = 'var(--rose)'; msg.textContent = 'Enter a valid email address.'; return }
+  if (!projectId) { msg.style.color = 'var(--rose)'; msg.textContent = 'Create your project first (step 1).'; return }
+  var old = btn.textContent; btn.disabled = true; btn.textContent = 'Sending…'; msg.style.color = 'var(--paper-faint)'; msg.textContent = ''
+  try {
+    var res = await jsonFetch('/api/install/email', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ projectId: projectId, email: email }) })
+    if (!res.ok) { msg.style.color = 'var(--rose)'; msg.textContent = (res.data && res.data.error) || 'Could not send — try again.'; return }
+    if (res.data && res.data.emailed === false) { msg.style.color = 'var(--amber)'; msg.textContent = 'Email is briefly unavailable — copy the snippet above and send it manually.'; return }
+    msg.style.color = 'var(--green)'; msg.textContent = 'Instructions sent to ' + email + '.'
+    $('devEmail').value = ''
+  } catch(e){ msg.style.color = 'var(--rose)'; msg.textContent = 'Network error — try again.' }
+  finally { btn.disabled = false; btn.textContent = old }
+}
+
 // The Snap-only "Skip for now" exit is a plain link, but it IS a completed wizard run — stamp the
 // onboarding flag before navigating so these users aren't restarted at the wizard next visit.
 ;(function(){

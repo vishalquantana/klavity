@@ -264,6 +264,59 @@ export async function sendMemberInviteEmail(input: MemberInviteEmail) {
   if (!res.ok) throw new Error(`SendGrid ${res.status}: ${(await res.text()).slice(0, 200)}`)
 }
 
+// Onboarding hand-off: a non-technical user emails the widget install snippet to their developer.
+export type InstallInstructionsEmail = {
+  to: string
+  projectId: string
+  widgetHost: string              // public origin serving /widget.js, e.g. https://klavity.in
+  projectName?: string | null
+  senderEmail?: string | null
+  dashboardUrl?: string | null
+}
+
+export async function sendInstallInstructionsEmail(input: InstallInstructionsEmail) {
+  const key = process.env.SENDGRID_API_KEY
+  const from = process.env.KLAV_MAIL_FROM || "noreply@klavity.in"
+  if (!key) throw new Error("SENDGRID_API_KEY not set")
+  const host = input.widgetHost.replace(/\/+$/, "")
+  const snippet = `<script src="${host}/widget.js" data-project="${input.projectId}" defer></script>`
+  const who = input.senderEmail ? `${input.senderEmail} asked you` : "You've been asked"
+  const proj = input.projectName ? ` for ${input.projectName}` : ""
+  const subject = `Add the Klavity bug-report widget to your site${proj}`
+  const text = [
+    `${who} to add the Klavity bug-report widget to your site${proj}.`,
+    ``,
+    `Paste this one line just before </body> on every page you want covered:`,
+    ``,
+    snippet,
+    ``,
+    `That's it — visitors report bugs with one click, and each report arrives with a screenshot, console logs and network activity attached.`,
+    input.dashboardUrl ? `` : ``,
+    input.dashboardUrl ? `Manage reports in Klavity: ${input.dashboardUrl}` : ``,
+  ].filter((l) => l !== undefined).join("\n")
+  const html = `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#1d1d1f;line-height:1.55;max-width:560px">
+    <p>${escMail(who)} to add the <b>Klavity</b> bug-report widget to your site${input.projectName ? ` for <b>${escMail(input.projectName)}</b>` : ""}.</p>
+    <p>Paste this one line just before <code>&lt;/body&gt;</code> on every page you want covered:</p>
+    <pre style="background:#f6f6f9;border:1px solid #e6e4ef;border-radius:8px;padding:12px;font-size:12.5px;overflow:auto;white-space:pre-wrap;word-break:break-all">${escMail(snippet)}</pre>
+    <p style="color:#555">That's it — visitors report bugs with one click, and each report arrives with a screenshot, console logs and network activity attached.</p>
+    ${input.dashboardUrl ? `<p><a href="${escMail(input.dashboardUrl)}">Manage reports in Klavity →</a></p>` : ""}
+  </div>`
+  const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      personalizations: [{ to: [{ email: input.to }] }],
+      from: { email: from, name: "Klavity" },
+      subject,
+      content: [
+        { type: "text/plain", value: text },
+        { type: "text/html", value: html },
+      ],
+    }),
+  })
+  if (!res.ok) throw new Error(`SendGrid ${res.status}: ${(await res.text()).slice(0, 200)}`)
+}
+
 export type TicketAssignmentInviteEmail = TicketAssignmentEmail & {
   joinUrl: string
 }
