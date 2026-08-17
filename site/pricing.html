@@ -206,7 +206,7 @@
   
   /* Comparison Table */
   .comparison-section {
-    margin: 80px 0 100px;
+    margin: 80px auto 100px;
   }
   .comparison-title {
     text-align: center;
@@ -580,13 +580,13 @@
         <div class="plan-name" style="color:var(--amber, #d98324)">The Founding Ten</div>
         <!-- KLAVITYKLA-366: the STANDARD price is the anchor and stays visible in every state —
              the pitch is the contrast, not the discount in isolation. -->
-        <div class="founding-anchor">Team is <s>$2,988 a year</s> at $249 a month. The Founding Ten pay:</div>
+        <div class="founding-anchor">Scale is <s>$599 a month</s>. The Founding Ten pay:</div>
         <div class="plan-price-wrap" style="margin-bottom:10px">
           <span class="plan-price-currency">$</span>
-          <span class="plan-price" style="font-size:38px">41</span>
-          <span class="plan-price-period">/ month — $490 billed yearly, locked for life</span>
+          <span class="plan-price" style="font-size:38px">299</span>
+          <span class="plan-price-period">/ month — 50% off the top plan, locked for life</span>
         </div>
-        <div class="founding-anchor-save">84% off the standard price, forever.</div>
+        <div class="founding-anchor-save">50% off the top plan, forever.</div>
         <!-- Server-substituted, and EMPTY when the count is unavailable (see lib/founding.ts).
              An empty span collapses via :empty — we show the offer without a number rather than a
              wrong number or a spinner. Never animated: a stale honest number beats an animated lie. -->
@@ -600,11 +600,11 @@
         </li>
         <li>
           <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-          <span><strong>Sims</strong> — personas built from your calls. 20 Sims, 2,500 page reviews a month, unlimited projects.</span>
+          <span><strong>Sims</strong> — personas built from your calls. Unlimited Sims, unlimited page reviews, unlimited projects.</span>
         </li>
         <li>
           <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-          <span><strong>AutoSim as it stabilises</strong> — 20 repeat-checked flows, 600 runs a month, re-run daily.</span>
+          <span><strong>AutoSim as it stabilises</strong> — unlimited repeat-checked flows and runs, re-run on every deploy.</span>
         </li>
         <li>
           <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
@@ -620,7 +620,7 @@
       <div class="founding-cta-wrap founding-when-soldout">
         <div class="founding-soldout-line">All ten spots are taken.</div>
         <a class="btn btn-primary" href="/onboarding?plan=team">Start on Team — $249/mo</a>
-        <span class="founding-cta-note">Same limits, hourly flow runs instead of daily. The founding price is closed for good.</span>
+        <span class="founding-cta-note">Same unlimited limits. The founding price is closed for good.</span>
       </div>
     </div>
 
@@ -768,6 +768,36 @@
           <li>
             <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
             <span>Self-host support + SLA</span>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Enterprise -->
+      <div class="card pricing-card reveal">
+        <div class="plan-name">Enterprise</div>
+        <div class="plan-desc">For organizations that need SSO/SAML, self-hosting, an SLA and a dedicated support agreement.</div>
+        <div class="plan-price-wrap">
+          <span class="plan-price">Custom</span>
+        </div>
+        <a class="btn btn-ghost plan-btn" href="mailto:hello@quantana.com.au?subject=Klavity%20Enterprise%20inquiry">Contact sales</a>
+
+        <div class="plan-features-title">Everything in Scale, plus</div>
+        <ul class="plan-features-list">
+          <li>
+            <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span>SSO / SAML with SCIM provisioning</span>
+          </li>
+          <li>
+            <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span>Self-hosting or a dedicated instance</span>
+          </li>
+          <li>
+            <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span>An uptime SLA and security review</span>
+          </li>
+          <li>
+            <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span>A dedicated account manager</span>
           </li>
         </ul>
       </div>
