@@ -382,7 +382,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           <div id="s1form">
             <div class="kicker" id="s1kick">Step 1 of 3</div>
             <h2>Create your <em>project.</em></h2>
-            <p class="sub">A project is one product — its Sims, the pages they watch, and the tickets they file. You can add more projects later. We'll email you a 6-digit sign-in code. No password.</p>
+            <p class="sub" id="s1sub">A project is one product — its Sims, the pages they watch, and the tickets they file. You can add more projects later. We'll email you a 6-digit sign-in code. No password.</p>
             <label class="fld"><span class="lt">Your email</span><input class="in" id="email" type="email" placeholder="you@example.com" autocomplete="email" /></label>
             <label class="fld"><span class="lt">Project name</span><input class="in" id="projectName" placeholder="Acme Billing" /></label>
             <label class="fld"><span class="lt">Your website · optional, e.g. yourstore.com</span><input class="in" id="domain" placeholder="yourstore.com" /></label>
@@ -701,6 +701,7 @@ window.toggleMoreWays = function(){
 // ── Onboarding state. step 0 = welcome (no rail); 1..3 = wizard (rail). ──
 let cur = 0
 let projectId = null          // resolved after sign-in (the user's default project)
+let signedIn = false          // set by bootstrap() when /api/me shows an existing session → skip re-OTP
 let intent = 'transcript'     // step-3 choice: 'transcript' | 'hats'
 let goal = null               // goal fork: 'snap' (bug reports first) | 'sims' (AI review first)
 
@@ -841,10 +842,19 @@ function markOnboarded(){
 
 // ── Step 1a: request OTP (real signup) ──
 async function requestCode(){
-  const email = $('email').value.trim().toLowerCase()
   const err = $('s1err'); err.textContent = ''
-  if (!email || !email.includes('@')) { err.textContent = 'Enter a valid email address.'; return }
   if (!$('projectName').value.trim()) { err.textContent = 'Give your project a name.'; return }
+  // Already signed in (existing session detected by bootstrap): the user does NOT need a second
+  // OTP — just name the project and move on. Re-requesting a code here was a confusing dead-end.
+  if (signedIn) {
+    const b = $('createBtn'); b.disabled = true; b.textContent = 'Creating…'
+    try { await applyProjectName(); go(2) }
+    catch(e){ err.textContent = 'Network error — try again.' }
+    finally { b.disabled = false; b.textContent = 'Create project →' }
+    return
+  }
+  const email = $('email').value.trim().toLowerCase()
+  if (!email || !email.includes('@')) { err.textContent = 'Enter a valid email address.'; return }
   const btn = $('createBtn'); btn.disabled = true; btn.textContent = 'Sending code…'
   try {
     const { ok, status, data } = await jsonFetch('/api/auth/request', {
@@ -923,6 +933,23 @@ async function persistAhaPersonas(){
     } catch(e) { /* best-effort per-persona */ }
   }
   window._ahaPersonas = null // consume only after the POSTs, so an early failure can retry
+}
+
+// Derive a friendly project name from a domain/URL: "acme-billing.com" → "Acme Billing".
+function deriveName(host){
+  try { host = String(host||'').replace(/^https?:\/\//i,'').replace(/^www\./i,'').split('/')[0] } catch(e){ host = '' }
+  const base = (host || '').split('.')[0]
+  return base.split(/[-_]+/).map(function(w){ return w ? w.charAt(0).toUpperCase()+w.slice(1) : '' }).join(' ').trim()
+}
+// Wire the "Your website" field → auto-fill Project name (until the user edits the name themselves).
+function wireProjectNameAutofill(){
+  const dm = $('domain'), pn = $('projectName')
+  if (!dm || !pn || pn.dataset.wired) return
+  pn.dataset.wired = '1'
+  pn.addEventListener('input', function(){ pn.dataset.touched = '1' })
+  const fill = function(){ if (pn.dataset.touched || !dm.value.trim()) return; const n = deriveName(dm.value.trim()); if (n) pn.value = n }
+  dm.addEventListener('input', fill)
+  dm.addEventListener('blur', fill)
 }
 
 // Rename the signup's project to the chosen name (best-effort — never blocks the flow).
@@ -1281,6 +1308,7 @@ async function openStudio(){
 //    the server would have redirected them to /dashboard. But a signed-in user WITHOUT a project
 //    name set (edge) lands here — pre-resolve their project and let them skip the OTP sub-step. ──
 async function bootstrap(){
+  wireProjectNameAutofill()
   // Pre-apply a prior goal (URL wins over localStorage) so the matching tile shows as chosen
   // and the step counters/rail are already adapted — but we still start on the welcome screen.
   try {
@@ -1296,7 +1324,14 @@ async function bootstrap(){
       let _u = _hu.trim()
       if (_u && !/^https?:\/\//i.test(_u)) _u = 'https://' + _u
       const _parsed = new URL(_u)
-      if ((_parsed.protocol === 'http:' || _parsed.protocol === 'https:') && $('uhUrl')) $('uhUrl').value = _u
+      if ((_parsed.protocol === 'http:' || _parsed.protocol === 'https:')) {
+        if ($('uhUrl')) $('uhUrl').value = _u
+        // Also seed the step-1 "Your website" field + derive the project name from the domain, so a
+        // homepage handoff means the user doesn't have to re-type either.
+        const _host = _parsed.hostname.replace(/^www\./i,'')
+        if ($('domain') && !$('domain').value.trim()) $('domain').value = _host
+        if ($('projectName') && !$('projectName').value.trim()) $('projectName').value = deriveName(_host)
+      }
     }
   } catch(e){ /* malformed ?url= — leave the field empty */ }
   // 10s timeout: a hanging /api/me must never block paint() — the welcome screen must always show.
@@ -1306,7 +1341,14 @@ async function bootstrap(){
     const me = await jsonFetch('/api/me', { headers:{'accept':'application/json'}, signal: ctrl.signal })
     if (me.ok && me.data && me.data.email){
       // already signed in: pre-fill email + resolve project so step-2/3 work without re-auth.
+      signedIn = true
       $('email').value = me.data.email
+      // No second OTP for an authenticated user: collapse the email field + rewrite the step-1 copy
+      // so "Create project →" goes straight to step 2 (see requestCode()).
+      try {
+        const _ef = $('email').closest('.fld'); if (_ef) _ef.classList.add('hide')
+        const _sub = $('s1sub'); if (_sub) _sub.textContent = 'A project is one product — its Sims, the pages they watch, and the tickets they file. You’re signed in as ' + me.data.email + ', so just name it and continue.'
+      } catch(e){}
       const pr = await jsonFetch('/api/projects', { headers:{'accept':'application/json'}, signal: ctrl.signal })
       if (pr.ok && pr.data.projects && pr.data.projects.length){
         // Prefer the project bound at OTP verify (this signup's project); the newest-admin
