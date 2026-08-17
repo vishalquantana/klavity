@@ -462,13 +462,13 @@ test("a non-klavity checkout.session.completed (no account_id, unmappable price)
 
 // ── GTM round 2: Founding Team buyable self-serve ───────────────────────────────────────────────
 
-test("POST /api/billing/checkout accepts plan=founding and coerces the interval to year", async () => {
-  // Deliberately send interval:"month" — founding is annual-only, so the server must force "year"
-  // rather than reject or fall through to a missing catalog entry.
+test("POST /api/billing/checkout accepts plan=founding and coerces the interval to month", async () => {
+  // Deliberately send interval:"year" — founding is now MONTHLY ($299/mo, 50% off Scale), so the
+  // server must force "month" rather than reject or fall through to a missing catalog entry.
   const r = await authed("/api/billing/checkout", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ plan: "founding", interval: "month" }),
+    body: JSON.stringify({ plan: "founding", interval: "year" }),
   })
   // NOT the 400 "Choose ..." plan rejection — the mock Stripe backend serves the session fine.
   expect(r.status).toBe(200)
@@ -484,7 +484,7 @@ test("POST /api/billing/checkout accepts plan=founding and coerces the interval 
   expect(rows.rows.length).toBeGreaterThan(0)
   const props = JSON.parse(String((rows.rows[0] as any).props_json))
   expect(props.plan).toBe("founding")
-  expect(props.interval).toBe("year")
+  expect(props.interval).toBe("month")
 })
 
 test("POST /api/billing/checkout still rejects unknown plans, with Founding in the copy", async () => {

@@ -14,6 +14,10 @@ export type BillingInterval = "month" | "year"
 // below). Do NOT rename the slug; there is no migration and none is wanted.
 export const STRIPE_PRICE_CATALOG: Record<Exclude<BillingPlan, "free" | "partner">, Partial<Record<BillingInterval, { lookupKey: string; unitAmount: number; label: string }>>> = {
   founding: {
+    // Founder deal repriced to 50% off Scale ($599/mo) → $299/mo, billed MONTHLY (was annual-only
+    // $490/yr). Live Stripe price price_1U5NYTDWQd30h1DirsaHia4K carries this lookup_key. The old
+    // annual key stays below so grandfathered $490/yr founders keep resolving.
+    month: { lookupKey: "klavity_founding_monthly_299", unitAmount: 29900, label: "Klavity Founding Team" },
     year: { lookupKey: "klavity_founding_annual_490", unitAmount: 49000, label: "Klavity Founding Team" },
   },
   pro: {
