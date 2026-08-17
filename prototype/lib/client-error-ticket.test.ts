@@ -18,7 +18,7 @@ const file = join(tmpdir(), `klav-clienterrticket-${Date.now()}-${Math.random().
 process.env.TURSO_DATABASE_URL = "file:" + file
 delete process.env.TURSO_AUTH_TOKEN
 
-const { reconnectDb, applySchema, migrateV2 } = await import("./db")
+const { reconnectDb, applySchema, migrateV2, updateFeedbackMeta } = await import("./db")
 const { clientErrorSignature, severityFor, recordClientError } = await import("./client-error-ticket")
 
 let db: any
@@ -37,6 +37,17 @@ async function getObservation(id: string): Promise<string | null> {
   const res = await db!.execute({ sql: "SELECT observation FROM feedback WHERE id = ?", args: [id] })
   const row = res.rows[0] as any
   return row ? String(row.observation) : null
+}
+
+async function getRow(id: string): Promise<{ status: string; recurrenceCount: number; clientContext: any } | null> {
+  const res = await db!.execute({ sql: "SELECT status, recurrence_count, client_context_json FROM feedback WHERE id = ?", args: [id] })
+  const row = res.rows[0] as any
+  if (!row) return null
+  return {
+    status: String(row.status),
+    recurrenceCount: Number(row.recurrence_count) || 0,
+    clientContext: row.client_context_json ? JSON.parse(String(row.client_context_json)) : null,
+  }
 }
 
 async function countBySignature(projectId: string, signature: string): Promise<number> {
@@ -105,4 +116,98 @@ test("PII in the message is masked before persistence", async () => {
   const observation = await getObservation(id)
   expect(observation).not.toBeNull()
   expect(observation).not.toContain("user@example.com")
+})
+
+// I2: URL secrets (session/auth/otp/etc query params) must be redacted, not just PII-masked —
+// maskPii alone doesn't know about query-string secret keys.
+test("URL secrets in a network-error message are redacted before persistence", async () => {
+  const pid = "proj_cet_i2"
+  const e = {
+    kind: "network",
+    message: "0 https://api.example.com/sync?session=abc&otp=123&ok=1",
+    pageUrl: "https://s.com/checkout",
+    status: 0,
+  } as any
+  const { id } = await recordClientError(pid, e, {}, { atMs: 1 })
+  const observation = await getObservation(id)
+  expect(observation).not.toBeNull()
+  expect(observation).not.toContain("session=abc")
+  expect(observation).not.toContain("otp=123")
+  expect(observation).toContain("session=REDACTED")
+  expect(observation).toContain("otp=REDACTED")
+  // Non-secret params survive untouched.
+  expect(observation).toContain("ok=1")
+})
+
+test("URL secrets inside the persisted clientContext are also redacted", async () => {
+  const pid = "proj_cet_i2_ctx"
+  const e = { kind: "error", message: "boom", pageUrl: "https://s.com/p" } as any
+  const ctx = { networkFailures: [{ url: "https://api.example.com/x?token=SECRETVALUE&code=999", status: 500 }] }
+  const { id } = await recordClientError(pid, e, ctx, { atMs: 1 })
+  const row = await getRow(id)
+  expect(row).not.toBeNull()
+  const url = row!.clientContext?.networkFailures?.[0]?.url
+  expect(url).toBeDefined()
+  expect(String(url)).not.toContain("SECRETVALUE")
+  expect(String(url)).not.toContain("999")
+  expect(String(url)).toContain("token=REDACTED")
+  expect(String(url)).toContain("code=REDACTED")
+})
+
+// I3: a recurrence of an error whose ticket already got resolved/closed must RE-OPEN it, not
+// just silently bump the recurrence counter on a dead ticket.
+test("recurrence on a resolved ticket re-opens it and bumps recurrence", async () => {
+  const pid = "proj_cet_i3"
+  const e = { kind: "error", message: "reopen me", stack: "at f", pageUrl: "https://s.com/reopen" } as any
+
+  const first = await recordClientError(pid, e, {}, { atMs: 1000 })
+  expect(first.created).toBe(true)
+
+  // Simulate a human resolving the ticket.
+  await updateFeedbackMeta(pid, first.id, { status: "done" })
+  const resolved = await getRow(first.id)
+  expect(resolved?.status).toBe("done")
+
+  const second = await recordClientError(pid, e, {}, { atMs: 2000 })
+  expect(second.created).toBe(false)
+  expect(second.id).toBe(first.id)
+
+  const after = await getRow(first.id)
+  expect(after?.status).toBe("open")
+  expect(after?.recurrenceCount).toBeGreaterThanOrEqual(2)
+})
+
+test("recurrence on a dismissed ticket also re-opens it", async () => {
+  const pid = "proj_cet_i3b"
+  const e = { kind: "error", message: "reopen me too", pageUrl: "https://s.com/reopen2" } as any
+
+  const first = await recordClientError(pid, e, {}, { atMs: 1000 })
+  await updateFeedbackMeta(pid, first.id, { status: "dismissed" })
+
+  const second = await recordClientError(pid, e, {}, { atMs: 2000 })
+  expect(second.created).toBe(false)
+
+  const after = await getRow(first.id)
+  expect(after?.status).toBe("open")
+})
+
+// M5: the stack must be retrievable from the persisted row (previously only used for the
+// signature hash, then dropped).
+test("a scrubbed stack is persisted and retrievable from clientContext", async () => {
+  const pid = "proj_cet_m5"
+  const e = {
+    kind: "error",
+    message: "stack test",
+    stack: "Error: stack test\n    at handler (https://s.com/app.js:10:5)\n    at run user@example.com",
+    pageUrl: "https://s.com/p",
+  } as any
+  const { id } = await recordClientError(pid, e, {}, { atMs: 1 })
+  const row = await getRow(id)
+  expect(row).not.toBeNull()
+  const stack = row!.clientContext?.clientErrorStack
+  expect(typeof stack).toBe("string")
+  expect(stack).toContain("handler")
+  expect(stack).toContain("app.js")
+  // PII inside the stack is still masked like everything else in clientContext.
+  expect(stack).not.toContain("user@example.com")
 })
