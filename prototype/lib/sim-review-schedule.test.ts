@@ -21,6 +21,7 @@ import {
   setSimReviewScheduleEnabled,
   touchSimReviewScheduleRan,
   nextRunAfter,
+  setProjectPlanOverride,
   type SimReviewScheduleRow,
 } from "./db"
 import { runDueSchedules, type ScheduleRunDeps, type ScheduleRunResult } from "./sim-review-schedule"
@@ -337,6 +338,41 @@ test("runDueSchedules: screenshot error does NOT advance next_run_at (retry on n
   // next_run_at should NOT have advanced — retry on next tick
   const after = await getSimReviewSchedule(projRetry, sched.id)
   expect(after!.nextRunAt).toBe(pastTs)
+})
+
+test("runDueSchedules: a Snap-locked project's due schedule is skipped — never runs Sims or writes a sim_run", async () => {
+  const lockedProjId = `proj_snaplocked_${ts}`
+  await seedProject(lockedProjId)
+  await setProjectPlanOverride(lockedProjId, "snap")
+  // Seed a Sim so, if the lock did NOT take effect, the run would proceed past "no Sims".
+  await rawClient.execute({
+    sql: `INSERT OR IGNORE INTO personas (id, project_id, name, role, type, initials, accent, summary, insights_json, created_at, updated_at)
+          VALUES (?, ?, 'Locked Sim', 'Tester', 'client', 'LS', null, null, '[]', ?, ?)`,
+    args: [`sim_locked_${ts}`, lockedProjId, Date.now(), Date.now()],
+  })
+
+  const pastTs = Date.now() - 5000
+  const sched = await createSimReviewSchedule({
+    projectId: lockedProjId, targetUrl: "https://rds-snaplocked.com", frequency: "daily",
+    createdBy: ACTOR, firstRunAt: pastTs,
+  })
+
+  const deps = buildMockDeps({})
+  const results = await runDueSchedules({ ...deps, nowMs: Date.now() })
+  const result = results.find(r => r.scheduleId === sched.id)
+  expect(result).toBeDefined()
+  expect(result!.skipped).toBe("snap-locked")
+  expect(result!.simRunId).toBeNull()
+  // The screenshot pipeline must never have been reached for the locked schedule.
+  expect(deps.shotArgs.find((s) => s.url === "https://rds-snaplocked.com")).toBeUndefined()
+
+  // next_run_at advances anyway so a permanently-locked project doesn't get re-picked-up every tick.
+  const after = await getSimReviewSchedule(lockedProjId, sched.id)
+  expect(after!.nextRunAt).toBeGreaterThan(pastTs)
+
+  // No sim_runs row should have been written for this project.
+  const runs = await rawClient.execute({ sql: "SELECT COUNT(*) as n FROM sim_runs WHERE project_id=?", args: [lockedProjId] })
+  expect(Number((runs.rows[0] as any).n)).toBe(0)
 })
 
 // ── Suite 3: Tenant isolation ─────────────────────────────────────────────────

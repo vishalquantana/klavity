@@ -8,6 +8,8 @@
 import { listAllScheduledTrails, touchScheduledLastRunAt, recordSkippedScheduledRun } from "./trails"
 import { runWalkNow } from "./trails-trigger"
 import { WalkBusyError } from "./trails-browser"
+import { projectById } from "./db"
+import { projectEntitlement } from "./entitlement"
 
 // ── Cron parser ───────────────────────────────────────────────────────────────
 
@@ -262,6 +264,12 @@ export async function tickScheduler(now = new Date()): Promise<void> {
     if (!trail.schedule || !cronMatchesTz(trail.schedule, now, trail.scheduleTz)) continue
     // Already fired this minute for this trail
     if (trail.scheduledLastRunAt != null && trail.scheduledLastRunAt >= minuteTs) continue
+    // Snap-only project gating: skip a locked project's Trail here (before touching last-run-at or
+    // calling runWalkNow) so a permanently-locked project doesn't churn a launch-attempt + skipped-
+    // run record every minute forever. runWalkNow itself also refuses to launch (defense in depth
+    // for any other caller), but this avoids the noise for the steady-state scheduler loop.
+    const schedProj = await projectById(trail.projectId).catch(() => null)
+    if (projectEntitlement(schedProj?.planOverride).snapOnly) continue
     // Stamp before launching so a concurrent tick (or a fast walk) can't double-fire.
     await touchScheduledLastRunAt(trail.projectId, trail.id, minuteTs).catch(() => {})
     const outcome = await tryLaunchScheduled(trail.projectId, trail.id, trail.schedule)

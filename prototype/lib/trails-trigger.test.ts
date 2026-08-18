@@ -74,6 +74,22 @@ test("runWalkNow throws on a paused trail", async () => {
   await expect(runWalkNow("proj_t", trail)).rejects.toThrow("trail is paused")
 })
 
+test("runWalkNow refuses to launch a walk for a Snap-locked project — covers both the manual route and the scheduler loop", async () => {
+  const lockedProjId = `proj_snaplock_trigger_${Date.now()}`
+  await DB.db!.execute({
+    sql: `INSERT OR IGNORE INTO projects (id, account_id, name, status, review_mode, review_budget_daily, observability_mode, created_at, updated_at)
+          VALUES (?, 'acct_trigger_test', ?, 'active', 'auto', 200, 'named', ?, ?)`,
+    args: [lockedProjId, `Project ${lockedProjId}`, Date.now(), Date.now()],
+  })
+  await DB.setProjectPlanOverride(lockedProjId, "snap")
+  const trail = await T.createTrail(lockedProjId, { name: "Locked", baseUrl: "https://app.test/", authorKind: "llm" })
+
+  await expect(runWalkNow(lockedProjId, trail)).rejects.toThrow("snap-locked")
+  // No walk row was ever created — the guard fires before the slot/startWalk are touched.
+  const walks = await T.listRecentWalks(lockedProjId, 10)
+  expect(walks.length).toBe(0)
+})
+
 // KLA-53: pool+queue — queued walk starts once a slot frees
 test("runWalkNow queues a 2nd walk when pool=1 queue=1, resolves runId after slot opens", async () => {
   _resetWalkPoolForTest(1, 1)

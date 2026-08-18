@@ -40,3 +40,66 @@ sim-review-schedules create, project pause (review-mode), monitored-urls add/rem
 trails-autofile toggle. Full repo `bun test`: 3494 pass / 15 fail / 1 error — same pre-existing
 unrelated failures as before (verified via `git stash`), 5 more passing tests than the prior run.
 blocking concerns: none.
+
+---
+
+## Follow-up 2: closed remaining bypasses, incl. autonomous engines (2026-08-19)
+
+A whole-feature review found more surfaces still able to run Sims/AutoSim on a Snap-locked
+project — most importantly the two autonomous engines that run in prod unattended, which is the
+real billing-spend risk (a locked project would otherwise keep costing money even with every HTTP
+route gated).
+
+### HTTP endpoints gated (same `snapLocked(project)` 402 pattern, `proj` from a fresh `projectById`)
+
+- `POST /api/sim/preview` (server.ts) — gated the authenticated `projectId` branch, right after
+  `resolveProject` succeeds and before the SSRF preflight/screenshot are ever attempted. The
+  anonymous/no-project demo branch (`pvProj` null) is untouched.
+- `POST /api/transcripts`, `POST /api/transcripts/preview`, `POST /api/transcripts/apply` — the
+  full transcript→Sim create/enrich/reconcile family; gated right after `projectId` is resolved,
+  before the rate-limit checks and any LLM call.
+- `POST /api/projects/:id/sim-matches/:mid/confirm` — gated at the top of the confirm branch
+  (`proj` already in scope from the shared `/api/projects/:id` subroute block).
+- `PATCH /api/projects/:id/sim-review-schedules/:id` — gated only the **re-enable** case
+  (`body.enabled === true`); pausing a schedule stays allowed even when locked.
+- `POST /api/sim-review-schedules/tick` — intentionally left ungated at the HTTP layer; the fix is
+  in the engine (`runDueSchedules`/`runOneSchedule`, below), so /tick simply never fires a locked
+  project's schedule regardless of who calls it.
+
+### Execution engines (the critical fix — these run autonomously in prod)
+
+- `lib/trails-trigger.ts` `runWalkNow(projectId, trailId, ...)` — added a `projectById` +
+  `projectEntitlement(...).snapOnly` guard right after the existing "trail is paused" check; throws
+  `Error("trail is snap-locked")` before the walk slot or `startWalk` are ever touched. This is the
+  single choke point both the manual `/api/trails/:id/walk` route and the cron scheduler call, so
+  it covers both callers.
+- `lib/trails-scheduler.ts` `tickScheduler()` — added an explicit skip (`projectById` +
+  `projectEntitlement`) in the per-trail loop, BEFORE `touchScheduledLastRunAt`/`tryLaunchScheduled`,
+  so a permanently-locked project's Trail doesn't churn a launch-attempt + skipped-run DB write every
+  minute forever (defense in depth on top of the `runWalkNow` guard).
+- `lib/sim-review-schedule.ts` `runOneSchedule()` — added the same guard right before loading the
+  project's Sims; a locked schedule is returned as `{ skipped: "snap-locked" }` and
+  `touchSimReviewScheduleRan` is still called (advances `next_run_at`) so it doesn't get re-picked-up
+  every tick — mirrors the existing "no Sims" skip pattern exactly. No screenshot, no LLM call, no
+  `sim_runs` row.
+
+### Tests added
+
+- `prototype/server.snap-plan.test.ts`: 3 new 402 assertions (`/api/sim/preview` with a real
+  `projectId`, `/api/transcripts`, `/api/projects/:id/sim-matches/:mid/confirm`); strengthened the
+  stays-open assertions from `.not.toBe(402)` to exact status codes (`toBe(201)` for Sim creation,
+  `toBe(200)` for the tickets read) since a loose `.not.toBe(402)` could hide an unrelated 4xx/5xx.
+  17 tests total in the file.
+- `prototype/lib/sim-review-schedule.test.ts`: new test proving `runDueSchedules` skips a
+  Snap-locked project's due schedule — `skipped==="snap-locked"`, `simRunId` null, the mock
+  `takeScreenshot` never called, and zero rows land in `sim_runs` for that project.
+- `prototype/lib/trails-scheduler.test.ts`: new test proving `tickScheduler` never stamps
+  `scheduledLastRunAt` nor creates any walk row for a Snap-locked project's active scheduled Trail.
+- `prototype/lib/trails-trigger.test.ts`: new test proving `runWalkNow` rejects
+  (`toThrow("snap-locked")`) for a Snap-locked project and creates zero walk rows — this is the
+  shared choke point for both the manual route and the scheduler.
+
+status: done
+commit: (set at commit time — see final commit message)
+test summary: `bun test server.snap-plan.test.ts lib/entitlement.test.ts lib/sim-review-schedule.test.ts lib/trails-scheduler.test.ts lib/trails-trigger.test.ts server.workspace-rename.test.ts` — 85 pass / 0 fail. Newly-gated surfaces this round: `POST /api/sim/preview` (authed projectId branch), `POST /api/transcripts`, `POST /api/transcripts/preview`, `POST /api/transcripts/apply`, `POST /api/projects/:id/sim-matches/:mid/confirm`, `PATCH /api/projects/:id/sim-review-schedules/:id` (re-enable only), plus engine-level guards in `runWalkNow` (lib/trails-trigger.ts), `tickScheduler` (lib/trails-scheduler.ts), and `runOneSchedule`/`runDueSchedules` (lib/sim-review-schedule.ts). Full repo `bun test` (356 files, ~3600+ tests): consistently 15 pre-existing failures both with and without my changes (`git stash` diff-tested) — the specific failing test NAMES vary between runs due to pre-existing cross-file env-var leakage in the full-suite run (several lib test files mutate `process.env.TURSO_DATABASE_URL` directly and bun test shares one process across files), not from anything touched here; the individually-run gating test files above are 100% deterministic and green.
+blocking concerns: none. Note for future work: the full-suite flakiness from shared `process.env` mutations across test files is a pre-existing repo issue independent of this task and may be worth a follow-up ticket (per-file env isolation or a `TURSO_DATABASE_URL` reset in `afterAll`).

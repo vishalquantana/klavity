@@ -23,12 +23,14 @@ import type { Client } from "@libsql/client"
 import {
   listDueSimReviewSchedules, touchSimReviewScheduleRan, listPersonas,
   insertScreenshot, insertSimRun, accountIdForProject, accountPlan,
+  projectById,
   type SimReviewScheduleRow,
 } from "./db"
 import { captureSimRunCompleted, planTierForProject } from "./posthog"
 import { runSimReviews, splitUrl, buildSimRunSummary } from "./sim-review"
 import { authedScreenshotUrl } from "./sim-preview"
 import { safeFetch } from "./safe-fetch"
+import { projectEntitlement } from "./entitlement"
 
 // Injectable dependencies so the runner can be fully unit-tested without a browser or LLM.
 export interface ScheduleRunDeps {
@@ -75,6 +77,17 @@ async function runOneSchedule(
   const runStartedAt = Date.now()
 
   try {
+    // Snap-only project gating: never run a scheduled Sim review for a Snap-locked project — this
+    // is the same pipeline as the authenticated /api/sim/preview branch, so a locked project must
+    // not be able to keep burning AI spend just because a schedule was set up before the lock.
+    // Advance next_run_at anyway (same as the "no Sims" skip below) so a permanently-locked
+    // schedule doesn't get re-evaluated on every tick forever.
+    const schedProj = await projectById(schedule.projectId).catch(() => null)
+    if (projectEntitlement(schedProj?.planOverride).snapOnly) {
+      await touchSimReviewScheduleRan(schedule.id, nowMs, schedule.frequency)
+      return { ...base, simCount: 0, totalObservations: 0, simRunId: null, skipped: "snap-locked" }
+    }
+
     // Load the project's Sims (or subset).
     let allSims = await listPersonas(schedule.projectId)
     if (schedule.simIds && schedule.simIds.length > 0) {

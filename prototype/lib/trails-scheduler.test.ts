@@ -133,8 +133,17 @@ const file = join(tmpdir(), `klav-sched-${Date.now()}-${Math.random().toString(3
 process.env.TURSO_DATABASE_URL = "file:" + file
 delete process.env.TURSO_AUTH_TOKEN
 
-const { reconnectDb, applySchema, migrateV2 } = await import("./db")
+const dbMod = await import("./db")
+const { reconnectDb, applySchema, migrateV2, setProjectPlanOverride } = dbMod
 beforeAll(async () => { const db = reconnectDb("file:" + file); await applySchema(db); await migrateV2(db) })
+
+async function seedProjectRow(id: string) {
+  await dbMod.db!.execute({
+    sql: `INSERT OR IGNORE INTO projects (id, account_id, name, status, review_mode, review_budget_daily, observability_mode, created_at, updated_at)
+          VALUES (?, 'acct_sched_test', ?, 'active', 'auto', 200, 'named', ?, ?)`,
+    args: [id, `Project ${id}`, Date.now(), Date.now()],
+  })
+}
 
 const T = await import("./trails")
 const { tickScheduler, _resetSchedulerQueueForTest, _pendingRetryCount, nextCronFireUtc, nextLocalFireUtc, wallClockInZone } = await import("./trails-scheduler")
@@ -172,6 +181,27 @@ test("tickScheduler fires a walk for a due trail", async () => {
   await tick(now)
   const trail = await T.getTrail("proj_s", id)
   expect(trail?.scheduledLastRunAt).toBe(minuteTs)
+})
+
+test("tickScheduler skips a Snap-locked project's due trail — never fires the walk, no churn on scheduledLastRunAt", async () => {
+  const now = new Date()
+  const lockedProjId = `proj_snaplock_sched_${Date.now()}`
+  await seedProjectRow(lockedProjId)
+  await setProjectPlanOverride(lockedProjId, "snap")
+
+  const id = await T.createTrail(lockedProjId, { name: "Locked Sched", baseUrl: "https://app.test/", authorKind: "llm" })
+  await T.updateTrail(lockedProjId, id, { status: "active", schedule: "* * * * *" })
+
+  await tickScheduler(now)
+
+  // scheduledLastRunAt must stay unset — the trail was skipped BEFORE the launch-attempt stamp, so
+  // unlocking later lets it fire on the very next matching minute instead of waiting out a stale stamp.
+  const trail = await T.getTrail(lockedProjId, id)
+  expect(trail?.scheduledLastRunAt).toBeNull()
+
+  // No walk row (scheduled or otherwise) was ever created for the locked trail.
+  const walks = await T.listRecentWalks(lockedProjId, 10)
+  expect(walks.filter((w) => w.trailId === id).length).toBe(0)
 })
 
 test("tickScheduler skips a trail already fired this minute", async () => {
