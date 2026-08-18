@@ -1143,6 +1143,11 @@ export async function applySchema(c: Client) {
   // KLA-292: client site URL — the primary URL of the client's product, set at project creation.
   if (needCol("projects", "site_url")) await c.execute("ALTER TABLE projects ADD COLUMN site_url TEXT")
     .catch((e: any) => console.warn("projects.site_url ALTER skipped:", e?.message || e))
+  // Snap-only project gating: per-project plan override. NULL = inherit account plan (all features
+  // open). "snap" = lock this project to Snap-only (no Sims/AutoSim/AI settings) regardless of the
+  // account's billing plan — see lib/entitlement.ts::projectEntitlement.
+  if (needCol("projects", "plan_override")) await c.execute("ALTER TABLE projects ADD COLUMN plan_override TEXT")
+    .catch((e: any) => console.warn("projects.plan_override ALTER skipped:", e?.message || e))
   // KLA-81: computed severity stored at finding-creation time so ticket-filers + UIs don't have
   // to re-derive it. NULL on legacy rows → callers fall back to severityForKind(kind).
   if (needCol("findings", "severity")) await c.execute("ALTER TABLE findings ADD COLUMN severity TEXT")
@@ -1758,6 +1763,8 @@ export type ProjectRow = {
   // KLAVITYKLA-287 (JTBD 5.8): who may manually export a ticket to an external tracker.
   // 'admins_only' (default) | 'members_export' | 'members_request'.
   exportPolicy: string
+  // Snap-only project gating: NULL = inherit account plan, "snap" = locked to Snap-only.
+  planOverride: string | null
 }
 export const EXPORT_POLICIES = ["admins_only", "members_export", "members_request"] as const
 export type ExportPolicy = (typeof EXPORT_POLICIES)[number]
@@ -1782,6 +1789,7 @@ function rowToProject(x: any): ProjectRow {
     trailsAutofileEnabled: !!x.trails_autofile_enabled,
     siteUrl: x.site_url != null ? String(x.site_url) : null,
     exportPolicy: normalizeExportPolicy(x.export_policy),
+    planOverride: x.plan_override != null ? String(x.plan_override) : null,
   }
 }
 
@@ -1914,6 +1922,15 @@ export async function accountRole(accountId: string, email: string): Promise<str
 export async function projectById(projectId: string): Promise<ProjectRow | null> {
   const r = await db!.execute({ sql: "SELECT * FROM projects WHERE id=?", args: [projectId] })
   return r.rows.length ? rowToProject(r.rows[0]) : null
+}
+
+// Snap-only project gating: set or clear a project's plan override. "snap" locks the project to
+// Snap-only regardless of the account's billing plan; null clears the override (inherit account plan).
+export async function setProjectPlanOverride(projectId: string, override: "snap" | null): Promise<void> {
+  await db!.execute({
+    sql: "UPDATE projects SET plan_override=?, updated_at=? WHERE id=?",
+    args: [override === "snap" ? "snap" : null, Date.now(), projectId],
+  })
 }
 
 // Projects the caller can see: every project in an account they belong to (owner/admin see all),
