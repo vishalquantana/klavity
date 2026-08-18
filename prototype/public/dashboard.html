@@ -59,7 +59,7 @@ a{color:inherit;text-decoration:none}
 .side-plan-pill b{color:var(--indigo);font-weight:700}
 .side-plan-pill:hover{transform:var(--mi-lift);border-color:var(--indigo);background:rgba(99,102,241,.14);color:var(--paper)}
 .side-plan-pill:active{transform:var(--mi-press)}
-.content{flex:1 1 auto;min-width:0}
+.content{flex:1 1 auto;min-width:0;position:relative}
 /* view switching — show only blocks tagged for the active view */
 body[data-view="overview"] [data-view]:not([data-view~="overview"]),
 body[data-view="snap"] [data-view]:not([data-view~="snap"]),
@@ -625,10 +625,12 @@ body[data-view="team"] .grid>.card[data-view~="team"]{grid-column:1/-1;max-width
 body[data-view="recurring"] .grid>.card[data-view~="recurring"]{grid-column:1/-1}
 
 /* ── Snap-plan gating: nav locks + upgrade wall ── */
-.content{position:relative}
 .nv-lock{margin-left:auto;display:inline-flex;align-items:center;color:var(--paper-faint);flex:none}
 .side .nv.gated{color:var(--paper-faint)}
-.grid.uw-blurred{filter:blur(6px);opacity:.55;pointer-events:none;user-select:none}
+/* .uw-blurred is applied to whichever container is the CURRENT view's real content — the shared
+   Sims/Overview .grid, or the AutoSims card's own inner content (its outer .grid is display:none
+   on that view) — never scoped to .grid alone, so either target actually blurs. */
+.uw-blurred{filter:blur(6px);opacity:.55;pointer-events:none;user-select:none}
 .upgrade-wall{position:absolute;inset:0;display:none;place-items:center;padding:40px 20px;background:linear-gradient(180deg,rgba(20,17,13,.35),rgba(20,17,13,.7));border-radius:20px;z-index:5}
 .upgrade-wall.show{display:grid}
 .upgrade-wall.hide{display:none}
@@ -4238,25 +4240,34 @@ window.renderUpgradeWall = renderUpgradeWall
 
 // Show/hide the upgrade-wall overlay for the current view. Called from setView() (on every nav
 // switch) and from render() (in case the active project — and its entitlement — changed under an
-// already-open Sims/AutoSims view). Blurs the shared .grid behind a centered upgrade card, same
-// treatment for both gated views since they share one grid container.
+// already-open Sims/AutoSims view, or an admin flipping the plan override off/on). Blurs the
+// CURRENT view's real content container behind a centered upgrade card — Sims/Overview share
+// one .grid, but AutoSims has its OWN nested .grid inside the autosims-card (the shared outer
+// .grid is display:none on that view, so blurring it would leave the real AutoSims data —
+// health board, walks, queue — fully readable behind the overlay). Idempotent in both
+// directions: always clears any stale blur first, then re-applies only if still gated.
 function applyUpgradeWall(){
   const overlay = $("upgradeWallOverlay")
-  const grid = document.querySelector(".content > .grid")
-  if (!overlay || !grid) return
+  if (!overlay) return
   const view = document.body.getAttribute("data-view")
   const gated = (view === "sims" || view === "autosims") && snapOnly()
+  // Clear blur from BOTH possible targets unconditionally — switching views/gate state must
+  // never leave a stale blur on the container we are not using this pass.
+  const simsGrid = document.querySelector(".content > .grid")
+  const autosimsCard = document.querySelector('.card[data-view~="autosims"]')
+  if (simsGrid) simsGrid.classList.remove("uw-blurred")
+  if (autosimsCard) autosimsCard.classList.remove("uw-blurred")
   if (!gated) {
     overlay.className = "upgrade-wall hide"
     overlay.innerHTML = ""
-    grid.classList.remove("uw-blurred")
     return
   }
+  const target = view === "autosims" ? autosimsCard : simsGrid
   const feature = view === "autosims" ? "AutoSims" : "Sims"
   const projectName = state && state.active ? state.active.name : ""
   overlay.innerHTML = renderUpgradeWall(feature, projectName)
   overlay.className = "upgrade-wall show"
-  grid.classList.add("uw-blurred")
+  if (target) target.classList.add("uw-blurred")
 }
 window.applyUpgradeWall = applyUpgradeWall
 
@@ -4283,13 +4294,13 @@ window.applyNavLocks = applyNavLocks
 
 // AI-settings note: when snap-only, disable the Sims/AutoSim-only admin controls (live-Sims
 // pause + monitored URLs, AutoSim autofile) and show an inline upgrade note next to each.
+// Idempotent both ways — un-gating explicitly re-enables every control here rather than relying
+// on each control's own load/render logic to run again (loadLive/loadTrailsAutofile only fire
+// once per full render pass, so a control forced-disabled while gated would otherwise stay
+// disabled forever once the admin flips the project back to Full).
 function applyAiSettingsGate(){
   const gated = snapOnly()
-  // Only force-disable when gated — un-gating leaves each control's own load/render logic
-  // (renderPause, loadTrailsAutofile) in charge of its normal enabled/disabled state.
-  if (gated) {
-    ;[$("pauseBtn"), $("urlInput"), $("urlAdd"), $("trailsAutofileToggle"), $("trailsAutofileSaveBtn")].forEach(el => { if (el) el.disabled = true })
-  }
+  ;[$("pauseBtn"), $("urlInput"), $("urlAdd"), $("trailsAutofileToggle"), $("trailsAutofileSaveBtn")].forEach(el => { if (el) el.disabled = gated })
   const noteHtml = '<div class="gate-note">Upgrade to unlock — this project is on the Snap plan. '
     + '<button type="button" class="linklike" onclick="openPlanDrawer()">Upgrade</button></div>'
   const liveDrawerIn = document.querySelector("#liveDrawer .drawer-in")
