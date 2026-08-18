@@ -4567,6 +4567,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const projT = await resolveProject(meT, url.searchParams.get("project"))
       if (!projT) return json({ error: "No project." }, 400)
       const projectId = projT.id
+      const txProj = await projectById(projectId)
+      const txLock = txProj ? snapLocked(txProj) : null
+      if (txLock) return json(txLock, 402)
       // M5: rate-limit this 2-LLM-call endpoint per user AND per project (it has no daily budget gate).
       if (!rlAllow(`tx:u:${meT}`, TRANSCRIPT_PER_USER, TRANSCRIPT_WINDOW) || !rlAllow(`tx:p:${projectId}`, TRANSCRIPT_PER_PROJECT, TRANSCRIPT_WINDOW))
         return json({ error: "Too many transcript submissions. Please wait and try again." }, 429, { "Retry-After": "3600" })
@@ -4683,6 +4686,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const proj = await resolveProject(me, url.searchParams.get("project"))
       if (!proj) return json({ error: "No project." }, 400)
       const projectId = proj.id
+      const txpvProj = await projectById(projectId)
+      const txpvLock = txpvProj ? snapLocked(txpvProj) : null
+      if (txpvLock) return json(txpvLock, 402)
       // Mirrors the legacy POST /api/transcripts rate-limit guard exactly (distinct key prefixes so
       // preview and legacy don't share a bucket) — this endpoint makes MORE LLM calls than legacy
       // (extractPersonas + one reconcileSim per matched client persona) and had no guard.
@@ -4749,6 +4755,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const proj = await resolveProject(me, url.searchParams.get("project"))
       if (!proj) return json({ error: "No project." }, 400)
       const projectId = proj.id
+      const txapProj = await projectById(projectId)
+      const txapLock = txapProj ? snapLocked(txapProj) : null
+      if (txapLock) return json(txapLock, 402)
       try {
         const body = await req.json().catch(() => ({}))
         const previewId = String(body.previewId || "")
@@ -9246,6 +9255,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         {
           const smConfirm = sub.match(/^\/sim-matches\/([^/]+)\/confirm$/)
           if (smConfirm && req.method === "POST") {
+            const smLock = snapLocked(proj)
+            if (smLock) return json(smLock, 402)
             const matchId = smConfirm[1]
             const body = await req.json().catch(() => ({}))
             const chosenSimId = String(body.simId ?? "").trim()
@@ -9764,6 +9775,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             const pvProjId = String(pvProjectId).trim()
             pvProj = await resolveProject(mePv, pvProjId)
             if (!pvProj) return json({ error: "No accessible project found." }, 403)
+            const pvFullProj = await projectById(pvProj.id)
+            const pvLock = pvFullProj ? snapLocked(pvFullProj) : null
+            if (pvLock) return json(pvLock, 402)
             projectSims = await listPersonas(pvProj.id)
             if (!projectSims.length) return json({ error: "This project has no Sims yet. Add a Sim first." }, 400)
           }
@@ -9938,6 +9952,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             const existing = await getSimReviewSchedule(srsProj.id, srsScheduleId)
             if (!existing) return json({ error: "Schedule not found." }, 404)
             if (typeof body?.enabled === "boolean") {
+              // Re-enabling a schedule resumes autonomous Sim runs — block it on a Snap-locked
+              // project. Disabling (pausing) always stays allowed, even when locked.
+              if (body.enabled === true) {
+                const srsFullProj2 = await projectById(srsProj.id)
+                const srsPatchLock = srsFullProj2 ? snapLocked(srsFullProj2) : null
+                if (srsPatchLock) return json(srsPatchLock, 402)
+              }
               await setSimReviewScheduleEnabled(srsProj.id, srsScheduleId, body.enabled)
             }
             const updated = await getSimReviewSchedule(srsProj.id, srsScheduleId)

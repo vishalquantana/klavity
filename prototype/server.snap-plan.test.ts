@@ -144,6 +144,33 @@ function createSimReviewSchedule(sess?: string) {
   })
 }
 
+function simPreview(sess?: string) {
+  return fetch(`${BASE}/api/sim/preview`, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...withSess(sess) },
+    body: JSON.stringify({ url: "https://example.test/", projectId: PROJ }),
+    redirect: "manual",
+  })
+}
+
+function createTranscript(sess?: string) {
+  return fetch(`${BASE}/api/transcripts?project=${PROJ}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...withSess(sess) },
+    body: JSON.stringify({ transcript: "Sarah: I love the new dashboard, it's so much faster now." }),
+    redirect: "manual",
+  })
+}
+
+function confirmSimMatch(sess?: string) {
+  return fetch(`${BASE}/api/projects/${PROJ}/sim-matches/nonexistent-match/confirm`, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...withSess(sess) },
+    body: JSON.stringify({ simId: "sim_whatever" }),
+    redirect: "manual",
+  })
+}
+
 function getTickets(sess?: string) {
   return fetch(`${BASE}/api/projects/${PROJ}/tickets`, { headers: withSess(sess), redirect: "manual" })
 }
@@ -181,7 +208,7 @@ test("a non-admin cannot set the plan override", async () => {
 
 test("before any override, Sims creation works (not locked)", async () => {
   const r = await createSim(ADMIN_SESS)
-  expect(r.status).not.toBe(402)
+  expect(r.status).toBe(201)
 })
 
 test("an admin can lock a project to the Snap plan", async () => {
@@ -262,9 +289,30 @@ test("POST /api/projects/:id/sim-review-schedules is 402 snap_locked once Snap-l
   expect(body.code).toBe("snap_locked")
 })
 
+test("POST /api/sim/preview (authenticated projectId branch) is 402 snap_locked once Snap-locked", async () => {
+  const r = await simPreview(ADMIN_SESS)
+  expect(r.status).toBe(402)
+  const body = await r.json()
+  expect(body.code).toBe("snap_locked")
+})
+
+test("POST /api/transcripts (transcript->Sim create/enrich) is 402 snap_locked once Snap-locked", async () => {
+  const r = await createTranscript(ADMIN_SESS)
+  expect(r.status).toBe(402)
+  const body = await r.json()
+  expect(body.code).toBe("snap_locked")
+})
+
+test("POST /api/projects/:id/sim-matches/:mid/confirm is 402 snap_locked once Snap-locked", async () => {
+  const r = await confirmSimMatch(ADMIN_SESS)
+  expect(r.status).toBe(402)
+  const body = await r.json()
+  expect(body.code).toBe("snap_locked")
+})
+
 test("a ticket/Snap read endpoint is NOT gated by the Snap lock", async () => {
   const r = await getTickets(ADMIN_SESS)
-  expect(r.status).not.toBe(402)
+  expect(r.status).toBe(200)
 })
 
 test("clearing the override restores access", async () => {
@@ -274,5 +322,5 @@ test("clearing the override restores access", async () => {
   expect(body.project.planOverride).toBe(null)
 
   const r = await createSim(ADMIN_SESS)
-  expect(r.status).not.toBe(402)
+  expect(r.status).toBe(201)
 })

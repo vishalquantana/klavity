@@ -14,6 +14,8 @@ import { walkTrail } from "./trails-runner"
 import type { Verdict } from "./trails-types"
 import { configuredVisionResolver } from "./trails-vision"
 import { maybeAutoFileWalkFindings } from "./trails-findings-gate"
+import { projectById } from "./db"
+import { projectEntitlement } from "./entitlement"
 
 export type WalkFn = (projectId: string, trailId: string, runId: string) => Promise<{ verdict: Verdict; llmCalls: number; summary?: Record<string, unknown> }>
 
@@ -51,6 +53,11 @@ export async function runWalkNow(
   const trail = await getTrail(projectId, trailId)
   if (!trail) throw new Error("trail not found")
   if (trail.status === "paused") throw new Error("trail is paused")
+  // Snap-only project gating: a locked project's Trails must never launch a walk — covers the
+  // manual-trigger HTTP route AND the scheduler loop (both call runWalkNow), so this is the single
+  // enforcement point that keeps a Snap-locked project from burning AI spend via AutoSim.
+  const walkProj = await projectById(projectId)
+  if (projectEntitlement(walkProj?.planOverride).snapOnly) throw new Error("trail is snap-locked")
 
   const trigger = deps?.trigger ?? "manual"
   const environmentName = deps?.environmentName ?? null
