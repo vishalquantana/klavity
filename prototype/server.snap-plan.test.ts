@@ -33,6 +33,7 @@ const ACCT = `acct_sp_${RUN}`
 const PROJ = `proj_sp_${RUN}`
 const ADMIN_SESS = `sess_sp_admin_${RUN}`
 const MEMBER_SESS = `sess_sp_member_${RUN}`
+const TRAIL = `trl_sp_${RUN}`
 
 async function seed() {
   const now = Date.now()
@@ -53,6 +54,11 @@ async function seed() {
     [ADMIN_SESS, ADMIN, now, now + 86400_000])
   await exec("INSERT INTO sessions (id, email, created_at, expires_at) VALUES (?, ?, ?, ?)",
     [MEMBER_SESS, MEMBER, now, now + 86400_000])
+  // A pre-existing draft trail — created directly (not via /api/trails/author, which itself
+  // requires an LLM authoring drive) so /approve and PATCH can be exercised against a real row.
+  await exec(`INSERT INTO trails (id, project_id, name, intent, base_url, status, created_by, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [TRAIL, PROJ, "Checkout flow", "verify checkout", "https://example.test", "draft", ADMIN, now, now])
 }
 
 function withSess(sess?: string) {
@@ -95,6 +101,45 @@ function authorTrail(sess?: string) {
       objective: "Walk through the checkout flow and confirm the order total is correct.",
       base_url: "https://example.test",
     }),
+    redirect: "manual",
+  })
+}
+
+function listSims(sess?: string) {
+  return fetch(`${BASE}/api/personas?project=${PROJ}`, { headers: withSess(sess), redirect: "manual" })
+}
+
+function simReview(sess?: string) {
+  return fetch(`${BASE}/api/sim/review`, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...withSess(sess) },
+    body: JSON.stringify({ projectId: PROJ, url: "https://example.test/", screenshotDataUrl: "", adhoc: true }),
+    redirect: "manual",
+  })
+}
+
+function approveTrail(sess?: string) {
+  return fetch(`${BASE}/api/trails/${TRAIL}/approve?project=${PROJ}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...withSess(sess) },
+    redirect: "manual",
+  })
+}
+
+function patchTrail(sess?: string) {
+  return fetch(`${BASE}/api/trails/${TRAIL}?project=${PROJ}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json", ...withSess(sess) },
+    body: JSON.stringify({ schedule: "0 9 * * *" }),
+    redirect: "manual",
+  })
+}
+
+function createSimReviewSchedule(sess?: string) {
+  return fetch(`${BASE}/api/projects/${PROJ}/sim-review-schedules`, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...withSess(sess) },
+    body: JSON.stringify({ targetUrl: "https://example.test/", frequency: "daily" }),
     redirect: "manual",
   })
 }
@@ -177,6 +222,41 @@ test("an AutoSim endpoint is 402 snap_locked once the project is Snap-locked", a
 
 test("an AI-settings write (admin pause / review mode) is 402 snap_locked once Snap-locked", async () => {
   const r = await pauseProject(ADMIN_SESS)
+  expect(r.status).toBe(402)
+  const body = await r.json()
+  expect(body.code).toBe("snap_locked")
+})
+
+test("Sims list (GET /api/personas) is 402 snap_locked once Snap-locked", async () => {
+  const r = await listSims(ADMIN_SESS)
+  expect(r.status).toBe(402)
+  const body = await r.json()
+  expect(body.code).toBe("snap_locked")
+})
+
+test("POST /api/sim/review (extension live auto-review hot path) is 402 snap_locked once Snap-locked", async () => {
+  const r = await simReview(ADMIN_SESS)
+  expect(r.status).toBe(402)
+  const body = await r.json()
+  expect(body.code).toBe("snap_locked")
+})
+
+test("POST /api/trails/:id/approve is 402 snap_locked once Snap-locked", async () => {
+  const r = await approveTrail(ADMIN_SESS)
+  expect(r.status).toBe(402)
+  const body = await r.json()
+  expect(body.code).toBe("snap_locked")
+})
+
+test("PATCH /api/trails/:id (activate/schedule) is 402 snap_locked once Snap-locked", async () => {
+  const r = await patchTrail(ADMIN_SESS)
+  expect(r.status).toBe(402)
+  const body = await r.json()
+  expect(body.code).toBe("snap_locked")
+})
+
+test("POST /api/projects/:id/sim-review-schedules is 402 snap_locked once Snap-locked", async () => {
+  const r = await createSimReviewSchedule(ADMIN_SESS)
   expect(r.status).toBe(402)
   const body = await r.json()
   expect(body.code).toBe("snap_locked")
