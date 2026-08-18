@@ -3850,6 +3850,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const wid = proj2.id
 
       if (req.method === "GET" && path === "/api/personas") {
+        const listProj = await projectById(wid)
+        const listLock = listProj ? snapLocked(listProj) : null
+        if (listLock) return wjson(listLock, 402)
         // Use listPersonasForProject to include global Sims from sibling projects in the same account.
         // Each persona in the response carries isGlobal:true/false so the UI can badge globals.
         const personas = await listPersonasForProject(wid)
@@ -4306,6 +4309,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             settingsUrl,
           }, 401)
         }
+
+        // Snap-only project gating: block the extension's live auto-review hot path so a Snap-locked
+        // project can't keep running Sims (and burning AI spend) through this endpoint.
+        const reviewProj = await projectById(projectId)
+        const reviewLock = reviewProj ? snapLocked(reviewProj) : null
+        if (reviewLock) return wjson(reviewLock, 402)
 
         // Resolve the inputs the pure gate needs (in gate order; cheap reads, no AI/S3 yet).
         const reviewMode = await getReviewMode(projectId)
@@ -6547,6 +6556,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (req.method === "PATCH" && mPatchTrail) {
           const trail = await getTrail(projectId, mPatchTrail[1])
           if (!trail) return json({ error: "Not found" }, 404)
+          // Snap-only gating: a PATCH can activate a draft or set/clear a schedule, both of which
+          // bypass the /author and /walk gates — lock the whole PATCH when the trail's project is
+          // Snap-locked (simplest correct rule; PATCH is an AutoSim-configuration surface).
+          const patchProj = await projectById(trail.projectId)
+          const patchLock = patchProj ? snapLocked(patchProj) : null
+          if (patchLock) return json(patchLock, 402)
           const body = await req.json().catch(() => null)
           if (!body || typeof body !== "object") return json({ error: "Invalid body" }, 400)
           const patch: TrailPatch = {}
@@ -6901,6 +6916,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (req.method === "POST" && mA) {
           const trail = await getTrail(projectId, mA[1])
           if (!trail) return json({ error: "Not found" }, 404)
+          const approveProj = await projectById(trail.projectId)
+          const approveLock = approveProj ? snapLocked(approveProj) : null
+          if (approveLock) return json(approveLock, 402)
           if (trail.status !== "draft") return json({ error: `Trail is ${trail.status}, not draft` }, 409)
           await setTrailStatus(projectId, trail.id, "active")
           return json({ ok: true })
@@ -9891,6 +9909,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           }
 
           if (req.method === "POST" && !srsScheduleId) {
+            const srsFullProj = await projectById(srsProj.id)
+            const srsLock = srsFullProj ? snapLocked(srsFullProj) : null
+            if (srsLock) return json(srsLock, 402)
             const body = await req.json()
             const targetUrl = String(body?.targetUrl || "").trim()
             if (!targetUrl || !/^https?:\/\//i.test(targetUrl)) return json({ error: "targetUrl must be a valid https URL." }, 400)
