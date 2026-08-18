@@ -623,6 +623,26 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 body[data-view="sims"] .grid>.card[data-view~="sims"]{grid-column:1/-1}
 body[data-view="team"] .grid>.card[data-view~="team"]{grid-column:1/-1;max-width:820px}
 body[data-view="recurring"] .grid>.card[data-view~="recurring"]{grid-column:1/-1}
+
+/* ── Snap-plan gating: nav locks + upgrade wall ── */
+.content{position:relative}
+.nv-lock{margin-left:auto;display:inline-flex;align-items:center;color:var(--paper-faint);flex:none}
+.side .nv.gated{color:var(--paper-faint)}
+.grid.uw-blurred{filter:blur(6px);opacity:.55;pointer-events:none;user-select:none}
+.upgrade-wall{position:absolute;inset:0;display:none;place-items:center;padding:40px 20px;background:linear-gradient(180deg,rgba(20,17,13,.35),rgba(20,17,13,.7));border-radius:20px;z-index:5}
+.upgrade-wall.show{display:grid}
+.upgrade-wall.hide{display:none}
+.uw-card{width:440px;max-width:92%;background:var(--ink-2);border:1px solid var(--line);border-radius:20px;box-shadow:0 18px 50px rgba(0,0,0,.35);padding:30px 30px 26px;text-align:center}
+.uw-lock{width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,var(--indigo),#4f46e5);display:grid;place-items:center;margin:0 auto 14px;color:#fff}
+.uw-card h2{font-size:22px;font-weight:700;margin:0 0 6px;color:var(--paper)}
+.uw-sub{color:var(--paper-dim);font-size:14px;line-height:1.5;margin:0 0 18px}
+.uw-benefits{text-align:left;margin:0 auto 20px;max-width:340px;display:flex;flex-direction:column;gap:10px}
+.uw-benefits div{font-size:13.5px;color:var(--paper-dim);line-height:1.45;padding-left:16px;position:relative}
+.uw-benefits div::before{content:"\203A";position:absolute;left:0;color:var(--indigo);font-weight:800}
+.uw-note{font-size:12px;color:var(--paper-faint);margin-top:14px}
+.gate-note{font-size:12.5px;color:var(--paper-dim);margin-top:8px;padding:8px 10px;background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.25);border-radius:8px}
+.gate-note a,.gate-note button.linklike{color:var(--indigo);font-weight:600;cursor:pointer;background:none;border:none;padding:0;font-size:inherit;text-decoration:underline}
+
 /* ── Recurring Issues view ── */
 .ri-item{padding:14px 0;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:6px}
 .ri-item:first-child{border-top:none;padding-top:6px}
@@ -1960,6 +1980,11 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     </div>
   </div>
 
+  <!-- KLAVITYKLA snap-plan gating: upgrade wall overlay for Sims/AutoSims when the active project is
+       snap-only. Populated by applyUpgradeWall() (called from setView + render). Sits over .grid; the
+       .content wrap below is given position:relative so this positions correctly. -->
+  <div class="upgrade-wall hide" id="upgradeWallOverlay"></div>
+
   <!-- Admin: Live Sims — monitored URLs + pause (P3b, R5). Admin-only. Accessible from both Sims and Settings views as a collapsed section. -->
   <details class="drawer hide" id="liveDrawer" data-view="sims settings">
     <summary><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.9 16.1C1 12.2 1 5.8 4.9 1.9" /> <path d="M7.8 4.7a6.14 6.14 0 0 0-.8 7.5" /> <circle cx="12" cy="9" r="2" /> <path d="M16.2 4.8c2 2 2.26 5.11.8 7.47" /> <path d="M19.1 1.9a9.96 9.96 0 0 1 0 14.1" /> <path d="M9.5 18h5" /> <path d="m8 22 4-11 4 11" /></svg> Live Sims — monitored URLs & pause <span class="caret">›</span></summary>
@@ -2010,6 +2035,17 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           <span id="wsNameMsg" class="muted" style="font-size:12.5px"></span>
         </div>
         <div class="muted" style="font-size:12px;margin-top:6px">The name your team sees for this workspace.</div>
+      </div>
+      <!-- Project plan (admin-only) — KLAVITYKLA snap-plan gating: force this single project to the
+           Snap plan (report widget only, Sims/AutoSims locked) regardless of the account's billing plan. -->
+      <div id="projPlanCard" class="hide" style="border:1px solid var(--line,#e6e4ef);border-radius:12px;padding:14px 16px;margin-bottom:12px;background:#fff">
+        <div class="flbl" style="margin-bottom:6px">Project plan</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" id="projPlanFullBtn" type="button">Full</button>
+          <button class="btn btn-ghost btn-sm" id="projPlanSnapBtn" type="button">Snap-only</button>
+          <span id="projPlanMsg" class="muted" style="font-size:12.5px"></span>
+        </div>
+        <div class="muted" style="font-size:12px;margin-top:6px">Snap-only locks Sims, AutoSims and their AI settings for this project — the report widget keeps working. Overrides the account's billing plan for this project only.</div>
       </div>
       <!-- Klavity Cloud primary card -->
       <div class="conn-cloud">
@@ -3492,6 +3528,8 @@ function render(fromCache) {
     })
     $("wsNameInput").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("wsNameSave").click() } })
   }
+  // Project plan (admin-only) — KLAVITYKLA snap-plan gating admin toggle.
+  if (typeof wireProjPlan === "function") wireProjPlan(admin)
   $("who").textContent = state.email
   // Genuinely-fresh signal (same as the guided tour): 0 Sims + 0 feedback = first-ever session.
   const freshHello = !((state.sims || []).length) && !((state.counts || {}).feedback || 0)
@@ -3544,6 +3582,14 @@ function render(fromCache) {
   // P3b admin-only: live-Sims config (monitored URLs + pause) and named observability.
   $("liveDrawer").classList.toggle("hide", !admin)
   $("obsDrawer").classList.toggle("hide", !admin)
+
+  // Snap-plan gating: sidebar nav locks, Sims/AutoSims upgrade wall, AI-settings disable + note.
+  if (typeof applyNavLocks === "function") applyNavLocks()
+  if (typeof applyUpgradeWall === "function") applyUpgradeWall()
+  if (typeof applyAiSettingsGate === "function") applyAiSettingsGate()
+  // Re-run the plan-pill copy (Free/Snap) now that the active project (and its entitlement) may
+  // have changed — _wirePlan's refresh() owns the pill's fetch+render.
+  if (typeof window.refreshPlan === "function") window.refreshPlan()
 
   // Network sub-loaders — skipped on the instant cache paint, run once on fresh data.
   if (!fromCache) {
@@ -4166,6 +4212,142 @@ const projPath = (suffix) => "/api/projects/" + encodeURIComponent(curProjId()) 
 // as a thin wrapper over curProjId so those callers find it at runtime.
 function projParam(){try{return curProjId()||new URLSearchParams(location.search).get("project")||null}catch(e){return null}}
 
+// ── Snap-plan gating (KLAVITYKLA: Snap-only project gating, Task 3 — dashboard client) ──
+// The active project's entitlement rides on state.active.entitlement (see GET /api/dashboard /
+// GET /api/projects/:id, which both echo { planOverride, entitlement } via lib/entitlement.ts's
+// projectEntitlement()). snapOnly() is the single source of truth every gate below reads.
+function snapOnly(){ return !!(state && state.active && state.active.entitlement && state.active.entitlement.snapOnly) }
+window.snapOnly = snapOnly
+
+// Reusable upgrade-wall card markup (Sims / AutoSims teaser). Mirrors /tmp/klavity-snap-plan-mock.html.
+function renderUpgradeWall(feature, projectName){
+  return `<div class="uw-card">
+    <div class="uw-lock">${kicon('lock', {size:22})}</div>
+    <h2>Unlock ${esc(feature)} on ${esc(projectName || "this project")}</h2>
+    <p class="uw-sub">This project is on the <b>Snap plan</b> — the bug reporter is fully yours. Sims &amp; AutoSims are a Pro feature.</p>
+    <div class="uw-benefits">
+      <div>AI customer personas built from your real call transcripts</div>
+      <div>They browse your live site and file grounded bugs — even on pages no one visits</div>
+      <div>AutoSim re-runs your key flows so fixed things stay fixed</div>
+    </div>
+    <button class="btn btn-indigo" type="button" onclick="openPlanDrawer()">Upgrade to unlock</button>
+    <div class="uw-note">Admins can switch a project's plan in Settings.</div>
+  </div>`
+}
+window.renderUpgradeWall = renderUpgradeWall
+
+// Show/hide the upgrade-wall overlay for the current view. Called from setView() (on every nav
+// switch) and from render() (in case the active project — and its entitlement — changed under an
+// already-open Sims/AutoSims view). Blurs the shared .grid behind a centered upgrade card, same
+// treatment for both gated views since they share one grid container.
+function applyUpgradeWall(){
+  const overlay = $("upgradeWallOverlay")
+  const grid = document.querySelector(".content > .grid")
+  if (!overlay || !grid) return
+  const view = document.body.getAttribute("data-view")
+  const gated = (view === "sims" || view === "autosims") && snapOnly()
+  if (!gated) {
+    overlay.className = "upgrade-wall hide"
+    overlay.innerHTML = ""
+    grid.classList.remove("uw-blurred")
+    return
+  }
+  const feature = view === "autosims" ? "AutoSims" : "Sims"
+  const projectName = state && state.active ? state.active.name : ""
+  overlay.innerHTML = renderUpgradeWall(feature, projectName)
+  overlay.className = "upgrade-wall show"
+  grid.classList.add("uw-blurred")
+}
+window.applyUpgradeWall = applyUpgradeWall
+
+// Sidebar nav locks: add/remove a small lock badge on the Sims + AutoSims nav items when the
+// active project is snap-only, so the gate is visible before the user even clicks in.
+function applyNavLocks(){
+  const gated = snapOnly()
+  document.querySelectorAll('.side .nv[data-go="sims"], .side .nv[data-go="autosims"]').forEach(btn => {
+    btn.classList.toggle("gated", gated)
+    let badge = btn.querySelector(".nv-lock")
+    if (gated) {
+      if (!badge) {
+        badge = document.createElement("span")
+        badge.className = "nv-lock"
+        badge.innerHTML = kicon("lock", {size:12})
+        btn.appendChild(badge)
+      }
+    } else if (badge) {
+      badge.remove()
+    }
+  })
+}
+window.applyNavLocks = applyNavLocks
+
+// AI-settings note: when snap-only, disable the Sims/AutoSim-only admin controls (live-Sims
+// pause + monitored URLs, AutoSim autofile) and show an inline upgrade note next to each.
+function applyAiSettingsGate(){
+  const gated = snapOnly()
+  // Only force-disable when gated — un-gating leaves each control's own load/render logic
+  // (renderPause, loadTrailsAutofile) in charge of its normal enabled/disabled state.
+  if (gated) {
+    ;[$("pauseBtn"), $("urlInput"), $("urlAdd"), $("trailsAutofileToggle"), $("trailsAutofileSaveBtn")].forEach(el => { if (el) el.disabled = true })
+  }
+  const noteHtml = '<div class="gate-note">Upgrade to unlock — this project is on the Snap plan. '
+    + '<button type="button" class="linklike" onclick="openPlanDrawer()">Upgrade</button></div>'
+  const liveDrawerIn = document.querySelector("#liveDrawer .drawer-in")
+  if (liveDrawerIn) {
+    let note = liveDrawerIn.querySelector(".gate-note")
+    if (gated) {
+      if (!note) { liveDrawerIn.insertAdjacentHTML("afterbegin", noteHtml) }
+    } else if (note) { note.remove() }
+  }
+  const autofileAdmin = $("trailsAutofileAdmin")
+  if (autofileAdmin) {
+    let note = autofileAdmin.querySelector(".gate-note")
+    if (gated) {
+      if (!note) { autofileAdmin.insertAdjacentHTML("afterbegin", noteHtml) }
+    } else if (note) { note.remove() }
+  }
+}
+window.applyAiSettingsGate = applyAiSettingsGate
+
+// Admin project-plan toggle (Settings → Project settings). Full/Snap-only buttons POST to
+// POST /api/projects/:id/plan { override: "snap" | null }; on success, mirror how the workspace
+// rename Save above refreshes local state — patch state.active in place and re-render, so every
+// other gate (nav locks, upgrade wall, AI-settings note, pill copy) picks up the change immediately.
+let _projPlanBound = false
+function wireProjPlan(admin){
+  const card = $("projPlanCard")
+  if (!card) return
+  card.classList.toggle("hide", !admin)
+  if (!admin) return
+  const fullBtn = $("projPlanFullBtn"), snapBtn = $("projPlanSnapBtn"), msg = $("projPlanMsg")
+  const gated = snapOnly()
+  if (fullBtn) fullBtn.classList.toggle("btn-indigo", !gated)
+  if (snapBtn) snapBtn.classList.toggle("btn-indigo", gated)
+  if (_projPlanBound) return
+  _projPlanBound = true
+  const setPlan = async (override) => {
+    const pid = curProjId(); if (!pid) return
+    fullBtn.disabled = true; snapBtn.disabled = true
+    if (msg) msg.textContent = "Saving…"
+    try {
+      const r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/plan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ override }) })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok || !d.ok) { if (msg) msg.textContent = (d && d.error) || "Couldn't save"; return }
+      if (msg) msg.textContent = "Saved"
+      setTimeout(() => { if (msg && msg.textContent === "Saved") msg.textContent = "" }, 2500)
+      // The plan endpoint's { project } is the raw row (planOverride only, no computed
+      // entitlement) — reload the full dashboard payload (which DOES compute entitlement, see
+      // GET /api/dashboard) and re-render so every gate (nav locks, wall, AI-settings, pill) picks
+      // up the change immediately, mirroring how other admin Saves in this file refresh state.
+      if (typeof load === "function") await load()
+    } catch { if (msg) msg.textContent = "Network error" }
+    finally { fullBtn.disabled = false; snapBtn.disabled = false }
+  }
+  fullBtn.addEventListener("click", () => setPlan(null))
+  snapBtn.addEventListener("click", () => setPlan("snap"))
+}
+window.wireProjPlan = wireProjPlan
+
 // ── Pause toggle + monitored URLs (R5) ──
 async function loadLive() {
   // project detail gives review_mode; monitored-urls gives the allowlist patterns.
@@ -4191,6 +4373,7 @@ function renderPause(mode) {
     : `<span class="dot on"></span> <b>Live</b> — Sims auto-comment on monitored URLs (mode: ${esc(curMode)}).`
   btn.textContent = paused ? "Resume Sims" : "Pause Sims"
   btn.disabled = false
+  if (typeof applyAiSettingsGate === "function") applyAiSettingsGate() // re-assert the snap-plan gate over this async re-enable
 }
 $("pauseBtn").onclick = async () => {
   const next = curMode === "paused" ? "auto" : "paused"
@@ -7915,6 +8098,7 @@ async function loadTrailsAutofile() {
     var d = await r.json()
     toggle.checked = !!d.trailsAutofileEnabled
   } catch(e) {}
+  if (typeof applyAiSettingsGate === "function") applyAiSettingsGate() // re-assert the snap-plan gate over this async load
   saveBtn.onclick = async function() {
     msg.textContent = "Saving…"
     saveBtn.disabled = true
@@ -8081,9 +8265,16 @@ window.openPlanDrawer = openPlanDrawer
       if (quotaNote) quotaNote.textContent = quotaText(d.quotas)
       if (portalBtn) portalBtn.style.display = d.billing && d.billing.stripeCustomerId ? "" : "none"
       if (d.unlimited && area) { area.innerHTML = '<p class="muted" style="font-size:13px">'+window.kicon("check",{size:13})+' Unlimited access is active on this account.</p>' }
-      // Sidebar plan pill: free accounts only — a compact, always-visible path to the plan drawer.
+      // Sidebar plan pill: free accounts, OR a snap-only project (regardless of account plan) — a
+      // compact, always-visible path to the plan drawer. KLAVITYKLA snap-plan gating: project-level
+      // snap-only overrides account plan for this pill's visibility + copy.
       var pill = $("planPill")
-      if (pill) pill.classList.toggle("hide", !!(d.unlimited || (d.plan && d.plan !== "free")))
+      var isSnapOnly = typeof snapOnly === "function" && snapOnly()
+      if (pill) {
+        pill.classList.toggle("hide", !isSnapOnly && !!(d.unlimited || (d.plan && d.plan !== "free")))
+        pill.innerHTML = isSnapOnly ? "Snap plan · <b>Upgrade</b>" : "Free plan · <b>Upgrade</b>"
+        pill.setAttribute("aria-label", isSnapOnly ? "This project is on the Snap plan — see upgrade options" : "You are on the Free plan — see upgrade options")
+      }
       // Current-period usage meter (separate read; failure is non-fatal to the plan panel).
       try { var ur = await fetch("/api/account/usage"); if (ur.ok){ var ud = await ur.json(); renderUsage(ud.meters); renderProjects(ud) } } catch(e){}
       // Agency per-client rollup — only Agency/unlimited accounts are entitled (endpoint 403s otherwise).
@@ -8349,6 +8540,7 @@ load()
     normalizeSidebar();
     document.body.setAttribute('data-view',v);
     sidebarNavs().forEach(function(b){b.classList.toggle('active',b.getAttribute('data-go')===v);});
+    if(typeof applyUpgradeWall==='function')applyUpgradeWall();
     try{history.replaceState(null,'',v==='overview'?(location.pathname+location.search):('#'+v));}catch(e){}
     window.scrollTo(0,0);
     if(v==='triage'){if(typeof renderTriage==='function')renderTriage();}
