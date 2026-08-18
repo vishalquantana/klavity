@@ -187,6 +187,61 @@ test("revoke of a non-pending / unknown email is a 404 no-op", async () => {
   expect(r.status).toBe(404)
 })
 
+test("re-inviting an already-active member still sends the invite/sign-in email (QPLANE-407)", async () => {
+  // MEMBER is already an active (accepted) project member from the beforeAll seed — this is a
+  // re-invite, not a first invite. Before the fix, sendMemberInviteEmail only fired inside the
+  // `!priorAccess` branch, so a re-invite of an existing member updated the role/status but sent
+  // NOTHING — a silent no-op dressed up as a green "Invited" response. Lock in that the send is
+  // no longer gated on priorAccess: this re-invite is processed (200, ok, accepted status) AND
+  // dispatches an email in this SENDGRID_API_KEY-configured test env.
+  const r = await fetch(`${BASE}/api/team/invite`, { method: "POST", headers: auth(SID), body: JSON.stringify({ email: MEMBER, role: "admin" }) })
+  expect(r.status).toBe(200)
+  const j = await r.json() as any
+  expect(j.ok).toBe(true)
+  expect(j.invite.status).toBe("accepted") // already active → stays accepted, not re-pended
+  expect(j.invite.role).toBe("admin") // echoes the requested role
+  expect(j.emailSent).toBe(true) // <-- the bug: this used to be false for an existing member
+
+  // Membership row is untouched by this out-of-scope path (addProjectMember uses
+  // ON CONFLICT(project_id,email) DO NOTHING, so re-inviting doesn't change the stored role — that's
+  // pre-existing behavior, not part of this fix, which is scoped to the email-send gate only).
+  const pm = await raw.execute({ sql: "SELECT * FROM project_members WHERE project_id=? AND email=?", args: [PROJ, MEMBER] })
+  expect(pm.rows.length).toBe(1)
+
+  // A brand-new invite in the same request cycle is unaffected — still gets emailSent:true too.
+  const fresh = `mi-fresh-${RUN}@test.local`
+  const r2 = await fetch(`${BASE}/api/team/invite`, { method: "POST", headers: auth(SID), body: JSON.stringify({ email: fresh, role: "member" }) })
+  expect(r2.status).toBe(200)
+  const j2 = await r2.json() as any
+  expect(j2.ok).toBe(true)
+  expect(j2.invite.status).toBe("pending")
+  expect(j2.emailSent).toBe(true)
+})
+
+test("resend works for an already-ACTIVE member, not just a pending invite (QPLANE-407)", async () => {
+  // MEMBER is an active (accepted) project member — no pending invite row exists for them. Before
+  // this change, /api/team/invite/resend only consulted getPendingInvite and 404'd for anyone
+  // already accepted, which is exactly the "Resend to an existing teammate" gap the dashboard
+  // Team-page Resend control needs to fill. It should now fall back to an active-membership lookup
+  // and dispatch the same access email, rather than 404ing.
+  const pendingBefore = await pendingRow(MEMBER)
+  expect(pendingBefore).toBeNull() // sanity: confirms this exercises the NEW fallback path, not the old pending path
+
+  const r = await fetch(`${BASE}/api/team/invite/resend`, { method: "POST", headers: auth(SID), body: JSON.stringify({ email: MEMBER, project: PROJ }) })
+  expect(r.status).toBe(200)
+  const j = await r.json() as any
+  expect(j.ok).toBe(true)
+  expect(j.emailSent).toBe(true)
+
+  const inv = j.invites.find((x: any) => x.email === MEMBER)
+  expect(inv).toBeTruthy()
+  expect(inv.status).toBe("accepted") // still active — resend doesn't fabricate a pending state
+
+  // Still 404s for a genuinely unknown email (neither pending nor an active member).
+  const unknown = await fetch(`${BASE}/api/team/invite/resend`, { method: "POST", headers: auth(SID), body: JSON.stringify({ email: `nobody-resend-${RUN}@test.local`, project: PROJ }) })
+  expect(unknown.status).toBe(404)
+})
+
 test("resend + revoke are admin-only", async () => {
   // Re-create a pending invite to act on.
   await fetch(`${BASE}/api/team/invite`, { method: "POST", headers: auth(SID), body: JSON.stringify({ email: INVITEE_B, role: "member" }) })

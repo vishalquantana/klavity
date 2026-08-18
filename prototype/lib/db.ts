@@ -2518,6 +2518,16 @@ export async function addProjectMember(projectId: string, accountId: string, ema
   await db!.execute({ sql: "INSERT INTO project_members (id,project_id,email,project_role,invited_by,created_at) VALUES (?,?,?,?,?,?) ON CONFLICT(project_id,email) DO NOTHING", args: ["pm_" + projectId + "_" + email, projectId, email, projectRole === "admin" ? "admin" : "member", invitedBy ?? null, now] })
 }
 
+// Remove an ACTIVE member from a project (distinct from revokeProjectInvite, which only clears a
+// still-PENDING invite). Returns whether a row was actually deleted so the caller can 404 on a
+// no-op (e.g. the email was never a member). Caller is responsible for all access-control checks
+// (admin-only, can't remove self/owner/last-admin) — this helper is a plain delete.
+export async function removeProjectMember(projectId: string, email: string): Promise<boolean> {
+  const norm = String(email || "").trim().toLowerCase()
+  const r = await db!.execute({ sql: "DELETE FROM project_members WHERE project_id=? AND email=?", args: [projectId, norm] })
+  return Number(r.rowsAffected || 0) > 0
+}
+
 export type TicketAssignmentInvite = {
   id: string
   projectId: string
