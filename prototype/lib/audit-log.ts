@@ -18,6 +18,7 @@ export type AuditAction =
   | "gdpr_erasure"
   | "project_delete"
   | "account_delete"
+  | "plan_override_change"
 
 export interface AuditEntry {
   action: AuditAction
