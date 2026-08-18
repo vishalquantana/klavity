@@ -1,0 +1,104 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How AI Reproduces Bugs Automatically (and Where It Fails) · Klavity</title>
+<meta name="description" content="AI reproduces a bug by replaying the state a report captured: the steps, DOM, console, network, and environment. Here's how it works and where it fails.">
+<link rel="canonical" href="https://klavity.in/blog/how-ai-reproduces-bugs-automatically">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="How AI Reproduces Bugs Automatically (and Where It Fails)"><meta property="og:description" content="AI reproduces a bug by replaying the state a report captured: the steps, DOM, console, network, and environment. Here's how it works and where it fails.">
+<meta property="og:url" content="https://klavity.in/blog/how-ai-reproduces-bugs-automatically"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="How AI Reproduces Bugs Automatically (and Where It Fails)"><meta name="twitter:description" content="AI reproduces a bug by replaying the state a report captured: the steps, DOM, console, network, and environment. Here's how it works and where it fails."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"How AI Reproduces Bugs Automatically (and Where It Fails)","description":"AI reproduces a bug by replaying the state a report captured: the steps, DOM, console, network, and environment. Here's how it works and where it fails.","datePublished":"2026-08-18","dateModified":"2026-08-18","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/how-ai-reproduces-bugs-automatically","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How AI Reproduces Bugs Automatically (and Where It Fails)","item":"https://klavity.in/blog/how-ai-reproduces-bugs-automatically"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/how-ai-reproduces-bugs-automatically"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Can AI reproduce a bug from a screenshot alone?","acceptedAnswer":{"@type":"Answer","text":"Rarely. A screenshot proves a bug existed but omits the steps, DOM state, console errors, and network calls needed to trigger it again. AI reproduction works best when the report bundles a screenshot with the runtime state that produced it — the console log, the failing request, the URL, and the environment."}},{"@type":"Question","name":"Does AI bug reproduction replace manual QA?","acceptedAnswer":{"@type":"Answer","text":"No. It collapses the slow, mechanical part — re-creating the exact conditions of a report — so engineers skip the back-and-forth and start at the fix. Manual QA still owns judgment: deciding what to test, spotting bugs no one filed, and confirming a fix feels right to a real user."}},{"@type":"Question","name":"Why does AI fail to reproduce some bugs?","acceptedAnswer":{"@type":"Answer","text":"Because the trigger lives outside the captured state. If the bug depends on a specific database row, a race between two requests, a clock rollover, or a third-party outage, replaying the front-end steps won't recreate it. The fix is to capture more state at report time, not to replay harder."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Insights · 2026-08-18</div>
+    <h1>How AI Reproduces Bugs Automatically (and Where It Fails)</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>AI reproduces a bug by replaying the captured state of a report — the exact steps, a DOM snapshot, console errors, network calls, and the environment — against a fresh session of your app. It succeeds when the report carries that state, and fails when the bug depends on hidden inputs the report never captured: server-side data, timing, or third-party services.</div>
+    <div class="prose"><p>AI reproduces a bug by replaying the captured state of a report — the exact steps, a DOM snapshot, the console output, the network requests, and the environment — against a fresh session of your application. When the report carries that state, an agent can re-run the sequence in a real browser and watch the same failure happen. When the trigger lives outside that captured state — in a specific database row, a race between requests, or a third-party service — replaying the front-end steps won't recreate it, and the bug stays a mystery until someone captures more.</p>
+
+<h2>How does AI reproduce a bug from a report?</h2>
+<p>The mechanism is replay, not guesswork. An AI agent takes the structured evidence in a report and drives a browser to re-create the moment the bug occurred. Three things have to line up for that to work:</p>
+<ol>
+<li><strong>A deterministic path.</strong> The report has to say what was clicked and typed, in order, ending at the failure. Vague reports ("checkout is broken") give the agent nothing to replay; a concrete sequence ("add item, apply code SAVE10, click Pay") gives it a script.</li>
+<li><strong>A snapshot of the moment.</strong> A DOM snapshot plus the console and network state at the point of failure lets the agent verify it reached the same place — the same error in the console, the same 500 on the same request — rather than a superficially similar screen.</li>
+<li><strong>A matching environment.</strong> Browser, viewport, OS, logged-in role, and feature flags shape behavior. The agent recreates that context so it isn't testing a different app than the reporter saw.</li>
+</ol>
+<p>With those in place, reproduction becomes a checked replay: the agent runs the steps and asserts that the captured failure recurs. That is the same loop a self-healing test runs, which is why a reproduced bug converts so cleanly into an <a href="/autosim">automated regression test</a>.</p>
+
+<h2>What state does AI need to reproduce a bug?</h2>
+<p>Reproduction depends entirely on how much of the failing moment the report preserved. There are four layers of state, and a good report captures all of them at the instant the bug is flagged:</p>
+<ul>
+<li><strong>Interaction state</strong> — the ordered steps and the inputs used to reach the failure.</li>
+<li><strong>Runtime state</strong> — console errors and warnings, plus the network requests and responses (status, payload, timing) around the failure.</li>
+<li><strong>Page state</strong> — the URL and a DOM snapshot, so the agent knows the exact screen and element in play.</li>
+<li><strong>Environment state</strong> — browser, version, viewport, OS, and the user's role or account tier.</li>
+</ul>
+<p>Miss a layer and the agent has to guess to fill the gap — and every guess is a chance to diverge from the real conditions. This is the core reason "cannot reproduce" tickets pile up: the reporter saw all four layers, but only one or two survived into the ticket. Capturing state at the source, rather than reconstructing it later, is what makes reports <a href="/blog/reduce-cannot-reproduce-bug-tickets">reliably reproducible</a>.</p>
+
+<h2>Where AI bug reproduction still fails</h2>
+<p>Replay is powerful for front-end and deterministic bugs, and honest about its limits. It struggles — for AI and humans alike — when the trigger is not in the captured state:</p>
+<ul>
+<li><strong>Hidden server-side data.</strong> A bug that only fires for one corrupted record or a specific account won't reproduce from front-end steps. The agent needs that data seeded, not just the clicks.</li>
+<li><strong>Timing and race conditions.</strong> Two requests resolving in an unlucky order, a debounce that occasionally loses, a token expiring mid-flow — replaying at normal speed often lands on the lucky path and shows nothing.</li>
+<li><strong>Time and state that move on.</strong> A bug tied to a date rollover, a cache that has since expired, or a queue that has drained can be impossible to recreate after the fact.</li>
+<li><strong>Third-party dependencies.</strong> If a payment gateway or external API misbehaved during a narrow window, the replay hits a healthy service and passes.</li>
+</ul>
+<p>The lesson is not that reproduction is unreliable — it is that reproduction is only as good as the state you captured. When an agent can't reproduce a bug, the productive next step is to capture more at report time, not to replay the same thin report harder.</p>
+
+<h2>How to write bug reports AI can reproduce</h2>
+<p>You get reproducible reports by capturing state at the moment of the bug instead of asking people to remember it later. Practical steps:</p>
+<ol>
+<li><strong>File from inside the app.</strong> A report started where the bug happened can attach the live URL, DOM, console, and network automatically. A report typed into a separate tracker an hour later cannot. In-app, <a href="/snap">right-click reporting</a> exists precisely to freeze that runtime state at the click.</li>
+<li><strong>Write steps as an executable list.</strong> Each step should be one concrete action an agent — or a person — can perform without interpretation. Number them, and end at the exact failure.</li>
+<li><strong>Attach the console and the failing request.</strong> Not a summary — the actual error text and the request's method, URL, status, and response. These are what an agent asserts against to confirm it reproduced the right bug.</li>
+<li><strong>Record the environment.</strong> Browser and version, viewport, OS, and the account role. For role-specific bugs, note the role explicitly; it is the most commonly omitted variable.</li>
+<li><strong>Flag non-determinism honestly.</strong> If it happened 1 in 5 tries, say so. That tells whoever reproduces it — human or AI — to look for a race or timing issue rather than assume a clean, repeatable path.</li>
+</ol>
+
+<h2>From reproduction to a test that sticks</h2>
+<p>Reproduction is not the finish line; it is the setup for one. Once an agent can reliably re-create a bug, that same replay is nearly a regression test already — it drives the app to the failing state and knows what "failed" looks like. Promoting it into your suite means the bug fails the build if it ever returns, instead of quietly reappearing three releases later. That is the real payoff of machine-reproducible reports: they shorten the distance from <em>a user hit this</em> to <em>this can never ship again</em>. Explore how Klavity turns captured evidence into replayable checks on the <a href="/blog">Klavity blog</a>.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Capture state, not just a screenshot — steps, DOM, console, network, and environment</li><li>Replay reproduces front-end bugs reliably; hidden server or timing state is where it breaks</li><li>File bugs from inside the app so the exact runtime state ships with the report</li><li>Turn a reproduced bug straight into a regression test so it can't silently return</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Can AI reproduce a bug from a screenshot alone?</summary><p>Rarely. A screenshot proves a bug existed but omits the steps, DOM state, console errors, and network calls needed to trigger it again. AI reproduction works best when the report bundles a screenshot with the runtime state that produced it — the console log, the failing request, the URL, and the environment.</p></details><details><summary>Does AI bug reproduction replace manual QA?</summary><p>No. It collapses the slow, mechanical part — re-creating the exact conditions of a report — so engineers skip the back-and-forth and start at the fix. Manual QA still owns judgment: deciding what to test, spotting bugs no one filed, and confirming a fix feels right to a real user.</p></details><details><summary>Why does AI fail to reproduce some bugs?</summary><p>Because the trigger lives outside the captured state. If the bug depends on a specific database row, a race between two requests, a clock rollover, or a third-party outage, replaying the front-end steps won't recreate it. The fix is to capture more state at report time, not to replay harder.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

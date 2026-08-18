@@ -397,5 +397,12 @@
     "excerpt": "Test coverage is the percentage of your code executed by tests. Here's how line, branch, and function coverage differ — and why 100% never means bug-free.",
     "category": "Learn",
     "date": "2026-08-17"
+  },
+  {
+    "slug": "how-ai-reproduces-bugs-automatically",
+    "title": "How AI Reproduces Bugs Automatically (and Where It Fails)",
+    "excerpt": "AI reproduces a bug by replaying the state a report captured: the steps, DOM, console, network, and environment. Here's how it works and where it fails.",
+    "category": "Insights",
+    "date": "2026-08-18"
   }
 ]
