@@ -27,7 +27,7 @@ pre-seeded draft trail row (`trails` table insert) since `/api/trails/author` is
 requires a live LLM-driven authoring run, unsuitable for a unit test fixture.
 
 status: done
-commit: a4d1a08a
+commit: 158671fd
 test summary: `bun test server.snap-plan.test.ts` — 14 pass / 0 fail. Newly gated endpoints:
 `POST /api/sim/review`, `GET /api/personas`, `POST /api/trails/:id/approve`,
 `PATCH /api/trails/:id`, `POST /api/projects/:id/sim-review-schedules` — each returns 402 with
