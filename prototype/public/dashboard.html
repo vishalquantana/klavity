@@ -686,6 +686,13 @@ body[data-view="recurring"] .grid>.card[data-view~="recurring"]{grid-column:1/-1
 
 .member{display:flex;align-items:center;gap:11px;padding:9px 0;border-bottom:1px solid var(--line)}
 .member:last-child{border-bottom:none}
+.mem-resend,.mem-remove{background:none;border:none;padding:2px 4px;margin:0 0 0 4px;font-family:var(--sans,inherit);font-size:12px;color:var(--muted);cursor:pointer;border-radius:4px;transition:transform .15s ease,color .15s ease}
+.mem-resend:hover{color:var(--indigo);transform:scale(1.02)}
+.mem-resend:active{transform:scale(.97)}
+.mem-resend[disabled]{opacity:.5;cursor:default;transform:none}
+.mem-remove:hover{color:var(--rose);transform:scale(1.02)}
+.mem-remove:active{transform:scale(.97)}
+.mem-remove[disabled]{opacity:.5;cursor:default;transform:none}
 .av{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-family:var(--mono);font-weight:600;font-size:11px;color:#fff;flex-shrink:0}
 .m-email{font-size:13.5px;flex:1}
 .invite{display:flex;gap:8px;margin-top:14px}
@@ -4584,12 +4591,94 @@ document.addEventListener("DOMContentLoaded", function() {
 function renderMembers(admin) {
   const members = state.members || []
   $("memCount").textContent = members.length ? members.length : ""
-  $("members").innerHTML = members.map(m => `
+  $("members").innerHTML = members.map(m => {
+    const isSelf = m.email === state.email
+    // Admins can remove any teammate except themselves. The server is the source of truth for
+    // the finer-grained blocks (account owner, last remaining admin) — a rejection just surfaces
+    // the server's own error message, so it's safe to show the control on every non-self row.
+    const canRemove = admin && !isSelf
+    // Resend, unlike Remove, is shown on EVERY row (including yourself) — an admin may want to
+    // re-send their own sign-in link too, and there's no destructive risk to gate on.
+    const canResend = admin
+    return `
     <div class="member">
       <div class="av" style="background:${col(m.email)}">${initials(m.email)}</div>
-      <span class="m-email">${esc(m.email)}${m.email===state.email?' <span class="muted">(you)</span>':''}</span>
+      <span class="m-email">${esc(m.email)}${isSelf?' <span class="muted">(you)</span>':''}</span>
       <span class="rolepill ${m.role==="admin"?"r-admin":"r-user"}">${esc(m.role)}</span>
-    </div>`).join("")
+      ${canResend ? `<button class="mem-resend" type="button" data-email="${esc(m.email)}" title="Re-send the sign-in/access email">Resend</button>` : ""}
+      ${canRemove ? `<button class="mem-remove" type="button" data-email="${esc(m.email)}" title="Remove from project">Remove</button>` : ""}
+    </div>`
+  }).join("")
+  $("members").querySelectorAll(".mem-resend").forEach(btn => {
+    btn.addEventListener("click", () => resendMemberClick(btn))
+  })
+  $("members").querySelectorAll(".mem-remove").forEach(btn => {
+    btn.addEventListener("click", () => removeMemberClick(btn))
+  })
+}
+
+// QPLANE-407: admin-only "Resend" — one click re-dispatches the sign-in/access email to an
+// existing member (pending OR already-active). Reuses POST /api/team/invite/resend, which now
+// falls back to an active-member lookup when there's no pending invite row, instead of 404ing.
+async function resendMemberClick(btn) {
+  const email = btn.getAttribute("data-email")
+  if (!email) return
+  const projId = state.active && state.active.id
+  btn.disabled = true
+  const orig = btn.textContent
+  btn.textContent = "Sending…"
+  try {
+    const r = await fetch("/api/team/invite/resend", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email, project: projId }),
+    })
+    const d = await r.json().catch(() => ({}))
+    if (!r.ok || !d.ok) {
+      klavToast(esc(d.error || "Couldn't resend."), true)
+      return
+    }
+    if (d.emailSent === false) {
+      klavToast(`Couldn't email ${esc(email)} — mail isn't configured.`, true)
+    } else {
+      klavToast(`Sign-in link re-sent to ${esc(email)}`)
+    }
+  } catch {
+    klavToast("Couldn't resend.", true)
+  } finally {
+    btn.disabled = false
+    btn.textContent = orig
+  }
+}
+
+// QPLANE-407: admin-only member removal. Confirms, calls the server (which owns the real
+// guards — self/owner/last-admin), updates state.members from the response on success, and
+// otherwise surfaces the server's own error message via the shared toast.
+async function removeMemberClick(btn) {
+  const email = btn.getAttribute("data-email")
+  if (!email) return
+  if (!confirm(`Remove ${email} from this project?`)) return
+  const projId = state.active && state.active.id
+  btn.disabled = true
+  try {
+    const r = await fetch("/api/team/member/remove", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email, project: projId }),
+    })
+    const d = await r.json().catch(() => ({}))
+    if (!r.ok || !d.ok) {
+      klavToast(esc(d.error || "Couldn't remove that member."), true)
+      btn.disabled = false
+      return
+    }
+    state.members = d.members
+    renderMembers(state.active && state.active.role === "admin")
+    klavToast(`Removed ${esc(email)}`)
+  } catch {
+    klavToast("Couldn't remove that member.", true)
+    btn.disabled = false
+  }
 }
 
 const STATUS_LABELS = { new: "New", open: "Open", in_progress: "In Progress", done: "Done", dismissed: "Dismissed" }

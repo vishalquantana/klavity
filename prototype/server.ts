@@ -7,7 +7,7 @@ import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
 import { logAudit, queryAuditLog, auditRowsToCsv, type AuditAction } from "./lib/audit-log"
 import { buildMemberExport, membersToCsv, MEMBER_EXPORT_FIELDS } from "./lib/member-export"
 import { isMaskingEnabled, maskMemberExportRow, maskDeep, maskWalkReportData } from "./lib/data-masking"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, publicReportStatus, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, EXPORT_POLICIES, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, publicReportStatus, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, EXPORT_POLICIES, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows } from "./lib/db"
 import { countFoundingAccounts } from "./lib/db"
 // KLAVITYKLA-366 — the Founding Ten spot counter. One cached source of truth behind the public
 // pricing band, the in-app ribbon, and the server-side refusal of an 11th founding checkout.
@@ -7439,19 +7439,22 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         let status: "pending" | "accepted" = "accepted"
         let emailSent = false
         if (!priorAccess) {
-          // New teammate → durable PENDING invite + email until they accept (sign in).
+          // New teammate → durable PENDING invite until they accept (sign in).
           status = "pending"
           await upsertTicketAssignmentInvite(proj.id, inv, me, null)
-          if (process.env.SENDGRID_API_KEY) {
-            emailSent = true
-            void sendMemberInviteEmail({
-              to: inv,
-              projectName: p?.name ?? null,
-              invitedBy: me,
-              role: wantRole,
-              joinUrl: `${BASE.replace(/\/+$/, "")}/login?email=${encodeURIComponent(inv)}&project=${encodeURIComponent(proj.id)}`,
-            }).catch((e: any) => console.warn("member invite email skipped:", e?.message || e))
-          }
+        }
+        // Always (re)send the invite/sign-in email, whether this is a brand-new invite or a
+        // re-invite of an already-active member — the joinUrl is a sign-in/join link that works
+        // for both, so re-inviting must not be a silent no-op just because priorAccess existed.
+        if (process.env.SENDGRID_API_KEY) {
+          emailSent = true
+          void sendMemberInviteEmail({
+            to: inv,
+            projectName: p?.name ?? null,
+            invitedBy: me,
+            role: wantRole,
+            joinUrl: `${BASE.replace(/\/+$/, "")}/login?email=${encodeURIComponent(inv)}&project=${encodeURIComponent(proj.id)}`,
+          }).catch((e: any) => console.warn("member invite email skipped:", e?.message || e))
         }
         if (priorAccess) {
           logAudit({ action: "role_change", actorEmail: me, targetEmail: inv, projectId: proj.id, ip: clientIp(req, server), meta: { from: priorAccess, to: wantRole, status } })
@@ -7470,6 +7473,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       }
 
       // ── resend a still-pending invite (JTBD 6.4 / KLAVITYKLA-294) — admin only ──
+      // Works for BOTH a still-pending invite (bumps last_sent_at, keeps status pending) AND an
+      // already-ACTIVE member (QPLANE-407 — an admin one-click re-sends that member's sign-in/access
+      // link, e.g. because they lost the original email). Only 404s when the email is neither
+      // pending nor an active member of this project — i.e. genuinely unknown.
       if (req.method === "POST" && path === "/api/team/invite/resend") {
         const { email, project } = await req.json().catch(() => ({}))
         const inv = String(email || "").trim().toLowerCase()
@@ -7477,10 +7484,18 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (!proj) return json({ error: "No project." }, 400)
         if (proj.access !== "admin") return json({ error: "Only admins can resend invites." }, 403)
         const pending = await getPendingInvite(proj.id, inv)
-        if (!pending) return json({ error: "No pending invite for that email." }, 404)
+        let role: "admin" | "member"
+        if (pending) {
+          role = pending.role
+          // Re-stamp last_sent_at (keeps status pending) and re-send the email.
+          await upsertTicketAssignmentInvite(proj.id, inv, me, null)
+        } else {
+          const activeMembers = await membersOfProject(proj.id)
+          const activeMember = activeMembers.find((m) => m.email.toLowerCase() === inv)
+          if (!activeMember) return json({ error: "That email isn't invited or a member of this project." }, 404)
+          role = activeMember.role === "admin" ? "admin" : "member"
+        }
         const p = await projectById(proj.id)
-        // Re-stamp last_sent_at (keeps status pending) and re-send the email.
-        await upsertTicketAssignmentInvite(proj.id, inv, me, null)
         let emailSent = false
         if (process.env.SENDGRID_API_KEY) {
           emailSent = true
@@ -7488,7 +7503,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             to: inv,
             projectName: p?.name ?? null,
             invitedBy: me,
-            role: pending.role,
+            role,
             joinUrl: `${BASE.replace(/\/+$/, "")}/login?email=${encodeURIComponent(inv)}&project=${encodeURIComponent(proj.id)}`,
           }).catch((e: any) => console.warn("member invite resend email skipped:", e?.message || e))
         }
@@ -7507,6 +7522,36 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (!revoked) return json({ error: "No pending invite for that email." }, 404)
         logAudit({ action: "member_revoke", actorEmail: me, targetEmail: inv, projectId: proj.id, ip: clientIp(req, server) })
         return json({ ok: true, invites: await listProjectInvites(proj.id) })
+      }
+
+      // ── remove an ACTIVE member from a project (QPLANE-407) — admin only ──
+      // Distinct from /api/team/invite/revoke (which only clears a still-PENDING invite). Guards,
+      // in order: admin-only, can't remove yourself, can't remove the account owner, can't remove
+      // the last remaining admin on the project. Every rejection returns a clear message so the
+      // dashboard can surface it as-is.
+      if (req.method === "POST" && path === "/api/team/member/remove") {
+        const { email, project } = await req.json().catch(() => ({}))
+        const target = String(email || "").trim().toLowerCase()
+        if (!target.includes("@")) return json({ error: "Enter a valid email." }, 400)
+        const proj = await resolveProject(me, project ? String(project) : null)
+        if (!proj) return json({ error: "No project." }, 400)
+        if (proj.access !== "admin") return json({ error: "Only admins can remove members." }, 403)
+        if (target === String(me).trim().toLowerCase()) return json({ error: "You can't remove yourself." }, 400)
+        const p = await projectById(proj.id)
+        if (!p) return json({ error: "No project." }, 400)
+        const ownerRow = await db!.execute({ sql: "SELECT owner_email FROM accounts WHERE id=?", args: [p.accountId] })
+        const ownerEmail = ownerRow.rows.length ? String((ownerRow.rows[0] as any).owner_email || "").trim().toLowerCase() : null
+        if (ownerEmail && target === ownerEmail) return json({ error: "You can't remove the account owner." }, 400)
+        const members = await membersOfProject(proj.id)
+        const targetMember = members.find((m) => m.email.toLowerCase() === target)
+        if (targetMember && targetMember.role === "admin") {
+          const adminCount = members.filter((m) => m.role === "admin").length
+          if (adminCount <= 1) return json({ error: "You can't remove the last admin." }, 400)
+        }
+        const removed = await removeProjectMember(proj.id, target)
+        if (!removed) return json({ error: "Not a member of this project." }, 404)
+        logAudit({ action: "member_remove", actorEmail: me, targetEmail: target, projectId: proj.id, ip: clientIp(req, server) })
+        return json({ ok: true, members: await membersOfProject(proj.id) })
       }
 
       // ── account domain (onboarding step 1: tells clients from your own team) ──

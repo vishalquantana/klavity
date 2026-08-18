@@ -8,6 +8,7 @@ export type AuditAction =
   | "login"
   | "member_invite"
   | "member_revoke"
+  | "member_remove"
   | "role_change"
   | "connector_create"
   | "connector_update"
