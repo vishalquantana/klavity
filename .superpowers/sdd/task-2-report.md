@@ -1,83 +1,42 @@
-# Task 2 report — client-error-ticket.ts
+status: done
+commit: 78589be6
+test summary: `bun test server.snap-plan.test.ts` — 9 pass / 0 fail. Covered POST /api/projects/:pid/plan (admin sets override="snap" -> 200, project.planOverride echoed; non-admin -> 403; clearing override -> 200); GET /api/projects/:pid (planOverride + entitlement.snapOnly/canSims/canAutoSim/canAiSettings); POST /api/personas?project=:pid (Sims create) -> 402 snap_locked when locked, non-402 before lock and after clearing; POST /api/trails/author?project=:pid (AutoSim create) -> 402 snap_locked; POST /api/projects/:pid/pause (review-mode/AI-settings write) -> 402 snap_locked; GET /api/projects/:pid/tickets stays non-402 while locked (Snap path not gated). Also gated POST /api/trails/:id/walk (AutoSim run), monitored-urls writes, and trails-autofile writes with the same snapLocked() helper, and exposed planOverride+entitlement on GET /api/dashboard's active project. Full repo `bun test` run: 3489 pass / 15 fail / 1 error, all pre-existing and unrelated (verified identical failures with `git stash` applied — db-boot-speed ALTER idempotency, quota.test.ts grandfathering, simulated network-down connector/autosim-auth tests).
+blocking concerns: none.
 
-Status: DONE
+---
 
-Commit: a219877b "feat(errors): client-error fingerprint + create/bump/mask recorder"
+## Follow-up: closed gating gaps found in review (2026-08-19)
 
-## What was built
+Review found several Sims/AutoSim surfaces still ungated, letting a Snap-locked project keep
+running Sims/AutoSim. Closed with the same `snapLocked(project)` 402 pattern:
 
-- `prototype/lib/client-error-ticket.ts`: `ClientError` type, `clientErrorSignature(projectId, e)`
-  (sha256hex over [projectId, kind, normalized message, normalized pathname, normalized top
-  stack frame, selector], truncated to 32 hex chars), `severityFor(e)` (error/unhandledrejection
-  → high; network with status>=500 or status===0 → medium, else low; console.error → low),
-  and `recordClientError(projectId, e, ctx, opts?)` which:
-  - computes signature, looks up `findFeedbackBySignature`
-  - if found: `bumpFeedbackRecurrence(id, atMs)`, returns `{ id, created: false }`
-  - if not found and `opts.overCap`: returns `{ id: "", created: false }` (drop, caller logs)
-  - else: masks message via `maskPii`, masks `ctx` via `maskDeep`, calls `insertFeedback` with
-    `source: "auto-error"`, `signature`, derived `urlHost`/`urlPath`, returns `{ id, created: true }`
-- `prototype/lib/client-error-ticket.test.ts`: hermetic libsql-file harness (same pattern as
-  `db.client-error-signature.test.ts` / `db.sso-state.test.ts`) covering:
-  - signature stability under trivial whitespace/number changes in the message, and
-    project-scoping (p1 != p2 for identical error)
-  - severity ordering (uncaught error/unhandledrejection = high, network 5xx/0 = medium,
-    network non-5xx = low, console.error = low)
-  - first occurrence creates a ticket (id starts with `fb_`), identical second call bumps
-    (created:false, same id)
-  - PII (email) in the message is masked in the persisted `observation` column, verified via a
-    raw `SELECT observation FROM feedback WHERE id=?` against the exported `db` client
+1. `POST /api/sim/review` (server.ts, extension live auto-review hot path) — gated right after
+   `projectId` is resolved, via `projectById(projectId)` + `snapLocked`, returning `wjson(reviewLock, 402)`.
+2. `GET /api/personas` (Sims list) — gated via `projectById(wid)` at the top of the GET branch.
+3. `POST /api/trails/:id/approve` — resolves the trail then `projectById(trail.projectId)`, gates
+   before the draft→active status check.
+4. `PATCH /api/trails/:id` — same trail→project resolution; gates the entire PATCH (rename, status,
+   schedule, viewport) once the trail's project is Snap-locked, since status/schedule changes bypass
+   the /author and /walk gates.
+5. `POST /api/projects/:id/sim-review-schedules` (create) — gated via `projectById(srsProj.id)`
+   before creating the recurring schedule.
 
-## Test results
+Extended `prototype/server.snap-plan.test.ts` with 5 new tests (all locked-state, 402 `snap_locked`):
+Sims list, sim/review, trail approve, trail PATCH (schedule), sim-review-schedules create. Added a
+pre-seeded draft trail row (`trails` table insert) since `/api/trails/author` is itself gated and
+requires a live LLM-driven authoring run, unsuitable for a unit test fixture.
 
-`bun test lib/client-error-ticket.test.ts` → 4 pass, 0 fail, 15 expect() calls.
-Also re-ran `bun test lib/db.client-error-signature.test.ts` (Task 1's tests) → 2 pass, 0 fail,
-to confirm no regression in the consumed interfaces.
-
-No TDD detour needed — implementation matched the brief's pseudocode; test written first,
-confirmed the module-missing failure conceptually (file didn't exist), then implementation and
-test were added together and passed on first run.
-
-## Notes / non-goals
-
-- Connector auto-copy is explicitly NOT this task's job (per brief) — `recordClientError` only
-  returns `{ id, created }`; a later task's endpoint calls `autoCopyFeedback`.
-- No emoji in source. No version/CHANGELOG/manifest files touched. Committed only on
-  `feat/bugherd-autocapture` in this worktree.
-
-## Blocking concerns
-
-None.
-
-## Follow-up: coordinator review — test-coverage strengthening
-
-Coordinator review confirmed the implementation was correct but flagged two gaps in
-`prototype/lib/client-error-ticket.test.ts`:
-
-1. IMPORTANT — the dedup test only asserted return values (`b.created===false`,
-   `b.id===a.id`), not an actual DB row count. Added `countBySignature(projectId, signature)`
-   helper (`SELECT COUNT(*) AS n FROM feedback WHERE project_id=? AND signature=?`) and, after
-   the second `recordClientError` call in the dedup test, assert
-   `countBySignature(pid, clientErrorSignature(pid, e)) === 1` — proving the bump path did not
-   insert a duplicate row.
-2. MINOR — added a new test `"overCap drop path: new signature, no prior ticket -> no row
-   inserted"`: computes the signature for a fresh error with no prior ticket, asserts count is 0
-   before, calls `recordClientError(pid, e, {}, { atMs: 1, overCap: true })`, asserts
-   `result.created === false` and `result.id === ""`, then asserts count is still 0 after — no
-   row was ever inserted for the dropped signature.
-
-### Re-run
-
-Command: `cd prototype && bun test lib/client-error-ticket.test.ts`
-
-Output:
-```
-bun test v1.3.14 (0d9b296a)
-
- 5 pass
- 0 fail
- 20 expect() calls
-Ran 5 tests across 1 file. [177.00ms]
-```
-
-(Previously 4 pass / 15 expect() calls; now 5 pass / 20 expect() calls after adding the
-DB-row-count assertion to the dedup test and the new overCap test.)
+status: done
+commit: a4d1a08a
+test summary: `bun test server.snap-plan.test.ts` — 14 pass / 0 fail. Newly gated endpoints:
+`POST /api/sim/review`, `GET /api/personas`, `POST /api/trails/:id/approve`,
+`PATCH /api/trails/:id`, `POST /api/projects/:id/sim-review-schedules` — each returns 402 with
+`body.code==="snap_locked"` on a Snap-locked project. Combined with task-2's original gates
+(`POST /api/personas` create, `POST /api/trails/author`, `POST /api/trails/:id/walk`,
+`POST /api/projects/:id/pause`, monitored-urls writes, trails-autofile writes, admin
+`POST /api/projects/:id/plan`), the full endpoint list gated is now: sim/review, personas
+list+create, trails/author, trails/:id/walk, trails/:id/approve, trails/:id PATCH,
+sim-review-schedules create, project pause (review-mode), monitored-urls add/remove/rename/toggle,
+trails-autofile toggle. Full repo `bun test`: 3494 pass / 15 fail / 1 error — same pre-existing
+unrelated failures as before (verified via `git stash`), 5 more passing tests than the prior run.
+blocking concerns: none.
