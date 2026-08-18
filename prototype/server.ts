@@ -1,5 +1,7 @@
 // Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
 import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
+import { setProjectPlanOverride } from "./lib/db"
+import { projectEntitlement } from "./lib/entitlement"
 // NOTE: re-added after a theirs-wins merge ate this import (KLAVITYKLA-352). Without it
 // `logAudit` is undefined at 11 call sites — including the login/verify success path — so
 // every login threw ReferenceError. Do not remove; server.ts is NOT covered by tsc, so
@@ -1345,6 +1347,17 @@ async function quotaExceeded(accountId: string, kind: "projects" | "sims" | "aut
     code: "quota_exceeded",
     upgradeUrl: "/dashboard?upgrade=pro",
   }
+}
+
+// Snap-only project gating: a project's plan_override column can lock it to Snap-only regardless
+// of the account's billing plan (see lib/entitlement.ts). Checked at the entry of every
+// Sims/AutoSim/AI-settings write/create so a locked project can't reach those features even if
+// billing enforcement is otherwise off. Feedback/tickets/team/widget-config/branding/rename stay open.
+function snapLocked(project: { id: string; planOverride?: string | null }): { error: string; code: "snap_locked"; upgradeUrl: string } | null {
+  if (projectEntitlement(project.planOverride).snapOnly) {
+    return { error: "This project is on the Snap plan. Sims and AutoSims are a Pro feature — upgrade to unlock.", code: "snap_locked", upgradeUrl: `/dashboard?upgrade=pro&project=${encodeURIComponent(project.id)}` }
+  }
+  return null
 }
 
 // ── /api/sim/review dedupe cache (§5: promote the klav_dev_react_* hash). In-process LRU-ish set keyed
@@ -3866,6 +3879,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // projects — the account is the billing unit. Checked AFTER the dedup guard: returning an
           // already-existing Sim never counts as creation.
           const homeProj = await projectById(wid)
+          const simLock = homeProj ? snapLocked(homeProj) : null
+          if (simLock) return wjson(simLock, 402)
           const simQuota = homeProj ? await quotaExceeded(homeProj.accountId, "sims", async () => {
             const accountProjects = (await listProjects(me2)).filter((p) => p.accountId === homeProj.accountId)
             let n = 0
@@ -4134,6 +4149,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const access = await projectAccess(meP, pid)
         if (!access) return json({ error: "No access to this project." }, 403)
         if (access !== "admin") return json({ error: "Only project admins can pause/resume reviews." }, 403)
+        const pauseProj = await projectById(pid)
+        const pauseLock = pauseProj ? snapLocked(pauseProj) : null
+        if (pauseLock) return json(pauseLock, 402)
         const body = await req.json().catch(() => ({}))
         // accept { paused: true } or { mode: 'paused'|'auto' }
         const mode: "paused" | "auto" = body.mode === "auto" || body.paused === false ? "auto" : body.mode === "paused" || body.paused === true ? "paused" : "paused"
@@ -6609,6 +6627,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // (never a 2nd browser on the 1GB box); an unknown trail → 404.
       const walkMatch = path.match(/^\/api\/trails\/([^/]+)\/walk$/)
       if (req.method === "POST" && walkMatch) {
+        const walkProj = await projectById(projectId)
+        const walkLock = walkProj ? snapLocked(walkProj) : null
+        if (walkLock) return json(walkLock, 402)
         try {
           const { runId } = await runWalkNow(projectId, walkMatch[1])
           return json({ runId })
@@ -6642,6 +6663,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         }
       }
       if (req.method === "POST" && path === "/api/trails/author") {
+        const authorProj = await projectById(projectId)
+        const authorLock = authorProj ? snapLocked(authorProj) : null
+        if (authorLock) return json(authorLock, 402)
         const body = await req.json().catch(() => ({}))
         const name = String(body.name || "").trim().slice(0, 80)
         const objective = String(body.objective || "").trim()
@@ -7133,7 +7157,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const projectName = activeProj?.name || "Default Project"
           const projects = allProjects.map(p => ({ id: p.id, name: p.name }))
           // siteUrl: exposed so the Add-a-Sim "Run a review now" panel (JTBD 6.10) can prefill the URL.
-          const activeOut = { id: projectId, name: projectName, role, siteUrl: activeProj?.siteUrl || null }
+          const activeOut = { id: projectId, name: projectName, role, siteUrl: activeProj?.siteUrl || null, planOverride: activeProj?.planOverride ?? null, entitlement: projectEntitlement(activeProj?.planOverride) }
 
           // members — project roster (project_members), mapped to legacy admin|user for the UI.
           const members = (await membersOfProject(projectId)).map(m => ({ email: m.email, role: m.role === "admin" ? "admin" : "user", createdAt: m.createdAt }))
@@ -8410,7 +8434,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return json({ project: { id: created.id, name: created.name, accountId: created.accountId, status: created.status, siteUrl: created.siteUrl, role: "admin" } }, 201)
       }
       // Project detail + members (projectAccess-gated) and project-scoped invite (R4) + monitored-urls (P3b) + connectors.
-      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/branding|\/triage|\/tickets(?:\/bulk)?|\/recurring|\/replays|\/widget-status|\/heartbeat-diagnosis(?:\/email)?|\/share-token|\/labels(?:\/[^/]+)?|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/test)?|\/export-policy|\/export-requests(?:\/[^/]+\/(?:approve|reject))?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send|\/trails-autofile|\/regression-events(?:\/[^/]+\/ack)?)?$/)
+      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/branding|\/triage|\/tickets(?:\/bulk)?|\/recurring|\/replays|\/widget-status|\/heartbeat-diagnosis(?:\/email)?|\/share-token|\/labels(?:\/[^/]+)?|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/test)?|\/export-policy|\/export-requests(?:\/[^/]+\/(?:approve|reject))?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send|\/trails-autofile|\/regression-events(?:\/[^/]+\/ack)?|\/plan)?$/)
       if (projMatch) {
         const pid = projMatch[1]
         const sub = projMatch[2] || ""
@@ -8464,6 +8488,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const midMatch = sub.match(/^\/monitored-urls\/([^/]+)$/)
           if (req.method === "GET" && !midMatch) {
             return json({ monitoredUrls: await listMonitoredUrls(pid) })
+          }
+          // Writes (add/remove/rename/toggle) are AI-configuration surface — gated when Snap-locked.
+          // The read above stays open so a locked project's admin can still see its allowlist.
+          if (req.method !== "GET") {
+            const muLock = snapLocked(proj)
+            if (muLock) return json(muLock, 402)
           }
           if (req.method === "POST" && !midMatch) {
             const body = await req.json().catch(() => ({}))
@@ -9546,7 +9576,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         }
 
         if (req.method === "GET" && sub === "") {
-          return json({ project: { id: proj.id, name: proj.name, accountId: proj.accountId, status: proj.status, reviewMode: proj.reviewMode, observabilityMode: proj.observabilityMode, reviewBudgetDaily: proj.reviewBudgetDaily }, role: access, members: await membersOfProject(pid) })
+          return json({ project: { id: proj.id, name: proj.name, accountId: proj.accountId, status: proj.status, reviewMode: proj.reviewMode, observabilityMode: proj.observabilityMode, reviewBudgetDaily: proj.reviewBudgetDaily, planOverride: proj.planOverride, entitlement: projectEntitlement(proj.planOverride) }, role: access, members: await membersOfProject(pid) })
         }
         if (req.method === "GET" && sub === "/members") {
           return json({ members: await membersOfProject(pid) })
@@ -9578,6 +9608,19 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           return json({ project: { id: updated!.id, name: updated!.name, accountId: updated!.accountId, status: updated!.status, role: access } })
         }
 
+        // Snap-only project gating: admin-only plan override. POST { override: "snap" } locks the
+        // project to Snap-only (blocking Sims/AutoSim/AI-settings regardless of account billing plan);
+        // { override: null } (or anything else) clears the override back to inheriting the account plan.
+        if (sub === "/plan") {
+          if (req.method !== "POST") return json({ error: "Not found" }, 404)
+          if (access !== "admin") return json({ error: "Only project admins can change the plan override." }, 403)
+          const body = await req.json().catch(() => ({}))
+          const val = body.override === "snap" ? "snap" : null
+          await setProjectPlanOverride(pid, val)
+          logAudit({ action: "plan_override_change", actorEmail: me, projectId: pid, ip: clientIp(req, server), meta: { override: val } })
+          return json({ ok: true, project: await projectById(pid) })
+        }
+
         // ── KLAVITYKLA-248: Trails subjective auto-file toggle ────────────────────────────────────
         // GET  /api/projects/:id/trails-autofile — returns { trailsAutofileEnabled: boolean }
         // POST /api/projects/:id/trails-autofile — { enabled: boolean } — set the per-project flag.
@@ -9589,6 +9632,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           }
           if (req.method === "POST") {
             if (access !== "admin") return json({ error: "Only project admins can change auto-file settings." }, 403)
+            const autofileLock = snapLocked(proj)
+            if (autofileLock) return json(autofileLock, 402)
             const body = await req.json().catch(() => ({}))
             if (typeof body.enabled !== "boolean") return json({ error: "enabled (boolean) is required." }, 400)
             await setProjectTrailsAutofile(pid, body.enabled)
