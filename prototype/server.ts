@@ -26,6 +26,7 @@ import { pushCommentToLinkedIssues } from "./lib/connectors/comment-sync"
 import { syncFieldsToLinkedIssues } from "./lib/connectors/field-sync"
 import { importExternalIssues } from "./lib/connectors/import"
 import { deriveHealth } from "./lib/connectors/health"
+import { autoMatch } from "./lib/connector-automatch"
 import { applyReconcileOps, recurrenceFromEvents, pickCitation, groundQuote, type ReconcileOp, type Trait, type TraitEventRow } from "./lib/provenance"
 import { parseTranscript, speakersFromLines, offsetToTime, formatTs } from "./lib/transcript-parse"
 import { sendOtp, sendLeadAlert, sendTicketAssignmentEmail, sendTicketAssignmentInviteEmail, sendMemberInviteEmail, sendInstallInstructionsEmail } from "./lib/mail"
@@ -8584,6 +8585,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // because `^\/connectors\/([^/]+)$` would otherwise capture cid="test".
           const testNoCid = sub === "/connectors/test"
           const cidTestMatch = sub.match(/^\/connectors\/([^/]+)\/test$/)
+          // Connector-field-mapping (Task 8): fetch the tracker's issue types/statuses + run the
+          // pure auto-match lib server-side, for the connect-flow mapping UI. Matched before the
+          // generic /connectors/:cid handler for the same reason as the test routes.
+          const metaNoCid = sub === "/connectors/meta"
           // JTBD 5.10 (KLA-289): import external-first issues from a saved connector. Matched before
           // the generic /connectors/:cid handler for the same reason as the test routes.
           const cidImportMatch = sub.match(/^\/connectors\/([^/]+)\/import$/)
@@ -8616,6 +8621,53 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               // A10: never echo guard/upstream/internal text — generic message + logged correlation id.
               const o = oops(e, "connector-test")
               return json({ ok: false, error: o.error, id: o.id })
+            }
+          }
+
+          // POST /api/projects/:pid/connectors/meta — Connector-field-mapping (Task 8): fetch the
+          // tracker's issue types + statuses (from a posted unsaved config, or a saved cid) and
+          // run the pure auto-match lib server-side, so the connect-flow mapping UI can render
+          // suggested mappings + flag ambiguous/unmatched rows (admin only).
+          if (req.method === "POST" && metaNoCid) {
+            if (access !== "admin") return json({ error: "Only project admins can manage connectors." }, 403)
+            const body = await req.json().catch(() => ({}))
+            const type = String(body.type || "")
+            let config: Record<string, string> = (body.config && typeof body.config === "object") ? body.config : {}
+            const adapter = getConnector(type)
+            if (!adapter) return json({ error: `Unknown connector type: ${type}` }, 400)
+            // if a saved cid is passed, load + decrypt (reuse the /cid/test decrypt loop); else use posted config
+            if (body.cid) {
+              const connector = await getConnectorById(pid, String(body.cid))
+              if (!connector) return json({ error: "Connector not found." }, 404)
+              config = { ...connector.config }
+              for (const f of adapter.fields) {
+                if (f.secret && connector.config[f.key]) {
+                  try { config[f.key] = await decryptSecret(connector.config[f.key]) }
+                  catch { config[f.key] = "" }
+                }
+              }
+            }
+            const caps = adapter.capabilities ?? { issueTypes: false, statuses: false }
+            try {
+              const [issueTypes, statuses] = await Promise.all([
+                adapter.listIssueTypes ? adapter.listIssueTypes(config) : Promise.resolve([]),
+                adapter.listStatuses ? adapter.listStatuses(config) : Promise.resolve([]),
+              ])
+              const typeOpts = issueTypes.map(t => t.name)
+              const statusOpts = statuses.map(s => s.name)
+              const KINDS = [{ key: "bug", label: "Bug" }, { key: "feature", label: "Feature" }]
+              const STATUSES = [{ key: "new", label: "New" }, { key: "open", label: "Open" }, { key: "in_progress", label: "In Progress" }, { key: "done", label: "Done" }, { key: "dismissed", label: "Dismissed" }]
+              const typeRows = KINDS.map(k => autoMatch(k, typeOpts))
+              const statusRows = STATUSES.map(s => autoMatch(s, statusOpts))
+              const issue_type_map: Record<string, string> = {}
+              for (const r of typeRows) if (r.suggested) issue_type_map[r.key] = r.suggested
+              const status_map: Record<string, string> = {}
+              for (const r of statusRows) if (r.suggested) status_map[r.key] = r.suggested
+              return json({ capabilities: caps, issueTypes, statuses, rows: { types: typeRows, statuses: statusRows }, suggested: { issue_type_map, status_map } })
+            } catch (e: any) {
+              // A10: never echo guard/upstream/internal text — generic message + logged correlation id.
+              const o = oops(e, "connector-meta")
+              return json({ ok: false, error: o.error, id: o.id }, 502)
             }
           }
 
