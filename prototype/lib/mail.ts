@@ -1,3 +1,5 @@
+import { logOutboundEmail } from "./db"
+
 // A short, on-brand line under the code — picks one deterministically from the
 // code so it varies between sends but stays stable for a given code (testable,
 // no Math.random). Same energy as a sign-in email that doesn't feel robotic.
@@ -62,74 +64,101 @@ export function otpEmailHtml(code: string): string {
 </body></html>`
 }
 
-// Email OTP via SendGrid (raw API; no SDK). Requires a VERIFIED sender.
-export async function sendOtp(to: string, code: string) {
+// Shared SendGrid transport for every transactional send in this file. Does the single fetch,
+// captures the response status + SendGrid's x-message-id header, and best-effort logs one
+// email_log row PER RECIPIENT (so a multi-personalization send like sendReportAlertEmail gets
+// one row per address) — success or failure. Preserves the pre-existing contract: throws
+// `SendGrid ${status}: ${body}` on a non-2xx response, after logging.
+async function sgSend(params: {
+  from: { email: string; name: string }
+  to: string[]
+  subject: string
+  content: Array<{ type: string; value: string }>
+  type: string
+}): Promise<void> {
   const key = process.env.SENDGRID_API_KEY
-  const from = process.env.KLAV_MAIL_FROM || "noreply@klavity.in"
   if (!key) throw new Error("SENDGRID_API_KEY not set")
   const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" },
     body: JSON.stringify({
-      personalizations: [{ to: [{ email: to }] }],
-      from: { email: from, name: "Klavity" },
-      subject: `Your Klavity code: ${code}`,
-      content: [
-        { type: "text/plain", value: `Your Klavity sign-in code is ${code}\n\nIt expires in 10 minutes. If you didn't request it, ignore this email.` },
-        { type: "text/html", value: otpEmailHtml(code) },
-      ],
+      personalizations: params.to.map((email) => ({ to: [{ email }] })),
+      from: params.from,
+      subject: params.subject,
+      content: params.content,
     }),
   })
-  if (!res.ok) throw new Error(`SendGrid ${res.status}: ${(await res.text()).slice(0, 200)}`)
+  const messageId = res.headers.get("x-message-id")
+  const errorText = res.ok ? null : (await res.text()).slice(0, 200)
+  await Promise.all(
+    params.to.map((email) =>
+      logOutboundEmail({
+        type: params.type,
+        to: email,
+        subject: params.subject,
+        messageId,
+        httpStatus: res.status,
+        status: res.ok ? "sent" : "failed",
+        error: errorText,
+      }),
+    ),
+  )
+  if (!res.ok) throw new Error(`SendGrid ${res.status}: ${errorText}`)
+}
+
+// Email OTP via SendGrid (raw API; no SDK). Requires a VERIFIED sender.
+export async function sendOtp(to: string, code: string) {
+  const from = process.env.KLAV_MAIL_FROM || "noreply@klavity.in"
+  if (!process.env.SENDGRID_API_KEY) throw new Error("SENDGRID_API_KEY not set")
+  await sgSend({
+    to: [to],
+    from: { email: from, name: "Klavity" },
+    subject: `Your Klavity code: ${code}`,
+    content: [
+      { type: "text/plain", value: `Your Klavity sign-in code is ${code}\n\nIt expires in 10 minutes. If you didn't request it, ignore this email.` },
+      { type: "text/html", value: otpEmailHtml(code) },
+    ],
+    type: "otp",
+  })
 }
 
 // Founder alert on new bug/feature reports (lib/report-alert.ts). Same SendGrid transport as the
 // OTP mail above; one API call, individual copies per recipient (separate personalizations so
 // member addresses aren't exposed to each other in the To header).
 export async function sendReportAlertEmail(to: string[], subject: string, html: string, text: string) {
-  const key = process.env.SENDGRID_API_KEY
   const from = process.env.KLAV_MAIL_FROM || "noreply@klavity.in"
-  if (!key) throw new Error("SENDGRID_API_KEY not set")
+  if (!process.env.SENDGRID_API_KEY) throw new Error("SENDGRID_API_KEY not set")
   if (!to.length) return
-  const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" },
-    body: JSON.stringify({
-      personalizations: to.map((email) => ({ to: [{ email }] })),
-      from: { email: from, name: "Klavity" },
-      subject,
-      content: [
-        { type: "text/plain", value: text },
-        { type: "text/html", value: html },
-      ],
-    }),
+  await sgSend({
+    to,
+    from: { email: from, name: "Klavity" },
+    subject,
+    content: [
+      { type: "text/plain", value: text },
+      { type: "text/html", value: html },
+    ],
+    type: "report_alert",
   })
-  if (!res.ok) throw new Error(`SendGrid ${res.status}: ${(await res.text()).slice(0, 200)}`)
 }
 
 export async function sendLeadAlert(to: string, lead: { email: string; description: string; pageUrl: string; referrer?: string; projectName: string; feedbackUrl: string }) {
-  const key = process.env.SENDGRID_API_KEY
   const from = process.env.KLAV_MAIL_FROM || "noreply@klavity.in"
-  if (!key) throw new Error("SENDGRID_API_KEY not set")
+  if (!process.env.SENDGRID_API_KEY) throw new Error("SENDGRID_API_KEY not set")
   const esc = (s: string) => s.replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c] as string))
-  const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" },
-    body: JSON.stringify({
-      personalizations: [{ to: [{ email: to }] }],
-      from: { email: from, name: "Klavity Leads" },
-      subject: `🌱 New Klavity lead: ${lead.email}`,
-      content: [{ type: "text/html", value:
-        `<div style="font-family:system-ui,sans-serif;color:#1d1d1f">
-         <p><b>New lead</b> from the ${esc(lead.projectName)} widget.</p>
-         <p>Email: <b>${esc(lead.email)}</b></p>
-         <p>They reported: ${esc(lead.description)}</p>
-         <p>Page: ${esc(lead.pageUrl)}</p>
-         ${lead.referrer ? `<p>Came from: ${esc(lead.referrer)}</p>` : ""}
-         <p><a href="${esc(lead.feedbackUrl)}">Open in Klavity →</a></p></div>` }],
-    }),
+  await sgSend({
+    to: [to],
+    from: { email: from, name: "Klavity Leads" },
+    subject: `🌱 New Klavity lead: ${lead.email}`,
+    content: [{ type: "text/html", value:
+      `<div style="font-family:system-ui,sans-serif;color:#1d1d1f">
+       <p><b>New lead</b> from the ${esc(lead.projectName)} widget.</p>
+       <p>Email: <b>${esc(lead.email)}</b></p>
+       <p>They reported: ${esc(lead.description)}</p>
+       <p>Page: ${esc(lead.pageUrl)}</p>
+       ${lead.referrer ? `<p>Came from: ${esc(lead.referrer)}</p>` : ""}
+       <p><a href="${esc(lead.feedbackUrl)}">Open in Klavity →</a></p></div>` }],
+    type: "lead_alert",
   })
-  if (!res.ok) throw new Error(`SendGrid ${res.status}: ${(await res.text()).slice(0, 200)}`)
 }
 
 // notify-on-fix: sent to the bug reporter (contact_email) when their ticket is marked done/fixed
@@ -185,9 +214,8 @@ function escMail(s: string): string {
 }
 
 export async function sendTicketAssignmentEmail(input: TicketAssignmentEmail) {
-  const key = process.env.SENDGRID_API_KEY
   const from = process.env.KLAV_MAIL_FROM || "noreply@klavity.in"
-  if (!key) throw new Error("SENDGRID_API_KEY not set")
+  if (!process.env.SENDGRID_API_KEY) throw new Error("SENDGRID_API_KEY not set")
   const project = input.projectName ? ` in ${input.projectName}` : ""
   const actor = input.assignedBy ? ` by ${input.assignedBy}` : ""
   const subject = `Klavity ticket assigned to you${project}`
@@ -204,20 +232,16 @@ export async function sendTicketAssignmentEmail(input: TicketAssignmentEmail) {
     ${input.projectName ? `<p>Project: ${escMail(input.projectName)}</p>` : ""}
     <p><a href="${escMail(input.ticketUrl)}">Open ticket</a></p>
   </div>`
-  const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" },
-    body: JSON.stringify({
-      personalizations: [{ to: [{ email: input.to }] }],
-      from: { email: from, name: "Klavity" },
-      subject,
-      content: [
-        { type: "text/plain", value: text },
-        { type: "text/html", value: html },
-      ],
-    }),
+  await sgSend({
+    to: [input.to],
+    from: { email: from, name: "Klavity" },
+    subject,
+    content: [
+      { type: "text/plain", value: text },
+      { type: "text/html", value: html },
+    ],
+    type: "ticket_assignment",
   })
-  if (!res.ok) throw new Error(`SendGrid ${res.status}: ${(await res.text()).slice(0, 200)}`)
 }
 
 // ── First-class member invite (KLAVITYKLA-294, JTBD 6.4) ──
@@ -232,9 +256,8 @@ export type MemberInviteEmail = {
 }
 
 export async function sendMemberInviteEmail(input: MemberInviteEmail) {
-  const key = process.env.SENDGRID_API_KEY
   const from = process.env.KLAV_MAIL_FROM || "noreply@klavity.in"
-  if (!key) throw new Error("SENDGRID_API_KEY not set")
+  if (!process.env.SENDGRID_API_KEY) throw new Error("SENDGRID_API_KEY not set")
   const projectPlain = input.projectName || "Klavity"
   const inviterPlain = input.invitedBy || "A teammate"
   const project = input.projectName ? ` to ${input.projectName}` : ""
@@ -298,20 +321,16 @@ export async function sendMemberInviteEmail(input: MemberInviteEmail) {
     <p style="margin:18px 0 0;${f};font-size:11px;color:#b6b3c0">Sent by Klavity &middot; AI that finds your bugs before your users do</p>
   </td></tr></table>
 </body>`
-  const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" },
-    body: JSON.stringify({
-      personalizations: [{ to: [{ email: input.to }] }],
-      from: { email: from, name: "Klavity" },
-      subject,
-      content: [
-        { type: "text/plain", value: text },
-        { type: "text/html", value: html },
-      ],
-    }),
+  await sgSend({
+    to: [input.to],
+    from: { email: from, name: "Klavity" },
+    subject,
+    content: [
+      { type: "text/plain", value: text },
+      { type: "text/html", value: html },
+    ],
+    type: "member_invite",
   })
-  if (!res.ok) throw new Error(`SendGrid ${res.status}: ${(await res.text()).slice(0, 200)}`)
 }
 
 // Onboarding hand-off: a non-technical user emails the widget install snippet to their developer.
@@ -325,9 +344,8 @@ export type InstallInstructionsEmail = {
 }
 
 export async function sendInstallInstructionsEmail(input: InstallInstructionsEmail) {
-  const key = process.env.SENDGRID_API_KEY
   const from = process.env.KLAV_MAIL_FROM || "noreply@klavity.in"
-  if (!key) throw new Error("SENDGRID_API_KEY not set")
+  if (!process.env.SENDGRID_API_KEY) throw new Error("SENDGRID_API_KEY not set")
   const host = input.widgetHost.replace(/\/+$/, "")
   const snippet = `<script src="${host}/widget.js" data-project="${input.projectId}" defer></script>`
   const who = input.senderEmail ? `${input.senderEmail} asked you` : "You've been asked"
@@ -351,20 +369,16 @@ export async function sendInstallInstructionsEmail(input: InstallInstructionsEma
     <p style="color:#555">That's it — visitors report bugs with one click, and each report arrives with a screenshot, console logs and network activity attached.</p>
     ${input.dashboardUrl ? `<p><a href="${escMail(input.dashboardUrl)}">Manage reports in Klavity →</a></p>` : ""}
   </div>`
-  const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" },
-    body: JSON.stringify({
-      personalizations: [{ to: [{ email: input.to }] }],
-      from: { email: from, name: "Klavity" },
-      subject,
-      content: [
-        { type: "text/plain", value: text },
-        { type: "text/html", value: html },
-      ],
-    }),
+  await sgSend({
+    to: [input.to],
+    from: { email: from, name: "Klavity" },
+    subject,
+    content: [
+      { type: "text/plain", value: text },
+      { type: "text/html", value: html },
+    ],
+    type: "install",
   })
-  if (!res.ok) throw new Error(`SendGrid ${res.status}: ${(await res.text()).slice(0, 200)}`)
 }
 
 export type TicketAssignmentInviteEmail = TicketAssignmentEmail & {
@@ -372,9 +386,8 @@ export type TicketAssignmentInviteEmail = TicketAssignmentEmail & {
 }
 
 export async function sendTicketAssignmentInviteEmail(input: TicketAssignmentInviteEmail) {
-  const key = process.env.SENDGRID_API_KEY
   const from = process.env.KLAV_MAIL_FROM || "noreply@klavity.in"
-  if (!key) throw new Error("SENDGRID_API_KEY not set")
+  if (!process.env.SENDGRID_API_KEY) throw new Error("SENDGRID_API_KEY not set")
   const project = input.projectName ? ` to ${input.projectName}` : ""
   const actor = input.assignedBy ? ` by ${input.assignedBy}` : ""
   const subject = `You're invited${project} on Klavity`
@@ -391,18 +404,14 @@ export async function sendTicketAssignmentInviteEmail(input: TicketAssignmentInv
     ${input.projectName ? `<p>Project: ${escMail(input.projectName)}</p>` : ""}
     <p><a href="${escMail(input.joinUrl)}">Join and view the ticket</a></p>
   </div>`
-  const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" },
-    body: JSON.stringify({
-      personalizations: [{ to: [{ email: input.to }] }],
-      from: { email: from, name: "Klavity" },
-      subject,
-      content: [
-        { type: "text/plain", value: text },
-        { type: "text/html", value: html },
-      ],
-    }),
+  await sgSend({
+    to: [input.to],
+    from: { email: from, name: "Klavity" },
+    subject,
+    content: [
+      { type: "text/plain", value: text },
+      { type: "text/html", value: html },
+    ],
+    type: "ticket_assignment_invite",
   })
-  if (!res.ok) throw new Error(`SendGrid ${res.status}: ${(await res.text()).slice(0, 200)}`)
 }
