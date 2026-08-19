@@ -201,25 +201,15 @@ input.code{font-family:var(--mono);font-size:24px;letter-spacing:.5em;text-align
 .li.done .cbead{background:var(--green-ghost);border-color:var(--green);color:var(--green)}
 .li.act .cbead{background:var(--indigo);border-color:var(--indigo);color:#fff}
 
-/* stats + finding */
-.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px}
-.stat{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:16px 18px}
-.stat .n{font-size:30px;font-weight:780;line-height:1}
-.stat .l{color:var(--muted);font-size:12.5px;margin-top:6px}
-.sev{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;font-weight:700;
-  letter-spacing:.03em;border-radius:999px;padding:2px 10px}
-.sev.crit{background:var(--rose-ghost);color:var(--rose)}
-.conf{font-family:var(--mono);font-size:11px;color:var(--muted);background:var(--bg);border:1px solid var(--line);
-  border-radius:999px;padding:2px 9px}
-.evi{border:1px solid var(--line);border-radius:11px;overflow:hidden;margin-top:8px}
-.evi .r{display:flex;justify-content:space-between;padding:9px 13px;border-top:1px solid var(--line2);font-size:12.5px}
-.evi .r:first-child{border-top:none} .evi .r .k{color:var(--muted)} .evi .r .v{color:var(--ink2)}
-.steps-num{counter-reset:st;margin:6px 0 0;padding:0;list-style:none}
-.steps-num li{counter-increment:st;position:relative;padding:3px 0 3px 26px;color:var(--ink2);font-size:13.5px}
-.steps-num li:before{content:counter(st);position:absolute;left:0;top:3px;width:18px;height:18px;border-radius:50%;
-  background:var(--indigo-ghost);color:var(--indigo);font-size:11px;font-weight:700;display:grid;place-items:center}
-.recfix{background:var(--green-ghost);border:1px solid var(--line);border-radius:11px;padding:11px 13px;margin-top:14px;font-size:13px}
-.recfix b{color:var(--green)}
+/* real-result card (Step 4 first result — no canned stats, real reaction only) */
+.rescard-head{display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line2);flex-wrap:wrap}
+.rescard-persona{font-size:15px} .rescard-persona b{color:var(--ink)} .rescard-persona span{color:var(--muted);font-weight:500;margin-left:4px}
+.sentbadge{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;font-weight:700;
+  letter-spacing:.03em;border-radius:999px;padding:2px 10px;text-transform:capitalize}
+.sentbadge.amber{background:var(--amber-ghost);color:var(--amber)}
+.sentbadge.rose{background:var(--rose-ghost);color:var(--rose)}
+.sentbadge.green{background:var(--green-ghost);color:var(--green)}
+.sentbadge.muted{background:var(--line2);color:var(--muted)}
 .rx-live{border-left:3px solid var(--indigo);padding:10px 0 10px 13px;margin-bottom:16px;background:var(--indigo-ghost);
   border-radius:0 10px 10px 0;padding-right:13px}
 .rx-live .rx-lead{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--indigo);margin-bottom:6px}
@@ -462,40 +452,13 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   <!-- ═════════ STEP 4 · INSIGHTS — first result (data-s=3) ═════════ -->
   <section class="screen" data-s="3">
     <div class="kicker green">Step 4 · Your first result</div>
-    <h1 class="hd">Your first test is <em>complete.</em></h1>
-    <p class="sub">Klavity tested your journeys and found issues worth your attention — with the receipts.</p>
-    <div class="stats">
-      <div class="stat"><div class="n" style="color:var(--indigo)">3</div><div class="l">Issues found</div></div>
-      <div class="stat"><div class="n" style="color:var(--rose)">1</div><div class="l">Critical</div></div>
-      <div class="stat"><div class="n" style="color:var(--amber)">2</div><div class="l">Usability</div></div>
-    </div>
-    <!-- Live reaction (from /api/sim/preview) is injected here as a finding when present -->
+    <h1 class="hd">Your Sim just reacted, <em>live.</em></h1>
+    <p class="sub">This is one real reaction from your first Sim on your real page — not a demo. Save your project to run the full review across every persona, with findings filed straight to your tracker.</p>
+    <!-- Real reaction (from /api/sim/preview) is rendered here — persona, sentiment, observation,
+         and the actual captured screenshot with the reaction region. No canned findings. -->
     <div id="insightLive"></div>
-    <div class="card">
-      <div class="pad" style="display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--line2);flex-wrap:wrap">
-        <span class="sev crit">CRITICAL</span><span class="conf">confidence 96%</span>
-        <b style="font-size:17px">Checkout button fails on mobile</b>
-      </div>
-      <div class="pad cols">
-        <div>
-          <div style="font-weight:650;margin-bottom:4px">Why this matters</div>
-          <p style="color:var(--ink2);margin:0 0 14px">Users can't complete checkout on smaller screens — the primary CTA is pushed below the viewport and never becomes tappable.</p>
-          <div style="font-weight:650">Reproduction steps</div>
-          <ol class="steps-num"><li>Open the product on a 375px viewport</li><li>Add any item and go to checkout</li><li>Attempt to tap "Pay now" — button is off-screen</li></ol>
-          <div class="recfix"><b>Recommended fix:</b> pin the mobile checkout CTA to a sticky footer below 400px.</div>
-        </div>
-        <div>
-          <div style="font-weight:650;margin-bottom:8px">Evidence</div>
-          <div class="evi">
-            <div class="r"><span class="k">Screenshot</span><span class="v mono" id="eviShotName">captured live</span></div>
-            <div class="r"><span class="k">Device</span><span class="v mono">iPhone 14 · 375×812 · Safari</span></div>
-            <div class="r"><span class="k">Console</span><span class="v mono">TypeError: cta.offsetTop…</span></div>
-          </div>
-        </div>
-      </div>
-    </div>
     <div class="row">
-      <span class="helper">See the other 2 findings in your dashboard once you save.</span>
+      <span class="helper">Save your project to get the complete review — every persona, every finding.</span>
       <button class="btn btn-indigo" onclick="go(S.SIGNUP)" style="margin-left:auto">Save my results →</button>
     </div>
   </section>
@@ -780,10 +743,14 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         var st=JSON.parse(localStorage.getItem('klav-aha-preview')||'{}')||{}
         st.reactionText=String(rx.observation||rx.title||'')
         st.reactionTitle=String(rx.title||'')
+        st.sentiment=String(rx.sentiment||'neutral')
+        st.personaName=String(pname||'')
+        st.personaRole=String((persona&&persona.role)||'')
         if(d.shotDataUrl) st.shotDataUrl=String(d.shotDataUrl)
         if(d.region) st.region=d.region
         localStorage.setItem('klav-aha-preview',JSON.stringify(st))
       }catch(e){}
+      window._ahaReaction={reactionText:String(rx.observation||rx.title||''),reactionTitle:String(rx.title||''),sentiment:String(rx.sentiment||'neutral'),personaName:String(pname||''),personaRole:String((persona&&persona.role)||'')}
       var sent=String(rx.sentiment||'neutral')
       var word=sent==='critical'?(esc(pname)+' found something before your users would:'):(esc(pname)+' reacted to your real page:')
       node.innerHTML='<div class="uh-label">'+word+'</div>'
@@ -1041,12 +1008,24 @@ function renderInsightLive(){
   const title = (st && st.reactionTitle) || ''
   const shot = (st && st.shotDataUrl) || ''
   const region = (st && st.region) || null
+  const sentiment = ((st && st.sentiment) || 'neutral').toLowerCase()
+  const personaName = (st && st.personaName) || ((st && st.personas && st.personas[0] && st.personas[0].name) || 'Your Sim')
+  const personaRole = (st && st.personaRole) || ((st && st.personas && st.personas[0] && st.personas[0].role) || '')
   let host = ''
   try { if (st && st.url) host = new URL(st.url).hostname.replace(/^www\./,'') } catch(e){}
-  // Never present a fake screenshot filename as if real \u2014 reflect the real captured host (or a
-  // neutral "captured live") on the sample evidence card below.
-  const eviName = $('eviShotName'); if (eviName) eviName.textContent = host ? ('captured from ' + host) : 'captured live'
-  if (!txt && !shot){ slot.innerHTML = ''; return }
+  // Honest empty state \u2014 no reaction/screenshot yet (demo path or a capture failure). Never fall
+  // back to a canned finding; just say the truth and point at signup, where the real review lands.
+  if (!txt && !shot){
+    slot.innerHTML = '<div class="card"><div class="pad" style="color:var(--muted)">Your Sim is reviewing your page \u2014 save your project to see the full result.</div></div>'
+    return
+  }
+  const sentColor = (sentiment === 'frustrated' || sentiment === 'confused' || sentiment === 'critical') ? 'rose'
+    : (sentiment === 'satisfied' || sentiment === 'delighted' || sentiment === 'happy') ? 'green'
+    : (sentiment === 'neutral') ? 'muted' : 'amber'
+  const head = '<div class="pad rescard-head">'
+    + '<span class="rescard-persona"><b>' + esc(personaName) + '</b>' + (personaRole ? '<span>' + esc(personaRole) + '</span>' : '') + '</span>'
+    + '<span class="sentbadge ' + sentColor + '">' + esc(sentiment) + '</span>'
+    + '</div>'
   // Real visual evidence: the captured screenshot with the reaction region drawn as a highlighted
   // 0..1 box (percentage-positioned, so it scales with the rendered image). Graceful text fallback
   // ("captured from <host>") when no shot/region is present (e.g. the demo path).
@@ -1062,10 +1041,13 @@ function renderInsightLive(){
   } else if (host){
     evi = '<div class="rx-cap">Captured from ' + esc(host) + '</div>'
   }
-  slot.innerHTML = '<div class="rx-live"><div class="rx-lead">Your Sim caught this on your real page</div>'
+  const body = '<div class="pad">'
+    + '<div style="font-weight:650;margin-bottom:4px">What your Sim noticed</div>'
     + (title ? '<div class="rx-title">' + esc(title) + '</div>' : '')
-    + (txt ? '<div class="rx-obs">\u201c' + esc(txt) + '\u201d</div>' : '')
-    + evi + '</div>'
+    + (txt ? '<p style="color:var(--ink2);margin:0;font-style:italic">\u201c' + esc(txt) + '\u201d</p>' : '')
+    + evi
+    + '</div>'
+  slot.innerHTML = '<div class="card">' + head + body + '</div>'
 }
 
 // ── Step 4 · Insights: tracker connector choice. No backend commit — stashed + carried. ──
