@@ -163,10 +163,7 @@ export const linearConnector: Connector = {
     if (!res.ok) {
       const text = (await res.text().catch(() => "")).slice(0, 200)
       console.error(`linear upstream error ${res.status}: ${text}`)
-      const err = new Error(`tracker request failed (HTTP ${res.status})`)
-      ;(err as any).upstreamStatus = res.status
-      ;(err as any).upstreamBody = text
-      throw err
+      throw new Error(`tracker request failed (HTTP ${res.status})`)
     }
 
     const json = await res.json()
