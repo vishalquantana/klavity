@@ -4878,8 +4878,10 @@ async function removeMemberClick(btn) {
 const STATUS_LABELS = { new: "New", open: "Open", in_progress: "In Progress", done: "Done", dismissed: "Dismissed" }
 
 function projectMemberEmails() {
-  const fromMembers = (state.members || []).map(m => m.email)
-  const fromTickets = (state.tickets || []).map(t => t.assignee)
+  // `state` is still null when a deep link (/dashboard#tickets) renders this view before the first
+  // data load — reading .members threw and aborted the rest of the bootstrap.
+  const fromMembers = ((state && state.members) || []).map(m => m.email)
+  const fromTickets = ((state && state.tickets) || []).map(t => t.assignee)
   return [...new Set([...fromMembers, ...fromTickets].filter(Boolean).map(e => String(e).trim().toLowerCase()).filter(Boolean))].sort()
 }
 function refreshAssigneeOptions() {
@@ -11407,29 +11409,31 @@ load()
     })
     document.getElementById("ntBg").addEventListener("click",function(e){if(e.target===this)this.classList.remove("show")})
 
-    // KLAVITYKLA-198: wire the "+ New ticket" button in the Tickets toolbar
-    const newTicketBtn = document.getElementById("newTicketBtn")
-    if (newTicketBtn) newTicketBtn.addEventListener("click", openNewTicketModal)
-
-    // KLA-173: new ticket modal wiring
-    const newTktBg = document.getElementById("newTktBg")
-    if (newTktBg) {
-      newTktBg.addEventListener("click", function(e) { if (e.target === this) closeNewTicketModal() })
-      const closeBtn = document.getElementById("newTktClose")
-      if (closeBtn) closeBtn.addEventListener("click", closeNewTicketModal)
-      const cancelBtn = document.getElementById("newTktCancel")
-      if (cancelBtn) cancelBtn.addEventListener("click", closeNewTicketModal)
-      const submitBtn = document.getElementById("newTktSubmit")
-      if (submitBtn) submitBtn.addEventListener("click", submitNewTicket)
-      const titleInp = document.getElementById("newTktTitleInp")
-      if (titleInp) titleInp.addEventListener("keydown", function(e) {
-        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitNewTicket() }
-      })
-    }
-
     // kick off data load
     loadAccounts();load();loadExpectations();reattachActiveAuthorSession();loadResumableDrafts()
   }
+  // KLAVITYKLA-198 / KLA-173: "+ New ticket" button + its compose modal. This wiring used to sit
+  // INSIDE initTrailsView, which only runs when the AutoSims view is opened — so on a normal visit
+  // to Tickets the button (and the modal's Create/Cancel/Enter) stayed dead unless you happened to
+  // open AutoSims first. It belongs out here in the load-time IIFE: both #newTicketBtn (Tickets
+  // toolbar) and #newTktBg (modal markup) are parsed well before this script tag.
+  const newTicketBtn = document.getElementById("newTicketBtn")
+  if (newTicketBtn) newTicketBtn.addEventListener("click", openNewTicketModal)
+  const newTktBg = document.getElementById("newTktBg")
+  if (newTktBg) {
+    newTktBg.addEventListener("click", function(e) { if (e.target === this) closeNewTicketModal() })
+    const closeBtn = document.getElementById("newTktClose")
+    if (closeBtn) closeBtn.addEventListener("click", closeNewTicketModal)
+    const cancelBtn = document.getElementById("newTktCancel")
+    if (cancelBtn) cancelBtn.addEventListener("click", closeNewTicketModal)
+    const submitBtn = document.getElementById("newTktSubmit")
+    if (submitBtn) submitBtn.addEventListener("click", submitNewTicket)
+    const titleInp = document.getElementById("newTktTitleInp")
+    if (titleInp) titleInp.addEventListener("keydown", function(e) {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitNewTicket() }
+    })
+  }
+
   // expose openWizard for inline onclick="openWizard()" in onboarding HTML
   window.openWizard=openWizard
   // B.10: the Guards board is its own top-level view now — expose its loader so the sidebar's
