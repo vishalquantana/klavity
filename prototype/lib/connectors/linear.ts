@@ -1,7 +1,16 @@
-import type { Connector, TicketPayload, ExportResult, CommentSyncResult, FieldUpdate, FieldSyncResult, ImportedIssue } from "./index"
+import type { Connector, TicketPayload, ExportResult, CommentSyncResult, FieldUpdate, FieldSyncResult, ImportedIssue, ConnectorMeta } from "./index"
 import { safeFetch } from "../safe-fetch"
+import { resolveIssueType } from "./resolve-issue-type"
 
-const LINEAR_API = "https://api.linear.app/graphql"
+// Connector-field-mapping: overridable via KLAV_LINEAR_API so tests can point this at a loopback
+// fake (Linear has no sandbox). Prod always uses the real api.linear.app/graphql default. Read
+// lazily (a function, not a module-level const) because bun's test runner shares one module
+// registry across test files — a top-level const would freeze on whichever value was live the
+// FIRST time any test file imported "./linear" (directly or via "./index"), before this file's
+// own test sets KLAV_LINEAR_API and dynamically imports it.
+function linearApi(): string {
+  return process.env.KLAV_LINEAR_API || "https://api.linear.app/graphql"
+}
 
 // JTBD 5.10: reverse of linearPriority — map Linear's priority Int back onto Klavity's vocabulary
 // (0 none → null). Used on IMPORT so an issue keeps its priority when pulled into Klavity.
@@ -60,7 +69,7 @@ async function uploadAttachment(
 ): Promise<string | null> {
   // step 1 — request a presigned upload slot.
   const res = await safeFetch(
-    LINEAR_API,
+    linearApi(),
     {
       method: "POST",
       headers: { "Authorization": api_key, "Content-Type": "application/json" },
@@ -97,6 +106,10 @@ async function uploadAttachment(
 export const linearConnector: Connector = {
   type: "linear",
   label: "Linear",
+  // Connector-field-mapping: Linear has no native issue-type concept — it uses labels instead.
+  // typesAsLabels tells the mapping UI that listIssueTypes returns team LABELS (not native
+  // types), and that createIssue applies the kind→label mapping via a label, not a type field.
+  capabilities: { issueTypes: false, statuses: true, typesAsLabels: true },
   fields: [
     { key: "api_key", label: "API Key", required: true, secret: true },
     { key: "team_id", label: "Team ID", required: true, placeholder: "TEAM-UUID" },
@@ -120,10 +133,17 @@ export const linearConnector: Connector = {
     // Wrapped per-attachment so a failure NEVER blocks issue creation (the body keeps the
     // permanent fallback link). No-op when there are no attachments (unchanged behavior).
     let description = ticket.body
+    // Connector-field-mapping (typesAsLabels): Linear has no native issue-type field, so the
+    // bug/feature kind is applied as a LABEL (per capabilities.typesAsLabels above). Resolve it
+    // through issue_type_map same as every other connector, then fold it into the same label-name
+    // set the description's "Labels:" line already renders. Best-effort — an empty/unmatched
+    // kindLabel is simply omitted, never fails the create.
+    const kindLabel = resolveIssueType(cfg, ticket.kind, "")
+    const allLabels = [...(ticket.labels ?? []), ...(kindLabel ? [kindLabel] : [])]
     // JTBD 2.16: Linear applies labels by UUID (labelIds), not by name, so mapping Klavity's
     // label names onto native Linear labels needs a version-dependent lookup. Carry the
     // classification in the issue description instead so the exported ticket keeps its labels.
-    if (ticket.labels?.length) description += `\n\nLabels: ${ticket.labels.join(", ")}`
+    if (allLabels.length) description += `\n\nLabels: ${allLabels.join(", ")}`
     const attachFailures: string[] = []
     for (const att of ticket.attachments ?? []) {
       try {
@@ -142,7 +162,7 @@ export const linearConnector: Connector = {
     // linear.app and re-validates every hop — rejecting any private/loopback resolution
     // (e.g. DNS-rebinding) or a redirect off-host before sending the API key.
     const res = await safeFetch(
-      LINEAR_API,
+      linearApi(),
       {
         method: "POST",
         headers: {
@@ -222,7 +242,7 @@ export const linearConnector: Connector = {
       // Step 1: resolve the issue's internal UUID from the identifier (e.g. "ENG-42").
       // Linear's issue(id:) field accepts either the identifier or the UUID directly.
       const resolveRes = await safeFetch(
-        LINEAR_API,
+        linearApi(),
         {
           method: "POST",
           headers,
@@ -250,7 +270,7 @@ export const linearConnector: Connector = {
 
       // Step 2: create the comment.
       const commentRes = await safeFetch(
-        LINEAR_API,
+        linearApi(),
         {
           method: "POST",
           headers,
@@ -299,7 +319,7 @@ export const linearConnector: Connector = {
       if (pri == null) return { ok: true }
 
       const res = await safeFetch(
-        LINEAR_API,
+        linearApi(),
         {
           method: "POST",
           headers: { "Authorization": api_key, "Content-Type": "application/json" },
@@ -338,7 +358,7 @@ export const linearConnector: Connector = {
 
     const first = Math.max(1, Math.min(100, opts?.limit ?? 50))
     const res = await safeFetch(
-      LINEAR_API,
+      linearApi(),
       {
         method: "POST",
         headers: { "Authorization": api_key, "Content-Type": "application/json" },
@@ -381,5 +401,46 @@ export const linearConnector: Connector = {
       })
     }
     return out
+  },
+
+  // Connector-field-mapping: Linear has no native workflow-state list endpoint distinct from a
+  // team's own states — the team's issue workflow states ARE the statuses.
+  async listStatuses(cfg: Record<string, string>): Promise<ConnectorMeta[]> {
+    const res = await safeFetch(
+      linearApi(),
+      {
+        method: "POST",
+        headers: { "Authorization": cfg.api_key, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: "query($tm:String!){ team(id:$tm){ states { nodes { id name type } } } }",
+          variables: { tm: cfg.team_id },
+        }),
+      },
+      { allowHosts: ["linear.app"], allowLoopbackInTest: true },
+    )
+    const json = await res.json()
+    if (json?.errors?.length) throw new Error("tracker request failed (GraphQL error)")
+    return (json?.data?.team?.states?.nodes ?? []).map((s: any) => ({ id: String(s.id), name: String(s.name), category: s.type }))
+  },
+
+  // Connector-field-mapping (typesAsLabels): Linear has no native issue-type field — the mapping
+  // UI instead offers the team's LABELS as the "issue type" options, and createIssue applies the
+  // resolved kind→label via the same label path as ticket.labels (see above).
+  async listIssueTypes(cfg: Record<string, string>): Promise<ConnectorMeta[]> {
+    const res = await safeFetch(
+      linearApi(),
+      {
+        method: "POST",
+        headers: { "Authorization": cfg.api_key, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: "query($tm:String!){ team(id:$tm){ labels { nodes { id name } } } }",
+          variables: { tm: cfg.team_id },
+        }),
+      },
+      { allowHosts: ["linear.app"], allowLoopbackInTest: true },
+    )
+    const json = await res.json()
+    if (json?.errors?.length) throw new Error("tracker request failed (GraphQL error)")
+    return (json?.data?.team?.labels?.nodes ?? []).map((l: any) => ({ id: String(l.id), name: String(l.name) }))
   },
 }

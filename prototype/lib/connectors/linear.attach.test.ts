@@ -1,6 +1,13 @@
-import { test, expect, mock } from "bun:test"
+import { test, expect, mock, afterEach } from "bun:test"
 import { getConnector } from "./index"
 import type { TicketPayload } from "./index"
+
+// Each test below replaces globalThis.fetch with a mock and never restores it — since bun runs
+// every test file in one process, that leak bleeds into whichever file runs next (observed:
+// linear.mapping.test.ts's real Bun.serve loopback calls were silently intercepted by the last
+// mock left here). Restore the real fetch after every test in this file so it can't leak out.
+const REAL_FETCH = globalThis.fetch
+afterEach(() => { globalThis.fetch = REAL_FETCH })
 
 const GRAPHQL = "https://api.linear.app/graphql"
 // Linear hands back a presigned PUT target on a *.linear.app host (passes the allowHosts guard).
