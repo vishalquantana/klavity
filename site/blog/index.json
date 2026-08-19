@@ -404,5 +404,12 @@
     "excerpt": "AI reproduces a bug by replaying the state a report captured: the steps, DOM, console, network, and environment. Here's how it works and where it fails.",
     "category": "Insights",
     "date": "2026-08-18"
+  },
+  {
+    "slug": "shift-left-testing-catch-bugs-before-production",
+    "title": "Shift-Left Testing: How to Catch Bugs Before Production",
+    "excerpt": "Shift-left testing moves quality checks earlier in development so bugs surface at the keyboard, not in production. Here's how to do it in practice.",
+    "category": "Insights",
+    "date": "2026-08-19"
   }
 ]
