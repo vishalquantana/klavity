@@ -31,9 +31,17 @@ export const webhookConnector: Connector = {
     if (!res.ok) {
       // Log the upstream body server-side only; never embed it in the thrown Error (it can
       // contain attacker-influenced content / be an SSRF oracle when echoed to a client).
+      // Unlike the other connectors, `cfg.url` is fully admin-controlled and safeFetch's guard is
+      // the only thing standing between this request and an internal target, so we deliberately
+      // do NOT attach `upstreamBody` here — only the HTTP status, which is enough for the
+      // connector-test route to tell "your endpoint rejected the test" from "we broke" without
+      // giving an admin (or anyone who can edit a webhook config) an oracle into internal
+      // response bodies.
       const text = (await res.text().catch(() => "")).slice(0, 200)
       console.error(`webhook upstream error ${res.status}: ${text}`)
-      throw new Error(`tracker request failed (HTTP ${res.status})`)
+      const err = new Error(`tracker request failed (HTTP ${res.status})`)
+      ;(err as any).upstreamStatus = res.status
+      throw err
     }
 
     // Best-effort parse; non-JSON 2xx still counts as success.

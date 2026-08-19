@@ -97,7 +97,10 @@ export const jiraConnector: Connector = {
     if (!res.ok) {
       const text = (await res.text().catch(() => "")).slice(0, 200)
       console.error(`jira upstream error ${res.status}: ${text}`)
-      throw new Error(`tracker request failed (HTTP ${res.status})`)
+      const err = new Error(`tracker request failed (HTTP ${res.status})`)
+      ;(err as any).upstreamStatus = res.status
+      ;(err as any).upstreamBody = text
+      throw err
     }
 
     const json = await res.json()

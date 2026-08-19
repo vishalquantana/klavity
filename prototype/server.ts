@@ -61,6 +61,7 @@ import { notifyNewReport } from "./lib/report-alert"
 import { notifyBudgetResumeRequest } from "./lib/budget-resume-alert"
 import { reportError } from "./lib/error-alert"
 import { autoTicketError } from "./lib/error-autoticket"
+import { isUpstreamConfigError, friendlyUpstream } from "./lib/connector-test-error"
 import { validateModalConfigInput, resolveModalConfig } from "../packages/core/src/modal-theme"
 import { MODEL_CHOICES, MODEL_CHOICE_IDS, DEFAULT_WEIGHTS, pickModel, parseWeightsForm, weightsToPct } from "./lib/models"
 import { AsyncLocalStorage } from "node:async_hooks"
@@ -839,6 +840,25 @@ function oops(e: unknown, label: string): { error: string; id: string } {
   void reportError({ where: "backend", message, traceId: id, route: label, stack: (e as any)?.stack })
   void autoTicketError({ where: "backend", message, traceId: id, route: label, stack: (e as any)?.stack }).catch(() => {})
   return { error: "Something went wrong. Please try again.", id }
+}
+// Connector-test failures need different handling than a generic backend error: when the admin's
+// OWN tracker rejects the test create (an upstream 4xx — e.g. Jira's "Specify a valid issue type"
+// for a misconfigured issue type), that's expected user-configuration error, not a Klavity defect.
+// It must NOT page (no reportError/autoTicketError via oops()) — it should just tell the admin why
+// their tracker rejected it. Anything else (network failure, upstream 5xx, an unexpected bug) is a
+// genuine incident and still goes through oops() as before.
+function connectorTestFailure(e: unknown, label: string): { body: { ok: false; error: string; config?: true; id?: string }; status: number } {
+  if (isUpstreamConfigError(e)) {
+    const status = (e as any).upstreamStatus as number
+    const reason = friendlyUpstream((e as any).upstreamBody)
+    console.error(`[${label}] upstream config rejection ${status}: ${reason}`)
+    return {
+      status: 400,
+      body: { ok: false, error: `Your tracker rejected the test (HTTP ${status}): ${reason}`, config: true },
+    }
+  }
+  const o = oops(e, label)
+  return { status: 500, body: { ok: false, error: o.error, id: o.id } }
 }
 // Widget-scoped json: always attaches WIDGET_CORS so every response (success AND error) is
 // readable cross-origin. Used for /api/personas, /api/sim/review, /api/consent only.
@@ -8590,9 +8610,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               const result = await adapter.createIssue(TEST_PAYLOAD, config)
               return json({ ok: true, externalKey: result.externalKey, externalUrl: result.externalUrl })
             } catch (e: any) {
-              // A10: never echo guard/upstream/internal text — generic message + logged correlation id.
-              const o = oops(e, "connector-test")
-              return json({ ok: false, error: o.error, id: o.id })
+              // A10 still holds for genuine backend errors (generic message + correlation id, no
+              // internal text echoed). But an upstream 4xx means the ADMIN'S OWN tracker rejected
+              // their own test config — that's expected user error, not a leak, and not a page.
+              const { body: respBody, status } = connectorTestFailure(e, "connector-test")
+              return json(respBody, status)
             }
           }
 
@@ -8617,9 +8639,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               const result = await adapter.createIssue(TEST_PAYLOAD, decryptedConfig)
               return json({ ok: true, externalKey: result.externalKey, externalUrl: result.externalUrl })
             } catch (e: any) {
-              // A10: generic message + logged correlation id (no guard/upstream leak).
-              const o = oops(e, "connector-test")
-              return json({ ok: false, error: o.error, id: o.id })
+              // A10 still holds for genuine backend errors (generic message + correlation id, no
+              // internal text echoed). But an upstream 4xx means the ADMIN'S OWN tracker rejected
+              // their own test config — that's expected user error, not a leak, and not a page.
+              const { body: respBody, status } = connectorTestFailure(e, "connector-test")
+              return json(respBody, status)
             }
           }
 
