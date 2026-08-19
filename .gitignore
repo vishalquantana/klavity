@@ -14,3 +14,6 @@ sdd/
 
 # Build artifacts
 *.zip
+
+# Prod deployment runbook — contains SSH/host access coordinates; keep OUT of the repo
+docs/DEPLOYMENT.md
