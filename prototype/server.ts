@@ -1540,6 +1540,7 @@ async function feedbackToTicketPayload(fb: any, project: { id: string; name?: st
     klavityUrl: `${BASE}/dashboard?project=${project.id}`,
     attachments,
     labels: labelNames,
+    kind: (fb.report_type === "feature" ? "feature" : fb.report_type === "bug" ? "bug" : undefined),
   }
 }
 
@@ -2626,7 +2627,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (!verified) return json({ error: "unauthorized" }, 401)
 
       // Map the provider's state → Klavity status. null = a non-status event → no-op.
-      const newStatus = mapExternalStatus(type, payload)
+      const newStatus = mapExternalStatus(type, payload, connector.config)
       if (!newStatus) return json({ ok: true, ignored: "no-status-change" })
 
       const beforeFeedback = await feedbackById(exportRow.projectId, exportRow.feedbackId).catch(() => null)
