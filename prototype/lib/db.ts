@@ -890,6 +890,21 @@ export async function applySchema(c: Client) {
     `CREATE INDEX IF NOT EXISTS audit_log_actor_idx ON audit_log (actor_email, created_at DESC)`,
     `CREATE INDEX IF NOT EXISTS audit_log_project_idx ON audit_log (project_id, created_at DESC)`,
     `CREATE INDEX IF NOT EXISTS audit_log_action_idx ON audit_log (action, created_at DESC)`,
+    // OUTBOUND EMAIL LOG — durable record of every transactional email send attempt (OTP, invites,
+    // ticket assignment, report/lead alerts, install instructions). Motivation: after an OTP/DNS
+    // outage there was no way to answer "did X's email actually go out?" — successful sends logged
+    // nothing. Best-effort write (see logOutboundEmail) — a logging failure never blocks a send.
+    `CREATE TABLE IF NOT EXISTS email_log (
+       id TEXT PRIMARY KEY,
+       type TEXT NOT NULL,
+       to_email TEXT NOT NULL,
+       subject TEXT,
+       sendgrid_message_id TEXT,
+       http_status INTEGER,
+       status TEXT NOT NULL,
+       error TEXT,
+       created_at INTEGER NOT NULL)`,
+    `CREATE INDEX IF NOT EXISTS email_log_to_idx ON email_log (to_email, created_at)`,
   ]
   // Boot-time fix: run the whole static CREATE TABLE/INDEX block as ONE batched round-trip instead
   // of ~150 sequential `await c.execute(s)` calls. Against REMOTE Turso those 150 round-trips cost
@@ -6226,4 +6241,83 @@ export async function ensureAccountMember(
     sql: "INSERT OR IGNORE INTO project_members (id,project_id,email,project_role,invited_by,created_at) VALUES (?,?,?,?,?,?)",
     args: [`pm_sso_${projectId}_${email}`, projectId, email, "member", null, now],
   })
+}
+
+// ── Outbound email log (motivation: after an OTP/DNS outage we had no way to answer "did X's
+// email actually go out?" — successful sends previously logged nothing). Every transactional
+// send in lib/mail.ts's sgSend() calls logOutboundEmail() for each recipient, on both the
+// success and failure paths. Best-effort: a logging failure must NEVER break a send, so this
+// swallows its own errors (console.warn only) instead of throwing.
+export interface OutboundEmailLogEntry {
+  type: string
+  to: string
+  subject?: string | null
+  messageId?: string | null
+  httpStatus?: number | null
+  status: "sent" | "failed"
+  error?: string | null
+}
+
+export async function logOutboundEmail(entry: OutboundEmailLogEntry): Promise<void> {
+  if (!db) return
+  try {
+    await db.execute({
+      sql: `INSERT INTO email_log
+              (id, type, to_email, subject, sendgrid_message_id, http_status, status, error, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [
+        "eml_" + crypto.randomUUID(),
+        entry.type,
+        entry.to,
+        entry.subject ?? null,
+        entry.messageId ?? null,
+        entry.httpStatus ?? null,
+        entry.status,
+        entry.error ?? null,
+        Date.now(),
+      ],
+    })
+  } catch (e: any) {
+    console.warn("logOutboundEmail failed (non-fatal):", e?.message || e)
+  }
+}
+
+export interface OutboundEmailLogRow {
+  id: string
+  type: string
+  to: string
+  subject: string | null
+  messageId: string | null
+  httpStatus: number | null
+  status: string
+  error: string | null
+  createdAt: number
+}
+
+// Quick "did X get it?" lookup — newest first, optionally scoped to a recipient.
+export async function recentOutboundEmails(
+  opts: { to?: string; limit?: number } = {},
+): Promise<OutboundEmailLogRow[]> {
+  if (!db) return []
+  const limit = opts.limit ?? 50
+  const args: (string | number)[] = []
+  let sql = `SELECT id, type, to_email, subject, sendgrid_message_id, http_status, status, error, created_at FROM email_log`
+  if (opts.to) {
+    sql += ` WHERE lower(to_email) = lower(?)`
+    args.push(opts.to)
+  }
+  sql += ` ORDER BY created_at DESC LIMIT ?`
+  args.push(limit)
+  const res = await db.execute({ sql, args })
+  return res.rows.map((r: any) => ({
+    id: String(r.id),
+    type: String(r.type),
+    to: String(r.to_email),
+    subject: r.subject == null ? null : String(r.subject),
+    messageId: r.sendgrid_message_id == null ? null : String(r.sendgrid_message_id),
+    httpStatus: r.http_status == null ? null : Number(r.http_status),
+    status: String(r.status),
+    error: r.error == null ? null : String(r.error),
+    createdAt: Number(r.created_at),
+  }))
 }
