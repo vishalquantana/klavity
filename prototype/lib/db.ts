@@ -999,6 +999,9 @@ export async function applySchema(c: Client) {
     ["source",                "TEXT"],
     // KLA-175: AI-suggested label IDs (JSON array of label IDs), stored on capture for ghost-chip display.
     ["suggested_label_ids_json", "TEXT"],
+    // Connector field mapping task 1: persist the report kind ("bug" | "feature") chosen at submit
+    // so exports can pick a Jira issue type (or similar) per kind. Null on older rows — back-compat.
+    ["report_type",            "TEXT"],
   ]
   for (const [col, def] of feedbackAlters) {
     if (needCol("feedback", col)) {
@@ -2896,6 +2899,7 @@ export type FeedbackInsert = {
   annotations?: any    // structured markup: { w, h, shapes:Shape[], region?, selector? } — re-rendered as the ticket overlay
   source?: string | null  // KLA-173: 'manual' | 'widget' | null (null → derived from sim_id at read time)
   signature?: string | null  // BugHerd sub-project A: client-error fingerprint for dedup via findFeedbackBySignature
+  reportType?: "bug" | "feature" | null  // connector field mapping task 1: kind chosen at submit
 }
 
 // Triage gate: new feedback is "new" (needs triage) unless it's a high-priority
@@ -2912,8 +2916,8 @@ export async function insertFeedback(f: FeedbackInsert): Promise<string> {
   await db!.execute({
     sql: `INSERT INTO feedback (id,project_id,sim_id,actor_email,url_host,url_path,source_referrer,observation,sentiment,priority,
           screenshot_id,suggested_bug_json,cited_trait_ids_json,source_quote,source_transcript_id,source_date,
-          plane_issue_key,plane_issue_url,issue_key,recurrence_count,recurrence_dates_json,last_seen_at,client_context_json,annotations_json,source,signature,created_at,status)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          plane_issue_key,plane_issue_url,issue_key,recurrence_count,recurrence_dates_json,last_seen_at,client_context_json,annotations_json,source,signature,report_type,created_at,status)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [id, f.projectId, f.simId ?? null, f.actorEmail ?? null, f.urlHost ?? null, f.urlPath ?? null, f.sourceReferrer ?? null,
            f.observation ?? null, f.sentiment ?? null, f.priority ?? null, f.screenshotId ?? null,
            f.suggestedBug != null ? JSON.stringify(f.suggestedBug) : null,
@@ -2923,7 +2927,7 @@ export async function insertFeedback(f: FeedbackInsert): Promise<string> {
            f.issueKey ?? null, 1, JSON.stringify([now]), now,
            f.clientContext != null ? JSON.stringify(f.clientContext) : null,
            f.annotations != null ? JSON.stringify(f.annotations) : null,
-           f.source ?? null, f.signature ?? null, now, status],
+           f.source ?? null, f.signature ?? null, f.reportType ?? null, now, status],
   })
   // KLA-200: assign per-project sequential number immediately after insert
   await db!.execute({
@@ -4894,6 +4898,11 @@ export async function feedbackById(projectId: string, id: string): Promise<any |
     clientContext: x.client_context_json != null ? safeJsonParse(x.client_context_json) : null,
     contactEmail: x.contact_email != null ? String(x.contact_email) : null,
     seqNum: x.seq_num != null ? Number(x.seq_num) : null,
+    // Connector field mapping task 1: report kind chosen at submit ("bug" | "feature" | null on
+    // older/manual rows). Exposed both camelCase (this API's convention) and snake_case
+    // (feedbackToTicketPayload / raw-row callers reference fb.report_type directly).
+    reportType: x.report_type != null ? String(x.report_type) : null,
+    report_type: x.report_type != null ? String(x.report_type) : null,
   }
 }
 
