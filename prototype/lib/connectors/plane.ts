@@ -1,4 +1,5 @@
-import type { Connector, TicketPayload, ExportResult, CommentSyncResult, FieldUpdate, FieldSyncResult } from "./index"
+import type { Connector, TicketPayload, ExportResult, CommentSyncResult, FieldUpdate, FieldSyncResult, ConnectorMeta } from "./index"
+import { resolveIssueType } from "./resolve-issue-type"
 import { safeFetch } from "../safe-fetch"
 
 // JTBD 5.7: Plane has a native `priority` field whose enum ("urgent"|"high"|"medium"|"low"|"none")
@@ -51,6 +52,12 @@ export const planeConnector: Connector = {
     { key: "inbound_secret", label: "Inbound Webhook Secret (optional, for two-way sync)", secret: true },
   ],
 
+  // Plane has NO native issue-type field (it models classification via labels instead), so
+  // issueTypes: false — but statuses (project states) exist and listIssueTypes below is backed
+  // by project labels, hence typesAsLabels: true. Connector-field-mapping UI uses this flag to
+  // know it's mapping kind → a Plane LABEL, not a Plane "issue type".
+  capabilities: { issueTypes: false, statuses: true, typesAsLabels: true },
+
   validate(cfg) {
     for (const k of ["workspace", "project_id", "token"] as const) {
       if (!cfg[k]) return { ok: false, error: `${k} is required` }
@@ -66,8 +73,16 @@ export const planeConnector: Connector = {
     // JTBD 2.16: Plane's issue-create API applies labels by UUID, not by name, so we can't map
     // Klavity's label names onto native Plane labels without a version-dependent lookup. Instead
     // we carry the classification in the issue description so the exported ticket keeps its labels.
+    //
+    // Connector-field-mapping (Task 6): resolve the ticket's kind (bug/feature) to a configured
+    // Plane label name via issue_type_map (falls back to "" — no legacy issue_type field on this
+    // connector, and an empty kindLabel means "no mapping configured", so it's simply omitted).
+    // This is best-effort and additive to the existing label list — it can never fail createIssue
+    // since resolveIssueType is pure/synchronous and only touches cfg + ticket already in hand.
+    const kindLabel = resolveIssueType(cfg, (ticket as any).kind, "")
+    const exportLabels = [...(ticket.labels ?? []), ...(kindLabel ? [kindLabel] : [])]
     let descriptionHtml = ticket.body
-    if (ticket.labels?.length) descriptionHtml += `\n\nLabels: ${ticket.labels.join(", ")}`
+    if (exportLabels.length) descriptionHtml += `\n\nLabels: ${exportLabels.join(", ")}`
 
     // SSRF guard (H3): `host` is user-supplied (self-hosted Plane is allowed, but must be a
     // public https host). safeFetch validates the URL and every redirect hop (loopback /
@@ -327,5 +342,47 @@ export const planeConnector: Connector = {
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) }
     }
+  },
+
+  // listStatuses: Plane's native project states (Backlog/In Progress/Done/etc, plus custom
+  // states). Used by the connector-field-mapping UI to populate the status-mapping dropdown.
+  //   GET {host}/api/v1/workspaces/{workspace}/projects/{project_id}/states/
+  async listStatuses(cfg: Record<string, string>): Promise<ConnectorMeta[]> {
+    const host = cfg.host?.replace(/\/$/, "") || "https://api.plane.so"
+    const res = await safeFetch(
+      `${host}/api/v1/workspaces/${cfg.workspace}/projects/${cfg.project_id}/states/`,
+      { method: "GET", headers: { "X-API-Key": cfg.token } },
+      { allowLoopbackInTest: true },
+    )
+    if (!res.ok) {
+      const t = (await res.text().catch(() => "")).slice(0, 200)
+      console.error(`plane states error ${res.status}: ${t}`)
+      throw new Error(`tracker request failed (HTTP ${res.status})`)
+    }
+    const data = await res.json()
+    const rows = Array.isArray(data) ? data : (data?.results ?? [])
+    return rows.map((s: any) => ({ id: String(s.id), name: String(s.name), category: s.group }))
+  },
+
+  // listIssueTypes: Plane has no native issue-type object, so this surfaces project LABELS
+  // instead (capabilities.typesAsLabels = true tells callers to treat these as label targets,
+  // not Jira/Linear-style issue types). kind → label mapping is applied best-effort in
+  // createIssue above via resolveIssueType.
+  //   GET {host}/api/v1/workspaces/{workspace}/projects/{project_id}/labels/
+  async listIssueTypes(cfg: Record<string, string>): Promise<ConnectorMeta[]> {
+    const host = cfg.host?.replace(/\/$/, "") || "https://api.plane.so"
+    const res = await safeFetch(
+      `${host}/api/v1/workspaces/${cfg.workspace}/projects/${cfg.project_id}/labels/`,
+      { method: "GET", headers: { "X-API-Key": cfg.token } },
+      { allowLoopbackInTest: true },
+    )
+    if (!res.ok) {
+      const t = (await res.text().catch(() => "")).slice(0, 200)
+      console.error(`plane labels error ${res.status}: ${t}`)
+      throw new Error(`tracker request failed (HTTP ${res.status})`)
+    }
+    const data = await res.json()
+    const rows = Array.isArray(data) ? data : (data?.results ?? [])
+    return rows.map((l: any) => ({ id: String(l.id), name: String(l.name) }))
   },
 }
