@@ -3744,6 +3744,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   // KLAVITYKLA-256: persist the sandbox tag so the demo funnel's mock findings are
                   // excluded from the real New-reports triage listing.
                   source: feedbackSourceTag,
+                  // Connector field mapping task 1: persist the Bug/Feature toggle so exports can
+                  // pick a Jira issue type (or similar) per kind.
+                  reportType,
                 })
                 if (priorFeedbackCount === 0 && feedbackId) {
                   const fbSource = anonWidgetAllowed ? "widget" : (simId ? "sim" : "extension")
@@ -9387,6 +9390,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             priority,
             assignee: assignee || null,
             source: "manual",
+            // A hand-written ticket is a bug report by default (KLA connector field mapping task 1).
+            reportType: "bug",
           })
           // Manual tickets start as "open" regardless of priority (override initial "new" status).
           await updateFeedbackMeta(proj.id, id, { status: "open" })
