@@ -55,6 +55,7 @@ beforeAll(async () => {
       KLAV_BASE_URL: BASE,
       KLAV_ALLOWED_DOMAINS: "test.local",
       SENDGRID_API_KEY: "",
+      KLAV_TEST_ALLOW_LOOPBACK: "1",
       KLAV_MAIL_FROM: "",
     },
     stdout: "ignore",
@@ -242,4 +243,45 @@ test("PATCH /api/projects/:id/tickets/bulk surfaces failures without dropping su
 
   const row = await raw.execute({ sql: "SELECT status FROM feedback WHERE id=?", args: [good] })
   expect((row.rows[0] as any).status).toBe("done")
+})
+
+// Regression: the triage "Accept as bug" button posts status:"open" to THIS bulk route (see
+// dashboard.html tgAccept), but auto-copy used to be wired only into the single-ticket PATCH -
+// so the primary triage flow accepted reports and exported nothing to Jira/Plane/GitHub/Linear.
+test("bulk accept (new -> open) fires auto-copy, and a non-accept status change does not", async () => {
+  let hits = 0
+  const receiver = Bun.serve({ port: 0, fetch: async () => { hits++; return Response.json({ id: "EXT-1" }) } })
+  const cid = `conn_bulk_${RUN}`
+  const NEWFID = `fb_bulk_new_${RUN}`
+  const DONEFID = `fb_bulk_done_${RUN}`
+  await exec(
+    "INSERT INTO connectors (id,project_id,type,name,config,auto_copy,enabled,created_at,created_by) VALUES (?,?,?,?,?,1,1,?,?)",
+    [cid, PROJ, "webhook", "Auto-copy receiver", JSON.stringify({ url: `http://127.0.0.1:${receiver.port}/hook` }), NOW, OWNER],
+  )
+  await exec("INSERT INTO feedback (id, project_id, observation, priority, status, created_at) VALUES (?, ?, ?, ?, ?, ?)", [NEWFID, PROJ, "Untriaged report", "medium", "new", NOW])
+  await exec("INSERT INTO feedback (id, project_id, observation, priority, status, created_at) VALUES (?, ?, ?, ?, ?, ?)", [DONEFID, PROJ, "Finished ticket", "medium", "open", NOW])
+  try {
+    const r = await req("PATCH", `/api/projects/${PROJ}/tickets/bulk`, { ticketIds: [NEWFID], status: "open" })
+    expect(r.status).toBe(200)
+    let row: any = null
+    for (let i = 0; i < 40 && !row; i++) {
+      const q = await raw.execute({ sql: "SELECT status, error FROM ticket_exports WHERE feedback_id=?", args: [NEWFID] })
+      row = q.rows[0] ?? null
+      if (!row) await Bun.sleep(100)
+    }
+    expect(row).not.toBeNull()
+    expect(String(row.status)).toBe("ok")
+    expect(hits).toBe(1)
+
+    // open -> done is a workflow move, not a triage accept: it must NOT export.
+    const r2 = await req("PATCH", `/api/projects/${PROJ}/tickets/bulk`, { ticketIds: [DONEFID], status: "done" })
+    expect(r2.status).toBe(200)
+    await Bun.sleep(600)
+    const q2 = await raw.execute({ sql: "SELECT COUNT(*) AS n FROM ticket_exports WHERE feedback_id=?", args: [DONEFID] })
+    expect(Number((q2.rows[0] as any).n)).toBe(0)
+    expect(hits).toBe(1)
+  } finally {
+    receiver.stop(true)
+    await exec("DELETE FROM connectors WHERE id=?", [cid])
+  }
 })
