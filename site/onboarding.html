@@ -341,7 +341,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 <!-- ───────────── TOP BAR + PROGRESS RAIL ───────────── -->
 <div class="top">
   <div class="in">
-    <a class="brand" href="index.html"><span class="mark">K</span>Klavity</a>
+    <a class="brand" href="index.html"><img class="mark" src="/favicon.svg" alt="" width="30" height="30" />Klavity</a>
     <div class="rail" id="rail"></div>
     <span class="pill-live">AI QA · live</span>
   </div>
@@ -436,10 +436,6 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     <div class="hide" id="uhLoading"><div class="uh-loading"><span class="uh-spin"></span><span id="uhLoadTxt">Opening your page…</span><span style="color:var(--faint)">· usually ~20s</span></div></div>
     <div id="uhResult" style="margin-top:16px"></div>
 
-    <div class="card pad" style="margin-top:16px">
-      <div class="uh-label">Recommended tests — the journeys that matter most</div>
-      <div id="jlist"></div>
-    </div>
     <div class="row">
       <button class="btn btn-indigo" onclick="previewContinue()">See your first result →</button>
     </div>
@@ -1536,17 +1532,6 @@ async function openStudio(){
     : '/app' + qs + '#add-transcript'
   window.location.href = dest
 }
-
-// ── Recommended-tests journey list (Test step). ──
-;(function(){
-  var J=[['Sign up','Core conversion journey',95],['Login','High-frequency journey',93],['Create project','Core product workflow',89],['Checkout','Revenue-critical journey',96]]
-  var jl=document.getElementById('jlist'); if(!jl) return
-  var jh=''
-  for(var i=0;i<J.length;i++){
-    jh+='<div class="jrow"><div class="jt">'+J[i][0]+'</div><div style="flex:1;color:var(--muted);font-size:12.5px">'+J[i][1]+'</div><div class="jbar"><i style="width:'+J[i][2]+'%"></i></div><div class="jp">'+J[i][2]+'%</div></div>'
-  }
-  jl.innerHTML=jh
-})()
 
 // ── Resilience: pre-resolve an already-signed-in user's project and skip the OTP sub-step. ──
 async function bootstrap(){
