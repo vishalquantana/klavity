@@ -209,38 +209,12 @@ export interface Connector {
   listStatuses?(cfg: Record<string, string>): Promise<ConnectorMeta[]>
 }
 
-// Connector-field-mapping: `issue_type_map` arrives on cfg (a Record<string,string>) as a JSON
-// STRING (e.g. `{"bug":"Bug","feature":"Story","default":"Task"}`), since cfg values are always
-// strings. Tolerates an already-parsed object (tests/callers may pass one directly) and never
-// throws on malformed JSON — returns null instead so callers fall back gracefully.
-export function parseJsonMap(raw: unknown): Record<string, string> | null {
-  if (!raw) return null
-  if (typeof raw === "object") return raw as Record<string, string>
-  if (typeof raw !== "string") return null
-  try {
-    const o = JSON.parse(raw)
-    return o && typeof o === "object" ? o : null
-  } catch {
-    return null
-  }
-}
-
-// Connector-field-mapping: resolve which external issue type to use for a given ticket `kind`.
-// Precedence: per-kind entry in issue_type_map > issue_type_map.default > legacy cfg.issue_type >
-// caller-supplied fallback. Back-compat: a connector with no issue_type_map still works off its
-// legacy `issue_type` field, and a connector with neither falls back to `fallback` unchanged.
-export function resolveIssueType(
-  cfg: Record<string, string>,
-  kind: "bug" | "feature" | undefined,
-  fallback: string,
-): string {
-  const map = parseJsonMap((cfg as any).issue_type_map)
-  if (map) {
-    if (kind && map[kind]) return String(map[kind])
-    if (map.default) return String(map.default)
-  }
-  return cfg.issue_type || fallback
-}
+// Connector-field-mapping: parseJsonMap/resolveIssueType live in their own leaf module
+// (resolve-issue-type.ts) so adapters can import them WITHOUT creating an import cycle through
+// this file's registry (every adapter is imported at the top of index.ts; an adapter importing a
+// value back out of index.ts creates a circular init order — see resolve-issue-type.ts for
+// details). Re-exported here for back-compat with existing callers/tests that import from "./index".
+export { parseJsonMap, resolveIssueType } from "./resolve-issue-type"
 
 // ── Registry ───────────────────────────────────────────────────────────────────
 

@@ -1,4 +1,5 @@
-import type { Connector, TicketPayload, ExportResult, CommentSyncResult, FieldUpdate, FieldSyncResult } from "./index"
+import type { Connector, TicketPayload, ExportResult, CommentSyncResult, FieldUpdate, FieldSyncResult, ConnectorMeta } from "./index"
+import { resolveIssueType } from "./resolve-issue-type"
 import { safeFetch } from "../safe-fetch"
 
 // JTBD 5.7: map Klavity priority (urgent/high/medium/low) onto Jira's default priority scheme
@@ -57,7 +58,7 @@ export const jiraConnector: Connector = {
 
   async createIssue(ticket: TicketPayload, cfg: Record<string, string>): Promise<ExportResult> {
     const { host, email, token, project_key } = cfg
-    const issueType = cfg.issue_type || "Task"
+    const issueType = resolveIssueType(cfg, (ticket as any).kind, "Task")
     const url = `${host.replace(/\/$/, "")}/rest/api/3/issue`
 
     const credentials = Buffer.from(`${email}:${token}`).toString("base64")
@@ -247,5 +248,59 @@ export const jiraConnector: Connector = {
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) }
     }
+  },
+
+  // Connector-field-mapping: declares which optional metadata lookups this adapter implements.
+  capabilities: { issueTypes: true, statuses: true },
+
+  // Connector-field-mapping: list the Jira issue types available for the configured project, so
+  // the mapping UI can offer them instead of free text. Excludes subtasks (not a valid top-level
+  // create target). https://{host}/rest/api/3/issue/createmeta/{projectKey}/issuetypes
+  async listIssueTypes(cfg: Record<string, string>): Promise<ConnectorMeta[]> {
+    const host = cfg.host.replace(/\/$/, "")
+    const credentials = Buffer.from(`${cfg.email}:${cfg.token}`).toString("base64")
+    const res = await safeFetch(
+      `${host}/rest/api/3/issue/createmeta/${encodeURIComponent(cfg.project_key)}/issuetypes`,
+      { method: "GET", headers: { Authorization: `Basic ${credentials}`, Accept: "application/json" } },
+      { allowLoopbackInTest: true },
+    )
+    if (!res.ok) {
+      const t = (await res.text().catch(() => "")).slice(0, 200)
+      console.error(`jira issuetypes error ${res.status}: ${t}`)
+      throw new Error(`tracker request failed (HTTP ${res.status})`)
+    }
+    const json = await res.json()
+    const arr: any[] = Array.isArray(json) ? json : (json?.values ?? json?.issueTypes ?? [])
+    return arr.filter((x: any) => !x.subtask).map((x: any) => ({ id: String(x.id ?? ""), name: String(x.name) }))
+  },
+
+  // Connector-field-mapping: list the Jira workflow statuses available across the configured
+  // project's issue types, flattened + de-duplicated by name for the mapping UI.
+  // https://{host}/rest/api/3/project/{projectKey}/statuses
+  async listStatuses(cfg: Record<string, string>): Promise<ConnectorMeta[]> {
+    const host = cfg.host.replace(/\/$/, "")
+    const credentials = Buffer.from(`${cfg.email}:${cfg.token}`).toString("base64")
+    const res = await safeFetch(
+      `${host}/rest/api/3/project/${encodeURIComponent(cfg.project_key)}/statuses`,
+      { method: "GET", headers: { Authorization: `Basic ${credentials}`, Accept: "application/json" } },
+      { allowLoopbackInTest: true },
+    )
+    if (!res.ok) {
+      const t = (await res.text().catch(() => "")).slice(0, 200)
+      console.error(`jira statuses error ${res.status}: ${t}`)
+      throw new Error(`tracker request failed (HTTP ${res.status})`)
+    }
+    const json = await res.json()
+    const seen = new Set<string>()
+    const out: ConnectorMeta[] = []
+    for (const group of (Array.isArray(json) ? json : [])) {
+      for (const s of (group.statuses ?? [])) {
+        if (!seen.has(s.name)) {
+          seen.add(s.name)
+          out.push({ id: String(s.id ?? ""), name: String(s.name), category: s.statusCategory?.key })
+        }
+      }
+    }
+    return out
   },
 }
