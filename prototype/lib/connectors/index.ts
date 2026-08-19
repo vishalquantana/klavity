@@ -34,6 +34,9 @@ export type TicketPayload = {
   // Connectors that support name-based labels attach them natively (GitHub/Jira); the rest
   // surface them in the issue body (see feedbackToTicketPayload). Omitted/empty = no labels.
   labels?: string[]
+  // Connector-field-mapping: the bug/feature classification, used with resolveIssueType() to
+  // pick the right external issue type per-connector (see issue_type_map on cfg).
+  kind?: "bug" | "feature"
 }
 
 export type ExportResult = {
@@ -101,6 +104,15 @@ export type ConnectorField = {
   required?: boolean
   placeholder?: string
 }
+
+// Connector-field-mapping: lightweight descriptor for a remote issue-type/status option,
+// returned by listIssueTypes/listStatuses so the mapping UI can render human-readable choices.
+export type ConnectorMeta = { id?: string; name: string; category?: string }
+
+// Connector-field-mapping: which optional metadata lookups a connector supports, so the UI
+// knows whether to offer issue-type/status pickers (and whether the connector maps types to
+// labels instead of native issue types, e.g. GitHub).
+export type ConnectorCapabilities = { issueTypes: boolean; statuses: boolean; typesAsLabels?: boolean }
 
 export interface Connector {
   type: "webhook" | "plane" | "github" | "jira" | "linear"
@@ -173,6 +185,61 @@ export interface Connector {
     cfg: Record<string, string>,
     opts?: { limit?: number },
   ): Promise<ImportedIssue[]>
+
+  // Connector-field-mapping: declares which optional metadata lookups below this adapter
+  // implements, so the UI can decide whether to show issue-type/status pickers at all.
+  capabilities?: ConnectorCapabilities
+
+  /**
+   * Connector-field-mapping: list the remote issue types (Jira issue types, Linear/Plane
+   * states-as-types, etc.) available for this connector's configured project, so the mapping UI
+   * can offer them instead of free text. Optional — adapters without a native issue-type concept
+   * (e.g. GitHub, which maps kind to labels) omit this.
+   *
+   * @param cfg  Decrypted connector config (same shape as createIssue receives).
+   */
+  listIssueTypes?(cfg: Record<string, string>): Promise<ConnectorMeta[]>
+
+  /**
+   * Connector-field-mapping: list the remote statuses/workflow states available for this
+   * connector's configured project, for the same mapping UI as listIssueTypes. Optional.
+   *
+   * @param cfg  Decrypted connector config (same shape as createIssue receives).
+   */
+  listStatuses?(cfg: Record<string, string>): Promise<ConnectorMeta[]>
+}
+
+// Connector-field-mapping: `issue_type_map` arrives on cfg (a Record<string,string>) as a JSON
+// STRING (e.g. `{"bug":"Bug","feature":"Story","default":"Task"}`), since cfg values are always
+// strings. Tolerates an already-parsed object (tests/callers may pass one directly) and never
+// throws on malformed JSON — returns null instead so callers fall back gracefully.
+export function parseJsonMap(raw: unknown): Record<string, string> | null {
+  if (!raw) return null
+  if (typeof raw === "object") return raw as Record<string, string>
+  if (typeof raw !== "string") return null
+  try {
+    const o = JSON.parse(raw)
+    return o && typeof o === "object" ? o : null
+  } catch {
+    return null
+  }
+}
+
+// Connector-field-mapping: resolve which external issue type to use for a given ticket `kind`.
+// Precedence: per-kind entry in issue_type_map > issue_type_map.default > legacy cfg.issue_type >
+// caller-supplied fallback. Back-compat: a connector with no issue_type_map still works off its
+// legacy `issue_type` field, and a connector with neither falls back to `fallback` unchanged.
+export function resolveIssueType(
+  cfg: Record<string, string>,
+  kind: "bug" | "feature" | undefined,
+  fallback: string,
+): string {
+  const map = parseJsonMap((cfg as any).issue_type_map)
+  if (map) {
+    if (kind && map[kind]) return String(map[kind])
+    if (map.default) return String(map.default)
+  }
+  return cfg.issue_type || fallback
 }
 
 // ── Registry ───────────────────────────────────────────────────────────────────
