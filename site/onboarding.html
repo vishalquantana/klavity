@@ -188,7 +188,7 @@ button.goaltile[aria-pressed="true"]{border-color:var(--indigo);box-shadow:0 0 0
 .goalpick .gnote{font-size:13px;color:var(--paper-faint);margin-top:15px}
 @media(max-width:820px){.goaltiles{grid-template-columns:1fr}}
 /* snap goal: hide the Sims/Studio rail steps + the step-2 install tiles */
-.shell[data-goal="snap"] .rstep[data-r="3"],.shell[data-goal="snap"] .rstep[data-r="4"]{display:none}
+.shell[data-goal="snap"] .rstep[data-r="3"],.shell[data-goal="snap"] .rstep[data-r="4"],.shell[data-goal="snap"] .rstep[data-r="5"]{display:none}
 /* forward "add Sims too" link on step 2 (snap only) */
 .snap-fwd{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;color:var(--paper-faint);cursor:pointer;transition:transform 150ms ease,color 150ms ease}
 .snap-fwd:hover{color:var(--amber);transform:translateY(-1.5px) scale(1.02)}
@@ -284,6 +284,52 @@ button.goaltile[aria-pressed="true"]{border-color:var(--indigo);box-shadow:0 0 0
 .url-toggle{background:none;border:none;color:var(--indigo);font-family:var(--body);font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:5px;padding:0;margin-top:22px;text-decoration:underline;text-underline-offset:2px}
 .url-toggle:hover{color:var(--paper)}
 
+/* ── recommended badge on the Sims goal tile ── */
+.goaltile .grec{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;color:#fff;background:linear-gradient(135deg,#eab06a,var(--amber));padding:3px 9px;border-radius:20px;position:absolute;top:14px;right:14px}
+[data-theme="dark"] .goaltile .grec{color:#0c0a08}
+button.goaltile{position:relative}
+
+/* ── sign-in-to-test affordance (step 0 connect) ── */
+.creds-toggle{margin-top:12px;display:inline-flex;align-items:center;gap:7px;background:none;border:1px solid var(--line);border-radius:9px;padding:7px 12px;color:var(--indigo);font-family:var(--body);font-size:13px;cursor:pointer;transition:border-color .15s,background .15s}
+.creds-toggle:hover{border-color:var(--indigo);background:var(--ink-3)}
+.creds-panel{margin-top:12px;background:var(--ink-2);border:1px solid var(--line);border-radius:14px;padding:16px;text-align:left}
+.creds-panel .cp-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:560px){.creds-panel .cp-grid{grid-template-columns:1fr}}
+.creds-panel .cp-full{grid-column:1/-1}
+.creds-panel label.fld{margin-bottom:0}
+
+/* ── tracker connector picker (new step) ── */
+.trk-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+@media(max-width:560px){.trk-grid{grid-template-columns:1fr}}
+.trk{background:var(--ink-2);border:1px solid var(--line);border-radius:14px;padding:16px 18px;cursor:pointer;display:flex;align-items:center;gap:13px;transition:transform 150ms ease,border-color 150ms ease,box-shadow 150ms ease;text-align:left}
+.trk:hover{border-color:var(--indigo);transform:translateY(-2px)}
+.trk.sel{border-color:var(--indigo);box-shadow:0 0 0 3px rgba(99,102,241,.12)}
+.trk .tk-ic{width:38px;height:38px;border-radius:10px;background:var(--ink-3);border:1px solid var(--line);display:grid;place-items:center;font-family:var(--mono);font-weight:700;font-size:13px;color:var(--indigo);flex-shrink:0}
+.trk h3{font-family:var(--display);font-weight:600;font-size:15.5px;margin-bottom:2px}
+.trk p{font-size:12.5px;color:var(--paper-dim);line-height:1.4}
+.automap{margin-top:16px;display:flex;align-items:flex-start;gap:9px;font-size:12.5px;color:var(--paper-dim);line-height:1.5;background:linear-gradient(135deg,rgba(15,157,107,.07),transparent);border:1px solid rgba(15,157,107,.22);border-radius:11px;padding:11px 13px}
+
+/* ── plan cards (new step) ── */
+.plans{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+@media(max-width:700px){.plans{grid-template-columns:1fr}}
+.plan{position:relative;background:var(--ink-2);border:1px solid var(--line);border-radius:16px;padding:20px 18px;cursor:pointer;text-align:left;transition:transform 150ms ease,border-color 150ms ease,box-shadow 150ms ease}
+.plan:hover{border-color:var(--indigo);transform:translateY(-3px)}
+.plan.sel{border-color:var(--amber);box-shadow:0 0 0 3px rgba(217,131,36,.14)}
+.plan .pl-tag{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--amber);position:absolute;top:16px;right:16px}
+.plan h3{font-family:var(--display);font-weight:600;font-size:18px;margin-bottom:6px}
+.plan .pl-price{font-family:var(--display);font-size:26px;font-weight:600;margin-bottom:2px}
+.plan .pl-price span{font-family:var(--body);font-size:12.5px;color:var(--paper-faint);font-weight:400}
+.plan .pl-desc{font-size:12.5px;color:var(--paper-dim);line-height:1.45;margin-top:8px}
+.guarantee{margin-top:18px;display:flex;align-items:flex-start;gap:10px;font-size:13.5px;color:var(--paper-dim);line-height:1.5;border-left:3px solid var(--green);padding-left:12px}
+.guarantee b{color:var(--paper)}
+
+/* ── AutoSim journeys + frequency (final step) ── */
+.freq{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
+.freqp{background:var(--ink-2);border:1px solid var(--line);border-radius:11px;padding:11px 14px;cursor:pointer;font-size:13px;color:var(--paper-dim);transition:transform 150ms ease,border-color 150ms ease,box-shadow 150ms ease;position:relative}
+.freqp:hover{border-color:var(--indigo);transform:translateY(-2px)}
+.freqp.sel{border-color:var(--amber);color:var(--paper);box-shadow:0 0 0 3px rgba(217,131,36,.14)}
+.freqp .fr-rec{display:block;font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--amber);margin-top:3px}
+
 /* ── a11y: visible focus + reduced-motion ── */
 a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{outline:2px solid #8b8bf5;outline-offset:2px;border-radius:5px}
 @media (prefers-reduced-motion: reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}}
@@ -295,12 +341,13 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   <aside class="rail" id="rail">
     <a class="brand" href="index.html"><img src="/favicon.svg" width="30" height="30" alt="" style="border-radius:9px;display:block" />Klavity</a>
     <ul class="steps">
-      <li class="rstep" data-r="1"><span class="ix">1</span><div class="rl">Create your project</div></li>
-      <li class="rstep" data-r="2"><span class="ix">2</span><div class="rl">Add to your website</div></li>
-      <li class="rstep" data-r="3"><span class="ix">3</span><div class="rl">Pick your starting Sims</div></li>
-      <li class="rstep studio" data-r="4"><span class="ix"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z" /></svg></span><div class="rl">Meet them in the Studio</div></li>
+      <li class="rstep" data-r="1"><span class="ix">1</span><div class="rl">Save your results</div></li>
+      <li class="rstep" data-r="2"><span class="ix">2</span><div class="rl">Add to your site</div></li>
+      <li class="rstep" data-r="3"><span class="ix">3</span><div class="rl">Send issues to your tracker</div></li>
+      <li class="rstep" data-r="4"><span class="ix">4</span><div class="rl">Start your plan</div></li>
+      <li class="rstep studio" data-r="5"><span class="ix"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z" /></svg></span><div class="rl">Keep testing every release</div></li>
     </ul>
-    <div class="foot">~2 minutes to your first bug report</div>
+    <div class="foot">The complete AI QA suite · ~2 minutes to set up</div>
   </aside>
 
   <main class="content" style="padding:0;display:block">
@@ -308,8 +355,8 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     <!-- ───────────── STEP 0 — WELCOME / AHA DEMO + URL ACTION ───────────── -->
     <div class="panel step" data-s="0" style="max-width:none">
       <div class="hero">
-        <div class="eyebrow"><span class="spark">▦</span>Welcome to Klavity</div>
-        <h1>Watch a customer <em>catch a bug</em> — before launch.</h1>
+        <div class="eyebrow"><span class="spark">▦</span>The complete AI QA suite</div>
+        <h1>Ship software your customers <em>actually trust.</em></h1>
 
         <!-- ── A1: Demo aha beat — baked, zero input ── -->
         <div class="demo-beat" role="region" aria-label="Demo: a Sim catches a bug pre-launch">
@@ -335,13 +382,24 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 
         <!-- ── A2: Two first-class paths — Snap (report widget) and Sims (AI personas) ── -->
         <div class="url-hero" id="urlHeroSection">
-          <h2>Start with <em>Sims</em> or the report widget.</h2>
-          <p class="uh-sub">Paste your product URL to generate AI personas from your pages — or scroll down to install the one-click bug-report widget on your live site.</p>
+          <h2>Point Klavity at <em>your app.</em></h2>
+          <p class="uh-sub">Paste your product URL and AI customer personas read your real pages — and surface issues before your users hit them. See a grounded finding in about 20 seconds, no signup needed.</p>
           <div class="url-field">
             <input id="uhUrl" type="url" placeholder="yourproduct.com" autocomplete="url" aria-label="Your product URL" />
             <button class="btn btn-indigo" id="uhGo" onclick="uhFetch()">Meet your Sims →</button>
           </div>
           <div class="uh-err" id="uhErr"></div>
+          <!-- Sign-in-to-test affordance (UI only for now): collects test creds to carry forward.
+               The instant preview still runs on the public URL; authed crawl runs after continue. -->
+          <button type="button" class="creds-toggle" id="credsToggle" aria-expanded="false" onclick="toggleCreds()">This app needs a login to test</button>
+          <div class="creds-panel hide" id="credsPanel">
+            <div class="cp-grid">
+              <label class="fld cp-full"><span class="lt">Login page URL · optional</span><input class="in" id="credLoginUrl" type="url" placeholder="yourapp.com/login" autocomplete="off" /></label>
+              <label class="fld"><span class="lt">Test username / email</span><input class="in" id="credUser" type="text" placeholder="test@yourapp.com" autocomplete="off" /></label>
+              <label class="fld"><span class="lt">Test password</span><input class="in" id="credPass" type="password" placeholder="••••••••" autocomplete="off" /></label>
+            </div>
+            <div class="note amber" style="margin-top:14px">If your login sends a one-time code or 2FA, Klavity pauses and asks you when it needs one. Sign-in testing runs after you continue and save your project — the instant preview below reads your public pages first.</div>
+          </div>
           <div class="hide" id="uhLoading"><div class="uh-loading"><span class="uh-spin"></span><span id="uhLoadTxt">Opening your page…</span><span style="color:var(--paper-faint)">· usually ~20s</span></div></div>
           <div id="uhResult"></div>
         </div>
@@ -351,23 +409,24 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           <!-- mw-toggle kept in DOM for JS compat but hidden via CSS -->
           <button type="button" class="mw-toggle" id="mwToggle" aria-expanded="true" onclick="toggleMoreWays()">Choose your starting point</button>
           <div class="mw-body" id="mwBody">
-            <div class="goalpick" role="group" aria-label="Choose your starting point">
-              <div class="glabel">How do you want to start?</div>
+            <div class="goalpick" role="group" aria-label="What are you looking to improve?">
+              <div class="glabel">What are you looking to improve?</div>
               <div class="goaltiles">
                 <button type="button" class="goaltile snap" id="goalSnap" aria-pressed="false" onclick="chooseGoal('snap')">
                   <span class="gic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 9l5 12 1.8-5.2L21 14Z" /><path d="M7.2 2.2 8 5.1" /><path d="m5.1 7.2-2.9-.8" /><path d="M14 4.1 12 6" /><path d="m6 12-1.9 2" /></svg></span>
-                  <span class="gtag">Snap · live site</span>
-                  <h3>Catch bugs from real visitors</h3>
-                  <p>One snippet on your site — visitors report bugs with a single click. No AI setup, no extension. Start collecting clean tickets in 2 minutes.</p>
+                  <span class="gtag">Snap · free forever</span>
+                  <h3>Just let people report bugs</h3>
+                  <p>For founders and small teams. One snippet on your live site — visitors report bugs with a single click, and clean tickets land in your dashboard. No AI setup.</p>
                 </button>
-                <button type="button" class="goaltile sims" id="goalSims" aria-pressed="false" onclick="chooseGoal('sims')">
+                <button type="button" class="goaltile sims" id="goalSims" aria-pressed="true" onclick="chooseGoal('sims')">
+                  <span class="grec">Recommended</span>
                   <span class="gic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg></span>
-                  <span class="gtag">Sims · AI review</span>
-                  <h3>AI personas that review your product</h3>
-                  <p>Paste your URL above (or a call transcript) — we build AI customers who surface issues before real users hit them.</p>
+                  <span class="gtag">Sims + AutoSim · AI QA</span>
+                  <h3>Let AI test my product like QA</h3>
+                  <p>For teams that want to catch regressions before customers do. AI customer personas review every release, surface issues, and file them for you — your always-on QA team.</p>
                 </button>
               </div>
-              <p class="gnote">Either path takes 2 minutes and creates a full project. You can add the other any time.</p>
+              <p class="gnote">Both take about 2 minutes and create a full project. You can add the other any time.</p>
             </div>
           </div>
         </div>
@@ -381,8 +440,8 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           <!-- 1a: signup form -->
           <div id="s1form">
             <div class="kicker" id="s1kick">Step 1 of 3</div>
-            <h2>Create your <em>project.</em></h2>
-            <p class="sub" id="s1sub">A project is one product — its Sims, the pages they watch, and the tickets they file. You can add more projects later. We'll email you a 6-digit sign-in code. No password.</p>
+            <h2>Save your results &amp; <em>keep going.</em></h2>
+            <p class="sub" id="s1sub">Create your project so the finding you just saw — and every review after it — is waiting for you. We will email you a 6-digit sign-in code. No password.</p>
             <label class="fld"><span class="lt">Your email</span><input class="in" id="email" type="email" placeholder="you@example.com" autocomplete="email" /></label>
             <label class="fld"><span class="lt">Project name</span><input class="in" id="projectName" placeholder="Acme Billing" /></label>
             <label class="fld"><span class="lt">Your website · optional, e.g. yourstore.com</span><input class="in" id="domain" placeholder="yourstore.com" /></label>
@@ -494,18 +553,76 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
             <span class="skip" id="s2skip" onclick="s2SkipLater()">Set up later</span>
           </div>
           <!-- Snap goal: an optional forward door into the Sims step (hidden for the Sims goal). -->
-          <div class="hide" id="s2AddSims" style="margin-top:16px"><span class="snap-fwd" role="button" tabindex="0" onclick="go(3)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();go(3)}">Want AI reviews too? Add AI customer personas →</span></div>
+          <div class="hide" id="s2AddSims" style="margin-top:16px"><span class="snap-fwd" role="button" tabindex="0" onclick="addSimsToo()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();addSimsToo()}">Want AI reviews too? Add AI customer personas →</span></div>
         </div>
       </div>
     </div>
 
-    <!-- ───────────── STEP 3 — PICK YOUR STARTING SIMS ───────────── -->
+    <!-- ───────────── STEP 3 — SEND ISSUES TO YOUR TRACKER (NEW) ───────────── -->
     <div class="panel step hide" data-s="3">
       <div class="content" style="padding:60px clamp(28px,6vw,90px)">
         <div class="panel">
-          <div class="kicker">Step 3 of 3 · bring your customers in</div>
-          <h2>Who should <em>review it?</em></h2>
-          <p class="sub" id="s3sub">Start from a real customer call, or drop in a ready-made review team if you don't have a customer call to draw from yet. Either way, you'll meet them in the Studio next.</p>
+          <div class="kicker" id="s3kick">Step 3 of 5 · connect your tracker</div>
+          <h2>Send issues to <em>your tracker.</em></h2>
+          <p class="sub">Every issue Klavity finds can flow straight into the tool your team already lives in — or stay in Klavity Cloud. Pick where issues should land; you can wire up the details in Settings after.</p>
+          <div class="trk-grid" role="group" aria-label="Choose where issues go">
+            <button type="button" class="trk" id="trkJira" onclick="chooseTracker('jira')"><span class="tk-ic">JR</span><div><h3>Jira</h3><p>Push issues into your Jira project</p></div></button>
+            <button type="button" class="trk" id="trkLinear" onclick="chooseTracker('linear')"><span class="tk-ic">LN</span><div><h3>Linear</h3><p>Create Linear issues automatically</p></div></button>
+            <button type="button" class="trk" id="trkGithub" onclick="chooseTracker('github')"><span class="tk-ic">GH</span><div><h3>GitHub</h3><p>Open GitHub issues in your repo</p></div></button>
+            <button type="button" class="trk" id="trkPlane" onclick="chooseTracker('plane')"><span class="tk-ic">PL</span><div><h3>Plane</h3><p>File into your Plane workspace</p></div></button>
+            <button type="button" class="trk sel" id="trkCloud" onclick="chooseTracker('cloud')"><span class="tk-ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.5 19a4.5 4.5 0 1 0-1.4-8.78 6 6 0 1 0-10.5 4.02" /><path d="M12 12v9" /><path d="m8 17 4 4 4-4" /></svg></span><div><h3>Keep them in Klavity Cloud</h3><p>Triage and track issues right here — no external tool needed</p></div></button>
+          </div>
+          <div class="automap"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;margin-top:1px;color:var(--green)"><path d="M20 6 9 17l-5-5" /></svg><span>New: Klavity auto-maps issue types and statuses to your tracker, so severities and workflow states line up without manual field mapping.</span></div>
+          <div class="row">
+            <button class="btn btn-indigo" id="trkContinue" onclick="trackerContinue()">Continue →</button>
+            <span class="skip" id="trkSkip" onclick="trackerContinue()">Decide later</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ───────────── STEP 4 — START YOUR PLAN (NEW) ───────────── -->
+    <div class="panel step hide" data-s="4">
+      <div class="content" style="padding:60px clamp(28px,6vw,90px)">
+        <div class="panel">
+          <div class="kicker" id="s4kick">Step 4 of 5 · start your plan</div>
+          <h2>Start your <em>plan.</em></h2>
+          <p class="sub">Pick the plan that fits your team. No card charged now, and there is no credit-burn — fair-use guard rails keep costs predictable.</p>
+          <div class="plans" role="group" aria-label="Choose a plan">
+            <button type="button" class="plan" id="planStarter" onclick="choosePlan('pro')">
+              <h3>Starter</h3>
+              <div class="pl-price">$29<span> /mo</span></div>
+              <div class="pl-desc">For a single product. Sims review your releases and file issues into your tracker.</div>
+            </button>
+            <button type="button" class="plan sel" id="planTeam" onclick="choosePlan('team')">
+              <span class="pl-tag">Recommended</span>
+              <h3>Team</h3>
+              <div class="pl-price">$99<span> /mo</span></div>
+              <div class="pl-desc">AutoSim on every release, multiple projects, and your whole team in one workspace.</div>
+            </button>
+            <button type="button" class="plan" id="planScale" onclick="choosePlan('founding')">
+              <span class="pl-tag">Highest volume</span>
+              <h3>Scale</h3>
+              <div class="pl-price">Custom</div>
+              <div class="pl-desc">High-volume AutoSim runs, priority support, and advanced guard-rail controls.</div>
+            </button>
+          </div>
+          <div class="guarantee"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;color:var(--green)"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" /><path d="m9 12 2 2 4-4" /></svg><span><b>14-day money-back guarantee.</b> Not a free trial — start on a real plan, and if Klavity is not catching issues worth the price in your first two weeks, we refund you in full.</span></div>
+          <div class="row">
+            <button class="btn btn-indigo" id="planContinue" onclick="planContinue()">Continue →</button>
+            <span class="skip" id="planSkip" onclick="planSkip()">Choose a plan later</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ───────────── STEP 5 — AUTOSIM: KEEP TESTING EVERY RELEASE ───────────── -->
+    <div class="panel step hide" data-s="5">
+      <div class="content" style="padding:60px clamp(28px,6vw,90px)">
+        <div class="panel">
+          <div class="kicker amber" id="s5kick">Step 5 of 5 · keep testing</div>
+          <h2>Keep testing <em>every release.</em></h2>
+          <p class="sub" id="s3sub">AutoSim is the always-on version of your Sims: it re-runs the journeys that matter on every release, catches regressions before your customers do, and files what it finds. Set how often it runs, then bring your review team in.</p>
           <!-- Aha carry-through: when step 0 built Sims from THEIR site, the primary path is seeing
                those Sims' first review in New reports — not Sim-authoring jargon. Hidden when the
                user skipped step 0 (no stashed personas). -->
@@ -515,8 +632,15 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
               <h3 id="ahaPrimaryHd">Your AI customer personas — see their first review →</h3>
               <p>The AI customer personas we built from your site are already on it — their first review lands in New reports on your dashboard.</p>
             </div>
-            <div style="font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);margin:18px 0 12px">Richer AI personas later</div>
           </div>
+          <!-- AutoSim frequency (carried forward as &freq= — no backend commit here) -->
+          <div style="font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);margin:22px 0 10px">How often should AutoSim run?</div>
+          <div class="freq" role="group" aria-label="AutoSim frequency">
+            <button type="button" class="freqp sel" id="freqDeploy" onclick="chooseFreq('deploy')">After every deployment<span class="fr-rec">Recommended</span></button>
+            <button type="button" class="freqp" id="freqDaily" onclick="chooseFreq('daily')">Daily</button>
+            <button type="button" class="freqp" id="freqWeekly" onclick="chooseFreq('weekly')">Weekly</button>
+          </div>
+          <div style="font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);margin:24px 0 12px">Bring your review team in</div>
           <div class="tiles">
             <div class="tile sel" id="intentTranscript" onclick="pickIntent('transcript')"><div class="ti"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" /> <path d="M14 2v4a2 2 0 0 0 2 2h4" /> <path d="M10 9H8" /> <path d="M16 13H8" /> <path d="M16 17H8" /></svg></div><h3>From a customer call</h3><p>Upload a written record of the call (Zoom / Meet / Loom). We turn each speaker into an AI customer persona, based on what they actually said.</p></div>
             <div class="tile" id="intentHats" onclick="pickIntent('hats')"><div class="ti"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5" /> <path d="M9 18h6" /> <path d="M10 22h4" /></svg></div><h3>The Six Thinking Hats</h3><p>A balanced review team — facts, feelings, optimism, risks, ideas, process — that works on any page, no customer call needed.</p>
@@ -531,7 +655,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
             </div>
           </div>
           <div class="row"><button id="onb-open-studio" class="btn btn-amber" onclick="openStudio()">Open the Studio →</button><span id="onb-pick-later" class="skip" onclick="openStudio()">Pick later in the Studio</span></div>
-          <!-- Snap-only exit: founders who just want bug reports shouldn't be forced through Sims. -->
+          <!-- Low-emphasis exit: jump straight to the dashboard reports. -->
           <div style="margin-top:16px"><a class="snap-exit" id="skipToDash" href="/dashboard">Skip for now — take me to my reports →</a></div>
         </div>
       </div>
@@ -595,7 +719,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       var lead=sent==='critical'?(esc(pname)+' found something before your users would:'):(esc(pname)+' reacted to your real page:')
       node.innerHTML='<div class="uh-rx"><div class="uh-rx-top"><span class="uh-rx-pill '+cls+'">'+word+'</span><span class="uh-rx-lead">'+lead+'</span></div>'
         +(rx.title?'<div class="uh-rx-title">'+esc(rx.title)+'</div>':'')
-        +'<div class="uh-rx-obs">“'+esc(rx.observation||rx.title)+'”</div></div>'
+        +'<div class="uh-rx-obs">\u201c'+esc(rx.observation||rx.title)+'\u201d</div></div>'
     }catch(e){ softNote(node,pname) }
     finally{ clearInterval(waitTimer) }
   }
@@ -678,6 +802,9 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     if(!raw){ err.textContent='Enter your product URL.'; inp.focus(); return }
     var url=raw
     if(!/^https?:\/\//i.test(url)) url='https://'+url
+    // Sign-in-to-test: stash any entered creds to carry into the authed crawl later. This does
+    // NOT change the anonymous preview body below — the instant preview reads the public URL.
+    if(typeof stashTestCreds==='function') stashTestCreds()
     uhSetLoading(true)
     try{
       var res=await fetch('/api/persona/site',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({url:url})})
@@ -747,11 +874,14 @@ function applyGoal(){
   const gSnap = $('goalSnap'), gSims = $('goalSims')
   if (gSnap) gSnap.setAttribute('aria-pressed', String(isSnap))
   if (gSims) gSims.setAttribute('aria-pressed', String(goal === 'sims'))
-  // step counters — Snap is a 2-step flow, Sims stays 3
-  const total = isSnap ? 2 : 3
+  // step counters — Snap is a 2-step flow (signup + install); Sims runs the full 5-step path.
+  const total = isSnap ? 2 : 5
   setText('s1kick',  'Step 1 of ' + total)
   setText('s1ckick', 'Step 1 of ' + total + ' · check your email')
   setText('s2kick',  'Step 2 of ' + total + ' · add to your site')
+  setText('s3kick',  'Step 3 of ' + total + ' · connect your tracker')
+  setText('s4kick',  'Step 4 of ' + total + ' · start your plan')
+  setText('s5kick',  'Step 5 of ' + total + ' · keep testing')
   // step-2 copy + install options adapt to the goal
   const sub = $('s2sub')
   if (sub) sub.textContent = isSnap
@@ -772,6 +902,85 @@ function chooseGoal(g){
   go(1)
 }
 
+// Snap users can opt into the AI/Sims path from step 2 — switch the goal and route them
+// through the full Sims flow (tracker → plan → AutoSim) starting at the tracker step.
+function addSimsToo(){
+  goal = 'sims'
+  persistGoal('sims')
+  applyGoal()
+  go(3)
+}
+
+// ── Step 0: "this app needs a login to test" affordance (UI only for now) ──
+// Reveals test-credential fields. We do NOT change the anonymous /api/persona/site body —
+// the instant preview still runs on the public URL. Creds are stashed locally so the authed
+// crawl can pick them up after the project is created (a follow-up), never faking success here.
+function toggleCreds(){
+  const p = $('credsPanel'), b = $('credsToggle'); if (!p || !b) return
+  const open = p.classList.toggle('hide') === false
+  b.setAttribute('aria-expanded', String(open))
+}
+function stashTestCreds(){
+  try {
+    const user = ($('credUser') && $('credUser').value.trim()) || ''
+    const pass = ($('credPass') && $('credPass').value) || ''
+    const loginUrl = ($('credLoginUrl') && $('credLoginUrl').value.trim()) || ''
+    if (!user && !pass && !loginUrl) return false
+    localStorage.setItem('klav-aha-creds', JSON.stringify({ user, pass, loginUrl, ts: Date.now() }))
+    return true
+  } catch(e){ return false }
+}
+
+// ── Step 3 (NEW): tracker connector choice. No backend commit — the pick is stashed and
+// carried to the dashboard (like ?goal=) so Settings can finish wiring it. Never fakes success. ──
+let trackerChoice = 'cloud'
+function chooseTracker(which){
+  trackerChoice = which
+  try { localStorage.setItem('klav-tracker-choice', which) } catch(e){}
+  ;['trkJira','trkLinear','trkGithub','trkPlane','trkCloud'].forEach(function(id){
+    const el = $(id); if (el) el.classList.toggle('sel', el.id.toLowerCase().indexOf(which) > -1)
+  })
+}
+function trackerContinue(){ go(4) }
+
+// ── Step 4 (NEW): plan choice. Reuses the existing planIntent stash (sessionStorage
+// 'klav-plan-intent' + ?upgrade= on the dashboard exits) — presentational only, no payment. ──
+function choosePlan(slug){
+  if (slug === 'pro' || slug === 'team' || slug === 'founding') {
+    planIntent = slug
+    try { sessionStorage.setItem('klav-plan-intent', slug) } catch(e){}
+  }
+  const map = { pro:'planStarter', team:'planTeam', founding:'planScale' }
+  ;['planStarter','planTeam','planScale'].forEach(function(id){
+    const el = $(id); if (el) el.classList.toggle('sel', id === map[slug])
+  })
+  renderWidgetSnippet() // refresh the skip-to-dash href so it carries the new ?upgrade=
+}
+function planContinue(){
+  // Adopt the highlighted default (Team) if the user continued without an explicit pick and
+  // no pricing-page intent is already in play — matches what is visually selected.
+  if (!planIntent) choosePlan('team')
+  go(5)
+}
+function planSkip(){ go(5) }
+
+// ── Step 5 (NEW): AutoSim run frequency. Carried forward as &freq= (no backend commit). ──
+let freqChoice = 'deploy'
+function chooseFreq(which){
+  freqChoice = which
+  try { localStorage.setItem('klav-autosim-freq', which) } catch(e){}
+  ;[['deploy','freqDeploy'],['daily','freqDaily'],['weekly','freqWeekly']].forEach(function(pair){
+    const el = $(pair[1]); if (el) el.classList.toggle('sel', pair[0] === which)
+  })
+}
+// Append the onboarding choices that have no dedicated endpoint yet (tracker + AutoSim
+// frequency) onto a dashboard-bound query, so the dashboard can honor them post-onboarding.
+function carryChoices(q){
+  if (trackerChoice && trackerChoice !== 'cloud') q.set('tracker', trackerChoice)
+  if (goal === 'sims' && freqChoice) q.set('freq', freqChoice)
+  return q
+}
+
 // Fill the embed snippet with the real project ID so users never hand-edit it.
 function widgetSnippetText(){ return '<script src="' + location.origin + '/widget.js" data-project="' + (projectId || 'YOUR_PROJECT_ID') + '" defer><\/script>' }
 function renderWidgetSnippet(){
@@ -788,6 +997,7 @@ function renderWidgetSnippet(){
     if (projectId) q.set('project', projectId)
     if (goal) q.set('goal', goal)
     if (typeof planIntent !== 'undefined' && planIntent) q.set('upgrade', planIntent)
+    if (typeof carryChoices === 'function') carryChoices(q)
     var qs = q.toString()
     a.href = '/dashboard' + (qs ? '?' + qs : '')
   }
@@ -839,14 +1049,14 @@ function paint(){
   document.querySelectorAll('.rstep').forEach(el => {
     const r = Number(el.dataset.r)
     el.classList.toggle('active', r === cur)
-    el.classList.toggle('done', r < cur && r !== 4)
-    if (r < cur && r !== 4) el.querySelector('.ix').innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>'
-    else if (r !== 4) el.querySelector('.ix').textContent = String(r)
+    el.classList.toggle('done', r < cur && r !== 5)
+    if (r < cur && r !== 5) el.querySelector('.ix').innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>'
+    else if (r !== 5) el.querySelector('.ix').textContent = String(r)
   })
   // Widget live-detect: poll only while step 2's widget section is visible.
   if (typeof syncWidgetPoll === 'function') syncWidgetPoll()
-  // Step 3: show the "see their first review" primary exit when step-0 aha personas exist.
-  if (cur === 3) syncAhaPrimary()
+  // Final step: show the "see their first review" primary exit when step-0 aha personas exist.
+  if (cur === 5) syncAhaPrimary()
   window.scrollTo(0, 0)
 }
 function go(n){ cur = n; paint() }
@@ -888,7 +1098,7 @@ async function requestCode(){
     const { ok, status, data } = await jsonFetch('/api/auth/request', {
       method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(window.KlavAttr ? window.KlavAttr.attach({ email }) : { email })
     })
-    if (!ok) { err.textContent = data.error || (status===403 ? 'This email isn’t on the access list yet.' : 'Could not send a code.'); return }
+    if (!ok) { err.textContent = data.error || (status===403 ? 'This email is not on the access list yet.' : 'Could not send a code.'); return }
     // success → switch to the code-entry view
     $('codeEmail').textContent = email
     $('s1form').classList.add('hide')
@@ -1051,6 +1261,7 @@ async function finishToReports(){
   if (projectId) q.set('project', projectId)
   q.set('goal', 'snap')
   if (typeof planIntent !== 'undefined' && planIntent) q.set('upgrade', planIntent)
+  if (typeof carryChoices === 'function') carryChoices(q)
   window.location.href = '/dashboard?' + q.toString()
 }
 
@@ -1299,12 +1510,15 @@ function syncAhaPrimary(){
   $('ahaPrimaryHd').textContent = 'Your Sims from ' + (host || 'your site') + ' — see their first review →'
   setText('s3sub', 'Your Sims are already reviewing your site — or build richer Sims from a real customer call. You can meet them in the Studio any time.')
 }
-function gotoAhaReview(){
+async function gotoAhaReview(){
+  // Exit → stamp onboarded first so the wizard never re-shows (KLA-297).
+  await markOnboarded()
   // New reports = the dashboard triage view; #triage is its existing deep link.
   const q = new URLSearchParams()
   if (projectId) q.set('project', projectId)
   if (goal) q.set('goal', goal)
   if (typeof planIntent !== 'undefined' && planIntent) q.set('upgrade', planIntent)
+  if (typeof carryChoices === 'function') carryChoices(q)
   const qs = q.toString()
   window.location.href = '/dashboard' + (qs ? '?' + qs : '') + '#triage'
 }
@@ -1375,7 +1589,7 @@ async function bootstrap(){
       // so "Create project →" goes straight to step 2 (see requestCode()).
       try {
         const _ef = $('email').closest('.fld'); if (_ef) _ef.classList.add('hide')
-        const _sub = $('s1sub'); if (_sub) _sub.textContent = 'A project is one product — its Sims, the pages they watch, and the tickets they file. You’re signed in as ' + me.data.email + ', so just name it and continue.'
+        const _sub = $('s1sub'); if (_sub) _sub.textContent = 'A project is one product — its Sims, the pages they watch, and the tickets they file. You are signed in as ' + me.data.email + ', so just name it and continue.'
       } catch(e){}
       const pr = await jsonFetch('/api/projects', { headers:{'accept':'application/json'}, signal: ctrl.signal })
       if (pr.ok && pr.data.projects && pr.data.projects.length){
