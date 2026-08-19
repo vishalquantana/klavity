@@ -1170,6 +1170,19 @@ details.drawer .drawer-in{padding:0 22px 22px}
 .conn-urlpaste-hint.err{color:var(--amber)}
 .conn-field-hint{font-size:11px;color:var(--paper-faint);margin-top:4px;line-height:1.45}
 input.conn-autofilled{border-color:var(--indigo)!important;box-shadow:0 0 0 2px rgba(99,102,241,.22);transition:box-shadow .5s ease,border-color .5s ease}
+/* Connector-field-mapping (Task 10): "next: map fields" prompt + the two mapping tables */
+.conn-map-prompt{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px;padding:11px 13px;background:var(--ink-2);border:1px solid var(--line);border-radius:10px;font-size:12.5px;color:var(--paper-dim)}
+.conn-map{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+.conn-map-h{font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:6px;margin-bottom:4px}
+.conn-map-sub{font-size:11.5px;color:var(--paper-faint);line-height:1.5;margin-bottom:10px}
+.conn-map-table{width:100%;border-collapse:collapse;margin-bottom:12px}
+.conn-map-table th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--paper-faint);padding:0 8px 6px;font-weight:600}
+.conn-map-table td{padding:6px 8px;border-top:1px solid var(--line);font-size:12.5px;vertical-align:middle}
+.conn-map-table tr.amber td{background:rgba(217,131,36,.08)}
+.conn-map-table select{appearance:none;width:100%;max-width:260px;background:var(--ink-2);border:1px solid var(--line);border-radius:8px;padding:6px 26px 6px 9px;color:var(--paper);font-family:var(--body);font-size:12.5px;outline:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center}
+.conn-map-table select[data-needs="1"]{border-color:var(--amber)}
+.conn-map-table .cm-flag{font-size:10px;color:var(--amber);margin-left:8px;white-space:nowrap}
+.conn-map-gate{font-size:11.5px;color:var(--amber);margin-bottom:8px}
 
 /* test-accounts section */
 .tacc-list{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
@@ -2082,6 +2095,14 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
             <span class="msg" id="connAddMsg" style="margin:0"></span>
           </div>
           <div class="conn-result hide" id="connAddTestResult"></div>
+          <!-- Connector-field-mapping (Task 10): shown after a successful Test — map bug kinds
+               and ticket stages onto the tracker's real fields, or skip and use defaults. -->
+          <div id="connMapPrompt" class="conn-map-prompt hide">
+            <span>Connected! Map your bug kinds and ticket stages to this tracker's fields, or skip and use defaults.</span>
+            <button type="button" class="btn btn-indigo btn-sm" id="connMapStart">Next: map fields &rarr;</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="connMapPromptSkip">Skip &mdash; use defaults</button>
+          </div>
+          <div id="connMapWrap" class="conn-map hide"></div>
         </div>
         <button class="btn btn-ghost btn-sm" id="connAddBtn" style="margin-top:8px">+ Connect a tracker</button>
         <div class="msg" id="connMsg"></div>
@@ -7245,6 +7266,11 @@ function openConnEdit(conn) {
   $("connSaveNew").textContent = "Save changes"
   $("connAddMsg").textContent = ""
   $("connAddTestResult") && $("connAddTestResult").classList.add("hide")
+  // Connector-field-mapping (Task 10): a saved connector already has working creds (cid path),
+  // so load + pre-select its mapping right away instead of gating behind a re-test.
+  $("connMapPrompt") && $("connMapPrompt").classList.add("hide")
+  resetConnMapUi()
+  renderConnectorMapping(conn.type, conn.config || {})
   $("connAddWrap").scrollIntoView({ behavior: "smooth", block: "nearest" })
 }
 function resetConnForm() {
@@ -7257,6 +7283,8 @@ function resetConnForm() {
   $("connSaveNew").textContent = "Connect tracker"
   $("connAddMsg").textContent = ""
   $("connAddTestResult") && $("connAddTestResult").classList.add("hide")
+  $("connMapPrompt") && $("connMapPrompt").classList.add("hide")
+  resetConnMapUi()
 }
 
 // Per-type "Where do I find this?" pointers — one line above the credential fields so a founder
@@ -7456,9 +7484,177 @@ function renderConnectorFields(type, editConfig) {
   }
 }
 
+// ── Connector-field-mapping (Task 10): inline mapping UI in the connect flow ──────────────────
+// Klavity's fixed bug-kind and ticket-stage keys, in the same order the meta endpoint returns
+// row objects for. Kept in one place so collectConnMaps() can bucket <select> values without
+// re-deriving them from the loaded rows.
+const CONN_MAP_KIND_KEYS = ["bug", "feature"]
+const CONN_MAP_STATUS_KEYS = ["new", "open", "in_progress", "done", "dismissed"]
+
+// Client mirror of prototype/lib/connectors/resolve-issue-type.ts's parseJsonMap — issue_type_map
+// / status_map are stored as JSON strings on connector config; this only needs to read them back
+// to pre-select the mapping UI, never to resolve at send-time (the server owns that).
+function parseConnMap(raw) {
+  if (!raw || typeof raw !== "string") return {}
+  try {
+    const o = JSON.parse(raw)
+    return (o && typeof o === "object") ? o : {}
+  } catch (e) { return {} }
+}
+
+// Hide + clear the mapping section without touching the "map fields" prompt above it.
+function resetConnMapUi() {
+  const wrap = $("connMapWrap")
+  if (wrap) { wrap.classList.add("hide"); wrap.innerHTML = "" }
+  updateConnMapGate()
+}
+
+// Count unresolved (ambiguous/unmatched) selects and gate the Save/Connect button on them —
+// mirrors the mockup's "N items need your input" rule.
+function updateConnMapGate() {
+  const wrap = $("connMapWrap")
+  const gate = $("connMapGate")
+  const saveBtn = $("connSaveNew")
+  const n = (wrap && !wrap.classList.contains("hide"))
+    ? Array.from(wrap.querySelectorAll('select[data-needs="1"]')).filter(s => !s.value).length
+    : 0
+  if (gate) {
+    if (n > 0) {
+      gate.classList.remove("hide")
+      gate.textContent = n + (n === 1 ? " item needs" : " items need") + " your input before you can connect."
+    } else {
+      gate.classList.add("hide")
+      gate.textContent = ""
+    }
+  }
+  if (saveBtn) saveBtn.disabled = n > 0
+}
+
+// Render one mapping table (types or statuses). `rows` is the meta endpoint's MatchRow[]
+// (key/label/suggested/candidates/status); `optionNames` are the real provider option names to
+// offer in each <select>; `existingMap` (klavity key -> provider name) overrides the
+// auto-suggestion when re-opening a saved connector for edit.
+function connMapTable(heading, rows, optionNames, existingMap) {
+  if (!rows || !rows.length) return ""
+  const rowsHtml = rows.map(row => {
+    const needsInput = row.status === "ambiguous" || row.status === "unmatched"
+    const hasExisting = existingMap && Object.prototype.hasOwnProperty.call(existingMap, row.key)
+    const existing = hasExisting ? existingMap[row.key] : null
+    const preselect = existing != null ? existing : (needsInput ? "" : (row.suggested || ""))
+    const optsHtml = `<option value="">— don't sync —</option>` + optionNames.map(o =>
+      `<option value="${esc(o)}"${o === preselect ? " selected" : ""}>${esc(o)}</option>`
+    ).join("")
+    const flag = needsInput
+      ? `<span class="cm-flag">${row.status === "ambiguous" ? "ambiguous — pick one" : "no auto-match"}</span>`
+      : ""
+    return `<tr${needsInput ? ' class="amber"' : ""}>
+      <td>${esc(row.label)}</td>
+      <td><select data-map-key="${esc(row.key)}"${needsInput ? ' data-needs="1"' : ""}>${optsHtml}</select>${flag}</td>
+    </tr>`
+  }).join("")
+  return `<table class="conn-map-table"><thead><tr><th>${esc(heading)}</th><th></th></tr></thead><tbody>${rowsHtml}</tbody></table>`
+}
+
+// Fetch /connectors/meta and render the two mapping tables. Unsaved config (create flow) posts
+// {type, config}; a saved connector (edit flow, connEditId set) posts {type, cid} so the server
+// decrypts + uses the already-working saved credentials instead of requiring fields to be
+// re-entered. Skips the section entirely for webhook-style connectors (no issue types/statuses).
+async function renderConnectorMapping(type, config) {
+  const wrap = $("connMapWrap")
+  if (!wrap) return
+  const mapPrompt = $("connMapPrompt")
+  if (mapPrompt) mapPrompt.classList.add("hide")
+  wrap.classList.remove("hide")
+  wrap.innerHTML = `<div class="muted" style="font-size:12px;padding:4px 0">Loading field mapping…</div>`
+  const body = connEditId ? { type, cid: connEditId } : { type, config: config || {} }
+  const r = await fetch(projPath("/connectors/meta"), {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify(body)
+  }).catch(() => null)
+  const d = (r && r.ok) ? await r.json().catch(() => null) : null
+  if (!d || !d.rows) {
+    wrap.innerHTML = `<div class="conn-result err">${kicon('x')} Couldn't load field mapping — you can still connect; Klavity's defaults will be used.</div>`
+    updateConnMapGate()
+    return
+  }
+  const caps = d.capabilities || {}
+  if (caps.issueTypes === false && caps.statuses === false) {
+    // Webhook-style connector: nothing to map — say so instead of leaving a dead click.
+    wrap.innerHTML = `<div class="muted" style="font-size:12px;padding:4px 0">This connector type doesn't use field mapping — you're all set.</div>`
+    updateConnMapGate()
+    return
+  }
+  const ct = connectorTypes.find(t => t.type === type)
+  const trackerLabel = (ct && ct.label) || type
+  const typesHeading = "Klavity kind → " + (caps.typesAsLabels ? `${trackerLabel} label` : `${trackerLabel} issue type`)
+
+  // Re-opening a saved connector: pre-select whatever it already has stored, falling back to
+  // the server's auto-suggestion for anything not yet mapped.
+  let existingTypeMap = {}, existingStatusMap = {}
+  const conn = connEditId ? (state._connectors || []).find(x => x.id === connEditId) : null
+  if (conn && conn.config) {
+    existingTypeMap = parseConnMap(conn.config.issue_type_map)
+    existingStatusMap = parseConnMap(conn.config.status_map)
+  }
+
+  const typeOpts = (d.issueTypes || []).map(t => t.name)
+  const statusOpts = (d.statuses || []).map(s => s.name)
+  const typesHtml = caps.issueTypes === false ? "" : connMapTable(typesHeading, d.rows.types, typeOpts, existingTypeMap)
+  const statusesHtml = caps.statuses === false ? "" : connMapTable("Klavity stage → tracker status", d.rows.statuses, statusOpts, existingStatusMap)
+
+  wrap.innerHTML = `
+    <div class="conn-map-h">${kicon('link', { size: 14 })} Field mapping <span class="muted" style="font-weight:400;font-size:11px">— optional</span></div>
+    <div class="conn-map-sub">We matched what we could automatically. Rows in amber need your input before you connect.</div>
+    ${typesHtml}
+    ${statusesHtml}
+    <div id="connMapGate" class="conn-map-gate hide"></div>
+    <button type="button" class="btn btn-ghost btn-sm" id="connMapSkip">Skip &mdash; use defaults</button>
+  `
+  wrap.querySelectorAll("select[data-map-key]").forEach(sel => {
+    sel.addEventListener("change", updateConnMapGate)
+  })
+  const skipBtn = $("connMapSkip")
+  if (skipBtn) skipBtn.onclick = () => resetConnMapUi()
+  updateConnMapGate()
+}
+
+// Gather the mapping selects into {issue_type_map, status_map} JSON strings, ready to fold into
+// the config object the existing create/PATCH request already sends. Returns {} (no keys) when
+// the mapping section is hidden/unused — Save then behaves exactly as it did before this feature.
+function collectConnMaps() {
+  const wrap = $("connMapWrap")
+  const result = {}
+  if (!wrap || wrap.classList.contains("hide")) return result
+  const issue_type_map = {}
+  const status_map = {}
+  wrap.querySelectorAll("select[data-map-key]").forEach(sel => {
+    const key = sel.getAttribute("data-map-key")
+    const val = sel.value
+    if (!val) return
+    if (CONN_MAP_KIND_KEYS.includes(key)) issue_type_map[key] = val
+    else if (CONN_MAP_STATUS_KEYS.includes(key)) status_map[key] = val
+  })
+  if (Object.keys(issue_type_map).length) result.issue_type_map = JSON.stringify(issue_type_map)
+  if (Object.keys(status_map).length) result.status_map = JSON.stringify(status_map)
+  return result
+}
+
+$("connMapStart") && ($("connMapStart").onclick = () => {
+  const { type, config } = readConnForm()
+  renderConnectorMapping(type, config)
+})
+
+$("connMapPromptSkip") && ($("connMapPromptSkip").onclick = () => {
+  $("connMapPrompt") && $("connMapPrompt").classList.add("hide")
+  resetConnMapUi()
+})
+
 $("connTypeSelect") && ($("connTypeSelect").onchange = () => {
   renderConnectorFields($("connTypeSelect").value)
   $("connAddTestResult") && $("connAddTestResult").classList.add("hide")
+  // Switching type invalidates any mapping computed for the previous type.
+  $("connMapPrompt") && $("connMapPrompt").classList.add("hide")
+  resetConnMapUi()
 })
 
 $("connAddBtn") && ($("connAddBtn").onclick = () => {
@@ -7498,6 +7694,12 @@ $("connTestNew") && ($("connTestNew").onclick = async () => {
   $("connTestNew").disabled = false
   const d = r ? await r.json().catch(() => ({})) : {}
   renderTestResult(resEl, r, d)
+  // Connector-field-mapping (Task 10): a successful Test proves the config works, so it's now
+  // safe to call /connectors/meta with it — reveal the "map fields" affordance.
+  const success = !!(r && r.ok && d && d.ok === true)
+  const mapPrompt = $("connMapPrompt")
+  if (success && mapPrompt) mapPrompt.classList.remove("hide")
+  else if (!success && mapPrompt) mapPrompt.classList.add("hide")
 })
 
 $("connSaveNew") && ($("connSaveNew").onclick = async () => {
@@ -7513,6 +7715,13 @@ $("connSaveNew") && ($("connSaveNew").onclick = async () => {
     const v = inp.value.trim()
     if (v) config[inp.getAttribute("data-fkey")] = v
   })
+  // Connector-field-mapping (Task 10): fold the mapping selects (if the mapping step was used
+  // and not skipped) into the same config object — no new save endpoint. If the user skipped
+  // mapping, connMapWrap stays hidden and collectConnMaps() returns nothing, so behavior is
+  // identical to before this feature.
+  const maps = collectConnMaps()
+  if (maps.issue_type_map) config.issue_type_map = maps.issue_type_map
+  if (maps.status_map) config.status_map = maps.status_map
   $("connSaveNew").disabled = true
   let r
   if (connEditId) {
@@ -7527,7 +7736,7 @@ $("connSaveNew") && ($("connSaveNew").onclick = async () => {
       body: JSON.stringify({ type, name, config, autoCopy })
     }).catch(() => null)
   }
-  $("connSaveNew").disabled = false
+  updateConnMapGate() // re-derives connSaveNew.disabled from any still-unresolved amber rows
   const d = r ? await r.json().catch(() => ({})) : {}
   if (d.ok) {
     msg.style.color = "var(--green)"; msg.textContent = connEditId ? "Connector updated." : "Connector added." // emoji-ok
