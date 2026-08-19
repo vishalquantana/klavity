@@ -177,6 +177,14 @@ input.code{font-family:var(--mono);font-size:24px;letter-spacing:.5em;text-align
 .bbody{padding:16px;min-height:190px;position:relative}
 .sk{background:var(--line2);border-radius:8px;height:14px;margin:8px 0}
 .bcursor{position:absolute;background:var(--indigo);color:#fff;font-size:11px;border-radius:999px;padding:3px 9px;box-shadow:var(--shadow)}
+/* grounded visual scan — real screenshot + top-to-bottom scanner line on the Test screen */
+.test-shotwrap{position:relative;overflow:hidden;border-radius:8px;max-height:320px}
+.test-shot{display:block;width:100%;height:auto;object-fit:cover;object-position:top}
+.scanline{position:absolute;left:0;right:0;top:0;height:26px;pointer-events:none;
+  background:linear-gradient(to bottom,rgba(99,102,241,0) 0%,rgba(99,102,241,.18) 60%,rgba(99,102,241,.55) 100%);
+  border-bottom:2px solid var(--indigo);box-shadow:0 0 14px rgba(99,102,241,.5);animation:scansweep 2.4s ease-in-out infinite}
+@keyframes scansweep{0%{transform:translateY(-26px)}100%{transform:translateY(320px)}}
+@media(prefers-reduced-motion:reduce){.scanline{animation:none;opacity:.5}}
 
 /* auth advanced (product step) */
 .adv-toggle{margin-top:14px;display:inline-flex;align-items:center;gap:8px;background:none;border:1px solid var(--line);
@@ -216,6 +224,15 @@ input.code{font-family:var(--mono);font-size:24px;letter-spacing:.5em;text-align
   border-radius:0 10px 10px 0;padding-right:13px}
 .rx-live .rx-lead{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--indigo);margin-bottom:6px}
 .rx-live .rx-obs{font-size:14.5px;line-height:1.5;font-style:italic;color:var(--ink)}
+.rx-live .rx-title{font-weight:700;font-size:15px;color:var(--ink);margin:2px 0 6px}
+/* visual evidence — real screenshot with the reaction region drawn on top */
+.rx-shotwrap{position:relative;margin-top:12px;border:1px solid var(--line);border-radius:11px;overflow:hidden;max-height:360px}
+.rx-shot{display:block;width:100%;height:auto;object-fit:cover;object-position:top}
+.rx-region{position:absolute;border:2px solid var(--indigo);background:rgba(99,102,241,.14);border-radius:4px;
+  box-shadow:0 0 0 9999px rgba(15,20,40,.12);pointer-events:none}
+.rx-pin{position:absolute;left:0;top:-9px;transform:translateY(-100%);background:var(--indigo);color:#fff;
+  font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.03em;border-radius:6px;padding:2px 7px;white-space:nowrap;box-shadow:var(--shadow)}
+.rx-cap{margin-top:10px;font-family:var(--mono);font-size:12px;color:var(--muted)}
 
 /* recommended journeys */
 .jrow{display:flex;align-items:center;gap:12px;padding:11px 0;border-top:1px solid var(--line2)}
@@ -233,6 +250,7 @@ input.code{font-family:var(--mono);font-size:24px;letter-spacing:.5em;text-align
 @keyframes uhpop{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 .uh-sim .uh-av{width:36px;height:36px;border-radius:10px;color:#fff;font-weight:700;font-size:13px;display:grid;place-items:center;margin-bottom:2px}
 .uh-sim .uh-nm{font-weight:650;font-size:13px} .uh-sim .uh-rl{font-size:11.5px;color:var(--faint);line-height:1.4}
+.uh-sim .uh-ds{font-size:11.5px;color:var(--ink2);line-height:1.45;margin-top:2px}
 .uh-label{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);margin-bottom:6px}
 .uh-loading{display:flex;align-items:center;gap:9px;margin-top:16px;font-size:13.5px;color:var(--muted)}
 .uh-spin{width:16px;height:16px;border-radius:50%;border:2px solid var(--indigo);border-top-color:transparent;animation:uhspin .7s linear infinite}
@@ -469,7 +487,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         <div>
           <div style="font-weight:650;margin-bottom:8px">Evidence</div>
           <div class="evi">
-            <div class="r"><span class="k">Screenshot</span><span class="v mono">checkout-mobile-375.png</span></div>
+            <div class="r"><span class="k">Screenshot</span><span class="v mono" id="eviShotName">captured live</span></div>
             <div class="r"><span class="k">Device</span><span class="v mono">iPhone 14 · 375×812 · Safari</span></div>
             <div class="r"><span class="k">Console</span><span class="v mono">TypeError: cta.offsetTop…</span></div>
           </div>
@@ -743,12 +761,27 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       var res=await fetch('/api/sim/preview',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({url:url,persona:persona})})
       if(!res.ok) throw 0
       var d=await res.json(); var rx=d&&d.reaction
+      // Grounded visual scan: if the SAME JPEG the Sim reacted to came back, drop the skeleton and
+      // show the REAL page inside the browser-preview panel with a top-to-bottom scanner sweep.
+      // Missing shot → keep the existing skeleton (graceful).
+      if(d&&d.shotDataUrl){
+        try{
+          var bb=document.querySelector('.screen[data-s="2"] .browser .bbody')
+          if(bb){ bb.innerHTML='<div class="test-shotwrap"><img class="test-shot" src="'+esc(d.shotDataUrl)+'" alt="Your page, captured live"/><div class="scanline"></div></div>' }
+          var bu=document.querySelector('.screen[data-s="2"] .browser .burl')
+          if(bu){ try{ bu.textContent=new URL(url).host }catch(e2){} }
+        }catch(e){}
+      }
       if(!rx||!(rx.observation||rx.title)){ softNote(node,pname); return }
-      // Aha carry-through: keep the reaction alongside the stashed personas so post-signup
-      // steps can reference what the Sim already found on THEIR site.
+      // Aha carry-through: keep the reaction + captured screenshot + region alongside the stashed
+      // personas so the Insights step can render the real visual evidence. Wrapped in try/catch so a
+      // localStorage quota overflow (large base64) simply falls back to the text-only finding.
       try{
         var st=JSON.parse(localStorage.getItem('klav-aha-preview')||'{}')||{}
         st.reactionText=String(rx.observation||rx.title||'')
+        st.reactionTitle=String(rx.title||'')
+        if(d.shotDataUrl) st.shotDataUrl=String(d.shotDataUrl)
+        if(d.region) st.region=d.region
         localStorage.setItem('klav-aha-preview',JSON.stringify(st))
       }catch(e){}
       var sent=String(rx.sentiment||'neutral')
@@ -806,7 +839,9 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       var init=p.initials||initials(p.name||'')
       return '<div class="uh-sim"><div class="uh-av" style="background:'+esc(acc)+'">'+esc(init)+'</div>'
         +'<div class="uh-nm">'+esc(p.name||'Sim')+'</div>'
-        +'<div class="uh-rl">'+esc(p.role||'')+'</div></div>'
+        +'<div class="uh-rl">'+esc(p.role||'')+'</div>'
+        +(p.desc?'<div class="uh-ds">'+esc(p.desc)+'</div>':'')
+        +'</div>'
     }).join('')
     var firstSim = personas[0]
     var catchNote = firstSim ? '<div class="uh-catch"><b>'+esc(firstSim.name)+'</b> and '+(personas.length-1)+' other'+(personas.length>2?'s':'')+' are reading your page now — their reaction lands in your first result.</div>' : ''
@@ -1000,10 +1035,37 @@ function stashTestCreds(){
 // ── Step 4 · Insights: surface the real /api/sim/preview reaction (if any) as a finding. ──
 function renderInsightLive(){
   const slot = $('insightLive'); if (!slot) return
-  let txt = ''
-  try { const st = JSON.parse(localStorage.getItem('klav-aha-preview') || 'null'); txt = (st && st.reactionText) || '' } catch(e){}
-  if (!txt){ slot.innerHTML = ''; return }
-  slot.innerHTML = '<div class="rx-live"><div class="rx-lead">Your Sim caught this on your real page</div><div class="rx-obs">\u201c' + esc(txt) + '\u201d</div></div>'
+  let st = null
+  try { st = JSON.parse(localStorage.getItem('klav-aha-preview') || 'null') } catch(e){}
+  const txt = (st && st.reactionText) || ''
+  const title = (st && st.reactionTitle) || ''
+  const shot = (st && st.shotDataUrl) || ''
+  const region = (st && st.region) || null
+  let host = ''
+  try { if (st && st.url) host = new URL(st.url).hostname.replace(/^www\./,'') } catch(e){}
+  // Never present a fake screenshot filename as if real \u2014 reflect the real captured host (or a
+  // neutral "captured live") on the sample evidence card below.
+  const eviName = $('eviShotName'); if (eviName) eviName.textContent = host ? ('captured from ' + host) : 'captured live'
+  if (!txt && !shot){ slot.innerHTML = ''; return }
+  // Real visual evidence: the captured screenshot with the reaction region drawn as a highlighted
+  // 0..1 box (percentage-positioned, so it scales with the rendered image). Graceful text fallback
+  // ("captured from <host>") when no shot/region is present (e.g. the demo path).
+  let evi = ''
+  if (shot){
+    let box = ''
+    if (region && typeof region.x === 'number' && typeof region.y === 'number' && typeof region.w === 'number' && typeof region.h === 'number'){
+      const clamp = (n) => Math.max(0, Math.min(1, Number(n) || 0))
+      const L = clamp(region.x) * 100, T = clamp(region.y) * 100, W = clamp(region.w) * 100, H = clamp(region.h) * 100
+      box = '<div class="rx-region" style="left:' + L + '%;top:' + T + '%;width:' + W + '%;height:' + H + '%"><span class="rx-pin">found here</span></div>'
+    }
+    evi = '<div class="rx-shotwrap"><img class="rx-shot" src="' + esc(shot) + '" alt="The page Klavity scanned" />' + box + '</div>'
+  } else if (host){
+    evi = '<div class="rx-cap">Captured from ' + esc(host) + '</div>'
+  }
+  slot.innerHTML = '<div class="rx-live"><div class="rx-lead">Your Sim caught this on your real page</div>'
+    + (title ? '<div class="rx-title">' + esc(title) + '</div>' : '')
+    + (txt ? '<div class="rx-obs">\u201c' + esc(txt) + '\u201d</div>' : '')
+    + evi + '</div>'
 }
 
 // ── Step 4 · Insights: tracker connector choice. No backend commit — stashed + carried. ──

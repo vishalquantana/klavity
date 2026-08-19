@@ -279,7 +279,7 @@ function personaSiteSys(countPhrase: string): string {
     "Classify each on two axes: simClass (\"user\" = actually OPERATES the product hands-on, feedback skews UI/interaction; " +
     "\"client\" = evaluates OVERALL outcomes and business results, feedback skews feature/workflow/strategy — only assign \"client\" when the persona clearly describes an executive, buyer, or outcome-judging stakeholder) " +
     "and side (\"external\" = customer/partner outside the team; \"internal\" = on the product/company team). " +
-    "Respond with ONLY a JSON object, no prose: {\"personas\":[{\"name\":string,\"role\":string,\"simClass\":\"user\"|\"client\",\"side\":\"external\"|\"internal\",\"initials\":string(2 uppercase letters),\"accent\":string(hex colour like #6366f1),\"summary\":string,\"insights\":[{\"kind\":\"pain\"|\"want\"|\"love\",\"text\":string,\"quote\":string}]}]} with " + countPhrase + " personas, each with exactly 3 insights; each quote is a short first-person line that persona might say."
+    "Respond with ONLY a JSON object, no prose: {\"personas\":[{\"name\":string,\"role\":string,\"simClass\":\"user\"|\"client\",\"side\":\"external\"|\"internal\",\"initials\":string(2 uppercase letters),\"accent\":string(hex colour like #6366f1),\"desc\":string(<=90 chars, ONE plain sentence: who this persona is and what they care about),\"summary\":string,\"insights\":[{\"kind\":\"pain\"|\"want\"|\"love\",\"text\":string,\"quote\":string}]}]} with " + countPhrase + " personas, each with exactly 3 insights; each quote is a short first-person line that persona might say."
 }
 
 const REACT_SYS =
@@ -9831,6 +9831,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const personas = (data.personas || []).slice(0, 3).map((p: any) => {
             if (!SIM_CLASS_ENUM.has(String(p?.simClass))) p.simClass = "user"
             if (!SIDE_ENUM.has(String(p?.side))) p.side = "external"
+            // desc: a short one-line bio surfaced on the onboarding persona cards. Bounded + ASCII-safe.
+            p.desc = String(p?.desc || "").replace(/\s+/g, " ").trim().slice(0, 90)
             return p
           })
           return json({ personas, usage })
@@ -9976,7 +9978,16 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           try { rr = await reactToPage(p, shot.imageB64, shot.mediaType, pvUrl, { email: mePv }) }
           catch { return json({ error: "The Sim couldn't finish reading that page — try again in a moment." }, 400) }
           const reaction = (rr.data.reactions || [])[0] || null
-          return json({ reaction, personaName: p?.name || null, usage: rr.usage })
+          // Grounded visual scan: surface the SAME JPEG the persona reacted to (already captured —
+          // reuse, do NOT capture twice) as an inline data URL, plus the first reaction's normalised
+          // 0..1 region box. Both omitted/null when unavailable so the onboarding client degrades
+          // gracefully (skeleton + text fallback). No S3 persistence for this anonymous path.
+          const shotDataUrl = shot?.imageB64 ? ("data:" + shot.mediaType + ";base64," + shot.imageB64) : null
+          const rgn = reaction && reaction.region && typeof reaction.region === "object" ? reaction.region : null
+          const region = rgn && typeof rgn.x === "number" && typeof rgn.y === "number"
+            && typeof rgn.w === "number" && typeof rgn.h === "number"
+            ? { x: rgn.x, y: rgn.y, w: rgn.w, h: rgn.h } : null
+          return json({ reaction, personaName: p?.name || null, shotDataUrl, region, usage: rr.usage })
         } catch (e: any) { return json(oops(e, "preview"), 500) }
       }
 
