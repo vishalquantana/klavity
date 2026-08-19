@@ -46,644 +46,686 @@
 <link rel="stylesheet" href="/fonts/fonts.css" />
 <script src="/icons.generated.js"></script>
 <style>
-:root{--ink:#f5f3ee;--ink-2:#ffffff;--ink-3:#efeae0;--paper:#19140f;--paper-dim:#574f45;--paper-faint:#8a8076;
---indigo:#6366f1;--indigo-deep:#4f46e5;--amber:#d98324;--rose:#db2777;--green:#0f9d6b;--line:rgba(25,20,15,.12);
---display:'Fraunces',serif;--body:'Hanken Grotesk',system-ui,sans-serif;--mono:'JetBrains Mono',monospace}
-[data-theme="dark"]{--ink:#0c0a08;--ink-2:#15110d;--ink-3:#1e1813;--paper:#f3ece1;--paper-dim:#b3a896;--paper-faint:#776c5d;
---indigo:#8b8bf5;--indigo-deep:#6366f1;--amber:#e8a24a;--rose:#e8849a;--green:#9fd6a0;--line:rgba(243,236,225,.11)}
+/* ── Klavity onboarding v2 — Figma stepwise wizard, top progress rail ── */
+/* Light look (Figma): lavender-gray page, white cards, indigo accent, green success. */
+:root{
+  --bg:#f4f4f8; --card:#ffffff; --ink:#17171c; --ink2:#3a3b45; --muted:#6b6d7c; --faint:#9a9cab;
+  --line:#e7e7ef; --line2:#eeeef5;
+  --indigo:#6366f1; --indigo-deep:#4f46e5; --indigo-ghost:#eef0fe; --indigo-line:#d9ddfb;
+  --green:#0f9d6b; --green-ghost:#e6f6ef; --amber:#c98a1a; --amber-ghost:#fdf3e2;
+  --rose:#db2777; --rose-ghost:#fbe9f1;
+  --shadow:0 10px 34px rgba(30,25,70,.08); --radius:16px;
+  --display:'Fraunces',serif; --body:'Hanken Grotesk',system-ui,sans-serif; --mono:'JetBrains Mono',monospace;
+}
+[data-theme="dark"]{
+  --bg:#0c0a08; --card:#15110d; --ink:#f3ece1; --ink2:#cfc6b8; --muted:#a89e90; --faint:#776c5d;
+  --line:rgba(243,236,225,.12); --line2:rgba(243,236,225,.07);
+  --indigo:#8b8bf5; --indigo-deep:#6366f1; --indigo-ghost:rgba(139,139,245,.13); --indigo-line:rgba(139,139,245,.3);
+  --green:#5cc79a; --green-ghost:rgba(15,157,107,.15); --amber:#e8a24a; --amber-ghost:rgba(217,131,36,.14);
+  --rose:#e8849a; --rose-ghost:rgba(219,39,119,.14);
+  --shadow:0 10px 34px rgba(0,0,0,.35);
+}
 *{margin:0;padding:0;box-sizing:border-box}
-body{background:var(--ink);color:var(--paper);font-family:var(--body);min-height:100vh;-webkit-font-smoothing:antialiased}
-body::after{content:"";position:fixed;inset:0;pointer-events:none;background:radial-gradient(110% 70% at 50% -10%,rgba(139,139,245,.10),transparent 60%);z-index:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);min-height:100vh;-webkit-font-smoothing:antialiased;
+  font-size:14.5px;line-height:1.55}
 a{color:inherit;text-decoration:none}
 .mono{font-family:var(--mono)}
-.shell{display:grid;grid-template-columns:300px 1fr;min-height:100vh;position:relative;z-index:2}
-.shell.norail{grid-template-columns:1fr}
+.hide{display:none !important}
 
-/* rail */
-.rail{border-right:1px solid var(--line);padding:30px 26px;display:flex;flex-direction:column}
-.shell.norail .rail{display:none}
-.brand{display:flex;align-items:center;gap:11px;font-family:var(--display);font-weight:600;font-size:22px;margin-bottom:42px;letter-spacing:-.02em}
-.brand .spark{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-size:16px;color:#fff;background:linear-gradient(135deg,var(--indigo-deep),#a78bfa)}
-.steps{list-style:none;display:flex;flex-direction:column;gap:4px}
-.rstep{display:flex;gap:13px;padding:11px 12px;border-radius:11px;align-items:flex-start;transition:background .2s}
-.rstep .ix{width:24px;height:24px;border-radius:50%;border:1px solid var(--line);display:grid;place-items:center;font-family:var(--mono);font-size:11px;flex-shrink:0;color:var(--paper-faint);transition:.25s}
-.rstep .rl{font-size:14px;color:var(--paper-faint);transition:.25s}
-.rstep.active{background:var(--ink-2)}
-.rstep.active .ix{border-color:var(--indigo);color:var(--indigo);box-shadow:0 0 0 4px rgba(139,139,245,.12)}
-.rstep.active .rl{color:var(--paper);font-weight:600}
-.rstep.done .ix{background:var(--green);border-color:var(--green);color:#fff}
-[data-theme="dark"] .rstep.done .ix{color:#0c0a08}
-.rstep.done .rl{color:var(--paper-dim)}
-.rstep.studio .ix{border-color:var(--amber);color:var(--amber)}
-.rstep.studio .rl{color:var(--paper-dim);font-weight:600}
-.rail .foot{margin-top:auto;font-family:var(--mono);font-size:11px;color:var(--paper-faint)}
+/* ── top bar + progress rail ── */
+.top{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 86%,transparent);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.top .in{max-width:1080px;margin:0 auto;display:flex;align-items:center;gap:18px;padding:14px 24px}
+.brand{display:flex;align-items:center;gap:11px;font-weight:750;font-size:16px;letter-spacing:-.01em;color:var(--ink)}
+.brand .mark{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-weight:800;color:#fff;
+  font-family:var(--body);background:linear-gradient(135deg,var(--indigo-deep),#a78bfa);box-shadow:0 4px 12px rgba(79,70,229,.28)}
+.rail{display:flex;align-items:center;gap:6px;margin:0 auto;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.rail .s{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--faint);white-space:nowrap}
+.rail .dot{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:700;
+  border:1.5px solid var(--line);background:var(--card);flex-shrink:0;transition:.2s}
+.rail .s.done{color:var(--green)}
+.rail .s.done .dot{background:var(--green-ghost);border-color:var(--green);color:var(--green)}
+.rail .s.now{color:var(--ink);font-weight:650}
+.rail .s.now .dot{background:var(--indigo);border-color:var(--indigo);color:#fff;box-shadow:0 0 0 4px var(--indigo-ghost)}
+.rail .bar{width:26px;height:1.5px;background:var(--line);flex-shrink:0}
+.pill-live{font-size:11px;color:var(--indigo);background:var(--indigo-ghost);border:1px solid var(--indigo-line);
+  border-radius:999px;padding:3px 10px;font-family:var(--mono);white-space:nowrap}
 
-/* content */
-.content{padding:60px clamp(28px,6vw,90px);display:flex;align-items:center;position:relative;z-index:2}
-.panel{max-width:560px;width:100%}
-.kicker{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--indigo);margin-bottom:16px}
-.kicker.amber{color:var(--amber)}
-.panel h1, .panel h2{font-family:var(--display);font-weight:450;font-size:clamp(30px,4vw,44px);line-height:1.08;letter-spacing:-.02em;margin-bottom:14px}
-.panel h1 em, .panel h2 em{font-style:italic;color:var(--amber)}
-.panel .sub{font-size:17px;color:var(--paper-dim);margin-bottom:30px;line-height:1.55}
-label.fld{display:block;margin-bottom:18px}
-label.fld .lt{font-family:var(--mono);font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:7px;display:block}
-input.in{width:100%;background:var(--ink-2);border:1px solid var(--line);border-radius:12px;padding:13px 15px;color:var(--paper);font-family:var(--body);font-size:15px;outline:none;transition:border-color .2s}
-input.in:focus{border-color:var(--indigo)}
-input.in:focus-visible{outline:2px solid #8b8bf5;outline-offset:2px}
+/* ── stage ── */
+.stage{max-width:1080px;margin:0 auto;padding:38px 24px 120px;position:relative}
+.screen{display:none}
+.screen.on{display:block;animation:fade .3s ease}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.kicker{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--indigo);
+  font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.kicker.green{color:var(--green)} .kicker.amber{color:var(--amber)}
+h1.hd{font-family:var(--body);font-size:clamp(28px,3.6vw,36px);line-height:1.12;letter-spacing:-.02em;
+  font-weight:750;margin:0 0 12px;color:var(--ink)}
+h1.hd em{font-style:normal;color:var(--indigo)}
+.sub{color:var(--muted);font-size:15.5px;max-width:600px;margin:0 0 26px;line-height:1.55}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:840px){.cols{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+.pad{padding:20px 22px}
+
+/* selectable option (goal cards, tracker, install tiles) */
+.opt{display:flex;align-items:center;gap:13px;background:var(--card);border:1.5px solid var(--line);border-radius:14px;
+  padding:16px 17px;cursor:pointer;transition:transform .14s ease,border-color .14s ease,box-shadow .14s ease,background .14s ease;
+  user-select:none;text-align:left;width:100%;font-family:var(--body);color:var(--ink)}
+.opt:hover{border-color:var(--indigo-line);transform:translateY(-1.5px)}
+.opt:active{transform:scale(.985)}
+.opt.sel{border-color:var(--indigo);background:var(--indigo-ghost);box-shadow:0 0 0 3px rgba(99,102,241,.10)}
+.opt .ic{width:34px;height:34px;border-radius:10px;background:var(--bg);border:1px solid var(--line);display:grid;
+  place-items:center;font-family:var(--mono);font-weight:700;font-size:13px;color:var(--indigo);flex:none}
+.opt.sel .ic{background:var(--card)}
+.opt .t{font-weight:650;color:var(--ink)} .opt .d{color:var(--muted);font-size:12.8px;line-height:1.4}
+.opt .chk{margin-left:auto;width:22px;height:22px;border-radius:7px;border:1.5px solid var(--line);display:grid;
+  place-items:center;flex:none;color:transparent;transition:.14s}
+.opt.sel .chk{background:var(--indigo);border-color:var(--indigo);color:#fff}
+.reco{font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.06em;color:var(--indigo);background:var(--card);
+  border:1px solid var(--indigo-line);border-radius:999px;padding:2px 8px;margin-left:8px;vertical-align:middle}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:640px){.grid2{grid-template-columns:1fr}}
+
+/* fields */
+.field{margin-top:16px}
+label.fld{display:block;margin-bottom:16px}
+label.fld .lt, .field label{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.05em;text-transform:uppercase;
+  color:var(--faint);margin-bottom:7px}
+.in, input.in{width:100%;background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:13px 15px;
+  font-family:var(--body);font-size:15px;color:var(--ink);outline:none;transition:border-color .2s,box-shadow .2s}
+.in:focus{border-color:var(--indigo);box-shadow:0 0 0 3px var(--indigo-ghost)}
+.in::placeholder{color:var(--faint)}
 input.code{font-family:var(--mono);font-size:24px;letter-spacing:.5em;text-align:center}
-.btn{font-family:var(--body);font-weight:600;font-size:15px;padding:12px 22px;border-radius:12px;cursor:pointer;border:1px solid transparent;transition:transform 150ms ease,background 150ms ease,border-color 150ms ease,opacity 150ms ease;display:inline-flex;align-items:center;gap:9px}
-.btn:hover{transform:translateY(-2px) scale(1.02);border-color:var(--indigo)}
-.btn:active{transform:scale(0.97)}
-.btn[disabled]{opacity:.5;cursor:default}
-.btn-indigo{color:#fff;background:linear-gradient(135deg,#a9a9ff,var(--indigo));box-shadow:0 10px 26px rgba(139,139,245,.3)}
-[data-theme="dark"] .btn-indigo{color:#0c0a08}
-.btn-amber{color:#fff;background:linear-gradient(135deg,#eab06a,var(--amber));box-shadow:0 10px 26px rgba(217,131,36,.28)}
-[data-theme="dark"] .btn-amber{color:#0c0a08}
-.btn-ghost{color:var(--paper);border-color:var(--line);background:transparent}
-.btn-ghost:hover{border-color:var(--indigo);background:var(--ink-3)}
-.row{display:flex;gap:13px;align-items:center;margin-top:32px;flex-wrap:wrap}
-.row .skip{font-size:13.5px;color:var(--paper-faint);margin-left:auto;cursor:pointer;transition:transform 150ms ease,color 150ms ease}
+
+/* buttons */
+.btn{font-family:var(--body);font-weight:650;font-size:14.5px;padding:12px 22px;border-radius:12px;cursor:pointer;
+  border:1px solid transparent;transition:transform 150ms ease,filter 150ms ease,border-color 150ms ease,opacity 150ms ease;
+  display:inline-flex;align-items:center;gap:9px}
+.btn:hover{transform:translateY(-2px) scale(1.02)}
+.btn:active{transform:scale(.97)}
+.btn[disabled]{opacity:.45;cursor:default;transform:none}
+.btn-indigo{color:#fff;background:linear-gradient(135deg,#818cf8,var(--indigo));box-shadow:0 8px 20px rgba(99,102,241,.32)}
+.btn-indigo:hover{filter:brightness(1.05)}
+.btn-amber{color:#fff;background:linear-gradient(135deg,#eab06a,var(--amber));box-shadow:0 8px 20px rgba(217,131,36,.28)}
+.btn-amber:hover{filter:brightness(1.05)}
+.btn-ghost{color:var(--ink);border-color:var(--line);background:var(--card)}
+.btn-ghost:hover{border-color:var(--indigo)}
+.btn-block{width:100%;justify-content:center}
+.row{display:flex;gap:13px;align-items:center;margin-top:26px;flex-wrap:wrap}
+.row .skip{font-size:13.5px;color:var(--faint);margin-left:auto;cursor:pointer;background:none;border:none;
+  font-family:var(--body);transition:transform 150ms ease,color 150ms ease}
 .row .skip:hover{color:var(--indigo);transform:translateY(-1.5px) scale(1.02)}
-.row .skip:active{transform:scale(0.97)}
-.err{margin-top:14px;font-size:13.5px;color:var(--rose);font-family:var(--body);min-height:1px}
-.note{margin-top:22px;font-size:13.5px;color:var(--paper-dim);line-height:1.5;border-left:3px solid var(--indigo);padding-left:12px}
+.err{margin-top:14px;font-size:13.5px;color:var(--rose);min-height:1px}
+.helper{margin-top:12px;font-size:13px;color:var(--faint)}
+.note{margin-top:18px;font-size:13.5px;color:var(--muted);line-height:1.5;border-left:3px solid var(--indigo);padding-left:12px}
 .note.amber{border-color:var(--amber)}
 .note code{font-family:var(--mono);font-size:12px}
 
-/* dual choice tiles */
-.tiles{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-.tile{background:var(--ink-2);border:1px solid var(--line);border-radius:16px;padding:22px;cursor:pointer;transition:.2s;text-align:left}
-.tile:hover{border-color:var(--indigo);transform:translateY(-3px)}
-.tile.sel{border-color:var(--indigo);box-shadow:0 0 0 3px rgba(99,102,241,.12)}
-.tile .ti{font-size:26px;margin-bottom:12px}
-.tile h3{font-family:var(--display);font-weight:600;font-size:18px;margin-bottom:6px}
-.tile p{font-size:13.5px;color:var(--paper-dim);line-height:1.5}
-.tile.alt{border-style:dashed}
+/* callouts / trust */
+.callout{display:flex;gap:10px;align-items:flex-start;background:var(--amber-ghost);border:1px solid var(--line);
+  border-radius:12px;padding:12px 14px;font-size:12.8px;color:var(--ink2);margin-top:14px}
+.trust{display:flex;gap:10px;align-items:center;background:var(--green-ghost);border:1px solid var(--line);
+  border-radius:12px;padding:12px 14px;font-size:12.8px;color:var(--ink2);margin-top:16px}
 
-/* ── A1: demo beat ── */
-.demo-beat{max-width:700px;margin:0 auto 36px;background:linear-gradient(135deg,rgba(219,39,119,.08),rgba(99,102,241,.06));border:1px solid rgba(219,39,119,.22);border-radius:20px;padding:26px 28px;position:relative;text-align:left}
-.demo-beat .db-eyebrow{font-family:var(--mono);font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--rose);font-weight:600;margin-bottom:10px;display:flex;align-items:center;gap:7px}
-.demo-beat .db-scene{background:var(--ink-2);border:1px solid var(--line);border-radius:13px;padding:16px;margin-bottom:14px}
-.demo-beat .db-row{display:flex;align-items:flex-start;gap:12px}
-.demo-beat .db-av{width:34px;height:34px;border-radius:9px;background:#e8843a;color:#fff;font-weight:700;font-size:13px;display:grid;place-items:center;flex-shrink:0}
-.demo-beat .db-body{flex:1;min-width:0}
-.demo-beat .db-who{font-weight:600;font-size:13.5px;margin-bottom:2px}
-.demo-beat .db-who .db-role{font-weight:400;font-size:11.5px;color:var(--paper-faint);margin-left:6px}
-.demo-beat .db-quote{font-size:14px;line-height:1.55;color:var(--paper-dim);font-style:italic}
-.demo-beat .db-quote b{font-style:normal;color:var(--paper)}
-.demo-beat .db-sentiment{display:inline-flex;align-items:center;gap:5px;margin-top:9px;font-family:var(--mono);font-size:11px;font-weight:600;background:rgba(219,39,119,.16);color:var(--rose);padding:4px 10px;border-radius:20px}
-.demo-beat .db-catch{margin-top:12px;background:linear-gradient(135deg,rgba(219,39,119,.05),transparent);border:1px solid rgba(219,39,119,.2);border-radius:10px;padding:12px 14px}
-.demo-beat .db-catch .db-ct{font-size:12.5px;font-weight:600;color:var(--paper);margin-bottom:4px}
-.demo-beat .db-catch .db-cd{font-size:12px;color:var(--paper-dim)}
-.demo-beat .db-cta{display:flex;justify-content:center;margin-top:4px}
+/* preview browser */
+.browser{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:var(--shadow)}
+.bchrome{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--line2);background:var(--bg)}
+.dots{display:flex;gap:5px} .dots i{width:9px;height:9px;border-radius:50%;background:var(--line);display:block}
+.burl{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:4px 9px;font-family:var(--mono);
+  font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bbody{padding:16px;min-height:190px;position:relative}
+.sk{background:var(--line2);border-radius:8px;height:14px;margin:8px 0}
+.bcursor{position:absolute;background:var(--indigo);color:#fff;font-size:11px;border-radius:999px;padding:3px 9px;box-shadow:var(--shadow)}
 
-/* ── A2: URL Sims hero ── */
-.url-hero{max-width:620px;margin:0 auto 10px}
-.url-hero h2{font-family:var(--display);font-weight:450;font-size:clamp(24px,3.5vw,36px);line-height:1.08;letter-spacing:-.02em;margin-bottom:10px}
-.url-hero h2 em{font-style:italic;color:var(--indigo)}
-.url-hero .uh-sub{font-size:15px;color:var(--paper-dim);margin-bottom:20px;line-height:1.5}
-.url-field{display:flex;gap:10px;background:var(--ink-2);border:1px solid var(--line);border-radius:14px;padding:6px 6px 6px 14px;transition:border-color .2s}
-.url-field:focus-within{border-color:var(--indigo)}
-.url-field input{flex:1;background:transparent;border:none;color:var(--paper);font-family:var(--mono);font-size:14px;outline:none;min-width:0}
-.url-field input::placeholder{color:var(--paper-faint)}
-.url-field button{flex-shrink:0}
-.uh-err{margin-top:8px;font-size:13px;color:var(--rose);min-height:1em}
-.uh-loading{display:flex;align-items:center;gap:9px;margin-top:16px;font-size:13.5px;color:var(--paper-faint)}
-.uh-loading .uh-spin{width:16px;height:16px;border-radius:50%;border:2px solid var(--indigo);border-top-color:transparent;animation:uhspin .7s linear infinite}
-@keyframes uhspin{to{transform:rotate(360deg)}}
+/* auth advanced (product step) */
+.adv-toggle{margin-top:14px;display:inline-flex;align-items:center;gap:8px;background:none;border:1px solid var(--line);
+  border-radius:10px;padding:8px 13px;color:var(--indigo);font-family:var(--body);font-size:13px;cursor:pointer;
+  transition:border-color .15s,background .15s}
+.adv-toggle:hover{border-color:var(--indigo);background:var(--indigo-ghost)}
+.auth{margin-top:12px;padding:15px;border:1px dashed var(--indigo-line);border-radius:12px;background:var(--indigo-ghost)}
+
+/* checklist */
+.chk-list .li{display:flex;align-items:center;gap:11px;padding:9px 0;color:var(--faint)}
+.chk-list .li.done{color:var(--ink)} .chk-list .li.act{color:var(--ink);font-weight:600}
+.cbead{width:22px;height:22px;border-radius:50%;border:1.5px solid var(--line);display:grid;place-items:center;
+  font-size:11px;flex:none}
+.li.done .cbead{background:var(--green-ghost);border-color:var(--green);color:var(--green)}
+.li.act .cbead{background:var(--indigo);border-color:var(--indigo);color:#fff}
+
+/* stats + finding */
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:16px 18px}
+.stat .n{font-size:30px;font-weight:780;line-height:1}
+.stat .l{color:var(--muted);font-size:12.5px;margin-top:6px}
+.sev{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;font-weight:700;
+  letter-spacing:.03em;border-radius:999px;padding:2px 10px}
+.sev.crit{background:var(--rose-ghost);color:var(--rose)}
+.conf{font-family:var(--mono);font-size:11px;color:var(--muted);background:var(--bg);border:1px solid var(--line);
+  border-radius:999px;padding:2px 9px}
+.evi{border:1px solid var(--line);border-radius:11px;overflow:hidden;margin-top:8px}
+.evi .r{display:flex;justify-content:space-between;padding:9px 13px;border-top:1px solid var(--line2);font-size:12.5px}
+.evi .r:first-child{border-top:none} .evi .r .k{color:var(--muted)} .evi .r .v{color:var(--ink2)}
+.steps-num{counter-reset:st;margin:6px 0 0;padding:0;list-style:none}
+.steps-num li{counter-increment:st;position:relative;padding:3px 0 3px 26px;color:var(--ink2);font-size:13.5px}
+.steps-num li:before{content:counter(st);position:absolute;left:0;top:3px;width:18px;height:18px;border-radius:50%;
+  background:var(--indigo-ghost);color:var(--indigo);font-size:11px;font-weight:700;display:grid;place-items:center}
+.recfix{background:var(--green-ghost);border:1px solid var(--line);border-radius:11px;padding:11px 13px;margin-top:14px;font-size:13px}
+.recfix b{color:var(--green)}
+.rx-live{border-left:3px solid var(--indigo);padding:10px 0 10px 13px;margin-bottom:16px;background:var(--indigo-ghost);
+  border-radius:0 10px 10px 0;padding-right:13px}
+.rx-live .rx-lead{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--indigo);margin-bottom:6px}
+.rx-live .rx-obs{font-size:14.5px;line-height:1.5;font-style:italic;color:var(--ink)}
+
+/* recommended journeys */
+.jrow{display:flex;align-items:center;gap:12px;padding:11px 0;border-top:1px solid var(--line2)}
+.jrow:first-child{border-top:none}
+.jrow .jt{font-weight:600;flex:0 0 auto}
+.jrow .jbar{flex:1;height:6px;background:var(--line2);border-radius:3px;overflow:hidden}
+.jrow .jbar i{display:block;height:100%;background:var(--indigo)}
+.jrow .jp{font-family:var(--mono);font-size:12px;color:var(--muted);width:38px;text-align:right}
+
 /* returned sims preview grid */
-.uh-sims{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:18px}
-@media(max-width:500px){.uh-sims{grid-template-columns:1fr 1fr}}
-.uh-sim{background:var(--ink-2);border:1px solid var(--line);border-radius:13px;padding:14px;display:flex;flex-direction:column;gap:6px;animation:uhpop .3s ease both}
+.uh-sims{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}
+@media(max-width:520px){.uh-sims{grid-template-columns:1fr 1fr}}
+.uh-sim{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:14px;display:flex;flex-direction:column;
+  gap:6px;animation:uhpop .3s ease both}
 @keyframes uhpop{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 .uh-sim .uh-av{width:36px;height:36px;border-radius:10px;color:#fff;font-weight:700;font-size:13px;display:grid;place-items:center;margin-bottom:2px}
-.uh-sim .uh-nm{font-weight:600;font-size:13px}
-.uh-sim .uh-rl{font-size:11.5px;color:var(--paper-faint);line-height:1.4}
-.uh-success{margin-top:14px;display:flex;flex-direction:column;gap:12px}
-.uh-success .uh-label{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:4px}
-.uh-catch{background:linear-gradient(135deg,rgba(15,157,107,.08),rgba(99,102,241,.04));border:1px solid rgba(15,157,107,.25);border-radius:12px;padding:12px 14px;font-size:13.5px;color:var(--paper-dim);line-height:1.5;animation:uhpop .4s .1s ease both}
-.uh-catch b{color:var(--paper)}
-.uh-catch .uh-sentiment{display:inline-flex;align-items:center;gap:5px;margin-left:4px;font-family:var(--mono);font-size:10.5px;font-weight:600;background:rgba(219,39,119,.14);color:var(--rose);padding:3px 9px;border-radius:20px}
+.uh-sim .uh-nm{font-weight:650;font-size:13px} .uh-sim .uh-rl{font-size:11.5px;color:var(--faint);line-height:1.4}
+.uh-label{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);margin-bottom:6px}
+.uh-loading{display:flex;align-items:center;gap:9px;margin-top:16px;font-size:13.5px;color:var(--muted)}
+.uh-spin{width:16px;height:16px;border-radius:50%;border:2px solid var(--indigo);border-top-color:transparent;animation:uhspin .7s linear infinite}
+@keyframes uhspin{to{transform:rotate(360deg)}}
+.uh-catch{background:var(--indigo-ghost);border:1px solid var(--indigo-line);border-radius:12px;padding:12px 14px;
+  font-size:13.5px;color:var(--ink2);line-height:1.5;margin-top:14px}
+.uh-catch b{color:var(--ink)}
 
-/* goal chooser (welcome) — two first-class paths, always visible ── */
-.more-ways{max-width:700px;margin:28px auto 0;border-top:1px solid var(--line);padding-top:24px}
-/* mw-toggle is kept for fallback / JS resize but hidden by default — paths shown immediately */
-.more-ways .mw-toggle{display:none}
-.more-ways .mw-body{margin-top:0}
-.goalpick{margin:0;max-width:none}
-.goalpick .glabel{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:16px}
-.goaltiles{display:grid;grid-template-columns:1fr 1fr;gap:14px;text-align:left}
-button.goaltile{font-family:var(--body);color:inherit;width:100%;background:var(--ink-2);border:1px solid var(--line);border-radius:16px;padding:22px;cursor:pointer;display:flex;flex-direction:column;align-items:flex-start;gap:10px;transition:transform 150ms ease,border-color 150ms ease,box-shadow 150ms ease}
-button.goaltile:hover{border-color:var(--indigo);transform:translateY(-3px) scale(1.01)}
-button.goaltile:active{transform:scale(.98)}
-button.goaltile[aria-pressed="true"]{border-color:var(--indigo);box-shadow:0 0 0 3px rgba(99,102,241,.12)}
-.goaltile.sims[aria-pressed="true"]{border-color:var(--amber);box-shadow:0 0 0 3px rgba(217,131,36,.14)}
-.goaltile .gic{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:var(--ink-3);border:1px solid var(--line);color:var(--indigo)}
-.goaltile.sims .gic{color:var(--amber)}
-.goaltile .gtag{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--indigo)}
-.goaltile.sims .gtag{color:var(--amber)}
-.goaltile h3{font-family:var(--display);font-weight:600;font-size:18px;line-height:1.2}
-.goaltile p{font-size:13.5px;color:var(--paper-dim);line-height:1.5}
-.goalpick .gnote{font-size:13px;color:var(--paper-faint);margin-top:15px}
-@media(max-width:820px){.goaltiles{grid-template-columns:1fr}}
-/* snap goal: hide the Sims/Studio rail steps + the step-2 install tiles */
-.shell[data-goal="snap"] .rstep[data-r="3"],.shell[data-goal="snap"] .rstep[data-r="4"],.shell[data-goal="snap"] .rstep[data-r="5"]{display:none}
-/* forward "add Sims too" link on step 2 (snap only) */
-.snap-fwd{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;color:var(--paper-faint);cursor:pointer;transition:transform 150ms ease,color 150ms ease}
-.snap-fwd:hover{color:var(--amber);transform:translateY(-1.5px) scale(1.02)}
-.snap-fwd:active{transform:scale(0.97)}
+/* plan cards */
+.plans{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+@media(max-width:700px){.plans{grid-template-columns:1fr}}
+.plan{position:relative;border:1.5px solid var(--line);border-radius:16px;padding:20px 18px;background:var(--card);cursor:pointer;
+  text-align:left;font-family:var(--body);color:var(--ink);transition:transform .14s ease,border-color .14s ease,box-shadow .14s ease}
+.plan:hover{border-color:var(--indigo-line);transform:translateY(-3px)}
+.plan.sel{border-color:var(--indigo);box-shadow:0 0 0 3px rgba(99,102,241,.12)}
+.plan .pl-tag{position:absolute;top:16px;right:16px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--indigo)}
+.plan h3{font-weight:700;font-size:18px;margin-bottom:6px}
+.plan .pl-price{font-size:26px;font-weight:780;margin-bottom:2px}
+.plan .pl-price span{font-size:12.5px;color:var(--muted);font-weight:500}
+.plan .pl-desc{color:var(--muted);font-size:12.5px;margin-top:8px;line-height:1.5}
+.guarantee{margin-top:18px;display:flex;align-items:flex-start;gap:10px;font-size:13.5px;color:var(--muted);line-height:1.5;
+  border-left:3px solid var(--green);padding-left:12px}
+.guarantee b{color:var(--ink)}
 
+/* frequency + tiles */
+.freq{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
+.freqp{background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:11px 15px;cursor:pointer;font-size:13.5px;
+  color:var(--muted);font-family:var(--body);transition:transform .14s ease,border-color .14s ease,box-shadow .14s ease}
+.freqp:hover{border-color:var(--indigo-line);transform:translateY(-2px)}
+.freqp.sel{border-color:var(--indigo);color:var(--ink);box-shadow:0 0 0 3px rgba(99,102,241,.12)}
+.freqp .fr-rec{display:block;font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--indigo);margin-top:3px}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:640px){.tiles{grid-template-columns:1fr}}
+.tile{background:var(--card);border:1.5px solid var(--line);border-radius:16px;padding:20px;cursor:pointer;
+  transition:transform .14s ease,border-color .14s ease,box-shadow .14s ease;text-align:left}
+.tile:hover{border-color:var(--indigo-line);transform:translateY(-3px)}
+.tile.sel{border-color:var(--indigo);box-shadow:0 0 0 3px rgba(99,102,241,.12)}
+.tile .ti{width:40px;height:40px;border-radius:11px;background:var(--bg);border:1px solid var(--line);display:grid;place-items:center;color:var(--indigo);margin-bottom:12px}
+.tile h3{font-weight:700;font-size:17px;margin-bottom:6px}
+.tile p{font-size:13px;color:var(--muted);line-height:1.5}
 .hatdots{display:flex;gap:5px;margin-top:11px}
-.hd{width:19px;height:19px;border-radius:50%;display:grid;place-items:center;font-family:var(--mono);font-size:8px;font-weight:700;color:#fff}
+.hatdots .hatb{width:19px;height:19px;border-radius:50%;display:grid;place-items:center;font-family:var(--mono);font-size:8px;font-weight:700;color:#fff}
 
-/* monitored-url input + chips */
+/* install (snap) — snippet + widget detect chip + monitored urls */
+.snip{margin:0;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:12px;font-family:var(--mono);
+  font-size:11.5px;line-height:1.55;overflow:auto;white-space:pre-wrap;word-break:break-all;color:var(--ink2)}
+.wstatus{display:inline-flex;align-items:center;gap:8px;margin-top:12px;padding:7px 12px;border:1px solid var(--line);
+  border-radius:999px;font-family:var(--mono);font-size:11.5px;color:var(--faint);transition:.3s}
+.wstatus .wdot{width:8px;height:8px;border-radius:50%;background:var(--amber);flex-shrink:0;animation:wpulse 1.6s ease infinite}
+.wstatus.ok{border-color:var(--green);color:var(--green);background:var(--green-ghost);animation:wpop .35s ease}
+.wstatus.ok .wdot{background:var(--green);animation:none}
+@keyframes wpulse{0%,100%{opacity:.35}50%{opacity:1}}
+@keyframes wpop{0%{transform:scale(.92)}60%{transform:scale(1.04)}100%{transform:scale(1)}}
+.plat-toggle{background:none;border:1px solid var(--line);border-radius:9px;padding:8px 14px;color:var(--indigo);
+  font-family:var(--body);font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;margin-top:12px}
+.plat-toggle:hover{background:var(--indigo-ghost);border-color:var(--indigo)}
+.plat-panel{margin-top:10px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+.plat-tabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.plat-tab{background:none;border:1px solid var(--line);border-radius:8px;padding:5px 12px;font-size:12.5px;font-family:var(--body);cursor:pointer;color:var(--muted)}
+.plat-tab.act{border-color:var(--indigo);color:var(--ink);background:var(--indigo-ghost)}
+.plat-steps{font-size:13px;color:var(--muted);line-height:1.7}
+.plat-steps ol{margin:6px 0 0 16px}
+.plat-steps code{font-family:var(--mono);font-size:11.5px;background:var(--bg);border-radius:4px;padding:1px 4px}
+.ext-msg{margin-top:10px;font-size:13px;color:var(--muted);line-height:1.5}
 .urlrow{display:flex;gap:9px;margin-bottom:12px}
 .urlrow input.in{flex:1;font-family:var(--mono);font-size:13.5px}
 .chiplist{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
-.uchip{font-family:var(--mono);font-size:12.5px;padding:7px 11px;border:1px solid var(--line);border-radius:9px;background:var(--ink-2);display:flex;align-items:center;gap:8px}
+.uchip{font-family:var(--mono);font-size:12.5px;padding:7px 11px;border:1px solid var(--line);border-radius:9px;background:var(--card);display:flex;align-items:center;gap:8px}
 .uchip .dot{width:7px;height:7px;border-radius:50%;background:var(--green)}
-.uchip .x{color:var(--paper-faint);cursor:pointer}.uchip .x:hover{color:var(--rose)}
-.empty{font-size:13px;color:var(--paper-faint);font-family:var(--mono);margin-bottom:6px}
+.uchip .x{color:var(--faint);cursor:pointer}.uchip .x:hover{color:var(--rose)}
+.empty{font-size:13px;color:var(--faint);font-family:var(--mono);margin-bottom:6px}
+.snap-fwd{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;color:var(--faint);cursor:pointer}
+.snap-fwd:hover{color:var(--amber)}
+.snap-exit{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;color:var(--faint);cursor:pointer}
+.snap-exit:hover{color:var(--indigo)}
 
-.hide{display:none}
-@media(max-width:820px){
-  .shell{grid-template-columns:1fr}
-  .tiles{grid-template-columns:1fr}
-  /* Mobile: turn the side rail into a compact horizontal progress strip ABOVE the wizard. */
-  .rail{flex-direction:row;align-items:center;gap:14px;border-right:none;border-bottom:1px solid var(--line);
-        padding:14px clamp(16px,5vw,28px);position:sticky;top:0;z-index:5;background:var(--ink);overflow-x:auto;-webkit-overflow-scrolling:touch}
-  .rail .brand{display:none}
-  .rail .foot{display:none}
-  .steps{flex-direction:row;align-items:center;gap:6px;flex-wrap:nowrap;width:100%}
-  .rstep{padding:6px 8px;gap:8px;align-items:center;flex-shrink:0}
-  /* Only the active step shows its label on mobile — others collapse to just the number. */
-  .rstep .rl{display:none;font-size:12.5px;white-space:nowrap}
-  .rstep.active .rl{display:block}
-  .rstep .ix{width:22px;height:22px;font-size:10px}
-}
+/* done */
+.center{max-width:640px;margin:0 auto;text-align:center}
+.done-mark{width:64px;height:64px;border-radius:18px;background:var(--green-ghost);border:1px solid var(--line);
+  display:grid;place-items:center;color:var(--green);margin:0 auto 22px}
 
-/* welcome hero (no rail) */
-.hero{padding:60px clamp(28px,6vw,76px);text-align:center;position:relative;z-index:2;max-width:1000px;margin:0 auto}
-.hero .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--indigo);margin-bottom:20px;display:flex;align-items:center;justify-content:center;gap:9px}
-.hero .eyebrow .spark{width:24px;height:24px;border-radius:7px;display:grid;place-items:center;font-size:13px;color:#fff;background:linear-gradient(135deg,var(--indigo-deep),#a78bfa)}
-.hero h1{font-family:var(--display);font-weight:450;font-size:clamp(34px,4.6vw,50px);line-height:1.06;letter-spacing:-.02em;margin:0 auto 16px;max-width:19ch}
-.hero h1 em{font-style:italic;color:var(--amber)}
-.hero .lede{font-size:17.5px;color:var(--paper-dim);max-width:62ch;margin:0 auto 40px;line-height:1.55}
-.hero .lede b{color:var(--paper)}
-.how{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;max-width:900px;margin:0 auto 34px;text-align:left}
-.how .st{background:var(--ink-2);border:1px solid var(--line);border-radius:16px;padding:22px;position:relative}
-.how .st .si{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;font-size:22px;background:var(--ink-3);border:1px solid var(--line);margin-bottom:14px}
-.how .st .sn{position:absolute;top:20px;right:20px;font-family:var(--mono);font-size:11px;color:var(--paper-faint)}
-.how .st h3{font-family:var(--display);font-weight:600;font-size:18px;margin-bottom:7px}
-.how .st p{font-size:13.5px;color:var(--paper-dim);line-height:1.55}
-.how .st p em{font-style:normal;color:var(--paper-faint)}
-.payoff{font-family:var(--display);font-style:italic;font-size:20px;color:var(--paper);max-width:52ch;margin:0 auto 28px;line-height:1.5}
-.hero .cta{display:flex;gap:13px;justify-content:center;align-items:center;flex-wrap:wrap}
-@media(max-width:820px){.how{grid-template-columns:1fr}}
-.reelwrap{max-width:660px;margin:0 auto 30px}
-.reelframe{width:100%;aspect-ratio:16/9;border:1px solid var(--line);border-radius:16px;box-shadow:0 18px 50px rgba(25,20,15,.12);display:block;background:var(--ink-3)}
+/* footer nav */
+.foot{position:fixed;bottom:0;left:0;right:0;z-index:15;background:color-mix(in srgb,var(--bg) 92%,transparent);
+  backdrop-filter:blur(8px);border-top:1px solid var(--line)}
+.foot .in{max-width:1080px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;padding:13px 24px}
 
-.theme-toggle{position:fixed;right:16px;bottom:16px;z-index:90;width:40px;height:40px;border-radius:50%;border:1px solid var(--line);background:var(--ink-2);color:var(--paper);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(0,0,0,.12);transition:transform 150ms ease,border-color 150ms ease,color 150ms ease}
+/* snap goal hides Test + Automate rail — handled in JS railModel(); this keeps the
+   step-2 install tiles hidden for snap so founders get the widget path only. */
+.shell[data-goal="snap"] #installTiles{display:none}
+
+/* theme toggle */
+.theme-toggle{position:fixed;right:16px;bottom:70px;z-index:90;width:40px;height:40px;border-radius:50%;border:1px solid var(--line);
+  background:var(--card);color:var(--ink);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;
+  box-shadow:var(--shadow);transition:transform 150ms ease,border-color 150ms ease,color 150ms ease}
 .theme-toggle:hover{border-color:var(--indigo);color:var(--indigo);transform:translateY(-1.5px) scale(1.02)}
-.theme-toggle:active{transform:scale(0.97)}
 
-#copySnippet{transition:transform 150ms ease,border-color 150ms ease,background-color 150ms ease}
-#copySnippet:hover{transform:translateY(-1.5px) scale(1.02);border-color:var(--indigo) !important}
-#copySnippet:active{transform:scale(0.97)}
-
-/* ── widget live-detect chip (step 2): amber pulsing "waiting" → green "detected" pop ── */
-.wstatus{display:inline-flex;align-items:center;gap:8px;margin-top:12px;padding:7px 12px;border:1px solid var(--line);border-radius:999px;font-family:var(--mono);font-size:11.5px;color:var(--paper-faint);transition:border-color .3s ease,color .3s ease,background .3s ease}
-.wstatus .wdot{width:8px;height:8px;border-radius:50%;background:var(--amber);flex-shrink:0;animation:wpulse 1.6s ease infinite}
-.wstatus.ok{border-color:var(--green);color:var(--green);background:rgba(15,157,107,.07);animation:wpop .35s ease}
-.wstatus.ok .wdot{background:var(--green);animation:none}
-.wstatus .icon{flex-shrink:0}
-@keyframes wpulse{0%,100%{opacity:.35}50%{opacity:1}}
-@keyframes wpop{0%{transform:scale(.92)}60%{transform:scale(1.04)}100%{transform:scale(1)}}
-
-/* ── low-emphasis Snap exit on step 3 (skip Sims, go straight to reports) ── */
-.snap-exit{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;color:var(--paper-faint);cursor:pointer;transition:transform 150ms ease,color 150ms ease}
-.snap-exit:hover{color:var(--indigo);transform:translateY(-1.5px) scale(1.02)}
-.snap-exit:active{transform:scale(0.97)}
-
-/* ── platform install guide ── */
-.plat-toggle{background:none;border:1px solid var(--line);border-radius:9px;padding:8px 14px;color:var(--indigo);font-family:var(--body);font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;margin-top:12px;transition:border-color .15s,background .15s}
-.plat-toggle:hover{background:var(--ink-3);border-color:var(--indigo)}
-.plat-panel{margin-top:10px;background:var(--ink-2);border:1px solid var(--line);border-radius:12px;padding:16px}
-.plat-tabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
-.plat-tab{background:none;border:1px solid var(--line);border-radius:8px;padding:5px 12px;font-size:12.5px;font-family:var(--body);cursor:pointer;color:var(--paper-dim);transition:.15s}
-.plat-tab.act{border-color:var(--indigo);color:var(--paper);background:var(--ink-3)}
-.plat-tab:hover{border-color:var(--indigo)}
-.plat-steps{font-size:13px;color:var(--paper-dim);line-height:1.7}
-.plat-steps ol{margin:6px 0 0 16px}
-.plat-steps li{margin-bottom:2px}
-.plat-steps code{font-family:var(--mono);font-size:11.5px;background:var(--ink-3);border-radius:4px;padding:1px 4px}
-/* ext status message inside the extension panel */
-.ext-msg{margin-top:10px;font-size:13px;color:var(--paper-dim);line-height:1.5}
-/* url section toggle */
-.url-toggle{background:none;border:none;color:var(--indigo);font-family:var(--body);font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:5px;padding:0;margin-top:22px;text-decoration:underline;text-underline-offset:2px}
-.url-toggle:hover{color:var(--paper)}
-
-/* ── recommended badge on the Sims goal tile ── */
-.goaltile .grec{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;color:#fff;background:linear-gradient(135deg,#eab06a,var(--amber));padding:3px 9px;border-radius:20px;position:absolute;top:14px;right:14px}
-[data-theme="dark"] .goaltile .grec{color:#0c0a08}
-button.goaltile{position:relative}
-
-/* ── sign-in-to-test affordance (step 0 connect) ── */
-.creds-toggle{margin-top:12px;display:inline-flex;align-items:center;gap:7px;background:none;border:1px solid var(--line);border-radius:9px;padding:7px 12px;color:var(--indigo);font-family:var(--body);font-size:13px;cursor:pointer;transition:border-color .15s,background .15s}
-.creds-toggle:hover{border-color:var(--indigo);background:var(--ink-3)}
-.creds-panel{margin-top:12px;background:var(--ink-2);border:1px solid var(--line);border-radius:14px;padding:16px;text-align:left}
-.creds-panel .cp-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-@media(max-width:560px){.creds-panel .cp-grid{grid-template-columns:1fr}}
-.creds-panel .cp-full{grid-column:1/-1}
-.creds-panel label.fld{margin-bottom:0}
-
-/* ── tracker connector picker (new step) ── */
-.trk-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
-@media(max-width:560px){.trk-grid{grid-template-columns:1fr}}
-.trk{background:var(--ink-2);border:1px solid var(--line);border-radius:14px;padding:16px 18px;cursor:pointer;display:flex;align-items:center;gap:13px;transition:transform 150ms ease,border-color 150ms ease,box-shadow 150ms ease;text-align:left}
-.trk:hover{border-color:var(--indigo);transform:translateY(-2px)}
-.trk.sel{border-color:var(--indigo);box-shadow:0 0 0 3px rgba(99,102,241,.12)}
-.trk .tk-ic{width:38px;height:38px;border-radius:10px;background:var(--ink-3);border:1px solid var(--line);display:grid;place-items:center;font-family:var(--mono);font-weight:700;font-size:13px;color:var(--indigo);flex-shrink:0}
-.trk h3{font-family:var(--display);font-weight:600;font-size:15.5px;margin-bottom:2px}
-.trk p{font-size:12.5px;color:var(--paper-dim);line-height:1.4}
-.automap{margin-top:16px;display:flex;align-items:flex-start;gap:9px;font-size:12.5px;color:var(--paper-dim);line-height:1.5;background:linear-gradient(135deg,rgba(15,157,107,.07),transparent);border:1px solid rgba(15,157,107,.22);border-radius:11px;padding:11px 13px}
-
-/* ── plan cards (new step) ── */
-.plans{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-@media(max-width:700px){.plans{grid-template-columns:1fr}}
-.plan{position:relative;background:var(--ink-2);border:1px solid var(--line);border-radius:16px;padding:20px 18px;cursor:pointer;text-align:left;transition:transform 150ms ease,border-color 150ms ease,box-shadow 150ms ease}
-.plan:hover{border-color:var(--indigo);transform:translateY(-3px)}
-.plan.sel{border-color:var(--amber);box-shadow:0 0 0 3px rgba(217,131,36,.14)}
-.plan .pl-tag{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--amber);position:absolute;top:16px;right:16px}
-.plan h3{font-family:var(--display);font-weight:600;font-size:18px;margin-bottom:6px}
-.plan .pl-price{font-family:var(--display);font-size:26px;font-weight:600;margin-bottom:2px}
-.plan .pl-price span{font-family:var(--body);font-size:12.5px;color:var(--paper-faint);font-weight:400}
-.plan .pl-desc{font-size:12.5px;color:var(--paper-dim);line-height:1.45;margin-top:8px}
-.guarantee{margin-top:18px;display:flex;align-items:flex-start;gap:10px;font-size:13.5px;color:var(--paper-dim);line-height:1.5;border-left:3px solid var(--green);padding-left:12px}
-.guarantee b{color:var(--paper)}
-
-/* ── AutoSim journeys + frequency (final step) ── */
-.freq{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
-.freqp{background:var(--ink-2);border:1px solid var(--line);border-radius:11px;padding:11px 14px;cursor:pointer;font-size:13px;color:var(--paper-dim);transition:transform 150ms ease,border-color 150ms ease,box-shadow 150ms ease;position:relative}
-.freqp:hover{border-color:var(--indigo);transform:translateY(-2px)}
-.freqp.sel{border-color:var(--amber);color:var(--paper);box-shadow:0 0 0 3px rgba(217,131,36,.14)}
-.freqp .fr-rec{display:block;font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--amber);margin-top:3px}
-
-/* ── a11y: visible focus + reduced-motion ── */
-a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{outline:2px solid #8b8bf5;outline-offset:2px;border-radius:5px}
+a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{
+  outline:2px solid var(--indigo);outline-offset:2px;border-radius:5px}
 @media (prefers-reduced-motion: reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}}
 </style>
 <script src="/kit.js" defer></script>
 </head>
 <body>
-<div class="shell norail" id="shell">
-  <aside class="rail" id="rail">
-    <a class="brand" href="index.html"><img src="/favicon.svg" width="30" height="30" alt="" style="border-radius:9px;display:block" />Klavity</a>
-    <ul class="steps">
-      <li class="rstep" data-r="1"><span class="ix">1</span><div class="rl">Save your results</div></li>
-      <li class="rstep" data-r="2"><span class="ix">2</span><div class="rl">Add to your site</div></li>
-      <li class="rstep" data-r="3"><span class="ix">3</span><div class="rl">Send issues to your tracker</div></li>
-      <li class="rstep" data-r="4"><span class="ix">4</span><div class="rl">Start your plan</div></li>
-      <li class="rstep studio" data-r="5"><span class="ix"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z" /></svg></span><div class="rl">Keep testing every release</div></li>
-    </ul>
-    <div class="foot">The complete AI QA suite · ~2 minutes to set up</div>
-  </aside>
+<div class="shell" id="shell">
 
-  <main class="content" style="padding:0;display:block">
-
-    <!-- ───────────── STEP 0 — WELCOME / AHA DEMO + URL ACTION ───────────── -->
-    <div class="panel step" data-s="0" style="max-width:none">
-      <div class="hero">
-        <div class="eyebrow"><span class="spark">▦</span>The complete AI QA suite</div>
-        <h1>Ship software your customers <em>actually trust.</em></h1>
-
-        <!-- ── A1: Demo aha beat — baked, zero input ── -->
-        <div class="demo-beat" role="region" aria-label="Demo: a Sim catches a bug pre-launch">
-          <div class="db-eyebrow">Example · Acme Finance</div>
-          <div class="db-scene">
-            <div class="db-row">
-              <div class="db-av">PR</div>
-              <div class="db-body">
-                <div class="db-who">Priya <span class="db-role">Customer Support Lead</span></div>
-                <div class="db-quote">"I saw <b>3 overdue</b> and clicked it — I expected the list of overdue invoices. Nothing happened. If I'm a support lead under pressure, this dead-end is where I'd give up and email someone instead."</div>
-                <div class="db-sentiment">● frustrated</div>
-              </div>
-            </div>
-          </div>
-          <div class="db-catch">
-            <div class="db-ct"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:5px" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>Bug surfaced pre-launch</div>
-            <div class="db-cd">Overdue KPI card is not clickable — no drill-down to the overdue list · confidence 0.86</div>
-          </div>
-          <div class="db-cta">
-            <button class="btn btn-indigo" id="demoCta" onclick="scrollToUrlField()" style="margin-top:14px">Now try it on your product →</button>
-          </div>
-        </div>
-
-        <!-- ── A2: Two first-class paths — Snap (report widget) and Sims (AI personas) ── -->
-        <div class="url-hero" id="urlHeroSection">
-          <h2>Point Klavity at <em>your app.</em></h2>
-          <p class="uh-sub">Paste your product URL and AI customer personas read your real pages — and surface issues before your users hit them. See a grounded finding in about 20 seconds, no signup needed.</p>
-          <div class="url-field">
-            <input id="uhUrl" type="url" placeholder="yourproduct.com" autocomplete="url" aria-label="Your product URL" />
-            <button class="btn btn-indigo" id="uhGo" onclick="uhFetch()">Meet your Sims →</button>
-          </div>
-          <div class="uh-err" id="uhErr"></div>
-          <!-- Sign-in-to-test affordance (UI only for now): collects test creds to carry forward.
-               The instant preview still runs on the public URL; authed crawl runs after continue. -->
-          <button type="button" class="creds-toggle" id="credsToggle" aria-expanded="false" onclick="toggleCreds()">This app needs a login to test</button>
-          <div class="creds-panel hide" id="credsPanel">
-            <div class="cp-grid">
-              <label class="fld cp-full"><span class="lt">Login page URL · optional</span><input class="in" id="credLoginUrl" type="url" placeholder="yourapp.com/login" autocomplete="off" /></label>
-              <label class="fld"><span class="lt">Test username / email</span><input class="in" id="credUser" type="text" placeholder="test@yourapp.com" autocomplete="off" /></label>
-              <label class="fld"><span class="lt">Test password</span><input class="in" id="credPass" type="password" placeholder="••••••••" autocomplete="off" /></label>
-            </div>
-            <div class="note amber" style="margin-top:14px">If your login sends a one-time code or 2FA, Klavity pauses and asks you when it needs one. Sign-in testing runs after you continue and save your project — the instant preview below reads your public pages first.</div>
-          </div>
-          <div class="hide" id="uhLoading"><div class="uh-loading"><span class="uh-spin"></span><span id="uhLoadTxt">Opening your page…</span><span style="color:var(--paper-faint)">· usually ~20s</span></div></div>
-          <div id="uhResult"></div>
-        </div>
-
-        <!-- ── Two first-class setup paths: Snap (report widget) + Sims (AI review) ── -->
-        <div class="more-ways" id="moreWaysSection">
-          <!-- mw-toggle kept in DOM for JS compat but hidden via CSS -->
-          <button type="button" class="mw-toggle" id="mwToggle" aria-expanded="true" onclick="toggleMoreWays()">Choose your starting point</button>
-          <div class="mw-body" id="mwBody">
-            <div class="goalpick" role="group" aria-label="What are you looking to improve?">
-              <div class="glabel">What are you looking to improve?</div>
-              <div class="goaltiles">
-                <button type="button" class="goaltile snap" id="goalSnap" aria-pressed="false" onclick="chooseGoal('snap')">
-                  <span class="gic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 9l5 12 1.8-5.2L21 14Z" /><path d="M7.2 2.2 8 5.1" /><path d="m5.1 7.2-2.9-.8" /><path d="M14 4.1 12 6" /><path d="m6 12-1.9 2" /></svg></span>
-                  <span class="gtag">Snap · free forever</span>
-                  <h3>Just let people report bugs</h3>
-                  <p>For founders and small teams. One snippet on your live site — visitors report bugs with a single click, and clean tickets land in your dashboard. No AI setup.</p>
-                </button>
-                <button type="button" class="goaltile sims" id="goalSims" aria-pressed="true" onclick="chooseGoal('sims')">
-                  <span class="grec">Recommended</span>
-                  <span class="gic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg></span>
-                  <span class="gtag">Sims + AutoSim · AI QA</span>
-                  <h3>Let AI test my product like QA</h3>
-                  <p>For teams that want to catch regressions before customers do. AI customer personas review every release, surface issues, and file them for you — your always-on QA team.</p>
-                </button>
-              </div>
-              <p class="gnote">Both take about 2 minutes and create a full project. You can add the other any time.</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ───────────── STEP 1 — CREATE YOUR PROJECT ───────────── -->
-    <div class="panel step hide" data-s="1">
-      <div class="content" style="padding:60px clamp(28px,6vw,90px)">
-        <div class="panel">
-          <!-- 1a: signup form -->
-          <div id="s1form">
-            <div class="kicker" id="s1kick">Step 1 of 3</div>
-            <h2>Save your results &amp; <em>keep going.</em></h2>
-            <p class="sub" id="s1sub">Create your project so the finding you just saw — and every review after it — is waiting for you. We will email you a 6-digit sign-in code. No password.</p>
-            <label class="fld"><span class="lt">Your email</span><input class="in" id="email" type="email" placeholder="you@example.com" autocomplete="email" /></label>
-            <label class="fld"><span class="lt">Project name</span><input class="in" id="projectName" placeholder="Acme Billing" /></label>
-            <label class="fld"><span class="lt">Your website · optional, e.g. yourstore.com</span><input class="in" id="domain" placeholder="yourstore.com" /></label>
-            <div class="row"><button class="btn btn-indigo" id="createBtn" onclick="requestCode()">Create project →</button></div>
-            <div class="err" id="s1err"></div>
-          </div>
-          <!-- 1b: code entry -->
-          <div id="s1code" class="hide">
-            <div class="kicker" id="s1ckick">Step 1 of 3 · check your email</div>
-            <h2>Enter your <em>6-digit code.</em></h2>
-            <p class="sub">We emailed a sign-in code to <b id="codeEmail">you</b>. Pop it in below to finish creating your project.</p>
-            <label class="fld"><span class="lt">6-digit code</span><input class="in code" id="code" inputmode="numeric" maxlength="6" placeholder="••••••" /></label>
-            <div class="row"><button class="btn btn-indigo" id="verifyBtn" onclick="verifyCode()">Verify &amp; create →</button><span id="onb-use-different-email" class="skip" onclick="backToEmail()">Use a different email</span></div>
-            <div class="err" id="s1cerr"></div>
-            <div class="note hide" id="devNote"></div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ───────────── STEP 2 — ADD KLAVITY TO YOUR SITE ───────────── -->
-    <div class="panel step hide" data-s="2">
-      <div class="content" style="padding:60px clamp(28px,6vw,90px)">
-        <div class="panel">
-          <div class="kicker amber" id="s2kick">Step 2 of 3 · add to your site</div>
-          <h2>Add Klavity to your <em>site.</em></h2>
-          <p class="sub" id="s2sub">Klavity puts a one-click bug button on every page your visitors see — no extra apps needed. If you also want AI customer personas reviewing your product live, add the Klavity Chrome add-on too.</p>
-
-          <!-- ── Two paths: widget (primary) + extension (secondary). Hidden on the Snap goal. ── -->
-          <div class="tiles" id="installTiles">
-            <div class="tile sel" id="widgetTile" onclick="selectInstall('widget')">
-              <div class="ti">&lt;/&gt;</div>
-              <h3>Add the bug-report button</h3>
-              <p>One small piece of code on your site — visitors report bugs with a single click, no add-on needed.</p>
-            </div>
-            <div class="tile" id="chromeTile" onclick="selectInstall('extension')">
-              <div class="ti"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z" /></svg></div>
-              <h3>Connect the Klavity Chrome add-on</h3>
-              <p>For live AI customer-persona reviews on your pages. Works alongside the bug button.</p>
-            </div>
-          </div>
-
-          <!-- ── Widget section (shown by default) ── -->
-          <div id="widgetSection" style="margin-top:14px">
-            <pre style="margin:0;background:var(--ink-2);border:1px solid var(--line);border-radius:10px;padding:12px;font-family:var(--mono);font-size:11.5px;line-height:1.55;overflow:auto;white-space:pre-wrap;word-break:break-all">&lt;script src="<span id="snipHost">https://klavity.in</span>/widget.js" data-project="<span id="snipPid">YOUR_PROJECT_ID</span>" defer&gt;&lt;/script&gt;</pre>
-            <div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap">
-              <button type="button" id="copySnippet" style="background:var(--ink-2);border:1px solid var(--line);border-radius:8px;padding:7px 12px;color:var(--paper);font-family:var(--body);font-size:12.5px;cursor:pointer">Copy code</button>
-              <span style="color:var(--paper-faint);font-size:11.5px">Paste this once — it shows on every page automatically.</span>
-            </div>
-            <!-- Hand-off: email the install snippet to a developer (POST /api/install/email) -->
-            <div id="sendDevWrap" style="margin-top:12px;border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--ink-2)">
-              <div style="font-size:13px;font-weight:600;color:var(--paper);margin-bottom:2px">Not the one who installs code?</div>
-              <div style="font-size:12.5px;color:var(--paper-dim);margin-bottom:9px">Email the snippet to your developer — they paste one line and you're live.</div>
-              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-                <input class="in" id="devEmail" type="email" placeholder="developer@yourcompany.com" autocomplete="off" style="flex:1;min-width:200px" />
-                <button type="button" class="btn btn-indigo" id="sendDevBtn" onclick="sendToDeveloper()">Send instructions</button>
-              </div>
-              <div id="sendDevMsg" style="font-size:12.5px;margin-top:7px;color:var(--paper-faint)"></div>
-            </div>
-            <!-- Live install check: polls /api/projects/:id/widget-status (~3s) and flips green the
-                 moment the widget's heartbeat is seen from the founder's site (or the test below). -->
-            <div class="wstatus" id="widgetChip" role="status" aria-live="polite">
-              <span class="wdot" aria-hidden="true"></span><span id="widgetChipTxt">Waiting for your site… (paste the code, then reload your page)</span>
-            </div>
-            <!-- "Try it now": mounts the real widget on THIS page with the founder's project id and
-                 opens the composer — the submitted report flows through /api/feedback into their dashboard. -->
-            <div style="display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap">
-              <button type="button" class="btn btn-ghost" id="tryWidgetBtn" onclick="tryTestReport()">Try it now — send a test report</button>
-              <span style="color:var(--paper-faint);font-size:11.5px;max-width:34ch">This creates a real ticket in your project — perfect for seeing how it works.</span>
-            </div>
-            <!-- Platform install guide -->
-            <button type="button" class="plat-toggle" id="platToggle" onclick="togglePlatforms()">Where do I paste this? ↓</button>
-            <div id="platPanel" class="hide">
-              <div class="plat-panel">
-                <div class="plat-tabs" id="platTabs">
-                  <button type="button" class="plat-tab act" onclick="showPlat('shopify',this)">Shopify</button>
-                  <button type="button" class="plat-tab" onclick="showPlat('webflow',this)">Webflow</button>
-                  <button type="button" class="plat-tab" onclick="showPlat('squarespace',this)">Squarespace</button>
-                  <button type="button" class="plat-tab" onclick="showPlat('wix',this)">Wix</button>
-                  <button type="button" class="plat-tab" onclick="showPlat('react',this)">React / Next.js</button>
-                  <button type="button" class="plat-tab" onclick="showPlat('other',this)">Other</button>
-                </div>
-                <div class="plat-steps" id="platDesc"></div>
-              </div>
-            </div>
-          </div>
-
-          <!-- ── Extension section (hidden by default) ── -->
-          <div id="extSection" class="hide" style="margin-top:14px">
-            <div class="ext-msg" id="chromeMsg">
-              <a href="https://chromewebstore.google.com/detail/olahjdcgbdjajbfmgnakjlehgjdmaene" target="_blank" rel="noopener" style="color:var(--indigo);font-weight:600">Add Klavity to Chrome →</a>
-              <span style="color:var(--paper-faint)"> — then click the button below to connect it.</span>
-            </div>
-            <!-- URL input for Sim monitoring — only relevant with the extension -->
-            <div style="margin-top:16px">
-              <div style="font-family:var(--mono);font-size:11px;color:var(--paper-faint);margin-bottom:8px">Which pages should your AI customer personas watch? (paste your site address)</div>
-              <div class="urlrow">
-                <input class="in" id="urlInput" aria-label="Your site URL" placeholder="yoursite.com" onkeydown="if(event.key==='Enter')addUrl()" />
-                <button id="onb-add-url" class="btn btn-ghost" onclick="addUrl()">Add</button>
-              </div>
-              <div class="empty hide" id="urlEmpty">No URLs yet — add your site above.</div>
-              <div class="chiplist" id="urlChips"></div>
-            </div>
-          </div>
-
-          <div class="err" id="s2err"></div>
-          <div class="row">
-            <button class="btn btn-indigo" id="s2continue" onclick="s2proceed()">Continue →</button>
-            <span class="skip" id="s2skip" onclick="s2SkipLater()">Set up later</span>
-          </div>
-          <!-- Snap goal: an optional forward door into the Sims step (hidden for the Sims goal). -->
-          <div class="hide" id="s2AddSims" style="margin-top:16px"><span class="snap-fwd" role="button" tabindex="0" onclick="addSimsToo()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();addSimsToo()}">Want AI reviews too? Add AI customer personas →</span></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ───────────── STEP 3 — SEND ISSUES TO YOUR TRACKER (NEW) ───────────── -->
-    <div class="panel step hide" data-s="3">
-      <div class="content" style="padding:60px clamp(28px,6vw,90px)">
-        <div class="panel">
-          <div class="kicker" id="s3kick">Step 3 of 5 · connect your tracker</div>
-          <h2>Send issues to <em>your tracker.</em></h2>
-          <p class="sub">Every issue Klavity finds can flow straight into the tool your team already lives in — or stay in Klavity Cloud. Pick where issues should land; you can wire up the details in Settings after.</p>
-          <div class="trk-grid" role="group" aria-label="Choose where issues go">
-            <button type="button" class="trk" id="trkJira" onclick="chooseTracker('jira')"><span class="tk-ic">JR</span><div><h3>Jira</h3><p>Push issues into your Jira project</p></div></button>
-            <button type="button" class="trk" id="trkLinear" onclick="chooseTracker('linear')"><span class="tk-ic">LN</span><div><h3>Linear</h3><p>Create Linear issues automatically</p></div></button>
-            <button type="button" class="trk" id="trkGithub" onclick="chooseTracker('github')"><span class="tk-ic">GH</span><div><h3>GitHub</h3><p>Open GitHub issues in your repo</p></div></button>
-            <button type="button" class="trk" id="trkPlane" onclick="chooseTracker('plane')"><span class="tk-ic">PL</span><div><h3>Plane</h3><p>File into your Plane workspace</p></div></button>
-            <button type="button" class="trk sel" id="trkCloud" onclick="chooseTracker('cloud')"><span class="tk-ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.5 19a4.5 4.5 0 1 0-1.4-8.78 6 6 0 1 0-10.5 4.02" /><path d="M12 12v9" /><path d="m8 17 4 4 4-4" /></svg></span><div><h3>Keep them in Klavity Cloud</h3><p>Triage and track issues right here — no external tool needed</p></div></button>
-          </div>
-          <div class="automap"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;margin-top:1px;color:var(--green)"><path d="M20 6 9 17l-5-5" /></svg><span>New: Klavity auto-maps issue types and statuses to your tracker, so severities and workflow states line up without manual field mapping.</span></div>
-          <div class="row">
-            <button class="btn btn-indigo" id="trkContinue" onclick="trackerContinue()">Continue →</button>
-            <span class="skip" id="trkSkip" onclick="trackerContinue()">Decide later</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ───────────── STEP 4 — START YOUR PLAN (NEW) ───────────── -->
-    <div class="panel step hide" data-s="4">
-      <div class="content" style="padding:60px clamp(28px,6vw,90px)">
-        <div class="panel">
-          <div class="kicker" id="s4kick">Step 4 of 5 · start your plan</div>
-          <h2>Start your <em>plan.</em></h2>
-          <p class="sub">Pick the plan that fits your team. No card charged now, and there is no credit-burn — fair-use guard rails keep costs predictable.</p>
-          <div class="plans" role="group" aria-label="Choose a plan">
-            <button type="button" class="plan" id="planStarter" onclick="choosePlan('pro')">
-              <h3>Starter</h3>
-              <div class="pl-price">$29<span> /mo</span></div>
-              <div class="pl-desc">For a single product. Sims review your releases and file issues into your tracker.</div>
-            </button>
-            <button type="button" class="plan sel" id="planTeam" onclick="choosePlan('team')">
-              <span class="pl-tag">Recommended</span>
-              <h3>Team</h3>
-              <div class="pl-price">$99<span> /mo</span></div>
-              <div class="pl-desc">AutoSim on every release, multiple projects, and your whole team in one workspace.</div>
-            </button>
-            <button type="button" class="plan" id="planScale" onclick="choosePlan('founding')">
-              <span class="pl-tag">Highest volume</span>
-              <h3>Scale</h3>
-              <div class="pl-price">Custom</div>
-              <div class="pl-desc">High-volume AutoSim runs, priority support, and advanced guard-rail controls.</div>
-            </button>
-          </div>
-          <div class="guarantee"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;color:var(--green)"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" /><path d="m9 12 2 2 4-4" /></svg><span><b>14-day money-back guarantee.</b> Not a free trial — start on a real plan, and if Klavity is not catching issues worth the price in your first two weeks, we refund you in full.</span></div>
-          <div class="row">
-            <button class="btn btn-indigo" id="planContinue" onclick="planContinue()">Continue →</button>
-            <span class="skip" id="planSkip" onclick="planSkip()">Choose a plan later</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ───────────── STEP 5 — AUTOSIM: KEEP TESTING EVERY RELEASE ───────────── -->
-    <div class="panel step hide" data-s="5">
-      <div class="content" style="padding:60px clamp(28px,6vw,90px)">
-        <div class="panel">
-          <div class="kicker amber" id="s5kick">Step 5 of 5 · keep testing</div>
-          <h2>Keep testing <em>every release.</em></h2>
-          <p class="sub" id="s3sub">AutoSim is the always-on version of your Sims: it re-runs the journeys that matter on every release, catches regressions before your customers do, and files what it finds. Set how often it runs, then bring your review team in.</p>
-          <!-- Aha carry-through: when step 0 built Sims from THEIR site, the primary path is seeing
-               those Sims' first review in New reports — not Sim-authoring jargon. Hidden when the
-               user skipped step 0 (no stashed personas). -->
-          <div class="hide" id="ahaPrimary">
-            <div class="tile sel" id="ahaPrimaryTile" role="button" tabindex="0" onclick="gotoAhaReview()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();gotoAhaReview()}">
-              <div class="ti"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z" /></svg></div>
-              <h3 id="ahaPrimaryHd">Your AI customer personas — see their first review →</h3>
-              <p>The AI customer personas we built from your site are already on it — their first review lands in New reports on your dashboard.</p>
-            </div>
-          </div>
-          <!-- AutoSim frequency (carried forward as &freq= — no backend commit here) -->
-          <div style="font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);margin:22px 0 10px">How often should AutoSim run?</div>
-          <div class="freq" role="group" aria-label="AutoSim frequency">
-            <button type="button" class="freqp sel" id="freqDeploy" onclick="chooseFreq('deploy')">After every deployment<span class="fr-rec">Recommended</span></button>
-            <button type="button" class="freqp" id="freqDaily" onclick="chooseFreq('daily')">Daily</button>
-            <button type="button" class="freqp" id="freqWeekly" onclick="chooseFreq('weekly')">Weekly</button>
-          </div>
-          <div style="font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);margin:24px 0 12px">Bring your review team in</div>
-          <div class="tiles">
-            <div class="tile sel" id="intentTranscript" onclick="pickIntent('transcript')"><div class="ti"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" /> <path d="M14 2v4a2 2 0 0 0 2 2h4" /> <path d="M10 9H8" /> <path d="M16 13H8" /> <path d="M16 17H8" /></svg></div><h3>From a customer call</h3><p>Upload a written record of the call (Zoom / Meet / Loom). We turn each speaker into an AI customer persona, based on what they actually said.</p></div>
-            <div class="tile" id="intentHats" onclick="pickIntent('hats')"><div class="ti"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5" /> <path d="M9 18h6" /> <path d="M10 22h4" /></svg></div><h3>The Six Thinking Hats</h3><p>A balanced review team — facts, feelings, optimism, risks, ideas, process — that works on any page, no customer call needed.</p>
-              <div class="hatdots">
-                <span class="hd" style="background:#3b82f6">BL</span>
-                <span class="hd" style="background:#fff;color:#19140f;border:1px solid rgba(0,0,0,.18)">WH</span>
-                <span class="hd" style="background:#ef4444">RH</span>
-                <span class="hd" style="background:#facc15;color:#19140f">YH</span>
-                <span class="hd" style="background:#1f2937">BK</span>
-                <span class="hd" style="background:#22c55e">GH</span>
-              </div>
-            </div>
-          </div>
-          <div class="row"><button id="onb-open-studio" class="btn btn-amber" onclick="openStudio()">Open the Studio →</button><span id="onb-pick-later" class="skip" onclick="openStudio()">Pick later in the Studio</span></div>
-          <!-- Low-emphasis exit: jump straight to the dashboard reports. -->
-          <div style="margin-top:16px"><a class="snap-exit" id="skipToDash" href="/dashboard">Skip for now — take me to my reports →</a></div>
-        </div>
-      </div>
-    </div>
-
-  </main>
+<!-- ───────────── TOP BAR + PROGRESS RAIL ───────────── -->
+<div class="top">
+  <div class="in">
+    <a class="brand" href="index.html"><span class="mark">K</span>Klavity</a>
+    <div class="rail" id="rail"></div>
+    <span class="pill-live">AI QA · live</span>
+  </div>
 </div>
+
+<div class="stage">
+
+  <!-- ═════════ STEP 1 · GOAL (data-s=0) — the FIRST screen ═════════ -->
+  <section class="screen on" data-s="0">
+    <div class="kicker">Step 1 · Your goals</div>
+    <h1 class="hd">What are you looking to <em>improve?</em></h1>
+    <p class="sub">Select everything that applies — Klavity tunes its testing and findings around what matters to you.</p>
+    <div class="cols" role="group" aria-label="What are you looking to improve?">
+      <button type="button" class="opt gcard sel" data-g="bugs" onclick="toggleGoalCard(this)"><span class="ic">B</span><div><div class="t">Find bugs faster</div><div class="d">Catch breakage before customers do</div></div><span class="chk"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></span></button>
+      <button type="button" class="opt gcard" data-g="cx" onclick="toggleGoalCard(this)"><span class="ic">C</span><div><div class="t">Validate customer experiences</div><div class="d">Make sure real journeys actually work</div></div><span class="chk"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></span></button>
+      <button type="button" class="opt gcard" data-g="journeys" onclick="toggleGoalCard(this)"><span class="ic">J</span><div><div class="t">Test critical user journeys</div><div class="d">Signup, login, checkout, core flows</div></div><span class="chk"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></span></button>
+      <button type="button" class="opt gcard" data-g="feedback" onclick="toggleGoalCard(this)"><span class="ic">F</span><div><div class="t">Turn feedback into actionable issues</div><div class="d">Reports and calls become clean tickets</div></div><span class="chk"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></span></button>
+    </div>
+    <button type="button" class="btn btn-ghost btn-block" style="margin-top:14px" onclick="selectAllGoals()">Select all of the above</button>
+
+    <div class="card pad" style="margin-top:20px">
+      <div style="font-weight:650;margin-bottom:2px">We'll start you here <span style="color:var(--muted);font-weight:400">— you can switch anytime.</span></div>
+      <div class="grid2" style="margin-top:14px" role="group" aria-label="Where should we start?">
+        <button type="button" class="opt startopt sel" data-start="test" data-fork="sims" onclick="pickStart(this)"><span class="ic">T</span><div><div class="t">Test my product <span class="reco">Recommended</span></div><div class="d">An AI customer explores and finds issues — no setup</div></div></button>
+        <button type="button" class="opt startopt" data-start="sim" data-fork="sims" onclick="pickStart(this)"><span class="ic">S</span><div><div class="t">Create a Sim</div><div class="d">An AI persona built from your real customers</div></div></button>
+        <button type="button" class="opt startopt" data-start="monitor" data-fork="sims" onclick="pickStart(this)"><span class="ic">M</span><div><div class="t">Monitor a critical flow</div><div class="d">Re-test key journeys on every release</div></div></button>
+        <button type="button" class="opt startopt" data-start="capture" data-fork="snap" onclick="pickStart(this)"><span class="ic">R</span><div><div class="t">Capture an existing issue</div><div class="d">Snap — a one-click bug button, free forever</div></div></button>
+      </div>
+    </div>
+
+    <div class="row">
+      <button class="btn btn-indigo" id="goalContinueBtn" onclick="goalContinue()">Continue →</button>
+      <span class="helper" id="goalHelp">Pick at least one goal to continue.</span>
+    </div>
+  </section>
+
+  <!-- ═════════ STEP 2 · PRODUCT (data-s=1) — connect + real aha input ═════════ -->
+  <section class="screen" data-s="1">
+    <div class="kicker">Step 2 · Connect your product</div>
+    <h1 class="hd">Point Klavity at <em>your app.</em></h1>
+    <p class="sub">Just a URL to start. Klavity opens your product in a real browser, reads your pages, and surfaces issues before your users hit them — no signup needed to see your first finding.</p>
+    <div class="cols">
+      <div>
+        <div class="field"><label>Product URL</label>
+          <input class="in" id="uhUrl" type="url" placeholder="yourproduct.com" autocomplete="url" aria-label="Your product URL" style="font-family:var(--mono);font-size:14px" />
+        </div>
+        <div class="uh-err err" id="uhErr" style="margin-top:8px"></div>
+        <button type="button" class="adv-toggle" id="credsToggle" aria-expanded="false" onclick="toggleCreds()">Advanced options — authentication</button>
+        <div class="auth hide" id="credsPanel">
+          <div class="grid2">
+            <div class="field" style="margin-top:0"><label>Test username / email</label><input class="in" id="credUser" type="text" placeholder="test@yourapp.com" autocomplete="off" /></div>
+            <div class="field" style="margin-top:0"><label>Test password</label><input class="in" id="credPass" type="password" placeholder="••••••••" autocomplete="off" /></div>
+          </div>
+          <div class="field"><label>Login page URL · optional</label><input class="in" id="credLoginUrl" type="url" placeholder="yourapp.com/login" autocomplete="off" /></div>
+          <div class="callout"><span><b>2-factor / OTP?</b> No problem — when Klavity hits a one-time code or bot-check it <b>pauses and asks you</b> for the code, then continues. Credentials are encrypted and used only to run your tests.</span></div>
+        </div>
+        <div class="row">
+          <button class="btn btn-indigo" id="uhGo" onclick="connectAndExplore()">Connect &amp; explore →</button>
+          <button class="btn btn-ghost" onclick="useDemoProduct()">Use a demo product</button>
+        </div>
+      </div>
+      <div>
+        <div class="browser">
+          <div class="bchrome"><div class="dots"><i></i><i></i><i></i></div><div class="burl">app.yourproduct.com</div><span style="font-family:var(--mono);font-size:11px;color:var(--green)">ready</span></div>
+          <div class="bbody"><div class="sk" style="width:40%"></div><div class="sk" style="height:70px"></div><div style="display:flex;gap:10px"><div class="sk" style="width:33%;height:44px"></div><div class="sk" style="width:33%;height:44px"></div><div class="sk" style="width:33%;height:44px"></div></div><div class="sk" style="width:30%;height:38px;background:var(--indigo-ghost)"></div></div>
+        </div>
+        <div style="text-align:center;color:var(--faint);font-size:12px;margin-top:8px">Klavity opens your product in a real browser to explore it.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═════════ STEP 3 · TEST (data-s=2) — exploring / live run + recommended tests ═════════ -->
+  <section class="screen" data-s="2">
+    <div class="kicker">Step 3 · Test</div>
+    <h1 class="hd">Klavity is testing your product.</h1>
+    <p class="sub">It browses your app like a first-time customer — no test scripts to write. Watch it work; this live walkthrough is the heart of Klavity.</p>
+    <div class="cols">
+      <div class="card pad chk-list">
+        <div class="li done"><span class="cbead"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></span> Opened your product</div>
+        <div class="li done"><span class="cbead"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></span> Scanning pages &amp; navigation</div>
+        <div class="li act"><span class="cbead">•</span> Detecting forms &amp; interactions</div>
+        <div class="li"><span class="cbead"></span> Mapping important journeys</div>
+        <div class="li"><span class="cbead"></span> Preparing your first result</div>
+      </div>
+      <div class="browser">
+        <div class="bchrome"><div class="dots"><i></i><i></i><i></i></div><div class="burl">app.yourproduct.com/dashboard</div><span style="font-family:var(--mono);font-size:11px;color:var(--indigo)">reading…</span></div>
+        <div class="bbody"><div class="sk" style="width:45%"></div><div class="sk" style="height:64px"></div><div style="display:flex;gap:10px"><div class="sk" style="width:48%;height:40px"></div><div class="sk" style="width:48%;height:40px"></div></div><div class="bcursor" style="right:24px;bottom:26px">AI tester</div></div>
+      </div>
+    </div>
+
+    <!-- Personas + live reaction render here (real /api/persona/site + /api/sim/preview) -->
+    <div class="hide" id="uhLoading"><div class="uh-loading"><span class="uh-spin"></span><span id="uhLoadTxt">Opening your page…</span><span style="color:var(--faint)">· usually ~20s</span></div></div>
+    <div id="uhResult" style="margin-top:16px"></div>
+
+    <div class="card pad" style="margin-top:16px">
+      <div class="uh-label">Recommended tests — the journeys that matter most</div>
+      <div id="jlist"></div>
+    </div>
+    <div class="row">
+      <button class="btn btn-indigo" onclick="previewContinue()">See your first result →</button>
+    </div>
+  </section>
+
+  <!-- ═════════ STEP 4 · INSIGHTS — first result (data-s=3) ═════════ -->
+  <section class="screen" data-s="3">
+    <div class="kicker green">Step 4 · Your first result</div>
+    <h1 class="hd">Your first test is <em>complete.</em></h1>
+    <p class="sub">Klavity tested your journeys and found issues worth your attention — with the receipts.</p>
+    <div class="stats">
+      <div class="stat"><div class="n" style="color:var(--indigo)">3</div><div class="l">Issues found</div></div>
+      <div class="stat"><div class="n" style="color:var(--rose)">1</div><div class="l">Critical</div></div>
+      <div class="stat"><div class="n" style="color:var(--amber)">2</div><div class="l">Usability</div></div>
+    </div>
+    <!-- Live reaction (from /api/sim/preview) is injected here as a finding when present -->
+    <div id="insightLive"></div>
+    <div class="card">
+      <div class="pad" style="display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--line2);flex-wrap:wrap">
+        <span class="sev crit">CRITICAL</span><span class="conf">confidence 96%</span>
+        <b style="font-size:17px">Checkout button fails on mobile</b>
+      </div>
+      <div class="pad cols">
+        <div>
+          <div style="font-weight:650;margin-bottom:4px">Why this matters</div>
+          <p style="color:var(--ink2);margin:0 0 14px">Users can't complete checkout on smaller screens — the primary CTA is pushed below the viewport and never becomes tappable.</p>
+          <div style="font-weight:650">Reproduction steps</div>
+          <ol class="steps-num"><li>Open the product on a 375px viewport</li><li>Add any item and go to checkout</li><li>Attempt to tap "Pay now" — button is off-screen</li></ol>
+          <div class="recfix"><b>Recommended fix:</b> pin the mobile checkout CTA to a sticky footer below 400px.</div>
+        </div>
+        <div>
+          <div style="font-weight:650;margin-bottom:8px">Evidence</div>
+          <div class="evi">
+            <div class="r"><span class="k">Screenshot</span><span class="v mono">checkout-mobile-375.png</span></div>
+            <div class="r"><span class="k">Device</span><span class="v mono">iPhone 14 · 375×812 · Safari</span></div>
+            <div class="r"><span class="k">Console</span><span class="v mono">TypeError: cta.offsetTop…</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="row">
+      <span class="helper">See the other 2 findings in your dashboard once you save.</span>
+      <button class="btn btn-indigo" onclick="go(S.SIGNUP)" style="margin-left:auto">Save my results →</button>
+    </div>
+  </section>
+
+  <!-- ═════════ STEP 4 · INSIGHTS — signup gate (data-s=4) — OTP earned after the win ═════════ -->
+  <section class="screen" data-s="4">
+    <div id="s1form">
+      <div class="kicker" id="s1kick">Step 4 · Insights · save your results</div>
+      <h1 class="hd">Save your results &amp; <em>keep going.</em></h1>
+      <p class="sub" id="s1sub">Create your project so the finding you just saw — and every review after it — is waiting for you. We will email you a 6-digit sign-in code. No password.</p>
+      <div style="max-width:460px">
+        <label class="fld"><span class="lt">Your email</span><input class="in" id="email" type="email" placeholder="you@example.com" autocomplete="email" /></label>
+        <label class="fld"><span class="lt">Project name</span><input class="in" id="projectName" placeholder="Acme Billing" /></label>
+        <label class="fld"><span class="lt">Your website · optional, e.g. yourstore.com</span><input class="in" id="domain" placeholder="yourstore.com" /></label>
+        <div class="row"><button class="btn btn-indigo" id="createBtn" onclick="requestCode()">Create project →</button></div>
+        <div class="err" id="s1err"></div>
+      </div>
+    </div>
+    <div id="s1code" class="hide">
+      <div class="kicker" id="s1ckick">Step 4 · Insights · check your email</div>
+      <h1 class="hd">Enter your <em>6-digit code.</em></h1>
+      <p class="sub">We emailed a sign-in code to <b id="codeEmail">you</b>. Pop it in below to finish creating your project.</p>
+      <div style="max-width:460px">
+        <label class="fld"><span class="lt">6-digit code</span><input class="in code" id="code" inputmode="numeric" maxlength="6" placeholder="••••••" /></label>
+        <div class="row"><button class="btn btn-indigo" id="verifyBtn" onclick="verifyCode()">Verify &amp; create →</button><button id="onb-use-different-email" class="skip" onclick="backToEmail()">Use a different email</button></div>
+        <div class="err" id="s1cerr"></div>
+        <div class="note hide" id="devNote"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═════════ STEP 4 · INSIGHTS — send to tracker (data-s=5) ═════════ -->
+  <section class="screen" data-s="5">
+    <div class="kicker" id="s3kick">Step 4 · Insights · connect your tracker</div>
+    <h1 class="hd">Send issues to <em>your tracker.</em></h1>
+    <p class="sub">Every issue Klavity finds can flow straight into the tool your team already lives in — with evidence and reproduction steps attached — or stay in Klavity Cloud.</p>
+    <div class="grid2" role="group" aria-label="Choose where issues go">
+      <button type="button" class="opt trk" id="trkJira" onclick="chooseTracker('jira')"><span class="ic">JR</span><div><div class="t">Jira</div><div class="d">Push issues into your Jira project</div></div></button>
+      <button type="button" class="opt trk" id="trkLinear" onclick="chooseTracker('linear')"><span class="ic">LN</span><div><div class="t">Linear</div><div class="d">Create Linear issues automatically</div></div></button>
+      <button type="button" class="opt trk" id="trkGithub" onclick="chooseTracker('github')"><span class="ic">GH</span><div><div class="t">GitHub</div><div class="d">Open GitHub issues in your repo</div></div></button>
+      <button type="button" class="opt trk" id="trkPlane" onclick="chooseTracker('plane')"><span class="ic">PL</span><div><div class="t">Plane</div><div class="d">File into your Plane workspace</div></div></button>
+    </div>
+    <button type="button" class="opt trk sel" id="trkCloud" onclick="chooseTracker('cloud')" style="margin-top:12px"><span class="ic">KC</span><div><div class="t">Keep them in Klavity Cloud</div><div class="d">No tracker? Klavity stores and manages issues for you — serious teams keep Jira, we just CC it.</div></div></button>
+    <div class="trust"><span>Klavity only <b>creates and updates</b> issues. It never reads your private repos or boards. New: it auto-maps issue types and statuses to your tracker, so severities and workflow states line up.</span></div>
+    <div class="row">
+      <button class="btn btn-indigo" id="trkContinue" onclick="trackerContinue()">Continue →</button>
+      <button class="skip" id="trkSkip" onclick="trackerContinue()">Decide later</button>
+    </div>
+  </section>
+
+  <!-- ═════════ STEP 5 · AUTOMATE — plan (data-s=6) ═════════ -->
+  <section class="screen" data-s="6">
+    <div class="kicker amber" id="s4kick">Step 5 · Automate · start your plan</div>
+    <h1 class="hd">You've seen it work. Ready to put it to <em>work?</em></h1>
+    <p class="sub">Continuous AI testing runs real browsers and real models on every release. Pick a plan to start — no card charged now, and there is no credit-burn.</p>
+    <div class="plans" role="group" aria-label="Choose a plan">
+      <button type="button" class="plan" id="planStarter" onclick="choosePlan('pro')"><h3>Starter</h3><div class="pl-price">$29<span> /mo</span></div><div class="pl-desc">For a single product. Sims review your releases and file issues into your tracker.</div></button>
+      <button type="button" class="plan sel" id="planTeam" onclick="choosePlan('team')"><span class="pl-tag">Recommended</span><h3>Team</h3><div class="pl-price">$99<span> /mo</span></div><div class="pl-desc">AutoSim on every release, multiple projects, and your whole team in one workspace.</div></button>
+      <button type="button" class="plan" id="planScale" onclick="choosePlan('founding')"><span class="pl-tag">Highest volume</span><h3>Scale</h3><div class="pl-price">Custom</div><div class="pl-desc">High-volume AutoSim runs, priority support, and advanced guard-rail controls.</div></button>
+    </div>
+    <div class="guarantee"><span><b>14-day money-back guarantee.</b> Not a free trial — start on a real plan, and if Klavity is not catching issues worth the price in your first two weeks, we refund you in full.</span></div>
+    <div class="row">
+      <button class="btn btn-indigo" id="planContinue" onclick="planContinue()">Continue →</button>
+      <button class="skip" id="planSkip" onclick="planSkip()">Choose a plan later</button>
+    </div>
+  </section>
+
+  <!-- ═════════ STEP 5 · AUTOMATE — create a Sim (data-s=7) ═════════ -->
+  <section class="screen" data-s="7">
+    <div class="kicker amber">Step 5 · Automate · your AI customers</div>
+    <h1 class="hd">Want Klavity to think like <em>your</em> customers?</h1>
+    <p class="sub">So far a general AI customer did the testing. Create a <b>Sim</b> — an AI persona grounded in your real users — or skip and do it later from the dashboard.</p>
+    <div class="cols">
+      <div class="card pad">
+        <div class="grid2"><div class="field" style="margin-top:0"><label>Sim name</label><input class="in" id="simName" value="Marketing Manager" /></div><div class="field" style="margin-top:0"><label>Role</label><input class="in" id="simRole" value="B2B SaaS buyer" /></div></div>
+        <div class="field"><label>Goal</label><input class="in" id="simGoal" value="Evaluate whether onboarding is clear" /></div>
+        <div class="field"><label>Ground it in real customers · optional</label>
+          <div style="border:1.5px dashed var(--line);border-radius:12px;padding:20px;text-align:center;color:var(--muted);font-size:13px">Drop call transcripts (.txt / .vtt / .csv) or <span style="color:var(--indigo)">paste a customer call</span><div style="font-size:11.5px;color:var(--faint);margin-top:4px">Klavity grounds the Sim in real customer language, needs and frustrations.</div></div>
+        </div>
+        <div class="row"><button class="btn btn-indigo" onclick="showSim()">Create my Sim</button><button class="skip" onclick="go(S.AUTOSIM)">Skip</button></div>
+      </div>
+      <div class="card pad hide" id="simres">
+        <div class="uh-label">Sim result</div>
+        <div style="display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:center;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:8px">
+          <div style="text-align:center"><div style="font-size:30px;font-weight:780;color:var(--indigo)">78%</div><div style="font-size:11px;color:var(--muted)">successful</div></div>
+          <div class="chk-list"><div class="li done" style="padding:5px 0"><span class="cbead"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></span>Understood navigation</div><div class="li done" style="padding:5px 0"><span class="cbead"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></span>Created workspace</div><div class="li" style="padding:5px 0;color:var(--amber)"><span class="cbead" style="border-color:var(--amber);color:var(--amber)">!</span>Could not find reporting</div></div>
+        </div>
+        <div style="border-left:3px solid var(--indigo);padding:8px 12px;margin-top:14px;color:var(--ink2);font-style:italic">"I set everything up fine, but I genuinely could not find where the reports live. I gave up and asked support."</div>
+        <div class="row"><button class="btn btn-indigo" onclick="go(S.AUTOSIM)">Continue →</button></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═════════ STEP 5 · AUTOMATE — keep testing every release (data-s=8) ═════════ -->
+  <section class="screen" data-s="8">
+    <div class="kicker amber" id="s5kick">Step 5 · Automate · keep testing</div>
+    <h1 class="hd">Keep testing <em>every release.</em></h1>
+    <p class="sub" id="s3sub">Turn your critical journeys into continuous <b>AutoSims</b> — they re-run the flows that matter on every release, catch regressions before your customers do, and file what they find.</p>
+
+    <!-- Aha carry-through: when step 1 built Sims from THEIR site, the primary path is seeing
+         those Sims' first review in New reports. Hidden when no stashed personas. -->
+    <div class="hide" id="ahaPrimary">
+      <div class="tile sel" id="ahaPrimaryTile" role="button" tabindex="0" onclick="gotoAhaReview()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();gotoAhaReview()}">
+        <div class="ti"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z" /></svg></div>
+        <h3 id="ahaPrimaryHd">Your AI customer personas — see their first review →</h3>
+        <p>The AI customer personas we built from your site are already on it — their first review lands in New reports on your dashboard.</p>
+      </div>
+    </div>
+
+    <div style="font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:22px 0 10px">How often should AutoSim run?</div>
+    <div class="freq" role="group" aria-label="AutoSim frequency">
+      <button type="button" class="freqp sel" id="freqDeploy" onclick="chooseFreq('deploy')">After every deployment<span class="fr-rec">Recommended</span></button>
+      <button type="button" class="freqp" id="freqDaily" onclick="chooseFreq('daily')">Daily</button>
+      <button type="button" class="freqp" id="freqWeekly" onclick="chooseFreq('weekly')">Weekly</button>
+    </div>
+
+    <div style="font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:24px 0 12px">Bring your review team in</div>
+    <div class="tiles">
+      <div class="tile sel" id="intentTranscript" onclick="pickIntent('transcript')"><div class="ti"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" /><path d="M16 13H8" /><path d="M16 17H8" /></svg></div><h3>From a customer call</h3><p>Upload a written record of the call (Zoom / Meet / Loom). We turn each speaker into an AI customer persona, based on what they actually said.</p></div>
+      <div class="tile" id="intentHats" onclick="pickIntent('hats')"><div class="ti"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5" /><path d="M9 18h6" /><path d="M10 22h4" /></svg></div><h3>The Six Thinking Hats</h3><p>A balanced review team — facts, feelings, optimism, risks, ideas, process — that works on any page, no customer call needed.</p>
+        <div class="hatdots">
+          <span class="hatb" style="background:#3b82f6">BL</span>
+          <span class="hatb" style="background:#fff;color:#19140f;border:1px solid rgba(0,0,0,.18)">WH</span>
+          <span class="hatb" style="background:#ef4444">RH</span>
+          <span class="hatb" style="background:#facc15;color:#19140f">YH</span>
+          <span class="hatb" style="background:#1f2937">BK</span>
+          <span class="hatb" style="background:#22c55e">GH</span>
+        </div>
+      </div>
+    </div>
+    <div class="row"><button class="btn btn-amber" onclick="go(S.DONE)">Enable AutoSim →</button><button id="onb-open-studio" class="skip" onclick="openStudio()">Open the Studio instead</button></div>
+    <div style="margin-top:16px"><a class="snap-exit" id="skipToDash" href="/dashboard">Skip for now — take me to my reports →</a></div>
+  </section>
+
+  <!-- ═════════ DONE (data-s=9) ═════════ -->
+  <section class="screen" data-s="9">
+    <div class="center">
+      <div class="done-mark"><svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></div>
+      <h1 class="hd">You're set up.</h1>
+      <p class="sub" style="margin-inline:auto">AutoSim will keep testing your critical journeys on every deploy and alert you the moment something breaks. Your first insight is already waiting.</p>
+      <div class="row" style="justify-content:center"><button class="btn btn-indigo" onclick="finishAll()">Go to my dashboard →</button></div>
+    </div>
+  </section>
+
+  <!-- ═════════ INSTALL — Snap short path (data-s=10) ═════════ -->
+  <section class="screen" data-s="10">
+    <div class="kicker amber" id="s2kick">Add Klavity to your site</div>
+    <h1 class="hd">Add Klavity to your <em>site.</em></h1>
+    <p class="sub" id="installSub">Drop one small piece of code on your site and every visitor gets a one-click bug button — clean, detailed tickets land in your dashboard automatically. No extra apps.</p>
+
+    <!-- widget (primary) + extension (secondary). installTiles hidden on the Snap goal via CSS. -->
+    <div class="tiles" id="installTiles">
+      <div class="tile sel" id="widgetTile" onclick="selectInstall('widget')">
+        <div class="ti mono" style="font-weight:700">&lt;/&gt;</div>
+        <h3>Add the bug-report button</h3>
+        <p>One small piece of code on your site — visitors report bugs with a single click, no add-on needed.</p>
+      </div>
+      <div class="tile" id="chromeTile" onclick="selectInstall('extension')">
+        <div class="ti"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z" /></svg></div>
+        <h3>Connect the Klavity Chrome add-on</h3>
+        <p>For live AI customer-persona reviews on your pages. Works alongside the bug button.</p>
+      </div>
+    </div>
+
+    <div id="widgetSection" style="margin-top:16px">
+      <pre class="snip">&lt;script src="<span id="snipHost">https://klavity.in</span>/widget.js" data-project="<span id="snipPid">YOUR_PROJECT_ID</span>" defer&gt;&lt;/script&gt;</pre>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap">
+        <button type="button" id="copySnippet" class="btn btn-ghost" style="padding:7px 12px;font-size:12.5px">Copy code</button>
+        <span style="color:var(--faint);font-size:11.5px">Paste this once — it shows on every page automatically.</span>
+      </div>
+      <!-- Hand-off: email the install snippet to a developer (POST /api/install/email) -->
+      <div id="sendDevWrap" style="margin-top:12px;border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--card)">
+        <div style="font-size:13px;font-weight:600;margin-bottom:2px">Not the one who installs code?</div>
+        <div style="font-size:12.5px;color:var(--muted);margin-bottom:9px">Email the snippet to your developer — they paste one line and you're live.</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input class="in" id="devEmail" type="email" placeholder="developer@yourcompany.com" autocomplete="off" style="flex:1;min-width:200px" />
+          <button type="button" class="btn btn-indigo" id="sendDevBtn" onclick="sendToDeveloper()">Send instructions</button>
+        </div>
+        <div id="sendDevMsg" style="font-size:12.5px;margin-top:7px;color:var(--faint)"></div>
+      </div>
+      <!-- Live install check: polls /api/projects/:id/widget-status (~3s) and flips green. -->
+      <div class="wstatus" id="widgetChip" role="status" aria-live="polite">
+        <span class="wdot" aria-hidden="true"></span><span id="widgetChipTxt">Waiting for your site… (paste the code, then reload your page)</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap">
+        <button type="button" class="btn btn-ghost" id="tryWidgetBtn" onclick="tryTestReport()">Try it now — send a test report</button>
+        <span style="color:var(--faint);font-size:11.5px;max-width:34ch">This creates a real ticket in your project — perfect for seeing how it works.</span>
+      </div>
+      <button type="button" class="plat-toggle" id="platToggle" onclick="togglePlatforms()">Where do I paste this? ↓</button>
+      <div id="platPanel" class="hide">
+        <div class="plat-panel">
+          <div class="plat-tabs" id="platTabs">
+            <button type="button" class="plat-tab act" onclick="showPlat('shopify',this)">Shopify</button>
+            <button type="button" class="plat-tab" onclick="showPlat('webflow',this)">Webflow</button>
+            <button type="button" class="plat-tab" onclick="showPlat('squarespace',this)">Squarespace</button>
+            <button type="button" class="plat-tab" onclick="showPlat('wix',this)">Wix</button>
+            <button type="button" class="plat-tab" onclick="showPlat('react',this)">React / Next.js</button>
+            <button type="button" class="plat-tab" onclick="showPlat('other',this)">Other</button>
+          </div>
+          <div class="plat-steps" id="platDesc"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="extSection" class="hide" style="margin-top:16px">
+      <div class="ext-msg" id="chromeMsg">
+        <a href="https://chromewebstore.google.com/detail/olahjdcgbdjajbfmgnakjlehgjdmaene" target="_blank" rel="noopener" style="color:var(--indigo);font-weight:600">Add Klavity to Chrome →</a>
+        <span style="color:var(--faint)"> — then click the button below to connect it.</span>
+      </div>
+      <div style="margin-top:16px">
+        <div style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-bottom:8px">Which pages should your AI customer personas watch? (paste your site address)</div>
+        <div class="urlrow">
+          <input class="in" id="urlInput" aria-label="Your site URL" placeholder="yoursite.com" onkeydown="if(event.key==='Enter')addUrl()" />
+          <button id="onb-add-url" class="btn btn-ghost" onclick="addUrl()">Add</button>
+        </div>
+        <div class="empty hide" id="urlEmpty">No URLs yet — add your site above.</div>
+        <div class="chiplist" id="urlChips"></div>
+      </div>
+    </div>
+
+    <div class="err" id="s2err"></div>
+    <div class="row">
+      <button class="btn btn-indigo" id="s2continue" onclick="s2proceed()">Continue →</button>
+      <button class="skip" id="s2skip" onclick="s2SkipLater()">Set up later</button>
+    </div>
+    <div class="hide" id="s2AddSims" style="margin-top:16px"><span class="snap-fwd" role="button" tabindex="0" onclick="addSimsToo()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();addSimsToo()}">Want AI reviews too? Add AI customer personas →</span></div>
+  </section>
+
+</div><!-- /stage -->
+</div><!-- /shell -->
+
+<div class="foot"><div class="in">
+  <button class="btn btn-ghost" id="backBtn" onclick="prev()">← Back</button>
+  <span class="mono" style="color:var(--faint);font-size:11px">The complete AI QA suite · ~2 minutes to set up</span>
+</div></div>
 
 <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401" /></svg></button>
 <script>(function(){var b=document.getElementById('themeToggle');if(!b)return;var R=document.documentElement;function dark(){return R.getAttribute('data-theme')==='dark'}function svgIcon(name,label){var body=(window.KLAV_ICONS||{})[name]||'';var a11y=label?'role="img"':'aria-hidden="true"';var title=label?'<title>'+label+'</title>':'';return'<svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" '+a11y+'>'+title+body+'</svg>'}function paint(){b.innerHTML=svgIcon(dark()?'sun':'moon',dark()?'Switch to light mode':'Switch to dark mode')}paint();b.addEventListener('click',function(){var n=dark()?'light':'dark';if(n==='dark')R.setAttribute('data-theme','dark');else R.removeAttribute('data-theme');try{localStorage.setItem('klav-theme',n)}catch(e){}paint()})})();</script>
-<style>
-/* Phase B: live-reaction wire (renders into Phase A's .uh-catch slot) */
-@keyframes uhpulse{0%,100%{opacity:.4}50%{opacity:1}}
-.uh-live-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--indigo,#6366f1);animation:uhpulse 1.2s ease infinite;margin-right:7px;vertical-align:middle}
-.uh-rx{border-left:3px solid var(--indigo,#6366f1);padding:2px 0 2px 12px;margin-top:2px}
-.uh-rx-top{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap}
-.uh-rx-pill{font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:3px 8px;border-radius:20px}
-.uh-rx-pill.crit{background:rgba(219,39,119,.14);color:var(--rose,#db2777)}
-.uh-rx-pill.pos{background:rgba(15,157,107,.14);color:var(--green,#0f9d6b)}
-.uh-rx-pill.neu{background:rgba(99,102,241,.12);color:var(--indigo,#6366f1)}
-.uh-rx-lead{font-size:13px;color:var(--paper-dim,#7a6f63)}
-.uh-rx-title{font-weight:600;font-size:14px;margin-bottom:3px}
-.uh-rx-obs{font-size:14px;line-height:1.5;font-style:italic}
-</style>
+
 <script>
-// Phase B wire — window.klavPreviewReact: the one-paste LIVE reaction. Phase A's uhShowPersonas()
-// calls this after personas return; we POST /api/sim/preview (headless screenshot + ephemeral-Sim
-// reaction) and render the catch into the .uh-catch slot. Fails soft — never shows an error here.
+// Phase B wire — window.klavPreviewReact: the one-paste LIVE reaction. The URL step's
+// uhShowPersonas() calls this after personas return; we POST /api/sim/preview (headless
+// screenshot + ephemeral-Sim reaction) and render the catch into the .uh-catch slot.
+// Fails soft — never shows an error here.
 (function(){
   function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
   // "New reports" = the dashboard triage view (#triage is its existing deep link).
@@ -698,7 +740,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     // The preview can take up to ~40s — rotate staged progress lines client-side while we wait.
     var waitLines=[esc(pname)+' is opening your page…','Taking a screenshot…',esc(pname)+' is reading it…','Writing up what bugs them…']
     var waitIx=0
-    function paintWait(){ node.innerHTML='<span class="uh-live-dot"></span>'+waitLines[waitIx]+' <span style="color:var(--paper-faint);font-size:12px">usually ~20s</span>' }
+    function paintWait(){ node.innerHTML=waitLines[waitIx]+' <span style="color:var(--faint);font-size:12px">usually ~20s</span>' }
     paintWait()
     var waitTimer=setInterval(function(){ waitIx=Math.min(waitIx+1,waitLines.length-1); paintWait() },5000)
     try{
@@ -714,19 +756,17 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         localStorage.setItem('klav-aha-preview',JSON.stringify(st))
       }catch(e){}
       var sent=String(rx.sentiment||'neutral')
-      var cls=sent==='critical'?'crit':sent==='positive'?'pos':'neu'
-      var word=sent==='critical'?'caught something':sent==='positive'?'liked it':'noticed'
-      var lead=sent==='critical'?(esc(pname)+' found something before your users would:'):(esc(pname)+' reacted to your real page:')
-      node.innerHTML='<div class="uh-rx"><div class="uh-rx-top"><span class="uh-rx-pill '+cls+'">'+word+'</span><span class="uh-rx-lead">'+lead+'</span></div>'
-        +(rx.title?'<div class="uh-rx-title">'+esc(rx.title)+'</div>':'')
-        +'<div class="uh-rx-obs">\u201c'+esc(rx.observation||rx.title)+'\u201d</div></div>'
+      var word=sent==='critical'?(esc(pname)+' found something before your users would:'):(esc(pname)+' reacted to your real page:')
+      node.innerHTML='<div class="uh-label">'+word+'</div>'
+        +(rx.title?'<div style="font-weight:650;margin-bottom:3px">'+esc(rx.title)+'</div>':'')
+        +'<div style="font-style:italic">\u201c'+esc(rx.observation||rx.title)+'\u201d</div>'
     }catch(e){ softNote(node,pname) }
     finally{ clearInterval(waitTimer) }
   }
 })();
 </script>
 <script>
-// ── A2: URL → Meet your Sims ──────────────────────────────────────────────────
+// ── URL → Meet your Sims ──────────────────────────────────────────────────────
 // Calls POST /api/persona/site with {url} → {personas} and renders the cards.
 // After personas return, fires window.klavPreviewReact(url, personas) if Phase B has shipped.
 (function(){
@@ -741,7 +781,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   function uhSetLoading(on){
     var lo=document.getElementById('uhLoading'), go=document.getElementById('uhGo'), txt=document.getElementById('uhLoadTxt')
     if(lo) lo.classList.toggle('hide',!on)
-    if(go){ go.disabled=on; go.textContent=on?'Reading…':'Meet your Sims →' }
+    if(go){ go.disabled=on; go.textContent=on?'Reading…':'Connect & explore →' }
     if(uhWaitTimer){ clearInterval(uhWaitTimer); uhWaitTimer=null }
     if(on){
       uhWaitIx=0
@@ -753,12 +793,12 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   function uhShowPersonas(url, personas){
     var r=document.getElementById('uhResult'); if(!r) return
     if(!personas||!personas.length){ r.innerHTML='<p style="font-size:13px;color:var(--rose);margin-top:10px">No Sims came back — try a different URL.</p>'; return }
-    // A5: first-catch hook — if any Sim returned, mark that the user reached their first Sim reaction
+    // first-catch hook — if any Sim returned, mark that the user reached their first Sim reaction
     try{ localStorage.setItem('klav-aha-sims-seen','1') }catch(e){}
     // Aha carry-through: stash so signup can persist these Sims into the new project and
-    // step 3 can link straight to their first review. klavPreviewReact fills reactionText.
+    // the automate step can link straight to their first review. klavPreviewReact fills reactionText.
     try{ localStorage.setItem('klav-aha-preview', JSON.stringify({ url: url, personas: personas, reactionText: '', ts: Date.now() })) }catch(e){}
-    // Friction: prefill step 1 from the URL the user already typed (still editable there).
+    // Friction: prefill signup from the URL the user already typed (still editable there).
     try{
       var host=new URL(url).hostname.replace(/^www\./,'')
       var dm=document.getElementById('domain'); if(dm && !dm.value.trim()) dm.value=host
@@ -773,19 +813,8 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         +'<div class="uh-rl">'+esc(p.role||'')+'</div></div>'
     }).join('')
     var firstSim = personas[0]
-    var pid=(typeof projectId!=='undefined'&&projectId)?projectId:null
-    var reviewsAt = pid
-      ? '<a href="/dashboard?project='+encodeURIComponent(pid)+'#triage" style="color:var(--indigo);font-weight:600">New reports</a>'
-      : '<b>New reports</b> as soon as you create your project'
-    var catchNote = firstSim ? '<div class="uh-catch"><b>'+esc(firstSim.name)+'</b> and '+(personas.length-1)+' other'+(personas.length>2?'s':'')+' are reading your page now \u2014 their first review lands in '+reviewsAt+'. <span class="uh-sentiment">\u2728 your Sims</span></div>' : ''
-    r.innerHTML = '<div class="uh-success">'
-      +'<div><div class="uh-label">Your customers, read from your page</div><div class="uh-sims">'+simsHtml+'</div></div>'
-      +(catchNote)
-      +'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">'
-      +'<button class="btn btn-indigo" onclick="chooseGoal(\'sims\')" id="uhContinue">Create your project \u2192</button>'
-      +'<button class="btn btn-ghost" onclick="go(1)" id="uhSkipProject" style="font-size:13.5px">Skip \u2014 I have an account</button>'
-      +'</div>'
-      +'</div>'
+    var catchNote = firstSim ? '<div class="uh-catch"><b>'+esc(firstSim.name)+'</b> and '+(personas.length-1)+' other'+(personas.length>2?'s':'')+' are reading your page now — their reaction lands in your first result.</div>' : ''
+    r.innerHTML = '<div><div class="uh-label">Your customers, read from your page</div><div class="uh-sims">'+simsHtml+'</div></div>'+(catchNote)
     // Phase B hook — safe-guard for when it doesn't exist yet
     if(typeof window.klavPreviewReact === 'function'){
       try{ window.klavPreviewReact(url, personas) }catch(e){}
@@ -817,35 +846,27 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   // Enter key support on the URL field
   document.addEventListener('DOMContentLoaded', function(){
     var inp=document.getElementById('uhUrl'); if(!inp) return
-    inp.addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); window.uhFetch() } })
+    inp.addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); if(typeof connectAndExplore==='function') connectAndExplore() } })
   })
 })()
-
-window.scrollToUrlField = function(){
-  var el=document.getElementById('urlHeroSection')
-  if(el){ el.scrollIntoView({behavior:'smooth',block:'center'}); setTimeout(function(){ var i=document.getElementById('uhUrl'); if(i) i.focus() },400) }
-}
-window.toggleMoreWays = function(){
-  // The "more ways" section is always open (no-op collapse). Toggle is kept for JS compat.
-  var body=document.getElementById('mwBody'), toggle=document.getElementById('mwToggle')
-  if(!body||!toggle) return
-  // Remove 'hide' class if somehow present (it no longer should be added at init)
-  body.classList.remove('hide')
-  toggle.setAttribute('aria-expanded','true')
-}
 </script>
 <script>
-// ── Onboarding state. step 0 = welcome (no rail); 1..3 = wizard (rail). ──
-let cur = 0
+// ── Onboarding state — top-rail stepwise wizard. cur=0 => Step 1 · Goal (first screen). ──
+// Named screen indices (data-s on each <section class="screen">).
+const S = { GOAL:0, PRODUCT:1, TEST:2, INSIGHT:3, SIGNUP:4, TRACKER:5, PLAN:6, SIM:7, AUTOSIM:8, DONE:9, INSTALL:10 }
+
+let cur = 0                   // starts on the Goal step (top rail visible)
 let projectId = null          // resolved after sign-in (the user's default project)
 let signedIn = false          // set by bootstrap() when /api/me shows an existing session → skip re-OTP
-let intent = 'transcript'     // step-3 choice: 'transcript' | 'hats'
+let intent = 'transcript'     // automate-step choice: 'transcript' | 'hats'
 let goal = null               // goal fork: 'snap' (bug reports first) | 'sims' (AI review first)
+let navStack = []             // simple back-stack for the footer Back button
+
+const $ = (id) => document.getElementById(id)
+const esc = (s) => String(s||'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))
 
 // Buy intent from /pricing (?plan=pro|team|founding): stash it and carry it to every dashboard exit
-// as &upgrade=<plan> (the dashboard opens the plan drawer). The Studio exit goes to /app
-// instead — there we deliberately leave the 'klav-plan-intent' sessionStorage key in place
-// and the dashboard reads it on its next visit.
+// as &upgrade=<plan> (the dashboard opens the plan drawer).
 let planIntent = null
 try {
   const _plan = new URL(window.location.href).searchParams.get('plan')
@@ -856,65 +877,114 @@ try {
   }
 } catch(e){}
 
-// ── Goal fork ────────────────────────────────────────────────────────────────
-// Snap  = 2-step flow (create project → add the widget), ends at /dashboard reports.
-// Sims  = the full 3-step path (create → add to site → pick Sims → Studio).
-// The choice is persisted (localStorage + ?goal= query param) so the dashboard/Studio
-// can read it, and so a returning founder sees their prior pick pre-highlighted.
+// ── Rail model. Sims path uses the full 5-phase rail; Snap collapses to Goal → Setup → Done
+//    (hiding the Test + Automate steps per the short widget-install path). ──
+function railModel(){
+  if (goal === 'snap') return { labels:['Goal','Setup','Done'], phaseOf:{0:0,4:1,10:1,9:2} }
+  return {
+    labels:['Goal','Product','Test','Insights','Automate'],
+    phaseOf:{0:0,1:1,2:2,3:3,4:3,5:3,6:4,7:4,8:4,9:4}
+  }
+}
+const CHECK_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>'
+function renderRail(){
+  const rail = $('rail'); if (!rail) return
+  const model = railModel()
+  const active = (model.phaseOf[cur] != null) ? model.phaseOf[cur] : 0
+  let h = ''
+  for (let i=0;i<model.labels.length;i++){
+    const cls = i<active ? 'done' : (i===active ? 'now' : '')
+    h += '<span class="s '+cls+'"><span class="dot">'+(i<active?CHECK_SVG:(i+1))+'</span>'+model.labels[i]+'</span>'
+    if (i<model.labels.length-1) h += '<span class="bar"></span>'
+  }
+  rail.innerHTML = h
+}
+
+function paint(){
+  document.querySelectorAll('.screen').forEach(el => el.classList.toggle('on', Number(el.dataset.s) === cur))
+  renderRail()
+  if (typeof syncWidgetPoll === 'function') syncWidgetPoll()
+  if (cur === S.AUTOSIM) syncAhaPrimary()
+  if (cur === S.INSIGHT) renderInsightLive()
+  const back = $('backBtn'); if (back) back.style.visibility = (cur === S.GOAL) ? 'hidden' : 'visible'
+  window.scrollTo(0, 0)
+}
+function go(n){ if (n !== cur) navStack.push(cur); cur = n; paint() }
+function prev(){ if (navStack.length){ cur = navStack.pop(); paint() } }
+
+async function jsonFetch(url, opts){
+  const r = await fetch(url, opts)
+  let data = {}
+  try { data = await r.json() } catch(e){}
+  return { ok: r.ok, status: r.status, data }
+}
+
+// ── Onboarding-completed flag (KLA-297): stamp on every wizard EXIT to /app or /dashboard. ──
+function markOnboarded(){
+  const call = jsonFetch('/api/account/onboarded', { method:'POST' }).catch(function(){})
+  return Promise.race([call, new Promise(function(res){ setTimeout(res, 1200) })])
+}
+
+// ── Goal fork persistence (localStorage + ?goal=) so dashboard/Studio exits carry it. ──
 function persistGoal(g){
   try { localStorage.setItem('klav-onboarding-goal', g) } catch(e){}
   try { const u = new URL(window.location.href); u.searchParams.set('goal', g); history.replaceState(null, '', u) } catch(e){}
 }
-function setText(id, t){ const el = document.getElementById(id); if (el) el.textContent = t }
+function setText(id, t){ const el = $(id); if (el) el.textContent = t }
 function applyGoal(){
   const isSnap = goal === 'snap'
-  const shell = document.getElementById('shell')
+  const shell = $('shell')
   if (goal) shell.setAttribute('data-goal', goal); else shell.removeAttribute('data-goal')
-  // reflect the choice on the welcome tiles (pre-select on return visits)
-  const gSnap = $('goalSnap'), gSims = $('goalSims')
-  if (gSnap) gSnap.setAttribute('aria-pressed', String(isSnap))
-  if (gSims) gSims.setAttribute('aria-pressed', String(goal === 'sims'))
-  // step counters — Snap is a 2-step flow (signup + install); Sims runs the full 5-step path.
-  const total = isSnap ? 2 : 5
-  setText('s1kick',  'Step 1 of ' + total)
-  setText('s1ckick', 'Step 1 of ' + total + ' · check your email')
-  setText('s2kick',  'Step 2 of ' + total + ' · add to your site')
-  setText('s3kick',  'Step 3 of ' + total + ' · connect your tracker')
-  setText('s4kick',  'Step 4 of ' + total + ' · start your plan')
-  setText('s5kick',  'Step 5 of ' + total + ' · keep testing')
-  // step-2 copy + install options adapt to the goal
-  const sub = $('s2sub')
+  const sub = $('installSub')
   if (sub) sub.textContent = isSnap
     ? 'Drop one small piece of code on your site and every visitor gets a one-click bug button — clean, detailed tickets land in your dashboard automatically. No extra apps.'
     : 'Klavity puts a one-click bug button on every page your visitors see — no extra apps needed. If you also want AI customer personas reviewing your product live, add the Klavity Chrome add-on too.'
   const tiles = $('installTiles')
-  if (tiles) tiles.classList.toggle('hide', isSnap)   // Snap = widget only, no path choice
+  if (tiles) tiles.classList.toggle('hide', isSnap)
   if (isSnap){ installPath = 'widget'; if ($('widgetSection')) $('widgetSection').classList.remove('hide'); if ($('extSection')) $('extSection').classList.add('hide') }
   const addSims = $('s2AddSims')
   if (addSims) addSims.classList.toggle('hide', !isSnap)
   updateS2Cta()
   renderWidgetSnippet()
 }
-function chooseGoal(g){
-  goal = g
-  persistGoal(g)
+
+// ── Step 1 · Goal: multi-select improvement goals + the "start here" fork picker. ──
+function syncGoalContinue(){
+  const n = document.querySelectorAll('.gcard.sel').length
+  const b = $('goalContinueBtn'); if (b) b.disabled = (n === 0)
+  const h = $('goalHelp'); if (h){ h.style.visibility = n ? 'hidden' : 'visible'; h.style.color = 'var(--faint)' }
+}
+function toggleGoalCard(el){ el.classList.toggle('sel'); syncGoalContinue() }
+function selectAllGoals(){ document.querySelectorAll('.gcard').forEach(function(el){ el.classList.add('sel') }); syncGoalContinue() }
+let _startFork = 'sims', _startKey = 'test'
+function pickStart(el){
+  _startFork = el.dataset.fork || 'sims'
+  _startKey = el.dataset.start || 'test'
+  document.querySelectorAll('.startopt').forEach(function(o){ o.classList.toggle('sel', o === el) })
+}
+function goalContinue(){
+  const picked = [...document.querySelectorAll('.gcard.sel')].map(function(e){ return e.dataset.g })
+  if (!picked.length){ const h = $('goalHelp'); if (h){ h.style.visibility='visible'; h.style.color='var(--rose)' } return }
+  try { localStorage.setItem('klav-onboarding-goals', JSON.stringify(picked)) } catch(e){}
+  try { localStorage.setItem('klav-onboarding-start', _startKey) } catch(e){}
+  goal = _startFork
+  persistGoal(goal)
   applyGoal()
-  go(1)
+  if (goal === 'snap') go(S.SIGNUP)   // short path: signup → widget install → done
+  else go(S.PRODUCT)
 }
 
-// Snap users can opt into the AI/Sims path from step 2 — switch the goal and route them
-// through the full Sims flow (tracker → plan → AutoSim) starting at the tracker step.
-function addSimsToo(){
-  goal = 'sims'
-  persistGoal('sims')
-  applyGoal()
-  go(3)
+// ── Step 2 · Product: kick off the real anonymous aha (persona/site + sim/preview). ──
+function connectAndExplore(){
+  const inp = $('uhUrl')
+  if (!inp || !inp.value.trim()){ const e = $('uhErr'); if (e) e.textContent = 'Enter your product URL.'; if (inp) inp.focus(); return }
+  go(S.TEST)
+  if (typeof window.uhFetch === 'function') window.uhFetch()
 }
+function useDemoProduct(){ go(S.TEST) }   // baked exploring + example finding, no API call
+function previewContinue(){ go(S.INSIGHT) }
 
-// ── Step 0: "this app needs a login to test" affordance (UI only for now) ──
-// Reveals test-credential fields. We do NOT change the anonymous /api/persona/site body —
-// the instant preview still runs on the public URL. Creds are stashed locally so the authed
-// crawl can pick them up after the project is created (a follow-up), never faking success here.
+// ── Step 2: "Advanced options — authentication" affordance (UI only for now). ──
 function toggleCreds(){
   const p = $('credsPanel'), b = $('credsToggle'); if (!p || !b) return
   const open = p.classList.toggle('hide') === false
@@ -931,8 +1001,16 @@ function stashTestCreds(){
   } catch(e){ return false }
 }
 
-// ── Step 3 (NEW): tracker connector choice. No backend commit — the pick is stashed and
-// carried to the dashboard (like ?goal=) so Settings can finish wiring it. Never fakes success. ──
+// ── Step 4 · Insights: surface the real /api/sim/preview reaction (if any) as a finding. ──
+function renderInsightLive(){
+  const slot = $('insightLive'); if (!slot) return
+  let txt = ''
+  try { const st = JSON.parse(localStorage.getItem('klav-aha-preview') || 'null'); txt = (st && st.reactionText) || '' } catch(e){}
+  if (!txt){ slot.innerHTML = ''; return }
+  slot.innerHTML = '<div class="rx-live"><div class="rx-lead">Your Sim caught this on your real page</div><div class="rx-obs">\u201c' + esc(txt) + '\u201d</div></div>'
+}
+
+// ── Step 4 · Insights: tracker connector choice. No backend commit — stashed + carried. ──
 let trackerChoice = 'cloud'
 function chooseTracker(which){
   trackerChoice = which
@@ -941,10 +1019,9 @@ function chooseTracker(which){
     const el = $(id); if (el) el.classList.toggle('sel', el.id.toLowerCase().indexOf(which) > -1)
   })
 }
-function trackerContinue(){ go(4) }
+function trackerContinue(){ go(S.PLAN) }
 
-// ── Step 4 (NEW): plan choice. Reuses the existing planIntent stash (sessionStorage
-// 'klav-plan-intent' + ?upgrade= on the dashboard exits) — presentational only, no payment. ──
+// ── Step 5 · Automate: plan choice (presentational; reuses planIntent stash). ──
 function choosePlan(slug){
   if (slug === 'pro' || slug === 'team' || slug === 'founding') {
     planIntent = slug
@@ -954,17 +1031,15 @@ function choosePlan(slug){
   ;['planStarter','planTeam','planScale'].forEach(function(id){
     const el = $(id); if (el) el.classList.toggle('sel', id === map[slug])
   })
-  renderWidgetSnippet() // refresh the skip-to-dash href so it carries the new ?upgrade=
+  renderWidgetSnippet()
 }
-function planContinue(){
-  // Adopt the highlighted default (Team) if the user continued without an explicit pick and
-  // no pricing-page intent is already in play — matches what is visually selected.
-  if (!planIntent) choosePlan('team')
-  go(5)
-}
-function planSkip(){ go(5) }
+function planContinue(){ if (!planIntent) choosePlan('team'); go(S.SIM) }
+function planSkip(){ go(S.SIM) }
 
-// ── Step 5 (NEW): AutoSim run frequency. Carried forward as &freq= (no backend commit). ──
+// ── Step 5 · Automate: create-a-Sim (presentational result). ──
+function showSim(){ const el = $('simres'); if (el) el.classList.remove('hide') }
+
+// ── Step 5 · Automate: AutoSim run frequency. Carried forward as &freq= (no backend commit). ──
 let freqChoice = 'deploy'
 function chooseFreq(which){
   freqChoice = which
@@ -973,8 +1048,7 @@ function chooseFreq(which){
     const el = $(pair[1]); if (el) el.classList.toggle('sel', pair[0] === which)
   })
 }
-// Append the onboarding choices that have no dedicated endpoint yet (tracker + AutoSim
-// frequency) onto a dashboard-bound query, so the dashboard can honor them post-onboarding.
+// Append onboarding choices that have no dedicated endpoint (tracker + freq) to a dashboard query.
 function carryChoices(q){
   if (trackerChoice && trackerChoice !== 'cloud') q.set('tracker', trackerChoice)
   if (goal === 'sims' && freqChoice) q.set('freq', freqChoice)
@@ -984,14 +1058,9 @@ function carryChoices(q){
 // Fill the embed snippet with the real project ID so users never hand-edit it.
 function widgetSnippetText(){ return '<script src="' + location.origin + '/widget.js" data-project="' + (projectId || 'YOUR_PROJECT_ID') + '" defer><\/script>' }
 function renderWidgetSnippet(){
-  var s = document.getElementById('snipPid'); if (s) s.textContent = projectId || 'YOUR_PROJECT_ID'
-  // Keep the visible snippet's host in step with the copied one (location.origin), so
-  // self-hosters get a snippet pointing at their own host — matching Settings behavior.
-  var h = document.getElementById('snipHost'); if (h) h.textContent = location.origin
-  // Also deep-link the "Skip for now" exit at the onboarding project, so /dashboard opens
-  // the project created in step 1 rather than the account default (KLAVITYKLA-47), and
-  // carry any pricing-page buy intent so the dashboard can open the plan drawer.
-  var a = document.getElementById('skipToDash')
+  var s = $('snipPid'); if (s) s.textContent = projectId || 'YOUR_PROJECT_ID'
+  var h = $('snipHost'); if (h) h.textContent = location.origin
+  var a = $('skipToDash')
   if (a) {
     var q = new URLSearchParams()
     if (projectId) q.set('project', projectId)
@@ -1008,8 +1077,8 @@ async function sendToDeveloper(){
   var msg = $('sendDevMsg'), btn = $('sendDevBtn')
   var email = ($('devEmail').value || '').trim().toLowerCase()
   if (!email || !email.includes('@')) { msg.style.color = 'var(--rose)'; msg.textContent = 'Enter a valid email address.'; return }
-  if (!projectId) { msg.style.color = 'var(--rose)'; msg.textContent = 'Create your project first (step 1).'; return }
-  var old = btn.textContent; btn.disabled = true; btn.textContent = 'Sending…'; msg.style.color = 'var(--paper-faint)'; msg.textContent = ''
+  if (!projectId) { msg.style.color = 'var(--rose)'; msg.textContent = 'Create your project first.'; return }
+  var old = btn.textContent; btn.disabled = true; btn.textContent = 'Sending…'; msg.style.color = 'var(--faint)'; msg.textContent = ''
   try {
     var res = await jsonFetch('/api/install/email', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ projectId: projectId, email: email }) })
     if (!res.ok) { msg.style.color = 'var(--rose)'; msg.textContent = (res.data && res.data.error) || 'Could not send — try again.'; return }
@@ -1020,10 +1089,9 @@ async function sendToDeveloper(){
   finally { btn.disabled = false; btn.textContent = old }
 }
 
-// The Snap-only "Skip for now" exit is a plain link, but it IS a completed wizard run — stamp the
-// onboarding flag before navigating so these users aren't restarted at the wizard next visit.
+// The Snap "Skip for now" exit is a plain link, but it IS a completed run — stamp onboarded first.
 ;(function(){
-  var a = document.getElementById('skipToDash'); if (!a) return
+  var a = $('skipToDash'); if (!a) return
   a.addEventListener('click', function(ev){
     if (a.dataset.marked) return
     ev.preventDefault()
@@ -1031,7 +1099,7 @@ async function sendToDeveloper(){
   })
 })()
 ;(function(){
-  var cp = document.getElementById('copySnippet'); if (!cp) return
+  var cp = $('copySnippet'); if (!cp) return
   cp.addEventListener('click', function(){
     navigator.clipboard && navigator.clipboard.writeText(widgetSnippetText()).then(function(){
       var t = cp.textContent; cp.textContent = 'Copied!'; setTimeout(function(){ cp.textContent = t }, 1500)
@@ -1039,54 +1107,14 @@ async function sendToDeveloper(){
   })
 })()
 
-const $ = (id) => document.getElementById(id)
-
-function paint(){
-  // show only the active step panel
-  document.querySelectorAll('.step').forEach(el => el.classList.toggle('hide', Number(el.dataset.s) !== cur))
-  // rail: hidden on welcome (step 0), shown for 1..3
-  $('shell').classList.toggle('norail', cur === 0)
-  document.querySelectorAll('.rstep').forEach(el => {
-    const r = Number(el.dataset.r)
-    el.classList.toggle('active', r === cur)
-    el.classList.toggle('done', r < cur && r !== 5)
-    if (r < cur && r !== 5) el.querySelector('.ix').innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>'
-    else if (r !== 5) el.querySelector('.ix').textContent = String(r)
-  })
-  // Widget live-detect: poll only while step 2's widget section is visible.
-  if (typeof syncWidgetPoll === 'function') syncWidgetPoll()
-  // Final step: show the "see their first review" primary exit when step-0 aha personas exist.
-  if (cur === 5) syncAhaPrimary()
-  window.scrollTo(0, 0)
-}
-function go(n){ cur = n; paint() }
-
-async function jsonFetch(url, opts){
-  const r = await fetch(url, opts)
-  let data = {}
-  try { data = await r.json() } catch(e){}
-  return { ok: r.ok, status: r.status, data }
-}
-
-// ── Onboarding-completed flag (KLA-297) ──
-// The server used to infer "already onboarded" from the OPTIONAL website field, so users who
-// skipped it got the wizard restarted on every /onboarding visit. Stamp an explicit flag at every
-// wizard EXIT instead. Fire-and-forget with a short cap: never hold up the exit navigation, and a
-// logged-out/failed call just leaves the flag unset (worst case: wizard shows again, as today).
-function markOnboarded(){
-  const call = jsonFetch('/api/account/onboarded', { method:'POST' }).catch(function(){})
-  return Promise.race([call, new Promise(function(res){ setTimeout(res, 1200) })])
-}
-
-// ── Step 1a: request OTP (real signup) ──
+// ── Signup (Insights phase) — request OTP (real signup). ──
 async function requestCode(){
   const err = $('s1err'); err.textContent = ''
   if (!$('projectName').value.trim()) { err.textContent = 'Give your project a name.'; return }
-  // Already signed in (existing session detected by bootstrap): the user does NOT need a second
-  // OTP — just name the project and move on. Re-requesting a code here was a confusing dead-end.
+  // Already signed in: skip the second OTP — name the project and move on.
   if (signedIn) {
     const b = $('createBtn'); b.disabled = true; b.textContent = 'Creating…'
-    try { await applyProjectName(); go(2) }
+    try { await applyProjectName(); go(goal === 'snap' ? S.INSTALL : S.TRACKER) }
     catch(e){ err.textContent = 'Network error — try again.' }
     finally { b.disabled = false; b.textContent = 'Create project →' }
     return
@@ -1099,7 +1127,6 @@ async function requestCode(){
       method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(window.KlavAttr ? window.KlavAttr.attach({ email }) : { email })
     })
     if (!ok) { err.textContent = data.error || (status===403 ? 'This email is not on the access list yet.' : 'Could not send a code.'); return }
-    // success → switch to the code-entry view
     $('codeEmail').textContent = email
     $('s1form').classList.add('hide')
     $('s1code').classList.remove('hide')
@@ -1117,7 +1144,7 @@ function backToEmail(){
   $('s1cerr').textContent = ''; $('devNote').classList.add('hide')
 }
 
-// ── Step 1b: verify OTP → sign in → name the default project → continue to step 2 ──
+// ── Signup — verify OTP → sign in → name the default project → advance. ──
 async function verifyCode(){
   const email = $('email').value.trim().toLowerCase()
   const code = $('code').value.trim()
@@ -1130,24 +1157,17 @@ async function verifyCode(){
       method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ email, code, attribution: _attr })
     })
     if (!v.ok) { err.textContent = v.data.error || 'Invalid or expired code.'; return }
-    // Bind the wizard to the project the server ensured for THIS signup. Never guess from
-    // /api/projects here — invite-holders can have admin roles on OTHER tenants' projects,
-    // and the newest-admin heuristic would bind renames/personas/snippet to the wrong one.
     if (v.data && v.data.projectId) {
       projectId = v.data.projectId
       try { sessionStorage.setItem('klav-onboarding-project', projectId) } catch(e){}
     }
-    // signed in (cookie set). Resolve the default project, then set its name to the chosen project name.
     await applyProjectName()
-    go(2)
+    go(goal === 'snap' ? S.INSTALL : S.TRACKER)
   } catch(e){ err.textContent = 'Network error — try again.' }
   finally { btn.disabled = false; btn.textContent = 'Verify & create →' }
 }
 
-// The step-0 aha stash ({url, personas, reactionText, ts}) — survives a reload between the
-// hero preview and OTP verify, and feeds the step-3 "see their first review" exit.
-// Expires after 2h: a stale stash from an earlier visit must never leak an OLD site's
-// personas/preview into a project created later, or show a stale step-3 tile.
+// The aha stash ({url, personas, reactionText, ts}) — survives a reload; expires after 2h.
 function ahaStash(){
   try {
     const st = JSON.parse(localStorage.getItem('klav-aha-preview') || 'null')
@@ -1156,9 +1176,7 @@ function ahaStash(){
   } catch(e){ return null }
 }
 
-// Persist aha personas (generated in the hero URL step) into the newly-created project.
-// Awaited after projectId is resolved so the follow-up /api/sim/preview lands on Sims that
-// already exist. Uses the POST /api/personas dedup guard so re-running never duplicates.
+// Persist aha personas (generated in the URL step) into the newly-created project.
 async function persistAhaPersonas(){
   let ps = window._ahaPersonas
   if (!ps || !ps.length) { const st = ahaStash(); ps = (st && st.personas) || null }
@@ -1170,16 +1188,15 @@ async function persistAhaPersonas(){
       })
     } catch(e) { /* best-effort per-persona */ }
   }
-  window._ahaPersonas = null // consume only after the POSTs, so an early failure can retry
+  window._ahaPersonas = null
 }
 
-// Derive a friendly project name from a domain/URL: "acme-billing.com" → "Acme Billing".
+// Derive a friendly project name from a domain/URL.
 function deriveName(host){
   try { host = String(host||'').replace(/^https?:\/\//i,'').replace(/^www\./i,'').split('/')[0] } catch(e){ host = '' }
   const base = (host || '').split('.')[0]
   return base.split(/[-_]+/).map(function(w){ return w ? w.charAt(0).toUpperCase()+w.slice(1) : '' }).join(' ').trim()
 }
-// Wire the "Your website" field → auto-fill Project name (until the user edits the name themselves).
 function wireProjectNameAutofill(){
   const dm = $('domain'), pn = $('projectName')
   if (!dm || !pn || pn.dataset.wired) return
@@ -1190,20 +1207,17 @@ function wireProjectNameAutofill(){
   dm.addEventListener('blur', fill)
 }
 
-// Rename the signup's project to the chosen name (best-effort — never blocks the flow).
+// Rename the signup's project to the chosen name + persist aha (best-effort — never blocks).
 async function applyProjectName(){
   const name = $('projectName').value.trim()
   try {
     if (!projectId) {
-      // Fallback heuristic — ONLY when /api/auth/verify didn't return a projectId.
       const { ok, data } = await jsonFetch('/api/projects', { headers:{'accept':'application/json'} })
       if (!ok || !data.projects || !data.projects.length) return
       projectId = (data.projects.filter(p => p.role === 'admin').pop() || data.projects[0]).id
     }
     renderWidgetSnippet()
     await persistAhaPersonas()
-    // Aha carry-through: run a PERSISTED review of their step-0 URL so a real first review
-    // is waiting in this project's New reports (fire-and-forget — never blocks the flow).
     const st = ahaStash()
     if (st && st.url) {
       jsonFetch('/api/sim/preview', {
@@ -1221,13 +1235,12 @@ async function applyProjectName(){
         method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ domain })
       })
     }
-  } catch(e){ /* non-fatal: continue onboarding regardless */ }
+  } catch(e){ /* non-fatal */ }
 }
 
-// ── Step 2: which install path is selected ('widget' | 'extension') ──
+// ── Install step (Snap short path) — widget vs extension. ──
 let installPath = 'widget'
-let extConnected = false   // extension handshake done — flips the CTA back to plain Continue
-
+let extConnected = false
 function selectInstall(which) {
   installPath = which
   $('widgetTile').classList.toggle('sel', which === 'widget')
@@ -1237,47 +1250,49 @@ function selectInstall(which) {
   updateS2Cta()
   syncWidgetPoll()
 }
-
-// The step-2 primary button adapts to both the install path and the goal:
-//   extension → connect handshake; Snap+widget → finish to reports; Sims+widget → step 3.
 function updateS2Cta(){
   const cont = $('s2continue'); if (!cont) return
   if (installPath === 'extension') {
-    // Instructions say "click the button below to connect it" — so before the handshake the
-    // button must read "Connect & continue", and only AFTER connecting become plain Continue.
-    if (extConnected) { cont.textContent = 'Continue →'; cont.onclick = () => go(3) }
+    if (extConnected) { cont.textContent = 'Continue →'; cont.onclick = () => finishToReports() }
     else { cont.textContent = 'Connect & continue →'; cont.onclick = connectExtension }
     return
   }
-  if (goal === 'snap') { cont.textContent = 'Finish — go to my reports →'; cont.onclick = finishToReports }
-  else { cont.textContent = 'Continue →'; cont.onclick = () => go(3) }
+  // Install step is the Snap terminal step → finish to reports.
+  cont.textContent = 'Finish — go to my reports →'; cont.onclick = finishToReports
 }
-
-// Snap goal ends at the dashboard with the project + goal in the query so it opens the
-// right project's reports (and can tailor its own first-run hints to the goal).
 async function finishToReports(){
   await markOnboarded()
   const q = new URLSearchParams()
   if (projectId) q.set('project', projectId)
-  q.set('goal', 'snap')
+  q.set('goal', goal || 'snap')
   if (typeof planIntent !== 'undefined' && planIntent) q.set('upgrade', planIntent)
   if (typeof carryChoices === 'function') carryChoices(q)
   window.location.href = '/dashboard?' + q.toString()
 }
-
-function s2SkipLater(){ if (goal === 'snap') finishToReports(); else go(3) }
-
+function s2SkipLater(){ finishToReports() }
 function s2proceed() {
   if (installPath === 'extension' && !extConnected) connectExtension()
-  else if (goal === 'snap') finishToReports()
-  else go(3)
+  else finishToReports()
+}
+// Snap users can opt into the Sims path from the install step.
+function addSimsToo(){ goal = 'sims'; persistGoal('sims'); applyGoal(); go(S.TRACKER) }
+
+// ── DONE — final exit to the dashboard. ──
+async function finishAll(){
+  await markOnboarded()
+  const q = new URLSearchParams()
+  if (projectId) q.set('project', projectId)
+  if (goal) q.set('goal', goal)
+  if (typeof planIntent !== 'undefined' && planIntent) q.set('upgrade', planIntent)
+  if (typeof carryChoices === 'function') carryChoices(q)
+  const qs = q.toString()
+  window.location.href = '/dashboard' + (qs ? '?' + qs : '')
 }
 
-// ── Widget-detected live check: poll the authed heartbeat probe every ~3s while the widget
-//    section of step 2 is visible; flip the chip green (with host) the moment it's seen. ──
+// ── Widget-detected live check (install step). ──
 let widgetPollTimer = null
 let widgetSeen = false
-let widgetPollStart = 0        // first poll start — drives the 75s install-failure rescue
+let widgetPollStart = 0
 let widgetRescueShown = false
 function setWidgetChipDetected(host) {
   const chip = $('widgetChip'), txt = $('widgetChipTxt')
@@ -1297,13 +1312,8 @@ async function pollWidgetStatus() {
       return
     }
   } catch (e) { /* transient — keep polling */ }
-  // Install-failure rescue: after ~75s with no heartbeat, the most common cause is a strict
-  // Content-Security-Policy silently blocking widget.js — escalate with a ready-to-paste
-  // AI-agent prompt (mirrors the dashboard's "Copy to AI" fix). Polling continues regardless.
   if (!widgetSeen && widgetPollStart && Date.now() - widgetPollStart > 75000) showWidgetRescue()
 }
-// Minimal inline cspFixPrompt (full version lives in dashboard.html): the paste-ready prompt a
-// founder hands to their AI/dev when a CSP blocks the widget. Includes their real snippet.
 function cspFixPrompt() {
   const origin = location.origin
   return [
@@ -1341,7 +1351,7 @@ function showWidgetRescue() {
   const d = document.createElement('div')
   d.id = 'widgetRescue'
   d.style.cssText = 'display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap'
-  d.innerHTML = '<span style="color:var(--paper-faint);font-size:11.5px;max-width:44ch">Still waiting — if the button doesn\'t appear on your site, a Content-Security-Policy may be blocking it.</span>'
+  d.innerHTML = '<span style="color:var(--faint);font-size:11.5px;max-width:44ch">Still waiting — if the button doesn\'t appear on your site, a Content-Security-Policy may be blocking it.</span>'
     + '<button type="button" class="btn btn-ghost" id="cspFixBtn">Copy the fix for your AI agent</button>'
   chip.insertAdjacentElement('afterend', d)
   const btn = document.getElementById('cspFixBtn')
@@ -1358,19 +1368,14 @@ function startWidgetPoll() {
   widgetPollTimer = setInterval(pollWidgetStatus, 3000)
 }
 function stopWidgetPoll() { if (widgetPollTimer) { clearInterval(widgetPollTimer); widgetPollTimer = null } }
-// Poll only while step 2's widget section is actually on screen (and we know the project).
 function syncWidgetPoll() {
-  if (cur === 2 && installPath === 'widget' && projectId && !widgetSeen) startWidgetPoll()
+  if (cur === S.INSTALL && installPath === 'widget' && projectId && !widgetSeen) startWidgetPoll()
   else stopWidgetPoll()
 }
 
-// ── "Try it now — send a test report": mount the REAL widget on this page (founder's own
-//    project id, loaded on demand) and open the bug composer. The submission goes through the
-//    normal /api/feedback path, so it lands in their dashboard like any visitor report. ──
+// ── "Try it now — send a test report": mount the REAL widget on this page. ──
 let widgetScriptRequested = false
 function openWidgetComposer(deadline) {
-  // window.Klavity.open() is a silent no-op until mount() finishes — the widget host element
-  // appearing in the DOM is the reliable "mounted" signal, so wait for it, then open.
   const mounted = !!document.getElementById('klavity-widget-host')
   if (mounted && window.Klavity && typeof window.Klavity.open === 'function') {
     const btn = $('tryWidgetBtn'); if (btn) { btn.disabled = false; btn.textContent = 'Try it now — send a test report' }
@@ -1386,13 +1391,13 @@ function openWidgetComposer(deadline) {
 }
 function tryTestReport() {
   const err = $('s2err'); err.textContent = ''
-  if (!projectId) { err.textContent = 'Project not ready yet — finish step 1 first.'; return }
+  if (!projectId) { err.textContent = 'Project not ready yet — create your project first.'; return }
   const btn = $('tryWidgetBtn')
   if (btn) { btn.disabled = true; btn.textContent = 'Loading the widget…' }
   if (!widgetScriptRequested) {
     widgetScriptRequested = true
     const s = document.createElement('script')
-    s.src = '/widget.js' // same-origin: works on prod and locally alike
+    s.src = '/widget.js'
     s.setAttribute('data-project', projectId)
     s.onerror = () => {
       widgetScriptRequested = false
@@ -1404,13 +1409,12 @@ function tryTestReport() {
   openWidgetComposer(Date.now() + 8000)
 }
 
-// Connect the Klavity extension (reuses the CONNECT handshake; works on klavity.in where
-// the content script exposes window.__klavityExtensionId). Honest fallback when not installed.
+// Connect the Klavity extension (reuses the CONNECT handshake).
 async function connectExtension(){
   const msg = $('chromeMsg')
   const extId = (typeof chrome !== 'undefined') && window.__klavityExtensionId
   if (!extId) {
-    msg.innerHTML = '<a href="https://chromewebstore.google.com/detail/olahjdcgbdjajbfmgnakjlehgjdmaene" target="_blank" rel="noopener" style="color:var(--indigo);font-weight:600">Add Klavity to Chrome →</a><span style="color:var(--paper-faint)"> — then click "Connect &amp; continue" again.</span>'
+    msg.innerHTML = '<a href="https://chromewebstore.google.com/detail/olahjdcgbdjajbfmgnakjlehgjdmaene" target="_blank" rel="noopener" style="color:var(--indigo);font-weight:600">Add Klavity to Chrome →</a><span style="color:var(--faint)"> — then click "Connect &amp; continue" again.</span>'
     return
   }
   msg.textContent = 'Connecting…'
@@ -1439,7 +1443,7 @@ const PLAT_STEPS = {
   squarespace: '<ol><li>In Squarespace, go to <b>Settings → Advanced → Code Injection</b> (its extra-code area)</li><li>Paste the code in the <b>Footer</b> box</li><li>Click <b>Save</b></li></ol>',
   wix: '<ol><li>In Wix, go to <b>Settings → Custom Code</b></li><li>Click <b>+ Add Custom Code</b></li><li>Paste the code, set placement to <b>Body — End of tag</b> (loads at the bottom of every page)</li><li>Select <b>All Pages</b>, then click <b>Apply</b> and <b>Save</b></li></ol>',
   react: '<ol><li><b>Plain React / Vite / CRA:</b> paste the code just before <code>&lt;/body&gt;</code> in your <code>index.html</code> (it lives outside the React tree, so no component changes)</li><li><b>Next.js (pages router):</b> add it inside <code>&lt;body&gt;</code> in <code>pages/_document</code></li><li><b>Next.js (app router):</b> add it in <code>app/layout</code> inside <code>&lt;body&gt;</code> — or use <code>&lt;Script src="KLAVITY_HOST/widget.js" data-project="YOUR_PROJECT_ID" strategy="afterInteractive" /&gt;</code></li><li><b>Any SPA, no HTML access:</b> inject it once at startup: <code>var s=document.createElement(\'script\');s.src=\'KLAVITY_HOST/widget.js\';s.setAttribute(\'data-project\',\'YOUR_PROJECT_ID\');s.defer=true;document.body.appendChild(s)</code></li></ol>',
-  other: '<ol><li>Open your page\'s HTML and find <code>&lt;/body&gt;</code> near the bottom</li><li>Paste the code on the line just before it</li><li>Save and publish — done</li></ol><p style="margin-top:8px;font-size:12px;color:var(--paper-faint)">WordPress: Appearance → Theme File Editor → <code>footer.php</code> (the footer file in your theme) → paste before <code>&lt;/body&gt;</code></p>'
+  other: '<ol><li>Open your page\'s HTML and find <code>&lt;/body&gt;</code> near the bottom</li><li>Paste the code on the line just before it</li><li>Save and publish — done</li></ol><p style="margin-top:8px;font-size:12px;color:var(--faint)">WordPress: Appearance → Theme File Editor → <code>footer.php</code> (the footer file in your theme) → paste before <code>&lt;/body&gt;</code></p>'
 }
 let platOpen = false
 let curPlat = 'shopify'
@@ -1451,15 +1455,12 @@ function togglePlatforms() {
 }
 function showPlat(name, btn) {
   curPlat = name
-  // Personalize guides: show the founder's real project id inside code examples once known.
   $('platDesc').innerHTML = (PLAT_STEPS[name] || '').replace(/KLAVITY_HOST/g, esc(location.origin)).replace(/YOUR_PROJECT_ID/g, esc(projectId || 'YOUR_PROJECT_ID'))
   if (btn) Array.from($('platTabs').children).forEach(b => b.classList.toggle('act', b === btn))
 }
 
-// ── Step 2: monitored URLs (real POST/DELETE against the resolved project) ──
-const esc = (s) => String(s||'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))
-let monitored = []   // [{id, urlPattern}]
-
+// ── Install step: monitored URLs (real POST/DELETE against the resolved project). ──
+let monitored = []
 function renderChips(){
   const wrap = $('urlChips'); wrap.innerHTML = ''
   $('urlEmpty').classList.toggle('hide', monitored.length > 0)
@@ -1471,9 +1472,6 @@ function renderChips(){
     wrap.appendChild(chip)
   }
 }
-// Normalize to a path-only pattern: strip scheme + any query/fragment (server rejects ?/#).
-// Auto-append /* when the user enters a bare domain — covers the whole site without needing
-// wildcard knowledge (e.g. "yoursite.com" → "yoursite.com/*").
 function normalizePattern(v){
   let p = String(v||'').trim().replace(/^https?:\/\//i,'').replace(/[?#].*$/,'').replace(/\/+$/,'')
   if (p && !p.includes('/') && !p.includes('*')) p = p + '/*'
@@ -1483,7 +1481,7 @@ async function addUrl(){
   const err = $('s2err'); err.textContent = ''
   const pattern = normalizePattern($('urlInput').value)
   if (!pattern) { err.textContent = 'Enter a web address (e.g. app.acme.com/*).'; return }
-  if (!projectId) { err.textContent = 'Project not ready yet — finish step 1 first.'; return }
+  if (!projectId) { err.textContent = 'Project not ready yet — create your project first.'; return }
   const { ok, data } = await jsonFetch('/api/projects/' + encodeURIComponent(projectId) + '/monitored-urls', {
     method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ urlPattern: pattern })
   })
@@ -1498,7 +1496,7 @@ async function removeUrl(id){
   if (ok) { monitored = (data.monitoredUrls || []).map(m => ({ id: m.id, urlPattern: m.urlPattern })); renderChips() }
 }
 
-// ── Step 3: aha carry-through primary exit ("see their first review" in New reports) ──
+// ── Automate step: aha carry-through primary exit ("see their first review"). ──
 function syncAhaPrimary(){
   const wrap = $('ahaPrimary'); if (!wrap) return
   const st = ahaStash()
@@ -1511,9 +1509,7 @@ function syncAhaPrimary(){
   setText('s3sub', 'Your Sims are already reviewing your site — or build richer Sims from a real customer call. You can meet them in the Studio any time.')
 }
 async function gotoAhaReview(){
-  // Exit → stamp onboarded first so the wizard never re-shows (KLA-297).
   await markOnboarded()
-  // New reports = the dashboard triage view; #triage is its existing deep link.
   const q = new URLSearchParams()
   if (projectId) q.set('project', projectId)
   if (goal) q.set('goal', goal)
@@ -1523,7 +1519,7 @@ async function gotoAhaReview(){
   window.location.href = '/dashboard' + (qs ? '?' + qs : '') + '#triage'
 }
 
-// ── Step 3: pick starting Sims + hand off into the Studio ──
+// ── Automate step: pick starting Sims + hand off into the Studio. ──
 function pickIntent(which){
   intent = which
   $('intentTranscript').classList.toggle('sel', which === 'transcript')
@@ -1531,11 +1527,6 @@ function pickIntent(which){
 }
 async function openStudio(){
   await markOnboarded()
-  // Transcript → /app#add-transcript ; Hats → /app?starter=hats (studio reads either, light handoff).
-  // Carry the onboarding project id (KLAVITYKLA-47): without it the Studio opens the account's
-  // default project, so starter Sims + saved reviews land in the WRONG project. Query goes before #hash.
-  // Buy intent (?plan=) is NOT appended here — this exit goes to /app, not /dashboard; the
-  // 'klav-plan-intent' sessionStorage key stays set and the dashboard reads it on its next visit.
   const params = []
   if (projectId) params.push('project=' + encodeURIComponent(projectId))
   if (goal) params.push('goal=' + encodeURIComponent(goal))
@@ -1546,55 +1537,59 @@ async function openStudio(){
   window.location.href = dest
 }
 
-// ── Resilience: if the user is ALREADY signed in with a membership when they reach onboarding,
-//    the server would have redirected them to /dashboard. But a signed-in user WITHOUT a project
-//    name set (edge) lands here — pre-resolve their project and let them skip the OTP sub-step. ──
+// ── Recommended-tests journey list (Test step). ──
+;(function(){
+  var J=[['Sign up','Core conversion journey',95],['Login','High-frequency journey',93],['Create project','Core product workflow',89],['Checkout','Revenue-critical journey',96]]
+  var jl=document.getElementById('jlist'); if(!jl) return
+  var jh=''
+  for(var i=0;i<J.length;i++){
+    jh+='<div class="jrow"><div class="jt">'+J[i][0]+'</div><div style="flex:1;color:var(--muted);font-size:12.5px">'+J[i][1]+'</div><div class="jbar"><i style="width:'+J[i][2]+'%"></i></div><div class="jp">'+J[i][2]+'%</div></div>'
+  }
+  jl.innerHTML=jh
+})()
+
+// ── Resilience: pre-resolve an already-signed-in user's project and skip the OTP sub-step. ──
 async function bootstrap(){
   wireProjectNameAutofill()
-  // Pre-apply a prior goal (URL wins over localStorage) so the matching tile shows as chosen
-  // and the step counters/rail are already adapted — but we still start on the welcome screen.
+  syncGoalContinue()
+  // Pre-apply a prior goal (URL wins over localStorage) so the fork/rail are ready — but we still
+  // start on the Goal screen (step 1) with the top rail.
   try {
     const urlGoal = new URL(window.location.href).searchParams.get('goal')
     const savedGoal = urlGoal || localStorage.getItem('klav-onboarding-goal')
     if (savedGoal === 'snap' || savedGoal === 'sims') { goal = savedGoal; applyGoal() }
   } catch(e){}
-  // Homepage handoff (?url=<their site>): prefill the step-0 hero field so the aha preview is
-  // one click away. Deliberately NOT auto-run — the explicit click keeps rate-limit abuse down.
+  // Render the Goal screen + top rail IMMEDIATELY — never wait on the /api/me round-trip below.
+  paint()
+  // Homepage handoff (?url=<their site>): prefill the Product URL field + signup fields.
   try {
-    const _hu = new URL(window.location.href).searchParams.get('url') // .get() percent-decodes
+    const _hu = new URL(window.location.href).searchParams.get('url')
     if (_hu) {
       let _u = _hu.trim()
       if (_u && !/^https?:\/\//i.test(_u)) _u = 'https://' + _u
       const _parsed = new URL(_u)
       if ((_parsed.protocol === 'http:' || _parsed.protocol === 'https:')) {
         if ($('uhUrl')) $('uhUrl').value = _u
-        // Also seed the step-1 "Your website" field + derive the project name from the domain, so a
-        // homepage handoff means the user doesn't have to re-type either.
         const _host = _parsed.hostname.replace(/^www\./i,'')
         if ($('domain') && !$('domain').value.trim()) $('domain').value = _host
         if ($('projectName') && !$('projectName').value.trim()) $('projectName').value = deriveName(_host)
       }
     }
-  } catch(e){ /* malformed ?url= — leave the field empty */ }
-  // 10s timeout: a hanging /api/me must never block paint() — the welcome screen must always show.
+  } catch(e){ /* malformed ?url= — leave empty */ }
+  // 10s timeout: a hanging /api/me must never block paint() — the Goal screen must always show.
   const ctrl = new AbortController()
   const tmo = setTimeout(() => ctrl.abort(), 10000)
   try {
     const me = await jsonFetch('/api/me', { headers:{'accept':'application/json'}, signal: ctrl.signal })
     if (me.ok && me.data && me.data.email){
-      // already signed in: pre-fill email + resolve project so step-2/3 work without re-auth.
       signedIn = true
       $('email').value = me.data.email
-      // No second OTP for an authenticated user: collapse the email field + rewrite the step-1 copy
-      // so "Create project →" goes straight to step 2 (see requestCode()).
       try {
         const _ef = $('email').closest('.fld'); if (_ef) _ef.classList.add('hide')
         const _sub = $('s1sub'); if (_sub) _sub.textContent = 'A project is one product — its Sims, the pages they watch, and the tickets they file. You are signed in as ' + me.data.email + ', so just name it and continue.'
       } catch(e){}
       const pr = await jsonFetch('/api/projects', { headers:{'accept':'application/json'}, signal: ctrl.signal })
       if (pr.ok && pr.data.projects && pr.data.projects.length){
-        // Prefer the project bound at OTP verify (this signup's project); the newest-admin
-        // heuristic is only a fallback and can pick another tenant's project for invitees.
         let saved = null
         try { saved = sessionStorage.getItem('klav-onboarding-project') } catch(e){}
         const own = (saved && pr.data.projects.find(p => p.id === saved))
