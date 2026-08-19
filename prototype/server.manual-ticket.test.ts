@@ -50,6 +50,7 @@ beforeAll(async () => {
       KLAV_BASE_URL: BASE,
       KLAV_ALLOWED_DOMAINS: "test.local",
       SENDGRID_API_KEY: "",
+      KLAV_TEST_ALLOW_LOOPBACK: "1",
       KLAV_MAIL_FROM: "",
     },
     stdout: "ignore",
@@ -190,4 +191,41 @@ test("bulk resolving a reported ticket with contact_email succeeds and marks it 
   expect(d.updated).toBe(1)
   const row = await raw.execute({ sql: "SELECT status FROM feedback WHERE id=?", args: [fbId] })
   expect(String((row.rows[0] as any).status)).toBe("done")
+})
+
+// Regression: a manually-created ticket never passes through the PATCH route that fires the
+// triage-accept auto-copy hook, so it silently reached NO connector (reported as "Jira connected
+// but my ticket never shows up in Jira"). Also pins the tracker title to a single line - the
+// manual route stores title + "\n\n" + body in observation, and Jira 400s a multi-line summary.
+test("manual ticket auto-copies to an auto_copy connector with a single-line title", async () => {
+  let received: any = null
+  const receiver = Bun.serve({
+    port: 0,
+    fetch: async (r) => { received = await r.json(); return Response.json({ id: "EXT-1" }) },
+  })
+  const cid = `conn_${RUN}`
+  await exec(
+    "INSERT INTO connectors (id,project_id,type,name,config,auto_copy,enabled,created_at,created_by) VALUES (?,?,?,?,?,1,1,?,?)",
+    [cid, PROJ, "webhook", "Auto-copy receiver", JSON.stringify({ url: `http://127.0.0.1:${receiver.port}/hook` }), NOW, OWNER],
+  )
+  try {
+    const c = await req("POST", `/api/projects/${PROJ}/tickets`, { title: "Auto-copy me", body: "line one\nline two", priority: "high" })
+    expect(c.status).toBe(201)
+    const { ticketId } = await c.json()
+
+    // Auto-copy is fire-and-forget - poll for the export row.
+    let row: any = null
+    for (let i = 0; i < 60 && !row; i++) {
+      const r = await raw.execute({ sql: "SELECT status, error FROM ticket_exports WHERE feedback_id=?", args: [ticketId] })
+      row = r.rows[0] ?? null
+      if (!row) await Bun.sleep(100)
+    }
+    expect(row).not.toBeNull()
+    expect(String(row.status)).toBe("ok")
+    expect(received?.ticket?.title).toBe("Auto-copy me")
+    expect(received?.ticket?.body).toContain("line two")
+  } finally {
+    receiver.stop(true)
+    await exec("DELETE FROM connectors WHERE id=?", [cid])
+  }
 })

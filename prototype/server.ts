@@ -1460,7 +1460,9 @@ function occurrenceTimelineText(mem: RecurrenceMemory | null): string {
 // Build a normalized TicketPayload from a feedback row for the connector adapters. Async because it
 // resolves the screenshot into a permanent signed link (body fallback) + bytes (for native attachment).
 async function feedbackToTicketPayload(fb: any, project: { id: string; name?: string }, simName: string | null = null): Promise<TicketPayload> {
-  const title = fb.observation || "Sim report"
+  // Manual tickets store the title and body joined by a blank line in `observation`; the tracker
+  // title field is single-line, and the full observation is already the body's first line.
+  const title = (fb.observation || "Sim report").split("\n")[0] || "Sim report"
   const lines: string[] = []
   if (fb.observation) lines.push(fb.observation)
   if (simName) lines.push(`Sim: ${simName}`)
@@ -1865,6 +1867,20 @@ function autoCopyFeedback(feedbackId: string, projectId: string, actor: string |
       console.error("auto-copy hook (non-fatal):", err?.message || err)
     }
   })().catch((err: any) => console.error("auto-copy hook outer (non-fatal):", err?.message || err))
+}
+
+// ONE definition of "triage accept" (status -> open from new/dismissed), because more than one
+// route performs that transition: the single-ticket PATCH (ticket drawer) AND the bulk PATCH that
+// the triage "Accept as bug" button and the kanban drag both call. The gate used to live inline in
+// the single PATCH only, so the primary triage flow silently exported nothing.
+function autoCopyOnTriageAccept(
+  feedbackId: string, projectId: string,
+  prevStatus: string | null | undefined, nextStatus: string | undefined,
+  effectivePriority: string | null | undefined, actor: string | null,
+): void {
+  if (nextStatus !== "open") return
+  if (prevStatus !== "new" && prevStatus !== "dismissed") return
+  autoCopyFeedback(feedbackId, projectId, actor, effectivePriority)
 }
 
 // ── KLAVITYKLA-287 (JTBD 5.8): shared single-connector manual export ──────────────────────────────
@@ -3650,6 +3666,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               citation = await resolveCitations(simId, citedRaw, projectId)
 
               let dedupedInto: string | null = null
+              // A screenshot-only report carries NO user text — `observation` is the deterministic
+              // placeholder from fallbackDraftTitle ("Screenshot report on /dashboard"). Hashing that
+              // gives every such report on a page the SAME issue key, and its text is a 1.0 trigram
+              // match against every sibling, so each new one silently collapsed into the first ticket
+              // ever filed there: recurrence_count climbed, no new ticket appeared. Skip the dedupe
+              // lookup — there is no content to match on. (Salting the key instead does NOT work:
+              // normalizeReportText rewrites any uuid/long number to a constant token.) Such rows do
+              // share an issue_key, which is inert: every issue_key reader is a dedupe path.
               const newIssueKey = suggestedBug
                 ? issueKeyForFeedback(projectId, urlPath, citation.issueType, citation.citedTraitIds)
                 : humanReportIssueKeyFor({ projectId, urlPath: urlPath ?? "/", text: observation })
@@ -3659,7 +3683,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   citedTraitIds: citation.citedTraitIds,
                   title: String(suggestedBug?.title || ""), observation,
                 })
-              } else {
+              } else if (!draftedTitle) {
                 dedupedInto = await findDuplicateFeedback({
                   projectId, urlPath, title: observation.slice(0, 120), observation,
                   issueKey: newIssueKey,
@@ -8156,11 +8180,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // "in_progress" or "done" back to "open" do NOT re-trigger (those are workflow reversals,
           // not fresh accepts). The connector's `auto_copy_min_priority` config key gates on priority.
           // The effective priority may have been updated in the SAME patch — use the merged value.
-          const triageAcceptSources = new Set(["new", "dismissed"])
-          if (meta.status === "open" && triageAcceptSources.has(String(fbRow.status))) {
-            const effectivePriority = meta.priority !== undefined ? meta.priority : fbRow.priority
-            autoCopyFeedback(fid, fbRow.projectId, me, effectivePriority)
-          }
+          autoCopyOnTriageAccept(fid, fbRow.projectId, fbRow.status, meta.status, meta.priority !== undefined ? meta.priority : fbRow.priority, me)
           // B.7: when this close is on a guard-caught (checkpoint-gone) ticket, tell the UI to OFFER the
           // one-click "regression-caught receipt" (offer, not silent auto-send). Only surfaced on a real
           // transition into done, when a receipt hasn't already been sent. Best-effort — never blocks.
@@ -9370,6 +9390,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           })
           // Manual tickets start as "open" regardless of priority (override initial "new" status).
           await updateFeedbackMeta(proj.id, id, { status: "open" })
+          // A manually-created ticket IS the triage-accept (a human wrote it), but it never passes
+          // through the PATCH route that fires the auto-copy hook — so fire it here, or a manual
+          // ticket silently never reaches Jira/Plane/GitHub/Linear.
+          autoCopyFeedback(id, proj.id, me, priority)
           // Emit an activity event so the timeline shows who created it.
           await insertActivity({
             projectId: proj.id,
@@ -9519,6 +9543,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   ticketUrl: ticketDashboardUrl(proj.id),
                 })
               }
+              autoCopyOnTriageAccept(tid, proj.id, row.status, meta.status, hasPriority ? meta.priority : row.priority, me)
             }
             if (labelToAdd) {
               try { await attachLabel(labelToAdd, tid) }
