@@ -31,9 +31,13 @@ let proc: ReturnType<typeof Bun.spawn>
 let BASE = ""
 
 // Fake Jira tracker: serves createmeta issue types + project statuses on loopback.
+// Also tags every response with the caller's Authorization header (base64 user:token) so tests
+// can assert which credentials (stored vs. freshly-posted) actually reached the tracker.
+let lastJiraAuth = ""
 const fakeJira = Bun.serve({
   port: 0,
   fetch: (r) => {
+    lastJiraAuth = r.headers.get("authorization") || ""
     const url = new URL(r.url)
     if (url.pathname.includes("/issue/createmeta/") && url.pathname.endsWith("/issuetypes")) {
       return Response.json({
@@ -58,6 +62,10 @@ const fakeJira = Bun.serve({
   },
 })
 const JIRA_HOST = `http://127.0.0.1:${fakeJira.port}`
+// A second loopback "tracker" standing in for an unreachable/wrong host in the stored config,
+// so tests can prove the meta endpoint did NOT fall back to it once a posted config overrides it.
+const deadJira = Bun.serve({ port: 0, fetch: () => new Response("not found", { status: 404 }) })
+const DEAD_JIRA_HOST = `http://127.0.0.1:${deadJira.port}`
 
 async function exec(sql: string, args: any[] = []) {
   await raw.execute({ sql, args })
@@ -105,6 +113,7 @@ afterAll(() => {
   proc?.kill()
   raw.close()
   fakeJira.stop(true)
+  deadJira.stop(true)
   rmDb()
 })
 
@@ -137,4 +146,46 @@ test("POST /api/projects/:id/connectors/meta rejects non-admins with 403", async
     config: { host: JIRA_HOST, email: "a@b.com", token: "tok", project_key: "PROJ" },
   }, MEM_SID)
   expect(r.status).toBe(403)
+})
+
+// Task 10 fix: a saved connector's meta fetch must resolve against whatever the "Test connection"
+// button just verified, not silently fall back to the OLD stored account when the user edited
+// credentials without saving yet. The stored connector below points at DEAD_JIRA_HOST (unreachable)
+// so any test that reaches issue types/statuses proves the posted config override was used.
+let editCid = ""
+test("setup: create a saved jira connector with a broken stored host", async () => {
+  const r = await req("POST", `/api/projects/${PROJ}/connectors`, {
+    type: "jira",
+    name: "Stale Jira",
+    config: { host: DEAD_JIRA_HOST, email: "old@b.com", token: "old-stored-token", project_key: "OLD" },
+  })
+  expect(r.status).toBe(201)
+  const d = await r.json()
+  editCid = d.connector?.id || d.id
+  expect(editCid).toBeTruthy()
+})
+
+test("POST /connectors/meta with cid + posted config overlays non-empty posted fields on the stored config", async () => {
+  const r = await req("POST", `/api/projects/${PROJ}/connectors/meta`, {
+    type: "jira",
+    cid: editCid,
+    // Freshly-typed, not-yet-saved edit — same shape readConnForm() would send after Test.
+    config: { host: JIRA_HOST, email: "new@b.com", token: "new-typed-token", project_key: "PROJ" },
+  })
+  expect(r.status).toBe(200)
+  const d = await r.json()
+  expect(d.issueTypes.map((t: any) => t.name)).toEqual(["Bug", "Story"])
+  // Confirm the freshly-typed token (not the stored one) is what actually reached the tracker.
+  expect(lastJiraAuth).toContain(Buffer.from("new@b.com:new-typed-token").toString("base64"))
+})
+
+test("POST /connectors/meta with cid alone (no posted config) still resolves the stored decrypted config", async () => {
+  const r = await req("POST", `/api/projects/${PROJ}/connectors/meta`, {
+    type: "jira",
+    cid: editCid,
+    config: {},
+  })
+  // Stored host is unreachable (DEAD_JIRA_HOST returns 404 for every path), so with no overlay
+  // the request should fail to find matching capabilities rather than silently succeed elsewhere.
+  expect(r.status).toBe(502)
 })

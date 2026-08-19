@@ -8647,6 +8647,19 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   catch { config[f.key] = "" }
                 }
               }
+              // Task 10 fix: overlay any explicitly-posted non-empty config values on top of the
+              // decrypted stored config. The edit-flow "Test connection" button always tests the
+              // freshly-typed form values (readConnForm()), never the stale stored ones — so the
+              // mapping fetch must resolve against the SAME credentials that were just tested, not
+              // silently fall back to a different (stored) account. Blank/omitted fields (e.g. an
+              // unchanged secret, which the form leaves blank on edit) keep the stored decrypted
+              // value, so the unchanged-credentials edit path still works.
+              const posted = (body.config && typeof body.config === "object") ? body.config : null
+              if (posted) {
+                for (const [k, v] of Object.entries(posted)) {
+                  if (typeof v === "string" && v.trim()) config[k] = v
+                }
+              }
             }
             const caps = adapter.capabilities ?? { issueTypes: false, statuses: false }
             try {

@@ -7267,10 +7267,12 @@ function openConnEdit(conn) {
   $("connAddMsg").textContent = ""
   $("connAddTestResult") && $("connAddTestResult").classList.add("hide")
   // Connector-field-mapping (Task 10): a saved connector already has working creds (cid path),
-  // so load + pre-select its mapping right away instead of gating behind a re-test.
+  // so load + pre-select its mapping right away instead of gating behind a re-test. Pass an EMPTY
+  // config here (not conn.config) — conn.config's secret fields are still ciphertext at this point,
+  // and we must not overlay ciphertext on top of the server's decrypted stored config.
   $("connMapPrompt") && $("connMapPrompt").classList.add("hide")
   resetConnMapUi()
-  renderConnectorMapping(conn.type, conn.config || {})
+  renderConnectorMapping(conn.type, {})
   $("connAddWrap").scrollIntoView({ behavior: "smooth", block: "nearest" })
 }
 function resetConnForm() {
@@ -7556,9 +7558,12 @@ function connMapTable(heading, rows, optionNames, existingMap) {
 }
 
 // Fetch /connectors/meta and render the two mapping tables. Unsaved config (create flow) posts
-// {type, config}; a saved connector (edit flow, connEditId set) posts {type, cid} so the server
-// decrypts + uses the already-working saved credentials instead of requiring fields to be
-// re-entered. Skips the section entirely for webhook-style connectors (no issue types/statuses).
+// {type, config}; a saved connector (edit flow, connEditId set) posts {type, cid, config} so the
+// server starts from the decrypted saved credentials but overlays any explicitly-posted non-empty
+// config values on top. This MUST agree with whatever the "Test connection" button just verified
+// (connTestNew always posts readConnForm()'s fresh form values, cid or not) — otherwise the
+// mapping step can silently reflect a different (stale, stored) account than what was tested.
+// Skips the section entirely for webhook-style connectors (no issue types/statuses).
 async function renderConnectorMapping(type, config) {
   const wrap = $("connMapWrap")
   if (!wrap) return
@@ -7566,7 +7571,7 @@ async function renderConnectorMapping(type, config) {
   if (mapPrompt) mapPrompt.classList.add("hide")
   wrap.classList.remove("hide")
   wrap.innerHTML = `<div class="muted" style="font-size:12px;padding:4px 0">Loading field mapping…</div>`
-  const body = connEditId ? { type, cid: connEditId } : { type, config: config || {} }
+  const body = connEditId ? { type, cid: connEditId, config: config || {} } : { type, config: config || {} }
   const r = await fetch(projPath("/connectors/meta"), {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify(body)
