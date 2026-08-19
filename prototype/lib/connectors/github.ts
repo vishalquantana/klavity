@@ -1,5 +1,16 @@
-import type { Connector, TicketPayload, ExportResult, CommentSyncResult, FieldUpdate, FieldSyncResult, ImportedIssue } from "./index"
+import type { Connector, TicketPayload, ExportResult, CommentSyncResult, FieldUpdate, FieldSyncResult, ImportedIssue, ConnectorMeta } from "./index"
 import { safeFetch } from "../safe-fetch"
+import { resolveIssueType } from "./resolve-issue-type"
+
+// Connector-field-mapping: overridable via KLAV_GITHUB_API so tests can point this at a loopback
+// fake. Read lazily (a function, not a module-level const) because bun's test runner shares one
+// module registry across test files in this directory — a top-level const would freeze on
+// whichever value was live the FIRST time any test file imported "./github" (directly or via
+// "./index", which imports githubConnector eagerly), before this file's own test sets
+// KLAV_GITHUB_API and dynamically imports it (see the identical gotcha documented in linear.ts).
+function githubApi(): string {
+  return process.env.KLAV_GITHUB_API || "https://api.github.com"
+}
 
 // JTBD 5.10: GitHub has no native priority. Our outbound export encodes Klavity priority as a
 // conventional `priority:<value>` label (see githubLabels). On IMPORT we read that convention back so
@@ -30,6 +41,10 @@ function githubLabels(labels: string[] | undefined, priority: string | null | un
 export const githubConnector: Connector = {
   type: "github",
   label: "GitHub Issues",
+  // Connector-field-mapping: GitHub Issues has no native issue-type field (labels only) and no
+  // workflow beyond open/closed, so the bug/feature `kind` is applied as a LABEL via
+  // resolveIssueType (see createIssue) rather than a native "issue type" field.
+  capabilities: { issueTypes: false, statuses: true, typesAsLabels: true },
   fields: [
     { key: "owner", label: "Repository Owner", required: true, placeholder: "my-org" },
     { key: "repo", label: "Repository Name", required: true, placeholder: "my-repo" },
@@ -73,6 +88,11 @@ export const githubConnector: Connector = {
           body: ticket.body,
           ...((): { labels?: string[] } => {
             const ls = githubLabels(ticket.labels, ticket.priority)
+            // Connector-field-mapping: GitHub has no native issue-type field, so the bug/feature
+            // kind is applied natively as an additional label (best-effort — GitHub silently
+            // ignores labels that don't exist in the repo, never an error).
+            const kindLabel = resolveIssueType(cfg, ticket.kind, "")
+            if (kindLabel) ls.push(kindLabel)
             return ls.length ? { labels: ls } : {}
           })(),
         }),
@@ -253,5 +273,37 @@ export const githubConnector: Connector = {
       })
     }
     return out
+  },
+
+  // listStatuses (Connector-field-mapping): GitHub issues have no workflow beyond open/closed —
+  // return the fixed pair rather than hitting the network.
+  async listStatuses(_cfg: Record<string, string>): Promise<ConnectorMeta[]> {
+    return [{ name: "open" }, { name: "closed" }]
+  },
+
+  // listIssueTypes (Connector-field-mapping): GitHub has no native issue-type field, so we surface
+  // the repo's labels — the mapping UI lets a user pick which label represents "bug"/"feature".
+  //   GET https://api.github.com/repos/{owner}/{repo}/labels?per_page=100
+  async listIssueTypes(cfg: Record<string, string>): Promise<ConnectorMeta[]> {
+    const res = await safeFetch(
+      `${githubApi()}/repos/${cfg.owner}/${cfg.repo}/labels?per_page=100`,
+      {
+        method: "GET",
+        headers: {
+          "Authorization": `Bearer ${cfg.token}`,
+          "Accept": "application/vnd.github+json",
+          "User-Agent": "Klavity",
+        },
+      },
+      { allowHosts: ["github.com"], allowLoopbackInTest: true },
+    )
+    if (!res.ok) {
+      const text = (await res.text().catch(() => "")).slice(0, 200)
+      console.error(`github labels error ${res.status}: ${text}`)
+      throw new Error(`tracker request failed (HTTP ${res.status})`)
+    }
+    const json = await res.json()
+    const rows: any[] = Array.isArray(json) ? json : []
+    return rows.map(l => ({ id: String(l.id), name: String(l.name) }))
   },
 }

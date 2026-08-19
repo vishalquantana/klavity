@@ -13,6 +13,8 @@
 //   linear  ✅ inbound (Issue update: state.type, HMAC-signed Linear-Signature)
 //   webhook ➖ N/A — generic outbound sink, no canonical inbound contract
 
+import { parseJsonMap } from "./resolve-issue-type"
+
 export type KlavityStatus = "open" | "in_progress" | "done"
 
 const INBOUND: Record<string, boolean> = {
@@ -106,12 +108,69 @@ export function extractExternalKey(type: string, payload: any): string | null {
 }
 
 // ── Status mapping: provider vocabulary → Klavity status (null = no-op) ───────
-export function mapExternalStatus(type: string, payload: any): KlavityStatus | null {
+// `cfg` is the connector's decrypted config (optional — callers that don't have it, or older
+// call sites, keep working via the hard-coded fallback below; back-compat by construction).
+// When cfg.status_map is set (JSON string, klavity-key → provider-status-NAME, same shape/encoding
+// as issue_type_map — see resolve-issue-type.ts), it is consulted FIRST: we reverse it into
+// provider-name → klavity-key and match it against the raw status name the provider sent. Only on
+// a miss (no status_map, malformed JSON, or no matching name) do we fall back to the existing
+// hard-coded per-provider mapping, so an unmapped/unknown provider status still no-ops exactly
+// as it did before this feature existed.
+export function mapExternalStatus(
+  type: string,
+  payload: any,
+  cfg?: Record<string, string> | null,
+): KlavityStatus | null {
+  const fromMap = statusFromStatusMap(type, payload, cfg)
+  if (fromMap) return fromMap
   if (type === "github") return mapGithub(payload)
   if (type === "plane") return mapPlane(payload)
   if (type === "jira") return mapJira(payload)
   if (type === "linear") return mapLinear(payload)
   return null // webhook N/A
+}
+
+// Raw human-readable status NAME the provider attached to this event (distinct from the
+// stable category/type used by the hard-coded mappers below) — this is what a connector's
+// status_map maps against, since that's what's visible/configurable in the provider's own UI.
+function providerStatusName(type: string, payload: any): string | null {
+  if (type === "github") {
+    const s = payload?.issue?.state
+    return s != null ? String(s) : null // "open" | "closed"
+  }
+  if (type === "plane") {
+    const d = payload?.data ?? {}
+    const name = d?.state?.name ?? d?.state_detail?.name
+    return name != null ? String(name) : null
+  }
+  if (type === "jira") {
+    const name = payload?.issue?.fields?.status?.name
+    return name != null ? String(name) : null
+  }
+  if (type === "linear") {
+    const name = payload?.data?.state?.name
+    return name != null ? String(name) : null
+  }
+  return null
+}
+
+// Reverse cfg.status_map (klavity-key → provider-status-name) and match it against the
+// provider's raw status name for this event, case-insensitively. Returns null (never throws) on
+// missing/malformed status_map, an unrecognized provider, or no match — every case falls through
+// to the hard-coded mapper in mapExternalStatus.
+function statusFromStatusMap(type: string, payload: any, cfg?: Record<string, string> | null): KlavityStatus | null {
+  if (!cfg) return null
+  const map = parseJsonMap((cfg as any).status_map)
+  if (!map) return null
+  const name = providerStatusName(type, payload)
+  if (!name) return null
+  const needle = name.trim().toLowerCase()
+  for (const [klavityKey, providerName] of Object.entries(map)) {
+    if (providerName == null) continue
+    if (String(providerName).trim().toLowerCase() !== needle) continue
+    if (klavityKey === "open" || klavityKey === "in_progress" || klavityKey === "done") return klavityKey
+  }
+  return null
 }
 
 function mapGithub(payload: any): KlavityStatus | null {
