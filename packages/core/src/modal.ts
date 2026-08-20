@@ -114,6 +114,15 @@ export interface KnownIssueMatch {
   headline?: string      // optional amplified recurrence headline ("Keeps coming back · 3x")
 }
 
+// KLA-412 (multi-page evidence): per-shot page tag. Rendered as a small mono label under the thumbnail
+// so the reporter can see which page each screenshot came from. All fields optional + additive — a shot
+// with no page metadata renders exactly as before (no label), so single-page reports are unchanged.
+export interface ShotPageMeta {
+  pageUrl?: string
+  pagePath?: string
+  label?: string
+}
+
 export interface ModalCallbacks {
   // Each capture callback may return a raw dataUrl (legacy) or { dataUrl, quality } (JTBD 1.9). The quality
   // tag drives the thumbnail badge + the "Retake sharp" affordance. onCaptureFull is 'rendered'/'wireframe'
@@ -187,6 +196,21 @@ export interface ModalCallbacks {
   // The buffer becomes playable a few hundred ms after mount, so the host may re-evaluate later via
   // the controller's setReplayState().
   replayState?: 'attached' | 'unavailable'
+  // ── KLA-412 multi-page evidence (all optional + additive; absent => identical to today) ──
+  // When provided, a minimize button appears in the header. Clicking it invokes this callback — the host
+  // (widget) then persists the in-progress report to its IndexedDB "evidence session", closes the
+  // composer, and shows a minimized dock so the reporter can keep capturing across page navigations.
+  // Its mere presence also puts the composer in "session mode": per-shot page labels are shown and the
+  // image cap is raised so evidence can span more pages.
+  onMinimize?: () => void
+  // Fired AFTER a NEW screenshot the reporter captured/uploaded INSIDE the composer is added to the strip
+  // (Full Page / Screen / Region / Upload / paste / auto-capture). NOT fired for shots seeded via the
+  // controller's addScreenshot() (the host already knows those). The host uses it to append the shot,
+  // tagged with the current page URL, to the evidence session. Absent => nothing extra happens.
+  onShotAdded?: (dataUrl: string, quality: CaptureQuality | undefined) => void
+  // Fired when the reporter removes a thumbnail, with its strip index, so the host can drop the matching
+  // shot from the evidence session (indices stay aligned with the seed + append order). Absent => no-op.
+  onShotRemoved?: (index: number) => void
 }
 
 export interface ModalController {
@@ -194,7 +218,10 @@ export interface ModalController {
   // JTBD 1.9: an optional capture-quality tag badges the thumbnail (real-pixel/rendered/wireframe) and,
   // for a degraded shot, surfaces "Retake sharp". Omit it (e.g. a right-click-drag region shot the host
   // already knows the quality of) and no badge is shown.
-  addScreenshot: (dataUrl: string, quality?: CaptureQuality) => void
+  // KLA-412: an optional 3rd arg tags the shot with the page it came from (rendered as a mono label
+  // under the thumbnail). Shots added through this controller method do NOT fire onShotAdded — the host
+  // is seeding shots it already tracks. Backward compatible: existing 1/2-arg callers are unaffected.
+  addScreenshot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta) => void
   close: () => void
   // JTBD 1.8: update the attached-proof replay chip after mount (rrweb loads async, so the buffer may
   // only become playable a few hundred ms after the composer opens). No-op when no chip was rendered.
@@ -227,8 +254,17 @@ export function buildModal(
   // ('real-pixel' | 'rendered' | 'wireframe'), or undefined for images with no known quality (user
   // uploads / clipboard pastes). Drives the per-thumbnail badge + the "Retake sharp" affordance.
   let screenshotQuality: (CaptureQuality | undefined)[] = []
+  // KLA-412: parallel array of per-shot page tags — screenshotPageMeta[i] describes screenshots[i], or
+  // undefined for a shot with no page metadata (every shot in a normal single-page report). When set, a
+  // small mono label is rendered under the thumbnail. Stays index-aligned across add/remove like the
+  // quality array.
+  let screenshotPageMeta: (ShotPageMeta | undefined)[] = []
+  // KLA-412: "session mode" is on whenever the host wired onMinimize — it means this composer is backed
+  // by a multi-page evidence session, so we show the minimize button + per-shot page labels and raise the
+  // image cap so evidence can span more pages. Absent => behaves exactly as before.
+  const sessionMode = !!callbacks.onMinimize
   // Upload guards (Dev 6 audit #4): cap how many images can be attached and how big each may be.
-  const MAX_IMAGES = 5
+  const MAX_IMAGES = sessionMode ? 8 : 5
   const MAX_FILE_BYTES = 10 * 1024 * 1024 // 10 MB per image
   // Structured markup per screenshot index { w, h, shapes } so the ticket can re-render a
   // toggleable/zoomable overlay instead of baking the drawing into the uploaded image.
@@ -479,6 +515,18 @@ export function buildModal(
     .klavity-x::after{content:"";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:40px;height:40px;}
     .klavity-x:hover{transform:var(--kl-lift);color:var(--kl-accent);background:color-mix(in srgb,var(--kl-accent) 14%,transparent);}
     .klavity-x:active{transform:var(--kl-press);}
+    /* KLA-412 minimize (─) — sits just left of the close (×). Same lift/press/focus feel. The toggle
+       reserves extra right padding (via :has) so neither header button overlaps the Bug/Feature chips. */
+    .klavity-min{position:absolute;top:14px;right:50px;z-index:3;width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;padding:0;background:transparent;color:var(--kl-muted);border:none;border-radius:9px;cursor:pointer;transition:transform .15s cubic-bezier(.34,1.56,.64,1),background .15s ease,color .15s ease;will-change:transform;}
+    .klavity-min::after{content:"";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:40px;height:40px;}
+    .klavity-min:hover{transform:var(--kl-lift);color:var(--kl-accent);background:color-mix(in srgb,var(--kl-accent) 14%,transparent);}
+    .klavity-min:active{transform:var(--kl-press);}
+    .klavity-min:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
+    .klavity-modal:has(.klavity-min) .klavity-toggle{padding-right:66px;}
+    /* KLA-412 per-shot page label — the mono path each screenshot came from, under its thumbnail. Only
+       rendered for shots that carry page metadata, so single-page reports show no label. */
+    .klavity-pglabel{margin-top:4px;max-width:104px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:9.5px;line-height:1.3;color:var(--kl-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .klavity-pglabel b{color:var(--kl-accent);font-weight:600;}
     /* Keyboard accessibility — visible focus ring on every control */
     .klavity-toggle button:focus-visible,.klavity-actions button:focus-visible,.klavity-submit:focus-visible,.klavity-lead button:focus-visible,.klavity-cta:focus-visible,.klavity-rm:focus-visible,.klavity-mk:focus-visible,.klavity-x:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
     /* ── Screen button: the (i) badge is a purely visual affordance nested inside the button.
@@ -547,6 +595,7 @@ export function buildModal(
   const modal = document.createElement('div')
   modal.className = 'klavity-modal'
   modal.innerHTML = `
+    ${sessionMode ? `<button class="klavity-min" id="klavity-min" type="button" aria-label="Minimize" title="Minimize (keeps your evidence)"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-0.125em" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/></svg></button>` : ''}
     <button class="klavity-x" id="klavity-x" type="button" aria-label="Close" title="Close (Esc)">${icon('x', { size: 16 })}</button>
     <div class="kl-hero" id="klavity-hero">
       <div class="kl-hero-tools" id="klavity-hero-tools"></div>
@@ -573,7 +622,7 @@ export function buildModal(
       ${callbacks.onPickElement ? `<div class="klavity-pickinfo" id="klavity-pickinfo" role="status" aria-live="polite" hidden></div>` : ''}
       <label class="klav-mask-row"><input type="checkbox" id="klavity-mask-numbers"${maskOn ? ' checked' : ''}>${icon('eye-off', { size: 13 })}<span>Mask numbers</span></label>
       <input type="file" id="klavity-file" accept="image/*,.heic,.heif" multiple style="display:none">
-      <div class="klavity-counter" id="klavity-counter">0/5 images</div>
+      <div class="klavity-counter" id="klavity-counter">0/${MAX_IMAGES} images</div>
       <div class="klavity-error" id="klavity-err"></div>
       <textarea class="klavity-desc" id="klavity-desc" placeholder="${initialType === 'feature' ? "Describe the feature you'd like..." : 'Describe the bug...'}"></textarea>
       <div class="klavity-desc-hint" id="klavity-desc-hint" hidden>${icon('sparkles', { size: 13 })}<span>No title needed — we'll auto-generate one for you</span></div>
@@ -650,9 +699,18 @@ export function buildModal(
     chip.innerHTML = replayChipInner(state)
   }
 
+  // KLA-412: the CURRENT page's tag — used to label an interactive capture in session mode when the
+  // host didn't supply an explicit tag (the shot came from whatever page the composer is open on).
+  function currentPageMeta(): ShotPageMeta | undefined {
+    if (typeof window === 'undefined' || !window.location) return undefined
+    return { pageUrl: window.location.href, pagePath: window.location.pathname }
+  }
+
   const controller: ModalController = {
     shadowRoot,
-    addScreenshot,
+    // Host seeds shots it already tracks (evidence-session restore, region-initial): fireAdded=false so
+    // onShotAdded does NOT re-fire (which would double-persist). Page metadata is carried through as-is.
+    addScreenshot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta) => addScreenshot(dataUrl, quality, pageMeta, false),
     close,
     setReplayState,
   }
@@ -683,6 +741,9 @@ export function buildModal(
         screenshots.splice(i, 1)
         screenshotCompressed.splice(i, 1)
         screenshotQuality.splice(i, 1) // JTBD 1.9: keep the quality tags aligned with the shifted indices
+        screenshotPageMeta.splice(i, 1) // KLA-412: keep the page tags aligned with the shifted indices
+        // KLA-412: tell the host to drop the matching shot from the evidence session (index-aligned).
+        try { callbacks.onShotRemoved?.(i) } catch { /* host sync best-effort */ }
         // KLAVITYKLA-217: keep annotationsByIndex aligned with the (now shifted) screenshot indices —
         // drop the removed image's markup and slide every higher index down by one. Without this, submitting
         // the full per-image map would attach an annotation to the wrong screenshot after a mid-strip delete.
@@ -737,9 +798,21 @@ export function buildModal(
         wrap.appendChild(note)
       }
 
+      // KLA-412: page-URL label under the thumbnail — the page each shot came from. Only rendered when the
+      // shot carries page metadata (session mode), so single-page reports show no label and are unchanged.
+      const pm = screenshotPageMeta[i]
+      if (pm && (pm.pagePath || pm.pageUrl)) {
+        const pg = document.createElement('div')
+        pg.className = 'klavity-pglabel'
+        const path = pm.pagePath || pm.pageUrl || ''
+        pg.title = pm.pageUrl || path
+        pg.innerHTML = '<b>' + escHtml(path) + '</b>' + (pm.label ? ' &middot; ' + escHtml(pm.label) : '')
+        wrap.appendChild(pg)
+      }
+
       strip.appendChild(wrap)
     })
-    counter.textContent = `${screenshots.length}/5 images`
+    counter.textContent = `${screenshots.length}/${MAX_IMAGES} images`
     // JTBD 1.10: attaching/removing a screenshot changes the evidence state → re-evaluate Submit + hint.
     refreshSubmit()
     // Image-hero: keep the big annotator pane in sync with the strip (selection / empty state).
@@ -756,7 +829,11 @@ export function buildModal(
     if (errEl) (errEl as HTMLElement).style.display = 'none'
   }
 
-  function addScreenshot(dataUrl: string, quality?: CaptureQuality) {
+  // `fireAdded` is true for shots captured/uploaded INSIDE the composer (buttons / paste / auto-capture) —
+  // those fire onShotAdded so the host can persist them to the evidence session, and in session mode they
+  // default to the CURRENT page's tag. The host's controller.addScreenshot passes fireAdded=false to SEED
+  // shots it already tracks (no re-persist, explicit page tag carried through).
+  function addScreenshot(dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, fireAdded = true) {
     // Hard cap — every capture/upload/paste path funnels through here, so the limit holds everywhere.
     if (screenshots.length >= MAX_IMAGES) { showError(`You can attach up to ${MAX_IMAGES} images.`); return }
     clearError()
@@ -764,7 +841,11 @@ export function buildModal(
     // Kick off compression immediately — by submit time the Promise is settled (user was typing).
     screenshotCompressed.push(callbacks.compressImage ? callbacks.compressImage(dataUrl) : Promise.resolve(dataUrl))
     screenshotQuality.push(quality) // JTBD 1.9: stays aligned with screenshots[] (undefined = no badge)
+    // KLA-412: keep the page-tag array aligned. An interactive session-mode capture with no explicit tag
+    // is tagged with the current page; everything else keeps whatever the caller passed (often undefined).
+    screenshotPageMeta.push(pageMeta ?? (sessionMode && fireAdded ? currentPageMeta() : undefined))
     updateStrip()
+    if (fireAdded) { try { callbacks.onShotAdded?.(dataUrl, quality) } catch { /* host persistence best-effort */ } }
   }
 
   // JTBD 1.9: re-capture a degraded thumbnail via the host's real-pixel path and swap it in place. The
@@ -954,6 +1035,11 @@ export function buildModal(
   }
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close() })
   modal.querySelector('#klavity-x')?.addEventListener('click', () => close())
+  // KLA-412: minimize hands off to the host, which persists the evidence session, closes this composer,
+  // and shows the dock. Never let a listener error leave the button dead.
+  modal.querySelector('#klavity-min')?.addEventListener('click', () => {
+    try { callbacks.onMinimize?.() } catch { /* host handles teardown */ }
+  })
 
   // Re-entrancy guard (Dev 6 audit #3): block double-click / cross-firing while a capture OR submit is in
   // flight. `lockComposer(true)` disables every capture button (Sharp/Full Page/Upload/Region) and Submit;

@@ -23,6 +23,7 @@
     "rrweb": "^2.0.1"
   },
   "devDependencies": {
+    "fake-indexeddb": "^6.2.5",
     "typescript": "^5.4.0",
     "vite": "^6.4.3",
     "vitest": "^3.2.6"

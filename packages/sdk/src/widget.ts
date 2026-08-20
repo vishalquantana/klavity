@@ -14,6 +14,11 @@ import { getTurnstileToken } from "./load-turnstile"
 import { icon } from "@klavity/core/icons"
 import { createSessionReplay, type SessionReplay } from "./session-replay"
 import { on, emit } from "./events"
+import {
+  getActiveSession, startOrContinue, addShot, removeShot, clear as clearEvidenceSession,
+  makeShotId, pageCount, MAX_SHOTS,
+  type EvidenceSession, type EvidenceShot,
+} from "./evidence-session"
 import { SimsLive, type LiveObservation } from "./sims-live"  // side-effecting: auto-installs window.KlavitySims on load
 import { startSimsWatch, type SimsWatchController } from "./sims-watch"
 
@@ -100,6 +105,46 @@ function pickElementOnPage(): Promise<PickedTarget | null> {
     document.addEventListener("mousemove", onMove, true)
     document.addEventListener("click", onClick, true)
     document.addEventListener("keydown", onKey, true)
+  })
+}
+
+// ── KLA-412 multi-page evidence helpers (pure, top-level) ──────────────────────────────────────────
+// The evidence session stores screenshots as Blobs (IndexedDB). The composer works in data URLs (its
+// screenshots[] are data URLs, and submit uploads them). These convert between the two + measure dims.
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader()
+    fr.onload = () => resolve(String(fr.result || ""))
+    fr.onerror = () => reject(fr.error || new Error("blob read failed"))
+    fr.readAsDataURL(blob)
+  })
+}
+// Manual data-URL -> Blob (no fetch(), so a strict connect-src CSP can't block it).
+function dataUrlToBlob(dataUrl: string): Blob {
+  const comma = dataUrl.indexOf(",")
+  const header = dataUrl.slice(0, comma)
+  const body = dataUrl.slice(comma + 1)
+  const mimeMatch = /data:([^;,]+)/.exec(header)
+  const mime = mimeMatch ? mimeMatch[1] : "application/octet-stream"
+  if (/;base64/i.test(header)) {
+    const bin = atob(body)
+    const arr = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i)
+    return new Blob([arr], { type: mime })
+  }
+  return new Blob([decodeURIComponent(body)], { type: mime })
+}
+// Best-effort natural dimensions of an image data URL (0×0 on failure — never rejects).
+function measureImage(dataUrl: string): Promise<{ w: number; h: number }> {
+  return new Promise((resolve) => {
+    try {
+      const img = new Image()
+      const done = (w: number, h: number) => resolve({ w, h })
+      img.onload = () => done(img.naturalWidth || 0, img.naturalHeight || 0)
+      img.onerror = () => done(0, 0)
+      img.src = dataUrl
+      setTimeout(() => done(img.naturalWidth || 0, img.naturalHeight || 0), 3000)
+    } catch { resolve({ w: 0, h: 0 }) }
   })
 }
 
@@ -453,6 +498,168 @@ async function mount() {
   // reference to the open one and treat it as "open" only while its shadow host is still in the DOM (the
   // modal removes its host on close), so a normal re-open after closing still works.
   let composer: ModalController | null = null
+
+  // ── KLA-412 multi-page evidence session ─────────────────────────────────────────────────────────
+  // A bug report that survives page navigation: shots persist in IndexedDB keyed by (projectId, origin).
+  // The widget shows a minimized DOCK when a session is active so the user can keep capturing across
+  // pages, then files ONE report (with a "Pages captured" trail) from the whole session on submit.
+  const evOrigin = location.origin
+  let evSession: EvidenceSession | null = null
+  let evMinimizing = false // set while we deliberately close the composer to minimize (vs a plain X-close)
+  // Serialize session writes so concurrent adds/removes can't lose an update (read-modify-write races).
+  let evWriteChain: Promise<unknown> = Promise.resolve()
+  function queueEvWrite<T>(fn: () => Promise<T>): Promise<T> {
+    const run = evWriteChain.then(fn, fn)
+    evWriteChain = run.catch(() => undefined)
+    return run
+  }
+  // Persist one composer-captured shot (data URL) to the active session, tagged with the CURRENT page.
+  async function persistEvShot(sessionId: string, dataUrl: string): Promise<void> {
+    try {
+      const blob = dataUrlToBlob(dataUrl)
+      const dims = await measureImage(dataUrl)
+      const shot: EvidenceShot = {
+        id: makeShotId(), pageUrl: location.href, pagePath: location.pathname, label: "",
+        blob, bytes: blob.size, w: dims.w, h: dims.h, ts: Date.now(),
+      }
+      const res = await addShot(sessionId, shot)
+      evSession = res.session
+      if (!res.ok) {
+        evBanner(res.reason === "max-bytes"
+          ? "Max evidence size reached — submit or remove a shot to add more."
+          : `Max evidence reached (${MAX_SHOTS} shots) — submit or remove a shot to add more.`)
+      }
+      updateEvDock()
+    } catch { /* best-effort: a failed persist must never break capture */ }
+  }
+  // Remove the session shot at a composer strip index (indices stay aligned with seed+append order).
+  function removeEvShotAt(index: number): void {
+    void queueEvWrite(async () => {
+      const latest = await getActiveSession(cfg.projectId, evOrigin)
+      if (!latest) return
+      const target = latest.shots[index]
+      if (!target) return
+      evSession = await removeShot(latest.id, target.id)
+      updateEvDock()
+    })
+  }
+  function buildPagesTrail(shots: EvidenceShot[]): string {
+    if (!shots || !shots.length) return ""
+    const lines = shots.map((s, i) => {
+      const path = s.pagePath || s.pageUrl || "(unknown)"
+      const full = s.pageUrl && s.pagePath && s.pageUrl !== s.pagePath ? " - " + s.pageUrl : ""
+      return `${i + 1}. ${path}${full}`
+    })
+    return "Pages captured:\n" + lines.join("\n")
+  }
+
+  // ── Minimized dock (the mockup's dark pill) ──
+  let evDockEl: HTMLDivElement | null = null
+  let evDockCount: HTMLElement | null = null
+  function ensureEvDockStyle() {
+    if (root.getElementById("klavity-evdock-anim")) return
+    const s = document.createElement("style")
+    s.id = "klavity-evdock-anim"
+    s.textContent =
+      "@keyframes kl-evpop{from{transform:scale(.9);opacity:0}to{transform:none;opacity:1}}" +
+      "@keyframes kl-evpulse{0%{box-shadow:0 0 0 0 rgba(15,157,107,.5)}70%{box-shadow:0 0 0 8px rgba(15,157,107,0)}100%{box-shadow:0 0 0 0 rgba(15,157,107,0)}}" +
+      ".kl-evdock{display:flex;align-items:center;gap:12px;background:#19140f;color:#f5f3ee;border-radius:999px;padding:9px 10px 9px 16px;box-shadow:0 24px 60px -12px rgba(25,20,15,.35);pointer-events:auto;font-family:system-ui,-apple-system,sans-serif;animation:kl-evpop .2s ease}" +
+      ".kl-evpulse{width:9px;height:9px;border-radius:50%;background:#0f9d6b;animation:kl-evpulse 1.6s infinite;flex:none}" +
+      ".kl-evlab{font-size:13px;line-height:1.25}.kl-evlab b{font-weight:600}.kl-evlab small{display:block;font:10px ui-monospace,monospace;color:#b3a896}" +
+      ".kl-evbtn{border:none;border-radius:999px;padding:7px 13px;font:600 12.5px system-ui,sans-serif;cursor:pointer;transition:transform .14s ease,filter .14s ease,background .14s ease}" +
+      ".kl-evbtn:hover{transform:translateY(-1px)}.kl-evbtn:active{transform:scale(.97)}" +
+      ".kl-evbtn.cap{background:rgba(255,255,255,.12);color:#fff}.kl-evbtn.cap:hover{background:rgba(255,255,255,.2)}" +
+      ".kl-evbtn.res{background:#6366f1;color:#fff}.kl-evbtn.res:hover{filter:brightness(1.1)}" +
+      ".kl-evx{border:none;background:transparent;color:#b3a896;cursor:pointer;font-size:16px;line-height:1;padding:4px 6px;border-radius:8px}.kl-evx:hover{color:#fff;background:rgba(255,255,255,.12)}" +
+      "@media (prefers-reduced-motion:reduce){.kl-evdock,.kl-evpulse{animation:none}.kl-evbtn{transition:none}}"
+    root.appendChild(s)
+  }
+  function evCountText(): string {
+    const n = evSession ? evSession.shots.length : 0
+    const m = evSession ? pageCount(evSession) : 0
+    return `${n} shot${n === 1 ? "" : "s"} - ${m} page${m === 1 ? "" : "s"} - not lost`
+  }
+  function updateEvDock() {
+    if (evDockCount) evDockCount.textContent = evCountText()
+  }
+  function evBanner(text: string) {
+    // Reuse the widget's banner surface (declared later in mount); fall back to console if not ready.
+    try { (banner as (t: string) => void)(text) } catch { try { console.warn("[Klavity] " + text) } catch {} }
+  }
+  function showEvDock() {
+    if (!evSession || evSession.shots.length === 0) return
+    ensureEvDockStyle()
+    reportDock.style.display = "none" // hide the launcher while the report-in-progress dock is up
+    if (!evDockEl) {
+      const d = document.createElement("div")
+      d.className = "kl-evdock"
+      const pulse = document.createElement("span"); pulse.className = "kl-evpulse"
+      const lab = document.createElement("div"); lab.className = "kl-evlab"
+      const labTitle = document.createElement("b"); labTitle.textContent = "Bug report in progress"
+      const labSub = document.createElement("small"); labSub.textContent = evCountText()
+      evDockCount = labSub
+      lab.append(labTitle, labSub)
+      const capBtn = document.createElement("button"); capBtn.className = "kl-evbtn cap"; capBtn.type = "button"; capBtn.textContent = "+ Capture here"
+      capBtn.addEventListener("click", () => void captureHereFromDock(capBtn))
+      const resBtn = document.createElement("button"); resBtn.className = "kl-evbtn res"; resBtn.type = "button"; resBtn.textContent = "Resume"
+      resBtn.addEventListener("click", () => void resumeEvidence())
+      const xBtn = document.createElement("button"); xBtn.className = "kl-evx"; xBtn.type = "button"; xBtn.title = "Discard this report"; xBtn.setAttribute("aria-label", "Discard"); xBtn.textContent = "x"
+      xBtn.addEventListener("click", () => void discardEvidence())
+      d.append(pulse, lab, capBtn, resBtn, xBtn)
+      evDockEl = d
+      reportDock.parentElement?.appendChild(d) // sits in the chrome column next to the launcher slot
+    }
+    evDockEl.style.display = "flex"
+    updateEvDock()
+  }
+  function hideEvDock() {
+    if (evDockEl) evDockEl.style.display = "none"
+    paintLauncher() // restore the normal launcher (respects hidden/icon/full modes)
+  }
+  async function captureHereFromDock(btn: HTMLButtonElement) {
+    if (!evSession) return
+    const prev = btn.textContent
+    btn.disabled = true
+    try {
+      const { dataUrl } = await safeToPngWithQuality(document.body, { filter: notKlavityChrome })
+      await queueEvWrite(() => persistEvShot(evSession!.id, dataUrl))
+      btn.textContent = "Captured"
+      setTimeout(() => { btn.textContent = prev; btn.disabled = false }, 900)
+    } catch {
+      btn.textContent = prev; btn.disabled = false
+    }
+  }
+  async function resumeEvidence() {
+    // Refresh from storage (another tab/page may have added shots) then open the composer seeded.
+    try { evSession = await getActiveSession(cfg.projectId, evOrigin) } catch { /* keep in-memory copy */ }
+    if (!evSession) { hideEvDock(); return }
+    if (evDockEl) evDockEl.style.display = "none"
+    openReport("bug", { evidence: { session: evSession } })
+  }
+  async function discardEvidence() {
+    const s = evSession
+    evSession = null
+    hideEvDock()
+    if (s) { try { await clearEvidenceSession(s.id) } catch { /* best-effort */ } }
+  }
+  // Minimize the open composer to the dock WITHOUT losing evidence (called from the composer's onMinimize).
+  function minimizeToDock() {
+    evMinimizing = true
+    void queueEvWrite(async () => {
+      try { evSession = await getActiveSession(cfg.projectId, evOrigin) } catch { /* keep copy */ }
+      showEvDock()
+    })
+    try { composer?.close() } catch { /* the modal removes its own host */ }
+  }
+  // Start (or continue) an evidence session, then open the composer in session mode. Falls back to a
+  // plain single-page report if IndexedDB is unavailable, so nothing breaks where storage is blocked.
+  async function startBugReport(opts?: { initialShot?: string; initialShotQuality?: "rendered" | "wireframe"; initialDescription?: string }) {
+    let session: EvidenceSession | null = null
+    try { session = await startOrContinue(cfg.projectId, evOrigin) } catch { session = null }
+    if (session) evSession = session
+    openReport("bug", session ? { ...opts, evidence: { session } } : opts)
+  }
+
   // Track deployed Sims so the context menu can show their icons without a fetch.
   let _deployedSims: Array<{ id: string; name: string; initials?: string; accent?: string }> = []
   // Cumulative count of observations returned by boot + watch-engine reviews.
@@ -530,8 +737,10 @@ async function mount() {
   }
   paintLauncher()
   mq.addEventListener('change', paintLauncher)
-  function openReport(type: "bug" | "feature" = "bug", opts?: { initialShot?: string; initialShotQuality?: "rendered" | "wireframe"; initialDescription?: string }) {
+  function openReport(type: "bug" | "feature" = "bug", opts?: { initialShot?: string; initialShotQuality?: "rendered" | "wireframe"; initialDescription?: string; evidence?: { session: EvidenceSession } }) {
     if (composer && (composer.shadowRoot.host as HTMLElement | null)?.isConnected) return
+    // KLA-412: the multi-page evidence session backing this composer (null for a normal single-page report).
+    const ev = opts?.evidence?.session ?? null
     const identified = firstParty || !!getToken()  // already known to Klavity (own page session, or signed-in widget)
     // Only the "login" gate forces the connect flow on third-party sites. "email"/"anonymous" let an
     // end-user file WITHOUT a Klavity account; "email" requires a typed email when not already identified.
@@ -552,8 +761,10 @@ async function mount() {
       // Auto-grab a Full Page shot the moment the modal opens — parity with the extension
       // (content.ts autoCaptureOnOpen). Captures the current page state without an extra click.
       // EXCEPT when we already have a right-click-drag region shot: that one is the default first image,
-      // so we skip the full-page auto-capture and let the zoomed-in region lead.
-      autoCaptureOnOpen: !opts?.initialShot,
+      // so we skip the full-page auto-capture and let the zoomed-in region lead. KLA-412: also skip it when
+      // resuming an evidence session that already holds shots (we seed those below); a BRAND-NEW session
+      // (empty, no region shot) still auto-captures so the first shot lands + persists via onShotAdded.
+      autoCaptureOnOpen: !opts?.initialShot && !(ev && ev.shots.length > 0),
       // JTBD 1.9: report the capture-quality tag so the composer badges the thumbnail — 'rendered' on the
       // html-to-image path, 'wireframe' when it fell back to the fetch-free painter. Degraded shots get the
       // one-tap "Retake sharp" (getDisplayMedia real-pixel path via onRetakeSharp below).
@@ -603,9 +814,18 @@ async function mount() {
         // fail-opens when it can't verify, so a token hiccup never hard-blocks a legitimate report.
         const needsTurnstile = !!turnstileSiteKey && widget.reportGate === "anonymous" && !identified
         const turnstileToken = needsTurnstile ? (await getTurnstileToken(turnstileSiteKey)) || undefined : undefined
+        // KLA-412: for an evidence session, append a "Pages captured" trail listing the page each shot came
+        // from (read the LATEST session so shots added across pages are included). The composer already
+        // supplies every image in p.screenshots (seeded + interactive), so only the trail text is added.
+        let description = p.description
+        if (ev) {
+          const latest = await getActiveSession(cfg.projectId, evOrigin).catch(() => null)
+          const trail = buildPagesTrail((latest && latest.shots.length ? latest : ev).shots)
+          if (trail) description = (description ? description + "\n\n" : "") + trail
+        }
         const result = await submitFeedback(
           { backendUrl: cfg.backendUrl, projectId: cfg.projectId, firstParty, token: getToken() },
-          { type: p.type as "bug" | "feature", description: p.description, pageUrl: location.href, referrer: document.referrer || "", screenshots: p.screenshots,
+          { type: p.type as "bug" | "feature", description, pageUrl: location.href, referrer: document.referrer || "", screenshots: p.screenshots,
             context: buildWidgetContext(), replayEvents: replay.snapshot(), annotations: p.annotations,
             // Forward the gate's required email → server reporter_email. Without this, an "email"-gated
             // project rejects the submit with 400. On the default anonymous gate this is undefined (the
@@ -620,10 +840,37 @@ async function mount() {
         )
         // G5: fire 'submit' event after the report is stored so site code receives the ticket key.
         try { emit("submit", { issueKey: result.issueKey, issueUrl: result.issueUrl ?? null, type: p.type as "bug" | "feature" }) } catch {}
+        // KLA-412: the report was filed from the whole session — clear it and drop the dock.
+        if (ev) {
+          evMinimizing = false
+          try { await clearEvidenceSession(ev.id) } catch { /* best-effort */ }
+          evSession = null
+          hideEvDock()
+        }
         return result
       },
+      // KLA-412: minimize hands off to the widget — persist (already incremental), close the composer,
+      // and show the dock so the user keeps their evidence while navigating. Only wired for sessions.
+      onMinimize: ev ? () => minimizeToDock() : undefined,
+      // KLA-412: persist a shot captured INSIDE the composer (Full Page / Screen / Region / Upload / paste
+      // / auto-capture) to the session, tagged with the current page. Serialized to avoid lost updates.
+      onShotAdded: ev ? (dataUrl: string) => { void queueEvWrite(() => persistEvShot(ev.id, dataUrl)) } : undefined,
+      // KLA-412: keep the session in sync when the reporter removes a thumbnail.
+      onShotRemoved: ev ? (index: number) => removeEvShotAt(index) : undefined,
       // G5: fire 'close' event whenever the composer is dismissed (Esc, overlay click, X button).
-      onClose: () => emit("close", {}),
+      onClose: () => {
+        emit("close", {})
+        // KLA-412: a plain X/Esc close (NOT a minimize) keeps any captured evidence — we show the dock so
+        // it isn't lost — but reaps an EMPTY session so an unused open never lingers, restoring the launcher.
+        if (ev && !evMinimizing) {
+          void queueEvWrite(async () => {
+            const latest = await getActiveSession(cfg.projectId, evOrigin)
+            if (latest && latest.shots.length > 0) { evSession = latest; showEvDock() }
+            else { if (latest) await clearEvidenceSession(latest.id); evSession = null; hideEvDock() }
+          })
+        }
+        evMinimizing = false
+      },
       // JTBD 1.8: attached-proof chip — tell the reporter whether a session replay will ride along.
       replayState: replayChipState(),
       success: { copy: successCopy(widget.mode, widget.ctaUrl, suppressSuccessEmail), onLead: postLead },
@@ -642,18 +889,35 @@ async function mount() {
       }, 250)
     }
     if (opts?.initialDescription) prefillReportDescription(ctrl, opts.initialDescription)
-    // Right-click-drag region: load the cropped selection as the default (first) screenshot, zoomed to fit.
-    // JTBD 1.9: a right-click-drag region shot is an html-to-image crop, so it carries its capture-quality
-    // tag → the composer badges it (and offers "Retake sharp" when it's rendered/wireframe).
-    if (opts?.initialShot) ctrl.addScreenshot(opts.initialShot, opts.initialShotQuality)
+    if (ev) {
+      // KLA-412: seed the already-persisted session shots (in order, each with its page tag), then handle a
+      // region-initial shot as a NEW capture — seed it visually AND persist it to the session.
+      void (async () => {
+        for (const shot of ev.shots) {
+          try {
+            ctrl.addScreenshot(await blobToDataUrl(shot.blob), undefined, { pageUrl: shot.pageUrl, pagePath: shot.pagePath, label: shot.label })
+          } catch { /* skip an unreadable shot */ }
+        }
+        if (opts?.initialShot) {
+          ctrl.addScreenshot(opts.initialShot, opts.initialShotQuality, { pageUrl: location.href, pagePath: location.pathname })
+          void queueEvWrite(() => persistEvShot(ev.id, opts.initialShot!))
+        }
+      })()
+    } else if (opts?.initialShot) {
+      // Right-click-drag region: load the cropped selection as the default (first) screenshot, zoomed to fit.
+      // JTBD 1.9: a right-click-drag region shot is an html-to-image crop, so it carries its capture-quality
+      // tag → the composer badges it (and offers "Retake sharp" when it's rendered/wireframe).
+      ctrl.addScreenshot(opts.initialShot, opts.initialShotQuality)
+    }
     } catch (e) { console.warn("[Klavity] failed to open the report composer:", e) }
   }
   SimsLive.onTriage = (observation, simName) => {
     openReport("bug", { initialDescription: simObservationBugDescription(observation, simName) })
   }
-  // G5: expose openReport through the module-level ref so window.Klavity.open() works.
-  _openReport = (type = "bug") => openReport(type as "bug" | "feature")
-  reportBtn.onclick = () => openReport("bug")
+  // G5: expose openReport through the module-level ref so window.Klavity.open() works. KLA-412: a bug
+  // report starts (or continues) a multi-page evidence session; feature requests stay single-page.
+  _openReport = (type = "bug") => { if (type === "feature") openReport("feature"); else void startBugReport() }
+  reportBtn.onclick = () => void startBugReport()
   reportDock.appendChild(reportBtn)
 
   // Right-click anywhere → a small Klavity menu (mirrors the extension's context menu and the
@@ -903,7 +1167,7 @@ async function mount() {
       }
       menu.append(list, confirmBtn)
     }
-    menu.appendChild(card("zap", "Report a Bug", "Snap the page and tell us what broke.", { primary: true, onClick: () => openReport("bug") }))
+    menu.appendChild(card("zap", "Report a Bug", "Snap the page and tell us what broke.", { primary: true, onClick: () => void startBugReport() }))
     menu.appendChild(card("lightbulb", "Request a Feature", "Suggest something you'd love to see.", { onClick: () => openReport("feature") }))
     // Sims actions are member-only + 'full'-mode-only — anonymous visitors and reportOnly never see them.
     if (showSims) {
@@ -974,7 +1238,9 @@ async function mount() {
       shot = await cropDataUrl(dataUrl, rect, window.scrollX, window.scrollY, scale)
       shotQuality = quality
     } catch { /* fall back to an empty composer */ }
-    openReport("bug", shot ? { initialShot: shot, initialShotQuality: shotQuality } : undefined)
+    // KLA-412: a region shot also starts/continues an evidence session (the cropped selection becomes the
+    // first shot, tagged with the current page).
+    void startBugReport(shot ? { initialShot: shot, initialShotQuality: shotQuality } : undefined)
   }
   let reportArmed = true
   // 'off' mode: install NEITHER the right-click-drag region capture NOR the contextmenu takeover, so
@@ -1168,6 +1434,15 @@ async function mount() {
   // now lives exclusively in SimsLive after "Deploy all Sims". The old authenticated mini dock rendered
   // a second avatar stack and a second review control in the same corner, so it is intentionally gone.
   ;(window as any).KlavityWidget = { mount, identify, setMetadata }
+
+  // ── KLA-412: on load, resume a still-fresh evidence session (survives navigation) by showing the dock
+  // instead of the plain launcher, so the user can keep capturing on THIS page. Best-effort + non-blocking.
+  void (async () => {
+    try {
+      const active = await getActiveSession(cfg.projectId, evOrigin)
+      if (active && active.shots.length > 0) { evSession = active; showEvDock() }
+    } catch { /* IndexedDB unavailable — normal launcher stands */ }
+  })()
 }
 
 export async function submitFeedback(
