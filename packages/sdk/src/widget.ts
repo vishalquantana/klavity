@@ -422,6 +422,11 @@ async function mount() {
   // current behavior for existing projects. 'reportOnly' hides Sims actions from everyone; 'off'
   // leaves the native context menu untouched (no takeover at all).
   let rightClickMode: 'full' | 'reportOnly' | 'off' = 'full'
+  // PX4 #411/#425: enhanced-composer opts (per-project, from modalConfig.composer). All default OFF, so a
+  // project that hasn't opted in renders the classic Bug/Feature composer with no Title field / file uploads.
+  let composerShowTitle = false
+  let composerFileAttach = false
+  let composerIssueTypes: Array<{ value: 'bug' | 'feature' | 'task' | 'query'; label: string; mappingLabel?: string }> | undefined
   try {
     const r = await fetchWithTimeout(cfg.backendUrl + "/api/projects/" + encodeURIComponent(cfg.projectId) + "/config")
     if (r.ok) {
@@ -444,6 +449,20 @@ async function mount() {
       }
       if (modalConfig.rightClickMode && ['full', 'reportOnly', 'off'].includes(modalConfig.rightClickMode)) {
         rightClickMode = modalConfig.rightClickMode
+      }
+      // PX4 #411/#425: per-project enhanced-composer settings. Validated + clamped so a malformed config can
+      // never break the composer; unknown issue-type values are dropped and an empty list falls back to the
+      // classic Bug/Feature toggle.
+      const composer = (modalConfig && typeof modalConfig.composer === 'object' && modalConfig.composer) || null
+      if (composer) {
+        composerShowTitle = composer.title === true || composer.showTitleField === true
+        composerFileAttach = composer.fileAttach === true || composer.allowFileAttachments === true
+        if (Array.isArray(composer.issueTypes) && composer.issueTypes.length) {
+          const cleaned = composer.issueTypes
+            .filter((t: any) => t && typeof t.value === 'string' && ['bug', 'feature', 'task', 'query'].includes(t.value))
+            .map((t: any) => ({ value: t.value, label: String(t.label || t.value).slice(0, 24), mappingLabel: t.mappingLabel ? String(t.mappingLabel).slice(0, 32) : undefined }))
+          if (cleaned.length) composerIssueTypes = cleaned
+        }
       }
       // Passive client-error auto-ticketing (BugHerd sub-project A): only mount the error reporter
       // when the project has explicitly opted in via config. Never throws — a failed/absent config
@@ -804,6 +823,10 @@ async function mount() {
         } catch { return null }
       },
       requireEmail,
+      // PX4 #411/#425: enhanced-composer opts from the project config (all default off → classic composer).
+      showTitleField: composerShowTitle,
+      allowFileAttachments: composerFileAttach,
+      issueTypes: composerIssueTypes,
       // Pre-compress each screenshot as soon as it's captured (runs while the user types their
       // description). By submit time the Promise is settled → zero compression delay before upload.
       compressImage: compressScreenshot,
@@ -825,7 +848,9 @@ async function mount() {
         }
         const result = await submitFeedback(
           { backendUrl: cfg.backendUrl, projectId: cfg.projectId, firstParty, token: getToken() },
-          { type: p.type as "bug" | "feature", description, pageUrl: location.href, referrer: document.referrer || "", screenshots: p.screenshots,
+          // PX4 #411: forward the precise kind (Task/Query fall back to p.type=bug for legacy consumers, but
+          // p.kind carries the real value) so the server's report_type + connector issue-type mapping are right.
+          { type: (p.kind ?? p.type), title: p.title, files: p.files, description, pageUrl: location.href, referrer: document.referrer || "", screenshots: p.screenshots,
             context: buildWidgetContext(), replayEvents: replay.snapshot(), annotations: p.annotations,
             // Forward the gate's required email → server reporter_email. Without this, an "email"-gated
             // project rejects the submit with 400. On the default anonymous gate this is undefined (the
@@ -1451,7 +1476,7 @@ async function mount() {
 
 export async function submitFeedback(
   cfg: { backendUrl: string; projectId: string; firstParty: boolean; token: string },
-  payload: { type: "bug" | "feature"; description: string; pageUrl: string; referrer?: string; screenshots: string[]; context?: ReportContext; replayEvents?: unknown[]; annotations?: any; reporterEmail?: string; turnstileToken?: string },
+  payload: { type: string; title?: string; description: string; pageUrl: string; referrer?: string; screenshots: string[]; files?: Array<{ name: string; type: string; size: number; dataUrl: string }>; context?: ReportContext; replayEvents?: unknown[]; annotations?: any; reporterEmail?: string; turnstileToken?: string },
   // Optional progress callback: called with 0–90 during the upload phase, leaving the final 10%
   // for server-side processing. When provided, the upload uses XMLHttpRequest instead of fetch so
   // the browser exposes real upload progress events. Omitting it (e.g. extension path) keeps the
@@ -1467,7 +1492,11 @@ export async function submitFeedback(
   // full image and simply yields no speed-up). Generated from the compressed source to reuse its decode.
   const screenshotThumbs = await Promise.all(screenshots.map((s) => buildThumbnail(s)))
   const fd = buildFeedbackForm({
+    // PX4 #411: `type` carries the precise kind (bug/feature/task/query); the server maps it to report_type
+    // and resolveIssueType picks the tracker issue type. Legacy callers still pass bug/feature unchanged.
     type: payload.type,
+    // PX4 #411: explicit Title (when the composer had a Title field). The server prefers it over auto-title.
+    title: payload.title,
     // JTBD 1.10: a screenshot-only report carries no typed prose — send an EMPTY description (not a bare
     // "[bug] " prefix) so the server takes the evidence-only branch and the AI drafts the title. Only
     // prefix the type tag when the reporter actually typed something.
@@ -1477,6 +1506,8 @@ export async function submitFeedback(
     projectId: cfg.projectId,
     screenshots,
     screenshotThumbs,
+    // PX4 #425: non-image file attachments carried through as their own multipart field.
+    files: payload.files,
     context: payload.context,
     replayEvents: payload.replayEvents,
     // KLAVITYKLA-217: forward the full per-image annotation map so markup on every screenshot reaches

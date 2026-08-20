@@ -281,6 +281,40 @@ describe('identity + metadata → /api/feedback FormData pipeline', () => {
   })
 })
 
+// ── PX4 #411/#425: Title + non-image file attachments in the /api/feedback FormData ──
+describe('PX4 buildFeedbackForm — title + files', () => {
+  it('sets the "title" field when a title is provided, and omits it otherwise', () => {
+    const withTitle = buildFeedbackForm({
+      title: 'Coupon does nothing on mobile',
+      description: '[task] add coupon test',
+      pageUrl: 'https://app.example.com/cart', projectId: 'p1', screenshots: [],
+    })
+    expect(withTitle.get('title')).toBe('Coupon does nothing on mobile')
+    const noTitle = buildFeedbackForm({ description: '[bug] x', pageUrl: 'https://app.example.com/', projectId: 'p1', screenshots: [] })
+    expect(noTitle.get('title')).toBeNull()
+  })
+
+  it('appends non-image files under the "files" field, preserving filename + MIME', () => {
+    const pdf = 'data:application/pdf;base64,' + btoa('%PDF-1.4 fake')
+    const log = 'data:text/plain;base64,' + btoa('ERROR boom')
+    const fd = buildFeedbackForm({
+      description: '[bug] see attached', pageUrl: 'https://app.example.com/', projectId: 'p1', screenshots: [],
+      files: [{ name: 'invoice.pdf', type: 'application/pdf', dataUrl: pdf }, { name: 'app.log', type: 'text/plain', dataUrl: log }],
+    })
+    const files = fd.getAll('files') as File[]
+    expect(files.length).toBe(2)
+    expect(files[0].name).toBe('invoice.pdf')
+    expect(files[0].type).toBe('application/pdf')
+    expect(files[1].name).toBe('app.log')
+    expect(files[1].type).toBe('text/plain')
+  })
+
+  it('omits the "files" field entirely when no files are attached (back-compat)', () => {
+    const fd = buildFeedbackForm({ description: '[bug] x', pageUrl: 'https://app.example.com/', projectId: 'p1', screenshots: [] })
+    expect(fd.getAll('files').length).toBe(0)
+  })
+})
+
 // ── 6. metadata size-caps (client-side coerceStrings contract) ────────────────
 //
 // widget.ts coerceStrings caps key length to 64 chars and value length to 1000 chars

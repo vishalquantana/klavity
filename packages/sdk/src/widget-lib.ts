@@ -163,7 +163,7 @@ export async function buildThumbnail(dataUrl: string, opts: { maxWidth?: number;
   }
 }
 
-export function buildFeedbackForm(input: { type?: string; description: string; pageUrl: string; referrer?: string; projectId: string; screenshots: string[]; screenshotThumbs?: string[]; context?: ReportContext; replayEvents?: unknown[]; annotations?: any }): FormData {
+export function buildFeedbackForm(input: { type?: string; title?: string; description: string; pageUrl: string; referrer?: string; projectId: string; screenshots: string[]; screenshotThumbs?: string[]; files?: Array<{ name: string; type?: string; dataUrl: string }>; context?: ReportContext; replayEvents?: unknown[]; annotations?: any }): FormData {
   // Use the shared serializer (packages/core/integrations/backend) for all common fields so that
   // extension + widget stay in parity by construction — a new shared field added in buildFeedbackFormData
   // appears in BOTH paths automatically (prevents drift like KLAVITYKLA-208).
@@ -176,9 +176,19 @@ export function buildFeedbackForm(input: { type?: string; description: string; p
     replayEvents: input.replayEvents,
   })
   // ── Widget-only fields ────────────────────────────────────────────────────
+  // PX4 #411: explicit one-line Title — the server prefers this over the auto-title when present, and the
+  // connector uses it verbatim as the external issue summary. Omitted when the composer had no Title field.
+  if (input.title) fd.set("title", input.title)
   // Source attribution: where the visitor came from (document.referrer of the embed page), when present.
   // Extension has no page referrer concept, so this stays widget-only by design.
   if (input.referrer) fd.set("referrer", input.referrer)
+  // PX4 #425: non-image file attachments (PDF, .log, .har, ...). Appended as their own multipart field with
+  // the real filename + content type preserved, so the server can store them and connectors attach natively.
+  if (input.files) {
+    for (const f of input.files) {
+      try { fd.append("files", dataUrlToBlob(f.dataUrl), f.name) } catch { /* skip a malformed data URL */ }
+    }
+  }
   // Screenshots: widget receives data URLs (html-to-image), so we convert inline.
   // Extension path fetches blobs via fetch(dataUrl) in submitReport instead.
   for (const s of input.screenshots) fd.append("screenshots", dataUrlToBlob(s), "screenshot.png")
