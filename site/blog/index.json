@@ -411,5 +411,12 @@
     "excerpt": "Shift-left testing moves quality checks earlier in development so bugs surface at the keyboard, not in production. Here's how to do it in practice.",
     "category": "Insights",
     "date": "2026-08-19"
+  },
+  {
+    "slug": "how-to-prioritize-bugs-with-a-scoring-model",
+    "title": "How to Prioritize Bugs With a Scoring Model, Step by Step",
+    "excerpt": "Prioritizing bugs by gut invites the loudest voice to win. A scoring model ranks them on reach, impact, confidence, and effort so the right fix rises first.",
+    "category": "Guides",
+    "date": "2026-08-20"
   }
 ]

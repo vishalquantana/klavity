@@ -1,0 +1,111 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to Prioritize Bugs With a Scoring Model, Step by Step · Klavity</title>
+<meta name="description" content="Prioritizing bugs by gut invites the loudest voice to win. A scoring model ranks them on reach, impact, confidence, and effort so the right fix rises first.">
+<link rel="canonical" href="https://klavity.in/blog/how-to-prioritize-bugs-with-a-scoring-model">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="How to Prioritize Bugs With a Scoring Model, Step by Step"><meta property="og:description" content="Prioritizing bugs by gut invites the loudest voice to win. A scoring model ranks them on reach, impact, confidence, and effort so the right fix rises first.">
+<meta property="og:url" content="https://klavity.in/blog/how-to-prioritize-bugs-with-a-scoring-model"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="How to Prioritize Bugs With a Scoring Model, Step by Step"><meta name="twitter:description" content="Prioritizing bugs by gut invites the loudest voice to win. A scoring model ranks them on reach, impact, confidence, and effort so the right fix rises first."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"How to Prioritize Bugs With a Scoring Model, Step by Step","description":"Prioritizing bugs by gut invites the loudest voice to win. A scoring model ranks them on reach, impact, confidence, and effort so the right fix rises first.","datePublished":"2026-08-20","dateModified":"2026-08-20","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/how-to-prioritize-bugs-with-a-scoring-model","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Prioritize Bugs With a Scoring Model, Step by Step","item":"https://klavity.in/blog/how-to-prioritize-bugs-with-a-scoring-model"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/how-to-prioritize-bugs-with-a-scoring-model"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is the difference between severity and a bug priority score?","acceptedAnswer":{"@type":"Answer","text":"Severity measures how badly the bug breaks the product in isolation. A priority score combines severity with how many users hit it, how confident you are in the estimate, and how much effort the fix takes. A severe bug that affects one user on a deprecated path can score lower than a moderate bug on your signup flow."}},{"@type":"Question","name":"Which scoring model should I use for bugs, RICE or WSJF?","acceptedAnswer":{"@type":"Answer","text":"Use RICE (Reach x Impact x Confidence / Effort) when you want a simple, defensible ranking that most teams can adopt in a day. Use WSJF (cost of delay / job size) when time-criticality matters heavily, such as security or compliance deadlines. Both produce a number you divide by effort, so pick the one whose inputs your team can estimate honestly."}},{"@type":"Question","name":"How often should bug scores be recalculated?","acceptedAnswer":{"@type":"Answer","text":"Re-score at each triage cycle, weekly for active backlogs. Reach and impact drift as usage changes, and confidence rises once a bug is reproduced. A score set months ago and never revisited is usually the reason a stale bug outranks a fresh, more damaging one."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-08-20</div>
+    <h1>How to Prioritize Bugs With a Scoring Model, Step by Step</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>Prioritize bugs with a scoring model instead of a gut call: score each bug on reach, impact, confidence, and effort (the RICE method adapted for bugs), then rank by the resulting number. It turns 'this feels urgent' into a comparable score every stakeholder can see, so the highest-value fix rises to the top instead of the loudest request.</div>
+    <div class="prose"><p>Prioritize bugs with a scoring model rather than a gut call: score each bug on <strong>reach</strong> (how many users hit it), <strong>impact</strong> (how badly it hurts them), <strong>confidence</strong> (how sure you are of those estimates), and <strong>effort</strong> (how much work the fix is), then rank by the resulting number. This is the RICE method &mdash; popularized for feature prioritization &mdash; adapted for bugs. It converts "this feels urgent" into a comparable score every stakeholder can see, so the highest-value fix rises to the top instead of the loudest request.</p>
+
+<h2>Why severity alone can't prioritize a backlog</h2>
+<p>Severity answers one question: how badly does this bug break the product? That's necessary but not sufficient. A crash on a settings page almost nobody visits is high-severity and low-priority. A layout glitch that blocks the "Buy" button on mobile is moderate-severity and top-priority. Ranking by severity alone puts the wrong bug first.</p>
+<p>A scoring model fixes this by multiplying severity by the other factors that actually decide business value &mdash; how many people are affected, how confident your estimates are, and what the fix costs. If you still conflate the two dimensions, start with the difference between <a href="/blog/severity-vs-priority-how-to-classify-a-bug">severity and priority</a>, then layer a score on top.</p>
+
+<h2>How to score a bug: the RICE formula adapted for bugs</h2>
+<p>RICE gives you a single comparable number per bug:</p>
+<p><strong>Score = (Reach &times; Impact &times; Confidence) &divide; Effort</strong></p>
+<ol>
+<li><strong>Reach.</strong> Estimate how many users or sessions hit the bug in a fixed window &mdash; say, per month. Use real numbers where you have them: affected accounts, error counts, or the share of traffic on the broken flow. A checkout bug reaches far more people than one on an admin export screen.</li>
+<li><strong>Impact.</strong> Rate how much the bug hurts each affected user on a fixed scale (for example 3 = blocks the task, 2 = painful workaround, 1 = minor annoyance). This is your severity, expressed as a number you can multiply.</li>
+<li><strong>Confidence.</strong> Discount the score by how sure you are. Use a percentage: 100% when the bug is reproduced with evidence, 50% when reach is a guess, lower when it's a single unconfirmed report. Confidence is what stops a loud anecdote from dominating a ranking.</li>
+<li><strong>Effort.</strong> Estimate the fix cost in person-days (or story points). Dividing by effort is what makes a one-hour fix for a common bug outrank a two-week rewrite for a rare one.</li>
+</ol>
+<p>Multiply the top three, divide by effort, and sort descending. The bugs at the top are the ones that return the most user value per unit of work.</p>
+
+<h2>How to set consistent scoring scales</h2>
+<p>A scoring model only works if two people scoring the same bug land close to the same number. That requires <em>fixed, written scales</em> &mdash; not vibes.</p>
+<ol>
+<li><strong>Write the scale down.</strong> Define each impact level with a concrete example: "3 = user cannot complete the core task; 2 = task possible but with a manual workaround; 1 = cosmetic." Ambiguous scales produce inconsistent scores.</li>
+<li><strong>Anchor reach to data, not adjectives.</strong> "A lot of users" is not a number. Tie reach to affected sessions, error volume, or percentage of traffic on the affected route so it's auditable later.</li>
+<li><strong>Cap the range.</strong> Keep each factor on a small bounded scale (1&ndash;3 or 1&ndash;5). Unbounded numbers let one enthusiastic estimate swamp everything else.</li>
+<li><strong>Calibrate on a few known bugs.</strong> Score five bugs everyone already agrees on, compare, and adjust the scale definitions until the ranking matches team intuition. Do this once and you'll trust the model for the rest.</li>
+</ol>
+
+<h2>How to prioritize with WSJF when deadlines dominate</h2>
+<p>RICE weights broad reach heavily. When time-criticality is the deciding factor &mdash; a security bug with a disclosure deadline, a compliance fix, a regression blocking a launch &mdash; Weighted Shortest Job First (WSJF) fits better:</p>
+<p><strong>Score = Cost of Delay &divide; Job Size</strong></p>
+<p>Cost of delay sums business value, time-criticality, and risk-or-opportunity reduction; job size is your effort estimate. Because both models divide value by effort, you can run RICE as your default and switch a bug to WSJF only when a hard deadline changes the calculus. Don't mix the two in one ranked list &mdash; the numbers aren't comparable.</p>
+
+<h2>How to keep bug scores honest over time</h2>
+<p>The most common failure isn't a bad formula &mdash; it's a stale one. A score is a snapshot of what you knew when you set it.</p>
+<ol>
+<li><strong>Re-score at every triage cycle.</strong> Reach and impact drift as usage shifts and features ship. A bug on a page you've since deprecated should fall; a bug on a newly popular flow should climb.</li>
+<li><strong>Raise confidence when you reproduce.</strong> An unconfirmed report might sit at 40% confidence. Once it's reproduced with a screenshot, console log, and network trace, push it toward 100% &mdash; and watch it jump the queue on merit, not volume.</li>
+<li><strong>Log the inputs, not just the score.</strong> Store the reach, impact, confidence, and effort numbers on the ticket. A bare score can't be challenged; the inputs can, which keeps the model trusted.</li>
+</ol>
+<p>Confidence is where good evidence pays off directly. The faster a report is reproduced with real state attached, the sooner its score reflects reality. Capturing that evidence at report time &mdash; the steps, console, network, and environment in one click &mdash; is exactly what <a href="/snap">Klavity Snap</a> is built to do, which is why reproduced, high-confidence bugs stop losing the queue to loud-but-unverified ones.</p>
+
+<h2>A worked example</h2>
+<p>Two bugs compete for the next slot:</p>
+<ul>
+<li><strong>Bug A &mdash; checkout button misaligned on iOS Safari.</strong> Reach 8,000 sessions/month, Impact 3 (blocks purchase), Confidence 100% (reproduced), Effort 0.5 days. Score = (8000 &times; 3 &times; 1.0) &divide; 0.5 = <strong>48,000</strong>.</li>
+<li><strong>Bug B &mdash; CSV export drops a column on a rarely used admin report.</strong> Reach 40 sessions/month, Impact 2, Confidence 0.8, Effort 2 days. Score = (40 &times; 2 &times; 0.8) &divide; 2 = <strong>32</strong>.</li>
+</ul>
+<p>Bug A outranks Bug B by three orders of magnitude &mdash; despite both being real, reproducible defects. Without a model, Bug B might have jumped the line simply because an internal admin filed it loudly. The score makes the trade-off explicit and defensible, and anyone can audit the four inputs that produced it.</p>
+
+<h2>Put it into practice</h2>
+<p>Start small: pick RICE, write your scales down, calibrate on five known bugs, and score your next triage batch. Store the inputs on each ticket and re-score weekly. Within a cycle or two you'll have a ranked backlog that reflects user value rather than volume &mdash; and a number you can point to when someone asks why their bug isn't first. For the upstream steps that feed the model, see how to <a href="/blog/how-to-triage-a-bug-backlog">triage a bug backlog</a> without losing your mind.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Score every bug on reach, impact, confidence, and effort, not severity alone</li><li>Fix numeric scales in writing so scores are comparable across people</li><li>Divide value by effort so cheap high-impact fixes rank above expensive ones</li><li>Re-score the backlog each triage cycle as reach, impact, and confidence shift</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What is the difference between severity and a bug priority score?</summary><p>Severity measures how badly the bug breaks the product in isolation. A priority score combines severity with how many users hit it, how confident you are in the estimate, and how much effort the fix takes. A severe bug that affects one user on a deprecated path can score lower than a moderate bug on your signup flow.</p></details><details><summary>Which scoring model should I use for bugs, RICE or WSJF?</summary><p>Use RICE (Reach x Impact x Confidence / Effort) when you want a simple, defensible ranking that most teams can adopt in a day. Use WSJF (cost of delay / job size) when time-criticality matters heavily, such as security or compliance deadlines. Both produce a number you divide by effort, so pick the one whose inputs your team can estimate honestly.</p></details><details><summary>How often should bug scores be recalculated?</summary><p>Re-score at each triage cycle, weekly for active backlogs. Reach and impact drift as usage changes, and confidence rises once a bug is reproduced. A score set months ago and never revisited is usually the reason a stale bug outranks a fresh, more damaging one.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
