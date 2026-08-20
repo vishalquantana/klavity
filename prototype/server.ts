@@ -2308,6 +2308,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     }
     // ── blog (Claude-authored, auto-published; static files under site/blog/) ──
     if (req.method === "GET" && path === "/blog") return file(SITE + "/blog/index.html")
+    // Serve the post manifest so the homepage can render the latest few posts (the /blog/<slug>
+    // route below rejects the dot in "index.json", so it needs its own explicit route).
+    if (req.method === "GET" && path === "/blog/index.json") {
+      const jf = Bun.file(SITE + "/blog/index.json")
+      if (await jf.exists()) return new Response(jf, { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "public, max-age=600" } })
+    }
     if (req.method === "GET" && path.startsWith("/blog/") && /^[a-z0-9-]+$/.test(path.slice(6))) {
       const bf = Bun.file(SITE + "/blog/" + path.slice(6) + ".html")
       if (await bf.exists()) return new Response(bf, { headers: { "content-type": "text/html; charset=utf-8" } })
