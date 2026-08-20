@@ -1,4 +1,4 @@
-import type { ReportType, Shape } from './types'
+import type { ReportType, IssueKind, ReportFileAttachment, Shape } from './types'
 import { Annotator } from './annotator'
 import { themeCss, resolveModalConfig, type ModalConfig } from './modal-theme'
 import { icon } from './icons'
@@ -154,15 +154,41 @@ export interface ModalCallbacks {
   // or dismiss the note. Widget/host-only — the extension omits it, preserving parity.
   onCheckKnown?: (description: string) => Promise<KnownIssueMatch | null>
   onSubmit: (payload: {
+    // Coarse report type kept for back-compat consumers (extension/message protocol) — always a valid
+    // ReportType. For Task/Query this is 'bug' (they are bug-like, non-feature); the precise value is `kind`.
     type: ReportType
+    // PX4 #411: the precise issue kind the reporter selected ('bug'|'feature'|'task'|'query'). Present only
+    // when the host offered the extended issueTypes chips; consumers should prefer `kind ?? type`. The
+    // widget forwards it to the server as the report_type, which drives resolveIssueType on the connector.
+    kind?: IssueKind
+    // PX4 #411: the trimmed Title input value, when the host enabled showTitleField and the user typed one.
+    // The connector uses it verbatim as the external issue summary; absent → server auto-titles as today.
+    title?: string
     description: string
     screenshots: string[]
+    // PX4 #425: non-image file attachments (PDF, .log, .har, ...) the reporter added, when the host enabled
+    // allowFileAttachments. Absent/empty when none. Screenshots keep travelling in `screenshots`.
+    files?: ReportFileAttachment[]
     annotations?: any
     // The email typed into the REQUIRED-email gate (requireEmail). The host must forward it to the
     // backend as reporter_email, otherwise an "email"-gated project rejects the submit with 400
     // "A valid email is required to submit." Undefined when no email field was shown.
     reporterEmail?: string
   }) => Promise<{ issueKey: string; issueUrl: string }>
+  // ── PX4 enhancements (all optional + additive; absent => the composer is identical to today) ──
+  // PX4 #411: show a single-line Title input at the top of the composer. Its trimmed value threads through
+  // onSubmit as `title` and the connector uses it verbatim as the external issue summary. Default false →
+  // no Title field (the server auto-titles from the description/AI draft, exactly as today).
+  showTitleField?: boolean
+  // PX4 #411: which issue-type chips to offer. Each entry renders a chip; `mappingLabel` is the small caption
+  // under the label showing where it lands in the tracker (e.g. "Jira Task"). Omit entirely (or pass an empty
+  // array) → the classic Bug/Feature toggle is rendered unchanged (full back-compat). Provide it (PX4 passes
+  // all four) to add Task/Query. The chosen value threads through onSubmit as `kind`.
+  issueTypes?: Array<{ value: IssueKind; label: string; mappingLabel?: string }>
+  // PX4 #425: allow non-image file attachments (PDF, .log, .har, .txt, ...). When true an "Attach file" button
+  // appears in the capture row; selected files show as chips below the evidence strip and thread through
+  // onSubmit as `files`. Default false → only images can be attached (upload/paste stay image-only), unchanged.
+  allowFileAttachments?: boolean
   // Optional image pre-processor called immediately when a screenshot is added (e.g. PNG→JPEG
   // compression). By submit time the promise is already resolved, so the upload starts with zero
   // compression delay. The host passes compressScreenshot here; the extension omits it (its SW
@@ -266,6 +292,14 @@ export function buildModal(
   // Upload guards (Dev 6 audit #4): cap how many images can be attached and how big each may be.
   const MAX_IMAGES = sessionMode ? 8 : 5
   const MAX_FILE_BYTES = 10 * 1024 * 1024 // 10 MB per image
+  // PX4 #425: non-image file attachments (PDF, .log, .har, ...). Kept separate from screenshots[] so the
+  // image-hero/annotator logic is untouched. Capped by count + total bytes; each file also obeys MAX_FILE_BYTES.
+  const fileAttachEnabled = !!callbacks.allowFileAttachments
+  const MAX_FILES = 5
+  const MAX_FILES_TOTAL_BYTES = 25 * 1024 * 1024 // 25 MB across all attached files
+  let attachedFiles: ReportFileAttachment[] = []
+  // PX4 #411: the extended issue-type chips, when the host provided them (else null → classic Bug/Feature toggle).
+  const issueTypeOpts = (callbacks.issueTypes && callbacks.issueTypes.length) ? callbacks.issueTypes : null
   // Structured markup per screenshot index { w, h, shapes } so the ticket can re-render a
   // toggleable/zoomable overlay instead of baking the drawing into the uploaded image.
   const annotationsByIndex: Record<number, any> = {}
@@ -293,7 +327,7 @@ export function buildModal(
     if (pickedTarget) { out.selector = pickedTarget.selector; out.selectorText = pickedTarget.text }
     return out
   }
-  let currentType = initialType
+  let currentType: IssueKind = initialType
   // Image-hero: the screenshot currently shown big + live-annotated in the hero pane. Clicking a
   // thumbnail selects it; the inline annotator mounts on it and persists shapes to annotationsByIndex.
   let activeIndex = 0
@@ -364,6 +398,27 @@ export function buildModal(
     .klavity-toggle button{flex:1;min-height:40px;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 12px;border-radius:8px;border:none;cursor:pointer;font-size:14px;font-weight:600;background:var(--kl-chip);color:var(--kl-fg);line-height:1;}
     .klavity-toggle .bug.active{background:var(--kl-accent);color:var(--kl-on-accent);}
     .klavity-toggle .feat.active{background:var(--kl-accent);color:var(--kl-on-accent);}
+    /* PX4 #411: Title field. */
+    .klavity-title-label{display:block;font-size:12px;font-weight:600;color:var(--kl-muted);margin-bottom:12px;padding-right:34px;}
+    input.klavity-title{width:100%;margin-top:5px;background:var(--kl-input-bg);color:var(--kl-fg);border:1px solid var(--kl-border);border-radius:8px;padding:9px 11px;font-size:14px;font-weight:500;box-sizing:border-box;box-shadow:0 1px 2px rgba(25,20,15,.04);}
+    input.klavity-title:focus{outline:none;border-color:var(--kl-accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--kl-accent) 18%,transparent);}
+    /* PX4 #411: issue-type chips (Bug/Feature/Task/Query) — replaces the toggle when host supplies issueTypes. */
+    .klavity-types{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;padding-right:34px;}
+    .kl-type-chip{flex:1;min-width:80px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:8px 6px;border-radius:9px;border:1px solid var(--kl-border);background:var(--kl-chip);color:var(--kl-fg);cursor:pointer;font-size:13px;font-weight:600;line-height:1.2;transition:transform .12s ease,box-shadow .12s ease,border-color .12s ease;}
+    .kl-type-chip:hover{transform:translateY(-1px);}
+    .kl-type-chip .kl-type-map{font-size:10.5px;font-weight:500;color:var(--kl-muted);}
+    .kl-type-chip.active{border-color:var(--kl-accent);background:color-mix(in srgb,var(--kl-accent) 12%,var(--kl-chip));box-shadow:0 0 0 3px color-mix(in srgb,var(--kl-accent) 16%,transparent);}
+    .kl-type-chip.active .kl-type-map{color:var(--kl-fg);}
+    .kl-type-chip:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
+    /* PX4 #425: attached non-image file chips (evidence strip). */
+    .klavity-files{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;}
+    .kl-file-chip{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:6px 8px 6px 9px;border-radius:8px;border:1px solid var(--kl-border);background:var(--kl-chip);color:var(--kl-fg);font-size:12px;}
+    .kl-file-chip .kl-file-ic{display:inline-flex;flex:none;color:var(--kl-muted);}
+    .kl-file-chip .kl-file-nm{max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;}
+    .kl-file-chip .kl-file-sz{color:var(--kl-muted);font-variant-numeric:tabular-nums;font-size:11px;}
+    .kl-file-rm{flex:none;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;border:none;border-radius:50%;background:color-mix(in srgb,var(--kl-fg) 12%,transparent);color:var(--kl-fg);cursor:pointer;padding:0;}
+    .kl-file-rm:hover{background:color-mix(in srgb,var(--kl-fg) 22%,transparent);}
+    @media (prefers-reduced-motion:reduce){.kl-type-chip{transition:none;}.kl-type-chip:hover{transform:none;}}
     .klavity-page{font-size:12px;color:var(--kl-muted);margin-bottom:12px;}
     /* JTBD 1.8 attached-proof chip: tells the reporter (and later the reviewer, in the drawer) that a
        rolling session replay will ride along with the report. Sits under the page path, above the strip. */
@@ -605,16 +660,20 @@ export function buildModal(
       <div class="klavity-strip" id="klavity-strip"></div>
     </div>
     <div class="kl-side" id="klavity-side">
-      <div class="klavity-toggle">
+      ${callbacks.showTitleField ? `<label class="klavity-title-label" for="klavity-title">Title<input type="text" class="klavity-title" id="klavity-title" maxlength="200" placeholder="One line summarising the issue"></label>` : ''}
+      ${issueTypeOpts
+        ? `<div class="klavity-types" id="klavity-types" role="radiogroup" aria-label="Issue type">${issueTypeOpts.map(t => `<button type="button" class="kl-type-chip${t.value === initialType ? ' active' : ''}" data-kind="${escHtml(t.value)}" role="radio" aria-checked="${t.value === initialType ? 'true' : 'false'}">${escHtml(t.label)}${t.mappingLabel ? `<span class="kl-type-map">${escHtml(t.mappingLabel)}</span>` : ''}</button>`).join('')}</div>`
+        : `<div class="klavity-toggle">
         <button class="bug ${initialType === 'bug' ? 'active' : ''}"><span class="kl-cap-ic">${icon('bug')}</span>Bug</button>
         <button class="feat ${initialType === 'feature' ? 'active' : ''}"><span class="kl-cap-ic">${icon('lightbulb')}</span>Feature</button>
-      </div>
+      </div>`}
       <div class="klavity-page">${icon('map-pin')} ${typeof window !== 'undefined' ? escHtml(window.location.pathname) : ''}</div>
       ${callbacks.replayState ? `<div class="klavity-proof"><span class="klavity-chip ${callbacks.replayState === 'attached' ? 'kl-chip-on' : 'kl-chip-off'}" id="klavity-replay-chip">${replayChipInner(callbacks.replayState)}</span></div>` : ''}
       <div class="klavity-actions">
         ${callbacks.onCaptureSharp ? `<button id="klavity-sharp" aria-describedby="klavity-sharp-tip"><span class="kl-cap-ic">${icon('app-window')}</span><span class="kl-sharp-label">Screen</span><span class="kl-info-badge" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></span><span id="klavity-sharp-tip" class="klavity-info-pop" role="tooltip">Screen grabs the <b>whole page — every image, pixel-perfect</b> using your browser's screen-share. Your browser will ask you to <b>share this tab</b>.</span></button>` : ''}
         <button id="klavity-full" title="Full Page — instant capture; may miss some cross-origin images"><span class="kl-cap-ic">${icon('camera')}</span><span class="kl-full-label">Full Page</span></button>
         <button id="klavity-upload"><span class="kl-cap-ic">${icon('image')}</span><span class="kl-upload-label">Upload</span></button>
+        ${fileAttachEnabled ? `<button id="klavity-attach" title="Attach a non-image file (PDF, .log, .har, ...)"><span class="kl-cap-ic">${icon('paperclip')}</span><span class="kl-attach-label">Attach file</span></button>` : ''}
         ${callbacks.onRegionCapture ? `<button id="klavity-region"><span class="kl-cap-ic">${icon('scissors')}</span><span class="kl-region-label">Region</span></button>` : ''}
         ${callbacks.onPickElement ? `<button id="klavity-pick" title="Pick the exact element that's broken"><span class="kl-cap-ic">${icon('mouse-pointer-2')}</span><span class="kl-pick-label">Pick element</span></button>` : ''}
         ${VoiceInput.isSupported() ? `<button id="klavity-voice" title="Dictate description"><span class="kl-cap-ic">${icon('mic')}<span class="kl-vdot"></span></span><span class="kl-voice-label">Voice</span><svg class="kl-vring" viewBox="0 0 32 32" aria-hidden="true"><circle class="kl-vring-bg" cx="16" cy="16" r="13" fill="none" stroke-width="2"/><circle class="kl-vring-prog" cx="16" cy="16" r="13" fill="none" stroke-width="2" stroke-dasharray="81.68" stroke-dashoffset="81.68" stroke-linecap="round" transform="rotate(-90 16 16)"/></svg></button>` : ''}
@@ -622,7 +681,9 @@ export function buildModal(
       ${callbacks.onPickElement ? `<div class="klavity-pickinfo" id="klavity-pickinfo" role="status" aria-live="polite" hidden></div>` : ''}
       <label class="klav-mask-row"><input type="checkbox" id="klavity-mask-numbers"${maskOn ? ' checked' : ''}>${icon('eye-off', { size: 13 })}<span>Mask numbers</span></label>
       <input type="file" id="klavity-file" accept="image/*,.heic,.heif" multiple style="display:none">
+      ${fileAttachEnabled ? '<input type="file" id="klavity-attach-input" multiple style="display:none">' : ''}
       <div class="klavity-counter" id="klavity-counter">0/${MAX_IMAGES} images</div>
+      ${fileAttachEnabled ? '<div class="klavity-files" id="klavity-files" hidden></div>' : ''}
       <div class="klavity-error" id="klavity-err"></div>
       <textarea class="klavity-desc" id="klavity-desc" placeholder="${initialType === 'feature' ? "Describe the feature you'd like..." : 'Describe the bug...'}"></textarea>
       <div class="klavity-desc-hint" id="klavity-desc-hint" hidden>${icon('sparkles', { size: 13 })}<span>No title needed — we'll auto-generate one for you</span></div>
@@ -902,6 +963,60 @@ export function buildModal(
     }
   }
 
+  // ── PX4 #425: non-image file attachments ─────────────────────────────────────────────────────────
+  // Render the attached-file chips (name + size + remove). Hidden when empty so the row takes no space.
+  function renderFiles() {
+    const box = shadowRoot.getElementById('klavity-files') as HTMLElement | null
+    if (!box) return
+    box.innerHTML = ''
+    box.hidden = attachedFiles.length === 0
+    attachedFiles.forEach((f, i) => {
+      const chip = document.createElement('div')
+      chip.className = 'kl-file-chip'
+      const ic = document.createElement('span')
+      ic.className = 'kl-file-ic'
+      ic.innerHTML = icon('file-text', { size: 14 })
+      const nm = document.createElement('span')
+      nm.className = 'kl-file-nm'
+      nm.textContent = f.name
+      nm.title = f.name
+      const sz = document.createElement('span')
+      sz.className = 'kl-file-sz'
+      sz.textContent = f.size < 1024 ? `${f.size} B` : f.size < 1024 * 1024 ? `${Math.round(f.size / 1024)} KB` : `${(f.size / 1024 / 1024).toFixed(1)} MB`
+      const rm = document.createElement('button')
+      rm.type = 'button'
+      rm.className = 'kl-file-rm'
+      rm.setAttribute('aria-label', `Remove ${f.name}`)
+      rm.title = 'Remove'
+      rm.innerHTML = icon('x', { size: 11 })
+      rm.addEventListener('click', () => { attachedFiles.splice(i, 1); renderFiles() })
+      chip.append(ic, nm, sz, rm)
+      box.appendChild(chip)
+    })
+    // An attached file is evidence in its own right — re-evaluate Submit (a file-only report is valid).
+    refreshSubmit()
+  }
+
+  // Ingest non-image files from the "Attach file" picker: enforce count + per-file + total-size caps, and
+  // surface a clear message on any reject. An image dropped here is redirected to the image path so users
+  // aren't penalised for picking the wrong button. Files are read as data URLs and threaded through onSubmit.
+  async function ingestAttachments(files: File[]) {
+    clearError()
+    for (const file of files) {
+      if (isImageFile(file)) { await ingestFiles([file]); continue } // route images to the screenshot path
+      if (attachedFiles.length >= MAX_FILES) { showError(`You can attach up to ${MAX_FILES} files.`); break }
+      if (file.size > MAX_FILE_BYTES) { showError(`"${file.name}" is too large — files must be under ${Math.round(MAX_FILE_BYTES / 1024 / 1024)} MB.`); continue }
+      const total = attachedFiles.reduce((n, f) => n + f.size, 0)
+      if (total + file.size > MAX_FILES_TOTAL_BYTES) { showError(`Attachments exceed the ${Math.round(MAX_FILES_TOTAL_BYTES / 1024 / 1024)} MB total limit.`); break }
+      try {
+        attachedFiles.push({ name: file.name, type: file.type || '', size: file.size, dataUrl: await fileToDataUrl(file) })
+        renderFiles()
+      } catch {
+        showError(`Couldn't add "${file.name}". Please try a different file.`)
+      }
+    }
+  }
+
   let _stopVoice: (() => void) | null = null
 
   function close() {
@@ -948,27 +1063,43 @@ export function buildModal(
   }
   document.addEventListener('paste', onPaste)
 
-  // Toggle
-  const bugBtn = modal.querySelector('.bug') as HTMLButtonElement
-  const featBtn = modal.querySelector('.feat') as HTMLButtonElement
-  // JTBD 1.10: the composer placeholder follows the Bug/Feature mode ("Describe the feature you'd like…"
-  // reads wrong for a bug and vice-versa). `desc` is declared just below; these handlers run post-mount.
+  // Toggle / issue-type chips
+  // JTBD 1.10: the composer placeholder follows the mode ("Describe the feature you'd like…" reads wrong for
+  // a bug and vice-versa). `desc` is declared just below; these handlers run post-mount.
   const applyModePlaceholder = () => {
     const el = modal.querySelector('#klavity-desc') as HTMLTextAreaElement | null
-    if (el) el.placeholder = currentType === 'feature' ? "Describe the feature you'd like..." : 'Describe the bug...'
+    if (!el) return
+    el.placeholder = currentType === 'feature' ? "Describe the feature you'd like..."
+      : currentType === 'bug' ? 'Describe the bug...'
+      : 'Describe the issue...'   // PX4 #411: Task/Query get a neutral prompt
   }
-  bugBtn.addEventListener('click', () => {
-    currentType = 'bug'
-    bugBtn.classList.add('active')
-    featBtn.classList.remove('active')
-    applyModePlaceholder()
-  })
-  featBtn.addEventListener('click', () => {
-    currentType = 'feature'
-    featBtn.classList.add('active')
-    bugBtn.classList.remove('active')
-    applyModePlaceholder()
-  })
+  if (issueTypeOpts) {
+    // PX4 #411: extended issue-type chips. Clicking one sets currentType (an IssueKind) + moves the active
+    // state. The classic .bug/.feat buttons are NOT rendered in this mode, so we skip their wiring entirely.
+    const chips = Array.from(modal.querySelectorAll('.kl-type-chip')) as HTMLButtonElement[]
+    chips.forEach(chip => {
+      chip.addEventListener('click', () => {
+        currentType = (chip.getAttribute('data-kind') || 'bug') as IssueKind
+        chips.forEach(c => { const on = c === chip; c.classList.toggle('active', on); c.setAttribute('aria-checked', on ? 'true' : 'false') })
+        applyModePlaceholder()
+      })
+    })
+  } else {
+    const bugBtn = modal.querySelector('.bug') as HTMLButtonElement
+    const featBtn = modal.querySelector('.feat') as HTMLButtonElement
+    bugBtn.addEventListener('click', () => {
+      currentType = 'bug'
+      bugBtn.classList.add('active')
+      featBtn.classList.remove('active')
+      applyModePlaceholder()
+    })
+    featBtn.addEventListener('click', () => {
+      currentType = 'feature'
+      featBtn.classList.add('active')
+      bugBtn.classList.remove('active')
+      applyModePlaceholder()
+    })
+  }
 
   // Submit
   const desc = modal.querySelector('#klavity-desc') as HTMLTextAreaElement
@@ -979,7 +1110,7 @@ export function buildModal(
   const emailValid = () => !callbacks.requireEmail || (!!remail && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(remail.value.trim()))
   // JTBD 1.10: a screenshot (or an attached replay buffer) is evidence in its own right — Submit no longer
   // requires typed prose. The server accepts an evidence-only report and the AI drafts the title post-intake.
-  const hasEvidence = () => screenshots.length > 0 || replayAttached
+  const hasEvidence = () => screenshots.length > 0 || replayAttached || attachedFiles.length > 0
   const refreshSubmit = () => {
     const noDesc = desc.value.trim() === ''
     submitBtn.disabled = (noDesc && !hasEvidence()) || !emailValid()
@@ -1133,6 +1264,12 @@ export function buildModal(
   submitBtn.addEventListener('click', async () => {
     if (busy || submitBtn.disabled) return // re-entrancy: ignore double-clicks / clicks while a capture runs
     const description = desc.value.trim()
+    // PX4 #411/#425: gather the optional Title + precise kind + non-image files. Each is only included in the
+    // payload when the host enabled the corresponding affordance, so a caller passing no new opts sends the
+    // exact same payload shape as before (full back-compat).
+    const titleInput = modal.querySelector('#klavity-title') as HTMLInputElement | null
+    const title = titleInput ? titleInput.value.trim() : ''
+    const coarseType: ReportType = currentType === 'feature' ? 'feature' : 'bug'
     lockComposer(true) // disable Submit + every capture button for the duration of the upload
     submitBtn.textContent = 'Uploading…'
     const errEl = shadowRoot.getElementById('klavity-err')!
@@ -1155,7 +1292,16 @@ export function buildModal(
       // seconds, these Promises are already settled — zero wait. Falls back to the raw dataUrl when
       // compressImage is not provided (e.g. extension path).
       const finalScreenshots = await Promise.all(screenshotCompressed)
-      const result = await callbacks.onSubmit({ type: currentType, description, screenshots: finalScreenshots, annotations: buildAnnotationsPayload(), reporterEmail: remail?.value.trim() || undefined })
+      const result = await callbacks.onSubmit({
+        type: coarseType,
+        ...(issueTypeOpts ? { kind: currentType } : {}),
+        ...(title ? { title } : {}),
+        description,
+        screenshots: finalScreenshots,
+        ...(attachedFiles.length ? { files: attachedFiles.slice() } : {}),
+        annotations: buildAnnotationsPayload(),
+        reporterEmail: remail?.value.trim() || undefined,
+      })
       finishProgress()
       if (callbacks.success) {
         // Mode-aware lead/CTA screen rendered THROUGH the existing themed modal — no auto-close;
@@ -1274,6 +1420,28 @@ export function buildModal(
       if (screenshots.length > before) setActiveCapture(uploadBtn) // at least one file was accepted
     }
   })
+
+  // PX4 #425: "Attach file" button + its own (non-image) hidden input — only rendered when the host enabled
+  // allowFileAttachments. Mirrors the Upload button's click→picker→ingest flow, routed to ingestAttachments.
+  const attachBtn = shadowRoot.getElementById('klavity-attach') as HTMLButtonElement | null
+  const attachInput = shadowRoot.getElementById('klavity-attach-input') as HTMLInputElement | null
+  if (attachBtn && attachInput) {
+    attachBtn.addEventListener('click', () => {
+      if (busy) return
+      if (attachedFiles.length >= MAX_FILES) { showError(`You can attach up to ${MAX_FILES} files.`); return }
+      attachInput.click()
+    })
+    attachInput.addEventListener('change', async (e) => {
+      const input = e.target as HTMLInputElement
+      const files = input.files ? Array.from(input.files) : []
+      input.value = '' // reset so re-selecting the SAME file fires change again
+      if (files.length) {
+        const before = attachedFiles.length
+        await ingestAttachments(files)
+        if (attachedFiles.length > before) setActiveCapture(attachBtn)
+      }
+    })
+  }
 
   // Region capture button — only rendered when the host provides onRegionCapture
   const regionBtn = shadowRoot.getElementById('klavity-region') as HTMLButtonElement | null
