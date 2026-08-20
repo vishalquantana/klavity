@@ -374,7 +374,7 @@ function showCtxMenu(x: number, y: number) {
     if (opts.hint) {
       const h = document.createElement('span')
       h.textContent = opts.hint
-      h.style.cssText = 'font-family:ui-monospace,monospace;font-size:11px;color:#a59a8c;flex-shrink:0;'
+      h.style.cssText = 'font-family:ui-monospace,monospace;font-size:11px;color:#a59a8c;flex-shrink:0;white-space:pre-line;text-align:center;line-height:1.32;'
       btn.append(h)
     }
     btn.addEventListener('mouseenter', () => { btn.style.background = 'rgba(139,92,246,.12)'; btn.style.color = '#4f46e5' })
@@ -496,7 +496,7 @@ function showCtxMenu(x: number, y: number) {
 
   const winIcon = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18M9 21V9"/></svg>`
   // Scripts can't open Chrome's native menu directly — arm the next right-click to pass through.
-  const nativeBtn = makeRow(winIcon, '#9aa0a6', 'Show browser menu', { muted: true, hint: '⇧ right-click' })
+  const nativeBtn = makeRow(winIcon, '#9aa0a6', 'Show browser menu', { muted: true, hint: '⇧ right-\nclick' })
   nativeBtn.addEventListener('click', () => {
     closeCtxMenu()
     nativeMenuPending = true
