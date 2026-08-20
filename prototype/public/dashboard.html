@@ -6020,7 +6020,7 @@ function refreshTicketLabelOptions() {
   const fbLabel = document.getElementById("fbLabel")
   if (!fbLabel) return
   const selected = _tktFilters.label
-  fbLabel.innerHTML = '<option value="">All labels</option>' + (state._labels || []).map(l => `<option value="${esc(l.id)}">${esc(l.name)}</option>`).join("")
+  fbLabel.innerHTML = '<option value="">All labels</option>' + ((state && state._labels) || []).map(l => `<option value="${esc(l.id)}">${esc(l.name)}</option>`).join("")
   fbLabel.value = selected
 }
 
@@ -6128,7 +6128,7 @@ async function fetchAndRenderTktList() {
   _tktListState.loading = true
   listEl.innerHTML = '<div class="tkt-list-empty">Loading…</div>'
 
-  const projId = state.active && state.active.id
+  const projId = state && state.active && state.active.id
   if (!projId) { listEl.innerHTML = '<div class="tkt-list-empty">No project selected.</div>'; _tktListState.loading = false; return }
 
   const sp = ticketQueryParams("list", _tktListState.page, 50)
@@ -6152,7 +6152,7 @@ async function fetchAndRenderTktBoard() {
   _tktBoardState.loading = true
   board.innerHTML = '<div class="tkt-list-empty">Loading…</div>'
 
-  const projId = state.active && state.active.id
+  const projId = state && state.active && state.active.id
   if (!projId) { board.innerHTML = '<div class="tkt-list-empty">No project selected.</div>'; _tktBoardState.loading = false; return }
 
   const sp = ticketQueryParams("board", 1, 200)
