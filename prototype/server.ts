@@ -2307,7 +2307,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       }
     }
     // ── blog (Claude-authored, auto-published; static files under site/blog/) ──
-    if (req.method === "GET" && path === "/blog") return file(SITE + "/blog/index.html")
+    // Routed through htmlPage() (same as the other marketing pages) so __POSTHOG_KEY__
+    // substitution applies to the blog index and every post.
+    if (req.method === "GET" && path === "/blog") return htmlPage(SITE + "/blog/index.html")
     // Serve the post manifest so the homepage can render the latest few posts (the /blog/<slug>
     // route below rejects the dot in "index.json", so it needs its own explicit route).
     if (req.method === "GET" && path === "/blog/index.json") {
@@ -2316,7 +2318,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     }
     if (req.method === "GET" && path.startsWith("/blog/") && /^[a-z0-9-]+$/.test(path.slice(6))) {
       const bf = Bun.file(SITE + "/blog/" + path.slice(6) + ".html")
-      if (await bf.exists()) return new Response(bf, { headers: { "content-type": "text/html; charset=utf-8" } })
+      if (await bf.exists()) return htmlPage(SITE + "/blog/" + path.slice(6) + ".html")
     }
     if (req.method === "GET" && path === "/kit.css") return new Response(Bun.file(SITE + "/kit.css"), { headers: { "content-type": "text/css; charset=utf-8" } })
     if (req.method === "GET" && path === "/kit.js") return new Response(Bun.file(SITE + "/kit.js"), { headers: { "content-type": "text/javascript; charset=utf-8" } })
