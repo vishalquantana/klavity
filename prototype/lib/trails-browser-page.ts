@@ -248,6 +248,16 @@ export interface BrowserPage {
    * mocks (idempotent: unroutes old handlers then installs fresh ones). No-op when mocks is empty.
    */
   interceptNetwork(mocks: NetworkMock[]): Promise<void>
+  /**
+   * SSRF hardening for headless previews (KLAVITYKLA-405 / QA#1). The browser follows HTTP 3xx
+   * redirects itself, so validating only the initial URL leaves a redirect-to-internal hole: a
+   * public URL that 302s to 169.254.169.254 / 127.0.0.1 / a private host would be fetched and its
+   * content rendered into the returned screenshot. Install this BEFORE goto() to re-validate EVERY
+   * navigation request (the initial load AND each redirect hop) against `isAllowed`; a hop that
+   * fails the guard is aborted so no internal content is ever fetched or returned. Non-navigation
+   * sub-resource requests are left untouched (kept cheap — no per-asset DNS lookup).
+   */
+  guardNavigations(isAllowed: (url: string) => boolean | Promise<boolean>): Promise<void>
 }
 export interface BrowserHandle {
   newPage(viewport?: TrailViewport | null): Promise<BrowserPage>
@@ -343,6 +353,18 @@ class PlaywrightPage implements BrowserPage {
         return
       }
       route.continue().catch(() => {})
+    })
+  }
+  async guardNavigations(isAllowed: (url: string) => boolean | Promise<boolean>): Promise<void> {
+    await this.page.route("**/*", async (route) => {
+      const req = route.request()
+      // Only guard top-level/frame NAVIGATIONS (initial doc + each redirect hop). Playwright invokes
+      // the route handler for the redirected request too, so a 3xx into an internal host is caught here.
+      if (!req.isNavigationRequest()) { await route.continue().catch(() => {}); return }
+      let ok = false
+      try { ok = await isAllowed(req.url()) } catch { ok = false }
+      if (ok) await route.continue().catch(() => {})
+      else await route.abort("blockedbyclient").catch(() => {})
     })
   }
 }
@@ -460,6 +482,18 @@ class PuppeteerPage implements BrowserPage {
         return
       }
       req.continue().catch(() => {})
+    })
+  }
+  async guardNavigations(isAllowed: (url: string) => boolean | Promise<boolean>): Promise<void> {
+    await this.page.setRequestInterception(true)
+    // Note: this shares the request-interception channel with interceptNetwork(); the headless preview
+    // path (sim-preview) never installs both, so there is no double-handling here.
+    this.page.on("request", async (req: any) => {
+      if (typeof req.isNavigationRequest === "function" && !req.isNavigationRequest()) { req.continue().catch(() => {}); return }
+      let ok = false
+      try { ok = await isAllowed(req.url()) } catch { ok = false }
+      if (ok) req.continue().catch(() => {})
+      else req.abort().catch(() => {})
     })
   }
 }

@@ -101,6 +101,7 @@ function makeStuckPage(opts: {
     assertElementCount: async () => {},
     waitMs: async () => {},
     interceptNetwork: async () => {},
+    guardNavigations: async () => {},
   } as any
   return page
 }
