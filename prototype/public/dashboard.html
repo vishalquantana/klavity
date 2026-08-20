@@ -7490,7 +7490,7 @@ function renderConnectorFields(type, editConfig) {
 // Klavity's fixed bug-kind and ticket-stage keys, in the same order the meta endpoint returns
 // row objects for. Kept in one place so collectConnMaps() can bucket <select> values without
 // re-deriving them from the loaded rows.
-const CONN_MAP_KIND_KEYS = ["bug", "feature"]
+const CONN_MAP_KIND_KEYS = ["bug", "feature", "task", "query"]
 const CONN_MAP_STATUS_KEYS = ["new", "open", "in_progress", "done", "dismissed"]
 
 // Client mirror of prototype/lib/connectors/resolve-issue-type.ts's parseJsonMap — issue_type_map

@@ -999,9 +999,15 @@ export async function applySchema(c: Client) {
     ["source",                "TEXT"],
     // KLA-175: AI-suggested label IDs (JSON array of label IDs), stored on capture for ghost-chip display.
     ["suggested_label_ids_json", "TEXT"],
-    // Connector field mapping task 1: persist the report kind ("bug" | "feature") chosen at submit
-    // so exports can pick a Jira issue type (or similar) per kind. Null on older rows — back-compat.
+    // Connector field mapping task 1: persist the report kind ("bug" | "feature" | "task" | "query") chosen
+    // at submit so exports can pick a Jira issue type (or similar) per kind. Null on older rows — back-compat.
     ["report_type",            "TEXT"],
+    // PX4 #411: explicit one-line issue Title (composer Title field). Preferred over the auto-title
+    // (observation first line) by feedbackToTicketPayload. Null on older rows / when no Title was typed.
+    ["title",                  "TEXT"],
+    // PX4 #425: non-image file attachments (PDF, .log, .har, ...) as a JSON array of
+    // { key, filename, contentType, size } S3 descriptors. Null/absent when the report had no files.
+    ["attachments_json",       "TEXT"],
   ]
   for (const [col, def] of feedbackAlters) {
     if (needCol("feedback", col)) {
@@ -2899,7 +2905,9 @@ export type FeedbackInsert = {
   annotations?: any    // structured markup: { w, h, shapes:Shape[], region?, selector? } — re-rendered as the ticket overlay
   source?: string | null  // KLA-173: 'manual' | 'widget' | null (null → derived from sim_id at read time)
   signature?: string | null  // BugHerd sub-project A: client-error fingerprint for dedup via findFeedbackBySignature
-  reportType?: "bug" | "feature" | null  // connector field mapping task 1: kind chosen at submit
+  reportType?: "bug" | "feature" | "task" | "query" | null  // connector field mapping / PX4 #411: kind chosen at submit
+  title?: string | null      // PX4 #411: explicit one-line issue Title (preferred over auto-title on export)
+  attachments?: Array<{ key: string; filename: string; contentType: string; size: number }> | null  // PX4 #425: non-image files
 }
 
 // Triage gate: new feedback is "new" (needs triage) unless it's a high-priority
@@ -2916,8 +2924,8 @@ export async function insertFeedback(f: FeedbackInsert): Promise<string> {
   await db!.execute({
     sql: `INSERT INTO feedback (id,project_id,sim_id,actor_email,url_host,url_path,source_referrer,observation,sentiment,priority,
           screenshot_id,suggested_bug_json,cited_trait_ids_json,source_quote,source_transcript_id,source_date,
-          plane_issue_key,plane_issue_url,issue_key,recurrence_count,recurrence_dates_json,last_seen_at,client_context_json,annotations_json,source,signature,report_type,created_at,status)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          plane_issue_key,plane_issue_url,issue_key,recurrence_count,recurrence_dates_json,last_seen_at,client_context_json,annotations_json,source,signature,report_type,title,attachments_json,created_at,status)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [id, f.projectId, f.simId ?? null, f.actorEmail ?? null, f.urlHost ?? null, f.urlPath ?? null, f.sourceReferrer ?? null,
            f.observation ?? null, f.sentiment ?? null, f.priority ?? null, f.screenshotId ?? null,
            f.suggestedBug != null ? JSON.stringify(f.suggestedBug) : null,
@@ -2927,7 +2935,9 @@ export async function insertFeedback(f: FeedbackInsert): Promise<string> {
            f.issueKey ?? null, 1, JSON.stringify([now]), now,
            f.clientContext != null ? JSON.stringify(f.clientContext) : null,
            f.annotations != null ? JSON.stringify(f.annotations) : null,
-           f.source ?? null, f.signature ?? null, f.reportType ?? null, now, status],
+           f.source ?? null, f.signature ?? null, f.reportType ?? null,
+           f.title ?? null, (f.attachments && f.attachments.length) ? JSON.stringify(f.attachments) : null,
+           now, status],
   })
   // KLA-200: assign per-project sequential number immediately after insert
   await db!.execute({
@@ -4903,6 +4913,10 @@ export async function feedbackById(projectId: string, id: string): Promise<any |
     // (feedbackToTicketPayload / raw-row callers reference fb.report_type directly).
     reportType: x.report_type != null ? String(x.report_type) : null,
     report_type: x.report_type != null ? String(x.report_type) : null,
+    // PX4 #411: explicit Title (feedbackToTicketPayload prefers it over the observation first-line auto-title).
+    title: x.title != null ? String(x.title) : null,
+    // PX4 #425: non-image file attachments — parsed JSON array of { key, filename, contentType, size }.
+    attachments: safeJsonParse(x.attachments_json),
   }
 }
 
