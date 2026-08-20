@@ -6,6 +6,7 @@ import { planeConnector } from "./plane"
 import { githubConnector } from "./github"
 import { jiraConnector } from "./jira"
 import { linearConnector } from "./linear"
+import type { IssueKind } from "./resolve-issue-type"
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -34,9 +35,10 @@ export type TicketPayload = {
   // Connectors that support name-based labels attach them natively (GitHub/Jira); the rest
   // surface them in the issue body (see feedbackToTicketPayload). Omitted/empty = no labels.
   labels?: string[]
-  // Connector-field-mapping: the bug/feature classification, used with resolveIssueType() to
-  // pick the right external issue type per-connector (see issue_type_map on cfg).
-  kind?: "bug" | "feature"
+  // Connector-field-mapping: the ticket classification, used with resolveIssueType() to pick the right
+  // external issue type per-connector (see issue_type_map on cfg). PX4 #411 widened this to add "task"/
+  // "query" (both default to the tracker's default issue type unless the admin maps them in issue_type_map).
+  kind?: IssueKind
 }
 
 export type ExportResult = {
@@ -215,6 +217,7 @@ export interface Connector {
 // value back out of index.ts creates a circular init order — see resolve-issue-type.ts for
 // details). Re-exported here for back-compat with existing callers/tests that import from "./index".
 export { parseJsonMap, resolveIssueType } from "./resolve-issue-type"
+export type { IssueKind } from "./resolve-issue-type"
 
 // ── Registry ───────────────────────────────────────────────────────────────────
 
