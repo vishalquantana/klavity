@@ -1035,6 +1035,16 @@ export async function applySchema(c: Client) {
   // page itself is already captured as url_host/url_path; this records the upstream traffic source so
   // we can see which external site each widget interaction/lead originated from.
   if (needCol("feedback", "source_referrer")) await c.execute("ALTER TABLE feedback ADD COLUMN source_referrer TEXT").catch((e) => console.warn("feedback.source_referrer ALTER skipped:", e?.message || e))
+  // KLAVITYKLA-440: server-side ingest capture. Every report records, SERVER-SIDE at the ingest
+  // endpoint, the client IP (report_ip — derived via the trusted-proxy X-Forwarded-For helper, never
+  // blindly trusting a client-set header) and the top-level page URL it was filed from (report_url —
+  // page_url payload field or the Referer header, query/fragment stripped). report_geo_json carries
+  // best-effort geo/company enrichment derived from the IP (ip-api.com, the same path as the signup
+  // Slack alert). Privacy: these are retained per the project's existing feedback retention policy; the
+  // IP is used only for abuse triage + this enrichment and is NOT used for cross-site tracking.
+  if (needCol("feedback", "report_ip")) await c.execute("ALTER TABLE feedback ADD COLUMN report_ip TEXT").catch((e) => console.warn("feedback.report_ip ALTER skipped:", e?.message || e))
+  if (needCol("feedback", "report_url")) await c.execute("ALTER TABLE feedback ADD COLUMN report_url TEXT").catch((e) => console.warn("feedback.report_url ALTER skipped:", e?.message || e))
+  if (needCol("feedback", "report_geo_json")) await c.execute("ALTER TABLE feedback ADD COLUMN report_geo_json TEXT").catch((e) => console.warn("feedback.report_geo_json ALTER skipped:", e?.message || e))
   // KLA-94: opt-in auto-file flag. When enabled AND a finding meets the confidence/severity threshold,
   // the walk executor automatically creates a ticket via the project's connector. Default OFF (back-compat).
   if (needCol("projects", "trails_autofile_enabled")) await c.execute("ALTER TABLE projects ADD COLUMN trails_autofile_enabled INTEGER NOT NULL DEFAULT 0").catch((e) => console.warn("projects.trails_autofile_enabled ALTER skipped:", e?.message || e))
@@ -2900,6 +2910,10 @@ export type FeedbackInsert = {
   source?: string | null  // KLA-173: 'manual' | 'widget' | null (null → derived from sim_id at read time)
   signature?: string | null  // BugHerd sub-project A: client-error fingerprint for dedup via findFeedbackBySignature
   reportType?: "bug" | "feature" | null  // connector field mapping task 1: kind chosen at submit
+  // KLAVITYKLA-440: server-side ingest capture (always set at the ingest endpoint, never client-trusted).
+  reportIp?: string | null       // client IP via the trusted-proxy XFF helper
+  reportUrl?: string | null      // top-level page the report was filed from (query/fragment stripped)
+  reportGeoJson?: string | null  // best-effort geo/company enrichment JSON (may be stamped async post-insert)
 }
 
 // Triage gate: new feedback is "new" (needs triage) unless it's a high-priority
@@ -2916,8 +2930,8 @@ export async function insertFeedback(f: FeedbackInsert): Promise<string> {
   await db!.execute({
     sql: `INSERT INTO feedback (id,project_id,sim_id,actor_email,url_host,url_path,source_referrer,observation,sentiment,priority,
           screenshot_id,suggested_bug_json,cited_trait_ids_json,source_quote,source_transcript_id,source_date,
-          plane_issue_key,plane_issue_url,issue_key,recurrence_count,recurrence_dates_json,last_seen_at,client_context_json,annotations_json,source,signature,report_type,created_at,status)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          plane_issue_key,plane_issue_url,issue_key,recurrence_count,recurrence_dates_json,last_seen_at,client_context_json,annotations_json,source,signature,report_type,report_ip,report_url,report_geo_json,created_at,status)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [id, f.projectId, f.simId ?? null, f.actorEmail ?? null, f.urlHost ?? null, f.urlPath ?? null, f.sourceReferrer ?? null,
            f.observation ?? null, f.sentiment ?? null, f.priority ?? null, f.screenshotId ?? null,
            f.suggestedBug != null ? JSON.stringify(f.suggestedBug) : null,
@@ -2927,7 +2941,8 @@ export async function insertFeedback(f: FeedbackInsert): Promise<string> {
            f.issueKey ?? null, 1, JSON.stringify([now]), now,
            f.clientContext != null ? JSON.stringify(f.clientContext) : null,
            f.annotations != null ? JSON.stringify(f.annotations) : null,
-           f.source ?? null, f.signature ?? null, f.reportType ?? null, now, status],
+           f.source ?? null, f.signature ?? null, f.reportType ?? null,
+           f.reportIp ?? null, f.reportUrl ?? null, f.reportGeoJson ?? null, now, status],
   })
   // KLA-200: assign per-project sequential number immediately after insert
   await db!.execute({
@@ -2938,6 +2953,14 @@ export async function insertFeedback(f: FeedbackInsert): Promise<string> {
     args: [f.projectId, now, now, id, id],
   }).catch((e: any) => console.warn("seq_num assign skipped:", e?.message || e))
   return id
+}
+
+// KLAVITYKLA-440: stamp the async geo/company enrichment onto a report row after insert. The IP is
+// captured synchronously at ingest; the ip-api lookup can take up to a few seconds, so it runs
+// fire-and-forget and back-fills report_geo_json here. Best-effort — a failed/empty enrichment leaves
+// the column NULL and never affects the already-persisted report.
+export async function updateFeedbackReportGeo(id: string, geoJson: string): Promise<void> {
+  await db!.execute({ sql: "UPDATE feedback SET report_geo_json=? WHERE id=?", args: [geoJson, id] })
 }
 
 // Record the downstream tracker issue on a feedback row after it is filed (tracker is optional/best-effort).
@@ -3083,7 +3106,8 @@ export type FeedbackRow = {
   urlHost: string | null; urlPath: string | null; sourceReferrer: string | null; observation: string | null
   sentiment: string | null; priority: string | null; screenshotId: string | null
   suggestedBug: any | null; sourceQuote: string | null; citedTraitIds: any | null; sourceDate: number | null
-  planeIssueKey: string | null; planeIssueUrl: string | null; annotations: any | null; createdAt: number
+  planeIssueKey: string | null; planeIssueUrl: string | null; annotations: any | null
+  reportIp: string | null; reportUrl: string | null; reportGeo: any | null; createdAt: number
 }
 function safeJsonParse(s: any): any { try { return s ? JSON.parse(String(s)) : null } catch { return null } }
 function rowToFeedback(x: any): FeedbackRow {
@@ -3105,6 +3129,10 @@ function rowToFeedback(x: any): FeedbackRow {
     planeIssueKey: x.plane_issue_key != null ? String(x.plane_issue_key) : null,
     planeIssueUrl: x.plane_issue_url != null ? String(x.plane_issue_url) : null,
     annotations: safeJsonParse(x.annotations_json),
+    // KLAVITYKLA-440: server-captured ingest provenance.
+    reportIp: x.report_ip != null ? String(x.report_ip) : null,
+    reportUrl: x.report_url != null ? String(x.report_url) : null,
+    reportGeo: safeJsonParse(x.report_geo_json),
     createdAt: Number(x.created_at),
   }
 }
@@ -4874,6 +4902,10 @@ export async function feedbackById(projectId: string, id: string): Promise<any |
     urlHost: x.url_host != null ? String(x.url_host) : null,
     urlPath: x.url_path != null ? String(x.url_path) : null,
     sourceReferrer: x.source_referrer != null ? String(x.source_referrer) : null,
+    // KLAVITYKLA-440: server-captured ingest provenance (client IP + page URL + geo/company).
+    reportIp: x.report_ip != null ? String(x.report_ip) : null,
+    reportUrl: x.report_url != null ? String(x.report_url) : null,
+    reportGeo: safeJsonParse(x.report_geo_json),
     pageUrl: x.url_path != null ? String(x.url_path) : null,
     observation: x.observation != null ? String(x.observation) : null,
     sentiment: x.sentiment != null ? String(x.sentiment) : null,

@@ -9,7 +9,7 @@ import { projectEntitlement } from "./lib/entitlement"
 import { logAudit, queryAuditLog, auditRowsToCsv, type AuditAction } from "./lib/audit-log"
 import { buildMemberExport, membersToCsv, MEMBER_EXPORT_FIELDS } from "./lib/member-export"
 import { isMaskingEnabled, maskMemberExportRow, maskDeep, maskWalkReportData } from "./lib/data-masking"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, publicReportStatus, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, EXPORT_POLICIES, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, publicReportStatus, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, EXPORT_POLICIES, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows } from "./lib/db"
 import { countFoundingAccounts } from "./lib/db"
 // KLAVITYKLA-366 — the Founding Ten spot counter. One cached source of truth behind the public
 // pricing band, the in-app ribbon, and the server-side refusal of an 11th founding checkout.
@@ -57,7 +57,7 @@ import type { TrailStatus } from "./lib/trails-types"
 import type { RecurrenceMemory } from "./lib/recurrence-memory"
 import { allow as rlAllow, record as rlRecord, count as rlCount, clear as rlClear } from "./lib/ratelimit"
 import { wrapUntrusted, UNTRUSTED_GUARD } from "./lib/prompt-safety"
-import { notifyNewSignup } from "./lib/signup-alert"
+import { notifyNewSignup, geoLookup } from "./lib/signup-alert"
 import { notifyNewReport } from "./lib/report-alert"
 import { notifyBudgetResumeRequest } from "./lib/budget-resume-alert"
 import { reportError } from "./lib/error-alert"
@@ -3421,6 +3421,21 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // kept only if it parses as an http(s) URL so a junk/oversized value never poisons the row/ticket.
         const referrerRaw = String(form.get("referrer") || "").trim().slice(0, 500)
         const sourceReferrer = /^https?:\/\//i.test(referrerRaw) ? referrerRaw : ""
+        // KLAVITYKLA-440: ALWAYS capture, SERVER-SIDE at ingest, the client IP and the top-level page the
+        // report was filed from. The IP is NEVER read from a client-controlled field — it comes from the
+        // shared clientIp() helper, which only trusts the first X-Forwarded-For hop when the socket peer is
+        // a trusted reverse proxy (Caddy on-box), and otherwise falls back to the raw peer address. The
+        // report URL prefers the payload's page_url and falls back to the Referer header; query + fragment
+        // are stripped (privacy by structure, mirroring url_host/url_path). geo/company are enriched below
+        // from the IP via the same ip-api path as the signup alert. Privacy: retained per the project's
+        // existing feedback retention policy; the IP is used only for abuse triage + this enrichment and is
+        // NOT used for cross-site tracking.
+        const reportIp = clientIp(req, server)
+        const reportUrl: string | null = (() => {
+          const raw = (pageUrl || req.headers.get("referer") || "").trim().slice(0, 2048)
+          if (!raw) return null
+          try { const u = new URL(raw); return u.origin + u.pathname } catch { return raw.split(/[?#]/)[0] || null }
+        })()
         const reporterEmail = String(form.get("reporter_email") || "").trim()
         const validReporterEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(reporterEmail) && reporterEmail.length <= 200
         // Report type from the composer's Bug/Feature toggle (packages/core submit payload `type`).
@@ -3757,6 +3772,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   // Connector field mapping task 1: persist the Bug/Feature toggle so exports can
                   // pick a Jira issue type (or similar) per kind.
                   reportType,
+                  // KLAVITYKLA-440: server-captured ingest provenance (IP + page URL). geo/company are
+                  // back-filled asynchronously below (updateFeedbackReportGeo) so the ip-api call never
+                  // slows the submission.
+                  reportIp, reportUrl,
                 })
                 if (priorFeedbackCount === 0 && feedbackId) {
                   const fbSource = anonWidgetAllowed ? "widget" : (simId ? "sim" : "extension")
@@ -3851,6 +3870,27 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   reporterEmail: validReporterEmail ? reporterEmail : null,
                   isRecurrence: !!dedupedInto, baseUrl: BASE, at: Date.now(),
                 }).catch((err: any) => console.error("report alert (non-fatal):", err?.message || err))
+              }
+
+              // KLAVITYKLA-440: async geo/company enrichment of the captured IP. Fire-and-forget, mirrors
+              // the signup-alert path (geoLookup → ip-api.com); it back-fills report_geo_json without ever
+              // blocking or failing the submission. Skips private/loopback/unknown IPs (geoLookup returns
+              // null). Runs only on a freshly inserted row (a deduped row already carries its first
+              // reporter's provenance). Stored fields: country/countryCode/city + company (org||isp).
+              if (feedbackId && !dedupedInto && reportIp && reportIp !== "unknown") {
+                const enrichId = feedbackId
+                void (async () => {
+                  const geo = await geoLookup(reportIp)
+                  if (!geo) return
+                  const compact = {
+                    country: geo.country ?? null,
+                    countryCode: geo.countryCode ?? null,
+                    city: geo.city ?? null,
+                    company: geo.org || geo.isp || null,
+                    asname: geo.asname ?? null,
+                  }
+                  await updateFeedbackReportGeo(enrichId, JSON.stringify(compact))
+                })().catch((err: any) => console.warn("[report-geo] enrichment (non-fatal):", err?.message || err))
               }
             }
           } catch (persistErr: any) {
