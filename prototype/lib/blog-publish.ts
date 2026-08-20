@@ -20,6 +20,38 @@ export interface GitResult {
 
 export type GitRunner = (args: string[], opts: { cwd: string }) => Promise<GitResult>
 
+// KLAVITYKLA analytics — verbatim copy of the <head> analytics block from site/index.html
+// (GA4 gtag.js + Microsoft Clarity + PostHog). Keep __POSTHOG_KEY__ as a placeholder: it is
+// substituted server-side by htmlPage() (see server.ts) at request time, not here.
+export const ANALYTICS_BLOCK = `<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-Q9H005LW9K"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-Q9H005LW9K');
+</script>
+<script type="text/javascript">
+    (function(c,l,a,r,i,t,y){
+        c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+        t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+        y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+    })(window, document, "clarity", "script", "xyncb9awww");
+</script>
+<script>!function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.people.toString()+" (stub)"},o="capture identify alias people.set people.set_once set_config register register_once unregister opt_out_capturing has_opted_out_capturing opt_in_capturing reset isFeatureEnabled onFeatureFlags getFeatureFlag getFeatureFlagPayload reloadFeatureFlags group updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures getActiveMatchingSurveys getSurveys onSessionId".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);posthog.init("__POSTHOG_KEY__",{api_host:"https://us.i.posthog.com",person_profiles:"identified_only"})</script>`
+
+// Ensures every post (and the index.html listing) published through this pipeline carries
+// analytics, even though posts are written verbatim from externally-authored HTML with no
+// template file to patch (see ensureAttrScript below for the same pattern). Idempotent — a
+// no-op if the block (detected via the GA4 id) is already present — and best-effort: HTML with
+// no recognizable </head> is left untouched rather than risk corrupting a post.
+export function ensureAnalyticsBlock(html: string): string {
+  if (html.includes("G-Q9H005LW9K")) return html
+  const headCloseIdx = html.indexOf("</head>")
+  if (headCloseIdx === -1) return html
+  return html.slice(0, headCloseIdx) + ANALYTICS_BLOCK + "\n" + html.slice(headCloseIdx)
+}
+
 export interface PublishResult {
   ok: true
   sha: string
@@ -69,7 +101,7 @@ export async function publishBlogPost(
 ): Promise<PublishResult> {
   const { slug, title, excerpt, category, date, html: rawHtml } = input
   const blogDir = repoRoot + "/site/blog"
-  const html = ensureAttrScript(rawHtml)
+  const html = ensureAnalyticsBlock(ensureAttrScript(rawHtml))
 
   // 1. Write the HTML file (attribution include injected if the post didn't already have one)
   await Bun.write(blogDir + "/" + slug + ".html", html)
@@ -96,6 +128,7 @@ export async function publishBlogPost(
   )
   const newCard = `\n    <a class="bcard reveal" href="/blog/${slug}"><div class="bcat">${category} · ${date}</div><h2>${title}</h2><p>${excerpt}</p></a>`
   indexHtml = indexHtml.replace('<div class="bgrid">', `<div class="bgrid">${newCard}`)
+  indexHtml = ensureAnalyticsBlock(indexHtml)
   await Bun.write(blogDir + "/index.html", indexHtml)
 
   // 4. Git: pull, stage, commit, push (retry once on non-fast-forward)
