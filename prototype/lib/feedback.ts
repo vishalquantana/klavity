@@ -179,6 +179,69 @@ export function reporterClientInfoHtml(reporter: any, ci: any): string {
   return parts.join('')
 }
 
+// ── #434 log-trim: bound + dedupe + denoise the console/network dump in the ticket BODY ──
+// The captured console + network logs can be huge and noisy (hundreds of repeated warnings,
+// analytics/beacon requests). These caps + filters trim ONLY the rendered ticket body — the FULL
+// arrays remain in storage (client_context_json / clientContext) untouched. Signal is preserved:
+// error-level console lines are prioritized when capping, and real failed requests are kept; obvious
+// noise (analytics/telemetry/beacon traffic, repeated identical lines) is dropped or collapsed into
+// an "(xN)" count so the ticket stays readable.
+export const LOG_MAX_CONSOLE_LINES = 40   // max distinct console lines rendered in the body
+export const LOG_MAX_NETWORK_LINES = 30   // max distinct network-failure lines rendered in the body
+export const LOG_MAX_LINE_LEN = 500       // per-line character cap (message / url)
+
+// URL/message fragments identifying analytics / telemetry / beacon traffic — noise in a bug ticket.
+// Matched case-insensitively against the request URL; a hit drops that network line from the body.
+const LOG_NOISE_URL_RE = /(google-analytics|googletagmanager|\/gtag\/|\/gtm\.js|doubleclick|segment\.(io|com)|posthog|mixpanel|amplitude|hotjar|fullstory|heap(analytics)?\.|clarity\.ms|fbevents|facebook\.com\/tr|\/collect(\?|$|\/)|\/beacon(\?|$|\/)|sentry_key|ingest\.sentry|datadoghq|nr-data\.net|newrelic|bugsnag|intercom|track\.customer)/i
+
+// Dedupe repeated identical console lines (collapsed with an "(xN)" count), drop empties, prioritize
+// error-level lines when capping (so a flood of warnings never evicts the actual error), cap the
+// distinct total, and truncate each line. Returns rendered plain-text strings + a trimmed count.
+export function trimConsoleLines(errors: any[]): { lines: string[]; omitted: number } {
+  const seen = new Map<string, { text: string; count: number; isError: boolean }>()
+  const order: string[] = []
+  for (const e of Array.isArray(errors) ? errors : []) {
+    const level = ['log', 'info', 'warn', 'error'].includes(e?.level) ? e.level : 'error'
+    const msg = capStr(e?.message ?? '', LOG_MAX_LINE_LEN).trim()
+    if (!msg) continue
+    const key = `${level}::${msg}`
+    const hit = seen.get(key)
+    if (hit) { hit.count++; continue }
+    seen.set(key, { text: `[${level}] ${msg}`, count: 1, isError: level === 'error' })
+    order.push(key)
+  }
+  // Stable sort (V8/Bun): errors float to the front, relative order otherwise preserved.
+  const uniq = order.map((k) => seen.get(k)!)
+  uniq.sort((a, b) => (a.isError ? 0 : 1) - (b.isError ? 0 : 1))
+  const kept = uniq.slice(0, LOG_MAX_CONSOLE_LINES)
+  const omitted = uniq.length - kept.length
+  return { lines: kept.map((d) => (d.count > 1 ? `${d.text} (x${d.count})` : d.text)), omitted }
+}
+
+// Drop analytics/beacon noise, dedupe identical method+url+status (collapsed with "(xN)"), cap the
+// distinct total, and truncate each line. Returns rendered plain-text strings + trimmed + dropped counts.
+export function trimNetworkLines(fails: any[]): { lines: string[]; omitted: number; dropped: number } {
+  const seen = new Map<string, { text: string; count: number }>()
+  const order: string[] = []
+  let dropped = 0
+  for (const n of Array.isArray(fails) ? fails : []) {
+    const url = capStr(n?.url ?? '', LOG_MAX_LINE_LEN)
+    if (LOG_NOISE_URL_RE.test(url)) { dropped++; continue }
+    const method = String(n?.method || 'GET')
+    const status = String(n?.status ?? 0)
+    const dur = n?.durationMs != null ? ` (${n.durationMs}ms)` : ''
+    const key = `${method}::${url}::${status}`
+    const hit = seen.get(key)
+    if (hit) { hit.count++; continue }
+    seen.set(key, { text: `${method} ${url} → ${status}${dur}`, count: 1 })
+    order.push(key)
+  }
+  const uniq = order.map((k) => seen.get(k)!)
+  const kept = uniq.slice(0, LOG_MAX_NETWORK_LINES)
+  const omitted = uniq.length - kept.length
+  return { lines: kept.map((d) => (d.count > 1 ? `${d.text} (x${d.count})` : d.text)), omitted, dropped }
+}
+
 // Render the captured context as an HTML block appended to the issue body (escaped, safe).
 export function clientContextHtml(ctx: any, opts: { skipIdentity?: boolean } = {}): string {
   if (!ctx) return ''
@@ -197,14 +260,21 @@ export function clientContextHtml(ctx: any, opts: { skipIdentity?: boolean } = {
     parts.push(`<p><strong>User / metadata:</strong></p><ul>${rows}</ul>`)
   }
   if (Array.isArray(ctx.consoleErrors) && ctx.consoleErrors.length) {
-    const rows = ctx.consoleErrors
-      .map((e: any) => `<li>[${escapeHtml(String(e.level || 'error'))}] ${escapeHtml(capStr(e.message))}</li>`).join('')
-    parts.push(`<p><strong>Console (${ctx.consoleErrors.length}):</strong></p><ul>${rows}</ul>`)
+    // #434: bounded + deduped + errors-prioritized rendering (full array stays in storage).
+    const { lines: cl, omitted } = trimConsoleLines(ctx.consoleErrors)
+    const rows = cl.map((l) => `<li>${escapeHtml(l)}</li>`).join('')
+    const more = omitted > 0 ? `<li>&hellip; ${omitted} more line(s) trimmed</li>` : ''
+    parts.push(`<p><strong>Console (${ctx.consoleErrors.length}):</strong></p><ul>${rows}${more}</ul>`)
   }
   if (Array.isArray(ctx.networkFailures) && ctx.networkFailures.length) {
-    const rows = ctx.networkFailures
-      .map((n: any) => `<li>${escapeHtml(String(n.method || 'GET'))} ${escapeHtml(capStr(n.url, 1000))} → ${escapeHtml(String(n.status))}${n.durationMs != null ? ` (${escapeHtml(String(n.durationMs))}ms)` : ''}</li>`).join('')
-    parts.push(`<p><strong>Network (${ctx.networkFailures.length}):</strong></p><ul>${rows}</ul>`)
+    // #434: drop analytics/beacon noise, dedupe, cap — keep the real failed requests.
+    const { lines: nl, omitted, dropped } = trimNetworkLines(ctx.networkFailures)
+    const rows = nl.map((l) => `<li>${escapeHtml(l)}</li>`).join('')
+    const notes: string[] = []
+    if (omitted > 0) notes.push(`${omitted} more trimmed`)
+    if (dropped > 0) notes.push(`${dropped} analytics/beacon hidden`)
+    const more = notes.length ? `<li>&hellip; ${escapeHtml(notes.join(', '))}</li>` : ''
+    parts.push(`<p><strong>Network (${ctx.networkFailures.length}):</strong></p><ul>${rows}${more}</ul>`)
   }
   if (Array.isArray(ctx.perfEntries) && ctx.perfEntries.length) {
     const rows = ctx.perfEntries.map((p: any) => {
@@ -230,12 +300,21 @@ export function clientContextLines(ctx: any, opts: { skipIdentity?: boolean } = 
   const metaEntries = ctx.metadata ? Object.entries(ctx.metadata) : []
   for (const [k, v] of [...identityEntries, ...metaEntries]) lines.push(`${k}: ${v}`)
   if (Array.isArray(ctx.consoleErrors) && ctx.consoleErrors.length) {
+    // #434: bounded + deduped + errors-prioritized rendering (full array stays in storage).
+    const { lines: cl, omitted } = trimConsoleLines(ctx.consoleErrors)
     lines.push(`Console (${ctx.consoleErrors.length}):`)
-    for (const e of ctx.consoleErrors) lines.push(`  [${e.level || 'error'}] ${capStr(e.message)}`)
+    for (const l of cl) lines.push(`  ${l}`)
+    if (omitted > 0) lines.push(`  … ${omitted} more line(s) trimmed`)
   }
   if (Array.isArray(ctx.networkFailures) && ctx.networkFailures.length) {
+    // #434: drop analytics/beacon noise, dedupe, cap — keep the real failed requests.
+    const { lines: nl, omitted, dropped } = trimNetworkLines(ctx.networkFailures)
     lines.push(`Network (${ctx.networkFailures.length}):`)
-    for (const n of ctx.networkFailures) lines.push(`  ${n.method || 'GET'} ${capStr(n.url, 1000)} → ${n.status}${n.durationMs != null ? ` (${n.durationMs}ms)` : ''}`)
+    for (const l of nl) lines.push(`  ${l}`)
+    const notes: string[] = []
+    if (omitted > 0) notes.push(`${omitted} more trimmed`)
+    if (dropped > 0) notes.push(`${dropped} analytics/beacon hidden`)
+    if (notes.length) lines.push(`  … ${notes.join(', ')}`)
   }
   if (Array.isArray(ctx.perfEntries) && ctx.perfEntries.length) {
     lines.push(`Performance (${ctx.perfEntries.length}):`)

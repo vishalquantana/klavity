@@ -4,6 +4,7 @@ import { insightsFromTraits, type Trait, type TraitKind, type TraitStatus, type 
 import { encryptSecret, sha256hex } from "./crypto"
 import type { SanitizedAttr } from "./attr"
 import type { ParsedLine } from "./transcript-parse"
+import { sanitizeLabelRules, type LabelRule } from "./label-rules"
 
 const url = process.env.TURSO_DATABASE_URL
 const authToken = process.env.TURSO_AUTH_TOKEN
@@ -1057,6 +1058,16 @@ export async function applySchema(c: Client) {
   if (needCol("feedback", "report_ip")) await c.execute("ALTER TABLE feedback ADD COLUMN report_ip TEXT").catch((e) => console.warn("feedback.report_ip ALTER skipped:", e?.message || e))
   if (needCol("feedback", "report_url")) await c.execute("ALTER TABLE feedback ADD COLUMN report_url TEXT").catch((e) => console.warn("feedback.report_url ALTER skipped:", e?.message || e))
   if (needCol("feedback", "report_geo_json")) await c.execute("ALTER TABLE feedback ADD COLUMN report_geo_json TEXT").catch((e) => console.warn("feedback.report_geo_json ALTER skipped:", e?.message || e))
+  // KLAVITYKLA-441: workspace auto-labeling. At ingest, the project's ordered rule list (projects.label_rules_json)
+  // is evaluated against the report's URL host + client IP (#440) and the FIRST matching rule stamps env/org/server
+  // here. Unmatched reports leave these NULL (no guesses). An explicit reporter env/org (#439 identify) still wins
+  // over a rule — the rule only fills gaps. Additive, back-compat (older rows / no rules → NULL). See lib/label-rules.ts.
+  if (needCol("feedback", "report_env")) await c.execute("ALTER TABLE feedback ADD COLUMN report_env TEXT").catch((e) => console.warn("feedback.report_env ALTER skipped:", e?.message || e))
+  if (needCol("feedback", "report_org")) await c.execute("ALTER TABLE feedback ADD COLUMN report_org TEXT").catch((e) => console.warn("feedback.report_org ALTER skipped:", e?.message || e))
+  if (needCol("feedback", "report_server")) await c.execute("ALTER TABLE feedback ADD COLUMN report_server TEXT").catch((e) => console.warn("feedback.report_server ALTER skipped:", e?.message || e))
+  // KLAVITYKLA-441: the per-project ordered auto-labeling rule list, stored as a JSON array of
+  // { match:{ urlHost?, cidr? }, label:{ env?, org?, server? } }. NULL/absent → no rules (back-compat).
+  if (needCol("projects", "label_rules_json")) await c.execute("ALTER TABLE projects ADD COLUMN label_rules_json TEXT").catch((e) => console.warn("projects.label_rules_json ALTER skipped:", e?.message || e))
   // KLA-94: opt-in auto-file flag. When enabled AND a finding meets the confidence/severity threshold,
   // the walk executor automatically creates a ticket via the project's connector. Default OFF (back-compat).
   if (needCol("projects", "trails_autofile_enabled")) await c.execute("ALTER TABLE projects ADD COLUMN trails_autofile_enabled INTEGER NOT NULL DEFAULT 0").catch((e) => console.warn("projects.trails_autofile_enabled ALTER skipped:", e?.message || e))
@@ -1805,6 +1816,8 @@ export type ProjectRow = {
   exportPolicy: string
   // Snap-only project gating: NULL = inherit account plan, "snap" = locked to Snap-only.
   planOverride: string | null
+  // KLAVITYKLA-441: ordered auto-labeling rules, applied at ingest (first match wins). [] when unset.
+  labelRules: LabelRule[]
 }
 export const EXPORT_POLICIES = ["admins_only", "members_export", "members_request"] as const
 export type ExportPolicy = (typeof EXPORT_POLICIES)[number]
@@ -1830,6 +1843,7 @@ function rowToProject(x: any): ProjectRow {
     siteUrl: x.site_url != null ? String(x.site_url) : null,
     exportPolicy: normalizeExportPolicy(x.export_policy),
     planOverride: x.plan_override != null ? String(x.plan_override) : null,
+    labelRules: sanitizeLabelRules(safeJsonParse(x.label_rules_json)),
   }
 }
 
@@ -2930,6 +2944,10 @@ export type FeedbackInsert = {
   attachments?: Array<{ key: string; filename: string; contentType: string; size: number }> | null  // PX4 #425: non-image files
   reporter?: Record<string, string> | null   // PX4 #439: resolved reporter identity (id/email/name/org/...)
   clientInfo?: Record<string, any> | null     // PX4 #428: captured browser/app info (browser/os/viewport/...)
+  // KLAVITYKLA-441: resolved auto-labels from the project's rules (first match wins). Null when unmatched.
+  reportEnv?: string | null
+  reportOrg?: string | null
+  reportServer?: string | null
 }
 
 // Triage gate: new feedback is "new" (needs triage) unless it's a high-priority
@@ -2946,8 +2964,8 @@ export async function insertFeedback(f: FeedbackInsert): Promise<string> {
   await db!.execute({
     sql: `INSERT INTO feedback (id,project_id,sim_id,actor_email,url_host,url_path,source_referrer,observation,sentiment,priority,
           screenshot_id,suggested_bug_json,cited_trait_ids_json,source_quote,source_transcript_id,source_date,
-          plane_issue_key,plane_issue_url,issue_key,recurrence_count,recurrence_dates_json,last_seen_at,client_context_json,annotations_json,source,signature,report_type,report_ip,report_url,report_geo_json,title,attachments_json,reporter_json,client_info_json,created_at,status)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          plane_issue_key,plane_issue_url,issue_key,recurrence_count,recurrence_dates_json,last_seen_at,client_context_json,annotations_json,source,signature,report_type,report_ip,report_url,report_geo_json,report_env,report_org,report_server,title,attachments_json,reporter_json,client_info_json,created_at,status)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [id, f.projectId, f.simId ?? null, f.actorEmail ?? null, f.urlHost ?? null, f.urlPath ?? null, f.sourceReferrer ?? null,
            f.observation ?? null, f.sentiment ?? null, f.priority ?? null, f.screenshotId ?? null,
            f.suggestedBug != null ? JSON.stringify(f.suggestedBug) : null,
@@ -2959,6 +2977,7 @@ export async function insertFeedback(f: FeedbackInsert): Promise<string> {
            f.annotations != null ? JSON.stringify(f.annotations) : null,
            f.source ?? null, f.signature ?? null, f.reportType ?? null,
            f.reportIp ?? null, f.reportUrl ?? null, f.reportGeoJson ?? null,
+           f.reportEnv ?? null, f.reportOrg ?? null, f.reportServer ?? null,
            f.title ?? null, (f.attachments && f.attachments.length) ? JSON.stringify(f.attachments) : null,
            (f.reporter && Object.keys(f.reporter).length) ? JSON.stringify(f.reporter) : null,
            (f.clientInfo && Object.keys(f.clientInfo).length) ? JSON.stringify(f.clientInfo) : null,
@@ -3127,7 +3146,8 @@ export type FeedbackRow = {
   sentiment: string | null; priority: string | null; screenshotId: string | null
   suggestedBug: any | null; sourceQuote: string | null; citedTraitIds: any | null; sourceDate: number | null
   planeIssueKey: string | null; planeIssueUrl: string | null; annotations: any | null
-  reportIp: string | null; reportUrl: string | null; reportGeo: any | null; createdAt: number
+  reportIp: string | null; reportUrl: string | null; reportGeo: any | null
+  reportEnv: string | null; reportOrg: string | null; reportServer: string | null; createdAt: number
 }
 function safeJsonParse(s: any): any { try { return s ? JSON.parse(String(s)) : null } catch { return null } }
 function rowToFeedback(x: any): FeedbackRow {
@@ -3153,6 +3173,10 @@ function rowToFeedback(x: any): FeedbackRow {
     reportIp: x.report_ip != null ? String(x.report_ip) : null,
     reportUrl: x.report_url != null ? String(x.report_url) : null,
     reportGeo: safeJsonParse(x.report_geo_json),
+    // KLAVITYKLA-441: resolved auto-labels (null on older rows / unmatched reports).
+    reportEnv: x.report_env != null ? String(x.report_env) : null,
+    reportOrg: x.report_org != null ? String(x.report_org) : null,
+    reportServer: x.report_server != null ? String(x.report_server) : null,
     createdAt: Number(x.created_at),
   }
 }
@@ -4926,6 +4950,10 @@ export async function feedbackById(projectId: string, id: string): Promise<any |
     reportIp: x.report_ip != null ? String(x.report_ip) : null,
     reportUrl: x.report_url != null ? String(x.report_url) : null,
     reportGeo: safeJsonParse(x.report_geo_json),
+    // KLAVITYKLA-441: resolved auto-labels (null on older rows / unmatched reports).
+    reportEnv: x.report_env != null ? String(x.report_env) : null,
+    reportOrg: x.report_org != null ? String(x.report_org) : null,
+    reportServer: x.report_server != null ? String(x.report_server) : null,
     pageUrl: x.url_path != null ? String(x.url_path) : null,
     observation: x.observation != null ? String(x.observation) : null,
     sentiment: x.sentiment != null ? String(x.sentiment) : null,
@@ -5055,6 +5083,21 @@ export async function setExportPolicy(projectId: string, policy: string): Promis
     sql: "UPDATE projects SET export_policy=?, updated_at=? WHERE id=?",
     args: [normalizeExportPolicy(policy), Date.now(), projectId],
   })
+}
+
+// KLAVITYKLA-441: read/write the per-project auto-labeling rule list. Always sanitized (bounded,
+// capped, empty rules dropped) on the way in AND out so a stale/oversized column can't poison ingest.
+export async function getProjectLabelRules(projectId: string): Promise<LabelRule[]> {
+  const p = await projectById(projectId)
+  return p ? p.labelRules : []
+}
+export async function setProjectLabelRules(projectId: string, rules: any): Promise<LabelRule[]> {
+  const clean = sanitizeLabelRules(rules)
+  await db!.execute({
+    sql: "UPDATE projects SET label_rules_json=?, updated_at=? WHERE id=?",
+    args: [clean.length ? JSON.stringify(clean) : null, Date.now(), projectId],
+  })
+  return clean
 }
 
 export type ExportRequestRow = {

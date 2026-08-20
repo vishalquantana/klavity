@@ -9,7 +9,7 @@ import { projectEntitlement } from "./lib/entitlement"
 import { logAudit, queryAuditLog, auditRowsToCsv, type AuditAction } from "./lib/audit-log"
 import { buildMemberExport, membersToCsv, MEMBER_EXPORT_FIELDS } from "./lib/member-export"
 import { isMaskingEnabled, maskMemberExportRow, maskDeep, maskWalkReportData } from "./lib/data-masking"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, publicReportStatus, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, EXPORT_POLICIES, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, publicReportStatus, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows } from "./lib/db"
 import { countFoundingAccounts } from "./lib/db"
 // KLAVITYKLA-366 — the Founding Ten spot counter. One cached source of truth behind the public
 // pricing band, the in-app ribbon, and the server-side refusal of an 11th founding checkout.
@@ -41,6 +41,7 @@ import { signImageToken, verifyImageToken } from "./lib/imgsign"
 import { runRetentionSweep } from "./lib/retention"
 import { SCREENSHOTS, resolveScreenshotConfig, mbLabel } from "./lib/screenshot-config"
 import { buildIssueHtml, escapeHtml, sanitizeClientContext, clientContextLines, sanitizeReporter, sanitizeClientInfo, reporterLines, clientInfoLines } from "./lib/feedback"
+import { evaluateLabelRules } from "./lib/label-rules"
 import { encryptSecret, decryptSecret } from "./lib/crypto"
 import { createTestAccount, listTestAccounts, getTestAccountById, getTestAccountByName, deleteTestAccount, isTestAccountEmail, getTestAccountRefs, rotateTestAccountSecret } from "./lib/test-accounts"
 import { assertSafeUrl } from "./lib/url-guard"
@@ -1491,6 +1492,16 @@ async function feedbackToTicketPayload(fb: any, project: { id: string; name?: st
   const hasReporter = fb.reporter && typeof fb.reporter === "object" && Object.keys(fb.reporter).length > 0
   if (hasReporter) { const rl = reporterLines(fb.reporter); if (rl.length) lines.push(rl.join("\n")) }
   if (fb.clientInfo) { const cl = clientInfoLines(fb.clientInfo); if (cl.length) lines.push(cl.join("\n")) }
+  // KLAVITYKLA-441: surface resolved workspace auto-labels (env/org/server) near the reporter block.
+  // The reporter block above already prints any env/org/server the reporter explicitly carried (#439),
+  // so only append the auto-labeled GAPS here to avoid duplicating the same value twice.
+  {
+    const labelBits: string[] = []
+    if (fb.reportEnv && !(hasReporter && fb.reporter.env)) labelBits.push(`Environment: ${fb.reportEnv}`)
+    if (fb.reportOrg && !(hasReporter && fb.reporter.org)) labelBits.push(`Org: ${fb.reportOrg}`)
+    if (fb.reportServer && !(hasReporter && fb.reporter.server)) labelBits.push(`Server: ${fb.reportServer}`)
+    if (labelBits.length) lines.push(`Workspace labels:\n${labelBits.map((b) => `  ${b}`).join("\n")}`)
+  }
   // G2/G3/G5: append captured dev-tools context (console + network + env + identity/metadata) so the
   // external ticket carries the same technical context the extension path does.
   if (fb.clientContext) {
@@ -3717,6 +3728,16 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               let urlHost: string | null = null, urlPath: string | null = null
               if (pageUrl) { try { const u = new URL(pageUrl); urlHost = u.host; urlPath = u.pathname } catch { urlPath = pageUrl.split(/[?#]/)[0] || null } }
 
+              // KLAVITYKLA-441: workspace auto-labeling. Evaluate the project's ordered rule list against
+              // the report's URL host (glob) + client IP (CIDR, from #440); the FIRST matching rule stamps
+              // env/org/server. An explicit reporter value (#439 identify) ALWAYS wins over a rule — the
+              // rule only fills gaps. Unmatched → null (no guesses). Pure + best-effort; never blocks submit.
+              const reportHost = (() => { try { return reportUrl ? new URL(reportUrl).host : (urlHost || null) } catch { return urlHost || null } })()
+              const autoLabels = evaluateLabelRules(resolved.labelRules, { urlHost: reportHost, ip: reportIp })
+              const reportEnv = (reporter?.env ? String(reporter.env) : null) || autoLabels.env
+              const reportOrg = (reporter?.org ? String(reporter.org) : null) || autoLabels.org
+              const reportServer = (reporter?.server ? String(reporter.server) : null) || autoLabels.server
+
               // Persist a ledger row for EVERY uploaded screenshot using its pre-minted id, so each
               // permanent /img link resolves (the dashboard still references screenshotId = the first).
               let screenshotId: string | null = null
@@ -3851,6 +3872,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   // back-filled asynchronously below (updateFeedbackReportGeo) so the ip-api call never
                   // slows the submission.
                   reportIp, reportUrl,
+                  // KLAVITYKLA-441: resolved workspace auto-labels (reporter value wins, else rule, else null).
+                  reportEnv, reportOrg, reportServer,
                   // PX4 #411/#425: explicit Title + non-image file attachment descriptors (null/empty when absent).
                   title: reportTitle,
                   attachments: attachmentDescs.length ? attachmentDescs : null,
@@ -8979,6 +9002,23 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             await setExportPolicy(pid, raw)
             logAudit({ action: "export_policy_set", actorEmail: me, projectId: pid, ip: clientIp(req, server), meta: { policy: raw } })
             return json({ ok: true, exportPolicy: normalizeExportPolicy(raw) })
+          }
+          return json({ error: "Method not allowed" }, 405)
+        }
+
+        // ── KLAVITYKLA-441: workspace auto-labeling rules (env/org/server by URL-host glob and/or IP-CIDR) ──
+        // GET /api/projects/:pid/label-rules  — the ordered rule list (member-readable).
+        // PUT /api/projects/:pid/label-rules  — replace the whole list (admin only). Body: { rules: [...] }.
+        if (sub === "/label-rules") {
+          if (req.method === "GET") {
+            return json({ rules: await getProjectLabelRules(pid) })
+          }
+          if (req.method === "PUT" || req.method === "POST") {
+            if (access !== "admin") return json({ error: "Only project admins can change auto-labeling rules." }, 403)
+            const body = await req.json().catch(() => ({}))
+            const clean = await setProjectLabelRules(pid, body?.rules)
+            logAudit({ action: "label_rules_set", actorEmail: me, projectId: pid, ip: clientIp(req, server), meta: { count: clean.length } })
+            return json({ ok: true, rules: clean })
           }
           return json({ error: "Method not allowed" }, 405)
         }

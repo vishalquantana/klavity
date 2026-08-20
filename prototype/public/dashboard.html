@@ -2122,6 +2122,17 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           <div class="flbl" style="margin-bottom:6px">Pending export requests</div>
           <div id="exportReqList" class="conn-list"></div>
         </div>
+        <!-- KLAVITYKLA-441: workspace auto-labeling rules (env/org/server by URL-host and/or IP-CIDR) -->
+        <div id="labelRulesWrap" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line)">
+          <div class="flbl" style="margin-bottom:2px">Auto-labeling rules</div>
+          <div class="muted" style="font-size:12.5px;margin-bottom:10px">Tag every incoming report with an <b>environment</b>, <b>org</b> and/or <b>server</b> based on the page's URL host and/or the reporter's IP. Rules are checked top-to-bottom; the first match wins. These seed the env/org/server labels — an explicit reporter identity value always takes precedence.</div>
+          <div id="labelRulesList" class="conn-list"></div>
+          <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-sm" id="labelRuleAddBtn" type="button">+ Add rule</button>
+            <button class="btn btn-indigo btn-sm" id="labelRulesSave" type="button">Save rules</button>
+            <span class="msg" id="labelRulesMsg" style="margin:0"></span>
+          </div>
+        </div>
       </div>
       <!-- Non-admin: read-only destinations + policy note (KLAVITYKLA-287 req 4) -->
       <div id="connUser" class="hide">
@@ -3617,6 +3628,7 @@ function render(fromCache) {
   // Network sub-loaders — skipped on the instant cache paint, run once on fresh data.
   if (!fromCache) {
     loadConnectors(admin)
+    loadLabelRules(admin)
     loadAppearance()
     loadLabels(admin)
     wireTrends()
@@ -7032,6 +7044,74 @@ async function loadConnectors(admin) {
     renderConnectors(admin)
   } catch {}
   finally { kbar.done() }
+}
+
+// ── KLAVITYKLA-441: workspace auto-labeling rules editor (admin-only) ──
+async function loadLabelRules(admin) {
+  const wrap = $("labelRulesWrap")
+  if (wrap) wrap.classList.toggle("hide", !admin)
+  if (!admin || !curProjId()) return
+  try {
+    const r = await fetch(projPath("/label-rules"))
+    state._labelRules = r.ok ? ((await r.json()).rules || []) : []
+  } catch { state._labelRules = [] }
+  renderLabelRules()
+}
+function renderLabelRules() {
+  const el = $("labelRulesList"); if (!el) return
+  const rules = state._labelRules || []
+  const inCss = "padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;min-width:0"
+  if (!rules.length) {
+    el.innerHTML = `<div class="muted" style="padding:4px 2px;font-size:13px">No rules yet — add one to auto-tag reports by URL host or IP range.</div>`
+  } else {
+    el.innerHTML = rules.map((ru, i) => `
+      <div class="conn-row lr-row" data-i="${i}" style="display:grid;grid-template-columns:1.4fr 1.1fr .8fr .8fr .8fr auto;gap:6px;align-items:center">
+        <input class="lr-in" data-k="urlHost" placeholder="URL host glob (*.staging.acme.com)" value="${esc((ru.match && ru.match.urlHost) || '')}" style="${inCss}"/>
+        <input class="lr-in" data-k="cidr" placeholder="IP CIDR (10.0.0.0/8)" value="${esc((ru.match && ru.match.cidr) || '')}" style="${inCss}"/>
+        <input class="lr-in" data-k="env" placeholder="env" value="${esc((ru.label && ru.label.env) || '')}" style="${inCss}"/>
+        <input class="lr-in" data-k="org" placeholder="org" value="${esc((ru.label && ru.label.org) || '')}" style="${inCss}"/>
+        <input class="lr-in" data-k="server" placeholder="server" value="${esc((ru.label && ru.label.server) || '')}" style="${inCss}"/>
+        <button class="btn btn-ghost btn-sm lr-del" data-i="${i}" type="button" aria-label="Remove rule">${kicon('x')}</button>
+      </div>`).join("")
+  }
+  // Delegated delete: pull the latest values from the DOM first so an unsaved edit isn't lost on remove.
+  el.querySelectorAll(".lr-del").forEach(btn => {
+    btn.onclick = () => {
+      const cur = collectLabelRules()
+      const i = Number(btn.getAttribute("data-i"))
+      cur.splice(i, 1)
+      state._labelRules = cur
+      renderLabelRules()
+    }
+  })
+  const addBtn = $("labelRuleAddBtn")
+  if (addBtn) addBtn.onclick = () => { state._labelRules = collectLabelRules().concat([{ match: {}, label: {} }]); renderLabelRules() }
+  const saveBtn = $("labelRulesSave")
+  if (saveBtn) saveBtn.onclick = saveLabelRules
+}
+// Read the current rule rows straight from the DOM inputs (source of truth while editing).
+function collectLabelRules() {
+  return Array.from(document.querySelectorAll("#labelRulesList .lr-row")).map(row => {
+    const g = k => { const el = row.querySelector('.lr-in[data-k="' + k + '"]'); return el ? el.value.trim() : "" }
+    const match = {}; if (g("urlHost")) match.urlHost = g("urlHost"); if (g("cidr")) match.cidr = g("cidr")
+    const label = {}; if (g("env")) label.env = g("env"); if (g("org")) label.org = g("org"); if (g("server")) label.server = g("server")
+    return { match, label }
+  })
+}
+async function saveLabelRules() {
+  const msg = $("labelRulesMsg")
+  if (msg) { msg.style.color = ""; msg.textContent = "Saving…" }
+  try {
+    const r = await fetch(projPath("/label-rules"), {
+      method: "PUT", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ rules: collectLabelRules() })
+    })
+    const d = await r.json().catch(() => ({}))
+    if (!r.ok || !d.ok) { if (msg) { msg.style.color = "var(--rose)"; msg.textContent = (d && d.error) || "Couldn't save." } return }
+    state._labelRules = d.rules || []
+    renderLabelRules()
+    if (msg) { msg.style.color = "var(--green)"; msg.textContent = "Saved" }
+  } catch { if (msg) { msg.style.color = "var(--rose)"; msg.textContent = "Couldn't save." } }
 }
 
 function renderConnectors(admin) {
