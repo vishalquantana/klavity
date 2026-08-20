@@ -1,5 +1,123 @@
 import { logOutboundEmail } from "./db"
 
+// ── Outbound-email failure alerting (KLAVITYKLA-405/406) ───────────────────────
+// A silent mail outage (e.g. the SendGrid OTP incident) must never go unnoticed.
+// Whenever a send through sgSend() FAILS — a non-2xx SendGrid response OR a thrown
+// error — we post a best-effort Slack alert so on-call sees it immediately. This is
+// strictly additive: it NEVER throws, NEVER blocks the caller, and NEVER changes the
+// send result. If no webhook is configured it is a silent no-op (console.error still
+// happens upstream). Privacy: we send the recipient DOMAIN only, never the address.
+
+const MAIL_ALERT_WINDOW_MS = 10 * 60 * 1000 // one alert per (type,status) per 10 min
+
+// In-memory de-dup so a mass outage (hundreds of failing sends) posts at most one
+// Slack alert per (type,status) per window instead of flooding the channel.
+const mailAlertLast = new Map<string, number>()
+
+// Test hook: the most recently fired (fire-and-forget) alert promise, so a test can
+// deterministically await the async Slack post. Not used in production code paths.
+let _lastMailAlertPromise: Promise<void> = Promise.resolve()
+export function __mailAlertTail(): Promise<void> {
+  return _lastMailAlertPromise
+}
+export function __resetMailAlertDedup(): void {
+  mailAlertLast.clear()
+}
+
+function mailAlertWebhook(): string | null {
+  return (
+    process.env.SLACK_MAIL_ALERT_WEBHOOK_URL ||
+    process.env.SLACK_ALERT_WEBHOOK_URL ||
+    process.env.SLACK_SIGNUP_WEBHOOK_URL ||
+    null
+  )
+}
+
+function shouldMailAlert(key: string, now: number): boolean {
+  const last = mailAlertLast.get(key)
+  if (last != null && now - last < MAIL_ALERT_WINDOW_MS) return false
+  mailAlertLast.set(key, now)
+  return true
+}
+
+/** Unique recipient DOMAINS ("@example.com"), never the local part — privacy. */
+function recipientDomains(to: string[]): string {
+  const set = new Set<string>()
+  for (const a of to) {
+    const at = String(a).lastIndexOf("@")
+    set.add(at >= 0 ? String(a).slice(at).toLowerCase() : "@unknown")
+  }
+  return Array.from(set).join(", ") || "@unknown"
+}
+
+/** Short, log-safe reason: strip any addresses/bearer tokens, cap length. */
+function sanitizeReason(reason: string | null | undefined): string {
+  if (!reason) return "(no detail)"
+  return String(reason)
+    .replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
+    .replace(/[^\s@]+@[^\s@]+\.[^\s@]+/g, "[addr]")
+    .slice(0, 200)
+}
+
+export interface MailFailure {
+  type: string
+  to: string[]
+  status: number // SendGrid HTTP status, or 0 for a thrown/network error
+  reason?: string | null
+}
+
+/** Slack Block-Kit payload for a failed send (exported for testing). */
+export function buildMailFailurePayload(f: MailFailure, whenIso: string): unknown {
+  const domain = recipientDomains(f.to)
+  const statusLabel = f.status ? String(f.status) : "network error"
+  const reason = sanitizeReason(f.reason)
+  return {
+    text: `📪 Klavity email FAILED to send: ${f.type} -> ${domain} (${statusLabel})`,
+    blocks: [
+      { type: "section", text: { type: "mrkdwn", text: "📪 *Outbound email failed* — a transactional mail did not go out." } },
+      {
+        type: "section",
+        fields: [
+          { type: "mrkdwn", text: `*Type:*\n${f.type}` },
+          { type: "mrkdwn", text: `*Recipient domain:*\n${domain}` },
+          { type: "mrkdwn", text: `*SendGrid status:*\n${statusLabel}` },
+          { type: "mrkdwn", text: `*When:*\n${whenIso}` },
+        ],
+      },
+      { type: "context", elements: [{ type: "mrkdwn", text: `Reason: \`${reason}\`` }] },
+    ],
+  }
+}
+
+/**
+ * Best-effort Slack alert for a failed outbound email. NEVER throws, NEVER blocks
+ * the caller (fire-and-forget), NEVER exposes a full address. No-op when no webhook
+ * is configured or when the (type,status) was already alerted inside the window.
+ */
+export async function alertMailFailure(f: MailFailure): Promise<void> {
+  try {
+    const webhook = mailAlertWebhook()
+    if (!webhook) return
+    const now = Date.now()
+    if (!shouldMailAlert(`${f.type}:${f.status}`, now)) return
+    const payload = buildMailFailurePayload(f, new Date(now).toISOString())
+    const res = await fetch(webhook, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+    if (!res.ok) console.error(`mail-fail slack alert: webhook returned ${res.status}`)
+  } catch (err: any) {
+    console.error("mail-fail slack alert (non-fatal):", err?.message || err)
+  }
+}
+
+/** Fire the alert without blocking or affecting the caller; records the promise for tests. */
+function fireMailFailure(f: MailFailure): void {
+  _lastMailAlertPromise = alertMailFailure(f)
+  void _lastMailAlertPromise
+}
+
 // A short, on-brand line under the code — picks one deterministically from the
 // code so it varies between sends but stays stable for a given code (testable,
 // no Math.random). Same energy as a sign-in email that doesn't feel robotic.
@@ -78,16 +196,24 @@ async function sgSend(params: {
 }): Promise<void> {
   const key = process.env.SENDGRID_API_KEY
   if (!key) throw new Error("SENDGRID_API_KEY not set")
-  const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" },
-    body: JSON.stringify({
-      personalizations: params.to.map((email) => ({ to: [{ email }] })),
-      from: params.from,
-      subject: params.subject,
-      content: params.content,
-    }),
-  })
+  let res: Response
+  try {
+    res = await fetch("https://api.sendgrid.com/v3/mail/send", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        personalizations: params.to.map((email) => ({ to: [{ email }] })),
+        from: params.from,
+        subject: params.subject,
+        content: params.content,
+      }),
+    })
+  } catch (err: any) {
+    // Network/transport error — the send definitely did not go out. Alert, then rethrow
+    // so the caller's contract is unchanged.
+    fireMailFailure({ type: params.type, to: params.to, status: 0, reason: err?.message || String(err) })
+    throw err
+  }
   const messageId = res.headers.get("x-message-id")
   const errorText = res.ok ? null : (await res.text()).slice(0, 200)
   await Promise.all(
@@ -103,7 +229,11 @@ async function sgSend(params: {
       }),
     ),
   )
-  if (!res.ok) throw new Error(`SendGrid ${res.status}: ${errorText}`)
+  if (!res.ok) {
+    // Non-2xx from SendGrid — surface it to on-call before rethrowing (unchanged contract).
+    fireMailFailure({ type: params.type, to: params.to, status: res.status, reason: errorText })
+    throw new Error(`SendGrid ${res.status}: ${errorText}`)
+  }
 }
 
 // Email OTP via SendGrid (raw API; no SDK). Requires a VERIFIED sender.
@@ -198,7 +328,11 @@ export async function sendFixedNotification(
       content: [{ type: "text/plain", value: text }, { type: "text/html", value: html }],
     }),
   })
-  if (!res.ok) throw new Error(`SendGrid ${res.status}: ${(await res.text()).slice(0, 200)}`)
+  if (!res.ok) {
+    const errorText = (await res.text()).slice(0, 200)
+    fireMailFailure({ type: "notify_fixed", to: [to], status: res.status, reason: errorText })
+    throw new Error(`SendGrid ${res.status}: ${errorText}`)
+  }
 }
 
 export type TicketAssignmentEmail = {
