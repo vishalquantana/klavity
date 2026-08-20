@@ -76,6 +76,21 @@ test('onboarding.html persistAhaPersonas consumes _ahaPersonas once to prevent d
   expect(src).toContain('window._ahaPersonas = null')
 })
 
+// ── QA #2: the completion POST must survive the exit navigation ──────────────
+// A plain fetch races a 1.2s timer against navigation and gets aborted on a slow
+// connection, so onboarded_at never persists and the wizard reappears. markOnboarded
+// must send the POST with keepalive (and a sendBeacon fallback) so it survives.
+
+test('onboarding.html markOnboarded posts with keepalive so it survives navigation', () => {
+  const src = loadSite('onboarding.html')
+  const idx = src.indexOf('function markOnboarded(')
+  expect(idx).toBeGreaterThanOrEqual(0)
+  const body = src.slice(idx, idx + 600)
+  expect(body).toContain('/api/account/onboarded')
+  expect(body).toContain('keepalive:true')
+  expect(body).toContain('sendBeacon')
+})
+
 test('dashboard.html keeps data-go=overview', () => {
   expect(loadPublic('../public/dashboard.html')).toContain('data-go="overview"');
 });

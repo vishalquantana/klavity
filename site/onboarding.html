@@ -918,8 +918,15 @@ async function jsonFetch(url, opts){
 }
 
 // ── Onboarding-completed flag (KLA-297): stamp on every wizard EXIT to /app or /dashboard. ──
+// The POST races a 1.2s cap against an imminent navigation. A PLAIN fetch would be aborted by that
+// navigation on a slow connection, so onboarded_at never persists and the wizard reappears. Use
+// keepalive:true so the request survives the navigation, with sendBeacon as a belt-and-suspenders
+// fallback. Same-origin cookies ride along on both, so the authed route still resolves the account.
 function markOnboarded(){
-  const call = jsonFetch('/api/account/onboarded', { method:'POST' }).catch(function(){})
+  var call = fetch('/api/account/onboarded', { method:'POST', keepalive:true, credentials:'same-origin' })
+    .then(function(){}, function(){
+      try { if (navigator.sendBeacon) navigator.sendBeacon('/api/account/onboarded') } catch(e){}
+    })
   return Promise.race([call, new Promise(function(res){ setTimeout(res, 1200) })])
 }
 
