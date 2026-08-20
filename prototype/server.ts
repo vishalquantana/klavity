@@ -1461,9 +1461,10 @@ function occurrenceTimelineText(mem: RecurrenceMemory | null): string {
 // Build a normalized TicketPayload from a feedback row for the connector adapters. Async because it
 // resolves the screenshot into a permanent signed link (body fallback) + bytes (for native attachment).
 async function feedbackToTicketPayload(fb: any, project: { id: string; name?: string }, simName: string | null = null): Promise<TicketPayload> {
-  // Manual tickets store the title and body joined by a blank line in `observation`; the tracker
-  // title field is single-line, and the full observation is already the body's first line.
-  const title = (fb.observation || "Sim report").split("\n")[0] || "Sim report"
+  // PX4 #411: an explicit composer Title wins when present (the connector uses it verbatim as the external
+  // issue summary). Otherwise fall back to the historical auto-title — the observation's first line.
+  const explicitTitle = typeof fb.title === "string" ? fb.title.trim() : ""
+  const title = explicitTitle || (fb.observation || "Sim report").split("\n")[0] || "Sim report"
   const lines: string[] = []
   if (fb.observation) lines.push(fb.observation)
   if (simName) lines.push(`Sim: ${simName}`)
@@ -1508,6 +1509,23 @@ async function feedbackToTicketPayload(fb: any, project: { id: string; name?: st
       }
     } catch (e: any) { console.warn("screenshot lookup failed for ticket:", e?.message || e) }
   }
+  // PX4 #425: non-image file attachments (PDF, .log, .har, ...). Each was stored under an S3 key at intake;
+  // fetch its bytes and hand them to the connector, which uploads them NATIVELY (Jira/Plane/Linear). A body
+  // "Attachment: <link>" line (short-lived presigned URL) is added as the GitHub/webhook fallback + a receipt.
+  // Best-effort per file — a fetch/presign failure for one file must never block the export.
+  if (Array.isArray(fb.attachments) && fb.attachments.length) {
+    for (const a of fb.attachments) {
+      try {
+        if (!a || !a.key) continue
+        const { bytes, contentType } = await getObjectBytes(String(a.key))
+        let url = ""
+        try { url = presignGet(String(a.key), 3600) } catch { /* link is best-effort */ }
+        const filename = String(a.filename || "attachment")
+        if (url) lines.push(`Attachment (${filename}): ${url}`)
+        attachments.push({ filename, contentType: String(a.contentType || contentType || "application/octet-stream"), bytes, url })
+      } catch (e: any) { console.warn("file attachment fetch failed for ticket (non-fatal):", e?.message || e) }
+    }
+  }
   // A.8: occurrence timeline — when this report recurred, append each occurrence's own verbatim
   // wording + date so the external ticket carries the receipts ("you said X on Y, then Y2, then Y3").
   // Best-effort: a memory lookup failure must never block the export.
@@ -1540,7 +1558,12 @@ async function feedbackToTicketPayload(fb: any, project: { id: string; name?: st
     klavityUrl: `${BASE}/dashboard?project=${project.id}`,
     attachments,
     labels: labelNames,
-    kind: (fb.report_type === "feature" ? "feature" : fb.report_type === "bug" ? "bug" : undefined),
+    // PX4 #411: pass the precise kind through so resolveIssueType picks the tracker issue type. task/query
+    // carry through untouched (they resolve to the tracker default unless the admin mapped them per-project).
+    kind: (fb.report_type === "feature" ? "feature"
+      : fb.report_type === "task" ? "task"
+      : fb.report_type === "query" ? "query"
+      : fb.report_type === "bug" ? "bug" : undefined),
   }
 }
 
@@ -3438,9 +3461,18 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         })()
         const reporterEmail = String(form.get("reporter_email") || "").trim()
         const validReporterEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(reporterEmail) && reporterEmail.length <= 200
-        // Report type from the composer's Bug/Feature toggle (packages/core submit payload `type`).
-        // Anything other than the literal "feature" is treated as a bug report.
-        const reportType: "bug" | "feature" = String(form.get("type") || "") === "feature" ? "feature" : "bug"
+        // Report type from the composer's issue-type selector (packages/core submit payload `type`/`kind`).
+        // PX4 #411: the enhanced composer can file Task/Query in addition to Bug/Feature; those map to the
+        // tracker default issue type unless an admin remaps them per-project (see resolveIssueType). Anything
+        // outside the known set is treated as a bug report (safe legacy default).
+        const rawReportType = String(form.get("type") || "").toLowerCase()
+        const reportType: "bug" | "feature" | "task" | "query" =
+          rawReportType === "feature" ? "feature"
+          : rawReportType === "task" ? "task"
+          : rawReportType === "query" ? "query"
+          : "bug"
+        // PX4 #411: explicit one-line Title (optional). Trimmed + length-capped; empty → null (auto-title).
+        const reportTitle = String(form.get("title") || "").trim().slice(0, 200) || null
         // JTBD 1.10: accept screenshot-only (or replay-only) reports. Requiring typed prose even when the
         // reporter attached perfect visual evidence is a typing tax during which the bug moment ages out of
         // the replay buffer. Detect attached evidence cheaply BEFORE the 400: at least one screenshot File
@@ -3614,6 +3646,27 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           uploaded.push({ ...meta, bytes: buf.byteLength, id: sid, thumbKey })
         }
 
+        // PX4 #425: non-image file attachments (PDF, .log, .har, .txt, ...) from the composer's "Attach file"
+        // affordance. Uploaded PRIVATE via uploadAttachment (real extension preserved), then persisted as
+        // descriptors on the feedback row (attachments_json) so feedbackToTicketPayload can fetch the bytes and
+        // attach them natively to the external issue. Capped by count + per-file + total size; an image sent
+        // here is ignored (images travel on the screenshots path). A single upload failure is non-fatal.
+        const attachFiles = form.getAll("files").filter((f): f is File => f instanceof File).slice(0, 5)
+        const attachmentDescs: Array<{ key: string; filename: string; contentType: string; size: number }> = []
+        let attachTotalBytes = 0
+        for (const af of attachFiles) {
+          if (af.size <= 0) continue
+          if (af.type && af.type.startsWith(SCREENSHOTS.allowedTypePrefix)) continue // images go through the screenshots path
+          if (af.size > SCREENSHOTS.maxBytes) return wjson({ error: `File ${af.name} exceeds ${mbLabel(SCREENSHOTS.maxBytes)}.` }, 400)
+          attachTotalBytes += af.size
+          if (attachTotalBytes > 25 * 1024 * 1024) return wjson({ error: "Attachments exceed the 25 MB total limit." }, 400)
+          try {
+            const abuf = new Uint8Array(await af.arrayBuffer())
+            const up = await uploadAttachment(abuf, af.name || "attachment", af.type || "application/octet-stream")
+            attachmentDescs.push({ key: up.key, filename: up.filename, contentType: up.contentType, size: af.size })
+          } catch (aErr: any) { console.error("attachment upload failed (non-fatal):", aErr?.message || aErr) }
+        }
+
         // ── persist to our durable ledger (P0) FIRST, always — best-effort, never fails the submission.
         // Runs whether or not a tracker is connected, so the dashboard always gets a row.
         let feedbackId: string | null = null
@@ -3769,13 +3822,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   // KLAVITYKLA-256: persist the sandbox tag so the demo funnel's mock findings are
                   // excluded from the real New-reports triage listing.
                   source: feedbackSourceTag,
-                  // Connector field mapping task 1: persist the Bug/Feature toggle so exports can
+                  // Connector field mapping task 1 / PX4 #411: persist the issue-type selection so exports can
                   // pick a Jira issue type (or similar) per kind.
                   reportType,
-                  // KLAVITYKLA-440: server-captured ingest provenance (IP + page URL). geo/company are
-                  // back-filled asynchronously below (updateFeedbackReportGeo) so the ip-api call never
-                  // slows the submission.
-                  reportIp, reportUrl,
+                  // PX4 #411/#425: explicit Title + non-image file attachment descriptors (null/empty when absent).
+                  title: reportTitle,
+                  attachments: attachmentDescs.length ? attachmentDescs : null,
                 })
                 if (priorFeedbackCount === 0 && feedbackId) {
                   const fbSource = anonWidgetAllowed ? "widget" : (simId ? "sim" : "extension")
@@ -8717,7 +8769,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               ])
               const typeOpts = issueTypes.map(t => t.name)
               const statusOpts = statuses.map(s => s.name)
-              const KINDS = [{ key: "bug", label: "Bug" }, { key: "feature", label: "Feature" }]
+              // PX4 #411: Task/Query join Bug/Feature so admins can remap where they land per-project. Both
+              // default to the tracker's default issue type (autoMatch may still suggest a "Task" match by name).
+              const KINDS = [{ key: "bug", label: "Bug" }, { key: "feature", label: "Feature" }, { key: "task", label: "Task" }, { key: "query", label: "Query" }]
               const STATUSES = [{ key: "new", label: "New" }, { key: "open", label: "Open" }, { key: "in_progress", label: "In Progress" }, { key: "done", label: "Done" }, { key: "dismissed", label: "Dismissed" }]
               const typeRows = KINDS.map(k => autoMatch(k, typeOpts))
               const statusRows = STATUSES.map(s => autoMatch(s, statusOpts))
