@@ -3825,6 +3825,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   // Connector field mapping task 1 / PX4 #411: persist the issue-type selection so exports can
                   // pick a Jira issue type (or similar) per kind.
                   reportType,
+                  // KLAVITYKLA-440: server-captured ingest provenance (IP + page URL). geo/company are
+                  // back-filled asynchronously below (updateFeedbackReportGeo) so the ip-api call never
+                  // slows the submission.
+                  reportIp, reportUrl,
                   // PX4 #411/#425: explicit Title + non-image file attachment descriptors (null/empty when absent).
                   title: reportTitle,
                   attachments: attachmentDescs.length ? attachmentDescs : null,

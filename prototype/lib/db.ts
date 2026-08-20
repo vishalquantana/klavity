@@ -2916,6 +2916,10 @@ export type FeedbackInsert = {
   source?: string | null  // KLA-173: 'manual' | 'widget' | null (null → derived from sim_id at read time)
   signature?: string | null  // BugHerd sub-project A: client-error fingerprint for dedup via findFeedbackBySignature
   reportType?: "bug" | "feature" | "task" | "query" | null  // connector field mapping / PX4 #411: kind chosen at submit
+  // KLAVITYKLA-440: server-side ingest capture (always set at the ingest endpoint, never client-trusted).
+  reportIp?: string | null       // client IP via the trusted-proxy XFF helper
+  reportUrl?: string | null      // top-level page the report was filed from (query/fragment stripped)
+  reportGeoJson?: string | null  // best-effort geo/company enrichment JSON (may be stamped async post-insert)
   title?: string | null      // PX4 #411: explicit one-line issue Title (preferred over auto-title on export)
   attachments?: Array<{ key: string; filename: string; contentType: string; size: number }> | null  // PX4 #425: non-image files
 }
@@ -2934,8 +2938,8 @@ export async function insertFeedback(f: FeedbackInsert): Promise<string> {
   await db!.execute({
     sql: `INSERT INTO feedback (id,project_id,sim_id,actor_email,url_host,url_path,source_referrer,observation,sentiment,priority,
           screenshot_id,suggested_bug_json,cited_trait_ids_json,source_quote,source_transcript_id,source_date,
-          plane_issue_key,plane_issue_url,issue_key,recurrence_count,recurrence_dates_json,last_seen_at,client_context_json,annotations_json,source,signature,report_type,title,attachments_json,created_at,status)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          plane_issue_key,plane_issue_url,issue_key,recurrence_count,recurrence_dates_json,last_seen_at,client_context_json,annotations_json,source,signature,report_type,report_ip,report_url,report_geo_json,title,attachments_json,created_at,status)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [id, f.projectId, f.simId ?? null, f.actorEmail ?? null, f.urlHost ?? null, f.urlPath ?? null, f.sourceReferrer ?? null,
            f.observation ?? null, f.sentiment ?? null, f.priority ?? null, f.screenshotId ?? null,
            f.suggestedBug != null ? JSON.stringify(f.suggestedBug) : null,
@@ -2946,6 +2950,7 @@ export async function insertFeedback(f: FeedbackInsert): Promise<string> {
            f.clientContext != null ? JSON.stringify(f.clientContext) : null,
            f.annotations != null ? JSON.stringify(f.annotations) : null,
            f.source ?? null, f.signature ?? null, f.reportType ?? null,
+           f.reportIp ?? null, f.reportUrl ?? null, f.reportGeoJson ?? null,
            f.title ?? null, (f.attachments && f.attachments.length) ? JSON.stringify(f.attachments) : null,
            now, status],
   })
