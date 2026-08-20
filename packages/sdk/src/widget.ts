@@ -709,7 +709,7 @@ async function mount() {
       ".klm-go{margin-left:auto;flex:none;color:#b6afce;display:inline-flex;transition:transform .2s cubic-bezier(.2,0,0,1)}" +
       ".klm-go svg{width:14px;height:14px;display:block}" +
       ".klm-card:hover .klm-go{transform:translateX(3px)}" +
-      ".klm-hint{margin-left:auto;flex:none;font-family:ui-monospace,monospace;font-size:10px;color:#9a93a6;background:rgba(40,30,60,.06);padding:2px 7px;border-radius:20px;white-space:nowrap}" +
+      ".klm-hint{margin-left:auto;flex:none;font-family:ui-monospace,monospace;font-size:10px;color:#9a93a6;background:rgba(40,30,60,.06);padding:3px 8px;border-radius:12px;text-align:center;line-height:1.32}" +
       // primary = Report a Bug (brand purple)
       ".klm-card.primary{background:linear-gradient(160deg,#6d6bf3,#5b51d8);color:#fff;box-shadow:0 6px 16px -4px rgba(79,70,229,.45),inset 0 1px 0 rgba(255,255,255,.3)}" +
       ".klm-card.primary:hover{box-shadow:0 9px 22px -4px rgba(79,70,229,.55),inset 0 1px 0 rgba(255,255,255,.35)}" +
@@ -910,7 +910,7 @@ async function mount() {
       menu.appendChild(card("users", "Deploy all Sims", "Have every Sim jump in and analyze this page.", { onClick: () => { closeMenu(); void deployAndWatch("all") } }))
       menu.appendChild(card("sparkles", "Select Sims…", "Choose which Sims jump into action.", { onClick: () => { void showSimPicker() } }))
     }
-    menu.appendChild(card("monitor", "Browser menu", "", { muted: true, hint: "⇧ right-click", onClick: () => { nativePending = true; showNativeHint(x, y) } }))
+    menu.appendChild(card("monitor", "Browser menu", "", { muted: true, hint: "⇧ right-<br>click", onClick: () => { nativePending = true; showNativeHint(x, y) } }))
     // "Powered by Klavity" footer — hidden for Pro accounts with whiteLabel enabled (KLAVITYKLA-311).
     if (!modalConfig.whiteLabel) {
       const footer = document.createElement("button")
