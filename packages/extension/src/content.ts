@@ -1,4 +1,5 @@
-import type { ContentMessage, BackgroundMessage, ReportType, SubmitReportPayload, KlavConfig, KlavMonitoredProject } from '@klavity/core'
+import type { ContentMessage, BackgroundMessage, ReportType, IssueKind, ReportFileAttachment, SubmitReportPayload, KlavConfig, KlavMonitoredProject } from '@klavity/core'
+import { parseComposerOpts, type ExtComposerOpts } from './composer-opts'
 import { buildModal, installRegionDrag, isEditableTarget, type ModalController, type CaptureQuality } from '@klavity/core/modal'
 import { icon } from '@klavity/core/icons'
 import { resolveModalConfig } from '@klavity/core/modal-theme'
@@ -144,17 +145,25 @@ let modalCtrl: ModalController | null = null
 
 // Resolve the active project's per-project appearance config (best-effort). Mirrors
 // the SDK widget's GET /api/projects/:id/config call. Falls back to the default
-// (light) theme on any failure so the modal always opens.
-async function fetchModalConfig(): Promise<ReturnType<typeof resolveModalConfig>> {
+// (light) theme on any failure so the modal always opens. Returns BOTH the resolved
+// ModalConfig (buildModal's 3rd arg — theme/thankYou) AND the enhanced-composer opts
+// (PX4 #411/#425: Title field / issue-type chips / file attachments) parsed from the
+// SAME raw modalConfig.composer the widget reads — so the composer is at parity across
+// the widget + extension for any project that opted in.
+const EMPTY_COMPOSER_OPTS: ExtComposerOpts = { showTitleField: false, allowFileAttachments: false }
+async function fetchModalConfig(): Promise<{ config: ReturnType<typeof resolveModalConfig>; composer: ExtComposerOpts }> {
   try {
     const proj = klavMatchProject(location.href)
     const backendUrl = klavConfig?.backendUrl
     if (proj?.id && backendUrl) {
       const r = await fetch(`${backendUrl.replace(/\/+$/, '')}/api/projects/${encodeURIComponent(proj.id)}/config`)
-      if (r.ok) return resolveModalConfig((await r.json()).modalConfig || {})
+      if (r.ok) {
+        const modalConfig = (await r.json()).modalConfig || {}
+        return { config: resolveModalConfig(modalConfig), composer: parseComposerOpts(modalConfig) }
+      }
     }
-  } catch { /* default theme */ }
-  return resolveModalConfig({})
+  } catch { /* default theme + classic composer */ }
+  return { config: resolveModalConfig({}), composer: EMPTY_COMPOSER_OPTS }
 }
 
 async function openModal(type: ReportType, initialShot?: { dataUrl: string; quality?: CaptureQuality }) {
@@ -163,7 +172,7 @@ async function openModal(type: ReportType, initialShot?: { dataUrl: string; qual
     showToast('Extension reloaded. Please refresh the page.')
     return
   }
-  const config = await fetchModalConfig()
+  const { config, composer } = await fetchModalConfig()
   modalCtrl = buildModal(type, {
     // Right-click-drag region: the cropped selection is the default first image, so skip the full-page
     // auto-capture and let the zoomed-in region lead. Otherwise auto-grab the full page on open.
@@ -173,6 +182,14 @@ async function openModal(type: ReportType, initialShot?: { dataUrl: string; qual
     // JTBD 1.9: the extension's captures are already real-pixel, but wire onRetakeSharp for parity so a
     // (rare) degraded shot — or a future non-real-pixel path — can still re-capture at full quality.
     onRetakeSharp: onCaptureFull,
+    // PX4 #411/#425 (ext↔widget parity): enhanced-composer opts from the project's modalConfig.composer,
+    // parsed identically to the widget. All default off → classic Bug/Feature composer. When a project
+    // opts in, the extension now offers the same Title field, extended issue-type chips (Bug/Feature/
+    // Task/Query), and non-image file attachments the widget does; the chosen kind + title + files thread
+    // through onSubmit below and are forwarded to /api/feedback (see submitViaSW → background).
+    showTitleField: composer.showTitleField,
+    allowFileAttachments: composer.allowFileAttachments,
+    issueTypes: composer.issueTypes,
     onSubmit: (p) => submitViaSW(p),
   }, config)
   if (initialShot) modalCtrl.addScreenshot(initialShot.dataUrl, initialShot.quality)
@@ -188,13 +205,23 @@ function closeModal() {
 // Single-slot: at most one submit is in flight (one modal at a time).
 let pendingSubmit: { resolve: (r: { issueKey: string; issueUrl: string }) => void; reject: (e: Error) => void } | null = null
 
-function submitViaSW(p: { type: ReportType; description: string; screenshots: string[] }): Promise<{ issueKey: string; issueUrl: string }> {
+function submitViaSW(p: { type: ReportType; kind?: IssueKind; title?: string; description: string; screenshots: string[]; files?: ReportFileAttachment[] }): Promise<{ issueKey: string; issueUrl: string }> {
   const matchedProject = klavMatchProject(location.href)
   const payload: SubmitReportPayload = {
     type: p.type,
+    // PX4 #411 (ext↔widget parity): the precise issue kind (bug/feature/task/query) the reporter chose,
+    // when the composer offered the extended chips. `type` stays bug/feature for legacy consumers; the
+    // background forwards `kind ?? type` as the /api/feedback `type` field — exactly what the widget sends.
+    ...(p.kind ? { kind: p.kind } : {}),
+    // PX4 #411: explicit one-line Title (when the composer showed the Title field). The server prefers it
+    // over the auto-title and connectors use it verbatim as the external issue summary.
+    ...(p.title ? { title: p.title } : {}),
     description: p.description,
     context: buildContext(),
     screenshots: [...p.screenshots],
+    // PX4 #425: non-image file attachments (PDF, .log, .har, ...) the reporter added. Screenshots keep
+    // their own path; these ride the /api/feedback `files` field (forwarded in the background).
+    ...(p.files && p.files.length ? { files: p.files } : {}),
     ...(matchedProject?.id ? { projectId: matchedProject.id } : {}),
   }
   return new Promise((resolve, reject) => {

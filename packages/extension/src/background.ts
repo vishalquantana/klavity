@@ -1,4 +1,4 @@
-import type { BackgroundMessage, ContentMessage, KlavitySettings, KlavConfig, ReportType } from '@klavity/core'
+import type { BackgroundMessage, ContentMessage, KlavitySettings, KlavConfig, ReportType, SubmitReportPayload, SubmitResult } from '@klavity/core'
 import { findProjectForUrl } from './project-url'
 import { onSettingsChanged } from './config-flush'
 import { revalidateConfig } from './config-revalidate'
@@ -8,7 +8,7 @@ import { submitReport as jiraSubmit } from '@klavity/core/integrations/jira'
 import { submitReport as linearSubmit } from '@klavity/core/integrations/linear'
 import { submitReport as githubSubmit } from '@klavity/core/integrations/github'
 import { submitReport as planeSubmit } from '@klavity/core/integrations/plane'
-import { submitReport as backendSubmit } from '@klavity/core/integrations/backend'
+import { submitReport as backendSubmit, buildFeedbackFormData } from '@klavity/core/integrations/backend'
 
 // Safety net: messaging a tab/port that has no listener (e.g. a tab with no
 // content script) rejects with "Could not establish connection / Receiving end
@@ -24,6 +24,64 @@ self.addEventListener('unhandledrejection', (e: PromiseRejectionEvent) => {
 async function getSettings(): Promise<KlavitySettings> {
   const result = await chrome.storage.sync.get('klavSettings')
   return { ...DEFAULT_SETTINGS, ...(result.klavSettings ?? {}) }
+}
+
+// PX4 #411/#425 (ext↔widget parity): submit to the Klavity /api/feedback backend WITH the enhanced
+// composer fields (Title, precise issue kind, non-image file attachments). This mirrors the core
+// backendSubmit (packages/core/integrations/backend) — same shared form serializer, same auth (klavity
+// Bearer vs direct-Plane creds), same screenshots-as-blobs and same response shape — but additionally:
+//   • sends the precise kind as the `type` field (`kind ?? type`), so Task/Query reach the server's
+//     report_type + connector issue-type mapping (exactly what the widget forwards);
+//   • sets the explicit `title` when the composer had a Title field; and
+//   • appends non-image `files` as their own multipart field with the real filename preserved.
+// Used only on the Klavity-backend path; direct-tracker modes still go through dispatchSubmit unchanged.
+async function submitToBackendWithExtras(payload: SubmitReportPayload, settings: KlavitySettings): Promise<SubmitResult> {
+  const kind = payload.kind ?? payload.type
+  const form = buildFeedbackFormData({
+    // `type` carries the precise kind (bug/feature/task/query) — the server maps it to report_type.
+    type: kind,
+    description: payload.description,
+    pageUrl: payload.context.pageUrl,
+    context: payload.context,
+    projectId: payload.projectId,
+    replayEvents: payload.replayEvents,
+  })
+  // Explicit one-line Title (server prefers it over the auto-title; connectors use it as the summary).
+  if (payload.title) form.set('title', payload.title)
+
+  // Klavity mode: signed-in user — the backend resolves their personal→team connection, so the tracker
+  // token never leaves the server (Bearer only). Direct mode forwards this browser's own Plane creds.
+  const useKlavity = settings.connectionMode === 'klavity' && !!settings.klavToken
+  if (!useKlavity) {
+    const { plane } = settings
+    form.append('plane_token', plane.token)
+    form.append('plane_workspace', plane.workspace)
+    form.append('plane_project_id', plane.projectId)
+    form.append('plane_host', plane.host)
+  }
+
+  // PX4 #425: non-image file attachments. Fetch each data URL → blob (works in the MV3 service worker,
+  // same as the screenshot path below) and append with its real filename. A malformed data URL is skipped.
+  for (const f of payload.files ?? []) {
+    try {
+      const blob = await (await fetch(f.dataUrl)).blob()
+      form.append('files', blob, f.name)
+    } catch { /* skip a malformed / oversized attachment rather than fail the whole submit */ }
+  }
+
+  for (let i = 0; i < payload.screenshots.length; i++) {
+    const blob = await (await fetch(payload.screenshots[i])).blob()
+    form.append('screenshots', blob, `screenshot-${i}.png`)
+  }
+
+  const headers: Record<string, string> = useKlavity ? { Authorization: `Bearer ${settings.klavToken}` } : {}
+  const res = await fetch(`${settings.backendUrl}/api/feedback`, { method: 'POST', headers, body: form })
+  if (!res.ok) throw new Error(`Klavity backend error ${res.status}: ${await res.text()}`)
+  const data = await res.json() as { id: string; jira_key?: string; issue_url?: string }
+  return {
+    issueKey: data.jira_key ?? data.id,
+    issueUrl: data.issue_url ?? settings.backendUrl,
+  }
 }
 
 function getTrackerUrl(settings: KlavitySettings): string {
@@ -674,6 +732,13 @@ chrome.runtime.onMessage.addListener((msg: BackgroundMessage, sender, sendRespon
 
   if (msg.kind === 'SUBMIT_REPORT') {
     getSettings().then(settings => {
+      // PX4 #411/#425 (ext↔widget parity): the enhanced composer can carry an explicit Title, a precise
+      // issue kind (Task/Query beyond Bug/Feature), and non-image file attachments. The shared
+      // dispatchSubmit → backendSubmit path drops those (IntegrationConfig has no title/kind/files), so on
+      // the Klavity-backend path we build + POST the /api/feedback form here with the extra fields. Routing
+      // is identical to dispatchSubmit: it uses the backend handler exactly when backendUrl is set, so this
+      // only diverges to ADD fields — direct-tracker modes (no backendUrl) keep the classic dispatch.
+      if (settings.backendUrl) return submitToBackendWithExtras(msg.payload, settings)
       return dispatchSubmit(msg.payload, settings, {
         jira: jiraSubmit,
         linear: linearSubmit,
