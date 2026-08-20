@@ -1,6 +1,19 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from "vitest"
-import { isCrossOriginImageSrc, isUncapturable, TRANSPARENT_PIXEL } from "./capture"
+import { describe, it, expect, vi } from "vitest"
+// Mock the DOM renderer so the full-page tests can assert the exact width/height requested of it without
+// needing a real layout engine (jsdom does no layout). Pure helpers in this file don't touch domToPng.
+vi.mock("modern-screenshot", () => ({
+  domToPng: vi.fn(async () => "data:image/png;base64,AAAA"),
+}))
+import { domToPng } from "modern-screenshot"
+import {
+  isCrossOriginImageSrc,
+  isUncapturable,
+  TRANSPARENT_PIXEL,
+  fullPageCaptureSize,
+  safeToPngFullPage,
+  MAX_FULLPAGE_CAPTURE_HEIGHT,
+} from "./capture"
 
 describe("isCrossOriginImageSrc", () => {
   const ORIGIN = "https://bigidea.example.com"
@@ -79,5 +92,37 @@ describe("isUncapturable (DOM prune, KLAVITYKLA-393)", () => {
 
   it("does not prune text/non-element nodes", () => {
     expect(isUncapturable(document.createTextNode("hi"))).toBe(false)
+  })
+})
+
+describe("full-page live-review capture (KLAVITYKLA-404)", () => {
+  const setScrollHeight = (el: HTMLElement, h: number) =>
+    Object.defineProperty(el, "scrollHeight", { configurable: true, value: h })
+
+  it("fullPageCaptureSize returns the full document scrollHeight, not the viewport height", () => {
+    // App-shell repro: viewport is ~768px tall but the page scrolls to 5000px. The bug captured only the
+    // viewport; the fix must report the full scrollHeight so the whole page renders.
+    setScrollHeight(document.documentElement, 5000)
+    setScrollHeight(document.body, 4800)
+    const { width, height } = fullPageCaptureSize()
+    expect(height).toBe(5000)
+    expect(width).toBeGreaterThan(0)
+  })
+
+  it("fullPageCaptureSize clamps a very tall (infinite-scroll) page to the max", () => {
+    setScrollHeight(document.documentElement, 100_000)
+    expect(fullPageCaptureSize().height).toBe(MAX_FULLPAGE_CAPTURE_HEIGHT)
+  })
+
+  it("safeToPngFullPage requests the FULL page height from the renderer (not the viewport box)", async () => {
+    setScrollHeight(document.documentElement, 5000)
+    setScrollHeight(document.body, 4800)
+    ;(domToPng as unknown as ReturnType<typeof vi.fn>).mockClear()
+    const url = await safeToPngFullPage({ skipFonts: true })
+    expect(url.startsWith("data:image/png")).toBe(true)
+    const opts = (domToPng as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as { width?: number; height?: number }
+    // The renderer is told to render the full 5000px document, NOT the node's viewport-sized bounding box.
+    expect(opts.height).toBe(5000)
+    expect(opts.width).toBeGreaterThan(0)
   })
 })

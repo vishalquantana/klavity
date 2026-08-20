@@ -1,6 +1,6 @@
 // packages/sdk/src/widget.ts
 import { injectSimStyles } from "@klavity/core/sim"
-import { safeToPng, safeToPngWithScale, safeToPngWithQuality } from "./capture"
+import { safeToPng, safeToPngWithScale, safeToPngWithQuality, safeToPngFullPage } from "./capture"
 import { buildModal, installRegionDrag, isEditableTarget, type ModalController, type PickedTarget } from "@klavity/core/modal"
 import { cropDataUrl, type Rect } from "@klavity/core/crop"
 import { planScrollStitch, clampCaptureHeight } from "./sharp-capture"
@@ -1315,7 +1315,9 @@ async function mount() {
       backendUrl: cfg.backendUrl,
       projectId: cfg.projectId,
       simIds: simIds === 'all' ? undefined : simIds,
-      captureViewport: () => safeToPng(document.body, { skipFonts: true, filter: notKlavityChrome }),
+      // Live-review captures the FULL page (whole scrollHeight), not just the above-the-fold viewport,
+      // so the Sim reviews the entire page — bounded by MAX_FULLPAGE_CAPTURE_HEIGHT. (KLAVITYKLA-404)
+      captureViewport: () => safeToPngFullPage({ skipFonts: true, filter: notKlavityChrome }),
       bearerToken: getToken() || undefined,
     })
     // BOOT: fire an immediate review so Sims react to the current page right away (not only on next scroll).
@@ -1335,7 +1337,9 @@ async function mount() {
         height: window.innerHeight || 1,
       }
       const shot = await Promise.race([
-        safeToPng(document.body, { skipFonts: true, filter: notKlavityChrome }),
+        // Boot review captures the FULL page (whole scrollHeight), not just the viewport, so the Sim's
+        // first reaction covers the entire page — bounded by MAX_FULLPAGE_CAPTURE_HEIGHT. (KLAVITYKLA-404)
+        safeToPngFullPage({ skipFonts: true, filter: notKlavityChrome }),
         new Promise<never>((_, rej) => setTimeout(() => rej(new Error("capture timeout")), 10_000)),
       ])
       const captureMs = benchNow() - captureStart
