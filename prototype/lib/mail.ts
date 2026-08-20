@@ -55,7 +55,11 @@ function sanitizeReason(reason: string | null | undefined): string {
   if (!reason) return "(no detail)"
   return String(reason)
     .replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
-    .replace(/[^\s@]+@[^\s@]+\.[^\s@]+/g, "[addr]")
+    // Redact the local-part of ANY local@domain token, keeping only the domain — privacy.
+    // The domain is intentionally NOT required to contain a dot: a bare intranet address like
+    // "secretuser@test" must have its local-part stripped just as "x@y.com" does, or the
+    // sensitive local-part leaks into the Slack payload.
+    .replace(/[^\s@]+@([^\s@]+)/g, "@$1")
     .slice(0, 200)
 }
 
@@ -195,7 +199,12 @@ async function sgSend(params: {
   type: string
 }): Promise<void> {
   const key = process.env.SENDGRID_API_KEY
-  if (!key) throw new Error("SENDGRID_API_KEY not set")
+  if (!key) {
+    // Missing key = the send definitely did not go out (the exact SendGrid outage class this alert
+    // exists for). Alert on-call BEFORE throwing, so a misconfigured/rotated-out key never fails silently.
+    fireMailFailure({ type: params.type, to: params.to, status: 0, reason: "SENDGRID_API_KEY not set" })
+    throw new Error("SENDGRID_API_KEY not set")
+  }
   let res: Response
   try {
     res = await fetch("https://api.sendgrid.com/v3/mail/send", {
@@ -239,7 +248,6 @@ async function sgSend(params: {
 // Email OTP via SendGrid (raw API; no SDK). Requires a VERIFIED sender.
 export async function sendOtp(to: string, code: string) {
   const from = process.env.KLAV_MAIL_FROM || "noreply@klavity.in"
-  if (!process.env.SENDGRID_API_KEY) throw new Error("SENDGRID_API_KEY not set")
   await sgSend({
     to: [to],
     from: { email: from, name: "Klavity" },
@@ -257,7 +265,6 @@ export async function sendOtp(to: string, code: string) {
 // member addresses aren't exposed to each other in the To header).
 export async function sendReportAlertEmail(to: string[], subject: string, html: string, text: string) {
   const from = process.env.KLAV_MAIL_FROM || "noreply@klavity.in"
-  if (!process.env.SENDGRID_API_KEY) throw new Error("SENDGRID_API_KEY not set")
   if (!to.length) return
   await sgSend({
     to,
@@ -273,7 +280,6 @@ export async function sendReportAlertEmail(to: string[], subject: string, html: 
 
 export async function sendLeadAlert(to: string, lead: { email: string; description: string; pageUrl: string; referrer?: string; projectName: string; feedbackUrl: string }) {
   const from = process.env.KLAV_MAIL_FROM || "noreply@klavity.in"
-  if (!process.env.SENDGRID_API_KEY) throw new Error("SENDGRID_API_KEY not set")
   const esc = (s: string) => s.replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c] as string))
   await sgSend({
     to: [to],
@@ -299,7 +305,12 @@ export async function sendFixedNotification(
 ) {
   const key = process.env.SENDGRID_API_KEY
   const from = process.env.KLAV_MAIL_FROM || "noreply@klavity.in"
-  if (!key) throw new Error("SENDGRID_API_KEY not set")
+  if (!key) {
+    // Missing key -> the notification did not go out. Alert on-call before throwing (this path does
+    // not go through sgSend, so it needs its own alert to avoid a silent miss).
+    fireMailFailure({ type: "notify_fixed", to: [to], status: 0, reason: "SENDGRID_API_KEY not set" })
+    throw new Error("SENDGRID_API_KEY not set")
+  }
   const esc = (s: string) => s.replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c] as string))
   const subject = `Fixed: ${ticket.title}`
   const text = [
@@ -318,16 +329,24 @@ export async function sendFixedNotification(
   <p style="margin:16px 0 0"><a href="${esc(ticket.ticketUrl)}" style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:10px 18px;border-radius:8px">View ticket</a></p>
   <p style="margin:18px 0 0;font-size:11px;color:#b6b3c0">Sent by Klavity when a bug you reported is resolved.</p>
 </div>`
-  const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" },
-    body: JSON.stringify({
-      personalizations: [{ to: [{ email: to }] }],
-      from: { email: from, name: "Klavity" },
-      subject,
-      content: [{ type: "text/plain", value: text }, { type: "text/html", value: html }],
-    }),
-  })
+  let res: Response
+  try {
+    res = await fetch("https://api.sendgrid.com/v3/mail/send", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        personalizations: [{ to: [{ email: to }] }],
+        from: { email: from, name: "Klavity" },
+        subject,
+        content: [{ type: "text/plain", value: text }, { type: "text/html", value: html }],
+      }),
+    })
+  } catch (err: any) {
+    // Network/DNS/transport error — the send definitely did not go out. Alert, then rethrow so the
+    // caller's contract is unchanged. Without this, a network exception would bypass the alert entirely.
+    fireMailFailure({ type: "notify_fixed", to: [to], status: 0, reason: err?.message || String(err) })
+    throw err
+  }
   if (!res.ok) {
     const errorText = (await res.text()).slice(0, 200)
     fireMailFailure({ type: "notify_fixed", to: [to], status: res.status, reason: errorText })
@@ -349,7 +368,6 @@ function escMail(s: string): string {
 
 export async function sendTicketAssignmentEmail(input: TicketAssignmentEmail) {
   const from = process.env.KLAV_MAIL_FROM || "noreply@klavity.in"
-  if (!process.env.SENDGRID_API_KEY) throw new Error("SENDGRID_API_KEY not set")
   const project = input.projectName ? ` in ${input.projectName}` : ""
   const actor = input.assignedBy ? ` by ${input.assignedBy}` : ""
   const subject = `Klavity ticket assigned to you${project}`
@@ -391,7 +409,6 @@ export type MemberInviteEmail = {
 
 export async function sendMemberInviteEmail(input: MemberInviteEmail) {
   const from = process.env.KLAV_MAIL_FROM || "noreply@klavity.in"
-  if (!process.env.SENDGRID_API_KEY) throw new Error("SENDGRID_API_KEY not set")
   const projectPlain = input.projectName || "Klavity"
   const inviterPlain = input.invitedBy || "A teammate"
   const project = input.projectName ? ` to ${input.projectName}` : ""
@@ -479,7 +496,6 @@ export type InstallInstructionsEmail = {
 
 export async function sendInstallInstructionsEmail(input: InstallInstructionsEmail) {
   const from = process.env.KLAV_MAIL_FROM || "noreply@klavity.in"
-  if (!process.env.SENDGRID_API_KEY) throw new Error("SENDGRID_API_KEY not set")
   const host = input.widgetHost.replace(/\/+$/, "")
   const snippet = `<script src="${host}/widget.js" data-project="${input.projectId}" defer></script>`
   const who = input.senderEmail ? `${input.senderEmail} asked you` : "You've been asked"
@@ -521,7 +537,6 @@ export type TicketAssignmentInviteEmail = TicketAssignmentEmail & {
 
 export async function sendTicketAssignmentInviteEmail(input: TicketAssignmentInviteEmail) {
   const from = process.env.KLAV_MAIL_FROM || "noreply@klavity.in"
-  if (!process.env.SENDGRID_API_KEY) throw new Error("SENDGRID_API_KEY not set")
   const project = input.projectName ? ` to ${input.projectName}` : ""
   const actor = input.assignedBy ? ` by ${input.assignedBy}` : ""
   const subject = `You're invited${project} on Klavity`
