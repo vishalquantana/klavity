@@ -1,6 +1,24 @@
 export type IntegrationType = 'jira' | 'linear' | 'github' | 'plane'
 export type ReportType = 'bug' | 'feature'
 
+// PX4 #411: the full set of issue "kinds" the enhanced composer can file. A superset of ReportType —
+// ReportType stays the 2-value union used by the extension + message protocol (which only ever opens
+// Bug/Feature), while the widget composer can additionally file Task/Query. Task/Query map to the
+// tracker's DEFAULT issue type unless an admin overrides them per-project via the connector
+// issue_type_map (see resolve-issue-type.ts). Widening is additive: 'bug'|'feature' still satisfy it.
+export type IssueKind = 'bug' | 'feature' | 'task' | 'query'
+
+// PX4 #425: a non-image file the reporter attached to the report (PDF, .log, .har, .txt, ...). Carried
+// alongside `screenshots` (which stay images) and threaded to the connector so it can attach the file
+// natively to the external issue. `dataUrl` is a base64 data: URL of the file bytes; `type` is the
+// browser-reported MIME (may be '' for unknown types like .log/.har — the server infers from name).
+export interface ReportFileAttachment {
+  name: string
+  type: string
+  size: number
+  dataUrl: string
+}
+
 // How the extension authenticates to the Klavity backend:
 //   'klavity' — signed-in user; backend resolves their personal→team connection (token stays server-side)
 //   'direct'  — no account; the extension forwards its own tracker creds (Phase 1 behavior)
@@ -95,9 +113,18 @@ export interface ReportContext {
 
 export interface SubmitReportPayload {
   type: ReportType
+  // PX4 #411: optional one-line issue title. When present the connector uses it verbatim as the external
+  // issue summary/title; when absent the server falls back to the existing auto-title (first line of the
+  // description / AI-drafted). Optional so existing payloads stay valid.
+  title?: string
+  // PX4 #411: the filed issue kind when it goes beyond Bug/Feature (Task/Query). Optional + additive: when
+  // absent the server uses `type`. The extension only ever sets `type`; the widget composer sets this.
+  kind?: IssueKind
   description: string
   context: ReportContext
   screenshots: string[] // data URLs (PNG or JPEG)
+  // PX4 #425: non-image file attachments (PDF, logs, .har, ...). Optional; screenshots keep their own path.
+  files?: ReportFileAttachment[]
   projectId?: string    // Klavity project ID; if set, report lands in that project
   // G1 session replay: rolling rrweb DOM-event buffer (Klavity backend integration only).
   replayEvents?: unknown[]
