@@ -797,6 +797,93 @@ export async function acquirePlaywrightBrowser(
 }
 
 /**
+ * Heuristic: does this thrown error indicate a browser/CDP TRANSPORT failure — i.e. the connection to
+ * the (remote Steel / self-hosted CDP / local) browser dropped or was never established — rather than a
+ * product/flow problem? Used to (a) decide a browser-acquire is worth RETRYING (a transient Steel/CDP
+ * hiccup self-heals on the next attempt), and (b) classify a mid-walk failure as INFRA (crash /
+ * browser-unavailable) instead of a false "regression" against the product under test.
+ *
+ * Deliberately NARROW: a plain element/assertion timeout ("Timeout 5000ms exceeded", "locator ...") is
+ * a genuine FLOW failure and must NOT match here, or infra retries/alerts would swallow real regressions.
+ * A BrowserLaunchError is always infra by construction. (KLAVITYKLA-397..401.)
+ */
+export function isInfraTransportError(error: unknown): boolean {
+  if (error instanceof BrowserLaunchError) return true
+  const msg = String((error as any)?.message ?? error ?? "").toLowerCase()
+  if (!msg) return false
+  return (
+    msg.includes("connection closed") ||
+    msg.includes("connection was closed") ||
+    msg.includes("websocket") ||
+    msg.includes("ws endpoint") ||
+    msg.includes("target closed") ||
+    msg.includes("target page, context or browser has been closed") ||
+    msg.includes("browser has been closed") ||
+    msg.includes("browser has disconnected") ||
+    msg.includes("session closed") ||
+    msg.includes("browser closed unexpectedly") ||
+    (msg.includes("browser.newcontext") && msg.includes("closed")) ||
+    (msg.includes("protocol error") && (msg.includes("closed") || msg.includes("connection"))) ||
+    msg.includes("econnrefused") ||
+    msg.includes("econnreset")
+  )
+}
+
+export interface WalkBrowserRetryOptions {
+  /** Total attempts including the first (>=1). Default 3, or AUTOSIM_BROWSER_ACQUIRE_ATTEMPTS. */
+  attempts?: number
+  /** Base backoff in ms for the jittered exponential backoff between attempts. Default 500. */
+  baseDelayMs?: number
+  /** Injectable sleep (tests pass a no-op so retries are instant). */
+  sleep?: (ms: number) => Promise<void>
+  /** Injectable jitter source (tests). Default Math.random. */
+  rand?: () => number
+  /** Injectable acquire fn (tests). Default the real acquirePlaywrightBrowser. */
+  acquire?: (opts: AcquireOpts, deps?: AcquirePlaywrightDeps) => Promise<PlaywrightBrowserHandle>
+  /** Passed through to the acquire fn (hermetic fallback tests). */
+  deps?: AcquirePlaywrightDeps
+}
+
+/**
+ * KLAVITYKLA-397..401: bounded, jittered RETRY around acquirePlaywrightBrowser. A transient Steel/CDP
+ * hiccup ("connection was closed" on connect, a dead session, a proxy blip) previously turned into an
+ * instant "browser/infra unavailable" RED. Here we retry a few times with jittered exponential backoff
+ * before giving up, so a momentary infra wobble self-heals. Retries are STRICTLY bounded (attempts cap)
+ * and only fire for infra/transport errors — a non-infra error (should not normally escape acquire) is
+ * re-thrown immediately, and the acquire-per-attempt cost is capped so a real outage can't loop or
+ * blow up cost. On exhaustion the last error is re-thrown for the caller to finalize as an infra crash.
+ */
+export async function acquireWalkBrowser(
+  opts: AcquireOpts = {},
+  retry: WalkBrowserRetryOptions = {},
+): Promise<PlaywrightBrowserHandle> {
+  const envAttempts = Number(process.env.AUTOSIM_BROWSER_ACQUIRE_ATTEMPTS)
+  const attempts = Math.max(1, retry.attempts ?? (Number.isFinite(envAttempts) && envAttempts > 0 ? envAttempts : 3))
+  const baseDelayMs = retry.baseDelayMs ?? 500
+  const sleep = retry.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)))
+  const rand = retry.rand ?? Math.random
+  const acquire = retry.acquire ?? acquirePlaywrightBrowser
+  let lastErr: unknown
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await acquire(opts, retry.deps)
+    } catch (e) {
+      lastErr = e
+      // Stop when we're out of attempts, or the failure is NOT a transient transport error.
+      if (attempt >= attempts || !isInfraTransportError(e)) break
+      // Jittered exponential backoff: base * 2^(attempt-1) * (0.5..1.5). Bounded — never unbounded.
+      const backoff = Math.round(baseDelayMs * Math.pow(2, attempt - 1) * (0.5 + rand()))
+      console.warn(
+        `[trails-browser] walk browser acquire attempt ${attempt}/${attempts} failed ` +
+        `(${String((e as any)?.message ?? e)}); reconnecting in ${backoff}ms`,
+      )
+      await sleep(backoff)
+    }
+  }
+  throw lastErr
+}
+
+/**
  * The remote (AUTOSIM_CDP_URL) acquire path for the walker seam. Throws BrowserLaunchError when the
  * remote browser cannot be reached, so acquirePlaywrightBrowser can decide to fall back to local.
  * (Callers must NOT invoke this with AUTOSIM_CDP_URL unset.)

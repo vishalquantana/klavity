@@ -68,6 +68,36 @@ export function isInfraFailure(ctx: Pick<WalkRedAlertContext, "failureKind" | "b
   return ctx.failureKind === "crash" || ctx.browserUnavailable === true
 }
 
+// ── KLAVITYKLA-397..401: repeated browser-unavailable outage escalation ─────────────────────────────
+// A single infra blip is noisy but expected; a RUN of consecutive browser-unavailable walks means the
+// browser tier (Steel/CDP) is likely DOWN — an outage worth flagging loudly. Track consecutive infra
+// outcomes in-process and, once a threshold is crossed, escalate ONE louder alert per cooldown window
+// (rate-limited so an outage doesn't spam). Any non-infra walk outcome resets the streak. Process-local
+// + best-effort — never persisted, never throws, never blocks a walk.
+let _consecutiveInfra = 0
+let _lastEscalateAt = 0
+const INFRA_ESCALATE_THRESHOLD = Math.max(2, Number(process.env.AUTOSIM_INFRA_ESCALATE_THRESHOLD) || 3)
+const INFRA_ESCALATE_WINDOW_MS = Math.max(60_000, Number(process.env.AUTOSIM_INFRA_ESCALATE_WINDOW_MS) || 10 * 60_000)
+
+/**
+ * Record one walk's infra outcome and decide whether to ESCALATE. Returns the current consecutive
+ * browser-unavailable count and whether this call should fire the louder outage alert (true at most once
+ * per cooldown window once the threshold is reached). Exported for direct unit testing.
+ */
+export function recordWalkInfraOutcome(infra: boolean, now: number = Date.now()): { consecutive: number; escalate: boolean } {
+  if (!infra) { _consecutiveInfra = 0; return { consecutive: 0, escalate: false } }
+  _consecutiveInfra++
+  const escalate = _consecutiveInfra >= INFRA_ESCALATE_THRESHOLD && now - _lastEscalateAt >= INFRA_ESCALATE_WINDOW_MS
+  if (escalate) _lastEscalateAt = now
+  return { consecutive: _consecutiveInfra, escalate }
+}
+
+/** Test-only: reset the infra escalation tracker between cases. */
+export function _resetWalkInfraTracker(): void {
+  _consecutiveInfra = 0
+  _lastEscalateAt = 0
+}
+
 function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, n - 1) + "…" : s
 }
@@ -132,17 +162,25 @@ export async function notifyWalkRed(ctx: WalkRedAlertContext): Promise<void> {
   // NOT a regression, and NEVER the signup channel. reportError is a no-op when the error webhook
   // is unset (open-core safe default).
   if (isInfraFailure(ctx)) {
+    // KLAVITYKLA-397..401: track the consecutive-infra streak so a real outage (browser tier down) gets
+    // a louder, rate-limited escalation instead of looking like N independent blips.
+    const { consecutive, escalate } = recordWalkInfraOutcome(true)
     const reason = ctx.reasons.length ? ctx.reasons.join(" | ") : "browser/infra unavailable"
+    const streakNote = escalate
+      ? ` [OUTAGE? ${consecutive} consecutive AutoSim infra failures — check Steel/CDP (AUTOSIM_CDP_URL / STEEL_API_KEY)]`
+      : consecutive > 1 ? ` [${consecutive}x consecutive infra failures]` : ""
     const walkUrl = baseUrl ? `${baseUrl}/autosims/walk/${ctx.runId}?project=${encodeURIComponent(ctx.projectId)}` : undefined
     await reportError({
       where: "backend",
-      message: `AutoSim walk infra failure — "${ctx.trailName}": ${truncate(reason, 300)}`,
+      message: `AutoSim walk infra failure — "${ctx.trailName}": ${truncate(reason, 300)}${streakNote}`,
       route: walkUrl,
       projectId: ctx.projectId,
       traceId: ctx.runId,
     }).catch((err: any) => console.error("walk-red-alert (infra, non-fatal):", err?.message || err))
     return
   }
+  // A genuine (non-infra) walk RED resets the infra streak — the browser tier is clearly reachable.
+  recordWalkInfraOutcome(false)
 
   // GENUINE regression → SLACK_ALERT_WEBHOOK_URL, falling back to SLACK_ERROR_WEBHOOK_URL.
   // The signup webhook is intentionally NOT a fallback here — walk alerts must never hit signup.

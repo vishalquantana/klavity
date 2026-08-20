@@ -9,7 +9,7 @@
 //
 // Project-scoped: projectId is the first arg of every persisted call and every query.
 import type { Browser, BrowserContext, Page, Locator } from "playwright"
-import { acquirePlaywrightBrowser, playwrightContextOptionsForTrailViewport, startCdpScreencast, BrowserLaunchError, harRecordContextOptions, applyHarReplay, startContextTracing, stopContextTracing, type PlaywrightBrowserHandle } from "./trails-browser-page"
+import { acquireWalkBrowser, playwrightContextOptionsForTrailViewport, startCdpScreencast, BrowserLaunchError, isInfraTransportError, harRecordContextOptions, applyHarReplay, startContextTracing, stopContextTracing, type PlaywrightBrowserHandle } from "./trails-browser-page"
 import { getHarForTrail, saveWalkArtifact } from "./trails-har"
 import { mkdtemp, writeFile, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -386,6 +386,11 @@ export function humanStepDescription(action: string, name?: string | null): stri
  * Walk summary `reasons` array (surfaced in the Slack alert and the walk-detail
  * page).
  */
+// KLAVITYKLA-397..401: reason shown when a walk failed because the browser/CDP connection dropped
+// mid-walk. Kept distinct from humanRedReason so infra failures never read as a product regression.
+export const INFRA_DROP_REASON =
+  "The connection to the browser was lost during the walk (infrastructure issue) — this is not a product failure."
+
 export function humanRedReason(stepIdx: number, action: string, name?: string | null): string {
   const desc = humanStepDescription(action, name)
   if (action === "assert") {
@@ -700,9 +705,14 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
   // entirely and be finalized by runWalkNow's generic catch with NO failureKind — indistinguishable from
   // a real regression, and with an empty walk report. Catch it here: the run row already exists, so we
   // finalize it RED as a CRASH (infra), with the actionable BrowserLaunchError message surfaced verbatim.
+  // KLAVITYKLA-397..401: acquire via the bounded, jittered RETRY wrapper. A transient Steel/CDP hiccup
+  // (dead session, "connection was closed" on connect, a proxy blip) previously became an instant
+  // "browser/infra unavailable" RED; now we reconnect a few times before declaring the browser
+  // unavailable. On exhaustion this still finalizes the run RED as an infra CRASH (browserUnavailable),
+  // never a misleading product regression.
   let bh: PlaywrightBrowserHandle
   try {
-    bh = await acquirePlaywrightBrowser({ headless: opts.headless, launchArgs: opts.launchArgs })
+    bh = await acquireWalkBrowser({ headless: opts.headless, launchArgs: opts.launchArgs })
   } catch (e) {
     const msg = e instanceof BrowserLaunchError ? e.message : `Could not start the walk browser: ${String((e as any)?.message ?? e)}`
     const reasons = [msg]
@@ -726,6 +736,10 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
   const deadline = opts.deadlineMs ? Date.now() + opts.deadlineMs : Infinity
   let deadlineHit = false
   let cancelledBySignal = false
+  // KLAVITYKLA-397..401: set when a step fails because the browser/CDP connection dropped mid-walk (an
+  // INFRA transport error, not a product break). Forces the walk verdict to an infra CRASH so the alert
+  // is routed + labelled as an infrastructure issue, never a false "regression".
+  let sawInfraDrop = false
   let redFailureKind: FailureKind | null = null
   const shotUploads = opts.stepShots
     ? createStepShotUploadQueue(projectId, opts.shotUploader ?? defaultShotUploader)
@@ -926,13 +940,22 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
 
       const evBefore = evCol.offsets()
       const stepStart = Date.now()
-      const { tier, verdict, healed, llmCalls: stepLlm, failureKind } = await runOneStep(projectId, runId, trail.id, page, step, opts, opTimeout, deadline, { col: evCol, before: evBefore, start: stepStart }, shotUploads, walkVerdict === "red")
+      const { tier, verdict, healed, llmCalls: stepLlm, failureKind, infra } = await runOneStep(projectId, runId, trail.id, page, step, opts, opTimeout, deadline, { col: evCol, before: evBefore, start: stepStart }, shotUploads, walkVerdict === "red")
       stepSummaries.push({ stepId: step.id, idx: step.idx, tier, verdict, healed, ...(failureKind ? { failureKind } : {}) })
       if (healed) healedCount++
       llmCalls += stepLlm
       walkVerdict = worse(walkVerdict, verdict)
       // KLAVITYKLA-48: every RED must carry a reason — accumulate per-step so the Walk summary is never silent.
       if (verdict === "red") {
+        // KLAVITYKLA-397..401: a step that failed because the browser/CDP connection dropped is INFRA,
+        // not a product regression. Record the honest infra reason and STOP the walk cleanly — the
+        // connection is dead, so every remaining step would false-fail too.
+        if (infra) {
+          sawInfraDrop = true
+          redReasons.push(INFRA_DROP_REASON)
+          redFailureKind = "crash"
+          break
+        }
         redReasons.push(humanRedReason(step.idx, step.action, step.target?.accessibleName))
         redFailureKind = worseFailureKind(redFailureKind, failureKind ?? failureKindForExpectationFailure())
       }
@@ -962,8 +985,9 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
 
     // KLA-74: include browser diagnostics in the walk summary when anything was captured.
     const evSummary = evCol.hasEvidence() ? evCol.summary() : null
+    // KLAVITYKLA-397..401: an infra connection-drop wins the roll-up as a CRASH (never a regression).
     const walkFailureKind = walkVerdict === "red"
-      ? (deadlineHit || cancelledBySignal ? failureKindForThrownError(deadlineHit ? "deadline_exceeded" : "cancelled") : redFailureKind ?? failureKindForExpectationFailure())
+      ? (sawInfraDrop ? "crash" : deadlineHit || cancelledBySignal ? failureKindForThrownError(deadlineHit ? "deadline_exceeded" : "cancelled") : redFailureKind ?? failureKindForExpectationFailure())
       : null
     await finishWalk(projectId, runId, {
       status: walkVerdict,
@@ -971,11 +995,11 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
       // browserKind (KLA-278): which browser actually ran the walk — "local", "steel:<region>",
       // "cdp-remote", or "local-fallback" (remote endpoint was down → we fell back so the guard
       // still ran). Surfacing it here makes the Steel↔local fallback VISIBLE on the walk report.
-      summary: { healedCount, stepCount: steps.length, browserKind: bh.kind, ...(walkFailureKind ? { failureKind: walkFailureKind } : {}), ...(deadlineHit ? { error: "deadline_exceeded" } : cancelledBySignal ? { error: "cancelled" } : {}), ...(evSummary ? { evidence: evSummary } : {}) },
+      summary: { healedCount, stepCount: steps.length, browserKind: bh.kind, ...(walkFailureKind ? { failureKind: walkFailureKind } : {}), ...(sawInfraDrop ? { browserUnavailable: true } : {}), ...(deadlineHit ? { error: "deadline_exceeded" } : cancelledBySignal ? { error: "cancelled" } : {}), ...(evSummary ? { evidence: evSummary } : {}) },
     })
 
     if (walkVerdict === "red") {
-      notifyWalkRed({ trailName: trail.name, trailId, projectId, runId, reasons: redReasons, at: Date.now(), failureKind: walkFailureKind ?? undefined }).catch(() => {})
+      notifyWalkRed({ trailName: trail.name, trailId, projectId, runId, reasons: redReasons, at: Date.now(), failureKind: walkFailureKind ?? undefined, ...(sawInfraDrop ? { browserUnavailable: true } : {}) }).catch(() => {})
     }
 
     // KLA-94: opt-in auto-file. Runs after finishWalk so the walk is already settled. Best-effort:
@@ -994,14 +1018,20 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
   } catch (e) {
     // Anything thrown (e.g. an unreachable fixtureUrl) must STILL finalize the run — never leave it
     // 'running'. The Walk is RED and the error is recorded in the summary for the trace viewer.
-    const redReasons: string[] = [`walk failed: ${String(e)}`]
+    //
+    // KLAVITYKLA-397..401: distinguish an INFRA transport drop (the browser/CDP connection was lost, or
+    // the browser is no longer connected) from a genuine flow failure. An infra drop is flagged
+    // browserUnavailable so the alert routes to the infra channel with an honest "lost the browser"
+    // reason instead of misreporting it as a product break.
+    const infra = isInfraTransportError(e) || browser?.isConnected?.() === false
+    const redReasons: string[] = [infra ? INFRA_DROP_REASON : `walk failed: ${String(e)}`]
     const evSummaryCatch = evCol.hasEvidence() ? evCol.summary() : null
     await finishWalk(projectId, runId, {
       status: "red",
       llmCalls,
-      summary: { ...redReasons.length ? { reasons: redReasons } : {}, failureKind: failureKindForThrownError(e), error: String(e), browserKind: bh.kind, ...(evSummaryCatch ? { evidence: evSummaryCatch } : {}) },
+      summary: { ...redReasons.length ? { reasons: redReasons } : {}, failureKind: failureKindForThrownError(e), error: String(e), browserKind: bh.kind, ...(infra ? { browserUnavailable: true } : {}), ...(evSummaryCatch ? { evidence: evSummaryCatch } : {}) },
     })
-    notifyWalkRed({ trailName: trail.name, trailId, projectId, runId, reasons: redReasons, at: Date.now(), failureKind: failureKindForThrownError(e) }).catch(() => {})
+    notifyWalkRed({ trailName: trail.name, trailId, projectId, runId, reasons: redReasons, at: Date.now(), failureKind: failureKindForThrownError(e), ...(infra ? { browserUnavailable: true } : {}) }).catch(() => {})
     return { runId, verdict: "red", llmCalls, steps: stepSummaries, healedCount, reasons: redReasons, failureKind: failureKindForThrownError(e), ...(evSummaryCatch ? { evidence: evSummaryCatch } : {}) }
   } finally {
     // Usage meter (KLAVITYKLA-305): one 'autosim_walk' event per completed AutoSim/Trail walk
@@ -1027,7 +1057,7 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
   }
 }
 
-interface OneStepResult { tier: Tier; verdict: Verdict; healed: boolean; llmCalls: number; failureKind?: FailureKind }
+interface OneStepResult { tier: Tier; verdict: Verdict; healed: boolean; llmCalls: number; failureKind?: FailureKind; /** KLAVITYKLA-397..401: true when this step failed due to a browser/CDP transport drop (infra, not a product break). */ infra?: boolean }
 
 // KLA-74: evidence context threaded into runOneStep + callees so they can inject
 // durationMs + per-step browser events into every addRunStep evidence blob.
@@ -1460,7 +1490,13 @@ async function runOneStep(
   if (lastActionError !== undefined) {
     // All retry attempts exhausted — the element resolved but the action/assertion failed -> RED.
     const verdict: Verdict = "red"
-    if (!opts.suppressFindings) {
+    // KLAVITYKLA-397..401: if the action failed because the browser/CDP connection dropped (e.g. a Steel
+    // session died mid-walk), this is an INFRA transport failure, NOT a product regression. Do NOT file a
+    // product Finding for it (that would look like the app broke), and classify it as a "crash" so the
+    // walk roll-up + alert route it as an infrastructure issue.
+    const infra = isInfraTransportError(lastActionError)
+    const stepFailureKind: FailureKind = infra ? "crash" : failureKindForExpectationFailure()
+    if (!infra && !opts.suppressFindings) {
       const title = isAssert
         ? `Check failed — "${step.checkpoint?.description ?? fp?.accessibleName ?? fp?.text ?? "expected condition"}" was not met on the page.`
         : `Could not complete ${humanStepDescription(step.action, fp?.accessibleName)} — the interaction failed after retrying.`
@@ -1479,16 +1515,16 @@ async function runOneStep(
     // PDF task 1: best-effort screenshot even on action failure (shows the failure state).
     await addStepRunWithShot({
       runId, trailId, stepId: step.id, idx: step.idx,
-      tier: resolved.tier, verdict, confidence: resolved.confidence, diagnosis: isAssert ? "regression" : "interaction_change", healed: false,
+      tier: resolved.tier, verdict, confidence: resolved.confidence, diagnosis: infra ? "crash" : isAssert ? "regression" : "interaction_change", healed: false,
       evidence: {
-        failureKind: failureKindForExpectationFailure(),
-        reason: isAssert ? "checkpoint_failed" : "action_failed",
+        failureKind: stepFailureKind,
+        reason: infra ? "infra_transport" : isAssert ? "checkpoint_failed" : "action_failed",
         error: String((lastActionError as any)?.message || lastActionError),
         checkpoint: step.checkpoint?.description ?? null,
         recordedStep: recordedStep(resolved.selector, fp),
       },
     })
-    return { tier: resolved.tier, verdict, healed: false, llmCalls: 0, failureKind: failureKindForExpectationFailure() }
+    return { tier: resolved.tier, verdict, healed: false, llmCalls: 0, failureKind: stepFailureKind, ...(infra ? { infra: true } : {}) }
   }
 
   // Capture the pre-heal selector BEFORE the upsert overwrites it (heal-as-reviewable-diff, §6.4).
