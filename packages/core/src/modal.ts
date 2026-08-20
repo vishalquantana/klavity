@@ -199,6 +199,10 @@ export interface ModalCallbacks {
   // so an end-user can file a ticket without a Klavity account. Default false → extension/authed
   // paths are unaffected (they already carry an identity).
   requireEmail?: boolean
+  // PX4 #439: when the reporter identity is already known (Identify API / config / fallback), pre-fill the
+  // required-email field so the user doesn't retype it. Ignored unless requireEmail rendered the field.
+  // The value stays user-editable; it only seeds the initial input. Absent → no pre-fill (as today).
+  prefillEmail?: string
   // Mode-aware success screen. When provided, a successful submit swaps the modal body for this
   // screen (headline/body, optional email-lead capture, optional CTA) and DOES NOT auto-close —
   // the user must interact. When absent, falls back to the themed thankYou/"Filed" auto-close card.
@@ -1105,6 +1109,8 @@ export function buildModal(
   const desc = modal.querySelector('#klavity-desc') as HTMLTextAreaElement
   const submitBtn = modal.querySelector('#klavity-submit') as HTMLButtonElement
   const remail = modal.querySelector('#klavity-remail') as HTMLInputElement | null
+  // PX4 #439: pre-fill the required-email field when the reporter identity is already known (no retyping).
+  if (remail && callbacks.prefillEmail && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(callbacks.prefillEmail)) remail.value = callbacks.prefillEmail
   const descHint = modal.querySelector('#klavity-desc-hint') as HTMLElement | null
   // Submit is enabled only when there's a description AND (if a required email field is shown) a valid email.
   const emailValid = () => !callbacks.requireEmail || (!!remail && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(remail.value.trim()))

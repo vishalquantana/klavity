@@ -38,7 +38,7 @@ import type { CaptureBuffers } from '@klavity/core/capture'
 
 // Importing widget.ts triggers the window.Klavity side effect.
 // With the parseScriptConfig mock above, the auto-mount returns early without crashing.
-import { identify, setMetadata } from './widget'
+import { identify, setMetadata, installIdentifyQueue, currentReporter } from './widget'
 
 beforeEach(() => {
   _clearListenersForTest()
@@ -62,6 +62,49 @@ describe('window.Klavity API surface', () => {
     expect(typeof w.identify).toBe('function')
     expect(typeof w.setMetadata).toBe('function')
     expect(typeof w.mount).toBe('function')
+  })
+
+  // ── PX4 #439: lowercase window.klavity async queue (PostHog-style stub) ──
+  it('window.klavity is a live object exposing identify/setMetadata/open/on/push after load', () => {
+    const k = (window as any).klavity
+    expect(k).toBeDefined()
+    expect(typeof k.identify).toBe('function')
+    expect(typeof k.setMetadata).toBe('function')
+    expect(typeof k.open).toBe('function')
+    expect(typeof k.on).toBe('function')
+    expect(typeof k.push).toBe('function')
+  })
+
+  it('identify() called via window.klavity is honored (resolves the reporter)', () => {
+    identify(null)
+    ;(window as any).klavity.identify({ id: 'u_live', email: 'live@example.com', org: 'Acme' })
+    expect(currentReporter()).toEqual({ id: 'u_live', email: 'live@example.com', org: 'Acme' })
+  })
+
+  it('replays a pre-load queue array on installIdentifyQueue() (called before OR after load is honored)', () => {
+    identify(null)
+    // Simulate the install-snippet stub: window.klavity is an array of queued [method, ...args] calls
+    // pushed BEFORE widget.js finished loading.
+    ;(window as any).klavity = [
+      ['identify', { id: 'u_queued', email: 'queued@example.com', role: 'admin' }],
+      ['setMetadata', { plan: 'pro' }],
+    ]
+    installIdentifyQueue()
+    // Queue drained → reporter resolved from the replayed identify() call.
+    expect(currentReporter()).toEqual({ id: 'u_queued', email: 'queued@example.com', role: 'admin' })
+    // …and window.klavity is now the live object (push processes immediately).
+    const k = (window as any).klavity
+    expect(typeof k.push).toBe('function')
+    k.push(['identify', { id: 'u_after', email: 'after@example.com' }])
+    expect(currentReporter()).toEqual({ id: 'u_after', email: 'after@example.com' })
+  })
+
+  it('a malformed queue entry never throws and does not corrupt the reporter', () => {
+    identify({ id: 'u_ok', email: 'ok@example.com' })
+    ;(window as any).klavity = [null, 'garbage', ['unknownMethod', 1], { no: 'method' }]
+    expect(() => installIdentifyQueue()).not.toThrow()
+    // The valid prior identity is untouched (no queue entry replaced it).
+    expect(currentReporter()).toEqual({ id: 'u_ok', email: 'ok@example.com' })
   })
 
   it('window.Klavity.identify is the same function exported from widget.ts', () => {

@@ -40,7 +40,7 @@ import { uploadScreenshotMeta, uploadAttachment, presignGet, deleteObject, getOb
 import { signImageToken, verifyImageToken } from "./lib/imgsign"
 import { runRetentionSweep } from "./lib/retention"
 import { SCREENSHOTS, resolveScreenshotConfig, mbLabel } from "./lib/screenshot-config"
-import { buildIssueHtml, escapeHtml, sanitizeClientContext, clientContextLines } from "./lib/feedback"
+import { buildIssueHtml, escapeHtml, sanitizeClientContext, clientContextLines, sanitizeReporter, sanitizeClientInfo, reporterLines, clientInfoLines } from "./lib/feedback"
 import { encryptSecret, decryptSecret } from "./lib/crypto"
 import { createTestAccount, listTestAccounts, getTestAccountById, getTestAccountByName, deleteTestAccount, isTestAccountEmail, getTestAccountRefs, rotateTestAccountSecret } from "./lib/test-accounts"
 import { assertSafeUrl } from "./lib/url-guard"
@@ -1485,10 +1485,16 @@ async function feedbackToTicketPayload(fb: any, project: { id: string; name?: st
       labelNames = (await labelsForFeedback(String(fb.id))).map((l: any) => String(l.name)).filter(Boolean)
     } catch (e: any) { console.warn("label lookup failed for ticket payload (non-fatal):", e?.message || e) }
   }
+  // PX4 #439/#428: the dedicated reporter identity + captured browser/app info blocks. Rendered first so
+  // the "who + from where" attribution sits above the technical console/network dump. When a reporter
+  // block is present we skip the overlapping context.identity lines below (skipIdentity) to avoid dupes.
+  const hasReporter = fb.reporter && typeof fb.reporter === "object" && Object.keys(fb.reporter).length > 0
+  if (hasReporter) { const rl = reporterLines(fb.reporter); if (rl.length) lines.push(rl.join("\n")) }
+  if (fb.clientInfo) { const cl = clientInfoLines(fb.clientInfo); if (cl.length) lines.push(cl.join("\n")) }
   // G2/G3/G5: append captured dev-tools context (console + network + env + identity/metadata) so the
   // external ticket carries the same technical context the extension path does.
   if (fb.clientContext) {
-    const ctxLines = clientContextLines(fb.clientContext)
+    const ctxLines = clientContextLines(fb.clientContext, { skipIdentity: hasReporter })
     if (ctxLines.length) lines.push(ctxLines.join("\n"))
   }
   // Screenshot: connectors natively attach `bytes` when they can; the permanent `url` is the body
@@ -3526,6 +3532,22 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           try { clientContext = sanitizeClientContext(JSON.parse(ctxRaw)) } catch { clientContext = null }
         }
 
+        // PX4 #439: the resolved reporter identity (Identify API / config / data-attrs / safe fallback),
+        // sent as its own JSON field. Sanitized (allowlisted keys, capped strings) so a malformed/oversized
+        // blob never poisons the row. Persisted to feedback.reporter_json + surfaced on the exported ticket.
+        let reporter: any = null
+        const reporterRaw = String(form.get("reporter") || "")
+        if (reporterRaw && reporterRaw.length <= 10_000) {
+          try { reporter = sanitizeReporter(JSON.parse(reporterRaw)) } catch { reporter = null }
+        }
+        // PX4 #428: captured client/browser/app info (browser+version/OS/viewport/locale). Own JSON field →
+        // feedback.client_info_json + a readable "Client:" line on the exported ticket.
+        let clientInfo: any = null
+        const clientInfoRaw = String(form.get("client_info") || "")
+        if (clientInfoRaw && clientInfoRaw.length <= 10_000) {
+          try { clientInfo = sanitizeClientInfo(JSON.parse(clientInfoRaw)) } catch { clientInfo = null }
+        }
+
         // Annotation overlay (KLAVITYKLA-1 / KLAVITYKLA-217): structured markup { w, h, shapes:[], region?,
         // selector?, byIndex? } so the ticket can re-render the highlight over EACH screenshot. Optional,
         // size-capped, sanitized defensively (coords coerced to finite numbers, shape types allowlisted, strings
@@ -3832,6 +3854,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   // PX4 #411/#425: explicit Title + non-image file attachment descriptors (null/empty when absent).
                   title: reportTitle,
                   attachments: attachmentDescs.length ? attachmentDescs : null,
+                  // PX4 #439/#428: reporter identity + captured browser/app info (null when absent).
+                  reporter, clientInfo,
                 })
                 if (priorFeedbackCount === 0 && feedbackId) {
                   const fbSource = anonWidgetAllowed ? "widget" : (simId ? "sim" : "extension")

@@ -1008,6 +1008,12 @@ export async function applySchema(c: Client) {
     // PX4 #425: non-image file attachments (PDF, .log, .har, ...) as a JSON array of
     // { key, filename, contentType, size } S3 descriptors. Null/absent when the report had no files.
     ["attachments_json",       "TEXT"],
+    // PX4 #439: resolved reporter identity (Identify API / config / data-attrs / safe fallback) as a JSON
+    // object { id,email,name,org,orgId,role,product,env,server }. Null on older rows / anonymous reports.
+    ["reporter_json",          "TEXT"],
+    // PX4 #428: captured client/browser/app info as a JSON object { browser,browserVersion,os,viewport,
+    // locale,timezone,... }. Null on older rows / when the client sent none.
+    ["client_info_json",       "TEXT"],
   ]
   for (const [col, def] of feedbackAlters) {
     if (needCol("feedback", col)) {
@@ -2922,6 +2928,8 @@ export type FeedbackInsert = {
   reportGeoJson?: string | null  // best-effort geo/company enrichment JSON (may be stamped async post-insert)
   title?: string | null      // PX4 #411: explicit one-line issue Title (preferred over auto-title on export)
   attachments?: Array<{ key: string; filename: string; contentType: string; size: number }> | null  // PX4 #425: non-image files
+  reporter?: Record<string, string> | null   // PX4 #439: resolved reporter identity (id/email/name/org/...)
+  clientInfo?: Record<string, any> | null     // PX4 #428: captured browser/app info (browser/os/viewport/...)
 }
 
 // Triage gate: new feedback is "new" (needs triage) unless it's a high-priority
@@ -2938,8 +2946,8 @@ export async function insertFeedback(f: FeedbackInsert): Promise<string> {
   await db!.execute({
     sql: `INSERT INTO feedback (id,project_id,sim_id,actor_email,url_host,url_path,source_referrer,observation,sentiment,priority,
           screenshot_id,suggested_bug_json,cited_trait_ids_json,source_quote,source_transcript_id,source_date,
-          plane_issue_key,plane_issue_url,issue_key,recurrence_count,recurrence_dates_json,last_seen_at,client_context_json,annotations_json,source,signature,report_type,report_ip,report_url,report_geo_json,title,attachments_json,created_at,status)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          plane_issue_key,plane_issue_url,issue_key,recurrence_count,recurrence_dates_json,last_seen_at,client_context_json,annotations_json,source,signature,report_type,report_ip,report_url,report_geo_json,title,attachments_json,reporter_json,client_info_json,created_at,status)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [id, f.projectId, f.simId ?? null, f.actorEmail ?? null, f.urlHost ?? null, f.urlPath ?? null, f.sourceReferrer ?? null,
            f.observation ?? null, f.sentiment ?? null, f.priority ?? null, f.screenshotId ?? null,
            f.suggestedBug != null ? JSON.stringify(f.suggestedBug) : null,
@@ -2952,6 +2960,8 @@ export async function insertFeedback(f: FeedbackInsert): Promise<string> {
            f.source ?? null, f.signature ?? null, f.reportType ?? null,
            f.reportIp ?? null, f.reportUrl ?? null, f.reportGeoJson ?? null,
            f.title ?? null, (f.attachments && f.attachments.length) ? JSON.stringify(f.attachments) : null,
+           (f.reporter && Object.keys(f.reporter).length) ? JSON.stringify(f.reporter) : null,
+           (f.clientInfo && Object.keys(f.clientInfo).length) ? JSON.stringify(f.clientInfo) : null,
            now, status],
   })
   // KLA-200: assign per-project sequential number immediately after insert
@@ -4949,6 +4959,10 @@ export async function feedbackById(projectId: string, id: string): Promise<any |
     title: x.title != null ? String(x.title) : null,
     // PX4 #425: non-image file attachments — parsed JSON array of { key, filename, contentType, size }.
     attachments: safeJsonParse(x.attachments_json),
+    // PX4 #439/#428: reporter identity + captured browser/app info (null on older/anonymous rows). Consumed
+    // by feedbackToTicketPayload to attribute the exported ticket.
+    reporter: safeJsonParse(x.reporter_json),
+    clientInfo: safeJsonParse(x.client_info_json),
   }
 }
 

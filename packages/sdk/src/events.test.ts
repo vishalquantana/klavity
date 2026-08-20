@@ -123,14 +123,40 @@ describe('parseScriptConfig — G5 metadata via data-* attributes', () => {
   const script = (data: Record<string, string>, src = 'https://app.klavity.com/widget.js') =>
     ({ dataset: data, src })
 
-  it('parses data-user-id / data-user-email / data-user-name into identity', () => {
+  it('parses data-user-id / data-user-email / data-user-name into reporter (legacy spelling)', () => {
     const cfg = parseScriptConfig(script({
       project: 'proj_abc',
       userId: 'u_42',
       userEmail: 'ada@example.com',
       userName: 'Ada Lovelace',
     }))
-    expect(cfg.identity).toEqual({ id: 'u_42', email: 'ada@example.com', name: 'Ada Lovelace' })
+    expect(cfg.reporter).toEqual({ id: 'u_42', email: 'ada@example.com', name: 'Ada Lovelace' })
+  })
+
+  it('parses data-klavity-user-* (PX4 #439 canonical spelling) + extended fields into reporter', () => {
+    const cfg = parseScriptConfig(script({
+      project: 'proj_abc',
+      klavityUserId: 'u_99',
+      klavityUserEmail: 'grace@example.com',
+      klavityUserName: 'Grace Hopper',
+      klavityUserOrg: 'Navy',
+      klavityUserOrgId: 'org_7',
+      klavityUserRole: 'admin',
+      klavityUserProduct: 'compiler',
+      klavityUserEnv: 'prod',
+      klavityUserServer: 'BHP_WEB',
+    }))
+    expect(cfg.reporter).toEqual({
+      id: 'u_99', email: 'grace@example.com', name: 'Grace Hopper',
+      org: 'Navy', orgId: 'org_7', role: 'admin', product: 'compiler', env: 'prod', server: 'BHP_WEB',
+    })
+  })
+
+  it('prefers data-klavity-user-* over the legacy data-user-* when both are present', () => {
+    const cfg = parseScriptConfig(script({
+      project: 'p', klavityUserEmail: 'new@example.com', userEmail: 'old@example.com',
+    }))
+    expect(cfg.reporter!.email).toBe('new@example.com')
   })
 
   it('parses data-meta JSON into metadata', () => {
@@ -166,16 +192,16 @@ describe('parseScriptConfig — G5 metadata via data-* attributes', () => {
     expect(cfg.metadata).toBeUndefined()
   })
 
-  it('returns identity: undefined and metadata: undefined when no data-* provided', () => {
+  it('returns reporter: undefined and metadata: undefined when no data-* provided', () => {
     const cfg = parseScriptConfig(script({ project: 'p' }))
-    expect(cfg.identity).toBeUndefined()
+    expect(cfg.reporter).toBeUndefined()
     expect(cfg.metadata).toBeUndefined()
   })
 
-  it('omits identity fields that are not provided (partial identity is fine)', () => {
+  it('omits reporter fields that are not provided (partial identity is fine)', () => {
     const cfg = parseScriptConfig(script({ project: 'p', userEmail: 'ada@example.com' }))
-    expect(cfg.identity).toEqual({ email: 'ada@example.com' })
-    expect(cfg.identity!.id).toBeUndefined()
-    expect(cfg.identity!.name).toBeUndefined()
+    expect(cfg.reporter).toEqual({ email: 'ada@example.com' })
+    expect(cfg.reporter!.id).toBeUndefined()
+    expect(cfg.reporter!.name).toBeUndefined()
   })
 })

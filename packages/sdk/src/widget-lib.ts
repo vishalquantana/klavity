@@ -1,19 +1,34 @@
-import type { ReportContext, ReportIdentity } from "@klavity/core"
+import type { ReportContext, Reporter } from "@klavity/core"
 import { buildFeedbackFormData } from '../../core/src/integrations/backend'
+import { coerceReporter } from './identity'
 import { icon } from '@klavity/core/icons'
 
-export function parseScriptConfig(scriptEl: { dataset: Record<string, string | undefined>, src: string }): { projectId: string, backendUrl: string, identity?: ReportIdentity, metadata?: Record<string, string> } {
+export function parseScriptConfig(scriptEl: { dataset: Record<string, string | undefined>, src: string }): { projectId: string, backendUrl: string, reporter?: Reporter, metadata?: Record<string, string> } {
   const projectId = scriptEl.dataset.project || ""
   let backendUrl = ""
   try { backendUrl = new URL(scriptEl.src).origin } catch { backendUrl = "" }
-  // G5: custom identity/metadata can be declared on the script tag, e.g.
+  // PX4 #439 / G5: the reporter identity can be declared directly on the script tag. Two attribute
+  // spellings are accepted (both map to the same dataset camelCase keys):
+  //   data-klavity-user-*  → dataset.klavityUser*   (PX4 #439 canonical, namespaced)
+  //   data-user-*          → dataset.user*          (original G5 spelling, kept for back-compat)
+  // Full field set: id/email/name/org/orgId/role/product/env/server. e.g.
   //   <script src=".../widget.js" data-project="p1"
-  //           data-user-id="u_42" data-user-email="a@b.com" data-user-name="Ada"
+  //           data-klavity-user-id="u_42" data-klavity-user-email="a@b.com" data-klavity-user-name="Ada"
+  //           data-klavity-user-org="Acme" data-klavity-user-role="admin" data-klavity-user-env="prod"
   //           data-meta='{"plan":"pro","tenant":"acme"}'></script>
-  const identity: ReportIdentity = {}
-  if (scriptEl.dataset.userId) identity.id = String(scriptEl.dataset.userId)
-  if (scriptEl.dataset.userEmail) identity.email = String(scriptEl.dataset.userEmail)
-  if (scriptEl.dataset.userName) identity.name = String(scriptEl.dataset.userName)
+  const d = scriptEl.dataset
+  const raw: Record<string, string | undefined> = {
+    id:      d.klavityUserId      ?? d.userId,
+    email:   d.klavityUserEmail   ?? d.userEmail,
+    name:    d.klavityUserName    ?? d.userName,
+    org:     d.klavityUserOrg     ?? d.userOrg,
+    orgId:   d.klavityUserOrgId   ?? d.userOrgId,
+    role:    d.klavityUserRole    ?? d.userRole,
+    product: d.klavityUserProduct ?? d.userProduct,
+    env:     d.klavityUserEnv     ?? d.userEnv,
+    server:  d.klavityUserServer  ?? d.userServer,
+  }
+  const reporter = coerceReporter(raw)
   let metadata: Record<string, string> | undefined
   if (scriptEl.dataset.meta) {
     try {
@@ -27,11 +42,7 @@ export function parseScriptConfig(scriptEl: { dataset: Record<string, string | u
       }
     } catch { /* ignore malformed data-meta */ }
   }
-  return {
-    projectId, backendUrl,
-    identity: Object.keys(identity).length ? identity : undefined,
-    metadata,
-  }
+  return { projectId, backendUrl, reporter, metadata }
 }
 
 export interface SuccessCopy {
@@ -163,7 +174,7 @@ export async function buildThumbnail(dataUrl: string, opts: { maxWidth?: number;
   }
 }
 
-export function buildFeedbackForm(input: { type?: string; title?: string; description: string; pageUrl: string; referrer?: string; projectId: string; screenshots: string[]; screenshotThumbs?: string[]; files?: Array<{ name: string; type?: string; dataUrl: string }>; context?: ReportContext; replayEvents?: unknown[]; annotations?: any }): FormData {
+export function buildFeedbackForm(input: { type?: string; title?: string; description: string; pageUrl: string; referrer?: string; projectId: string; screenshots: string[]; screenshotThumbs?: string[]; files?: Array<{ name: string; type?: string; dataUrl: string }>; context?: ReportContext; reporter?: Reporter; clientInfo?: import("@klavity/core").ClientInfo; replayEvents?: unknown[]; annotations?: any }): FormData {
   // Use the shared serializer (packages/core/integrations/backend) for all common fields so that
   // extension + widget stay in parity by construction — a new shared field added in buildFeedbackFormData
   // appears in BOTH paths automatically (prevents drift like KLAVITYKLA-208).
@@ -182,6 +193,13 @@ export function buildFeedbackForm(input: { type?: string; title?: string; descri
   // Source attribution: where the visitor came from (document.referrer of the embed page), when present.
   // Extension has no page referrer concept, so this stays widget-only by design.
   if (input.referrer) fd.set("referrer", input.referrer)
+  // PX4 #439: the resolved reporter identity (Identify API / config / data-attrs / safe fallback). Sent
+  // as its own JSON field so the server persists feedback.reporter_json and the connector attributes the
+  // ticket to the right person/org/env. Omitted when no identity was resolved (back-compat).
+  if (input.reporter && Object.keys(input.reporter).length) fd.set("reporter", JSON.stringify(input.reporter))
+  // PX4 #428: captured client/browser/app info (browser+version/OS/viewport/locale). Its own JSON field →
+  // feedback.client_info_json + a readable "Client:" line on the exported ticket. Omitted when empty.
+  if (input.clientInfo && Object.keys(input.clientInfo).length) fd.set("client_info", JSON.stringify(input.clientInfo))
   // PX4 #425: non-image file attachments (PDF, .log, .har, ...). Appended as their own multipart field with
   // the real filename + content type preserved, so the server can store them and connectors attach natively.
   if (input.files) {

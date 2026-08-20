@@ -624,7 +624,13 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     </div>
 
     <div id="widgetSection" style="margin-top:16px">
-      <pre class="snip">&lt;script src="<span id="snipHost">https://klavity.in</span>/widget.js" data-project="<span id="snipPid">YOUR_PROJECT_ID</span>" defer&gt;&lt;/script&gt;</pre>
+      <pre class="snip">&lt;script&gt;
+  window.klavity = window.klavity || [];
+  ['identify','setMetadata','open','on'].forEach(function(m){window.klavity[m]=window.klavity[m]||function(){window.klavity.push([m].concat([].slice.call(arguments)))}});
+  // Wire this to your current user (all fields optional):
+  window.klavity.identify({ id: 'USER_ID', email: 'USER_EMAIL', name: 'USER_NAME', org: 'ORG_NAME', role: 'ROLE', env: 'prod' });
+&lt;/script&gt;
+&lt;script src="<span id="snipHost">https://klavity.in</span>/widget.js" data-project="<span id="snipPid">YOUR_PROJECT_ID</span>" defer&gt;&lt;/script&gt;</pre>
       <div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap">
         <button type="button" id="copySnippet" class="btn btn-ghost" style="padding:7px 12px;font-size:12.5px">Copy code</button>
         <span style="color:var(--faint);font-size:11.5px">Paste this once — it shows on every page automatically.</span>
@@ -1102,8 +1108,23 @@ function carryChoices(q){
   return q
 }
 
-// Fill the embed snippet with the real project ID so users never hand-edit it.
-function widgetSnippetText(){ return '<script src="' + location.origin + '/widget.js" data-project="' + (projectId || 'YOUR_PROJECT_ID') + '" defer><\/script>' }
+// Fill the embed snippet with the real project ID so users never hand-edit it. PX4 #439: the snippet now
+// sets up the async identify() queue (honored even if called before widget.js loads) and identifies the
+// current user, so every report is attributed to the right person/org/environment with zero extra typing.
+function widgetSnippetText(){
+  var host = location.origin
+  var pid = projectId || 'YOUR_PROJECT_ID'
+  return [
+    '<script>',
+    '  // Klavity async queue: identify() is honored even if called before widget.js finishes loading.',
+    '  window.klavity = window.klavity || [];',
+    "  ['identify','setMetadata','open','on'].forEach(function(m){window.klavity[m]=window.klavity[m]||function(){window.klavity.push([m].concat([].slice.call(arguments)))}});",
+    '  // Wire this to your app\'s current user (all fields optional; drop any you do not have):',
+    "  window.klavity.identify({ id: 'USER_ID', email: 'USER_EMAIL', name: 'USER_NAME', org: 'ORG_NAME', role: 'ROLE', env: 'prod' });",
+    '<\/script>',
+    '<script src="' + host + '/widget.js" data-project="' + pid + '" defer><\/script>'
+  ].join('\n')
+}
 function renderWidgetSnippet(){
   var s = $('snipPid'); if (s) s.textContent = projectId || 'YOUR_PROJECT_ID'
   var h = $('snipHost'); if (h) h.textContent = location.origin
@@ -1364,31 +1385,51 @@ async function pollWidgetStatus() {
 function cspFixPrompt() {
   const origin = location.origin
   return [
-    '## Task: embed the Klavity bug-report widget on this site',
+    '## Task: embed the Klavity bug-report widget on this site AND identify the logged-in user',
     '',
-    'I want a small floating bug-report button on every page. Reports go to my Klavity dashboard.',
+    'I want a small floating bug-report button on every page. Reports go to my Klavity dashboard, and',
+    'every report must be attributed to the current user (person + org + environment) with zero extra typing.',
     '',
-    '### Step 1 — Add the widget snippet to every page',
+    '### Step 1 — Add the widget snippet to every page (with identify)',
     '',
-    'Paste this just before </body> (or in the shared layout / _document / base template):',
+    'Paste this just before </body> (or in the shared layout / _document / base template). Replace the',
+    'USER_* / ORG_* placeholders in identify() with your app\'s real server-rendered session values',
+    '(id, email, name, org, orgId, role, product, env, server) — all fields are optional, drop any you',
+    'lack. identify() may be called before OR after widget.js loads; the async queue replays it either way:',
     '',
-    '  ' + widgetSnippetText(),
+    widgetSnippetText(),
     '',
-    '### Step 2 — Fix the Content Security Policy (if the site sets one)',
+    '### Step 2 — Serve the widget (pick ONE)',
+    '',
+    'A) Load from Klavity\'s CDN (simplest) — the snippet above already points at ' + origin + '/widget.js.',
+    '',
+    'B) Self-host same-origin (recommended if you have a strict CSP — avoids allowlisting Klavity). Download',
+    '   the bundle into your own assets and change the src to your local path:',
+    '',
+    '     curl -fsSL ' + origin + '/widget.js -o <your-assets-dir>/widget.js',
+    '',
+    '   Re-run that curl whenever you want to pick up widget updates (self-hosting pins the version).',
+    '',
+    '### Step 3 — Fix the Content Security Policy (only if the site sets one)',
     '',
     'A CSP header blocks the widget unless its origin is allowed. Append (do NOT remove existing sources):',
     '',
-    '  script-src  ' + origin + '   (download + execute widget.js)',
-    '  connect-src ' + origin + '   (POST reports to ' + origin + '/api/feedback)',
-    '  img-src     data:   (base64 screenshot preview)',
+    '  If loading from the CDN (option A):',
+    '    script-src  ' + origin + '   (download + execute widget.js)',
+    '    connect-src ' + origin + '   (POST reports to ' + origin + '/api/feedback)',
+    '    img-src     ' + origin + ' data:   (widget UI assets + base64 screenshot preview)',
+    '',
+    '  If self-hosting (option B): the widget is same-origin, so script-src \'self\' already covers it —',
+    '  you still need connect-src ' + origin + ' so reports can POST to the Klavity API.',
     '',
     'The CSP may live in: Express/helmet middleware, next.config.js headers(), a <meta http-equiv=',
     '"Content-Security-Policy"> tag, nginx/Caddy config, vercel.json, or netlify.toml.',
     '',
     '### Verification',
     '',
-    'Reload any page: no CSP errors in the console mentioning ' + origin + ', and a floating button',
-    'appears bottom-right that opens a bug-report composer. Tell me what you changed.',
+    'Reload any page: no CSP errors in the console mentioning ' + origin + ', a floating button appears',
+    'bottom-right that opens a bug-report composer, and a filed test report shows the logged-in user under',
+    '"Reporter" in the Klavity dashboard. Tell me what you changed.',
   ].join('\n')
 }
 function showWidgetRescue() {

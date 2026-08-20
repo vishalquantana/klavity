@@ -72,11 +72,54 @@ export interface NetworkFailure {
 
 // Arbitrary site-owner-supplied identity + key/values (G5). Plumbed through the report context and
 // surfaced on the ticket. Values are coerced to strings and length-capped server-/client-side.
+// PX4 #439: the named identity fields (org/orgId/role/product/env/server) are additive — they were
+// always allowed by the string index signature, but naming them documents the Identify API contract
+// and lets `Reporter` (below) reuse the same shape. The index signature keeps arbitrary keys valid.
 export interface ReportIdentity {
   id?: string
   email?: string
   name?: string
+  org?: string
+  orgId?: string
+  role?: string
+  product?: string
+  env?: string
+  server?: string
   [key: string]: string | undefined
+}
+
+// PX4 #439: the resolved reporter identity attached to a report by the Identify API. A typed superset
+// of the historical {id,email,name} G5 identity: adds org/orgId/role/product/env/server so a filed
+// ticket is attributed to the right person, org, and environment with zero extra typing. Every value
+// is coerced to a capped string client-side (widget/SDK) and re-sanitized server-side. All fields are
+// optional — a report with no identity omits the object entirely (full back-compat).
+export interface Reporter {
+  id?: string
+  email?: string
+  name?: string
+  org?: string
+  orgId?: string
+  role?: string
+  product?: string
+  env?: string
+  server?: string
+}
+
+// PX4 #428: client/browser/app info captured at report time. `userAgent` overlaps ReportContext for
+// convenience; the parsed browser/os/locale fields are the value-add (readable attribution in the
+// ticket + queryable columns). Optional throughout — absent fields are simply omitted.
+export interface ClientInfo {
+  userAgent?: string
+  browser?: string          // parsed browser name, e.g. "Chrome", "Safari", "Firefox", "Edge"
+  browserVersion?: string   // parsed major(.minor) version, e.g. "127" / "17.4"
+  os?: string               // parsed OS, e.g. "macOS", "Windows", "Android", "iOS", "Linux"
+  deviceType?: string       // "desktop" | "mobile" | "tablet"
+  viewport?: string         // innerWidth x innerHeight, e.g. "1280x800"
+  screen?: string           // screen.width x screen.height, e.g. "1920x1080"
+  devicePixelRatio?: number // window.devicePixelRatio (rounded)
+  locale?: string           // navigator.language, e.g. "en-US"
+  languages?: string        // navigator.languages joined, capped
+  timezone?: string         // Intl.DateTimeFormat resolved timeZone, e.g. "Australia/Sydney"
 }
 
 // A PerformanceObserver entry captured by the widget (G3 supplement). Covers signals that
@@ -126,6 +169,13 @@ export interface SubmitReportPayload {
   // PX4 #425: non-image file attachments (PDF, logs, .har, ...). Optional; screenshots keep their own path.
   files?: ReportFileAttachment[]
   projectId?: string    // Klavity project ID; if set, report lands in that project
+  // PX4 #439: the resolved reporter identity (Identify API / config / data-attrs / safe fallback). Threaded
+  // to /api/feedback as `reporter` and persisted to feedback.reporter_json for connector attribution.
+  // Optional + additive — no identity => object omitted, composer behaves exactly as today.
+  reporter?: Reporter
+  // PX4 #428: captured client/browser/app info. Threaded as `client_info` and persisted to
+  // feedback.client_info_json. Optional so existing payloads stay valid.
+  clientInfo?: ClientInfo
   // G1 session replay: rolling rrweb DOM-event buffer (Klavity backend integration only).
   replayEvents?: unknown[]
 }

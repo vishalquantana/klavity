@@ -103,15 +103,93 @@ export function sanitizeClientContext(raw: any): any | null {
   return Object.keys(out).length ? out : null
 }
 
+// ── PX4 #439 reporter identity ──
+// Server-side sanitize of the client-supplied `reporter` field: allow ONLY the known named keys,
+// coerce each to a short string, drop empties. Returns null for absent/garbage input so a malformed
+// blob never poisons the row or the ticket body.
+const REPORTER_KEYS = ['id', 'email', 'name', 'org', 'orgId', 'role', 'product', 'env', 'server'] as const
+
+export function sanitizeReporter(raw: any): Record<string, string> | null {
+  if (!raw || typeof raw !== 'object') return null
+  const out: Record<string, string> = {}
+  for (const k of REPORTER_KEYS) {
+    const v = (raw as any)[k]
+    if (v === undefined || v === null) continue
+    const s = capStr(v, 500).trim()
+    if (s) out[k] = s
+  }
+  return Object.keys(out).length ? out : null
+}
+
+// ── PX4 #428 client/browser/app info ──
+// Sanitize the client-supplied `client_info` field: allowlisted keys, capped strings, numeric dpr.
+const CLIENT_INFO_STR_KEYS = ['userAgent', 'browser', 'browserVersion', 'os', 'deviceType', 'viewport', 'screen', 'locale', 'languages', 'timezone'] as const
+
+export function sanitizeClientInfo(raw: any): Record<string, any> | null {
+  if (!raw || typeof raw !== 'object') return null
+  const out: Record<string, any> = {}
+  for (const k of CLIENT_INFO_STR_KEYS) {
+    const v = (raw as any)[k]
+    if (v === undefined || v === null) continue
+    const cap = k === 'userAgent' ? 500 : 120
+    const s = capStr(v, cap).trim()
+    if (s) out[k] = s
+  }
+  const dpr = Number((raw as any).devicePixelRatio)
+  if (isFinite(dpr) && dpr > 0 && dpr < 20) out.devicePixelRatio = Math.round(dpr * 100) / 100
+  return Object.keys(out).length ? out : null
+}
+
+// Human-friendly ordered field labels for the ticket body reporter block.
+const REPORTER_LABELS: Record<string, string> = {
+  name: 'Name', email: 'Email', id: 'User ID', org: 'Org', orgId: 'Org ID',
+  role: 'Role', product: 'Product', env: 'Environment', server: 'Server',
+}
+
+// Render the reporter identity as plain-text lines for connector bodies (text). Empty array when absent.
+export function reporterLines(reporter: any): string[] {
+  if (!reporter || typeof reporter !== 'object') return []
+  const entries = REPORTER_KEYS.filter((k) => reporter[k]).map((k) => `  ${REPORTER_LABELS[k] || k}: ${capStr(reporter[k], 500)}`)
+  return entries.length ? ['Reporter:', ...entries] : []
+}
+
+// Render the captured client/browser info as a compact plain-text line. Empty array when absent.
+export function clientInfoLines(ci: any): string[] {
+  if (!ci || typeof ci !== 'object') return []
+  const bits: string[] = []
+  if (ci.browser) bits.push(`${capStr(ci.browser, 60)}${ci.browserVersion ? ' ' + capStr(ci.browserVersion, 40) : ''}`)
+  if (ci.os) bits.push(capStr(ci.os, 60))
+  if (ci.deviceType) bits.push(capStr(ci.deviceType, 20))
+  if (ci.viewport) bits.push(`viewport ${capStr(ci.viewport, 40)}`)
+  if (ci.locale) bits.push(capStr(ci.locale, 35))
+  if (ci.timezone) bits.push(capStr(ci.timezone, 60))
+  return bits.length ? [`Client: ${bits.join(' | ')}`] : []
+}
+
+// Render reporter + client info as an HTML block for connectors whose body is HTML (escaped, safe).
+export function reporterClientInfoHtml(reporter: any, ci: any): string {
+  const parts: string[] = []
+  const rl = reporterLines(reporter)
+  if (rl.length) {
+    const rows = REPORTER_KEYS.filter((k) => reporter[k]).map((k) => `<li>${escapeHtml(REPORTER_LABELS[k] || k)}: ${escapeHtml(capStr(reporter[k], 500))}</li>`).join('')
+    parts.push(`<p><strong>Reporter:</strong></p><ul>${rows}</ul>`)
+  }
+  const cl = clientInfoLines(ci)
+  if (cl.length) parts.push(`<p><strong>${escapeHtml(cl[0])}</strong></p>`)
+  return parts.join('')
+}
+
 // Render the captured context as an HTML block appended to the issue body (escaped, safe).
-export function clientContextHtml(ctx: any): string {
+export function clientContextHtml(ctx: any, opts: { skipIdentity?: boolean } = {}): string {
   if (!ctx) return ''
   const parts: string[] = []
   if (ctx.userAgent) parts.push(`<p><strong>Browser:</strong> ${escapeHtml(capStr(ctx.userAgent, 500))}</p>`)
   if (ctx.screenSize || ctx.viewportSize) {
     parts.push(`<p><strong>Screen:</strong> ${escapeHtml(capStr(ctx.screenSize, 40))} &nbsp;|&nbsp; <strong>Viewport:</strong> ${escapeHtml(capStr(ctx.viewportSize, 40))}</p>`)
   }
-  const identityEntries = ctx.identity ? Object.entries(ctx.identity) : []
+  // PX4 #439: when a dedicated reporter block is rendered from reporter_json, skip context.identity here
+  // so the person isn't listed twice.
+  const identityEntries = (ctx.identity && !opts.skipIdentity) ? Object.entries(ctx.identity) : []
   const metaEntries = ctx.metadata ? Object.entries(ctx.metadata) : []
   if (identityEntries.length || metaEntries.length) {
     const rows = [...identityEntries, ...metaEntries]
@@ -142,12 +220,13 @@ export function clientContextHtml(ctx: any): string {
 }
 
 // Render the captured context as plain-text lines for connectors whose body is text (G2).
-export function clientContextLines(ctx: any): string[] {
+export function clientContextLines(ctx: any, opts: { skipIdentity?: boolean } = {}): string[] {
   if (!ctx) return []
   const lines: string[] = []
   if (ctx.userAgent) lines.push(`Browser: ${capStr(ctx.userAgent, 500)}`)
   if (ctx.screenSize || ctx.viewportSize) lines.push(`Screen: ${capStr(ctx.screenSize, 40)} | Viewport: ${capStr(ctx.viewportSize, 40)}`)
-  const identityEntries = ctx.identity ? Object.entries(ctx.identity) : []
+  // PX4 #439: skip context.identity when a dedicated reporter block already renders the person.
+  const identityEntries = (ctx.identity && !opts.skipIdentity) ? Object.entries(ctx.identity) : []
   const metaEntries = ctx.metadata ? Object.entries(ctx.metadata) : []
   for (const [k, v] of [...identityEntries, ...metaEntries]) lines.push(`${k}: ${v}`)
   if (Array.isArray(ctx.consoleErrors) && ctx.consoleErrors.length) {

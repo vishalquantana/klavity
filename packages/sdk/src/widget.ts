@@ -7,8 +7,9 @@ import { planScrollStitch, clampCaptureHeight } from "./sharp-capture"
 import { type CaptureBuffers } from "@klavity/core/capture"
 import { installCaptureContext, buildCaptureContext } from "./capture-context"
 import { installErrorReporter } from "./error-reporter"
-import type { ReportContext, ReportIdentity } from "@klavity/core"
+import type { ReportContext, ReportIdentity, Reporter, ClientInfo } from "@klavity/core"
 import { parseScriptConfig, isFirstParty, buildFeedbackForm, successCopy, compressScreenshot, buildThumbnail } from "./widget-lib"
+import { coerceReporter, reporterToIdentity, resolveFallbackReporter, captureClientInfo } from "./identity"
 import { computeSelector, describeElement } from "./element-selector"
 import { getTurnstileToken } from "./load-turnstile"
 import { icon } from "@klavity/core/icons"
@@ -181,6 +182,12 @@ function clearToken() { try { localStorage.removeItem(TOKEN_KEY) } catch {} }
 // Shared full-fidelity capture buffers, plus site-owner identity/metadata that can be set either via
 // the script-tag config (data-user-*/data-meta) or the public JS API (window.Klavity.identify/...).
 const _buffers: CaptureBuffers = { consoleErrors: [], networkFailures: [] }
+// PX4 #439: the resolved reporter identity is the canonical store; _identity mirrors it as the G5
+// string-map so ReportContext.identity keeps working for every existing consumer. `_explicitReporter`
+// records whether identify()/window.klavity was called so mount()'s config/settings/fallback seeding
+// never overrides an explicit host-app identity.
+let _reporter: Reporter | undefined
+let _explicitReporter = false
 let _identity: ReportIdentity | undefined
 let _metadata: Record<string, string> | undefined
 
@@ -193,15 +200,64 @@ function coerceStrings(obj: Record<string, unknown>): Record<string, string> {
   return out
 }
 
-// Public JS SDK (G5): window.Klavity.identify({...}) / setMetadata({...}).
-export function identify(user: ReportIdentity | null) {
-  _identity = user ? (coerceStrings(user as Record<string, unknown>) as ReportIdentity) : undefined
+// Set the resolved reporter + mirror the G5 identity string-map. `explicit=true` for identify()/queue
+// calls (host app volunteered it) so seeded sources (config/settings/fallback) can't clobber it.
+function setReporter(r: Reporter | undefined, explicit: boolean) {
+  _reporter = r
+  _identity = reporterToIdentity(r)
+  if (explicit) _explicitReporter = true
+}
+
+// PX4 #439 Public JS SDK: window.Klavity.identify({...}) / window.klavity.identify({...}). Accepts the
+// full reporter shape (id/email/name/org/orgId/role/product/env/server); identify(null) clears it.
+export function identify(user: Reporter | ReportIdentity | null) {
+  setReporter(user ? coerceReporter(user) : undefined, true)
 }
 export function setMetadata(meta: Record<string, unknown> | null) {
   _metadata = meta ? coerceStrings(meta) : undefined
 }
+// Expose the currently-resolved reporter (test + submit helper).
+export function currentReporter(): Reporter | undefined { return _reporter }
 function buildWidgetContext(): ReportContext {
   return buildCaptureContext(_buffers, { identity: _identity, metadata: _metadata })
+}
+
+// ── PX4 #439 async-safe queue (PostHog-style stub) ───────────────────────────────────────────────────
+// The install snippet sets `window.klavity = window.klavity || []` and stubs methods that push
+// [method, ...args] onto the array, so identify()/open() called BEFORE the widget bundle loads are not
+// lost. On load we drain the array (replay in order) and replace window.klavity with a live object whose
+// methods act immediately (and whose .push() also processes immediately, so late pushes still work).
+function processQueueEntry(entry: unknown): void {
+  if (!entry) return
+  let method: string
+  let args: unknown[]
+  if (Array.isArray(entry)) { method = String(entry[0]); args = entry.slice(1) }
+  else if (typeof entry === "object" && (entry as any).method) { method = String((entry as any).method); args = (entry as any).args || [] }
+  else return
+  try {
+    if (method === "identify") identify((args[0] as any) ?? null)
+    else if (method === "setMetadata") setMetadata((args[0] as any) ?? null)
+    else if (method === "open") _openReport(args[0] as any)
+    else if (method === "on") on(args[0] as any, args[1] as any)
+  } catch { /* one bad queue entry must never break the widget */ }
+}
+export function installIdentifyQueue(): void {
+  if (typeof window === "undefined") return
+  const w = window as any
+  const existing = w.klavity
+  // Replay anything queued before load (the snippet's array). Guard: only iterate a real array.
+  if (existing && Array.isArray(existing)) {
+    for (const entry of existing) processQueueEntry(entry)
+  }
+  // Live API: methods run immediately; push() also processes immediately so post-load pushes still honor.
+  const live: any = {
+    identify,
+    setMetadata,
+    open: (type: "bug" | "feature" = "bug") => _openReport(type),
+    on,
+    push: (...entries: unknown[]) => { for (const e of entries) processQueueEntry(e); return (w.klavity as any[])?.length ?? 0 },
+  }
+  w.klavity = live
 }
 
 function simObservationBugDescription(observation: LiveObservation, simName: string): string {
@@ -243,6 +299,8 @@ if (typeof window !== "undefined") {
     /** Subscribe to a widget event. Returns an unsubscribe function. */
     on,
   }
+  // PX4 #439: drain + take over the lowercase window.klavity async queue (identify() called before load).
+  installIdentifyQueue()
 }
 
 // ── Sharp capture (getDisplayMedia real-pixel scroll-stitch) ─────────────────────────────────────────
@@ -350,8 +408,18 @@ async function mount() {
 
   // G3: start full-fidelity capture — console + fetch/XHR (core) + PerformanceObserver (longtask/paint/resource).
   installCaptureContext(_buffers)
-  // G5: seed identity/metadata declared on the script tag (a later identify()/setMetadata() wins).
-  if (cfg.identity && !_identity) _identity = cfg.identity
+  // PX4 #439: resolve the reporter identity in precedence order, only when the host app did NOT call
+  // identify()/window.klavity.identify() (which sets _explicitReporter and always wins):
+  //   1. script-tag config     — data-klavity-user-* / data-user-* (cfg.reporter)
+  //   2. window.KlavitySettings.user — a global config object
+  //   3. PX4 #427 safe fallback — documented meta tags + conservative window.currentUser/user globals
+  if (!_explicitReporter && !_reporter) {
+    let seeded = cfg.reporter
+    if (!seeded) { try { seeded = coerceReporter((window as any).KlavitySettings?.user) } catch { seeded = undefined } }
+    if (!seeded) { try { seeded = resolveFallbackReporter() } catch { seeded = undefined } }
+    if (seeded) setReporter(seeded, false)
+  }
+  // G5: seed metadata declared on the script tag (a later setMetadata() wins).
   if (cfg.metadata && !_metadata) _metadata = cfg.metadata
 
   const host = document.createElement("div")
@@ -823,6 +891,8 @@ async function mount() {
         } catch { return null }
       },
       requireEmail,
+      // PX4 #439: pre-fill the email gate with the known reporter email so the user never retypes it.
+      prefillEmail: _reporter?.email,
       // PX4 #411/#425: enhanced-composer opts from the project config (all default off → classic composer).
       showTitleField: composerShowTitle,
       allowFileAttachments: composerFileAttach,
@@ -851,7 +921,10 @@ async function mount() {
           // PX4 #411: forward the precise kind (Task/Query fall back to p.type=bug for legacy consumers, but
           // p.kind carries the real value) so the server's report_type + connector issue-type mapping are right.
           { type: (p.kind ?? p.type), title: p.title, files: p.files, description, pageUrl: location.href, referrer: document.referrer || "", screenshots: p.screenshots,
-            context: buildWidgetContext(), replayEvents: replay.snapshot(), annotations: p.annotations,
+            context: buildWidgetContext(),
+            // PX4 #439/#428: attach the resolved reporter identity + freshly-captured browser/app info.
+            reporter: _reporter, clientInfo: captureClientInfo(),
+            replayEvents: replay.snapshot(), annotations: p.annotations,
             // Forward the gate's required email → server reporter_email. Without this, an "email"-gated
             // project rejects the submit with 400. On the default anonymous gate this is undefined (the
             // email ask moved to the post-submit success card).
@@ -1476,7 +1549,7 @@ async function mount() {
 
 export async function submitFeedback(
   cfg: { backendUrl: string; projectId: string; firstParty: boolean; token: string },
-  payload: { type: string; title?: string; description: string; pageUrl: string; referrer?: string; screenshots: string[]; files?: Array<{ name: string; type: string; size: number; dataUrl: string }>; context?: ReportContext; replayEvents?: unknown[]; annotations?: any; reporterEmail?: string; turnstileToken?: string },
+  payload: { type: string; title?: string; description: string; pageUrl: string; referrer?: string; screenshots: string[]; files?: Array<{ name: string; type: string; size: number; dataUrl: string }>; context?: ReportContext; reporter?: Reporter; clientInfo?: ClientInfo; replayEvents?: unknown[]; annotations?: any; reporterEmail?: string; turnstileToken?: string },
   // Optional progress callback: called with 0–90 during the upload phase, leaving the final 10%
   // for server-side processing. When provided, the upload uses XMLHttpRequest instead of fetch so
   // the browser exposes real upload progress events. Omitting it (e.g. extension path) keeps the
@@ -1509,6 +1582,9 @@ export async function submitFeedback(
     // PX4 #425: non-image file attachments carried through as their own multipart field.
     files: payload.files,
     context: payload.context,
+    // PX4 #439/#428: reporter identity + captured browser/app info as their own /api/feedback fields.
+    reporter: payload.reporter,
+    clientInfo: payload.clientInfo,
     replayEvents: payload.replayEvents,
     // KLAVITYKLA-217: forward the full per-image annotation map so markup on every screenshot reaches
     // the server as annotations_json (buildFeedbackForm serializes it). Previously omitted here, which
