@@ -10,6 +10,7 @@
 //
 // The browser factory is injectable so the plumbing is unit-testable without launching Chromium.
 import { acquireBrowser } from "./trails-browser-page"
+import { isSafeUrl } from "./url-guard"
 import {
   loadAutosimAuthConfig, establishAutosimSession,
   type DecryptedAutosimAuthConfig,
@@ -18,6 +19,12 @@ import {
 export interface ScreenshotDeps {
   // defaults to the real AutoSims browser factory (honors AUTOSIM_CDP_URL / Steel)
   acquire?: typeof acquireBrowser
+  /**
+   * SSRF navigation guard (QA#1): re-validate every navigation/redirect hop before the browser
+   * fetches it. Defaults to the central url-guard (isSafeUrl), which blocks private/loopback/
+   * link-local/metadata hosts and non-https schemes. Injectable for hermetic tests.
+   */
+  isUrlAllowed?: (url: string) => boolean | Promise<boolean>
 }
 
 export interface ScreenshotResult {
@@ -38,6 +45,7 @@ export async function screenshotUrl(
   deps: ScreenshotDeps = {},
 ): Promise<ScreenshotResult> {
   const acquire = deps.acquire ?? acquireBrowser
+  const isUrlAllowed = deps.isUrlAllowed ?? ((u: string) => isSafeUrl(u))
   const navTimeoutMs = opts.navTimeoutMs ?? 15000
   const shotTimeoutMs = opts.shotTimeoutMs ?? 10000
   const quality = opts.quality ?? 70
@@ -46,6 +54,9 @@ export async function screenshotUrl(
   const browser = await acquire({ headless: true })
   try {
     const page = await browser.newPage()
+    // SSRF: guard EVERY navigation hop (initial + redirects) BEFORE navigating, so a public URL that
+    // 302s to an internal/metadata host is aborted rather than fetched and rendered into the shot.
+    await (page as any).guardNavigations?.(isUrlAllowed)
     await page.goto(url, navTimeoutMs)
     // brief settle so above-the-fold content/webfonts paint before the shot
     if (settleMs > 0) await page.waitMs(settleMs)
@@ -108,6 +119,7 @@ export async function authedScreenshotUrl(
   deps: AuthedScreenshotDeps = {},
 ): Promise<AuthedScreenshotResult> {
   const acquire = deps.acquire ?? acquireBrowser
+  const isUrlAllowed = deps.isUrlAllowed ?? ((u: string) => isSafeUrl(u))
   const loadAuthConfig = deps.loadAuthConfig ?? loadAutosimAuthConfig
   const establishSession = deps.establishSession ?? establishAutosimSession
   const navTimeoutMs = opts.navTimeoutMs ?? 15000
@@ -121,6 +133,9 @@ export async function authedScreenshotUrl(
   const browser = await acquire({ headless: true })
   try {
     const page = await browser.newPage()
+    // SSRF: guard every navigation hop (initial + redirects, and the session-establish nav) BEFORE
+    // navigating, so a redirect into an internal/metadata host is aborted, never fetched or rendered.
+    await (page as any).guardNavigations?.(isUrlAllowed)
     let authed = false
     // mint_link is the only method establishable in a plain headless tab (no LLM form-fill).
     if (cfg && cfg.method === "mint_link") {

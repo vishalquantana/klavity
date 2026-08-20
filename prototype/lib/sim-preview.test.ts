@@ -3,16 +3,31 @@ import { test, expect } from "bun:test"
 import { screenshotUrl, authedScreenshotUrl, projectHasHeadlessAuth, defaultPreviewPersona } from "./sim-preview"
 
 // A minimal fake BrowserHandle/BrowserPage that records the calls screenshotUrl makes.
-function fakeAcquire(opts: { b64?: string; gotoThrows?: boolean; emptyShot?: boolean } = {}) {
-  const calls: any = { acquired: 0, goto: [] as string[], shots: 0, closed: 0, waited: 0 }
+// `redirectTo` simulates the browser following a 3xx to another URL: goto re-runs the installed
+// navigation guard on the redirect target (as a real browser + guardNavigations route would), and
+// throws a blocked-navigation error when the guard rejects a hop — so no screenshot is taken.
+function fakeAcquire(opts: { b64?: string; gotoThrows?: boolean; emptyShot?: boolean; redirectTo?: string } = {}) {
+  const calls: any = { acquired: 0, goto: [] as string[], shots: 0, closed: 0, waited: 0, guarded: 0 }
   const acquire = async (_o?: any) => {
     calls.acquired++
+    let guard: ((u: string) => boolean | Promise<boolean>) | null = null
     return {
       kind: "local",
       async newPage() {
         return {
           url() { return "" },
-          async goto(u: string, _t: number) { if (opts.gotoThrows) throw new Error("nav fail"); calls.goto.push(u) },
+          async guardNavigations(isAllowed: (u: string) => boolean | Promise<boolean>) { guard = isAllowed; calls.guarded++ },
+          async goto(u: string, _t: number) {
+            if (opts.gotoThrows) throw new Error("nav fail")
+            // The initial URL is already SSRF-validated upstream (server preflights via safeFetch), so
+            // the guard's real job is redirect hops. Only exercise it against the simulated 3xx target.
+            if (opts.redirectTo) {
+              if (guard && !(await guard(opts.redirectTo))) throw new Error("net::ERR_BLOCKED_BY_CLIENT")
+              calls.goto.push(opts.redirectTo)
+            } else {
+              calls.goto.push(u)
+            }
+          },
           async waitMs(_ms: number) { calls.waited++ },
           async screenshotJpeg(_q: number, _t: number) { calls.shots++; return opts.emptyShot ? "" : (opts.b64 ?? "QUJD".repeat(50)) },
           async krefSnapshot(_c?: number) { return "" },
@@ -22,6 +37,18 @@ function fakeAcquire(opts: { b64?: string; gotoThrows?: boolean; emptyShot?: boo
     } as any
   }
   return { acquire, calls }
+}
+
+// A synchronous stand-in for the real url-guard so these tests do no DNS/network. Blocks the same
+// literal hosts the real guard blocks (loopback / link-local metadata / private) + non-https.
+function fakeUrlGuard(u: string): boolean {
+  let parsed: URL
+  try { parsed = new URL(u) } catch { return false }
+  if (parsed.protocol !== "https:") return false
+  const h = parsed.hostname
+  if (h === "localhost" || h === "127.0.0.1" || h === "169.254.169.254") return false
+  if (/^10\./.test(h) || /^192\.168\./.test(h) || /^169\.254\./.test(h)) return false
+  return true
 }
 
 test("screenshotUrl navigates, screenshots, and always closes the browser", async () => {
@@ -40,6 +67,54 @@ test("screenshotUrl closes the browser even when navigation throws", async () =>
   const { acquire, calls } = fakeAcquire({ gotoThrows: true })
   await expect(screenshotUrl("https://bad.example", { settleMs: 0 }, { acquire })).rejects.toThrow()
   expect(calls.closed).toBe(1) // finally-block release on failure
+})
+
+// ── QA #1: SSRF-via-redirect — a redirect to an internal/metadata host must be blocked ────────────
+
+test("screenshotUrl installs the navigation guard before navigating", async () => {
+  const { acquire, calls } = fakeAcquire({ b64: "SGVsbG8".repeat(30) })
+  await screenshotUrl("https://example.com", { settleMs: 0 }, { acquire, isUrlAllowed: fakeUrlGuard })
+  expect(calls.guarded).toBe(1) // guard installed exactly once, before goto
+})
+
+test("screenshotUrl blocks a 302 to the cloud-metadata IP (no content returned)", async () => {
+  const { acquire, calls } = fakeAcquire({ redirectTo: "http://169.254.169.254/latest/meta-data/" })
+  await expect(
+    screenshotUrl("https://safe-looking.example", { settleMs: 0 }, { acquire, isUrlAllowed: fakeUrlGuard }),
+  ).rejects.toThrow()
+  expect(calls.shots).toBe(0)   // never screenshotted the internal content
+  expect(calls.goto).toHaveLength(0)
+  expect(calls.closed).toBe(1)  // browser still released
+})
+
+test("screenshotUrl blocks a redirect to loopback / a private host", async () => {
+  for (const bad of ["https://127.0.0.1/", "https://10.0.0.5/admin", "http://192.168.1.1/"]) {
+    const { acquire, calls } = fakeAcquire({ redirectTo: bad })
+    await expect(
+      screenshotUrl("https://safe.example", { settleMs: 0 }, { acquire, isUrlAllowed: fakeUrlGuard }),
+    ).rejects.toThrow()
+    expect(calls.shots).toBe(0)
+  }
+})
+
+test("screenshotUrl allows a redirect to another PUBLIC https host", async () => {
+  const { acquire, calls } = fakeAcquire({ redirectTo: "https://www.example.org/landing", b64: "SGVsbG8".repeat(30) })
+  const res = await screenshotUrl("https://example.com", { settleMs: 0 }, { acquire, isUrlAllowed: fakeUrlGuard })
+  expect(res.imageB64.length).toBeGreaterThan(100)
+  expect(calls.shots).toBe(1)
+  expect(calls.goto).toEqual(["https://www.example.org/landing"])
+})
+
+test("authedScreenshotUrl also installs the navigation guard and blocks an internal redirect", async () => {
+  const { acquire, calls } = fakeAcquire({ redirectTo: "http://169.254.169.254/" })
+  await expect(
+    authedScreenshotUrl("https://app.example", "p1", { settleMs: 0 }, {
+      acquire, loadAuthConfig: async () => null, isUrlAllowed: fakeUrlGuard,
+    }),
+  ).rejects.toThrow()
+  expect(calls.guarded).toBe(1)
+  expect(calls.shots).toBe(0)
+  expect(calls.closed).toBe(1)
 })
 
 test("screenshotUrl rejects an empty/too-small screenshot", async () => {

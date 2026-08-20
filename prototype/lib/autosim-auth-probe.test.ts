@@ -69,6 +69,7 @@ function makeFakePage(landedUrl: string, showAuthGate: boolean): BrowserPage {
     assertUrlMatches: async () => {},
     assertElementCount: async () => {},
     interceptNetwork: async () => {},
+    guardNavigations: async () => {},
   }
 }
 
