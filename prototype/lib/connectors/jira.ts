@@ -20,6 +20,38 @@ function jiraLabels(labels: string[] | undefined): string[] {
   return (labels ?? []).map((l) => l.trim().replace(/\s+/g, "_")).filter(Boolean)
 }
 
+// Parse a short, sanitized reason out of a Jira error response body for server-side diagnostics.
+// Jira 400s the create-issue call with a machine-readable body that names the exact offending
+// field(s), e.g. {"errors":{"issuetype":"Specify a valid issue type"}} or
+// {"errorMessages":["..."]}. The generic thrown message must stay "tracker request failed (HTTP
+// 400)" so nothing upstream leaks to end users (oops() already replaces it with a generic string
+// client-side) — but we surface the parsed reason in logs + on the thrown error's internal detail
+// so an auto-filed 400 (KLAVITYKLA-408) is diagnosable instead of a bare status code. Mirrors the
+// shape of lib/connector-test-error.ts#friendlyUpstream (hold/connector-test-noalert) so a future
+// server route can reuse the same upstreamStatus/upstreamBody contract without more adapter edits.
+function jiraErrorReason(body: string | undefined | null): string {
+  if (!body) return "no additional details available"
+  try {
+    const parsed = JSON.parse(body)
+    if (parsed && typeof parsed === "object") {
+      // Jira create-issue validation errors: { errors: { issuetype: "Specify a valid issue type" } }
+      if (parsed.errors && typeof parsed.errors === "object" && !Array.isArray(parsed.errors)) {
+        const vals = Object.entries(parsed.errors).map(([k, v]) => `${k}: ${String(v)}`).filter(Boolean)
+        if (vals.length) return vals.join("; ").slice(0, 200)
+      }
+      // Jira top-level errors: { errorMessages: ["..."] }
+      if (Array.isArray(parsed.errorMessages) && parsed.errorMessages.length) {
+        return parsed.errorMessages.map(String).join("; ").slice(0, 200)
+      }
+      // Generic { message: "..." } shape.
+      if (typeof parsed.message === "string" && parsed.message) return parsed.message.slice(0, 200)
+    }
+  } catch {
+    // not JSON — fall through to the raw (already truncated) body
+  }
+  return body.slice(0, 200)
+}
+
 // Build an Atlassian Document Format (ADF) doc wrapping plain text.
 function toAdf(text: string): object {
   return {
@@ -96,9 +128,17 @@ export const jiraConnector: Connector = {
     )
 
     if (!res.ok) {
-      const text = (await res.text().catch(() => "")).slice(0, 200)
-      console.error(`jira upstream error ${res.status}: ${text}`)
-      throw new Error(`tracker request failed (HTTP ${res.status})`)
+      // Capture Jira's error body (it names the exact offending field, e.g. an invalid issuetype)
+      // instead of discarding it, so a 400 during a connector test is diagnosable from logs + the
+      // auto-filed ticket. The thrown message stays generic — no upstream text reaches the client.
+      const text = (await res.text().catch(() => "")).slice(0, 500)
+      const reason = jiraErrorReason(text)
+      console.error(`jira create-issue upstream error ${res.status}: ${reason}`)
+      const err = new Error(`tracker request failed (HTTP ${res.status})`)
+      ;(err as any).upstreamStatus = res.status
+      ;(err as any).upstreamBody = text
+      ;(err as any).upstreamReason = reason
+      throw err
     }
 
     const json = await res.json()
