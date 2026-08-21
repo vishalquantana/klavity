@@ -54,7 +54,7 @@ import { encryptSecret, decryptSecret } from "./lib/crypto"
 import { createTestAccount, listTestAccounts, getTestAccountById, getTestAccountByName, deleteTestAccount, isTestAccountEmail, getTestAccountRefs, rotateTestAccountSecret } from "./lib/test-accounts"
 import { assertSafeUrl } from "./lib/url-guard"
 import { genCode, isValidSlug, stampUtm, isBotRequest, hashIp } from "./lib/shortlinks"
-import { createShortLink, getShortLinkByCodeOrSlug, listShortLinks, getShortLinkDetail, updateShortLink, recordLinkClick, linkClickStats, type ShortLinkRow } from "./lib/db"
+import { createShortLink, getShortLinkByCodeOrSlug, listShortLinks, getShortLinkDetail, updateShortLink, recordLinkClick, linkClickStats, ShortLinkConflictError, type ShortLinkRow } from "./lib/db"
 import { safeFetch } from "./lib/safe-fetch"
 import { extConfigVersion, type ExtProjectConfig } from "./lib/ext-config-version"
 import { verifyTurnstile, turnstileEnabled, turnstileSiteKey } from "./lib/turnstile"
@@ -1903,6 +1903,13 @@ async function applyStripeCheckoutSession(session: any): Promise<string | null> 
 const AUTOCOPY_WINDOW = 60 * 60 * 1000
 const AUTOCOPY_PER_PROJECT = 60
 
+// Short-link click-LOGGING caps (Codex review — MED). These bound how many click rows a single
+// (code, ip) can write per window; they NEVER affect the redirect, which always 302s. Bots get a
+// tight cap because they add lots of volume but little analytics signal.
+const LINKCLICK_WINDOW_MS = 10 * 60 * 1000 // 10-minute fixed window
+const LINKCLICK_HUMAN_CAP = 20             // human clicks logged per (code, ip) / window
+const LINKCLICK_BOT_CAP = 3                // bot/preview clicks logged per (code, ip) / window
+
 // PX4 #478 — atomic in-flight lock for manual export. The already-exported guard
 // (findPriorSuccessfulExport) is a check-then-act: a fast double-click fires two concurrent requests
 // that BOTH read "no prior export" before either writes one, creating TWO external tickets. This
@@ -2430,7 +2437,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     // 302 + Cache-Control:no-store (NEVER 301 — a cached 301 loses click counts and destination
     // re-pointability). Click logging is fire-and-forget: it must never block or fail the redirect.
     if ((req.method === "GET" || req.method === "HEAD") && (path.startsWith("/s/"))) {
-      const codeOrSlug = decodeURIComponent(path.slice(3)).split("/")[0]
+      // Malformed percent-encoding (e.g. /s/%) makes decodeURIComponent throw — treat as a plain
+      // 404 rather than a 500 (Codex review — LOW: decode guard).
+      let codeOrSlug: string
+      try { codeOrSlug = decodeURIComponent(path.slice(3)).split("/")[0] }
+      catch { return new Response("Not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" } }) }
       if (!codeOrSlug) return new Response("Not found", { status: 404 })
       let link: ShortLinkRow | null = null
       try { link = db ? await getShortLinkByCodeOrSlug(codeOrSlug) : null } catch { link = null }
@@ -2448,11 +2459,20 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         purpose: req.headers.get("purpose"),
       })
       const ipHash = hashIp(clientIp(req, server))
-      void recordLinkClick({
-        linkId: link.id, code: link.code, ipHash,
-        ua: req.headers.get("user-agent"), referer: req.headers.get("referer"),
-        country: req.headers.get("cf-ipcountry") || null, isBot,
-      }).catch(() => {})
+      // Bound the LOGGING only — never the redirect (the 302 below ALWAYS fires). A refresh-loop,
+      // scraper or misbehaving client could otherwise insert an unbounded number of click rows and
+      // inflate click_count. Cap inserts per (code, ip) fixed window using the shared in-process
+      // limiter; humans get a generous cap, bots a tight one (they add little signal but lots of
+      // volume). Over-cap hits still redirect, they just don't get logged. (Codex review — MED.)
+      const capId = ipHash || clientIp(req, server) || "anon"
+      const withinLogCap = rlAllow(`linkclick:${link.code}:${capId}`, isBot ? LINKCLICK_BOT_CAP : LINKCLICK_HUMAN_CAP, LINKCLICK_WINDOW_MS)
+      if (withinLogCap) {
+        void recordLinkClick({
+          linkId: link.id, code: link.code, ipHash,
+          ua: req.headers.get("user-agent"), referer: req.headers.get("referer"),
+          country: req.headers.get("cf-ipcountry") || null, isBot,
+        }).catch(() => {})
+      }
       return new Response(null, { status: 302, headers: { Location: target, "cache-control": "no-store" } })
     }
 
@@ -6842,29 +6862,37 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (await getShortLinkByCodeOrSlug(slug, { includeInactive: true })) return json({ error: "slug already in use" }, 409)
         }
 
-        // Generate a unique 6-char code (retry on the astronomically-rare collision).
-        let code = ""
-        for (let i = 0; i < 6; i++) {
-          const cand = genCode()
-          if (!(await getShortLinkByCodeOrSlug(cand, { includeInactive: true }))) { code = cand; break }
-        }
-        if (!code) return json({ error: "could not allocate a code, retry" }, 500)
-
         const utm = body.utm && typeof body.utm === "object" ? body.utm : {}
         const kind = ["campaign", "affiliate", "referral"].includes(body.kind) ? body.kind : "campaign"
-        try {
-          const created = await createShortLink({
-            code, slug, destinationUrl,
-            utm: { source: utm.source, medium: utm.medium, campaign: utm.campaign, term: utm.term, content: utm.content },
-            label: body.label ? String(body.label) : null, kind, createdBy: me,
-          })
-          const row = await getShortLinkDetail(created.id)
-          return json({ id: created.id, code: created.code, link: row }, 200, { "cache-control": "no-store" })
-        } catch (e: any) {
-          // UNIQUE(code/slug) race → 409.
-          if (String(e?.message || "").toUpperCase().includes("UNIQUE")) return json({ error: "code or slug already in use" }, 409)
-          return json(oops(e, "shortlink-create"), 500)
+
+        // Generate a unique 6-char code and insert. createShortLink runs a cross-column namespace
+        // guard (code/slug share the /s/ resolver) and throws ShortLinkConflictError. A generated-CODE
+        // collision is retried with a fresh code (never a 409); a user-supplied SLUG collision → 409.
+        let created: { id: string; code: string } | null = null
+        for (let i = 0; i < 8 && !created; i++) {
+          const code = genCode()
+          try {
+            created = await createShortLink({
+              code, slug, destinationUrl,
+              utm: { source: utm.source, medium: utm.medium, campaign: utm.campaign, term: utm.term, content: utm.content },
+              label: body.label ? String(body.label) : null, kind, createdBy: me,
+            })
+          } catch (e: any) {
+            const msg = String(e?.message || "").toUpperCase()
+            if (e instanceof ShortLinkConflictError) {
+              if (e.which === "slug") return json({ error: "slug already in use" }, 409)
+              continue // code collision → retry with a fresh code
+            }
+            // Backstop for the raw UNIQUE race: disambiguate by column when the driver reports it.
+            if (msg.includes("SHORT_LINKS.SLUG")) return json({ error: "slug already in use" }, 409)
+            if (msg.includes("SHORT_LINKS.CODE")) continue
+            if (msg.includes("UNIQUE")) return json({ error: "code or slug already in use" }, 409)
+            return json(oops(e, "shortlink-create"), 500)
+          }
         }
+        if (!created) return json({ error: "could not allocate a code, retry" }, 500)
+        const row = await getShortLinkDetail(created.id)
+        return json({ id: created.id, code: created.code, link: row }, 200, { "cache-control": "no-store" })
       }
 
       // GET /api/superadmin/links — list
@@ -6873,7 +6901,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       }
 
       const idPart = path.slice("/api/superadmin/links/".length)
-      const linkId = decodeURIComponent(idPart)
+      // Malformed percent-encoding must not 500 — return a stable 400 (Codex review — LOW: decode guard).
+      let linkId: string
+      try { linkId = decodeURIComponent(idPart) } catch { return json({ error: "invalid id" }, 400) }
       if (linkId) {
         // GET /:id — detail + click stats
         if (req.method === "GET") {

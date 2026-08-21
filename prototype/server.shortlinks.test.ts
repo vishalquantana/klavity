@@ -131,6 +131,58 @@ test("HEAD / bot request still redirects but logs is_bot=1", async () => {
   expect(Number(rows[0].is_bot)).toBe(1)
 })
 
+test("referer with a query string is logged HOST-ONLY (no email/token PII) — Codex HIGH", async () => {
+  await raw.execute({
+    sql: `INSERT INTO short_links (id, code, destination_url, kind, active, created_at, click_count)
+          VALUES (?,?,?,?,1,?,0)`,
+    args: [`lnk_${RUN}_pii`, "piicode", PUBLIC_DEST, "campaign", new Date().toISOString()],
+  })
+  const r = await fetch(`${BASE}/s/piicode`, {
+    redirect: "manual",
+    headers: { "user-agent": "Mozilla/5.0 Chrome/120.0.0.0", referer: "https://ref.example/path?email=a@b.com&token=123" },
+  })
+  expect(r.status).toBe(302)
+  await Bun.sleep(200)
+  const rows = await query("SELECT referer, ua FROM link_clicks WHERE link_id=?", [`lnk_${RUN}_pii`])
+  expect(rows.length).toBe(1)
+  const referer = String(rows[0].referer)
+  expect(referer).toBe("ref.example") // host only
+  expect(referer).not.toContain("email")
+  expect(referer).not.toContain("a@b.com")
+  expect(referer).not.toContain("token")
+  // UA is coarsened: the precise version is stripped
+  expect(String(rows[0].ua)).not.toContain("120.0.0.0")
+})
+
+test("malformed percent-encoding /s/% → stable 404, not a 500 — Codex LOW", async () => {
+  const r = await fetch(`${BASE}/s/%`, { redirect: "manual" })
+  expect(r.status).toBe(404)
+})
+
+test("burst of repeated hits from one IP is LOG-capped but ALWAYS redirects 302 — Codex MED", async () => {
+  await raw.execute({
+    sql: `INSERT INTO short_links (id, code, destination_url, kind, active, created_at, click_count)
+          VALUES (?,?,?,?,1,?,0)`,
+    args: [`lnk_${RUN}_burst`, "burstc", PUBLIC_DEST, "campaign", new Date().toISOString()],
+  })
+  const N = 40
+  let redirects = 0
+  for (let i = 0; i < N; i++) {
+    const r = await fetch(`${BASE}/s/burstc`, { redirect: "manual", headers: { "user-agent": "Mozilla/5.0 Chrome/120" } })
+    if (r.status === 302) redirects++
+  }
+  expect(redirects).toBe(N) // the redirect is NEVER throttled
+  await Bun.sleep(300)
+  const rows = await query("SELECT COUNT(*) AS c FROM link_clicks WHERE link_id=?", [`lnk_${RUN}_burst`])
+  const logged = Number(rows[0].c)
+  // Bounded: far fewer rows than requests (human cap is 20/window), so counts can't be inflated.
+  expect(logged).toBeGreaterThan(0)
+  expect(logged).toBeLessThanOrEqual(20)
+  expect(logged).toBeLessThan(N)
+  const cnt = await query("SELECT click_count FROM short_links WHERE id=?", [`lnk_${RUN}_burst`])
+  expect(Number(cnt[0].click_count)).toBe(logged) // denormalized counter matches the (capped) row count
+})
+
 // ── Task 4: superadmin CRUD API ─────────────────────────────────────────────────
 test("POST /api/superadmin/links: non-ops-admin → 403", async () => {
   const r = await fetch(`${BASE}/api/superadmin/links`, {

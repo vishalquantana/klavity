@@ -10,7 +10,7 @@ delete process.env.TURSO_AUTH_TOKEN
 import {
   applySchema, reconnectDb,
   createShortLink, getShortLinkByCodeOrSlug, listShortLinks, getShortLinkDetail,
-  updateShortLink, recordLinkClick, linkClickStats,
+  updateShortLink, recordLinkClick, linkClickStats, ShortLinkConflictError,
 } from "./db"
 
 beforeAll(async () => {
@@ -84,8 +84,48 @@ test("recordLinkClick inserts a click AND increments click_count", async () => {
   expect(stats.total).toBe(2)
   expect(stats.bots).toBe(1)
   expect(stats.humans).toBe(1)
-  expect(stats.topReferers.find((r) => r.referer === "https://t.co")?.count).toBe(1)
+  // Referer is normalized to host at the data layer, so "https://t.co" is stored/returned as "t.co".
+  expect(stats.topReferers.find((r) => r.referer === "t.co")?.count).toBe(1)
   expect(stats.byDay.length).toBeGreaterThanOrEqual(1)
+})
+
+test("recordLinkClick strips referer PII to host-only (no query/email/token persisted) — Codex HIGH", async () => {
+  const { id, code } = await createShortLink({
+    code: "pii001", destinationUrl: "https://example.com/pii", utm: {}, kind: "campaign", createdBy: null,
+  })
+  await recordLinkClick({
+    linkId: id, code, ipHash: "hh",
+    ua: "Mozilla/5.0 (X) Chrome/120.0.6099.71 Safari/537.36",
+    referer: "https://x.com/p?email=a@b.com&token=123", country: null, isBot: false,
+  })
+  const stats = await linkClickStats(id)
+  const refs = stats.topReferers.map((r) => r.referer)
+  expect(refs).toContain("x.com")
+  for (const r of refs) {
+    expect(r).not.toContain("email")
+    expect(r).not.toContain("a@b.com")
+    expect(r).not.toContain("token")
+    expect(r).not.toContain("123")
+  }
+})
+
+test("createShortLink: a code may not collide with an existing SLUG (cross-column namespace) — Codex LOW", async () => {
+  await createShortLink({ code: "xcol01", slug: "shared-x", destinationUrl: "https://example.com/x", utm: {}, kind: "campaign", createdBy: null })
+  // New row whose CODE equals the existing SLUG must be rejected (would make /s/shared-x ambiguous).
+  let err: any = null
+  try {
+    await createShortLink({ code: "shared-x", destinationUrl: "https://example.com/y", utm: {}, kind: "campaign", createdBy: null })
+  } catch (e) { err = e }
+  expect(err).toBeInstanceOf(ShortLinkConflictError)
+  expect(err.which).toBe("code")
+
+  // And a new SLUG equal to an existing CODE is likewise rejected.
+  let err2: any = null
+  try {
+    await createShortLink({ code: "xcol02", slug: "xcol01", destinationUrl: "https://example.com/z", utm: {}, kind: "campaign", createdBy: null })
+  } catch (e) { err2 = e }
+  expect(err2).toBeInstanceOf(ShortLinkConflictError)
+  expect(err2.which).toBe("slug")
 })
 
 test("migrateShortLinks is idempotent (re-applySchema does not throw)", async () => {

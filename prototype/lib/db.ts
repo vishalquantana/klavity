@@ -5,6 +5,7 @@ import { encryptSecret, sha256hex } from "./crypto"
 import type { SanitizedAttr } from "./attr"
 import type { ParsedLine } from "./transcript-parse"
 import { sanitizeLabelRules, type LabelRule } from "./label-rules"
+import { normalizeReferer, coarsenUa } from "./shortlinks"
 
 const url = process.env.TURSO_DATABASE_URL
 const authToken = process.env.TURSO_AUTH_TOKEN
@@ -6996,9 +6997,32 @@ export interface CreateShortLinkInput {
   ownerAccountId?: string | null
 }
 
+// Thrown by createShortLink when the code/slug namespace already holds the candidate. `.which`
+// tells the caller how to react: a generated CODE collision should RETRY (new code); a user-supplied
+// SLUG collision should surface as 409.
+export class ShortLinkConflictError extends Error {
+  which: "code" | "slug"
+  constructor(which: "code" | "slug") { super(`shortlink ${which} already in use`); this.which = which }
+}
+
 export async function createShortLink(input: CreateShortLinkInput): Promise<{ id: string; code: string }> {
   const id = "lnk_" + crypto.randomUUID()
   const createdAt = new Date().toISOString()
+  const slug = nullIfEmpty(input.slug)
+  // Cross-column namespace guard (Codex review — LOW: atomic code/slug namespace). code and slug
+  // share the /s/:x resolver, so a candidate must not equal ANY existing code OR slug. The two
+  // UNIQUE(code)/UNIQUE(slug) constraints alone permit the cross case (row A.code=x + row B.slug=x →
+  // ambiguous /s/x), so we check BOTH columns for BOTH candidates in one query right before insert.
+  const clash = await db!.execute({
+    sql: `SELECT code, slug FROM short_links WHERE code IN (?, ?) OR slug IN (?, ?) LIMIT 1`,
+    args: [input.code, slug, input.code, slug],
+  })
+  if (clash.rows.length) {
+    const r: any = clash.rows[0]
+    // If the collision touches our code candidate, it's a (retryable) code clash; else it's the slug.
+    if (String(r.code) === input.code || String(r.slug ?? "") === input.code) throw new ShortLinkConflictError("code")
+    throw new ShortLinkConflictError("slug")
+  }
   await db!.execute({
     sql: `INSERT INTO short_links
             (id, code, slug, destination_url, utm_source, utm_medium, utm_campaign, utm_term, utm_content,
@@ -7083,8 +7107,11 @@ export async function recordLinkClick(click: RecordLinkClickInput): Promise<void
     {
       sql: `INSERT INTO link_clicks (id, link_id, code, ts, ip_hash, ua, referer, country, is_bot)
             VALUES (?,?,?,?,?,?,?,?,?)`,
-      args: [id, click.linkId, click.code, ts, nullIfEmpty(click.ipHash), nullIfEmpty(click.ua),
-             nullIfEmpty(click.referer), nullIfEmpty(click.country), click.isBot ? 1 : 0],
+      // PII minimization at the data-layer chokepoint (Codex review — HIGH): the referer is stored
+      // HOST-ONLY (no path/query/userinfo) and the UA is COARSENED (version noise stripped, truncated)
+      // regardless of the caller, so no raw fingerprint/PII ever lands in link_clicks.
+      args: [id, click.linkId, click.code, ts, nullIfEmpty(click.ipHash), coarsenUa(click.ua),
+             normalizeReferer(click.referer), nullIfEmpty(click.country), click.isBot ? 1 : 0],
     },
     { sql: "UPDATE short_links SET click_count = click_count + 1 WHERE id=?", args: [click.linkId] },
   ], "write")

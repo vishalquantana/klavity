@@ -7,16 +7,28 @@ import { createHmac, createHash } from "node:crypto"
 // the reserved top-level paths.
 export const RESERVED_SLUGS: readonly string[] = [
   "api", "login", "superadmin", "s", "r", "dashboard", "health", "widget", "blog", "admin",
+  // Live top-level routes that must never be shadowed by a vanity slug (Codex review).
+  "home", "privacy", "terms", "pricing", "snap", "trails", "opsadmin", "onboarding",
 ]
 
 const BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
-/** 6-char base62 random code (cryptographically random, uniform over the alphabet). */
+/**
+ * 6-char base62 random code (cryptographically random, uniform over the alphabet).
+ * Uses REJECTION SAMPLING: 256 is not a multiple of 62, so a bare `byte % 62` over-weights the
+ * first 8 symbols (256 = 4*62 + 8). We reject any byte >= 248 (= 4*62) so the remaining range maps
+ * uniformly and the distribution is unbiased across all 62 symbols.
+ */
 export function genCode(): string {
-  const bytes = new Uint8Array(6)
-  crypto.getRandomValues(bytes)
   let out = ""
-  for (let i = 0; i < 6; i++) out += BASE62[bytes[i] % 62]
+  while (out.length < 6) {
+    const bytes = new Uint8Array(6)
+    crypto.getRandomValues(bytes)
+    for (let i = 0; i < 6 && out.length < 6; i++) {
+      const b = bytes[i]
+      if (b < 248) out += BASE62[b % 62] // reject 248..255 to eliminate modulo bias
+    }
+  }
   return out
 }
 
@@ -98,13 +110,44 @@ export function isBotRequest(sig: BotSignals): boolean {
 
 /**
  * Hash a client IP for the click log. Uses HMAC-SHA256 keyed on an existing server secret
- * (KLAV_SECRET) when present so raw IPs are never recoverable from a DB dump; falls back to a
- * plain SHA-256 when no secret is configured (no new REQUIRED env var). Empty/"unknown" IPs
- * return "" — we store no PII and no misleading hash for an unknown source.
+ * (KLAV_SECRET) so raw IPs are never recoverable from a DB dump. When NO secret is configured we
+ * store NOTHING ("") rather than a bare SHA-256: an unkeyed hash of the tiny IPv4 space is trivially
+ * dictionary-recoverable, so it would be PII in practice. Empty/"unknown" IPs also return "".
+ * (Codex review — MED: weak IP-hash fallback.)
  */
 export function hashIp(ip: string): string {
   if (!ip || ip === "unknown") return ""
   const secret = process.env.KLAV_SECRET
-  if (secret) return createHmac("sha256", secret).update(ip).digest("hex")
-  return createHash("sha256").update(ip).digest("hex")
+  if (!secret) return "" // no keyed secret → omit the hash entirely (never store a recoverable digest)
+  return createHmac("sha256", secret).update(ip).digest("hex")
+}
+
+/**
+ * Normalize a Referer header for the click log to its HOST ONLY. A raw referer can carry the full
+ * path + query (and thus emails, tokens, session ids or other PII) and userinfo — we drop all of it
+ * and keep just the host so referrer analytics survive without fingerprinting/PII. Returns null for
+ * an absent or unparseable referer (never store a bare/garbage string). (Codex review — HIGH: PII.)
+ */
+export function normalizeReferer(ref: string | null | undefined): string | null {
+  if (!ref) return null
+  try {
+    const u = new URL(ref)
+    return u.host || null // host = hostname[:port]; drops scheme/userinfo/path/query/fragment
+  } catch {
+    return null
+  }
+}
+
+// Version-noise: slash- or space-delimited numeric version tokens (e.g. "/120.0.6099.71", " 5.0").
+const UA_VERSION_RE = /[\/ ]\d[\d._]*/g
+
+/**
+ * Coarsen a User-Agent for the click log: strip precise version numbers (the highest-entropy part of
+ * a UA fingerprint) and truncate to ~120 chars so we keep a coarse browser/OS family hint without the
+ * full fingerprinting string. Returns null when empty. (Codex review — HIGH: PII/fingerprinting.)
+ */
+export function coarsenUa(ua: string | null | undefined): string | null {
+  if (!ua) return null
+  const coarse = ua.replace(UA_VERSION_RE, "").replace(/\s+/g, " ").trim().slice(0, 120)
+  return coarse.length ? coarse : null
 }
