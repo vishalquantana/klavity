@@ -8689,8 +8689,19 @@ window.openPlanDrawer = openPlanDrawer
   if (want !== "pro" && want !== "team" && want !== "founding") return
   try { sessionStorage.removeItem("klav-plan-intent") } catch(e){}
   try { var u = new URL(location.href); u.searchParams.delete("upgrade"); history.replaceState(null, "", u.pathname + u.search + u.hash) } catch(e){}
-  // Defer past the sidebar view-switch script (runs later in the document) so setView exists.
-  setTimeout(openPlanDrawer, 400)
+  // #447: do NOT hijack the initial route to the Plan/billing (pricing) view. A user who arrives
+  // from onboarding — including one who skipped the payment step — must land on their real
+  // dashboard (Overview), not a wall that reads like a paywall. Surface the upgrade intent INLINE
+  // instead: a dismissible toast whose CTA opens the Plan drawer on demand. The persistent sidebar
+  // plan pill (#planPill, wired by _wirePlan) remains the durable inline nudge. We deliberately no
+  // longer call openPlanDrawer() here (it setView('settings') + opens the drawer, switching away
+  // from Overview). openPlanDrawer stays wired to the pill / Pro-note links for explicit clicks.
+  var _planLabel = want === "founding" ? "Founding" : (want.charAt(0).toUpperCase() + want.slice(1))
+  setTimeout(function(){
+    if (typeof klavToast === "function") {
+      klavToast('Finish upgrading to <b>' + _planLabel + '</b> whenever you\'re ready — <a href="#" style="color:var(--indigo)" onclick="openPlanDrawer();return false">see plans</a>.')
+    }
+  }, 600)
 })()
 
 // Stripe checkout return: /dashboard?billing=success|cancelled (see /api/billing/checkout URLs).

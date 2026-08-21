@@ -1548,7 +1548,7 @@ export function buildModal(
       c('#ef4444') + c('#f97316') + c('#3b82f6') + c('#111827') +
       // Line-width control (applies to pen/line/rect/circle/arrow strokes via Annotator.strokeScale).
       `<span class="kl-hsep"></span>` +
-      `<span class="kl-hlabel">Width</span>` +
+      `<span class="kl-hlabel">Stroke</span>` +
       `<button type="button" class="kl-hopt" data-stroke="0.6" title="Thin stroke" aria-label="Thin stroke">S</button>` +
       `<button type="button" class="kl-hopt kl-on" data-stroke="1" title="Medium stroke" aria-label="Medium stroke">M</button>` +
       `<button type="button" class="kl-hopt" data-stroke="1.8" title="Thick stroke" aria-label="Thick stroke">L</button>` +
