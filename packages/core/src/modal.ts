@@ -1497,7 +1497,12 @@ export function buildModal(
   // #529: auto-grow the description so a prefilled or long (>4 line) report shows in full without the
   // reporter dragging the resize handle. Reset to 'auto' first so the box can also shrink, then grow to
   // fit content, capped at 40vh (keeps the modal usable on short viewports). resize:vertical stays as a
-  // manual override. Exposed on the controller so the prefill path can call it once after seeding text.
+  // manual override.
+  // #529 refinement (Codex review): autosize is wired to the DESCRIPTION textarea's own 'input' listener
+  // only — NOT to the shared refreshSubmit. refreshSubmit also fires from the reporter-email input, and
+  // re-running autosize there would stomp a description the reporter had manually resized. Autosize now
+  // fires solely on description/content changes. The prefill path (widget.ts) reuses this single source of
+  // truth by dispatching an 'input' event on the textarea rather than duplicating the layout math.
   const autosizeDesc = () => {
     desc.style.height = 'auto'
     // .klavity-desc is box-sizing:border-box with a 1px border; scrollHeight excludes the border, so add
@@ -1511,8 +1516,9 @@ export function buildModal(
     submitBtn.disabled = (noDesc && !hasEvidence()) || !emailValid()
     // Hint appears only when evidence is present but nothing has been typed ("we'll title it from your shot").
     if (descHint) descHint.hidden = !(noDesc && hasEvidence())
-    autosizeDesc()
   }
+  // Autosize only on description changes; refreshSubmit runs for both fields but never resizes the box.
+  desc.addEventListener('input', autosizeDesc)
   desc.addEventListener('input', refreshSubmit)
   remail?.addEventListener('input', refreshSubmit)
 

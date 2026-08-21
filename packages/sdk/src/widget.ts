@@ -298,13 +298,11 @@ function prefillReportDescription(ctrl: ModalController, description: string): v
   const desc = ctrl.shadowRoot.getElementById("klavity-desc") as HTMLTextAreaElement | null
   if (!desc) return
   desc.value = description
+  // #529 refinement (Codex review): dispatch a single 'input' event — modal.ts's own listener auto-grows
+  // the textarea (so a seeded long description shows fully on open, capped 40vh) AND refreshes the submit
+  // state. This is the single source of truth for the layout math; the previously-duplicated inline
+  // height calculation here is removed so there is exactly one autosize, not two.
   desc.dispatchEvent(new Event("input", { bubbles: true }))
-  // #529: auto-grow so a seeded long description shows fully on open (mirrors modal.ts autosizeDesc; the
-  // dispatched input already triggers it, but call explicitly in case listener wiring changes). Add the
-  // vertical border delta so a border-box textarea has no residual internal scroll. Capped 40vh.
-  desc.style.height = "auto"
-  const descBorder = desc.offsetHeight - desc.clientHeight
-  desc.style.height = Math.min(desc.scrollHeight + descBorder, Math.round(window.innerHeight * 0.4)) + "px"
   try { desc.focus({ preventScroll: true }) } catch { desc.focus() }
 }
 
