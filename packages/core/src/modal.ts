@@ -341,6 +341,59 @@ export function buildModal(
   // initial callback state and kept in sync by setReplayState() as rrweb resolves post-mount.
   let replayAttached = callbacks.replayState === 'attached'
   let autodismissTimeout: any = null
+  // #448: countdown duration for the post-submit terminal-confirmation card before it auto-closes the
+  // modal. Hovering pauses the countdown (armAutodismiss). Named so both the timer + the on-screen
+  // progress-bar animation share one source of truth.
+  const SUBMIT_AUTOCLOSE_MS = 4000
+  // The existing mode-aware success screen (host-supplied opts.success) keeps its 5s auto-dismiss.
+  const SUCCESS_AUTODISMISS_MS = 5000
+  // #449: per-screenshot undo history. Every mutating op on an image (pen/line/rect/circle/arrow/text/
+  // numbers AND crop AND clear) pushes a pre-op snapshot here, so one Ctrl/Cmd-Z (or a toolbar Undo)
+  // steps back exactly one op — through annotations and crops alike — all the way down to the original
+  // untouched image. cropStacks tracks pre-crop snapshots (with their position in undoStacks) so an
+  // explicit "Revert crop" can jump straight back to the pre-crop image + its original markup.
+  interface UndoSnap { url: string; compressed: Promise<string>; ann: any | null }
+  const undoStacks: Record<number, UndoSnap[]> = {}
+  const cropStacks: Record<number, Array<{ snap: UndoSnap; mark: number }>> = {}
+  const cloneAnn = (a: any): any => (a ? JSON.parse(JSON.stringify(a)) : null)
+  const snapshotShot = (index: number): UndoSnap => ({
+    url: screenshots[index],
+    compressed: screenshotCompressed[index],
+    ann: cloneAnn(annotationsByIndex[index]),
+  })
+  // Capture the current image+markup as the pre-op state, so undo restores exactly what was there before.
+  const pushUndo = (index: number) => { (undoStacks[index] ??= []).push(snapshotShot(index)) }
+  const restoreShot = (index: number, snap: UndoSnap) => {
+    screenshots[index] = snap.url
+    screenshotCompressed[index] = snap.compressed
+    if (snap.ann) annotationsByIndex[index] = cloneAnn(snap.ann)
+    else delete annotationsByIndex[index]
+  }
+  // One unified step back through the merged draw+crop history for this image. Returns false when the
+  // stack is empty (already at the original image). Remounts the hero so the restored state is painted.
+  const undoShot = (index: number): boolean => {
+    const st = undoStacks[index]
+    if (!st || !st.length) return false
+    const snap = st.pop()!
+    // If the op we just undid was (or sat above) a crop, drop the now-orphaned crop marker so the
+    // "Revert crop" affordance reflects reality.
+    const cs = cropStacks[index]
+    while (cs && cs.length && cs[cs.length - 1].mark >= st.length) cs.pop()
+    restoreShot(index, snap)
+    updateStrip()
+    return true
+  }
+  // Explicit "Revert crop": jump back to the most recent pre-crop image + its original markup (drops the
+  // crop and anything drawn after it — the affordance reads "revert crop to original").
+  const revertCrop = (index: number): boolean => {
+    const cs = cropStacks[index]
+    if (!cs || !cs.length) return false
+    const { snap, mark } = cs.pop()!
+    if (undoStacks[index]) undoStacks[index].length = Math.min(undoStacks[index].length, mark)
+    restoreShot(index, snap)
+    updateStrip()
+    return true
+  }
 
   const style = document.createElement('style')
   style.textContent = `
@@ -369,6 +422,9 @@ export function buildModal(
     /* Hero annotation toolbar — always-on tools over the image. Tap targets ≥36px for touch. */
     .kl-htool,.kl-htbtn{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;min-width:38px;height:38px;padding:0 8px;border:1px solid transparent;border-radius:9px;background:transparent;color:#cfd5ea;cursor:pointer;line-height:1;transition:transform .12s ease,background .12s ease;}
     .kl-htool .kl-hk{font-size:9px;font-weight:700;opacity:.5;}
+    /* #449 "Revert crop" affordance — accent-tinted, with a small visible label under the glyph. */
+    .kl-htbtn.kl-hrevert{color:var(--kl-accent);min-width:44px;}
+    .kl-htbtn.kl-hrevert .kl-hrevert-lbl{font-size:8.5px;font-weight:700;opacity:.85;}
     .kl-htool:hover,.kl-htbtn:hover{background:rgba(255,255,255,.08);transform:translateY(-1px);}
     .kl-htool.kl-on{background:var(--kl-accent);color:var(--kl-on-accent);box-shadow:0 4px 12px color-mix(in srgb,var(--kl-accent) 45%,transparent);}
     .kl-htool.kl-on .kl-hk{opacity:.85;}
@@ -519,6 +575,14 @@ export function buildModal(
     .klavity-progress-fill{height:100%;width:0;border-radius:999px;background:linear-gradient(90deg,color-mix(in srgb,var(--kl-accent) 65%,#fff),var(--kl-accent));}
     .klavity-toast-progress{position:absolute;top:0;left:0;height:3px;background:var(--kl-accent);width:100%;transform-origin:left;animation:kl-toast-decay 5s linear forwards;z-index:10;}
     @keyframes kl-toast-decay{from{transform:scaleX(1)}to{transform:scaleX(0)}}
+    /* #448 — post-submit terminal confirmation card ("Report sent"). Self-contained (the composer body
+       is removed); the countdown line sits along the BOTTOM edge, matching the approved mock. */
+    .klavity-sent{position:relative;overflow:hidden;background:var(--kl-bg);color:var(--kl-fg);border:1px solid var(--kl-border);border-radius:var(--kl-radius);padding:34px 30px 30px;width:92vw;max-width:420px;text-align:center;box-shadow:var(--kl-shadow);font-family:var(--kl-font,system-ui,sans-serif);-webkit-font-smoothing:antialiased;display:flex;flex-direction:column;align-items:center;gap:11px;animation:kl-genie-in .5s cubic-bezier(.16,1,.3,1) both;}
+    .klavity-sent .kl-sent-check{width:52px;height:52px;border-radius:50%;background:color-mix(in srgb,#16a34a 15%,transparent);color:#16a34a;display:grid;place-items:center;animation:kl-rise .45s cubic-bezier(.16,1,.3,1) .04s both;}
+    .klavity-sent h2{margin:0;font-size:20px;font-weight:600;color:var(--kl-fg);line-height:1.2;animation:kl-rise .45s cubic-bezier(.16,1,.3,1) .09s both;}
+    .klavity-sent p{margin:0;font-size:13.5px;color:var(--kl-muted);line-height:1.5;animation:kl-rise .45s cubic-bezier(.16,1,.3,1) .14s both;}
+    .klavity-sent .klavity-ref{margin:4px 0 0;justify-content:center;}
+    .klavity-sent .klavity-toast-progress{top:auto;bottom:0;}
     .klavity-error{color:#f38ba8;font-size:13px;margin-bottom:8px;display:none;}
     .klavity-success h2{margin:0 0 10px;font-size:24px;font-family:var(--kl-font-display, var(--display, 'Fraunces', serif));font-weight:480;color:var(--kl-fg);display:flex;align-items:center;gap:8px;line-height:1.2;letter-spacing:-.01em;}
     .klavity-success p{margin:0 0 20px;font-size:14.5px;color:var(--kl-muted);line-height:1.5;}
@@ -817,6 +881,14 @@ export function buildModal(
           annotationsByIndex[key - 1] = annotationsByIndex[key]
           delete annotationsByIndex[key]
         }
+        // #449: keep the per-image undo + crop history index-aligned with the shifted screenshots.
+        delete undoStacks[i]; delete cropStacks[i]
+        for (const key of Object.keys(undoStacks).map(Number).filter(n => n > i).sort((a, b) => a - b)) {
+          undoStacks[key - 1] = undoStacks[key]; delete undoStacks[key]
+        }
+        for (const key of Object.keys(cropStacks).map(Number).filter(n => n > i).sort((a, b) => a - b)) {
+          cropStacks[key - 1] = cropStacks[key]; delete cropStacks[key]
+        }
         if (screenshots.length === 0) {
           setActiveCapture(null)
         }
@@ -935,6 +1007,8 @@ export function buildModal(
           screenshotQuality[index] = quality ?? 'real-pixel'
           // Clear any markup on this image — the new capture has different pixels/dimensions.
           if (annotationsByIndex[index]) { delete annotationsByIndex[index]; retakeClearedNote.add(index) }
+          // #449: the shot was fully replaced — its old undo/crop history no longer matches these pixels.
+          delete undoStacks[index]; delete cropStacks[index]
         }
       }
     } catch { /* user cancelled the share prompt, or capture failed — leave the original shot untouched */ }
@@ -1038,6 +1112,45 @@ export function buildModal(
     const done = () => host.remove()
     m.addEventListener('animationend', done, { once: true })
     setTimeout(done, 700) // safety if animationend doesn't fire
+  }
+
+  // Shared countdown-to-auto-close used by BOTH the post-submit confirmation card (#448, ~4s) and the
+  // host-supplied success screen (~5s). Appends a draining progress line to `target`, closes after `ms`,
+  // and pauses on hover/focus (resuming with only the remaining time). Idempotent — a second call is a
+  // no-op while a countdown is already armed. The progress-bar CSS animates over its own duration, set
+  // inline here so the visual bar always matches `ms`.
+  function armAutodismiss(target: HTMLElement, ms: number) {
+    if (autodismissTimeout) return
+    const progressBar = document.createElement('div')
+    progressBar.className = 'klavity-toast-progress'
+    progressBar.style.animationDuration = ms + 'ms'
+    target.appendChild(progressBar)
+    let remainingMs = ms
+    let startedAt = Date.now()
+    const arm = () => {
+      startedAt = Date.now()
+      autodismissTimeout = setTimeout(() => { close() }, remainingMs)
+    }
+    const pause = () => {
+      if (!autodismissTimeout) return
+      clearTimeout(autodismissTimeout)
+      autodismissTimeout = null
+      remainingMs = Math.max(0, remainingMs - (Date.now() - startedAt))
+      progressBar.style.animationPlayState = 'paused'
+    }
+    const resume = () => {
+      if (autodismissTimeout || target.classList.contains('kl-closing')) return
+      progressBar.style.animationPlayState = 'running'
+      arm()
+    }
+    target.addEventListener('mouseenter', pause)
+    target.addEventListener('mouseleave', resume)
+    // Keyboard users get the same affordance: focus inside pauses, leaving resumes.
+    target.addEventListener('focusin', pause)
+    target.addEventListener('focusout', (e: FocusEvent) => {
+      if (!target.contains(e.relatedTarget as Node | null)) resume()
+    })
+    arm()
   }
 
   function escHandler(e: KeyboardEvent) {
@@ -1187,7 +1300,15 @@ export function buildModal(
   const lockComposer = (on: boolean) => {
     busy = on
     captureBtnEls().forEach(b => { b.disabled = on })
-    if (on) submitBtn.disabled = true
+    // #448: freeze the remaining editable surfaces too — description, voice, and every annotation tool —
+    // so once a submit is in flight (and after it succeeds) NOTHING in the composer stays editable. The
+    // capture row (incl. Attach) is already covered by captureBtnEls above; voice is excluded there, so
+    // stop any live recording and disable it explicitly.
+    desc.disabled = on
+    const voiceEl = modal.querySelector('#klavity-voice') as HTMLButtonElement | null
+    if (voiceEl) voiceEl.disabled = on
+    modal.querySelectorAll<HTMLButtonElement>('.kl-htool,.kl-htbtn,.kl-hopt,.kl-hcolor').forEach(el => { el.disabled = on })
+    if (on) { _stopVoice?.(); submitBtn.disabled = true }
     else refreshSubmit()
   }
   // KLA-21: active-source indicator — moves .kl-active + aria-pressed to the chosen capture button
@@ -1310,39 +1431,17 @@ export function buildModal(
       })
       finishProgress()
       if (callbacks.success) {
-        // Mode-aware lead/CTA screen rendered THROUGH the existing themed modal — no auto-close;
-        // the user must interact (submit email or click the CTA, or dismiss via overlay/esc).
+        // Mode-aware lead/CTA screen rendered THROUGH the existing themed modal. It self-arms the shared
+        // countdown auto-close (armAutodismiss) once there's nothing left for the user to do; when a lead
+        // form / CTA is shown it waits for the interaction first (unchanged).
         renderSuccess(result.issueKey, result.issueUrl, callbacks.success)
       } else {
-        // Their themed auto-close card: custom thank-you (2600ms) or "check-circle Filed as KEY".
-        // When the host resolved a dashboard link (authed reporters only — extension / logged-in
-        // session), append it and hold the card a little longer so the link is actually clickable.
-        const wrap = document.createElement('div')
-        wrap.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:all;'
-        const card = document.createElement('div')
-        card.style.cssText = 'background:var(--kl-bg);color:var(--kl-fg);border:1px solid var(--kl-border);border-radius:var(--kl-radius);padding:32px;font-family:var(--kl-font,system-ui),sans-serif;font-size:16px;text-align:center;box-shadow:var(--kl-shadow);'
-        let cardLink = ''
-        if (cfg.thankYou) {
-          card.textContent = cfg.thankYou
-        } else {
-          card.innerHTML = `${icon('check-circle', { label: 'Filed', size: 20 })} Filed as `
-          card.appendChild(document.createTextNode(displayRef(result.issueKey)))
-          cardLink = safeHttpUrl(result.issueUrl)
-          if (cardLink) {
-            const a = document.createElement('a')
-            a.href = cardLink
-            a.target = '_blank'
-            a.rel = 'noopener'
-            a.textContent = 'View in dashboard'
-            a.style.cssText = 'display:block;margin-top:12px;font-size:14px;font-weight:600;color:var(--kl-accent);text-decoration:underline;text-underline-offset:2px;'
-            card.appendChild(a)
-          }
-        }
-        wrap.appendChild(card)
-        // keep the themed style element; swap only the body
-        overlay.remove()
-        shadowRoot.appendChild(wrap)
-        setTimeout(close, cfg.thankYou ? 2600 : cardLink ? 4000 : 1500)
+        // #448 — terminal confirmation. The composer body is already frozen (lockComposer above); here we
+        // swap it for a "Report sent" confirmation (check + headline + line + quotable ref + Open-in-
+        // Klavity link) and run a countdown progress line along the bottom that auto-closes the modal
+        // after SUBMIT_AUTOCLOSE_MS. Hovering pauses the countdown; the link stays clickable until it
+        // closes. cfg.thankYou (host custom copy) rides in as the body line so it's still honoured.
+        renderSentConfirmation(result.issueKey, result.issueUrl)
       }
     } catch (err) {
       // Upload failed — surface the error and re-open the composer (never leave it stuck/disabled).
@@ -1531,7 +1630,7 @@ export function buildModal(
   function heroGlyph(inner: string, size = 15): string {
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-0.125em">${inner}</svg>`
   }
-  function heroToolbarHtml(): string {
+  function heroToolbarHtml(showRevert: boolean): string {
     const t = (name: string, label: string, glyph: string, key: string) =>
       `<button type="button" class="kl-htool" data-tool="${name}" title="${label} (${key.toUpperCase()})" aria-label="${label}">${glyph}<span class="kl-hk">${key.toUpperCase()}</span></button>`
     const c = (col: string) => `<button type="button" class="kl-hcolor" data-color="${col}" style="background:${col}" title="${col}" aria-label="Colour ${col}"></button>`
@@ -1566,7 +1665,10 @@ export function buildModal(
         `<button type="button" class="kl-hopt" data-size="40" title="Large">L</button>` +
       `</span>` +
       `<span class="kl-hsep"></span>` +
-      `<button type="button" class="kl-htbtn" id="kl-hero-undo" title="Undo (⌘Z)" aria-label="Undo">${heroGlyph('<path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/>', 14)}</button>` +
+      `<button type="button" class="kl-htbtn" id="kl-hero-undo" title="Undo (Cmd+Z / Ctrl+Z)" aria-label="Undo">${heroGlyph('<path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/>', 14)}</button>` +
+      // #449: explicit "Revert crop" — shown only after a crop on this image (visibility driven by the
+      // per-image crop stack). Reverts the most recent crop to its pre-crop image + original markup.
+      (showRevert ? `<button type="button" class="kl-htbtn kl-hrevert" id="kl-hero-revert" title="Revert crop to original" aria-label="Revert crop">${heroGlyph('<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 5 5v2"/>', 14)}<span class="kl-hk kl-hrevert-lbl">Revert</span></button>` : '') +
       `<button type="button" class="kl-htbtn" id="kl-hero-clear" title="Clear" aria-label="Clear">${icon('trash-2', { size: 14 })}</button>` +
       `<span class="kl-hgrow"></span>` +
       `<span class="kl-hhint">P pen · L line · R rect · O circle · T text · C numbers · K crop · scroll to zoom · shift-drag to pan</span>`
@@ -1594,8 +1696,10 @@ export function buildModal(
     mountHeroAnnotator(activeIndex)
   }
 
-  // Destructive crop: replace screenshots[index] with the selected region of the CLEAN image and rebase
-  // that image's markup into the new origin. Browser-only (needs a real 2D context); no-op if unavailable.
+  // #449 — reversible crop: replace screenshots[index] with the selected region of the CLEAN image and
+  // rebase that image's markup into the new origin, but FIRST preserve the pre-crop image + markup as an
+  // undo snapshot so the crop steps back like any other op (Ctrl/Cmd-Z + toolbar Undo) and an explicit
+  // "Revert crop" can jump straight back. Browser-only (needs a real 2D context); no-op if unavailable.
   function applyHeroCrop(index: number, rx: number, ry: number, rw: number, rh: number) {
     const srcUrl = screenshots[index]
     if (!srcUrl) return
@@ -1610,6 +1714,10 @@ export function buildModal(
       cx.drawImage(src, rx, ry, rw, rh, 0, 0, cc.width, cc.height)
       let cropped: string
       try { cropped = cc.toDataURL('image/png') } catch { return }
+      // Snapshot the pre-crop image + original (un-rebased) markup BEFORE mutating, and record it on both
+      // the unified undo stack and the crop stack (with its position, so Revert can rewind precisely).
+      const mark = undoStacks[index]?.length ?? 0
+      const preSnap = snapshotShot(index)
       screenshots[index] = cropped
       screenshotCompressed[index] = callbacks.compressImage ? callbacks.compressImage(cropped) : Promise.resolve(cropped)
       const prevShapes = annotationsByIndex[index]?.shapes as Shape[] | undefined
@@ -1618,6 +1726,8 @@ export function buildModal(
       } else {
         delete annotationsByIndex[index]
       }
+      ;(undoStacks[index] ??= []).push(preSnap)
+      ;(cropStacks[index] ??= []).push({ snap: preSnap, mark })
       updateStrip()
     }
     src.src = srcUrl
@@ -1654,7 +1764,7 @@ export function buildModal(
     annotator.redraw()
 
     {
-      tools.innerHTML = heroToolbarHtml()
+      tools.innerHTML = heroToolbarHtml((cropStacks[index]?.length ?? 0) > 0)
       let activeTool = 'pen'
       let activeColor = '#ef4444'
       let textSize = 26
@@ -1688,8 +1798,12 @@ export function buildModal(
         tools.querySelectorAll<HTMLElement>('[data-stroke]').forEach(el => el.classList.toggle('kl-on', el === b))
         annotator.redraw()
       }))
-      tools.querySelector('#kl-hero-undo')?.addEventListener('click', () => { annotator.undo(); persist() })
-      tools.querySelector('#kl-hero-clear')?.addEventListener('click', () => { annotator.clearAll(); persist() })
+      // #449: route the toolbar Undo through the unified per-image history so one click steps back one op
+      // (annotation OR crop), remounting to paint the restored state.
+      tools.querySelector('#kl-hero-undo')?.addEventListener('click', () => { undoShot(index) })
+      tools.querySelector('#kl-hero-revert')?.addEventListener('click', () => { revertCrop(index) })
+      // Clear is itself undoable: snapshot the current markup before wiping it.
+      tools.querySelector('#kl-hero-clear')?.addEventListener('click', () => { pushUndo(index); annotator.clearAll(); persist() })
       selectTool(activeTool)
       selectColor(activeColor, tools.querySelector('[data-color]') as HTMLElement)
 
@@ -1763,11 +1877,12 @@ export function buildModal(
           input.style.cssText = `position:fixed;left:${e.clientX}px;top:${e.clientY}px;background:transparent;border:1px dashed ${activeColor};color:${activeColor};font-size:${textSize}px;font-weight:700;text-shadow:${shadow};outline:none;z-index:2147483647;min-width:80px;`
           const sz = textSize, ol = textOutline
           document.body.appendChild(input); input.focus()
-          input.addEventListener('blur', () => { if (input.value.trim()) { annotator.addShape({ type: 'text', color: activeColor, x: startX, y: startY, text: input.value.trim(), size: sz, outline: ol }); persist() } input.remove() }, { once: true })
+          input.addEventListener('blur', () => { if (input.value.trim()) { pushUndo(index); annotator.addShape({ type: 'text', color: activeColor, x: startX, y: startY, text: input.value.trim(), size: sz, outline: ol }); persist() } input.remove() }, { once: true })
           input.addEventListener('keydown', (ke) => { if (ke.key === 'Enter') input.blur(); ke.stopPropagation() })
           return
         }
         if (activeTool === 'count') {
+          pushUndo(index)
           annotator.addShape({ type: 'count', color: activeColor, x: pt.x, y: pt.y, n: ++countN })
           persist()
           return
@@ -1801,6 +1916,9 @@ export function buildModal(
           if (rw > 4 && rh > 4) applyHeroCrop(index, rx, ry, rw, rh)
           return
         }
+        // #449: snapshot before adding so this shape becomes one undo step in the unified history.
+        const willAdd = (activeTool === 'pen' && penPoints.length > 1) || activeTool === 'line' || activeTool === 'rect' || activeTool === 'circle' || activeTool === 'arrow'
+        if (willAdd) pushUndo(index)
         if (activeTool === 'pen' && penPoints.length > 1) annotator.addShape({ type: 'pen', color: activeColor, points: penPoints })
         else if (activeTool === 'line') annotator.addShape({ type: 'line', color: activeColor, x1: startX, y1: startY, x2: pt.x, y2: pt.y })
         else if (activeTool === 'rect') annotator.addShape({ type: 'rect', color: activeColor, x: Math.min(startX, pt.x), y: Math.min(startY, pt.y), w: Math.abs(pt.x - startX), h: Math.abs(pt.y - startY) })
@@ -1818,7 +1936,9 @@ export function buildModal(
         // the single-key tool shortcuts (e.g. "r" selects Rect) and preventDefault eats the character.
         const el = ((typeof e.composedPath === 'function' && e.composedPath()[0]) || e.target) as HTMLElement | null
         if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) return
-        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); annotator.undo(); persist(); return }
+        // #449 addendum: BOTH Cmd+Z (metaKey, macOS) and Ctrl+Z (ctrlKey, Win/Linux) step back one op
+        // through the unified draw+crop history — repeat to walk all the way to the clean image.
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undoShot(index); return }
         if (e.metaKey || e.ctrlKey || e.altKey) return
         const k = e.key.toLowerCase()
         if (TOOL_KEYS[k]) { e.preventDefault(); selectTool(TOOL_KEYS[k]) }
@@ -2012,6 +2132,55 @@ export function buildModal(
     img.src = dataUrl
   }
 
+  // #448 — post-submit terminal confirmation (the default path, when the host wired no opts.success).
+  // Replaces the (already-frozen) composer body with a "Report sent" card: a check, headline, a short
+  // line (host cfg.thankYou copy if set), the quotable ticket ref, and an "Open in Klavity" link when
+  // the server returned a dashboard URL. A countdown progress line runs along the bottom and auto-closes
+  // the modal after SUBMIT_AUTOCLOSE_MS; hovering pauses it and the link stays clickable until it closes.
+  // Dynamic values go in via textContent/href (never innerHTML) per this file's XSS guards.
+  function renderSentConfirmation(issueKey: string, issueUrl: string) {
+    const wrap = document.createElement('div')
+    wrap.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:all;'
+    const card = document.createElement('div')
+    card.className = 'klavity-sent'
+    const check = document.createElement('div')
+    check.className = 'kl-sent-check'
+    check.innerHTML = icon('check', { label: 'Sent', size: 26 })
+    card.appendChild(check)
+    const h = document.createElement('h2')
+    h.textContent = 'Report sent'
+    card.appendChild(h)
+    const p = document.createElement('p')
+    p.textContent = cfg.thankYou || 'We filed it and emailed you a copy.'
+    card.appendChild(p)
+    if (issueKey) {
+      const ref = document.createElement('div')
+      ref.className = 'klavity-ref'
+      const label = document.createElement('span')
+      label.textContent = 'Filed as'
+      const code = document.createElement('code')
+      code.textContent = displayRef(issueKey)
+      ref.append(label, code)
+      // Link only when the server resolved a real http(s) dashboard URL (authed reporters). Anonymous
+      // widget submits get just the quotable ref — matching the pre-#448 themed card contract.
+      const linkUrl = safeHttpUrl(issueUrl)
+      if (linkUrl) {
+        const a = document.createElement('a')
+        a.href = linkUrl
+        a.target = '_blank'
+        a.rel = 'noopener'
+        a.textContent = 'Open in Klavity'
+        ref.appendChild(a)
+      }
+      card.appendChild(ref)
+    }
+    wrap.appendChild(card)
+    // Keep the themed <style>; swap only the body (drop the whole composer overlay).
+    overlay.remove()
+    shadowRoot.appendChild(wrap)
+    armAutodismiss(card, SUBMIT_AUTOCLOSE_MS)
+  }
+
   // Mode-aware success screen: swap the modal body in-place (keeps the themed modal element + its
   // Genie animation + injected --kl-* vars) for headline/body, optional email-lead capture, optional
   // CTA, and an always-on "Powered by Klavity" footer. Dynamic data (feedbackId, email) is never
@@ -2059,43 +2228,9 @@ export function buildModal(
       wrap.appendChild(ref)
     }
 
-    const startAutodismiss = () => {
-      if (autodismissTimeout) return
-      const progressBar = document.createElement('div')
-      progressBar.className = 'klavity-toast-progress'
-      modal.appendChild(progressBar)
-      // Hover-to-pause (KLAVITYKLA-32 follow-up): while the pointer (or keyboard focus) is on the
-      // toast, freeze both the close timer and the draining progress bar; on leave, resume with
-      // only the remaining time. Manual close() still clears the pending timeout as before.
-      let remainingMs = 5000
-      let startedAt = Date.now()
-      const arm = () => {
-        startedAt = Date.now()
-        autodismissTimeout = setTimeout(() => {
-          close()
-        }, remainingMs)
-      }
-      const pause = () => {
-        if (!autodismissTimeout) return
-        clearTimeout(autodismissTimeout)
-        autodismissTimeout = null
-        remainingMs = Math.max(0, remainingMs - (Date.now() - startedAt))
-        progressBar.style.animationPlayState = 'paused'
-      }
-      const resume = () => {
-        if (autodismissTimeout || modal.classList.contains('kl-closing')) return
-        progressBar.style.animationPlayState = 'running'
-        arm()
-      }
-      modal.addEventListener('mouseenter', pause)
-      modal.addEventListener('mouseleave', resume)
-      // Keyboard users get the same affordance: focus inside the toast pauses, leaving it resumes.
-      modal.addEventListener('focusin', pause)
-      modal.addEventListener('focusout', (e: FocusEvent) => {
-        if (!modal.contains(e.relatedTarget as Node | null)) resume()
-      })
-      arm()
-    }
+    // Hover-to-pause countdown auto-close (KLAVITYKLA-32 follow-up) — now the shared armAutodismiss
+    // helper, attached to the themed modal so the drain + timer freeze while hovered/focused.
+    const startAutodismiss = () => armAutodismiss(modal, SUCCESS_AUTODISMISS_MS)
 
     if (copy.showEmail) {
       const row = document.createElement('div')
