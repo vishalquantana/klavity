@@ -5049,6 +5049,54 @@ export async function feedbackById(projectId: string, id: string): Promise<any |
   }
 }
 
+// QA mode (team-gated per-page bug view): the reports/tickets whose captured page matches a given
+// URL, project-scoped. Matches on the SAME url_host + url_path a report stores at ingest (#440
+// captures these via `new URL(pageUrl)` → { host, pathname }, query/fragment already stripped). The
+// caller passes the already-normalised host (lowercased) plus a small set of equivalent path
+// candidates (raw, trailing-slash-stripped, and the +"/" variant) so "/app" and "/app/" collapse to
+// one page. Host compared case-insensitively (hosts are case-insensitive; new URL lowercases them
+// anyway). Returns the raw-ish columns the QA route needs; the route maps them to the client shape,
+// signs the screenshot link, and computes the counts summary. Newest report first.
+export type PageBugRow = {
+  id: string; seqNum: number | null; title: string | null; observation: string | null
+  status: string; priority: string | null; severity: string | null
+  actorEmail: string | null; contactEmail: string | null
+  screenshotId: string | null; urlHost: string | null; urlPath: string | null
+  reportUrl: string | null; annotations: any; createdAt: number
+}
+export async function feedbackByPageUrl(
+  projectId: string, host: string, pathCandidates: string[],
+): Promise<PageBugRow[]> {
+  const cands = Array.from(new Set(pathCandidates.filter((p) => p != null && p !== "")))
+  if (!cands.length) return []
+  const placeholders = cands.map(() => "?").join(",")
+  const r = await db!.execute({
+    sql: `SELECT id, seq_num, title, observation, status, priority, severity, actor_email,
+                 contact_email, screenshot_id, url_host, url_path, report_url, annotations_json, created_at
+          FROM feedback
+          WHERE project_id=? AND lower(url_host)=lower(?) AND url_path IN (${placeholders})
+          ORDER BY created_at DESC`,
+    args: [projectId, host, ...cands],
+  })
+  return r.rows.map((x: any) => ({
+    id: String(x.id),
+    seqNum: x.seq_num != null ? Number(x.seq_num) : null,
+    title: x.title != null ? String(x.title) : null,
+    observation: x.observation != null ? String(x.observation) : null,
+    status: x.status != null ? String(x.status) : "open",
+    priority: x.priority != null ? String(x.priority) : null,
+    severity: x.severity != null ? String(x.severity) : null,
+    actorEmail: x.actor_email != null ? String(x.actor_email) : null,
+    contactEmail: x.contact_email != null ? String(x.contact_email) : null,
+    screenshotId: x.screenshot_id != null ? String(x.screenshot_id) : null,
+    urlHost: x.url_host != null ? String(x.url_host) : null,
+    urlPath: x.url_path != null ? String(x.url_path) : null,
+    reportUrl: x.report_url != null ? String(x.report_url) : null,
+    annotations: safeJsonParse(x.annotations_json),
+    createdAt: Number(x.created_at),
+  }))
+}
+
 // KLAVITYKLA-214 (JTBD 1.3): resolve a PUBLIC report reference to the minimal, anonymous-safe status
 // facts for the no-login /r/:ref status page. Accepts either the full "fb_<uuid>" id OR the shortened
 // human-quotable form "fb_<8hex>" that the widget success card shows ("Filed as fb_1a2b3c4d", see

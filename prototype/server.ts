@@ -9,7 +9,7 @@ import { projectEntitlement } from "./lib/entitlement"
 import { logAudit, queryAuditLog, auditRowsToCsv, type AuditAction } from "./lib/audit-log"
 import { buildMemberExport, membersToCsv, MEMBER_EXPORT_FIELDS } from "./lib/member-export"
 import { isMaskingEnabled, maskMemberExportRow, maskDeep, maskWalkReportData } from "./lib/data-masking"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, publicReportStatus, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, publicReportStatus, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows } from "./lib/db"
 import { countFoundingAccounts } from "./lib/db"
 // KLAVITYKLA-366 — the Founding Ten spot counter. One cached source of truth behind the public
 // pricing band, the in-app ribbon, and the server-side refusal of an 11th founding checkout.
@@ -2048,6 +2048,52 @@ async function runManualExport(
       .catch((err: any) => console.warn("heartbeat record failed (non-fatal):", err?.message || err))
     return { exportResult: { type: connector.type, externalKey: null, externalUrl: null, status: "failed", error: `${o.error} (ref ${o.id})` }, exportId }
   }
+}
+
+// QA mode close (KLA qa-mode): when a team member closes a bug on a page, transition every linked
+// external tracker issue to a done/closed status too. Reuses the #433/#414 default-status mechanism
+// (adapter.transitionIssue resolves a status NAME → the tracker's transition id and applies it).
+// The target status name is per-connector admin config (`done_status`, e.g. "Done"/"Closed"), with a
+// sane "Done" fallback. STRICTLY best-effort: mirrors the export path's decrypt→call shape but NEVER
+// throws into the caller — a tracker that is unreachable, lacks the capability (webhook/GitHub), or
+// has no matching transition just yields a warning string. Returns a small summary the route relays.
+async function transitionLinkedIssuesOnQaClose(
+  fbRow: any,
+): Promise<{ attempted: number; applied: number; warnings: string[] }> {
+  const out = { attempted: 0, applied: 0, warnings: [] as string[] }
+  let exports: Awaited<ReturnType<typeof listTicketExports>> = []
+  try { exports = await listTicketExports(fbRow.id) } catch { return out }
+  // De-dupe to the most-recent SUCCESSFUL export per connector — a failed attempt never created an
+  // external issue, and two successes to one connector are the same destination.
+  const seen = new Set<string>()
+  for (const ex of exports) {
+    if (ex.status !== "ok" || !ex.externalKey || seen.has(ex.connectorId)) continue
+    seen.add(ex.connectorId)
+    try {
+      const connector = await getConnectorById(fbRow.projectId, ex.connectorId)
+      if (!connector || !connector.enabled) continue
+      const adapter = getConnector(connector.type)
+      if (!adapter?.transitionIssue) {
+        out.warnings.push(`${connector.type} has no workflow transition — external issue left as-is`)
+        continue
+      }
+      const target = String(connector.config.done_status || "").trim() || "Done"
+      const decryptedConfig: Record<string, string> = { ...connector.config }
+      for (const f of adapter.fields) {
+        if (f.secret && connector.config[f.key]) {
+          try { decryptedConfig[f.key] = await decryptSecret(connector.config[f.key]) }
+          catch { decryptedConfig[f.key] = "" }
+        }
+      }
+      out.attempted++
+      const t = await adapter.transitionIssue(ex.externalKey, target, decryptedConfig)
+      if (t.applied) out.applied++
+      else if (t.error) out.warnings.push(`${connector.type}: ${t.error}`)
+    } catch (e: any) {
+      out.warnings.push(`${ex.type}: ${e?.message || "transition failed"}`)
+    }
+  }
+  return out
 }
 
 // Anonymous feedback rate limits (per hour). Per-IP guards a single abuser; per-project caps the
@@ -7542,6 +7588,111 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       }
 
       return json({ error: "Not found" }, 404)
+    }
+
+    // ── QA mode (team-gated): teammates SEE + CLOSE bugs on the page they are browsing ────────────
+    // AUTHENTICATED + project-membership gated — reporters/anonymous never reach these. Placed BEFORE
+    // the generic /api/ gate so an unauthenticated call gets a JSON 401 (not a /login redirect) and so
+    // a Bearer extension token (the QA overlay) is accepted alongside the first-party cookie, mirroring
+    // the trails block above. Two endpoints:
+    //   GET  /api/projects/:id/page-bugs?url=<full-url>  → this page's bugs + a {open,inProgress,done} count
+    //   POST /api/feedback/:id/qa-close { resolution? }  → mark Done + best-effort external-tracker close
+    {
+      const pageBugsMatch = path.match(/^\/api\/projects\/([^/]+)\/page-bugs$/)
+      const qaCloseMatch = path.match(/^\/api\/feedback\/([^/]+)\/qa-close$/)
+      if (pageBugsMatch || qaCloseMatch) {
+        const meQa = (await sessionEmail(req)) || (await bearerEmail(req))
+        if (!meQa) return json({ error: "Sign in to continue." }, 401)
+
+        // GET /api/projects/:id/page-bugs?url=<full-url> — bugs whose captured page matches <url>.
+        if (req.method === "GET" && pageBugsMatch) {
+          const projectId = pageBugsMatch[1]
+          // TEAM GATE: projectAccess returns 'admin' | 'member' | null. A non-member (or a stranger's
+          // project) is null → 403. This is the SAME membership helper every dashboard/ticket route uses.
+          const access = await projectAccess(meQa, projectId)
+          if (!access) return json({ error: "You are not a member of this project." }, 403)
+          if (!rlAllow(`qa:pagebugs:${meQa}`, 120, 60 * 1000)) return json({ error: "Too many requests." }, 429)
+          const rawUrl = url.searchParams.get("url") || ""
+          let host = "", pagePath = "/"
+          try { const u = new URL(rawUrl); host = u.host.toLowerCase(); pagePath = u.pathname || "/" }
+          catch { return json({ error: "A valid ?url= is required." }, 400) }
+          if (!host) return json({ error: "A valid ?url= is required." }, 400)
+          // Trailing-slash-insensitive: "/app" and "/app/" are the same page (root "/" is untouched).
+          const stripped = pagePath.length > 1 ? pagePath.replace(/\/+$/, "") : pagePath
+          const np = stripped === "" ? "/" : stripped
+          const candidates = [pagePath, np, np === "/" ? "/" : np + "/"]
+          const rows = await feedbackByPageUrl(projectId, host, candidates)
+          const counts = { open: 0, inProgress: 0, done: 0 }
+          const bugs = rows.map((r) => {
+            const s = r.status.toLowerCase()
+            if (s === "in_progress") counts.inProgress++
+            else if (s === "done" || s === "dismissed" || s === "resolved" || s === "closed" || s === "fixed") counts.done++
+            else counts.open++ // new | open | triaged | unknown all read as "still open"
+            // Screenshot: the PERMANENT signed link tickets embed (/img/<id>.<hmac>), null when none.
+            const screenshotUrl = r.screenshotId ? `${BASE}/img/${signImageToken(r.screenshotId)}` : null
+            const pageUrl = r.reportUrl || (r.urlHost ? `https://${r.urlHost}${r.urlPath || ""}` : (r.urlPath || null))
+            // coords: the report's first captured annotation region (normalised 0..1 { x,y,w,h }), so the
+            // overlay can pin the marker to the exact element. Field is OMITTED when the report has none.
+            let coords: { x: number; y: number; w: number; h: number } | undefined
+            const ann = Array.isArray(r.annotations) ? r.annotations[0] : r.annotations
+            const rg = ann && typeof ann === "object" ? (ann as any).region : null
+            if (rg && typeof rg.x === "number" && typeof rg.y === "number") {
+              coords = { x: Number(rg.x), y: Number(rg.y), w: Number(rg.w) || 0, h: Number(rg.h) || 0 }
+            }
+            const out: any = {
+              id: r.id,
+              ref: r.id.split("-")[0], // human-quotable short ref "fb_1a2b3c4d" (also the /r/:ref key)
+              title: r.title || r.observation || null, // prefer the explicit Title, else the observation
+              status: r.status,
+              severity: r.priority || r.severity || null, // effective priority wins, else stored severity
+              reporterEmail: r.actorEmail || r.contactEmail || null,
+              createdAt: r.createdAt,
+              screenshotUrl,
+              pageUrl,
+            }
+            if (coords) out.coords = coords
+            return out
+          })
+          return json({ projectId, url: `${host}${np}`, bugs, counts })
+        }
+
+        // POST /api/feedback/:id/qa-close { resolution? } — mark Done + best-effort tracker transition.
+        if (req.method === "POST" && qaCloseMatch) {
+          const fid = qaCloseMatch[1]
+          if (!rlAllow(`qa:close:${meQa}`, 60, 60 * 1000)) return json({ error: "Too many requests." }, 429)
+          // TEAM GATE: resolve which of the caller's accessible projects owns this bug. A non-member of
+          // the owning project never finds the row here → 404 (same resolve-across-accessible-projects
+          // pattern the ticket-management block uses).
+          let fbRow: any = null
+          for (const p of await listProjects(meQa)) {
+            if (!(await projectAccess(meQa, p.id))) continue
+            const row = await feedbackById(p.id, fid)
+            if (row) { fbRow = row; break }
+          }
+          if (!fbRow) return json({ error: "Bug not found or not accessible." }, 404)
+          const body = await req.json().catch(() => ({}))
+          const resolution = typeof body.resolution === "string" ? body.resolution.slice(0, 2000).trim() : null
+          const prevStatus = fbRow.status
+          // Mark resolved/Done — updateFeedbackMeta stamps resolved_at on the done transition. Append the
+          // resolution note (if any) to notes so the reason survives on the ticket.
+          const meta: { status: string; notes?: string } = { status: "done" }
+          if (resolution) meta.notes = fbRow.notes ? `${fbRow.notes}\n\n[QA close by ${meQa}] ${resolution}` : `[QA close by ${meQa}] ${resolution}`
+          const updated = await updateFeedbackMeta(fbRow.projectId, fid, meta)
+          if (!updated) return json({ error: "Close failed." }, 500)
+          // Audit trail: who closed it (session user) + from→to. Best-effort, never blocks the close.
+          insertActivity({
+            projectId: fbRow.projectId, type: "ticket_qa_closed", actorEmail: meQa, feedbackId: fid,
+            meta: { from: prevStatus, to: "done", via: "qa_mode", resolution: resolution || null },
+          }).catch((e: any) => console.warn("qa-close activity skipped:", e?.message || e))
+          // Best-effort external-tracker transition to the connector's done_status (fallback "Done").
+          // NEVER fails the close — an unreachable/incapable tracker only yields a warning.
+          const tracker = await transitionLinkedIssuesOnQaClose({ ...fbRow, status: "done" })
+          const warning = tracker.warnings.length ? tracker.warnings.join("; ") : null
+          return json({ ok: true, id: fid, status: "done", previousStatus: prevStatus, tracker: { attempted: tracker.attempted, applied: tracker.applied }, warning })
+        }
+
+        return json({ error: "Method not allowed." }, 405)
+      }
     }
 
     if (path.startsWith("/api/")) {
