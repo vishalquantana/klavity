@@ -78,6 +78,17 @@ export function successCopy(mode: string, ctaUrl: string, suppressEmail = false)
   }
 }
 
+// Post-submit UX decision (KLA post-submit-box fix). The DEFAULT for EVERY widget submit path — support
+// mode AND the multi-page evidence session — is the non-blocking background-upload pill: the modal closes
+// at once on Submit and a bottom-right pill drives the upload. The ONLY exception that stays blocking
+// in-modal is a TRUE lead-gen interactive success screen (a lead-capture form + "Start free" CTA), where
+// the user is meant to engage before it dismisses. A support-mode OPTIONAL "Notify me" email must NOT
+// force the blocking in-modal card — that was the "big broken box" bug: showEmail alone kept the modal
+// open on an in-modal success screen instead of closing to the pill. Only leadgen's CTA keeps it in-modal.
+export function shouldUseInteractiveSuccess(mode: string, copy: SuccessCopy): boolean {
+  return mode === "leadgen" && copy.showCta
+}
+
 export function gateMessage(reason: string): string {
   switch (reason) {
     case "paused": return "Sims are paused for this project."

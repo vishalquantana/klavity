@@ -8,7 +8,7 @@ import { type CaptureBuffers } from "@klavity/core/capture"
 import { installCaptureContext, buildCaptureContext } from "./capture-context"
 import { installErrorReporter } from "./error-reporter"
 import type { ReportContext, ReportIdentity, Reporter, ClientInfo } from "@klavity/core"
-import { parseScriptConfig, isFirstParty, buildFeedbackForm, successCopy, compressScreenshot, buildThumbnail } from "./widget-lib"
+import { parseScriptConfig, isFirstParty, buildFeedbackForm, successCopy, shouldUseInteractiveSuccess, compressScreenshot, buildThumbnail } from "./widget-lib"
 import { coerceReporter, reporterToIdentity, resolveFallbackReporter, captureClientInfo } from "./identity"
 import { computeSelector, describeElement } from "./element-selector"
 import { getTurnstileToken } from "./load-turnstile"
@@ -876,11 +876,12 @@ async function mount() {
     // G5: fire 'open' event so site code can react (e.g. pause video, expand widget).
     emit("open", { type })
     // Post-submit UX: the DEFAULT is now a non-blocking background-upload pill (modal closes at once on
-    // Submit). The ONLY exception is an INTERACTIVE success screen — a leadgen lead-capture form or a CTA
-    // button — which must stay in the modal so the user can engage. successCopy() decides: showEmail /
-    // showCta => interactive (keep the blocking in-modal success), else => pill.
+    // Submit) for EVERY widget path — support mode AND the multi-page evidence session (both flow through
+    // this openReport). The ONLY exception that stays blocking in-modal is a TRUE lead-gen interactive
+    // success screen (lead-capture form + CTA). A support-mode optional "Notify me" email (showEmail) must
+    // NOT force the in-modal card — that was the "big broken box" the user hit. See shouldUseInteractiveSuccess.
     const successCfg = successCopy(widget.mode, widget.ctaUrl, suppressSuccessEmail)
-    const useInteractiveSuccess = successCfg.showEmail || successCfg.showCta
+    const useInteractiveSuccess = shouldUseInteractiveSuccess(widget.mode, successCfg)
     const ctrl = buildModal(type, {
       // Auto-grab a Full Page shot the moment the modal opens — parity with the extension
       // (content.ts autoCaptureOnOpen). Captures the current page state without an extra click.

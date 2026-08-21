@@ -645,10 +645,12 @@ export function buildModal(
     @keyframes kl-toast-decay{from{transform:scaleX(1)}to{transform:scaleX(0)}}
     /* #448 — post-submit terminal confirmation card ("Report sent"). Self-contained (the composer body
        is removed); the countdown line sits along the BOTTOM edge, matching the approved mock. */
-    .klavity-sent{position:relative;overflow:hidden;background:var(--kl-bg);color:var(--kl-fg);border:1px solid var(--kl-border);border-radius:var(--kl-radius);padding:34px 30px 30px;width:92vw;max-width:420px;text-align:center;box-shadow:var(--kl-shadow);font-family:var(--kl-font,system-ui,sans-serif);-webkit-font-smoothing:antialiased;display:flex;flex-direction:column;align-items:center;gap:11px;animation:kl-genie-in .5s cubic-bezier(.16,1,.3,1) both;}
-    .klavity-sent .kl-sent-check{width:52px;height:52px;border-radius:50%;background:color-mix(in srgb,#16a34a 15%,transparent);color:#16a34a;display:grid;place-items:center;animation:kl-rise .45s cubic-bezier(.16,1,.3,1) .04s both;}
-    .klavity-sent h2{margin:0;font-size:20px;font-weight:600;color:var(--kl-fg);line-height:1.2;animation:kl-rise .45s cubic-bezier(.16,1,.3,1) .09s both;}
-    .klavity-sent p{margin:0;font-size:13.5px;color:var(--kl-muted);line-height:1.5;animation:kl-rise .45s cubic-bezier(.16,1,.3,1) .14s both;}
+    /* Compact card (post-submit-box fix): tightened to a small confirmation, never a big centered box.
+       The countdown progress line runs along the BOTTOM edge and auto-closes after SUBMIT_AUTOCLOSE_MS. */
+    .klavity-sent{position:relative;overflow:hidden;background:var(--kl-bg);color:var(--kl-fg);border:1px solid var(--kl-border);border-radius:var(--kl-radius);padding:22px 22px 20px;width:90vw;max-width:340px;text-align:center;box-shadow:var(--kl-shadow);font-family:var(--kl-font,system-ui,sans-serif);-webkit-font-smoothing:antialiased;display:flex;flex-direction:column;align-items:center;gap:9px;animation:kl-genie-in .5s cubic-bezier(.16,1,.3,1) both;}
+    .klavity-sent .kl-sent-check{width:42px;height:42px;border-radius:50%;background:color-mix(in srgb,#16a34a 15%,transparent);color:#16a34a;display:grid;place-items:center;animation:kl-rise .45s cubic-bezier(.16,1,.3,1) .04s both;}
+    .klavity-sent h2{margin:0;font-size:17px;font-weight:600;color:var(--kl-fg);line-height:1.2;animation:kl-rise .45s cubic-bezier(.16,1,.3,1) .09s both;}
+    .klavity-sent p{margin:0;font-size:13px;color:var(--kl-muted);line-height:1.45;animation:kl-rise .45s cubic-bezier(.16,1,.3,1) .14s both;}
     .klavity-sent .klavity-ref{margin:4px 0 0;justify-content:center;}
     .klavity-sent .klavity-toast-progress{top:auto;bottom:0;}
     .klavity-error{color:#f38ba8;font-size:13px;margin-bottom:8px;display:none;}
@@ -2410,7 +2412,7 @@ export function buildModal(
     card.className = 'klavity-sent'
     const check = document.createElement('div')
     check.className = 'kl-sent-check'
-    check.innerHTML = icon('check', { label: 'Sent', size: 26 })
+    check.innerHTML = icon('check', { label: 'Sent', size: 22 })
     card.appendChild(check)
     const h = document.createElement('h2')
     h.textContent = 'Report sent'

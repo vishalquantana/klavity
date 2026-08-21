@@ -67,4 +67,38 @@ describe('non-blocking background-upload submit', () => {
     expect(c.shadowRoot.textContent).toContain('Report sent')
     vi.useRealTimers()
   })
+
+  it('legacy card is COMPACT, arms the 4s countdown progress line, and auto-closes (never a big broken box)', async () => {
+    vi.useFakeTimers()
+    const onClose = vi.fn()
+    const c = buildModal('bug', {
+      onCaptureFull: async () => 'x',
+      onSubmit: async () => ({ issueKey: 'CHAR-9', issueUrl: '' }),
+      onClose,
+      // no backgroundUpload, no success → legacy renderSentConfirmation (extension / opt-out path)
+    })
+    c.addScreenshot(PNG)
+    ;(q(c, '#klavity-submit') as HTMLButtonElement).click()
+    await vi.advanceTimersByTimeAsync(0)
+
+    const card = q(c, '.klavity-sent') as HTMLElement
+    expect(card).not.toBeNull()
+
+    // Compact: the card CSS caps its width small (<=340px) — not the old big 420px centered box.
+    const css = c.shadowRoot.querySelector('style')!.textContent!
+    const width = css.match(/\.klavity-sent\{[^}]*max-width:(\d+)px/)
+    expect(width).not.toBeNull()
+    expect(Number(width![1])).toBeLessThanOrEqual(340)
+
+    // Countdown progress line runs along the BOTTOM edge, armed for exactly SUBMIT_AUTOCLOSE_MS (4000ms).
+    const bar = card.querySelector('.klavity-toast-progress') as HTMLElement
+    expect(bar).not.toBeNull()
+    expect(bar.style.animationDuration).toBe('4000ms')
+
+    // Auto-closes after 4s (hover would pause, but untouched it dismisses).
+    expect(onClose).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(4000)
+    expect(onClose).toHaveBeenCalledTimes(1)
+    vi.useRealTimers()
+  })
 })

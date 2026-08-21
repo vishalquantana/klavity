@@ -1,5 +1,28 @@
 import { describe, it, expect } from "vitest"
-import { parseScriptConfig, gateMessage, isFirstParty, buildFeedbackForm } from "../src/widget-lib"
+import { parseScriptConfig, gateMessage, isFirstParty, buildFeedbackForm, successCopy, shouldUseInteractiveSuccess } from "../src/widget-lib"
+
+// Post-submit UX (big-broken-box fix): every widget submit path (support mode + multi-page evidence) must
+// close to the non-blocking bottom-right pill, i.e. NOT use the interactive in-modal success. Only a true
+// lead-gen success screen (lead form + CTA) stays blocking in-modal. Regression guard for the bug where a
+// support-mode optional "Notify me" email (showEmail) wrongly forced the big in-modal card.
+describe("shouldUseInteractiveSuccess (post-submit pill vs in-modal)", () => {
+  it("support mode uses the PILL even when the optional email is shown (modal closes on submit)", () => {
+    const copy = successCopy("support", "", false) // showEmail:true, showCta:false
+    expect(copy.showEmail).toBe(true)
+    expect(shouldUseInteractiveSuccess("support", copy)).toBe(false)
+  })
+  it("support mode with suppressed email also uses the pill", () => {
+    expect(shouldUseInteractiveSuccess("support", successCopy("support", "", true))).toBe(false)
+  })
+  it("off mode uses the pill", () => {
+    expect(shouldUseInteractiveSuccess("off", successCopy("off", "", false))).toBe(false)
+  })
+  it("ONLY true lead-gen (CTA) keeps the interactive in-modal success", () => {
+    const copy = successCopy("leadgen", "https://klavity.in/start", false)
+    expect(copy.showCta).toBe(true)
+    expect(shouldUseInteractiveSuccess("leadgen", copy)).toBe(true)
+  })
+})
 
 describe("parseScriptConfig", () => {
   it("reads data-project and derives backend origin from src", () => {
