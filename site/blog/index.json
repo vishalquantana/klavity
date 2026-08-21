@@ -418,5 +418,12 @@
     "excerpt": "Prioritizing bugs by gut invites the loudest voice to win. A scoring model ranks them on reach, impact, confidence, and effort so the right fix rises first.",
     "category": "Guides",
     "date": "2026-08-20"
+  },
+  {
+    "slug": "geo-vs-seo-get-your-saas-cited-by-ai-engines",
+    "title": "GEO vs. SEO: How to Get Your SaaS Cited by AI Engines",
+    "excerpt": "SEO optimizes to rank in search results; GEO optimizes to be cited inside AI answers. Here's how they differ and what to do for each.",
+    "category": "Compare",
+    "date": "2026-08-21"
   }
 ]
