@@ -1020,6 +1020,11 @@ export async function applySchema(c: Client) {
     // PX4 #428: captured client/browser/app info as a JSON object { browser,browserVersion,os,viewport,
     // locale,timezone,... }. Null on older rows / when the client sent none.
     ["client_info_json",       "TEXT"],
+    // KLAVITYKLA-453: count of report evidence items (screenshots + attachments + recordings) whose BYTES
+    // failed to upload to object storage at ingest (S3 misconfigured / write error). The report is still
+    // persisted, but this stamp makes the silent evidence loss visible (dashboard render is a follow-up).
+    // Null/0 on healthy rows — additive, back-compat.
+    ["evidence_dropped",       "INTEGER"],
   ]
   for (const [col, def] of feedbackAlters) {
     if (needCol("feedback", col)) {
@@ -3036,6 +3041,13 @@ export async function insertFeedback(f: FeedbackInsert): Promise<string> {
 // the column NULL and never affects the already-persisted report.
 export async function updateFeedbackReportGeo(id: string, geoJson: string): Promise<void> {
   await db!.execute({ sql: "UPDATE feedback SET report_geo_json=? WHERE id=?", args: [geoJson, id] })
+}
+
+// KLAVITYKLA-453: stamp how many evidence items (screenshots + attachments + recordings) were DROPPED at
+// ingest because their bytes failed to upload to object storage. Best-effort, additive — makes the
+// otherwise-silent evidence loss visible on the row. The report itself is already persisted.
+export async function updateFeedbackEvidenceDropped(id: string, count: number): Promise<void> {
+  await db!.execute({ sql: "UPDATE feedback SET evidence_dropped=? WHERE id=?", args: [count, id] })
 }
 
 // Record the downstream tracker issue on a feedback row after it is filed (tracker is optional/best-effort).

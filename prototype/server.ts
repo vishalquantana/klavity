@@ -124,6 +124,10 @@ const PLAN_LOOKUP_DEPS = { accountIdForProject, accountPlan }
 import { createSimReviewSchedule, listSimReviewSchedules, getSimReviewSchedule, deleteSimReviewSchedule, setSimReviewScheduleEnabled, type SimReviewScheduleFrequency } from "./lib/db"
 import { startSimsDigestScheduler, sendSimsDigest, type SimsDigestDeps, DAY_MS as SIMS_DIGEST_DAY_MS } from "./lib/sims-digest"
 import { sendReportAlertEmail } from "./lib/mail"
+// KLAVITYKLA-453: fire a best-effort Slack alert when report evidence (screenshot/attachment/recording)
+// bytes fail to upload to object storage, so silent evidence loss on a misconfigured prod is surfaced.
+import { fireEvidenceDropped } from "./lib/mail"
+import { updateFeedbackEvidenceDropped } from "./lib/db"
 import { diagnoseHeartbeat, renderDeveloperEmail, type HeartbeatSignals } from "./lib/heartbeat-diagnosis"
 import { countRecentFeedback, countUsers } from "./lib/db"
 import { enrollLead, buildNurtureEmail, recordNurtureEmailSent, recordSendgridEvents, startLeadNurtureScheduler } from "./lib/lead-nurture"
@@ -3792,6 +3796,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const thumbFiles = form.getAll("screenshot_thumbs").filter((f): f is File => f instanceof File)
         const imageUrls: string[] = []
         const uploaded: Array<UploadedScreenshot & { bytes: number; id: string; thumbKey: string | null }> = []
+        // KLAVITYKLA-453: track evidence whose BYTES fail to reach object storage (S3 unconfigured / write
+        // error). Each upload catch below is non-fatal (the report still persists), but a silent drop on a
+        // misconfigured prod is exactly the evidence loss we must not hide. We count what was dropped and
+        // keep the FIRST failure reason (sanitized before it leaves) so the ingest can fire ONE Slack alert.
+        let droppedScreenshots = 0, droppedAttachments = 0, droppedRecordings = 0
+        let evidenceDropReason: string | null = null
+        const noteEvidenceDrop = (msg: string) => { if (!evidenceDropReason) evidenceDropReason = msg }
         for (let fi = 0; fi < files.length; fi++) {
           const f = files[fi]
           if (f.type && !f.type.startsWith(SCREENSHOTS.allowedTypePrefix)) return wjson({ error: `Screenshot ${f.name} is not an image.` }, 400)
@@ -3807,7 +3818,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // report anyway (this shot is simply dropped) rather than losing the whole submission.
           let meta: UploadedScreenshot
           try { meta = await uploadScreenshotMeta(buf, f.type || "image/png", SCREENSHOTS.defaultAcl) }
-          catch (upErr: any) { console.error("screenshot upload failed (non-fatal):", upErr?.message || upErr); continue }
+          catch (upErr: any) { console.error("screenshot upload failed (non-fatal):", upErr?.message || upErr); droppedScreenshots++; noteEvidenceDrop(upErr?.message || String(upErr)); continue }
           // Best-effort thumbnail upload for this shot. Only accept a small image (guards against a client
           // sending a full-size blob under the thumb field). A thumb failure never affects the full shot —
           // the row is stored with thumb_key null and the dashboard falls back to the full image.
@@ -3842,7 +3853,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             const abuf = new Uint8Array(await af.arrayBuffer())
             const up = await uploadAttachment(abuf, af.name || "attachment", af.type || "application/octet-stream")
             attachmentDescs.push({ key: up.key, filename: up.filename, contentType: up.contentType, size: af.size })
-          } catch (aErr: any) { console.error("attachment upload failed (non-fatal):", aErr?.message || aErr) }
+          } catch (aErr: any) { console.error("attachment upload failed (non-fatal):", aErr?.message || aErr); droppedAttachments++; noteEvidenceDrop(aErr?.message || String(aErr)) }
         }
 
         // KLAVITYKLA-438 "Record me" (Phase 1): screen+camera+mic video recordings. Uploaded PRIVATE via the
@@ -3875,7 +3886,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               // insert below) flips it to done/failed and stores the transcript in-place by id.
               transcript_status: "pending",
             })
-          } catch (rErr: any) { console.error("recording upload failed (non-fatal):", rErr?.message || rErr) }
+          } catch (rErr: any) { console.error("recording upload failed (non-fatal):", rErr?.message || rErr); droppedRecordings++; noteEvidenceDrop(rErr?.message || String(rErr)) }
         }
 
         // ── persist to our durable ledger (P0) FIRST, always — best-effort, never fails the submission.
@@ -4078,6 +4089,25 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   if (anonWidgetAllowed) {
                     void capturePosthog("anonymous", "first_widget_report", { project_id: projectId })
                   }
+                }
+              }
+              // KLAVITYKLA-453: evidence-loss visibility. If any screenshot/attachment/recording BYTES
+              // failed to reach object storage above (S3 misconfigured or a write error), the report was
+              // still persisted — but WITHOUT that evidence. On a broken prod that is silent evidence loss
+              // (the "I told you multiple times" failure). Fire ONE best-effort Slack alert (fire-and-forget,
+              // deduped per project+reason inside alertEvidenceDropped) with the dropped counts + a SANITIZED
+              // reason, and stamp a durable count on the row so it is no longer silent. Never fatal — the
+              // submission already succeeded and this must not change that.
+              const totalEvidenceDropped = droppedScreenshots + droppedAttachments + droppedRecordings
+              if (totalEvidenceDropped > 0) {
+                fireEvidenceDropped({
+                  projectId, feedbackId,
+                  screenshots: droppedScreenshots, attachments: droppedAttachments, recordings: droppedRecordings,
+                  reason: evidenceDropReason,
+                })
+                if (feedbackId) {
+                  try { await updateFeedbackEvidenceDropped(feedbackId, totalEvidenceDropped) }
+                  catch (edErr: any) { console.warn("evidence_dropped stamp skipped (non-fatal):", edErr?.message || edErr) }
                 }
               }
               // KLAVITYKLA-372 — per-occurrence `bug_filed`. Placed AFTER the dedupe/new

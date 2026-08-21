@@ -122,6 +122,104 @@ function fireMailFailure(f: MailFailure): void {
   void _lastMailAlertPromise
 }
 
+// ── Evidence-drop alerting (KLAVITYKLA-453) ────────────────────────────────────
+// When a report's screenshot / attachment / recording BYTES fail to upload to object
+// storage (S3 unconfigured, or a write error), the report still persists but that
+// evidence is silently dropped — no `screenshots` row / empty `attachments_json`. On a
+// misconfigured prod that is silent evidence loss: the exact "I told you multiple times"
+// failure. Whenever the ingest handler drops evidence it fires a best-effort Slack alert
+// so on-call sees it immediately. Strictly additive: it NEVER throws, NEVER blocks the
+// caller (fire-and-forget), and NEVER changes the ingest result. No-op when no webhook is
+// configured. Reuses the mail webhook resolution + the same secret redactor (sanitizeReason).
+
+const EVIDENCE_ALERT_WINDOW_MS = 10 * 60 * 1000 // one alert per (project,reason) per 10 min
+
+// In-memory de-dup so a broken S3 (every report dropping evidence) posts at most one Slack
+// alert per (project,reason) per window instead of flooding the channel.
+const evidenceAlertLast = new Map<string, number>()
+
+// Test hook: the most recently fired (fire-and-forget) evidence-drop alert promise, so a
+// test can deterministically await the async Slack post. Not used in production code paths.
+let _lastEvidenceAlertPromise: Promise<void> = Promise.resolve()
+export function __evidenceAlertTail(): Promise<void> {
+  return _lastEvidenceAlertPromise
+}
+export function __resetEvidenceAlertDedup(): void {
+  evidenceAlertLast.clear()
+}
+
+function shouldEvidenceAlert(key: string, now: number): boolean {
+  const last = evidenceAlertLast.get(key)
+  if (last != null && now - last < EVIDENCE_ALERT_WINDOW_MS) return false
+  evidenceAlertLast.set(key, now)
+  return true
+}
+
+export interface EvidenceDropped {
+  projectId: string
+  feedbackId?: string | null
+  screenshots: number
+  attachments: number
+  recordings: number
+  reason?: string | null // sanitized here — any secret/address is redacted before it leaves
+}
+
+/** Slack Block-Kit payload for dropped report evidence (exported for testing). */
+export function buildEvidenceDroppedPayload(e: EvidenceDropped, whenIso: string): unknown {
+  const reason = sanitizeReason(e.reason)
+  const total = e.screenshots + e.attachments + e.recordings
+  const droppedLine = `${e.screenshots} screenshot(s), ${e.attachments} attachment(s), ${e.recordings} recording(s)`
+  return {
+    text: `🗑️ Klavity DROPPED ${total} evidence item(s) on report ${e.feedbackId || "(not persisted)"} — object storage upload failed`,
+    blocks: [
+      { type: "section", text: { type: "mrkdwn", text: "🗑️ *Report evidence dropped* — screenshot/attachment/recording bytes failed to store. The report was saved WITHOUT them (silent evidence loss — check object-storage config)." } },
+      {
+        type: "section",
+        fields: [
+          { type: "mrkdwn", text: `*Project:*\n${e.projectId}` },
+          { type: "mrkdwn", text: `*Feedback:*\n${e.feedbackId || "(not persisted)"}` },
+          { type: "mrkdwn", text: `*Dropped:*\n${droppedLine}` },
+          { type: "mrkdwn", text: `*When:*\n${whenIso}` },
+        ],
+      },
+      { type: "context", elements: [{ type: "mrkdwn", text: `Reason: \`${reason}\`` }] },
+    ],
+  }
+}
+
+/**
+ * Best-effort Slack alert for dropped report evidence. NEVER throws, NEVER blocks the
+ * caller (fire-and-forget). No-op when no webhook is configured, when nothing was actually
+ * dropped, or when the (project,reason) was already alerted inside the window.
+ */
+export async function alertEvidenceDropped(e: EvidenceDropped): Promise<void> {
+  try {
+    const total = e.screenshots + e.attachments + e.recordings
+    if (total <= 0) return
+    const webhook = mailAlertWebhook()
+    if (!webhook) return
+    const now = Date.now()
+    // Dedup keyed on project + SANITIZED reason so a broken S3 doesn't spam the channel.
+    const reason = sanitizeReason(e.reason)
+    if (!shouldEvidenceAlert(`${e.projectId}:${reason}`, now)) return
+    const payload = buildEvidenceDroppedPayload(e, new Date(now).toISOString())
+    const res = await fetch(webhook, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+    if (!res.ok) console.error(`evidence-drop slack alert: webhook returned ${res.status}`)
+  } catch (err: any) {
+    console.error("evidence-drop slack alert (non-fatal):", err?.message || err)
+  }
+}
+
+/** Fire the evidence-drop alert without blocking or affecting the caller; records the promise for tests. */
+export function fireEvidenceDropped(e: EvidenceDropped): void {
+  _lastEvidenceAlertPromise = alertEvidenceDropped(e)
+  void _lastEvidenceAlertPromise
+}
+
 // A short, on-brand line under the code — picks one deterministically from the
 // code so it varies between sends but stays stable for a given code (testable,
 // no Math.random). Same energy as a sign-in email that doesn't feel robotic.
