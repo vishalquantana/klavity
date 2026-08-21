@@ -5930,6 +5930,45 @@ export async function setFeedbackObservation(feedbackId: string, projectId: stri
   })
 }
 
+// KLAVITYKLA-438 "Record me" (Phase 2): update ONE recording's transcript fields in-place inside the
+// row's recordings_json array, keyed by the recording's stable `id`. We extend the recording objects
+// (rather than add a sibling column) so the transcript travels with the clip it belongs to and the GET
+// report read exposes it for free via the existing `...r` spread. `status` ∈ pending|done|failed|none;
+// `transcript` = { text, segments } on done (omit/undefined leaves any prior transcript untouched).
+// Returns false when the row/recording can't be found or the JSON is unparseable (best-effort caller).
+export async function setRecordingTranscript(
+  feedbackId: string,
+  projectId: string,
+  recordingId: string,
+  status: "pending" | "done" | "failed" | "none",
+  transcript?: { text: string; segments: any[] | null } | null,
+): Promise<boolean> {
+  const r = await db!.execute({
+    sql: "SELECT recordings_json FROM feedback WHERE id=? AND project_id=?",
+    args: [feedbackId, projectId],
+  })
+  const row = r.rows[0] as any
+  if (!row || row.recordings_json == null) return false
+  let recs: any[]
+  try { recs = JSON.parse(String(row.recordings_json)) } catch { return false }
+  if (!Array.isArray(recs)) return false
+  let found = false
+  for (const rec of recs) {
+    if (rec && String(rec.id) === String(recordingId)) {
+      rec.transcript_status = status
+      if (transcript !== undefined) rec.transcript_json = transcript
+      found = true
+      break
+    }
+  }
+  if (!found) return false
+  await db!.execute({
+    sql: "UPDATE feedback SET recordings_json=? WHERE id=? AND project_id=?",
+    args: [JSON.stringify(recs), feedbackId, projectId],
+  })
+  return true
+}
+
 // KLA-175: return the suggested LabelRows for a feedback item (resolves IDs → full rows).
 export async function getSuggestedLabels(feedbackId: string, projectId: string): Promise<LabelRow[]> {
   const r = await db!.execute({

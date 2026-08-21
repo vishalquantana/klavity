@@ -96,6 +96,7 @@ import { getTrailStepById } from "./lib/trails"
 import { nearMissSummary } from "./lib/expectations-nearmiss"
 import { createLabel, listLabels, updateLabel, deleteLabel, attachLabel, detachLabel, labelsForFeedback, labelsForFeedbackBatch, setSuggestedLabels, getSuggestedLabels } from "./lib/db"
 import { suggestLabelsForFeedback, draftTitleForFeedback, fallbackDraftTitle } from "./lib/label-suggest"
+import { transcribeFeedbackRecordings } from "./lib/transcribe"
 import { validateAssertionDraft, normalizeCheckpointInput } from "./lib/assertion-spec"
 import { buildRecurrenceMemory, listProjectRecurringIssues } from "./lib/recurrence-memory"
 import { findKnownIssue } from "./lib/known-issue"
@@ -3777,7 +3778,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const recFiles = form.getAll("recording").filter((f): f is File => f instanceof File).slice(0, RECORDING_MAX_FILES)
         let recMeta: Array<{ id?: string; durationMs?: number; width?: number; height?: number; screenOnly?: boolean }> = []
         try { const rm = JSON.parse(String(form.get("recording_meta") || "[]")); if (Array.isArray(rm)) recMeta = rm } catch { /* tolerate a missing/garbled meta blob */ }
-        const recordingDescs: Array<{ id: string; key: string; contentType: string; bytes: number; durationMs: number; w: number; h: number; screenOnly: boolean }> = []
+        const recordingDescs: Array<{ id: string; key: string; contentType: string; bytes: number; durationMs: number; w: number; h: number; screenOnly: boolean; transcript_status?: string }> = []
         for (let ri = 0; ri < recFiles.length; ri++) {
           const rf = recFiles[ri]
           if (rf.size <= 0) continue
@@ -3792,6 +3793,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               key: up.key, contentType: up.contentType, bytes: rf.size,
               durationMs: Number(m.durationMs) || 0, w: Number(m.width) || 0, h: Number(m.height) || 0,
               screenOnly: m.screenOnly === true,
+              // KLAVITYKLA-438 (Phase 2): the row starts "pending" — an async STT pass (fired after the
+              // insert below) flips it to done/failed and stores the transcript in-place by id.
+              transcript_status: "pending",
             })
           } catch (rErr: any) { console.error("recording upload failed (non-fatal):", rErr?.message || rErr) }
         }
@@ -4065,6 +4069,18 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   void draftTitleForFeedback({ feedbackId, projectId, reportType, pageUrl, clientContext })
                     .catch((err: any) => console.warn("[title-draft] non-fatal:", err?.message || err))
                 }
+              }
+
+              // KLAVITYKLA-438 (Phase 2): async STT transcription of each "Record me" clip. Fire-and-forget
+              // (mirrors the title/label enrichment above) — fetches the clip bytes from S3, transcribes via
+              // OpenRouter, and stores the transcript back on the recording keyed by its id. Never blocks the
+              // submit; new rows only (a deduped repeat already transcribed on its first submission).
+              if (feedbackId && !dedupedInto && recordingDescs.length) {
+                const fbForRec = feedbackId
+                void transcribeFeedbackRecordings({
+                  feedbackId: fbForRec, projectId,
+                  recordings: recordingDescs.map(r => ({ id: r.id, key: r.key, contentType: r.contentType })),
+                }).catch((err: any) => console.warn("[transcribe] non-fatal:", err?.message || err))
               }
 
               // ── founder notifications (P0 retention loop): email to account owner/admins

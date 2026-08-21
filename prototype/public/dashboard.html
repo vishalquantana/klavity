@@ -1385,6 +1385,19 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   .tkt-shot{margin-top:2px}
   .tkt-shot img{max-width:100%;border-radius:10px;cursor:zoom-in;display:block}
   .chip.sev-high{background:#3a1416;color:#ffb4ac}.chip.sev-medium{background:#3a2c10;color:#ffd79a}.chip.sev-low{background:#10261a;color:#9ae6b4}
+  /* KLAVITYKLA-438 "Record me" (Phase 2): recording player + transcript panel on the ticket detail. */
+  .tkt-recordings{display:flex;flex-direction:column;gap:14px;margin-top:6px}
+  .tkt-rec{display:flex;flex-direction:column;gap:8px;background:var(--ink-2);border:1px solid var(--line);border-radius:12px;padding:12px}
+  .tkt-rec-video{width:100%;max-height:360px;border-radius:10px;background:#000;display:block}
+  .tkt-rec-panel{display:flex;flex-direction:column;gap:6px}
+  .tkt-rec-tx-lbl{display:flex;align-items:center;gap:6px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--paper-dim)}
+  .tkt-rec-tx-lbl svg{width:13px;height:13px}
+  .tkt-rec-tx{font-size:13px;line-height:1.6;max-height:220px;overflow:auto;color:var(--paper)}
+  .tkt-rec-tx-plain{white-space:pre-wrap}
+  .tkt-rec-seg{display:block;padding:1px 0;cursor:pointer;border-radius:4px;transition:background .12s}
+  .tkt-rec-seg:hover{background:rgba(255,255,255,.05)}
+  .tkt-rec-ts{font-family:var(--mono);font-size:11px;color:var(--indigo,#9a8cff);margin-right:6px}
+  .tkt-rec-tx-status{font-size:12.5px}
 
 /* ===== Add-a-Sim modal (first-run + "New Sim") ===== */
 .sm-ov{position:fixed;inset:0;background:rgba(25,20,15,.5);backdrop-filter:blur(4px);display:none;align-items:flex-start;justify-content:center;z-index:2147483646;overflow:auto;padding:40px 18px}
@@ -5193,6 +5206,58 @@ function assigneePickerHtml(t, compact = false) {
 // its own summary element. Returns the wired detailEl.
 // isSingle=true: called from the single-ticket view, which already renders title/severity/sim/url·date
 // in its .single-head — so skip those from .tkt-context to avoid duplication.
+// KLAVITYKLA-438 "Record me" (Phase 2): format seconds → m:ss for a transcript timestamp.
+function recTimeFmt(sec) {
+  var s = Math.max(0, Math.floor(Number(sec) || 0))
+  var m = Math.floor(s / 60)
+  return m + ":" + (s % 60 < 10 ? "0" : "") + (s % 60)
+}
+// Build the recording player(s) + transcript panel(s) for a ticket. Segments (when present) render as
+// clickable timestamps that seek the paired <video>. Returns "" when the ticket has no recordings.
+function buildRecordingsHtml(t) {
+  var recs = Array.isArray(t.recordings) ? t.recordings : []
+  if (!recs.length) return ""
+  return '<div class="tkt-recordings">' + recs.map(function (r, i) {
+    var rid = esc(String(r.id || ("rec" + i)))
+    var vid = r.url
+      ? '<video class="tkt-rec-video" data-rec="' + rid + '" src="' + esc(String(r.url)) + '" controls preload="metadata"></video>'
+      : '<div class="muted" style="font-size:12px">Recording unavailable</div>'
+    var st = r.transcript_status || "none"
+    var tj = r.transcript_json || null
+    var segs = tj && Array.isArray(tj.segments) ? tj.segments : null
+    var body = ""
+    if (st === "pending") body = '<div class="tkt-rec-tx-status muted">Transcribing…</div>'
+    else if (st === "failed") body = '<div class="tkt-rec-tx-status muted">Transcription failed</div>'
+    else if (st === "done" && tj) {
+      if (segs && segs.length) {
+        body = '<div class="tkt-rec-tx">' + segs.map(function (s) {
+          return '<span class="tkt-rec-seg" data-rec="' + rid + '" data-t="' + (Number(s.start) || 0) + '">'
+            + '<span class="tkt-rec-ts">' + recTimeFmt(s.start) + '</span>' + esc(String(s.text || "")) + '</span>'
+        }).join("") + '</div>'
+      } else if (tj.text) {
+        body = '<div class="tkt-rec-tx"><div class="tkt-rec-tx-plain">' + esc(String(tj.text)) + '</div></div>'
+      }
+    }
+    var panel = body ? '<div class="tkt-rec-panel"><div class="tkt-rec-tx-lbl">' + kicon('file-text', { size: 13 }) + ' Transcript</div>' + body + '</div>' : ""
+    return '<div class="tkt-rec">' + vid + panel + '</div>'
+  }).join("") + '</div>'
+}
+// Wire clickable transcript timestamps → seek the paired recording <video> to that time and play.
+function wireRecordingSeek(root) {
+  root.querySelectorAll(".tkt-rec-seg").forEach(function (seg) {
+    seg.addEventListener("click", function () {
+      var rid = seg.getAttribute("data-rec")
+      var tt = Number(seg.getAttribute("data-t")) || 0
+      var vids = root.querySelectorAll("video.tkt-rec-video")
+      for (var i = 0; i < vids.length; i++) {
+        if (vids[i].getAttribute("data-rec") === rid) {
+          try { vids[i].currentTime = tt; vids[i].play() } catch (e) {}
+          break
+        }
+      }
+    })
+  })
+}
 function buildTktDetail(t, admin, onChange, isSingle = false) {
   const ticketId = t.id
   const exports = t.exports || []
@@ -5335,9 +5400,12 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
       <div class="tkt-gap tkt-copy">${copySelect}</div>
       <div class="tkt-err hide tkt-err-el"></div>
       <div class="tkt-msg hide tkt-msg-el"></div>`
+    // KLAVITYKLA-438 "Record me" (Phase 2): recording player(s) + transcript panel, between context + body.
+    const _recHtml = buildRecordingsHtml(t)
     detailEl.innerHTML = _isTwoCol
-      ? `${_shotHtml}<div class="tkt-right-body">${_contextHtml}${_bodyHtml}</div>`
-      : `${_contextHtml}${_bodyHtml}`
+      ? `${_shotHtml}<div class="tkt-right-body">${_contextHtml}${_recHtml}${_bodyHtml}</div>`
+      : `${_contextHtml}${_recHtml}${_bodyHtml}`
+    wireRecordingSeek(detailEl)
 
     // Wire up status buttons
     detailEl.querySelectorAll(".seg-btn").forEach(btn => {
