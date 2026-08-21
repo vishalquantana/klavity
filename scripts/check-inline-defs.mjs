@@ -48,6 +48,7 @@ const GLOBALS = new Set([
   'cancelIdleCallback', 'alert', 'confirm', 'prompt', 'localStorage', 'sessionStorage',
   'navigator', 'location', 'history', 'screen', 'top', 'parent', 'self', 'globalThis',
   'URL', 'URLSearchParams', 'FormData', 'Blob', 'File', 'FileReader', 'Image', 'Audio',
+  'XMLSerializer', 'DOMParser', 'XMLHttpRequest', 'AbortController', 'TextEncoder', 'TextDecoder',
   'IntersectionObserver', 'MutationObserver', 'ResizeObserver', 'PerformanceObserver',
   'getComputedStyle', 'matchMedia', 'btoa', 'atob', 'CustomEvent', 'Event', 'MouseEvent',
   'KeyboardEvent', 'AbortController', 'AbortSignal', 'crypto', 'performance', 'WebSocket',
