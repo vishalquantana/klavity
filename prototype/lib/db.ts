@@ -2979,7 +2979,9 @@ export type FeedbackInsert = {
   reportUrl?: string | null      // top-level page the report was filed from (query/fragment stripped)
   reportGeoJson?: string | null  // best-effort geo/company enrichment JSON (may be stamped async post-insert)
   title?: string | null      // PX4 #411: explicit one-line issue Title (preferred over auto-title on export)
-  attachments?: Array<{ key: string; filename: string; contentType: string; size: number }> | null  // PX4 #425: non-image files
+  // PX4 #425: non-image files. KLAVITYKLA-480: video/* uploads are seeded transcript_status="pending" at
+  // ingest (an async STT pass flips it to done/skipped/failed and stores the transcript in-place by key).
+  attachments?: Array<{ key: string; filename: string; contentType: string; size: number; transcript_status?: string }> | null
   // KLAVITYKLA-438 "Record me": video recordings. `id` is the stable per-recording identity (Phase 2 transcript ref).
   recordings?: Array<{ id: string; key: string; contentType: string; bytes: number; durationMs: number; w: number; h: number; screenOnly: boolean }> | null
   reporter?: Record<string, string> | null   // PX4 #439: resolved reporter identity (id/email/name/org/...)
@@ -6037,6 +6039,48 @@ export async function setRecordingTranscript(
   await db!.execute({
     sql: "UPDATE feedback SET recordings_json=? WHERE id=? AND project_id=?",
     args: [JSON.stringify(recs), feedbackId, projectId],
+  })
+  return true
+}
+
+// KLAVITYKLA-480: mirror of setRecordingTranscript, but for an UPLOADED file attachment (attachments_json,
+// PX4 #425). We transcribe video/* uploads too (spoken notes in an uploaded clip), storing the transcript
+// in-place on the matching attachment object keyed by its stable S3 `key` (attachments carry no `id`).
+// The transcript fields ride WITH the attachment, so the GET report read surfaces them for free via the
+// existing `attachments: safeJsonParse(x.attachments_json)` spread. `status` ∈ pending|done|failed|none|
+// skipped; `transcript` = { text, segments } on done (undefined leaves any prior transcript untouched).
+// Returns false when the row/attachment can't be found or the JSON is unparseable (best-effort caller).
+export async function setFeedbackAttachmentTranscript(
+  feedbackId: string,
+  projectId: string,
+  attachmentKey: string,
+  status: "pending" | "done" | "failed" | "none" | "skipped",
+  transcript?: { text: string; segments: any[] | null } | null,
+  reason?: string | null,
+): Promise<boolean> {
+  const r = await db!.execute({
+    sql: "SELECT attachments_json FROM feedback WHERE id=? AND project_id=?",
+    args: [feedbackId, projectId],
+  })
+  const row = r.rows[0] as any
+  if (!row || row.attachments_json == null) return false
+  let atts: any[]
+  try { atts = JSON.parse(String(row.attachments_json)) } catch { return false }
+  if (!Array.isArray(atts)) return false
+  let found = false
+  for (const att of atts) {
+    if (att && String(att.key) === String(attachmentKey)) {
+      att.transcript_status = status
+      if (transcript !== undefined) att.transcript_json = transcript
+      if (reason !== undefined) att.transcript_reason = reason
+      found = true
+      break
+    }
+  }
+  if (!found) return false
+  await db!.execute({
+    sql: "UPDATE feedback SET attachments_json=? WHERE id=? AND project_id=?",
+    args: [JSON.stringify(atts), feedbackId, projectId],
   })
   return true
 }

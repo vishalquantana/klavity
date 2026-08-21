@@ -24,7 +24,7 @@ mock.module("./s3", () => ({
 }))
 
 const { reconnectDb, applySchema, insertFeedback, feedbackById } = await import("./db")
-const { parseTranscribeResponse, transcribeFeedbackRecordings, transcribeRecording, TRANSCRIBE_MODEL, TRANSCRIBE_MAX_BYTES } = await import("./transcribe")
+const { parseTranscribeResponse, transcribeFeedbackRecordings, transcribeFeedbackAttachments, transcribeRecording, TRANSCRIBE_MODEL, TRANSCRIBE_MAX_BYTES } = await import("./transcribe")
 
 const RUN = `${Date.now()}_${Math.random().toString(36).slice(2)}`
 const ACCT = `acct_${RUN}`
@@ -184,6 +184,90 @@ test("transcribeRecording: a 413 response degrades to failed (not a throw)", asy
   const out = await transcribeRecording("attachments/big2.webm", "video/webm")
   expect(out.status).toBe("failed")
   if (out.status === "failed") expect(out.reason).toBe("payload-too-large")
+})
+
+// ── KLAVITYKLA-480: transcribe ANY uploaded video attachment (attachments_json), not just record-me clips.
+
+test("transcribeFeedbackAttachments: video upload → done, transcript stored by key, ai_call logged", async () => {
+  const vid = { key: "attachments/uploaded-clip.mp4", filename: "bug.mp4", contentType: "video/mp4", size: 4, transcript_status: "pending" }
+  const fid = await insertFeedback({ projectId: P, observation: "uploaded video bug", attachments: [vid] })
+
+  mockFetch({ text: "the spoken note in the uploaded video", usage: { seconds: 4, cost: 0.0003 } })
+  const before = (await aiCallsFor(TRANSCRIBE_MODEL)).length
+
+  await transcribeFeedbackAttachments({ feedbackId: fid, projectId: P, attachments: [vid] })
+
+  const row = await feedbackById(P, fid)
+  const stored = row.attachments.find((a: any) => a.key === vid.key)
+  expect(stored.transcript_status).toBe("done")
+  expect(stored.transcript_json.text).toBe("the spoken note in the uploaded video")
+
+  const calls = await aiCallsFor(TRANSCRIBE_MODEL)
+  expect(calls.length).toBe(before + 1)
+  expect(Number(calls[calls.length - 1].ok)).toBe(1)
+})
+
+test("transcribeFeedbackAttachments: non-video attachment is skipped entirely (no transcript, no POST, no ai_call)", async () => {
+  const pdf = { key: "attachments/report.pdf", filename: "report.pdf", contentType: "application/pdf", size: 4 }
+  const fid = await insertFeedback({ projectId: P, observation: "pdf attached", attachments: [pdf] })
+
+  // Any POST must fail the test — a non-video attachment must never reach STT.
+  let posted = false
+  globalThis.fetch = (async () => { posted = true; throw new Error("should not POST a non-video attachment") }) as any
+  const before = (await aiCallsFor(TRANSCRIBE_MODEL)).length
+
+  await transcribeFeedbackAttachments({ feedbackId: fid, projectId: P, attachments: [pdf] })
+
+  expect(posted).toBe(false)
+  const row = await feedbackById(P, fid)
+  const stored = row.attachments.find((a: any) => a.key === pdf.key)
+  expect(stored.transcript_status).toBeUndefined() // untouched — no field added to a non-video attachment
+  expect(stored.transcript_json).toBeUndefined()
+  expect((await aiCallsFor(TRANSCRIBE_MODEL)).length).toBe(before) // no ledger row
+})
+
+test("transcribeFeedbackAttachments: over-cap video upload is skipped (no POST, no ai_call)", async () => {
+  const big = new Uint8Array(TRANSCRIBE_MAX_BYTES + 500)
+  mock.module("./s3", () => ({ getObjectBytes: async () => ({ bytes: big, contentType: "video/mp4" }) }))
+  let posted = false
+  globalThis.fetch = (async () => { posted = true; throw new Error("should not POST an over-cap upload") }) as any
+
+  const vid = { key: "attachments/huge-upload.mp4", filename: "huge.mp4", contentType: "video/mp4", size: 4, transcript_status: "pending" }
+  const fid = await insertFeedback({ projectId: P, observation: "huge upload bug", attachments: [vid] })
+  const before = (await aiCallsFor(TRANSCRIBE_MODEL)).length
+
+  await transcribeFeedbackAttachments({ feedbackId: fid, projectId: P, attachments: [vid] })
+
+  expect(posted).toBe(false)
+  const row = await feedbackById(P, fid)
+  expect(row.observation).toBe("huge upload bug") // report intact
+  const stored = row.attachments.find((a: any) => a.key === vid.key)
+  expect(stored.transcript_status).toBe("skipped")
+  expect(String(stored.transcript_reason || "")).toContain("too large")
+  expect((await aiCallsFor(TRANSCRIBE_MODEL)).length).toBe(before)
+
+  // Restore the small-bytes S3 mock for subsequent tests.
+  mock.module("./s3", () => ({ getObjectBytes: async () => ({ bytes: new Uint8Array([1, 2, 3, 4]), contentType: "video/webm" }) }))
+})
+
+test("transcribeFeedbackAttachments: STT failure → status=failed, report intact, ai_call ok=0", async () => {
+  const vid = { key: "attachments/bad-upload.mp4", filename: "bad.mp4", contentType: "video/mp4", size: 4, transcript_status: "pending" }
+  const fid = await insertFeedback({ projectId: P, observation: "upload fail bug", attachments: [vid] })
+
+  mockFetch({ error: "model unavailable" }, false, 502)
+  const before = (await aiCallsFor(TRANSCRIBE_MODEL)).length
+
+  await transcribeFeedbackAttachments({ feedbackId: fid, projectId: P, attachments: [vid] }) // must not throw
+
+  const row = await feedbackById(P, fid)
+  expect(row.observation).toBe("upload fail bug") // untouched
+  const stored = row.attachments.find((a: any) => a.key === vid.key)
+  expect(stored.transcript_status).toBe("failed")
+  expect(stored.transcript_json == null || stored.transcript_json === undefined).toBe(true)
+
+  const calls = await aiCallsFor(TRANSCRIBE_MODEL)
+  expect(calls.length).toBe(before + 1)
+  expect(Number(calls[calls.length - 1].ok)).toBe(0)
 })
 
 test("transcribeFeedbackRecordings: no API key → status=none (no stuck spinner)", async () => {

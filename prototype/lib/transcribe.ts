@@ -8,7 +8,7 @@
 // feedback submission, and every fetch/parse/network failure degrades to a `failed`/`none` status rather
 // than throwing to the caller.
 import { getObjectBytes } from "./s3"
-import { setRecordingTranscript, recordAiCall } from "./db"
+import { setRecordingTranscript, setFeedbackAttachmentTranscript, recordAiCall } from "./db"
 
 // Swappable model constant. Default: Nvidia's Nemotron streaming ASR (verified live on OpenRouter,
 // cheap + multilingual). Alternatives worth a swap if quality/timestamps disappoint:
@@ -215,6 +215,73 @@ export async function transcribeFeedbackRecordings(opts: {
 
     // Cost ledger. ai_calls has no seconds column; cost/model/type/ok are what the schema carries.
     // A skipped clip made NO upstream call → do not log a ledger row for it.
+    if (outcome.status !== "skipped") {
+      await recordAiCall({
+        type: "transcribe",
+        model: TRANSCRIBE_MODEL,
+        projectId,
+        feature: "transcribe",
+        costUsd: outcome.status === "done" ? (outcome.result.usage.cost ?? null) : null,
+        ok: outcome.status === "done",
+      }).catch(() => null)
+    }
+  }
+}
+
+// KLAVITYKLA-480: extend Phase-2 transcription to ANY uploaded video attachment (not just in-widget
+// "Record me" clips). The #425 file-upload path stores non-image uploads (incl. videos) in
+// attachments_json; a spoken note inside such a video should be transcribed too so AI/Sims can process it.
+// This mirrors transcribeFeedbackRecordings but:
+//   • iterates attachments and ONLY touches entries whose contentType is video/* (audio/pdf/etc untouched);
+//   • keys the stored transcript by the attachment's stable S3 `key` (attachments carry no `id`);
+//   • reuses the SAME transcribeRecording(key, contentType) multipart-STT path and #471 outcome handling
+//     (20MB cap → 'skipped' with a reason and NO POST; 413/timeout/non-2xx → 'failed'; parsed → 'done').
+// Fire-and-forget from ingest: a single attachment's failure never affects the others or the submission.
+function isVideoAttachment(contentType?: string | null): boolean {
+  return typeof contentType === "string" && /^video\//i.test(contentType.trim())
+}
+
+export async function transcribeFeedbackAttachments(opts: {
+  feedbackId: string
+  projectId: string
+  attachments: Array<{ key: string; filename?: string; contentType?: string }>
+}): Promise<void> {
+  const { feedbackId, projectId, attachments } = opts
+  if (!Array.isArray(attachments) || !attachments.length) return
+
+  const configured = transcribeConfigured()
+  for (const att of attachments) {
+    // Only video uploads carry a spoken track worth transcribing — leave PDFs, logs, audio, images untouched.
+    if (!att || !att.key || !isVideoAttachment(att.contentType)) continue
+    const akey = String(att.key)
+
+    // No STT key configured → mark 'none' so the UI shows "unavailable", not a stuck spinner.
+    if (!configured) {
+      await setFeedbackAttachmentTranscript(feedbackId, projectId, akey, "none").catch(() => {})
+      continue
+    }
+
+    let outcome: TranscribeOutcome
+    try {
+      outcome = await transcribeRecording(akey, String(att.contentType || ""))
+    } catch (e: any) {
+      console.warn("[transcribe] attachment failed (non-fatal):", e?.message || e)
+      outcome = { status: "failed", reason: "unexpected-error" }
+    }
+
+    if (outcome.status === "done") {
+      await setFeedbackAttachmentTranscript(feedbackId, projectId, akey, "done", {
+        text: outcome.result.text,
+        segments: outcome.result.segments,
+      }, null).catch(() => {})
+    } else if (outcome.status === "skipped") {
+      // #471: intentionally not transcribed (too large) — record the reason, no transcript, no spend.
+      await setFeedbackAttachmentTranscript(feedbackId, projectId, akey, "skipped", null, outcome.reason).catch(() => {})
+    } else {
+      await setFeedbackAttachmentTranscript(feedbackId, projectId, akey, "failed", undefined, outcome.reason).catch(() => {})
+    }
+
+    // Cost ledger — mirror the recordings path. A skipped (over-cap) upload made NO upstream call → no row.
     if (outcome.status !== "skipped") {
       await recordAiCall({
         type: "transcribe",

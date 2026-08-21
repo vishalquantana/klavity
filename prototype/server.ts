@@ -97,7 +97,7 @@ import { getTrailStepById } from "./lib/trails"
 import { nearMissSummary } from "./lib/expectations-nearmiss"
 import { createLabel, listLabels, updateLabel, deleteLabel, attachLabel, detachLabel, labelsForFeedback, labelsForFeedbackBatch, setSuggestedLabels, getSuggestedLabels } from "./lib/db"
 import { suggestLabelsForFeedback, draftTitleForFeedback, fallbackDraftTitle } from "./lib/label-suggest"
-import { transcribeFeedbackRecordings } from "./lib/transcribe"
+import { transcribeFeedbackRecordings, transcribeFeedbackAttachments } from "./lib/transcribe"
 import { validateAssertionDraft, normalizeCheckpointInput } from "./lib/assertion-spec"
 import { buildRecurrenceMemory, listProjectRecurringIssues } from "./lib/recurrence-memory"
 import { findKnownIssue } from "./lib/known-issue"
@@ -3887,7 +3887,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // attach them natively to the external issue. Capped by count + per-file + total size; an image sent
         // here is ignored (images travel on the screenshots path). A single upload failure is non-fatal.
         const attachFiles = form.getAll("files").filter((f): f is File => f instanceof File).slice(0, 5)
-        const attachmentDescs: Array<{ key: string; filename: string; contentType: string; size: number }> = []
+        // KLAVITYKLA-480: video/* uploads carry transcript_status ("pending" at ingest) so an async STT pass
+        // (fired after the insert below) can transcribe spoken notes inside them and store the transcript
+        // in-place by key. Non-video attachments (PDF/log/audio/...) never get the field and are untouched.
+        const attachmentDescs: Array<{ key: string; filename: string; contentType: string; size: number; transcript_status?: string }> = []
         let attachTotalBytes = 0
         for (const af of attachFiles) {
           if (af.size <= 0) continue
@@ -3898,7 +3901,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           try {
             const abuf = new Uint8Array(await af.arrayBuffer())
             const up = await uploadAttachment(abuf, af.name || "attachment", af.type || "application/octet-stream")
-            attachmentDescs.push({ key: up.key, filename: up.filename, contentType: up.contentType, size: af.size })
+            const desc: { key: string; filename: string; contentType: string; size: number; transcript_status?: string } =
+              { key: up.key, filename: up.filename, contentType: up.contentType, size: af.size }
+            // KLAVITYKLA-480: seed video uploads "pending" so the UI shows a spinner (not "unavailable")
+            // until the async transcription pass resolves it. Keyed by up.key downstream.
+            if (/^video\//i.test(up.contentType || "")) desc.transcript_status = "pending"
+            attachmentDescs.push(desc)
           } catch (aErr: any) { console.error("attachment upload failed (non-fatal):", aErr?.message || aErr); droppedAttachments++; noteEvidenceDrop(aErr?.message || String(aErr)) }
         }
 
@@ -4246,6 +4254,18 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   feedbackId: fbForRec, projectId,
                   recordings: recordingDescs.map(r => ({ id: r.id, key: r.key, contentType: r.contentType })),
                 }).catch((err: any) => console.warn("[transcribe] non-fatal:", err?.message || err))
+              }
+
+              // KLAVITYKLA-480: transcribe spoken notes in ANY uploaded video attachment (#425 path), not just
+              // "Record me" clips. Same async fire-and-forget contract — transcribeFeedbackAttachments only
+              // touches video/* uploads (others untouched), applies the 20MB cap, stores the transcript by
+              // key, and logs ai_calls. New rows only (a deduped repeat already transcribed on first submit).
+              if (feedbackId && !dedupedInto && attachmentDescs.some(a => /^video\//i.test(a.contentType || ""))) {
+                const fbForAtt = feedbackId
+                void transcribeFeedbackAttachments({
+                  feedbackId: fbForAtt, projectId,
+                  attachments: attachmentDescs.map(a => ({ key: a.key, filename: a.filename, contentType: a.contentType })),
+                }).catch((err: any) => console.warn("[transcribe] attachment non-fatal:", err?.message || err))
               }
 
               // ── founder notifications (P0 retention loop): email to account owner/admins
@@ -8683,6 +8703,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             // the ticket drawer can play the clip. Additive/minimal — does not touch title/triage (#452).
             recordings: Array.isArray(fbRow.recordings)
               ? fbRow.recordings.map((r: any) => ({ ...r, url: (() => { try { return presignGet(String(r.key), 3600) } catch { return null } })() }))
+              : [],
+            // PX4 #425 + KLAVITYKLA-480: uploaded file attachments, each with a short-lived presigned URL and
+            // (for video uploads) the transcript fields (transcript_status/transcript_json/transcript_reason)
+            // stored in-place by the async STT pass. Surfacing them here makes the spoken-note transcript
+            // available to the AI/report context + dashboard (dashboard render is a follow-up). Additive:
+            // non-video attachments simply carry no transcript fields.
+            attachments: Array.isArray(fbRow.attachments)
+              ? fbRow.attachments.map((a: any) => ({ ...a, url: (() => { try { return presignGet(String(a.key), 3600) } catch { return null } })() }))
               : [],
             simId: fbRow.simId,
             planeIssueKey: fbRow.planeIssueKey,
