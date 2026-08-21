@@ -5,12 +5,13 @@ export type BillingInterval = "month" | "year"
 // "founding" (Founding Team) is an annual-only supporter tier sold exclusively via a hosted Stripe
 // Payment Link (see STRIPE_PRICE_IDS below) — it has no "month" entry, hence Partial<...> here.
 //
-// Free $0 · Pro $29/mo · Team $99/mo · Scale $599/mo (PUBLISHED) · Founding Ten $490/yr.
+// Free $0 · Solo $49/mo · Team $249/mo · Scale $599/mo (PUBLISHED) · Founding Ten $490/yr.
 // Annual = two months free (10× monthly) on every self-serve tier, unchanged.
 //
-// The internal PLAN SLUG is `pro` — the value stored in the accounts table, sent to Stripe metadata,
-// and carried by every existing subscription. Its customer-facing DISPLAY name is "Pro" (see
-// PLAN_DISPLAY_NAMES below). Do NOT rename the slug; there is no migration and none is wanted.
+// NOTE ON THE "SOLO" RENAME: "Pro" became the customer-facing name "Solo", but the internal PLAN
+// SLUG stays `pro` — it is the value stored in the accounts table, sent to Stripe metadata, and
+// carried by every existing subscription. Only the DISPLAY name changed (see PLAN_DISPLAY_NAMES
+// below). Do NOT rename the slug; there is no migration and none is wanted.
 export const STRIPE_PRICE_CATALOG: Record<Exclude<BillingPlan, "free" | "partner">, Partial<Record<BillingInterval, { lookupKey: string; unitAmount: number; label: string }>>> = {
   founding: {
     // Founder deal repriced to 50% off Scale ($599/mo) → $299/mo, billed MONTHLY (was annual-only
@@ -19,19 +20,13 @@ export const STRIPE_PRICE_CATALOG: Record<Exclude<BillingPlan, "free" | "partner
     month: { lookupKey: "klavity_founding_monthly_299", unitAmount: 29900, label: "Klavity Founding Team" },
     year: { lookupKey: "klavity_founding_annual_490", unitAmount: 49000, label: "Klavity Founding Team" },
   },
-  // PRICING RECONCILIATION 2026-08-21: the published self-serve ladder is Free / Pro $29 / Team $99 /
-  // Scale. The catalog had briefly drifted to a "Solo $49 / Team $249" ladder (KLAVITYKLA-379) that
-  // was never created in LIVE Stripe (the live price objects in STRIPE_PRICE_IDS below are the $29 /
-  // $99 objects). The catalog is the source of truth for what a NEW checkout creates by lookup_key,
-  // so it is set back to $29 / $99 here; the retired Solo/$249 keys stay resolvable in
-  // SUPERSEDED_LOOKUP_KEYS so any subscriber on them is never demoted. Annual = two months free (10×).
   pro: {
-    month: { lookupKey: "klavity_pro_monthly_29", unitAmount: 2900, label: "Klavity Pro" },
-    year: { lookupKey: "klavity_pro_annual_290", unitAmount: 29000, label: "Klavity Pro" },
+    month: { lookupKey: "klavity_solo_monthly_49", unitAmount: 4900, label: "Klavity Solo" },
+    year: { lookupKey: "klavity_solo_annual_490", unitAmount: 49000, label: "Klavity Solo" },
   },
   team: {
-    month: { lookupKey: "klavity_team_monthly_99", unitAmount: 9900, label: "Klavity Team" },
-    year: { lookupKey: "klavity_team_annual_990", unitAmount: 99000, label: "Klavity Team" },
+    month: { lookupKey: "klavity_team_monthly_249", unitAmount: 24900, label: "Klavity Team" },
+    year: { lookupKey: "klavity_team_annual_2490", unitAmount: 249000, label: "Klavity Team" },
   },
   // Scale (KLAVITYKLA-379): the price is now PUBLISHED ($599/mo) instead of "Custom", because nine
   // of sixteen AI-QA competitors hide theirs and publishing wins the "<product> pricing" search
@@ -64,24 +59,26 @@ export const STRIPE_PRICE_CATALOG: Record<Exclude<BillingPlan, "free" | "partner
 export const SUPERSEDED_LOOKUP_KEYS: Record<string, { plan: BillingPlan; interval: BillingInterval }> = {
   // Founding Ten at $290/yr — superseded by klavity_founding_annual_490 on 2026-07-20.
   klavity_founding_annual_290: { plan: "founding", interval: "year" },
-  // PRICING RECONCILIATION 2026-08-21: the live catalog is back on the Pro $29 · Team $99 keys (see
-  // STRIPE_PRICE_CATALOG). The keys below are the RETIRED "Solo $49 / Team $249" (KLAVITYKLA-379)
-  // ladder that briefly lived in the catalog. Anyone who ever subscribed on one of these is billed
-  // against that immutable price object and their webhooks still carry these keys, so they MUST keep
-  // resolving to a plan or they'd silently drop to `free`. New checkouts never use them.
-  klavity_solo_monthly_49: { plan: "pro", interval: "month" },
-  klavity_solo_annual_490: { plan: "pro", interval: "year" },
-  klavity_team_monthly_249: { plan: "team", interval: "month" },
-  klavity_team_annual_2490: { plan: "team", interval: "year" },
+  // "Pro" at $29/mo · $290/yr — superseded by the Solo $49/mo · $490/yr keys. These briefly lived in
+  // the catalog during the 2026-08-21 drift, so anyone who checked out at $29/$99 in that window is
+  // billed against these immutable price objects and their webhooks still carry these keys; they MUST
+  // keep resolving or a grandfathered customer silently drops to `free`.
+  klavity_pro_monthly_29: { plan: "pro", interval: "month" },
+  klavity_pro_annual_290: { plan: "pro", interval: "year" },
+  // Team at $99/mo · $990/yr — superseded by the $249/mo · $2,490/yr keys.
+  klavity_team_monthly_99: { plan: "team", interval: "month" },
+  klavity_team_annual_990: { plan: "team", interval: "year" },
 }
 
-// ── Customer-facing plan DISPLAY names ─────────────────────────────────────────────────────────
+// ── Customer-facing plan DISPLAY names (KLAVITYKLA-379) ────────────────────────────────────────
 // The keys here are the internal plan SLUGS (what lives in the DB, in Stripe metadata and in every
-// API payload). The values are what a human is allowed to see. Render plan names through
-// planDisplayName() — never print a raw slug at a customer.
+// API payload). The values are what a human is allowed to see. These two deliberately disagree for
+// `pro`, which is displayed as "Solo": the ladder was renamed for customers without touching any
+// stored value, so no migration was needed and existing subscriptions kept working untouched.
+// Render plan names through planDisplayName() — never print a raw slug at a customer.
 export const PLAN_DISPLAY_NAMES: Record<BillingPlan, string> = {
   free: "Free",
-  pro: "Pro", // slug is `pro`; displayed as "Pro" (the $29 tier).
+  pro: "Solo", // slug stays `pro` — display only. See the note above.
   team: "Team",
   agency: "Agency",
   founding: "Founding Ten",
@@ -491,9 +488,12 @@ export function intervalFromLookupKey(lookupKey: string | null | undefined): Bil
 export const STRIPE_PRICE_IDS: Record<string, { plan: Exclude<BillingPlan, "free" | "scale" | "partner">; interval: BillingInterval }> = {
   // Founding Team — annual only, $490/yr (KLAVITYKLA-379). This is the live Payment Link price.
   price_1TuhSqDWQd30h1DiyqjXQ3NC: { plan: "founding", interval: "year" },
-  // Live Pro $29/mo·$290/yr and Team $99/mo·$990/yr price objects — the CURRENT published ladder
-  // (see the 2026-08-21 pricing reconciliation on STRIPE_PRICE_CATALOG). Webhooks for existing
-  // subscribers carry these IDs; they MUST keep resolving or a customer silently drops to `free`.
+  // ── SUPERSEDED price IDs (KLAVITYKLA-379 reprice) ──
+  // These are the OLD "Pro" $29/mo·$290/yr and Team $99/mo·$990/yr price objects. Stripe prices are
+  // immutable, so anyone who subscribed before the reprice is still billed against these IDs and
+  // their webhooks still arrive carrying them. They MUST keep resolving or a grandfathered customer
+  // silently drops to `free`. New checkouts never touch these — ensureStripePrice resolves the new
+  // catalog lookup keys and creates fresh price objects, which resolve via the lookup_key fallback.
   price_1TuhSrDWQd30h1DivfC0EMKT: { plan: "pro", interval: "month" },
   price_1TuhSrDWQd30h1DiTy9eSe5p: { plan: "pro", interval: "year" },
   price_1TuhSsDWQd30h1DiU5g7VDZo: { plan: "team", interval: "month" },

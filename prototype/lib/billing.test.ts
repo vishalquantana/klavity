@@ -38,12 +38,12 @@ async function stripeSig(raw: string, secret: string, ts = Math.floor(Date.now()
   return `t=${ts},v1=${hex}`
 }
 
-test("Stripe catalog encodes Pro/Team monthly and two-months-free annual prices", () => {
-  // Reconciled ladder (2026-08-21): Pro $29/mo, Team $99/mo (slug stays `pro`).
-  expect(STRIPE_PRICE_CATALOG.pro.month.unitAmount).toBe(2900)
-  expect(STRIPE_PRICE_CATALOG.pro.year.unitAmount).toBe(29000)
-  expect(STRIPE_PRICE_CATALOG.team.month.unitAmount).toBe(9900)
-  expect(STRIPE_PRICE_CATALOG.team.year.unitAmount).toBe(99000)
+test("Stripe catalog encodes Solo/Team monthly and two-months-free annual prices", () => {
+  // KLAVITYKLA-379 ladder: Solo $49/mo (slug stays `pro`), Team $249/mo.
+  expect(STRIPE_PRICE_CATALOG.pro.month.unitAmount).toBe(4900)
+  expect(STRIPE_PRICE_CATALOG.pro.year.unitAmount).toBe(49000)
+  expect(STRIPE_PRICE_CATALOG.team.month.unitAmount).toBe(24900)
+  expect(STRIPE_PRICE_CATALOG.team.year.unitAmount).toBe(249000)
   expect(planFromLookupKey(STRIPE_PRICE_CATALOG.team.year.lookupKey)).toBe("team")
   expect(intervalFromLookupKey(STRIPE_PRICE_CATALOG.pro.year.lookupKey)).toBe("year")
 })
@@ -350,20 +350,20 @@ test("PLAN_QUOTAS covers every BillingPlan value (type exhaustiveness holds at r
   }
 })
 
-test("Founding/Pro/Team catalog amounts stay correct", () => {
+test("Founding/Solo/Team catalog amounts stay correct", () => {
   expect(STRIPE_PRICE_CATALOG.founding.year?.unitAmount).toBe(49000)
-  expect(STRIPE_PRICE_CATALOG.pro.month?.unitAmount).toBe(2900)
-  expect(STRIPE_PRICE_CATALOG.pro.year?.unitAmount).toBe(29000)
-  expect(STRIPE_PRICE_CATALOG.team.month?.unitAmount).toBe(9900)
-  expect(STRIPE_PRICE_CATALOG.team.year?.unitAmount).toBe(99000)
+  expect(STRIPE_PRICE_CATALOG.pro.month?.unitAmount).toBe(4900)
+  expect(STRIPE_PRICE_CATALOG.pro.year?.unitAmount).toBe(49000)
+  expect(STRIPE_PRICE_CATALOG.team.month?.unitAmount).toBe(24900)
+  expect(STRIPE_PRICE_CATALOG.team.year?.unitAmount).toBe(249000)
 })
 
-// ── Reconciled self-serve ladder (2026-08-21) ───────────────────────────────────────────────────
+// ── KLAVITYKLA-379: the upmarket ladder ────────────────────────────────────────────────────────
 
-test("the published ladder is Free $0 / Pro $29 / Team $99 / Scale $599 / Founding $490per year", () => {
-  expect(STRIPE_PRICE_CATALOG.pro.month!.unitAmount).toBe(2900)      // Pro
-  expect(STRIPE_PRICE_CATALOG.team.month!.unitAmount).toBe(9900)     // Team
-  expect(STRIPE_PRICE_CATALOG.scale.month!.unitAmount).toBe(59900)   // Scale — PUBLISHED
+test("the published ladder is Free $0 / Solo $49 / Team $249 / Scale $599 / Founding $490per year", () => {
+  expect(STRIPE_PRICE_CATALOG.pro.month!.unitAmount).toBe(4900)      // Solo
+  expect(STRIPE_PRICE_CATALOG.team.month!.unitAmount).toBe(24900)    // Team
+  expect(STRIPE_PRICE_CATALOG.scale.month!.unitAmount).toBe(59900)   // Scale — now PUBLISHED
   expect(STRIPE_PRICE_CATALOG.founding.year!.unitAmount).toBe(49000) // Founding Ten
 })
 
@@ -386,11 +386,13 @@ test("the Founding lookup key is the _490 one; the _290 key is superseded but st
 test("every superseded lookup key still resolves to its original plan and interval", () => {
   const retired: Array<[string, string, "month" | "year"]> = [
     ["klavity_founding_annual_290", "founding", "year"],
-    // Retired Solo $49 / Team $249 ladder (KLAVITYKLA-379) — reverted to Pro $29 / Team $99.
-    ["klavity_solo_monthly_49", "pro", "month"],
-    ["klavity_solo_annual_490", "pro", "year"],
-    ["klavity_team_monthly_249", "team", "month"],
-    ["klavity_team_annual_2490", "team", "year"],
+    // Retired "Pro" $29 / Team $99 ladder — plus the brief 2026-08-21 window when these lived in the
+    // catalog. Superseded by the canonical Solo $49 / Team $249 (KLAVITYKLA-379) keys, but any
+    // subscriber on them must keep resolving.
+    ["klavity_pro_monthly_29", "pro", "month"],
+    ["klavity_pro_annual_290", "pro", "year"],
+    ["klavity_team_monthly_99", "team", "month"],
+    ["klavity_team_annual_990", "team", "year"],
   ]
   for (const [key, plan, interval] of retired) {
     expect(planFromLookupKey(key)).toBe(plan as any)
@@ -407,13 +409,15 @@ test("the old live Stripe price IDs still resolve, so grandfathered subscribers 
   expect(planFromPriceId("price_1TuhSqDWQd30h1DiyqjXQ3NC")).toBe("founding")
 })
 
-test("the `pro` slug is displayed as `Pro` and round-trips as a slug", () => {
-  expect(planDisplayName("pro")).toBe("Pro")
-  expect(PLAN_DISPLAY_NAMES.pro).toBe("Pro")
+test("Solo is a DISPLAY name only — the plan slug stays `pro` everywhere", () => {
+  expect(planDisplayName("pro")).toBe("Solo")
+  expect(PLAN_DISPLAY_NAMES.pro).toBe("Solo")
+  // The slug is untouched: normalizePlan still round-trips `pro`, and "solo" is NOT a valid slug
+  // (it normalizes to free like any other unknown string). No DB/Stripe migration was needed.
   expect(normalizePlan("pro")).toBe("pro")
-  expect(normalizePlan("solo")).toBe("free") // the transient "solo" name is not a slug
-  expect(STRIPE_PRICE_CATALOG.pro.month!.lookupKey).toBe("klavity_pro_monthly_29")
-  expect(PLAN_QUOTAS.pro).toBeDefined()
+  expect(normalizePlan("solo")).toBe("free")
+  expect(STRIPE_PRICE_CATALOG.pro.month!.lookupKey).toContain("solo") // label/key may say solo…
+  expect(PLAN_QUOTAS.pro).toBeDefined()                               // …but the slug key is `pro`
 })
 
 test("every plan slug has a customer-facing display name", () => {
@@ -516,37 +520,39 @@ test("subscriptionStartMs normalizes seconds vs ms and moneyBackEligibility repo
   expect(expired.daysRemaining).toBe(0)
 })
 
-// ── Catalog: reconciled Pro $29 / Team $99 ladder (2026-08-21) ───────────────────────────────────
-// The published self-serve ladder is Free / Pro $29 / Team $99 / Scale. Assert the catalog encodes
-// those amounts + lookup keys, and that the RETIRED Solo $49 / Team $249 keys still resolve so a
-// grandfathered subscriber is never demoted to free.
-test("catalog Pro/Team carry the reconciled $29/$99 amounts + lookup keys", () => {
-  expect(STRIPE_PRICE_CATALOG.pro.month!.unitAmount).toBe(2900)
-  expect(STRIPE_PRICE_CATALOG.pro.month!.lookupKey).toBe("klavity_pro_monthly_29")
-  expect(STRIPE_PRICE_CATALOG.pro.year!.unitAmount).toBe(29000)
-  expect(STRIPE_PRICE_CATALOG.pro.year!.lookupKey).toBe("klavity_pro_annual_290")
-  expect(STRIPE_PRICE_CATALOG.team.month!.unitAmount).toBe(9900)
-  expect(STRIPE_PRICE_CATALOG.team.month!.lookupKey).toBe("klavity_team_monthly_99")
-  expect(STRIPE_PRICE_CATALOG.team.year!.unitAmount).toBe(99000)
-  expect(STRIPE_PRICE_CATALOG.team.year!.lookupKey).toBe("klavity_team_annual_990")
+// ── Catalog: canonical Solo $49 / Team $249 ladder (KLAVITYKLA-379) ───────────────────────────────
+// The published self-serve ladder is Free / Solo $49 / Team $249 / Scale. Assert the catalog encodes
+// those amounts + lookup keys — the source of truth for what a NEW checkout creates. A brief drift
+// to $29/$99 (2026-08-21) was reverted; those keys stay grandfathered (see the next test).
+test("catalog Solo/Team carry the canonical $49/$249 amounts + lookup keys", () => {
+  expect(STRIPE_PRICE_CATALOG.pro.month!.unitAmount).toBe(4900)
+  expect(STRIPE_PRICE_CATALOG.pro.month!.lookupKey).toBe("klavity_solo_monthly_49")
+  expect(STRIPE_PRICE_CATALOG.pro.year!.unitAmount).toBe(49000)
+  expect(STRIPE_PRICE_CATALOG.pro.year!.lookupKey).toBe("klavity_solo_annual_490")
+  expect(STRIPE_PRICE_CATALOG.team.month!.unitAmount).toBe(24900)
+  expect(STRIPE_PRICE_CATALOG.team.month!.lookupKey).toBe("klavity_team_monthly_249")
+  expect(STRIPE_PRICE_CATALOG.team.year!.unitAmount).toBe(249000)
+  expect(STRIPE_PRICE_CATALOG.team.year!.lookupKey).toBe("klavity_team_annual_2490")
   // Annual is two months free (10x monthly) on both.
   expect(STRIPE_PRICE_CATALOG.pro.year!.unitAmount).toBe(STRIPE_PRICE_CATALOG.pro.month!.unitAmount * 10)
   expect(STRIPE_PRICE_CATALOG.team.year!.unitAmount).toBe(STRIPE_PRICE_CATALOG.team.month!.unitAmount * 10)
 })
 
-test("grandfathering: the retired Solo $49 / Team $249 keys still resolve to their plan + interval", () => {
-  expect(planFromLookupKey("klavity_solo_monthly_49")).toBe("pro")
-  expect(intervalFromLookupKey("klavity_solo_monthly_49")).toBe("month")
-  expect(planFromLookupKey("klavity_solo_annual_490")).toBe("pro")
-  expect(planFromLookupKey("klavity_team_monthly_249")).toBe("team")
-  expect(intervalFromLookupKey("klavity_team_monthly_249")).toBe("month")
-  expect(planFromLookupKey("klavity_team_annual_2490")).toBe("team")
+test("grandfathering: the retired $29/$99 keys still resolve so a brief-window subscriber is never demoted", () => {
+  // These lived in the catalog during the 2026-08-21 drift; anyone who checked out then is billed
+  // against them and their webhooks still carry them, so they MUST resolve via SUPERSEDED_LOOKUP_KEYS.
+  expect(planFromLookupKey("klavity_pro_monthly_29")).toBe("pro")
+  expect(intervalFromLookupKey("klavity_pro_monthly_29")).toBe("month")
+  expect(planFromLookupKey("klavity_pro_annual_290")).toBe("pro")
+  expect(planFromLookupKey("klavity_team_monthly_99")).toBe("team")
+  expect(intervalFromLookupKey("klavity_team_monthly_99")).toBe("month")
+  expect(planFromLookupKey("klavity_team_annual_990")).toBe("team")
   // And the live price IDs (the $29/$99 objects) still resolve for existing subscribers.
   expect(planFromPriceId("price_1TuhSrDWQd30h1DivfC0EMKT")).toBe("pro")
   expect(planFromPriceId("price_1TuhSsDWQd30h1DiU5g7VDZo")).toBe("team")
-  // The retired keys are NOT in the live catalog — new checkouts never create them.
+  // The retired $29/$99 keys are NOT in the live catalog — new checkouts create the canonical keys.
   const live = Object.values(STRIPE_PRICE_CATALOG).flatMap((i) => Object.values(i).map((e) => e!.lookupKey))
-  for (const k of ["klavity_solo_monthly_49", "klavity_solo_annual_490", "klavity_team_monthly_249", "klavity_team_annual_2490"]) {
+  for (const k of ["klavity_pro_monthly_29", "klavity_pro_annual_290", "klavity_team_monthly_99", "klavity_team_annual_990"]) {
     expect(live).not.toContain(k)
   }
 })
