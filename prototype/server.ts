@@ -9976,7 +9976,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // SSRF-guarded fetch of the public page (private/loopback hosts rejected by the guard).
           let html = ""
           try {
-            const res = await safeFetch(siteUrl, { headers: { "user-agent": "KlavitySimBot/1.0 (+https://klavity.in)" }, signal: AbortSignal.timeout(8000) })
+            const res = await safeFetch(siteUrl, { headers: { "user-agent": "KlavitySimBot/1.0 (+https://klavity.in)" }, signal: AbortSignal.timeout(8000) }, { allowLoopbackInTest: true })
             if (!res.ok) return json({ error: `Couldn't read that page (HTTP ${res.status}).` }, 400)
             html = (await res.text()).slice(0, 300_000)
           } catch {
@@ -9995,8 +9995,32 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // simClass: "user" = operates the product hands-on; "client" = judges outcomes/business results.
           // Site-inferred Sims default to "user" unless the page clearly targets exec/buyer audiences.
           const sys = personaSiteSys("2-3")
-          const { content, usage } = await chat([{ role: "system", content: sys }, { role: "user", content: "Page URL: " + siteUrl + "\n\nPage text:\n" + text }], 1600, true, { type: "persona", email: meS })
-          const data = parseJSON(content)
+          const userMsg = "Page URL: " + siteUrl + "\n\nPage text:\n" + text
+          // ROOT CAUSE (P1, 2026-08-21): verbose 2-3 persona output (each carries a name/role/summary +
+          // exactly 3 insights with quotes) can clip the 1600-token ceiling mid-JSON, or the model
+          // occasionally emits malformed JSON — parseJSON then throws "Model did not return valid JSON",
+          // producing a 500 on the onboarding aha-path. Same failure mode that forced the
+          // EXTRACT_MAX_OUTPUT_TOKENS bump on /api/extract. Fix: retry ONCE on a parse failure with a
+          // reinforced "minified JSON only" instruction and a higher token ceiling (survives truncation);
+          // if the retry also fails, return a friendly 422 instead of paging P1 with a 500.
+          let data: any
+          let usage: { input_tokens?: number; output_tokens?: number }
+          const first = await chat([{ role: "system", content: sys }, { role: "user", content: userMsg }], 1600, true, { type: "persona", email: meS })
+          usage = first.usage
+          try {
+            data = parseJSON(first.content)
+          } catch (parseErr: any) {
+            console.warn("persona/site: parseJSON failed, retrying once:", parseErr?.message || parseErr)
+            const retrySys = sys + " Return ONLY valid minified JSON with no prose, no markdown fences, and no trailing commas. Ensure the JSON is COMPLETE: every string, brace, and bracket must be closed."
+            const retry = await chat([{ role: "system", content: retrySys }, { role: "user", content: userMsg }], 2600, true, { type: "persona", email: meS })
+            usage = retry.usage
+            try {
+              data = parseJSON(retry.content)
+            } catch (retryErr: any) {
+              console.error("persona/site: parseJSON failed after retry:", retryErr?.message || retryErr)
+              return json({ error: "Couldn't read that page well enough to build Sims — try again, or paste a call transcript instead." }, 422)
+            }
+          }
           // Ensure simClass/side are always set on each persona: default to "user"/"external" for site-inferred Sims.
           const personas = (data.personas || []).slice(0, 3).map((p: any) => {
             if (!SIM_CLASS_ENUM.has(String(p?.simClass))) p.simClass = "user"
