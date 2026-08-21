@@ -1720,6 +1720,11 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
        regression stream carries an un-dismissed event (memory / sim-reopen / guard). -->
   <div id="regressionBanner" style="display:none"></div>
 
+  <!-- #445: "finish connecting your tracker" nudge. Populated by maybeTrackerNudge() after connectors
+       load when onboarding flagged a tracker intent (?tracker= or klav-tracker-pending) that has no
+       saved connector yet — so choosing Jira in onboarding never dead-ends. -->
+  <div id="trackerNudge" class="checklist hide" data-view="overview" style="display:none"></div>
+
   <!-- First-run checklist (value-ordered, non-gated) — shown until all 5 are done or dismissed -->
   <div class="checklist hide" id="checklist" data-view="overview">
     <button class="cl-x" id="checklistDismiss" aria-label="Dismiss checklist"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18" /> <path d="m6 6 12 12" /></svg></button>
@@ -7042,8 +7047,60 @@ async function loadConnectors(admin) {
       state._exportRequests = []
     }
     renderConnectors(admin)
+    maybeTrackerNudge(admin)
   } catch {}
   finally { kbar.done() }
+}
+
+// #445: onboarding flags a tracker intent (?tracker=<type> and/or klav-tracker-pending in localStorage)
+// when the user picks a tracker but chooses "Connect later". If that project has no saved connector of
+// that type yet, surface a dismissible nudge that deep-links straight into the connect form — so the
+// choice is never a dead-end. Admin-only (only admins can add connectors) and dismissible.
+function maybeTrackerNudge(admin) {
+  const box = $("trackerNudge")
+  if (!box) return
+  let pending = ""
+  try {
+    const u = new URLSearchParams(location.search)
+    pending = u.get("tracker") || localStorage.getItem("klav-tracker-pending") || ""
+  } catch { pending = "" }
+  const label = { jira: "Jira", linear: "Linear", github: "GitHub", plane: "Plane" }[pending]
+  const already = (state._connectors || []).some(c => c.type === pending)
+  const dismissed = (() => { try { return localStorage.getItem("klav-tracker-nudge-x") === pending } catch { return false } })()
+  if (!admin || !pending || !label || already || dismissed) {
+    box.style.display = "none"; box.classList.add("hide"); return
+  }
+  box.innerHTML =
+    '<button class="cl-x" id="trkNudgeX" aria-label="Dismiss">&times;</button>'
+    + '<h3>Finish connecting ' + esc(label) + '</h3>'
+    + '<p class="cl-intro">You chose to send issues to ' + esc(label) + ' during setup. Add your credentials once and every accepted bug flows straight into ' + esc(label) + '.</p>'
+    + '<button class="btn btn-indigo btn-sm" id="trkNudgeGo" type="button">Connect ' + esc(label) + ' &rarr;</button>'
+  box.style.display = ""; box.classList.remove("hide")
+  const go = $("trkNudgeGo")
+  if (go) go.onclick = () => { openTrackerConnect(pending) }
+  const x = $("trkNudgeX")
+  if (x) x.onclick = () => {
+    try { localStorage.setItem("klav-tracker-nudge-x", pending); localStorage.removeItem("klav-tracker-pending") } catch {}
+    box.style.display = "none"; box.classList.add("hide")
+  }
+}
+
+// Deep-link from the nudge (or elsewhere) into the connectors add form, preselected to `type`.
+function openTrackerConnect(type) {
+  try { setView("settings") } catch {}
+  const wrap = $("connAdmin")
+  if (!wrap || wrap.classList.contains("hide")) return  // non-admins have no connect form
+  if (typeof resetConnForm === "function") resetConnForm()
+  const add = $("connAddWrap"); if (add) add.classList.remove("hide")
+  const btn = $("connAddBtn"); if (btn) btn.classList.add("hide")
+  const tsel = $("connTypeSelect")
+  if (tsel && type) {
+    tsel.value = type
+    // Fire the existing onchange so the credential fields for this type render.
+    if (typeof tsel.onchange === "function") tsel.onchange()
+    else tsel.dispatchEvent(new Event("change"))
+  }
+  if (add && add.scrollIntoView) add.scrollIntoView({ behavior: "smooth", block: "nearest" })
 }
 
 // ── KLAVITYKLA-441: workspace auto-labeling rules editor (admin-only) ──

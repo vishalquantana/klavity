@@ -168,6 +168,25 @@ input.code{font-family:var(--mono);font-size:24px;letter-spacing:.5em;text-align
 .trust{display:flex;gap:10px;align-items:center;background:var(--green-ghost);border:1px solid var(--line);
   border-radius:12px;padding:12px 14px;font-size:12.8px;color:var(--ink2);margin-top:16px}
 
+/* inline tracker connect panel (#445) */
+.trk-panel{margin-top:12px;background:var(--indigo-ghost);border:1.5px solid var(--indigo-line);border-radius:14px;padding:16px 16px 14px}
+.trk-panel .tp-head{font-size:14px;font-weight:650;color:var(--ink);margin-bottom:12px}
+.trk-panel .tp-tag{font-family:var(--mono);font-size:10px;letter-spacing:.05em;background:var(--indigo);color:#fff;border-radius:6px;padding:2px 6px;vertical-align:middle;margin-left:4px}
+.trk-panel .tp-oauth{margin-bottom:12px}
+.trk-panel .tp-or{text-align:center;font-size:12px;color:var(--muted);margin-top:8px}
+.trk-panel .tp-fields label.fld{margin-bottom:12px}
+.trk-panel .tp-status{font-size:13px;color:var(--muted);margin-left:auto;align-self:center}
+.trk-panel .tp-status.ok{color:var(--green)}
+.trk-panel .tp-map{margin-top:14px;border-top:1px solid var(--line);padding-top:12px}
+.trk-panel .tp-map-h{font-size:12.5px;font-weight:650;color:var(--ink);margin-bottom:8px}
+.trk-panel .tp-map-h span{color:var(--muted);font-weight:400}
+.trk-panel .tp-map-load{font-size:12.5px;color:var(--muted)}
+.trk-panel .tp-maprow{display:flex;align-items:center;gap:10px;font-size:13px;padding:5px 0}
+.trk-panel .tp-maprow .mf{min-width:82px;color:var(--ink2)}
+.trk-panel .tp-maprow .ma{color:var(--muted)}
+.trk-panel .tp-maprow .mt{font-weight:600;color:var(--ink)}
+.trk-panel .tp-maprow .mauto{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:1px 6px}
+
 /* preview browser */
 .browser{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:var(--shadow)}
 .bchrome{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--line2);background:var(--bg)}
@@ -500,6 +519,24 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       <button type="button" class="opt trk" id="trkLinear" onclick="chooseTracker('linear')"><span class="ic">LN</span><div><div class="t">Linear</div><div class="d">Create Linear issues automatically</div></div></button>
       <button type="button" class="opt trk" id="trkGithub" onclick="chooseTracker('github')"><span class="ic">GH</span><div><div class="t">GitHub</div><div class="d">Open GitHub issues in your repo</div></div></button>
       <button type="button" class="opt trk" id="trkPlane" onclick="chooseTracker('plane')"><span class="ic">PL</span><div><div class="t">Plane</div><div class="d">File into your Plane workspace</div></div></button>
+    </div>
+    <!-- Inline connect panel (#445): expands when a real tracker is selected so Jira etc. never dead-end. -->
+    <div id="trkPanel" class="trk-panel hide" role="region" aria-label="Connect your tracker">
+      <div class="tp-head">Connect <b id="tpName">Jira</b> <span class="tp-tag">NEW</span></div>
+      <div id="tpOauth" class="tp-oauth hide">
+        <button type="button" class="btn btn-ghost btn-block" id="tpOauthBtn" onclick="trackerOauth()">Connect with Atlassian (OAuth)</button>
+        <div class="tp-or">or connect with an API token</div>
+      </div>
+      <div id="tpFields" class="tp-fields"></div>
+      <div class="row" style="margin-top:2px">
+        <button type="button" class="btn btn-indigo" id="tpConnectBtn" onclick="trackerConnect()">Connect →</button>
+        <span id="tpStatus" class="tp-status"></span>
+      </div>
+      <div class="err" id="tpErr"></div>
+      <div id="tpMap" class="tp-map hide">
+        <div class="tp-map-h">Auto-mapped <span>(edit anytime in Settings)</span></div>
+        <div id="tpMapRows"></div>
+      </div>
     </div>
     <button type="button" class="opt trk sel" id="trkCloud" onclick="chooseTracker('cloud')" style="margin-top:12px"><span class="ic">KC</span><div><div class="t">Keep them in Klavity Cloud</div><div class="d">No tracker? Klavity stores and manages issues for you — serious teams keep Jira, we just CC it.</div></div></button>
     <div class="trust"><span>Klavity only <b>creates and updates</b> issues. It never reads your private repos or boards. New: it auto-maps issue types and statuses to your tracker, so severities and workflow states line up.</span></div>
@@ -1063,16 +1100,197 @@ function renderInsightLive(){
   slot.innerHTML = '<div class="card">' + head + body + '</div>'
 }
 
-// ── Step 4 · Insights: tracker connector choice. No backend commit — stashed + carried. ──
+// ── Step 4 · Insights: tracker connector choice (#445). ──
+// Cloud stays the zero-config default (unchanged). Picking a REAL tracker expands an inline connect
+// panel that stores per-project connector credentials through the SAME connector store the dashboard
+// uses (POST /api/projects/:id/connectors — secrets encrypted server-side), then previews the
+// auto-mapping from the connector-meta capability. It never dead-ends: "Connect later" still proceeds
+// and flags the intent so the dashboard nudges the user to finish.
 let trackerChoice = 'cloud'
+let trackerConnected = false     // true once a connector row is created (or already exists) this session
+let connectorCatalog = null      // { types:[{type,label,fields}], connectors:[{id,type}] } — fetched once
+const TRACKER_IDS = { jira:'trkJira', linear:'trkLinear', github:'trkGithub', plane:'trkPlane', cloud:'trkCloud' }
+// OAuth ("Connect with Atlassian") needs an external Atlassian app registration that isn't provisioned
+// yet, so it is DEFERRED behind this flag — we never fake it. The robust API-token path ships now; flip
+// this to surface the (real) OAuth button once the app is registered.
+const JIRA_OAUTH_ENABLED = false
+
 function chooseTracker(which){
   trackerChoice = which
   try { localStorage.setItem('klav-tracker-choice', which) } catch(e){}
-  ;['trkJira','trkLinear','trkGithub','trkPlane','trkCloud'].forEach(function(id){
-    const el = $(id); if (el) el.classList.toggle('sel', el.id.toLowerCase().indexOf(which) > -1)
+  Object.keys(TRACKER_IDS).forEach(function(k){
+    const el = $(TRACKER_IDS[k]); if (el) el.classList.toggle('sel', k === which)
+  })
+  const skip = $('trkSkip')
+  if (which === 'cloud') {
+    const p = $('trkPanel'); if (p) p.classList.add('hide')
+    if (skip) skip.textContent = 'Decide later'
+  } else {
+    if (skip) skip.textContent = 'Connect later in Settings'
+    openTrackerPanel(which)
+  }
+}
+
+async function loadConnectorCatalog(){
+  if (connectorCatalog) return connectorCatalog
+  if (!projectId) return null
+  try {
+    const { ok, data } = await jsonFetch('/api/projects/' + encodeURIComponent(projectId) + '/connectors')
+    if (!ok) return null
+    connectorCatalog = {
+      types: data.types || [],
+      connectors: (data.connectors || []).map(function(c){ return { id: c.id, type: c.type } })
+    }
+  } catch(e){ return null }
+  return connectorCatalog
+}
+
+async function openTrackerPanel(type){
+  trackerConnected = false
+  const panel = $('trkPanel'); if (!panel) return
+  panel.classList.remove('hide')
+  $('tpErr').textContent = ''
+  $('tpStatus').textContent = ''; $('tpStatus').className = 'tp-status'
+  $('tpMap').classList.add('hide')
+  const cat = await loadConnectorCatalog()
+  const meta = cat && cat.types ? cat.types.find(function(t){ return t.type === type }) : null
+  $('tpName').textContent = meta ? meta.label : type
+  const oauth = $('tpOauth')
+  if (oauth) oauth.classList.toggle('hide', !(type === 'jira' && JIRA_OAUTH_ENABLED))
+  renderTrackerFields(meta)
+  // Already connected this project (e.g. re-entered onboarding)? Reflect it + preview the saved mapping.
+  const existing = cat && cat.connectors ? cat.connectors.find(function(c){ return c.type === type }) : null
+  if (existing) {
+    trackerConnected = true
+    $('tpConnectBtn').disabled = true
+    $('tpStatus').className = 'tp-status ok'; $('tpStatus').textContent = 'Already connected'
+    loadTrackerMapping(type, null)
+  } else {
+    $('tpConnectBtn').disabled = false
+  }
+}
+
+function renderTrackerFields(meta){
+  const wrap = $('tpFields'); if (!wrap) return
+  wrap.innerHTML = ''
+  if (!meta || !meta.fields) return
+  meta.fields.forEach(function(f){
+    // The inbound webhook secret is a two-way-sync extra — not needed to start, keep onboarding lean.
+    if (f.key === 'inbound_secret') return
+    const lbl = document.createElement('label'); lbl.className = 'fld'
+    const span = document.createElement('span'); span.className = 'lt'
+    span.textContent = f.label + (f.required ? '' : ' (optional)')
+    const inp = document.createElement('input'); inp.className = 'in'; inp.id = 'tpf_' + f.key
+    inp.type = f.secret ? 'password' : 'text'
+    if (f.placeholder) inp.placeholder = f.placeholder
+    if (f.secret) inp.autocomplete = 'off'
+    lbl.appendChild(span); lbl.appendChild(inp); wrap.appendChild(lbl)
   })
 }
-function trackerContinue(){ go(S.PLAN) }
+
+function readTrackerConfig(meta){
+  const cfg = {}
+  if (!meta || !meta.fields) return cfg
+  meta.fields.forEach(function(f){
+    if (f.key === 'inbound_secret') return
+    const inp = $('tpf_' + f.key)
+    if (inp && inp.value.trim()) cfg[f.key] = inp.value.trim()
+  })
+  return cfg
+}
+
+function trackerOauth(){
+  // Deferred: OAuth needs an Atlassian app registration that isn't provisioned yet. Never fake it —
+  // steer users to the working API-token path below.
+  const e = $('tpErr'); if (e) e.textContent = 'OAuth is coming soon — connect with an API token below for now.'
+}
+
+async function trackerConnect(){
+  const type = trackerChoice
+  if (!type || type === 'cloud') return
+  if (!projectId) { $('tpErr').textContent = 'Create your project first.'; return }
+  const cat = await loadConnectorCatalog()
+  const meta = cat && cat.types ? cat.types.find(function(t){ return t.type === type }) : null
+  const cfg = readTrackerConfig(meta)
+  const missing = ((meta && meta.fields) || []).filter(function(f){
+    return f.required && f.key !== 'inbound_secret' && !cfg[f.key]
+  })
+  if (missing.length) {
+    $('tpErr').textContent = 'Please fill in: ' + missing.map(function(f){ return f.label }).join(', ')
+    return
+  }
+  const btn = $('tpConnectBtn'); const status = $('tpStatus')
+  $('tpErr').textContent = ''
+  btn.disabled = true; status.className = 'tp-status'; status.textContent = 'Testing connection...'
+  // 1) Verify the credentials genuinely work (files a clearly-labelled test ticket).
+  const test = await jsonFetch('/api/projects/' + encodeURIComponent(projectId) + '/connectors/test', {
+    method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ type: type, config: cfg })
+  })
+  if (!(test.ok && test.data && test.data.ok)) {
+    btn.disabled = false; status.textContent = ''
+    $('tpErr').textContent = (test.data && test.data.error) || 'Could not connect. Check your credentials and try again.'
+    return
+  }
+  // 2) Persist via the SAME connector store the dashboard uses (secret fields encrypted server-side).
+  status.textContent = 'Saving...'
+  const label = meta ? meta.label : type
+  const create = await jsonFetch('/api/projects/' + encodeURIComponent(projectId) + '/connectors', {
+    method:'POST', headers:{'content-type':'application/json'},
+    body: JSON.stringify({ type: type, name: label + ' (onboarding)', config: cfg, autoCopy: true })
+  })
+  if (!(create.ok && create.data && create.data.ok)) {
+    btn.disabled = false; status.textContent = ''
+    $('tpErr').textContent = (create.data && create.data.error) || 'Connected, but could not save. Try again.'
+    return
+  }
+  trackerConnected = true
+  connectorCatalog = null           // force refresh so re-entry sees the new connector
+  try { localStorage.removeItem('klav-tracker-pending') } catch(e){}
+  status.className = 'tp-status ok'; status.textContent = 'Connected'
+  // 3) Auto-mapping preview from the connector-meta capability (Bug/Feature/Severity/Statuses).
+  loadTrackerMapping(type, cfg)
+}
+
+async function loadTrackerMapping(type, cfg){
+  const box = $('tpMap'); const rows = $('tpMapRows'); if (!box || !rows) return
+  box.classList.remove('hide')
+  rows.innerHTML = '<div class="tp-map-load">Mapping issue types and statuses...</div>'
+  let body
+  if (cfg) body = { type: type, config: cfg }
+  else {
+    const cat = await loadConnectorCatalog()
+    const found = cat && cat.connectors ? cat.connectors.find(function(c){ return c.type === type }) : null
+    body = found ? { type: type, cid: found.id } : { type: type }
+  }
+  const { ok, data } = await jsonFetch('/api/projects/' + encodeURIComponent(projectId) + '/connectors/meta', {
+    method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body)
+  })
+  let bug = 'Bug', feature = 'Story', statuses = 'To Do / In Progress / Done'
+  if (ok && data && data.suggested) {
+    const itm = data.suggested.issue_type_map || {}
+    const sm = data.suggested.status_map || {}
+    if (itm.bug) bug = itm.bug
+    if (itm.feature) feature = itm.feature
+    const sv = ['new','open','in_progress','done'].map(function(k){ return sm[k] }).filter(Boolean)
+    if (sv.length) statuses = sv.join(' / ')
+  }
+  rows.innerHTML = trackerMapRow('Bug', bug) + trackerMapRow('Feature', feature)
+    + trackerMapRow('Severity', 'Priority') + trackerMapRow('Statuses', statuses)
+}
+
+function trackerMapRow(from, to){
+  return '<div class="tp-maprow"><span class="mf">' + esc(from) + '</span><span class="ma">&rarr;</span>'
+    + '<span class="mt">' + esc(to) + '</span><span class="mauto">auto</span></div>'
+}
+
+function trackerContinue(){
+  // Cloud (default) or an already-connected tracker: just proceed.
+  // A real tracker chosen but NOT connected → persist the intent so the dashboard nudges to finish.
+  if (trackerChoice && trackerChoice !== 'cloud' && !trackerConnected) {
+    try { localStorage.setItem('klav-tracker-pending', trackerChoice) } catch(e){}
+  }
+  go(S.PLAN)
+}
 
 // ── Step 5 · Automate: plan choice (presentational; reuses planIntent stash). ──
 function choosePlan(slug){
