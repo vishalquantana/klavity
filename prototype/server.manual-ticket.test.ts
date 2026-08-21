@@ -105,7 +105,7 @@ test("POST /api/projects/:id/tickets creates a manual ticket and returns 201", a
 })
 
 test("created ticket appears in GET /api/projects/:id/tickets with source=manual", async () => {
-  await req("POST", `/api/projects/${PROJ}/tickets`, { title: "Listing ticket for source check", priority: "medium" })
+  await req("POST", `/api/projects/${PROJ}/tickets`, { title: "Listing ticket for source check", priority: "medium", assignee: "dev@team.local" })
   const r = await req("GET", `/api/projects/${PROJ}/tickets?source=manual`)
   expect(r.status).toBe(200)
   const { tickets } = await r.json()
@@ -114,7 +114,7 @@ test("created ticket appears in GET /api/projects/:id/tickets with source=manual
 })
 
 test("created ticket has status=open (skips triage queue)", async () => {
-  const c = await req("POST", `/api/projects/${PROJ}/tickets`, { title: "Status check ticket", priority: "low" })
+  const c = await req("POST", `/api/projects/${PROJ}/tickets`, { title: "Status check ticket", priority: "low", assignee: "dev@team.local" })
   expect(c.status).toBe(201)
   const { ticketId } = await c.json()
   const r = await req("GET", `/api/feedback/${ticketId}`)
@@ -136,7 +136,8 @@ test("POST /api/projects/:id/tickets rejects outsiders with 403", async () => {
 })
 
 test("project members can create tickets too", async () => {
-  const r = await req("POST", `/api/projects/${PROJ}/tickets`, { title: "Member ticket", priority: "medium" }, MEM_SID)
+  // A non-admin member can only assign to a project member, so assign to the OWNER (a member).
+  const r = await req("POST", `/api/projects/${PROJ}/tickets`, { title: "Member ticket", priority: "medium", assignee: OWNER }, MEM_SID)
   expect(r.status).toBe(201)
 })
 
@@ -156,8 +157,8 @@ test("source=manual filter excludes sim and widget tickets", async () => {
 
 test("GET /tickets q searches server-side, paginates, and excludes another project", async () => {
   const needle = `needle-${RUN}`
-  await req("POST", `/api/projects/${PROJ}/tickets`, { title: `First ${needle}`, body: "A matching description" })
-  await req("POST", `/api/projects/${PROJ}/tickets`, { title: "Second match", body: `Description contains ${needle}` })
+  await req("POST", `/api/projects/${PROJ}/tickets`, { title: `First ${needle}`, body: "A matching description", assignee: "dev@team.local" })
+  await req("POST", `/api/projects/${PROJ}/tickets`, { title: "Second match", body: `Description contains ${needle}`, assignee: "dev@team.local" })
   const otherProject = `proj_other_${RUN}`
   await exec("INSERT INTO projects (id,account_id,name,status,review_mode,review_budget_daily,observability_mode,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)", [otherProject, ACCT, "Other project", "active", "auto", 200, "named", NOW, NOW])
   await exec("INSERT INTO feedback (id,project_id,observation,priority,status,created_at) VALUES (?,?,?,?,?,?)", [`fb_other_${RUN}`, otherProject, `Private ${needle}`, "medium", "open", NOW])
@@ -209,7 +210,7 @@ test("manual ticket auto-copies to an auto_copy connector with a single-line tit
     [cid, PROJ, "webhook", "Auto-copy receiver", JSON.stringify({ url: `http://127.0.0.1:${receiver.port}/hook` }), NOW, OWNER],
   )
   try {
-    const c = await req("POST", `/api/projects/${PROJ}/tickets`, { title: "Auto-copy me", body: "line one\nline two", priority: "high" })
+    const c = await req("POST", `/api/projects/${PROJ}/tickets`, { title: "Auto-copy me", body: "line one\nline two", priority: "high", assignee: "dev@team.local" })
     expect(c.status).toBe(201)
     const { ticketId } = await c.json()
 
@@ -228,4 +229,59 @@ test("manual ticket auto-copies to an auto_copy connector with a single-line tit
     receiver.stop(true)
     await exec("DELETE FROM connectors WHERE id=?", [cid])
   }
+})
+
+// #543 (data bug): the manual create route used to cram the title into `observation`
+// (`${title}\n\n${body}`) and NEVER set the `title` column, so feedback.title stayed NULL and every
+// read fell back to the observation blob → garbled/duplicated title+description. The title must land
+// in the dedicated `title` column verbatim, and `observation` must hold ONLY the Description.
+test("#543 manual ticket stores Title in the title column and Description alone in observation", async () => {
+  const c = await req("POST", `/api/projects/${PROJ}/tickets`, {
+    title: "ALPHA-TITLE",
+    body: "BETA-BODY",
+    priority: "medium",
+    assignee: "dev@team.local",
+  })
+  expect(c.status).toBe(201)
+  const { ticketId } = await c.json()
+
+  // Stored row: title column === the reporter's Title (NOT the concatenated blob, NOT 'Untitled report'),
+  // observation === the Description alone.
+  const row = await raw.execute({ sql: "SELECT title, observation FROM feedback WHERE id=?", args: [ticketId] })
+  const stored = row.rows[0] as any
+  expect(String(stored.title)).toBe("ALPHA-TITLE")
+  expect(String(stored.observation)).toBe("BETA-BODY")
+
+  // And the read path surfaces the reporter's Title verbatim (no blob, no fallback).
+  const g = await req("GET", `/api/projects/${PROJ}/tickets?source=manual`)
+  expect(g.status).toBe(200)
+  const { tickets } = await g.json()
+  const t = tickets.find((x: any) => x.id === ticketId)
+  expect(t).toBeTruthy()
+  expect(t.title).toBe("ALPHA-TITLE")
+  expect(t.title).not.toBe("Untitled report")
+})
+
+// #541: the MANUAL create-ticket route REQUIRES an assignee. An empty/missing assignee → 400; a valid
+// assignee → 201. (Widget/anon/autofile ingest paths are unaffected — this check is route-local.)
+test("#541 manual create rejects an empty/missing assignee with 400", async () => {
+  const r = await req("POST", `/api/projects/${PROJ}/tickets`, { title: "Needs an owner", body: "no assignee" })
+  expect(r.status).toBe(400)
+  const d = await r.json()
+  expect(String(d.error)).toMatch(/assignee/i)
+
+  // Explicit empty string is likewise rejected.
+  const r2 = await req("POST", `/api/projects/${PROJ}/tickets`, { title: "Needs an owner 2", assignee: "" })
+  expect(r2.status).toBe(400)
+})
+
+test("#541 manual create with a valid assignee succeeds (201)", async () => {
+  const r = await req("POST", `/api/projects/${PROJ}/tickets`, {
+    title: "Owned ticket",
+    body: "has an assignee",
+    assignee: "dev@team.local",
+  })
+  expect(r.status).toBe(201)
+  const d = await r.json()
+  expect(d.ok).toBe(true)
 })

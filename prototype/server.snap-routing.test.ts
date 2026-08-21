@@ -360,6 +360,24 @@ test("KLA-524 autofile success: advances new→open and the Snap shows in the Ti
   } finally { recv.stop(true) }
 }, 15000)
 
+// #534: on a CONNECTOR-LESS project there is no tracker to file to, but an autofiled human Snap must
+// still leave "New Reports" and show up on the Tickets board. It should advance new→open even though no
+// export happens. (Contrast with the FAILED-export case below, which keeps 'new' for manual retry.)
+test("#534 connector-less autofile: advances new→open and shows in the Tickets list", async () => {
+  await api("POST", `/api/projects/${PROJECT_ID}/snap-routing`, { snapRouting: "autofile" }, ADMIN_SID)
+  await clearConnectors()   // zero auto-copy connectors on this project
+
+  const fr = await submitHumanSnap(uniqueDesc(`kla534-noconn`), { page_url: `https://kla534.example/noconn/${ts}` })
+  expect(fr.ok).toBe(true)
+  const fid = (await fr.json()).id
+  expect(fid).toBeTruthy()
+
+  // No connector → no export row is ever written, but the status still advances to 'open'.
+  const status = await waitForStatus(fid, "open", 5000)
+  expect(status).toBe("open")
+  expect(await ticketsContain(fid)).toBe(true)
+}, 15000)
+
 // A FAILED autofile (connector create errors) must NOT falsely mark the report filed/open — it stays
 // 'new' so it remains in New Reports for manual retry, and is absent from the Tickets list.
 test("KLA-524 autofile failure: keeps status='new' and stays out of the Tickets list", async () => {

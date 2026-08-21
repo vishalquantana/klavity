@@ -139,6 +139,13 @@ test("full loop: submit report → inbox/triage → ticketize → status flows b
   const marker = `FULLLOOP-${ts}`
   const description = `Checkout button unresponsive on mobile ${marker}`
 
+  // This test exercises the MANUAL triage → ticketize flow, so the report must sit in the triage
+  // queue until a human accepts it. Put the project in 'review' snap-routing: under the default
+  // 'autofile' mode a connector-less human Snap now advances new→open on submit (#534) and would
+  // never appear in the triage queue.
+  const rm = await api("POST", `/api/projects/${PROJECT_ID}/snap-routing`, { snapRouting: "review" }, ADMIN_SID)
+  expect(rm.status).toBe(200)
+
   // ── 1. CAPTURE: submit a report the way the widget/extension does (multipart form) ──
   const fd = new FormData()
   fd.set("description", description)

@@ -1946,7 +1946,19 @@ function autoCopyFeedback(feedbackId: string, projectId: string, actor: string |
   void (async () => {
     try {
       const connectors = await listAutoCopyConnectors(projectId)
-      if (!connectors.length) return
+      if (!connectors.length) {
+        // #534: on a CONNECTOR-LESS project an autofiled human Snap has no tracker to file to, but it
+        // must still leave "New Reports" and appear on the Tickets board. When the caller opted into the
+        // autofile status advance (advanceStatusOnSuccess — autofile-on-submit only), advance new→open
+        // directly. advanceFeedbackToOpenIfNew is WHERE status='new' (idempotent, never downgrades), and
+        // non-autofile callers (triage-accept) never pass advanceStatusOnSuccess, so their behavior is
+        // unchanged. A connector that EXISTS but fails export is handled below and still stays 'new'.
+        if (opts?.advanceStatusOnSuccess) {
+          await advanceFeedbackToOpenIfNew(feedbackId, projectId)
+            .catch((e: any) => console.warn("[snap-routing] connector-less status advance failed (non-fatal):", e?.message || e))
+        }
+        return
+      }
       let anyExportSucceeded = false
       // M6/ASI: bound auto-filed tickets per project so a burst of feedback can't flood the tracker.
       if (!rlAllow(`autocopy:${projectId}`, AUTOCOPY_PER_PROJECT, AUTOCOPY_WINDOW)) {
@@ -10590,14 +10602,23 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const priority = VALID_PRI.includes(body.priority) ? body.priority : "medium"
           const assignee = normalizeAssigneeEmail(body.assignee)
           if (assignee === "") return json({ error: "assignee must be a valid email address." }, 400)
+          // #541: the MANUAL create-ticket route REQUIRES an assignee (a hand-written ticket must have an
+          // owner). normalizeAssigneeEmail returns null for empty/missing input. This check lives ONLY on
+          // this route — widget/anon/autofile ingest paths accept an empty assignee unchanged.
+          if (!assignee) return json({ error: "assignee required" }, 400)
           if (!(await canAssignTicketTo(proj.id, access, assignee))) {
             return json({ error: "Only project admins can assign tickets to non-members." }, 403)
           }
-          const observation = bodyText ? `${title}\n\n${bodyText}` : title
+          // #543: store the reporter's Title in the dedicated `title` column (verbatim) and keep the
+          // Description alone in `observation`. Previously the title was crammed into observation as
+          // `${title}\n\n${bodyText}` with no title column set, so every read fell back to the blob and
+          // produced garbled/duplicated title+description text.
+          const observation = bodyText || title
           const id = await insertFeedback({
             projectId: proj.id,
             actorEmail: me,
             observation,
+            title,
             priority,
             assignee: assignee || null,
             source: "manual",
