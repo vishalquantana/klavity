@@ -505,6 +505,89 @@ test("#544 Fix1 regression guard: ANONYMOUS default priority still 'new'", async
   expect(await ticketsContain(fid)).toBe(false)
 }, 15000)
 
+// ── #544 follow-up (Codex round 4): include sim_id in the quarantine predicate ────────────────────
+// A report carrying a sim_id is machine/bot intake — isHumanSnap already treats `!!rawSimId` as
+// non-human. Previously the priority→status clamp and the recurrence head-source guard omitted sim_id,
+// so an authenticated member could POST any sim_id, omit `source`, set priority=high|urgent, and open the
+// row directly (trustedProvenance=true, intakeQuarantined=false). The ingest now (1) forces status='new'
+// for ANY sim_id intake regardless of priority, and (2) persists a durable canonical source='sim' so the
+// recurrence head-quarantine guard blocks marker-less authenticated recurrences. Read the persisted
+// `source` column directly to prove the durable canonical marker.
+async function feedbackRow(fid: string): Promise<any | null> {
+  const r = await rawClient.execute({ sql: "SELECT status, source, recurrence_count FROM feedback WHERE id=?", args: [fid] })
+  return r.rows.length ? (r.rows[0] as any) : null
+}
+
+// (1) An AUTHENTICATED member POSTing a sim_id with priority=high must start 'new' (NOT on the board),
+// and the persisted source must be the canonical quarantine marker 'sim'. Review mode isolates the INSERT
+// status (no autofile advance to confound the assertion).
+test("#544 round4: AUTHENTICATED sim_id + priority=high starts 'new' with durable source='sim'", async () => {
+  await api("POST", `/api/projects/${PROJECT_ID}/snap-routing`, { snapRouting: "review" }, ADMIN_SID)
+  await clearConnectors()
+  const fr = await submitHumanSnap(uniqueDesc(`r4alpha-simclamp`), { sim_id: SIM_ID, priority: "high", page_url: `https://kla544r4.example/sim/${ts}` })
+  expect(fr.ok).toBe(true)
+  const fid = (await fr.json()).id
+  expect(fid).toBeTruthy()
+  await Bun.sleep(400)
+  const row = await feedbackRow(fid)
+  expect(String(row.status)).toBe("new")
+  expect(String(row.source)).toBe("sim")   // durable canonical quarantine marker
+  expect(await ticketsContain(fid)).toBe(false)
+}, 15000)
+
+// (2) A head created with ONLY a sim_id (durable source='sim') must NOT be promoted onto the board by 3
+// marker-less AUTHENTICATED recurrences — the durable head-source guard (bumpFeedbackRecurrence) blocks it,
+// and the intake-quarantine gate also withholds the promotion vouch. Review mode keeps the head 'new' after
+// submit #1, isolating the recurrence-promotion path.
+test("#544 round4: 3× AUTHENTICATED sim_id recurrences do NOT promote the durable-'sim' head", async () => {
+  await api("POST", `/api/projects/${PROJECT_ID}/snap-routing`, { snapRouting: "review" }, ADMIN_SID)
+  await clearConnectors()
+  const desc = uniqueDesc("r4bravo-simrecur")
+  const page = `https://kla544r4.example/sim-recur/${ts}`
+  let fid = ""
+  for (let i = 0; i < 3; i++) {
+    const fr = await submitHumanSnap(desc, { sim_id: SIM_ID, page_url: page })
+    expect(fr.ok).toBe(true)
+    fid = (await fr.json()).id
+    expect(fid).toBeTruthy()
+  }
+  await Bun.sleep(1300)
+  const row = await feedbackRow(fid)
+  expect(String(row.status)).toBe("new")     // never reached the board
+  expect(String(row.source)).toBe("sim")     // durable quarantine marker persisted
+  expect(await ticketsContain(fid)).toBe(false)
+}, 20000)
+
+// (3) Regression guard: an AUTHENTICATED member with NO sim_id and priority=high must STILL start 'open'
+// (the sim_id fix must not touch the ordinary human-report priority→status behavior).
+test("#544 round4 regression: AUTHENTICATED no-sim priority=high still starts 'open'", async () => {
+  await api("POST", `/api/projects/${PROJECT_ID}/snap-routing`, { snapRouting: "review" }, ADMIN_SID)
+  await clearConnectors()
+  const fr = await submitHumanSnap(uniqueDesc(`r4charlie-humanpriority`), { priority: "high", page_url: `https://kla544r4.example/nosim/${ts}` })
+  expect(fr.ok).toBe(true)
+  const fid = (await fr.json()).id
+  expect(fid).toBeTruthy()
+  await Bun.sleep(400)
+  const row = await feedbackRow(fid)
+  expect(String(row.status)).toBe("open")
+  expect(row.source == null || String(row.source) === "").toBe(true)  // no quarantine marker persisted
+  expect(await ticketsContain(fid)).toBe(true)
+}, 15000)
+
+// (4) Regression guard: an ANONYMOUS cross-origin widget submit with priority=high still starts 'new'
+// (unchanged from hardening3 — untrusted provenance forces 'new').
+test("#544 round4 regression: ANONYMOUS priority=high still starts 'new'", async () => {
+  await api("POST", `/api/projects/${PROJECT_ID}/snap-routing`, { snapRouting: "review" }, ADMIN_SID)
+  await clearConnectors()
+  const fr = await submitAnonWidgetSnap(uniqueDesc(`r4delta-anonpriority`), { priority: "high", page_url: `https://kla544r4.example/anon/${ts}` })
+  expect(fr.ok).toBe(true)
+  const fid = (await fr.json()).id
+  expect(fid).toBeTruthy()
+  await Bun.sleep(400)
+  expect(await feedbackStatus(fid)).toBe("new")
+  expect(await ticketsContain(fid)).toBe(false)
+}, 15000)
+
 // A FAILED autofile (connector create errors) must NOT falsely mark the report filed/open — it stays
 // 'new' so it remains in New Reports for manual retry, and is absent from the Tickets list.
 test("KLA-524 autofile failure: keeps status='new' and stays out of the Tickets list", async () => {

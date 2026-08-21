@@ -4205,13 +4205,22 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               // host, via feedbackSourceTag). Both key off real authentication / server-side detection, never an
               // attacker-controllable claim, so a client can't forge trusted provenance.
               const trustedProvenance = !!actor && !anonWidgetAllowed
-              const intakeQuarantined = NON_HUMAN_SOURCES.has(rawReportSource) || !!feedbackSourceTag
+              // #544 follow-up (Codex round 4): a report carrying a sim_id is machine/bot intake — the
+              // isHumanSnap predicate above already treats `!!rawSimId` as non-human. Include `!!rawSimId`
+              // here so an authenticated member who POSTs any sim_id (omitting `source`, setting
+              // priority=high|urgent) is still forced to status='new' and cannot open the row directly.
+              const intakeQuarantined = NON_HUMAN_SOURCES.has(rawReportSource) || !!feedbackSourceTag || !!rawSimId
               // #544 follow-up (Fix 2): make EVERY quarantine marker durable so the recurrence head-source
               // guard (bumpFeedbackRecurrence) can see non-studio markers too. studio-demo keeps priority
               // (host-detected demos have no source string); otherwise persist the recognized non-human
               // marker verbatim. A plain human/widget report (empty or unrecognized source) stays null.
+              // #544 follow-up (Codex round 4): a bare sim_id (no explicit source string) must ALSO persist a
+              // durable, canonical quarantine marker so the recurrence head-source guard (bumpFeedbackRecurrence)
+              // can block it later. 'sim' is in NON_HUMAN_FEEDBACK_SOURCES, so a head created with only sim_id
+              // is durably quarantined and can never be laundered onto the board by marker-less recurrences.
               const quarantineSourceTag = feedbackSourceTag
                 || (NON_HUMAN_SOURCES.has(rawReportSource) ? rawReportSource : null)
+                || (rawSimId ? "sim" : null)
               // JTBD 1.10: a screenshot-only report has no typed prose. Seed the observation (which drives the
               // triage title) with a deterministic fallback so the row never shows "Untitled report"; the
               // post-intake AI drafter (below) refines it in place from the captured page context. Reports
