@@ -1934,5 +1934,21 @@ async function bootstrap(){
 }
 bootstrap()
 </script>
+<!-- Live Klavity Snap widget on the onboarding page itself (same as the homepage) so the
+     report button is present here too, and we dogfood: reports from onboarding flow to our
+     own marketing/lead project. Idle-loaded so it never blocks the wizard. -->
+<script>
+window.addEventListener('load', function() {
+  var run = function() {
+    if (document.getElementById('klavity-widget-host')) return; // don't double-mount the install-step preview widget
+    var s = document.createElement('script');
+    s.src = 'https://klavity.in/widget.js';
+    s.setAttribute('data-project', 'proj_5a9b422f-ecb3-4abd-99b2-e48b6dbbaa2c');
+    s.defer = true;
+    document.body.appendChild(s);
+  };
+  if ('requestIdleCallback' in window) { requestIdleCallback(run); } else { setTimeout(run, 1); }
+});
+</script>
 </body>
 </html>
