@@ -1,6 +1,11 @@
 // @vitest-environment jsdom
-// #448 — after a SUCCESSFUL submit the composer locks (nothing stays editable), swaps to a terminal
-// "Report sent" confirmation, and auto-closes after a hover-pausable countdown.
+// #448 (LEGACY opt-out path) — after a SUCCESSFUL submit the composer locks (nothing stays editable),
+// swaps to a terminal "Report sent" confirmation, and auto-closes after a hover-pausable countdown.
+// NOTE: this in-modal confirmation is now the OPT-OUT path — it renders ONLY when the caller passes
+// neither `success` nor `backgroundUpload` (today: the extension via the shared modal; pill parity there
+// is a follow-up). The DEFAULT widget path is non-blocking (modal closes immediately → widget pill) and
+// is covered in modal-background-upload.test.ts. These tests intentionally omit `backgroundUpload` to
+// keep guarding the retained legacy card.
 import { describe, it, expect, vi } from 'vitest'
 import { buildModal } from '../src/modal'
 

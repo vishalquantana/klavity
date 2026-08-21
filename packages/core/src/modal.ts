@@ -228,8 +228,18 @@ export interface ModalCallbacks {
   // result is added to the screenshot strip. Default false — the production widget is unaffected.
   autoCaptureOnOpen?: boolean
   // Called once when the composer closes — via Esc, overlay click, X button, or programmatic close.
-  // Used by the widget to fire the public window.Klavity.on('close') event.
-  onClose?: () => void
+  // Used by the widget to fire the public window.Klavity.on('close') event. `reason` is 'submitted'
+  // ONLY on the non-blocking background-upload close (see backgroundUpload): the report was handed off
+  // to the host's pill, so the host should skip any "keep evidence / restore dock" bookkeeping.
+  onClose?: (reason?: 'submitted') => void
+  // NON-BLOCKING SUBMIT (default widget path). When true, a successful Submit does NOT await the upload
+  // inside the modal: the payload is handed to callbacks.onSubmit (fire-and-forget) and the modal +
+  // backdrop dismiss IMMEDIATELY so the page is never dimmed while a (possibly large) recording uploads.
+  // The host (widget) owns a bottom-right progress pill that drives upload/success/failure/retry after
+  // the modal is gone. In this mode onSubmit MUST manage its own errors (never reject) — the modal shows
+  // no terminal card. Default false/absent → the legacy blocking path (await → renderSuccess /
+  // renderSentConfirmation), kept for the extension (shared-modal pill parity is a follow-up).
+  backgroundUpload?: boolean
   // JTBD 1.8: attached-proof chip. Reflects whether a rolling session-replay buffer will ride along
   // with the report so reporters (and, in the drawer, reviewers) know what evidence traveled:
   //   'attached'    -> chip reads "Replay 60s" with a check (a scrubbable buffer will attach)
@@ -1158,7 +1168,11 @@ export function buildModal(
 
   let _stopVoice: (() => void) | null = null
 
-  function close() {
+  // opts.immediate — tear the host down synchronously (no genie-out animation) so the backdrop dim is
+  // gone AT ONCE; used by the non-blocking background-upload submit so the page is never left dimmed
+  // while the report uploads. opts.reason='submitted' is forwarded to onClose so the host can skip its
+  // keep-evidence/restore-dock bookkeeping (the report was filed, not abandoned).
+  function close(opts?: { immediate?: boolean; reason?: 'submitted' }) {
     _stopVoice?.()
     if (autodismissTimeout) {
       clearTimeout(autodismissTimeout)
@@ -1166,9 +1180,9 @@ export function buildModal(
     }
     document.removeEventListener('keydown', escHandler, { capture: true })
     document.removeEventListener('paste', onPaste)
-    try { callbacks.onClose?.() } catch { /* never let a listener error block the close */ }
+    try { callbacks.onClose?.(opts?.reason) } catch { /* never let a listener error block the close */ }
     const m = shadowRoot.querySelector('.klavity-modal') as HTMLElement | null
-    if (!m) { host.remove(); return }
+    if (opts?.immediate || !m) { host.remove(); return }
     m.classList.add('kl-closing')
     const done = () => host.remove()
     m.addEventListener('animationend', done, { once: true })
@@ -1480,7 +1494,7 @@ export function buildModal(
       // seconds, these Promises are already settled — zero wait. Falls back to the raw dataUrl when
       // compressImage is not provided (e.g. extension path).
       const finalScreenshots = await Promise.all(screenshotCompressed)
-      const result = await callbacks.onSubmit({
+      const submitPayload = {
         type: coarseType,
         ...(issueTypeOpts ? { kind: currentType } : {}),
         ...(title ? { title } : {}),
@@ -1490,19 +1504,31 @@ export function buildModal(
         ...(recordings.length ? { recordings: recordings.slice() } : {}),
         annotations: buildAnnotationsPayload(),
         reporterEmail: remail?.value.trim() || undefined,
-      })
+      }
+      // NON-BLOCKING default path — hand the fully-built payload to the host (widget) and CLOSE the modal
+      // + backdrop immediately. The host shows a bottom-right pill and drives the (possibly 16MB+) upload
+      // in the background, so the user's view is unblocked at once. We do NOT await onSubmit here and the
+      // modal renders NO terminal card — the pill owns success/failure/retry. onSubmit must not reject in
+      // this mode (it surfaces errors in the pill). See ModalCallbacks.backgroundUpload.
+      if (callbacks.backgroundUpload) {
+        void callbacks.onSubmit(submitPayload)
+        close({ immediate: true, reason: 'submitted' })
+        return
+      }
+      const result = await callbacks.onSubmit(submitPayload)
       finishProgress()
       if (callbacks.success) {
         // Mode-aware lead/CTA screen rendered THROUGH the existing themed modal. It self-arms the shared
         // countdown auto-close (armAutodismiss) once there's nothing left for the user to do; when a lead
-        // form / CTA is shown it waits for the interaction first (unchanged).
+        // form / CTA is shown it waits for the interaction first (unchanged). This interactive success
+        // screen is intentionally kept blocking (the user must engage) even under the pill era.
         renderSuccess(result.issueKey, result.issueUrl, callbacks.success)
       } else {
-        // #448 — terminal confirmation. The composer body is already frozen (lockComposer above); here we
-        // swap it for a "Report sent" confirmation (check + headline + line + quotable ref + Open-in-
-        // Klavity link) and run a countdown progress line along the bottom that auto-closes the modal
-        // after SUBMIT_AUTOCLOSE_MS. Hovering pauses the countdown; the link stays clickable until it
-        // closes. cfg.thankYou (host custom copy) rides in as the body line so it's still honoured.
+        // Legacy in-modal terminal confirmation (#448). Retained for callers that opt OUT of the
+        // background pill (backgroundUpload absent) — today that's the extension via the shared modal;
+        // giving it the pill is a follow-up. Swaps the frozen composer body for a "Report sent" card
+        // (check + headline + line + quotable ref + Open-in-Klavity link) with a countdown auto-close
+        // after SUBMIT_AUTOCLOSE_MS. cfg.thankYou (host custom copy) rides in as the body line.
         renderSentConfirmation(result.issueKey, result.issueUrl)
       }
     } catch (err) {

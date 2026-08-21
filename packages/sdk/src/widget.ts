@@ -850,6 +850,12 @@ async function mount() {
     try {
     // G5: fire 'open' event so site code can react (e.g. pause video, expand widget).
     emit("open", { type })
+    // Post-submit UX: the DEFAULT is now a non-blocking background-upload pill (modal closes at once on
+    // Submit). The ONLY exception is an INTERACTIVE success screen — a leadgen lead-capture form or a CTA
+    // button — which must stay in the modal so the user can engage. successCopy() decides: showEmail /
+    // showCta => interactive (keep the blocking in-modal success), else => pill.
+    const successCfg = successCopy(widget.mode, widget.ctaUrl, suppressSuccessEmail)
+    const useInteractiveSuccess = successCfg.showEmail || successCfg.showCta
     const ctrl = buildModal(type, {
       // Auto-grab a Full Page shot the moment the modal opens — parity with the extension
       // (content.ts autoCaptureOnOpen). Captures the current page state without an extra click.
@@ -926,35 +932,59 @@ async function mount() {
           const trail = buildPagesTrail((latest && latest.shots.length ? latest : ev).shots)
           if (trail) description = (description ? description + "\n\n" : "") + trail
         }
-        const result = await submitFeedback(
-          { backendUrl: cfg.backendUrl, projectId: cfg.projectId, firstParty, token: getToken() },
+        // The retained upload config + payload. In the PILL path this closure is held for the lifetime of
+        // the (possibly retried) background upload, so Retry re-sends the SAME payload — screenshots +
+        // recording blobs included — WITHOUT re-capturing anything.
+        const uploadCfg = { backendUrl: cfg.backendUrl, projectId: cfg.projectId, firstParty, token: getToken() }
+        const uploadPayload = {
           // PX4 #411: forward the precise kind (Task/Query fall back to p.type=bug for legacy consumers, but
           // p.kind carries the real value) so the server's report_type + connector issue-type mapping are right.
-          { type: (p.kind ?? p.type), title: p.title, files: p.files, recordings: p.recordings, description, pageUrl: location.href, referrer: document.referrer || "", screenshots: p.screenshots,
-            context: buildWidgetContext(),
-            // PX4 #439/#428: attach the resolved reporter identity + freshly-captured browser/app info.
-            reporter: _reporter, clientInfo: captureClientInfo(),
-            replayEvents: replay.snapshot(), annotations: p.annotations,
-            // Forward the gate's required email → server reporter_email. Without this, an "email"-gated
-            // project rejects the submit with 400. On the default anonymous gate this is undefined (the
-            // email ask moved to the post-submit success card).
-            reporterEmail: p.reporterEmail, turnstileToken },
-          // Drive the modal's progress fill with real XHR upload bytes — overrides the modal's own
-          // estimated 10 s animation so the bar reflects actual network speed.
-          (pct) => {
-            const fill = composer?.shadowRoot.getElementById("klavity-progress-fill") as HTMLElement | null
-            if (fill) { fill.style.transition = "width 0.15s ease"; fill.style.width = pct + "%" }
-          },
-        )
-        // G5: fire 'submit' event after the report is stored so site code receives the ticket key.
-        try { emit("submit", { issueKey: result.issueKey, issueUrl: result.issueUrl ?? null, type: p.type as "bug" | "feature" }) } catch {}
-        // KLA-412: the report was filed from the whole session — clear it and drop the dock.
-        if (ev) {
-          evMinimizing = false
-          try { await clearEvidenceSession(ev.id) } catch { /* best-effort */ }
-          evSession = null
-          hideEvDock()
+          type: (p.kind ?? p.type), title: p.title, files: p.files, recordings: p.recordings, description,
+          pageUrl: location.href, referrer: document.referrer || "", screenshots: p.screenshots,
+          context: buildWidgetContext(),
+          // PX4 #439/#428: attach the resolved reporter identity + freshly-captured browser/app info.
+          reporter: _reporter, clientInfo: captureClientInfo(),
+          replayEvents: replay.snapshot(), annotations: p.annotations,
+          // Forward the gate's required email → server reporter_email. Without this, an "email"-gated
+          // project rejects the submit with 400. On the default anonymous gate this is undefined.
+          reporterEmail: p.reporterEmail, turnstileToken,
         }
+        // Post-filing bookkeeping shared by both paths: fire the public 'submit' event and clear a
+        // multi-page evidence session (KLA-412) now that the report is stored.
+        const afterFiled = async (result: { issueKey: string; issueUrl: string }) => {
+          try { emit("submit", { issueKey: result.issueKey, issueUrl: result.issueUrl ?? null, type: p.type as "bug" | "feature" }) } catch {}
+          if (ev) {
+            evMinimizing = false
+            try { await clearEvidenceSession(ev.id) } catch { /* best-effort */ }
+            evSession = null
+            hideEvDock()
+          }
+        }
+
+        // ── NON-BLOCKING pill path (default) ──────────────────────────────────────────────────────
+        // The modal already closed (backgroundUpload). Drive the upload in a bottom-right pill and NEVER
+        // reject — a failure becomes a retryable pill state, not a modal error.
+        if (!useInteractiveSuccess) {
+          const pill = createUploadPill({ totalBytesHint: estimatePayloadBytes(uploadPayload), label: describePayloadParts(uploadPayload) })
+          const attempt = () => {
+            pill.uploading()
+            submitFeedback(uploadCfg, uploadPayload, (pct, loaded, total) => pill.progress(pct, loaded, total))
+              .then(async (result) => { await afterFiled(result); pill.success(result.issueKey, result.issueUrl) })
+              .catch(() => { pill.failure(attempt) }) // Retry re-runs attempt() with the retained payload
+          }
+          attempt()
+          // The modal fire-and-forgets this promise; the returned value is unused in pill mode.
+          return { issueKey: "", issueUrl: "" }
+        }
+
+        // ── INTERACTIVE success path (leadgen / CTA) ──────────────────────────────────────────────
+        // Kept blocking: the in-modal lead/CTA screen renders on resolve, so drive the modal's own
+        // progress fill with real XHR upload bytes and return the result to the modal.
+        const result = await submitFeedback(uploadCfg, uploadPayload, (pct) => {
+          const fill = composer?.shadowRoot.getElementById("klavity-progress-fill") as HTMLElement | null
+          if (fill) { fill.style.transition = "width 0.15s ease"; fill.style.width = pct + "%" }
+        })
+        await afterFiled(result)
         return result
       },
       // KLA-412: minimize hands off to the widget — persist (already incremental), close the composer,
@@ -966,8 +996,11 @@ async function mount() {
       // KLA-412: keep the session in sync when the reporter removes a thumbnail.
       onShotRemoved: ev ? (index: number) => removeEvShotAt(index) : undefined,
       // G5: fire 'close' event whenever the composer is dismissed (Esc, overlay click, X button).
-      onClose: () => {
+      onClose: (reason?: 'submitted') => {
         emit("close", {})
+        // 'submitted' => the report was handed off to the background pill; onSubmit/afterFiled owns
+        // clearing the evidence session, so skip the keep-evidence / restore-dock bookkeeping here.
+        if (reason === "submitted") { evMinimizing = false; return }
         // KLA-412: a plain X/Esc close (NOT a minimize) keeps any captured evidence — we show the dock so
         // it isn't lost — but reaps an EMPTY session so an unused open never lingers, restoring the launcher.
         if (ev && !evMinimizing) {
@@ -981,7 +1014,13 @@ async function mount() {
       },
       // JTBD 1.8: attached-proof chip — tell the reporter whether a session replay will ride along.
       replayState: replayChipState(),
-      success: { copy: successCopy(widget.mode, widget.ctaUrl, suppressSuccessEmail), onLead: postLead },
+      // NON-BLOCKING default: close the modal + backdrop immediately on Submit and let the widget's
+      // bottom-right pill drive the upload. Turned OFF only for an interactive success screen (leadgen
+      // lead form / CTA), which must stay in the modal so the user can engage before it dismisses.
+      backgroundUpload: !useInteractiveSuccess,
+      // Only pass the success screen when it's the interactive kind; otherwise the pill owns the
+      // post-submit confirmation and no in-modal success card should render.
+      success: useInteractiveSuccess ? { copy: successCfg, onLead: postLead } : undefined,
     }, modalConfig)
     composer = ctrl // track the open composer so a second open is ignored until this one closes
     // JTBD 1.8: rrweb lazy-loads (a few hundred ms), so the buffer may only become playable AFTER the
@@ -1557,14 +1596,184 @@ async function mount() {
   })()
 }
 
+// ── Non-blocking background-upload pill ─────────────────────────────────────────────────────────
+// Lives at the WIDGET layer (its OWN shadow host on document.body) so it PERSISTS after the report
+// modal + backdrop dismiss on Submit — the page is never blocked while a (possibly 16MB+) recording
+// uploads; the user can scroll/click/file another report meanwhile. Three states:
+//   • uploading — spinner + progress bar + "screenshot + recording · 9.8 / 16 MB" byte readout
+//   • success   — "Report sent" + quotable ref + optional "Open in Klavity" link; auto-dismiss ~4s
+//                 (hover/focus pauses — mirrors the modal's armAutodismiss / SUBMIT_AUTOCLOSE_MS)
+//   • failure   — "Upload didn't finish · Retry" (Retry re-sends the RETAINED payload — no re-capture)
+// A dismiss (×) is always present. Dynamic values go in via textContent/href (never innerHTML) — XSS-safe.
+const PILL_AUTODISMISS_MS = 4000
+
+function pillDisplayRef(issueKey: string): string {
+  const m = /^fb_([0-9a-f]{8})[0-9a-f-]+$/i.exec(issueKey)
+  return m ? "fb_" + m[1] : issueKey
+}
+function pillSafeHttpUrl(u: string | null | undefined): string {
+  if (!u) return ""
+  try { const p = new URL(u); return p.protocol === "https:" || p.protocol === "http:" ? p.href : "" } catch { return "" }
+}
+function fmtMB(bytes: number): string { return (bytes / 1048576).toFixed(1) }
+
+// A rough total-bytes estimate from the retained payload, used for the pill's initial "0 / N MB"
+// readout before the browser reports the real on-the-wire total. dataUrl base64 decodes to ~0.75×
+// its string length; recordings carry an exact byte count.
+function estimatePayloadBytes(p: { screenshots?: string[]; recordings?: Array<{ bytes: number }>; files?: Array<{ dataUrl: string }> }): number {
+  let n = 0
+  for (const s of p.screenshots || []) n += Math.round(s.length * 0.75)
+  for (const r of p.recordings || []) n += r.bytes || 0
+  for (const f of p.files || []) n += Math.round((f.dataUrl?.length || 0) * 0.75)
+  return n
+}
+// Human label of what's riding along, e.g. "screenshot + recording".
+function describePayloadParts(p: { screenshots?: string[]; recordings?: unknown[]; files?: unknown[] }): string {
+  const parts: string[] = []
+  if (p.screenshots && p.screenshots.length) parts.push(p.screenshots.length > 1 ? "screenshots" : "screenshot")
+  if (p.recordings && p.recordings.length) parts.push(p.recordings.length > 1 ? "recordings" : "recording")
+  if (p.files && p.files.length) parts.push(p.files.length > 1 ? "files" : "file")
+  return parts.length ? parts.join(" + ") : "report"
+}
+
+export interface UploadPill {
+  uploading: () => void
+  progress: (pct: number, loaded?: number, total?: number) => void
+  success: (issueKey: string, issueUrl: string) => void
+  failure: (onRetry: () => void) => void
+  dismiss: () => void
+}
+
+export function createUploadPill(opts: { totalBytesHint?: number; label?: string } = {}): UploadPill {
+  const host = document.createElement("div")
+  host.setAttribute("data-klavity-ui", "upload-pill")
+  // Stack concurrent uploads so a second report filed mid-upload sits above (not on top of) the first.
+  const existing = document.querySelectorAll('[data-klavity-ui="upload-pill"]').length
+  host.style.cssText = `position:fixed;right:18px;bottom:${78 + existing * 58}px;z-index:2147483646;pointer-events:none`
+  document.body.appendChild(host)
+  const root = host.attachShadow({ mode: "open" })
+  const style = document.createElement("style")
+  style.textContent = `
+    .pill{pointer-events:auto;position:relative;display:flex;align-items:center;gap:9px;background:#19140f;color:#fff;border-radius:12px;padding:9px 12px;box-shadow:0 10px 30px rgba(0,0,0,.28);min-width:210px;max-width:330px;font:13px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;animation:klp-in .22s cubic-bezier(.16,1,.3,1) both}
+    @keyframes klp-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+    @keyframes klp-sp{to{transform:rotate(360deg)}}
+    .pill.out{opacity:0;transform:translateY(8px);transition:opacity .25s ease,transform .25s ease}
+    .ic{width:20px;height:20px;flex:0 0 auto;display:grid;place-items:center}
+    .ic svg{width:18px;height:18px}
+    .spin{width:15px;height:15px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:klp-sp .8s linear infinite}
+    .tx{flex:1;min-width:0}
+    .tx b{font-weight:600;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .tx .sub{opacity:.72;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+    .x{opacity:.6;cursor:pointer;font-size:15px;line-height:1;padding:0 2px;flex:0 0 auto;user-select:none}
+    .x:hover{opacity:1}
+    .prog{position:absolute;left:0;right:0;bottom:0;height:3px;background:rgba(255,255,255,.18);border-radius:0 0 12px 12px;overflow:hidden}
+    .prog>i{display:block;height:100%;background:#6366f1;width:0;transition:width .2s ease}
+    .pill.ok{background:#123f2a}.pill.ok .prog>i{background:#16a34a}
+    .pill.err{background:#4a1620}
+    a{color:#c7d2fe;text-decoration:none;font-weight:600}
+    .pill.ok a{color:#a7f3d0}
+    a:hover{text-decoration:underline}
+    @media (prefers-reduced-motion: reduce){.pill,.spin,.prog>i{animation:none!important;transition:none!important}}
+  `
+  root.appendChild(style)
+
+  const pill = document.createElement("div"); pill.className = "pill"
+  const ic = document.createElement("span"); ic.className = "ic"
+  const tx = document.createElement("span"); tx.className = "tx"
+  const title = document.createElement("b")
+  const sub = document.createElement("span"); sub.className = "sub"
+  tx.append(title, sub)
+  const x = document.createElement("span"); x.className = "x"; x.textContent = "×"; x.setAttribute("role", "button"); x.setAttribute("aria-label", "Dismiss"); x.title = "Dismiss"
+  const prog = document.createElement("div"); prog.className = "prog"
+  const progFill = document.createElement("i"); prog.appendChild(progFill)
+  pill.append(ic, tx, x, prog)
+  root.appendChild(pill)
+
+  let totalBytes = opts.totalBytesHint || 0
+  const label = opts.label || "report"
+  let dismissTimer: ReturnType<typeof setTimeout> | null = null
+  let armed = false
+
+  const remove = () => {
+    if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null }
+    pill.classList.add("out")
+    setTimeout(() => host.remove(), 260)
+  }
+  x.addEventListener("click", remove)
+
+  const setSpinner = () => { ic.textContent = ""; const s = document.createElement("span"); s.className = "spin"; ic.appendChild(s) }
+  const setIcon = (name: string) => { ic.innerHTML = icon(name, { size: 18 }) } // static icon SVG, no user data
+
+  const uploading = () => {
+    pill.classList.remove("ok", "err")
+    if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null }
+    armed = false
+    setSpinner()
+    title.textContent = "Uploading your report…"
+    sub.textContent = totalBytes ? `${label} · 0 / ${fmtMB(totalBytes)} MB` : label
+    prog.style.display = ""
+    progFill.style.width = "0"
+  }
+
+  const progress = (pct: number, loaded?: number, total?: number) => {
+    if (total) totalBytes = total
+    progFill.style.width = Math.max(0, Math.min(100, pct)) + "%"
+    if (typeof loaded === "number" && totalBytes) sub.textContent = `${label} · ${fmtMB(loaded)} / ${fmtMB(totalBytes)} MB`
+  }
+
+  const success = (issueKey: string, issueUrl: string) => {
+    pill.classList.remove("err"); pill.classList.add("ok")
+    setIcon("check-circle")
+    title.textContent = "Report sent"
+    progFill.style.width = "100%"
+    sub.textContent = ""
+    const ref = pillDisplayRef(issueKey)
+    if (ref) { const r = document.createElement("span"); r.textContent = ref; sub.appendChild(r) }
+    const linkUrl = pillSafeHttpUrl(issueUrl)
+    if (linkUrl) {
+      if (ref) sub.appendChild(document.createTextNode(" · "))
+      const a = document.createElement("a"); a.href = linkUrl; a.target = "_blank"; a.rel = "noopener"; a.textContent = "Open in Klavity ↗"
+      sub.appendChild(a)
+    }
+    if (!ref && !linkUrl) sub.textContent = "We filed it."
+    // Auto-dismiss ~4s; hover/focus pauses and resumes with only the remaining time.
+    let remaining = PILL_AUTODISMISS_MS
+    let started = 0
+    const arm = () => { if (armed) return; armed = true; started = Date.now(); dismissTimer = setTimeout(remove, remaining) }
+    const pause = () => { if (!dismissTimer) return; clearTimeout(dismissTimer); dismissTimer = null; armed = false; remaining = Math.max(0, remaining - (Date.now() - started)) }
+    pill.addEventListener("mouseenter", pause)
+    pill.addEventListener("mouseleave", arm)
+    pill.addEventListener("focusin", pause)
+    pill.addEventListener("focusout", arm)
+    arm()
+  }
+
+  const failure = (onRetry: () => void) => {
+    pill.classList.remove("ok"); pill.classList.add("err")
+    if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null }
+    armed = false
+    setIcon("x-circle")
+    title.textContent = "Upload didn't finish"
+    sub.textContent = ""
+    const a = document.createElement("a"); a.href = "#"; a.textContent = "Retry"
+    a.addEventListener("click", (e) => { e.preventDefault(); onRetry() })
+    sub.append(document.createTextNode("check your connection · "), a)
+    prog.style.display = "none"
+  }
+
+  uploading()
+  return { uploading, progress, success, failure, dismiss: remove }
+}
+
 export async function submitFeedback(
   cfg: { backendUrl: string; projectId: string; firstParty: boolean; token: string },
   payload: { type: string; title?: string; description: string; pageUrl: string; referrer?: string; screenshots: string[]; files?: Array<{ name: string; type: string; size: number; dataUrl: string }>; recordings?: Array<{ id: string; dataUrl: string; mime: string; durationMs: number; width: number; height: number; bytes: number; screenOnly: boolean }>; context?: ReportContext; reporter?: Reporter; clientInfo?: ClientInfo; replayEvents?: unknown[]; annotations?: any; reporterEmail?: string; turnstileToken?: string },
   // Optional progress callback: called with 0–90 during the upload phase, leaving the final 10%
   // for server-side processing. When provided, the upload uses XMLHttpRequest instead of fetch so
-  // the browser exposes real upload progress events. Omitting it (e.g. extension path) keeps the
-  // plain-fetch behaviour unchanged.
-  onProgress?: (pct: number) => void,
+  // the browser exposes real upload progress events. `loaded`/`total` are the real on-the-wire bytes
+  // (multipart total, incl. boundary overhead) when the browser reports them — the pill uses these for
+  // its "9.8 / 16 MB" readout. Omitting onProgress (e.g. extension path) keeps plain-fetch unchanged.
+  onProgress?: (pct: number, loaded?: number, total?: number) => void,
 ): Promise<{ issueKey: string; issueUrl: string }> {
   // Compress screenshots (PNG → JPEG, downscale very wide ones) so the upload is fast. Best-effort,
   // parallel; each falls back to its original on failure.
@@ -1619,7 +1828,7 @@ export async function submitFeedback(
       // Report 0–90 % during the upload phase; the remaining 10 % covers server processing latency
       // so the bar never falsely reads 100 % before the response is actually received.
       xhr.upload.onprogress = (ev) => {
-        if (ev.lengthComputable) onProgress(Math.min(90, Math.round((ev.loaded / ev.total) * 90)))
+        if (ev.lengthComputable) onProgress(Math.min(90, Math.round((ev.loaded / ev.total) * 90)), ev.loaded, ev.total)
       }
       xhr.onload = () => {
         if (xhr.status < 200 || xhr.status >= 300) { reject(new Error("submit failed: " + xhr.status)); return }
