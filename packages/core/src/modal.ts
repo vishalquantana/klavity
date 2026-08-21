@@ -171,7 +171,10 @@ export interface ModalCallbacks {
   // single short, specific tip from the cheap-LLM endpoint (POST /api/report/clarity). Best-effort: any
   // failure resolves null and the meter/chips still render. Only wired by the widget when clarity is on; the
   // extension omits it. Result cached by the host so it's one call per meaningful change.
-  onClarityTip?: (text: string) => Promise<{ tip: string } | null>
+  // KLAVITYKLA-492: the second arg carries the context Klavity has ALREADY captured for this report so the
+  // host can forward it to the clarity endpoint — the coach must never ask the reporter for anything already
+  // on the report (URL/screenshot/browser/screen). `images` is the current screenshot count in the composer.
+  onClarityTip?: (text: string, ctx?: { images?: number }) => Promise<{ tip: string } | null>
   onSubmit: (payload: {
     // Coarse report type kept for back-compat consumers (extension/message protocol) — always a valid
     // ReportType. For Task/Query this is 'bug' (they are bug-like, non-feature); the precise value is `kind`.
@@ -854,7 +857,9 @@ export function buildModal(
         <button class="bug ${initialType === 'bug' ? 'active' : ''}"><span class="kl-cap-ic">${icon('bug')}</span>Bug</button>
         <button class="feat ${initialType === 'feature' ? 'active' : ''}"><span class="kl-cap-ic">${icon('lightbulb')}</span>Feature</button>
       </div>`}
-      <div class="klavity-page">${icon('map-pin')} ${typeof window !== 'undefined' ? escHtml(window.location.pathname) : ''}</div>
+      ${/* KLAVITYKLA-496: the page-path line ("/dashboard") was reporter-facing noise. It is intentionally
+          NOT rendered anymore — the page URL is STILL captured and attached to the ticket (the widget puts
+          location.href on the submit payload as pageUrl), only the visible line is gone for a clean composer. */''}
       ${/* KLAVITYKLA-493: the reporter-facing "Replay · 60s" chip confused users (it read like an action).
           It is intentionally NOT rendered anymore. Session replay is STILL captured and attached to the
           filed ticket (the host keeps feeding replayEvents into the submit payload); only the visible chip
@@ -893,7 +898,7 @@ export function buildModal(
       </div>` : ''}
       ${callbacks.onCheckKnown ? `<div class="klavity-known" id="klavity-known" role="status" aria-live="polite" hidden></div>` : ''}
       ${callbacks.requireEmail ? '<input type="email" class="klavity-remail" id="klavity-remail" placeholder="your@email.com" autocomplete="email">' : ''}
-      ${cfg.reportClarity ? `<div class="klavity-nudge" id="klavity-nudge" role="alert" hidden>
+      ${cfg.reportClarity && cfg.preSubmitNudge !== false ? `<div class="klavity-nudge" id="klavity-nudge" role="alert" hidden>
         <div class="kl-nudge-h">This might be hard for the team to act on</div>
         <div class="kl-nudge-d">Adding what you expected + one step to reproduce gets it fixed faster. Or send it as-is — your call.</div>
         <div class="kl-nudge-row"><button type="button" class="kl-nudge-add" id="klavity-nudge-add">Add detail</button><button type="button" class="kl-nudge-anyway" id="klavity-nudge-anyway">Submit anyway</button></div>
@@ -1077,17 +1082,11 @@ export function buildModal(
         wrap.appendChild(note)
       }
 
-      // KLA-412: page-URL label under the thumbnail — the page each shot came from. Only rendered when the
-      // shot carries page metadata (session mode), so single-page reports show no label and are unchanged.
-      const pm = screenshotPageMeta[i]
-      if (pm && (pm.pagePath || pm.pageUrl)) {
-        const pg = document.createElement('div')
-        pg.className = 'klavity-pglabel'
-        const path = pm.pagePath || pm.pageUrl || ''
-        pg.title = pm.pageUrl || path
-        pg.innerHTML = '<b>' + escHtml(path) + '</b>' + (pm.label ? ' &middot; ' + escHtml(pm.label) : '')
-        wrap.appendChild(pg)
-      }
+      // KLAVITYKLA-496: the per-shot page-URL label ("/deals · list") under each thumbnail was
+      // reporter-facing noise, so it is intentionally NOT rendered anymore. The page each shot came from is
+      // STILL captured — screenshotPageMeta stays populated and the widget appends the "Pages captured"
+      // trail to the description on submit (buildPagesTrail), so the multi-page evidence still reaches the
+      // ticket; only the visible per-thumbnail label is gone for a clean composer.
 
       strip.appendChild(wrap)
     })
@@ -1595,7 +1594,9 @@ export function buildModal(
         if (tipCache.has(text)) { renderTip(tipCache.get(text)!); return }
         const seq = ++tipSeq
         try {
-          const res = await onClarityTip(text)
+          // KLAVITYKLA-492: forward the already-captured screenshot count so the server can tell the coach
+          // not to ask for a screenshot when one is attached. pageUrl + browser/screen are added host-side.
+          const res = await onClarityTip(text, { images: screenshots.length })
           if (seq !== tipSeq) return                    // a newer keystroke superseded this response
           if (desc.value.trim() !== text) return         // text moved on while we waited
           if (res && res.tip) { tipCache.set(text, res.tip); renderTip(res.tip) }
@@ -1753,7 +1754,10 @@ export function buildModal(
     // Report-clarity soft nudge (mockup panel D). If the helper is on and the typed report is still in the
     // weakest band, surface the nudge and stop THIS click — but NEVER hard-block: the nudge's "Submit
     // anyway" sets clarityAckd and re-fires this handler, which then proceeds down the normal submit path.
-    if (cfg.reportClarity && !clarityAckd && shouldNudgeOnSubmit(desc.value)) { showClarityNudge(); return }
+    // KLAVITYKLA-497: the nudge is config-gated (preSubmitNudge, DEFAULT on) and NEVER a hard block. When
+    // suppressed (explicit false) Submit fires straight through; when shown, "Submit anyway" still lets it
+    // through (clarityAckd). Either way Submit always works.
+    if (cfg.reportClarity && cfg.preSubmitNudge !== false && !clarityAckd && shouldNudgeOnSubmit(desc.value)) { showClarityNudge(); return }
     const description = desc.value.trim()
     // PX4 #411/#425: gather the optional Title + precise kind + non-image files. Each is only included in the
     // payload when the host enabled the corresponding affordance, so a caller passing no new opts sends the
@@ -2012,10 +2016,13 @@ export function buildModal(
     if (!pickInfo) return
     if (!pickedTarget) { pickInfo.hidden = true; pickInfo.innerHTML = ''; return }
     pickInfo.hidden = false
-    const { selector, text } = pickedTarget
-    // Use escHtml on both selector and text (user-page values) so HTML chars can't escape the shadow DOM.
-    const textFrag = text ? `<span class="kl-pick-txt">${escHtml(text)}</span>` : ''
-    pickInfo.innerHTML = `<span class="kl-pick-ic">${icon('mouse-pointer-2', { size: 13 })}</span><span>Element pinned:</span><code title="${escHtml(selector)}">${escHtml(selector)}</code>${textFrag}<button type="button" class="kl-pick-clear" id="klavity-pick-clear">Clear</button>`
+    const { text } = pickedTarget
+    // KLAVITYKLA-496: the raw CSS selector ("div.kb-col…") was reporter-facing noise, so it is no longer
+    // shown. The selector is STILL captured — it rides the submit payload as annotations.selector (see
+    // buildAnnotationsPayload); only the visible <code> chip is dropped. We keep a friendly confirmation
+    // (with the element's human label when the picker resolved one) plus the one-tap Clear.
+    const textFrag = text ? `: <span class="kl-pick-txt">${escHtml(text)}</span>` : ''
+    pickInfo.innerHTML = `<span class="kl-pick-ic">${icon('mouse-pointer-2', { size: 13 })}</span><span>Element pinned${textFrag}</span><button type="button" class="kl-pick-clear" id="klavity-pick-clear">Clear</button>`
     pickInfo.querySelector('#klavity-pick-clear')?.addEventListener('click', () => { pickedTarget = null; reflectPicked() })
   }
   if (pickBtn && callbacks.onPickElement) {

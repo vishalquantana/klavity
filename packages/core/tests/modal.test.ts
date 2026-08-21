@@ -802,38 +802,63 @@ describe('buildModal pick-element cropped screenshot (KLAVITYKLA-494)', () => {
   const base = { onCaptureFull: async () => 'x', onSubmit: async () => ({ issueKey: '1', issueUrl: '' }) }
   const flush = () => new Promise(r => setTimeout(r, 0))
 
-  it('adds the picked element crop to the strip (keeps selector/text pin)', async () => {
+  // KLAVITYKLA-496 helper: type a description so an evidence-less report can still Submit, then click Submit.
+  const typeDesc = (ctrl: any, text: string) => {
+    const desc = q(ctrl, '#klavity-desc') as HTMLTextAreaElement
+    desc.value = text
+    desc.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+
+  it('adds the picked element crop to the strip; selector reaches the PAYLOAD, not the reporter UI', async () => {
+    const onSubmit = vi.fn(async () => ({ issueKey: '1', issueUrl: '' }))
     const onPickElement = async () => ({ selector: '#broken', text: 'button "Save"', shot: 'data:image/png;base64,CROP' })
-    const ctrl = buildModal('bug', { ...base, onPickElement })
+    const ctrl = buildModal('bug', { ...base, onSubmit, onPickElement })
     expect(q(ctrl, '.klavity-thumb')).toBeNull()
     q(ctrl, '#klavity-pick')!.dispatchEvent(new MouseEvent('click'))
     await flush()
     expect(ctrl.shadowRoot.querySelectorAll('.klavity-thumb').length).toBe(1)      // crop added
-    expect((q(ctrl, '#klavity-pickinfo') as HTMLElement).textContent).toContain('#broken') // selector still pinned
+    // KLAVITYKLA-496: the raw CSS selector is NOT shown to the reporter (decluttered) — only a friendly pin.
+    const pi = q(ctrl, '#klavity-pickinfo') as HTMLElement
+    expect(pi.textContent).toContain('Element pinned')
+    expect(pi.textContent).not.toContain('#broken')
+    // …but it STILL travels on the submit payload as annotations.selector.
+    ;(q(ctrl, '#klavity-submit') as HTMLButtonElement).click()
+    await flush()
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    expect(onSubmit.mock.calls[0][0].annotations.selector).toBe('#broken')
     ctrl.close()
   })
 
-  it('respects the image cap — a crop is NOT added when the strip is already full', async () => {
+  it('respects the image cap — a crop is NOT added when the strip is already full (selector still in payload)', async () => {
+    const onSubmit = vi.fn(async () => ({ issueKey: '1', issueUrl: '' }))
     const onPickElement = async () => ({ selector: '#broken', text: 't', shot: 'data:image/png;base64,CROP' })
-    const ctrl = buildModal('bug', { ...base, onPickElement })
+    const ctrl = buildModal('bug', { ...base, onSubmit, onPickElement })
     for (let i = 0; i < 5; i++) ctrl.addScreenshot('data:image/png;base64,' + i) // fill to the cap (5)
     expect(ctrl.shadowRoot.querySelectorAll('.klavity-thumb').length).toBe(5)
     q(ctrl, '#klavity-pick')!.dispatchEvent(new MouseEvent('click'))
     await flush()
     expect(ctrl.shadowRoot.querySelectorAll('.klavity-thumb').length).toBe(5)       // cap held, no 6th
     expect((q(ctrl, '#klavity-err') as HTMLElement).textContent).toMatch(/up to 5/)
-    // The selector/text pin still lands even though the crop was capped out.
-    expect((q(ctrl, '#klavity-pickinfo') as HTMLElement).textContent).toContain('#broken')
+    // The selector still lands in the payload even though the crop was capped out — and is not shown raw.
+    expect((q(ctrl, '#klavity-pickinfo') as HTMLElement).textContent).not.toContain('#broken')
+    ;(q(ctrl, '#klavity-submit') as HTMLButtonElement).click()
+    await flush()
+    expect(onSubmit.mock.calls[0][0].annotations.selector).toBe('#broken')
     ctrl.close()
   })
 
-  it('no crop supplied → only the selector is pinned (back-compat, no image)', async () => {
+  it('no crop supplied → only the selector is pinned to the payload (back-compat, no image, not shown raw)', async () => {
+    const onSubmit = vi.fn(async () => ({ issueKey: '1', issueUrl: '' }))
     const onPickElement = async () => ({ selector: '#broken', text: 't' })
-    const ctrl = buildModal('bug', { ...base, onPickElement })
+    const ctrl = buildModal('bug', { ...base, onSubmit, onPickElement })
     q(ctrl, '#klavity-pick')!.dispatchEvent(new MouseEvent('click'))
     await flush()
     expect(ctrl.shadowRoot.querySelectorAll('.klavity-thumb').length).toBe(0)
-    expect((q(ctrl, '#klavity-pickinfo') as HTMLElement).textContent).toContain('#broken')
+    expect((q(ctrl, '#klavity-pickinfo') as HTMLElement).textContent).not.toContain('#broken')
+    typeDesc(ctrl, 'the Save button does nothing when I click it')
+    ;(q(ctrl, '#klavity-submit') as HTMLButtonElement).click()
+    await flush()
+    expect(onSubmit.mock.calls[0][0].annotations.selector).toBe('#broken')
     ctrl.close()
   })
 })

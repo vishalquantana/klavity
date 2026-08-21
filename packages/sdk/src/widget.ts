@@ -545,6 +545,11 @@ async function mount() {
       // disables it. Merge into modalConfig so it threads through resolveModalConfig → buildModal (cfg.reportClarity).
       reportClarity = j.reportClarity !== false
       if (modalConfig && typeof modalConfig === "object") modalConfig.reportClarity = reportClarity
+      // KLAVITYKLA-497: pre-submit nudge toggle (sibling of reportClarity, DEFAULT shown). The server/admin
+      // toggle is a later pass; until then honor an explicit false wherever it may ride (top-level or in
+      // modalConfig). Only false suppresses it — absent/true → the composer shows the non-blocking warning.
+      const nudgeFalse = j.preSubmitNudge === false || (modalConfig && (modalConfig as any).preSubmitNudge === false)
+      if (modalConfig && typeof modalConfig === "object") (modalConfig as any).preSubmitNudge = nudgeFalse ? false : true
       if (j.widget) widget = { mode: j.widget.mode || "support", ctaUrl: j.widget.ctaUrl || widget.ctaUrl, reportGate: j.widget.reportGate || "anonymous" }
       if (typeof j.turnstileSiteKey === "string") turnstileSiteKey = j.turnstileSiteKey
       // Pull launcher display overrides out of modalConfig
@@ -734,11 +739,24 @@ async function mount() {
       evDockCount = labSub
       lab.append(labTitle, labSub)
       const capBtn = document.createElement("button"); capBtn.className = "kl-evbtn cap"; capBtn.type = "button"; capBtn.textContent = "+ Capture here"
-      capBtn.addEventListener("click", () => void captureHereFromDock(capBtn))
+      // KLAVITYKLA-498: "+ Capture here" and the X are distinct actions — stop the click from bubbling to the
+      // dock-body resume handler below so they don't ALSO reopen the composer.
+      capBtn.addEventListener("click", (e) => { e.stopPropagation(); void captureHereFromDock(capBtn) })
       const resBtn = document.createElement("button"); resBtn.className = "kl-evbtn res"; resBtn.type = "button"; resBtn.textContent = "Resume"
-      resBtn.addEventListener("click", () => void resumeEvidence())
+      resBtn.addEventListener("click", (e) => { e.stopPropagation(); void resumeEvidence() })
       const xBtn = document.createElement("button"); xBtn.className = "kl-evx"; xBtn.type = "button"; xBtn.title = "Discard this report"; xBtn.setAttribute("aria-label", "Discard"); xBtn.textContent = "x"
-      xBtn.addEventListener("click", () => void discardEvidence())
+      xBtn.addEventListener("click", (e) => { e.stopPropagation(); void discardEvidence() })
+      // KLAVITYKLA-498: the whole dock body (pulse + "Bug report in progress" label) is clickable — clicking
+      // anywhere that isn't one of the explicit buttons above resumes/reopens the composer. Give the body the
+      // affordances of a button (cursor + role/label + keyboard activation) so it's obviously interactive.
+      d.style.cursor = "pointer"
+      d.setAttribute("role", "button")
+      d.setAttribute("tabindex", "0")
+      d.setAttribute("aria-label", "Resume bug report")
+      d.addEventListener("click", () => void resumeEvidence())
+      d.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); void resumeEvidence() }
+      })
       d.append(pulse, lab, capBtn, resBtn, xBtn)
       evDockEl = d
       reportDock.parentElement?.appendChild(d) // sits in the chrome column next to the launcher slot
@@ -956,12 +974,21 @@ async function mount() {
       // project enabled the helper. The composer computes the heuristic meter/chips itself (no network) and
       // caches by text, so this fires at most once per meaningful change. Best-effort — any failure resolves
       // null and the meter still renders. Server route: POST /api/report/clarity.
-      onClarityTip: reportClarity ? (async (text: string) => {
+      onClarityTip: reportClarity ? (async (text: string, ctx?: { images?: number }) => {
         try {
+          // KLAVITYKLA-492: send the context Klavity has ALREADY captured — pageUrl, the attached-screenshot
+          // count, and the browser/screen client info — so the server can instruct the coach to NEVER ask
+          // the reporter for anything already on the report (URL/screenshot/browser/screen).
           const res = await fetchWithTimeout(cfg.backendUrl + "/api/report/clarity", {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ projectId: cfg.projectId, text }),
+            body: JSON.stringify({
+              projectId: cfg.projectId,
+              text,
+              pageUrl: location.href,
+              images: ctx?.images ?? 0,
+              client: captureClientInfo(),
+            }),
           })
           if (!res.ok) return null
           const data = await res.json().catch(() => null)

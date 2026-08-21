@@ -31,13 +31,13 @@ describe('buildModal — KLA-412 session mode (onMinimize provided)', () => {
     ctrl.close()
   })
 
-  it('renders a per-shot page label for a shot seeded with page metadata', () => {
+  it('KLAVITYKLA-496: does NOT show a per-shot page label (decluttered) — the shot is still added', () => {
     const ctrl = buildModal('bug', { ...base(), onMinimize: () => {} })
     ctrl.addScreenshot(PNG, 'rendered', { pageUrl: 'https://app.example.com/deals', pagePath: '/deals', label: 'list' })
-    const label = q(ctrl, '.klavity-pglabel')
-    expect(label).toBeTruthy()
-    expect(label!.textContent).toContain('/deals')
-    expect(label!.textContent).toContain('list')
+    // The page-path label under the thumbnail is reporter-facing noise and is no longer rendered. The page
+    // metadata is still tracked internally + attached to the ticket via the widget's "Pages captured" trail.
+    expect(q(ctrl, '.klavity-pglabel')).toBeNull()
+    expect(ctrl.shadowRoot.querySelectorAll('.klavity-thumb').length).toBe(1)
     ctrl.close()
   })
 
@@ -83,6 +83,16 @@ describe('buildModal — back-compat (no new opts)', () => {
     const ctrl = buildModal('bug', base())
     ctrl.addScreenshot(PNG, 'rendered')
     expect(q(ctrl, '.klavity-pglabel')).toBeNull()
+    ctrl.close()
+  })
+})
+
+// KLAVITYKLA-496: the composer no longer shows the page-path line to the reporter (decluttered). The URL is
+// still captured on the submit payload by the host (widget: pageUrl = location.href).
+describe('buildModal — KLAVITYKLA-496 declutter', () => {
+  it('does NOT render the page-path line in the composer', () => {
+    const ctrl = buildModal('bug', base())
+    expect(q(ctrl, '.klavity-page')).toBeNull()
     ctrl.close()
   })
 })

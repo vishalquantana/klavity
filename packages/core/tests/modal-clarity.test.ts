@@ -92,6 +92,22 @@ describe('report-clarity helper — debounced AI tip (cached, one call per chang
     ctrl.close()
     vi.useRealTimers()
   })
+
+  // KLAVITYKLA-492: the modal forwards the already-captured screenshot count to onClarityTip so the host can
+  // send it (+ pageUrl/browser/screen) to the server and the coach never asks for context we already have.
+  it('passes the current screenshot count as ctx.images to onClarityTip', async () => {
+    vi.useFakeTimers()
+    const onClarityTip = vi.fn(async (_t: string, _ctx?: { images?: number }) => ({ tip: 'add a repro step' }))
+    const ctrl = buildModal('bug', { ...base, onClarityTip }, { reportClarity: true } as any)
+    ctrl.addScreenshot('data:image/png;base64,AAAA')
+    ctrl.addScreenshot('data:image/png;base64,BBBB')
+    type(ctrl, "the coupon code doesn't apply on mobile cart")
+    await vi.advanceTimersByTimeAsync(1100)
+    expect(onClarityTip).toHaveBeenCalledTimes(1)
+    expect(onClarityTip.mock.calls[0][1]).toEqual({ images: 2 })
+    ctrl.close()
+    vi.useRealTimers()
+  })
 })
 
 describe('report-clarity helper — soft pre-submit nudge (never a hard block)', () => {
@@ -131,6 +147,46 @@ describe('report-clarity helper — soft pre-submit nudge (never a hard block)',
     expect((q(ctrl, '#klavity-nudge') as HTMLElement).hidden).toBe(true)
     await new Promise(r => setTimeout(r, 0))
     expect(onSubmit).toHaveBeenCalledTimes(1)
+    ctrl.close()
+  })
+})
+
+// KLAVITYKLA-497 (widget half): the pre-submit nudge is config-gated via `preSubmitNudge` — DEFAULT shown as
+// a non-blocking warning; only an explicit false suppresses it. Submit ALWAYS works either way.
+describe('report-clarity helper — pre-submit nudge is config-gated (preSubmitNudge)', () => {
+  it('DEFAULT (flag absent): the nudge renders and Submit is always enabled with a description', () => {
+    const ctrl = buildModal('bug', { ...base }, { reportClarity: true } as any)
+    expect(q(ctrl, '#klavity-nudge')).not.toBeNull()   // shown by default
+    type(ctrl, 'broken pls fix')
+    expect((q(ctrl, '#klavity-submit') as HTMLButtonElement).disabled).toBe(false)  // never a block
+    ctrl.close()
+  })
+
+  it('preSubmitNudge:true renders the nudge (same as default)', () => {
+    const ctrl = buildModal('bug', { ...base }, { reportClarity: true, preSubmitNudge: true } as any)
+    expect(q(ctrl, '#klavity-nudge')).not.toBeNull()
+    ctrl.close()
+  })
+
+  it('preSubmitNudge:false does NOT render the nudge, and weak text submits STRAIGHT through (no nudge step)', async () => {
+    const onSubmit = vi.fn(async () => ({ issueKey: '1', issueUrl: '' }))
+    const ctrl = buildModal('bug', { ...base, onSubmit }, { reportClarity: true, preSubmitNudge: false } as any)
+    // The nudge element is not rendered at all.
+    expect(q(ctrl, '#klavity-nudge')).toBeNull()
+    type(ctrl, 'broken pls fix')   // weak text that WOULD have nudged
+    const submit = q(ctrl, '#klavity-submit') as HTMLButtonElement
+    expect(submit.disabled).toBe(false)
+    submit.click()
+    await new Promise(r => setTimeout(r, 0))
+    // No nudge interception — Submit fires immediately even on weak text.
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    ctrl.close()
+  })
+
+  it('the clarity meter still renders when only the nudge is suppressed', () => {
+    const ctrl = buildModal('bug', { ...base }, { reportClarity: true, preSubmitNudge: false } as any)
+    expect(q(ctrl, '#klavity-clarity')).not.toBeNull()   // clarity helper unaffected
+    expect(q(ctrl, '#klavity-nudge')).toBeNull()
     ctrl.close()
   })
 })

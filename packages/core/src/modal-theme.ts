@@ -40,6 +40,13 @@ export interface ModalConfig {
    * exactly as before (full back-compat).
    */
   reportClarity?: boolean
+  /**
+   * KLAVITYKLA-497 (widget half): the soft pre-submit nudge ("This might be hard for the team to act on").
+   * A sibling of reportClarity and, like it, DEFAULT on — the nudge renders as a NON-BLOCKING warning
+   * (Submit always works via "Submit anyway"). Only an EXPLICIT `false` suppresses the nudge entirely (no
+   * render, Submit fires straight through). Absent/true → shown. The server/admin toggle is a separate pass.
+   */
+  preSubmitNudge?: boolean
 }
 
 const HEX = /^#[0-9a-fA-F]{3,8}$/
@@ -116,6 +123,10 @@ export function resolveModalConfig(raw: unknown): ModalConfig & { theme: ModalTh
   // buildModal; preserved verbatim so an absent flag stays absent (helper off → back-compat).
   if (r.reportClarity === true) out.reportClarity = true
   else if (r.reportClarity === false) out.reportClarity = false
+  // KLAVITYKLA-497: pre-submit nudge toggle. DEFAULT on (shown as a non-blocking warning); only an
+  // explicit false suppresses it. Preserved verbatim so an absent flag stays absent (defaults to shown).
+  if (r.preSubmitNudge === false) out.preSubmitNudge = false
+  else if (r.preSubmitNudge === true) out.preSubmitNudge = true
   // whiteLabel: read from top-level (already-resolved passthrough) or nested agency_branding (stored format).
   const ab = isObj(r.agency_branding) ? (r.agency_branding as Record<string, unknown>) : {}
   if (r.whiteLabel === true || ab.whiteLabel === true) out.whiteLabel = true

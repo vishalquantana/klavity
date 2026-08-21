@@ -39,16 +39,22 @@ let appProc: ReturnType<typeof Bun.spawn>
 // A tiny OpenRouter stand-in: records how many times it was called and returns a fixed JSON tip in the
 // OpenRouter chat-completions shape ({ choices:[{message:{content}}], usage }).
 let llmCalls = 0
+let lastLlmBody: any = null   // KLAVITYKLA-492: capture the last prompt so tests can assert its instructions
 const llm = Bun.serve({
   port: LLM_PORT,
-  async fetch() {
+  async fetch(req) {
     llmCalls++
+    try { lastLlmBody = await req.json() } catch { lastLlmBody = null }
     return Response.json({
       choices: [{ message: { content: JSON.stringify({ tip: "'Not working' is hard to act on - what did you expect instead?" }) } }],
       usage: { prompt_tokens: 42, completion_tokens: 12, cost: 0.0001 },
     })
   },
 })
+function lastSystemPrompt(): string {
+  const msgs = (lastLlmBody && Array.isArray(lastLlmBody.messages)) ? lastLlmBody.messages : []
+  return msgs.filter((m: any) => m?.role === "system").map((m: any) => String(m?.content || "")).join("\n")
+}
 
 async function seed() {
   const now = Date.now()
@@ -119,6 +125,30 @@ test("POST /api/report/clarity returns heuristic coverage + a mocked LLM tip for
   // Mocked LLM tip
   expect(body.tip).toContain("hard to act on")
   expect(llmCalls).toBe(1)
+})
+
+test("KLAVITYKLA-492: forwards the already-captured context and tells the coach to NEVER ask for it", async () => {
+  llmCalls = 0
+  lastLlmBody = null
+  const r = await postClarity({
+    projectId: PROJ,
+    text: "the coupon code is not working on my mobile cart",
+    pageUrl: "https://shop.example.com/cart",
+    images: 2,
+    client: { browser: "Chrome", browserVersion: "141", os: "macOS", screen: "2560x1440", viewport: "1280x800", deviceType: "desktop" },
+  })
+  expect(r.status).toBe(200)
+  expect(llmCalls).toBe(1)
+  const sys = lastSystemPrompt()
+  // The instruction must forbid asking for anything Klavity already captures.
+  expect(sys).toContain("NEVER ask the reporter for the URL")
+  expect(sys.toLowerCase()).toContain("screenshot")
+  expect(sys.toLowerCase()).toContain("browser")
+  // The forwarded context is summarised into the prompt so the model knows exactly what's already present.
+  expect(sys).toContain("https://shop.example.com/cart")
+  expect(sys).toContain("2 screenshots")
+  expect(sys).toContain("Chrome")
+  expect(sys).toContain("2560x1440")
 })
 
 test("a Great report spends NO LLM call (tip null) — heuristic gate mirrors the client", async () => {
