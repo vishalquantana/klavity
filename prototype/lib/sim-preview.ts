@@ -27,6 +27,26 @@ export interface ScreenshotDeps {
   isUrlAllowed?: (url: string) => boolean | Promise<boolean>
 }
 
+/**
+ * Belt-and-suspenders SSRF check (QA#1). After navigation, verify the page's FINAL landed URL still
+ * passes the guard before we screenshot/return anything. The per-hop guardNavigations route is the
+ * primary defense (it aborts a disallowed redirect target before it is ever fetched); this is a second
+ * line in case a driver follows a hop the route did not surface. `page.url()` may be "about:blank" when
+ * the guard aborted the initial/redirect nav — an empty/blank/non-parseable URL is treated as safe (the
+ * subsequent empty-screenshot check will reject it), but any concretely disallowed host throws here.
+ */
+async function assertFinalUrlSafe(
+  page: { url(): string },
+  isUrlAllowed: (url: string) => boolean | Promise<boolean>,
+): Promise<void> {
+  let finalUrl = ""
+  try { finalUrl = page.url() } catch { finalUrl = "" }
+  if (!finalUrl || finalUrl === "about:blank") return
+  let ok = false
+  try { ok = await isUrlAllowed(finalUrl) } catch { ok = false }
+  if (!ok) throw new Error("blocked navigation: final URL failed SSRF guard")
+}
+
 export interface ScreenshotResult {
   imageB64: string // base64 JPEG, no data: prefix
   mediaType: "image/jpeg"
@@ -58,6 +78,10 @@ export async function screenshotUrl(
     // 302s to an internal/metadata host is aborted rather than fetched and rendered into the shot.
     await (page as any).guardNavigations?.(isUrlAllowed)
     await page.goto(url, navTimeoutMs)
+    // Belt-and-suspenders (QA#1): even with the per-hop nav guard, re-check the FINAL landed URL's host
+    // before capturing. If a redirect somehow slipped a disallowed host through (driver differences), the
+    // page has navigated there — refuse to screenshot/return internal content.
+    await assertFinalUrlSafe(page, isUrlAllowed)
     // brief settle so above-the-fold content/webfonts paint before the shot
     if (settleMs > 0) await page.waitMs(settleMs)
     const imageB64 = await page.screenshotJpeg(quality, shotTimeoutMs, { fullPage: !!opts.fullPage })
@@ -146,6 +170,8 @@ export async function authedScreenshotUrl(
     // Navigate to the target. When a session was established, this loads the authed page; when not,
     // it loads the public page (or the login gate) exactly as the plain path would.
     await page.goto(url, navTimeoutMs)
+    // Belt-and-suspenders (QA#1): re-check the final landed host before capturing the authed shot too.
+    await assertFinalUrlSafe(page, isUrlAllowed)
     if (settleMs > 0) await page.waitMs(settleMs)
     const imageB64 = await page.screenshotJpeg(quality, shotTimeoutMs)
     if (!imageB64 || imageB64.length < 100) throw new Error("empty screenshot")

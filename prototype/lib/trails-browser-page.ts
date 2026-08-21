@@ -358,13 +358,40 @@ class PlaywrightPage implements BrowserPage {
   async guardNavigations(isAllowed: (url: string) => boolean | Promise<boolean>): Promise<void> {
     await this.page.route("**/*", async (route) => {
       const req = route.request()
-      // Only guard top-level/frame NAVIGATIONS (initial doc + each redirect hop). Playwright invokes
-      // the route handler for the redirected request too, so a 3xx into an internal host is caught here.
+      // Only guard top-level/frame NAVIGATIONS; sub-resources are left cheap (no per-asset DNS).
       if (!req.isNavigationRequest()) { await route.continue().catch(() => {}); return }
+      // 1) Validate the URL of THIS hop.
       let ok = false
       try { ok = await isAllowed(req.url()) } catch { ok = false }
-      if (ok) await route.continue().catch(() => {})
-      else await route.abort("blockedbyclient").catch(() => {})
+      if (!ok) { await route.abort("blockedbyclient").catch(() => {}); return }
+      // 2) CRITICAL (QA#1 re-open): a plain route.continue() makes Playwright follow HTTP 3xx redirects
+      //    INTERNALLY without re-invoking this handler — confirmed against real Chromium: a guard on the
+      //    initial /start hop never saw the 302 target /private, which was fetched and rendered. Fix:
+      //    fetch this hop with maxRedirects:0 (do NOT auto-follow), and if it is a 3xx, validate the
+      //    Location target against the guard BEFORE letting the browser go there. Fulfilling the 3xx back
+      //    to the browser makes it issue a FRESH navigation to Location, which re-enters this handler and
+      //    is validated again (defense in depth). A non-redirect response is fulfilled as-is (the browser
+      //    does not re-request it, so there is no double navigation for normal pages).
+      let response: import("playwright").APIResponse
+      try {
+        response = await route.fetch({ maxRedirects: 0 })
+      } catch {
+        // A fetch failure (DNS/refused/etc.) — do not render anything.
+        await route.abort("failed").catch(() => {})
+        return
+      }
+      const status = response.status()
+      if (status >= 300 && status < 400) {
+        const loc = response.headers()["location"]
+        if (loc) {
+          let next: string | null = null
+          try { next = new URL(loc, req.url()).toString() } catch { next = null }
+          let nextOk = false
+          try { nextOk = next ? await isAllowed(next) : false } catch { nextOk = false }
+          if (!nextOk) { await route.abort("blockedbyclient").catch(() => {}); return }
+        }
+      }
+      await route.fulfill({ response }).catch(() => { route.abort("failed").catch(() => {}) })
     })
   }
 }
