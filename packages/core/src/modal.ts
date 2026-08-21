@@ -108,6 +108,12 @@ export interface PickedTarget {
   selector: string
   /** Short human snippet: element tag + its visible text/label (up to 80 chars). */
   text: string
+  /** KLAVITYKLA-494: optional cropped screenshot (dataUrl) of the picked element's bounding box. When the
+   *  host's picker can produce it, the composer adds it to the images strip (respecting the MAX_IMAGES cap).
+   *  Absent → only the selector/text is pinned, exactly as before. */
+  shot?: string
+  /** Capture-quality tag for `shot` (drives the thumbnail badge), when the host supplied a crop. */
+  shotQuality?: CaptureQuality
 }
 
 // KLAVITYKLA-241 (JTBD A.11): a known/recurring issue matched against the reporter's in-progress prose.
@@ -812,6 +818,14 @@ export function buildModal(
     .kl-vdot{display:none;position:absolute;top:0;right:0;width:6px;height:6px;border-radius:50%;background:rgb(220 38 38);}
     #klavity-voice.kl-voice-rec .kl-vdot{display:block;animation:kl-vdot-pulse 1.2s ease infinite;}
     @keyframes kl-vdot-pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.5;transform:scale(.7);}}
+    /* KLAVITYKLA-495: the voice status/error gets its OWN block row (was dynamically inserted right after
+       the textarea, where the Report-clarity bar's negative top margin painted over it). It sits between
+       the description and the clarity helper, so the two never collide. */
+    .klavity-voice-status{margin:6px 0 10px;font-size:12px;line-height:1.4;display:flex;align-items:center;gap:6px;}
+    .klavity-voice-status[hidden]{display:none;}
+    .klavity-voice-status.kl-vs-info{color:var(--kl-muted);}
+    .klavity-voice-status.kl-vs-info::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--kl-accent);flex:0 0 auto;animation:kl-vdot-pulse 1.2s ease infinite;}
+    .klavity-voice-status.kl-vs-err{color:rgb(220 38 38);}
     @media (prefers-reduced-motion: reduce){.klavity-overlay,.klavity-modal,.klavity-modal.kl-closing,.klavity-modal>*, .klavity-toast-progress{animation-duration:.01ms!important;}.klavity-modal{--kl-lift:none;--kl-press:none;--kl-bhover:none;--kl-bpress:none;}.klavity-info,.klavity-rm,.klavity-mk{transition:none!important;}.klavity-actions button.kl-loading{animation:none;}.klavity-actions .kl-cap-ic,.klavity-toggle .kl-cap-ic{transition:none;transform:none!important;}}
   `
   shadowRoot.appendChild(style)
@@ -841,7 +855,11 @@ export function buildModal(
         <button class="feat ${initialType === 'feature' ? 'active' : ''}"><span class="kl-cap-ic">${icon('lightbulb')}</span>Feature</button>
       </div>`}
       <div class="klavity-page">${icon('map-pin')} ${typeof window !== 'undefined' ? escHtml(window.location.pathname) : ''}</div>
-      ${callbacks.replayState ? `<div class="klavity-proof"><span class="klavity-chip ${callbacks.replayState === 'attached' ? 'kl-chip-on' : 'kl-chip-off'}" id="klavity-replay-chip">${replayChipInner(callbacks.replayState)}</span></div>` : ''}
+      ${/* KLAVITYKLA-493: the reporter-facing "Replay · 60s" chip confused users (it read like an action).
+          It is intentionally NOT rendered anymore. Session replay is STILL captured and attached to the
+          filed ticket (the host keeps feeding replayEvents into the submit payload); only the visible chip
+          is gone. replayState is still passed through so replayAttached (evidence gating for a
+          replay-only report) and setReplayState() keep working — see line ~390 and setReplayState below. */''}
       <div class="klavity-actions">
         ${callbacks.onCaptureSharp ? `<button id="klavity-sharp" aria-describedby="klavity-sharp-tip"><span class="kl-cap-ic">${icon('app-window')}</span><span class="kl-sharp-label">Screen</span><span class="kl-info-badge" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></span><span id="klavity-sharp-tip" class="klavity-info-pop" role="tooltip">Screen grabs the <b>whole page — every image, pixel-perfect</b> using your browser's screen-share. Your browser will ask you to <b>share this tab</b>.</span></button>` : ''}
         <button id="klavity-full" title="Full Page — instant capture; may miss some cross-origin images"><span class="kl-cap-ic">${icon('camera')}</span><span class="kl-full-label">Full Page</span></button>
@@ -862,6 +880,7 @@ export function buildModal(
       <div class="klavity-error" id="klavity-err"></div>
       <textarea class="klavity-desc" id="klavity-desc" placeholder="${initialType === 'feature' ? "Describe the feature you'd like..." : 'Describe the bug...'}"></textarea>
       <div class="klavity-desc-hint" id="klavity-desc-hint" hidden>${icon('sparkles', { size: 13 })}<span>No title needed — we'll auto-generate one for you</span></div>
+      ${VoiceInput.isSupported() ? `<div class="klavity-voice-status" id="klavity-voice-status" role="status" aria-live="polite" hidden></div>` : ''}
       ${cfg.reportClarity ? `<div class="klavity-clarity" id="klavity-clarity" role="status" aria-live="polite" hidden>
         <div class="kl-clr-bar"><i></i><i></i><i></i></div>
         <div class="kl-clr-row"><span>Report clarity</span><span class="kl-clr-st" id="klavity-clarity-status">Needs detail</span></div>
@@ -1673,27 +1692,42 @@ export function buildModal(
       voiceBtn.classList.remove('kl-voice-warn')
     }
 
+    // KLAVITYKLA-495: the voice status/error now lives in a dedicated row (#klavity-voice-status) that sits
+    // above the Report-clarity bar, so it never paints over the clarity meter. Helpers below drive it.
+    const voiceStatusEl = modal.querySelector('#klavity-voice-status') as HTMLElement | null
+    let voiceStatusHideTimer: ReturnType<typeof setTimeout> | null = null
+    const clearVoiceStatus = () => {
+      if (voiceStatusHideTimer) { clearTimeout(voiceStatusHideTimer); voiceStatusHideTimer = null }
+      if (!voiceStatusEl) return
+      voiceStatusEl.hidden = true
+      voiceStatusEl.textContent = ''
+      voiceStatusEl.classList.remove('kl-vs-info', 'kl-vs-err')
+    }
+    const setVoiceStatus = (kind: 'info' | 'err', message: string, autoHideMs?: number) => {
+      if (!voiceStatusEl || !message) return
+      if (voiceStatusHideTimer) { clearTimeout(voiceStatusHideTimer); voiceStatusHideTimer = null }
+      voiceStatusEl.classList.remove('kl-vs-info', 'kl-vs-err')
+      voiceStatusEl.classList.add(kind === 'err' ? 'kl-vs-err' : 'kl-vs-info')
+      voiceStatusEl.textContent = message
+      voiceStatusEl.hidden = false
+      if (autoHideMs) voiceStatusHideTimer = setTimeout(clearVoiceStatus, autoHideMs)
+    }
+
     voice.onTranscript = (text) => {
       const existing = desc.value
       desc.value = existing + (existing.length > 0 && !/\s$/.test(existing) ? ' ' : '') + text
       refreshSubmit()
     }
 
+    // Non-alarming reconnect status while VoiceInput auto-retries a transient drop.
+    voice.onStatus = (type, message) => {
+      if (type === 'idle') clearVoiceStatus()
+      else setVoiceStatus('info', message)
+    }
+
     voice.onError = (_, message) => {
       if (!message) return
-      let errEl = shadowRoot.getElementById('klavity-voice-err')
-      if (!errEl) {
-        errEl = document.createElement('div')
-        errEl.id = 'klavity-voice-err'
-        errEl.style.cssText = 'color:rgb(220 38 38);font-size:12px;margin-top:4px;opacity:1;'
-        desc.insertAdjacentElement('afterend', errEl)
-      }
-      errEl.style.opacity = '1'
-      errEl.style.transition = ''
-      errEl.textContent = message
-      errEl.style.transition = 'opacity .3s ease'
-      setTimeout(() => { if (errEl) errEl.style.opacity = '0' }, 3700)
-      setTimeout(() => { if (errEl) { errEl.textContent = ''; errEl.style.opacity = '1'; errEl.style.transition = '' } }, 4000)
+      setVoiceStatus('err', message, 4000)
     }
 
     voice.onStop = () => {
@@ -1704,6 +1738,7 @@ export function buildModal(
 
     voiceBtn.addEventListener('click', () => {
       if (!voiceRecording) {
+        clearVoiceStatus() // fresh start — drop any leftover error/reconnect line
         voiceRecording = true; voiceBtn.classList.add('kl-voice-rec'); voice.start(); startRing()
       } else {
         voice.stop()
@@ -1992,7 +2027,14 @@ export function buildModal(
       host.style.display = 'none'
       try {
         const result = await callbacks.onPickElement!()
-        if (result) { pickedTarget = result; reflectPicked() }
+        if (result) {
+          pickedTarget = result
+          reflectPicked()
+          // KLAVITYKLA-494: if the picker also produced a cropped screenshot of the element's bounding box,
+          // add it to the images strip. addScreenshot enforces the MAX_IMAGES cap itself, so a full strip
+          // just surfaces the usual "up to N images" notice and the selector/text pin still lands.
+          if (result.shot) addScreenshot(result.shot, result.shotQuality, undefined, true)
+        }
       } catch { /* picker failure must never break the composer */ }
       finally {
         document.addEventListener('keydown', escHandler, { capture: true })

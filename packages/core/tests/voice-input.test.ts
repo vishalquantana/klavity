@@ -66,11 +66,32 @@ describe('VoiceInput errors', () => {
     expect(errors).toEqual([{ type: 'not-allowed', msg: 'Microphone access was denied' }])
     expect(stops).toHaveLength(1)
   })
-  it('onError message for network', () => {
-    const v = new VoiceInput(); const errors = []
-    v.onError = (type, msg) => errors.push({ type, msg }); v.onStop = () => {}; v.start()
-    mockSR._fireError('network')
-    expect(errors).toEqual([{ type: 'network', msg: 'Voice recognition lost connection' }])
+  it('KLAVITYKLA-495: first network drop auto-retries (status, no error)', () => {
+    vi.useFakeTimers()
+    const v = new VoiceInput(); const errors: any[] = []; const statuses: any[] = []
+    v.onError = (type, msg) => errors.push({ type, msg })
+    v.onStatus = (type, msg) => statuses.push({ type, msg })
+    v.onStop = () => {}
+    v.start()
+    expect(mockSR.start).toHaveBeenCalledTimes(1)
+    mockSR._fireError('network')       // transient blip
+    expect(errors).toHaveLength(0)     // NOT surfaced as an error on the first drop
+    expect(statuses).toEqual([{ type: 'retrying', msg: 'Reconnecting voice…' }])
+    mockSR._fireEnd()                  // onend follows onerror → schedules a reconnect
+    vi.advanceTimersByTime(500)
+    expect(mockSR.start).toHaveBeenCalledTimes(2) // reconnected, still recording
+  })
+
+  it('KLAVITYKLA-495: surfaces the error only after retries are exhausted', () => {
+    vi.useFakeTimers()
+    const v = new VoiceInput(); const errors: any[] = []
+    v.onError = (type, msg) => errors.push({ type, msg }); v.onStatus = () => {}; v.onStop = () => {}
+    v.start()
+    // Two auto-retries (MAX_RETRIES=2), each: error → end → reconnect.
+    for (let i = 0; i < 2; i++) { mockSR._fireError('network'); mockSR._fireEnd(); vi.advanceTimersByTime(500) }
+    expect(errors).toHaveLength(0)
+    mockSR._fireError('network')       // third drop → give up
+    expect(errors).toEqual([{ type: 'network', msg: 'Voice disconnected — tap Voice to try again' }])
   })
   it('no-speech: silent stop, no onError', () => {
     const v = new VoiceInput(); const errors = []; const stops = []

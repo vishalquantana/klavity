@@ -747,8 +747,10 @@ describe('buildModal capture-quality badges (JTBD 1.9)', () => {
   })
 })
 
-// JTBD 1.8: attached-proof replay chip
-describe('buildModal replay chip (JTBD 1.8)', () => {
+// KLAVITYKLA-493: the reporter-facing "Replay · 60s" chip is HIDDEN (it read like an action and confused
+// reporters). Session replay is STILL captured + attached; only the visible chip is gone. replayState is
+// still honored for evidence gating (a replay-only report can Submit) and setReplayState() still works.
+describe('buildModal replay chip hidden (KLAVITYKLA-493)', () => {
   const base = { onCaptureFull: async () => 'x', onSubmit: async () => ({ issueKey: '1', issueUrl: '' }) }
 
   it('renders no chip when replayState is omitted (e.g. the extension path)', () => {
@@ -758,42 +760,80 @@ describe('buildModal replay chip (JTBD 1.8)', () => {
     ctrl.close()
   })
 
-  it("renders the attached chip ('Replay · 60s' + on-state) when replayState is 'attached'", () => {
+  it("renders NO chip even when replayState is 'attached' (hidden from the composer UI)", () => {
     const ctrl = buildModal('bug', { ...base, replayState: 'attached' })
-    const chip = q(ctrl, '#klavity-replay-chip')!
-    expect(chip).not.toBeNull()
-    expect(chip.textContent).toContain('Replay')
-    expect(chip.textContent).toContain('60s')
-    expect(chip.classList.contains('kl-chip-on')).toBe(true)
-    expect(chip.classList.contains('kl-chip-off')).toBe(false)
-    ctrl.close()
-  })
-
-  it("renders the not-available chip when replayState is 'unavailable'", () => {
-    const ctrl = buildModal('bug', { ...base, replayState: 'unavailable' })
-    const chip = q(ctrl, '#klavity-replay-chip')!
-    expect(chip).not.toBeNull()
-    expect(chip.textContent).toContain('not available')
-    expect(chip.classList.contains('kl-chip-off')).toBe(true)
-    expect(chip.classList.contains('kl-chip-on')).toBe(false)
-    ctrl.close()
-  })
-
-  it('setReplayState flips the chip from unavailable → attached after mount (rrweb loads async)', () => {
-    const ctrl = buildModal('bug', { ...base, replayState: 'unavailable' })
-    let chip = q(ctrl, '#klavity-replay-chip')!
-    expect(chip.textContent).toContain('not available')
-    ctrl.setReplayState('attached')
-    chip = q(ctrl, '#klavity-replay-chip')!
-    expect(chip.textContent).toContain('60s')
-    expect(chip.classList.contains('kl-chip-on')).toBe(true)
-    ctrl.close()
-  })
-
-  it('setReplayState is a no-op (no throw) when no chip was rendered', () => {
-    const ctrl = buildModal('bug', { ...base })
-    expect(() => ctrl.setReplayState('attached')).not.toThrow()
+    expect(q(ctrl, '.klavity-proof')).toBeNull()
     expect(q(ctrl, '#klavity-replay-chip')).toBeNull()
+    expect(ctrl.shadowRoot.textContent).not.toContain('Replay')
+    ctrl.close()
+  })
+
+  it("renders NO chip even when replayState is 'unavailable'", () => {
+    const ctrl = buildModal('bug', { ...base, replayState: 'unavailable' })
+    expect(q(ctrl, '#klavity-replay-chip')).toBeNull()
+    ctrl.close()
+  })
+
+  it('replayState:"attached" still counts as evidence — a replay-only report can Submit (no chip needed)', () => {
+    const ctrl = buildModal('bug', { ...base, replayState: 'attached' })
+    // No typed prose, no screenshot — the attached replay buffer alone enables Submit. Nudge refreshSubmit
+    // via an input event on the (empty) description so we assert the gate, not the initial render timing.
+    const desc = q(ctrl, '#klavity-desc') as HTMLTextAreaElement
+    desc.value = ''
+    desc.dispatchEvent(new Event('input'))
+    const submit = q(ctrl, '.klavity-submit') as HTMLButtonElement
+    expect(submit.disabled).toBe(false)
+    ctrl.close()
+  })
+
+  it('setReplayState still gates evidence (no throw) even though no chip is rendered', () => {
+    const ctrl = buildModal('bug', { ...base, replayState: 'unavailable' })
+    const submit = q(ctrl, '.klavity-submit') as HTMLButtonElement
+    expect(submit.disabled).toBe(true)          // no evidence yet
+    expect(() => ctrl.setReplayState('attached')).not.toThrow()
+    expect(submit.disabled).toBe(false)          // replay resolved → evidence → Submit enabled
+    expect(q(ctrl, '#klavity-replay-chip')).toBeNull()
+    ctrl.close()
+  })
+})
+
+// KLAVITYKLA-494: "Pick element" also adds a cropped screenshot of the picked element to the images strip.
+describe('buildModal pick-element cropped screenshot (KLAVITYKLA-494)', () => {
+  const base = { onCaptureFull: async () => 'x', onSubmit: async () => ({ issueKey: '1', issueUrl: '' }) }
+  const flush = () => new Promise(r => setTimeout(r, 0))
+
+  it('adds the picked element crop to the strip (keeps selector/text pin)', async () => {
+    const onPickElement = async () => ({ selector: '#broken', text: 'button "Save"', shot: 'data:image/png;base64,CROP' })
+    const ctrl = buildModal('bug', { ...base, onPickElement })
+    expect(q(ctrl, '.klavity-thumb')).toBeNull()
+    q(ctrl, '#klavity-pick')!.dispatchEvent(new MouseEvent('click'))
+    await flush()
+    expect(ctrl.shadowRoot.querySelectorAll('.klavity-thumb').length).toBe(1)      // crop added
+    expect((q(ctrl, '#klavity-pickinfo') as HTMLElement).textContent).toContain('#broken') // selector still pinned
+    ctrl.close()
+  })
+
+  it('respects the image cap — a crop is NOT added when the strip is already full', async () => {
+    const onPickElement = async () => ({ selector: '#broken', text: 't', shot: 'data:image/png;base64,CROP' })
+    const ctrl = buildModal('bug', { ...base, onPickElement })
+    for (let i = 0; i < 5; i++) ctrl.addScreenshot('data:image/png;base64,' + i) // fill to the cap (5)
+    expect(ctrl.shadowRoot.querySelectorAll('.klavity-thumb').length).toBe(5)
+    q(ctrl, '#klavity-pick')!.dispatchEvent(new MouseEvent('click'))
+    await flush()
+    expect(ctrl.shadowRoot.querySelectorAll('.klavity-thumb').length).toBe(5)       // cap held, no 6th
+    expect((q(ctrl, '#klavity-err') as HTMLElement).textContent).toMatch(/up to 5/)
+    // The selector/text pin still lands even though the crop was capped out.
+    expect((q(ctrl, '#klavity-pickinfo') as HTMLElement).textContent).toContain('#broken')
+    ctrl.close()
+  })
+
+  it('no crop supplied → only the selector is pinned (back-compat, no image)', async () => {
+    const onPickElement = async () => ({ selector: '#broken', text: 't' })
+    const ctrl = buildModal('bug', { ...base, onPickElement })
+    q(ctrl, '#klavity-pick')!.dispatchEvent(new MouseEvent('click'))
+    await flush()
+    expect(ctrl.shadowRoot.querySelectorAll('.klavity-thumb').length).toBe(0)
+    expect((q(ctrl, '#klavity-pickinfo') as HTMLElement).textContent).toContain('#broken')
     ctrl.close()
   })
 })
@@ -839,12 +879,31 @@ describe('buildModal voice input', () => {
     mockSR.onresult({ resultIndex: 0, results: [Object.assign([{ transcript: 'more text' }], { isFinal: true })] })
     expect(desc.value).toBe('existing text more text'); ctrl.close()
   })
-  it('shows inline error for not-allowed', () => {
+  it('shows the error in the dedicated status row for not-allowed (KLAVITYKLA-495)', () => {
     stubSR()
     const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: async () => ({ issueKey: '1', issueUrl: '' }) })
     q(ctrl, '#klavity-voice')!.dispatchEvent(new MouseEvent('click'))
     mockSR.onerror({ error: 'not-allowed' })
-    expect(q(ctrl, '#klavity-voice-err')?.textContent).toBe('Microphone access was denied'); ctrl.close()
+    const status = q(ctrl, '#klavity-voice-status') as HTMLElement
+    expect(status.textContent).toBe('Microphone access was denied')
+    expect(status.hidden).toBe(false)
+    expect(status.classList.contains('kl-vs-err')).toBe(true)
+    ctrl.close()
+  })
+  it('voice status row is a sibling ABOVE the clarity bar, never overlapping it (KLAVITYKLA-495)', () => {
+    stubSR()
+    const ctrl = buildModal('bug', {
+      onCaptureFull: async () => 'x', onSubmit: async () => ({ issueKey: '1', issueUrl: '' }),
+    }, { reportClarity: true } as any)
+    const status = q(ctrl, '#klavity-voice-status') as HTMLElement
+    const clarity = q(ctrl, '#klavity-clarity') as HTMLElement
+    expect(status).not.toBeNull()
+    expect(clarity).not.toBeNull()
+    // The status row is its own element (not injected inside/after the textarea) and precedes the clarity
+    // helper in document order → they occupy separate rows instead of painting on top of each other.
+    expect(status.parentElement).toBe(clarity.parentElement)
+    expect(status.compareDocumentPosition(clarity) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    ctrl.close()
   })
   it('resets button to idle state after 180s auto-stop', () => {
     vi.useFakeTimers()

@@ -1,7 +1,7 @@
 // packages/sdk/src/widget.ts
 import { injectSimStyles } from "@klavity/core/sim"
 import { safeToPng, safeToPngWithScale, safeToPngWithQuality, safeToPngFullPage } from "./capture"
-import { buildModal, installRegionDrag, isEditableTarget, type ModalController, type PickedTarget } from "@klavity/core/modal"
+import { buildModal, installRegionDrag, isEditableTarget, type ModalController, type PickedTarget, type CaptureQuality } from "@klavity/core/modal"
 import { cropDataUrl, type Rect } from "@klavity/core/crop"
 import { planScrollStitch, clampCaptureHeight } from "./sharp-capture"
 import { type CaptureBuffers } from "@klavity/core/capture"
@@ -85,20 +85,40 @@ function pickElementOnPage(): Promise<PickedTarget | null> {
       if (!el || isOurs(el)) return
       highlight(el)
     }
-    const cleanup = (result: PickedTarget | null) => {
+    // Tear down the picker overlays + listeners. Split from resolve() so onClick can drop the highlight
+    // overlays BEFORE it captures the element crop (otherwise the purple box/label paint into the shot).
+    const teardown = () => {
       document.removeEventListener("mousemove", onMove, true)
       document.removeEventListener("click", onClick, true)
       document.removeEventListener("keydown", onKey, true)
       rootEl.style.cursor = prevCursor
       box.remove(); label.remove(); banner.remove()
-      resolve(result)
     }
+    const cleanup = (result: PickedTarget | null) => { teardown(); resolve(result) }
     const onClick = (e: MouseEvent) => {
       const el = document.elementFromPoint(e.clientX, e.clientY)
       if (!el || isOurs(el)) return
       e.preventDefault(); e.stopPropagation()
       const selector = computeSelector(el)
-      cleanup(selector ? { selector, text: describeElement(el) } : null)
+      if (!selector) { cleanup(null); return }
+      // KLAVITYKLA-494: also grab a cropped screenshot of the picked element's bounding box so the report
+      // carries an image of exactly what's broken (not just the selector/kref/context). Capture the rect +
+      // text NOW, drop the picker overlays, then crop out of a full-page capture — mirrors onRegionCapture.
+      const r = el.getBoundingClientRect()
+      const text = describeElement(el)
+      teardown()
+      void (async () => {
+        let shot: string | undefined
+        let shotQuality: CaptureQuality | undefined
+        try {
+          if (r.width >= 1 && r.height >= 1) {
+            const { dataUrl, scale, quality } = await safeToPngWithScale(document.body, { filter: notKlavityChrome })
+            shot = await cropDataUrl(dataUrl, { x: r.left, y: r.top, w: r.width, h: r.height }, window.scrollX, window.scrollY, scale)
+            shotQuality = quality
+          }
+        } catch { /* the crop is best-effort — the selector still pins the element even if capture fails */ }
+        resolve({ selector, text, shot, shotQuality })
+      })()
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); cleanup(null) }
