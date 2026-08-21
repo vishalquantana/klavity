@@ -216,6 +216,11 @@ function datesFromRow(row: any): number[] {
 }
 
 function titleFromRow(row: any): string | null {
+  // #543 straggler (Codex re-review): an explicit composer/manual Title wins over the suggested-bug
+  // title and the observation body — mirror the shared effectiveTicketTitle resolver order. (The
+  // cluster rows come from `SELECT *`, so the `title` column is present.)
+  const explicit = row.title != null ? String(row.title).trim() : ""
+  if (explicit) return explicit
   try {
     const parsed = JSON.parse(row.suggested_bug_json || "{}")
     const title = String(parsed?.title || "").trim()

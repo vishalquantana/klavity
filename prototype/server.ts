@@ -1311,8 +1311,17 @@ async function bearerEmail(req: Request): Promise<string | null> {
   // M2 closed: only dedicated, revocable extension tokens (`ext_…`) are accepted as Bearer credentials.
   // The raw session id is no longer honored as a Bearer — it remains valid only as a first-party
   // HttpOnly cookie via sessionEmail(). A leaked Bearer is now always narrow-scope and revocable.
+  //
+  // #534 hardening (Codex re-review): extension_tokens ALSO stores project-bound, non-expiring CI tokens
+  // (kci_…) minted for triggering CI walks. Those are machine-to-machine and MUST NOT authenticate a
+  // user/extension request here — otherwise a CI credential POSTing /api/feedback would resolve to a
+  // non-null actor and count as TRUSTED feedback provenance, auto-advancing a report onto the Tickets
+  // board. Enforce the ext_ prefix (short-circuit before the DB hit) AND the resolved token kind so a
+  // kci_ (or any non-ext) Bearer resolves to null (unauthenticated). The dedicated /api/ci/* handlers
+  // keep resolving kci_ via getExtensionTokenInfo directly, so CI walk triggers are unaffected.
+  if (!/^ext_/.test(m[1])) return null
   const info = await getExtensionTokenInfo(m[1])
-  if (!info) return null
+  if (!info || info.kind !== "ext") return null
   // F5: if this token is bound to a project (widget token), record it so resolveProject constrains the
   // request to that project. Account-wide extension tokens (projectId null) leave the context unset.
   const ctx = reqCtx.getStore(); if (ctx) ctx.boundProject = info.projectId ?? null
@@ -1536,10 +1545,12 @@ function occurrenceTimelineText(mem: RecurrenceMemory | null): string {
 // Build a normalized TicketPayload from a feedback row for the connector adapters. Async because it
 // resolves the screenshot into a permanent signed link (body fallback) + bytes (for native attachment).
 async function feedbackToTicketPayload(fb: any, project: { id: string; name?: string }, simName: string | null = null): Promise<TicketPayload> {
-  // PX4 #411: an explicit composer Title wins when present (the connector uses it verbatim as the external
-  // issue summary). Otherwise fall back to the historical auto-title — the observation's first line.
-  const explicitTitle = typeof fb.title === "string" ? fb.title.trim() : ""
-  const title = explicitTitle || (fb.observation || "Sim report").split("\n")[0] || "Sim report"
+  // PX4 #411 / #543 straggler (Codex re-review): resolve the external issue summary via the SHARED
+  // resolver order (explicit composer Title → suggestedBug.title → observation first-line) instead of
+  // skipping suggestedBug.title as before. Preserve the Sim-friendly "Sim report" terminal fallback
+  // (effectiveTicketTitle's own terminal is "Untitled report").
+  const resolvedTitle = effectiveTicketTitle(fb)
+  const title = resolvedTitle && resolvedTitle !== "Untitled report" ? resolvedTitle : "Sim report"
   const lines: string[] = []
   if (fb.observation) lines.push(fb.observation)
   if (simName) lines.push(`Sim: ${simName}`)
@@ -4227,7 +4238,21 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               }
               if (dedupedInto) {
                 const seenAt = Date.now()
-                await bumpFeedbackRecurrence(dedupedInto, seenAt)
+                // #534 recurrence hardening (Codex re-review): the recurrence new→open auto-promotion
+                // (count≥3) is the SAME triage bypass the direct connector-less advance guards — it must be
+                // provenance/quarantine-aware. Only a TRUSTED (authenticated workspace member, non-anonymous)
+                // recurrence may auto-advance onto the Tickets board; an anonymous/cross-origin widget repeat,
+                // or a quarantined source (studio-demo / any NON_HUMAN source, incl. host-detected demos via
+                // feedbackSourceTag), STAYS 'new' for human triage. Bound it by the SAME per-project autocopy
+                // rate cap the direct advance uses so it can't flood the board faster than the cap allows.
+                const recurrenceTrusted = !!actor && !anonWidgetAllowed
+                const recurrenceQuarantined = NON_HUMAN_SOURCES.has(rawReportSource) || !!feedbackSourceTag
+                let allowRecurrencePromote = recurrenceTrusted && !recurrenceQuarantined
+                if (allowRecurrencePromote && !rlAllow(`autocopy:${projectId}`, AUTOCOPY_PER_PROJECT, AUTOCOPY_WINDOW)) {
+                  console.warn(`auto-copy rate cap hit for project ${projectId} — skipping recurrence status advance`)
+                  allowRecurrencePromote = false
+                }
+                await bumpFeedbackRecurrence(dedupedInto, seenAt, { allowPromote: allowRecurrencePromote })
                 feedbackId = dedupedInto
                 knownDuplicate = true
                 // A.8 occurrence receipts: keep THIS repeat-report's own verbatim description, its
@@ -6941,7 +6966,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               const q = await db!.execute({ sql: "SELECT source_quote FROM feedback WHERE project_id=? AND id=?", args: [projE.id, id] })
               if (q.rows.length) groundedQuote = (q.rows[0] as any).source_quote != null ? String((q.rows[0] as any).source_quote) : null
             } catch { /* column/table absent — no quote */ }
-            return { title: fb.observation ?? null, urlPath: fb.urlPath ?? null, groundedQuote }
+            // #543 straggler (Codex re-review): resolve the card title via the shared resolver
+            // (explicit Title → suggestedBug.title → observation) instead of the raw observation.
+            return { title: effectiveTicketTitle(fb), urlPath: fb.urlPath ?? null, groundedQuote }
           } catch { return null }
         },
         getFinding: async (id: string) => {

@@ -95,7 +95,7 @@ export async function gatherTrustReport(
 
   // 2. Snap reports: feedback rows NOT from a Sim (sim_id IS NULL)
   const snapR = await c.execute({
-    sql: `SELECT observation, suggested_bug_json, url_path, severity
+    sql: `SELECT title, observation, suggested_bug_json, url_path, severity
           FROM feedback
           WHERE project_id=? AND created_at>=? AND created_at<? AND (sim_id IS NULL OR sim_id='')
           ORDER BY created_at DESC`,
@@ -110,7 +110,7 @@ export async function gatherTrustReport(
 
   // 3. Sim findings: feedback rows from a Sim (sim_id IS NOT NULL)
   const simR = await c.execute({
-    sql: `SELECT f.observation, f.suggested_bug_json, f.url_path, f.sim_id, p.name AS sim_name
+    sql: `SELECT f.title, f.observation, f.suggested_bug_json, f.url_path, f.sim_id, p.name AS sim_name
           FROM feedback f
           LEFT JOIN personas p ON p.id=f.sim_id AND p.project_id=f.project_id
           WHERE f.project_id=? AND f.created_at>=? AND f.created_at<? AND f.sim_id IS NOT NULL AND f.sim_id!=''
@@ -157,7 +157,7 @@ export async function gatherTrustReport(
   // 6. Recurring issues: feedback rows in the window that are part of a recurrence cluster
   //    (issue_key IS NOT NULL OR recurrence_count > 1)
   const recurR = await c.execute({
-    sql: `SELECT observation, suggested_bug_json, COALESCE(recurrence_count, 1) AS rc
+    sql: `SELECT title, observation, suggested_bug_json, COALESCE(recurrence_count, 1) AS rc
           FROM feedback
           WHERE project_id=? AND created_at>=? AND created_at<? AND (
             (issue_key IS NOT NULL AND issue_key!='') OR COALESCE(recurrence_count,1)>1
@@ -231,6 +231,11 @@ export async function gatherTrustReport(
 }
 
 function extractTitle(r: any): string {
+  // #543 straggler (Codex re-review): an explicit composer/manual Title wins over the suggested-bug
+  // title and the observation body — mirror the shared effectiveTicketTitle resolver order. (The
+  // highlight queries below SELECT the `title` column so this is populated.)
+  const explicit = r.title != null ? String(r.title).trim() : ""
+  if (explicit) return explicit
   try {
     const parsed = JSON.parse(r.suggested_bug_json || "{}")
     const t = String(parsed?.title || "").trim()

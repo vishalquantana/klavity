@@ -16,6 +16,7 @@ import { test, expect, beforeAll, afterAll } from "bun:test"
 import { createClient } from "@libsql/client"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { sha256hex } from "./lib/crypto"
 
 const ts = `${Date.now()}-${Math.random().toString(36).slice(2)}`
 const srvDbFile = join(tmpdir(), `klav-snap-routing-${ts}.db`)
@@ -507,6 +508,157 @@ test("KLA-524 review mode: keeps status='new' even with a connector configured",
     // Restore autofile for any subsequent tests.
     await api("POST", `/api/projects/${PROJECT_ID}/snap-routing`, { snapRouting: "autofile" }, ADMIN_SID)
   } finally { recv.stop(true) }
+}, 15000)
+
+// ── #534 recurrence hardening (Codex re-review): the recurrence new→open auto-promotion (count≥3) must
+// be provenance/quarantine-aware, exactly like the direct connector-less advance. Submitting the SAME
+// report 3× dedupes into one cluster head and bumps its recurrence_count to 3 — but only a TRUSTED
+// (authenticated-member), non-quarantined recurrence may auto-advance onto the Tickets board. ────────
+
+// (a) 3× ANONYMOUS cross-origin widget report on a connector-less project dedupes into one 'new' row and
+// must STAY 'new' — the 3rd occurrence must NOT auto-promote it onto the board (the pre-fix bypass).
+test("#534 recurrence: 3× ANONYMOUS connector-less report stays 'new' (never reaches the board)", async () => {
+  await api("POST", `/api/projects/${PROJECT_ID}/snap-routing`, { snapRouting: "autofile" }, ADMIN_SID)
+  await clearConnectors()
+  const desc = uniqueDesc("recur-anon")
+  const page = `https://kla534.example/recur-anon/${ts}`
+  let fid = ""
+  for (let i = 0; i < 3; i++) {
+    const fr = await submitAnonWidgetSnap(desc, { page_url: page })
+    expect(fr.ok).toBe(true)
+    fid = (await fr.json()).id
+    expect(fid).toBeTruthy()
+  }
+  // Give the fire-and-forget recurrence bump ample time to (not) promote.
+  await Bun.sleep(1300)
+  const r = await rawClient.execute({ sql: "SELECT status, recurrence_count FROM feedback WHERE id=?", args: [fid] })
+  expect(String((r.rows[0] as any).status)).toBe("new")
+  expect(Number((r.rows[0] as any).recurrence_count)).toBeGreaterThanOrEqual(3)  // it DID recur…
+  expect(await ticketsContain(fid)).toBe(false)                                   // …but never reached the board
+}, 20000)
+
+// (b) 3× source='studio-demo' (quarantined) dedupes into one quarantined head and must NEVER be promoted
+// by recurrence — even though it's submitted by an authenticated member.
+test("#534 recurrence: 3× source='studio-demo' stays quarantined ('new'), never promoted", async () => {
+  await api("POST", `/api/projects/${PROJECT_ID}/snap-routing`, { snapRouting: "autofile" }, ADMIN_SID)
+  await clearConnectors()
+  const desc = uniqueDesc("recur-demo")
+  const page = `https://kla534.example/recur-demo/${ts}`
+  let fid = ""
+  for (let i = 0; i < 3; i++) {
+    const fr = await submitHumanSnap(desc, { source: "studio-demo", page_url: page })
+    expect(fr.ok).toBe(true)
+    fid = (await fr.json()).id
+    expect(fid).toBeTruthy()
+  }
+  await Bun.sleep(1300)
+  const r = await rawClient.execute({ sql: "SELECT status FROM feedback WHERE id=?", args: [fid] })
+  expect(String((r.rows[0] as any).status)).toBe("new")
+  expect(await ticketsContain(fid)).toBe(false)
+}, 20000)
+
+// (c) control — an AUTHENTICATED member's genuinely-recurring report STILL advances at the threshold.
+// Uses review mode so the head stays 'new' after submit #1 (no autofile advance), isolating the
+// recurrence-promotion path: submit #3 (count=3, trusted, non-quarantined) advances it to 'open'.
+test("#534 recurrence: an AUTHENTICATED-member recurring report still advances at the threshold", async () => {
+  await api("POST", `/api/projects/${PROJECT_ID}/snap-routing`, { snapRouting: "review" }, ADMIN_SID)
+  await clearConnectors()
+  const desc = uniqueDesc("recur-auth")
+  const page = `https://kla534.example/recur-auth/${ts}`
+  let fid = ""
+  for (let i = 0; i < 3; i++) {
+    const fr = await submitHumanSnap(desc, { page_url: page })
+    expect(fr.ok).toBe(true)
+    fid = (await fr.json()).id
+    expect(fid).toBeTruthy()
+  }
+  // The 3rd trusted occurrence promotes the un-triaged cluster head onto the board.
+  expect(await waitForStatus(fid, "open", 5000)).toBe("open")
+  expect(await ticketsContain(fid)).toBe(true)
+  // Restore autofile for any subsequent tests.
+  await api("POST", `/api/projects/${PROJECT_ID}/snap-routing`, { snapRouting: "autofile" }, ADMIN_SID)
+}, 20000)
+
+// ── #534 Fix 2 (Codex re-review): kci_* CI tokens must NOT count as trusted FEEDBACK provenance. A CI
+// walk-trigger credential POSTing /api/feedback must not resolve to a non-null actor / trustedProvenance
+// and auto-advance a report onto the Tickets board. Only a real ext_ user/extension token (or a session
+// cookie) may. Raw session ids and revoked/expired ext_ tokens as Bearer remain rejected. ───────────────
+
+// Submit /api/feedback with an Authorization: Bearer <token> (no session cookie). `origin` optional
+// (cross-origin widget path). Uses a unique description so it never dedupes into an earlier test row.
+async function submitWithBearer(token: string, desc: string, extra: Record<string, string> = {}, origin?: string) {
+  const fd = new FormData()
+  fd.set("description", desc)
+  fd.set("project_id", PROJECT_ID)
+  for (const [k, v] of Object.entries(extra)) fd.set(k, v)
+  const headers: Record<string, string> = { Authorization: `Bearer ${token}` }
+  if (origin) headers.Origin = origin
+  return fetch(`${BASE}/api/feedback`, { method: "POST", headers, body: fd })
+}
+// Insert a token row directly (stored as sha256hex, like issueExtensionToken / issueCIToken). Returns the
+// RAW token to send as the Bearer credential. expiresAt=null → non-expiring; pass a past ms to expire it.
+async function insertToken(prefix: "ext_" | "kci_", opts: { revoked?: boolean; expiresAt?: number | null } = {}): Promise<string> {
+  const raw = prefix + crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "")
+  await rawExec(
+    "INSERT INTO extension_tokens (token,email,project_id,created_at,expires_at,revoked) VALUES (?,?,?,?,?,?)",
+    [sha256hex(raw), ADMIN_EMAIL, PROJECT_ID, Date.now(), opts.expiresAt ?? null, opts.revoked ? 1 : 0],
+  )
+  return raw
+}
+
+// A valid ext_ token IS trusted feedback provenance → connector-less autofile advances new→open.
+test("#534 Fix2: a valid ext_ token advances a connector-less human Snap to 'open' (trusted provenance)", async () => {
+  await api("POST", `/api/projects/${PROJECT_ID}/snap-routing`, { snapRouting: "autofile" }, ADMIN_SID)
+  await clearConnectors()
+  const extTok = await insertToken("ext_")
+  const fr = await submitWithBearer(extTok, uniqueDesc("fix2-ext"), { page_url: `https://kla534.example/fix2ext/${ts}` })
+  expect(fr.ok).toBe(true)
+  const fid = (await fr.json()).id
+  expect(fid).toBeTruthy()
+  expect(await waitForStatus(fid, "open", 5000)).toBe("open")
+  expect(await ticketsContain(fid)).toBe(true)
+}, 15000)
+
+// A kci_ CI token must NOT grant trusted feedback provenance. Sent cross-origin (widget path) so a row is
+// still persisted via the ANONYMOUS gate — it must land 'new' in triage, NOT advance onto the board.
+test("#534 Fix2: a kci_ CI token does NOT trigger the board advance (stays 'new')", async () => {
+  await api("POST", `/api/projects/${PROJECT_ID}/snap-routing`, { snapRouting: "autofile" }, ADMIN_SID)
+  await clearConnectors()
+  const ciTok = await insertToken("kci_")
+  const fr = await submitWithBearer(ciTok, uniqueDesc("fix2-kci"),
+    { page_url: `https://kla534.example/fix2kci/${ts}` }, "https://widget-customer.example")
+  expect(fr.ok).toBe(true)
+  const fid = (await fr.json()).id
+  expect(fid).toBeTruthy()  // a row IS created via the anon widget path — the CI token was simply ignored
+  await Bun.sleep(1300)
+  expect(await feedbackStatus(fid)).toBe("new")
+  expect(await ticketsContain(fid)).toBe(false)
+}, 15000)
+
+// A raw session id presented as a Bearer is rejected (M2). With no Origin it never reaches the anon path,
+// so no trusted row is created and nothing advances.
+test("#534 Fix2: a raw session id as Bearer is rejected (no trusted advance)", async () => {
+  await api("POST", `/api/projects/${PROJECT_ID}/snap-routing`, { snapRouting: "autofile" }, ADMIN_SID)
+  await clearConnectors()
+  const fr = await submitWithBearer(ADMIN_SID, uniqueDesc("fix2-rawsess"), { page_url: `https://kla534.example/fix2raw/${ts}` })
+  expect(fr.ok).toBe(true)
+  // Not an ext_ token and not in extension_tokens → bearerEmail null, no Origin → no project resolved → no row.
+  expect((await fr.json()).id).toBe("")
+}, 15000)
+
+// A revoked/expired ext_ token as Bearer is rejected → no trusted advance (same no-row outcome).
+test("#534 Fix2: a revoked or expired ext_ token as Bearer is rejected", async () => {
+  await api("POST", `/api/projects/${PROJECT_ID}/snap-routing`, { snapRouting: "autofile" }, ADMIN_SID)
+  await clearConnectors()
+  const revoked = await insertToken("ext_", { revoked: true })
+  const r1 = await submitWithBearer(revoked, uniqueDesc("fix2-revoked"), { page_url: `https://kla534.example/fix2rev/${ts}` })
+  expect(r1.ok).toBe(true)
+  expect((await r1.json()).id).toBe("")
+
+  const expired = await insertToken("ext_", { expiresAt: Date.now() - 60_000 })
+  const r2 = await submitWithBearer(expired, uniqueDesc("fix2-expired"), { page_url: `https://kla534.example/fix2exp/${ts}` })
+  expect(r2.ok).toBe(true)
+  expect((await r2.json()).id).toBe("")
 }, 15000)
 
 // IDEMPOTENCY: an autofiled Snap that is later re-triaged (new→open again) must NOT create a second

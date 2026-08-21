@@ -11,6 +11,7 @@
 //                   day it recurred (last_seen_at). Mirrors the dashboard's isRegression flag.
 
 import type { Client } from "@libsql/client"
+import { effectiveTicketTitle } from "./db"
 
 export type TrendSeries = "reports" | "findings" | "regressions"
 export const TREND_SERIES: TrendSeries[] = ["reports", "findings", "regressions"]
@@ -158,7 +159,9 @@ export async function dashboardTrendDrill(
   const orderCol = series === "regressions" ? "last_seen_at" : "created_at"
 
   const r = await client.execute({
-    sql: `SELECT id, observation, COALESCE(priority, severity) AS priority,
+    // #543 straggler (Codex re-review): SELECT title + suggested_bug_json so the drill-down title
+    // resolves via the shared order (explicit Title → suggestedBug.title → observation), not raw obs.
+    sql: `SELECT id, title, suggested_bug_json, observation, COALESCE(priority, severity) AS priority,
                  COALESCE(status, 'new') AS status, url_path, sim_id, created_at
           FROM feedback
           WHERE ${where}
@@ -168,7 +171,7 @@ export async function dashboardTrendDrill(
   })
   return (r.rows as any[]).map((x) => ({
     id: String(x.id),
-    title: x.observation != null ? String(x.observation) : null,
+    title: effectiveTicketTitle(x),
     priority: x.priority != null ? String(x.priority) : null,
     status: String(x.status || "new"),
     urlPath: x.url_path != null ? String(x.url_path) : null,

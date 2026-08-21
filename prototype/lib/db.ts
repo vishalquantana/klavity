@@ -3451,16 +3451,29 @@ export async function findFeedbackBySignature(projectId: string, signature: stri
   return { id: String(x.id), status: String(x.status), recurrenceCount: Number(x.recurrence_count) || 1 }
 }
 
-export async function bumpFeedbackRecurrence(id: string, atMs: number): Promise<void> {
-  const r = await db!.execute({ sql: "SELECT recurrence_count, recurrence_dates_json, status FROM feedback WHERE id=?", args: [id] })
+// #534 recurrence hardening (Codex re-review): sources that are quarantined / non-human and therefore
+// NEVER eligible for the recurrence new→open auto-promotion onto the Tickets board. Mirrors the
+// NON_HUMAN_SOURCES set the /api/feedback autofile gate uses (studio-demo is quarantined here too).
+export const NON_HUMAN_FEEDBACK_SOURCES = new Set(["sim", "autosim", "adhoc", "ad-hoc", "trail", "trails", "walk", "studio-demo"])
+
+export async function bumpFeedbackRecurrence(id: string, atMs: number, opts?: { allowPromote?: boolean }): Promise<void> {
+  const r = await db!.execute({ sql: "SELECT recurrence_count, recurrence_dates_json, status, source FROM feedback WHERE id=?", args: [id] })
   if (!r.rows.length) return
   const row = r.rows[0] as any
   const count = Number(row.recurrence_count ?? 1) + 1
   let dates: number[] = []
   try { dates = JSON.parse(row.recurrence_dates_json || "[]") } catch { dates = [] }
   dates.push(atMs)
-  // A still-untriaged item that recurs ≥3 times is a strong signal — auto-accept it.
-  const promote = count >= 3 && String(row.status) === "new"
+  // #534 recurrence hardening (Codex re-review): a still-untriaged ('new') row that recurs ≥3 times is a
+  // strong signal — but auto-accepting it onto the board USED to be unconditional, which let an anonymous
+  // (or studio-demo) report ride 3 dedup hits onto the Tickets board with NO human triage and without
+  // consuming the autocopy rate cap. Promotion now requires the caller to vouch for TRUSTED, non-quarantined
+  // provenance (opts.allowPromote — an authenticated workspace member's genuinely-recurring report, already
+  // rate-bounded at the /api/feedback call site). Belt-and-suspenders: the HEAD row's own source is also
+  // checked here, so a quarantined cluster head can never be promoted even if a caller mis-vouches.
+  const headSource = row.source != null ? String(row.source).trim().toLowerCase() : ""
+  const headQuarantined = NON_HUMAN_FEEDBACK_SOURCES.has(headSource)
+  const promote = opts?.allowPromote === true && count >= 3 && String(row.status) === "new" && !headQuarantined
   await db!.execute({
     sql: promote
       ? "UPDATE feedback SET recurrence_count=?, recurrence_dates_json=?, last_seen_at=?, status='open' WHERE id=?"
@@ -4854,7 +4867,7 @@ export async function issueExtensionToken(email: string, projectId?: string | nu
 // Resolve a Bearer extension token to its owner AND the project it is bound to (null = account-wide).
 // Widget tokens (minted via /api/widget/token) carry a project_id and MUST be constrained to it (F5);
 // the extension's own token is account-wide (project_id null).
-export async function getExtensionTokenInfo(token: string): Promise<{ email: string; projectId: string | null } | null> {
+export async function getExtensionTokenInfo(token: string): Promise<{ email: string; projectId: string | null; kind: "ext" | "ci" | "other" } | null> {
   // E1: look up by hash. Dual-read migration fallback to the raw value keeps tokens minted before E1
   // working until they expire/are revoked. REMOVE the raw fallback once all pre-E1 tokens have aged out.
   let r = await db!.execute({ sql: "SELECT email, project_id, expires_at, revoked FROM extension_tokens WHERE token=?", args: [sha256hex(token)] })
@@ -4863,7 +4876,11 @@ export async function getExtensionTokenInfo(token: string): Promise<{ email: str
   const x = r.rows[0] as any
   if (Number(x.revoked) === 1) return null
   if (x.expires_at != null && Number(x.expires_at) < Date.now()) return null
-  return { email: String(x.email), projectId: x.project_id != null ? String(x.project_id) : null }
+  // #534 hardening (Codex re-review): expose the token KIND (derived from the minting prefix) so callers
+  // can tell a user/extension token (ext_) apart from a machine-to-machine CI walk-trigger token (kci_).
+  // Both live in extension_tokens, but only ext_ tokens may authenticate feedback/board-write requests.
+  const kind: "ext" | "ci" | "other" = token.startsWith("ext_") ? "ext" : token.startsWith("kci_") ? "ci" : "other"
+  return { email: String(x.email), projectId: x.project_id != null ? String(x.project_id) : null, kind }
 }
 export async function getExtensionTokenEmail(token: string): Promise<string | null> {
   return (await getExtensionTokenInfo(token))?.email ?? null
@@ -5169,6 +5186,10 @@ export async function feedbackById(projectId: string, id: string): Promise<any |
     report_type: x.report_type != null ? String(x.report_type) : null,
     // PX4 #411: explicit Title (feedbackToTicketPayload prefers it over the observation first-line auto-title).
     title: x.title != null ? String(x.title) : null,
+    // #543 straggler (Codex re-review): expose the parsed suggested bug so effectiveTicketTitle /
+    // feedbackToTicketPayload can resolve `suggestedBug.title` (the resolver's 2nd choice) instead of
+    // falling straight through to the observation. Additive — existing callers ignore it.
+    suggestedBug: safeJsonParse(x.suggested_bug_json),
     // PX4 #425: non-image file attachments — parsed JSON array of { key, filename, contentType, size }.
     attachments: safeJsonParse(x.attachments_json),
     // KLAVITYKLA-438 "Record me": video recordings — parsed JSON array of
