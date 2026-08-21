@@ -82,9 +82,12 @@ export interface NotifyDeps {
 }
 
 function defaultSlackWebhook(): string | null {
+  // Comment notifications are routine activity — they must go to the ticket/notifications
+  // channel, NEVER to Prod Alerts (SLACK_ALERT_WEBHOOK_URL). When the dedicated ticket
+  // webhook is unset we soft-fall-back to the signup/activity channel, then skip — so a
+  // missing ticket webhook can never pollute the prod-incident channel.
   return (
     process.env.SLACK_TICKET_WEBHOOK_URL ||
-    process.env.SLACK_ALERT_WEBHOOK_URL ||
     process.env.SLACK_SIGNUP_WEBHOOK_URL ||
     null
   )
