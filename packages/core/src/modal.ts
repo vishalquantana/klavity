@@ -70,12 +70,17 @@ function safeHttpUrl(u: string | null | undefined): string {
  */
 export type CaptureQuality = 'real-pixel' | 'rendered' | 'wireframe'
 
-/** A capture callback may return the raw dataUrl (legacy) OR { dataUrl, quality } (JTBD 1.9). */
-export type CaptureResult = string | { dataUrl: string; quality?: CaptureQuality }
+/**
+ * A capture callback may return the raw dataUrl (legacy) OR { dataUrl, quality } (JTBD 1.9). KLAVITYKLA-473
+ * adds an optional `suggestSharp`: the host detected IN THE BROWSER (no server call, no getDisplayMedia)
+ * that the DOM render came back blank or only partial (cross-origin images dropped to white gaps), so the
+ * composer should nudge the user toward the Screen button — the sharp capture stays a user-gesture click.
+ */
+export type CaptureResult = string | { dataUrl: string; quality?: CaptureQuality; suggestSharp?: boolean }
 
-/** Normalise a {@link CaptureResult} (raw dataUrl or { dataUrl, quality }) to a uniform shape. */
-function normalizeCapture(r: CaptureResult): { dataUrl: string; quality?: CaptureQuality } {
-  return typeof r === 'string' ? { dataUrl: r } : { dataUrl: r.dataUrl, quality: r.quality }
+/** Normalise a {@link CaptureResult} (raw dataUrl or { dataUrl, quality, suggestSharp }) to a uniform shape. */
+function normalizeCapture(r: CaptureResult): { dataUrl: string; quality?: CaptureQuality; suggestSharp?: boolean } {
+  return typeof r === 'string' ? { dataUrl: r } : { dataUrl: r.dataUrl, quality: r.quality, suggestSharp: r.suggestSharp }
 }
 
 /** JTBD 1.9 badge metadata per capture-quality tag: label + icon + whether "Retake sharp" applies. */
@@ -281,7 +286,9 @@ export interface ModalController {
   // KLA-412: an optional 3rd arg tags the shot with the page it came from (rendered as a mono label
   // under the thumbnail). Shots added through this controller method do NOT fire onShotAdded — the host
   // is seeding shots it already tracks. Backward compatible: existing 1/2-arg callers are unaffected.
-  addScreenshot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta) => void
+  // KLAVITYKLA-473: an optional 4th arg flags a seeded shot as blank/partial so the sharp-capture callout
+  // shows for it too (e.g. a right-click-drag region shot the host detected was partial). Defaults false.
+  addScreenshot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean) => void
   close: () => void
   // JTBD 1.8: update the attached-proof replay chip after mount (rrweb loads async, so the buffer may
   // only become playable a few hundred ms after the composer opens). No-op when no chip was rendered.
@@ -319,6 +326,13 @@ export function buildModal(
   // small mono label is rendered under the thumbnail. Stays index-aligned across add/remove like the
   // quality array.
   let screenshotPageMeta: (ShotPageMeta | undefined)[] = []
+  // KLAVITYKLA-473: parallel array of per-shot "suggest the sharp Screen capture" flags. True when the host
+  // detected (in the browser) that screenshots[i] came back blank/partial-white (cross-origin images the DOM
+  // renderer couldn't inline dropped to white gaps). Drives a non-intrusive callout pointing at the Screen
+  // button. Cleared when the shot is retaken sharp / removed. Index-aligned like the quality + page arrays.
+  let screenshotSuggestSharp: boolean[] = []
+  // Set once the reporter dismisses the sharp-capture callout so it never nags again this session.
+  let sharpHintDismissed = false
   // KLA-412: "session mode" is on whenever the host wired onMinimize — it means this composer is backed
   // by a multi-page evidence session, so we show the minimize button + per-shot page labels and raise the
   // image cap so evidence can span more pages. Absent => behaves exactly as before.
@@ -375,6 +389,11 @@ export function buildModal(
   // initial callback state and kept in sync by setReplayState() as rrweb resolves post-mount.
   let replayAttached = callbacks.replayState === 'attached'
   let autodismissTimeout: any = null
+  // #468: single source of truth for "this modal instance has been torn down". Guards close() against a
+  // double-fire (Esc/X/backdrop during a submit + the submit's later resolution both calling close()) and
+  // stops a late submit resolution from rendering a confirmation / arming a timer on the detached modal —
+  // which would call close()+onClose again and could tear down a DIFFERENT, freshly-reopened session.
+  let _closed = false
   // #448: countdown duration for the post-submit terminal-confirmation card before it auto-closes the
   // modal. Hovering pauses the countdown (armAutodismiss). Named so both the timer + the on-screen
   // progress-bar animation share one source of truth.
@@ -524,6 +543,21 @@ export function buildModal(
     /* overflow-x:auto forces overflow-y to auto (not visible) per CSS spec — adding vertical padding gives
        the absolutely-positioned rm/mk badge ::after hit-area extensions room so they're not clipped. */
     .klavity-strip{display:flex;gap:8px;overflow-x:auto;padding:6px 4px 16px;margin-bottom:6px;min-height:64px;align-items:flex-start;}
+    /* KLAVITYKLA-473: blank/partial-capture callout under the strip — steers the user to the Screen button
+       (in-browser detection; NEVER auto-triggers the screen-share). Warm amber warning tone, non-blocking. */
+    .klavity-sharphint{display:flex;align-items:center;gap:8px;margin:0 4px 8px;padding:9px 11px;border-radius:9px;font-size:12px;line-height:1.4;color:var(--kl-fg);background:color-mix(in srgb,#d97706 12%,var(--kl-chip));border:1px solid color-mix(in srgb,#d97706 55%,transparent);}
+    .klavity-sharphint[hidden]{display:none;}
+    .klavity-sharphint .kl-sh-ic{flex:none;display:inline-flex;color:#d97706;}
+    .klavity-sharphint .kl-sh-txt{flex:1 1 auto;min-width:0;}
+    .klavity-sharphint .kl-sh-use{flex:none;border:none;border-radius:7px;padding:5px 10px;font-size:11.5px;font-weight:700;cursor:pointer;background:var(--kl-accent);color:var(--kl-on-accent);transition:transform .15s cubic-bezier(.2,.7,.2,1),filter .15s ease;will-change:transform;}
+    .klavity-sharphint .kl-sh-use:hover{transform:translateY(-1px) scale(1.02);filter:brightness(1.06);}
+    .klavity-sharphint .kl-sh-use:active{transform:scale(.97);}
+    .klavity-sharphint .kl-sh-x{flex:none;display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border:none;border-radius:6px;background:transparent;color:var(--kl-fg);opacity:.6;cursor:pointer;transition:opacity .15s ease,background .15s ease;}
+    .klavity-sharphint .kl-sh-x:hover{opacity:1;background:color-mix(in srgb,var(--kl-fg) 12%,transparent);}
+    /* Pulse the Screen button while a suggestion is live so the eye is drawn to it. */
+    @keyframes kl-sharp-pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--kl-accent) 55%,transparent)}70%{box-shadow:0 0 0 7px color-mix(in srgb,var(--kl-accent) 0%,transparent)}100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--kl-accent) 0%,transparent)}}
+    #klavity-sharp.kl-suggest{color:var(--kl-accent);background:color-mix(in srgb,var(--kl-chip) 70%,var(--kl-accent) 30%);animation:kl-sharp-pulse 1.7s ease-out infinite;}
+    @media (prefers-reduced-motion: reduce){#klavity-sharp.kl-suggest{animation:none;}.klavity-sharphint .kl-sh-use{transition:none;}}
     .klavity-thumb{position:relative;flex-shrink:0;}
     .klavity-thumb img{height:72px;width:104px;object-fit:cover;object-position:top center;background:var(--kl-chip);display:block;border-radius:8px;outline:1px solid var(--kl-img-outline);outline-offset:-1px;cursor:pointer;transition:filter .12s;}
     .klavity-thumb img:hover{filter:brightness(.85);}
@@ -796,6 +830,7 @@ export function buildModal(
         <div class="kl-hero-empty" id="klavity-hero-empty">${icon('image', { size: 34 })}<span>Capture or upload a screenshot to start marking it up</span></div>
       </div>
       <div class="klavity-strip" id="klavity-strip"></div>
+      ${callbacks.onCaptureSharp ? `<div class="klavity-sharphint" id="klavity-sharphint" role="status" aria-live="polite" hidden></div>` : ''}
     </div>
     <div class="kl-side" id="klavity-side">
       ${callbacks.showTitleField ? `<label class="klavity-title-label" for="klavity-title">Title<input type="text" class="klavity-title" id="klavity-title" maxlength="200" placeholder="One line summarising the issue"></label>` : ''}
@@ -926,7 +961,7 @@ export function buildModal(
     shadowRoot,
     // Host seeds shots it already tracks (evidence-session restore, region-initial): fireAdded=false so
     // onShotAdded does NOT re-fire (which would double-persist). Page metadata is carried through as-is.
-    addScreenshot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta) => addScreenshot(dataUrl, quality, pageMeta, false),
+    addScreenshot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean) => addScreenshot(dataUrl, quality, pageMeta, false, !!suggestSharp),
     close,
     setReplayState,
   }
@@ -958,6 +993,7 @@ export function buildModal(
         screenshotCompressed.splice(i, 1)
         screenshotQuality.splice(i, 1) // JTBD 1.9: keep the quality tags aligned with the shifted indices
         screenshotPageMeta.splice(i, 1) // KLA-412: keep the page tags aligned with the shifted indices
+        screenshotSuggestSharp.splice(i, 1) // KLAVITYKLA-473: keep the sharp-suggest flags aligned too
         // KLA-412: tell the host to drop the matching shot from the evidence session (index-aligned).
         try { callbacks.onShotRemoved?.(i) } catch { /* host sync best-effort */ }
         // KLAVITYKLA-217: keep annotationsByIndex aligned with the (now shifted) screenshot indices —
@@ -1039,8 +1075,53 @@ export function buildModal(
     counter.textContent = `${screenshots.length}/${MAX_IMAGES} images`
     // JTBD 1.10: attaching/removing a screenshot changes the evidence state → re-evaluate Submit + hint.
     refreshSubmit()
+    // KLAVITYKLA-473: re-evaluate the "suggest Screen" callout for the (possibly new) active shot.
+    updateSharpSuggestion()
     // Image-hero: keep the big annotator pane in sync with the strip (selection / empty state).
     syncHero()
+  }
+
+  // KLAVITYKLA-473: show a non-intrusive callout — pointing at the Screen button — when the ACTIVE shot was
+  // detected (in the browser) as blank/partial-white (cross-origin images the DOM renderer couldn't inline
+  // dropped to white gaps). It never auto-captures: the sharp getDisplayMedia grab fires only when the user
+  // clicks Screen (either the real button or this callout's "Use Screen", which forwards the click's gesture).
+  function updateSharpSuggestion() {
+    const hint = shadowRoot.getElementById('klavity-sharphint') as HTMLElement | null
+    if (!hint) return // onCaptureSharp not wired → the callout element isn't rendered
+    const flagged = screenshots.length > 0 && activeIndex >= 0 && activeIndex < screenshots.length && !!screenshotSuggestSharp[activeIndex]
+    const show = flagged && !sharpHintDismissed && !!callbacks.onCaptureSharp && !busy
+    if (show) {
+      if (!hint.dataset.built) {
+        hint.dataset.built = '1'
+        hint.innerHTML = ''
+        const ic = document.createElement('span')
+        ic.className = 'kl-sh-ic'
+        ic.innerHTML = icon('triangle-alert', { size: 15 })
+        const txt = document.createElement('span')
+        txt.className = 'kl-sh-txt'
+        // ASCII-only copy, mirroring the approved mockup.
+        txt.textContent = "Some areas didn't capture (cross-origin images render blank) - click Screen for a pixel-perfect shot."
+        const use = document.createElement('button')
+        use.type = 'button'
+        use.className = 'kl-sh-use'
+        use.textContent = 'Use Screen'
+        // Forward the user's click straight to the Screen button so getDisplayMedia keeps its user gesture.
+        use.addEventListener('click', () => { sharpHintDismissed = true; updateSharpSuggestion(); sharpBtn?.click() })
+        const dismiss = document.createElement('button')
+        dismiss.type = 'button'
+        dismiss.className = 'kl-sh-x'
+        dismiss.setAttribute('aria-label', 'Dismiss')
+        dismiss.title = 'Dismiss'
+        dismiss.innerHTML = icon('x', { size: 12 })
+        dismiss.addEventListener('click', () => { sharpHintDismissed = true; updateSharpSuggestion() })
+        hint.append(ic, txt, use, dismiss)
+      }
+      hint.hidden = false
+      sharpBtn?.classList.add('kl-suggest')
+    } else {
+      hint.hidden = true
+      sharpBtn?.classList.remove('kl-suggest')
+    }
   }
 
   // Surface a problem in the shared error line (used for upload + submit failures alike).
@@ -1057,7 +1138,7 @@ export function buildModal(
   // those fire onShotAdded so the host can persist them to the evidence session, and in session mode they
   // default to the CURRENT page's tag. The host's controller.addScreenshot passes fireAdded=false to SEED
   // shots it already tracks (no re-persist, explicit page tag carried through).
-  function addScreenshot(dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, fireAdded = true) {
+  function addScreenshot(dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, fireAdded = true, suggestSharp = false) {
     // Hard cap — every capture/upload/paste path funnels through here, so the limit holds everywhere.
     if (screenshots.length >= MAX_IMAGES) { showError(`You can attach up to ${MAX_IMAGES} images.`); return }
     clearError()
@@ -1065,6 +1146,8 @@ export function buildModal(
     // Kick off compression immediately — by submit time the Promise is settled (user was typing).
     screenshotCompressed.push(callbacks.compressImage ? callbacks.compressImage(dataUrl) : Promise.resolve(dataUrl))
     screenshotQuality.push(quality) // JTBD 1.9: stays aligned with screenshots[] (undefined = no badge)
+    // KLAVITYKLA-473: a real-pixel shot can never be blank/partial, so never suggest sharp for one.
+    screenshotSuggestSharp.push(suggestSharp && quality !== 'real-pixel')
     // KLA-412: keep the page-tag array aligned. An interactive session-mode capture with no explicit tag
     // is tagged with the current page; everything else keeps whatever the caller passed (often undefined).
     screenshotPageMeta.push(pageMeta ?? (sessionMode && fireAdded ? currentPageMeta() : undefined))
@@ -1097,6 +1180,7 @@ export function buildModal(
           screenshots[index] = dataUrl
           screenshotCompressed[index] = callbacks.compressImage ? callbacks.compressImage(dataUrl) : Promise.resolve(dataUrl)
           screenshotQuality[index] = quality ?? 'real-pixel'
+          screenshotSuggestSharp[index] = false // KLAVITYKLA-473: a sharp retake can't be blank/partial
           // Clear any markup on this image — the new capture has different pixels/dimensions.
           if (annotationsByIndex[index]) { delete annotationsByIndex[index]; retakeClearedNote.add(index) }
           // #449: the shot was fully replaced — its old undo/crop history no longer matches these pixels.
@@ -1232,6 +1316,11 @@ export function buildModal(
   // while the report uploads. opts.reason='submitted' is forwarded to onClose so the host can skip its
   // keep-evidence/restore-dock bookkeeping (the report was filed, not abandoned).
   function close(opts?: { immediate?: boolean; reason?: 'submitted' }) {
+    // #468: idempotent — a second close() (e.g. the auto-dismiss timer firing after the user already hit X)
+    // must never re-run teardown or re-fire onClose. onClose can tear down host session state, so a double
+    // call could kill a reopened composer.
+    if (_closed) return
+    _closed = true
     _stopVoice?.()
     if (autodismissTimeout) {
       clearTimeout(autodismissTimeout)
@@ -1254,7 +1343,7 @@ export function buildModal(
   // no-op while a countdown is already armed. The progress-bar CSS animates over its own duration, set
   // inline here so the visual bar always matches `ms`.
   function armAutodismiss(target: HTMLElement, ms: number) {
-    if (autodismissTimeout) return
+    if (autodismissTimeout || _closed) return // #468: never arm a countdown on an already-torn-down modal
     const progressBar = document.createElement('div')
     progressBar.className = 'klavity-toast-progress'
     progressBar.style.animationDuration = ms + 'ms'
@@ -1540,8 +1629,12 @@ export function buildModal(
     const voiceEl = modal.querySelector('#klavity-voice') as HTMLButtonElement | null
     if (voiceEl) voiceEl.disabled = on
     modal.querySelectorAll<HTMLButtonElement>('.kl-htool,.kl-htbtn,.kl-hopt,.kl-hcolor').forEach(el => { el.disabled = on })
+    // #467: also freeze the remaining PAYLOAD MUTATORS while a submit is in flight (belt-and-suspenders
+    // alongside the submit-start snapshot) — Title, reporter email, issue-type buttons, the mask toggle,
+    // attachment removes, and thumbnail Remove/Markup/Retake — so nothing that shapes the report stays live.
+    shadowRoot.querySelectorAll<HTMLButtonElement | HTMLInputElement>('#klavity-title,#klavity-remail,.kl-type-chip,.klavity-toggle button,#klavity-mask-numbers,.kl-file-rm,.klavity-rm,.klavity-mk,.klavity-retake').forEach(el => { el.disabled = on })
     if (on) { _stopVoice?.(); submitBtn.disabled = true }
-    else refreshSubmit()
+    else { refreshSubmit(); updateSharpSuggestion() } // KLAVITYKLA-473: re-show the callout after a capture unlocks
   }
   // KLA-21: active-source indicator — moves .kl-active + aria-pressed to the chosen capture button
   // so the user can see which source is currently selected. Call on every successful capture/ingest.
@@ -1633,7 +1726,18 @@ export function buildModal(
     const titleInput = modal.querySelector('#klavity-title') as HTMLInputElement | null
     const title = titleInput ? titleInput.value.trim() : ''
     const coarseType: ReportType = currentType === 'feature' ? 'feature' : 'bug'
-    lockComposer(true) // disable Submit + every capture button for the duration of the upload
+    // #467: SNAPSHOT every payload-shaping array + field at submit-START, before the async compression await.
+    // Post-submit, some mutators (thumbnail Remove/Markup, Title, email, issue-type, mask, attachments) can
+    // still fire; removing a shot mid-compression would splice the live arrays and misalign the annotation
+    // map against the (already-captured) screenshot list. Building the payload from these frozen snapshots
+    // makes post-submit mutation harmless — the report reflects exactly the state at the moment of Submit.
+    const compressedSnapshot = screenshotCompressed.slice()
+    const annotationsSnapshot = buildAnnotationsPayload()
+    const filesSnapshot = attachedFiles.slice()
+    const recordingsSnapshot = recordings.slice()
+    const kindSnapshot: IssueKind = currentType
+    const emailSnapshot = remail?.value.trim() || undefined
+    lockComposer(true) // disable Submit + every capture button + the payload mutators for the upload duration
     submitBtn.textContent = 'Uploading…'
     const errEl = shadowRoot.getElementById('klavity-err')!
     errEl.style.display = 'none'
@@ -1654,17 +1758,19 @@ export function buildModal(
       // Await pre-compressed screenshots (kicked off at capture time). For a user who typed for a few
       // seconds, these Promises are already settled — zero wait. Falls back to the raw dataUrl when
       // compressImage is not provided (e.g. extension path).
-      const finalScreenshots = await Promise.all(screenshotCompressed)
+      // #467: resolve the SNAPSHOT (taken at submit-start), never the live array — so a shot removed while
+      // compression is in flight can't change what's submitted or misalign the annotation map.
+      const finalScreenshots = await Promise.all(compressedSnapshot)
       const submitPayload = {
         type: coarseType,
-        ...(issueTypeOpts ? { kind: currentType } : {}),
+        ...(issueTypeOpts ? { kind: kindSnapshot } : {}),
         ...(title ? { title } : {}),
         description,
         screenshots: finalScreenshots,
-        ...(attachedFiles.length ? { files: attachedFiles.slice() } : {}),
-        ...(recordings.length ? { recordings: recordings.slice() } : {}),
-        annotations: buildAnnotationsPayload(),
-        reporterEmail: remail?.value.trim() || undefined,
+        ...(filesSnapshot.length ? { files: filesSnapshot } : {}),
+        ...(recordingsSnapshot.length ? { recordings: recordingsSnapshot } : {}),
+        annotations: annotationsSnapshot,
+        reporterEmail: emailSnapshot,
       }
       // NON-BLOCKING default path — hand the fully-built payload to the host (widget) and CLOSE the modal
       // + backdrop immediately. The host shows a bottom-right pill and drives the (possibly 16MB+) upload
@@ -1677,6 +1783,10 @@ export function buildModal(
         return
       }
       const result = await callbacks.onSubmit(submitPayload)
+      // #468: the user may have closed the modal (Esc / X / backdrop) while onSubmit was in flight. If it's
+      // already torn down, do NOT render a confirmation or arm a timer on the detached modal — that would
+      // call close()+onClose a second time and could tear down a freshly-reopened session.
+      if (_closed) return
       finishProgress()
       if (callbacks.success) {
         // Mode-aware lead/CTA screen rendered THROUGH the existing themed modal. It self-arms the shared
@@ -1711,8 +1821,8 @@ export function buildModal(
     try {
       const restore = maskOn ? maskNumbers(document.body) : null
       try {
-        const { dataUrl, quality } = normalizeCapture(await callbacks.onCaptureFull())
-        addScreenshot(dataUrl, quality); setActiveCapture(fullBtn)
+        const { dataUrl, quality, suggestSharp } = normalizeCapture(await callbacks.onCaptureFull())
+        addScreenshot(dataUrl, quality, undefined, true, !!suggestSharp); setActiveCapture(fullBtn)
       }
       finally { restore?.() }
     }
@@ -1835,8 +1945,8 @@ export function buildModal(
           try { shot = await callbacks.onRegionCapture!(rect) }
           finally { restore?.() }
           if (shot) {
-            const { dataUrl, quality } = normalizeCapture(shot)
-            if (dataUrl) { addScreenshot(dataUrl, quality); setActiveCapture(regionBtn) }
+            const { dataUrl, quality, suggestSharp } = normalizeCapture(shot)
+            if (dataUrl) { addScreenshot(dataUrl, quality, undefined, true, !!suggestSharp); setActiveCapture(regionBtn) }
           }
         } finally {
           host.style.display = ''
@@ -2274,6 +2384,11 @@ export function buildModal(
         '@media (prefers-reduced-motion:reduce){.kl-edtb button{transition:none;}.kl-edtb button:hover,.kl-edtb button:active,.kl-edtb button[data-color]:hover{transform:none;}}'
       editor.append(cstyle, toolbar, scroller)
       shadowRoot.appendChild(editor)
+      // #466: the fullscreen markup editor OWNS the keyboard while it's open. Detach the hero's document-level
+      // keydown handler so there is EXACTLY ONE active keydown listener (this editor's onKeyDown below) — a
+      // stray hero Ctrl/Cmd+Z would otherwise silently undo the CROP underneath while the user meant to undo
+      // an edit stroke in here (the split-brain bug). syncHero() re-attaches it when the editor closes.
+      detachHeroKeys()
 
       // ── Zoom / fit: render the image at a readable scale (CSS px per image px). Default fit-WIDTH for
       // tall captures (so they don't become a sliver) and fit-WHOLE for normal ones. toImg() below maps via
@@ -2334,16 +2449,26 @@ export function buildModal(
       function close() {
         document.removeEventListener('keydown', onKeyDown, { capture: true })
         editor.remove()
+        // #466: hand the keyboard back to the hero. syncHero() remounts the hero annotator, which re-attaches
+        // the (single) hero keydown handler that was detached on open — so exactly one is ever active.
+        syncHero()
       }
       document.addEventListener('keydown', onKeyDown, { capture: true })
       selectTool(activeTool)
 
       toolbar.querySelector('#klavity-save-ann')!.addEventListener('click', async () => {
+        // #466: push the pre-edit image + markup onto the SAME unified per-image undo/crop history the hero
+        // uses, so after closing, one Ctrl/Cmd+Z (or the hero Undo) reverses THIS edit — never the crop that
+        // sits below it. Previously the editor saved without pushUndo and re-wrote screenshots[index] with a
+        // stale (editor-open) image, so a later undo skipped straight past the edit to the crop and "Revert
+        // crop" couldn't recover. Snapshot BEFORE mutating annotationsByIndex.
+        pushUndo(index)
         // Keep the CLEAN screenshot; the drawn shapes travel as a structured overlay (re-rendered
-        // toggleable + zoomable in the ticket) instead of being flattened into the image.
+        // toggleable + zoomable in the ticket) instead of being flattened into the image. We do NOT reassign
+        // screenshots[index] — it already holds the current (possibly cropped) image; overwriting it with the
+        // editor-open dataUrl was the "restores a stale image" bug.
         if (annotator.shapes.length) {
           annotationsByIndex[index] = { w: canvas.width, h: canvas.height, shapes: annotator.shapes.map(s => ({ ...s })) }
-          screenshots[index] = dataUrl
         } else {
           delete annotationsByIndex[index]
         }
@@ -2585,8 +2710,8 @@ export function buildModal(
     setTimeout(() => {
       callbacks.onCaptureFull()
         .then(shot => {
-          const { dataUrl, quality } = normalizeCapture(shot)
-          addScreenshot(dataUrl, quality)
+          const { dataUrl, quality, suggestSharp } = normalizeCapture(shot)
+          addScreenshot(dataUrl, quality, undefined, true, !!suggestSharp)
           setActiveCapture(fullBtn)
         })
         .catch(() => {})

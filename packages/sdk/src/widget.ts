@@ -400,20 +400,18 @@ async function captureSharpFullPage(): Promise<string> {
   }
 }
 
-// KLAVITYKLA-460: when the CSP/CORS-resilient DOM render comes back BLANK (unrenderable page — the classic
-// blank/white first-capture that made Snap "not usable" on PX4/Charantra), fall back to the sharp
-// getDisplayMedia real-pixel path (the one QA confirmed works) instead of seeding an empty shot. capture.ts
-// already settles + retries the DOM render once; this is the last resort when even the retry is blank.
-// Best-effort: if getDisplayMedia is unavailable (iOS Safari) or the user cancels the picker, keep the
-// (blank-flagged) DOM shot so the composer still shows something + its one-tap "Retake sharp" affordance.
-async function sharpIfBlank(
-  r: { dataUrl: string; quality: "rendered" | "wireframe"; blank: boolean },
-): Promise<{ dataUrl: string; quality: "rendered" | "wireframe" | "real-pixel" }> {
-  if (r.blank && sharpCaptureSupported()) {
-    try { return { dataUrl: await captureSharpFullPage(), quality: "real-pixel" } }
-    catch { /* user cancelled / no frame — fall through to the DOM shot */ }
-  }
-  return { dataUrl: r.dataUrl, quality: r.quality }
+// KLAVITYKLA-473 (regression fix over #460): NEVER auto-invoke getDisplayMedia. #460 auto-triggered the
+// sharp screen-share whenever a capture was flagged blank — but on a legitimately white/minimalist page that
+// popped a surprise "share your screen" system prompt on a normal "Report a bug" click (Antigravity #4).
+// Instead, detect blank/partial-white ENTIRELY IN THE BROWSER (capture.ts's blank flag + the renderer's
+// cross-origin skip count + a cheap white-fraction canvas sample — no server call, the image stays local)
+// and map it to a `suggestSharp` hint. The composer shows a non-intrusive callout pointing at the Screen
+// button; the sharp getDisplayMedia capture then fires ONLY from that button's real user-gesture click.
+function withSharpSuggestion(
+  r: { dataUrl: string; quality: "rendered" | "wireframe"; blank: boolean; partial?: boolean },
+): { dataUrl: string; quality: "rendered" | "wireframe"; suggestSharp: boolean } {
+  // Only worth suggesting the sharp path when the browser can actually do it (hidden on iOS Safari).
+  return { dataUrl: r.dataUrl, quality: r.quality, suggestSharp: !!(r.blank || r.partial) && sharpCaptureSupported() }
 }
 
 // Active watch-engine controller — torn down when Sims are undeployed.
@@ -737,9 +735,10 @@ async function mount() {
     const prev = btn.textContent
     btn.disabled = true
     try {
-      // KLAVITYKLA-460: sharpIfBlank swaps a blank DOM render for the getDisplayMedia real-pixel shot so the
-      // evidence session never persists an empty capture.
-      const { dataUrl } = await sharpIfBlank(await safeToPngWithQuality(document.body, { filter: notKlavityChrome }))
+      // KLAVITYKLA-473: persist the DOM render as-is — NO auto getDisplayMedia (that popped a surprise
+      // screen-share prompt from a plain dock capture). A blank/partial shot is still persisted; the user
+      // steers to the sharp Screen capture themselves when they resume the composer.
+      const { dataUrl } = await safeToPngWithQuality(document.body, { filter: notKlavityChrome })
       await queueEvWrite(() => persistEvShot(evSession!.id, dataUrl))
       btn.textContent = "Captured"
       setTimeout(() => { btn.textContent = prev; btn.disabled = false }, 900)
@@ -771,7 +770,7 @@ async function mount() {
   }
   // Start (or continue) an evidence session, then open the composer in session mode. Falls back to a
   // plain single-page report if IndexedDB is unavailable, so nothing breaks where storage is blocked.
-  async function startBugReport(opts?: { initialShot?: string; initialShotQuality?: "rendered" | "wireframe" | "real-pixel"; initialDescription?: string }) {
+  async function startBugReport(opts?: { initialShot?: string; initialShotQuality?: "rendered" | "wireframe" | "real-pixel"; initialShotSuggestSharp?: boolean; initialDescription?: string }) {
     let session: EvidenceSession | null = null
     try { session = await startOrContinue(cfg.projectId, evOrigin) } catch { session = null }
     if (session) evSession = session
@@ -855,7 +854,7 @@ async function mount() {
   }
   paintLauncher()
   mq.addEventListener('change', paintLauncher)
-  function openReport(type: "bug" | "feature" = "bug", opts?: { initialShot?: string; initialShotQuality?: "rendered" | "wireframe" | "real-pixel"; initialDescription?: string; evidence?: { session: EvidenceSession } }) {
+  function openReport(type: "bug" | "feature" = "bug", opts?: { initialShot?: string; initialShotQuality?: "rendered" | "wireframe" | "real-pixel"; initialShotSuggestSharp?: boolean; initialDescription?: string; evidence?: { session: EvidenceSession } }) {
     if (composer && (composer.shadowRoot.host as HTMLElement | null)?.isConnected) return
     // KLA-412: the multi-page evidence session backing this composer (null for a normal single-page report).
     const ev = opts?.evidence?.session ?? null
@@ -893,19 +892,17 @@ async function mount() {
       // JTBD 1.9: report the capture-quality tag so the composer badges the thumbnail — 'rendered' on the
       // html-to-image path, 'wireframe' when it fell back to the fetch-free painter. Degraded shots get the
       // one-tap "Retake sharp" (getDisplayMedia real-pixel path via onRetakeSharp below).
-      // KLAVITYKLA-460: if the DOM render is blank, sharpIfBlank swaps in the getDisplayMedia real-pixel shot.
-      onCaptureFull: async () => sharpIfBlank(await safeToPngWithQuality(document.body, { filter: notKlavityChrome })),
+      // KLAVITYKLA-473: if the DOM render is blank/partial-white, flag suggestSharp so the composer nudges
+      // the user to the Screen button — NO auto getDisplayMedia (the #460 surprise-prompt regression).
+      onCaptureFull: async () => withSharpSuggestion(await safeToPngWithQuality(document.body, { filter: notKlavityChrome })),
       onRegionCapture: async (rect) => {
         // Crop the selected VIEWPORT rect out of a full-page capture. Pass the capture's scale so the rect
         // lands correctly even when the fetch-free fallback downscaled a tall page (otherwise → black).
-        const { dataUrl, scale, quality, blank } = await safeToPngWithScale(document.body, { filter: notKlavityChrome })
-        // KLAVITYKLA-460: a blank crop is worthless — fall back to the sharp full-page real-pixel shot (which
-        // includes the selected region) rather than seeding an empty selection. Otherwise crop as normal.
-        if (blank && sharpCaptureSupported()) {
-          try { return { dataUrl: await captureSharpFullPage(), quality: "real-pixel" as const } }
-          catch { /* user cancelled — fall through to the (blank-flagged) crop */ }
-        }
-        return { dataUrl: await cropDataUrl(dataUrl, rect, window.scrollX, window.scrollY, scale), quality }
+        const { dataUrl, scale, quality, blank, partial } = await safeToPngWithScale(document.body, { filter: notKlavityChrome })
+        // KLAVITYKLA-473: a blank/partial crop just carries the suggestSharp hint into the composer; we no
+        // longer auto-invoke getDisplayMedia here (it surprised users with a screen-share prompt).
+        const cropped = await cropDataUrl(dataUrl, rect, window.scrollX, window.scrollY, scale)
+        return { dataUrl: cropped, quality, suggestSharp: !!(blank || partial) && sharpCaptureSupported() }
       },
       // Sharp capture: real tab pixels via getDisplayMedia (no CORS issues, captures cross-origin images) +
       // scroll-stitch to a full-page image. Feature-detected — undefined on iOS Safari (no getDisplayMedia),
@@ -1095,7 +1092,7 @@ async function mount() {
           } catch { /* skip an unreadable shot */ }
         }
         if (opts?.initialShot) {
-          ctrl.addScreenshot(opts.initialShot, opts.initialShotQuality, { pageUrl: location.href, pagePath: location.pathname })
+          ctrl.addScreenshot(opts.initialShot, opts.initialShotQuality, { pageUrl: location.href, pagePath: location.pathname }, opts.initialShotSuggestSharp)
           void queueEvWrite(() => persistEvShot(ev.id, opts.initialShot!))
         }
       })()
@@ -1103,7 +1100,8 @@ async function mount() {
       // Right-click-drag region: load the cropped selection as the default (first) screenshot, zoomed to fit.
       // JTBD 1.9: a right-click-drag region shot is an html-to-image crop, so it carries its capture-quality
       // tag → the composer badges it (and offers "Retake sharp" when it's rendered/wireframe).
-      ctrl.addScreenshot(opts.initialShot, opts.initialShotQuality)
+      // KLAVITYKLA-473: also carry the blank/partial flag so the "Use Screen" callout shows for it.
+      ctrl.addScreenshot(opts.initialShot, opts.initialShotQuality, undefined, opts.initialShotSuggestSharp)
     }
     } catch (e) { console.warn("[Klavity] failed to open the report composer:", e) }
   }
@@ -1426,25 +1424,22 @@ async function mount() {
   async function captureRegionAndOpen(rect: Rect) {
     let shot = ""
     let shotQuality: "rendered" | "wireframe" | "real-pixel" | undefined
+    let shotSuggestSharp = false
     try {
       // Full-page capture (CSP/CORS-resilient), then crop to the selected VIEWPORT rect (cropDataUrl adds
       // the scroll offset). Pass the capture's scale so the crop is correct even when the fetch-free
       // fallback downscaled a tall page. Best-effort: if capture fails, still open the composer to retry.
-      const { dataUrl, scale, quality, blank } = await safeToPngWithScale(document.body, { filter: notKlavityChrome })
-      // KLAVITYKLA-460: this right-click-drag is the exact path QA flagged as blank on PX4/Charantra. When
-      // the DOM render is blank even after capture.ts's settle+retry, fall back to the sharp getDisplayMedia
-      // full-page shot (real pixels, includes the selected region) instead of seeding a blank crop.
-      if (blank && sharpCaptureSupported()) {
-        try { shot = await captureSharpFullPage(); shotQuality = "real-pixel" }
-        catch { shot = await cropDataUrl(dataUrl, rect, window.scrollX, window.scrollY, scale); shotQuality = quality }
-      } else {
-        shot = await cropDataUrl(dataUrl, rect, window.scrollX, window.scrollY, scale)
-        shotQuality = quality
-      }
+      const { dataUrl, scale, quality, blank, partial } = await safeToPngWithScale(document.body, { filter: notKlavityChrome })
+      // KLAVITYKLA-473: this right-click-drag is a path QA flagged as blank on PX4/Charantra. We no longer
+      // auto-invoke getDisplayMedia (the #460 surprise screen-share prompt) — instead crop as normal and
+      // carry a suggestSharp hint so the composer nudges the user to the Screen button on their own click.
+      shot = await cropDataUrl(dataUrl, rect, window.scrollX, window.scrollY, scale)
+      shotQuality = quality
+      shotSuggestSharp = !!(blank || partial) && sharpCaptureSupported()
     } catch { /* fall back to an empty composer */ }
     // KLA-412: a region shot also starts/continues an evidence session (the cropped selection becomes the
     // first shot, tagged with the current page).
-    void startBugReport(shot ? { initialShot: shot, initialShotQuality: shotQuality } : undefined)
+    void startBugReport(shot ? { initialShot: shot, initialShotQuality: shotQuality, initialShotSuggestSharp: shotSuggestSharp } : undefined)
   }
   let reportArmed = true
   // 'off' mode: install NEITHER the right-click-drag region capture NOR the contextmenu takeover, so

@@ -43,6 +43,12 @@ const BLANK_PNG_MAX_BYTES = 1024    // a uniform PNG is well under this; real co
 const BLANK_SAMPLE_EDGE = 32        // downscale edge for the (cheap) pixel-variance sample
 const BLANK_VARIANCE_EPS = 4        // luminance variance at/below this ~= a single flat color → blank
 const BLANK_IMAGE_LOAD_MS = 400     // bound the sample image decode so detection never hangs
+// KLAVITYKLA-473 (partial white-box detection). A capture is "partial" — real content rendered, but some
+// cross-origin images dropped to white gaps — when the DOM renderer had to SKIP any cross-origin <img>
+// (definite: those render as white boxes), OR a sampled fraction of the shot is near-total uniform white
+// (corroborating browser-only signal, set conservatively so a normal minimalist page is never flagged).
+const PARTIAL_WHITE_FRACTION = 0.985 // >= this fraction near-white (but NOT fully blank) → likely missing images
+const WHITE_LUM_MIN = 250            // alpha-over-white luminance at/above this counts as a "white" pixel
 
 /**
  * True when an <img> src points to a different origin than the page, so html-to-image's fetch() to inline
@@ -333,6 +339,57 @@ export async function isBlankCapture(dataUrl: string): Promise<boolean> {
   return false
 }
 
+// KLAVITYKLA-473: fraction of a downscaled sample that is near-uniform white (alpha-composited over white,
+// matching how a transparent gap reads on the composer). Distinct from the blank check's VARIANCE — a
+// partial capture has real content AND large white gaps, so its variance is high but its white FRACTION is
+// also high. Returns null when a real canvas isn't available (jsdom) so callers fall back to the skip count.
+async function sampleWhiteFraction(dataUrl: string): Promise<number | null> {
+  if (typeof document === "undefined") return null
+  const img = await loadImageBounded(dataUrl, BLANK_IMAGE_LOAD_MS)
+  if (!img) return null
+  let canvas: HTMLCanvasElement
+  try { canvas = document.createElement("canvas") } catch { return null }
+  canvas.width = BLANK_SAMPLE_EDGE
+  canvas.height = BLANK_SAMPLE_EDGE
+  const ctx = canvas.getContext("2d")
+  if (!ctx) return null
+  try {
+    ctx.drawImage(img, 0, 0, BLANK_SAMPLE_EDGE, BLANK_SAMPLE_EDGE)
+    const { data } = ctx.getImageData(0, 0, BLANK_SAMPLE_EDGE, BLANK_SAMPLE_EDGE)
+    let n = 0, white = 0
+    for (let i = 0; i < data.length; i += 4) {
+      const a = data[i + 3] / 255
+      const r = data[i] * a + 255 * (1 - a)
+      const g = data[i + 1] * a + 255 * (1 - a)
+      const b = data[i + 2] * a + 255 * (1 - a)
+      const lum = 0.299 * r + 0.587 * g + 0.114 * b
+      if (lum >= WHITE_LUM_MIN) white++
+      n++
+    }
+    return n ? white / n : null
+  } catch { return null } // e.g. a tainted canvas — treat as "can't tell", not partial
+}
+
+/**
+ * KLAVITYKLA-473: decide (IN THE BROWSER — no server call, image never leaves the page) whether a NON-blank
+ * capture is only PARTIAL — real content rendered but some cross-origin images the DOM renderer couldn't
+ * inline dropped out as white gaps. Two signals, mirroring {@link isBlankCapture}:
+ *   1. SKIP COUNT (primary, deterministic): the renderer already tracks each cross-origin <img> it skipped
+ *      (they can't be fetched under CSP/CORS). Any skip ⇒ at least one white gap ⇒ partial.
+ *   2. WHITE FRACTION (browser refinement): a shot that is almost entirely uniform white (but not fully
+ *      blank) is what a page whose main imagery is cross-origin looks like once those images drop. Set
+ *      conservatively (>=98.5%) so a normal minimalist/white page is never flagged. Unavailable envs skip it.
+ * The caller uses this to SUGGEST the sharp "Screen" capture; it never triggers getDisplayMedia itself.
+ */
+export async function isPartialCapture(dataUrl: string, opts: { skippedImages?: number } = {}): Promise<boolean> {
+  if ((opts.skippedImages ?? 0) > 0) return true
+  try {
+    const frac = await sampleWhiteFraction(dataUrl)
+    if (frac !== null && frac >= PARTIAL_WHITE_FRACTION) return true
+  } catch { /* best-effort — fall through to "not partial" */ }
+  return false
+}
+
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`capture timed out after ${timeoutMs}ms`)), timeoutMs)
@@ -374,7 +431,7 @@ export type WidgetCaptureQuality = "rendered" | "wireframe"
 export async function safeToPngWithScale(
   node: HTMLElement,
   opts: { filter?: (n: HTMLElement) => boolean; pixelRatio?: number; skipFonts?: boolean; width?: number; height?: number } = {},
-): Promise<{ dataUrl: string; scale: number; quality: WidgetCaptureQuality; blank: boolean }> {
+): Promise<{ dataUrl: string; scale: number; quality: WidgetCaptureQuality; blank: boolean; partial: boolean; skippedImages: number }> {
   let skipped = 0
   const callerFilter = opts.filter
   const pixelRatio = opts.pixelRatio ?? 1
@@ -433,7 +490,11 @@ export async function safeToPngWithScale(
     if (blank) {
       warn("[Klavity] capture: DOM render came back blank after retry — caller may retake with the sharp path")
     }
-    return { dataUrl: out, scale: pixelRatio, quality: "rendered", blank }
+    // KLAVITYKLA-473: a non-blank render can still be PARTIAL (some cross-origin images dropped to white
+    // gaps). Detect it in the browser (skip count + white-fraction) so the caller can SUGGEST the sharp
+    // "Screen" capture — never auto-invoke it. Blank shots are already flagged, so don't double-count them.
+    const partial = blank ? false : await isPartialCapture(out, { skippedImages: skipped })
+    return { dataUrl: out, scale: pixelRatio, quality: "rendered", blank, partial, skippedImages: skipped }
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
     warn(`[Klavity] capture: renderer unavailable (${reason}); using fetch-free fallback`)
@@ -441,7 +502,9 @@ export async function safeToPngWithScale(
     // The fetch-free painter draws layout/text, but on a near-empty (or unpaintable) page it can still be
     // blank — surface that so the caller can go sharp rather than seed an empty wireframe.
     const blank = await isBlankCapture(fb.dataUrl)
-    return { ...fb, quality: "wireframe", blank }
+    // The wireframe already draws image placeholders (grey boxes) + carries the degraded 'wireframe' badge
+    // + a Retake affordance, so it's not additionally flagged 'partial' (no cross-origin skip count here).
+    return { ...fb, quality: "wireframe", blank, partial: false, skippedImages: 0 }
   }
 }
 
@@ -454,9 +517,9 @@ export async function safeToPngWithScale(
 export async function safeToPngWithQuality(
   node: HTMLElement,
   opts: { filter?: (n: HTMLElement) => boolean; pixelRatio?: number; skipFonts?: boolean } = {},
-): Promise<{ dataUrl: string; quality: WidgetCaptureQuality; blank: boolean }> {
-  const { dataUrl, quality, blank } = await safeToPngWithScale(node, opts)
-  return { dataUrl, quality, blank }
+): Promise<{ dataUrl: string; quality: WidgetCaptureQuality; blank: boolean; partial: boolean }> {
+  const { dataUrl, quality, blank, partial } = await safeToPngWithScale(node, opts)
+  return { dataUrl, quality, blank, partial }
 }
 
 // Upper bound (CSS px) on a full-page live-review capture's height. Very tall / infinite-scroll pages are
