@@ -1009,6 +1009,11 @@ export async function applySchema(c: Client) {
     // PX4 #425: non-image file attachments (PDF, .log, .har, ...) as a JSON array of
     // { key, filename, contentType, size } S3 descriptors. Null/absent when the report had no files.
     ["attachments_json",       "TEXT"],
+    // KLAVITYKLA-438 "Record me" (Phase 1): video recordings (screen+camera+mic) as a JSON array of
+    // { id, key, contentType, bytes, durationMs, w, h, screenOnly } S3 descriptors. `id` is the stable
+    // per-recording identity a Phase 2 transcript will reference. Null/absent when the report had none.
+    // Additive-ALTER, mirrors attachments_json — older rows are simply null (full back-compat).
+    ["recordings_json",        "TEXT"],
     // PX4 #439: resolved reporter identity (Identify API / config / data-attrs / safe fallback) as a JSON
     // object { id,email,name,org,orgId,role,product,env,server }. Null on older rows / anonymous reports.
     ["reporter_json",          "TEXT"],
@@ -2942,6 +2947,8 @@ export type FeedbackInsert = {
   reportGeoJson?: string | null  // best-effort geo/company enrichment JSON (may be stamped async post-insert)
   title?: string | null      // PX4 #411: explicit one-line issue Title (preferred over auto-title on export)
   attachments?: Array<{ key: string; filename: string; contentType: string; size: number }> | null  // PX4 #425: non-image files
+  // KLAVITYKLA-438 "Record me": video recordings. `id` is the stable per-recording identity (Phase 2 transcript ref).
+  recordings?: Array<{ id: string; key: string; contentType: string; bytes: number; durationMs: number; w: number; h: number; screenOnly: boolean }> | null
   reporter?: Record<string, string> | null   // PX4 #439: resolved reporter identity (id/email/name/org/...)
   clientInfo?: Record<string, any> | null     // PX4 #428: captured browser/app info (browser/os/viewport/...)
   // KLAVITYKLA-441: resolved auto-labels from the project's rules (first match wins). Null when unmatched.
@@ -2964,8 +2971,8 @@ export async function insertFeedback(f: FeedbackInsert): Promise<string> {
   await db!.execute({
     sql: `INSERT INTO feedback (id,project_id,sim_id,actor_email,url_host,url_path,source_referrer,observation,sentiment,priority,
           screenshot_id,suggested_bug_json,cited_trait_ids_json,source_quote,source_transcript_id,source_date,
-          plane_issue_key,plane_issue_url,issue_key,recurrence_count,recurrence_dates_json,last_seen_at,client_context_json,annotations_json,source,signature,report_type,report_ip,report_url,report_geo_json,report_env,report_org,report_server,title,attachments_json,reporter_json,client_info_json,created_at,status)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          plane_issue_key,plane_issue_url,issue_key,recurrence_count,recurrence_dates_json,last_seen_at,client_context_json,annotations_json,source,signature,report_type,report_ip,report_url,report_geo_json,report_env,report_org,report_server,title,attachments_json,recordings_json,reporter_json,client_info_json,created_at,status)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [id, f.projectId, f.simId ?? null, f.actorEmail ?? null, f.urlHost ?? null, f.urlPath ?? null, f.sourceReferrer ?? null,
            f.observation ?? null, f.sentiment ?? null, f.priority ?? null, f.screenshotId ?? null,
            f.suggestedBug != null ? JSON.stringify(f.suggestedBug) : null,
@@ -2979,6 +2986,7 @@ export async function insertFeedback(f: FeedbackInsert): Promise<string> {
            f.reportIp ?? null, f.reportUrl ?? null, f.reportGeoJson ?? null,
            f.reportEnv ?? null, f.reportOrg ?? null, f.reportServer ?? null,
            f.title ?? null, (f.attachments && f.attachments.length) ? JSON.stringify(f.attachments) : null,
+           (f.recordings && f.recordings.length) ? JSON.stringify(f.recordings) : null,
            (f.reporter && Object.keys(f.reporter).length) ? JSON.stringify(f.reporter) : null,
            (f.clientInfo && Object.keys(f.clientInfo).length) ? JSON.stringify(f.clientInfo) : null,
            now, status],
@@ -4991,6 +4999,9 @@ export async function feedbackById(projectId: string, id: string): Promise<any |
     title: x.title != null ? String(x.title) : null,
     // PX4 #425: non-image file attachments — parsed JSON array of { key, filename, contentType, size }.
     attachments: safeJsonParse(x.attachments_json),
+    // KLAVITYKLA-438 "Record me": video recordings — parsed JSON array of
+    // { id, key, contentType, bytes, durationMs, w, h, screenOnly }. `id` is the Phase 2 transcript ref.
+    recordings: safeJsonParse(x.recordings_json),
     // PX4 #439/#428: reporter identity + captured browser/app info (null on older/anonymous rows). Consumed
     // by feedbackToTicketPayload to attribute the exported ticket.
     reporter: safeJsonParse(x.reporter_json),

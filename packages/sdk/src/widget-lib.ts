@@ -174,7 +174,7 @@ export async function buildThumbnail(dataUrl: string, opts: { maxWidth?: number;
   }
 }
 
-export function buildFeedbackForm(input: { type?: string; title?: string; description: string; pageUrl: string; referrer?: string; projectId: string; screenshots: string[]; screenshotThumbs?: string[]; files?: Array<{ name: string; type?: string; dataUrl: string }>; context?: ReportContext; reporter?: Reporter; clientInfo?: import("@klavity/core").ClientInfo; replayEvents?: unknown[]; annotations?: any }): FormData {
+export function buildFeedbackForm(input: { type?: string; title?: string; description: string; pageUrl: string; referrer?: string; projectId: string; screenshots: string[]; screenshotThumbs?: string[]; files?: Array<{ name: string; type?: string; dataUrl: string }>; recordings?: Array<{ id: string; dataUrl: string; mime: string; durationMs: number; width: number; height: number; bytes: number; screenOnly: boolean }>; context?: ReportContext; reporter?: Reporter; clientInfo?: import("@klavity/core").ClientInfo; replayEvents?: unknown[]; annotations?: any }): FormData {
   // Use the shared serializer (packages/core/integrations/backend) for all common fields so that
   // extension + widget stay in parity by construction — a new shared field added in buildFeedbackFormData
   // appears in BOTH paths automatically (prevents drift like KLAVITYKLA-208).
@@ -206,6 +206,21 @@ export function buildFeedbackForm(input: { type?: string; title?: string; descri
     for (const f of input.files) {
       try { fd.append("files", dataUrlToBlob(f.dataUrl), f.name) } catch { /* skip a malformed data URL */ }
     }
+  }
+  // KLAVITYKLA-438 "Record me": video recordings. Each blob is appended under the `recording` field (the
+  // server does form.getAll("recording")), and a parallel `recording_meta` JSON array carries the per-clip
+  // descriptors (stable id for Phase 2 transcript, duration, dimensions, screen-only flag) index-aligned
+  // with the appended blobs. Best-effort — a malformed data URL is skipped so one bad clip never fails submit.
+  if (input.recordings && input.recordings.length) {
+    const meta: Array<{ id: string; durationMs: number; width: number; height: number; bytes: number; mime: string; screenOnly: boolean }> = []
+    for (const r of input.recordings) {
+      try {
+        const ext = (r.mime || "").includes("mp4") ? "mp4" : "webm"
+        fd.append("recording", dataUrlToBlob(r.dataUrl), `recording-${r.id}.${ext}`)
+        meta.push({ id: r.id, durationMs: r.durationMs, width: r.width, height: r.height, bytes: r.bytes, mime: r.mime, screenOnly: r.screenOnly })
+      } catch { /* skip a malformed recording */ }
+    }
+    if (meta.length) fd.set("recording_meta", JSON.stringify(meta))
   }
   // Screenshots: widget receives data URLs (html-to-image), so we convert inline.
   // Extension path fetches blobs via fetch(dataUrl) in submitReport instead.

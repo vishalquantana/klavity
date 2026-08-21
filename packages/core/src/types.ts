@@ -19,6 +19,21 @@ export interface ReportFileAttachment {
   dataUrl: string
 }
 
+// KLAVITYKLA-438 "Record me" (Phase 1): a screen+camera(PiP)+mic-narration recording captured from the
+// composer and attached to the report as a video. `id` is a stable per-recording identity minted at
+// capture time so Phase 2's transcript can be attached back to the exact recording. Mirrors the sdk's
+// RecordingAttachment shape (packages/sdk/src/recorder.ts) — kept in core so the composer stays sdk-free.
+export interface ReportRecording {
+  id: string
+  dataUrl: string      // data:video/webm;base64,... (or mp4 on Safari)
+  mime: string
+  durationMs: number
+  bytes: number
+  width: number
+  height: number
+  screenOnly: boolean  // true when camera/mic were blocked (site Permissions-Policy) → screen-only clip
+}
+
 // How the extension authenticates to the Klavity backend:
 //   'klavity' — signed-in user; backend resolves their personal→team connection (token stays server-side)
 //   'direct'  — no account; the extension forwards its own tracker creds (Phase 1 behavior)
@@ -168,6 +183,9 @@ export interface SubmitReportPayload {
   screenshots: string[] // data URLs (PNG or JPEG)
   // PX4 #425: non-image file attachments (PDF, logs, .har, ...). Optional; screenshots keep their own path.
   files?: ReportFileAttachment[]
+  // KLAVITYKLA-438: "Record me" video recordings (screen+camera+mic). Optional + additive — absent when the
+  // composer's recording flag is off or the reporter attached none. Threaded to /api/feedback as `recording`.
+  recordings?: ReportRecording[]
   projectId?: string    // Klavity project ID; if set, report lands in that project
   // PX4 #439: the resolved reporter identity (Identify API / config / data-attrs / safe fallback). Threaded
   // to /api/feedback as `reporter` and persisted to feedback.reporter_json for connector attribution.

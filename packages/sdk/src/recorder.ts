@@ -1,0 +1,449 @@
+// ── "Record me" recorder (KLAVITYKLA-438, Phase 1) ────────────────────────────────────────────────────
+// From inside the Snap composer, record the reporter's SCREEN + optional CAMERA (picture-in-picture) +
+// MIC narration, composite them onto a single <canvas>, and encode ONE webm/mp4 blob via MediaRecorder.
+// Grounded in the #426 feasibility spike (docs/spikes/recording/record-poc.html) and reuses the same
+// getDisplayMedia orchestration style the widget's Sharp capture already ships (capture.ts / widget.ts).
+//
+// This module is split into three seams so the risky/engine part is pure + unit-testable:
+//   1. pickRecordingMime / recordingSupported — pure feature-detection helpers.
+//   2. startRecording(opts, deps)             — the capture ENGINE. Every browser primitive it touches
+//      (mediaDevices, MediaRecorder, MediaStream, canvas/video elements, timers) is injected via `deps`,
+//      so tests drive start→chunk→stop, cap enforcement, and the screen-only fallback with mocks.
+//   3. recordMe(opts)                          — a thin browser-only overlay UI (consent → recording →
+//      preview → attach) that drives the engine and resolves a RecordingAttachment for the composer.
+//
+// Phase 2 (transcript) is intentionally NOT built here. The RecordingAttachment carries a stable `id`
+// so a transcript produced later can be attached back to the exact recording (recordings_json row).
+
+// ── Caps ──────────────────────────────────────────────────────────────────────────────────────────────
+// Length cap: 3 min hard auto-stop (keeps blobs bounded + cheap to transcribe later). Size cap: ~50MB —
+// mirrors the server's RECORDING_MAX_BYTES so a client-accepted recording also passes server intake.
+export const RECORDING_MAX_DURATION_MS = 3 * 60 * 1000
+export const RECORDING_MAX_BYTES = 50 * 1024 * 1024
+
+export interface RecordingCaps {
+  maxDurationMs: number
+  maxBytes: number
+}
+export const DEFAULT_RECORDING_CAPS: RecordingCaps = {
+  maxDurationMs: RECORDING_MAX_DURATION_MS,
+  maxBytes: RECORDING_MAX_BYTES,
+}
+
+// vp9/opus webm is the Chrome/Edge/Firefox target; Safari 17+ emits mp4 (H.264/AAC). Feature-pick rather
+// than hardcode so storage/serving accepts whichever container the running browser produced.
+export const RECORDING_MIME_CANDIDATES = [
+  'video/webm;codecs=vp9,opus',
+  'video/webm;codecs=vp8,opus',
+  'video/webm;codecs=h264,opus',
+  'video/mp4;codecs=avc1,mp4a.40.2',
+  'video/webm',
+]
+
+// ── RecordingAttachment: the composer/widget-facing result ─────────────────────────────────────────────
+// `id` is the stable per-recording identity minted at capture time. It threads all the way to the server
+// so Phase 2's transcript can reference the exact recording. `dataUrl` is the encoded blob for upload.
+export interface RecordingAttachment {
+  id: string
+  dataUrl: string
+  mime: string
+  durationMs: number
+  bytes: number
+  width: number
+  height: number
+  screenOnly: boolean
+}
+
+export type RecorderState = 'idle' | 'recording' | 'paused' | 'stopped'
+
+export interface RecordingResult {
+  id: string
+  blob: Blob
+  mime: string
+  durationMs: number
+  bytes: number
+  width: number
+  height: number
+  screenOnly: boolean
+  hadCamera: boolean
+  hadAudio: boolean
+}
+
+export interface StartRecordingOptions {
+  wantCamera?: boolean
+  wantMic?: boolean
+  fps?: number
+  caps?: Partial<RecordingCaps>
+  onState?: (state: RecorderState) => void
+  onStats?: (stats: { elapsedMs: number; bytes: number }) => void
+  // Called once if getUserMedia (camera/mic) rejects — e.g. the customer site's Permissions-Policy blocks
+  // camera/microphone for embedded tools. The recording continues SCREEN-ONLY; the UI surfaces the hint.
+  onFallback?: (reason: string) => void
+}
+
+export interface RecordingController {
+  pause(): void
+  resume(): void
+  stop(): void
+  state(): RecorderState
+  screenOnly(): boolean
+  // Resolves when the recording fully stops (native "stop sharing", Stop button, or a cap auto-stop).
+  done: Promise<RecordingResult>
+}
+
+// ── Injected browser dependencies (real globals by default; mocked in tests) ───────────────────────────
+export interface RecorderDeps {
+  mediaDevices: {
+    getDisplayMedia: (constraints: any) => Promise<any>
+    getUserMedia: (constraints: any) => Promise<any>
+  }
+  MediaRecorder: any
+  MediaStream: any
+  createElement: (tag: 'canvas' | 'video') => any
+  now: () => number
+  raf: (cb: (t: number) => void) => number
+  caf: (id: number) => void
+  setInterval: (cb: () => void, ms: number) => any
+  clearInterval: (id: any) => void
+}
+
+export function defaultRecorderDeps(): RecorderDeps {
+  const g: any = globalThis as any
+  return {
+    mediaDevices: (typeof navigator !== 'undefined' ? (navigator as any).mediaDevices : undefined) as any,
+    MediaRecorder: g.MediaRecorder,
+    MediaStream: g.MediaStream,
+    createElement: (tag) => document.createElement(tag) as any,
+    now: () => (typeof performance !== 'undefined' ? performance.now() : Date.now()),
+    raf: (cb) => (typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame(cb) : (setTimeout(() => cb(Date.now()), 16) as unknown as number)),
+    caf: (id) => { if (typeof cancelAnimationFrame !== 'undefined') cancelAnimationFrame(id); else clearTimeout(id) },
+    setInterval: (cb, ms) => setInterval(cb, ms),
+    clearInterval: (id) => clearInterval(id),
+  }
+}
+
+// ── Pure helpers ───────────────────────────────────────────────────────────────────────────────────────
+// Return the first MediaRecorder mimeType this browser will actually emit, or null when MediaRecorder /
+// no candidate codec is available. `isSupported` is injectable so the choice is unit-testable per browser.
+export function pickRecordingMime(
+  isSupported?: (m: string) => boolean,
+  candidates: string[] = RECORDING_MIME_CANDIDATES,
+): string | null {
+  const test = isSupported ?? ((m: string) =>
+    typeof MediaRecorder !== 'undefined' && !!MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m))
+  for (const c of candidates) { if (test(c)) return c }
+  return null
+}
+
+// Feature-detect: screen capture + MediaRecorder. Matches the Sharp-capture support envelope (no
+// getDisplayMedia on iOS Safari → the "Record me" button is simply hidden there).
+export function recordingSupported(deps: Partial<RecorderDeps> & { mediaDevices?: any } = defaultRecorderDeps()): boolean {
+  const md = deps.mediaDevices
+  const MR = (deps as any).MediaRecorder ?? (globalThis as any).MediaRecorder
+  return !!md && typeof md.getDisplayMedia === 'function' && typeof MR !== 'undefined'
+}
+
+function newRecordingId(): string {
+  const rnd = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID()
+    : Math.random().toString(36).slice(2) + Date.now().toString(36)
+  return 'rec_' + rnd
+}
+
+// ── The capture engine ─────────────────────────────────────────────────────────────────────────────────
+// getDisplayMedia FIRST (preserves the click's user gesture — same rule the Sharp path respects). Camera/
+// mic are best-effort: a rejection (often a customer-site Permissions-Policy block) falls back to
+// screen-only and fires onFallback. Composites screen full-frame + camera as a bottom-right PiP onto a
+// canvas, then MediaRecorder(canvas.captureStream + micTrack). Enforces both the length + byte caps.
+export async function startRecording(
+  opts: StartRecordingOptions = {},
+  deps: RecorderDeps = defaultRecorderDeps(),
+): Promise<RecordingController> {
+  const caps: RecordingCaps = { ...DEFAULT_RECORDING_CAPS, ...(opts.caps || {}) }
+  const wantCamera = opts.wantCamera !== false
+  const wantMic = opts.wantMic !== false
+  const fps = Math.max(5, Math.min(60, opts.fps ?? 24))
+
+  const mime = pickRecordingMime(
+    deps.MediaRecorder?.isTypeSupported ? (m: string) => deps.MediaRecorder.isTypeSupported(m) : undefined,
+  )
+  if (!mime) throw new Error('recording-unsupported: no MediaRecorder codec available in this browser')
+
+  const id = newRecordingId()
+  const canvas = deps.createElement('canvas')
+  const ctx = canvas.getContext ? canvas.getContext('2d') : null
+  const screenVid = deps.createElement('video'); screenVid.muted = true; ;(screenVid as any).playsInline = true
+  const camVid = deps.createElement('video'); camVid.muted = true; ;(camVid as any).playsInline = true
+
+  let state: RecorderState = 'idle'
+  const setState = (s: RecorderState) => { state = s; try { opts.onState?.(s) } catch { /* listener errors never break capture */ } }
+
+  // 1) Screen — required. Throws (caller treats as cancel) if the user dismisses the picker.
+  const screenStream = await deps.mediaDevices.getDisplayMedia({ video: { frameRate: fps }, audio: false, preferCurrentTab: false })
+  const screenTrack = screenStream.getVideoTracks?.()[0]
+  const st = (screenTrack?.getSettings?.() ?? {}) as { width?: number; height?: number }
+  const aspect = (st.width && st.height) ? st.width / st.height : 16 / 9
+  canvas.width = 1280
+  canvas.height = Math.round(1280 / aspect)
+  try { screenVid.srcObject = screenStream; await (screenVid.play?.() ?? Promise.resolve()) } catch { /* jsdom/headless: no real playback */ }
+
+  // 2) Camera + mic — best-effort. A rejection → screen-only fallback (Permissions-Policy on the host page).
+  let camStream: any = null
+  let micTrack: any = null
+  let hadCamera = false
+  let screenOnly = true
+  if (wantCamera || wantMic) {
+    try {
+      camStream = await deps.mediaDevices.getUserMedia({
+        video: wantCamera ? { width: 640, height: 480, facingMode: 'user' } : false,
+        audio: wantMic ? { echoCancellation: true, noiseSuppression: true } : false,
+      })
+      if (wantCamera && camStream.getVideoTracks?.().length) {
+        hadCamera = true; screenOnly = false
+        try { camVid.srcObject = camStream; await (camVid.play?.() ?? Promise.resolve()) } catch { /* no-op */ }
+      }
+      if (wantMic) { micTrack = camStream.getAudioTracks?.()[0] || null; if (micTrack) screenOnly = false }
+    } catch (e: any) {
+      // KEY spike finding: on a customer site, Permissions-Policy can silently block camera/mic here.
+      try { opts.onFallback?.(e?.name === 'NotAllowedError' ? 'permissions-policy' : (e?.name || 'camera-mic-blocked')) } catch { /* no-op */ }
+      screenOnly = true
+    }
+  }
+  const hadAudio = !!micTrack
+
+  // 3) Compositor: screen letterboxed full-frame + camera PiP inset (22% width, bottom-right).
+  let rafId = 0
+  const drawFrame = () => {
+    rafId = deps.raf(drawFrame)
+    if (!ctx) return
+    const W = canvas.width, H = canvas.height
+    if ((screenVid as any).videoWidth) {
+      const sr = (screenVid as any).videoWidth / (screenVid as any).videoHeight, cr = W / H
+      let dw = W, dh = H, dx = 0, dy = 0
+      if (sr > cr) { dh = W / sr; dy = (H - dh) / 2 } else { dw = H * sr; dx = (W - dw) / 2 }
+      ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H)
+      ctx.drawImage(screenVid, dx, dy, dw, dh)
+    }
+    if (hadCamera && (camVid as any).videoWidth) {
+      const pw = Math.round(W * 0.22), ph = Math.round(pw * ((camVid as any).videoHeight / (camVid as any).videoWidth))
+      const px = W - pw - 20, py = H - ph - 20
+      ctx.drawImage(camVid, px, py, pw, ph)
+      ctx.strokeStyle = '#7c3aed'; ctx.lineWidth = 2; ctx.strokeRect(px, py, pw, ph)
+    }
+    if (state === 'recording') { ctx.fillStyle = '#e11'; ctx.beginPath(); ctx.arc(24, 24, 7, 0, Math.PI * 2); ctx.fill() }
+  }
+  drawFrame()
+
+  // 4) Combined output stream: composited canvas video track + mic audio track → one MediaRecorder.
+  const canvasStream = canvas.captureStream(fps)
+  const outTracks: any[] = [canvasStream.getVideoTracks?.()[0]].filter(Boolean)
+  if (micTrack) outTracks.push(micTrack)
+  const out = new deps.MediaStream(outTracks)
+
+  const recorder = new deps.MediaRecorder(out, { mimeType: mime, videoBitsPerSecond: 2_500_000, audioBitsPerSecond: 128_000 })
+  const chunks: BlobPart[] = []
+  let totalBytes = 0
+  let startedAt = 0, pausedMs = 0, pauseStartedAt = 0
+  let tickId: any = 0
+  let stopping = false
+
+  const elapsedMs = (): number => {
+    if (state === 'idle') return 0
+    const base = deps.now() - startedAt - pausedMs
+    return Math.max(0, base - (pauseStartedAt ? deps.now() - pauseStartedAt : 0))
+  }
+
+  recorder.ondataavailable = (ev: any) => {
+    if (ev?.data && ev.data.size) { chunks.push(ev.data); totalBytes += ev.data.size }
+    try { opts.onStats?.({ elapsedMs: elapsedMs(), bytes: totalBytes }) } catch { /* no-op */ }
+    // Size cap: stop the moment the accumulated blob would exceed the byte ceiling.
+    if (totalBytes >= caps.maxBytes) stop()
+  }
+
+  let resolveDone!: (r: RecordingResult) => void
+  const done = new Promise<RecordingResult>((res) => { resolveDone = res })
+
+  const cleanupStreams = () => {
+    for (const s of [screenStream, camStream]) { try { s?.getTracks?.().forEach((t: any) => t.stop?.()) } catch { /* no-op */ } }
+  }
+
+  recorder.onstop = () => {
+    deps.caf(rafId)
+    if (tickId) { deps.clearInterval(tickId); tickId = 0 }
+    const durationMs = elapsedMs()
+    const blob = new Blob(chunks, { type: mime.split(';')[0] })
+    cleanupStreams()
+    setState('stopped')
+    resolveDone({
+      id, blob, mime: blob.type || mime, durationMs, bytes: blob.size || totalBytes,
+      width: canvas.width, height: canvas.height, screenOnly, hadCamera, hadAudio,
+    })
+  }
+
+  function stop() {
+    if (stopping) return
+    stopping = true
+    try { if (recorder.state !== 'inactive') recorder.stop() } catch { /* already stopped */ }
+  }
+
+  // Native "stop sharing" from the browser bar ends the recording cleanly.
+  try { screenTrack?.addEventListener?.('ended', () => stop()) } catch { /* no-op */ }
+
+  // Emit a chunk every 1s so live size/elapsed readouts update; length-cap auto-stop is checked here.
+  recorder.start(1000)
+  startedAt = deps.now()
+  setState('recording')
+  tickId = deps.setInterval(() => {
+    const el = elapsedMs()
+    try { opts.onStats?.({ elapsedMs: el, bytes: totalBytes }) } catch { /* no-op */ }
+    if (el >= caps.maxDurationMs) stop()
+  }, 200)
+
+  return {
+    pause() {
+      if (state !== 'recording') return
+      try { recorder.pause() } catch { /* no-op */ }
+      pauseStartedAt = deps.now(); setState('paused')
+    },
+    resume() {
+      if (state !== 'paused') return
+      try { recorder.resume() } catch { /* no-op */ }
+      pausedMs += deps.now() - pauseStartedAt; pauseStartedAt = 0; setState('recording')
+    },
+    stop() { stop() },
+    state() { return state },
+    screenOnly() { return screenOnly },
+    done,
+  }
+}
+
+// ── Blob → data URL (upload form uses data URLs; widget-lib re-hydrates to a Blob on submit) ────────────
+export function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    try {
+      const fr = new FileReader()
+      fr.onload = () => resolve(String(fr.result))
+      fr.onerror = () => reject(fr.error || new Error('read failed'))
+      fr.readAsDataURL(blob)
+    } catch (e) { reject(e as Error) }
+  })
+}
+
+export async function recordingResultToAttachment(r: RecordingResult): Promise<RecordingAttachment> {
+  return {
+    id: r.id,
+    dataUrl: await blobToDataUrl(r.blob),
+    mime: r.mime,
+    durationMs: Math.round(r.durationMs),
+    bytes: r.bytes,
+    width: r.width,
+    height: r.height,
+    screenOnly: r.screenOnly,
+  }
+}
+
+// ── recordMe(): thin browser-only overlay (consent → recording → preview → attach) ────────────────────
+// Resolves a RecordingAttachment when the reporter clicks "Attach to report", or null on cancel/close.
+// Deliberately self-contained (its own fixed overlay) so the heavy MediaRecorder machinery stays OUT of
+// the shared composer (packages/core/src/modal.ts) — the composer only sees the resolved attachment.
+export interface RecordMeOptions {
+  caps?: Partial<RecordingCaps>
+  deps?: RecorderDeps
+}
+
+export async function recordMe(opts: RecordMeOptions = {}): Promise<RecordingAttachment | null> {
+  if (typeof document === 'undefined') return null
+  const deps = opts.deps ?? defaultRecorderDeps()
+  if (!recordingSupported(deps)) return null
+  return new Promise<RecordingAttachment | null>((resolve) => {
+    const host = document.createElement('div')
+    host.setAttribute('data-klavity-ui', 'recorder')
+    host.style.cssText = 'position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;background:rgba(10,8,14,.55);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#19140f'
+    const card = document.createElement('div')
+    card.style.cssText = 'width:360px;max-width:92vw;background:#f5f3ee;border:1px solid #e3ddd1;border-radius:12px;box-shadow:0 20px 60px rgba(28,22,40,.28);overflow:hidden'
+    host.appendChild(card); document.body.appendChild(host)
+
+    let settled = false
+    const finish = (val: RecordingAttachment | null) => { if (settled) return; settled = true; try { host.remove() } catch { /* no-op */ } resolve(val) }
+    let controller: RecordingController | null = null
+
+    const fmtTime = (ms: number) => { const s = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` }
+    const fmtMB = (b: number) => `${(b / 1048576).toFixed(1)} MB`
+    const caps: RecordingCaps = { ...DEFAULT_RECORDING_CAPS, ...(opts.caps || {}) }
+
+    // Panel 1 — consent-first start.
+    const renderConsent = () => {
+      card.innerHTML =
+        '<div style="padding:14px;border-bottom:1px solid #e3ddd1;font-weight:600">Record a walkthrough</div>' +
+        '<div style="padding:14px">' +
+        '<label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="klr-screen" checked disabled> Share my <b>screen</b></label>' +
+        '<label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="klr-cam" checked> Camera <span style="font-size:9px;font-weight:800;color:#fff;background:#6366f1;padding:1px 5px;border-radius:999px">optional</span></label>' +
+        '<label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="klr-mic" checked> Microphone (narration)</label>' +
+        '<div style="display:flex;gap:8px;margin-top:10px"><button id="klr-start" style="padding:8px 13px;border-radius:8px;border:1px solid #dc2626;background:#dc2626;color:#fff;font-weight:600;cursor:pointer">Start recording</button><button id="klr-cancel" style="padding:8px 13px;border-radius:8px;border:1px solid #e3ddd1;background:#fffdf8;font-weight:600;cursor:pointer">Cancel</button></div>' +
+        `<p style="font-size:11px;color:#574f45;margin-top:8px">Your browser will ask to share a tab/screen. Max ${Math.round(caps.maxDurationMs / 60000)} min. Nothing uploads until you attach it.</p>` +
+        '<div id="klr-hint"></div></div>'
+      ;(card.querySelector('#klr-cancel') as HTMLButtonElement).onclick = () => finish(null)
+      ;(card.querySelector('#klr-start') as HTMLButtonElement).onclick = () => {
+        const wantCamera = (card.querySelector('#klr-cam') as HTMLInputElement).checked
+        const wantMic = (card.querySelector('#klr-mic') as HTMLInputElement).checked
+        void begin(wantCamera, wantMic)
+      }
+    }
+
+    const begin = async (wantCamera: boolean, wantMic: boolean) => {
+      let fellBack = false
+      try {
+        controller = await startRecording({
+          wantCamera, wantMic, caps: opts.caps,
+          onFallback: () => { fellBack = true },
+          onStats: ({ elapsedMs, bytes }) => {
+            const t = card.querySelector('#klr-timer'); if (t) t.textContent = 'REC ' + fmtTime(elapsedMs)
+            const m = card.querySelector('#klr-meta')
+            if (m) m.innerHTML = `${fmtTime(Math.max(0, caps.maxDurationMs - elapsedMs))} left<br>~${fmtMB(bytes)}`
+          },
+        }, deps)
+      } catch {
+        finish(null); return // user dismissed the screen-share picker
+      }
+      renderRecording(fellBack)
+      controller.done.then(async (r) => { renderPreview(await recordingResultToAttachment(r)) })
+    }
+
+    // Panel 2 — recording (REC timer + size/time-left + pause/stop + screen-only hint).
+    const renderRecording = (fellBack: boolean) => {
+      card.innerHTML =
+        '<div style="padding:14px;border-bottom:1px solid #e3ddd1;font-weight:600">Recording…</div>' +
+        '<div style="padding:14px">' +
+        '<div style="position:relative;border-radius:10px;background:linear-gradient(135deg,#ece7dd,#f7f4ec);height:120px;display:grid;place-items:center;color:#574f45;font-size:12px">screen preview' +
+        '<div style="position:absolute;left:8px;top:8px;background:rgba(0,0,0,.6);color:#fff;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:600" id="klr-timer">REC 0:00</div></div>' +
+        '<div style="display:flex;align-items:center;gap:8px;margin-top:10px">' +
+        '<button id="klr-pause" style="padding:8px 13px;border-radius:8px;border:1px solid #e3ddd1;background:#fffdf8;font-weight:600;cursor:pointer">Pause</button>' +
+        '<button id="klr-stop" style="padding:8px 13px;border-radius:8px;border:1px solid #dc2626;background:#dc2626;color:#fff;font-weight:600;cursor:pointer">Stop</button>' +
+        '<span id="klr-meta" style="margin-left:auto;font-size:11px;color:#574f45;text-align:right"></span></div>' +
+        (fellBack ? '<p style="font-size:11px;color:#574f45;margin-top:9px">Camera/mic blocked by this site — recording <b>screen only</b>. You can still narrate by typing, or use the browser extension.</p>' : '') +
+        '</div>'
+      const pauseBtn = card.querySelector('#klr-pause') as HTMLButtonElement
+      pauseBtn.onclick = () => {
+        if (!controller) return
+        if (controller.state() === 'recording') { controller.pause(); pauseBtn.textContent = 'Resume' }
+        else { controller.resume(); pauseBtn.textContent = 'Pause' }
+      }
+      ;(card.querySelector('#klr-stop') as HTMLButtonElement).onclick = () => controller?.stop()
+    }
+
+    // Panel 3 — preview → attach.
+    const renderPreview = (att: RecordingAttachment) => {
+      card.innerHTML =
+        '<div style="padding:14px;border-bottom:1px solid #e3ddd1;font-weight:600">Preview</div>' +
+        '<div style="padding:14px">' +
+        `<video src="${att.dataUrl}" controls style="width:100%;border-radius:10px;background:#2a2740;max-height:220px"></video>` +
+        '<div style="display:flex;align-items:center;gap:8px;margin-top:10px">' +
+        '<button id="klr-attach" style="padding:8px 13px;border-radius:8px;border:1px solid #6366f1;background:#6366f1;color:#fff;font-weight:600;cursor:pointer">Attach to report</button>' +
+        '<button id="klr-redo" style="padding:8px 13px;border-radius:8px;border:1px solid #e3ddd1;background:#fffdf8;font-weight:600;cursor:pointer">Re-record</button>' +
+        `<span style="margin-left:auto;font-size:11px;color:#574f45">${fmtTime(att.durationMs)} · ${fmtMB(att.bytes)}</span></div></div>`
+      ;(card.querySelector('#klr-attach') as HTMLButtonElement).onclick = () => finish(att)
+      ;(card.querySelector('#klr-redo') as HTMLButtonElement).onclick = () => { controller = null; renderConsent() }
+    }
+
+    renderConsent()
+  })
+}

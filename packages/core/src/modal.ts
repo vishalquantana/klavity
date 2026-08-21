@@ -1,4 +1,4 @@
-import type { ReportType, IssueKind, ReportFileAttachment, Shape } from './types'
+import type { ReportType, IssueKind, ReportFileAttachment, ReportRecording, Shape } from './types'
 import { Annotator } from './annotator'
 import { themeCss, resolveModalConfig, type ModalConfig } from './modal-theme'
 import { icon } from './icons'
@@ -169,6 +169,9 @@ export interface ModalCallbacks {
     // PX4 #425: non-image file attachments (PDF, .log, .har, ...) the reporter added, when the host enabled
     // allowFileAttachments. Absent/empty when none. Screenshots keep travelling in `screenshots`.
     files?: ReportFileAttachment[]
+    // KLAVITYKLA-438: "Record me" video recordings the reporter captured + attached, when the host enabled
+    // allowRecording. Absent/empty when none. Each threads to /api/feedback as a `recording` multipart field.
+    recordings?: ReportRecording[]
     annotations?: any
     // The email typed into the REQUIRED-email gate (requireEmail). The host must forward it to the
     // backend as reporter_email, otherwise an "email"-gated project rejects the submit with 400
@@ -189,6 +192,15 @@ export interface ModalCallbacks {
   // appears in the capture row; selected files show as chips below the evidence strip and thread through
   // onSubmit as `files`. Default false → only images can be attached (upload/paste stay image-only), unchanged.
   allowFileAttachments?: boolean
+  // KLAVITYKLA-438 "Record me" (Phase 1): opt-in composer flag. When true AND onRecord is provided, a
+  // "Record me" button appears in the capture row; clicking it invokes onRecord() (the host drives the
+  // consent → record → preview flow via the sdk recorder) and the resolved recording is added to the
+  // evidence strip as a removable video chip, threading through onSubmit as `recordings`. Default false →
+  // no button, composer identical to today (full back-compat — callers that don't enable it are unchanged).
+  allowRecording?: boolean
+  // Host-supplied recorder entry point. Returns the captured recording (or null if the reporter cancelled).
+  // Kept as a callback so the heavy MediaRecorder/getDisplayMedia machinery lives in the sdk, not core.
+  onRecord?: () => Promise<ReportRecording | null>
   // Optional image pre-processor called immediately when a screenshot is added (e.g. PNG→JPEG
   // compression). By submit time the promise is already resolved, so the upload starts with zero
   // compression delay. The host passes compressScreenshot here; the extension omits it (its SW
@@ -302,6 +314,10 @@ export function buildModal(
   const MAX_FILES = 5
   const MAX_FILES_TOTAL_BYTES = 25 * 1024 * 1024 // 25 MB across all attached files
   let attachedFiles: ReportFileAttachment[] = []
+  // KLAVITYKLA-438: "Record me" recordings. Enabled only when the host opted in AND provided onRecord.
+  const recordingEnabled = !!(callbacks.allowRecording && callbacks.onRecord)
+  const MAX_RECORDINGS = 2
+  let recordings: ReportRecording[] = []
   // PX4 #411: the extended issue-type chips, when the host provided them (else null → classic Bug/Feature toggle).
   const issueTypeOpts = (callbacks.issueTypes && callbacks.issueTypes.length) ? callbacks.issueTypes : null
   // Structured markup per screenshot index { w, h, shapes } so the ticket can re-render a
@@ -742,6 +758,7 @@ export function buildModal(
         <button id="klavity-full" title="Full Page — instant capture; may miss some cross-origin images"><span class="kl-cap-ic">${icon('camera')}</span><span class="kl-full-label">Full Page</span></button>
         <button id="klavity-upload"><span class="kl-cap-ic">${icon('image')}</span><span class="kl-upload-label">Upload</span></button>
         ${fileAttachEnabled ? `<button id="klavity-attach" title="Attach a non-image file (PDF, .log, .har, ...)"><span class="kl-cap-ic">${icon('paperclip')}</span><span class="kl-attach-label">Attach file</span></button>` : ''}
+        ${recordingEnabled ? `<button id="klavity-record" title="Record your screen, camera and narration"><span class="kl-cap-ic">${icon('monitor')}</span><span class="kl-record-label">Record me</span></button>` : ''}
         ${callbacks.onRegionCapture ? `<button id="klavity-region"><span class="kl-cap-ic">${icon('scissors')}</span><span class="kl-region-label">Region</span></button>` : ''}
         ${callbacks.onPickElement ? `<button id="klavity-pick" title="Pick the exact element that's broken"><span class="kl-cap-ic">${icon('mouse-pointer-2')}</span><span class="kl-pick-label">Pick element</span></button>` : ''}
         ${VoiceInput.isSupported() ? `<button id="klavity-voice" title="Dictate description"><span class="kl-cap-ic">${icon('mic')}<span class="kl-vdot"></span></span><span class="kl-voice-label">Voice</span><svg class="kl-vring" viewBox="0 0 32 32" aria-hidden="true"><circle class="kl-vring-bg" cx="16" cy="16" r="13" fill="none" stroke-width="2"/><circle class="kl-vring-prog" cx="16" cy="16" r="13" fill="none" stroke-width="2" stroke-dasharray="81.68" stroke-dashoffset="81.68" stroke-linecap="round" transform="rotate(-90 16 16)"/></svg></button>` : ''}
@@ -752,6 +769,7 @@ export function buildModal(
       ${fileAttachEnabled ? '<input type="file" id="klavity-attach-input" multiple style="display:none">' : ''}
       <div class="klavity-counter" id="klavity-counter">0/${MAX_IMAGES} images</div>
       ${fileAttachEnabled ? '<div class="klavity-files" id="klavity-files" hidden></div>' : ''}
+      ${recordingEnabled ? '<div class="klavity-files klavity-recordings" id="klavity-recordings" hidden></div>' : ''}
       <div class="klavity-error" id="klavity-err"></div>
       <textarea class="klavity-desc" id="klavity-desc" placeholder="${initialType === 'feature' ? "Describe the feature you'd like..." : 'Describe the bug...'}"></textarea>
       <div class="klavity-desc-hint" id="klavity-desc-hint" hidden>${icon('sparkles', { size: 13 })}<span>No title needed — we'll auto-generate one for you</span></div>
@@ -981,6 +999,11 @@ export function buildModal(
     // KLA-412: keep the page-tag array aligned. An interactive session-mode capture with no explicit tag
     // is tagged with the current page; everything else keeps whatever the caller passed (often undefined).
     screenshotPageMeta.push(pageMeta ?? (sessionMode && fireAdded ? currentPageMeta() : undefined))
+    // Bug fix (multi-page evidence editor): a genuine user capture (region/full/sharp/upload/paste — all
+    // call with fireAdded=true) must become the ACTIVE hero image, otherwise the editor keeps showing the
+    // first shot while the new one sits at the end of the strip. Only for real captures; the seed path
+    // (fireAdded=false, from controller.addScreenshot) leaves activeIndex alone so session restore is undisturbed.
+    if (fireAdded) activeIndex = screenshots.length - 1
     updateStrip()
     if (fireAdded) { try { callbacks.onShotAdded?.(dataUrl, quality) } catch { /* host persistence best-effort */ } }
   }
@@ -1093,6 +1116,44 @@ export function buildModal(
         showError(`Couldn't add "${file.name}". Please try a different file.`)
       }
     }
+  }
+
+  // ── KLAVITYKLA-438: "Record me" video chips ───────────────────────────────────────────────────────
+  // Render the attached-recording chips (a video-style chip with duration + size + remove) into the
+  // recordings strip. Hidden when empty so the row takes no space. A recording is evidence in its own
+  // right — re-evaluate Submit so a recording-only report is valid.
+  function renderRecordings() {
+    const box = shadowRoot.getElementById('klavity-recordings') as HTMLElement | null
+    if (!box) return
+    box.innerHTML = ''
+    box.hidden = recordings.length === 0
+    recordings.forEach((r, i) => {
+      const chip = document.createElement('div')
+      chip.className = 'kl-file-chip kl-rec-chip'
+      chip.setAttribute('data-kind', 'recording')
+      const ic = document.createElement('span')
+      ic.className = 'kl-file-ic'
+      ic.innerHTML = icon('play', { size: 14 })
+      const nm = document.createElement('span')
+      nm.className = 'kl-file-nm'
+      const secs = Math.round(r.durationMs / 1000)
+      const label = `Recording ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}${r.screenOnly ? ' (screen only)' : ''}`
+      nm.textContent = label
+      nm.title = label
+      const sz = document.createElement('span')
+      sz.className = 'kl-file-sz'
+      sz.textContent = r.bytes < 1024 * 1024 ? `${Math.round(r.bytes / 1024)} KB` : `${(r.bytes / 1024 / 1024).toFixed(1)} MB`
+      const rm = document.createElement('button')
+      rm.type = 'button'
+      rm.className = 'kl-file-rm'
+      rm.setAttribute('aria-label', `Remove ${label}`)
+      rm.title = 'Remove'
+      rm.innerHTML = icon('x', { size: 11 })
+      rm.addEventListener('click', () => { recordings.splice(i, 1); renderRecordings() })
+      chip.append(ic, nm, sz, rm)
+      box.appendChild(chip)
+    })
+    refreshSubmit()
   }
 
   let _stopVoice: (() => void) | null = null
@@ -1229,7 +1290,7 @@ export function buildModal(
   const emailValid = () => !callbacks.requireEmail || (!!remail && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(remail.value.trim()))
   // JTBD 1.10: a screenshot (or an attached replay buffer) is evidence in its own right — Submit no longer
   // requires typed prose. The server accepts an evidence-only report and the AI drafts the title post-intake.
-  const hasEvidence = () => screenshots.length > 0 || replayAttached || attachedFiles.length > 0
+  const hasEvidence = () => screenshots.length > 0 || replayAttached || attachedFiles.length > 0 || recordings.length > 0
   const refreshSubmit = () => {
     const noDesc = desc.value.trim() === ''
     submitBtn.disabled = (noDesc && !hasEvidence()) || !emailValid()
@@ -1426,6 +1487,7 @@ export function buildModal(
         description,
         screenshots: finalScreenshots,
         ...(attachedFiles.length ? { files: attachedFiles.slice() } : {}),
+        ...(recordings.length ? { recordings: recordings.slice() } : {}),
         annotations: buildAnnotationsPayload(),
         reporterEmail: remail?.value.trim() || undefined,
       })
@@ -1545,6 +1607,24 @@ export function buildModal(
         await ingestAttachments(files)
         if (attachedFiles.length > before) setActiveCapture(attachBtn)
       }
+    })
+  }
+
+  // KLAVITYKLA-438: "Record me" button — only rendered when the host enabled allowRecording + provided
+  // onRecord. Click → onRecord() drives the consent → record → preview flow (sdk recorder); the resolved
+  // recording is added as a removable video chip. Re-entrancy-guarded via `busy` like the capture buttons.
+  const recordBtn = shadowRoot.getElementById('klavity-record') as HTMLButtonElement | null
+  if (recordBtn && callbacks.onRecord) {
+    recordBtn.addEventListener('click', async () => {
+      if (busy) return
+      if (recordings.length >= MAX_RECORDINGS) { showError(`You can attach up to ${MAX_RECORDINGS} recordings.`); return }
+      lockComposer(true)
+      recordBtn.classList.add('kl-loading')
+      try {
+        const rec = await callbacks.onRecord!()
+        if (rec) { recordings.push(rec); renderRecordings(); setActiveCapture(recordBtn) }
+      } catch { /* user cancelled or recorder failed — leave the composer untouched */ }
+      finally { recordBtn.classList.remove('kl-loading'); lockComposer(false) }
     })
   }
 

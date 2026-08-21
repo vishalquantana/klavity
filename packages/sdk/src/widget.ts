@@ -14,6 +14,7 @@ import { computeSelector, describeElement } from "./element-selector"
 import { getTurnstileToken } from "./load-turnstile"
 import { icon } from "@klavity/core/icons"
 import { createSessionReplay, type SessionReplay } from "./session-replay"
+import { recordMe, recordingSupported } from "./recorder"
 import { on, emit } from "./events"
 import {
   getActiveSession, startOrContinue, addShot, removeShot, clear as clearEvidenceSession,
@@ -494,6 +495,9 @@ async function mount() {
   // project that hasn't opted in renders the classic Bug/Feature composer with no Title field / file uploads.
   let composerShowTitle = false
   let composerFileAttach = false
+  // KLAVITYKLA-438 "Record me": per-project opt-in. Only takes effect where the browser can screen-record
+  // (getDisplayMedia + MediaRecorder) — hidden on iOS Safari, matching the Sharp-capture support envelope.
+  let composerRecord = false
   let composerIssueTypes: Array<{ value: 'bug' | 'feature' | 'task' | 'query'; label: string; mappingLabel?: string }> | undefined
   try {
     const r = await fetchWithTimeout(cfg.backendUrl + "/api/projects/" + encodeURIComponent(cfg.projectId) + "/config")
@@ -525,6 +529,8 @@ async function mount() {
       if (composer) {
         composerShowTitle = composer.title === true || composer.showTitleField === true
         composerFileAttach = composer.fileAttach === true || composer.allowFileAttachments === true
+        // "Record me" (KLAVITYKLA-438): opt-in per project AND only where the browser supports screen capture.
+        composerRecord = (composer.record === true || composer.allowRecording === true) && recordingSupported()
         if (Array.isArray(composer.issueTypes) && composer.issueTypes.length) {
           const cleaned = composer.issueTypes
             .filter((t: any) => t && typeof t.value === 'string' && ['bug', 'feature', 'task', 'query'].includes(t.value))
@@ -896,6 +902,10 @@ async function mount() {
       // PX4 #411/#425: enhanced-composer opts from the project config (all default off → classic composer).
       showTitleField: composerShowTitle,
       allowFileAttachments: composerFileAttach,
+      // KLAVITYKLA-438 "Record me": expose the button + drive the consent → record → preview overlay from
+      // the sdk recorder, returning the captured recording (or null on cancel) to the composer.
+      allowRecording: composerRecord,
+      onRecord: composerRecord ? (() => recordMe()) : undefined,
       issueTypes: composerIssueTypes,
       // Pre-compress each screenshot as soon as it's captured (runs while the user types their
       // description). By submit time the Promise is settled → zero compression delay before upload.
@@ -920,7 +930,7 @@ async function mount() {
           { backendUrl: cfg.backendUrl, projectId: cfg.projectId, firstParty, token: getToken() },
           // PX4 #411: forward the precise kind (Task/Query fall back to p.type=bug for legacy consumers, but
           // p.kind carries the real value) so the server's report_type + connector issue-type mapping are right.
-          { type: (p.kind ?? p.type), title: p.title, files: p.files, description, pageUrl: location.href, referrer: document.referrer || "", screenshots: p.screenshots,
+          { type: (p.kind ?? p.type), title: p.title, files: p.files, recordings: p.recordings, description, pageUrl: location.href, referrer: document.referrer || "", screenshots: p.screenshots,
             context: buildWidgetContext(),
             // PX4 #439/#428: attach the resolved reporter identity + freshly-captured browser/app info.
             reporter: _reporter, clientInfo: captureClientInfo(),
@@ -1549,7 +1559,7 @@ async function mount() {
 
 export async function submitFeedback(
   cfg: { backendUrl: string; projectId: string; firstParty: boolean; token: string },
-  payload: { type: string; title?: string; description: string; pageUrl: string; referrer?: string; screenshots: string[]; files?: Array<{ name: string; type: string; size: number; dataUrl: string }>; context?: ReportContext; reporter?: Reporter; clientInfo?: ClientInfo; replayEvents?: unknown[]; annotations?: any; reporterEmail?: string; turnstileToken?: string },
+  payload: { type: string; title?: string; description: string; pageUrl: string; referrer?: string; screenshots: string[]; files?: Array<{ name: string; type: string; size: number; dataUrl: string }>; recordings?: Array<{ id: string; dataUrl: string; mime: string; durationMs: number; width: number; height: number; bytes: number; screenOnly: boolean }>; context?: ReportContext; reporter?: Reporter; clientInfo?: ClientInfo; replayEvents?: unknown[]; annotations?: any; reporterEmail?: string; turnstileToken?: string },
   // Optional progress callback: called with 0–90 during the upload phase, leaving the final 10%
   // for server-side processing. When provided, the upload uses XMLHttpRequest instead of fetch so
   // the browser exposes real upload progress events. Omitting it (e.g. extension path) keeps the
@@ -1581,6 +1591,8 @@ export async function submitFeedback(
     screenshotThumbs,
     // PX4 #425: non-image file attachments carried through as their own multipart field.
     files: payload.files,
+    // KLAVITYKLA-438 "Record me": video recordings carried through as their own `recording` multipart field(s).
+    recordings: payload.recordings,
     context: payload.context,
     // PX4 #439/#428: reporter identity + captured browser/app info as their own /api/feedback fields.
     reporter: payload.reporter,

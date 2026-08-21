@@ -1543,6 +1543,23 @@ async function feedbackToTicketPayload(fb: any, project: { id: string; name?: st
       } catch (e: any) { console.warn("file attachment fetch failed for ticket (non-fatal):", e?.message || e) }
     }
   }
+  // KLAVITYKLA-438 "Record me": video recordings. Attach each stored clip natively (same byte-path as the
+  // #425 attachments above) and add a short-lived presigned "Recording: <link>" body line so the recording
+  // plays back from the exported ticket. Best-effort per clip — a fetch/presign failure never blocks export.
+  if (Array.isArray((fb as any).recordings) && (fb as any).recordings.length) {
+    for (const r of (fb as any).recordings) {
+      try {
+        if (!r || !r.key) continue
+        const { bytes, contentType } = await getObjectBytes(String(r.key))
+        let url = ""
+        try { url = presignGet(String(r.key), 3600) } catch { /* link is best-effort */ }
+        const ext = String(r.contentType || contentType || "").includes("mp4") ? "mp4" : "webm"
+        const filename = `recording-${String(r.id || "clip")}.${ext}`
+        if (url) lines.push(`Recording (${filename}): ${url}`)
+        attachments.push({ filename, contentType: String(r.contentType || contentType || "video/webm"), bytes, url })
+      } catch (e: any) { console.warn("recording fetch failed for ticket (non-fatal):", e?.message || e) }
+    }
+  }
   // A.8: occurrence timeline — when this report recurred, append each occurrence's own verbatim
   // wording + date so the external ticket carries the receipts ("you said X on Y, then Y2, then Y3").
   // Best-effort: a memory lookup failure must never block the export.
@@ -3724,6 +3741,36 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           } catch (aErr: any) { console.error("attachment upload failed (non-fatal):", aErr?.message || aErr) }
         }
 
+        // KLAVITYKLA-438 "Record me" (Phase 1): screen+camera+mic video recordings. Uploaded PRIVATE via the
+        // same uploadAttachment byte-path #425 uses, then persisted as descriptors on the feedback row
+        // (recordings_json) — each carries a stable `id` so a Phase 2 transcript can reference the exact
+        // recording. The parallel `recording_meta` JSON (widget-lib) provides per-clip id/duration/dims/
+        // screen-only, paired by index. Capped by count + per-file bytes (RECORDING_MAX_BYTES ~50MB); only
+        // video/webm|video/mp4 accepted. A single upload failure is non-fatal (the clip is simply dropped).
+        const RECORDING_MAX_BYTES = Number(process.env.RECORDING_MAX_BYTES) || 50 * 1024 * 1024
+        const RECORDING_MAX_FILES = 2
+        const recFiles = form.getAll("recording").filter((f): f is File => f instanceof File).slice(0, RECORDING_MAX_FILES)
+        let recMeta: Array<{ id?: string; durationMs?: number; width?: number; height?: number; screenOnly?: boolean }> = []
+        try { const rm = JSON.parse(String(form.get("recording_meta") || "[]")); if (Array.isArray(rm)) recMeta = rm } catch { /* tolerate a missing/garbled meta blob */ }
+        const recordingDescs: Array<{ id: string; key: string; contentType: string; bytes: number; durationMs: number; w: number; h: number; screenOnly: boolean }> = []
+        for (let ri = 0; ri < recFiles.length; ri++) {
+          const rf = recFiles[ri]
+          if (rf.size <= 0) continue
+          if (rf.type && !/^video\/(webm|mp4)/.test(rf.type)) continue // only recorded video containers
+          if (rf.size > RECORDING_MAX_BYTES) return wjson({ error: `Recording ${rf.name} exceeds ${mbLabel(RECORDING_MAX_BYTES)}.` }, 400)
+          const m = recMeta[ri] || {}
+          try {
+            const rbuf = new Uint8Array(await rf.arrayBuffer())
+            const up = await uploadAttachment(rbuf, rf.name || `recording-${ri}.webm`, rf.type || "video/webm")
+            recordingDescs.push({
+              id: String(m.id || ("rec_" + crypto.randomUUID())),
+              key: up.key, contentType: up.contentType, bytes: rf.size,
+              durationMs: Number(m.durationMs) || 0, w: Number(m.width) || 0, h: Number(m.height) || 0,
+              screenOnly: m.screenOnly === true,
+            })
+          } catch (rErr: any) { console.error("recording upload failed (non-fatal):", rErr?.message || rErr) }
+        }
+
         // ── persist to our durable ledger (P0) FIRST, always — best-effort, never fails the submission.
         // Runs whether or not a tracker is connected, so the dashboard always gets a row.
         let feedbackId: string | null = null
@@ -3901,6 +3948,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   // PX4 #411/#425: explicit Title + non-image file attachment descriptors (null/empty when absent).
                   title: reportTitle,
                   attachments: attachmentDescs.length ? attachmentDescs : null,
+                  // KLAVITYKLA-438: "Record me" video recordings (null when none) — persisted to recordings_json.
+                  recordings: recordingDescs.length ? recordingDescs : null,
                   // PX4 #439/#428: reporter identity + captured browser/app info (null when absent).
                   reporter, clientInfo,
                 })
@@ -8309,6 +8358,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             sourceQuote: fbRow.sourceQuote,
             sourceDate: fbRow.sourceDate,
             screenshotId: fbRow.screenshotId,
+            // KLAVITYKLA-438 "Record me": stored recordings + a short-lived presigned playback URL each, so
+            // the ticket drawer can play the clip. Additive/minimal — does not touch title/triage (#452).
+            recordings: Array.isArray(fbRow.recordings)
+              ? fbRow.recordings.map((r: any) => ({ ...r, url: (() => { try { return presignGet(String(r.key), 3600) } catch { return null } })() }))
+              : [],
             simId: fbRow.simId,
             planeIssueKey: fbRow.planeIssueKey,
             planeIssueUrl: fbRow.planeIssueUrl,
