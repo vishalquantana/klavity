@@ -53,6 +53,8 @@ import { evaluateLabelRules } from "./lib/label-rules"
 import { encryptSecret, decryptSecret } from "./lib/crypto"
 import { createTestAccount, listTestAccounts, getTestAccountById, getTestAccountByName, deleteTestAccount, isTestAccountEmail, getTestAccountRefs, rotateTestAccountSecret } from "./lib/test-accounts"
 import { assertSafeUrl } from "./lib/url-guard"
+import { genCode, isValidSlug, stampUtm, isBotRequest, hashIp } from "./lib/shortlinks"
+import { createShortLink, getShortLinkByCodeOrSlug, listShortLinks, getShortLinkDetail, updateShortLink, recordLinkClick, linkClickStats, type ShortLinkRow } from "./lib/db"
 import { safeFetch } from "./lib/safe-fetch"
 import { extConfigVersion, type ExtProjectConfig } from "./lib/ext-config-version"
 import { verifyTurnstile, turnstileEnabled, turnstileSiteKey } from "./lib/turnstile"
@@ -2422,6 +2424,36 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (req.method === "GET" && path === "/api/health/busy") {
       const s = walkPoolStats()
       return json({ ok: true, busy: s.busy, idle: s.busy === 0, ...s })
+    }
+
+    // ── Public short-link redirector (UNGATED). /s/:code — code OR vanity slug, active only. ──
+    // 302 + Cache-Control:no-store (NEVER 301 — a cached 301 loses click counts and destination
+    // re-pointability). Click logging is fire-and-forget: it must never block or fail the redirect.
+    if ((req.method === "GET" || req.method === "HEAD") && (path.startsWith("/s/"))) {
+      const codeOrSlug = decodeURIComponent(path.slice(3)).split("/")[0]
+      if (!codeOrSlug) return new Response("Not found", { status: 404 })
+      let link: ShortLinkRow | null = null
+      try { link = db ? await getShortLinkByCodeOrSlug(codeOrSlug) : null } catch { link = null }
+      if (!link) {
+        return new Response("This short link doesn’t exist or has been disabled.", {
+          status: 404, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
+        })
+      }
+      const target = stampUtm(link.destinationUrl, link.utm)
+      // Log the click without awaiting failure — never block the redirect on the DB.
+      const isBot = isBotRequest({
+        method: req.method,
+        ua: req.headers.get("user-agent"),
+        secPurpose: req.headers.get("sec-purpose"),
+        purpose: req.headers.get("purpose"),
+      })
+      const ipHash = hashIp(clientIp(req, server))
+      void recordLinkClick({
+        linkId: link.id, code: link.code, ipHash,
+        ua: req.headers.get("user-agent"), referer: req.headers.get("referer"),
+        country: req.headers.get("cf-ipcountry") || null, isBot,
+      }).catch(() => {})
+      return new Response(null, { status: 302, headers: { Location: target, "cache-control": "no-store" } })
     }
 
     if (req.method === "POST" && path === "/api/billing/webhook") {
