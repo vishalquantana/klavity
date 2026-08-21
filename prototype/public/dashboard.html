@@ -2977,7 +2977,11 @@ async function load() {
   // before the network round-trip. (Only on the first paint; never clobber live state.)
   if (state === null) {
     const cached = swrRead(dashCacheKey(dashTargetProjId()))
-    if (cached) { state = cached; render(true) }   // fromCache: skip network sub-loaders until fresh confirms the project
+    if (cached) {
+      state = cached; render(true)   // fromCache: skip network sub-loaders until fresh confirms the project
+      // #535: instant deep-link restore from cache when the ticket is already present (no network wait).
+      try { maybeOpenDeepLinkTicket() } catch (e) {}
+    }
   }
   // SWR step 2 — revalidate in the background (progress bar visible).
   // KLAVITYKLA-299: use dashTargetProjId() (URL param || localStorage last) so the user's
@@ -3028,6 +3032,10 @@ async function load() {
       } catch (e) {}
     }
   }
+  // #535: reopen a deep-linked ticket (?ticket=<id>) on the BOOT load path too — previously this only
+  // ran from refreshAll(), so reloading a ticket URL dropped the user to the overview. openSingleTicket
+  // is idempotent (replaceState when already showing), so this is safe.
+  maybeOpenDeepLinkTicket()
 }
 
 function mountReportWidget() {
@@ -3043,6 +3051,7 @@ function mountReportWidget() {
 // Re-fetch /api/dashboard and re-render — used after triage accept/dismiss so counts + banner + kanban update.
 async function refreshAll() {
   let data
+  const fetchStart = Date.now()   // #532: anything saved after this the poll must not overwrite
   kbar.start()
   try {
     // KLAVITYKLA-299: use dashTargetProjId() so the stored project id is honoured, not just the URL param.
@@ -3054,6 +3063,9 @@ async function refreshAll() {
   } catch (e) { return }
   finally { kbar.done() }
   if (!data || data.error) return
+  // #532: overlay locally-edited fields the fresh payload may not yet reflect (belt-and-suspenders
+  // behind the __klavMutating guard) so a lagging poll read can never clobber a just-saved value.
+  mergeLocalEdits(data, fetchStart)
   state = data
   render()
   if (data.active && data.active.id) {                                       // keep cache fresh after triage actions
@@ -3075,6 +3087,33 @@ async function refreshAll() {
 // A mutation (triage accept/dismiss/send, bulk PATCH) bumps this while it's in flight so the poll
 // never yanks the DOM out from under an action mid-way.
 window.__klavMutating = window.__klavMutating || 0
+// #532 (belt-and-suspenders): remember locally-edited ticket fields with the time they were saved so a
+// background poll whose fetch STARTED before the save landed can't overwrite the fresher local value.
+// Keyed by ticket id → { fields: {notes,assignee,priority,status}, ts }. The __klavMutating guard is the
+// primary defence; this merge only covers the narrow race where a poll's read resolves just after a save.
+window.__klavLocalEdits = window.__klavLocalEdits || {}
+function recordLocalEdit(ticketId, fields) {
+  try {
+    const id = String(ticketId)
+    const prev = window.__klavLocalEdits[id] || { fields: {} }
+    window.__klavLocalEdits[id] = { fields: { ...prev.fields, ...fields }, ts: Date.now() }
+  } catch (e) {}
+}
+// Overlay any local edit that is newer than the moment the poll's fetch began onto the fresh payload,
+// so refreshAll() never repaints a stale value over a just-saved field. Prunes edits older than 60s.
+function mergeLocalEdits(data, fetchStart) {
+  try {
+    if (!data || !Array.isArray(data.tickets)) return data
+    const now = Date.now()
+    for (const [id, edit] of Object.entries(window.__klavLocalEdits)) {
+      if (!edit || now - edit.ts > 60000) { delete window.__klavLocalEdits[id]; continue }
+      if (edit.ts < fetchStart) continue   // fetch began AFTER the save → fresh data already reflects it
+      const t = data.tickets.find(x => String(x.id) === id)
+      if (t) Object.assign(t, edit.fields)
+    }
+  } catch (e) {}
+  return data
+}
 function dashLiveBusy() {
   try {
     if (document.hidden) return true
@@ -3223,11 +3262,21 @@ async function tgBulkPatch(ids, body) {
     return r && r.ok ? (await r.json().catch(() => ({ ok: true }))) : { ok: false }
   } finally { window.__klavMutating-- }
 }
+// #537: reflect an in-flight triage action on the clicked button immediately, so a click during a
+// project-switch race / offline blip is never a silent no-op. Returns a restore fn.
+function tgBtnPending(btn) {
+  if (!btn) return () => {}
+  const prevDisabled = btn.disabled
+  btn.disabled = true; btn.setAttribute("aria-busy", "true")
+  return () => { btn.disabled = prevDisabled; btn.removeAttribute("aria-busy") }
+}
 // Accept (single or bulk): status=open, priority applied to all. Reduces the inbox count by N.
-async function tgAccept(ids, priority) {
+async function tgAccept(ids, priority, btn) {
   const body = { status: "open" }
   if (priority) body.priority = priority
-  const res = await tgBulkPatch(ids, body)
+  const restore = tgBtnPending(btn)   // #537: pending immediately on click
+  let res
+  try { res = await tgBulkPatch(ids, body) } finally { restore() }
   if (res.ok) {
     _tgSelected.clear(); await refreshAll(); renderTriage()
     // KLAVITYKLA-512: the accepted row silently vanished before (contrast the dismiss undo-toast).
@@ -3237,13 +3286,18 @@ async function tgAccept(ids, priority) {
       ? ` — <a href="#tickets" style="color:var(--indigo)" onclick="try{setView('tickets');openSingleTicket('${esc(one)}')}catch(e){};return false">view in Tickets</a>`
       : ""
     klavToast((one ? "Accepted" : ids.length + " accepted") + " &rarr; moved to Open in Tickets" + link)
+  } else {
+    // #537: surface the failure instead of swallowing {ok:false} (project-switch race / offline blip).
+    tgFlash("Couldn't accept — retry.")
   }
   return res
 }
 // Dismiss (single or bulk): status=dismissed, then show an undo toast that restores status=new.
-async function tgDismiss(ids) {
+async function tgDismiss(ids, btn) {
   const restore = ids.slice()
-  const res = await tgBulkPatch(ids, { status: "dismissed" })
+  const undoBtn = tgBtnPending(btn)   // #537: pending immediately on click
+  let res
+  try { res = await tgBulkPatch(ids, { status: "dismissed" }) } finally { undoBtn() }
   if (res.ok) {
     _tgSelected.clear()
     await refreshAll(); renderTriage()
@@ -3251,6 +3305,9 @@ async function tgDismiss(ids) {
       const r = await tgBulkPatch(restore, { status: "new" })
       if (r.ok) { await refreshAll(); renderTriage() }
     })
+  } else {
+    // #537: no more silent no-op — tell the reviewer the dismiss didn't land and to retry.
+    tgFlash("Couldn't dismiss — retry.")
   }
   return res
 }
@@ -3418,9 +3475,9 @@ function renderTriageFilters() {
   const simSel = host.querySelector("#tgSimFilter")
   if (simSel) simSel.addEventListener("change", () => { _triageSim = simSel.value; _tgSelected.clear(); renderTriageView() })
   const simDis = host.querySelector("#tgSimDismiss")
-  if (simDis) simDis.addEventListener("click", () => {
+  if (simDis) simDis.addEventListener("click", (ev) => {
     const ids = (_triageItems || []).filter(t => tgSimKey(t) === _triageSim).map(t => String(t.id))
-    if (ids.length) tgDismiss(ids)
+    if (ids.length) tgDismiss(ids, ev.currentTarget)
   })
 }
 // KLAVITYKLA-384: restore the bulk-action bar for the New-reports triage inbox. The
@@ -3451,9 +3508,9 @@ function renderTriageBulkBar() {
     `<span class="bulk-sep"></span>` +
     `<button class="btn btn-ghost btn-sm" id="tgBulkClear" type="button" style="font-size:12px">Clear</button>`
   bar.classList.add("show")
-  bar.querySelector("#tgBulkAccept").addEventListener("click", () => {
+  bar.querySelector("#tgBulkAccept").addEventListener("click", (ev) => {
     const pri = bar.querySelector("#tgBulkPri").value
-    tgAccept([..._tgSelected], pri)
+    tgAccept([..._tgSelected], pri, ev.currentTarget)
   })
   const bulkSend = bar.querySelector("#tgBulkSend")
   if (bulkSend) bulkSend.addEventListener("click", () => {
@@ -3463,7 +3520,7 @@ function renderTriageBulkBar() {
     if (humanIds.length) tgSendToTracker(humanIds)
     else tgFlash("No human Snap reports selected.")
   })
-  bar.querySelector("#tgBulkDismiss").addEventListener("click", () => tgDismiss([..._tgSelected]))
+  bar.querySelector("#tgBulkDismiss").addEventListener("click", (ev) => tgDismiss([..._tgSelected], ev.currentTarget))
   bar.querySelector("#tgBulkClear").addEventListener("click", () => {
     _tgSelected.clear()
     if (host) host.querySelectorAll(".tg-row").forEach(r => { r.classList.remove("tg-selected"); const c = r.querySelector(".tg-cb"); if (c) c.checked = false })
@@ -3528,8 +3585,8 @@ function renderTriageItems(items) {
   host.querySelectorAll(".tg-row").forEach(row => {
     const id = row.getAttribute("data-id")
     const t = (items).find(x => String(x.id) === id)
-    row.querySelector(".tg-accept").addEventListener("click", () => tgAccept([id], row.querySelector(".tg-pri").value))
-    row.querySelector(".tg-dismiss").addEventListener("click", () => tgDismiss([id]))
+    row.querySelector(".tg-accept").addEventListener("click", (ev) => tgAccept([id], row.querySelector(".tg-pri").value, ev.currentTarget))
+    row.querySelector(".tg-dismiss").addEventListener("click", (ev) => tgDismiss([id], ev.currentTarget))
     const sendBtn = row.querySelector(".tg-send-jira")
     if (sendBtn) sendBtn.addEventListener("click", () => tgSendToTracker([id]))
     const cb = row.querySelector(".tg-cb")
@@ -4513,9 +4570,12 @@ $("clTestReportBtn") && ($("clTestReportBtn").onclick = () => {
         // updates counts/banner but renderTriage() would re-paint the STALE "triage:"+pid SWR snapshot,
         // so bust that cache entry and re-render the queue too.
         const _pid = curProjId()
-        if (_pid) swrInvalidate("triage:" + _pid)
+        if (_pid) { swrInvalidate("triage:" + _pid); swrInvalidate(dashCacheKey(_pid)) }   // #534: also bust the dashboard/tickets snapshot
         refreshAll()                      // triage count + checklist tick update without a reload
         if (typeof renderTriage === "function") renderTriage()
+        // #534: the connector-less autofile advances new→open server-side, so the report becomes a
+        // ticket immediately — re-render the Tickets view too when it's the one showing.
+        if (document.body.getAttribute("data-view") === "tickets" && typeof renderTicketsView === "function") renderTicketsView()
       })
     }
     window.Klavity.open("bug")
@@ -5681,16 +5741,28 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
       btn.addEventListener("click", async (ev) => {
         ev.stopPropagation()
         const newStatus = btn.getAttribute("data-status")
-        const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId), {
-          method: "PATCH", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ status: newStatus })
-        }).catch(() => null)
-        const d = r ? await r.json().catch(() => ({})) : {}
+        // #537: reflect in-flight state immediately (disable the seg + aria-busy) so a click during a
+        // project-switch race / offline blip isn't a silent no-op.
+        const segBtns = Array.from(detailEl.querySelectorAll(".seg-btn"))
+        segBtns.forEach(b => { b.disabled = true; b.setAttribute("aria-busy", "true") })
+        // #532: bump the mutation guard so the 25s liveness poll's refreshAll() can't wholesale-repaint
+        // the board mid-save and clobber the just-saved value.
+        window.__klavMutating++
+        let d = {}
+        try {
+          const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId), {
+            method: "PATCH", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ status: newStatus })
+          }).catch(() => null)
+          d = r ? await r.json().catch(() => ({})) : {}
+        } finally { window.__klavMutating-- }
+        segBtns.forEach(b => { b.disabled = false; b.removeAttribute("aria-busy") })
         if (d.ok) {
           detailEl.querySelectorAll(".seg-btn").forEach(b => b.classList.toggle("active", b.getAttribute("data-status") === newStatus))
           // Update state
           const tkt = (state.tickets || []).find(x => x.id === ticketId)
           if (tkt) tkt.status = newStatus
+          recordLocalEdit(ticketId, { status: newStatus })   // #532
           if (onChange) onChange("status", newStatus)
           // B.7: closing a guard-caught ticket → OFFER the one-click regression-caught receipt (never
           // auto-sent). The server flags offerRegressionReceipt only for a real transition into done on
@@ -5701,7 +5773,7 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
             showTktMsg(detailEl, "Saved.", false)
           }
         } else {
-          showTktMsg(detailEl, d.error || "Couldn't save.", true)
+          showTktMsg(detailEl, d.error || "Couldn't save — retry.", true)
         }
       })
     })
@@ -5712,14 +5784,21 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
       priSelEl.addEventListener("change", async (ev) => {
         ev.stopPropagation()
         const newPri = priSelEl.value || null
-        const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId), {
-          method: "PATCH", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ priority: newPri })
-        }).catch(() => null)
-        const d = r ? await r.json().catch(() => ({})) : {}
+        // #532: guard the liveness poll during the save so it can't clobber the picked priority.
+        window.__klavMutating++
+        priSelEl.disabled = true; priSelEl.setAttribute("aria-busy", "true")
+        let d = {}
+        try {
+          const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId), {
+            method: "PATCH", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ priority: newPri })
+          }).catch(() => null)
+          d = r ? await r.json().catch(() => ({})) : {}
+        } finally { window.__klavMutating--; priSelEl.disabled = false; priSelEl.removeAttribute("aria-busy") }
         if (d.ok) {
           const tkt = (state.tickets || []).find(x => x.id === ticketId)
           if (tkt) tkt.priority = newPri
+          recordLocalEdit(ticketId, { priority: newPri })   // #532
           // Update the severity rail class on the detail's parent card / row
           const parentRow = detailEl.closest(".row-tkt, .kb-card, #ticketSingle")
           if (parentRow) {
@@ -5743,14 +5822,24 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
       ev.stopPropagation()
       const assignee = detailEl.querySelector(".assignee-inp").value.trim()
       const notes = detailEl.querySelector(".notes-ta").value.trim()
-      const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId), {
-        method: "PATCH", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ assignee: assignee || null, notes: notes || null })
-      }).catch(() => null)
-      const d = r ? await r.json().catch(() => ({})) : {}
+      // #532: this is the KEYSTONE — without the guard, the 25s liveness poll's refreshAll() repaints
+      // the board right after Save and the just-typed notes VANISH (Raghu #520/#522). Bump the mutation
+      // counter around the PATCH so the poll is suppressed for the whole in-flight window.
+      const saveBtn = detailEl.querySelector(".save-meta-btn")
+      window.__klavMutating++
+      if (saveBtn) { saveBtn.disabled = true; saveBtn.setAttribute("aria-busy", "true") }
+      let d = {}
+      try {
+        const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId), {
+          method: "PATCH", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ assignee: assignee || null, notes: notes || null })
+        }).catch(() => null)
+        d = r ? await r.json().catch(() => ({})) : {}
+      } finally { window.__klavMutating--; if (saveBtn) { saveBtn.disabled = false; saveBtn.removeAttribute("aria-busy") } }
       if (d.ok) {
         const tkt = (state.tickets || []).find(x => x.id === ticketId)
         if (tkt) { tkt.assignee = assignee || null; tkt.notes = notes || null }
+        recordLocalEdit(ticketId, { assignee: assignee || null, notes: notes || null })   // #532
         setTicketAssigneeLocal(ticketId, assignee || null)
         if (onChange) onChange("assignee", assignee || null)
         // JTBD 2.15: warn inline when the notification email was silently skipped server-side.
@@ -6160,28 +6249,46 @@ function buildTimelineSection(ticketId, report) {
     }
   }
 
-  function reloadTimeline() {
+  // #533: comments the user just posted this session, kept locally so a lagging/failed /timeline read
+  // can never remove one that's already on screen. Merged (deduped by id) into every reload.
+  const localComments = []
+
+  // Render the merged list (server items + synthesized origin + any locally-posted comments), deduped
+  // by id and sorted oldest→newest. Shared by the optimistic append and the network reload paths.
+  function paintTimeline(serverItems) {
+    if (!listEl) return
+    const items = (serverItems || []).slice()
+    const seen = new Set(items.map(it => it && it.id != null ? String(it.id) : null).filter(Boolean))
+    // Fold in locally-posted comments the server read hasn't returned yet (race / lag / failure).
+    for (const c of localComments) {
+      if (c && c.id != null && seen.has(String(c.id))) continue
+      items.push(c)
+    }
+    items.sort((a, b) => (Number(a.createdAt) || 0) - (Number(b.createdAt) || 0))
+    // Prepend the synthesized origin row (oldest → renders at the top). This also makes the
+    // activity count read 1, never 0, for a single-report ticket.
+    const first = synthFirstItem()
+    if (first && !items.some(it => it.type === "report_received")) items.unshift(first)
+    listEl.innerHTML = ""
+    if (!items.length) {
+      listEl.innerHTML = '<div class="tkt-tl-empty">No activity yet.</div>'
+    } else {
+      items.forEach(item => listEl.appendChild(renderTimelineItem(item)))
+    }
+  }
+
+  function reloadTimeline(attempt) {
     if (!listEl) return
     fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/timeline")
       .then(r => r.ok ? r.json() : Promise.reject(r.status))
-      .then(d => {
-        const items = (d.items || []).slice()
-        // Prepend the synthesized origin row (oldest → renders at the top). This also makes the
-        // activity count read 1, never 0, for a single-report ticket.
-        const first = synthFirstItem()
-        if (first && !items.some(it => it.type === "report_received")) items.unshift(first)
-        listEl.innerHTML = ""
-        if (!items.length) {
-          listEl.innerHTML = '<div class="tkt-tl-empty">No activity yet.</div>'
-        } else {
-          items.forEach(item => listEl.appendChild(renderTimelineItem(item)))
-        }
-      })
+      .then(d => { paintTimeline((d.items || []).slice()) })
       .catch(() => {
-        // Even on a timeline fetch failure, still show the origin row if we can synthesize it.
+        // Short retry/backoff on a failed read before giving up (never drops a local comment).
+        if ((attempt || 0) < 2) { setTimeout(() => reloadTimeline((attempt || 0) + 1), 600 * ((attempt || 0) + 1)); return }
+        // On persistent failure, still show the origin row + any locally-posted comments.
         const first = synthFirstItem()
         if (listEl) {
-          if (first) { listEl.innerHTML = ""; listEl.appendChild(renderTimelineItem(first)) }
+          if (first || localComments.length) paintTimeline([])
           else listEl.innerHTML = '<div class="tkt-tl-empty" style="color:var(--rose)">Failed to load timeline.</div>'
         }
       })
@@ -6202,9 +6309,20 @@ function buildTimelineSection(ticketId, report) {
       submitBtn.disabled = false
       if (r && r.status === 201) {
         ta.value = ""
+        // #533: the 201 body IS the created comment — render it optimistically instead of discarding it
+        // and hoping a follow-up /timeline read returns it (that read races the write and can drop it).
+        const d = await r.json().catch(() => ({}))
+        const c = (d && d.comment) ? d.comment : d
+        if (c && (c.id != null || c.body)) {
+          localComments.push({
+            kind: "comment", id: c.id, author: c.author || null,
+            body: c.body != null ? c.body : text, createdAt: c.createdAt || Date.now(),
+          })
+          paintTimeline([])   // instant on-screen render from local state (no network wait)
+        }
         if (msgEl) { msgEl.style.color = "var(--green)"; msgEl.textContent = "Comment posted." }
         setTimeout(() => { if (msgEl) msgEl.textContent = "" }, 2500)
-        reloadTimeline()
+        reloadTimeline()      // reconcile with server; merge (never replace) keeps the local comment
       } else {
         const d = r ? await r.json().catch(() => ({})) : {}
         if (msgEl) { msgEl.style.color = "var(--rose)"; msgEl.textContent = d.error || "Failed to post comment." }
@@ -6551,8 +6669,12 @@ function openNewTicketModal() {
   if (inp) inp.value = ""
   if (body) body.value = ""
   if (pri) pri.value = "medium"
-  if (assignee) assignee.value = ""
+  // #541: prefill the current user's email as the default assignee (assignee is now required) so it's a
+  // one-click create for the common "assign to me" case; the user can still change it.
+  if (assignee) assignee.value = (state && state.email) || ""
   if (err) err.textContent = ""
+  const aerr = document.getElementById("newTktAssigneeErr")
+  if (aerr) aerr.textContent = ""
   if (msg) msg.textContent = ""
   bg.classList.add("show")
   document.body.style.overflow = "hidden"  // #539: lock background scroll behind the backdrop
@@ -6562,44 +6684,72 @@ function closeNewTicketModal() {
   const bg = document.getElementById("newTktBg"); if (bg) bg.classList.remove("show")
   document.body.style.overflow = ""  // #539: restore background scroll
 }
+// #542: module-level in-flight flag guards BOTH the click and Enter-key paths against a double-submit
+// (rapid double-Enter previously fired two POST /tickets → two tickets). The submitBtn.disabled toggle
+// alone didn't cover the keydown handler that calls this fn directly.
+let newTktSubmitting = false
 async function submitNewTicket() {
+  if (newTktSubmitting) return   // #542: reentrancy guard
   const inp = document.getElementById("newTktTitleInp")
   const body = document.getElementById("newTktBodyInp")
   const pri = document.getElementById("newTktPriInp")
   const assignee = document.getElementById("newTktAssigneeInp")
   const submitBtn = document.getElementById("newTktSubmit")
   const err = document.getElementById("newTktTitleErr")
+  const aerr = document.getElementById("newTktAssigneeErr")
   const msg = document.getElementById("newTktMsg")
   const title = inp ? inp.value.trim() : ""
   if (!title) { if (err) err.textContent = "Title is required."; return }
   if (err) err.textContent = ""
+  // #541: assignee is required on the manual Create modal (server also 400s empty assignee). Block the
+  // submit with an inline error rather than letting it round-trip to a server 400.
+  const assigneeVal = assignee ? assignee.value.trim() : ""
+  if (!assigneeVal) {
+    if (aerr) aerr.textContent = "Assignee is required."
+    if (assignee) { try { assignee.focus() } catch (e) {} }
+    return
+  }
+  if (aerr) aerr.textContent = ""
   if (msg) msg.textContent = ""
   const projId = state.active && state.active.id
   if (!projId) { if (msg) msg.textContent = "No project selected."; return }
+  newTktSubmitting = true   // #542
+  // #532/#534: pause the liveness poll while the create is in flight so a background refresh can't race it.
+  window.__klavMutating++
   if (submitBtn) submitBtn.disabled = true
-  const r = await fetch(`/api/projects/${encodeURIComponent(projId)}/tickets`, {
-    method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      title,
-      body: body ? body.value.trim() : "",
-      priority: pri ? pri.value : "medium",
-      assignee: assignee ? assignee.value.trim() : "",
-    })
-  }).catch(() => null)
-  if (submitBtn) submitBtn.disabled = false
-  const created = r ? await r.json().catch(() => ({})) : {}
+  let r, created = {}
+  try {
+    r = await fetch(`/api/projects/${encodeURIComponent(projId)}/tickets`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title,
+        body: body ? body.value.trim() : "",
+        priority: pri ? pri.value : "medium",
+        assignee: assigneeVal,
+      })
+    }).catch(() => null)
+    created = r ? await r.json().catch(() => ({})) : {}
+  } finally {
+    newTktSubmitting = false   // #542
+    window.__klavMutating--
+    if (submitBtn) submitBtn.disabled = false
+  }
   if (!r || !r.ok) {
     if (msg) msg.textContent = created.error || "Failed to create ticket."
     return
   }
   // JTBD 2.15: if the ticket was assigned but the notification email was silently skipped, warn.
-  const assignedEmail = assignee ? assignee.value.trim() : ""
-  if (assignedEmail && created.assigneeEmailSent === false) assignEmailWarnToast("Ticket created and assigned, but the notification email could not be sent.")
+  if (created.assigneeEmailSent === false) assignEmailWarnToast("Ticket created and assigned, but the notification email could not be sent.")
   closeNewTicketModal()
+  // #534: invalidate the cached triage/tickets payload for this project so the newly created ticket
+  // (and any server-side new→open autofile advance) shows up on the next paint instead of waiting for
+  // the 25s guarded poll (which is suppressed whenever a detail/input/modal is open).
+  try { swrInvalidate("triage:" + projId) } catch (e) {}
+  try { swrInvalidate(dashCacheKey(projId)) } catch (e) {}
   // Refresh the tickets list/board so the new ticket appears immediately
   if (typeof renderTicketsView === "function") renderTicketsView()
-  // Also reload dashboard data so the kanban + overview count updates
-  if (typeof loadDashboard === "function") loadDashboard()
+  // Re-fetch dashboard data so the kanban + overview count + Tickets rows update right away.
+  refreshAll()
 }
 
 // graft helpers: severity rail class + status pill
@@ -10727,8 +10877,9 @@ load()
         </select>
       </label>
       <label style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--paper-dim);flex:1">
-        Assignee <span style="font-weight:400;color:var(--paper-faint);font-size:11px">(optional)</span>
-        <input id="newTktAssigneeInp" type="email" list="tktAssigneeOptions" placeholder="name@company.com" maxlength="200" style="background:var(--ink);border:1px solid var(--line);border-radius:9px;color:var(--paper);font-family:var(--body);font-size:14px;padding:9px 12px;outline:none" />
+        Assignee <span style="color:var(--rose)">*</span>
+        <input id="newTktAssigneeInp" type="email" list="tktAssigneeOptions" placeholder="name@company.com" maxlength="200" required aria-required="true" style="background:var(--ink);border:1px solid var(--line);border-radius:9px;color:var(--paper);font-family:var(--body);font-size:14px;padding:9px 12px;outline:none" />
+        <span id="newTktAssigneeErr" style="font-size:11px;color:var(--rose);min-height:14px"></span>
       </label>
     </div>
     <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
@@ -12804,7 +12955,12 @@ load()
     if (submitBtn) submitBtn.addEventListener("click", submitNewTicket)
     const titleInp = document.getElementById("newTktTitleInp")
     if (titleInp) titleInp.addEventListener("keydown", function(e) {
-      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitNewTicket() }
+      // #542: no-op the Enter path while a submit is already in flight (guards keyboard double-submit).
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault()
+        if (submitBtn && submitBtn.disabled) return
+        submitNewTicket()
+      }
     })
   }
 
