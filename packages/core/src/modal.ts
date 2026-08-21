@@ -1494,11 +1494,24 @@ export function buildModal(
   // JTBD 1.10: a screenshot (or an attached replay buffer) is evidence in its own right — Submit no longer
   // requires typed prose. The server accepts an evidence-only report and the AI drafts the title post-intake.
   const hasEvidence = () => screenshots.length > 0 || replayAttached || attachedFiles.length > 0 || recordings.length > 0
+  // #529: auto-grow the description so a prefilled or long (>4 line) report shows in full without the
+  // reporter dragging the resize handle. Reset to 'auto' first so the box can also shrink, then grow to
+  // fit content, capped at 40vh (keeps the modal usable on short viewports). resize:vertical stays as a
+  // manual override. Exposed on the controller so the prefill path can call it once after seeding text.
+  const autosizeDesc = () => {
+    desc.style.height = 'auto'
+    // .klavity-desc is box-sizing:border-box with a 1px border; scrollHeight excludes the border, so add
+    // the vertical border delta (offsetHeight−clientHeight) — otherwise a ~2px residual internal scroll
+    // remains and scrollHeight !== clientHeight. Cap at 40vh.
+    const border = desc.offsetHeight - desc.clientHeight
+    desc.style.height = Math.min(desc.scrollHeight + border, Math.round(window.innerHeight * 0.4)) + 'px'
+  }
   const refreshSubmit = () => {
     const noDesc = desc.value.trim() === ''
     submitBtn.disabled = (noDesc && !hasEvidence()) || !emailValid()
     // Hint appears only when evidence is present but nothing has been typed ("we'll title it from your shot").
     if (descHint) descHint.hidden = !(noDesc && hasEvidence())
+    autosizeDesc()
   }
   desc.addEventListener('input', refreshSubmit)
   remail?.addEventListener('input', refreshSubmit)

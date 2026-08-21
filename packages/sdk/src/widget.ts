@@ -299,6 +299,12 @@ function prefillReportDescription(ctrl: ModalController, description: string): v
   if (!desc) return
   desc.value = description
   desc.dispatchEvent(new Event("input", { bubbles: true }))
+  // #529: auto-grow so a seeded long description shows fully on open (mirrors modal.ts autosizeDesc; the
+  // dispatched input already triggers it, but call explicitly in case listener wiring changes). Add the
+  // vertical border delta so a border-box textarea has no residual internal scroll. Capped 40vh.
+  desc.style.height = "auto"
+  const descBorder = desc.offsetHeight - desc.clientHeight
+  desc.style.height = Math.min(desc.scrollHeight + descBorder, Math.round(window.innerHeight * 0.4)) + "px"
   try { desc.focus({ preventScroll: true }) } catch { desc.focus() }
 }
 
