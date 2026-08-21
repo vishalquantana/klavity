@@ -3463,12 +3463,15 @@ export async function findFeedbackBySignature(projectId: string, signature: stri
 }
 
 // #534 recurrence hardening (Codex re-review): sources that are quarantined / non-human and therefore
-// NEVER eligible for the recurrence new→open auto-promotion onto the Tickets board. Mirrors the
-// NON_HUMAN_SOURCES set the /api/feedback autofile gate uses (studio-demo is quarantined here too).
+// NEVER eligible for the recurrence new→open auto-promotion onto the Tickets board (studio-demo is
+// quarantined here too). #544 round-5 (Codex re-review): this is now the SINGLE source of truth for the
+// quarantine vocabulary — server.ts imports it for the /api/feedback autofile intake gate rather than
+// redefining a parallel NON_HUMAN_SOURCES set, so the request-time gate and this DB-layer recurrence
+// guard can never drift apart.
 export const NON_HUMAN_FEEDBACK_SOURCES = new Set(["sim", "autosim", "adhoc", "ad-hoc", "trail", "trails", "walk", "studio-demo"])
 
 export async function bumpFeedbackRecurrence(id: string, atMs: number, opts?: { allowPromote?: boolean }): Promise<void> {
-  const r = await db!.execute({ sql: "SELECT recurrence_count, recurrence_dates_json, status, source FROM feedback WHERE id=?", args: [id] })
+  const r = await db!.execute({ sql: "SELECT recurrence_count, recurrence_dates_json, status, source, sim_id FROM feedback WHERE id=?", args: [id] })
   if (!r.rows.length) return
   const row = r.rows[0] as any
   const count = Number(row.recurrence_count ?? 1) + 1
@@ -3487,8 +3490,15 @@ export async function bumpFeedbackRecurrence(id: string, atMs: number, opts?: { 
   // quarantine marker (sim/autosim/adhoc/trail/walk) stored source=NULL and could be laundered onto the
   // board by 3 marker-less authenticated recurrences. The ingest now persists EVERY recognized quarantine
   // marker (NON_HUMAN_FEEDBACK_SOURCES) to `source`, so headQuarantined below catches all of them.
+  // #544 round-5 (Codex re-review): the `source` column is only populated for rows created AFTER the
+  // durable-marker fix. A LEGACY head (sim_id != NULL, source = NULL) written before that fix would read
+  // as non-quarantined and could STILL be laundered onto the board by 3 marker-less authenticated
+  // recurrences. Treat a head carrying a sim_id as quarantined too, so BOTH legacy and future Sim/bot
+  // heads are covered at the DB layer with no migration: a sim_id-tagged head is machine/bot intake and
+  // must NEVER be auto-promoted by recurrence, regardless of whether `source` was backfilled.
   const headSource = row.source != null ? String(row.source).trim().toLowerCase() : ""
-  const headQuarantined = NON_HUMAN_FEEDBACK_SOURCES.has(headSource)
+  const headHasSimId = row.sim_id != null && String(row.sim_id).trim() !== ""
+  const headQuarantined = headHasSimId || NON_HUMAN_FEEDBACK_SOURCES.has(headSource)
   const promote = opts?.allowPromote === true && count >= 3 && String(row.status) === "new" && !headQuarantined
   await db!.execute({
     sql: promote

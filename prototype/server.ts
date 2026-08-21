@@ -15,6 +15,10 @@ import { countFoundingAccounts } from "./lib/db"
 // observation first line → "Untitled report") so notifications/receipts/exports show a MANUAL ticket's
 // real title instead of its body. Wired into every consumer that previously derived title from observation.
 import { effectiveTicketTitle } from "./lib/db"
+// #544 round-5 (Codex re-review): the quarantine/non-human source vocabulary is defined ONCE in
+// lib/db.ts (NON_HUMAN_FEEDBACK_SOURCES) and imported here so the request-time intake gate and the
+// DB-layer recurrence head guard can never drift apart. Do not redefine it locally.
+import { NON_HUMAN_FEEDBACK_SOURCES } from "./lib/db"
 // KLAVITYKLA-366 — the Founding Ten spot counter. One cached source of truth behind the public
 // pricing band, the in-app ribbon, and the server-side refusal of an 11th founding checkout.
 import { getFoundingSpots, decideFoundingCheckout, foundingRibbonLabel, foundingSpotsLabel, foundingStateToken, computeFoundingSpots } from "./lib/founding"
@@ -4195,7 +4199,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               // in quarantine. Host-detected demos (feedbackSourceTag set with no source flag) are excluded
               // at the autofile call site below via `!feedbackSourceTag` (defense in depth).
               const rawReportSource = String(form.get("source") || "").trim().toLowerCase()
-              const NON_HUMAN_SOURCES = new Set(["sim", "autosim", "adhoc", "ad-hoc", "trail", "trails", "walk", "studio-demo"])
+              // #544 round-5: shared vocabulary imported from lib/db (NON_HUMAN_FEEDBACK_SOURCES) — see the
+              // recurrence head guard in bumpFeedbackRecurrence; kept in ONE place so they can't drift.
+              const NON_HUMAN_SOURCES = NON_HUMAN_FEEDBACK_SOURCES
               const isHumanSnap = !rawSimId && !NON_HUMAN_SOURCES.has(rawReportSource)
               // #544 follow-up (Codex re-review) — trust + quarantine signals shared by the priority→status
               // clamp (insert branch below) AND the recurrence-promotion gate (dedup branch below), computed

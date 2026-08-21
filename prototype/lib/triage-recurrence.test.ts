@@ -54,12 +54,44 @@ test("a head with source='autosim' is NEVER promoted by trusted recurrences (Fix
   expect((await feedbackById(P, id)).status).toBe("new")
 })
 
-// #544 follow-up: a 'sim'-marked head is equally protected (belt for the whole NON_HUMAN set).
-test("a head with source='sim' is NEVER promoted by trusted recurrences", async () => {
+// #544 follow-up: a 'sim'-marked head (durable canonical marker) is equally protected — belt for the
+// whole NON_HUMAN set. This is the FUTURE row shape (source backfilled by the round-4 ingest fix).
+test("a head with source='sim' (durable) is NEVER promoted by trusted recurrences", async () => {
   const id = await insertFeedback({ projectId: P, observation: "sim recurring", priority: "low", issueKey: "rk4", source: "sim" })
   await bumpFeedbackRecurrence(id, 1, { allowPromote: true })
   await bumpFeedbackRecurrence(id, 2, { allowPromote: true })
   expect((await feedbackById(P, id)).status).toBe("new")
+})
+
+// #544 round-5 (Codex re-review) — THE definitive legacy-exploit regression. Codex reproduced a LEGACY head:
+// a Sim/bot row created BEFORE the durable-marker fix carries sim_id != NULL but source = NULL, so the
+// old head-source-only guard read it as non-quarantined and 3 MARKER-LESS authenticated (allowPromote)
+// recurrences could still launder it new→open onto the Tickets board. The guard now also inspects sim_id,
+// so a sim_id-tagged head is quarantined regardless of whether `source` was ever backfilled. Insert the
+// exact legacy shape directly (simId set, source omitted → NULL) and assert NO promotion.
+test("#544 round-5: a LEGACY sim_id head with source=NULL is NEVER promoted by trusted recurrences", async () => {
+  const id = await insertFeedback({ projectId: P, observation: "legacy sim head", priority: "low", issueKey: "rk5", simId: "sim_legacy_1" })
+  // Prove the legacy shape: sim_id present, source column NULL (no durable marker backfilled).
+  const raw = await db!.execute({ sql: "SELECT sim_id, source, status FROM feedback WHERE id=?", args: [id] })
+  const seed = raw.rows[0] as any
+  expect(seed.sim_id).toBe("sim_legacy_1")
+  expect(seed.source == null).toBe(true)
+  expect(String(seed.status)).toBe("new")
+  // 3 marker-less TRUSTED (allowPromote) recurrences — the exact laundering attempt Codex reproduced.
+  await bumpFeedbackRecurrence(id, 1, { allowPromote: true })   // count 2
+  await bumpFeedbackRecurrence(id, 2, { allowPromote: true })   // count 3 — would have promoted pre-fix
+  await bumpFeedbackRecurrence(id, 3, { allowPromote: true })   // count 4 — still blocked
+  expect((await feedbackById(P, id)).status).toBe("new")        // head STAYS 'new' — no board laundering
+})
+
+// #544 round-5 regression: the sim_id guard must NOT over-block. A genuinely non-quarantined head (no
+// sim_id, no non-human source) from an authenticated member STILL advances to 'open' at count 3.
+test("#544 round-5 regression: a non-sim, non-quarantined trusted head STILL advances at count 3", async () => {
+  const id = await insertFeedback({ projectId: P, observation: "genuine human recurring", priority: "low", issueKey: "rk6" })
+  expect((await feedbackById(P, id)).status).toBe("new")
+  await bumpFeedbackRecurrence(id, 1, { allowPromote: true })   // count 2, still new
+  await bumpFeedbackRecurrence(id, 2, { allowPromote: true })   // count 3 -> promote
+  expect((await feedbackById(P, id)).status).toBe("open")
 })
 
 test("recurrence never resurrects a dismissed item", async () => {
