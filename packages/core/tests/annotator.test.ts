@@ -115,4 +115,82 @@ describe('Annotator', () => {
     const result = await a.save()
     expect(result).toMatch(/^data:/)
   })
+
+  // ── KLAVITYKLA-507: live rubber-band preview must NOT mutate the committed shape history. ──
+  it('drawPreview does not commit the provisional shape to history', () => {
+    const a = new Annotator(makeCanvas(), 'data:image/png;base64,img')
+    a.addShape({ type: 'rect', color: '#ff0000', x: 0, y: 0, w: 5, h: 5 })
+    a.drawPreview({ type: 'rect', color: '#0000ff', x: 0, y: 0, w: 99, h: 99 })
+    a.drawPreview({ type: 'line', color: '#00ff00', x1: 0, y1: 0, x2: 40, y2: 40 })
+    // Two previews drawn, but the history is still just the one committed rect.
+    expect(a.shapes).toHaveLength(1)
+    expect(a.shapes[0].color).toBe('#ff0000')
+  })
+
+  it('drawPreview repaints base + committed + the one provisional shape in a single synchronous pass', () => {
+    // Shared context spy + a synchronous-decode Image stub so the base bitmap caches on the first redraw and
+    // drawPreview() paints synchronously (the real drag path). We count strokeRect to see committed+preview.
+    const strokeRect = vi.fn()
+    const drawImage = vi.fn()
+    const ctx = {
+      clearRect: vi.fn(), drawImage, strokeRect, beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(),
+      stroke: vi.fn(), ellipse: vi.fn(), arc: vi.fn(), fill: vi.fn(), fillText: vi.fn(), strokeText: vi.fn(),
+      canvas: { width: 400, height: 300 }, lineWidth: 0, strokeStyle: '', fillStyle: '', font: '',
+      lineJoin: '' as CanvasLineJoin, lineCap: '' as CanvasLineCap, textAlign: '' as CanvasTextAlign,
+      textBaseline: '' as CanvasTextBaseline,
+    }
+    const canvas = {
+      width: 400, height: 300, getContext: () => ctx, toDataURL: () => 'data:image/png;base64,flat',
+    } as unknown as HTMLCanvasElement
+    const OrigImage = (globalThis as any).Image
+    ;(globalThis as any).Image = class {
+      onload: (() => void) | null = null
+      complete = false
+      naturalWidth = 0
+      set src(_v: string) { this.complete = true; this.naturalWidth = 400; this.onload && this.onload() }
+    }
+    try {
+      const a = new Annotator(canvas, 'data:image/png;base64,img')
+      a.addShape({ type: 'rect', color: '#f00', x: 0, y: 0, w: 5, h: 5 }) // caches base + paints 1 committed rect
+      strokeRect.mockClear(); drawImage.mockClear()
+      a.drawPreview({ type: 'rect', color: '#00f', x: 0, y: 0, w: 9, h: 9 })
+      expect(drawImage).toHaveBeenCalledTimes(1)     // base repainted once
+      expect(strokeRect).toHaveBeenCalledTimes(2)    // committed rect + provisional preview rect
+      expect(a.shapes).toHaveLength(1)               // preview still not committed
+    } finally {
+      ;(globalThis as any).Image = OrigImage
+    }
+  })
+
+  // ── KLAVITYKLA-508: committed text draws from the TOP-LEFT (textBaseline='top') so it lines up with the
+  //    editing <input>'s top-left anchor, then restores 'alphabetic' so other shapes are unaffected. ──
+  it('draws text with a top baseline and restores alphabetic afterwards', () => {
+    let baselineAtFill = ''
+    const ctx = {
+      clearRect: vi.fn(), drawImage: vi.fn(), beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(),
+      stroke: vi.fn(), strokeRect: vi.fn(), ellipse: vi.fn(), arc: vi.fn(), fill: vi.fn(),
+      strokeText: vi.fn(), fillText: vi.fn(function (this: any) { baselineAtFill = ctx.textBaseline }),
+      canvas: { width: 400, height: 300 }, lineWidth: 0, strokeStyle: '', fillStyle: '', font: '',
+      lineJoin: '' as CanvasLineJoin, lineCap: '' as CanvasLineCap, textAlign: '' as CanvasTextAlign,
+      textBaseline: 'alphabetic' as CanvasTextBaseline,
+    }
+    const canvas = {
+      width: 400, height: 300, getContext: () => ctx, toDataURL: () => 'data:image/png;base64,flat',
+    } as unknown as HTMLCanvasElement
+    const OrigImage = (globalThis as any).Image
+    ;(globalThis as any).Image = class {
+      onload: (() => void) | null = null
+      complete = false
+      naturalWidth = 0
+      set src(_v: string) { this.complete = true; this.naturalWidth = 400; this.onload && this.onload() }
+    }
+    try {
+      const a = new Annotator(canvas, 'data:image/png;base64,img')
+      a.addShape({ type: 'text', color: '#f00', x: 10, y: 20, text: 'hi', size: 26, outline: 'none' })
+      expect(baselineAtFill).toBe('top')          // text painted with the top-left baseline
+      expect(ctx.textBaseline).toBe('alphabetic') // state restored so later shapes are unaffected
+    } finally {
+      ;(globalThis as any).Image = OrigImage
+    }
+  })
 })
