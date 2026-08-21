@@ -87,6 +87,9 @@ await seedFeedback(FB_DONE, "/dashboard", "done")
 await seedFeedback(FB_INPROG, "/dashboard/", "in_progress")
 await seedFeedback(FB_OTHER, "/settings", "open")
 await seedFeedback(FB_CLOSE, "/billing", "open", { observation: "billing bug to close" })
+// Mixed-CASE stored path — must be found when the per-page view browses the lowercase form.
+const FB_MIXED = `fb_mixed_${ts}`
+await seedFeedback(FB_MIXED, "/Reports/Weekly", "open", { title: "Uppercase-path report" })
 
 let serverProc: ReturnType<typeof Bun.spawn>
 let BASE: string
@@ -211,6 +214,40 @@ test("page-bugs requires auth: no session → 401", async () => {
 test("page-bugs rejects a missing/invalid url param with 400", async () => {
   const r = await api("GET", `/api/projects/${PROJECT_ID}/page-bugs`, MEMBER_SID)
   expect(r.status).toBe(400)
+})
+
+test("page-bugs matches the URL path case-INSENSITIVELY (Antigravity fix)", async () => {
+  // A report filed on "/dashboard" must be found when the per-page view browses "/Dashboard",
+  // and a report stored as "/Reports/Weekly" must be found when browsing "/reports/weekly".
+  const upper = await api("GET", pageUrl(`https://${HOST}/Dashboard`), MEMBER_SID)
+  expect(upper.status).toBe(200)
+  const upBody = await upper.json()
+  expect(upBody.bugs.map((b: any) => b.id).sort()).toEqual([FB_DONE, FB_INPROG, FB_OPEN].sort())
+
+  const lower = await api("GET", pageUrl(`https://${HOST}/reports/weekly`), MEMBER_SID)
+  expect(lower.status).toBe(200)
+  const loBody = await lower.json()
+  expect(loBody.bugs.map((b: any) => b.id)).toContain(FB_MIXED)
+})
+
+// ── GET /reported-pages (Bugs-by-page picker) ─────────────────────────────────
+
+test("reported-pages lists distinct pages with counts for a member", async () => {
+  const r = await api("GET", `/api/projects/${PROJECT_ID}/reported-pages`, MEMBER_SID)
+  expect(r.status).toBe(200)
+  const body = await r.json()
+  const paths = body.pages.map((p: any) => p.path)
+  expect(paths).toContain("/dashboard")
+  expect(paths).toContain("/settings")
+  const dash = body.pages.find((p: any) => p.path === "/dashboard")
+  expect(dash.host).toBe(HOST)
+  expect(dash.url).toBe(`https://${HOST}/dashboard`)
+  expect(dash.count).toBeGreaterThanOrEqual(2)   // FB_OPEN + FB_DONE both on /dashboard
+})
+
+test("reported-pages is team-gated: non-member 403, no session 401", async () => {
+  expect((await api("GET", `/api/projects/${PROJECT_ID}/reported-pages`, OUTSIDER_SID)).status).toBe(403)
+  expect((await api("GET", `/api/projects/${PROJECT_ID}/reported-pages`, null)).status).toBe(401)
 })
 
 // ── POST /qa-close ───────────────────────────────────────────────────────────

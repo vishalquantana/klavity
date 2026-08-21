@@ -69,6 +69,8 @@ body[data-view="team"] [data-view]:not([data-view~="team"]),
 body[data-view="triage"] [data-view]:not([data-view~="triage"]),
 body[data-view="settings"] [data-view]:not([data-view~="settings"]),
 body[data-view="autosims"] [data-view]:not([data-view~="autosims"]),
+body[data-view="guards"] [data-view]:not([data-view~="guards"]),
+body[data-view="pagebugs"] [data-view]:not([data-view~="pagebugs"]),
 body[data-view="recurring"] [data-view]:not([data-view~="recurring"]){display:none!important}
 /* ── Snap view — report-widget install + live detect ──────────────────── */
 .snap-view{padding:22px 26px 32px;max-width:760px}
@@ -1726,6 +1728,9 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     <button class="nv" data-go="autosims"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z" /><path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z" /><path d="M16 17h4" /><path d="M4 13h4" /></svg></span>AutoSims</button>
     <button class="nv" data-go="tickets"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20v-9" /> <path d="M14 7a4 4 0 0 1 4 4v3a6 6 0 0 1-12 0v-3a4 4 0 0 1 4-4z" /> <path d="M14.12 3.88 16 2" /> <path d="M21 21a4 4 0 0 0-3.81-4" /> <path d="M21 5a4 4 0 0 1-3.55 3.97" /> <path d="M22 13h-4" /> <path d="M3 21a4 4 0 0 1 3.81-4" /> <path d="M3 5a4 4 0 0 0 3.55 3.97" /> <path d="M6 13H2" /> <path d="m8 2 1.88 1.88" /> <path d="M9 7.13V6a3 3 0 1 1 6 0v1.13" /></svg></span>Tickets <span class="ct" id="navTicketCount"></span></button>
     <button class="nv" data-go="triage"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg></span>New reports <span class="ct" id="navTriageCount"></span></button>
+    <!-- Bugs by page: the in-app equivalent of QA mode for teammates who don't use the extension —
+         pick a reported page, see its bugs grouped with status + counts, mark them working & close. -->
+    <button class="nv" data-go="pagebugs"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" /><path d="M9 13h6" /><path d="M9 17h3" /></svg></span>Bugs by page</button>
     <button class="nv" data-go="recurring"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path d="M8 16H3v5" /></svg></span>Recurring <span class="ct" id="navRecurringCount"></span></button>
     <!-- Guards (B.10): the "things Klavity re-checks forever because they broke once" board, promoted
          out of AutoSims to its own top-level view so a Snap-only customer can reach it directly. -->
@@ -2689,6 +2694,58 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           <div id="expRet"></div>
         </div>
       </div>
+    </div>
+
+    <!-- ── Bugs by page view — the in-app equivalent of the QA overlay for teammates who don't use the
+         browser extension. Pick a page that has reports (or type a URL), see its bugs grouped with
+         status + live counts, and mark each one working & closed. Consumes GET /page-bugs (list +
+         counts) and POST /feedback/:id/qa-close (close + tracker transition). ── -->
+    <style>
+      .pb-desc{color:var(--paper-faint);font-size:14px;margin:4px 0 16px}
+      .pb-controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+      .pb-input{flex:1 1 340px;min-width:0;background:var(--ink-2);border:1px solid var(--line);border-radius:10px;padding:9px 12px;color:var(--paper);font-size:13.5px;font-family:inherit}
+      .pb-input:focus{outline:none;border-color:var(--indigo)}
+      .pb-pages{display:flex;flex-direction:column;gap:6px;margin-bottom:20px}
+      .pb-page{display:flex;align-items:center;gap:10px;justify-content:space-between;background:var(--ink-2);border:1px solid var(--line);border-radius:10px;padding:9px 12px;cursor:pointer;text-align:left;transition:transform .15s ease,border-color .15s ease,background .15s ease}
+      .pb-page:hover{transform:var(--mi-lift);border-color:var(--indigo);background:rgba(99,102,241,.08)}
+      .pb-page:active{transform:var(--mi-press)}
+      .pb-page-url{font-family:var(--mono);font-size:12.5px;color:var(--paper);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .pb-page-n{flex-shrink:0;font-family:var(--mono);font-size:11px;color:var(--paper-faint)}
+      .pb-head-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+      #pbPageHead{font-family:var(--mono);font-size:13px;color:var(--paper);word-break:break-all}
+      .pb-counts{display:flex;gap:8px;flex-wrap:wrap}
+      .pb-count{font-family:var(--mono);font-size:11px;letter-spacing:.04em;text-transform:uppercase;padding:4px 9px;border-radius:20px;background:var(--ink-2);color:var(--paper-faint)}
+      .pb-count b{color:var(--paper)}
+      .pb-c-open{background:rgba(219,39,119,.12)}.pb-c-open b{color:var(--rose)}
+      .pb-c-prog{background:rgba(99,102,241,.12)}.pb-c-prog b{color:var(--indigo)}
+      .pb-c-done{background:rgba(15,157,107,.14)}.pb-c-done b{color:var(--green)}
+      .pb-row{align-items:center;gap:12px}
+      .pb-row.pb-done{background:rgba(15,157,107,.08);border-color:rgba(15,157,107,.3)}
+      .pb-thumb{flex-shrink:0;width:52px;height:40px;border-radius:8px;object-fit:cover;border:1px solid var(--line);background:var(--ink-2);display:inline-flex;align-items:center;justify-content:center;color:var(--paper-faint)}
+      .pb-thumb-none{color:var(--paper-faint)}
+      .pb-main{flex:1 1 auto;min-width:0}
+      .pb-title{font-size:14px;color:var(--paper);margin-bottom:4px}
+      .pb-title .tkt-seq{font-family:var(--mono);font-size:11px;color:var(--paper-faint);margin-left:4px}
+      .pb-actions{flex-shrink:0;display:flex;gap:8px;align-items:center}
+      .pb-closed-tag{font-family:var(--mono);font-size:11px;color:var(--green);letter-spacing:.04em;text-transform:uppercase}
+    </style>
+    <div class="card full" data-view="pagebugs">
+      <h2 style="display:flex;align-items:center;gap:8px">
+        <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" /><path d="M9 13h6" /><path d="M9 17h3" /></svg>
+        Bugs by page
+      </h2>
+      <p class="pb-desc">The pages your users reported bugs on — no extension needed. Pick a page (or paste its URL) to see every report on it, then mark each one <b>working &amp; closed</b> once it is fixed.</p>
+      <div class="pb-controls">
+        <input class="pb-input" id="pbUrl" type="text" list="pbPages" placeholder="https://yoursite.com/pricing" autocomplete="off" spellcheck="false" />
+        <datalist id="pbPages"></datalist>
+        <button class="btn btn-indigo btn-sm" id="pbLoadBtn" type="button">Show bugs</button>
+      </div>
+      <div class="pb-pages" id="pbPagesList"></div>
+      <div class="pb-head-row" id="pbHeadRow" style="display:none">
+        <span id="pbPageHead"></span>
+        <div class="pb-counts" id="pbCounts" style="display:none"></div>
+      </div>
+      <div class="tkt-list" id="pbList"></div>
     </div>
 
   </div><!-- /.content -->
@@ -9204,12 +9261,168 @@ async function openReplay(feedbackId) {
   } catch(e){ note.textContent = "Could not start the player: " + (e && e.message ? e.message : "unknown error") }
 }
 
+// ===== Bugs by page (in-app QA mode) =====
+// Consumes GET /api/projects/:id/reported-pages (page picker), GET /api/projects/:id/page-bugs?url=
+// (this page's bugs + {open,inProgress,done} counts) and POST /api/feedback/:id/qa-close (close +
+// best-effort external-tracker transition). Reuses the dashboard's row styling, statusPillHtml,
+// openSingleTicket drawer and klavToast — no new auth (the view is already team-gated).
+function pbProjId(){ return (state && state.active && state.active.id) || null }
+
+function renderPageBugsView(){
+  var input = document.getElementById("pbUrl")
+  if (input && !input.dataset.bound){
+    input.dataset.bound = "1"
+    var go = function(){ var u = (input.value || "").trim(); if (u) loadPageBugs(u) }
+    var btn = document.getElementById("pbLoadBtn")
+    if (btn) btn.addEventListener("click", go)
+    input.addEventListener("keydown", function(e){ if (e.key === "Enter"){ e.preventDefault(); go() } })
+  }
+  loadReportedPages()
+}
+
+async function loadReportedPages(){
+  var pid = pbProjId()
+  var host = document.getElementById("pbPagesList")
+  var dl = document.getElementById("pbPages")
+  if (!pid || !host) return
+  host.innerHTML = '<div class="tkt-list-empty">Loading pages…</div>'
+  try {
+    var res = await fetch("/api/projects/" + encodeURIComponent(pid) + "/reported-pages")
+    if (!res.ok) throw new Error("HTTP " + res.status)
+    var data = await res.json()
+    var pages = (data && data.pages) || []
+    if (dl) dl.innerHTML = pages.map(function(p){ return '<option value="' + esc(p.url) + '"></option>' }).join("")
+    if (!pages.length){ host.innerHTML = '<div class="tkt-list-empty">No reported pages yet. Reports filed from your site will show up here.</div>'; return }
+    host.innerHTML = pages.map(function(p){
+      return '<button type="button" class="pb-page" data-url="' + esc(p.url) + '">' +
+        '<span class="pb-page-url">' + esc((p.host || "") + (p.path || "")) + '</span>' +
+        '<span class="pb-page-n">' + (p.count || 0) + " report" + (p.count === 1 ? "" : "s") + "</span></button>"
+    }).join("")
+    host.querySelectorAll(".pb-page").forEach(function(b){
+      b.addEventListener("click", function(){
+        var u = b.getAttribute("data-url")
+        var inp = document.getElementById("pbUrl"); if (inp) inp.value = u
+        loadPageBugs(u)
+      })
+    })
+  } catch(e){ host.innerHTML = '<div class="tkt-list-empty">Could not load reported pages.</div>' }
+}
+
+async function loadPageBugs(rawUrl){
+  var pid = pbProjId()
+  var listEl = document.getElementById("pbList")
+  var headRow = document.getElementById("pbHeadRow")
+  if (!pid || !listEl) return
+  listEl.innerHTML = '<div class="tkt-list-empty">Loading…</div>'
+  try {
+    var res = await fetch("/api/projects/" + encodeURIComponent(pid) + "/page-bugs?url=" + encodeURIComponent(rawUrl))
+    var data = await res.json().catch(function(){ return {} })
+    if (!res.ok){
+      if (headRow) headRow.style.display = "none"
+      listEl.innerHTML = '<div class="tkt-list-empty">' + esc((data && data.error) || "Could not load bugs for this page.") + "</div>"
+      return
+    }
+    renderPageBugList(data)
+  } catch(e){ listEl.innerHTML = '<div class="tkt-list-empty">Failed to load bugs.</div>' }
+}
+
+function pbCountsHtml(c){
+  c = c || { open: 0, inProgress: 0, done: 0 }
+  return '<span class="pb-count pb-c-open"><b>' + (c.open || 0) + "</b> open</span>" +
+         '<span class="pb-count pb-c-prog"><b>' + (c.inProgress || 0) + "</b> in progress</span>" +
+         '<span class="pb-count pb-c-done"><b>' + (c.done || 0) + "</b> done</span>"
+}
+
+function renderPageBugList(data){
+  var listEl = document.getElementById("pbList")
+  var countsEl = document.getElementById("pbCounts")
+  var headRow = document.getElementById("pbHeadRow")
+  var head = document.getElementById("pbPageHead")
+  var bugs = (data && data.bugs) || []
+  if (head) head.textContent = data.url || ""
+  if (headRow) headRow.style.display = data.url ? "flex" : "none"
+  if (countsEl){ countsEl.innerHTML = pbCountsHtml(data.counts); countsEl.style.display = "flex" }
+  if (!bugs.length){ listEl.innerHTML = '<div class="tkt-list-empty">No reports captured on this page.</div>'; return }
+  listEl.innerHTML = ""
+  bugs.forEach(function(b){
+    var row = document.createElement("div")
+    row.className = "tkt-list-row pb-row"
+    row.setAttribute("data-id", b.id)
+    var isDone = ["done", "dismissed", "resolved", "closed", "fixed"].indexOf(String(b.status || "").toLowerCase()) >= 0
+    if (isDone) row.classList.add("pb-done")
+    var sev = b.severity || ""
+    var thumb = b.screenshotUrl
+      ? '<img class="pb-thumb" src="' + esc(b.screenshotUrl) + '" alt="" loading="lazy">'
+      : '<span class="pb-thumb pb-thumb-none">' + kicon("image", { size: 15 }) + "</span>"
+    var meta = [b.reporterEmail ? esc(b.reporterEmail) : "", ago(b.createdAt)].filter(Boolean).join(" · ")
+    row.innerHTML =
+      thumb +
+      '<div class="pb-main">' +
+        '<div class="pb-title">' + esc(b.title || "Untitled report") + ' <span class="tkt-seq">' + esc(b.ref || "") + "</span></div>" +
+        '<div class="tl-meta">' + statusPillHtml(b.status) + (sev ? '<span class="chip sev-' + esc(sev) + '">' + esc(sev) + "</span>" : "") + "<span>" + meta + "</span></div>" +
+      "</div>" +
+      '<div class="pb-actions">' +
+        '<button type="button" class="btn btn-ghost btn-sm pb-open">Open in Klavity</button>' +
+        (isDone
+          ? '<span class="pb-closed-tag">Closed</span>'
+          : '<button type="button" class="btn btn-indigo btn-sm pb-close">Mark working &amp; close</button>') +
+      "</div>"
+    var openBtn = row.querySelector(".pb-open")
+    if (openBtn) openBtn.addEventListener("click", function(e){ e.stopPropagation(); if (typeof openSingleTicket === "function") openSingleTicket(b.id) })
+    var closeBtn = row.querySelector(".pb-close")
+    if (closeBtn) closeBtn.addEventListener("click", function(e){ e.stopPropagation(); qaClosePageBug(b.id, row) })
+    listEl.appendChild(row)
+  })
+}
+
+async function qaClosePageBug(id, row){
+  var btn = row.querySelector(".pb-close")
+  // Optimistic — row goes green immediately; revert on failure.
+  row.classList.add("pb-done")
+  if (btn){ btn.disabled = true; btn.textContent = "Closing…" }
+  try {
+    var res = await fetch("/api/feedback/" + encodeURIComponent(id) + "/qa-close", {
+      method: "POST", headers: { "content-type": "application/json" }, body: "{}",
+    })
+    var data = await res.json().catch(function(){ return {} })
+    if (!res.ok) throw new Error((data && data.error) || "Close failed")
+    var pill = row.querySelector(".tkt-pill")
+    if (pill){ pill.className = "tkt-pill p-done"; pill.innerHTML = '<span class="pdot"></span>Done' }
+    var actions = row.querySelector(".pb-actions")
+    if (btn) btn.remove()
+    if (actions && !actions.querySelector(".pb-closed-tag")){
+      var tag = document.createElement("span"); tag.className = "pb-closed-tag"; tag.textContent = "Closed"; actions.appendChild(tag)
+    }
+    pbRecomputeCounts()
+    klavToast("Marked working &amp; closed" + (data.warning ? " — but the linked tracker could not be updated" : "") + ".", !!data.warning)
+  } catch(e){
+    row.classList.remove("pb-done")
+    if (btn){ btn.disabled = false; btn.textContent = "Mark working & close" }
+    klavToast("Could not close this report. " + esc((e && e.message) || ""), true)
+  }
+}
+
+// Re-derive the {open,inProgress,done} counts from the rows on screen after a close, so the strip
+// stays correct without a refetch. Mirrors the server's status→bucket mapping.
+function pbRecomputeCounts(){
+  var el = document.getElementById("pbCounts"); if (!el) return
+  var open = 0, prog = 0, done = 0
+  document.querySelectorAll("#pbList .pb-row").forEach(function(r){
+    var cls = (r.querySelector(".tkt-pill") || {}).className || ""
+    if (/p-in_progress/.test(cls)) prog++
+    else if (/p-done|p-dismissed/.test(cls)) done++
+    else open++
+  })
+  el.innerHTML = pbCountsHtml({ open: open, inProgress: prog, done: done })
+}
+window.renderPageBugsView = renderPageBugsView
+
 load()
 </script>
 <script>
 // ===== sidebar view switching =====
 (function(){
-  var VIEWS=['overview','snap','triage','sims','autosims','tickets','team','settings','recurring','guards','getting-started'];
+  var VIEWS=['overview','snap','triage','sims','autosims','tickets','team','settings','recurring','guards','pagebugs','getting-started'];
   function sidebarNavs(){
     return [].slice.call(document.querySelectorAll('.side .nv'));
   }
@@ -9252,6 +9465,7 @@ load()
       }
     }
     if(v==='guards'){if(typeof window.loadExpectations==='function')window.loadExpectations();}
+    if(v==='pagebugs'){if(typeof window.renderPageBugsView==='function')window.renderPageBugsView();}
   }
   normalizeSidebar();
   var side=document.querySelector('.side');

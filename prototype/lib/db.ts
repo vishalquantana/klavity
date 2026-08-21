@@ -5069,14 +5069,20 @@ export type PageBugRow = {
 export async function feedbackByPageUrl(
   projectId: string, host: string, pathCandidates: string[],
 ): Promise<PageBugRow[]> {
-  const cands = Array.from(new Set(pathCandidates.filter((p) => p != null && p !== "")))
+  // Case-insensitive on BOTH host and path: a report filed on "/Dashboard" must be found when the
+  // per-page view / QA overlay browses "/dashboard". We lowercase the candidate paths here and compare
+  // against lower(url_path) below (SQLite's default IN comparison is case-SENSITIVE, which silently
+  // dropped mixed-case matches and showed a false "no bugs on this page").
+  const cands = Array.from(
+    new Set(pathCandidates.filter((p) => p != null && p !== "").map((p) => p.toLowerCase())),
+  )
   if (!cands.length) return []
   const placeholders = cands.map(() => "?").join(",")
   const r = await db!.execute({
     sql: `SELECT id, seq_num, title, observation, status, priority, severity, actor_email,
                  contact_email, screenshot_id, url_host, url_path, report_url, annotations_json, created_at
           FROM feedback
-          WHERE project_id=? AND lower(url_host)=lower(?) AND url_path IN (${placeholders})
+          WHERE project_id=? AND lower(url_host)=lower(?) AND lower(url_path) IN (${placeholders})
           ORDER BY created_at DESC`,
     args: [projectId, host, ...cands],
   })
@@ -5096,6 +5102,29 @@ export async function feedbackByPageUrl(
     reportUrl: x.report_url != null ? String(x.report_url) : null,
     annotations: safeJsonParse(x.annotations_json),
     createdAt: Number(x.created_at),
+  }))
+}
+
+// Dashboard "Bugs by page" picker: the distinct pages that have at least one report, newest-active
+// first, each with a report count. Powers GET /api/projects/:id/reported-pages so a teammate who
+// doesn't use the QA overlay can pick a page from a list instead of typing a URL. Read-only; the
+// route that calls this is team-gated by projectAccess exactly like every other dashboard read.
+export type ReportedPageRow = { urlHost: string | null; urlPath: string | null; count: number; lastAt: number }
+export async function distinctReportedPages(projectId: string, limit = 200): Promise<ReportedPageRow[]> {
+  const r = await db!.execute({
+    sql: `SELECT url_host, url_path, COUNT(*) AS n, MAX(created_at) AS last_at
+          FROM feedback
+          WHERE project_id=? AND url_host IS NOT NULL AND url_host<>''
+          GROUP BY lower(url_host), url_path
+          ORDER BY last_at DESC
+          LIMIT ?`,
+    args: [projectId, Math.max(1, Math.min(500, limit))],
+  })
+  return r.rows.map((x: any) => ({
+    urlHost: x.url_host != null ? String(x.url_host) : null,
+    urlPath: x.url_path != null ? String(x.url_path) : null,
+    count: Number(x.n) || 0,
+    lastAt: Number(x.last_at) || 0,
   }))
 }
 
