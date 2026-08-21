@@ -34,6 +34,16 @@ export interface SafeFetchOptions {
    * hermetic integration test can point a connector at a real local receiver. Off in production.
    */
   allowLoopbackInTest?: boolean
+  /**
+   * CREDENTIAL-SAFETY (Codex #1): when true, a 3xx redirect whose host differs from the ORIGINAL
+   * request host is REJECTED instead of followed. The SSRF guard alone only blocks private/loopback
+   * IPs — it happily follows a redirect to ANY public host (e.g. https://attacker/collect), which
+   * would re-send the caller's Authorization header (Basic email:token) to that host. Any request
+   * that carries a secret auth header to a user-supplied host (Jira/Plane/etc.) MUST set this so the
+   * token can only ever reach the configured, validated host. Same-host path/query redirects are
+   * still followed; a cross-host redirect throws a generic, log-safe error.
+   */
+  sameOriginRedirectsOnly?: boolean
 }
 
 /**
@@ -68,6 +78,11 @@ export async function safeFetch(
   opts: SafeFetchOptions = {},
 ): Promise<Response> {
   let currentUrl = url
+  // Pin the credential-bearing origin. A redirect that leaves this host must never re-carry the
+  // caller's auth headers (see sameOriginRedirectsOnly). Parsed leniently — an unparseable initial
+  // URL is caught by the guard on the first hop below.
+  let originHost: string | null = null
+  try { originHost = new URL(url).host.toLowerCase() } catch { originHost = null }
 
   for (let hop = 0; hop <= MAX_HOPS; hop++) {
     // Re-validate immediately before each network hop (narrows the rebinding window — see file header).
@@ -87,17 +102,25 @@ export async function safeFetch(
       return res
     }
 
-    let nextUrl: string
+    let nextUrl: URL
     try {
-      nextUrl = new URL(location, currentUrl).toString()
+      nextUrl = new URL(location, currentUrl)
     } catch {
       throw new Error("blocked redirect: invalid Location")
+    }
+
+    // CREDENTIAL-SAFETY (Codex #1): reject a redirect that would carry the auth header off the
+    // original host. Enforced BEFORE we follow (and before the SSRF guard, which would let a public
+    // attacker host through). Drain the pending body first so the socket closes cleanly.
+    if (opts.sameOriginRedirectsOnly && originHost !== null && nextUrl.host.toLowerCase() !== originHost) {
+      await res.body?.cancel().catch(() => {})
+      throw new Error("blocked redirect: cross-origin redirect not allowed for authenticated request")
     }
 
     // Drain the redirect body so the connection can be reused/closed cleanly.
     await res.body?.cancel().catch(() => {})
 
-    currentUrl = nextUrl
+    currentUrl = nextUrl.toString()
     // Loop continues: top of loop re-validates the new host before the next fetch.
   }
 

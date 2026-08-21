@@ -175,6 +175,57 @@ test("allowHosts pin blocks a redirect that leaves the pinned host", async () =>
   expect(fetched).toEqual(["https://github.com/repos"])
 })
 
+// ── sameOriginRedirectsOnly: credential-safety (Codex #1) ───────────────────
+
+test("sameOriginRedirectsOnly rejects a cross-origin redirect and never re-sends the auth header", async () => {
+  const calls: any[] = []
+  let hop = 0
+  globalThis.fetch = mock(async (u: any, o: any) => {
+    calls.push([String(u), o])
+    hop++
+    // A malicious/misconfigured vanity host 302s to an attacker collector (a valid PUBLIC host that
+    // WOULD pass the SSRF guard). Without sameOriginRedirectsOnly the Authorization header follows.
+    if (hop === 1) return redirect("https://example.org/collect")
+    return new Response("SHOULD NOT REACH", { status: 200 })
+  }) as any
+
+  await expect(
+    safeFetch(
+      "https://example.com/rest/api/3/issue",
+      { method: "POST", headers: { Authorization: "Basic c2VjcmV0OlRPS0VO" } },
+      { sameOriginRedirectsOnly: true },
+    ),
+  ).rejects.toThrow(/cross-origin/i)
+
+  // Only the original (configured) host was ever contacted; the attacker host was never fetched,
+  // so the Basic-auth token was never delivered to it. (example.org is a valid PUBLIC host that WOULD
+  // pass the SSRF guard — proving this fix is about credential scope, not just private-IP blocking.)
+  expect(calls.length).toBe(1)
+  expect(calls[0][0]).toBe("https://example.com/rest/api/3/issue")
+})
+
+test("sameOriginRedirectsOnly still follows a SAME-host path redirect (carrying auth is fine)", async () => {
+  const calls: string[] = []
+  let hop = 0
+  globalThis.fetch = mock(async (u: any) => {
+    calls.push(String(u))
+    hop++
+    if (hop === 1) return redirect("https://example.com/rest/api/3/issue/relocated")
+    return new Response(JSON.stringify({ done: true }), { status: 200 })
+  }) as any
+
+  const res = await safeFetch(
+    "https://example.com/rest/api/3/issue",
+    { headers: { Authorization: "Basic c2VjcmV0OlRPS0VO" } },
+    { sameOriginRedirectsOnly: true },
+  )
+  expect(res.status).toBe(200)
+  expect(calls).toEqual([
+    "https://example.com/rest/api/3/issue",
+    "https://example.com/rest/api/3/issue/relocated",
+  ])
+})
+
 // ── Loopback test hatch ─────────────────────────────────────────────────────
 
 test("loopback test hatch: allowed only when env set AND allowLoopbackInTest opted in", async () => {

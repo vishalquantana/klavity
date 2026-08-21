@@ -60,6 +60,27 @@ test("#445 — 'Connect later' still proceeds and persists the tracker intent (n
   expect(ONBOARD).toMatch(/function trackerContinue\(\)\{[\s\S]*?go\(S\.PLAN\)/)
 })
 
+test("Codex #4 — connecting persists the suggested auto-mapping onto the saved connector (not just render it)", () => {
+  // loadTrackerMapping receives the new connector id and PATCHes the suggested issue_type_map /
+  // status_map onto it, so future Feature->Story exports honor the map instead of the default Task.
+  expect(ONBOARD).toContain("async function loadTrackerMapping(type, cfg, connectorId)")
+  // The new connector id is threaded from the save response into the mapping step.
+  expect(ONBOARD).toContain("const newId = create.data.connector && create.data.connector.id")
+  expect(ONBOARD).toContain("loadTrackerMapping(type, cfg, newId)")
+  // It PATCHes the connector config with the maps (JSON-encoded) — a real persist, not cosmetic.
+  expect(ONBOARD).toMatch(/patchCfg\.issue_type_map = JSON\.stringify\(itm\)/)
+  expect(ONBOARD).toMatch(/patchCfg\.status_map = JSON\.stringify\(sm\)/)
+  expect(ONBOARD).toMatch(/connectors\/'[\s\S]{0,120}method:'PATCH'/)
+})
+
+test("Codex #8 — a tracker switch mid-connect cannot show the wrong tracker connected", () => {
+  // trackerConnect pins the tracker it is for and bails at every async checkpoint if the choice changed.
+  expect(ONBOARD).toContain("const stale = function(){ return trackerChoice !== type }")
+  // Guards after the async test AND the async save, plus loadTrackerMapping's own stale check.
+  expect((ONBOARD.match(/if \(stale\(\)\) return/g) || []).length).toBeGreaterThanOrEqual(2)
+  expect(ONBOARD).toContain("if (trackerChoice !== type) return")
+})
+
 test("#445 — dashboard surfaces a 'finish connecting' nudge from the persisted intent", () => {
   expect(DASH).toContain('id="trackerNudge"')
   expect(DASH).toContain("function maybeTrackerNudge")

@@ -1234,10 +1234,15 @@ function trackerOauth(){
 }
 
 async function trackerConnect(){
+  // #8 (race): pin the tracker this run is FOR. If the user switches the shared tracker choice while
+  // an async test/save is in flight, every checkpoint below bails so we never render "Connected" or
+  // persist a mapping for a tracker that is no longer selected.
   const type = trackerChoice
+  const stale = function(){ return trackerChoice !== type }
   if (!type || type === 'cloud') return
   if (!projectId) { $('tpErr').textContent = 'Create your project first.'; return }
   const cat = await loadConnectorCatalog()
+  if (stale()) return
   const meta = cat && cat.types ? cat.types.find(function(t){ return t.type === type }) : null
   const cfg = readTrackerConfig(meta)
   const missing = ((meta && meta.fields) || []).filter(function(f){
@@ -1250,10 +1255,11 @@ async function trackerConnect(){
   const btn = $('tpConnectBtn'); const status = $('tpStatus')
   $('tpErr').textContent = ''
   btn.disabled = true; status.className = 'tp-status'; status.textContent = 'Testing connection...'
-  // 1) Verify the credentials genuinely work (files a clearly-labelled test ticket).
+  // 1) Verify the credentials genuinely work (files a clearly-labelled test ticket, deleted server-side).
   const test = await jsonFetch('/api/projects/' + encodeURIComponent(projectId) + '/connectors/test', {
     method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ type: type, config: cfg })
   })
+  if (stale()) return   // #8: user switched trackers during the test — discard this stale result
   if (!(test.ok && test.data && test.data.ok)) {
     btn.disabled = false; status.textContent = ''
     $('tpErr').textContent = (test.data && test.data.error) || 'Could not connect. Check your credentials and try again.'
@@ -1266,6 +1272,7 @@ async function trackerConnect(){
     method:'POST', headers:{'content-type':'application/json'},
     body: JSON.stringify({ type: type, name: label + ' (onboarding)', config: cfg, autoCopy: true })
   })
+  if (stale()) return   // #8: switched during the save — do not claim the wrong tracker connected
   if (!(create.ok && create.data && create.data.ok)) {
     btn.disabled = false; status.textContent = ''
     $('tpErr').textContent = (create.data && create.data.error) || 'Connected, but could not save. Try again.'
@@ -1275,17 +1282,23 @@ async function trackerConnect(){
   connectorCatalog = null           // force refresh so re-entry sees the new connector
   try { localStorage.removeItem('klav-tracker-pending') } catch(e){}
   status.className = 'tp-status ok'; status.textContent = 'Connected'
-  // 3) Auto-mapping preview from the connector-meta capability (Bug/Feature/Severity/Statuses).
-  loadTrackerMapping(type, cfg)
+  // 3) Auto-mapping preview + PERSIST (#4): the connector was saved with the raw creds only; without
+  // this the suggested Bug->Bug / Feature->Story mapping was cosmetic and future exports fell back to
+  // the default Task. Pass the new connector id so loadTrackerMapping writes the suggested maps onto it.
+  const newId = create.data.connector && create.data.connector.id
+  loadTrackerMapping(type, cfg, newId)
 }
 
-async function loadTrackerMapping(type, cfg){
+async function loadTrackerMapping(type, cfg, connectorId){
   const box = $('tpMap'); const rows = $('tpMapRows'); if (!box || !rows) return
   box.classList.remove('hide')
   rows.innerHTML = '<div class="tp-map-load">Mapping issue types and statuses...</div>'
   let body
   if (cfg) body = { type: type, config: cfg }
   else {
+    // Preview path for an ALREADY-connected tracker (re-entry). Never derive connectorId here — we
+    // must NOT re-persist over a mapping the admin may have customized in the dashboard. Persistence
+    // (#4) only happens on a FRESH connect, where trackerConnect passes the new connectorId in.
     const cat = await loadConnectorCatalog()
     const found = cat && cat.connectors ? cat.connectors.find(function(c){ return c.type === type }) : null
     body = found ? { type: type, cid: found.id } : { type: type }
@@ -1293,6 +1306,8 @@ async function loadTrackerMapping(type, cfg){
   const { ok, data } = await jsonFetch('/api/projects/' + encodeURIComponent(projectId) + '/connectors/meta', {
     method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body)
   })
+  // #8: if the tracker choice changed while meta was loading, don't paint mappings for a stale tracker.
+  if (trackerChoice !== type) return
   let bug = 'Bug', feature = 'Story', statuses = 'To Do / In Progress / Done'
   if (ok && data && data.suggested) {
     const itm = data.suggested.issue_type_map || {}
@@ -1301,6 +1316,22 @@ async function loadTrackerMapping(type, cfg){
     if (itm.feature) feature = itm.feature
     const sv = ['new','open','in_progress','done'].map(function(k){ return sm[k] }).filter(Boolean)
     if (sv.length) statuses = sv.join(' / ')
+    // #4: persist the auto-mapping onto the saved connector so exports actually honor Bug->Bug /
+    // Feature->Story instead of falling back to the default type. Stored as JSON strings in config
+    // (the same encoding resolveIssueType/status-map read). Best-effort — a failed PATCH just leaves
+    // the preview cosmetic, exactly the prior behavior.
+    if (connectorId) {
+      const patchCfg = {}
+      if (itm && Object.keys(itm).length) patchCfg.issue_type_map = JSON.stringify(itm)
+      if (sm && Object.keys(sm).length) patchCfg.status_map = JSON.stringify(sm)
+      if (Object.keys(patchCfg).length) {
+        try {
+          await jsonFetch('/api/projects/' + encodeURIComponent(projectId) + '/connectors/' + encodeURIComponent(connectorId), {
+            method:'PATCH', headers:{'content-type':'application/json'}, body: JSON.stringify({ config: patchCfg })
+          })
+        } catch(e){}
+      }
+    }
   }
   rows.innerHTML = trackerMapRow('Bug', bug) + trackerMapRow('Feature', feature)
     + trackerMapRow('Severity', 'Priority') + trackerMapRow('Statuses', statuses)

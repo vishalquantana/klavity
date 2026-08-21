@@ -8997,6 +8997,26 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // the generic /connectors/:cid handler for the same reason as the test routes.
           const cidImportMatch = sub.match(/^\/connectors\/([^/]+)\/import$/)
 
+          // Codex #3: best-effort cleanup of the throwaway connection-test issue. The connection test
+          // proves creds work by creating a real "Klavity connection test" ticket; leaving it behind
+          // orphans a ticket on every onboarding retry. Delete it via the adapter's optional deleteIssue
+          // (only Jira implements it today; others fall back to the prior behavior). Never throws — a
+          // failed delete must not turn a successful connectivity test into a failure.
+          const cleanupTestIssue = async (
+            adapter: ReturnType<typeof getConnector>,
+            externalKey: string | undefined,
+            cfg: Record<string, string>,
+          ): Promise<void> => {
+            try {
+              if (adapter && typeof adapter.deleteIssue === "function" && externalKey) {
+                const r = await adapter.deleteIssue(externalKey, cfg)
+                if (!r.ok) console.warn(`connector-test cleanup: could not delete test issue ${externalKey}: ${r.error ?? "unknown"}`)
+              }
+            } catch (e: any) {
+              console.warn(`connector-test cleanup error (non-fatal): ${e?.message ?? e}`)
+            }
+          }
+
           // A clearly-labelled test ticket used by both test endpoints to genuinely verify connectivity.
           const TEST_PAYLOAD: TicketPayload = {
             title: "✅ Klavity connection test",
@@ -9020,6 +9040,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             if (!validation.ok) return json({ error: validation.error || "Invalid connector config." }, 400)
             try {
               const result = await adapter.createIssue(TEST_PAYLOAD, config)
+              // Codex #3: the connection test creates a throwaway "Klavity connection test" issue to
+              // prove the creds work; delete it immediately (best-effort) so onboarding retries do not
+              // leave permanent orphan tickets in the customer's tracker. Never fail the test on cleanup.
+              await cleanupTestIssue(adapter, result.externalKey, config)
               return json({ ok: true, externalKey: result.externalKey, externalUrl: result.externalUrl })
             } catch (e: any) {
               // A10: never echo guard/upstream/internal text — generic message + logged correlation id.
@@ -9109,6 +9133,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
             try {
               const result = await adapter.createIssue(TEST_PAYLOAD, decryptedConfig)
+              // Codex #3: clean up the throwaway connection-test issue (best-effort) — see above.
+              await cleanupTestIssue(adapter, result.externalKey, decryptedConfig)
               return json({ ok: true, externalKey: result.externalKey, externalUrl: result.externalUrl })
             } catch (e: any) {
               // A10: generic message + logged correlation id (no guard/upstream leak).

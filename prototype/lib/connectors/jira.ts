@@ -8,6 +8,24 @@ function jiraCreds(cfg: Record<string, string>): string {
   return Buffer.from(`${cfg.email}:${cfg.token}`).toString("base64")
 }
 
+// CREDENTIAL-SAFETY (Codex #1): options every AUTHENTICATED Jira request passes to safeFetch. Besides
+// the SSRF/loopback-test posture, `sameOriginRedirectsOnly` forbids following a 3xx off the configured
+// Jira host — so the Basic-auth token (email:token) can NEVER be replayed to a redirect target like
+// https://attacker/collect. The token is only ever sent to the validated, configured host.
+const JIRA_FETCH_OPTS = { allowLoopbackInTest: true, sameOriginRedirectsOnly: true } as const
+
+// Codex #9 (LOW): redact anything that looks like a credential before it reaches a log line or a
+// returned error string. Jira's own error/response bodies should not contain our Authorization
+// header, but a misconfigured proxy/host could echo request headers — so we strip Basic/Bearer
+// tokens and any Authorization: value defensively. Keeps logs diagnosable without leaking secrets.
+function redactSecrets(s: string): string {
+  if (!s) return s
+  return s
+    .replace(/\bBasic\s+[A-Za-z0-9+/=_-]+/gi, "Basic [redacted]")
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]")
+    .replace(/\bAuthorization\b\s*[:=]\s*["']?[^"'\s,}]+/gi, "Authorization: [redacted]")
+}
+
 // Klavity->Jira #414: upload one batch of files to an already-created Jira issue. Shared by
 // createIssue and the public attachFiles capability. Enforces the size caps up front, uploads each
 // accepted file via multipart with the required X-Atlassian-Token header, and NEVER throws — a
@@ -43,10 +61,10 @@ async function jiraAttachFiles(
           },
           body: form,
         },
-        { allowLoopbackInTest: true },
+        JIRA_FETCH_OPTS,
       )
       if (!attRes.ok) {
-        const text = (await attRes.text().catch(() => "")).slice(0, 200)
+        const text = redactSecrets((await attRes.text().catch(() => "")).slice(0, 200))
         console.warn(`jira attachment upload failed for ${att.filename} (HTTP ${attRes.status}): ${text}`)
         failures.push(`${att.filename}: HTTP ${attRes.status}`)
       } else {
@@ -54,7 +72,7 @@ async function jiraAttachFiles(
       }
     } catch (err) {
       // Swallow: the issue already exists and its body has the permanent link. Never throw.
-      const reason = err instanceof Error ? err.message : String(err)
+      const reason = redactSecrets(err instanceof Error ? err.message : String(err))
       console.warn(`jira attachment upload error for ${att.filename}: ${reason}`)
       failures.push(`${att.filename}: ${reason}`)
     }
@@ -89,10 +107,10 @@ async function jiraTransitionIssue(
     const listRes = await safeFetch(
       url,
       { method: "GET", headers: { "Authorization": `Basic ${credentials}`, "Accept": "application/json" } },
-      { allowLoopbackInTest: true },
+      JIRA_FETCH_OPTS,
     )
     if (!listRes.ok) {
-      const text = (await listRes.text().catch(() => "")).slice(0, 200)
+      const text = redactSecrets((await listRes.text().catch(() => "")).slice(0, 200))
       return { ok: false, applied: false, error: `jira transitions GET HTTP ${listRes.status}: ${text}` }
     }
     const json = await listRes.json().catch(() => null)
@@ -117,15 +135,15 @@ async function jiraTransitionIssue(
         },
         body: JSON.stringify({ transition: { id: transitionId } }),
       },
-      { allowLoopbackInTest: true },
+      JIRA_FETCH_OPTS,
     )
     if (!postRes.ok) {
-      const text = (await postRes.text().catch(() => "")).slice(0, 200)
+      const text = redactSecrets((await postRes.text().catch(() => "")).slice(0, 200))
       return { ok: false, applied: false, transitionId, error: `jira transition POST HTTP ${postRes.status}: ${text}` }
     }
     return { ok: true, applied: true, transitionId }
   } catch (e) {
-    return { ok: false, applied: false, error: e instanceof Error ? e.message : String(e) }
+    return { ok: false, applied: false, error: redactSecrets(e instanceof Error ? e.message : String(e)) }
   }
 }
 
@@ -255,7 +273,7 @@ export const jiraConnector: Connector = {
           },
         }),
       },
-      { allowLoopbackInTest: true },
+      JIRA_FETCH_OPTS,
     )
 
     if (!res.ok) {
@@ -263,11 +281,11 @@ export const jiraConnector: Connector = {
       // instead of discarding it, so a 400 during a connector test is diagnosable from logs + the
       // auto-filed ticket. The thrown message stays generic — no upstream text reaches the client.
       const text = (await res.text().catch(() => "")).slice(0, 500)
-      const reason = jiraErrorReason(text)
+      const reason = redactSecrets(jiraErrorReason(text))
       console.error(`jira create-issue upstream error ${res.status}: ${reason}`)
       const err = new Error(`tracker request failed (HTTP ${res.status})`)
       ;(err as any).upstreamStatus = res.status
-      ;(err as any).upstreamBody = text
+      ;(err as any).upstreamBody = redactSecrets(text)
       ;(err as any).upstreamReason = reason
       throw err
     }
@@ -359,11 +377,11 @@ export const jiraConnector: Connector = {
           },
           body: JSON.stringify({ body: toAdf(commentText) }),
         },
-        { allowLoopbackInTest: true },
+        JIRA_FETCH_OPTS,
       )
 
       if (!res.ok) {
-        const text = (await res.text().catch(() => "")).slice(0, 200)
+        const text = redactSecrets((await res.text().catch(() => "")).slice(0, 200))
         return { ok: false, error: `jira comment POST HTTP ${res.status}: ${text}` }
       }
 
@@ -371,7 +389,7 @@ export const jiraConnector: Connector = {
       const externalCommentId = json?.id != null ? String(json.id) : null
       return { ok: true, externalCommentId }
     } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : String(e) }
+      return { ok: false, error: redactSecrets(e instanceof Error ? e.message : String(e)) }
     }
   },
 
@@ -410,16 +428,46 @@ export const jiraConnector: Connector = {
           },
           body: JSON.stringify({ fields: jFields }),
         },
-        { allowLoopbackInTest: true },
+        JIRA_FETCH_OPTS,
       )
 
       if (!res.ok) {
-        const text = (await res.text().catch(() => "")).slice(0, 200)
+        const text = redactSecrets((await res.text().catch(() => "")).slice(0, 200))
         return { ok: false, error: `jira issue PUT HTTP ${res.status}: ${text}` }
       }
       return { ok: true }
     } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : String(e) }
+      return { ok: false, error: redactSecrets(e instanceof Error ? e.message : String(e)) }
+    }
+  },
+
+  // Codex #3: delete an issue by key. Used to CLEAN UP the throwaway "Klavity connection test" issue
+  // the connection-test route creates to verify credentials — without this, every onboarding retry
+  // left a permanent orphan ticket in the customer's project. Best-effort + non-throwing.
+  //   DELETE {host}/rest/api/3/issue/{key}  -> 204 on success
+  async deleteIssue(
+    externalIssueRef: string,
+    cfg: Record<string, string>,
+  ): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const { host, email, token } = cfg
+      if (!host || !email || !token) return { ok: false, error: "jira deleteIssue: missing host/email/token in config" }
+      if (!externalIssueRef) return { ok: false, error: "jira deleteIssue: missing issue key" }
+      const url = `${host.replace(/\/$/, "")}/rest/api/3/issue/${encodeURIComponent(externalIssueRef)}`
+      const credentials = Buffer.from(`${email}:${token}`).toString("base64")
+      // SSRF + credential-safety guard (H3 / Codex #1): validated + same-origin-redirects-only.
+      const res = await safeFetch(
+        url,
+        { method: "DELETE", headers: { "Authorization": `Basic ${credentials}`, "Accept": "application/json" } },
+        JIRA_FETCH_OPTS,
+      )
+      if (!res.ok && res.status !== 204) {
+        const text = redactSecrets((await res.text().catch(() => "")).slice(0, 200))
+        return { ok: false, error: `jira issue DELETE HTTP ${res.status}: ${text}` }
+      }
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: redactSecrets(e instanceof Error ? e.message : String(e)) }
     }
   },
 
@@ -435,10 +483,10 @@ export const jiraConnector: Connector = {
     const res = await safeFetch(
       `${host}/rest/api/3/issue/createmeta/${encodeURIComponent(cfg.project_key)}/issuetypes`,
       { method: "GET", headers: { Authorization: `Basic ${credentials}`, Accept: "application/json" } },
-      { allowLoopbackInTest: true },
+      JIRA_FETCH_OPTS,
     )
     if (!res.ok) {
-      const t = (await res.text().catch(() => "")).slice(0, 200)
+      const t = redactSecrets((await res.text().catch(() => "")).slice(0, 200))
       console.error(`jira issuetypes error ${res.status}: ${t}`)
       throw new Error(`tracker request failed (HTTP ${res.status})`)
     }
@@ -456,10 +504,10 @@ export const jiraConnector: Connector = {
     const res = await safeFetch(
       `${host}/rest/api/3/project/${encodeURIComponent(cfg.project_key)}/statuses`,
       { method: "GET", headers: { Authorization: `Basic ${credentials}`, Accept: "application/json" } },
-      { allowLoopbackInTest: true },
+      JIRA_FETCH_OPTS,
     )
     if (!res.ok) {
-      const t = (await res.text().catch(() => "")).slice(0, 200)
+      const t = redactSecrets((await res.text().catch(() => "")).slice(0, 200))
       console.error(`jira statuses error ${res.status}: ${t}`)
       throw new Error(`tracker request failed (HTTP ${res.status})`)
     }

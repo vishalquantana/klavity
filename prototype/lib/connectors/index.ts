@@ -254,6 +254,23 @@ export interface Connector {
     opts?: { limit?: number },
   ): Promise<ImportedIssue[]>
 
+  /**
+   * Codex #3: delete an external issue by its key/id. Currently used ONLY to clean up the throwaway
+   * "Klavity connection test" issue that the connection-test route creates to verify credentials, so
+   * a connection test (and every onboarding retry) does not leave a permanent orphan ticket behind.
+   *
+   * MUST be non-throwing and best-effort: catch its own errors and return { ok: false, error }. The
+   * caller treats a failed delete as non-fatal (the test still "passed" — creds work). Optional so an
+   * adapter without a delete API (webhook) or a test fake may omit it; the caller skips cleanup then.
+   *
+   * @param externalIssueRef  The externalKey returned by createIssue (issue key/number/UUID).
+   * @param cfg               Decrypted connector config (same shape as createIssue receives).
+   */
+  deleteIssue?(
+    externalIssueRef: string,
+    cfg: Record<string, string>,
+  ): Promise<{ ok: boolean; error?: string }>
+
   // Connector-field-mapping: declares which optional metadata lookups below this adapter
   // implements, so the UI can decide whether to show issue-type/status pickers at all.
   capabilities?: ConnectorCapabilities
