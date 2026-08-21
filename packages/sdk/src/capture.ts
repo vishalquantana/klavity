@@ -29,6 +29,21 @@ const FALLBACK_RENDER_BUDGET_MS = 500
 const MAX_FALLBACK_ELEMENTS = 10_000
 const EMERGENCY_PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z4kwAAAAASUVORK5CYII="
 
+// KLAVITYKLA-460 (blank/white first-capture) tuning.
+// Settle budgets: how long we let the page "settle" (fonts/images decode + one paint tick) BEFORE a DOM
+// render so we don't snapshot an unrendered page. Bounded so a normal page (fonts already loaded) is never
+// slowed — the settle short-circuits when there's nothing to wait for.
+const SETTLE_BUDGET_MS = 600        // first, fast settle before the initial render
+const RETRY_SETTLE_BUDGET_MS = 1200 // longer settle before the one blank-triggered retry
+const MAX_DECODE_IMAGES = 24        // cap how many in-viewport <img> we await decode() on (bounded work)
+// Blank-detection: a blank / near-uniform (all-white or fully-transparent) PNG compresses to very few
+// bytes, while a real screenshot with content is many KB — so payload size is a cheap, environment-
+// independent primary signal. A small pixel-variance sample refines it in real browsers.
+const BLANK_PNG_MAX_BYTES = 1024    // a uniform PNG is well under this; real content is far above it
+const BLANK_SAMPLE_EDGE = 32        // downscale edge for the (cheap) pixel-variance sample
+const BLANK_VARIANCE_EPS = 4        // luminance variance at/below this ~= a single flat color → blank
+const BLANK_IMAGE_LOAD_MS = 400     // bound the sample image decode so detection never hangs
+
 /**
  * True when an <img> src points to a different origin than the page, so html-to-image's fetch() to inline
  * it would be blocked under a strict CSP (connect-src 'self') / CORS. data:/blob: and relative/same-origin
@@ -188,6 +203,136 @@ function renderFetchFreeFallback(
   }
 }
 
+function nextFrame(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => resolve())
+    else setTimeout(resolve, 16)
+  })
+}
+
+// Race a promise against a wall-clock budget, swallowing rejections. Resolves when EITHER the work
+// settles or the budget elapses — so a hung font/image decode can never stall the capture.
+function withBudget(work: Promise<unknown>, ms: number): Promise<void> {
+  return Promise.race([
+    Promise.resolve(work).then(() => undefined, () => undefined),
+    new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, ms))),
+  ])
+}
+
+// In-viewport <img> that haven't naturally finished loading yet — the ones most likely to render as a
+// blank gap if we snapshot too early. Capped so a media-heavy page doesn't await hundreds of decodes.
+function inViewportUndecodedImages(root: HTMLElement): HTMLImageElement[] {
+  if (!root || typeof root.querySelectorAll !== "function") return []
+  const vw = typeof window !== "undefined" ? (window.innerWidth || 0) : 0
+  const vh = typeof window !== "undefined" ? (window.innerHeight || 0) : 0
+  const out: HTMLImageElement[] = []
+  let imgs: NodeListOf<HTMLImageElement>
+  try { imgs = root.querySelectorAll("img") } catch { return [] }
+  for (let i = 0; i < imgs.length && out.length < MAX_DECODE_IMAGES; i++) {
+    const img = imgs[i]
+    if (!img || img.complete) continue
+    let rect: DOMRect
+    try { rect = img.getBoundingClientRect() } catch { continue }
+    if (rect.bottom < 0 || rect.right < 0 || rect.top > vh || rect.left > vw) continue // off-screen
+    out.push(img)
+  }
+  return out
+}
+
+/**
+ * KLAVITYKLA-460: let the page settle BEFORE a DOM-render capture so the first shot isn't fired against an
+ * unrendered page (fonts/images not yet decoded → blank/white). Best-effort and BOUNDED at `budgetMs`:
+ *   1. await document.fonts.ready — SKIPPED when fonts are already loaded (keeps normal pages fast),
+ *   2. await img.decode() of in-viewport not-yet-loaded images (best-effort, capped, bounded),
+ *   3. one requestAnimationFrame paint tick so a just-mutated layout is committed before the snapshot.
+ * Never throws and never waits past the budget — a stuck resource can't hang the capture.
+ */
+export async function settleForCapture(root: HTMLElement, budgetMs = SETTLE_BUDGET_MS): Promise<void> {
+  if (typeof document === "undefined") return
+  const deadline = Date.now() + Math.max(0, budgetMs)
+  const left = () => Math.max(0, deadline - Date.now())
+  try {
+    const fonts = (document as unknown as { fonts?: { status?: string; ready?: Promise<unknown> } }).fonts
+    if (fonts && fonts.status !== "loaded" && fonts.ready && typeof (fonts.ready as Promise<unknown>).then === "function") {
+      await withBudget(fonts.ready, left())
+    }
+    const imgs = inViewportUndecodedImages(root)
+    if (imgs.length) {
+      await withBudget(
+        Promise.allSettled(imgs.map((im) => (typeof im.decode === "function" ? im.decode() : Promise.resolve()))),
+        left(),
+      )
+    }
+    await withBudget(nextFrame(), Math.min(left(), 50))
+  } catch { /* settle is best-effort — never block or delay the capture on error */ }
+}
+
+function loadImageBounded(src: string, timeoutMs: number): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
+    if (typeof Image === "undefined") { resolve(null); return }
+    let done = false
+    const img = new Image()
+    const finish = (ok: boolean) => { if (done) return; done = true; resolve(ok ? img : null) }
+    const timer = setTimeout(() => finish(false), Math.max(0, timeoutMs))
+    img.onload = () => { clearTimeout(timer); finish(true) }
+    img.onerror = () => { clearTimeout(timer); finish(false) }
+    try { img.src = src } catch { clearTimeout(timer); finish(false) }
+  })
+}
+
+// Luminance variance of a downscaled sample of the PNG, alpha-composited over white (matching how a
+// transparent capture reads on the composer). ~0 variance ⇒ a single flat color ⇒ blank. Returns null
+// when a real canvas isn't available (e.g. jsdom) or the draw fails, so callers fall back to the size check.
+async function samplePixelVariance(dataUrl: string): Promise<number | null> {
+  if (typeof document === "undefined") return null
+  const img = await loadImageBounded(dataUrl, BLANK_IMAGE_LOAD_MS)
+  if (!img) return null
+  let canvas: HTMLCanvasElement
+  try { canvas = document.createElement("canvas") } catch { return null }
+  canvas.width = BLANK_SAMPLE_EDGE
+  canvas.height = BLANK_SAMPLE_EDGE
+  const ctx = canvas.getContext("2d")
+  if (!ctx) return null
+  try {
+    ctx.drawImage(img, 0, 0, BLANK_SAMPLE_EDGE, BLANK_SAMPLE_EDGE)
+    const { data } = ctx.getImageData(0, 0, BLANK_SAMPLE_EDGE, BLANK_SAMPLE_EDGE)
+    let n = 0, sum = 0, sumSq = 0
+    for (let i = 0; i < data.length; i += 4) {
+      const a = data[i + 3] / 255
+      const r = data[i] * a + 255 * (1 - a)
+      const g = data[i + 1] * a + 255 * (1 - a)
+      const b = data[i + 2] * a + 255 * (1 - a)
+      const lum = 0.299 * r + 0.587 * g + 0.114 * b
+      sum += lum; sumSq += lum * lum; n++
+    }
+    if (!n) return null
+    const mean = sum / n
+    return sumSq / n - mean * mean
+  } catch { return null } // e.g. a tainted canvas — treat as "can't tell", not blank
+}
+
+/**
+ * KLAVITYKLA-460: cheaply decide whether a capture came back blank / near-uniform (all-white or fully
+ * transparent) so we never silently seed an empty shot. Two signals:
+ *   1. PAYLOAD SIZE (primary, environment-independent): a uniform PNG compresses to a handful of bytes,
+ *      while a real screenshot is many KB. This alone catches the classic blank first-capture and works
+ *      without a real canvas (drives the unit tests).
+ *   2. PIXEL VARIANCE (browser refinement): a near-zero-variance frame is a single flat color → blank,
+ *      even in the rare case it compressed large. Best-effort; unavailable envs leave the size verdict.
+ */
+export async function isBlankCapture(dataUrl: string): Promise<boolean> {
+  if (!dataUrl || !dataUrl.startsWith("data:image/png")) return true
+  const comma = dataUrl.indexOf(",")
+  const b64 = comma >= 0 ? dataUrl.slice(comma + 1) : ""
+  const approxBytes = Math.floor((b64.length * 3) / 4)
+  if (approxBytes <= BLANK_PNG_MAX_BYTES) return true
+  try {
+    const variance = await samplePixelVariance(dataUrl)
+    if (variance !== null && variance <= BLANK_VARIANCE_EPS) return true
+  } catch { /* best-effort — fall through to "not blank" */ }
+  return false
+}
+
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`capture timed out after ${timeoutMs}ms`)), timeoutMs)
@@ -229,7 +374,7 @@ export type WidgetCaptureQuality = "rendered" | "wireframe"
 export async function safeToPngWithScale(
   node: HTMLElement,
   opts: { filter?: (n: HTMLElement) => boolean; pixelRatio?: number; skipFonts?: boolean; width?: number; height?: number } = {},
-): Promise<{ dataUrl: string; scale: number; quality: WidgetCaptureQuality }> {
+): Promise<{ dataUrl: string; scale: number; quality: WidgetCaptureQuality; blank: boolean }> {
   let skipped = 0
   const callerFilter = opts.filter
   const pixelRatio = opts.pixelRatio ?? 1
@@ -239,7 +384,9 @@ export async function safeToPngWithScale(
   const explicitSize = (opts.width && opts.height)
     ? { width: opts.width, height: opts.height }
     : undefined
-  try {
+  // One DOM render pass. Throws on a renderer failure / non-PNG result (→ wireframe fallback below).
+  const renderOnce = async (): Promise<string> => {
+    skipped = 0
     // Renderer: modern-screenshot's domToPng — a maintained, API-compatible fork of html-to-image that is
     // ~1.8× faster on the same DOM (benchmarked KLAVITYKLA-393). Option mapping vs html-to-image:
     //   pixelRatio → scale · skipFonts:true → font:false · imagePlaceholder → fetch.placeholderImage.
@@ -260,15 +407,41 @@ export async function safeToPngWithScale(
       },
     }), CAPTURE_TIMEOUT_MS)
     if (!out.startsWith("data:image/png")) throw new Error("capture returned a non-PNG result")
+    return out
+  }
+  // KLAVITYKLA-460: let the page settle BEFORE the first render so we don't snapshot an unrendered page
+  // (fonts/images not yet decoded) — the classic blank/white first-capture. Bounded + skipped when there's
+  // nothing to wait for, so a normal page stays fast.
+  await settleForCapture(node, SETTLE_BUDGET_MS)
+  try {
+    let out = await renderOnce()
+    // KLAVITYKLA-460: never silently seed a blank shot. If the render came back blank/near-uniform, settle
+    // LONGER and retry the DOM render ONCE — the automatic equivalent of the manual "wait, then recapture"
+    // workaround. If it's STILL blank, return it flagged so the caller (widget) can fall back to the sharp
+    // getDisplayMedia path instead of an empty PNG.
+    let blank = await isBlankCapture(out)
+    if (blank) {
+      await settleForCapture(node, RETRY_SETTLE_BUDGET_MS)
+      try {
+        const retry = await renderOnce()
+        if (!(await isBlankCapture(retry))) { out = retry; blank = false }
+      } catch { /* keep the first (blank-flagged) result; the caller can go sharp */ }
+    }
     if (skipped) {
       warn(`[Klavity] capture: omitted ${skipped} cross-origin image(s) the page's CSP/CORS blocks — captured the rest`)
     }
-    return { dataUrl: out, scale: pixelRatio, quality: "rendered" }
+    if (blank) {
+      warn("[Klavity] capture: DOM render came back blank after retry — caller may retake with the sharp path")
+    }
+    return { dataUrl: out, scale: pixelRatio, quality: "rendered", blank }
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
     warn(`[Klavity] capture: renderer unavailable (${reason}); using fetch-free fallback`)
     const fb = renderFetchFreeFallback(node, callerFilter, pixelRatio)
-    return { ...fb, quality: "wireframe" }
+    // The fetch-free painter draws layout/text, but on a near-empty (or unpaintable) page it can still be
+    // blank — surface that so the caller can go sharp rather than seed an empty wireframe.
+    const blank = await isBlankCapture(fb.dataUrl)
+    return { ...fb, quality: "wireframe", blank }
   }
 }
 
@@ -281,9 +454,9 @@ export async function safeToPngWithScale(
 export async function safeToPngWithQuality(
   node: HTMLElement,
   opts: { filter?: (n: HTMLElement) => boolean; pixelRatio?: number; skipFonts?: boolean } = {},
-): Promise<{ dataUrl: string; quality: WidgetCaptureQuality }> {
-  const { dataUrl, quality } = await safeToPngWithScale(node, opts)
-  return { dataUrl, quality }
+): Promise<{ dataUrl: string; quality: WidgetCaptureQuality; blank: boolean }> {
+  const { dataUrl, quality, blank } = await safeToPngWithScale(node, opts)
+  return { dataUrl, quality, blank }
 }
 
 // Upper bound (CSS px) on a full-page live-review capture's height. Very tall / infinite-scroll pages are
