@@ -2561,6 +2561,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     // KLAVITYKLA-337 — /alternatives/* competitor comparison pages (keystone: marker-io).
     // Same htmlPage() path as the other marketing pages so __POSTHOG_KEY__ substitution applies.
     if (req.method === "GET" && path === "/alternatives/marker-io") return htmlPage(SITE + "/alternatives/marker-io.html")
+    // KLAVITYKLA-526 — acquisition landing pages (BugHerd alternative + audience pages).
+    if (req.method === "GET" && path === "/alternatives/bugherd") return htmlPage(SITE + "/alternatives/bugherd.html")
+    if (req.method === "GET" && path === "/for/agencies") return htmlPage(SITE + "/for/agencies.html")
+    if (req.method === "GET" && path === "/for/saas-teams") return htmlPage(SITE + "/for/saas-teams.html")
     // ── POST /api/blog/publish — authenticated blog post publish + git push (Plan B path) ──
     // Auth: Authorization: Bearer <BLOG_PUBLISH_TOKEN>. The GH_TOKEN env var is used for the push URL
     // inline (never stored in git config) and must NEVER appear in any log or response body.
@@ -2639,7 +2643,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       } catch (e: any) { console.error("img stream failed:", e?.message || e); return new Response("Not found", { status: 404 }) }
     }
     if (req.method === "GET" && path === "/sitemap.xml") {
-      const core = ["/", "/snap", "/sims", "/autosim", "/blog", "/alternatives/marker-io", "/privacy", "/terms", "/dpa", "/cookies"]
+      const core = ["/", "/snap", "/sims", "/autosim", "/blog", "/alternatives/marker-io", "/alternatives/bugherd", "/for/agencies", "/for/saas-teams", "/privacy", "/terms", "/dpa", "/cookies"]
       let blog: Array<{ slug: string; date: string }> = []
       try { blog = JSON.parse(await Bun.file(SITE + "/blog/index.json").text()) } catch { /* no posts yet */ }
       const urls = [
