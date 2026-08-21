@@ -2521,6 +2521,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (req.method === "GET" && path === "/intro-reel") return file(SITE + "/intro-reel.html")
     if (req.method === "GET" && path === "/privacy") return htmlPage(SITE + "/privacy.html")
     if (req.method === "GET" && path === "/terms") return htmlPage(SITE + "/terms.html")
+    if (req.method === "GET" && path === "/dpa") return htmlPage(SITE + "/dpa.html")
+    if (req.method === "GET" && path === "/cookies") return htmlPage(SITE + "/cookies.html")
     // ── marketing product pages + shared kit assets ──
     if (req.method === "GET" && path === "/snap") return htmlPage(SITE + "/snap.html")
     if (req.method === "GET" && path === "/sims") return htmlPage(SITE + "/sims.html")
@@ -2610,7 +2612,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       } catch (e: any) { console.error("img stream failed:", e?.message || e); return new Response("Not found", { status: 404 }) }
     }
     if (req.method === "GET" && path === "/sitemap.xml") {
-      const core = ["/", "/snap", "/sims", "/autosim", "/blog", "/alternatives/marker-io", "/privacy", "/terms"]
+      const core = ["/", "/snap", "/sims", "/autosim", "/blog", "/alternatives/marker-io", "/privacy", "/terms", "/dpa", "/cookies"]
       let blog: Array<{ slug: string; date: string }> = []
       try { blog = JSON.parse(await Bun.file(SITE + "/blog/index.json").text()) } catch { /* no posts yet */ }
       const urls = [

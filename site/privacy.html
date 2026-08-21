@@ -74,7 +74,7 @@
   </div>
 
   <h1>Privacy Policy</h1>
-  <p class="meta">Klavity Snap &amp; Klavity Cloud · Last updated 19 June 2026</p>
+  <p class="meta">Klavity Snap &amp; Klavity Cloud · Last updated 21 August 2026</p>
 
   <p>Klavity ("we", "us") is built by <strong>Quantana</strong>. Klavity Snap is a browser
   extension and web service that lets AI personas ("Sims") review web pages and file bug and
@@ -107,13 +107,39 @@
     <li>We use aggregate, non-identifying usage and cost metrics to operate and improve the service. We do <strong>not</strong> sell your data, and we do not use your page content to train third-party models.</li>
   </ul>
 
+  <h2>Legal bases for processing (GDPR Art. 6)</h2>
+  <p>Where the GDPR applies, we rely on the following lawful bases to process personal data:</p>
+  <ul>
+    <li><strong>Contract</strong> — to provide the service you sign up for: authenticating you, capturing the pages you consent to, generating Sim feedback, and filing tickets to your tracker.</li>
+    <li><strong>Legitimate interests</strong> — to secure, operate, debug and improve Klavity using aggregate, non-identifying usage and cost metrics, where those interests are not overridden by your rights.</li>
+    <li><strong>Consent</strong> — for page capture (which is consent-gated before the first capture) and for non-essential analytics on our marketing site (see our <a href="/cookies">Cookie Notice</a>). You can withdraw consent at any time.</li>
+    <li><strong>Legal obligation</strong> — where we must retain or disclose data to comply with the law.</li>
+  </ul>
+  <p>Where a customer uses Klavity to process the personal data of their own end users, the customer is
+  the <strong>controller</strong> and Quantana acts as <strong>processor</strong> on their documented
+  instructions under our <a href="/dpa">Data Processing Addendum</a>.</p>
+
   <h2>Who processes your data (sub-processors)</h2>
   <ul>
-    <li><strong>OpenRouter</strong> — LLM routing/inference for Sim reviews.</li>
+    <li><strong>OpenRouter</strong> — LLM routing/inference for Sim reviews (currently routing to Google Gemini).</li>
     <li><strong>Object storage (S3-compatible)</strong> — private storage of screenshots.</li>
-    <li><strong>Turso (libSQL)</strong> — application database (accounts, tickets, settings).</li>
-    <li><strong>Your configured issue tracker</strong> — receives the tickets you file.</li>
+    <li><strong>Turso (libSQL)</strong> — application database (accounts, tickets, settings); hosted in the Mumbai region (aws-ap-south-1).</li>
+    <li><strong>SendGrid</strong> — transactional email and one-time login codes (OTP).</li>
+    <li><strong>Your configured issue tracker</strong> — receives the tickets you file (Jira, Linear, GitHub, Plane, or your webhook).</li>
   </ul>
+  <p>The full, current sub-processor list, including purposes and locations, is maintained in
+  <strong>Annex III</strong> of our <a href="/dpa">Data Processing Addendum</a>. Analytics tools used only
+  on our marketing site are listed in the <a href="/cookies">Cookie Notice</a>.</p>
+
+  <h2>International transfers</h2>
+  <p>Klavity is operated from Australia, and some of our sub-processors are based elsewhere. Your data may
+  therefore be processed in the <strong>United States</strong> (OpenRouter, Google, PostHog) and
+  <strong>India</strong> (our application database, hosted in the Mumbai region). Some of these countries
+  are not the subject of an "adequacy decision" under the GDPR. Where we transfer personal data out of the
+  EEA or the UK to a country without adequacy, we rely on <strong>appropriate safeguards</strong> —
+  principally the European Commission's <strong>Standard Contractual Clauses</strong> (and the UK
+  International Data Transfer Addendum for UK transfers) — as reflected in our
+  <a href="/dpa">Data Processing Addendum</a>.</p>
 
   <h2>Retention</h2>
   <ul>
@@ -140,6 +166,21 @@
     <li>You can also request access, correction, or deletion by contacting us (see Contact).</li>
   </ul>
 
+  <h2>Your rights under the GDPR</h2>
+  <p>If the GDPR (or UK GDPR) applies to you, you have the following rights over your personal data. You
+  can exercise the export and deletion rights yourself from <strong>Dashboard &rarr; Settings &rarr; Your
+  data &amp; privacy</strong>, or exercise any of them by contacting us (see Contact):</p>
+  <ul>
+    <li><strong>Access</strong> — obtain confirmation of, and a copy of, the personal data we hold about you (Art. 15).</li>
+    <li><strong>Rectification</strong> — have inaccurate or incomplete personal data corrected (Art. 16).</li>
+    <li><strong>Erasure</strong> — have your personal data deleted where there is no overriding reason to keep it (Art. 17).</li>
+    <li><strong>Restriction</strong> — ask us to limit how we process your data, for example while a dispute is resolved (Art. 18).</li>
+    <li><strong>Portability</strong> — receive a machine-readable copy of your data, or have it transferred, where processing is based on consent or contract (Art. 20).</li>
+    <li><strong>Objection</strong> — object to processing based on our legitimate interests (Art. 21).</li>
+    <li><strong>Withdraw consent</strong> — where we rely on your consent, withdraw it at any time, without affecting processing already carried out.</li>
+    <li><strong>Lodge a complaint</strong> — complain to a data-protection supervisory authority in your country of residence or work if you are unhappy with how we handle your data. We would appreciate the chance to address your concern first (see Contact).</li>
+  </ul>
+
   <h2>Children</h2>
   <p>Klavity is a tool for software teams and is not directed to children under 13. We do not knowingly collect data from children.</p>
 
@@ -150,7 +191,7 @@
   <h2>Contact</h2>
   <p>Questions or data requests: <a href="mailto:hello@quantana.com.au">hello@quantana.com.au</a> · Quantana, <a href="https://quantana.com.au">quantana.com.au</a></p>
 
-  <div class="foot">© 2026 Quantana · <a href="/">Klavity home</a></div>
+  <div class="foot">© 2026 Quantana · <a href="/">Klavity home</a> · <a href="/terms">Terms</a> · <a href="/dpa">DPA</a> · <a href="/cookies">Cookies</a></div>
 </div>
 <script src="https://klavity.in/widget.js" data-project="proj_5a9b422f-ecb3-4abd-99b2-e48b6dbbaa2c" defer></script>
 </body>
