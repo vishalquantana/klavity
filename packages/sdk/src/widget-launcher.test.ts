@@ -357,6 +357,46 @@ describe("launcherMode: full", () => {
   })
 })
 
+// ── KLAVITYKLA-506: the launcher + right-click must exist BEFORE the (now non-blocking) config fetch
+//    resolves. Previously mount() awaited /config (up to 15s) BEFORE building the launcher, so a slow/flaky
+//    config left the widget invisible. Now the launcher is created synchronously and merely REPAINTED once
+//    config lands. ───────────────────────────────────────────────────────────────────────────────────────
+describe("launcher renders before config resolves (KLAVITYKLA-506)", () => {
+  it("mounts the launcher synchronously while /config is still pending, then repaints on resolve", async () => {
+    vi.mocked(parseScriptConfig).mockReturnValue({
+      projectId: "proj_506",
+      backendUrl: "https://srv.test",
+    })
+    // /config is held pending; ping/sims resolve blank. We resolve config manually at the end.
+    let resolveConfig!: (r: Response) => void
+    const configP = new Promise<Response>((r) => { resolveConfig = r })
+    const fn = vi.fn((input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input.toString()
+      if (url.includes("/api/projects/") && url.includes("/config")) return configP
+      return Promise.resolve(jsonResponse({ ok: true }))
+    })
+    vi.stubGlobal("fetch", fn)
+
+    // Do NOT await mount(): its synchronous body builds + appends the launcher before it suspends on the
+    // config await, so the button is already in the DOM even though /config has not resolved.
+    const pending = mount()
+    const btn = launcherButton()
+    expect(btn).toBeTruthy()
+    // A2 hardening: explicit type="button" so a host <form> can't implicit-submit-navigate on click.
+    expect(btn.type).toBe("button")
+
+    // Now resolve config with a 'full' pill override and let mount() finish — the launcher repaints.
+    resolveConfig(jsonResponse({
+      modalConfig: { launcherMode: "full" },
+      widget: { mode: "support", ctaUrl: "https://cta.test", reportGate: "anonymous" },
+    }))
+    await pending
+    const repainted = launcherButton()
+    expect(repainted.textContent).toContain("Report a bug")
+    expect(repainted.style.borderRadius).toBe("999px")
+  })
+})
+
 // ── 4. launcherMode === 'custom' → admin-provided launcherText ────────────────
 
 describe("launcherMode: custom", () => {

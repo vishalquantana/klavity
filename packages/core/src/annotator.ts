@@ -6,6 +6,9 @@ export class Annotator {
   private imageDataUrl: string
   /** Stroke-thickness multiplier set by the toolbar line-width control (thin=0.6, medium=1, thick=1.8, xl=2.8). */
   strokeScale = 1
+  /** KLAVITYKLA-507: decoded base bitmap, cached after the first redraw so live drag previews can repaint
+   *  the base + committed shapes SYNCHRONOUSLY (no per-move image reload → no flicker). */
+  private baseImg: HTMLImageElement | null = null
 
   constructor(canvas: HTMLCanvasElement, imageDataUrl: string) {
     this.canvas = canvas
@@ -41,13 +44,37 @@ export class Annotator {
     const ctx = this.canvas.getContext('2d')
     // Headless canvases (jsdom) return a null 2D context — nothing to paint, bail safely.
     if (!ctx) return
-    const img = new Image()
-    img.onload = () => {
-      ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
-      ctx.drawImage(img, 0, 0)
-      this.shapes.forEach(s => this.drawShape(ctx, s))
+    // Repaint synchronously off the cached bitmap when it's already decoded (the common case after the
+    // first load) so drag previews don't have to wait on an async image load.
+    if (this.baseImg && this.baseImg.complete && this.baseImg.naturalWidth) {
+      this.paint(ctx, this.baseImg)
+      return
     }
+    const img = new Image()
+    img.onload = () => { this.baseImg = img; this.paint(ctx, img) }
     img.src = this.imageDataUrl
+  }
+
+  private paint(ctx: CanvasRenderingContext2D, img: HTMLImageElement, preview?: Shape | null): void {
+    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
+    ctx.drawImage(img, 0, 0)
+    this.shapes.forEach(s => this.drawShape(ctx, s))
+    if (preview) this.drawShape(ctx, preview)
+  }
+
+  /** KLAVITYKLA-507: live rubber-band preview during a drag — base image + committed shapes + ONE
+   *  provisional shape, WITHOUT mutating the shape history. Synchronous when the base bitmap has already
+   *  decoded; otherwise falls back to a plain redraw (which will cache the bitmap for the next move). */
+  drawPreview(preview: Shape): void {
+    if (typeof Image === 'undefined') return
+    const ctx = this.canvas.getContext('2d')
+    if (!ctx) return
+    if (this.baseImg && this.baseImg.complete && this.baseImg.naturalWidth) {
+      this.paint(ctx, this.baseImg, preview)
+    } else {
+      // Base not decoded yet — trigger a normal redraw (caches the bitmap). The next pointermove previews.
+      this.redraw()
+    }
   }
 
   private drawShape(ctx: CanvasRenderingContext2D, shape: Shape): void {
@@ -104,6 +131,9 @@ export class Annotator {
     } else if (shape.type === 'text') {
       const size = shape.size ?? this.computeFontSize()
       ctx.font = `bold ${size}px sans-serif`
+      // KLAVITYKLA-508: draw from the TOP-LEFT (matching the editing <input>'s top-left anchor) instead of
+      // the default alphabetic baseline — otherwise committed text sat ~one line-height above the box.
+      ctx.textBaseline = 'top'
       const outline = shape.outline ?? 'none'
       if (outline !== 'none') {
         ctx.lineJoin = 'round'
@@ -113,6 +143,7 @@ export class Annotator {
         ctx.fillStyle = shape.color
       }
       ctx.fillText(shape.text, shape.x, shape.y)
+      ctx.textBaseline = 'alphabetic'
     }
   }
 

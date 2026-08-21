@@ -322,6 +322,9 @@ export function buildModal(
   document.body.appendChild(host)
 
   let screenshots: string[] = []
+  // KLAVITYKLA-509: true while auto-capture-on-open is rendering the first shot, so updateStrip() shows a
+  // "Capturing…" skeleton tile instead of a blank slot for the ~1s the html-to-image render takes.
+  let capturing = false
   // Parallel array: each entry is the resolved (compressed) version of screenshots[i].
   // Pre-compression is kicked off immediately when a screenshot is added, so by the time the user
   // clicks Submit the Promise is already settled and the upload can start without delay.
@@ -348,6 +351,9 @@ export function buildModal(
   const sessionMode = !!callbacks.onMinimize
   // Upload guards (Dev 6 audit #4): cap how many images can be attached and how big each may be.
   const MAX_IMAGES = sessionMode ? 8 : 5
+  // KLAVITYKLA-506: above this element count, auto-capture-on-open is skipped (the html-to-image render
+  // would jank the composer's first paint). The user can still click "Full Page" to capture on demand.
+  const AUTO_CAPTURE_MAX_NODES = 15_000
   const MAX_FILE_BYTES = 10 * 1024 * 1024 // 10 MB per image
   // PX4 #425: non-image file attachments (PDF, .log, .har, ...). Kept separate from screenshots[] so the
   // image-hero/annotator logic is untouched. Capped by count + total bytes; each file also obeys MAX_FILE_BYTES.
@@ -568,6 +574,13 @@ export function buildModal(
     #klavity-sharp.kl-suggest{color:var(--kl-accent);background:color-mix(in srgb,var(--kl-chip) 70%,var(--kl-accent) 30%);animation:kl-sharp-pulse 1.7s ease-out infinite;}
     @media (prefers-reduced-motion: reduce){#klavity-sharp.kl-suggest{animation:none;}.klavity-sharphint .kl-sh-use{transition:none;}}
     .klavity-thumb{position:relative;flex-shrink:0;}
+    /* KLAVITYKLA-509: capture-in-progress skeleton tile — same footprint as a real thumbnail so the strip
+       doesn't jump when the shot swaps in. Pulses (kl-cap-pulse) unless reduced-motion is requested. */
+    .kl-thumb-skel{width:104px;height:72px;border-radius:8px;background:var(--kl-chip);outline:1px solid var(--kl-img-outline);outline-offset:-1px;display:flex;align-items:center;justify-content:center;gap:6px;font-size:10.5px;font-weight:600;color:var(--kl-muted);}
+    .kl-thumb-skel.kl-loading{animation:kl-cap-pulse 1s ease-in-out infinite;}
+    .kl-thumb-skel .kl-skel-spin{width:11px;height:11px;border:2px solid var(--kl-muted);border-top-color:transparent;border-radius:50%;animation:kl-skel-rot .7s linear infinite;}
+    @keyframes kl-skel-rot{to{transform:rotate(360deg)}}
+    @media (prefers-reduced-motion: reduce){.kl-thumb-skel.kl-loading{animation:none;}.kl-thumb-skel .kl-skel-spin{animation:none;}}
     .klavity-thumb img{height:72px;width:104px;object-fit:cover;object-position:top center;background:var(--kl-chip);display:block;border-radius:8px;outline:1px solid var(--kl-img-outline);outline-offset:-1px;cursor:pointer;transition:filter .12s;}
     .klavity-thumb img:hover{filter:brightness(.85);}
     /* Portrait (tall) screenshots: widen the thumbnail vertically so more page content is visible. */
@@ -903,7 +916,7 @@ export function buildModal(
         <div class="kl-nudge-d">Adding what you expected + one step to reproduce gets it fixed faster. Or send it as-is — your call.</div>
         <div class="kl-nudge-row"><button type="button" class="kl-nudge-add" id="klavity-nudge-add">Add detail</button><button type="button" class="kl-nudge-anyway" id="klavity-nudge-anyway">Submit anyway</button></div>
       </div>` : ''}
-      <button class="klavity-submit" id="klavity-submit" title="Submit (S)" disabled>Submit</button>
+      <button type="button" class="klavity-submit" id="klavity-submit" title="Submit (S)" disabled>Submit</button>
       <div class="klavity-progress" id="klavity-progress" role="progressbar" aria-label="Uploading report"><div class="klavity-progress-fill" id="klavity-progress-fill"></div></div>
     </div>
   `
@@ -1090,6 +1103,16 @@ export function buildModal(
 
       strip.appendChild(wrap)
     })
+    // KLAVITYKLA-509: while auto-capture is rendering the first shot, show a skeleton tile so the slot isn't
+    // blank. Swapped out the instant addScreenshot() runs (which flips `capturing` off + re-renders).
+    if (capturing) {
+      const skel = document.createElement('div')
+      skel.className = 'kl-thumb-skel kl-loading'
+      skel.setAttribute('role', 'status')
+      skel.setAttribute('aria-label', 'Capturing screenshot')
+      skel.innerHTML = '<span class="kl-skel-spin" aria-hidden="true"></span><span>Capturing…</span>'
+      strip.appendChild(skel)
+    }
     counter.textContent = `${screenshots.length}/${MAX_IMAGES} images`
     // JTBD 1.10: attaching/removing a screenshot changes the evidence state → re-evaluate Submit + hint.
     refreshSubmit()
@@ -2242,6 +2265,21 @@ export function buildModal(
         const offX = (r.width - dispW) / 2, offY = (r.height - dispH) / 2
         return { x: (e.clientX - r.left - offX) / s, y: (e.clientY - r.top - offY) / s }
       }
+      // KLAVITYKLA-508: the object-fit:contain scale (screen px per image px). Used to size the text-tool
+      // <input> so it matches the committed render (which is drawn in image pixels then scaled down by s).
+      const displayScale = () => {
+        const r = canvas.getBoundingClientRect()
+        return Math.min(r.width / canvas.width, r.height / canvas.height) || 1
+      }
+      // KLAVITYKLA-507: build the shape for a rect/line/circle/arrow drag from origin→cursor. Kept in one
+      // place so the live drag preview (pointermove) and the committed shape (pointerup) are byte-identical.
+      const provisionalShape = (tool: string, sx: number, sy: number, ex: number, ey: number, color: string): Shape | null => {
+        if (tool === 'line') return { type: 'line', color, x1: sx, y1: sy, x2: ex, y2: ey }
+        if (tool === 'arrow') return { type: 'arrow', color, x1: sx, y1: sy, x2: ex, y2: ey }
+        if (tool === 'rect') return { type: 'rect', color, x: Math.min(sx, ex), y: Math.min(sy, ey), w: Math.abs(ex - sx), h: Math.abs(ey - sy) }
+        if (tool === 'circle') return { type: 'circle', color, x: (sx + ex) / 2, y: (sy + ey) / 2, rx: Math.abs(ex - sx) / 2, ry: Math.abs(ey - sy) / 2 }
+        return null
+      }
       // ── Wheel-zoom + Shift-drag pan on the hero image. Zoom is a uniform translate()+scale() transform,
       //    so toImg()'s getBoundingClientRect math keeps annotation coordinates correct at any zoom.
       //    Scroll to zoom toward the cursor; Shift+drag to pan when zoomed; double-click resets. ──
@@ -2291,6 +2329,8 @@ export function buildModal(
         const pt = toImg(e); startX = pt.x; startY = pt.y
         if (activeTool === 'crop') {
           drawing = true
+          // KLAVITYKLA-507: capture the pointer so a release OUTSIDE the canvas still fires pointerup here.
+          try { canvas.setPointerCapture(e.pointerId) } catch { /* noop */ }
           cropClient = { x: e.clientX, y: e.clientY }
           cropBox = document.createElement('div')
           cropBox.style.cssText = 'position:absolute;border:2px dashed #6c63ff;background:rgba(108,99,255,.14);pointer-events:none;z-index:6;left:0;top:0;width:0;height:0;'
@@ -2300,8 +2340,14 @@ export function buildModal(
         if (activeTool === 'text') {
           const input = document.createElement('input')
           const shadow = textOutline === 'none' ? 'none' : `0 0 2px ${textOutline}, 0 0 2px ${textOutline}`
-          input.style.cssText = `position:fixed;left:${e.clientX}px;top:${e.clientY}px;background:transparent;border:1px dashed ${activeColor};color:${activeColor};font-size:${textSize}px;font-weight:700;text-shadow:${shadow};outline:none;z-index:2147483647;min-width:80px;`
+          // KLAVITYKLA-508: the on-screen input must match the COMMITTED render. The committed text is drawn
+          // in image pixels (size = textSize) at object-fit scale s (<1 for big screenshots), top-left anchored
+          // (drawShape now uses textBaseline='top'). So the input is scaled by the same s and its top-left is
+          // pinned at the click point (padding/border zeroed so the glyph box starts exactly at left/top).
+          const s = displayScale()
+          const inputFont = Math.max(6, textSize * s)
           const sz = textSize, ol = textOutline
+          input.style.cssText = `position:fixed;left:${e.clientX}px;top:${e.clientY}px;padding:0;margin:0;line-height:1;box-sizing:content-box;background:transparent;border:0;color:${activeColor};font-size:${inputFont}px;font-family:sans-serif;font-weight:700;text-shadow:${shadow};outline:1px dashed ${activeColor};z-index:2147483647;min-width:80px;`
           document.body.appendChild(input); input.focus()
           input.addEventListener('blur', () => { if (input.value.trim()) { pushUndo(index); annotator.addShape({ type: 'text', color: activeColor, x: startX, y: startY, text: input.value.trim(), size: sz, outline: ol }); persist() } input.remove() }, { once: true })
           input.addEventListener('keydown', (ke) => { if (ke.key === 'Enter') input.blur(); ke.stopPropagation() })
@@ -2314,12 +2360,20 @@ export function buildModal(
           return
         }
         drawing = true
+        // KLAVITYKLA-507: capture the pointer for draw tools too, so releasing OUTSIDE the canvas still
+        // fires pointerup (commits the shape) instead of silently dropping it + leaving drawing=true.
+        try { canvas.setPointerCapture(e.pointerId) } catch { /* noop */ }
         if (activeTool === 'pen') penPoints = [pt]
       })
       canvas.addEventListener('pointermove', (e) => {
         if (panning) { panX = panBaseX + (e.clientX - panSX); panY = panBaseY + (e.clientY - panSY); applyZoomTransform(); canvas.style.cursor = 'grabbing'; return }
         if (!drawing) return
-        if (activeTool === 'pen') { penPoints.push(toImg(e)); return }
+        if (activeTool === 'pen') {
+          penPoints.push(toImg(e))
+          // KLAVITYKLA-507: live pen preview (base + committed + the in-progress stroke).
+          if (penPoints.length > 1) annotator.drawPreview({ type: 'pen', color: activeColor, points: penPoints })
+          return
+        }
         if (activeTool === 'crop' && cropBox) {
           const sr = stage.getBoundingClientRect()
           const x1 = Math.min(cropClient.x, e.clientX), y1 = Math.min(cropClient.y, e.clientY)
@@ -2328,12 +2382,20 @@ export function buildModal(
           cropBox.style.top = (y1 - sr.top) + 'px'
           cropBox.style.width = (x2 - x1) + 'px'
           cropBox.style.height = (y2 - y1) + 'px'
+          return
         }
+        // KLAVITYKLA-507: rubber-band preview for the geometric tools — repaint base + committed shapes and
+        // draw a PROVISIONAL shape from the drag origin to the cursor (identical geometry to the pointerup
+        // commit below, so what you see is what you get). No history mutation until pointerup.
+        const pt = toImg(e)
+        const prov = provisionalShape(activeTool, startX, startY, pt.x, pt.y, activeColor)
+        if (prov) annotator.drawPreview(prov)
       })
       canvas.addEventListener('pointerup', (e) => {
         if (panning) { panning = false; canvas.style.cursor = zoom > 1 ? 'grab' : 'crosshair'; try { canvas.releasePointerCapture(e.pointerId) } catch { /* noop */ } return }
         if (!drawing) return
         drawing = false
+        try { canvas.releasePointerCapture(e.pointerId) } catch { /* noop */ }
         const pt = toImg(e)
         if (activeTool === 'crop') {
           if (cropBox) { cropBox.remove(); cropBox = null }
@@ -2351,6 +2413,14 @@ export function buildModal(
         else if (activeTool === 'circle') annotator.addShape({ type: 'circle', color: activeColor, x: (startX + pt.x) / 2, y: (startY + pt.y) / 2, rx: Math.abs(pt.x - startX) / 2, ry: Math.abs(pt.y - startY) / 2 })
         else if (activeTool === 'arrow') annotator.addShape({ type: 'arrow', color: activeColor, x1: startX, y1: startY, x2: pt.x, y2: pt.y })
         persist()
+      })
+      // KLAVITYKLA-507: safety net — if the OS cancels the pointer stream (e.g. gesture interrupt), drop any
+      // in-flight preview + reset state so `drawing` can never get stuck true (which would freeze all tools).
+      canvas.addEventListener('pointercancel', (e) => {
+        try { canvas.releasePointerCapture(e.pointerId) } catch { /* noop */ }
+        if (cropBox) { cropBox.remove(); cropBox = null }
+        if (panning) { panning = false; canvas.style.cursor = zoom > 1 ? 'grab' : 'crosshair' }
+        if (drawing) { drawing = false; annotator.redraw() } // discard the provisional shape, keep committed
       })
 
       const TOOL_KEYS: Record<string, string> = { p: 'pen', l: 'line', r: 'rect', o: 'circle', a: 'arrow', t: 'text', c: 'count', k: 'crop' }
@@ -2756,15 +2826,32 @@ export function buildModal(
   }
 
   if (callbacks.autoCaptureOnOpen) {
-    setTimeout(() => {
-      callbacks.onCaptureFull()
-        .then(shot => {
-          const { dataUrl, quality, suggestSharp } = normalizeCapture(shot)
-          addScreenshot(dataUrl, quality, undefined, true, !!suggestSharp)
-          setActiveCapture(fullBtn)
-        })
-        .catch(() => {})
-    }, 200)
+    // KLAVITYKLA-506: very large DOMs make the html-to-image render slow enough to jank the composer's first
+    // paint (and the description field the user wants to click). Skip auto-capture there and let the user
+    // click "Full Page" themselves — the strip stays empty (no false skeleton) so the choice is obvious.
+    let nodeCount = 0
+    try { nodeCount = document.getElementsByTagName('*').length } catch { nodeCount = 0 }
+    if (nodeCount <= AUTO_CAPTURE_MAX_NODES) {
+      // KLAVITYKLA-509: show the skeleton placeholder IMMEDIATELY (before the render), swap in the real shot
+      // on resolve so the thumbnail slot is never blank.
+      capturing = true
+      updateStrip()
+      const runCapture = () => {
+        callbacks.onCaptureFull()
+          .then(shot => {
+            const { dataUrl, quality, suggestSharp } = normalizeCapture(shot)
+            capturing = false
+            addScreenshot(dataUrl, quality, undefined, true, !!suggestSharp)
+            setActiveCapture(fullBtn)
+          })
+          .catch(() => { capturing = false; updateStrip() })
+      }
+      // KLAVITYKLA-506: defer the heavy render OFF the main thread so it doesn't block the composer opening
+      // or freeze the description box. requestIdleCallback runs it in idle time; fall back to rAF+timeout.
+      const ric = (window as any).requestIdleCallback as undefined | ((cb: () => void, opts?: { timeout?: number }) => void)
+      if (typeof ric === 'function') ric(() => runCapture(), { timeout: 1200 })
+      else requestAnimationFrame(() => setTimeout(runCapture, 0))
+    }
   }
 
   return controller

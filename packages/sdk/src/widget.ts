@@ -536,8 +536,14 @@ async function mount() {
   // Report-clarity helper (per-project, DEFAULT on). Only OFF when the server explicitly returns
   // reportClarity:false. Server + widget ship together (orchestrator), so the field is always present.
   let reportClarity = true
-  try {
-    const r = await fetchWithTimeout(cfg.backendUrl + "/api/projects/" + encodeURIComponent(cfg.projectId) + "/config")
+  // KLAVITYKLA-506: the config fetch is NON-BLOCKING and short-timeout. It carries ONLY optional theming +
+  // composer opts — the launcher button + right-click handler are created/armed synchronously below (they
+  // don't need config). On a slow/flaky config the launcher was previously missing for up to 15s. When the
+  // config resolves we patch the launcher* vars + composer settings and REPAINT the launcher (idempotent).
+  const CONFIG_FETCH_TIMEOUT_MS = 4_000
+  const configReady = (async () => {
+   try {
+    const r = await fetchWithTimeout(cfg.backendUrl + "/api/projects/" + encodeURIComponent(cfg.projectId) + "/config", {}, CONFIG_FETCH_TIMEOUT_MS)
     if (r.ok) {
       const j = await r.json()
       modalConfig = j.modalConfig || {}
@@ -597,7 +603,13 @@ async function mount() {
         })
       }
     }
-  } catch { /* default theme + support mode + email gate */ }
+   } catch { /* default theme + support mode + email gate */ }
+   // KLAVITYKLA-506: repaint the launcher now that any theming overrides (mode/text/color/icon) are patched.
+   // paintLauncher() is idempotent + hoisted (defined below); the launcher was already appended synchronously
+   // with defaults, so this just refreshes its look. Guarded so a degraded env can't break the widget.
+   try { paintLauncher() } catch { /* launcher not built (non-DOM env) — non-fatal */ }
+  })()
+  void configReady
 
   // ── Heartbeat (TASK #5): tell the backend this widget is live on this page so the dashboard can show
   // "Widget: active — last seen … on <host>". Fire-and-forget, non-blocking, and never throws — a failed
@@ -830,6 +842,9 @@ async function mount() {
   // 'hidden': no visible launcher (right-click still works); 'icon': bug icon only, no label;
   // 'full': icon + "Report a bug" (default); 'custom': icon + admin-defined text.
   const reportBtn = document.createElement("button")
+  // A2 hardening: explicit type="button" so a host-page <form> wrapping our host can never treat this as a
+  // submit and navigate away when the launcher is clicked.
+  reportBtn.type = "button"
   reportBtn.className = "kl-launcher-btn"
   reportBtn.title = "Klavity is active on this page — right-click anywhere or click here to report"
   // ── Active/monitoring indicator: a small green status light INSIDE the pill (like a chat "online"
@@ -1489,27 +1504,30 @@ async function mount() {
     void startBugReport(shot ? { initialShot: shot, initialShotQuality: shotQuality, initialShotSuggestSharp: shotSuggestSharp } : undefined)
   }
   let reportArmed = true
-  // 'off' mode: install NEITHER the right-click-drag region capture NOR the contextmenu takeover, so
-  // the native browser menu is left completely untouched everywhere on the page. 'full'/'reportOnly'
-  // both take over the gesture (the menu contents differ, decided in showMenu()).
-  if (rightClickMode !== 'off') {
+  // KLAVITYKLA-506: the right-click takeover is ARMED SYNCHRONOUSLY (before the non-blocking config fetch
+  // resolves) so it's never missing on a slow config. rightClickMode defaults to 'full' — the standing
+  // behavior for existing projects. If config later sets 'off' we honor it via the LIVE checks below (skip
+  // the drag/menu and let the native browser menu through) rather than skipping install entirely.
+  {
     const regionDrag = installRegionDrag({
       isOwnTarget: onOwnUi,
       mount: root,                        // draw the selection rectangle inside the widget's shadow root
-      shouldIgnore: () => nativePending,  // skip pressing when next click is for the native menu
+      shouldIgnore: () => nativePending || rightClickMode === 'off', // skip pressing for native menu / 'off'
       onRightDown: dismissMenuNow,        // close any open menu immediately at mousedown
       onDragStart: dismissMenuNow,        // safety: also dismiss if menu reappeared before threshold
       onPlainRightClick: (x, y) => {
+        if (rightClickMode === 'off') return
         // suppressNextMenu() is true while pressing, so contextmenu is suppressed; show menu here on mouseup.
         if (!reportArmed) return
         reportArmed = false
         setTimeout(() => { reportArmed = true }, 400)
         showMenu(x, y)
       },
-      onRegion: (rect) => { void captureRegionAndOpen(rect) },
+      onRegion: (rect) => { if (rightClickMode === 'off') return; void captureRegionAndOpen(rect) },
     })
 
     document.addEventListener("contextmenu", (e) => {
+      if (rightClickMode === 'off') return                               // config opted out — native menu untouched
       if (e.shiftKey || nativePending) { nativePending = false; return }  // pass through to native menu
       if (isEditableTarget(e.target)) return                              // QPLANE-21: native menu carries spellcheck for fields
       if (regionDrag.suppressNextMenu()) { e.preventDefault(); return }   // pressing or drag — suppress
@@ -1693,6 +1711,12 @@ async function mount() {
       if (active && active.shots.length > 0) { evSession = active; showEvDock() }
     } catch { /* IndexedDB unavailable — normal launcher stands */ }
   })()
+
+  // KLAVITYKLA-506: the launcher + right-click above were already created/armed SYNCHRONOUSLY (present
+  // before this point), so they never wait on config. We await the non-blocking config here only so a
+  // caller that awaits mount() (e.g. tests) sees the theming/composer overrides applied. configReady always
+  // resolves (its fetch is wrapped in try/catch), so a slow/failed config can never hang mount().
+  await configReady
 }
 
 // ── Non-blocking background-upload pill ─────────────────────────────────────────────────────────
