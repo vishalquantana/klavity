@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Klavity "Record me" feasibility POC (KLAVITYKLA-426)</title>
+<!--
+  CONTAINED SPIKE PROTOTYPE - KLAVITYKLA-426 (screen-recording feasibility).
+  This is a STANDALONE proof-of-concept. It is deliberately NOT wired into the
+  shipped widget bundle (packages/sdk/dist/klavity-widget.iife.js) or the shared
+  composer (packages/core/src/modal.ts). It does not talk to the real server.
+
+  What it demonstrates (the risky/unknown parts of #438 "Record me" + #435 video attach):
+    1. getDisplayMedia()  -> the user's SCREEN (grounded in the existing sharp-capture path)
+    2. getUserMedia()     -> CAMERA + MIC
+    3. draw screen video + camera video onto a <canvas> every frame, camera as
+       a picture-in-picture (PiP) inset  => single composited video track
+    4. canvas.captureStream(fps) + the mic AudioTrack => one MediaStream
+    5. MediaRecorder(vp9 / opus, webm) with start / pause / resume / stop
+    6. a hard LENGTH CAP (auto-stop) and a live byte/size readout
+    7. a previewable + downloadable Blob (what Phase 1 would POST to S3)
+
+  Open it: just double-click the file, or `open docs/spikes/recording/record-poc.html`.
+  MUST be same-origin-secure for getDisplayMedia: file:// and http://localhost both
+  qualify as "secure contexts", so no server is needed. (Chrome/Edge recommended.)
+-->
+<style>
+  :root { --pri:#6d28d9; --pri2:#7c3aed; --bg:#0b0b12; --panel:#15151f; --ink:#e7e7ef; --mut:#9aa; --ok:#1f9d55; --bad:#c0392b; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:16px 20px; border-bottom:1px solid #222; }
+  header h1 { margin:0; font-size:16px; }
+  header p { margin:4px 0 0; color:var(--mut); font-size:12px; }
+  main { display:grid; grid-template-columns:minmax(0,1fr) 320px; gap:16px; padding:20px; align-items:start; }
+  @media (max-width:820px){ main{ grid-template-columns:1fr; } }
+  .stage { background:#000; border:1px solid #222; border-radius:12px; overflow:hidden; position:relative; }
+  canvas#stage { width:100%; height:auto; display:block; background:#000; }
+  .panel { background:var(--panel); border:1px solid #222; border-radius:12px; padding:14px; }
+  .panel h2 { margin:0 0 10px; font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--mut); }
+  button { appearance:none; border:0; border-radius:9px; padding:9px 12px; font-weight:600; color:#fff; background:var(--pri); cursor:pointer; transition:transform .15s ease, background .15s ease, opacity .15s; width:100%; margin-bottom:8px; }
+  button:hover:not(:disabled){ transform:scale(1.02); background:var(--pri2); }
+  button:active:not(:disabled){ transform:scale(.97); }
+  button.ghost { background:#26263a; }
+  button.danger { background:var(--bad); }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  label.row { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:6px 0; color:var(--mut); }
+  input[type=number]{ width:70px; background:#0c0c14; border:1px solid #333; color:var(--ink); border-radius:6px; padding:4px 6px; }
+  .stat { display:flex; justify-content:space-between; padding:3px 0; border-bottom:1px dashed #262636; }
+  .stat b { font-variant-numeric:tabular-nums; }
+  .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:700; }
+  .pill.on { background:rgba(31,157,85,.15); color:#43d17f; }
+  .pill.off{ background:rgba(192,57,43,.15); color:#ff7a6b; }
+  video.preview { width:100%; border-radius:10px; margin-top:8px; background:#000; }
+  #log { font:11px/1.5 ui-monospace,Menlo,monospace; color:#9aa; white-space:pre-wrap; max-height:150px; overflow:auto; background:#0c0c14; border:1px solid #262636; border-radius:8px; padding:8px; }
+  a.dl { display:inline-block; margin-top:8px; color:#a78bfa; }
+  .support td{ padding:2px 6px; border-bottom:1px dashed #262636; }
+  .yes{color:#43d17f}.no{color:#ff7a6b}.part{color:#f1c40f}
+</style>
+</head>
+<body>
+<header>
+  <h1>Klavity "Record me" feasibility POC &middot; KLAVITYKLA-426</h1>
+  <p>Screen + camera (PiP) + mic &rarr; canvas compositing &rarr; MediaRecorder (vp9/opus webm). Standalone spike; not wired to the shipped widget.</p>
+</header>
+
+<main>
+  <div class="stage">
+    <canvas id="stage" width="1280" height="720"></canvas>
+  </div>
+
+  <div>
+    <div class="panel" style="margin-bottom:16px">
+      <h2>Controls</h2>
+      <label class="row"><span>Camera PiP</span><input id="wantCam" type="checkbox" checked></label>
+      <label class="row"><span>Microphone</span><input id="wantMic" type="checkbox" checked></label>
+      <label class="row"><span>Length cap (sec)</span><input id="cap" type="number" min="5" max="600" value="60"></label>
+      <label class="row"><span>Canvas FPS</span><input id="fps" type="number" min="5" max="60" value="24"></label>
+      <button id="btnStart">Start recording</button>
+      <button id="btnPause" class="ghost" disabled>Pause</button>
+      <button id="btnStop" class="danger" disabled>Stop</button>
+    </div>
+
+    <div class="panel" style="margin-bottom:16px">
+      <h2>Live stats</h2>
+      <div class="stat"><span>State</span><b id="sState"><span class="pill off">idle</span></b></div>
+      <div class="stat"><span>Screen</span><b id="sScreen">-</b></div>
+      <div class="stat"><span>Camera</span><b id="sCam">-</b></div>
+      <div class="stat"><span>Mic</span><b id="sMic">-</b></div>
+      <div class="stat"><span>Elapsed</span><b id="sTime">0.0s</b></div>
+      <div class="stat"><span>Chunks</span><b id="sChunks">0</b></div>
+      <div class="stat"><span>Blob size</span><b id="sSize">0 KB</b></div>
+      <div class="stat"><span>~kbps</span><b id="sRate">-</b></div>
+      <div class="stat"><span>MIME</span><b id="sMime" style="font-size:11px">-</b></div>
+    </div>
+
+    <div class="panel">
+      <h2>Result</h2>
+      <div id="result" style="color:var(--mut)">No recording yet.</div>
+    </div>
+  </div>
+</main>
+
+<div style="padding:0 20px 24px; display:grid; grid-template-columns:1fr 1fr; gap:16px">
+  <div class="panel">
+    <h2>Codec support (this browser)</h2>
+    <table class="support" id="codecTable"><tbody></tbody></table>
+  </div>
+  <div class="panel">
+    <h2>Event log</h2>
+    <div id="log"></div>
+  </div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const log = (m) => { const el = $("log"); el.textContent += m + "\n"; el.scrollTop = el.scrollHeight; };
+  const fmtBytes = (n) => n < 1024 ? n+" B" : n < 1048576 ? (n/1024).toFixed(1)+" KB" : (n/1048576).toFixed(2)+" MB";
+
+  // ---- Codec probe -------------------------------------------------------
+  // MediaRecorder support + which container/codec this browser will actually
+  // emit. vp9/opus in webm is the Phase-1 target; H.264/mp4 is the Safari path.
+  const CANDIDATES = [
+    "video/webm;codecs=vp9,opus",
+    "video/webm;codecs=vp8,opus",
+    "video/webm;codecs=h264,opus",
+    "video/mp4;codecs=avc1,mp4a.40.2",  // Safari 17+ emits mp4
+    "video/webm",
+  ];
+  function pickMime() {
+    if (typeof MediaRecorder === "undefined") return null;
+    const rows = [];
+    let chosen = null;
+    for (const c of CANDIDATES) {
+      const ok = MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(c);
+      rows.push([c, ok]);
+      if (ok && !chosen) chosen = c;
+    }
+    const tb = $("codecTable").querySelector("tbody");
+    tb.innerHTML = rows.map(([c,ok]) =>
+      `<tr><td>${c}</td><td class="${ok?'yes':'no'}">${ok?'yes':'no'}</td></tr>`).join("");
+    return chosen;
+  }
+  const CHOSEN_MIME = pickMime();
+  $("sMime").textContent = CHOSEN_MIME || "MediaRecorder unavailable";
+  if (typeof MediaRecorder === "undefined") log("MediaRecorder NOT supported in this browser.");
+  if (typeof navigator.mediaDevices?.getDisplayMedia !== "function") log("getDisplayMedia NOT supported (iOS Safari) - screen recording impossible here.");
+
+  // ---- State -------------------------------------------------------------
+  let screenStream = null, camStream = null, micTrack = null;
+  let recorder = null, chunks = [], rafId = 0, tickId = 0;
+  let startedAt = 0, pausedMs = 0, pauseStart = 0, totalBytes = 0;
+  const canvas = $("stage");
+  const ctx = canvas.getContext("2d");
+  const screenVid = document.createElement("video"); screenVid.muted = true; screenVid.playsInline = true;
+  const camVid = document.createElement("video"); camVid.muted = true; camVid.playsInline = true;
+
+  function setState(s, on) { $("sState").innerHTML = `<span class="pill ${on?'on':'off'}">${s}</span>`; }
+
+  // ---- Compositor: draw screen full-frame, camera as bottom-right PiP -----
+  function drawFrame() {
+    rafId = requestAnimationFrame(drawFrame);
+    const W = canvas.width, H = canvas.height;
+    if (screenVid.videoWidth) {
+      // letterbox screen into the canvas keeping aspect
+      const sr = screenVid.videoWidth / screenVid.videoHeight, cr = W / H;
+      let dw = W, dh = H, dx = 0, dy = 0;
+      if (sr > cr) { dh = W / sr; dy = (H - dh) / 2; } else { dw = H * sr; dx = (W - dw) / 2; }
+      ctx.fillStyle = "#000"; ctx.fillRect(0,0,W,H);
+      ctx.drawImage(screenVid, dx, dy, dw, dh);
+    }
+    if (camVid.videoWidth) {
+      // PiP inset: 22% width, bottom-right, with a subtle border
+      const pw = Math.round(W * 0.22), ph = Math.round(pw * (camVid.videoHeight/camVid.videoWidth));
+      const px = W - pw - 20, py = H - ph - 20;
+      ctx.save();
+      ctx.shadowColor = "rgba(0,0,0,.6)"; ctx.shadowBlur = 16;
+      ctx.fillStyle = "#000"; ctx.fillRect(px-3, py-3, pw+6, ph+6);
+      ctx.restore();
+      ctx.drawImage(camVid, px, py, pw, ph);
+      ctx.strokeStyle = "#7c3aed"; ctx.lineWidth = 2; ctx.strokeRect(px, py, pw, ph);
+    }
+    // recording HUD dot
+    if (recorder && recorder.state === "recording") {
+      ctx.fillStyle = "#e11"; ctx.beginPath(); ctx.arc(24, 24, 7, 0, Math.PI*2); ctx.fill();
+    }
+  }
+
+  // ---- Start -------------------------------------------------------------
+  async function start() {
+    if (!CHOSEN_MIME) { alert("MediaRecorder / a supported codec is unavailable in this browser."); return; }
+    const wantCam = $("wantCam").checked, wantMic = $("wantMic").checked;
+    const fps = Math.max(5, Math.min(60, +$("fps").value || 24));
+    const capSec = Math.max(5, Math.min(600, +$("cap").value || 60));
+    chunks = []; totalBytes = 0; pausedMs = 0;
+
+    try {
+      // getDisplayMedia FIRST to preserve the user gesture (same rule as the sharp-capture path).
+      log("Requesting screen (getDisplayMedia)...");
+      screenStream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: fps }, audio: false, preferCurrentTab: false });
+      screenVid.srcObject = screenStream; await screenVid.play().catch(()=>{});
+      const st = screenStream.getVideoTracks()[0].getSettings();
+      $("sScreen").textContent = `${st.width||"?"}x${st.height||"?"} @${st.frameRate||fps}`;
+      // size the canvas to the screen aspect (cap at 1280 wide for encode cost)
+      const aspect = (st.width && st.height) ? st.width/st.height : 16/9;
+      canvas.width = 1280; canvas.height = Math.round(1280 / aspect);
+      // if the user stops sharing via the browser's native bar, stop cleanly
+      screenStream.getVideoTracks()[0].addEventListener("ended", () => { log("Screen share ended by user."); stop(); });
+    } catch (e) { log("Screen denied/cancelled: " + e.message); cleanup(); return; }
+
+    if (wantCam || wantMic) {
+      try {
+        log("Requesting camera/mic (getUserMedia)...");
+        camStream = await navigator.mediaDevices.getUserMedia({
+          video: wantCam ? { width: 640, height: 480, facingMode: "user" } : false,
+          audio: wantMic ? { echoCancellation: true, noiseSuppression: true } : false,
+        });
+        if (wantCam) { camVid.srcObject = camStream; await camVid.play().catch(()=>{}); $("sCam").textContent = "on"; }
+        if (wantMic) { micTrack = camStream.getAudioTracks()[0] || null; $("sMic").textContent = micTrack ? "on" : "none"; }
+      } catch (e) {
+        // KEY FINDING: on a customer site, Permissions-Policy can silently block this.
+        log("Camera/mic denied or blocked (Permissions-Policy?): " + e.name + " " + e.message);
+        $("sCam").textContent = wantCam ? "blocked" : "-"; $("sMic").textContent = wantMic ? "blocked" : "-";
+        // Continue screen-only - the recording still works without the PiP/narration.
+      }
+    }
+
+    drawFrame(); // begin compositing
+
+    // Build the composited output stream: canvas video track + mic audio track.
+    const canvasStream = canvas.captureStream(fps);
+    const outTracks = [ canvasStream.getVideoTracks()[0] ];
+    if (micTrack) outTracks.push(micTrack);
+    const out = new MediaStream(outTracks);
+
+    recorder = new MediaRecorder(out, { mimeType: CHOSEN_MIME, videoBitsPerSecond: 2_500_000, audioBitsPerSecond: 128_000 });
+    recorder.ondataavailable = (ev) => { if (ev.data && ev.data.size) { chunks.push(ev.data); totalBytes += ev.data.size; refreshStats(); } };
+    recorder.onstop = onStop;
+    recorder.start(1000); // emit a chunk every 1s so we can show live size
+    startedAt = performance.now();
+    setState("recording", true);
+    $("btnStart").disabled = true; $("btnPause").disabled = false; $("btnStop").disabled = false;
+    log(`Recording started. mime=${CHOSEN_MIME} cap=${capSec}s fps=${fps}`);
+
+    tickId = setInterval(() => {
+      const el = elapsed();
+      $("sTime").textContent = (el/1000).toFixed(1) + "s";
+      if (el >= capSec*1000) { log("Length cap reached - auto-stopping."); stop(); }
+    }, 200);
+  }
+
+  function elapsed() { return (recorder && recorder.state !== "inactive") ? (performance.now() - startedAt - pausedMs - (pauseStart?performance.now()-pauseStart:0)) : 0; }
+
+  function refreshStats() {
+    $("sChunks").textContent = chunks.length;
+    $("sSize").textContent = fmtBytes(totalBytes);
+    const secs = elapsed()/1000;
+    $("sRate").textContent = secs > 0 ? Math.round((totalBytes*8/1000)/secs) + " kbps" : "-";
+  }
+
+  function pause() {
+    if (!recorder) return;
+    if (recorder.state === "recording") { recorder.pause(); pauseStart = performance.now(); setState("paused", false); $("btnPause").textContent = "Resume"; log("Paused."); }
+    else if (recorder.state === "paused") { recorder.resume(); pausedMs += performance.now()-pauseStart; pauseStart = 0; setState("recording", true); $("btnPause").textContent = "Pause"; log("Resumed."); }
+  }
+
+  function stop() { if (recorder && recorder.state !== "inactive") recorder.stop(); }
+
+  function onStop() {
+    clearInterval(tickId); cancelAnimationFrame(rafId);
+    const blob = new Blob(chunks, { type: (CHOSEN_MIME.split(";")[0]) });
+    const secs = elapsed()/1000;
+    const url = URL.createObjectURL(blob);
+    const per60 = secs > 0 ? (blob.size / secs) * 60 : 0;
+    $("result").innerHTML =
+      `<div class="stat"><span>Duration</span><b>${secs.toFixed(1)}s</b></div>` +
+      `<div class="stat"><span>Blob size</span><b>${fmtBytes(blob.size)}</b></div>` +
+      `<div class="stat"><span>Extrapolated / 60s</span><b>${fmtBytes(per60)}</b></div>` +
+      `<div class="stat"><span>Type</span><b style="font-size:11px">${blob.type}</b></div>` +
+      `<video class="preview" src="${url}" controls></video>` +
+      `<a class="dl" href="${url}" download="klavity-record-poc.webm">Download recording</a>` +
+      `<div style="margin-top:8px;color:var(--mut);font-size:12px">Phase 1 would POST this Blob to /api/feedback (multipart) &rarr; s3.ts uploadAttachment(). Phase 2 would extract the audio and send it to a transcription API.</div>`;
+    log(`Stopped. size=${fmtBytes(blob.size)} dur=${secs.toFixed(1)}s -> ~${fmtBytes(per60)}/60s`);
+    cleanup();
+    setState("done", true);
+    $("btnStart").disabled = false; $("btnPause").disabled = true; $("btnStop").disabled = true; $("btnPause").textContent = "Pause";
+  }
+
+  function cleanup() {
+    for (const s of [screenStream, camStream]) if (s) s.getTracks().forEach(t=>t.stop());
+    screenStream = camStream = micTrack = null;
+  }
+
+  $("btnStart").onclick = start;
+  $("btnPause").onclick = pause;
+  $("btnStop").onclick = stop;
+})();
+</script>
+</body>
+</html>
