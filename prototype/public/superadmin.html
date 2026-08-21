@@ -44,27 +44,97 @@ tbody tr:hover{background:var(--ink-3)}
 .icon{vertical-align:-2px}
 .err{color:var(--rose);font-size:14px;padding:20px}
 .muted{color:var(--paper-faint)}
+/* ── tab nav ── */
+.tabs{display:flex;gap:8px;margin-bottom:22px}
+.tab{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:8px 16px;border-radius:20px;border:1px solid var(--line);background:var(--ink-2);color:var(--paper-dim);cursor:pointer;transition:transform .15s ease,background .15s ease,color .15s ease,border-color .15s ease}
+.tab:hover{transform:scale(1.02);border-color:var(--indigo);color:var(--paper)}
+.tab:active{transform:scale(.97)}
+.tab.active{background:var(--indigo);border-color:var(--indigo);color:#fff}
+.view{display:none}.view.active{display:block}
+/* ── buttons + forms ── */
+.btn{font-family:var(--body);font-size:13px;font-weight:600;padding:9px 16px;border-radius:12px;border:1px solid var(--indigo);background:var(--indigo);color:#fff;cursor:pointer;transition:transform .15s ease,filter .15s ease}
+.btn:hover{transform:scale(1.02);filter:brightness(1.08)}
+.btn:active{transform:scale(.97)}
+.btn.ghost{background:transparent;color:var(--paper-dim);border-color:var(--line)}
+.btn.ghost:hover{color:var(--paper);border-color:var(--indigo)}
+.btn.sm{font-size:11px;padding:5px 10px;border-radius:9px}
+.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:14px}
+.fld{display:flex;flex-direction:column;gap:5px}
+.fld label{font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--paper-faint)}
+.fld input{background:var(--ink-3);border:1px solid var(--line);border-radius:10px;padding:9px 11px;color:var(--paper);font-family:var(--body);font-size:13px}
+.fld input:focus{outline:none;border-color:var(--indigo)}
+.preview{background:var(--ink-3);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px;font-family:var(--mono);font-size:12px;word-break:break-all}
+.preview .pk{font-size:9px;letter-spacing:.07em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:4px}
+.preview .pv{color:var(--indigo);margin-bottom:10px}
+.preview .pv:last-child{margin-bottom:0}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:1px}
+.dot.on{background:var(--green)}.dot.off{background:var(--paper-faint)}
+.formErr{color:var(--rose);font-size:12px;margin-bottom:10px;min-height:14px}
+.drill{margin-top:10px;padding:14px;background:var(--ink-3);border:1px solid var(--line);border-radius:12px}
+.drill h3{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--paper-dim);margin-bottom:10px}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>Superadmin · Per-Workspace P&amp;L</h1>
-  <div class="sub" id="sub">Revenue minus COGS per workspace. <span class="mono" id="gen"></span></div>
+  <h1>Superadmin</h1>
+  <div class="sub" id="sub">Revenue, COGS &amp; campaign short-links. <span class="mono" id="gen"></span></div>
 
-  <div class="cards" id="summary"></div>
-
-  <div class="panel">
-    <h2 id="cacHead">Customer Acquisition Cost</h2>
-    <div class="cac-grid" id="cac"></div>
+  <div class="tabs">
+    <button type="button" class="tab active" id="tabPl" data-view="pl">P&amp;L</button>
+    <button type="button" class="tab" id="tabLinks" data-view="links">Links</button>
   </div>
 
-  <div class="panel">
-    <h2 id="wsHead">Workspaces</h2>
-    <div style="overflow-x:auto">
-      <table id="tbl">
-        <thead><tr id="thead"></tr></thead>
-        <tbody id="tbody"></tbody>
-      </table>
+  <div class="view active" id="view-pl">
+    <div class="cards" id="summary"></div>
+
+    <div class="panel">
+      <h2 id="cacHead">Customer Acquisition Cost</h2>
+      <div class="cac-grid" id="cac"></div>
+    </div>
+
+    <div class="panel">
+      <h2 id="wsHead">Workspaces</h2>
+      <div style="overflow-x:auto">
+        <table id="tbl">
+          <thead><tr id="thead"></tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="view" id="view-links">
+    <div class="panel">
+      <h2 id="createHead">Create short-link</h2>
+      <div class="formErr" id="lkFormErr"></div>
+      <div class="form-grid">
+        <div class="fld" style="grid-column:1/-1"><label for="lkDest">Destination URL (https)</label><input id="lkDest" type="url" placeholder="https://klavity.in/pricing" /></div>
+        <div class="fld"><label for="lkSource">utm_source</label><input id="lkSource" placeholder="reddit" /></div>
+        <div class="fld"><label for="lkMedium">utm_medium</label><input id="lkMedium" placeholder="post" /></div>
+        <div class="fld"><label for="lkCampaign">utm_campaign</label><input id="lkCampaign" placeholder="q3-launch" /></div>
+        <div class="fld"><label for="lkTerm">utm_term</label><input id="lkTerm" placeholder="(optional)" /></div>
+        <div class="fld"><label for="lkContent">utm_content</label><input id="lkContent" placeholder="(optional)" /></div>
+        <div class="fld"><label for="lkSlug">Vanity slug (optional)</label><input id="lkSlug" placeholder="a-z0-9- 3–40" /></div>
+        <div class="fld"><label for="lkLabel">Label</label><input id="lkLabel" placeholder="internal note" /></div>
+      </div>
+      <div class="preview">
+        <div class="pk">Short URL</div><div class="pv" id="lkPrevShort">—</div>
+        <div class="pk">Tagged destination</div><div class="pv" id="lkPrevDest">—</div>
+      </div>
+      <button type="button" class="btn" id="lkCreate">Create link</button>
+    </div>
+
+    <div class="panel">
+      <h2 id="linksHead">Short-links</h2>
+      <div style="overflow-x:auto">
+        <table id="lkTbl">
+          <thead><tr>
+            <th>Code</th><th>Label</th><th>Campaign</th><th>Destination</th><th class="r">Clicks</th><th>Active</th><th></th>
+          </tr></thead>
+          <tbody id="lkBody"></tbody>
+        </table>
+      </div>
+      <div id="lkDrill"></div>
     </div>
   </div>
 </div>
@@ -201,6 +271,144 @@ tbody tr:hover{background:var(--ink-3)}
     .catch(function(e){
       document.querySelector(".wrap").innerHTML = "<div class='err'>" + esc(e.message || String(e)) + "</div>";
     });
+})();
+</script>
+
+<script>
+(function(){
+  "use strict";
+  function esc(s){ return String(s == null ? "" : s).replace(/[&<>"]/g, function(c){ return { "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;" }[c]; }); }
+  function el(id){ return document.getElementById(id); }
+  function val(id){ var e = el(id); return e ? e.value.trim() : ""; }
+
+  // Client mirror of server stampUtm — single-encode via URLSearchParams; unparseable/relative
+  // destinations pass through unchanged (never throws in preview).
+  function stampUtm(dest, utm){
+    var url;
+    try { url = new URL(dest); } catch (e) { return dest; }
+    var map = [["source","utm_source"],["medium","utm_medium"],["campaign","utm_campaign"],["term","utm_term"],["content","utm_content"]];
+    for (var i = 0; i < map.length; i++){
+      var v = utm[map[i][0]];
+      if (v == null) continue;
+      var s = String(v);
+      if (!s.length) continue;
+      url.searchParams.set(map[i][1], s);
+    }
+    return url.toString();
+  }
+
+  function currentUtm(){
+    return { source: val("lkSource"), medium: val("lkMedium"), campaign: val("lkCampaign"), term: val("lkTerm"), content: val("lkContent") };
+  }
+
+  function refreshPreview(){
+    var dest = val("lkDest");
+    var slug = val("lkSlug");
+    var codeShown = slug || "<code>";
+    el("lkPrevShort").textContent = location.origin + "/s/" + codeShown;
+    el("lkPrevDest").textContent = dest ? stampUtm(dest, currentUtm()) : "—";
+  }
+
+  function copyText(t){
+    try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t); } catch (e) {}
+  }
+
+  function renderRows(links){
+    el("lkBody").innerHTML = (links || []).map(function(l){
+      var shortUrl = location.origin + "/s/" + (l.slug || l.code);
+      var dot = "<span class='dot " + (l.active ? "on" : "off") + "'></span>" + (l.active ? "on" : "off");
+      var camp = (l.utm && l.utm.campaign) ? l.utm.campaign : "—";
+      return "<tr data-id='" + esc(l.id) + "'>"
+        + "<td class='mono'>" + esc(l.slug || l.code) + "</td>"
+        + "<td>" + esc(l.label || "—") + "</td>"
+        + "<td>" + esc(camp) + "</td>"
+        + "<td class='muted' style='max-width:280px;overflow:hidden;text-overflow:ellipsis'>" + esc(l.destinationUrl) + "</td>"
+        + "<td class='r'>" + (Number(l.clickCount) || 0) + "</td>"
+        + "<td>" + dot + "</td>"
+        + "<td style='white-space:nowrap'>"
+          + "<button type='button' class='btn ghost sm act-copy' data-url='" + esc(shortUrl) + "'>Copy</button> "
+          + "<button type='button' class='btn ghost sm act-toggle' data-id='" + esc(l.id) + "' data-active='" + (l.active ? "1" : "0") + "'>" + (l.active ? "Disable" : "Enable") + "</button> "
+          + "<button type='button' class='btn ghost sm act-drill' data-id='" + esc(l.id) + "'>Stats</button>"
+        + "</td>"
+        + "</tr>";
+    }).join("");
+
+    var body = el("lkBody");
+    body.querySelectorAll(".act-copy").forEach(function(b){ b.addEventListener("click", function(){ copyText(b.getAttribute("data-url")); b.textContent = "Copied"; setTimeout(function(){ b.textContent = "Copy"; }, 1200); }); });
+    body.querySelectorAll(".act-toggle").forEach(function(b){ b.addEventListener("click", function(){ toggleLink(b.getAttribute("data-id"), b.getAttribute("data-active") !== "1"); }); });
+    body.querySelectorAll(".act-drill").forEach(function(b){ b.addEventListener("click", function(){ drill(b.getAttribute("data-id")); }); });
+  }
+
+  function loadLinks(){
+    fetch("/api/superadmin/links", { credentials: "include" })
+      .then(function(r){ if (!r.ok) throw new Error("Failed to load links (" + r.status + ")"); return r.json(); })
+      .then(function(d){ renderRows(d.links); })
+      .catch(function(e){ el("lkBody").innerHTML = "<tr><td colspan='7' class='err'>" + esc(e.message || String(e)) + "</td></tr>"; });
+  }
+
+  function toggleLink(id, active){
+    fetch("/api/superadmin/links/" + encodeURIComponent(id), {
+      method: "PATCH", credentials: "include",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ active: active })
+    }).then(function(r){ if (!r.ok) throw new Error("toggle failed"); }).then(loadLinks).catch(function(){ loadLinks(); });
+  }
+
+  function drill(id){
+    fetch("/api/superadmin/links/" + encodeURIComponent(id), { credentials: "include" })
+      .then(function(r){ if (!r.ok) throw new Error("Failed to load stats (" + r.status + ")"); return r.json(); })
+      .then(function(d){
+        var s = d.stats || { total:0, bots:0, humans:0, byDay:[], topReferers:[] };
+        var days = (s.byDay || []).map(function(x){ return "<div>" + esc(x.day) + " · " + (Number(x.count)||0) + "</div>"; }).join("") || "<div class='muted'>no clicks yet</div>";
+        var refs = (s.topReferers || []).map(function(x){ return "<div>" + esc(x.referer) + " · " + (Number(x.count)||0) + "</div>"; }).join("") || "<div class='muted'>no referers</div>";
+        el("lkDrill").innerHTML = "<div class='drill'>"
+          + "<h3>" + esc(d.link ? (d.link.slug || d.link.code) : id) + " · " + (Number(s.total)||0) + " clicks (" + (Number(s.humans)||0) + " human / " + (Number(s.bots)||0) + " bot)</h3>"
+          + "<div class='form-grid'>"
+            + "<div><div class='pk'>Clicks over time</div>" + days + "</div>"
+            + "<div><div class='pk'>Top referers</div>" + refs + "</div>"
+          + "</div></div>";
+      })
+      .catch(function(e){ el("lkDrill").innerHTML = "<div class='drill err'>" + esc(e.message || String(e)) + "</div>"; });
+  }
+
+  function create(){
+    var dest = val("lkDest");
+    el("lkFormErr").textContent = "";
+    if (!dest){ el("lkFormErr").textContent = "Destination URL is required."; return; }
+    var payload = { destinationUrl: dest, utm: currentUtm() };
+    var slug = val("lkSlug"); if (slug) payload.slug = slug;
+    var label = val("lkLabel"); if (label) payload.label = label;
+    fetch("/api/superadmin/links", {
+      method: "POST", credentials: "include",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    }).then(function(r){
+      return r.json().then(function(b){ return { ok: r.ok, status: r.status, body: b }; });
+    }).then(function(res){
+      if (!res.ok){ el("lkFormErr").textContent = (res.body && res.body.error) ? res.body.error : ("Create failed (" + res.status + ")"); return; }
+      ["lkDest","lkSource","lkMedium","lkCampaign","lkTerm","lkContent","lkSlug","lkLabel"].forEach(function(id){ var e = el(id); if (e) e.value = ""; });
+      refreshPreview();
+      loadLinks();
+    }).catch(function(e){ el("lkFormErr").textContent = e.message || String(e); });
+  }
+
+  // ── wiring ──
+  var loaded = false;
+  function showView(v){
+    var isLinks = v === "links";
+    el("view-pl").classList.toggle("active", !isLinks);
+    el("view-links").classList.toggle("active", isLinks);
+    el("tabPl").classList.toggle("active", !isLinks);
+    el("tabLinks").classList.toggle("active", isLinks);
+    if (isLinks && !loaded){ loaded = true; loadLinks(); }
+  }
+  el("tabPl").addEventListener("click", function(){ showView("pl"); });
+  el("tabLinks").addEventListener("click", function(){ showView("links"); });
+  ["lkDest","lkSource","lkMedium","lkCampaign","lkTerm","lkContent","lkSlug"].forEach(function(id){
+    var e = el(id); if (e) e.addEventListener("input", refreshPreview);
+  });
+  el("lkCreate").addEventListener("click", create);
+  refreshPreview();
 })();
 </script>
 </body>
