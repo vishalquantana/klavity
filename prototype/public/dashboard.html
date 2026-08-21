@@ -1396,7 +1396,8 @@ img{outline:1px solid rgba(0,0,0,.1);outline-offset:-1px}
 a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{outline:2px solid #8b8bf5;outline-offset:2px;border-radius:5px}
 @media (prefers-reduced-motion: reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}}
   .tkt-context{display:flex;flex-direction:column;gap:10px;padding-bottom:12px;margin-bottom:2px;border-bottom:1px solid var(--line)}
-  .tkt-obs{font-size:14px;line-height:1.5;color:var(--paper)}
+  .tkt-obs{font-size:14px;line-height:1.5;color:var(--paper);white-space:pre-wrap}
+  .tkt-desc-label{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:3px}
   .tkt-chips{display:flex;flex-wrap:wrap;gap:6px}
   .tkt-bug{background:var(--ink-2);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
   .tkt-bug-t{font-size:13px;font-weight:600;margin-bottom:4px}
@@ -5459,6 +5460,15 @@ function assigneePickerHtml(t, compact = false) {
 // its own summary element. Returns the wired detailEl.
 // isSingle=true: called from the single-ticket view, which already renders title/severity/sim/url·date
 // in its .single-head — so skip those from .tkt-context to avoid duplication.
+// #538: render the reporter's observation as an explicitly labeled block. When the body reads like
+// reproduction steps (numbered / bulleted / "step N" lines) label it "Steps to reproduce", otherwise
+// "Description". The .tkt-obs child is white-space:pre-wrap so multi-line steps keep their line breaks.
+function descriptionBlockHtml(text) {
+  const raw = String(text == null ? "" : text)
+  const isSteps = /(^|\n)\s*(\d+[.)]\s|[-*•]\s|step\s*\d+\b)/i.test(raw)
+  const label = isSteps ? "Steps to reproduce" : "Description"
+  return `<div class="tkt-desc"><div class="tkt-desc-label">${label}</div><div class="tkt-obs">${esc(raw)}</div></div>`
+}
 // KLAVITYKLA-438 "Record me" (Phase 2): format seconds → m:ss for a transcript timestamp.
 function recTimeFmt(sec) {
   var s = Math.max(0, Math.floor(Number(sec) || 0))
@@ -5578,7 +5588,10 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
     // In single-ticket view the header shows: title, severity, sentiment, simName, url·date.
     // Two-column layout when screenshot exists: shot in col-1, everything else in .tkt-right-body col-2.
     const _isTwoCol = isSingle && !!t.screenshotId
-    const _showObs = t.observation && (!isSingle || t.observation.trim() !== (t.title || "").trim())
+    // #538: a multi-line description must never be suppressed just because its FIRST line happens
+    // to match the ticket title — only hide when the entire (single-line) observation IS the title.
+    const _obsMultiline = !!(t.observation && /\n/.test(String(t.observation).trim()))
+    const _showObs = t.observation && (!isSingle || _obsMultiline || t.observation.trim() !== (t.title || "").trim())
     const _showSevChip = !isSingle && !!t.priority
     const _showSentiment = !isSingle && !!t.sentiment
     const _showSimChip = !isSingle && !!t.simName
@@ -5601,7 +5614,7 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
       <div class="tkt-context">
         ${dupAckHtml(t)}
         ${regrBannerHtml(t)}
-        ${_showObs ? `<div class="tkt-obs">${esc(t.observation)}</div>` : ""}
+        ${_showObs ? descriptionBlockHtml(t.observation) : ""}
         ${(_showSevChip || _showSentiment || _showSimChip) ? `<div class="tkt-chips">${_showSevChip ? `<span class="chip sev-${esc(t.priority)}">${esc(t.priority)}</span>` : ""}${_showSentiment ? `<span class="chip s-${esc(t.sentiment)}">${esc(t.sentiment)}</span>` : ""}${_showSimChip ? `<span class="chip">${esc(t.simName)}</span>` : ""}</div>` : ""}
         ${_showBug ? `<div class="tkt-bug">${_showBugTitle ? `<div class="tkt-bug-t">${kicon('bug')} ${esc(_bugTitle)}</div>` : ""}${_showBugBody ? `<div class="tkt-bug-b">${esc(_bugBody)}</div>` : ""}</div>` : ""}
         ${t.sourceQuote ? `<div class="tkt-prov">"${esc(t.sourceQuote)}"${t.sourceDate ? ` · raised ${esc(ago(t.sourceDate))}` : ""}</div>` : ""}
@@ -6542,10 +6555,12 @@ function openNewTicketModal() {
   if (err) err.textContent = ""
   if (msg) msg.textContent = ""
   bg.classList.add("show")
+  document.body.style.overflow = "hidden"  // #539: lock background scroll behind the backdrop
   setTimeout(() => inp && inp.focus(), 60)
 }
 function closeNewTicketModal() {
   const bg = document.getElementById("newTktBg"); if (bg) bg.classList.remove("show")
+  document.body.style.overflow = ""  // #539: restore background scroll
 }
 async function submitNewTicket() {
   const inp = document.getElementById("newTktTitleInp")
@@ -6626,6 +6641,10 @@ let _tktFilters = { status: "", priority: "", label: "", assignee: "", source: "
 let _tktListState = { page: 1, totalPages: 1, loading: false }
 let _tktBoardState = { loading: false }
 let _tktBoardTickets = []
+// #536: the board caches the FULL, unfiltered project set here; status/priority/label/assignee/
+// source/search are applied client-side (tktMatchesSelectFilters) so filter + Clear are instant
+// (no 'Loading…' wipe, no round-trip). This tracks which project the cache belongs to.
+let _tktBoardProjId = null
 // JTBD 2.14: board selection UI sync — reassigned each render (see renderTicketsKanban).
 let syncKbSelectionUi = () => {}
 let _tktView = "board" // "list" | "board"
@@ -6734,8 +6753,43 @@ function renderTicketsView() {
     if (list) list.innerHTML = ""
     const board = document.getElementById("ticketsKanban")
     if (board) board.classList.remove("hide")
-    fetchAndRenderTktBoard()
+    // #536: if the full board for this project is already cached, apply filters/search/Clear
+    // client-side and re-render synchronously — no network round-trip, no 'Loading…' flash.
+    // Only fetch when the cache is empty or belongs to a different project.
+    const projId = state && state.active && state.active.id
+    if (projId && _tktBoardProjId === projId && Array.isArray(_tktBoardTickets) && _tktBoardTickets.length) {
+      renderTicketsKanban(_tktBoardTickets)
+    } else {
+      fetchAndRenderTktBoard()
+    }
   }
+}
+// #536: client-side predicate mirroring the server's ticket filters, so the board can filter the
+// cached full set without a fetch. Fields are the normalized shapes from listTicketsPaginated.
+function tktMatchesSelectFilters(t) {
+  const f = _tktFilters || {}
+  if (f.status) {
+    const want = f.status === "closed" ? ["done", "dismissed"] : [f.status]
+    if (!want.includes(t.status || "open")) return false
+  }
+  if (f.priority && t.priority !== f.priority) return false
+  if (f.assignee) {
+    if (f.assignee === "__unassigned__") { if (t.assignee) return false }
+    else if ((t.assignee || "") !== f.assignee) return false
+  }
+  if (f.source && t.source !== f.source) return false
+  if (f.label) {
+    const labs = Array.isArray(t.labels) ? t.labels : []
+    if (!labs.some(l => String(l && l.id != null ? l.id : l) === String(f.label))) return false
+  }
+  if (f.search) {
+    const q = String(f.search).toLowerCase()
+    let bug = ""
+    try { bug = t.suggestedBug ? JSON.stringify(t.suggestedBug) : "" } catch { bug = "" }
+    const hay = [t.title, t.observation, t.notes, bug].filter(Boolean).join(" \n ").toLowerCase()
+    if (!hay.includes(q)) return false
+  }
+  return true
 }
 
 function ticketStatusParamFor(view) {
@@ -6787,21 +6841,30 @@ async function fetchAndRenderTktBoard() {
   const board = document.getElementById("ticketsKanban")
   if (!board || _tktBoardState.loading) return
   _tktBoardState.loading = true
-  board.innerHTML = '<div class="tkt-list-empty">Loading…</div>'
-
+  // #536: only show the 'Loading…' placeholder on a genuine cold load (no cached board for this
+  // project). Re-fetches that back a filter/Clear/drag reconcile keep the current board in place.
   const projId = state && state.active && state.active.id
+  const warmCache = projId && _tktBoardProjId === projId && Array.isArray(_tktBoardTickets) && _tktBoardTickets.length
+  if (!warmCache) board.innerHTML = '<div class="tkt-list-empty">Loading…</div>'
+
   if (!projId) { board.innerHTML = '<div class="tkt-list-empty">No project selected.</div>'; _tktBoardState.loading = false; return }
 
-  const sp = ticketQueryParams("board", 1, 200)
+  // #536: fetch the FULL board (all statuses, no select filters) so the cache is a complete set the
+  // client can filter locally. Filters are applied in renderTicketsKanban via tktMatchesSelectFilters.
+  const sp = new URLSearchParams()
+  sp.set("status", "new,open,in_progress,done,dismissed")
+  sp.set("page", "1")
+  sp.set("limit", "200")
 
   try {
     const res = await fetch(`/api/projects/${encodeURIComponent(projId)}/tickets?${sp.toString()}`)
     if (!res.ok) throw new Error("HTTP " + res.status)
     const data = await res.json()
     _tktBoardTickets = data.tickets || []
+    _tktBoardProjId = projId
     renderTicketsKanban(_tktBoardTickets)
   } catch (e) {
-    board.innerHTML = '<div class="tkt-list-empty">Failed to load tickets.</div>'
+    if (!warmCache) board.innerHTML = '<div class="tkt-list-empty">Failed to load tickets.</div>'
   } finally {
     _tktBoardState.loading = false
   }
@@ -7214,9 +7277,11 @@ function renderTicketsKanban(boardTickets) {
   }
   refreshAssigneeOptions()
   const sourceTickets = Array.isArray(boardTickets) ? boardTickets : (_tktBoardTickets.length ? _tktBoardTickets : (state.tickets || []))
-  // Text filtering is already performed by the paginated, project-scoped API. Do not apply
-  // a second client-side predicate here or description-only matches can disappear from the board.
-  const tickets = sourceTickets.filter(t => kbMatchesFilter(t))
+  // #536: the board caches the FULL project set and filters client-side, so status/priority/label/
+  // assignee/source/search are applied here (tktMatchesSelectFilters mirrors the server, matching
+  // observation/notes/suggested-bug text too so description-only search hits are NOT dropped), in
+  // addition to the card-driven KPI filter (kbMatchesFilter).
+  const tickets = sourceTickets.filter(t => kbMatchesFilter(t) && tktMatchesSelectFilters(t))
   $("ticketKanbanCount").textContent = tickets.length ? tickets.length : ""
   if (!tickets.length) {
     board.innerHTML = emptyState(kicon('bug',{size:32}), "No tickets match these filters.", "")
@@ -7430,18 +7495,19 @@ async function loadTktShot(detailEl, annotations) {
       .then(fr => fr.json().catch(() => ({})))
       .then(fd => {
         if (!fd || !fd.url || fd.url === d.url) return
-        if (hasAnn) {
-          paint(fd.url)   // re-mount the overlay against the full image
-        } else if (img) {
-          img.setAttribute("data-full", fd.url); img.src = fd.url
-        }
+        // #531: swap the SAME <img> to full-res behind the existing overlay — the SVG uses a
+        // natural-coord viewBox (preserveAspectRatio=none) so it auto-scales, no re-mount needed.
+        // Re-mounting was what caused the thumb→full double flash and a duplicated overlay.
+        if (img) { img.setAttribute("data-full", fd.url); img.src = fd.url }
       })
       .catch(() => {})
   } catch { box.innerHTML = '<div class="muted" style="font-size:12px">Screenshot error</div>' }
 }
 // Re-render the reporter's markup as a toggleable/zoomable SVG overlay over the clean screenshot.
 // Shapes are in natural-image coords; the SVG viewBox = the image's natural size, so it auto-scales.
-function mountAnnotationOverlay(box, img, ann, url) {
+// #530/#531: build just the SVG markup layer (natural-image coords, preserveAspectRatio=none) so it
+// can be reused by BOTH the live overlay and the flattened export/composite.
+function buildAnnotationSvg(ann) {
   const W = ann.w || 1000, H = ann.h || 700, NS = "http://www.w3.org/2000/svg"
   const sw = Math.max(3, W / 320)
   const svg = document.createElementNS(NS, "svg")
@@ -7449,7 +7515,7 @@ function mountAnnotationOverlay(box, img, ann, url) {
   svg.setAttribute("preserveAspectRatio", "none")
   svg.setAttribute("class", "tkt-ann-svg")
   const set = (el, o) => { for (const k in o) el.setAttribute(k, o[k]); return el }
-  ann.shapes.forEach(s => {
+  ;(ann.shapes || []).forEach(s => {
     const col = s.color || "#db2777"
     if (s.type === "rect") svg.appendChild(set(document.createElementNS(NS, "rect"), { x: s.x, y: s.y, width: s.w, height: s.h, rx: 6, fill: "none", stroke: col, "stroke-width": sw }))
     else if (s.type === "circle") svg.appendChild(set(document.createElementNS(NS, "ellipse"), { cx: s.x, cy: s.y, rx: Math.abs(s.rx || 0), ry: Math.abs(s.ry || 0), fill: "none", stroke: col, "stroke-width": sw }))
@@ -7469,17 +7535,73 @@ function mountAnnotationOverlay(box, img, ann, url) {
       svg.appendChild(set(document.createElementNS(NS, "polyline"), { points: `${s.x2 - hl * Math.cos(a - Math.PI / 6)},${s.y2 - hl * Math.sin(a - Math.PI / 6)} ${s.x2},${s.y2} ${s.x2 - hl * Math.cos(a + Math.PI / 6)},${s.y2 - hl * Math.sin(a + Math.PI / 6)}`, fill: "none", stroke: col, "stroke-width": sw, "stroke-linecap": "round", "stroke-linejoin": "round" }))
     }
   })
+  return { svg, W, H, sw }
+}
+// #531: mount the reporter's markup as a LIVE SVG overlay, once. The box is reserved via aspect-ratio
+// from the reporter's coords BEFORE the (async) screenshot decodes, and the SVG stays hidden until the
+// image decodes — so the markup never renders over a zero-height / undecoded box (the pre-fix flash).
+function mountAnnotationOverlay(box, img, ann, url) {
+  const { svg, W, H } = buildAnnotationSvg(ann)
   const inner = document.createElement("div"); inner.className = "tkt-shot-inner"
+  if (W && H) inner.style.aspectRatio = W + " / " + H
+  svg.style.visibility = "hidden"
+  const reveal = () => { svg.style.visibility = ""; inner.style.aspectRatio = "" }
+  const onReady = () => { if (img.decode) img.decode().then(reveal).catch(reveal); else reveal() }
+  if (img.complete && img.naturalWidth) onReady()
+  else { img.addEventListener("load", onReady); img.addEventListener("error", reveal) }
   inner.appendChild(img); inner.appendChild(svg)
   const bar = document.createElement("div"); bar.className = "tkt-ann-bar"
   const tg = document.createElement("button"); tg.type = "button"; tg.className = "tkt-ann-btn on"; tg.textContent = "⦿ Markup"
   tg.addEventListener("click", e => { e.stopPropagation(); svg.classList.toggle("off"); tg.classList.toggle("on") })
   const op = document.createElement("button"); op.type = "button"; op.className = "tkt-ann-btn"; op.textContent = "↗ Full size"
-  op.addEventListener("click", e => { e.stopPropagation(); window.open(url, "_blank", "noopener") })
+  // #530: open a FLATTENED composite (screenshot + markup) rather than the clean raw URL; fall back to
+  // the raw URL if compositing fails (e.g. a cross-origin taint blocks canvas export).
+  op.addEventListener("click", async e => {
+    e.stopPropagation()
+    const full = img.getAttribute("data-full") || url
+    let opened = false
+    try {
+      const data = await exportAnnotatedShot(full, ann)
+      if (data) {
+        const blob = await (await fetch(data)).blob()
+        const burl = URL.createObjectURL(blob)
+        window.open(burl, "_blank", "noopener")
+        setTimeout(() => URL.revokeObjectURL(burl), 60000)
+        opened = true
+      }
+    } catch (_) {}
+    if (!opened) window.open(full, "_blank", "noopener")
+  })
   bar.appendChild(tg); bar.appendChild(op)
   box.classList.add("tkt-shotwrap")
   box.innerHTML = ""; box.appendChild(inner); box.appendChild(bar)
   box.addEventListener("click", e => { if (e.target.closest(".tkt-ann-btn")) return; box.classList.toggle("zoomed") })
+}
+// #530: draw the screenshot + annotation shapes onto a canvas and return a PNG data URL, so "Full
+// size"/export carries the markup. Loads the base image cross-origin; returns null on ANY failure
+// (blocked CORS, tainted canvas, decode error) so callers fall back to opening the raw URL. The
+// stored annotations_json is untouched, so re-editing the markup still works.
+async function exportAnnotatedShot(url, ann) {
+  try {
+    const { svg, W, H } = buildAnnotationSvg(ann)
+    const base = await new Promise((res, rej) => {
+      const i = new Image(); i.crossOrigin = "anonymous"
+      i.onload = () => res(i); i.onerror = rej; i.src = url
+    })
+    const cw = base.naturalWidth || W, ch = base.naturalHeight || H
+    const canvas = document.createElement("canvas"); canvas.width = cw; canvas.height = ch
+    const ctx = canvas.getContext("2d")
+    ctx.drawImage(base, 0, 0, cw, ch)
+    const s = svg.cloneNode(true)
+    s.setAttribute("xmlns", "http://www.w3.org/2000/svg")
+    s.setAttribute("width", String(cw)); s.setAttribute("height", String(ch))
+    const svgUrl = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(new XMLSerializer().serializeToString(s))
+    const overlay = await new Promise((res, rej) => {
+      const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = svgUrl
+    })
+    ctx.drawImage(overlay, 0, 0, cw, ch)
+    return canvas.toDataURL("image/png")
+  } catch (_) { return null }
 }
 // KLAVITYKLA-228: render the CSS selector the reporter pinned via the on-page element picker as a small
 // chip under the screenshot, so triage can link the finding to the exact DOM node. The selector is
@@ -10597,7 +10719,7 @@ load()
     <div style="display:flex;gap:10px;margin-bottom:12px">
       <label style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--paper-dim);flex:1">
         Priority
-        <select id="newTktPriInp" style="background:var(--ink);border:1px solid var(--line);border-radius:9px;color:var(--paper);font-family:var(--body);font-size:14px;padding:9px 12px;outline:none">
+        <select id="newTktPriInp" style="width:100%;box-sizing:border-box;appearance:none;-webkit-appearance:none;background:var(--ink) url(&quot;data:image/svg+xml;utf8,&lt;svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'&gt;&lt;path d='M2 4l4 4 4-4' fill='none' stroke='%23888' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/&gt;&lt;/svg&gt;&quot;) no-repeat right 12px center;border:1px solid var(--line);border-radius:9px;color:var(--paper);font-family:var(--body);font-size:14px;padding:9px 30px 9px 12px;outline:none">
           <option value="urgent">Urgent</option>
           <option value="high">High</option>
           <option value="medium" selected>Medium</option>
