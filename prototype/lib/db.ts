@@ -950,6 +950,11 @@ export async function applySchema(c: Client) {
   // below are intentionally NOT batched (they depend on per-DB column introspection).
   await c.batch(stmts, "write")
 
+  // Short-links + campaign tracker (Phase 1). Kept as its own migrate* so it can evolve
+  // independently; called from THE schema-init path (here) so every boot AND every test that
+  // calls applySchema() gets the tables — not just initDb (which also runs applySchema).
+  await migrateShortLinks(c)
+
   // ── Load all table column sets in one parallel batch ──────────────────────────────────────────
   // An established DB has most/all columns already. By reading PRAGMA table_info for all tables
   // in parallel upfront, we replace ~50 serial ALTER-then-catch round-trips to remote Turso with
@@ -6887,4 +6892,233 @@ export async function recentOutboundEmails(
     error: r.error == null ? null : String(r.error),
     createdAt: Number(r.created_at),
   }))
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// Short-links + campaign UTM tracker (Phase 1). Superadmin-owned URL shortener at /s/:code.
+// Phase 2 (referral loop) reuses this schema via kind='referral' + owner_account_id — DO NOT build now.
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+
+// Idempotent CREATE of both tables + indexes. Mirrors the other migrate* helpers.
+export async function migrateShortLinks(c: Client) {
+  await c.batch([
+    `CREATE TABLE IF NOT EXISTS short_links (
+       id TEXT PRIMARY KEY,
+       code TEXT UNIQUE NOT NULL,
+       slug TEXT UNIQUE,
+       destination_url TEXT NOT NULL,
+       utm_source TEXT, utm_medium TEXT, utm_campaign TEXT, utm_term TEXT, utm_content TEXT,
+       label TEXT,
+       kind TEXT NOT NULL DEFAULT 'campaign',        -- 'campaign' | 'affiliate' | 'referral'
+       created_by TEXT,
+       owner_account_id TEXT,                         -- Phase-2 referral hook (nullable now)
+       active INTEGER NOT NULL DEFAULT 1,
+       created_at TEXT NOT NULL,
+       click_count INTEGER NOT NULL DEFAULT 0         -- denormalized cache
+     )`,
+    `CREATE TABLE IF NOT EXISTS link_clicks (
+       id TEXT PRIMARY KEY,
+       link_id TEXT NOT NULL,
+       code TEXT NOT NULL,
+       ts TEXT NOT NULL,
+       ip_hash TEXT, ua TEXT, referer TEXT, country TEXT,
+       is_bot INTEGER NOT NULL DEFAULT 0
+     )`,
+    `CREATE INDEX IF NOT EXISTS short_links_code_idx ON short_links (code)`,
+    `CREATE INDEX IF NOT EXISTS short_links_slug_idx ON short_links (slug)`,
+    `CREATE INDEX IF NOT EXISTS link_clicks_link_idx ON link_clicks (link_id)`,
+    `CREATE INDEX IF NOT EXISTS link_clicks_ts_idx ON link_clicks (ts)`,
+  ], "write")
+}
+
+export type ShortLinkKind = "campaign" | "affiliate" | "referral"
+
+export interface ShortLinkUtm {
+  source?: string | null
+  medium?: string | null
+  campaign?: string | null
+  term?: string | null
+  content?: string | null
+}
+
+export interface ShortLinkRow {
+  id: string
+  code: string
+  slug: string | null
+  destinationUrl: string
+  utm: ShortLinkUtm
+  label: string | null
+  kind: ShortLinkKind
+  createdBy: string | null
+  ownerAccountId: string | null
+  active: boolean
+  createdAt: string
+  clickCount: number
+}
+
+function mapShortLink(r: any): ShortLinkRow {
+  return {
+    id: String(r.id),
+    code: String(r.code),
+    slug: r.slug == null ? null : String(r.slug),
+    destinationUrl: String(r.destination_url),
+    utm: {
+      source: r.utm_source == null ? null : String(r.utm_source),
+      medium: r.utm_medium == null ? null : String(r.utm_medium),
+      campaign: r.utm_campaign == null ? null : String(r.utm_campaign),
+      term: r.utm_term == null ? null : String(r.utm_term),
+      content: r.utm_content == null ? null : String(r.utm_content),
+    },
+    label: r.label == null ? null : String(r.label),
+    kind: String(r.kind || "campaign") as ShortLinkKind,
+    createdBy: r.created_by == null ? null : String(r.created_by),
+    ownerAccountId: r.owner_account_id == null ? null : String(r.owner_account_id),
+    active: Number(r.active) === 1,
+    createdAt: String(r.created_at),
+    clickCount: Number(r.click_count) || 0,
+  }
+}
+
+function nullIfEmpty(v: string | null | undefined): string | null {
+  if (v === undefined || v === null) return null
+  const s = String(v)
+  return s.length ? s : null
+}
+
+export interface CreateShortLinkInput {
+  code: string
+  slug?: string | null
+  destinationUrl: string
+  utm: ShortLinkUtm
+  label?: string | null
+  kind?: ShortLinkKind
+  createdBy?: string | null
+  ownerAccountId?: string | null
+}
+
+export async function createShortLink(input: CreateShortLinkInput): Promise<{ id: string; code: string }> {
+  const id = "lnk_" + crypto.randomUUID()
+  const createdAt = new Date().toISOString()
+  await db!.execute({
+    sql: `INSERT INTO short_links
+            (id, code, slug, destination_url, utm_source, utm_medium, utm_campaign, utm_term, utm_content,
+             label, kind, created_by, owner_account_id, active, created_at, click_count)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)`,
+    args: [
+      id, input.code, nullIfEmpty(input.slug), input.destinationUrl,
+      nullIfEmpty(input.utm.source), nullIfEmpty(input.utm.medium), nullIfEmpty(input.utm.campaign),
+      nullIfEmpty(input.utm.term), nullIfEmpty(input.utm.content),
+      nullIfEmpty(input.label), input.kind || "campaign",
+      nullIfEmpty(input.createdBy), nullIfEmpty(input.ownerAccountId),
+      1, createdAt,
+    ],
+  })
+  return { id, code: input.code }
+}
+
+// Match by code OR slug. The public redirector passes active-only (default); admin passes includeInactive.
+export async function getShortLinkByCodeOrSlug(
+  codeOrSlug: string,
+  opts: { includeInactive?: boolean } = {},
+): Promise<ShortLinkRow | null> {
+  const activeClause = opts.includeInactive ? "" : " AND active=1"
+  const r = await db!.execute({
+    sql: `SELECT * FROM short_links WHERE (code=? OR slug=?)${activeClause} LIMIT 1`,
+    args: [codeOrSlug, codeOrSlug],
+  })
+  return r.rows.length ? mapShortLink(r.rows[0]) : null
+}
+
+export async function getShortLinkDetail(id: string): Promise<ShortLinkRow | null> {
+  const r = await db!.execute({ sql: "SELECT * FROM short_links WHERE id=? LIMIT 1", args: [id] })
+  return r.rows.length ? mapShortLink(r.rows[0]) : null
+}
+
+export async function listShortLinks(): Promise<ShortLinkRow[]> {
+  const r = await db!.execute("SELECT * FROM short_links ORDER BY created_at DESC")
+  return r.rows.map(mapShortLink)
+}
+
+export interface UpdateShortLinkPatch {
+  destinationUrl?: string
+  utm?: ShortLinkUtm
+  label?: string | null
+  active?: boolean
+}
+
+// Edits destination / utm / label / active. code + slug are IMMUTABLE (never in the SET list).
+export async function updateShortLink(id: string, patch: UpdateShortLinkPatch): Promise<void> {
+  const sets: string[] = []
+  const args: any[] = []
+  if (patch.destinationUrl !== undefined) { sets.push("destination_url=?"); args.push(patch.destinationUrl) }
+  if (patch.utm !== undefined) {
+    sets.push("utm_source=?", "utm_medium=?", "utm_campaign=?", "utm_term=?", "utm_content=?")
+    args.push(
+      nullIfEmpty(patch.utm.source), nullIfEmpty(patch.utm.medium), nullIfEmpty(patch.utm.campaign),
+      nullIfEmpty(patch.utm.term), nullIfEmpty(patch.utm.content),
+    )
+  }
+  if (patch.label !== undefined) { sets.push("label=?"); args.push(nullIfEmpty(patch.label)) }
+  if (patch.active !== undefined) { sets.push("active=?"); args.push(patch.active ? 1 : 0) }
+  if (!sets.length) return
+  args.push(id)
+  await db!.execute({ sql: `UPDATE short_links SET ${sets.join(", ")} WHERE id=?`, args })
+}
+
+export interface RecordLinkClickInput {
+  linkId: string
+  code: string
+  ipHash?: string | null
+  ua?: string | null
+  referer?: string | null
+  country?: string | null
+  isBot: boolean
+}
+
+// Insert a click AND bump the denormalized click_count in ONE batched write.
+export async function recordLinkClick(click: RecordLinkClickInput): Promise<void> {
+  const id = "clk_" + crypto.randomUUID()
+  const ts = new Date().toISOString()
+  await db!.batch([
+    {
+      sql: `INSERT INTO link_clicks (id, link_id, code, ts, ip_hash, ua, referer, country, is_bot)
+            VALUES (?,?,?,?,?,?,?,?,?)`,
+      args: [id, click.linkId, click.code, ts, nullIfEmpty(click.ipHash), nullIfEmpty(click.ua),
+             nullIfEmpty(click.referer), nullIfEmpty(click.country), click.isBot ? 1 : 0],
+    },
+    { sql: "UPDATE short_links SET click_count = click_count + 1 WHERE id=?", args: [click.linkId] },
+  ], "write")
+}
+
+export interface LinkClickStats {
+  total: number
+  bots: number
+  humans: number
+  byDay: Array<{ day: string; count: number }>
+  topReferers: Array<{ referer: string; count: number }>
+}
+
+export async function linkClickStats(linkId: string): Promise<LinkClickStats> {
+  const totals = await db!.execute({
+    sql: `SELECT COUNT(*) AS total, SUM(is_bot) AS bots FROM link_clicks WHERE link_id=?`,
+    args: [linkId],
+  })
+  const total = Number((totals.rows[0] as any)?.total) || 0
+  const bots = Number((totals.rows[0] as any)?.bots) || 0
+  const byDayR = await db!.execute({
+    sql: `SELECT substr(ts,1,10) AS day, COUNT(*) AS count FROM link_clicks WHERE link_id=? GROUP BY day ORDER BY day`,
+    args: [linkId],
+  })
+  const topR = await db!.execute({
+    sql: `SELECT referer, COUNT(*) AS count FROM link_clicks
+          WHERE link_id=? AND referer IS NOT NULL GROUP BY referer ORDER BY count DESC LIMIT 10`,
+    args: [linkId],
+  })
+  return {
+    total,
+    bots,
+    humans: total - bots,
+    byDay: byDayR.rows.map((r: any) => ({ day: String(r.day), count: Number(r.count) || 0 })),
+    topReferers: topR.rows.map((r: any) => ({ referer: String(r.referer), count: Number(r.count) || 0 })),
+  }
 }
