@@ -57,6 +57,12 @@
     .toggle input:checked + .toggle-track{background:var(--indigo);}
     .toggle-track::after{content:'';position:absolute;width:14px;height:14px;border-radius:50%;background:#fff;top:3px;left:3px;transition:left .2s;}
     .toggle input:checked + .toggle-track::after{left:19px;}
+    .qa-card{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--ink-2);transition:border-color .16s,box-shadow .16s;}
+    .qa-card.on{border-color:var(--indigo);box-shadow:0 0 0 3px rgba(99,102,241,.12);}
+    .qa-ic{width:28px;height:28px;flex-shrink:0;border-radius:8px;display:grid;place-items:center;background:rgba(99,102,241,.12);color:var(--indigo);}
+    .qa-txt{flex:1;min-width:0;}
+    .qa-title{font-size:12.5px;font-weight:700;color:var(--paper);}
+    .qa-sub{font-size:11px;color:var(--paper-faint);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
     .empty-state{padding:10px 0;text-align:center;color:var(--paper-faint);font-size:12px;}
     .empty-link{color:var(--indigo-deep);text-decoration:none;font-size:12px;margin-top:2px;display:block;}
     .empty-link:hover{color:var(--indigo);}
@@ -162,6 +168,21 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       Analyse with Sims
     </button>
     <div id="analyze-msg" style="display:none;margin-top:7px;font-size:12px;line-height:1.4;color:var(--paper-faint);"></div>
+  </div>
+
+  <!-- QA mode (team-gated): see & close bugs reported on the current page, in place. -->
+  <div id="qa-wrap" style="display:none;padding:0 16px 12px;">
+    <div class="qa-card" id="qa-card">
+      <div class="qa-ic">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      </div>
+      <div class="qa-txt">
+        <div class="qa-title">QA mode</div>
+        <div class="qa-sub" id="qa-sub">See &amp; close bugs on this page</div>
+      </div>
+      <label class="toggle"><input type="checkbox" id="qa-toggle"><div class="toggle-track"></div></label>
+    </div>
+    <div id="qa-msg" style="display:none;margin-top:6px;font-size:11.5px;line-height:1.4;color:var(--paper-faint);"></div>
   </div>
 
   <div id="grant-wrap" style="display:none;padding:0 16px 12px;"></div>
