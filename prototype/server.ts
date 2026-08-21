@@ -7521,7 +7521,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             }
             return {
               id: f.id, simName: p?.name ?? null,
-              title: f.observation, priority: f.priority,
+              // PX4 #411: surface the reporter's explicit composer Title when present + non-empty;
+              // otherwise fall back to the historical observation-derived title (back-compat).
+              title: (f.title && f.title.trim()) ? f.title : f.observation, priority: f.priority,
               urlPath: f.urlPath, urlHost: f.urlHost, sourceReferrer: f.sourceReferrer,
               planeIssueKey: f.planeIssueKey,
               planeIssueUrl: f.planeIssueUrl, createdAt: f.createdAt,
@@ -8292,7 +8294,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const report = {
             id: fbRow.id,
             projectId: fbRow.projectId,
-            title: fbRow.observation,
+            // PX4 #411: surface the reporter's explicit composer Title when present + non-empty;
+            // otherwise fall back to the historical observation-derived title (back-compat).
+            title: (fbRow.title && String(fbRow.title).trim()) ? String(fbRow.title) : fbRow.observation,
             observation: fbRow.observation,
             sentiment: fbRow.sentiment,
             priority: fbRow.priority,

@@ -3143,6 +3143,7 @@ export async function ticketActivityTimeline(projectId: string, feedbackId: stri
 export type FeedbackRow = {
   id: string; projectId: string; simId: string | null; actorEmail: string | null
   urlHost: string | null; urlPath: string | null; sourceReferrer: string | null; observation: string | null
+  title: string | null
   sentiment: string | null; priority: string | null; screenshotId: string | null
   suggestedBug: any | null; sourceQuote: string | null; citedTraitIds: any | null; sourceDate: number | null
   planeIssueKey: string | null; planeIssueUrl: string | null; annotations: any | null
@@ -3159,6 +3160,9 @@ function rowToFeedback(x: any): FeedbackRow {
     urlPath: x.url_path != null ? String(x.url_path) : null,
     sourceReferrer: x.source_referrer != null ? String(x.source_referrer) : null,
     observation: x.observation != null ? String(x.observation) : null,
+    // PX4 #411: explicit composer Title (null on older/manual rows / when no Title was typed). Read
+    // paths prefer it over the observation-derived auto-title so the reporter's Title is visible.
+    title: x.title != null ? String(x.title) : null,
     sentiment: x.sentiment != null ? String(x.sentiment) : null,
     priority: (x.priority ?? x.severity) != null ? String(x.priority ?? x.severity) : null,
     screenshotId: x.screenshot_id != null ? String(x.screenshot_id) : null,
@@ -5322,7 +5326,13 @@ export async function listTriageFeedback(projectId: string): Promise<any[]> {
     try { bug = x.suggested_bug_json ? JSON.parse(x.suggested_bug_json) : null } catch { bug = null }
     return {
       id: String(x.id),
-      title: String(bug?.title || x.observation || "Untitled report"),
+      // PX4 #411: the reporter's explicit composer Title wins when present + non-empty; otherwise fall
+      // back to the historical auto-title (suggested-bug title -> observation -> "Untitled report").
+      title: String(
+        (x.title != null && String(x.title).trim())
+          ? x.title
+          : (bug?.title || x.observation || "Untitled report"),
+      ),
       observation: x.observation != null ? String(x.observation) : null,
       sentiment: x.sentiment != null ? String(x.sentiment) : null,
       // KLA-168: use priority (renamed from severity); fall back to severity for legacy rows
@@ -5595,7 +5605,13 @@ export async function listTicketsPaginated(
     try { bug = x.suggested_bug_json ? JSON.parse(String(x.suggested_bug_json)) : null } catch { bug = null }
     return {
       id: String(x.id),
-      title: String(bug?.title || x.observation || "Untitled report"),
+      // PX4 #411: the reporter's explicit composer Title wins when present + non-empty; otherwise fall
+      // back to the historical auto-title (suggested-bug title -> observation -> "Untitled report").
+      title: String(
+        (x.title != null && String(x.title).trim())
+          ? x.title
+          : (bug?.title || x.observation || "Untitled report"),
+      ),
       observation: x.observation != null ? String(x.observation) : null,
       sentiment: x.sentiment != null ? String(x.sentiment) : null,
       priority: (x.priority ?? x.severity) != null ? String(x.priority ?? x.severity) : null,
