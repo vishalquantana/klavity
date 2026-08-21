@@ -21,6 +21,20 @@ import {
   type QaBug,
   type QaCounts,
 } from './qa-mode'
+import {
+  chromeLocalStorage,
+  getActiveSession as evGetActive,
+  startOrContinue as evStartOrContinue,
+  addShot as evAddShot,
+  removeShot as evRemoveShot,
+  clear as evClear,
+  makeShot as evMakeShot,
+  buildPagesTrail as evBuildPagesTrail,
+  evCountText as evCountLabel,
+  MAX_SHOTS as EV_MAX_SHOTS,
+  type ExtEvidenceSession,
+  type EvidenceStorage,
+} from './evidence-store'
 
 // ── Error + network capture ring buffer (shared @klavity/core/capture, full fidelity G3) ──
 const _buffers: CaptureBuffers = { consoleErrors: [], networkFailures: [] }
@@ -177,17 +191,37 @@ async function fetchModalConfig(): Promise<{ config: ReturnType<typeof resolveMo
   return { config: resolveModalConfig({}), composer: EMPTY_COMPOSER_OPTS }
 }
 
+// Entry point for the context menu / OPEN_MODAL / region-drag. Bug reports open in "evidence-session mode"
+// (#442): the report survives cross-origin navigation via chrome.storage, so the user can minimize to the
+// dock, navigate anywhere, "+ Capture here" on each page, then Resume and file ONE report with the trail.
+// Feature requests stay single-page (parity with the widget). If chrome.storage is unavailable the bug
+// path transparently falls back to a plain single-page composer, so nothing ever breaks.
 async function openModal(type: ReportType, initialShot?: { dataUrl: string; quality?: CaptureQuality }) {
   if (modalCtrl) return // guard against double-open
   if (!isContextValid()) {
     showToast('Extension reloaded. Please refresh the page.')
     return
   }
+  if (type === 'bug') { await startBugReport(initialShot); return }
+  await openComposer(type, { initialShot })
+}
+
+// Open the shared composer. In session mode (`session` set) it wires the minimize/dock + evidence hooks and
+// seeds any already-captured shots; otherwise it's the classic single-page composer.
+async function openComposer(
+  type: ReportType,
+  opts: { initialShot?: { dataUrl: string; quality?: CaptureQuality }; session?: ExtEvidenceSession } = {},
+) {
+  if (modalCtrl) return
   const { config, composer } = await fetchModalConfig()
+  const session = opts.session ?? null
+  const seedShots = session ? session.shots.slice() : []
+  const hasSeed = seedShots.length > 0
   modalCtrl = buildModal(type, {
     // Right-click-drag region: the cropped selection is the default first image, so skip the full-page
-    // auto-capture and let the zoomed-in region lead. Otherwise auto-grab the full page on open.
-    autoCaptureOnOpen: !initialShot,
+    // auto-capture and let the zoomed-in region lead. In session mode with already-captured shots, also
+    // skip auto-capture (we seed those below). Otherwise auto-grab the full page on open.
+    autoCaptureOnOpen: !opts.initialShot && !hasSeed,
     onCaptureFull,
     onRegionCapture,
     // JTBD 1.9: the extension's captures are already real-pixel, but wire onRetakeSharp for parity so a
@@ -201,9 +235,41 @@ async function openModal(type: ReportType, initialShot?: { dataUrl: string; qual
     showTitleField: composer.showTitleField,
     allowFileAttachments: composer.allowFileAttachments,
     issueTypes: composer.issueTypes,
-    onSubmit: (p) => submitViaSW(p),
+    // #442: for an evidence session, append a "Pages captured" trail (read the LATEST session so shots
+    // added across pages/origins are included) and clear the session on a successful file.
+    onSubmit: (p) => submitViaSW(p, session),
+    // #442: minimize (─) hands off to the dock — the session is already persisted incrementally, so we
+    // just close the composer and show the dock pill. Only wired in session mode.
+    onMinimize: session ? () => minimizeToDock() : undefined,
+    // #442: persist a shot captured INSIDE the composer (Full Page / Screen / Region / Upload / paste /
+    // auto-capture), tagged with the CURRENT page. Serialized to avoid lost updates.
+    onShotAdded: session ? (dataUrl: string) => { void queueEvWrite(() => persistEvShot(dataUrl)) } : undefined,
+    // #442: keep the session in sync when the reporter removes a thumbnail (index-aligned with the strip).
+    onShotRemoved: session ? (index: number) => removeEvShotAt(index) : undefined,
+    // Reset the single-slot controller ref whenever the composer closes (so it can reopen), and for a
+    // session: a plain X/Esc close (NOT a submit or a minimize) keeps any captured evidence — show the
+    // dock so it isn't lost — but reaps an EMPTY session so an unused open never lingers.
+    onClose: (reason?: 'submitted') => {
+      modalCtrl = null
+      if (!session) return
+      if (reason === 'submitted') { evMinimizing = false; return }
+      if (evMinimizing) { evMinimizing = false; return } // minimizeToDock already showed the dock
+      void queueEvWrite(async () => {
+        const latest = await evGetActive(evStorage)
+        if (latest && latest.shots.length > 0) { evSession = latest; showEvDock() }
+        else { if (latest) await evClear(evStorage); evSession = null; hideEvDock() }
+      })
+    },
   }, config)
-  if (initialShot) modalCtrl.addScreenshot(initialShot.dataUrl, initialShot.quality)
+  // Seed the already-persisted session shots first (in order, each tagged with its page), then the
+  // region-initial shot as a NEW capture (seed visually AND persist it to the session).
+  for (const shot of seedShots) {
+    modalCtrl.addScreenshot(shot.dataUrl, 'real-pixel', { pageUrl: shot.pageUrl, pagePath: shot.pagePath, label: shot.label })
+  }
+  if (opts.initialShot) {
+    modalCtrl.addScreenshot(opts.initialShot.dataUrl, opts.initialShot.quality, session ? { pageUrl: location.href, pagePath: location.pathname } : undefined)
+    if (session) void queueEvWrite(() => persistEvShot(opts.initialShot!.dataUrl))
+  }
 }
 
 function closeModal() {
@@ -211,13 +277,184 @@ function closeModal() {
   modalCtrl = null
 }
 
+// ── #442 multi-page evidence session + dock ──────────────────────────────────────────────────────────
+// A bug report that survives cross-origin navigation: shots persist in chrome.storage.local (extension-
+// scoped → shared across every origin), so the widget's IndexedDB-per-origin limitation doesn't apply.
+// The content script shows a minimized DOCK when a session is active so the user keeps capturing across
+// pages, then files ONE report (with a "Pages captured" trail) from the whole session on submit.
+const evStorage: EvidenceStorage = chromeLocalStorage()
+let evSession: ExtEvidenceSession | null = null
+let evMinimizing = false // set while we deliberately close the composer to minimize (vs a plain X-close)
+// Serialize session writes so concurrent adds/removes can't lose an update (read-modify-write races).
+let evWriteChain: Promise<unknown> = Promise.resolve()
+function queueEvWrite<T>(fn: () => Promise<T>): Promise<T> {
+  const run = evWriteChain.then(fn, fn)
+  evWriteChain = run.catch(() => undefined)
+  return run
+}
+function evPage(): { href: string; pathname: string; origin: string } {
+  return { href: location.href, pathname: location.pathname, origin: location.origin }
+}
+// Persist one composer/dock-captured shot (data URL) to the active session, tagged with the CURRENT page.
+async function persistEvShot(dataUrl: string): Promise<void> {
+  try {
+    const shot = evMakeShot(dataUrl, evPage())
+    const res = await evAddShot(evStorage, shot)
+    evSession = res.session
+    if (!res.ok) {
+      showToast(res.reason === 'max-bytes'
+        ? 'Max evidence size reached — submit or remove a shot to add more.'
+        : `Max evidence reached (${EV_MAX_SHOTS} shots) — submit or remove a shot to add more.`)
+    }
+    updateEvDock()
+  } catch { /* best-effort: a failed persist must never break capture */ }
+}
+// Remove the session shot at a composer strip index (indices stay aligned with seed + append order).
+function removeEvShotAt(index: number): void {
+  void queueEvWrite(async () => {
+    const latest = await evGetActive(evStorage)
+    if (!latest) return
+    const target = latest.shots[index]
+    if (!target) return
+    evSession = await evRemoveShot(evStorage, target.id)
+    updateEvDock()
+  })
+}
+// Start (or continue) an evidence session, then open the composer in session mode. Falls back to a plain
+// single-page report if chrome.storage is unavailable, so nothing breaks where storage is blocked.
+async function startBugReport(initialShot?: { dataUrl: string; quality?: CaptureQuality }) {
+  let session: ExtEvidenceSession | null = null
+  try {
+    const pid = klavMatchProject(location.href)?.id ?? klavConfig?.projects?.[0]?.id ?? ''
+    session = await evStartOrContinue(evStorage, pid)
+  } catch { session = null }
+  if (session) evSession = session
+  await openComposer('bug', session ? { initialShot, session } : { initialShot })
+}
+
+// ── The minimized dock pill (lives in its own shadow host so it never disturbs the page/QA/widget) ──
+let evDockRoot: ShadowRoot | null = null
+let evDockEl: HTMLElement | null = null
+let evDockCount: HTMLElement | null = null
+function evDockHost(): ShadowRoot {
+  if (!evDockRoot) {
+    const host = document.createElement('div')
+    host.id = 'klavity-evdock-host'
+    host.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:2147483646;'
+    document.body.appendChild(host)
+    evDockRoot = host.attachShadow({ mode: 'open' })
+    const style = document.createElement('style')
+    style.textContent =
+      '@keyframes kev-pop{from{transform:scale(.9);opacity:0}to{transform:none;opacity:1}}' +
+      '@keyframes kev-pulse{0%{box-shadow:0 0 0 0 rgba(15,157,107,.5)}70%{box-shadow:0 0 0 8px rgba(15,157,107,0)}100%{box-shadow:0 0 0 0 rgba(15,157,107,0)}}' +
+      '.kev{display:flex;align-items:center;gap:12px;background:#19140f;color:#f5f3ee;border-radius:999px;padding:9px 10px 9px 16px;box-shadow:0 24px 60px -12px rgba(25,20,15,.35);font-family:system-ui,-apple-system,sans-serif;animation:kev-pop .2s ease}' +
+      '.kev-dot{width:9px;height:9px;border-radius:50%;background:#0f9d6b;animation:kev-pulse 1.6s infinite;flex:none}' +
+      '.kev-lab{font-size:13px;line-height:1.25}.kev-lab b{font-weight:600}.kev-lab small{display:block;font:10px ui-monospace,monospace;color:#b3a896}' +
+      '.kev-btn{border:none;border-radius:999px;padding:7px 13px;font:600 12.5px system-ui,sans-serif;cursor:pointer;transition:transform .14s ease,filter .14s ease,background .14s ease}' +
+      '.kev-btn:hover{transform:translateY(-1px)}.kev-btn:active{transform:scale(.97)}' +
+      '.kev-btn.cap{background:rgba(255,255,255,.12);color:#fff}.kev-btn.cap:hover{background:rgba(255,255,255,.2)}' +
+      '.kev-btn.res{background:#6366f1;color:#fff}.kev-btn.res:hover{filter:brightness(1.1)}' +
+      '.kev-x{border:none;background:transparent;color:#b3a896;cursor:pointer;font-size:16px;line-height:1;padding:4px 6px;border-radius:8px}.kev-x:hover{color:#fff;background:rgba(255,255,255,.12)}' +
+      '@media (prefers-reduced-motion:reduce){.kev,.kev-dot{animation:none}.kev-btn{transition:none}}'
+    evDockRoot.appendChild(style)
+  }
+  return evDockRoot
+}
+function updateEvDock(): void {
+  if (evDockCount) evDockCount.textContent = evCountLabel(evSession)
+}
+function showEvDock(): void {
+  if (!evSession || evSession.shots.length === 0) return
+  const root = evDockHost()
+  if (!evDockEl) {
+    const d = document.createElement('div'); d.className = 'kev'
+    const dot = document.createElement('span'); dot.className = 'kev-dot'
+    const lab = document.createElement('div'); lab.className = 'kev-lab'
+    const t = document.createElement('b'); t.textContent = 'Bug report in progress'
+    const sub = document.createElement('small'); sub.textContent = evCountLabel(evSession); evDockCount = sub
+    lab.append(t, sub)
+    const cap = document.createElement('button'); cap.className = 'kev-btn cap'; cap.type = 'button'; cap.textContent = '+ Capture here'
+    cap.addEventListener('click', () => void captureHereFromDock(cap))
+    const res = document.createElement('button'); res.className = 'kev-btn res'; res.type = 'button'; res.textContent = 'Resume'
+    res.addEventListener('click', () => void resumeEvidence())
+    const x = document.createElement('button'); x.className = 'kev-x'; x.type = 'button'; x.title = 'Discard this report'; x.setAttribute('aria-label', 'Discard'); x.textContent = '×'
+    x.addEventListener('click', () => void discardEvidence())
+    d.append(dot, lab, cap, res, x)
+    evDockEl = d
+    root.appendChild(d)
+  }
+  evDockEl.style.display = 'flex'
+  updateEvDock()
+}
+function hideEvDock(): void {
+  if (evDockEl) evDockEl.style.display = 'none'
+}
+async function captureHereFromDock(btn: HTMLButtonElement): Promise<void> {
+  if (!evSession) return
+  const prev = btn.textContent
+  btn.disabled = true
+  try {
+    const { dataUrl } = await onCaptureFull()
+    await queueEvWrite(() => persistEvShot(dataUrl))
+    btn.textContent = 'Captured'
+    setTimeout(() => { btn.textContent = prev; btn.disabled = false }, 900)
+  } catch {
+    btn.textContent = prev; btn.disabled = false
+    showToast('Could not capture this page — please try again.')
+  }
+}
+async function resumeEvidence(): Promise<void> {
+  // Refresh from storage (shots may have been added on other pages) then open the composer seeded.
+  try { evSession = await evGetActive(evStorage) } catch { /* keep in-memory copy */ }
+  if (!evSession) { hideEvDock(); return }
+  hideEvDock()
+  await openComposer('bug', { session: evSession })
+}
+async function discardEvidence(): Promise<void> {
+  const s = evSession
+  evSession = null
+  hideEvDock()
+  if (s) { try { await evClear(evStorage) } catch { /* best-effort */ } }
+}
+// Minimize the open composer to the dock WITHOUT losing evidence (called from the composer's onMinimize).
+function minimizeToDock(): void {
+  evMinimizing = true
+  void queueEvWrite(async () => {
+    try { evSession = await evGetActive(evStorage) } catch { /* keep copy */ }
+    if (evSession && evSession.shots.length > 0) showEvDock()
+  })
+  try { closeModal() } catch { /* the modal removes its own host */ }
+}
+// On content boot (including after a cross-origin navigation), resurface the dock for a still-fresh session
+// so the user's in-progress evidence is never lost.
+async function evResumeDockOnBoot(): Promise<void> {
+  try {
+    if (location.protocol !== 'http:' && location.protocol !== 'https:') return
+    if (widgetPresent()) return // the in-page widget owns reporting (and its own dock) — never double up
+    const s = await evGetActive(evStorage)
+    if (s && s.shots.length > 0) { evSession = s; showEvDock() }
+  } catch { /* best-effort */ }
+}
+
 // Promise bridge around the SUBMIT_REPORT → SUBMIT_SUCCESS/SUBMIT_ERROR round-trip.
 // buildModal awaits this and owns the success/error UI; we only resolve/reject.
 // Single-slot: at most one submit is in flight (one modal at a time).
 let pendingSubmit: { resolve: (r: { issueKey: string; issueUrl: string }) => void; reject: (e: Error) => void } | null = null
 
-function submitViaSW(p: { type: ReportType; kind?: IssueKind; title?: string; description: string; screenshots: string[]; files?: ReportFileAttachment[] }): Promise<{ issueKey: string; issueUrl: string }> {
+async function submitViaSW(
+  p: { type: ReportType; kind?: IssueKind; title?: string; description: string; screenshots: string[]; files?: ReportFileAttachment[] },
+  session?: ExtEvidenceSession | null,
+): Promise<{ issueKey: string; issueUrl: string }> {
   const matchedProject = klavMatchProject(location.href)
+  // #442: for a multi-page evidence session, append a "Pages captured" trail listing the page each shot
+  // came from (read the LATEST session so shots added across pages/origins are included). The composer
+  // already supplies every image in p.screenshots (seeded + interactive), so only the trail text is added.
+  let description = p.description
+  if (session) {
+    const latest = await evGetActive(evStorage).catch(() => null)
+    const trail = evBuildPagesTrail((latest && latest.shots.length ? latest : session).shots)
+    if (trail) description = (description ? description + '\n\n' : '') + trail
+  }
   const payload: SubmitReportPayload = {
     type: p.type,
     // PX4 #411 (ext↔widget parity): the precise issue kind (bug/feature/task/query) the reporter chose,
@@ -227,7 +464,7 @@ function submitViaSW(p: { type: ReportType; kind?: IssueKind; title?: string; de
     // PX4 #411: explicit one-line Title (when the composer showed the Title field). The server prefers it
     // over the auto-title and connectors use it verbatim as the external issue summary.
     ...(p.title ? { title: p.title } : {}),
-    description: p.description,
+    description,
     context: buildContext(),
     screenshots: [...p.screenshots],
     // PX4 #425: non-image file attachments (PDF, .log, .har, ...) the reporter added. Screenshots keep
@@ -240,6 +477,10 @@ function submitViaSW(p: { type: ReportType; kind?: IssueKind; title?: string; de
     sendToBackground({ kind: 'SUBMIT_REPORT', payload }).catch((err) => {
       if (pendingSubmit) { pendingSubmit = null; reject(err instanceof Error ? err : new Error(String(err))) }
     })
+  }).then((result) => {
+    // #442: the report is filed — clear the evidence session + tear down the dock so it doesn't linger.
+    if (session) { evMinimizing = false; evSession = null; hideEvDock(); void evClear(evStorage) }
+    return result as { issueKey: string; issueUrl: string }
   })
 }
 
@@ -618,6 +859,7 @@ document.addEventListener('contextmenu', handleContextMenu)
 document.addEventListener('klavity:widget-ready', () => {
   closeCtxMenu()
   if (modalCtrl) closeModal()
+  hideEvDock() // widget owns reporting + its own evidence dock — hide ours so they don't stack
   klavIndicatorEl?.remove(); klavIndicatorEl = null
   klavClearBubbles()
 })
@@ -854,6 +1096,22 @@ function klavEsc(s: unknown): string {
   return String(s ?? '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+}
+// Validate a screenshot/image URL before it is dropped into a CSS url() context.
+// Only http(s) (or data:image) is allowed; the value is applied via element.style
+// (never inline HTML) and any CSS-breaking chars are escaped so a stray quote/paren
+// can't break out of url("..."). Returns '' when the URL is unusable.
+function klavSafeImageUrl(u: unknown): string {
+  const s = String(u ?? '').trim()
+  if (!s) return ''
+  try {
+    const parsed = new URL(s, location.href)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return ''
+  } catch {
+    if (!/^data:image\//i.test(s)) return ''
+  }
+  // Strip newlines/control chars, escape backslash and double-quote for the url("...") context.
+  return s.replace(/[\x00-\x1f\x7f]/g, "").replace(/\\/g, "\\\\").replace(/"/g, "\\\"")
 }
 // Accent is dropped straight into a style attribute; allow only safe color tokens
 // (#hex, rgb()/hsl(), or a CSS named color) and fall back otherwise — no attribute breakout.
@@ -1377,6 +1635,7 @@ let klavQaProjectId: string | null = null
 let klavQaHostRoot: ShadowRoot | null = null
 let klavQaOpenId: string | null = null           // id of the bug whose popover is open
 let klavQaLoading = false
+const klavQaClosing = new Set<string>()          // bug ids with an in-flight qa-close request
 
 function klavQaColor(bucket: 'open' | 'prog' | 'done'): string {
   return bucket === 'done' ? '#16a34a' : bucket === 'prog' ? '#d97706' : '#dc2626'
@@ -1676,9 +1935,10 @@ function klavQaOpenPopover(bug: QaBug): void {
   const pop = document.createElement('div')
   pop.className = 'kqa-pop'; pop.id = 'kqa-pop'
   const meta = [bug.ref, bug.reporterEmail ? 'reported by ' + bug.reporterEmail : 'reported by an end-user', qaTimeAgo(bug.createdAt)].filter(Boolean).join(' · ')
-  const thumb = bug.screenshotUrl
-    ? `<div class="kqa-thumb" style="background-image:url('${encodeURI(bug.screenshotUrl)}')"></div>`
-    : `<div class="kqa-thumb"></div>`
+  // Thumb URL is applied via element.style after mount (see below) so a URL
+  // containing a quote/paren can never break out of the CSS url("...") context.
+  const safeThumbUrl = klavSafeImageUrl(bug.screenshotUrl)
+  const thumb = `<div class="kqa-thumb" id="kqa-thumb"></div>`
   const closed = bucket === 'done'
   pop.innerHTML = `
     <div class="kqa-poph">
@@ -1696,6 +1956,10 @@ function klavQaOpenPopover(bug: QaBug): void {
       </div>
     </div>`
   root.appendChild(pop)
+  if (safeThumbUrl) {
+    const thumbEl = pop.querySelector<HTMLElement>('#kqa-thumb')
+    if (thumbEl) thumbEl.style.backgroundImage = `url("${safeThumbUrl}")`
+  }
   klavQaPositionPopover(pop, bug)
   requestAnimationFrame(() => pop.classList.add('in'))
   pop.querySelector('#kqa-close')?.addEventListener('click', () => void klavQaCloseBug(bug))
@@ -1736,6 +2000,12 @@ async function klavQaCloseBug(bug: QaBug): Promise<void> {
   const base = klavConfig?.backendUrl?.replace(/\/+$/, '')
   const token = klavConfig?.token
   if (!base || !token) return
+  // In-flight guard (#483): rapid clicks must not fire duplicate qa-close POSTs
+  // (which would duplicate the resolution note). Disable the button + record the id.
+  if (klavQaClosing.has(bug.id)) return
+  klavQaClosing.add(bug.id)
+  const closeBtn = klavQaHostRoot?.querySelector<HTMLButtonElement>('#kqa-close')
+  if (closeBtn) closeBtn.disabled = true
   const prevStatus = bug.status
   bug.status = 'done'
   klavQaCounts = qaDeriveCounts(klavQaBugs)
@@ -1755,11 +2025,16 @@ async function klavQaCloseBug(bug: QaBug): Promise<void> {
     })
     if (!r.ok) throw new Error('close-failed:' + r.status)
     // success — settle the UI after the celebratory card
+    klavQaClosing.delete(bug.id)
     setTimeout(() => { klavQaClosePopover(); klavQaRenderBar(); klavQaRenderPins(); klavQaRenderPanel() }, 1050)
   } catch {
+    // Failure (#482): revert the optimistic status AND rebuild the popover back to
+    // the open/review state — the done-card must not linger and mislead the user.
+    klavQaClosing.delete(bug.id)
     bug.status = prevStatus // revert optimistic change
     klavQaCounts = qaDeriveCounts(klavQaBugs)
     klavQaRender()
+    if (klavQaOpenId === bug.id) klavQaOpenPopover(bug) // re-open the open-state card (re-enables the button)
     showToast('Could not close this bug — please try again.')
   }
 }
@@ -1825,5 +2100,8 @@ async function klavBootstrap() {
     const r = await chrome.storage.local.get(QA_STORAGE_KEY)
     if (r[QA_STORAGE_KEY]) await klavQaActivate()
   } catch { /* ignore */ }
+  // #442: resurface the multi-page evidence dock if a still-fresh report is in progress. chrome.storage is
+  // extension-scoped so the session survives cross-origin navigation to this page.
+  void evResumeDockOnBoot()
 }
 void klavBootstrap()

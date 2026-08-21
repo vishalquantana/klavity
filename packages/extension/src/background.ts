@@ -9,6 +9,7 @@ import { submitReport as linearSubmit } from '@klavity/core/integrations/linear'
 import { submitReport as githubSubmit } from '@klavity/core/integrations/github'
 import { submitReport as planeSubmit } from '@klavity/core/integrations/plane'
 import { submitReport as backendSubmit, buildFeedbackFormData } from '@klavity/core/integrations/backend'
+import { EVIDENCE_KEY } from './evidence-store'
 
 // Safety net: messaging a tab/port that has no listener (e.g. a tab with no
 // content script) rejects with "Could not establish connection / Receiving end
@@ -467,7 +468,45 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
     void safeSend(tabId, { kind: 'KLAV_NUDGE_ROUTE' })
     void autoSelectProjectForUrl(changeInfo.url)
   }
+  // #442: multi-page evidence survives cross-origin navigation via chrome.storage (extension-scoped). But
+  // content.ts only auto-injects on localhost, so on a fresh cross-origin page it isn't present to resurface
+  // the dock. When the tab finishes loading AND an evidence session is in progress, inject the content
+  // script (only where we already hold host permission — never prompts) so its boot re-shows the dock.
+  if (changeInfo.status === 'complete') void maybeInjectForEvidence(tabId)
 })
+
+// If a multi-page evidence report is in progress, ensure the content script is present on the tab so its
+// boot (evResumeDockOnBoot) re-shows the dock. Permission-guarded + best-effort: on origins we don't hold
+// permission for, the session still persists and resumes when the user next opens the extension there.
+let _evActiveCache = false
+let _evActiveCacheAt = 0
+async function evidenceSessionActive(): Promise<boolean> {
+  const now = Date.now()
+  if (now - _evActiveCacheAt < 1500) return _evActiveCache
+  const r = await chrome.storage.local.get(EVIDENCE_KEY)
+  const s = r[EVIDENCE_KEY] as { shots?: unknown[]; updatedAt?: number } | undefined
+  _evActiveCache = !!(s && Array.isArray(s.shots) && s.shots.length > 0 && (now - (s.updatedAt || 0)) < 30 * 60 * 1000)
+  _evActiveCacheAt = now
+  return _evActiveCache
+}
+async function maybeInjectForEvidence(tabId: number): Promise<void> {
+  try {
+    if (!(await evidenceSessionActive())) return
+    const tab = await chrome.tabs.get(tabId).catch(() => null)
+    const url = tab?.url || ''
+    if (!/^https?:\/\//.test(url)) return
+    if (/chromewebstore\.google\.com|chrome\.google\.com\/webstore/.test(url)) return
+    let origin = ''
+    try { origin = new URL(url).origin + '/*' } catch { return }
+    const has = await chrome.permissions.contains({ origins: [origin] }).catch(() => false)
+    if (!has) return // never prompt from a passive navigation; resume happens on the next explicit action
+    // Already there? A no-op ping avoids a duplicate injection.
+    if (await safeSend(tabId, { kind: 'KLAV_NUDGE_ROUTE' })) return
+    const cs = chrome.runtime.getManifest().content_scripts?.[0]
+    if (cs?.css?.length) await chrome.scripting.insertCSS({ target: { tabId }, files: cs.css }).catch(() => {})
+    if (cs?.js?.length) await chrome.scripting.executeScript({ target: { tabId }, files: cs.js }).catch(() => {})
+  } catch { /* best-effort */ }
+}
 
 // Project-follows-URL: when the user switches to a tab, resolve which project
 // monitors that tab's URL and make it the active project.  Uses chrome.tabs.get
