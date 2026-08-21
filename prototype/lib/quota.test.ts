@@ -170,7 +170,9 @@ test("grandfathering does not leak to paid plans (their real cap always wins)", 
   setEnforcement(true)
   mockCountAccountAutosimFlows = async () => 1
   mockGetAccountUsageMap = async () => ({})
-  for (const [plan, cap] of [["pro", 150], ["founding", 600], ["team", 600], ["agency", 1500]] as const) {
+  // founding is excluded: KLA-527 made it unlimited (fair-use, autosimRunsMonthly=null), so it has
+  // no fixed numeric cap — its "unlimited" allowance is asserted in billing.test.ts instead.
+  for (const [plan, cap] of [["pro", 150], ["team", 600], ["agency", 1500]] as const) {
     mockAccountPlan = async () => plan
     const r = await checkQuota(ACCOUNT, "autosim_walk")
     expect(r.limit).toBe(cap)

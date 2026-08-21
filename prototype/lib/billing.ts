@@ -2,10 +2,11 @@ export type BillingPlan = "free" | "pro" | "team" | "agency" | "founding" | "sca
 export type BillingInterval = "month" | "year"
 
 // ── KLAVITYKLA-379: the upmarket ladder (founder decision 2026-07-20) ───────────────────────────
-// "founding" (Founding Team) is an annual-only supporter tier sold exclusively via a hosted Stripe
-// Payment Link (see STRIPE_PRICE_IDS below) — it has no "month" entry, hence Partial<...> here.
+// "founding" (Founding Ten) is the founder deal — repriced 2026-08-21 (KLA-527) to $299/mo MONTHLY,
+// locked for life (= 50% off the $599/mo Scale plan). It now HAS a "month" entry (the primary
+// self-serve price); the annual $490/yr key is retained solely so grandfathered founders resolve.
 //
-// Free $0 · Solo $49/mo · Team $249/mo · Scale $599/mo (PUBLISHED) · Founding Ten $490/yr.
+// Free $0 · Solo $49/mo · Team $249/mo · Scale $599/mo (PUBLISHED) · Founding Ten $299/mo (locked for life).
 // Annual = two months free (10× monthly) on every self-serve tier, unchanged.
 //
 // NOTE ON THE "SOLO" RENAME: "Pro" became the customer-facing name "Solo", but the internal PLAN
@@ -131,13 +132,16 @@ export const PLAN_QUOTAS: Record<BillingPlan, { projects: number | null; sims: n
   // Daily cadence removes ~95% of that exposure, keeps the offer genuinely generous, and leaves
   // hourly/on-deploy as a real upsell into paid Team. Revisit only when KLAVITYKLA-364 has
   // instrumented the true per-replay cost — not before, and not on vibes.
-  // 2026-08-17 pricing refresh: founding is now pitched as 50% off Scale ($299/mo vs $599/mo),
-  // not "84% off Team" — so it grants SCALE-level (unlimited) quota, mirroring the `scale:` entry
-  // below, rather than Team's fixed limits. Cadence is a concrete "on-deploy/hourly" (not scale's
-  // "custom") because founding stays self-serve. NOTE: this reopens the cost exposure the
-  // KLAVITYKLA-379 comment above warned about (unlimited runs at a locked-for-life price) — flagged
-  // for follow-up instrumentation via KLAVITYKLA-364, not resolved here.
-  founding: { projects: null, sims: null, simReactionsMonthly: null, autosimFlows: null, autosimRunsMonthly: null, autosimCadence: "on-deploy/hourly" },
+  // 2026-08-17 pricing refresh: founding is pitched as 50% off Scale ($299/mo vs $599/mo), so it
+  // grants SCALE-level (practically-unlimited, fair-use) quota — mirroring the `scale:` entry below,
+  // rather than Team's fixed limits.
+  // KLA-527 (founder decision 2026-08-21): AutoSim cadence is "daily", NOT "on-deploy/hourly". The
+  // 2026-08-17 refresh had set hourly, which reopened exactly the loss-making exposure the
+  // KLAVITYKLA-379 comment above quantified (~$90–120/mo COGS at a locked-for-life $299/mo). Daily
+  // cadence removes ~95% of that exposure while keeping the offer genuinely generous, and leaves
+  // hourly/on-deploy as the upsell into paid Scale. Quotas stay unlimited (fair-use); only the RUN
+  // cadence is capped to daily. Do NOT restore hourly without KLAVITYKLA-364 cost instrumentation.
+  founding: { projects: null, sims: null, simReactionsMonthly: null, autosimFlows: null, autosimRunsMonthly: null, autosimCadence: "daily" },
   team: { projects: null, sims: 20, simReactionsMonthly: 2500, autosimFlows: 20, autosimRunsMonthly: 600, autosimCadence: "on-deploy/hourly" },
   // Agency (KLAVITYKLA-310): unlimited client projects; Sims/AutoSim allowances above Team so an
   // agency can cover many clients without immediately hitting Scale.
