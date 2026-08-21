@@ -2853,6 +2853,13 @@ function swrWrite(k, data) {
   }
 }
 
+// Drop a single SWR entry so the next swrSection() for that key revalidates from the network
+// instead of painting a now-stale snapshot (KLAVITYKLA-511: a fresh submit must bust "triage:"+pid).
+function swrInvalidate(k) {
+  if (!k) return
+  try { localStorage.removeItem(swrKey(k)) } catch (e) {}
+}
+
 // ── Top progress bar (GitHub/YouTube style) ───────────────────────────────────
 // A thin fixed line at the very top that animates while ANY background refresh is
 // in flight and completes + fades when the last one lands. Ref-counted so several
@@ -3058,6 +3065,55 @@ async function refreshAll() {
   if (typeof renderRegressionBanner === "function") renderRegressionBanner()
 }
 
+// ── KLAVITYKLA-510: dashboard liveness ─────────────────────────────────────────
+// The dashboard never re-fetched on its own (only the widget-install poll ran), so a report
+// filed from a customer site never appeared on an open tab and "2m ago" labels never re-ticked.
+// Add three things: refresh on window-focus / tab-visible, a guarded ~25s poll while the tab is
+// visible, and a 45s ago() re-tick on any timestamp tagged with data-ago. This is also the
+// staleness half of D2/D4/D5.
+// A mutation (triage accept/dismiss/send, bulk PATCH) bumps this while it's in flight so the poll
+// never yanks the DOM out from under an action mid-way.
+window.__klavMutating = window.__klavMutating || 0
+function dashLiveBusy() {
+  try {
+    if (document.hidden) return true
+    if (window.__klavMutating > 0) return true
+    if (typeof _tgSelected !== "undefined" && _tgSelected && _tgSelected.size > 0) return true
+    if (typeof _bulkSelected !== "undefined" && _bulkSelected && _bulkSelected.size > 0) return true
+    const tl = $("triageList")
+    if (tl && tl.querySelector(".tg-evidence:not(.hide)")) return true   // reviewer reading evidence
+    const single = $("ticketSingle")
+    if (single && single.children.length) return true                    // a ticket detail is open
+    if (document.querySelector(".modal-bg.open, .modal-bg.show, .sm-ov.show, .upgrade-wall.show")) return true
+    const ae = document.activeElement
+    if (ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.isContentEditable)) return true
+  } catch (e) {}
+  return false
+}
+function dashLiveTick() {
+  if (!state || dashLiveBusy()) return
+  refreshAll()
+  // Keep the New reports queue current too when that view is the one showing.
+  if (document.body.getAttribute("data-view") === "triage" && typeof renderTriage === "function") renderTriage()
+}
+// Re-run ago() on any timestamp span carrying data-ago="<epoch>", so relative-time labels keep
+// counting up without a full refetch.
+function retickAgo() {
+  if (document.hidden) return
+  document.querySelectorAll("[data-ago]").forEach(el => {
+    const ts = Number(el.getAttribute("data-ago"))
+    if (ts) el.textContent = ago(ts)
+  })
+}
+;(function initDashLiveness() {
+  if (window.__klavLivenessInit) return
+  window.__klavLivenessInit = true
+  window.addEventListener("focus", dashLiveTick)
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) dashLiveTick() })
+  setInterval(dashLiveTick, 25000)   // guarded background poll while visible
+  setInterval(retickAgo, 45000)      // live relative-time re-tick
+})()
+
 // KLA-200: if the URL contains ?ticket=<id>, switch to the Tickets view and open that ticket's detail.
 function maybeOpenDeepLinkTicket() {
   try {
@@ -3157,18 +3213,30 @@ function tgVisibleItems() {
 
 async function tgBulkPatch(ids, body) {
   const pid = curProjId(); if (!pid || !ids.length) return { ok: false }
-  const r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/tickets/bulk", {
-    method: "PATCH", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ ...body, ticketIds: ids }),
-  }).catch(() => null)
-  return r && r.ok ? (await r.json().catch(() => ({ ok: true }))) : { ok: false }
+  window.__klavMutating++   // KLAVITYKLA-510: pause the liveness poll while this action is in flight
+  try {
+    const r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/tickets/bulk", {
+      method: "PATCH", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...body, ticketIds: ids }),
+    }).catch(() => null)
+    return r && r.ok ? (await r.json().catch(() => ({ ok: true }))) : { ok: false }
+  } finally { window.__klavMutating-- }
 }
 // Accept (single or bulk): status=open, priority applied to all. Reduces the inbox count by N.
 async function tgAccept(ids, priority) {
   const body = { status: "open" }
   if (priority) body.priority = priority
   const res = await tgBulkPatch(ids, body)
-  if (res.ok) { _tgSelected.clear(); await refreshAll(); renderTriage() }
+  if (res.ok) {
+    _tgSelected.clear(); await refreshAll(); renderTriage()
+    // KLAVITYKLA-512: the accepted row silently vanished before (contrast the dismiss undo-toast).
+    // Confirm the move and offer a deep link into the ticket in the Tickets view.
+    const one = ids.length === 1 ? String(ids[0]) : null
+    const link = one
+      ? ` — <a href="#tickets" style="color:var(--indigo)" onclick="try{setView('tickets');openSingleTicket('${esc(one)}')}catch(e){};return false">view in Tickets</a>`
+      : ""
+    klavToast((one ? "Accepted" : ids.length + " accepted") + " &rarr; moved to Open in Tickets" + link)
+  }
   return res
 }
 // Dismiss (single or bulk): status=dismissed, then show an undo toast that restores status=new.
@@ -3444,7 +3512,7 @@ function renderTriageItems(items) {
       <div class="tg-b">
         <div class="fx-t">${t.seqNum ? `<span class="tkt-seq">#${t.seqNum}</span> ` : ""}${esc(t.title || "Untitled report")}${(t.recurrence >= 2) ? `<span class="fx-recur">recurring ×${t.recurrence}</span>` : ""}</div>
         ${t.sourceQuote ? `<div class="fx-q">"${esc(t.sourceQuote)}"</div>` : (t.observation ? `<div class="fx-q">${esc(t.observation)}</div>` : "")}
-        <div class="fx-m">${t.urlPath ? `<span class="fx-area">${esc(t.urlPath)}</span>` : ""}${t.sentiment ? `<span class="chip s-${esc(t.sentiment)}">${esc(t.sentiment)}</span>` : ""}${t.simName ? `<span>${kicon('bot',{size:14})} ${esc(t.simName)}</span>` : ""}${dupAckHtml(t, {badge:true})}${t.createdAt ? `<span class="muted">${esc(ago(t.createdAt))}</span>` : ""}</div>
+        <div class="fx-m">${t.urlPath ? `<span class="fx-area">${esc(t.urlPath)}</span>` : ""}${t.sentiment ? `<span class="chip s-${esc(t.sentiment)}">${esc(t.sentiment)}</span>` : ""}${t.simName ? `<span>${kicon('bot',{size:14})} ${esc(t.simName)}</span>` : ""}${dupAckHtml(t, {badge:true})}${t.createdAt ? `<span class="muted" data-ago="${Number(t.createdAt)}">${esc(ago(t.createdAt))}</span>` : ""}</div>
         <button class="tg-expand-btn" type="button" aria-expanded="false" title="Show full evidence">${kicon('chevron-right',{size:14})} <span class="tg-expand-lbl">Evidence</span></button>
         <div class="tg-evidence hide" data-loaded=""></div>
       </div>
@@ -3793,6 +3861,43 @@ function loadTriageShots(host) {
   })
 }
 
+// KLAVITYKLA-514: per-view page title. The generic "Welcome back — you're a User of <project>"
+// greeting used to render once (in render()) with no data-view scoping, so it persisted across
+// Sims/Team/Tickets/Settings. Scope it: only Overview shows the data-driven greeting; every other
+// view gets its own title. Called from BOTH setView() (on nav) and render() (so the ~25s liveness
+// poll can't clobber the current view's title back to "Welcome back").
+const VIEW_TITLES = {
+  snap:      ["Report widget", "Add the Klavity report widget to your site."],
+  triage:    ["New reports", "Fresh submissions waiting to be triaged."],
+  sims:      ["Sims", "The AI users reacting to your product."],
+  autosims:  ["AutoSims", "Critical paths Klavity re-runs on every deploy."],
+  tickets:   ["Tickets", "Everything filed, triaged, and tracked."],
+  team:      ["Team", "People with access to this workspace."],
+  settings:  ["Settings", "Project, widget, plan, and integration settings."],
+  recurring: ["Recurring issues", "Problems that keep coming back."],
+  guards:    ["Guards", "Expectations enforced across runs."],
+  pagebugs:  ["Page bugs", "Issues detected on your pages."],
+}
+function applyViewHeader(v) {
+  const hello = $("hello"), lead = $("lead")
+  if (!hello || !lead) return
+  if (v && v !== "overview" && VIEW_TITLES[v]) {
+    hello.textContent = VIEW_TITLES[v][0]
+    lead.textContent = VIEW_TITLES[v][1]
+    return
+  }
+  // Overview (or unknown view) → the data-driven greeting.
+  if (!state) return
+  const active = state.active
+  const admin = active && active.role === "admin"
+  const freshHello = !((state.sims || []).length) && !((state.counts || {}).feedback || 0)
+  hello.innerHTML = freshHello ? "Welcome to Klavity" : "Welcome back"
+  lead.innerHTML = active
+    ? `You're ${admin ? "an <b>Admin</b>" : "a <b>User</b>"} of <b>${esc(active.name)}</b>.`
+    : "Create your first Sim to get started."
+}
+window.applyViewHeader = applyViewHeader
+
 // render(fromCache): when painting the instant cache snapshot we skip the network
 // sub-loaders (connectors/appearance/live/obs) — they fire once on the fresh render
 // so we never double-fetch them or flicker the progress bar on a cache hit.
@@ -3828,12 +3933,10 @@ function render(fromCache) {
   // Project plan (admin-only) — KLAVITYKLA snap-plan gating admin toggle.
   if (typeof wireProjPlan === "function") wireProjPlan(admin)
   $("who").textContent = state.email
-  // Genuinely-fresh signal (same as the guided tour): 0 Sims + 0 feedback = first-ever session.
-  const freshHello = !((state.sims || []).length) && !((state.counts || {}).feedback || 0)
-  $("hello").innerHTML = freshHello ? "Welcome to Klavity" : "Welcome back"
-  $("lead").innerHTML = active
-    ? `You're ${admin ? "an <b>Admin</b>" : "a <b>User</b>"} of <b>${esc(active.name)}</b>.`
-    : "Create your first Sim to get started."
+  // KLAVITYKLA-514: paint the header for whichever view is currently showing (Overview → the
+  // data-driven greeting; any other view → its own title). Must respect the current view so the
+  // liveness poll's render() doesn't reset a non-overview title back to "Welcome back".
+  applyViewHeader(document.body.getAttribute("data-view") || "overview")
 
   // Isolate every section renderer: a throw in one (e.g. a future markup/selector drift) must NOT
   // abort the rest — otherwise one broken section stalls every later section's skeleton AND skips
@@ -4067,7 +4170,7 @@ async function drillTrend(day) {
       row.className = "trend-drill-item"; row.setAttribute("role", "button"); row.tabIndex = 0
       row.innerHTML = '<span class="tdi-ttl">' + esc(it.title || "Untitled report") + '</span>' +
         (it.priority ? '<span class="tdi-pri">' + esc(it.priority) + '</span>' : "") +
-        '<span class="muted" style="font-family:var(--mono);font-size:10px">' + esc(ago(it.createdAt)) + '</span>'
+        '<span class="muted" data-ago="' + Number(it.createdAt) + '" style="font-family:var(--mono);font-size:10px">' + esc(ago(it.createdAt)) + '</span>'
       const open = () => openTicketById(it.id)
       row.addEventListener("click", open)
       row.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open() } })
@@ -4405,7 +4508,13 @@ $("clTestReportBtn") && ($("clTestReportBtn").onclick = () => {
       window.__klavTestReportWired = true
       window.Klavity.on("submit", () => {
         klavToast('Test report received — <a href="#triage" style="color:var(--indigo)" onclick="setView(\'triage\');return false">review it in New reports</a>')
+        // KLAVITYKLA-511: the new report must show up in New reports immediately. refreshAll() alone
+        // updates counts/banner but renderTriage() would re-paint the STALE "triage:"+pid SWR snapshot,
+        // so bust that cache entry and re-render the queue too.
+        const _pid = curProjId()
+        if (_pid) swrInvalidate("triage:" + _pid)
         refreshAll()                      // triage count + checklist tick update without a reload
+        if (typeof renderTriage === "function") renderTriage()
       })
     }
     window.Klavity.open("bug")
@@ -5501,7 +5610,10 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
         ${!_isTwoCol ? _shotHtml : ""}
       </div>` : (!_isTwoCol ? _shotHtml : "")
     // KLA-199: priority picker — persists via PATCH, updates state + rail + sev chip in-place
-    const curPri = t.priority || ""
+    // KLAVITYKLA-513: a null/missing priority must resolve to the ONE canonical default 'medium'
+    // (matching the triage row select), so the <select> marks 'medium' selected instead of falling
+    // through to the first option ('urgent') and silently mis-representing an un-triaged report.
+    const curPri = t.priority || "medium"
     const priOpts = ["urgent","high","medium","low"].map(p =>
       `<option value="${p}"${p===curPri?" selected":""}>${p}</option>`
     ).join("")
@@ -5964,6 +6076,10 @@ const TL_ACTIVITY_LABELS = {
   ticket_priority_changed: (m) => `Priority → ${m && m.to ? m.to : ""}`,
   ticket_assignee_changed: (m) => m && m.to ? `Assigned to ${m.to}` : "Assignment cleared",
   connector_export: (m) => `Exported to ${m && m.connectorType ? m.connectorType : "external tracker"}${m && m.externalKey ? " · " + m.externalKey : ""}`,
+  // KLAVITYKLA-516: the very first fact — the report/Snap arriving — was never written to
+  // activity_events, so the timeline showed "No activity yet" and recurrence read 0. Synthesized
+  // client-side (see buildTimelineSection) so we never persist a server event.
+  report_received: (m) => `Report received${m && m.urlPath ? " · " + m.urlPath : ""}`,
 }
 
 function renderTimelineItem(item) {
@@ -5999,7 +6115,7 @@ function renderTimelineItem(item) {
   return el
 }
 
-function buildTimelineSection(ticketId) {
+function buildTimelineSection(ticketId, report) {
   const wrap = document.createElement("div")
   wrap.className = "tkt-timeline-wrap"
   wrap.innerHTML = `<div class="tkt-timeline-hd">Activity</div>
@@ -6017,12 +6133,30 @@ function buildTimelineSection(ticketId) {
   const submitBtn = wrap.querySelector(".tkt-comment-submit")
   const msgEl = wrap.querySelector(".tkt-comment-msg")
 
+  // KLAVITYKLA-516: the report/Snap ingest never writes a "ticket_created"-style activity row, so
+  // the timeline showed "No activity yet" (and the count read 0) for fresh reports. Synthesize a
+  // virtual FIRST "report received" row from the report itself — purely client-side, no server event.
+  function synthFirstItem() {
+    const r = report || (state.tickets || []).find(x => String(x.id) === String(ticketId))
+    if (!r || !r.createdAt) return null
+    return {
+      id: "synth-report-received", kind: "activity", type: "report_received",
+      actorEmail: r.contactEmail || r.actorEmail || null,
+      meta: { urlPath: r.urlPath || r.urlHost || null },
+      createdAt: Number(r.createdAt),
+    }
+  }
+
   function reloadTimeline() {
     if (!listEl) return
     fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/timeline")
       .then(r => r.ok ? r.json() : Promise.reject(r.status))
       .then(d => {
-        const items = d.items || []
+        const items = (d.items || []).slice()
+        // Prepend the synthesized origin row (oldest → renders at the top). This also makes the
+        // activity count read 1, never 0, for a single-report ticket.
+        const first = synthFirstItem()
+        if (first && !items.some(it => it.type === "report_received")) items.unshift(first)
         listEl.innerHTML = ""
         if (!items.length) {
           listEl.innerHTML = '<div class="tkt-tl-empty">No activity yet.</div>'
@@ -6030,7 +6164,14 @@ function buildTimelineSection(ticketId) {
           items.forEach(item => listEl.appendChild(renderTimelineItem(item)))
         }
       })
-      .catch(() => { if (listEl) listEl.innerHTML = '<div class="tkt-tl-empty" style="color:var(--rose)">Failed to load timeline.</div>' })
+      .catch(() => {
+        // Even on a timeline fetch failure, still show the origin row if we can synthesize it.
+        const first = synthFirstItem()
+        if (listEl) {
+          if (first) { listEl.innerHTML = ""; listEl.appendChild(renderTimelineItem(first)) }
+          else listEl.innerHTML = '<div class="tkt-tl-empty" style="color:var(--rose)">Failed to load timeline.</div>'
+        }
+      })
   }
 
   reloadTimeline()
@@ -6073,14 +6214,12 @@ function buildOccurrenceTimeline(ticketId) {
       <span class="tkt-occ-title">Occurrence timeline</span>
       <span class="tkt-occ-count"></span>
       <button class="btn btn-ghost btn-sm tkt-occ-copy" type="button" title="Copy this occurrence timeline for a client conversation">${kicon('clipboard-list')} Copy timeline</button>
-      <button class="btn btn-ghost btn-sm tkt-occ-merge" type="button" title="Merge another ticket into this cluster (fixes a match the matcher missed)">${kicon('link')} Merge a ticket</button>
     </div>
     <div class="tkt-occ-list"></div>
     <div class="tkt-occ-msg muted" style="font-size:12px"></div>`
   const listEl = wrap.querySelector(".tkt-occ-list")
   const countEl = wrap.querySelector(".tkt-occ-count")
   const copyBtn = wrap.querySelector(".tkt-occ-copy")
-  const mergeBtn = wrap.querySelector(".tkt-occ-merge")
   const msgEl = wrap.querySelector(".tkt-occ-msg")
 
   const day = ms => { try { return new Date(Number(ms)).toISOString().slice(0, 10) } catch (e) { return "" } }
@@ -6100,20 +6239,8 @@ function buildOccurrenceTimeline(ticketId) {
     else { if (btn) btn.disabled = false; setMsg(d.error || "Could not split occurrence.", true) }
   }
 
-  // A.10: merge another ticket (by id) into THIS cluster — carries its recurrence count + reporters over.
-  if (mergeBtn) mergeBtn.addEventListener("click", async () => {
-    const mergeId = (window.prompt("Ticket id to merge INTO this cluster:") || "").trim()
-    if (!mergeId) return
-    mergeBtn.disabled = true
-    const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/merge", {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ mergeId }), credentials: "include",
-    }).catch(() => null)
-    const d = r ? await r.json().catch(() => ({})) : {}
-    mergeBtn.disabled = false
-    if (r && r.ok && d.ok) { setMsg("Merged. Recurrence count is now " + d.recurrenceCount + ".", false); load() }
-    else { setMsg(d.error || "Could not merge ticket.", true) }
-  })
+  // KLAVITYKLA-515: the merge control moved OUT of this wrapper (see buildMergeControl) so you can
+  // merge INTO a single-occurrence ticket — this occurrence timeline still self-hides for singletons.
 
   function load() {
     fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/memory")
@@ -6159,6 +6286,62 @@ function buildOccurrenceTimeline(ticketId) {
     setTimeout(() => { copyBtn.innerHTML = orig }, 2000)
   })
 
+  return wrap
+}
+
+// KLAVITYKLA-515: standalone "Merge a ticket" control for the single-ticket detail. Previously the
+// merge button lived INSIDE the occurrence timeline, whose wrapper only un-hid at occ.length>=2 — so
+// you could never merge INTO a single-occurrence ticket (the common "matcher missed a dup" case). It
+// now always renders in detail, uses a searchable ticket picker (not window.prompt), and on success
+// re-opens the ticket so the merged occurrences show inline, plus a toast.
+function mergeCandLabel(x) {
+  return (x.seqNum ? "#" + x.seqNum + " " : "") + (x.title || "Untitled report")
+}
+function buildMergeControl(ticketId) {
+  const wrap = document.createElement("div")
+  wrap.className = "tkt-merge-wrap"
+  const cands = (state.tickets || []).filter(x => String(x.id) !== String(ticketId) && x.status !== "dismissed")
+  const listId = "mergeCands-" + ticketId
+  // label → id map so the free-text/datalist value resolves back to a ticket id.
+  const byLabel = {}
+  cands.forEach(x => { byLabel[mergeCandLabel(x)] = String(x.id) })
+  const opts = cands.map(x => `<option value="${esc(mergeCandLabel(x))}"></option>`).join("")
+  wrap.innerHTML = `
+    <div class="tkt-merge-hd" style="display:flex;align-items:center;gap:6px;font-weight:600;font-size:13px;margin-bottom:6px">${kicon('link',{size:14})} Merge another ticket into this one</div>
+    <div class="tkt-merge-row" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <input class="tkt-merge-input seg-like" list="${esc(listId)}" placeholder="Search a ticket by # or title…" autocomplete="off" style="flex:1;min-width:220px;padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:var(--ink-2);color:inherit;font-family:inherit;font-size:13px">
+      <datalist id="${esc(listId)}">${opts}</datalist>
+      <button class="btn btn-ghost btn-sm tkt-merge-go" type="button">${kicon('link',{size:13})} Merge</button>
+    </div>
+    <div class="tkt-merge-msg muted" style="font-size:12px;margin-top:6px"></div>`
+  const input = wrap.querySelector(".tkt-merge-input")
+  const goBtn = wrap.querySelector(".tkt-merge-go")
+  const msgEl = wrap.querySelector(".tkt-merge-msg")
+  const setMsg = (t, isErr) => { if (msgEl) { msgEl.textContent = t || ""; msgEl.style.color = isErr ? "var(--rose)" : "" } }
+  goBtn.addEventListener("click", async () => {
+    const val = (input.value || "").trim()
+    if (!val) { setMsg("Pick a ticket to merge in.", true); return }
+    // Resolve the typed/selected label to an id; fall back to treating the raw input as an id.
+    const mergeId = byLabel[val] || val
+    goBtn.disabled = true; setMsg("Merging…", false)
+    window.__klavMutating++
+    let d = {}
+    try {
+      const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/merge", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mergeId }), credentials: "include",
+      }).catch(() => null)
+      d = r ? await r.json().catch(() => ({})) : {}
+      if (r && r.ok && d.ok) {
+        if (typeof klavToast === "function") klavToast("Merged &rarr; reported " + (d.recurrenceCount || 2) + "&times; now")
+        input.value = ""
+        // Re-open the ticket so the (now multi-occurrence) timeline shows the merged receipts inline.
+        if (typeof openSingleTicket === "function") await openSingleTicket(ticketId)
+      } else {
+        setMsg((d && d.error) || "Could not merge ticket.", true)
+      }
+    } finally { window.__klavMutating--; goBtn.disabled = false }
+  })
   return wrap
 }
 
@@ -6304,8 +6487,11 @@ function _renderSingleTicket(id) {
   loadTktShot(detailEl, t.annotations)
   // A.8: per-ticket occurrence timeline (receipts) — self-hides for single-occurrence reports.
   single.appendChild(buildOccurrenceTimeline(t.id))
-  // KLA-171: append activity timeline + comment composer
-  single.appendChild(buildTimelineSection(t.id))
+  // KLAVITYKLA-515: always-available merge control (works even for single-occurrence tickets).
+  single.appendChild(buildMergeControl(t.id))
+  // KLA-171: append activity timeline + comment composer (KLAVITYKLA-516 passes `t` so the
+  // timeline can synthesize its virtual first "report received" row).
+  single.appendChild(buildTimelineSection(t.id, t))
   if (board) board.classList.add("hide")
   const listView = document.getElementById("tktListView")
   if (listView) listView.classList.add("hide")
@@ -7214,22 +7400,43 @@ async function loadTktShot(detailEl, annotations) {
   if (!box || box.getAttribute("data-loaded")) return
   box.setAttribute("data-loaded", "1")
   const id = box.getAttribute("data-shot")
+  const hasAnn = annotations && Array.isArray(annotations.shapes) && annotations.shapes.length
+  const paint = (url) => {
+    const img = document.createElement("img")
+    img.src = url; img.alt = "Sim screenshot"
+    if (hasAnn) {
+      // The overlay viewBox is in the reporter's original coordinates (preserveAspectRatio="none"),
+      // so it scales correctly over the thumbnail AND the full image alike.
+      mountAnnotationOverlay(box, img, annotations, url)
+    } else {
+      img.addEventListener("click", () => window.open(img.getAttribute("data-full") || url, "_blank", "noopener"))
+      box.innerHTML = ""; box.appendChild(img)
+    }
+    // KLAVITYKLA-228: surface the element the reporter pinned via the on-page picker. Stored on
+    // annotations.selector but previously never rendered — a selector-only report showed nothing.
+    mountPinnedSelector(box, annotations)
+    return img
+  }
   try {
-    const r = await fetch("/api/screenshots/" + encodeURIComponent(id))
+    // KLAVITYKLA-518: request the lightweight ?thumb=1 variant FIRST for an instant preview (mirrors
+    // the list view), then lazily upgrade to the full-resolution image. Previously this fetched the
+    // presigned URL and then the FULL image before anything showed — two serial round-trips on open.
+    const r = await fetch("/api/screenshots/" + encodeURIComponent(id) + "?thumb=1")
     const d = await r.json().catch(() => ({}))
-    if (d.url) {
-      const img = document.createElement("img")
-      img.src = d.url; img.alt = "Sim screenshot"
-      if (annotations && Array.isArray(annotations.shapes) && annotations.shapes.length) {
-        mountAnnotationOverlay(box, img, annotations, d.url)
-      } else {
-        img.addEventListener("click", () => window.open(d.url, "_blank", "noopener"))
-        box.innerHTML = ""; box.appendChild(img)
-      }
-      // KLAVITYKLA-228: surface the element the reporter pinned via the on-page picker. Stored on
-      // annotations.selector but previously never rendered — a selector-only report showed nothing.
-      mountPinnedSelector(box, annotations)
-    } else { box.innerHTML = '<div class="muted" style="font-size:12px">Screenshot couldn’t be loaded.</div>' }
+    if (!d.url) { box.innerHTML = '<div class="muted" style="font-size:12px">Screenshot couldn’t be loaded.</div>'; return }
+    const img = paint(d.url)
+    // Lazily upgrade to the full image (sharper; also what click / "Full size" should open).
+    fetch("/api/screenshots/" + encodeURIComponent(id))
+      .then(fr => fr.json().catch(() => ({})))
+      .then(fd => {
+        if (!fd || !fd.url || fd.url === d.url) return
+        if (hasAnn) {
+          paint(fd.url)   // re-mount the overlay against the full image
+        } else if (img) {
+          img.setAttribute("data-full", fd.url); img.src = fd.url
+        }
+      })
+      .catch(() => {})
   } catch { box.innerHTML = '<div class="muted" style="font-size:12px">Screenshot error</div>' }
 }
 // Re-render the reporter's markup as a toggleable/zoomable SVG overlay over the clean screenshot.
@@ -7336,7 +7543,14 @@ async function copyTicketToAI(ticketId, btn, detailEl) {
   const labeled = !btn.classList.contains("copy-ai-icon")
   btn.innerHTML = ok ? (labeled ? kicon('check')+" Copied!" : kicon('check')) : (labeled ? kicon('x')+" Copy failed" : kicon('x'))
   btn.classList.toggle("copied", ok)
-  if (detailEl) showTktMsg(detailEl, ok ? "Copied a fix-ready prompt to your clipboard." : "Couldn't access the clipboard.", !ok)
+  // KLAVITYKLA-197: the labeled detail button confirmed via showTktMsg, but the row/kanban ICON
+  // variants only swapped to a check with no visible confirmation. Give those a toast too (their
+  // detailEl, when present, is a collapsed panel the user can't see).
+  if (labeled && detailEl) {
+    showTktMsg(detailEl, ok ? "Copied a fix-ready prompt to your clipboard." : "Couldn't access the clipboard.", !ok)
+  } else if (typeof klavToast === "function") {
+    klavToast(ok ? "Copied a fix-ready AI prompt &mdash; paste into Claude / ChatGPT to fix this bug." : "Couldn't access the clipboard.", !ok)
+  }
   setTimeout(() => { btn.innerHTML = orig; btn.classList.remove("copied") }, 2000)
 }
 
@@ -9534,6 +9748,7 @@ load()
     normalizeSidebar();
     document.body.setAttribute('data-view',v);
     sidebarNavs().forEach(function(b){b.classList.toggle('active',b.getAttribute('data-go')===v);});
+    if(typeof applyViewHeader==='function')applyViewHeader(v);   // KLAVITYKLA-514: per-view page title
     if(typeof applyUpgradeWall==='function')applyUpgradeWall();
     try{history.replaceState(null,'',v==='overview'?(location.pathname+location.search):('#'+v));}catch(e){}
     window.scrollTo(0,0);
