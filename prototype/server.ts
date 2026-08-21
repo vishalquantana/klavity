@@ -1460,6 +1460,43 @@ function v3PersonaFields(body: any): { type: string; simClass: string | null; si
   return { type, simClass, side, core }
 }
 
+// ── KLAVITYKLA-461: Convert a Sim → an AutoSim ────────────────────────────────────────────────────
+// Pull the persona's pains (things she watches for) and wants (her goals) from BOTH the insights[]
+// array and the v3 core, so the carried-over chips + objective survive either storage shape.
+function personaPainsWants(p: any): { pains: string[]; wants: string[] } {
+  const insights = Array.isArray(p?.insights) ? p.insights : []
+  const pains = [
+    ...insights.filter((i: any) => i?.kind === "pain").map((i: any) => String(i.text || "")),
+    ...(Array.isArray(p?.core?.watchFor) ? p.core.watchFor.map((x: any) => String(x)) : []),
+  ].map((s) => s.trim()).filter(Boolean)
+  const wants = [
+    ...insights.filter((i: any) => i?.kind === "want").map((i: any) => String(i.text || "")),
+    ...(Array.isArray(p?.core?.goals) ? p.core.goals.map((x: any) => String(x)) : []),
+  ].map((s) => s.trim()).filter(Boolean)
+  // De-dup while preserving order.
+  const uniq = (a: string[]) => Array.from(new Set(a))
+  return { pains: uniq(pains), wants: uniq(wants) }
+}
+
+// Deterministic, LLM-free objective built straight from the persona. Used as the fallback when the
+// AI suggestion is unavailable (no key / call fails), so the endpoint is always resilient + testable.
+function fallbackAutosimObjective(p: any): string {
+  const { pains, wants } = personaPainsWants(p)
+  const parts: string[] = []
+  parts.push("Sign in and use the product as " + (p?.role ? String(p.role) : (p?.name || "this persona")))
+  if (wants[0]) parts.push("try to " + wants[0].replace(/\.$/, "").toLowerCase())
+  if (pains[0]) parts.push("check that " + pains[0].replace(/\.$/, "").toLowerCase() + " is not a problem")
+  const base = parts.join(", ")
+  return (base + " — flag anything confusing, slow, or broken.").slice(0, 4000)
+}
+
+// Map the Convert panel's Frequency selector to a stored cron. weekly is the default; once and
+// on_release do not recur (release runs are triggered by the CI hook, not a cron), so they store null.
+function autosimFrequencyToCron(freq: string): string | null {
+  return freq === "weekly" ? "0 9 * * 1" : null // Monday 09:00; once / on_release do not recur
+}
+const AUTOSIM_FREQUENCIES = new Set(["once", "weekly", "on_release"])
+
 // A.8: render a RecurrenceMemory's occurrence receipts as an exportable/quotable timeline block —
 // each occurrence's OWN wording + date, e.g.
 //   This issue was reported 3 times:
@@ -5498,6 +5535,87 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const acceptRate = simAcceptRate(feedback)
         return json({ sim, traits, feedback, transcripts, acceptRate })
       } catch (e: any) { return json(oops(e, "profile"), 500) }
+    }
+    // ── KLAVITYKLA-461: AI-suggested AutoSim objective for a Sim (Convert-to-AutoSim panel) ──────────
+    // Project-membership gated. Generates a short, first-person-ish objective from the persona's
+    // goals/pains via chat() (auto-logged to ai_calls). Falls back to a deterministic persona-derived
+    // objective when the LLM is unavailable, so the panel always has something to pre-fill.
+    const simObjMatch = path.match(/^\/api\/sims\/([^/]+)\/autosim-objective$/)
+    if (req.method === "POST" && simObjMatch) {
+      const meSO = (await sessionEmail(req)) || (await bearerEmail(req))
+      if (!meSO) return json({ error: "Sign in to continue." }, 401)
+      const projSO = await resolveProject(meSO, url.searchParams.get("project"))
+      if (!projSO) return json({ error: "No project." }, 400)
+      const persona = (await listPersonas(projSO.id)).find(p => p.id === simObjMatch[1])
+      if (!persona) return json({ error: "Not found" }, 404)
+      const fallback = fallbackAutosimObjective(persona)
+      try {
+        const { pains, wants } = personaPainsWants(persona)
+        const sys = "You write a SHORT autonomous-test objective for a persona (a \"Sim\") that will drive a web product on its own. "
+          + "Write ONE plain sentence in the imperative, first-person-task style (e.g. \"Sign in, open the Q2 dashboard, check the total is obvious and correct, flag anything confusing\"). "
+          + "Ground it in this persona's goals and pains. No preamble, no quotes, no persona name — just the objective, under 240 characters."
+        const profile = "Persona: " + String(persona.name || "") + (persona.role ? " (" + String(persona.role) + ")" : "")
+          + (wants.length ? "\nGoals: " + wants.slice(0, 4).join("; ") : "")
+          + (pains.length ? "\nPains / watches for: " + pains.slice(0, 4).join("; ") : "")
+          + (persona.summary ? "\nSummary: " + String(persona.summary) : "")
+        const { content } = await chat(
+          [{ role: "system", content: sys }, { role: "user", content: profile }],
+          160, false, { type: "autosim_objective", feature: "convert-sim-to-autosim", email: meSO, projectId: projSO.id },
+        )
+        const objective = String(content || "").trim().replace(/^["']|["']$/g, "").slice(0, 4000)
+        return json({ objective: objective.length >= 10 ? objective : fallback, source: objective.length >= 10 ? "ai" : "fallback" })
+      } catch (e: any) {
+        // Never fail the panel on an LLM hiccup — return the deterministic persona-derived objective.
+        return json({ objective: fallback, source: "fallback" })
+      }
+    }
+    // ── KLAVITYKLA-461: Convert a Sim → an AutoSim ─────────────────────────────────────────────────
+    // Carries the persona forward and kicks off the EXISTING author path (runAuthorNow → crystallize),
+    // seeded with: the persona as judge (runs AS that Sim), the NL objective, the scope URL, a weekly
+    // schedule (stamped so it recurs on Review & Activate), and a source_sim_id link back to the Sim.
+    // The runner/author are untouched — this only feeds them.
+    const simAutosimMatch = path.match(/^\/api\/sims\/([^/]+)\/autosim$/)
+    if (req.method === "POST" && simAutosimMatch) {
+      const meSA = (await sessionEmail(req)) || (await bearerEmail(req))
+      if (!meSA) return json({ error: "Sign in to continue." }, 401)
+      const projSA = await resolveProject(meSA, url.searchParams.get("project"))
+      if (!projSA) return json({ error: "No project." }, 400)
+      const project = await projectById(projSA.id)
+      const lock = project ? snapLocked(project) : null
+      if (lock) return json(lock, 402)
+      const persona = (await listPersonas(projSA.id)).find(p => p.id === simAutosimMatch[1])
+      if (!persona) return json({ error: "Not found" }, 404)
+      const body = await req.json().catch(() => ({}))
+      // Objective: caller sends the (edited) objective; if absent, derive one from the persona.
+      const objective = (String(body.objective || "").trim() || fallbackAutosimObjective(persona)).slice(0, 4000)
+      if (objective.length < 10) return json({ error: "objective must be at least 10 characters" }, 400)
+      // Scope URL: caller sends it; default to the project's site URL where the Sim was built.
+      let baseUrl = String(body.base_url || body.scope_url || "").trim()
+      if (!baseUrl && project && (project as any).siteUrl) baseUrl = String((project as any).siteUrl).trim()
+      if (baseUrl && !/^https?:\/\//i.test(baseUrl)) baseUrl = "https://" + baseUrl
+      if (!/^https?:\/\//.test(baseUrl) || baseUrl.length > 500) return json({ error: "A scope URL (http/https) is required." }, 400)
+      const frequency = AUTOSIM_FREQUENCIES.has(String(body.frequency)) ? String(body.frequency) : "weekly"
+      const schedule = autosimFrequencyToCron(frequency)
+      const scheduleTz = body.scheduleTz && typeof body.scheduleTz === "string" ? body.scheduleTz.trim() : null
+      if (scheduleTz) { try { new Intl.DateTimeFormat("en-US", { timeZone: scheduleTz }) } catch { return json({ error: "Invalid timezone" }, 400) } }
+      const name = (String(persona.name || "Sim") + " · " + objective.replace(/\s+/g, " ").slice(0, 48)).slice(0, 80)
+      // Same autosim-flow quota gate the /author endpoint applies (ship-dark unless enforcement on).
+      const acctId = await accountIdForProject(projSA.id)
+      if (acctId) {
+        const flowQuota = await quotaExceeded(acctId, "autosimFlows", () => countAccountAutosimFlows(acctId))
+        if (flowQuota) return json(flowQuota, 402)
+      }
+      try {
+        const { sessionId } = await runAuthorNow(projSA.id, {
+          name, objective, baseUrl, createdBy: meSA,
+          judgePersonaId: persona.id, sourceSimId: persona.id,
+          schedule, scheduleTz,
+        })
+        return json({ sessionId, sourceSimId: persona.id, frequency, schedule }, 202)
+      } catch (e) {
+        if (e instanceof WalkBusyError) return json({ error: "An AutoSim is already running — try again shortly." }, 409)
+        return json(oops(e, "sim-to-autosim"), 500)
+      }
     }
     // ── One transcript's raw text — project-scoped, read-only ──
     const txMatch = path.match(/^\/api\/transcripts\/([^/]+)$/)

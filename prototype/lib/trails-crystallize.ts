@@ -32,6 +32,11 @@ export interface Trajectory {
   judgePersonaId?: string | null
   /** File-upload fixtures for `upload` steps: attachment NAME → storage ref. Persisted on the Trail. */
   attachments?: Record<string, { key: string; filename: string; contentType?: string }> | null
+  /** KLAVITYKLA-461: source Sim this AutoSim was converted from (Convert-to-AutoSim). */
+  sourceSimId?: string | null
+  /** KLAVITYKLA-461: pre-stamp the recurring schedule (5-field cron) chosen at convert time. */
+  schedule?: string | null
+  scheduleTz?: string | null
 }
 
 export interface CrystallizeResult {
@@ -96,6 +101,9 @@ export async function crystallize(projectId: string, traj: Trajectory): Promise<
     objectiveVerified: traj.objectiveVerified,
     judgePersonaId: traj.judgePersonaId ?? null,
     attachments: traj.attachments ?? null,
+    sourceSimId: traj.sourceSimId ?? null,
+    schedule: traj.schedule ?? null,
+    scheduleTz: traj.scheduleTz ?? null,
   })
 
   const stepIds: string[] = []

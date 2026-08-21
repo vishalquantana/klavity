@@ -95,7 +95,7 @@ function analysisCheckpointDescription(objective: string): string {
     : "Analysis objective completed"
 }
 
-export interface AuthorRequest { name: string; objective: string; baseUrl: string; viewport?: TrailViewport | string | null; testAccountName?: string; createdBy?: string; /** KLAVITYKLA-149: id of the Sim persona picked as the Trail's judge/reviewer in the wizard's "Who reviews it?" step. */ judgePersonaId?: string | null; /** File-upload fixtures available to `upload` steps: attachment NAME → storage ref. */ attachments?: AttachmentManifest | null }
+export interface AuthorRequest { name: string; objective: string; baseUrl: string; viewport?: TrailViewport | string | null; testAccountName?: string; createdBy?: string; /** KLAVITYKLA-149: id of the Sim persona picked as the Trail's judge/reviewer in the wizard's "Who reviews it?" step. */ judgePersonaId?: string | null; /** File-upload fixtures available to `upload` steps: attachment NAME → storage ref. */ attachments?: AttachmentManifest | null; /** KLAVITYKLA-461: source Sim this AutoSim was converted from, stamped onto the crystallized Trail. */ sourceSimId?: string | null; /** KLAVITYKLA-461: recurring schedule (5-field cron) + IANA tz chosen at Convert-to-AutoSim time. */ schedule?: string | null; scheduleTz?: string | null }
 export interface AuthorStepLog { idx: number; op: string; selector: string | null; value: string | null; url: string; rationale: string; ok: boolean; error?: string; screenshotKey?: string; krefSnapshot?: string }
 export interface AuthorOutcome {
   status: "crystallized" | "stalled" | "failed" | "needs_auth"
@@ -387,6 +387,9 @@ export async function authorTrail(
           viewport: normalizeTrailViewport(req.viewport), authorKind: "llm",
           createdBy: req.createdBy, steps: traj,
           judgePersonaId: req.judgePersonaId ?? null,
+          sourceSimId: req.sourceSimId ?? null,
+          schedule: req.schedule ?? null,
+          scheduleTz: req.scheduleTz ?? null,
         }
         const r = await crystallize(projectId, partialTrajectory)
         await setTrailStatus(projectId, r.trailId, "draft")
@@ -779,7 +782,7 @@ export async function authorTrail(
     }
     await closeHandle()
     if (!traj.length) return { status: "stalled", trailId: null, verificationRunId: null, verificationVerdict: null, steps: log, stallReason: "model finished without performing any step", llmCalls, costUsd, objectiveVerified }
-    const trajectory: Trajectory = { name: req.name, intent: req.objective, baseUrl: req.baseUrl, viewport, authorKind: "llm", createdBy: req.createdBy, steps: traj, objectiveVerified, judgePersonaId: req.judgePersonaId ?? null, attachments: req.attachments ?? null }
+    const trajectory: Trajectory = { name: req.name, intent: req.objective, baseUrl: req.baseUrl, viewport, authorKind: "llm", createdBy: req.createdBy, steps: traj, objectiveVerified, judgePersonaId: req.judgePersonaId ?? null, attachments: req.attachments ?? null, sourceSimId: req.sourceSimId ?? null, schedule: req.schedule ?? null, scheduleTz: req.scheduleTz ?? null }
     const { trailId } = await crystallize(projectId, trajectory)
     await setTrailStatus(projectId, trailId, "draft")
     // Verification Walk: zero-LLM rehearsal; draft status suppresses findings (Task 4), but pass

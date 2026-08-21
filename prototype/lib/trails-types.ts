@@ -57,6 +57,8 @@ export interface Trail {
   scheduledLastRunAt: number | null  // epoch ms when last scheduled walk was triggered
   /** KLA-73: persona chosen to judge walk results for this Trail. Null = no judge assigned. */
   judgePersonaId: string | null
+  /** KLAVITYKLA-461: the source Sim this AutoSim was converted from (Convert-to-AutoSim). Null = authored directly. */
+  sourceSimId: string | null
   objectiveVerified?: boolean | null
   /** KLA-93: named environments (e.g. staging, prod). Empty = only baseUrl is available. */
   environments: TrailEnvironment[]

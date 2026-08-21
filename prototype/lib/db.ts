@@ -1121,6 +1121,10 @@ export async function applySchema(c: Client) {
   // File-upload fixtures: name→storageKey manifest so scheduled/verification walks can replay uploads.
   if (needCol("trails", "attachments_json")) await c.execute("ALTER TABLE trails ADD COLUMN attachments_json TEXT").catch((e: any) =>
     console.warn("trails.attachments_json ALTER skipped:", e?.message || e))
+  // KLAVITYKLA-461: link an AutoSim back to the source Sim it was converted from (Convert-to-AutoSim).
+  // Additive, nullable — most trails are authored directly and never carry a source Sim.
+  if (needCol("trails", "source_sim_id")) await c.execute("ALTER TABLE trails ADD COLUMN source_sim_id TEXT").catch((e: any) =>
+    console.warn("trails.source_sim_id ALTER skipped:", e?.message || e))
   // KLA-73: walk_judgments — one row per (run, persona) judgment session.
   await c.execute(`CREATE TABLE IF NOT EXISTS walk_judgments (
     id TEXT PRIMARY KEY,

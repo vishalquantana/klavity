@@ -760,6 +760,25 @@ body[data-view="recurring"] .grid>.card[data-view~="recurring"]{grid-column:1/-1
 .sim .name{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px}
 .sim .role{font-size:12px;color:var(--paper-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sim .la{font-size:11px;color:var(--paper-faint);font-family:var(--mono);margin-top:2px}
+/* KLAVITYKLA-461: Convert-to-AutoSim action + panel */
+.sim-wrap{display:flex;flex-direction:column;gap:6px}
+.sim-wrap>.sim{flex:1}
+.btn-convert-sim{display:inline-flex;align-items:center;justify-content:center;gap:6px;font-size:12px;font-weight:600;color:#fff;background:linear-gradient(135deg,var(--indigo),#7c5cff);border:1px solid var(--indigo);border-radius:9px;padding:7px 12px;cursor:pointer;transition:transform .15s ease,filter .15s ease}
+.btn-convert-sim:hover{transform:translateY(-1px);filter:brightness(1.05)}
+.btn-convert-sim:active{transform:scale(.97)}
+.ca-carry{background:var(--ink);border:1px solid var(--line);border-radius:10px;padding:11px;margin-bottom:12px}
+.ca-carry .ct{font-size:11px;color:var(--paper-faint);margin-bottom:7px}
+.ca-chips{display:flex;gap:6px;flex-wrap:wrap}
+.ca-chip{font-size:11px;padding:2px 9px;border-radius:999px;background:var(--ink2,rgba(255,255,255,.04));border:1px solid var(--line);color:var(--paper-faint)}
+.ca-chip.pain{color:#f0a878;border-color:rgba(217,131,36,.4)}
+.ca-chip.want{color:#a5b4fc;border-color:rgba(99,102,241,.4)}
+.ca-aihint{font-size:10.5px;color:var(--indigo);margin:-6px 0 12px;display:flex;align-items:center;gap:5px}
+.ca-aitag{font-size:9px;font-weight:800;color:#fff;background:var(--indigo);padding:1px 5px;border-radius:999px}
+.ca-freq{display:flex;gap:7px;margin:2px 0 4px}
+.ca-freq .opt{flex:1;text-align:center;padding:7px;border:1px solid var(--line);border-radius:8px;background:var(--ink);font-size:12px;cursor:pointer;color:var(--paper-faint)}
+.ca-freq .opt.on{border-color:var(--indigo);background:rgba(99,102,241,.12);color:var(--indigo);font-weight:600}
+.ca-done{display:grid;place-items:center;text-align:center;gap:8px;padding:10px 4px}
+.ca-check{width:46px;height:46px;border-radius:50%;background:rgba(22,163,74,.16);color:#22c55e;display:grid;place-items:center;font-size:22px}
 /* Global Sim badge: small pill shown on Sims marked is_global=1 */
 .sim-global-badge{display:inline-flex;align-items:center;font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--indigo);background:rgba(99,102,241,.12);border:1px solid rgba(99,102,241,.3);border-radius:5px;padding:1px 5px;flex-shrink:0}
 /* Global toggle in editor */
@@ -4932,15 +4951,83 @@ function renderSims(admin) {
       ? "/sim/" + encodeURIComponent(s.id) + "?project=" + encodeURIComponent(pid)
       : "/sim/" + encodeURIComponent(s.id)
     return `
-    <a class="sim" href="${esc(href)}">
-      <div class="av" style="background:${safeAccent(s.accent, col(s.name))}">${esc(s.initials||initials(s.name))}</div>
-      <div class="body">
-        <div class="name">${esc(s.name)}${s.isGlobal?'<span class="sim-global-badge" title="Available in all your projects">Global</span>':''}</div>
-        <div class="role">${esc(s.role||"")}</div>
-        <div class="la">${s.lastActiveAt?("active "+ago(s.lastActiveAt)):(s.insightsCount+" insight"+(s.insightsCount===1?"":"s"))}</div>
-      </div>
-    </a>`
+    <div class="sim-wrap">
+      <a class="sim" href="${esc(href)}">
+        <div class="av" style="background:${safeAccent(s.accent, col(s.name))}">${esc(s.initials||initials(s.name))}</div>
+        <div class="body">
+          <div class="name">${esc(s.name)}${s.isGlobal?'<span class="sim-global-badge" title="Available in all your projects">Global</span>':''}</div>
+          <div class="role">${esc(s.role||"")}</div>
+          <div class="la">${s.lastActiveAt?("active "+ago(s.lastActiveAt)):(s.insightsCount+" insight"+(s.insightsCount===1?"":"s"))}</div>
+        </div>
+      </a>
+      <button class="btn-convert-sim" title="Let this Sim test your product on its own, on a schedule" onclick="openConvertAutosim('${esc(s.id)}')">&#10022; Convert to AutoSim</button>
+    </div>`
   }).join("") + `</div>`
+}
+
+// ── KLAVITYKLA-461: Convert a Sim -> an AutoSim ─────────────────────────────
+var caState = { simId: null, freq: "weekly" };
+function setCaFreq(freq, el) {
+  caState.freq = freq;
+  var opts = document.querySelectorAll("#caFreq .opt");
+  for (var i = 0; i < opts.length; i++) opts[i].classList.toggle("on", opts[i] === el);
+}
+function openConvertAutosim(simId) {
+  var sim = (state.sims || []).find(function (x) { return x.id === simId; }) || { id: simId, name: "this Sim" };
+  caState.simId = simId; caState.freq = "weekly";
+  $("caName").textContent = sim.name || "this Sim";
+  $("caForm").style.display = ""; $("caSuccess").style.display = "none";
+  $("caMsg").textContent = ""; $("caGo").disabled = false;
+  $("caObj").value = ""; $("caChips").innerHTML = "";
+  $("caUrl").value = (state && state.active && state.active.siteUrl) || "";
+  setCaFreq("weekly", document.querySelector('#caFreq .opt[data-freq="weekly"]'));
+  $("caBg").classList.add("open");
+  var pid = curProjId();
+  // Carried-over persona chips: role + top pains + top wants, from the Sim's profile.
+  fetch("/api/sims/" + encodeURIComponent(simId) + "/profile?project=" + encodeURIComponent(pid))
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (d) {
+      if (!d || !d.sim) return;
+      var chips = [];
+      if (d.sim.role) chips.push('<span class="ca-chip">' + esc(d.sim.role) + "</span>");
+      var ins = Array.isArray(d.sim.insights) ? d.sim.insights : [];
+      var pains = ins.filter(function (i) { return i.kind === "pain"; }).slice(0, 2);
+      var wants = ins.filter(function (i) { return i.kind === "want"; }).slice(0, 2);
+      pains.forEach(function (p) { chips.push('<span class="ca-chip pain">' + esc(p.text || "") + "</span>"); });
+      wants.forEach(function (w) { chips.push('<span class="ca-chip want">' + esc(w.text || "") + "</span>"); });
+      $("caChips").innerHTML = chips.join("");
+    }).catch(function () {});
+  // AI-suggested objective, pre-filled + editable.
+  $("caObj").value = ""; $("caObj").setAttribute("placeholder", "Generating a suggested objective...");
+  $("caAihintTxt").textContent = "thinking...";
+  fetch("/api/sims/" + encodeURIComponent(simId) + "/autosim-objective?project=" + encodeURIComponent(pid), { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (d) {
+      if (d && d.objective && !$("caObj").value) $("caObj").value = d.objective;
+      $("caAihintTxt").textContent = (d && d.source === "ai") ? "suggested from the persona's goals — edit freely" : "drafted from the persona — edit freely";
+    }).catch(function () { $("caAihintTxt").textContent = "write what this Sim should try to do"; });
+}
+function closeConvertAutosim() { $("caBg").classList.remove("open"); }
+function createAutosimFromSim() {
+  var pid = curProjId();
+  var objective = ($("caObj").value || "").trim();
+  var baseUrl = ($("caUrl").value || "").trim();
+  if (objective.length < 10) { $("caMsg").style.color = "var(--rose)"; $("caMsg").textContent = "Describe what the Sim should try to do (at least a sentence)."; return; }
+  if (!baseUrl) { $("caMsg").style.color = "var(--rose)"; $("caMsg").textContent = "Add a URL where the Sim should run."; return; }
+  $("caGo").disabled = true; $("caMsg").style.color = "var(--paper-faint)"; $("caMsg").textContent = "Setting it loose...";
+  fetch("/api/sims/" + encodeURIComponent(caState.simId) + "/autosim?project=" + encodeURIComponent(pid), {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ objective: objective, base_url: baseUrl, frequency: caState.freq })
+  }).then(function (r) { return r.json().then(function (d) { return { status: r.status, d: d }; }); })
+    .then(function (res) {
+      $("caGo").disabled = false;
+      if (res.status !== 202) { $("caMsg").style.color = "var(--rose)"; $("caMsg").textContent = (res.d && (res.d.error || res.d.message)) || "Could not create the AutoSim."; return; }
+      var name = $("caName").textContent;
+      var freqTxt = caState.freq === "weekly" ? "weekly" : (caState.freq === "on_release" ? "on each release" : "once");
+      $("caSuccessSub").textContent = name + " will now test your product " + freqTxt + " and file the friction it hits.";
+      $("caViewLink").setAttribute("href", "/autosims?project=" + encodeURIComponent(pid));
+      $("caForm").style.display = "none"; $("caSuccess").style.display = "";
+    }).catch(function () { $("caGo").disabled = false; $("caMsg").style.color = "var(--rose)"; $("caMsg").textContent = "Network error. Try again."; });
 }
 
 function renderSimsFeed() {
@@ -10208,6 +10295,54 @@ load()
       <button class="btn btn-ghost" onclick="closeNewProject()">Cancel</button>
     </div>
     <div id="npMsg" style="margin-top:10px;font-size:13px"></div>
+  </div>
+</div>
+
+<!-- KLAVITYKLA-461: Convert a Sim -> an AutoSim -->
+<div class="modal-bg" id="caBg" role="dialog" aria-modal="true" aria-labelledby="caTitle">
+  <div class="modal" style="max-width:460px">
+    <div class="mhead">
+      <h3 id="caTitle">Let <span id="caName">this Sim</span> test on its own</h3>
+      <button class="mclose btn btn-ghost btn-sm" onclick="closeConvertAutosim()" aria-label="Cancel">&#x2715;</button>
+    </div>
+    <div id="caForm">
+      <p class="lead" style="margin-bottom:14px">It will drive your product as this persona, on a schedule, and file what trips it up. No recreating the persona from scratch.</p>
+      <div class="ca-carry">
+        <div class="ct">Carried over from the Sim &#10003;</div>
+        <div class="ca-chips" id="caChips"></div>
+      </div>
+      <label style="display:block;margin-bottom:4px">
+        <span style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">What should it try to do?</span>
+        <textarea id="caObj" rows="3" style="width:100%;box-sizing:border-box" placeholder="Sign in, open the dashboard, check the key number is obvious and correct, flag anything confusing."></textarea>
+      </label>
+      <div class="ca-aihint" id="caAihint"><span class="ca-aitag">AI</span> <span id="caAihintTxt">suggested from the persona&#8217;s goals &#8212; edit freely</span></div>
+      <label style="display:block;margin-bottom:14px">
+        <span style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">Where</span>
+        <input id="caUrl" type="url" placeholder="https://yourapp.com" style="width:100%;box-sizing:border-box" />
+      </label>
+      <div style="font-size:13px;font-weight:600;margin-bottom:6px">How often</div>
+      <div class="ca-freq" id="caFreq">
+        <span class="opt" data-freq="once" onclick="setCaFreq('once',this)">Once</span>
+        <span class="opt on" data-freq="weekly" onclick="setCaFreq('weekly',this)">Weekly</span>
+        <span class="opt" data-freq="on_release" onclick="setCaFreq('on_release',this)">On each release</span>
+      </div>
+      <div class="row" style="gap:10px;margin-top:16px">
+        <button class="btn btn-indigo" id="caGo" onclick="createAutosimFromSim()">Create AutoSim</button>
+        <button class="btn btn-ghost" onclick="closeConvertAutosim()">Cancel</button>
+      </div>
+      <div id="caMsg" style="margin-top:10px;font-size:13px"></div>
+    </div>
+    <div id="caSuccess" style="display:none">
+      <div class="ca-done">
+        <div class="ca-check">&#10003;</div>
+        <h3 style="margin:0">AutoSim created</h3>
+        <p class="lead" id="caSuccessSub" style="margin:0"></p>
+      </div>
+      <div class="row" style="gap:10px;margin-top:14px">
+        <a class="btn btn-indigo" id="caViewLink" href="/autosims">View in AutoSims</a>
+        <button class="btn btn-ghost" onclick="closeConvertAutosim()">Done</button>
+      </div>
+    </div>
   </div>
 </div>
 

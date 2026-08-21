@@ -131,3 +131,33 @@ test("two distinct steps sharing the same page-state + selector each keep their 
   const cnt = await db.execute({ sql: "SELECT COUNT(*) c FROM locator_cache WHERE trail_id=?", args: [trailId] })
   expect(Number(cnt.rows[0].c)).toBe(2)
 })
+
+test("KLAVITYKLA-461: crystallize stamps source_sim_id + weekly schedule + judge persona (Convert-to-AutoSim)", async () => {
+  // The Convert-to-AutoSim path feeds runAuthorNow -> crystallize with the persona link, a pre-chosen
+  // recurring schedule, and the persona as judge. Verify all three land on the persisted Trail row.
+  const traj = {
+    name: "Sarah Chen · Q2 dashboard",
+    intent: "Sign in, open the Q2 revenue dashboard, check the total is obvious and correct, flag anything confusing",
+    baseUrl: "https://app.charantra.com/",
+    authorKind: "llm" as const,
+    createdBy: "vishal@quantana.com.au",
+    judgePersonaId: "sim_sarah",
+    sourceSimId: "sim_sarah",
+    schedule: "0 9 * * 1",
+    scheduleTz: "Australia/Sydney",
+    steps: [
+      { action: "navigate" as const, actionValue: "https://app.charantra.com/login", url: "https://app.charantra.com/", domHash: "d0" },
+    ],
+  }
+  const { trailId } = await crystallize("proj_convert", traj)
+  const trail = await T.getTrail("proj_convert", trailId)
+  expect(trail).toBeTruthy()
+  expect(trail!.sourceSimId).toBe("sim_sarah")
+  expect(trail!.judgePersonaId).toBe("sim_sarah")
+  expect(trail!.schedule).toBe("0 9 * * 1")
+  expect(trail!.scheduleTz).toBe("Australia/Sydney")
+  expect(trail!.intent).toContain("Q2 revenue dashboard")
+  expect(trail!.baseUrl).toBe("https://app.charantra.com/")
+  // Draft on creation — recurs only after Review & Activate (autonomous engines stay gated).
+  expect(trail!.status).toBe("draft")
+})
