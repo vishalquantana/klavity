@@ -9,7 +9,7 @@ import { projectEntitlement } from "./lib/entitlement"
 import { logAudit, queryAuditLog, auditRowsToCsv, type AuditAction } from "./lib/audit-log"
 import { buildMemberExport, membersToCsv, MEMBER_EXPORT_FIELDS } from "./lib/member-export"
 import { isMaskingEnabled, maskMemberExportRow, maskDeep, maskWalkReportData } from "./lib/data-masking"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows } from "./lib/db"
 import { countFoundingAccounts } from "./lib/db"
 // KLAVITYKLA-366 — the Founding Ten spot counter. One cached source of truth behind the public
 // pricing band, the in-app ribbon, and the server-side refusal of an 11th founding checkout.
@@ -221,6 +221,15 @@ function ticketDashboardUrl(projectId: string, feedbackId?: string | null): stri
   return `${withTicket}#tickets`
 }
 
+// KLAVITYKLA-491: the FAST single-ticket permalink for Slack/email deep links + the connector
+// session-replay link. Lands on GET /t/:ref (public/ticket.html), which renders just this one ticket
+// instead of booting the whole dashboard SPA. The route resolves the project from the feedback row
+// and member-gates server-side, so we only pass the opaque feedback id (no project param needed). The
+// page itself carries an "Open in full dashboard" link back to ticketDashboardUrl for in-board work.
+function ticketDeepLinkUrl(feedbackId: string): string {
+  return `${BASE.replace(/\/+$/, "")}/t/${encodeURIComponent(feedbackId)}`
+}
+
 // JTBD 2.15: the post-login invite redirect carries the assigned ticket forward so first login
 // lands directly on it. The stored feedbackId is threaded through so the login flow can preserve it.
 function ticketInviteUrl(projectId: string, email: string, feedbackId?: string | null): string {
@@ -243,7 +252,7 @@ async function notifyTicketAssignee(input: { projectId: string; feedbackId: stri
         ticketTitle: input.ticketTitle,
         projectName: input.projectName ?? null,
         assignedBy: input.assignedBy ?? null,
-        ticketUrl: ticketDashboardUrl(input.projectId, input.feedbackId),
+        ticketUrl: ticketDeepLinkUrl(input.feedbackId),
         joinUrl: ticketInviteUrl(input.projectId, input.assignee, input.feedbackId),
       }).catch((e: any) => console.warn("ticket assignment invite email skipped:", e?.message || e))
     }
@@ -255,7 +264,7 @@ async function notifyTicketAssignee(input: { projectId: string; feedbackId: stri
       ticketTitle: input.ticketTitle,
       projectName: input.projectName ?? null,
       assignedBy: input.assignedBy ?? null,
-      ticketUrl: ticketDashboardUrl(input.projectId, input.feedbackId),
+      ticketUrl: ticketDeepLinkUrl(input.feedbackId),
     }).catch((e: any) => console.warn("ticket assignment email skipped:", e?.message || e))
   }
   return { emailSent: canEmail }
@@ -1638,7 +1647,7 @@ async function feedbackToTicketPayload(fb: any, project: { id: string; name?: st
     try {
       const pid = String(fb.projectId || project.id)
       const withReplay = await feedbackIdsWithReplay(pid, [String(fb.id)])
-      if (withReplay.has(String(fb.id))) lines.push(`Session replay: ${BASE}/dashboard?project=${pid}&ticket=${fb.id}`)
+      if (withReplay.has(String(fb.id))) lines.push(`Session replay: ${ticketDeepLinkUrl(String(fb.id))}`)
     } catch (e: any) { console.warn("replay link for export skipped (non-fatal):", e?.message || e) }
   }
   lines.push("Filed by Klavity")
@@ -6524,6 +6533,39 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       return new Response(renderReportStatusPage(reportRefMatch[1], status), { status: 200, headers })
     }
 
+    // ── GET /t/:ref — fast, member-gated single-ticket permalink (KLAVITYKLA-491 / JTBD 2.15) ──
+    // A ticket deep link used to be /dashboard?...&ticket=fb_... which booted the ENTIRE dashboard SPA
+    // just to focus one ticket (Raghu flagged the wait). This route serves a tiny standalone page
+    // (public/ticket.html) that fetches ONLY that ticket + its comments and renders fast. Auth model:
+    //   • no session      → redirect to /login?next=/t/:ref (loginGate), so first login lands here.
+    //   • session, non-member of the ticket's project → 403 (never leak a ticket to a non-member).
+    //   • member          → serve the page (its inline JS calls the same member-gated APIs the
+    //                        dashboard uses: GET /api/feedback/:id (+/comments), PATCH, POST comment).
+    // The project is resolved from the feedback row server-side (resolveFeedbackRef) — a query param is
+    // never trusted. The in-dashboard focus (?ticket=…) still works; this route is purely additive.
+    const ticketRefMatch = path.match(/^\/t\/([A-Za-z0-9_-]{1,80})$/)
+    if (req.method === "GET" && ticketRefMatch) {
+      if (!rlAllow("ticket:page:" + clientIp(req, server), 120, 60_000)) return new Response("Rate limited", { status: 429 })
+      if (!me) return loginGate(path, url.search)
+      const resolved = await resolveFeedbackRef(ticketRefMatch[1]).catch(() => null)
+      // Unknown/malformed ref → bare 404 (no info leak).
+      if (!resolved) return new Response("Not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } })
+      // Real membership gate: resolve project from the ROW, then check the caller belongs to it.
+      const tAccess = await projectAccess(me, resolved.projectId).catch(() => null)
+      if (!tAccess) return json({ error: "You are not a member of this ticket's project." }, 403)
+      // Serve the standalone page with the resolved FULL feedback id + project id injected as JS
+      // string literals (the ref may have been the short form; the page needs the full id for the APIs).
+      const _tPath = PUB + "/ticket.html"
+      if (!(await Bun.file(_tPath).exists())) return new Response("Not found", { status: 404 })
+      let _tHtml = await Bun.file(_tPath).text()
+      _tHtml = _tHtml
+        .replaceAll("__TICKET_ID__", resolved.id)
+        .replaceAll("__PROJECT_ID__", resolved.projectId)
+      return new Response(_tHtml, {
+        headers: { "content-type": "text/html; charset=utf-8", "x-robots-tag": "noindex, nofollow", "cache-control": "no-store" },
+      })
+    }
+
     // GET /shared/project/:token       — serve the read-only project status HTML (no auth)
     // GET /shared/project/:token/data  — return JSON portal data (no auth)
     // Token format: 64-char lowercase hex (32 random bytes); 404 on bad/unknown token.
@@ -8995,7 +9037,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               ticketTitle: fbRow.observation ?? null,
               projectName: projName,
               commentBody: text,
-              ticketUrl: ticketDashboardUrl(fbRow.projectId, fid),
+              ticketUrl: ticketDeepLinkUrl(fid),
               author: me,
               assignee: fbRow.assignee,
               contactEmail: fbRow.contactEmail,
@@ -9052,6 +9094,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             notes: fbRow.notes,
             urlPath: fbRow.urlPath,
             urlHost: fbRow.urlHost,
+            // KLAVITYKLA-491: reporter + a single resolved page URL, mirroring the /api/dashboard ticket
+            // projection so the standalone /t/:ref page renders reporter + page context without a second
+            // fetch. Member-gated (fbRow already access-checked above) — never surfaced to non-members.
+            reporterEmail: fbRow.actorEmail || fbRow.contactEmail || null,
+            pageUrl: fbRow.reportUrl || (fbRow.urlHost ? `https://${fbRow.urlHost}${fbRow.urlPath || ""}` : (fbRow.urlPath || null)),
+            ref: String(fbRow.id).split("-")[0],
             sourceReferrer: fbRow.sourceReferrer,
             sourceQuote: fbRow.sourceQuote,
             sourceDate: fbRow.sourceDate,
