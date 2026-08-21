@@ -350,6 +350,13 @@ input.code{font-family:var(--mono);font-size:24px;letter-spacing:.5em;text-align
    step-2 install tiles hidden for snap so founders get the widget path only. */
 .shell[data-goal="snap"] #installTiles{display:none}
 
+/* "Snap is always free" reassurance badge (Install step) */
+.free-badge{display:inline-flex;align-items:center;gap:8px;margin:2px 0 6px;padding:7px 12px;border-radius:999px;
+  font-size:12.5px;color:var(--green);background:color-mix(in srgb,var(--green) 10%,transparent);
+  border:1px solid color-mix(in srgb,var(--green) 30%,transparent)}
+.free-badge b{color:var(--green)}
+.free-badge .fb-dot{width:7px;height:7px;border-radius:50%;background:var(--green);flex:0 0 auto}
+
 /* theme toggle */
 .theme-toggle{position:fixed;right:16px;bottom:70px;z-index:90;width:40px;height:40px;border-radius:50%;border:1px solid var(--line);
   background:var(--card);color:var(--ink);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;
@@ -378,7 +385,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 
   <!-- ═════════ STEP 1 · GOAL (data-s=0) — the FIRST screen ═════════ -->
   <section class="screen on" data-s="0">
-    <div class="kicker">Step 1 · Your goals</div>
+    <div class="kicker">Step 1 of 5 · Your goals</div>
     <h1 class="hd">What are you looking to <em>improve?</em></h1>
     <p class="sub">Select everything that applies — Klavity tunes its testing and findings around what matters to you.</p>
     <div class="cols" role="group" aria-label="What are you looking to improve?">
@@ -407,7 +414,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 
   <!-- ═════════ STEP 2 · PRODUCT (data-s=1) — connect + real aha input ═════════ -->
   <section class="screen" data-s="1">
-    <div class="kicker">Step 2 · Connect your product</div>
+    <div class="kicker">Step 2 of 5 · Connect your product</div>
     <h1 class="hd">Point Klavity at <em>your app.</em></h1>
     <p class="sub">Just a URL to start. Klavity opens your product in a real browser, reads your pages, and surfaces issues before your users hit them — no signup needed to see your first finding.</p>
     <div class="cols">
@@ -442,7 +449,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 
   <!-- ═════════ STEP 3 · TEST (data-s=2) — exploring / live run + recommended tests ═════════ -->
   <section class="screen" data-s="2">
-    <div class="kicker">Step 3 · Test</div>
+    <div class="kicker">Step 3 of 5 · See it work</div>
     <h1 class="hd">Klavity is testing your product.</h1>
     <p class="sub">It browses your app like a first-time customer — no test scripts to write. Watch it work; this live walkthrough is the heart of Klavity.</p>
     <div class="cols">
@@ -470,7 +477,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 
   <!-- ═════════ STEP 4 · INSIGHTS — first result (data-s=3) ═════════ -->
   <section class="screen" data-s="3">
-    <div class="kicker green">Step 4 · Your first result</div>
+    <div class="kicker green">Step 3 of 5 · Your first result</div>
     <h1 class="hd">Your Sim just reacted, <em>live.</em></h1>
     <p class="sub">This is one real reaction from your first Sim on your real page — not a demo. Save your project to run the full review across every persona, with findings filed straight to your tracker.</p>
     <!-- Real reaction (from /api/sim/preview) is rendered here — persona, sentiment, observation,
@@ -485,7 +492,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   <!-- ═════════ STEP 4 · INSIGHTS — signup gate (data-s=4) — OTP earned after the win ═════════ -->
   <section class="screen" data-s="4">
     <div id="s1form">
-      <div class="kicker" id="s1kick">Step 4 · Insights · save your results</div>
+      <div class="kicker" id="s1kick">Step 4 of 5 · Create your account</div>
       <h1 class="hd">Save your results &amp; <em>keep going.</em></h1>
       <p class="sub" id="s1sub">Create your project so the finding you just saw — and every review after it — is waiting for you. We will email you a 6-digit sign-in code. No password.</p>
       <div style="max-width:460px">
@@ -497,7 +504,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       </div>
     </div>
     <div id="s1code" class="hide">
-      <div class="kicker" id="s1ckick">Step 4 · Insights · check your email</div>
+      <div class="kicker" id="s1ckick">Step 4 of 5 · Check your email</div>
       <h1 class="hd">Enter your <em>6-digit code.</em></h1>
       <p class="sub">We emailed a sign-in code to <b id="codeEmail">you</b>. Pop it in below to finish creating your project.</p>
       <div style="max-width:460px">
@@ -511,7 +518,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 
   <!-- ═════════ STEP 4 · INSIGHTS — send to tracker (data-s=5) ═════════ -->
   <section class="screen" data-s="5">
-    <div class="kicker" id="s3kick">Step 4 · Insights · connect your tracker</div>
+    <div class="kicker" id="s3kick">Also on your dashboard · Connect your tracker</div>
     <h1 class="hd">Send issues to <em>your tracker.</em></h1>
     <p class="sub">Every issue Klavity finds can flow straight into the tool your team already lives in — with evidence and reproduction steps attached — or stay in Klavity Cloud.</p>
     <div class="grid2" role="group" aria-label="Choose where issues go">
@@ -548,7 +555,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 
   <!-- ═════════ STEP 5 · AUTOMATE — plan (data-s=6) ═════════ -->
   <section class="screen" data-s="6">
-    <div class="kicker amber" id="s4kick">Step 5 · Automate · start your plan</div>
+    <div class="kicker amber" id="s4kick">Also on your dashboard · Pick a plan</div>
     <h1 class="hd">You've seen it work. Ready to put it to <em>work?</em></h1>
     <p class="sub">Continuous AI testing runs real browsers and real models on every release. Pick a plan to start — no card charged now, and there is no credit-burn.</p>
     <div class="plans" role="group" aria-label="Choose a plan">
@@ -556,7 +563,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       <button type="button" class="plan sel" id="planTeam" onclick="choosePlan('team')"><span class="pl-tag">Recommended</span><h3>Team</h3><div class="pl-price">$99<span> /mo</span></div><div class="pl-desc">AutoSim on every release, multiple projects, and your whole team in one workspace.</div></button>
       <button type="button" class="plan" id="planScale" onclick="choosePlan('founding')"><span class="pl-tag">Highest volume</span><h3>Scale</h3><div class="pl-price">Custom</div><div class="pl-desc">High-volume AutoSim runs, priority support, and advanced guard-rail controls.</div></button>
     </div>
-    <div class="guarantee"><span><b>14-day money-back guarantee.</b> Not a free trial — start on a real plan, and if Klavity is not catching issues worth the price in your first two weeks, we refund you in full.</span></div>
+    <div class="guarantee"><span><b>30-day money-back guarantee.</b> Snap bug reporting is free forever — plans add Sims + AutoSim. Start on a real plan, and if Klavity is not catching issues worth the price in your first 30 days, we refund you in full.</span></div>
     <div class="row">
       <button class="btn btn-indigo" id="planContinue" onclick="planContinue()">Continue →</button>
       <button class="skip" id="planSkip" onclick="planSkip()">Choose a plan later</button>
@@ -565,7 +572,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 
   <!-- ═════════ STEP 5 · AUTOMATE — create a Sim (data-s=7) ═════════ -->
   <section class="screen" data-s="7">
-    <div class="kicker amber">Step 5 · Automate · your AI customers</div>
+    <div class="kicker amber">Also on your dashboard · Your AI customers</div>
     <h1 class="hd">Want Klavity to think like <em>your</em> customers?</h1>
     <p class="sub">So far a general AI customer did the testing. Create a <b>Sim</b> — an AI persona grounded in your real users — or skip and do it later from the dashboard.</p>
     <div class="cols">
@@ -591,7 +598,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 
   <!-- ═════════ STEP 5 · AUTOMATE — keep testing every release (data-s=8) ═════════ -->
   <section class="screen" data-s="8">
-    <div class="kicker amber" id="s5kick">Step 5 · Automate · keep testing</div>
+    <div class="kicker amber" id="s5kick">Also on your dashboard · Keep testing</div>
     <h1 class="hd">Keep testing <em>every release.</em></h1>
     <p class="sub" id="s3sub">Turn your critical journeys into continuous <b>AutoSims</b> — they re-run the flows that matter on every release, catch regressions before your customers do, and file what they find.</p>
 
@@ -642,9 +649,10 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 
   <!-- ═════════ INSTALL — Snap short path (data-s=10) ═════════ -->
   <section class="screen" data-s="10">
-    <div class="kicker amber" id="s2kick">Add Klavity to your site</div>
+    <div class="kicker amber" id="s2kick">Step 5 of 5 · Install &amp; go live</div>
     <h1 class="hd">Add Klavity to your <em>site.</em></h1>
     <p class="sub" id="installSub">Drop one small piece of code on your site and every visitor gets a one-click bug button — clean, detailed tickets land in your dashboard automatically. No extra apps.</p>
+    <div class="free-badge" id="snapFreeBadge" role="note"><span class="fb-dot" aria-hidden="true"></span>Snap bug reporting is <b>free forever</b> — plans only add Sims + AutoSim.</div>
 
     <!-- widget (primary) + extension (secondary). installTiles hidden on the Snap goal via CSS. -->
     <div class="tiles" id="installTiles">
@@ -918,14 +926,33 @@ try {
   }
 } catch(e){}
 
-// ── Rail model. Sims path uses the full 5-phase rail; Snap collapses to Goal → Setup → Done
-//    (hiding the Test + Automate steps per the short widget-install path). ──
+// ── Rail model (tightened critical path). The wizard now stops at the activation moment —
+//    Goal → Product URL → See it work (aha, before signup) → Create account → Install. Everything
+//    that isn't required to feel value (connect-a-tracker / turn-on-AutoSim / pick-a-plan / add-more-
+//    Sims) has MOVED OUT of the wizard into the dashboard "Finish setting up Klavity" checklist, so
+//    progress always moves forward with a visible finish line. Snap collapses to Goal → Create
+//    account → Install. Screens data-s 5..8 (tracker/plan/sim/autosim) are no longer routed into —
+//    they are kept as inert markup only for back-compat and are never rendered. ──
 function railModel(){
-  if (goal === 'snap') return { labels:['Goal','Setup','Done'], phaseOf:{0:0,4:1,10:1,9:2} }
+  if (goal === 'snap') return { labels:['Goal','Create account','Install'], phaseOf:{0:0,4:1,10:2,9:2} }
   return {
-    labels:['Goal','Product','Test','Insights','Automate'],
-    phaseOf:{0:0,1:1,2:2,3:3,4:3,5:3,6:4,7:4,8:4,9:4}
+    labels:['Goal','Product URL','See it work','Create account','Install'],
+    phaseOf:{0:0,1:1,2:2,3:2,4:3,10:4,9:4}
   }
+}
+// Honest sequential "Step N of M" kicker — derived from the rail so it always matches the top rail
+// and never freezes on one number. Screen → its short label; the step number is the rail phase.
+const SCREEN_LABEL = { 0:'Your goals', 1:'Connect your product', 2:'See it work', 3:'Your first result', 4:'Create your account', 10:'Install & go live', 9:"You're all set" }
+function stepLabel(){
+  const m = railModel()
+  const p = (m.phaseOf[cur] != null) ? m.phaseOf[cur] : 0
+  return 'Step ' + (p + 1) + ' of ' + m.labels.length
+}
+function applyKicker(){
+  const sec = document.querySelector('.screen[data-s="' + cur + '"]'); if (!sec) return
+  const step = stepLabel()
+  if (cur === S.SIGNUP){ setText('s1kick', step + ' · Create your account'); setText('s1ckick', step + ' · Check your email'); return }
+  const k = sec.querySelector('.kicker'); if (k) k.textContent = step + ' · ' + (SCREEN_LABEL[cur] || '')
 }
 const CHECK_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>'
 function renderRail(){
@@ -944,6 +971,7 @@ function renderRail(){
 function paint(){
   document.querySelectorAll('.screen').forEach(el => el.classList.toggle('on', Number(el.dataset.s) === cur))
   renderRail()
+  applyKicker()
   if (typeof syncWidgetPoll === 'function') syncWidgetPoll()
   if (cur === S.AUTOSIM) syncAhaPrimary()
   if (cur === S.INSIGHT) renderInsightLive()
@@ -1049,7 +1077,7 @@ function stashTestCreds(){
   } catch(e){ return false }
 }
 
-// ── Step 4 · Insights: surface the real /api/sim/preview reaction (if any) as a finding. ──
+// ── Step 3 · See it work: surface the real /api/sim/preview reaction (if any) as a finding. ──
 function renderInsightLive(){
   const slot = $('insightLive'); if (!slot) return
   let st = null
@@ -1100,7 +1128,7 @@ function renderInsightLive(){
   slot.innerHTML = '<div class="card">' + head + body + '</div>'
 }
 
-// ── Step 4 · Insights: tracker connector choice (#445). ──
+// ── Deferred to dashboard: tracker connector choice (#445) — kept as inert markup, no longer routed. ──
 // Cloud stays the zero-config default (unchanged). Picking a REAL tracker expands an inline connect
 // panel that stores per-project connector credentials through the SAME connector store the dashboard
 // uses (POST /api/projects/:id/connectors — secrets encrypted server-side), then previews the
@@ -1400,7 +1428,9 @@ async function requestCode(){
   // Already signed in: skip the second OTP — name the project and move on.
   if (signedIn) {
     const b = $('createBtn'); b.disabled = true; b.textContent = 'Creating…'
-    try { await applyProjectName(); go(goal === 'snap' ? S.INSTALL : S.TRACKER) }
+    // Tightened path: signup → Install (the activation moment) for BOTH forks. Tracker / plan /
+    // AutoSim / more-Sims are deferred to the dashboard "Finish setting up Klavity" checklist.
+    try { await applyProjectName(); go(S.INSTALL) }
     catch(e){ err.textContent = 'Network error — try again.' }
     finally { b.disabled = false; b.textContent = 'Create project →' }
     return
@@ -1448,7 +1478,9 @@ async function verifyCode(){
       try { sessionStorage.setItem('klav-onboarding-project', projectId) } catch(e){}
     }
     await applyProjectName()
-    go(goal === 'snap' ? S.INSTALL : S.TRACKER)
+    // Tightened path: straight to Install after the account is created (aha already happened before
+    // signup). Deferred setup (tracker / plan / AutoSim / more Sims) lives on the dashboard checklist.
+    go(S.INSTALL)
   } catch(e){ err.textContent = 'Network error — try again.' }
   finally { btn.disabled = false; btn.textContent = 'Verify & create →' }
 }
@@ -1560,8 +1592,10 @@ function s2proceed() {
   if (installPath === 'extension' && !extConnected) connectExtension()
   else finishToReports()
 }
-// Snap users can opt into the Sims path from the install step.
-function addSimsToo(){ goal = 'sims'; persistGoal('sims'); applyGoal(); go(S.TRACKER) }
+// Snap users can opt into the Sims path from the install step. In the tightened flow both forks
+// finish at Install, so this just switches the fork (revealing the extension tile + Sims copy) and
+// re-renders in place — richer Sims / AutoSim setup then live on the dashboard checklist.
+function addSimsToo(){ goal = 'sims'; persistGoal('sims'); applyGoal(); paint() }
 
 // ── DONE — final exit to the dashboard. ──
 async function finishAll(){

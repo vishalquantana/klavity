@@ -106,3 +106,82 @@ test('dashboard.html keeps data-go=autosims', () => {
 test('dashboard.html keeps data-go=tickets', () => {
   expect(loadPublic('../public/dashboard.html')).toContain('data-go="tickets"');
 });
+
+// ── Tightened onboarding: honest sequential progress ─────────────────────────
+// The wizard used to show four consecutive "Step 4" screens (looked frozen). Progress must now
+// count honestly and sequentially ("Step N of M") across the real critical-path screens.
+
+test('onboarding.html progress is sequential "Step N of 5" across the critical path', () => {
+  const src = loadSite('onboarding.html')
+  expect(src).toContain('Step 1 of 5 · Your goals')
+  expect(src).toContain('Step 2 of 5 · Connect your product')
+  expect(src).toContain('Step 3 of 5 · See it work')
+  expect(src).toContain('Step 4 of 5 · Create your account')
+  expect(src).toContain('Step 5 of 5 · Install')
+})
+
+test('onboarding.html no longer shows the frozen "Step 4 · Insights" plateau', () => {
+  const src = loadSite('onboarding.html')
+  // The old bug: multiple visible kickers reading "Step 4 · Insights ·". None may remain in markup.
+  expect(src).not.toContain('Step 4 · Insights')
+})
+
+test('onboarding.html derives the kicker from the rail so it always matches (applyKicker)', () => {
+  const src = loadSite('onboarding.html')
+  expect(src).toContain('function applyKicker(')
+  expect(src).toContain("'Step ' + (p + 1) + ' of ' + m.labels.length")
+  // The rail itself is the 5-phase tightened path.
+  expect(src).toContain("labels:['Goal','Product URL','See it work','Create account','Install']")
+})
+
+// ── Deferred setup: tracker / plan / AutoSim / more-Sims move OUT of the wizard ───────────────
+// After the account is created the wizard goes straight to Install (the activation moment). It must
+// no longer route signup into the tracker step.
+
+test('onboarding.html routes account creation straight to Install (no wizard tracker/plan detour)', () => {
+  const src = loadSite('onboarding.html')
+  // Old routing branched to the tracker step for the sims fork — it must be gone.
+  expect(src).not.toContain("go(goal === 'snap' ? S.INSTALL : S.TRACKER)")
+  // verifyCode + requestCode now both advance to Install.
+  expect(src).toContain('go(S.INSTALL)')
+})
+
+// ── "Snap is always free" + 30-day guarantee copy ────────────────────────────
+
+test('onboarding.html surfaces "Snap is free forever" near Install', () => {
+  const src = loadSite('onboarding.html')
+  expect(src).toContain('id="snapFreeBadge"')
+  expect(src).toContain('free forever')
+})
+
+// ── Dashboard "Finish setting up Klavity" checklist (relocated wizard steps) ──
+
+test('dashboard.html has the "Finish setting up Klavity" checklist with the four deferred tasks', () => {
+  const src = loadPublic('dashboard.html')
+  expect(src).toContain('id="finishSetup"')
+  expect(src).toContain('Finish setting up Klavity')
+  expect(src).toContain('id="fsInstall"')
+  expect(src).toContain('id="fsTracker"')
+  expect(src).toContain('id="fsAutosim"')
+  expect(src).toContain('id="fsPlan"')
+})
+
+test('dashboard.html "Connect your tracker" task reuses #445 openTrackerConnect()', () => {
+  const src = loadPublic('dashboard.html')
+  expect(src).toContain('$("fsTrackerBtn").onclick')
+  expect(src).toMatch(/fsTrackerBtn"\)\.onclick[\s\S]{0,80}openTrackerConnect\(\)/)
+})
+
+test('dashboard.html checklist is dismissible and re-openable via a "Getting started" sidebar entry', () => {
+  const src = loadPublic('dashboard.html')
+  expect(src).toContain('id="finishSetupX"')
+  expect(src).toContain('klav-finish-setup-x')
+  expect(src).toContain('data-go="getting-started"')
+  expect(src).toContain('Getting started')
+})
+
+test('dashboard.html plan task carries "Snap is always free" + 30-day guarantee', () => {
+  const src = loadPublic('dashboard.html')
+  expect(src).toContain('Snap is always free')
+  expect(src).toContain('30-day money-back guarantee')
+})

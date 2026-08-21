@@ -1234,6 +1234,23 @@ input.conn-autofilled{border-color:var(--indigo)!important;box-shadow:0 0 0 2px 
 .checklist .cl-step-d a:hover{text-decoration:underline}
 .checklist .cl-x{position:absolute;top:14px;right:16px;background:none;border:none;color:var(--paper-faint);cursor:pointer;font-size:16px;line-height:1;padding:4px}
 .checklist .cl-x:hover{color:var(--paper-dim)}
+/* "Finish setting up Klavity" deferred-setup checklist (tightened onboarding) */
+.checklist.finish-setup .fs-prog{font-family:var(--mono);font-size:12px;font-weight:500;color:var(--paper-faint);margin-left:6px}
+.checklist.finish-setup ol.fs-tasks{gap:2px}
+.checklist.finish-setup li.fs-task{counter-increment:none;align-items:center;gap:11px;padding:11px 4px;border-bottom:1px solid rgba(139,139,245,.16)}
+.checklist.finish-setup li.fs-task:last-of-type{border-bottom:0}
+.checklist.finish-setup li.fs-task::before{content:none}
+.checklist.finish-setup .fs-tick{flex:0 0 auto;width:22px;height:22px;border-radius:50%;border:2px solid rgba(139,139,245,.4);display:grid;place-items:center;background:transparent}
+.checklist.finish-setup li.fs-done .fs-tick{background:var(--green);border-color:var(--green)}
+.checklist.finish-setup li.fs-done .fs-tick::after{content:"\2713";color:#fff;font-size:12px;font-weight:700;line-height:1}
+.checklist.finish-setup li.fs-done .cl-step-t{color:var(--paper-faint);text-decoration:line-through}
+.checklist.finish-setup .fs-body{flex:1 1 auto;min-width:0}
+.checklist.finish-setup .fs-cta{flex:0 0 auto;margin-left:auto}
+.checklist.finish-setup li.fs-done .fs-cta{background:transparent;border-color:rgba(139,139,245,.3);color:var(--paper-faint)}
+.checklist.finish-setup .fs-guarantee{color:var(--green);font-weight:600}
+.checklist.finish-setup .fs-foot{font-size:12px;color:var(--paper-faint);margin-top:14px}
+/* "Getting started" sidebar entry (re-opens the deferred-setup checklist) */
+.side .nv.nv-getting-started.active{background:transparent}
 /* step-1 two-path chooser: install extension OR embed widget */
 .checklist .cl-paths{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
 @media(max-width:640px){.checklist .cl-paths{grid-template-columns:1fr}}
@@ -1685,6 +1702,9 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     <!-- P0 upgrade surface: shown only for free accounts (wired by _wirePlan) — opens Plan & billing -->
     <button type="button" class="side-plan-pill hide" id="planPill" aria-label="You are on the Free plan — see upgrade options" onclick="openPlanDrawer()">Free plan · <b>Upgrade</b></button>
     <button class="nv active" data-go="overview"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1" ry="1" /> <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /> <path d="M12 11h4" /> <path d="M12 16h4" /> <path d="M8 11h.01" /> <path d="M8 16h.01" /></svg></span>Overview</button>
+    <!-- Getting started — re-opens the dismissible "Finish setting up Klavity" checklist on Overview.
+         data-go keeps it past normalizeSidebar; setView() special-cases it back to Overview. -->
+    <button class="nv nv-getting-started" data-go="getting-started"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg></span>Getting started</button>
     <!-- Snap / report-widget install — first nav item after Overview so it's immediately discoverable -->
     <button class="nv" data-go="snap"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 9l5 12 1.8-5.2L21 14Z"/><path d="M7.2 2.2 8 5.1"/><path d="m5.1 7.2-2.9-.8"/><path d="M14 4.1 12 6"/><path d="m6 12-1.9 2"/></svg></span>Snap <span class="cl-path-tag" style="margin-left:2px;font-size:9px;padding:2px 5px">widget</span></button>
     <button class="nv" data-go="sims"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 16 1.5 1.5" /> <path d="m14 8-1.5-1.5" /> <path d="M15 2c-1.798 1.998-2.518 3.995-2.807 5.993" /> <path d="m16.5 10.5 1 1" /> <path d="m17 6-2.891-2.891" /> <path d="M2 15c6.667-6 13.333 0 20-6" /> <path d="m20 9 .891.891" /> <path d="M3.109 14.109 4 15" /> <path d="m6.5 12.5 1 1" /> <path d="m7 18 2.891 2.891" /> <path d="M9 22c1.798-1.998 2.518-3.995 2.807-5.993" /></svg></span>Sims</button>
@@ -1724,6 +1744,52 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
        load when onboarding flagged a tracker intent (?tracker= or klav-tracker-pending) that has no
        saved connector yet — so choosing Jira in onboarding never dead-ends. -->
   <div id="trackerNudge" class="checklist hide" data-view="overview" style="display:none"></div>
+
+  <!-- "Finish setting up Klavity" — the tightened onboarding wizard now stops at Install (the
+       activation moment); the optional setup steps it used to carry (connect a tracker, turn on
+       AutoSim, pick a plan) are deferred here so a new user reaches value first. Dismissible and
+       re-openable from the "Getting started" sidebar entry. Install auto-checks off the widget
+       heartbeat; "Connect your tracker" reuses the #445 openTrackerConnect() deep-link. -->
+  <div class="checklist finish-setup hide" id="finishSetup" data-view="overview">
+    <button class="cl-x" id="finishSetupX" type="button" aria-label="Dismiss setup checklist"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18" /> <path d="m6 6 12 12" /></svg></button>
+    <h3>Finish setting up Klavity <span class="fs-prog" id="finishSetupProg"></span></h3>
+    <p class="cl-intro"><b>Snap bug reporting is free forever.</b> These are optional extras — pick them up whenever you're ready.</p>
+    <ol class="fs-tasks">
+      <li class="fs-task" id="fsInstall">
+        <span class="fs-tick" aria-hidden="true"></span>
+        <div class="fs-body">
+          <div class="cl-step-t">Install the widget</div>
+          <div class="cl-step-d" id="fsInstallDesc">One script tag — every visitor gets a one-click bug button. Auto-checks off when a report or the widget is detected.</div>
+        </div>
+        <button class="btn btn-ghost btn-sm fs-cta" id="fsInstallBtn" type="button">Show snippet</button>
+      </li>
+      <li class="fs-task" id="fsTracker">
+        <span class="fs-tick" aria-hidden="true"></span>
+        <div class="fs-body">
+          <div class="cl-step-t">Connect your tracker</div>
+          <div class="cl-step-d">Push issues into Jira / Linear / GitHub / Plane — or stay in Klavity Cloud.</div>
+        </div>
+        <button class="btn btn-indigo btn-sm fs-cta" id="fsTrackerBtn" type="button">Connect</button>
+      </li>
+      <li class="fs-task" id="fsAutosim">
+        <span class="fs-tick" aria-hidden="true"></span>
+        <div class="fs-body">
+          <div class="cl-step-t">Turn on AutoSim</div>
+          <div class="cl-step-d">Let your Sims re-run the flows that matter on every release and catch regressions before your users do.</div>
+        </div>
+        <button class="btn btn-indigo btn-sm fs-cta" id="fsAutosimBtn" type="button">Enable</button>
+      </li>
+      <li class="fs-task" id="fsPlan">
+        <span class="fs-tick" aria-hidden="true"></span>
+        <div class="fs-body">
+          <div class="cl-step-t">Pick a plan</div>
+          <div class="cl-step-d">You're on Free — no rush. <b>Snap is always free; plans add Sims + AutoSim.</b> <span class="fs-guarantee">30-day money-back guarantee.</span></div>
+        </div>
+        <button class="btn btn-indigo btn-sm fs-cta" id="fsPlanBtn" type="button">See plans</button>
+      </li>
+    </ol>
+    <div class="fs-foot">You can dismiss this anytime — reopen it from <b>Getting started</b> in the sidebar.</div>
+  </div>
 
   <!-- First-run checklist (value-ordered, non-gated) — shown until all 5 are done or dismissed -->
   <div class="checklist hide" id="checklist" data-view="overview">
@@ -3917,8 +3983,61 @@ function renderChecklist() {
   // GTM round 2: one-time celebration when the FIRST real report lands from the customer's own
   // site (runs on every checklist refresh, incl. the widget-status poll's first-heartbeat rerender).
   maybeCelebrateFirstReport()
+  // Keep the tightened "Finish setting up Klavity" card in sync on the same cadence (incl. the
+  // widget-status poll's first-heartbeat rerender, so Install auto-checks off live).
+  renderFinishSetup()
 }
 window.renderChecklist = renderChecklist   // called from setView so the poll restarts on Overview
+
+// ── "Finish setting up Klavity" — deferred-setup checklist (tightened onboarding). Carries the
+//    steps the wizard used to hold (tracker / AutoSim / plan) plus the install confirmation, so a
+//    new user hits value first and finishes setup at their own pace. Install auto-checks off the
+//    widget heartbeat; the tracker task reuses the #445 openTrackerConnect() deep-link; AutoSim and
+//    plan reuse the existing autosims view + plan drawer. Dismissible + re-openable via the sidebar.
+function renderFinishSetup() {
+  const el = $("finishSetup")
+  if (!el || !state) return
+  let dismissed = false
+  try { dismissed = localStorage.getItem("klav-finish-setup-x") === "1" } catch (e) {}
+  el.classList.toggle("hide", dismissed)
+  // While the deferred-setup card is showing, suppress the older generic welcome checklist so the
+  // Overview isn't stacked with two onboarding cards (it returns once this one is dismissed).
+  const oldCl = $("checklist"); if (oldCl && !dismissed) oldCl.classList.add("hide")
+  if (dismissed) return
+  // Detection (honest, mirrors renderChecklist's signals):
+  const widgetSeen = !!(state.widgetStatus && state.widgetStatus.lastSeen)
+  const hasHumanReport = (state.tickets || []).some(t => !t.simName)
+  const installDone = widgetSeen || hasHumanReport
+  const trackerDone = (state._connectors || []).length > 0
+  const autosimDone = (state.trails || []).length > 0
+  const planDone = !!(state.plan && state.plan !== "free" && state.plan !== "snap")
+  const setDone = (id, done) => { const li = $(id); if (li) li.classList.toggle("fs-done", !!done) }
+  setDone("fsInstall", installDone)
+  setDone("fsTracker", trackerDone)
+  setDone("fsAutosim", autosimDone)
+  setDone("fsPlan", planDone)
+  const done = [installDone, trackerDone, autosimDone, planDone].filter(Boolean).length
+  const prog = $("finishSetupProg"); if (prog) prog.textContent = done + " of 4 done"
+  const idesc = $("fsInstallDesc")
+  if (idesc && installDone) idesc.textContent = "Done — reports are flowing in."
+  // CTA labels reflect done-state (installed → "Installed", etc.)
+  const iBtn = $("fsInstallBtn"); if (iBtn) iBtn.textContent = installDone ? "View" : "Show snippet"
+  const tBtn = $("fsTrackerBtn"); if (tBtn) tBtn.textContent = trackerDone ? "Connected" : "Connect"
+  const aBtn = $("fsAutosimBtn"); if (aBtn) aBtn.textContent = autosimDone ? "Open" : "Enable"
+  const pBtn = $("fsPlanBtn"); if (pBtn) pBtn.textContent = planDone ? "Manage" : "See plans"
+}
+window.renderFinishSetup = renderFinishSetup
+// Wire the card's controls once (buttons exist in the static markup).
+$("finishSetupX") && ($("finishSetupX").onclick = () => {
+  try { localStorage.setItem("klav-finish-setup-x", "1") } catch (e) {}
+  const el = $("finishSetup"); if (el) el.classList.add("hide")
+  // Restore the generic welcome checklist now that the deferred-setup card is gone.
+  if (typeof renderChecklist === "function") renderChecklist()
+})
+$("fsInstallBtn") && ($("fsInstallBtn").onclick = () => { try { setView("snap") } catch (e) {} })
+$("fsTrackerBtn") && ($("fsTrackerBtn").onclick = () => { try { openTrackerConnect() } catch (e) {} })
+$("fsAutosimBtn") && ($("fsAutosimBtn").onclick = () => { try { setView("autosims") } catch (e) {} })
+$("fsPlanBtn") && ($("fsPlanBtn").onclick = () => { try { openPlanDrawer() } catch (e) {} })
 
 // ── First-report celebration toast — fires exactly once per project, the moment we've observed
 //    BOTH a genuine widget detection on a non-first-party host (the heartbeat host isn't this
@@ -8893,7 +9012,7 @@ load()
 <script>
 // ===== sidebar view switching =====
 (function(){
-  var VIEWS=['overview','snap','triage','sims','autosims','tickets','team','settings','recurring','guards'];
+  var VIEWS=['overview','snap','triage','sims','autosims','tickets','team','settings','recurring','guards','getting-started'];
   function sidebarNavs(){
     return [].slice.call(document.querySelectorAll('.side .nv'));
   }
@@ -8911,6 +9030,9 @@ load()
     });
   }
   function setView(v){
+    // "Getting started" is not a real view — it re-opens the deferred-setup checklist on Overview.
+    var reopenFinish=false;
+    if(v==='getting-started'){ try{localStorage.removeItem('klav-finish-setup-x');}catch(e){} reopenFinish=true; v='overview'; }
     if(VIEWS.indexOf(v)<0)v='overview';
     normalizeSidebar();
     document.body.setAttribute('data-view',v);
@@ -8924,7 +9046,14 @@ load()
     if(v==='tickets'){if(typeof renderTicketsView==='function')renderTicketsView();}
     if(v==='snap'){if(typeof window.renderSnapView==='function')window.renderSnapView();}
     // Returning to Overview re-runs the checklist so the widget-status poll restarts (it self-stops on other views).
-    if(v==='overview'){if(typeof window.renderChecklist==='function')window.renderChecklist();}
+    if(v==='overview'){
+      if(typeof window.renderChecklist==='function')window.renderChecklist();
+      if(typeof window.renderFinishSetup==='function')window.renderFinishSetup();
+      if(reopenFinish){
+        var _fs=document.getElementById('finishSetup');
+        if(_fs){_fs.classList.remove('hide');if(_fs.scrollIntoView)_fs.scrollIntoView({behavior:'smooth',block:'start'});}
+      }
+    }
     if(v==='guards'){if(typeof window.loadExpectations==='function')window.loadExpectations();}
   }
   normalizeSidebar();
