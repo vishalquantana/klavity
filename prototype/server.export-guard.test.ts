@@ -101,6 +101,7 @@ beforeAll(async () => {
       SENDGRID_API_KEY: "",
       KLAV_MAIL_FROM: "",
       OPENROUTER_API_KEY: "test-key",
+      KLAV_TEST_ALLOW_LOOPBACK: "1",  // allow the #478 concurrency webhook to reach the local test receiver
     },
     stdout: "pipe",
     stderr: "pipe",
@@ -174,6 +175,57 @@ test("a first-time export is unaffected by the guard (no extra friction)", async
   expect(r.status).toBe(200)
   expect((await r.json()).ok).toBe(true)
 })
+
+// ── PX4 #478: concurrent double-click must not slip two exports past the check-then-act guard ────────
+// The already-exported guard is non-atomic: two simultaneous requests can BOTH read "no prior export"
+// before either writes one. An in-flight lock keyed on (feedbackId, connectorId) serializes them, so a
+// concurrent second request is a 409 no-op and only ONE external ticket is ever created.
+test("two concurrent exports of the same (feedback, connector) create only ONE ticket", async () => {
+  // A slow-but-successful webhook: the ~400ms response keeps the FIRST export in-flight long enough
+  // that the concurrent SECOND request hits the lock. Counts how many times it is actually called.
+  let hits = 0
+  const recv = Bun.serve({
+    port: 0,
+    async fetch() {
+      hits++
+      await Bun.sleep(400)
+      return new Response(JSON.stringify({ id: `race-${hits}` }), { status: 201 })
+    },
+  })
+  try {
+    // Fresh ticket + a connector pointing at the slow receiver (reachable → export SUCCEEDS).
+    const fid = `fb_race_${ts}`
+    await rawExec(`INSERT INTO feedback (id, project_id, observation, priority, status, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+      [fid, PROJECT_ID, "Concurrent export bug", "high", "open", Date.now()])
+    const cr = await api("POST", `/api/projects/${PROJECT_ID}/connectors`, {
+      type: "webhook", name: "Race Webhook",
+      config: { url: `http://localhost:${recv.port}/hook` }, autoCopy: false,
+    })
+    expect(cr.status).toBe(201)
+    const cid = (await cr.json()).connector.id
+
+    // Fire two exports of the SAME (feedback, connector) at once.
+    const [a, b] = await Promise.all([
+      api("POST", `/api/feedback/${fid}/export`, { connectorId: cid }),
+      api("POST", `/api/feedback/${fid}/export`, { connectorId: cid }),
+    ])
+    const statuses = [a.status, b.status].sort()
+    // Exactly one succeeds (200); the other is a 409 (in-flight OR already-exported).
+    expect(statuses).toEqual([200, 409])
+
+    // The receiver was called exactly once → only ONE external ticket.
+    expect(hits).toBe(1)
+    // And exactly ONE successful export row for this ticket+connector.
+    const r = await rawClient.execute({
+      sql: "SELECT COUNT(*) AS n FROM ticket_exports WHERE feedback_id=? AND connector_id=? AND status='ok'",
+      args: [fid, cid],
+    })
+    expect(Number((r.rows[0] as any).n)).toBe(1)
+  } finally {
+    recv.stop(true)
+  }
+}, 15000)
+
 
 // ── Dashboard payload must carry what the Retry button needs ─────────────────
 

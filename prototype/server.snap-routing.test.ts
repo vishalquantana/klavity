@@ -240,3 +240,48 @@ test("autofile mode: a Sim-attributed report does NOT auto-file on submit", asyn
     expect(hits).toBe(0)
   } finally { recv.stop(true) }
 }, 15000)
+
+// PX4 #472: a report carrying an UNREGISTERED sim_id (deleted persona / cross-project / adhoc run) must
+// NOT be mis-classified as a Human Snap and auto-filed. The server coerces the unknown sim_id → null for
+// attribution (A01/IDOR), but the autofile gate must key off the RAW sim_id, so autofile stays OFF.
+test("autofile mode: a report with an UNREGISTERED sim_id does NOT auto-file on submit", async () => {
+  let hits = 0
+  const recv = Bun.serve({ port: 0, fetch() { hits++; return new Response(JSON.stringify({ id: "ghost1" }), { status: 201 }) } })
+  try {
+    await api("POST", `/api/projects/${PROJECT_ID}/snap-routing`, { snapRouting: "autofile" }, ADMIN_SID)
+    const cr = await api("POST", `/api/projects/${PROJECT_ID}/connectors`, {
+      type: "webhook", name: "SR Ghost-Sim Webhook",
+      config: { url: `http://localhost:${recv.port}/hook` }, autoCopy: true,
+    }, ADMIN_SID)
+    expect(cr.status).toBe(201)
+
+    // sim_id present but NOT a registered persona on this project → still a bot/sim report, not human.
+    const fr = await submitHumanSnap(`unregistered sim report ${ts}`, { sim_id: `sim_ghost_${ts}` })
+    expect(fr.ok).toBe(true)
+
+    await Bun.sleep(900)
+    expect(hits).toBe(0)
+  } finally { recv.stop(true) }
+}, 15000)
+
+// PX4 #472 control: a genuine human Snap (no sim_id, no sim/autosim source) with a NON-human source
+// marker also stays OFF; and the plain human Snap (covered above) DOES file. This asserts the source
+// marker path.
+test("autofile mode: a report with source=autosim does NOT auto-file even with no sim_id", async () => {
+  let hits = 0
+  const recv = Bun.serve({ port: 0, fetch() { hits++; return new Response(JSON.stringify({ id: "autosim1" }), { status: 201 }) } })
+  try {
+    await api("POST", `/api/projects/${PROJECT_ID}/snap-routing`, { snapRouting: "autofile" }, ADMIN_SID)
+    const cr = await api("POST", `/api/projects/${PROJECT_ID}/connectors`, {
+      type: "webhook", name: "SR AutoSim-Source Webhook",
+      config: { url: `http://localhost:${recv.port}/hook` }, autoCopy: true,
+    }, ADMIN_SID)
+    expect(cr.status).toBe(201)
+
+    const fr = await submitHumanSnap(`autosim source report ${ts}`, { source: "autosim" })
+    expect(fr.ok).toBe(true)
+
+    await Bun.sleep(900)
+    expect(hits).toBe(0)
+  } finally { recv.stop(true) }
+}, 15000)

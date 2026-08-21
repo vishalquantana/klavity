@@ -13,6 +13,9 @@ const file = join(tmpdir(), `klav-transcribe-${Date.now()}-${Math.random().toStr
 process.env.TURSO_DATABASE_URL = "file:" + file
 delete process.env.TURSO_AUTH_TOKEN
 process.env.OPENROUTER_API_KEY = "sk-test-transcribe" // so transcription is "configured"
+// PX4 #471: tiny payload cap so the over-cap test can trip it with a small buffer (must be set BEFORE
+// importing ./transcribe, which reads KLAV_TRANSCRIBE_MAX_BYTES at module load).
+process.env.KLAV_TRANSCRIBE_MAX_BYTES = "1000"
 
 // Mock the S3 byte-fetch so transcribeRecording gets bytes without a real bucket.
 const { mock } = await import("bun:test")
@@ -21,7 +24,7 @@ mock.module("./s3", () => ({
 }))
 
 const { reconnectDb, applySchema, insertFeedback, feedbackById } = await import("./db")
-const { parseTranscribeResponse, transcribeFeedbackRecordings, TRANSCRIBE_MODEL } = await import("./transcribe")
+const { parseTranscribeResponse, transcribeFeedbackRecordings, transcribeRecording, TRANSCRIBE_MODEL, TRANSCRIBE_MAX_BYTES } = await import("./transcribe")
 
 const RUN = `${Date.now()}_${Math.random().toString(36).slice(2)}`
 const ACCT = `acct_${RUN}`
@@ -116,6 +119,71 @@ test("transcribeFeedbackRecordings: STT failure → status=failed, report intact
   const calls = await aiCallsFor(TRANSCRIBE_MODEL)
   expect(calls.length).toBe(before + 1)
   expect(Number(calls[calls.length - 1].ok)).toBe(0)
+})
+
+// PX4 #471: an over-cap recording is SKIPPED — no POST, no base64 encode, no ai_calls ledger row.
+test("transcribeFeedbackRecordings: over-cap recording is skipped (no POST)", async () => {
+  // Re-point the S3 mock at bytes LARGER than the (tiny, test-set) payload cap.
+  const big = new Uint8Array(TRANSCRIBE_MAX_BYTES + 500)
+  mock.module("./s3", () => ({ getObjectBytes: async () => ({ bytes: big, contentType: "video/webm" }) }))
+  // Any POST attempt must FAIL the test — an over-cap clip must never reach the network.
+  let posted = false
+  globalThis.fetch = (async () => { posted = true; throw new Error("should not POST an over-cap clip") }) as any
+
+  const rec = { id: `rec_${RUN}_big`, key: "attachments/huge.webm", contentType: "video/webm", transcript_status: "pending" }
+  const fid = await insertFeedback({ projectId: P, observation: "huge recording bug", recordings: [rec] })
+  const before = (await aiCallsFor(TRANSCRIBE_MODEL)).length
+
+  await transcribeFeedbackRecordings({ feedbackId: fid, projectId: P, recordings: [rec] })
+
+  expect(posted).toBe(false)
+  const row = await feedbackById(P, fid)
+  expect(row.observation).toBe("huge recording bug") // report intact
+  const stored = row.recordings.find((r: any) => r.id === rec.id)
+  expect(stored.transcript_status).toBe("skipped")
+  expect(String(stored.transcript_reason || "")).toContain("too large")
+  // No upstream call → no ledger row for a skipped clip.
+  expect((await aiCallsFor(TRANSCRIBE_MODEL)).length).toBe(before)
+
+  // Restore the small-bytes S3 mock for subsequent tests.
+  mock.module("./s3", () => ({ getObjectBytes: async () => ({ bytes: new Uint8Array([1, 2, 3, 4]), contentType: "video/webm" }) }))
+})
+
+// PX4 #471: an under-cap recording is POSTed as multipart/form-data (a `file` field) — NOT base64 JSON.
+test("transcribeRecording: under-cap clip posts via multipart/form-data (file field, no base64 JSON)", async () => {
+  let captured: { body: any; headers: any } | null = null
+  globalThis.fetch = (async (_url: any, init: any) => {
+    captured = { body: init?.body, headers: init?.headers }
+    return {
+      ok: true, status: 200,
+      json: async () => ({ text: "multipart worked", usage: { seconds: 1, cost: 0.0001 } }),
+      text: async () => "{}",
+    }
+  }) as any
+
+  const out = await transcribeRecording("attachments/small.webm", "video/webm")
+  expect(out.status).toBe("done")
+  expect(captured).toBeTruthy()
+  // The body is a FormData with a `file` part — not a JSON string with base64 input_audio.
+  expect(captured!.body instanceof FormData).toBe(true)
+  const fd = captured!.body as FormData
+  expect(fd.get("file")).toBeInstanceOf(Blob)
+  expect(fd.get("model")).toBe(TRANSCRIBE_MODEL)
+  // We must NOT set Content-Type ourselves (fetch adds the multipart boundary).
+  const ctHeader = captured!.headers && (captured!.headers["Content-Type"] || captured!.headers["content-type"])
+  expect(ctHeader).toBeUndefined()
+})
+
+// PX4 #471: a 413 (payload too large) response degrades to 'failed' gracefully — report intact.
+test("transcribeRecording: a 413 response degrades to failed (not a throw)", async () => {
+  globalThis.fetch = (async () => ({
+    ok: false, status: 413,
+    json: async () => ({ error: "payload too large" }),
+    text: async () => "payload too large",
+  })) as any
+  const out = await transcribeRecording("attachments/big2.webm", "video/webm")
+  expect(out.status).toBe("failed")
+  if (out.status === "failed") expect(out.reason).toBe("payload-too-large")
 })
 
 test("transcribeFeedbackRecordings: no API key → status=none (no stuck spinner)", async () => {

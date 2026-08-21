@@ -5948,8 +5948,10 @@ export async function setRecordingTranscript(
   feedbackId: string,
   projectId: string,
   recordingId: string,
-  status: "pending" | "done" | "failed" | "none",
+  // PX4 #471: 'skipped' = intentionally not transcribed (e.g. clip too large to POST). Carries a reason.
+  status: "pending" | "done" | "failed" | "none" | "skipped",
   transcript?: { text: string; segments: any[] | null } | null,
+  reason?: string | null,
 ): Promise<boolean> {
   const r = await db!.execute({
     sql: "SELECT recordings_json FROM feedback WHERE id=? AND project_id=?",
@@ -5965,6 +5967,8 @@ export async function setRecordingTranscript(
     if (rec && String(rec.id) === String(recordingId)) {
       rec.transcript_status = status
       if (transcript !== undefined) rec.transcript_json = transcript
+      // Store the human-readable reason for a skipped/failed clip so the UI can explain it (not a spinner).
+      if (reason !== undefined) rec.transcript_reason = reason
       found = true
       break
     }

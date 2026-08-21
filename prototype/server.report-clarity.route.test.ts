@@ -22,7 +22,10 @@ const BASE = `http://localhost:${PORT}`
 const ACCT = `acct_clr_${RUN}`
 const PROJ = `proj_clr_${RUN}`
 const PROJ_OFF = `proj_clroff_${RUN}`
+const PROJ_CAP = `proj_clrcap_${RUN}`   // PX4 #476: dedicated project to exercise the per-project daily cap
 const ADMIN = `clr-admin-${RUN}@test.local`
+// PX4 #476: small per-project daily clarity cap so the test can exhaust it in a few calls.
+const CLARITY_CAP = 3
 
 function rmDb() { for (const s of ["", "-wal", "-shm"]) { try { unlinkSync(DB_FILE + s) } catch {} } }
 rmDb()
@@ -56,12 +59,14 @@ async function seed() {
   // Second project with the helper explicitly disabled (report_clarity = 0).
   await exec("INSERT INTO projects (id, account_id, name, status, review_mode, review_budget_daily, observability_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", [PROJ_OFF, ACCT, "Clarity Off Project", "active", "auto", 200, "named", now, now])
   await exec("UPDATE projects SET report_clarity = 0 WHERE id = ?", [PROJ_OFF])
+  // Third project for the per-project daily-cap test (helper on, default).
+  await exec("INSERT INTO projects (id, account_id, name, status, review_mode, review_budget_daily, observability_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", [PROJ_CAP, ACCT, "Clarity Cap Project", "active", "auto", 200, "named", now, now])
 }
 
-function postClarity(body: any) {
+function postClarity(body: any, xff?: string) {
   return fetch(`${BASE}/api/report/clarity`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...(xff ? { "x-forwarded-for": xff } : {}) },
     body: JSON.stringify(body),
   })
 }
@@ -77,6 +82,8 @@ beforeAll(async () => {
       // Mock the LLM: real key + endpoint pointed at our local stand-in.
       OPENROUTER_API_KEY: "test-key",
       OPENROUTER_ENDPOINT: `http://localhost:${LLM_PORT}/v1/chat/completions`,
+      // PX4 #476: tiny per-project daily clarity cap so the cap test can exhaust it.
+      KLAV_CLARITY_PROJECT_DAILY: String(CLARITY_CAP),
     },
     stdout: "ignore", stderr: "ignore",
   })
@@ -130,6 +137,29 @@ test("a project with report_clarity disabled is walled with 403 and spends no AI
   const r = await postClarity({ projectId: PROJ_OFF, text: "the coupon code is not working on my mobile cart" })
   expect(r.status).toBe(403)
   expect(llmCalls).toBe(0)
+})
+
+// PX4 #476: a project over its per-project daily clarity cap is rejected WITHOUT an LLM call, and a
+// forged/rotated X-Forwarded-For does not buy a fresh budget (the cap is keyed on projectId, not IP).
+test("a project over its daily clarity cap is rejected (no LLM call); forged XFF can't bypass", async () => {
+  llmCalls = 0
+  const vague = "the coupon code is not working on my mobile cart"
+  // Exhaust the cap with CLARITY_CAP vague reports, each from a DIFFERENT forged client IP.
+  for (let i = 0; i < CLARITY_CAP; i++) {
+    const r = await postClarity({ projectId: PROJ_CAP, text: vague }, `203.0.113.${i + 1}`)
+    expect(r.status).toBe(200)
+  }
+  expect(llmCalls).toBe(CLARITY_CAP)
+
+  // One more from YET ANOTHER forged IP: the per-project cap still blocks it, and no LLM call is made.
+  const over = await postClarity({ projectId: PROJ_CAP, text: vague }, "198.51.100.77")
+  expect(over.status).toBe(429)
+  const body = await over.json()
+  // Heuristic still rides the 429 body so the composer meter never breaks.
+  expect(typeof body.score).toBe("number")
+  expect(body.tip).toBeNull()
+  // Crucially: the over-cap request did NOT spend an LLM call.
+  expect(llmCalls).toBe(CLARITY_CAP)
 })
 
 test("an unknown project returns 404", async () => {

@@ -397,3 +397,97 @@ test("PATCH status=open from dismissed (re-accept) also triggers auto-copy", asy
     recv.stop(true)
   }
 }, 15000)
+
+
+// ─ T8 (PX4 #470): a human Snap AUTOFILED on submit and LATER triage-accepted must NOT double-file ─────
+// autofile-on-submit and triage-accept both funnel through autoCopyFeedback. Without the idempotency
+// guard, the accept created a SECOND external ticket for the same bug (PX4's "duplicate tickets").
+test("autofiled Snap that is later triage-accepted does NOT create a second ticket", async () => {
+  let hits = 0
+  const recv = Bun.serve({
+    port: 0,
+    fetch() { hits++; return new Response(JSON.stringify({ id: `dup-guard-${hits}` }), { status: 201 }) },
+  })
+  try {
+    // autofile ON so the human Snap files straight to the tracker on submit.
+    await api("POST", `/api/projects/${PROJECT_ID}/snap-routing`, { snapRouting: "autofile" }, ADMIN_SID)
+    const cr = await api("POST", `/api/projects/${PROJECT_ID}/connectors`, {
+      type: "webhook",
+      name: "AC Dup-Guard Webhook",
+      config: { url: `http://localhost:${recv.port}/hook` },
+      autoCopy: true,
+    }, ADMIN_SID)
+    expect(cr.status).toBe(201)
+    const cid = (await cr.json()).connector.id
+
+    // Submit a HUMAN Snap (no sim_id) via POST /api/feedback → autofiles on submit.
+    const fd = new FormData()
+    fd.set("description", `dup-guard human snap ${ts}`)
+    fd.set("project_id", PROJECT_ID)
+    const fr = await fetch(`${BASE}/api/feedback`, { method: "POST", headers: authHeader(ADMIN_SID), body: fd })
+    expect(fr.ok).toBe(true)
+    const fid = (await fr.json()).id
+    expect(fid).toBeTruthy()
+
+    // Autofile export lands (exactly one).
+    const first = await waitForExport(cid, 1, 5000)
+    expect(first.length).toBe(1)
+    expect(hits).toBe(1)
+
+    // Now triage-accept the SAME report (status new → open). The idempotency guard must SKIP the
+    // already-exported connector → no second webhook hit, no second export row.
+    const pr = await api("PATCH", `/api/feedback/${fid}`, { status: "open" }, ADMIN_SID)
+    expect(pr.status).toBe(200)
+
+    await Bun.sleep(1000)
+    expect(hits).toBe(1)                                   // still ONE external ticket
+    expect((await exportRows(cid)).length).toBe(1)         // still ONE successful export row
+  } finally {
+    recv.stop(true)
+  }
+}, 15000)
+
+
+// ─ T9 (PX4 #470 control): a report NOT autofiled (review mode) STILL exports on triage-accept ─────────
+test("report not autofiled (review mode) still exports on triage-accept", async () => {
+  let hits = 0
+  const recv = Bun.serve({
+    port: 0,
+    fetch() { hits++; return new Response(JSON.stringify({ id: "review-accept" }), { status: 201 }) },
+  })
+  try {
+    // review mode → NO autofile on submit.
+    await api("POST", `/api/projects/${PROJECT_ID}/snap-routing`, { snapRouting: "review" }, ADMIN_SID)
+    const cr = await api("POST", `/api/projects/${PROJECT_ID}/connectors`, {
+      type: "webhook",
+      name: "AC Review-Accept Webhook",
+      config: { url: `http://localhost:${recv.port}/hook` },
+      autoCopy: true,
+    }, ADMIN_SID)
+    expect(cr.status).toBe(201)
+    const cid = (await cr.json()).connector.id
+
+    const fd = new FormData()
+    fd.set("description", `review then accept snap ${ts}`)
+    fd.set("project_id", PROJECT_ID)
+    const fr = await fetch(`${BASE}/api/feedback`, { method: "POST", headers: authHeader(ADMIN_SID), body: fd })
+    expect(fr.ok).toBe(true)
+    const fid = (await fr.json()).id
+
+    // No autofile in review mode.
+    await Bun.sleep(700)
+    expect(hits).toBe(0)
+    expect((await exportRows(cid)).length).toBe(0)
+
+    // Triage-accept → no prior export → it exports now (exactly once).
+    const pr = await api("PATCH", `/api/feedback/${fid}`, { status: "open" }, ADMIN_SID)
+    expect(pr.status).toBe(200)
+    const landed = await waitForExport(cid, 1, 5000)
+    expect(landed.length).toBe(1)
+    expect(String(landed[0].status)).toBe("ok")
+    expect(hits).toBe(1)
+  } finally {
+    recv.stop(true)
+    await api("POST", `/api/projects/${PROJECT_ID}/snap-routing`, { snapRouting: "autofile" }, ADMIN_SID)
+  }
+}, 15000)

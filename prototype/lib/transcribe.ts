@@ -23,6 +23,22 @@ export type TranscriptSegment = { start: number; end: number; text: string }
 export type TranscriptJson = { text: string; segments: TranscriptSegment[] | null }
 export type TranscriptResult = TranscriptJson & { usage: { seconds: number | null; cost: number | null } }
 
+// PX4 #471 — discriminated outcome so the caller can distinguish a clip we DELIBERATELY did not send
+// (too large → 'skipped', no cost, no POST) from one we tried and lost ('failed'). A base64+JSON body
+// roughly DOUBLES a recording's size in memory, and OpenRouter/proxy rejects bodies over ~25MB, so a
+// 50MB clip both OOMs the encode and 413s the POST. We cap the RAW bytes well under that and stream the
+// S3 bytes as multipart/form-data (a `file` field) instead of base64-in-JSON.
+export type TranscribeOutcome =
+  | { status: "done"; result: TranscriptResult }
+  | { status: "failed"; reason: string }
+  | { status: "skipped"; reason: string }
+
+// Hard ceiling on the RAW recording bytes we will POST. Kept below OpenRouter's ~25MB request limit so
+// even multipart framing overhead stays under the wire cap. Overridable for ops without a code change.
+export const TRANSCRIBE_MAX_BYTES = Number(process.env.KLAV_TRANSCRIBE_MAX_BYTES || 20 * 1024 * 1024)
+// Wall-clock ceiling for the STT POST so a hung upstream degrades to 'failed' instead of blocking.
+const TRANSCRIBE_TIMEOUT_MS = Number(process.env.KLAV_TRANSCRIBE_TIMEOUT_MS || 120_000)
+
 // The OpenRouter key Klavity already uses. Both env names appear across the codebase (label-suggest reads
 // KLAV_OPENROUTER_KEY, trails reads OPENROUTER_API_KEY) — accept either so transcription lights up wherever
 // a key is configured.
@@ -65,11 +81,26 @@ export function parseTranscribeResponse(data: any): TranscriptResult | null {
   return { text: finalText, segments, usage: { seconds, cost } }
 }
 
-// Transcribe ONE recording by its S3 key. Resilient: returns null (never throws) on missing key,
-// unfetchable bytes, non-2xx, or an unparseable body — the caller marks the recording `failed`.
-export async function transcribeRecording(s3Key: string, contentType: string): Promise<TranscriptResult | null> {
+// Content-type / extension for the multipart `file` part, matched to the format hint.
+function fileMetaFor(ct: string): { mime: string; ext: string } {
+  const fmt = audioFormatFor(ct)
+  if (fmt === "mp4") return { mime: (ct && ct.toLowerCase().includes("mp4")) ? ct : "audio/mp4", ext: "mp4" }
+  if (fmt === "mp3") return { mime: "audio/mpeg", ext: "mp3" }
+  if (fmt === "wav") return { mime: "audio/wav", ext: "wav" }
+  if (fmt === "ogg") return { mime: "audio/ogg", ext: "ogg" }
+  return { mime: (ct && ct.toLowerCase().includes("webm")) ? ct : "video/webm", ext: "webm" }
+}
+
+// Transcribe ONE recording by its S3 key. Resilient: NEVER throws. Returns a discriminated outcome:
+//   • 'skipped' — the raw clip exceeds TRANSCRIBE_MAX_BYTES; we do NOT encode or POST it (no OOM/413).
+//   • 'failed'  — a real attempt that lost (missing key, unfetchable bytes, non-2xx incl. 413, timeout,
+//                 unparseable/empty body).
+//   • 'done'    — a parsed transcript.
+// PX4 #471: the S3 bytes stream to OpenRouter as multipart/form-data (a `file` field). We do NOT
+// base64-encode the whole file into a JSON body (that ~doubles memory and blows the request-size cap).
+export async function transcribeRecording(s3Key: string, contentType: string): Promise<TranscribeOutcome> {
   const key = apiKey()
-  if (!key) return null
+  if (!key) return { status: "failed", reason: "no-api-key" }
 
   let bytes: Uint8Array
   let ct = contentType
@@ -79,40 +110,63 @@ export async function transcribeRecording(s3Key: string, contentType: string): P
     if (!ct) ct = got.contentType
   } catch (e: any) {
     console.warn("[transcribe] fetch bytes failed (non-fatal):", e?.message || e)
-    return null
+    return { status: "failed", reason: "fetch-bytes-failed" }
   }
 
-  // RAW base64 (NOT a data: URI) — the endpoint wants the bare audio bytes.
-  const b64 = Buffer.from(bytes).toString("base64")
-  const format = audioFormatFor(ct)
+  // Payload cap FIRST — before any encode/allocation. An over-cap clip is intentionally not sent.
+  if (bytes.byteLength > TRANSCRIBE_MAX_BYTES) {
+    const mb = (bytes.byteLength / (1024 * 1024)).toFixed(1)
+    const capMb = (TRANSCRIBE_MAX_BYTES / (1024 * 1024)).toFixed(0)
+    console.warn(`[transcribe] recording ${mb}MB exceeds ${capMb}MB cap — skipping STT (no POST)`)
+    return { status: "skipped", reason: `Recording too large to transcribe (${mb}MB > ${capMb}MB limit).` }
+  }
 
+  const format = audioFormatFor(ct)
+  const { mime, ext } = fileMetaFor(ct)
+
+  // Wall-clock timeout so a hung upstream degrades to 'failed' rather than hanging the fire-and-forget.
+  const ac = new AbortController()
+  const timer = setTimeout(() => ac.abort(), TRANSCRIBE_TIMEOUT_MS)
   try {
+    // Multipart form: the file part streams the raw audio bytes (no base64/JSON doubling).
+    const form = new FormData()
+    // Copy into a fresh ArrayBuffer-backed Blob (Uint8Array over a shared/oversized buffer is fine here).
+    form.append("file", new Blob([bytes], { type: mime }), `recording.${ext}`)
+    form.append("model", TRANSCRIBE_MODEL)
+    form.append("language", "en")
+    // Ask for timestamped segments; models that don't support it fall back to plain `text`, which
+    // parseTranscribeResponse still handles (segments simply come back null).
+    form.append("response_format", "verbose_json")
+    // Some backends read the container hint from a `format` field; harmless when ignored.
+    form.append("format", format)
+
     const resp = await fetch(ENDPOINT, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
+        // NOTE: do NOT set Content-Type — fetch sets the multipart boundary automatically.
         "Authorization": `Bearer ${key}`,
         "HTTP-Referer": "https://klavity.in",
         "X-Title": "Klavity",
       },
-      body: JSON.stringify({
-        model: TRANSCRIBE_MODEL,
-        input_audio: { data: b64, format },
-        language: "en",
-        // Ask for timestamped segments; models that don't support it fall back to plain `text`, which
-        // parseTranscribeResponse still handles (segments simply come back null).
-        response_format: "verbose_json",
-      }),
+      body: form,
+      signal: ac.signal,
     })
     if (!resp.ok) {
-      console.warn(`[transcribe] OpenRouter ${resp.status}: ${(await resp.text().catch(() => "?")).slice(0, 200)}`)
-      return null
+      const detail = (await resp.text().catch(() => "?")).slice(0, 200)
+      // 413 (payload too large) and every other non-2xx degrade to 'failed' — the report stays intact.
+      console.warn(`[transcribe] OpenRouter ${resp.status}: ${detail}`)
+      return { status: "failed", reason: resp.status === 413 ? "payload-too-large" : `http-${resp.status}` }
     }
     const data: any = await resp.json()
-    return parseTranscribeResponse(data)
+    const parsed = parseTranscribeResponse(data)
+    if (!parsed) return { status: "failed", reason: "empty-or-unparseable" }
+    return { status: "done", result: parsed }
   } catch (e: any) {
-    console.warn("[transcribe] failed (non-fatal):", e?.message || e)
-    return null
+    const aborted = e?.name === "AbortError"
+    console.warn("[transcribe] failed (non-fatal):", aborted ? "timeout" : (e?.message || e))
+    return { status: "failed", reason: aborted ? "timeout" : "network-error" }
+  } finally {
+    clearTimeout(timer)
   }
 }
 
@@ -139,31 +193,37 @@ export async function transcribeFeedbackRecordings(opts: {
       continue
     }
 
-    let result: TranscriptResult | null = null
+    let outcome: TranscribeOutcome
     try {
-      result = await transcribeRecording(String(rec.key), String(rec.contentType || ""))
+      outcome = await transcribeRecording(String(rec.key), String(rec.contentType || ""))
     } catch (e: any) {
       console.warn("[transcribe] recording failed (non-fatal):", e?.message || e)
-      result = null
+      outcome = { status: "failed", reason: "unexpected-error" }
     }
 
-    if (result) {
+    if (outcome.status === "done") {
       await setRecordingTranscript(feedbackId, projectId, rid, "done", {
-        text: result.text,
-        segments: result.segments,
-      }).catch(() => {})
+        text: outcome.result.text,
+        segments: outcome.result.segments,
+      }, null).catch(() => {})
+    } else if (outcome.status === "skipped") {
+      // PX4 #471: intentionally not transcribed (too large) — record the reason, no transcript, no spend.
+      await setRecordingTranscript(feedbackId, projectId, rid, "skipped", null, outcome.reason).catch(() => {})
     } else {
-      await setRecordingTranscript(feedbackId, projectId, rid, "failed").catch(() => {})
+      await setRecordingTranscript(feedbackId, projectId, rid, "failed", undefined, outcome.reason).catch(() => {})
     }
 
     // Cost ledger. ai_calls has no seconds column; cost/model/type/ok are what the schema carries.
-    await recordAiCall({
-      type: "transcribe",
-      model: TRANSCRIBE_MODEL,
-      projectId,
-      feature: "transcribe",
-      costUsd: result?.usage?.cost ?? null,
-      ok: !!result,
-    }).catch(() => null)
+    // A skipped clip made NO upstream call → do not log a ledger row for it.
+    if (outcome.status !== "skipped") {
+      await recordAiCall({
+        type: "transcribe",
+        model: TRANSCRIBE_MODEL,
+        projectId,
+        feature: "transcribe",
+        costUsd: outcome.status === "done" ? (outcome.result.usage.cost ?? null) : null,
+        ok: outcome.status === "done",
+      }).catch(() => null)
+    }
   }
 }
