@@ -65,6 +65,12 @@ export const planeConnector: Connector = {
     return { ok: true }
   },
 
+  // Klavity->Jira #414: attachFiles is already done INLINE below (createIssue uploads every
+  // ticket.attachments entry — screenshots AND non-image files — via Plane's reserve/upload/commit
+  // flow), so a separate attachFiles capability method is not needed for parity. TODO(#414): expose
+  // the standalone `transitionIssue` capability — Plane has native states; resolving a configured
+  // state NAME to its id (GET .../states/) and PATCHing the issue would mirror Jira's default-status
+  // transition. Left as a TODO pending a per-project default-status config for Plane.
   async createIssue(ticket: TicketPayload, cfg: Record<string, string>): Promise<ExportResult> {
     const host = cfg.host?.replace(/\/$/, "") || "https://api.plane.so"
     const { workspace, project_id, token } = cfg

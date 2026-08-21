@@ -99,6 +99,26 @@ export type FieldSyncResult = {
   error?: string
 }
 
+// Klavity->Jira #414: result of natively uploading a batch of files to an already-created external
+// issue via the connector's attachFiles capability. Best-effort — the caller never fails the export
+// on a non-zero `failed`/`skipped`; it surfaces `warning` on the export timeline (same seam as
+// ExportResult.attachmentWarning) so a degraded upload is visible without opening the issue.
+export type AttachFilesResult = {
+  attached: number // files the tracker accepted
+  failed: number   // files that hit an upload/transport error
+  skipped: number  // files dropped up front by the size caps (see attach-caps.ts)
+  warning?: string | null
+}
+
+// Klavity->Jira #414 (#433 mechanism): result of transitioning a freshly created external issue to a
+// configured default status. Best-effort — the caller never fails the export on it.
+export type TransitionResult = {
+  ok: boolean
+  applied: boolean            // true only when a transition was actually POSTed
+  transitionId?: string | null // the resolved transition id, when a matching one was found
+  error?: string              // server-side reason (never echoed to clients)
+}
+
 export type ConnectorField = {
   key: string
   label: string
@@ -166,6 +186,52 @@ export interface Connector {
     fields: FieldUpdate,
     cfg: Record<string, string>,
   ): Promise<FieldSyncResult>
+
+  /**
+   * Klavity->Jira #414: natively upload a batch of files (report screenshots AND the non-image files
+   * the reporter attached — PDF/.log/.har/.txt/video/etc.) to an ALREADY-created external issue, so
+   * they live with the ticket forever rather than only as body links. createIssue calls this itself
+   * after the issue exists; it is also exposed on the interface so other adapters can opt in later
+   * and so the caller can re-attach out of band.
+   *
+   * MUST be non-throwing and best-effort: enforce the shared size caps (attach-caps.ts), upload each
+   * accepted file independently, and NEVER fail the export because a file did not attach — the issue
+   * body always carries the permanent fallback link. Return counts + a human warning summarising any
+   * skips/failures (surfaced on the export timeline, never leaking secrets).
+   *
+   * Optional so adapters without a native attachment API (webhook) or an unverified one may omit it.
+   *
+   * @param externalIssueRef  The externalKey stored by createIssue (issue key/number/UUID).
+   * @param attachments       The files to upload (bytes + filename + contentType).
+   * @param cfg               Decrypted connector config (same shape as createIssue receives).
+   */
+  attachFiles?(
+    externalIssueRef: string,
+    attachments: TicketAttachment[],
+    cfg: Record<string, string>,
+  ): Promise<AttachFilesResult>
+
+  /**
+   * Klavity->Jira #414 (#433 mechanism): transition a freshly created external issue to a configured
+   * default status/workflow state. Resolves the target status NAME to the tracker's transition id
+   * (Jira: GET .../transitions) and applies it (POST .../transitions). No-op when targetStatus is
+   * blank or no matching transition exists.
+   *
+   * MUST be non-throwing and best-effort: a failed/absent transition MUST NOT fail the export — the
+   * issue was already created successfully. The specific status VALUE is per-project admin config
+   * (e.g. Jira connector `default_status`); this method is the generic mechanism.
+   *
+   * Optional so adapters without a workflow-transition concept may omit it.
+   *
+   * @param externalIssueRef  The externalKey stored by createIssue (issue key/number/UUID).
+   * @param targetStatus      The desired status name (as configured per project).
+   * @param cfg               Decrypted connector config (same shape as createIssue receives).
+   */
+  transitionIssue?(
+    externalIssueRef: string,
+    targetStatus: string,
+    cfg: Record<string, string>,
+  ): Promise<TransitionResult>
 
   /**
    * JTBD 5.10 (KLAVITYKLA-289): the REVERSE of createIssue — pull recent issues that were filed

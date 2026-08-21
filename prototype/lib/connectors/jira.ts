@@ -1,6 +1,133 @@
-import type { Connector, TicketPayload, ExportResult, CommentSyncResult, FieldUpdate, FieldSyncResult, ConnectorMeta } from "./index"
+import type { Connector, TicketPayload, TicketAttachment, ExportResult, CommentSyncResult, FieldUpdate, FieldSyncResult, AttachFilesResult, TransitionResult, ConnectorMeta } from "./index"
 import { resolveIssueType } from "./resolve-issue-type"
 import { safeFetch } from "../safe-fetch"
+import { selectAttachmentsWithinCaps } from "./attach-caps"
+
+// Klavity->Jira #414: base64 Basic-auth credential for the Jira REST API from the connector config.
+function jiraCreds(cfg: Record<string, string>): string {
+  return Buffer.from(`${cfg.email}:${cfg.token}`).toString("base64")
+}
+
+// Klavity->Jira #414: upload one batch of files to an already-created Jira issue. Shared by
+// createIssue and the public attachFiles capability. Enforces the size caps up front, uploads each
+// accepted file via multipart with the required X-Atlassian-Token header, and NEVER throws — a
+// failed/oversize file is collected into the returned warning and the issue keeps its body link.
+//   POST {host}/rest/api/3/issue/{key}/attachments  (multipart/form-data, X-Atlassian-Token: no-check)
+async function jiraAttachFiles(
+  host: string,
+  credentials: string,
+  issueKey: string,
+  attachments: TicketAttachment[],
+): Promise<AttachFilesResult> {
+  const { accepted, skipped } = selectAttachmentsWithinCaps(attachments)
+  // Skipped-by-cap files are a form of degradation the user should be able to see.
+  const failures: string[] = skipped.map((s) => `${s.att.filename}: ${s.reason}`)
+  const attachUrl = `${host.replace(/\/$/, "")}/rest/api/3/issue/${issueKey}/attachments`
+  let attached = 0
+  for (const att of accepted) {
+    try {
+      // Build a Web FormData so the multipart boundary is set automatically — do NOT set
+      // Content-Type manually (the boundary would be missing/wrong).
+      const form = new FormData()
+      form.append("file", new Blob([att.bytes], { type: att.contentType }), att.filename)
+
+      // SSRF guard (H3): host is user-supplied → validate with safeFetch before sending creds.
+      const attRes = await safeFetch(
+        attachUrl,
+        {
+          method: "POST",
+          headers: {
+            "Authorization": `Basic ${credentials}`,
+            // Required by Jira to accept multipart attachment uploads (XSRF bypass).
+            "X-Atlassian-Token": "no-check",
+          },
+          body: form,
+        },
+        { allowLoopbackInTest: true },
+      )
+      if (!attRes.ok) {
+        const text = (await attRes.text().catch(() => "")).slice(0, 200)
+        console.warn(`jira attachment upload failed for ${att.filename} (HTTP ${attRes.status}): ${text}`)
+        failures.push(`${att.filename}: HTTP ${attRes.status}`)
+      } else {
+        attached++
+      }
+    } catch (err) {
+      // Swallow: the issue already exists and its body has the permanent link. Never throw.
+      const reason = err instanceof Error ? err.message : String(err)
+      console.warn(`jira attachment upload error for ${att.filename}: ${reason}`)
+      failures.push(`${att.filename}: ${reason}`)
+    }
+  }
+  const failed = accepted.length - attached
+  return {
+    attached,
+    failed,
+    skipped: skipped.length,
+    warning: failures.length
+      ? `attachment upload issues (${failures.length}/${attachments.length}) — link included in body: ${failures.join("; ").slice(0, 300)}`
+      : null,
+  }
+}
+
+// Klavity->Jira #414 (#433 mechanism): transition a freshly created Jira issue to `targetStatus`.
+// Resolves the status name to a transition id via GET .../transitions, then POSTs it. Best-effort:
+// returns a structured result and NEVER throws — a missing/failed transition leaves the issue in its
+// created state and must not fail the export.
+//   GET  {host}/rest/api/3/issue/{key}/transitions  -> { transitions: [{ id, name, to: { name } }] }
+//   POST {host}/rest/api/3/issue/{key}/transitions  <- { transition: { id } }  (204 on success)
+async function jiraTransitionIssue(
+  host: string,
+  credentials: string,
+  issueKey: string,
+  targetStatus: string,
+): Promise<TransitionResult> {
+  const want = String(targetStatus || "").trim()
+  if (!want) return { ok: true, applied: false } // unset → no-op
+  const url = `${host.replace(/\/$/, "")}/rest/api/3/issue/${issueKey}/transitions`
+  try {
+    const listRes = await safeFetch(
+      url,
+      { method: "GET", headers: { "Authorization": `Basic ${credentials}`, "Accept": "application/json" } },
+      { allowLoopbackInTest: true },
+    )
+    if (!listRes.ok) {
+      const text = (await listRes.text().catch(() => "")).slice(0, 200)
+      return { ok: false, applied: false, error: `jira transitions GET HTTP ${listRes.status}: ${text}` }
+    }
+    const json = await listRes.json().catch(() => null)
+    const transitions: any[] = Array.isArray(json?.transitions) ? json.transitions : []
+    const wantLc = want.toLowerCase()
+    // Match on the transition name OR the destination status name (either is what an admin would type).
+    const match = transitions.find(
+      (t) => String(t?.name ?? "").toLowerCase() === wantLc || String(t?.to?.name ?? "").toLowerCase() === wantLc,
+    )
+    if (!match?.id) {
+      return { ok: false, applied: false, error: `no transition to status "${want}" available on ${issueKey}` }
+    }
+    const transitionId = String(match.id)
+    const postRes = await safeFetch(
+      url,
+      {
+        method: "POST",
+        headers: {
+          "Authorization": `Basic ${credentials}`,
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+        },
+        body: JSON.stringify({ transition: { id: transitionId } }),
+      },
+      { allowLoopbackInTest: true },
+    )
+    if (!postRes.ok) {
+      const text = (await postRes.text().catch(() => "")).slice(0, 200)
+      return { ok: false, applied: false, transitionId, error: `jira transition POST HTTP ${postRes.status}: ${text}` }
+    }
+    return { ok: true, applied: true, transitionId }
+  } catch (e) {
+    return { ok: false, applied: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}
 
 // JTBD 5.7: map Klavity priority (urgent/high/medium/low) onto Jira's default priority scheme
 // names (Highest/High/Medium/Low/Lowest). Jira's create/edit APIs set priority by name. Returns
@@ -75,6 +202,10 @@ export const jiraConnector: Connector = {
     { key: "token", label: "API Token", required: true, secret: true },
     { key: "project_key", label: "Project Key", required: true, placeholder: "PROJ" },
     { key: "issue_type", label: "Issue Type", placeholder: "Task" },
+    // Klavity->Jira #414 (#433 mechanism): optional default status to transition a newly created issue
+    // to (e.g. "In Progress", "Selected for Development"). Blank = leave in the workflow's initial
+    // status. The specific value is per-project admin config (PX4 configures theirs later via #432).
+    { key: "default_status", label: "Default status on create (optional)", placeholder: "In Progress" },
     // Two-way sync (G4): shared secret you embed in the Jira webhook URL (?token=…) or send
     // as the X-Klavity-Token header. Jira Cloud webhooks aren't HMAC-signed by default, so this
     // token is the auth. Verified on inbound only; never sent outbound. Optional — blank = outbound-only.
@@ -144,48 +275,50 @@ export const jiraConnector: Connector = {
     const json = await res.json()
     const key: string = json.key
 
-    // Native screenshot attachment (ENHANCEMENT — the ticket body already contains a permanent
-    // fallback link to each screenshot, so this is best-effort and never affects the result).
-    // Endpoint: POST {host}/rest/api/3/issue/{key}/attachments
-    // NEEDS E2E VERIFICATION against a live Jira Cloud instance (multipart attachment API, X-Atlassian-Token).
-    if (ticket.attachments?.length) {
-      const attachUrl = `${host.replace(/\/$/, "")}/rest/api/3/issue/${key}/attachments`
-      for (const att of ticket.attachments) {
-        try {
-          // Build a Web FormData so the multipart boundary is set automatically — do NOT set
-          // Content-Type manually (the boundary would be missing/wrong).
-          const form = new FormData()
-          form.append("file", new Blob([att.bytes], { type: att.contentType }), att.filename)
+    // Klavity->Jira #414: native file attachment (ENHANCEMENT — the ticket body already contains a
+    // permanent fallback link, so this is best-effort and never affects the created issue). Uploads
+    // BOTH report screenshots and the non-image files the reporter attached (PDF/.log/.har/etc.),
+    // which arrive on ticket.attachments already resolved to bytes by feedbackToTicketPayload.
+    // Size-capped + failures collected into attachmentWarning (surfaced on the export timeline).
+    let attachmentWarning: string | null = null
+    if (ticket.attachments?.length && key) {
+      const r = await jiraAttachFiles(host, credentials, key, ticket.attachments)
+      attachmentWarning = r.warning ?? null
+    }
 
-          // SSRF guard (H3): host is user-supplied → validate with safeFetch before sending creds.
-          const attRes = await safeFetch(
-            attachUrl,
-            {
-              method: "POST",
-              headers: {
-                "Authorization": `Basic ${credentials}`,
-                // Required by Jira to accept multipart attachment uploads (XSRF bypass).
-                "X-Atlassian-Token": "no-check",
-              },
-              body: form,
-            },
-            { allowLoopbackInTest: true },
-          )
-          if (!attRes.ok) {
-            const text = (await attRes.text().catch(() => "")).slice(0, 200)
-            console.warn(`jira attachment upload failed for ${att.filename} (HTTP ${attRes.status}): ${text}`)
-          }
-        } catch (err) {
-          // Swallow: the issue already exists and its body has the permanent link. Never throw.
-          console.warn(`jira attachment upload error for ${att.filename}:`, err)
-        }
-      }
+    // Klavity->Jira #414 (#433 mechanism): if a default status is configured, transition the new
+    // issue to it. Best-effort — a missing/failed transition never fails the export.
+    if (cfg.default_status && key) {
+      const t = await jiraTransitionIssue(host, credentials, key, cfg.default_status)
+      if (!t.applied && t.error) console.warn(`jira default-status transition skipped for ${key}: ${t.error}`)
     }
 
     return {
       externalKey: key,
       externalUrl: `${host.replace(/\/$/, "")}/browse/${key}`,
+      attachmentWarning,
     }
+  },
+
+  // Klavity->Jira #414: public attachFiles capability — upload files to an already-created issue.
+  // Delegates to the same helper createIssue uses (size caps + X-Atlassian-Token multipart, best-effort).
+  async attachFiles(
+    externalIssueRef: string,
+    attachments: TicketAttachment[],
+    cfg: Record<string, string>,
+  ): Promise<AttachFilesResult> {
+    if (!attachments?.length) return { attached: 0, failed: 0, skipped: 0, warning: null }
+    return jiraAttachFiles(cfg.host, jiraCreds(cfg), externalIssueRef, attachments)
+  },
+
+  // Klavity->Jira #414 (#433 mechanism): public transitionIssue capability — resolve the target
+  // status name to a transition id and apply it. Best-effort; no-op when targetStatus is blank.
+  async transitionIssue(
+    externalIssueRef: string,
+    targetStatus: string,
+    cfg: Record<string, string>,
+  ): Promise<TransitionResult> {
+    return jiraTransitionIssue(cfg.host, jiraCreds(cfg), externalIssueRef, targetStatus)
   },
 
   // addComment: POST a comment on the Jira issue identified by externalIssueRef.

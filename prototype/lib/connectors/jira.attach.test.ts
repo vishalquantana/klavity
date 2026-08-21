@@ -101,10 +101,10 @@ test("jira createIssue resolves normally when attachment upload returns non-2xx"
     CFG,
   )
 
-  expect(r).toEqual({
-    externalKey: "PROJ-99",
-    externalUrl: "https://my.atlassian.net/browse/PROJ-99",
-  })
+  // Issue still created; the degradation is surfaced (not silent) via attachmentWarning.
+  expect(r.externalKey).toBe("PROJ-99")
+  expect(r.externalUrl).toBe("https://my.atlassian.net/browse/PROJ-99")
+  expect(typeof r.attachmentWarning).toBe("string")
 })
 
 // (2b) attachment upload throws → createIssue still resolves normally (graceful).
@@ -121,10 +121,9 @@ test("jira createIssue resolves normally when attachment upload throws", async (
     CFG,
   )
 
-  expect(r).toEqual({
-    externalKey: "PROJ-100",
-    externalUrl: "https://my.atlassian.net/browse/PROJ-100",
-  })
+  expect(r.externalKey).toBe("PROJ-100")
+  expect(r.externalUrl).toBe("https://my.atlassian.net/browse/PROJ-100")
+  expect(typeof r.attachmentWarning).toBe("string")
 })
 
 // (3) no attachments → no attachment request is made.
@@ -151,4 +150,90 @@ test("jira createIssue makes no attachment request when attachments is empty arr
   await getConnector("jira")!.createIssue({ ...BASE_TICKET, attachments: [] }, CFG)
 
   expect(calls.length).toBe(1)
+})
+
+// Klavity->Jira #414: a NON-IMAGE reporter file (e.g. a .log) is uploaded to the attachments
+// endpoint just like a screenshot — any type, not only PNGs.
+test("jira createIssue uploads a non-image reporter file (e.g. .log) with its content type", async () => {
+  const calls: any[] = []
+  globalThis.fetch = mock(async (u: any, o: any) => {
+    calls.push([u, o])
+    if (String(u).endsWith("/rest/api/3/issue")) {
+      return new Response(JSON.stringify({ key: "PROJ-50" }), { status: 201 })
+    }
+    return new Response(JSON.stringify([{ id: "att-log" }]), { status: 200 })
+  }) as any
+
+  const logFile: TicketAttachment = {
+    filename: "app.log",
+    contentType: "text/plain",
+    bytes: new Uint8Array([104, 105]),
+    url: "https://klavity.in/att/log.hmac",
+  }
+
+  await getConnector("jira")!.createIssue(
+    { ...BASE_TICKET, attachments: [makeAttachment("shot.png"), logFile] },
+    CFG,
+  )
+
+  const attachCalls = calls.filter(([u]) => String(u).endsWith("/attachments"))
+  expect(attachCalls.length).toBe(2)
+  // The second attachment is the .log with its declared content type preserved on the Blob.
+  const logForm = attachCalls[1][1].body as FormData
+  const logBlob = logForm.get("file") as Blob
+  expect(logBlob.type).toContain("text/plain")
+  expect((logForm.get("file") as File).name).toBe("app.log")
+})
+
+// Klavity->Jira #414: size cap — a file larger than the per-file cap (~10MB) is NOT uploaded, the
+// issue is still created, and the degradation is surfaced via attachmentWarning.
+test("jira createIssue skips an over-cap file but still creates the issue (size cap enforced)", async () => {
+  const calls: any[] = []
+  globalThis.fetch = mock(async (u: any, o: any) => {
+    calls.push([u, o])
+    if (String(u).endsWith("/rest/api/3/issue")) {
+      return new Response(JSON.stringify({ key: "PROJ-BIG" }), { status: 201 })
+    }
+    return new Response(JSON.stringify([{ id: "att1" }]), { status: 200 })
+  }) as any
+
+  const huge: TicketAttachment = {
+    filename: "huge.bin",
+    contentType: "application/octet-stream",
+    bytes: new Uint8Array(10 * 1024 * 1024 + 1), // 1 byte over the 10MB per-file cap
+    url: "https://klavity.in/att/huge.hmac",
+  }
+  const ok = makeAttachment("small.png")
+
+  const r = await getConnector("jira")!.createIssue(
+    { ...BASE_TICKET, attachments: [huge, ok] },
+    CFG,
+  )
+
+  // Only the small file was uploaded; the over-cap file was skipped up front (no request for it).
+  const attachCalls = calls.filter(([u]) => String(u).endsWith("/attachments"))
+  expect(attachCalls.length).toBe(1)
+  const form = attachCalls[0][1].body as FormData
+  expect((form.get("file") as File).name).toBe("small.png")
+  // Issue created; the skip is surfaced.
+  expect(r.externalKey).toBe("PROJ-BIG")
+  expect(typeof r.attachmentWarning).toBe("string")
+})
+
+// Klavity->Jira #414: the standalone attachFiles capability is exposed and delegates to the same
+// multipart upload path with the X-Atlassian-Token header.
+test("jira attachFiles capability uploads to the attachments endpoint", async () => {
+  const calls: any[] = []
+  globalThis.fetch = mock(async (u: any, o: any) => {
+    calls.push([u, o])
+    return new Response(JSON.stringify([{ id: "att1" }]), { status: 200 })
+  }) as any
+
+  const res = await getConnector("jira")!.attachFiles!("PROJ-9", [makeAttachment()], CFG)
+
+  expect(calls.length).toBe(1)
+  expect(calls[0][0]).toBe("https://my.atlassian.net/rest/api/3/issue/PROJ-9/attachments")
+  expect(calls[0][1].headers["X-Atlassian-Token"]).toBe("no-check")
+  expect(res.attached).toBe(1)
+  expect(res.failed).toBe(0)
 })

@@ -126,6 +126,12 @@ export const linearConnector: Connector = {
     return { ok: true }
   },
 
+  // Klavity->Jira #414: attachFiles is already done INLINE below (createIssue uploads every
+  // ticket.attachments entry — screenshots AND non-image files — via the fileUpload mutation), so a
+  // separate attachFiles capability method is not needed for parity. TODO(#414): expose the standalone
+  // `transitionIssue` capability — Linear has a native workflow-state concept (stateId on issueUpdate);
+  // resolving a configured state NAME to its id would let a Linear default-status transition mirror
+  // Jira's. Left as a TODO because Linear's file upload path itself is still unverified (see below).
   async createIssue(ticket: TicketPayload, cfg: Record<string, string>): Promise<ExportResult> {
     const { api_key, team_id } = cfg
 

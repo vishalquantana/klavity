@@ -62,6 +62,11 @@ export const githubConnector: Connector = {
     return { ok: true }
   },
 
+  // Klavity->Jira #414: GitHub Issues has NO native attachment API (files must be uploaded to a
+  // repo/gist or the user-content CDN, which needs a separate authenticated flow), so attachFiles is
+  // intentionally NOT implemented — the issue body keeps the permanent signed fallback links.
+  // transitionIssue is likewise N/A (GitHub issues have only open/closed, no configurable workflow
+  // statuses). TODO(#414): revisit if GitHub Projects v2 column moves are ever wanted.
   async createIssue(ticket: TicketPayload, cfg: Record<string, string>): Promise<ExportResult> {
     const { owner, repo, token } = cfg
     const url = `https://api.github.com/repos/${owner}/${repo}/issues`
