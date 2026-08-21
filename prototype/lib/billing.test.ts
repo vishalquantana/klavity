@@ -99,7 +99,8 @@ test("monthly AutoSim-run caps increase monotonically up the plan ladder", () =>
   const { free, pro, founding, team, agency, scale, partner } = PLAN_QUOTAS
   expect(free.autosimRunsMonthly).toBe(0) // KLAVITYKLA-365: AutoSim removed from Free
   expect(pro.autosimRunsMonthly).toBe(150)
-  expect(founding.autosimRunsMonthly!).toBeGreaterThanOrEqual(pro.autosimRunsMonthly!)
+  // founding is unlimited (null) per KLA-527 — treat null as "≥ everything" (top of the ladder).
+  expect(founding.autosimRunsMonthly === null || founding.autosimRunsMonthly >= pro.autosimRunsMonthly!).toBe(true)
   expect(team.autosimRunsMonthly!).toBeGreaterThan(pro.autosimRunsMonthly!)
   expect(agency.autosimRunsMonthly!).toBeGreaterThan(team.autosimRunsMonthly!)
   expect(scale.autosimRunsMonthly).toBeNull()
@@ -281,37 +282,33 @@ test("founding tier normalizes correctly and carries at-or-above-Pro quotas", ()
   const founding = quotasForPlan("founding").quotas
   const pro = PLAN_QUOTAS.pro
   expect(quotasForPlan("founding").plan).toBe("founding")
-  expect(founding.simReactionsMonthly).toBeGreaterThanOrEqual(pro.simReactionsMonthly!)
-  expect(founding.autosimFlows).toBeGreaterThanOrEqual(pro.autosimFlows!)
-  expect(founding.autosimRunsMonthly).toBeGreaterThanOrEqual(pro.autosimRunsMonthly!)
+  // KLA-527: founding is unlimited (null) on every axis — null counts as at-or-above Pro.
+  expect(founding.simReactionsMonthly === null || founding.simReactionsMonthly >= pro.simReactionsMonthly!).toBe(true)
+  expect(founding.autosimFlows === null || founding.autosimFlows >= pro.autosimFlows!).toBe(true)
+  expect(founding.autosimRunsMonthly === null || founding.autosimRunsMonthly >= pro.autosimRunsMonthly!).toBe(true)
   expect(founding.projects === null || founding.projects >= pro.projects!).toBe(true)
   expect(founding.sims === null || founding.sims >= pro.sims!).toBe(true)
 })
 
 // ── KLAVITYKLA-365: Founding Ten gets Team entitlements; AutoSim leaves Free ────────────────────
 
-test("founding matches Team on every LIMIT, but its AutoSim cadence is daily — not hourly", () => {
-  const founding = PLAN_QUOTAS.founding, team = PLAN_QUOTAS.team
-  // Limits: identical to Team. The Founding Ten were sold "everything in Team".
-  expect(founding.projects).toBe(team.projects)
-  expect(founding.sims).toBe(team.sims)
-  expect(founding.simReactionsMonthly).toBe(team.simReactionsMonthly)
-  expect(founding.autosimFlows).toBe(team.autosimFlows)
-  expect(founding.autosimRunsMonthly).toBe(team.autosimRunsMonthly)
-  // Concrete values, so a future edit to `team` can't silently drag Founding somewhere unintended.
+test("founding grants unlimited (fair-use) quota with a DAILY AutoSim cadence — not hourly", () => {
+  const founding = PLAN_QUOTAS.founding, team = PLAN_QUOTAS.team, scale = PLAN_QUOTAS.scale
+  // KLA-527 (founder decision 2026-08-21): Founding Ten at $299/mo has NO hard caps — it mirrors
+  // Scale's practically-unlimited (fair-use) quota, NOT Team's fixed limits. Every limit is null.
   expect(founding.projects).toBeNull()
-  expect(founding.sims).toBe(20)
-  expect(founding.simReactionsMonthly).toBe(2500)
-  expect(founding.autosimFlows).toBe(20)
-  expect(founding.autosimRunsMonthly).toBe(600)
+  expect(founding.sims).toBeNull()
+  expect(founding.simReactionsMonthly).toBeNull()
+  expect(founding.autosimFlows).toBeNull()
+  expect(founding.autosimRunsMonthly).toBeNull()
+  // Concretely: matches Scale (unlimited), NOT Team's fixed numbers.
+  expect(founding.sims).toBe(scale.sims)
+  expect(founding.sims).not.toBe(team.sims)
 
-  // KLAVITYKLA-379 — the ONE deliberate divergence from Team. This assertion exists to stop
-  // somebody "restoring parity" and re-shipping a permanent loss.
-  //
-  // KLA-365 set founding.autosimCadence to Team's "on-deploy/hourly". At 20 flows that is ~14,400
-  // replays/mo ≈ $72/mo, plus 2,500 page reviews at $17–50/mo → $90–120/mo COGS, against a
-  // $490/yr ($40.83/mo) price that is LOCKED FOR LIFE. Daily cadence removes ~95% of the exposure
-  // and keeps hourly as a genuine upsell into paid Team.
+  // The ONE deliberate cap: AutoSim RUN cadence is "daily", NOT "on-deploy/hourly". This assertion
+  // exists to stop somebody "restoring hourly" and re-shipping a permanent loss. At unlimited flows,
+  // an hourly cadence is ~$90–120/mo COGS against a LOCKED-FOR-LIFE $299/mo; daily removes ~95% of
+  // that exposure and leaves hourly/on-deploy as the upsell into paid Scale (KLAVITYKLA-379 / KLA-527).
   expect(founding.autosimCadence).toBe("daily")
   expect(founding.autosimCadence).not.toBe(team.autosimCadence)
   expect(team.autosimCadence).toBe("on-deploy/hourly")
@@ -333,8 +330,10 @@ test("Free has no AutoSim at all — zero configured flows AND zero monthly runs
 
 test("every PAID tier still includes AutoSim (Free is the only zero)", () => {
   for (const plan of ["pro", "founding", "team", "agency"] as const) {
-    expect(PLAN_QUOTAS[plan].autosimFlows!).toBeGreaterThan(0)
-    expect(PLAN_QUOTAS[plan].autosimRunsMonthly!).toBeGreaterThan(0)
+    const q = PLAN_QUOTAS[plan]
+    // null = unlimited (founding/scale fair-use); a number must be > 0. Either way, never zero.
+    expect(q.autosimFlows === null || q.autosimFlows > 0).toBe(true)
+    expect(q.autosimRunsMonthly === null || q.autosimRunsMonthly > 0).toBe(true)
   }
 })
 
