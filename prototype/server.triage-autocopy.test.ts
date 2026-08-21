@@ -132,9 +132,11 @@ async function waitForExport(connectorId: string, count = 1, waitMs = 4000): Pro
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-// ── T1: Raw submit does NOT trigger auto-copy ─────────────────────────────────
+// ── T1: Raw submit does NOT trigger auto-copy (review mode) ───────────────────
 // Even with an auto_copy connector present, filing via POST /api/feedback must NOT
-// immediately copy to the external tracker. Copy happens on triage-accept only.
+// immediately copy to the external tracker — copy happens on triage-accept only.
+// NOTE: Snap routing added a per-project 'autofile' default that DOES file human Snaps on submit; to
+// exercise the triage-gated path this test first puts the project into 'review' mode (auto-file off).
 test("raw POST /api/feedback does not trigger auto-copy even with auto_copy connector", async () => {
   let hits = 0
   const recv = Bun.serve({
@@ -142,6 +144,8 @@ test("raw POST /api/feedback does not trigger auto-copy even with auto_copy conn
     fetch() { hits++; return new Response(JSON.stringify({ id: "hit1" }), { status: 201 }) },
   })
   try {
+    // Snap routing: hold human Snaps for review so submit does not auto-file (isolates triage-gating).
+    await api("POST", `/api/projects/${PROJECT_ID}/snap-routing`, { snapRouting: "review" }, ADMIN_SID)
     // Create an auto_copy webhook connector.
     const cr = await api("POST", `/api/projects/${PROJECT_ID}/connectors`, {
       type: "webhook",

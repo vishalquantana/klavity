@@ -2177,6 +2177,20 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         </div>
         <button class="btn btn-ghost btn-sm" id="connAddBtn" style="margin-top:8px">+ Connect a tracker</button>
         <div class="msg" id="connMsg"></div>
+        <!-- Snap routing: how NEW human Snap reports are handled once a tracker is connected. -->
+        <div id="snapRoutingWrap" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line)">
+          <div class="flbl" style="margin-bottom:2px">New human Snap reports</div>
+          <div class="muted" style="font-size:12.5px;margin-bottom:8px">Choose what happens to a bug your users report once a tracker (like Jira) is connected. Sim / AutoSim reports keep their own auto-copy behavior.</div>
+          <label class="snap-route-opt" style="display:flex;gap:10px;align-items:flex-start;padding:11px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px;cursor:pointer">
+            <input type="radio" name="snapRouting" value="autofile" style="margin-top:2px">
+            <span><b>File directly into your tracker</b> <span class="chip" style="background:var(--green);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:999px">DEFAULT</span><br><span class="muted" style="font-size:12px">Every human Snap becomes a tracker ticket the moment it's submitted — screenshots, repro steps &amp; console logs attached. It still appears in New reports for reference, showing its tracker key.</span></span>
+          </label>
+          <label class="snap-route-opt" style="display:flex;gap:10px;align-items:flex-start;padding:11px;border:1px solid var(--line);border-radius:8px;cursor:pointer">
+            <input type="radio" name="snapRouting" value="review" style="margin-top:2px">
+            <span><b>Review in Klavity first, then transfer</b><br><span class="muted" style="font-size:12px">New Snaps land in New reports only. You review them and manually send the ones you want to Jira — nothing auto-pushes.</span></span>
+          </label>
+          <span class="msg" id="snapRoutingMsg" style="margin-top:4px;display:inline-block"></span>
+        </div>
         <!-- KLAVITYKLA-287 (JTBD 5.8): who may export a ticket to these destinations -->
         <div id="exportPolicyWrap" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line)">
           <div class="flbl" style="margin-bottom:2px">Who can export tickets</div>
@@ -3008,8 +3022,23 @@ function tgSentPass(t) {
   const grp = TG_SENTIMENT_GROUPS[_triageSentiment]
   return grp ? grp.includes(tgSent(t)) : tgSent(t) === _triageSentiment
 }
+// Lazily ensure the per-project Snap routing mode + connectors are known so New reports can render the
+// right per-row affordance (Send to Jira vs tracker key) even when the Settings tab hasn't loaded yet.
+async function ensureSnapRoutingLoaded() {
+  if (state._snapRouting !== undefined && state._connectors !== undefined) return
+  const pid = curProjId(); if (!pid) return
+  try {
+    const r = await fetch(projPath("/connectors"))
+    if (!r.ok) return
+    const d = await r.json()
+    if (state._connectors === undefined) state._connectors = d.connectors || []
+    if (state._snapRouting === undefined) state._snapRouting = d.snapRouting || "autofile"
+  } catch { /* non-fatal — falls back to autofile / no button */ }
+}
+
 async function renderTriage() {
   const pid = curProjId(); if (!pid) return
+  await ensureSnapRoutingLoaded()
   // The 4th arg (host) hands swrSection the skeleton it owns — swrSection now guarantees that
   // skeleton is always cleared (success → apply; throw/empty/cold-miss → couldn't-load state), so
   // this caller no longer needs its own post-call `.sk` fallback. renderTriageItems is the real
@@ -3066,6 +3095,49 @@ async function tgDismiss(ids) {
     })
   }
   return res
+}
+
+// ── Snap routing (review mode): manual "Send to Jira" from New reports ──
+// Picks a destination connector for a one-click send: prefer an auto-copy tracker, else the first
+// enabled connector. Returns null when none is configured (button then nudges to Settings).
+function tgPickTracker() {
+  const cs = (state._connectors || []).filter(c => c && c.enabled !== false)
+  return cs.find(c => c.autoCopy) || cs[0] || null
+}
+// A human Snap row is one with no originating Sim (simId/simName absent). Sim/AutoSim rows keep their
+// triage-accept auto-copy flow, so we never surface the manual Send/tracker-key affordance on them.
+function tgIsHumanSnap(t) { return !t.simId && !t.simName }
+// Reuses the EXISTING POST /api/feedback/:id/export endpoint (same one the ticket drawer uses). A 409
+// "already exported" counts as success (it's already in the tracker). Non-fatal per-row.
+async function tgSendToTracker(ids) {
+  ids = (ids || []).filter(Boolean)
+  if (!ids.length) return
+  const conn = tgPickTracker()
+  const msgHost = $("snapRoutingMsg")
+  if (!conn) {
+    tgFlash("Connect a tracker first — Settings → Bug tracking.")
+    return
+  }
+  let ok = 0, fail = 0
+  for (const id of ids) {
+    const r = await fetch("/api/feedback/" + encodeURIComponent(id) + "/export", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ connectorId: conn.id }),
+    }).catch(() => null)
+    if (r && (r.ok || r.status === 409)) ok++; else fail++
+  }
+  _tgSelected.clear()
+  await refreshAll(); renderTriage()
+  tgFlash(fail ? `Sent ${ok}, ${fail} failed.` : `Sent ${ok} to ${conn.name || "tracker"}.`)
+}
+// Minimal transient notice, reusing the dismiss-toast element/styling without an Undo button.
+function tgFlash(text) {
+  let toast = $("tgDismissToast")
+  if (!toast) { toast = document.createElement("div"); toast.id = "tgDismissToast"; document.body.appendChild(toast) }
+  toast.className = "tg-toast"
+  toast.innerHTML = `<span class="tg-toast-msg">${kicon("ticket",{size:15})} ${esc(text)}</span>`
+  toast.classList.add("show")
+  setTimeout(() => toast.classList.remove("show"), 3200)
 }
 
 // JTBD 2.8: move keyboard focus to a triage row; clears the previous highlight and
@@ -3208,12 +3280,15 @@ function renderTriageBulkBar() {
   }
   if (!n) { bar.classList.remove("show"); bar.innerHTML = ""; return }
   const priOpts = ["urgent","high","medium","low"].map(p => `<option value="${p}"${p==="medium"?" selected":""}>${p}</option>`).join("")
+  // Snap routing: in review mode, offer a bulk "Send to Jira" for the selected HUMAN Snaps.
+  const showBulkSend = (state._snapRouting || "autofile") === "review"
   bar.innerHTML =
     `<span class="bulk-count">${n} selected</span>` +
     `<span class="bulk-sep"></span>` +
     `<span class="bulk-lbl">Priority:</span>` +
     `<select class="bulk-sel" id="tgBulkPri">${priOpts}</select>` +
     `<button class="btn btn-indigo btn-sm" id="tgBulkAccept" type="button">Accept as bugs</button>` +
+    (showBulkSend ? `<button class="btn btn-indigo btn-sm" id="tgBulkSend" type="button">${kicon("chevron-right",{size:13})} Send to Jira</button>` : "") +
     `<button class="btn btn-ghost btn-sm" id="tgBulkDismiss" type="button">Dismiss</button>` +
     `<span class="bulk-sep"></span>` +
     `<button class="btn btn-ghost btn-sm" id="tgBulkClear" type="button" style="font-size:12px">Clear</button>`
@@ -3222,12 +3297,37 @@ function renderTriageBulkBar() {
     const pri = bar.querySelector("#tgBulkPri").value
     tgAccept([..._tgSelected], pri)
   })
+  const bulkSend = bar.querySelector("#tgBulkSend")
+  if (bulkSend) bulkSend.addEventListener("click", () => {
+    // Only human Snaps are eligible; silently skip any selected Sim/AutoSim rows.
+    const byId = new Map((_triageItems || []).map(t => [String(t.id), t]))
+    const humanIds = [..._tgSelected].filter(id => { const t = byId.get(String(id)); return t && tgIsHumanSnap(t) })
+    if (humanIds.length) tgSendToTracker(humanIds)
+    else tgFlash("No human Snap reports selected.")
+  })
   bar.querySelector("#tgBulkDismiss").addEventListener("click", () => tgDismiss([..._tgSelected]))
   bar.querySelector("#tgBulkClear").addEventListener("click", () => {
     _tgSelected.clear()
     if (host) host.querySelectorAll(".tg-row").forEach(r => { r.classList.remove("tg-selected"); const c = r.querySelector(".tg-cb"); if (c) c.checked = false })
     renderTriageBulkBar()
   })
+}
+// Snap routing per-row affordance for the New-reports list:
+//   • autofile + already filed → show the tracker key badge ("Filed to Jira · KEY").
+//   • review mode + human Snap  → show a "Send to Jira" button (manual transfer).
+//   • Sim/AutoSim rows          → nothing (they keep their triage-accept auto-copy flow).
+function tgRoutingAffordance(t) {
+  if (!tgIsHumanSnap(t)) return ""
+  if (t.planeIssueKey) {
+    const label = "Filed to Jira &middot; " + esc(String(t.planeIssueKey))
+    return t.planeIssueUrl
+      ? `<a class="tg-filed" href="${esc(String(t.planeIssueUrl))}" target="_blank" rel="noopener" title="Open in tracker" style="display:inline-flex;align-items:center;gap:5px;color:var(--green);font-weight:600;font-size:12px;text-decoration:none">${kicon("check-circle",{size:14})} ${label}</a>`
+      : `<span class="tg-filed" style="display:inline-flex;align-items:center;gap:5px;color:var(--green);font-weight:600;font-size:12px">${kicon("check-circle",{size:14})} ${label}</span>`
+  }
+  if ((state._snapRouting || "autofile") === "review") {
+    return `<button class="btn btn-indigo btn-sm tg-send-jira" type="button" title="Send this report to your tracker">${kicon("chevron-right",{size:13})} Send to Jira</button>`
+  }
+  return ""
 }
 function renderTriageItems(items) {
   const host = $("triageList"); if (!host) return
@@ -3260,6 +3360,7 @@ function renderTriageItems(items) {
         <div class="tg-evidence hide" data-loaded=""></div>
       </div>
       <div class="tg-actions">
+        ${tgRoutingAffordance(t)}
         <select class="tg-pri" aria-label="Priority">${["urgent","high","medium","low"].map(s => `<option value="${s}"${s===(t.priority||"medium")?" selected":""}>${s}</option>`).join("")}</select>
         <button class="btn btn-indigo btn-sm tg-accept" type="button">Accept as bug</button>
         <button class="btn btn-ghost btn-sm tg-dismiss" type="button">Dismiss</button>
@@ -3271,6 +3372,8 @@ function renderTriageItems(items) {
     const t = (items).find(x => String(x.id) === id)
     row.querySelector(".tg-accept").addEventListener("click", () => tgAccept([id], row.querySelector(".tg-pri").value))
     row.querySelector(".tg-dismiss").addEventListener("click", () => tgDismiss([id]))
+    const sendBtn = row.querySelector(".tg-send-jira")
+    if (sendBtn) sendBtn.addEventListener("click", () => tgSendToTracker([id]))
     const cb = row.querySelector(".tg-cb")
     cb.addEventListener("change", () => {
       if (cb.checked) _tgSelected.add(id); else _tgSelected.delete(id)
@@ -7156,6 +7259,8 @@ async function loadConnectors(admin) {
     connectorTypes = d.types || []
     // KLAVITYKLA-287: export policy rides along the (member-readable) connectors list.
     state._exportPolicy = d.exportPolicy || "admins_only"
+    // Snap routing rides along too so New reports can pick "Send to Jira" vs the tracker key.
+    state._snapRouting = d.snapRouting || "autofile"
     // Admins additionally load pending member export requests to surface + approve.
     if (admin) {
       try {
@@ -7394,7 +7499,31 @@ function renderConnectors(admin) {
 
   // ── KLAVITYKLA-287 (JTBD 5.8): export policy control + member destinations + pending requests ──
   const policy = state._exportPolicy || "admins_only"
+  // Snap routing radio (admin-only write). Reflects state._snapRouting; POSTs to /snap-routing.
   if (admin) {
+    const routing = state._snapRouting || "autofile"
+    const routeWrap = $("snapRoutingWrap")
+    if (routeWrap) {
+      routeWrap.querySelectorAll('input[name="snapRouting"]').forEach(inp => {
+        inp.checked = (inp.value === routing)
+        inp.onchange = async () => {
+          if (!inp.checked) return
+          const msg = $("snapRoutingMsg")
+          const newMode = inp.value
+          const r = await fetch(projPath("/snap-routing"), {
+            method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ snapRouting: newMode })
+          }).catch(() => null)
+          const d = r ? await r.json().catch(() => ({})) : {}
+          if (d.ok) {
+            state._snapRouting = d.snapRouting || newMode
+            if (msg) { msg.style.color = "var(--green)"; msg.textContent = "Saved" }
+            // Re-render New reports so the per-row action (Send to Jira vs tracker key) flips.
+            if (typeof renderTriageView === "function" && (_triageItems || []).length) renderTriageView()
+          } else if (msg) { msg.style.color = "var(--rose)"; msg.textContent = (d && d.error) || "Couldn't save." }
+        }
+      })
+    }
     const polSel = $("exportPolicySel")
     if (polSel) {
       polSel.value = policy

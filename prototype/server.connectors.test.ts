@@ -427,6 +427,9 @@ test("auto-copy to Plane backfills feedback.plane_issue_key + plane_issue_url (t
   })
   try {
     const host = `http://localhost:${plane.port}`
+    // Snap routing: this test isolates the TRIAGE-GATED path, so hold human Snaps for review (the
+    // 'autofile' default would otherwise file this human Snap straight to the tracker on submit).
+    await api("POST", `/api/projects/${PROJECT_ID}/snap-routing`, { snapRouting: "review" }, ADMIN_SID)
     // An enabled auto_copy PLANE connector pointed at the fake Plane API (token is a secret field →
     // encrypted on store, decrypted by the auto-copy hook).
     const cr = await api("POST", `/api/projects/${PROJECT_ID}/connectors`, {
@@ -478,6 +481,8 @@ test("auto-copy to Plane backfills feedback.plane_issue_key + plane_issue_url (t
     expect(String(fb?.plane_issue_key)).toBe("207")
     expect(String(fb?.plane_issue_url || "")).toContain("/projects/05ea72ad/")
   } finally {
+    // Restore the default so later tests in this file see the standard autofile behavior.
+    await api("POST", `/api/projects/${PROJECT_ID}/snap-routing`, { snapRouting: "autofile" }, ADMIN_SID).catch(() => {})
     plane.stop(true)
   }
 }, 15000)

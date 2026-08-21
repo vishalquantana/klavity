@@ -1346,6 +1346,14 @@ export async function applySchema(c: Client) {
       await c.execute("ALTER TABLE projects ADD COLUMN export_policy TEXT NOT NULL DEFAULT 'admins_only'")
         .catch((e: any) => console.warn("projects.export_policy ALTER skipped:", e?.message || e))
     }
+    // Snap routing: how a HUMAN Snap report is handled once a tracker connector is configured.
+    // 'autofile' (default) → file straight into the tracker on submit via the existing auto-copy path;
+    // 'review' → hold in New reports for manual "Send to Jira" transfer. Governs human Snaps only —
+    // Sim/AutoSim reports keep their own triage/auto-copy behavior. Additive, idempotent needCol.
+    if (!cols.has("snap_routing")) {
+      await c.execute("ALTER TABLE projects ADD COLUMN snap_routing TEXT NOT NULL DEFAULT 'autofile'")
+        .catch((e: any) => console.warn("projects.snap_routing ALTER skipped:", e?.message || e))
+    }
   }
   // KLAVITYKLA-287: export_requests — a member's pending request to export a ticket to a connector,
   // surfaced to admins for one-click approval. status: 'pending' | 'approved' | 'rejected'.
@@ -1819,6 +1827,9 @@ export type ProjectRow = {
   // KLAVITYKLA-287 (JTBD 5.8): who may manually export a ticket to an external tracker.
   // 'admins_only' (default) | 'members_export' | 'members_request'.
   exportPolicy: string
+  // Human-Snap routing: 'autofile' (default) files human Snaps into the tracker on submit; 'review'
+  // holds them in New reports for manual transfer. Governs HUMAN Snaps only (Sim/AutoSim unaffected).
+  snapRouting: string
   // Snap-only project gating: NULL = inherit account plan, "snap" = locked to Snap-only.
   planOverride: string | null
   // KLAVITYKLA-441: ordered auto-labeling rules, applied at ingest (first match wins). [] when unset.
@@ -1829,6 +1840,14 @@ export type ExportPolicy = (typeof EXPORT_POLICIES)[number]
 export function normalizeExportPolicy(v: unknown): ExportPolicy {
   const s = String(v ?? "")
   return (EXPORT_POLICIES as readonly string[]).includes(s) ? (s as ExportPolicy) : "admins_only"
+}
+// Human-Snap routing modes. 'autofile' = file to tracker on submit (default); 'review' = hold for
+// manual transfer. Unknown/legacy values normalize to the safe default 'autofile'.
+export const SNAP_ROUTINGS = ["autofile", "review"] as const
+export type SnapRouting = (typeof SNAP_ROUTINGS)[number]
+export function normalizeSnapRouting(v: unknown): SnapRouting {
+  const s = String(v ?? "")
+  return (SNAP_ROUTINGS as readonly string[]).includes(s) ? (s as SnapRouting) : "autofile"
 }
 function rowToProject(x: any): ProjectRow {
   return {
@@ -1847,6 +1866,7 @@ function rowToProject(x: any): ProjectRow {
     trailsAutofileEnabled: !!x.trails_autofile_enabled,
     siteUrl: x.site_url != null ? String(x.site_url) : null,
     exportPolicy: normalizeExportPolicy(x.export_policy),
+    snapRouting: normalizeSnapRouting(x.snap_routing),
     planOverride: x.plan_override != null ? String(x.plan_override) : null,
     labelRules: sanitizeLabelRules(safeJsonParse(x.label_rules_json)),
   }
@@ -5100,6 +5120,19 @@ export async function setExportPolicy(projectId: string, policy: string): Promis
   })
 }
 
+// Human-Snap routing: read/write the per-project mode. Always normalized so a stale/unknown column
+// value reads as the safe default ('autofile').
+export async function getSnapRouting(projectId: string): Promise<SnapRouting> {
+  const p = await projectById(projectId)
+  return normalizeSnapRouting(p?.snapRouting)
+}
+export async function setSnapRouting(projectId: string, mode: string): Promise<void> {
+  await db!.execute({
+    sql: "UPDATE projects SET snap_routing=?, updated_at=? WHERE id=?",
+    args: [normalizeSnapRouting(mode), Date.now(), projectId],
+  })
+}
+
 // KLAVITYKLA-441: read/write the per-project auto-labeling rule list. Always sanitized (bounded,
 // capped, empty rules dropped) on the way in AND out so a stale/oversized column can't poison ingest.
 export async function getProjectLabelRules(projectId: string): Promise<LabelRule[]> {
@@ -5356,6 +5389,11 @@ export async function listTriageFeedback(projectId: string): Promise<any[]> {
       simName: x.sim_name != null ? String(x.sim_name) : null,
       recurrence: Number(x.recurrence_count ?? 1),
       createdAt: Number(x.created_at),
+      // Snap routing: simId distinguishes a human Snap (null) from a Sim/AutoSim report (set), and the
+      // tracker key/url lets the New-reports UI show "Filed to Jira · KEY" for autofiled human Snaps.
+      simId: x.sim_id != null ? String(x.sim_id) : null,
+      planeIssueKey: x.plane_issue_key != null ? String(x.plane_issue_key) : null,
+      planeIssueUrl: x.plane_issue_url != null ? String(x.plane_issue_url) : null,
       // KLA-200: human-readable sequential number
       seqNum: x.seq_num != null ? Number(x.seq_num) : null,
       // JTBD 2.8: inline-evidence fields for the expandable triage row.

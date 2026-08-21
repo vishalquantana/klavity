@@ -9,7 +9,7 @@ import { projectEntitlement } from "./lib/entitlement"
 import { logAudit, queryAuditLog, auditRowsToCsv, type AuditAction } from "./lib/audit-log"
 import { buildMemberExport, membersToCsv, MEMBER_EXPORT_FIELDS } from "./lib/member-export"
 import { isMaskingEnabled, maskMemberExportRow, maskDeep, maskWalkReportData } from "./lib/data-masking"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, publicReportStatus, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, publicReportStatus, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows } from "./lib/db"
 import { countFoundingAccounts } from "./lib/db"
 // KLAVITYKLA-366 — the Founding Ten spot counter. One cached source of truth behind the public
 // pricing band, the in-app ribbon, and the server-side refusal of an 11th founding checkout.
@@ -1943,6 +1943,31 @@ function autoCopyOnTriageAccept(
   if (nextStatus !== "open") return
   if (prevStatus !== "new" && prevStatus !== "dismissed") return
   autoCopyFeedback(feedbackId, projectId, actor, effectivePriority)
+}
+
+// Snap routing (default = autofile): file a freshly-submitted HUMAN Snap straight into the tracker on
+// submit, WITHOUT waiting for triage-accept. Reuses the EXISTING auto-copy path (autoCopyFeedback),
+// so the connector selection, priority-threshold gate, rate cap and tracker writeback are all shared —
+// nothing about the ingest handler or the external-filing logic is rewritten here.
+//   • Governs HUMAN Snaps only: `simId` must be null/empty. Sim/AutoSim reports (simId set) are left to
+//     their own triage-gated auto-copy behavior, unchanged.
+//   • No-ops in 'review' mode (report stays in New reports for manual "Send to Jira").
+//   • autoCopyFeedback itself no-ops when the project has no enabled auto-copy connector, so this is a
+//     cheap fire-and-forget guard. Never throws.
+function autoFileHumanSnap(
+  feedbackId: string, projectId: string, simId: string | null | undefined,
+  actor: string | null, effectivePriority?: string | null,
+): void {
+  if (simId) return   // Sim/AutoSim report — not a human Snap; leave its behavior untouched.
+  void (async () => {
+    try {
+      const mode = await getSnapRouting(projectId)
+      if (mode !== "autofile") return   // 'review' mode: hold for manual transfer.
+      autoCopyFeedback(feedbackId, projectId, actor, effectivePriority)
+    } catch (e: any) {
+      console.warn("[snap-routing] autofile hook (non-fatal):", e?.message || e)
+    }
+  })().catch((e: any) => console.warn("[snap-routing] autofile hook outer (non-fatal):", e?.message || e))
 }
 
 // ── KLAVITYKLA-287 (JTBD 5.8): shared single-connector manual export ──────────────────────────────
@@ -4019,8 +4044,15 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                 catch (re: any) { console.warn("feedback replay save (non-fatal):", re?.message || re) }
               }
 
-              // Note: auto-copy is TRIAGE-GATED — it fires when a report is accepted (status→open),
-              // NOT on raw submit. See the PATCH /api/feedback/:id handler below.
+              // Note: auto-copy is TRIAGE-GATED for Sim/AutoSim reports — it fires when a report is
+              // accepted (status→open), NOT on raw submit. See the PATCH /api/feedback/:id handler.
+              // EXCEPTION — Snap routing (default 'autofile'): a freshly-inserted HUMAN Snap files
+              // straight into the tracker on submit via the existing auto-copy path. Human-only
+              // (simId falsy) and only for genuinely new rows (a deduped repeat already reached the
+              // tracker on its first submission). No-ops in 'review' mode / when no auto-copy connector.
+              if (feedbackId && !dedupedInto && !simId) {
+                autoFileHumanSnap(feedbackId, projectId, simId, actor, priority)
+              }
 
               // KLA-175: AI label suggestion — fire-and-forget, never blocks the response.
               if (feedbackId && !dedupedInto) {
@@ -8793,7 +8825,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return json({ project: { id: created.id, name: created.name, accountId: created.accountId, status: created.status, siteUrl: created.siteUrl, role: "admin" } }, 201)
       }
       // Project detail + members (projectAccess-gated) and project-scoped invite (R4) + monitored-urls (P3b) + connectors.
-      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/branding|\/triage|\/tickets(?:\/bulk)?|\/recurring|\/replays|\/widget-status|\/heartbeat-diagnosis(?:\/email)?|\/share-token|\/labels(?:\/[^/]+)?|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/test)?|\/export-policy|\/export-requests(?:\/[^/]+\/(?:approve|reject))?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send|\/trails-autofile|\/regression-events(?:\/[^/]+\/ack)?|\/plan)?$/)
+      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/branding|\/triage|\/tickets(?:\/bulk)?|\/recurring|\/replays|\/widget-status|\/heartbeat-diagnosis(?:\/email)?|\/share-token|\/labels(?:\/[^/]+)?|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/test)?|\/export-policy|\/snap-routing|\/export-requests(?:\/[^/]+\/(?:approve|reject))?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send|\/trails-autofile|\/regression-events(?:\/[^/]+\/ack)?|\/plan)?$/)
       if (projMatch) {
         const pid = projMatch[1]
         const sub = projMatch[2] || ""
@@ -9061,7 +9093,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // exportPolicy rides along so the dashboard can decide who gets the Copy-to / Request UI.
           if (req.method === "GET" && !cid) {
             const rows = await listConnectors(pid)
-            return json({ connectors: rows.map(connectorToClient), types: listConnectorTypes(), exportPolicy: await getExportPolicy(pid) })
+            // snapRouting rides along so the dashboard can render the Bug-Tracking routing radio and
+            // decide whether New-reports rows show a "Send to Jira" action (review) or the tracker key (autofile).
+            return json({ connectors: rows.map(connectorToClient), types: listConnectorTypes(), exportPolicy: await getExportPolicy(pid), snapRouting: await getSnapRouting(pid) })
           }
 
           // POST /api/projects/:id/connectors — create (admin only)
@@ -9158,6 +9192,27 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             await setExportPolicy(pid, raw)
             logAudit({ action: "export_policy_set", actorEmail: me, projectId: pid, ip: clientIp(req, server), meta: { policy: raw } })
             return json({ ok: true, exportPolicy: normalizeExportPolicy(raw) })
+          }
+          return json({ error: "Method not allowed" }, 405)
+        }
+
+        // GET/POST /api/projects/:pid/snap-routing — per-project HUMAN-Snap routing (admin-only write).
+        // 'autofile' (default) files human Snaps to the tracker on submit; 'review' holds them in New
+        // reports for manual transfer. Mirrors the export-policy endpoint shape.
+        if (sub === "/snap-routing") {
+          if (req.method === "GET") {
+            return json({ snapRouting: await getSnapRouting(pid), modes: SNAP_ROUTINGS })
+          }
+          if (req.method === "POST") {
+            if (access !== "admin") return json({ error: "Only project admins can change Snap routing." }, 403)
+            const body = await req.json().catch(() => ({}))
+            const raw = String(body.snapRouting ?? body.mode ?? "")
+            if (!(SNAP_ROUTINGS as readonly string[]).includes(raw)) {
+              return json({ error: `snapRouting must be one of: ${SNAP_ROUTINGS.join(", ")}.` }, 400)
+            }
+            await setSnapRouting(pid, raw)
+            logAudit({ action: "snap_routing_set", actorEmail: me, projectId: pid, ip: clientIp(req, server), meta: { snapRouting: raw } })
+            return json({ ok: true, snapRouting: normalizeSnapRouting(raw) })
           }
           return json({ error: "Method not allowed" }, 405)
         }
