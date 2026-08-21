@@ -103,7 +103,7 @@ import { publishBlogPost, SLUG_RE, type PublishInput } from "./lib/blog-publish"
 import { getExtractModel } from "./lib/extract-model"
 import { parseJSON } from "./lib/parse-json"
 import { EXTRACT_SYS as EXTRACT_SYS_PROMPT, normalizeExtractedPersonas } from "./lib/extract-pipeline"
-import { billingEnforcementEnabled, buildAgencyClientReport, buildProjectUsage, buildUsageMeters, createStripeCheckoutSession, createStripePortalSession, intervalFromPrice, isAgencyEntitled, normalizeInterval, normalizePlan, PLAN_QUOTAS, planFromPrice, quotasForPlan, resolveBillingGrace, retrieveStripeSubscription, verifyStripeWebhook } from "./lib/billing"
+import { billingEnforcementEnabled, buildAgencyClientReport, buildProjectUsage, buildUsageMeters, createStripeCheckoutSession, createStripePortalSession, entitledPlanForStatus, intervalFromPrice, isAgencyEntitled, isSnapDowngradeStatus, moneyBackEligibility, MONEY_BACK_GUARANTEE_DAYS, normalizeInterval, normalizePlan, PLAN_QUOTAS, planDisplayName, planFromPrice, quotasForPlan, resolveBillingGrace, retrieveStripeSubscription, verifyStripeWebhook } from "./lib/billing"
 import { sanitizeInsight } from "./lib/extract-sanitize"
 import { runAutosimAuthProbe } from "./lib/autosim-auth-probe"
 import { generateAuthPrompt } from "./lib/autosim-auth-prompt"
@@ -1675,8 +1675,11 @@ const BILLING_WEBHOOK_MAX_BYTES = 256 * 1024
 // downgraded to "free". Delegate to the single source of truth (normalizePlan in lib/billing) so a
 // new tier can never be dropped on the floor here again.
 function effectivePlanForStripeStatus(plan: string | null, status: string | null): string {
-  const normalized = normalizePlan(plan)
-  return status === "active" || status === "trialing" ? normalized : "free"
+  // Single source of truth in lib/billing: only "active"/"trialing" keep the paid plan; every other
+  // status (canceled/unpaid/incomplete_expired/past_due/…) collapses to Snap-only "free". Snap always
+  // works — this only re-walls the paid Sims/AutoSim features. Pure + idempotent, so a re-delivered
+  // subscription.updated/deleted webhook downgrades to the same "free" and is a harmless no-op.
+  return entitledPlanForStatus(plan, status)
 }
 
 async function accountIdFromStripeSubscriptionObject(sub: any): Promise<string | null> {
@@ -2175,8 +2178,18 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             })
           }
         } else if (event.type === "customer.subscription.created" || event.type === "customer.subscription.updated") {
-          await applyStripeSubscriptionState(event.data?.object)
+          const sub = event.data?.object
+          // A subscription.updated whose status lapsed (canceled/unpaid/incomplete_expired/past_due)
+          // is a graceful downgrade to Snap-only Free — applyStripeSubscriptionState resolves the
+          // plan via entitledPlanForStatus, which returns "free" for any non-active/trialing status.
+          if (event.type === "customer.subscription.updated" && isSnapDowngradeStatus(sub?.status)) {
+            console.info(`[billing webhook] subscription.updated lapsed (status=${sub?.status ?? "?"}) → Snap-only Free downgrade sub=${sub?.id ?? "?"}`)
+          }
+          await applyStripeSubscriptionState(sub)
         } else if (event.type === "customer.subscription.deleted") {
+          // Terminal cancellation → graceful downgrade to Snap-only Free. We DO NOT delete any data:
+          // updateAccountBillingState only flips plan=free (Snap always works; Sims/AutoSim re-gate
+          // behind the upgrade wall). Idempotent — a re-delivered delete just re-sets plan=free.
           const sub = event.data?.object
           const accountId = await accountIdFromStripeSubscriptionObject(sub)
           if (accountId) {
@@ -2189,12 +2202,23 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               billingCurrentPeriodEnd: sub?.current_period_end ? Number(sub.current_period_end) * 1000 : null,
               billingCancelAtPeriodEnd: false,
             })
+            // 30-day money-back guarantee: record eligibility so ops can proactively reach out. We
+            // NEVER auto-issue a refund — the customer requests one via POST /api/billing/refund-request
+            // and a human issues it in Stripe. The downgrade above happens regardless of the window.
+            const refund = moneyBackEligibility(sub)
+            if (refund.eligible) {
+              console.info(
+                `[billing webhook] money-back eligible on cancel: account=${accountId} sub=${sub?.id ?? "?"} daysLeft=${refund.daysRemaining}`,
+              )
+            }
             void trackFunnel(db!, {
               event: "subscription_canceled",
               accountId,
               props: {
                 plan: sub?.metadata?.plan ?? undefined,
                 stripeSubscriptionId: sub?.id ? String(sub.id) : undefined,
+                moneyBackEligible: refund.eligible,
+                moneyBackDaysRemaining: refund.daysRemaining,
               },
             })
           }
@@ -8065,6 +8089,80 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (!billing.stripeCustomerId) return json({ error: "No Stripe customer yet." }, 400)
         const session = await createStripePortalSession({ customerId: billing.stripeCustomerId, returnUrl: `${BASE}/dashboard?billing=portal` })
         return json({ ok: true, url: session.url, sessionId: session.id })
+      }
+
+      // POST /api/billing/refund-request — 30-day money-back guarantee (product decision 2026-08-21).
+      // We do NOT auto-issue Stripe refunds. Within the money-back window, an admin can REQUEST a
+      // refund; this checks the window and emails/alerts ops (support inbox + Slack) with the account
+      // email, subscription id, amount, and when. A human then issues the refund manually in Stripe.
+      // The cancel → Snap-only downgrade is independent of this (deliverable #1).
+      if (req.method === "POST" && path === "/api/billing/refund-request") {
+        const ms = await membershipsFor(me); const active = ms[0]
+        if (!active) return json({ error: "No account." }, 400)
+        if (active.role !== "admin") return json({ error: "Admin only." }, 403)
+        if (!rlAllow(`billing:${me}`, BILLING_PER_USER, BILLING_WINDOW)) return json({ error: "rate limited" }, 429)
+        const parsed = await readJsonLimited(req, 4 * 1024)
+        if (!parsed.ok) return json({ error: parsed.error }, parsed.status)
+        const reason = String((parsed.data as any)?.reason ?? "").slice(0, 2000)
+        const billing = await accountBillingState(active.workspaceId)
+        if (!billing.stripeSubscriptionId) return json({ error: "No subscription on file to refund." }, 400)
+        // Resolve the subscription so we can anchor the money-back window on its real start date and
+        // read the paid amount/plan (the account plan is already `free` after a cancellation).
+        let sub: any = null
+        try { sub = await retrieveStripeSubscription(billing.stripeSubscriptionId) } catch { sub = null }
+        const elig = moneyBackEligibility(sub)
+        // Only hard-block when we can POSITIVELY determine the request is outside the window. If Stripe
+        // was unreachable (no anchor), forward to ops flagged unverified rather than denying a valid ask.
+        if (elig.startMs != null && !elig.eligible) {
+          return json({ error: `Outside the ${MONEY_BACK_GUARANTEE_DAYS}-day money-back window.`, eligible: false, windowDays: MONEY_BACK_GUARANTEE_DAYS }, 400)
+        }
+        const price = sub?.items?.data?.[0]?.price
+        const amountCents = Number.isFinite(Number(price?.unit_amount)) ? Number(price.unit_amount) : null
+        const currency = price?.currency ? String(price.currency).toUpperCase() : "USD"
+        const paidPlan = planFromPrice(price) || billing.plan
+        const amountLabel = amountCents != null ? `${currency} ${(amountCents / 100).toFixed(2)}` : "unknown amount"
+        const whenIso = new Date().toISOString()
+        const summary = {
+          accountId: active.workspaceId,
+          requestedBy: me,
+          plan: planDisplayName(paidPlan),
+          subscriptionId: billing.stripeSubscriptionId,
+          customerId: billing.stripeCustomerId,
+          amount: amountLabel,
+          windowVerified: elig.startMs != null,
+          daysRemaining: elig.daysRemaining,
+          requestedAt: whenIso,
+          reason: reason || "(none given)",
+        }
+        void trackFunnel(db!, { event: "refund_requested", email: me, accountId: active.workspaceId, props: { ...summary } })
+        // Fire-and-forget ops alert: Slack + support email. Never block the response on delivery.
+        void (async () => {
+          const line = `Refund requested by ${me} — ${summary.plan}, ${amountLabel}, sub ${summary.subscriptionId}` +
+            `${summary.windowVerified ? ` (money-back window OK, ${summary.daysRemaining}d left)` : " (window UNVERIFIED — Stripe unreachable, check manually)"}.` +
+            ` Reason: ${summary.reason}`
+          try {
+            const slackUrl = process.env.SLACK_ALERT_WEBHOOK_URL || process.env.SLACK_SIGNUP_WEBHOOK_URL
+            if (slackUrl) {
+              await fetch(slackUrl, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: `Money-back refund request: ${line}` }) })
+            }
+          } catch (e: any) { console.warn("[refund-request] slack alert failed:", e?.message || e) }
+          try {
+            const ops = (process.env.OPS_ADMIN_EMAILS || "").split(",").map((s) => s.trim()).filter(Boolean)
+            const recipients = ops.length ? ops : ["vishal@quantana.com.au"]
+            const html = `<p>Money-back refund request</p><ul>` +
+              `<li>Account: ${escapeHtml(summary.accountId)}</li>` +
+              `<li>Requested by: ${escapeHtml(me)}</li>` +
+              `<li>Plan: ${escapeHtml(summary.plan)}</li>` +
+              `<li>Amount: ${escapeHtml(amountLabel)}</li>` +
+              `<li>Subscription: ${escapeHtml(summary.subscriptionId)}</li>` +
+              `<li>Window: ${summary.windowVerified ? `verified, ${summary.daysRemaining} day(s) left` : "UNVERIFIED (Stripe unreachable)"}</li>` +
+              `<li>When: ${escapeHtml(whenIso)}</li>` +
+              `<li>Reason: ${escapeHtml(summary.reason)}</li></ul>` +
+              `<p>Issue the refund manually in the Stripe dashboard if approved.</p>`
+            await sendReportAlertEmail(recipients, `Refund request: ${summary.plan} (${amountLabel})`, html, line)
+          } catch (e: any) { console.warn("[refund-request] ops email failed:", e?.message || e) }
+        })()
+        return json({ ok: true, eligible: true, windowVerified: summary.windowVerified, daysRemaining: summary.daysRemaining })
       }
 
       // ── Ticket management: PATCH /api/feedback/:id and POST /api/feedback/:id/export ──

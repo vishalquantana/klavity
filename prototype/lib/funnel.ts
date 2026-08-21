@@ -13,6 +13,9 @@ export const FUNNEL_EVENTS = [
   "checkout_started",
   "subscription_created",
   "subscription_canceled",
+  // 30-day money-back guarantee: an admin requested a refund inside the window (server-owned; the
+  // request emails/alerts ops — a human issues the actual Stripe refund).
+  "refund_requested",
   // KLAVITYKLA-331 — founder booking CTA on the unlocked report / nurture email.
   "booking_cta_clicked",
   "meeting_booked",

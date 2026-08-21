@@ -102,6 +102,23 @@ beforeAll(async () => {
           items: { data: [{ price: { id: "price_wali_unrelated", recurring: { interval: "month" } } }] },
         })
       }
+      // Money-back refund-request tests: a canceled sub that STARTED 5 days ago (inside the 30-day
+      // window) and one that started 60 days ago (outside it). Both carry a real amount so the ops
+      // alert can quote it.
+      if (req.method === "GET" && url.pathname === "/v1/subscriptions/sub_refund_recent") {
+        return Response.json({
+          id: "sub_refund_recent", customer: "cus_test_123", status: "canceled",
+          start_date: Math.floor((Date.now() - 5 * 86400000) / 1000),
+          items: { data: [{ price: { lookup_key: "klavity_team_monthly_99", unit_amount: 9900, currency: "usd", recurring: { interval: "month" } } }] },
+        })
+      }
+      if (req.method === "GET" && url.pathname === "/v1/subscriptions/sub_refund_old") {
+        return Response.json({
+          id: "sub_refund_old", customer: "cus_test_123", status: "canceled",
+          start_date: Math.floor((Date.now() - 60 * 86400000) / 1000),
+          items: { data: [{ price: { lookup_key: "klavity_team_monthly_99", unit_amount: 9900, currency: "usd", recurring: { interval: "month" } } }] },
+        })
+      }
       return Response.json({ error: { message: `unhandled ${req.method} ${url.pathname}` } }, { status: 404 })
     },
   })
@@ -326,6 +343,39 @@ test("past_due Stripe webhook records status but does not grant paid entitlement
   expect(acct.rows[0]).toMatchObject({ plan: "free", billing_status: "past_due" })
   const project = await raw.execute({ sql: "SELECT billing_plan, billing_status FROM projects WHERE id=?", args: [PROJECT] })
   expect(project.rows[0]).toMatchObject({ billing_plan: "free", billing_status: "past_due" })
+})
+
+test("refund-request: inside the 30-day money-back window is eligible (ops alerted, funnel logged)", async () => {
+  // Simulate a just-cancelled account (plan already free) whose subscription started 5 days ago.
+  await exec("UPDATE accounts SET plan='free', stripe_subscription_id='sub_refund_recent', stripe_customer_id='cus_test_123' WHERE id=?", [ACCOUNT])
+  const r = await authed("/api/billing/refund-request", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ reason: "changed my mind" }),
+  })
+  expect(r.status).toBe(200)
+  const body = await r.json()
+  expect(body).toMatchObject({ ok: true, eligible: true, windowVerified: true })
+  expect(body.daysRemaining).toBeGreaterThan(0)
+  await Bun.sleep(200)
+  const funnel = await raw.execute({ sql: "SELECT * FROM funnel_events WHERE account_id=? AND event='refund_requested'", args: [ACCOUNT] })
+  expect(funnel.rows.length).toBeGreaterThan(0)
+  const props = JSON.parse((funnel.rows[0] as any).props_json)
+  expect(props.plan).toBe("Team")          // paid plan resolved from the price, not the now-free account plan
+  expect(props.amount).toContain("99.00")  // $99 Team monthly
+})
+
+test("refund-request: outside the 30-day window is rejected with 400 and no Stripe refund", async () => {
+  await exec("UPDATE accounts SET stripe_subscription_id='sub_refund_old' WHERE id=?", [ACCOUNT])
+  const r = await authed("/api/billing/refund-request", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({}),
+  })
+  expect(r.status).toBe(400)
+  const body = await r.json()
+  expect(body.eligible).toBe(false)
+  expect(body.windowDays).toBe(30)
 })
 
 // ── KLAVITYKLA-336: invoice events ──────────────────────────────────────────────────────────────

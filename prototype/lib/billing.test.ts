@@ -21,6 +21,14 @@ import {
   STRIPE_PRICE_CATALOG,
   STRIPE_PRICE_IDS,
   verifyStripeWebhook,
+  entitledPlanForStatus,
+  isEntitledSubscriptionStatus,
+  isSnapDowngradeStatus,
+  SNAP_DOWNGRADE_STATUSES,
+  isWithinMoneyBackWindow,
+  moneyBackEligibility,
+  subscriptionStartMs,
+  MONEY_BACK_GUARANTEE_DAYS,
 } from "./billing"
 
 async function stripeSig(raw: string, secret: string, ts = Math.floor(Date.now() / 1000)): Promise<string> {
@@ -30,12 +38,12 @@ async function stripeSig(raw: string, secret: string, ts = Math.floor(Date.now()
   return `t=${ts},v1=${hex}`
 }
 
-test("Stripe catalog encodes Solo/Team monthly and two-months-free annual prices", () => {
-  // KLAVITYKLA-379 ladder: Solo $49/mo (slug stays `pro`), Team $249/mo.
-  expect(STRIPE_PRICE_CATALOG.pro.month.unitAmount).toBe(4900)
-  expect(STRIPE_PRICE_CATALOG.pro.year.unitAmount).toBe(49000)
-  expect(STRIPE_PRICE_CATALOG.team.month.unitAmount).toBe(24900)
-  expect(STRIPE_PRICE_CATALOG.team.year.unitAmount).toBe(249000)
+test("Stripe catalog encodes Pro/Team monthly and two-months-free annual prices", () => {
+  // Reconciled ladder (2026-08-21): Pro $29/mo, Team $99/mo (slug stays `pro`).
+  expect(STRIPE_PRICE_CATALOG.pro.month.unitAmount).toBe(2900)
+  expect(STRIPE_PRICE_CATALOG.pro.year.unitAmount).toBe(29000)
+  expect(STRIPE_PRICE_CATALOG.team.month.unitAmount).toBe(9900)
+  expect(STRIPE_PRICE_CATALOG.team.year.unitAmount).toBe(99000)
   expect(planFromLookupKey(STRIPE_PRICE_CATALOG.team.year.lookupKey)).toBe("team")
   expect(intervalFromLookupKey(STRIPE_PRICE_CATALOG.pro.year.lookupKey)).toBe("year")
 })
@@ -309,9 +317,9 @@ test("founding matches Team on every LIMIT, but its AutoSim cadence is daily —
   expect(team.autosimCadence).toBe("on-deploy/hourly")
 })
 
-test("the Founding entitlement grant did NOT change the Founding price ($490/yr, annual only)", () => {
+test("Founding is now monthly $299 (2026-08-17 refresh) with the $490/yr annual key grandfathered", () => {
+  expect(STRIPE_PRICE_CATALOG.founding.month?.unitAmount).toBe(29900)
   expect(STRIPE_PRICE_CATALOG.founding.year?.unitAmount).toBe(49000)
-  expect(STRIPE_PRICE_CATALOG.founding.month).toBeUndefined()
 })
 
 test("Free has no AutoSim at all — zero configured flows AND zero monthly runs", () => {
@@ -330,9 +338,9 @@ test("every PAID tier still includes AutoSim (Free is the only zero)", () => {
   }
 })
 
-test("founding is annual-only in the price catalog (no monthly entry) at $490/yr", () => {
+test("founding carries both a monthly $299 and the grandfathered $490/yr price", () => {
+  expect(STRIPE_PRICE_CATALOG.founding.month?.unitAmount).toBe(29900)
   expect(STRIPE_PRICE_CATALOG.founding.year?.unitAmount).toBe(49000)
-  expect(STRIPE_PRICE_CATALOG.founding.month).toBeUndefined()
 })
 
 test("PLAN_QUOTAS covers every BillingPlan value (type exhaustiveness holds at runtime too)", () => {
@@ -342,22 +350,21 @@ test("PLAN_QUOTAS covers every BillingPlan value (type exhaustiveness holds at r
   }
 })
 
-test("Founding/Solo/Team catalog amounts stay correct", () => {
+test("Founding/Pro/Team catalog amounts stay correct", () => {
   expect(STRIPE_PRICE_CATALOG.founding.year?.unitAmount).toBe(49000)
-  expect(STRIPE_PRICE_CATALOG.pro.month?.unitAmount).toBe(4900)
-  expect(STRIPE_PRICE_CATALOG.pro.year?.unitAmount).toBe(49000)
-  expect(STRIPE_PRICE_CATALOG.team.month?.unitAmount).toBe(24900)
-  expect(STRIPE_PRICE_CATALOG.team.year?.unitAmount).toBe(249000)
+  expect(STRIPE_PRICE_CATALOG.pro.month?.unitAmount).toBe(2900)
+  expect(STRIPE_PRICE_CATALOG.pro.year?.unitAmount).toBe(29000)
+  expect(STRIPE_PRICE_CATALOG.team.month?.unitAmount).toBe(9900)
+  expect(STRIPE_PRICE_CATALOG.team.year?.unitAmount).toBe(99000)
 })
 
-// ── KLAVITYKLA-379: the upmarket ladder ────────────────────────────────────────────────────────
+// ── Reconciled self-serve ladder (2026-08-21) ───────────────────────────────────────────────────
 
-test("the published ladder is Free $0 / Solo $49 / Team $249 / Scale $599 / Founding $490per year", () => {
-  expect(STRIPE_PRICE_CATALOG.pro.month!.unitAmount).toBe(4900)      // Solo
-  expect(STRIPE_PRICE_CATALOG.team.month!.unitAmount).toBe(24900)    // Team
-  expect(STRIPE_PRICE_CATALOG.scale.month!.unitAmount).toBe(59900)   // Scale — now PUBLISHED
+test("the published ladder is Free $0 / Pro $29 / Team $99 / Scale $599 / Founding $490per year", () => {
+  expect(STRIPE_PRICE_CATALOG.pro.month!.unitAmount).toBe(2900)      // Pro
+  expect(STRIPE_PRICE_CATALOG.team.month!.unitAmount).toBe(9900)     // Team
+  expect(STRIPE_PRICE_CATALOG.scale.month!.unitAmount).toBe(59900)   // Scale — PUBLISHED
   expect(STRIPE_PRICE_CATALOG.founding.year!.unitAmount).toBe(49000) // Founding Ten
-  expect(STRIPE_PRICE_CATALOG.founding.month).toBeUndefined()        // annual-only
 })
 
 test("annual is two months free (10x monthly) on every tier that sells both intervals", () => {
@@ -379,10 +386,11 @@ test("the Founding lookup key is the _490 one; the _290 key is superseded but st
 test("every superseded lookup key still resolves to its original plan and interval", () => {
   const retired: Array<[string, string, "month" | "year"]> = [
     ["klavity_founding_annual_290", "founding", "year"],
-    ["klavity_pro_monthly_29", "pro", "month"],
-    ["klavity_pro_annual_290", "pro", "year"],
-    ["klavity_team_monthly_99", "team", "month"],
-    ["klavity_team_annual_990", "team", "year"],
+    // Retired Solo $49 / Team $249 ladder (KLAVITYKLA-379) — reverted to Pro $29 / Team $99.
+    ["klavity_solo_monthly_49", "pro", "month"],
+    ["klavity_solo_annual_490", "pro", "year"],
+    ["klavity_team_monthly_249", "team", "month"],
+    ["klavity_team_annual_2490", "team", "year"],
   ]
   for (const [key, plan, interval] of retired) {
     expect(planFromLookupKey(key)).toBe(plan as any)
@@ -399,15 +407,13 @@ test("the old live Stripe price IDs still resolve, so grandfathered subscribers 
   expect(planFromPriceId("price_1TuhSqDWQd30h1DiyqjXQ3NC")).toBe("founding")
 })
 
-test("Solo is a DISPLAY name only — the plan slug stays `pro` everywhere", () => {
-  expect(planDisplayName("pro")).toBe("Solo")
-  expect(PLAN_DISPLAY_NAMES.pro).toBe("Solo")
-  // The slug is untouched: normalizePlan still round-trips `pro`, and "solo" is NOT a valid slug
-  // (it normalizes to free like any other unknown string). No DB/Stripe migration was needed.
+test("the `pro` slug is displayed as `Pro` and round-trips as a slug", () => {
+  expect(planDisplayName("pro")).toBe("Pro")
+  expect(PLAN_DISPLAY_NAMES.pro).toBe("Pro")
   expect(normalizePlan("pro")).toBe("pro")
-  expect(normalizePlan("solo")).toBe("free")
-  expect(STRIPE_PRICE_CATALOG.pro.month!.lookupKey).toContain("solo") // label/key may say solo…
-  expect(PLAN_QUOTAS.pro).toBeDefined()                               // …but the slug key is `pro`
+  expect(normalizePlan("solo")).toBe("free") // the transient "solo" name is not a slug
+  expect(STRIPE_PRICE_CATALOG.pro.month!.lookupKey).toBe("klavity_pro_monthly_29")
+  expect(PLAN_QUOTAS.pro).toBeDefined()
 })
 
 test("every plan slug has a customer-facing display name", () => {
@@ -434,6 +440,115 @@ test("agency price catalog encodes monthly + two-months-free annual", () => {
   expect(STRIPE_PRICE_CATALOG.agency.month?.unitAmount).toBe(24900)
   expect(STRIPE_PRICE_CATALOG.agency.year?.unitAmount).toBe(249000)
   expect(STRIPE_PRICE_CATALOG.agency.year!.unitAmount).toBe(STRIPE_PRICE_CATALOG.agency.month!.unitAmount * 10)
+})
+
+// ── Graceful downgrade to Snap-only Free on cancellation ────────────────────────────────────────
+
+test("only active/trialing keep the paid plan; every lapsed status downgrades to Snap-only free", () => {
+  // Entitled statuses keep the resolved plan.
+  expect(entitledPlanForStatus("pro", "active")).toBe("pro")
+  expect(entitledPlanForStatus("team", "trialing")).toBe("team")
+  expect(entitledPlanForStatus("agency", "active")).toBe("agency")
+  expect(isEntitledSubscriptionStatus("active")).toBe(true)
+  expect(isEntitledSubscriptionStatus("trialing")).toBe(true)
+
+  // Every cancellation/lapse status the webhook reacts to → free (Snap-only). Snap data is untouched;
+  // this only re-gates the paid Sims/AutoSim features behind the upgrade wall.
+  for (const status of SNAP_DOWNGRADE_STATUSES) {
+    expect(entitledPlanForStatus("team", status)).toBe("free")
+    expect(isSnapDowngradeStatus(status)).toBe(true)
+    expect(isEntitledSubscriptionStatus(status)).toBe(false)
+  }
+
+  // A status we never enumerated must ALSO fail closed to free, never leave a lapsed sub entitled.
+  expect(entitledPlanForStatus("pro", "incomplete")).toBe("free")
+  expect(entitledPlanForStatus("pro", "paused")).toBe("free")
+  expect(entitledPlanForStatus("pro", null)).toBe("free")
+  expect(isSnapDowngradeStatus("something_new")).toBe(true)
+})
+
+test("downgrade is idempotent — re-applying the same cancellation yields the same free plan", () => {
+  const once = entitledPlanForStatus("team", "canceled")
+  const twice = entitledPlanForStatus(once, "canceled") // re-delivery: plan is already 'free'
+  expect(once).toBe("free")
+  expect(twice).toBe("free")
+  // And Snap (free) never has AutoSim, so the paid engines are gated after downgrade — but Snap works.
+  expect(PLAN_QUOTAS.free.autosimFlows).toBe(0)
+  expect(PLAN_QUOTAS.free.sims).toBe(1) // Snap/Sims config preserved; runs just capped to free
+})
+
+// ── 30-day money-back guarantee ─────────────────────────────────────────────────────────────────
+
+test("isWithinMoneyBackWindow is true inside 30 days, false after (Stripe seconds timestamps)", () => {
+  const DAY = 24 * 60 * 60 * 1000
+  const now = Date.UTC(2026, 7, 21)
+  const startedDaysAgo = (d: number) => ({ start_date: Math.floor((now - d * DAY) / 1000) })
+
+  expect(isWithinMoneyBackWindow(startedDaysAgo(0), now)).toBe(true)   // just now
+  expect(isWithinMoneyBackWindow(startedDaysAgo(15), now)).toBe(true)  // mid-window
+  expect(isWithinMoneyBackWindow(startedDaysAgo(30), now)).toBe(true)  // exactly at the boundary
+  expect(isWithinMoneyBackWindow(startedDaysAgo(31), now)).toBe(false) // just past
+  expect(isWithinMoneyBackWindow(startedDaysAgo(90), now)).toBe(false) // long past
+
+  // Falls back to `created` when start_date is absent, and fails closed with no anchor.
+  expect(isWithinMoneyBackWindow({ created: Math.floor((now - 5 * DAY) / 1000) }, now)).toBe(true)
+  expect(isWithinMoneyBackWindow({}, now)).toBe(false)
+  expect(isWithinMoneyBackWindow(null, now)).toBe(false)
+  expect(MONEY_BACK_GUARANTEE_DAYS).toBe(30)
+})
+
+test("subscriptionStartMs normalizes seconds vs ms and moneyBackEligibility reports days remaining", () => {
+  const DAY = 24 * 60 * 60 * 1000
+  const now = Date.UTC(2026, 7, 21)
+  // Seconds (Stripe) → ms.
+  expect(subscriptionStartMs({ start_date: 1_700_000_000 })).toBe(1_700_000_000_000)
+  // Already-ms epoch passed through.
+  expect(subscriptionStartMs(now)).toBe(now)
+
+  const elig = moneyBackEligibility({ start_date: Math.floor((now - 10 * DAY) / 1000) }, now)
+  expect(elig.within).toBe(true)
+  expect(elig.eligible).toBe(true)
+  expect(elig.daysRemaining).toBe(20) // 30 - 10
+  expect(elig.windowDays).toBe(30)
+
+  const expired = moneyBackEligibility({ start_date: Math.floor((now - 40 * DAY) / 1000) }, now)
+  expect(expired.within).toBe(false)
+  expect(expired.daysRemaining).toBe(0)
+})
+
+// ── Catalog: reconciled Pro $29 / Team $99 ladder (2026-08-21) ───────────────────────────────────
+// The published self-serve ladder is Free / Pro $29 / Team $99 / Scale. Assert the catalog encodes
+// those amounts + lookup keys, and that the RETIRED Solo $49 / Team $249 keys still resolve so a
+// grandfathered subscriber is never demoted to free.
+test("catalog Pro/Team carry the reconciled $29/$99 amounts + lookup keys", () => {
+  expect(STRIPE_PRICE_CATALOG.pro.month!.unitAmount).toBe(2900)
+  expect(STRIPE_PRICE_CATALOG.pro.month!.lookupKey).toBe("klavity_pro_monthly_29")
+  expect(STRIPE_PRICE_CATALOG.pro.year!.unitAmount).toBe(29000)
+  expect(STRIPE_PRICE_CATALOG.pro.year!.lookupKey).toBe("klavity_pro_annual_290")
+  expect(STRIPE_PRICE_CATALOG.team.month!.unitAmount).toBe(9900)
+  expect(STRIPE_PRICE_CATALOG.team.month!.lookupKey).toBe("klavity_team_monthly_99")
+  expect(STRIPE_PRICE_CATALOG.team.year!.unitAmount).toBe(99000)
+  expect(STRIPE_PRICE_CATALOG.team.year!.lookupKey).toBe("klavity_team_annual_990")
+  // Annual is two months free (10x monthly) on both.
+  expect(STRIPE_PRICE_CATALOG.pro.year!.unitAmount).toBe(STRIPE_PRICE_CATALOG.pro.month!.unitAmount * 10)
+  expect(STRIPE_PRICE_CATALOG.team.year!.unitAmount).toBe(STRIPE_PRICE_CATALOG.team.month!.unitAmount * 10)
+})
+
+test("grandfathering: the retired Solo $49 / Team $249 keys still resolve to their plan + interval", () => {
+  expect(planFromLookupKey("klavity_solo_monthly_49")).toBe("pro")
+  expect(intervalFromLookupKey("klavity_solo_monthly_49")).toBe("month")
+  expect(planFromLookupKey("klavity_solo_annual_490")).toBe("pro")
+  expect(planFromLookupKey("klavity_team_monthly_249")).toBe("team")
+  expect(intervalFromLookupKey("klavity_team_monthly_249")).toBe("month")
+  expect(planFromLookupKey("klavity_team_annual_2490")).toBe("team")
+  // And the live price IDs (the $29/$99 objects) still resolve for existing subscribers.
+  expect(planFromPriceId("price_1TuhSrDWQd30h1DivfC0EMKT")).toBe("pro")
+  expect(planFromPriceId("price_1TuhSsDWQd30h1DiU5g7VDZo")).toBe("team")
+  // The retired keys are NOT in the live catalog — new checkouts never create them.
+  const live = Object.values(STRIPE_PRICE_CATALOG).flatMap((i) => Object.values(i).map((e) => e!.lookupKey))
+  for (const k of ["klavity_solo_monthly_49", "klavity_solo_annual_490", "klavity_team_monthly_249", "klavity_team_annual_2490"]) {
+    expect(live).not.toContain(k)
+  }
 })
 
 test("isAgencyEntitled gates on agency/scale/partner or an unlimited flag", () => {

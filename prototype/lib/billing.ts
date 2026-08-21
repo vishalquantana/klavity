@@ -5,13 +5,12 @@ export type BillingInterval = "month" | "year"
 // "founding" (Founding Team) is an annual-only supporter tier sold exclusively via a hosted Stripe
 // Payment Link (see STRIPE_PRICE_IDS below) — it has no "month" entry, hence Partial<...> here.
 //
-// Free $0 · Solo $49/mo · Team $249/mo · Scale $599/mo (PUBLISHED) · Founding Ten $490/yr.
+// Free $0 · Pro $29/mo · Team $99/mo · Scale $599/mo (PUBLISHED) · Founding Ten $490/yr.
 // Annual = two months free (10× monthly) on every self-serve tier, unchanged.
 //
-// NOTE ON THE "SOLO" RENAME: "Pro" became the customer-facing name "Solo", but the internal PLAN
-// SLUG stays `pro` — it is the value stored in the accounts table, sent to Stripe metadata, and
-// carried by every existing subscription. Only the DISPLAY name changed (see PLAN_DISPLAY_NAMES
-// below). Do NOT rename the slug; there is no migration and none is wanted.
+// The internal PLAN SLUG is `pro` — the value stored in the accounts table, sent to Stripe metadata,
+// and carried by every existing subscription. Its customer-facing DISPLAY name is "Pro" (see
+// PLAN_DISPLAY_NAMES below). Do NOT rename the slug; there is no migration and none is wanted.
 export const STRIPE_PRICE_CATALOG: Record<Exclude<BillingPlan, "free" | "partner">, Partial<Record<BillingInterval, { lookupKey: string; unitAmount: number; label: string }>>> = {
   founding: {
     // Founder deal repriced to 50% off Scale ($599/mo) → $299/mo, billed MONTHLY (was annual-only
@@ -20,13 +19,19 @@ export const STRIPE_PRICE_CATALOG: Record<Exclude<BillingPlan, "free" | "partner
     month: { lookupKey: "klavity_founding_monthly_299", unitAmount: 29900, label: "Klavity Founding Team" },
     year: { lookupKey: "klavity_founding_annual_490", unitAmount: 49000, label: "Klavity Founding Team" },
   },
+  // PRICING RECONCILIATION 2026-08-21: the published self-serve ladder is Free / Pro $29 / Team $99 /
+  // Scale. The catalog had briefly drifted to a "Solo $49 / Team $249" ladder (KLAVITYKLA-379) that
+  // was never created in LIVE Stripe (the live price objects in STRIPE_PRICE_IDS below are the $29 /
+  // $99 objects). The catalog is the source of truth for what a NEW checkout creates by lookup_key,
+  // so it is set back to $29 / $99 here; the retired Solo/$249 keys stay resolvable in
+  // SUPERSEDED_LOOKUP_KEYS so any subscriber on them is never demoted. Annual = two months free (10×).
   pro: {
-    month: { lookupKey: "klavity_solo_monthly_49", unitAmount: 4900, label: "Klavity Solo" },
-    year: { lookupKey: "klavity_solo_annual_490", unitAmount: 49000, label: "Klavity Solo" },
+    month: { lookupKey: "klavity_pro_monthly_29", unitAmount: 2900, label: "Klavity Pro" },
+    year: { lookupKey: "klavity_pro_annual_290", unitAmount: 29000, label: "Klavity Pro" },
   },
   team: {
-    month: { lookupKey: "klavity_team_monthly_249", unitAmount: 24900, label: "Klavity Team" },
-    year: { lookupKey: "klavity_team_annual_2490", unitAmount: 249000, label: "Klavity Team" },
+    month: { lookupKey: "klavity_team_monthly_99", unitAmount: 9900, label: "Klavity Team" },
+    year: { lookupKey: "klavity_team_annual_990", unitAmount: 99000, label: "Klavity Team" },
   },
   // Scale (KLAVITYKLA-379): the price is now PUBLISHED ($599/mo) instead of "Custom", because nine
   // of sixteen AI-QA competitors hide theirs and publishing wins the "<product> pricing" search
@@ -59,23 +64,24 @@ export const STRIPE_PRICE_CATALOG: Record<Exclude<BillingPlan, "free" | "partner
 export const SUPERSEDED_LOOKUP_KEYS: Record<string, { plan: BillingPlan; interval: BillingInterval }> = {
   // Founding Ten at $290/yr — superseded by klavity_founding_annual_490 on 2026-07-20.
   klavity_founding_annual_290: { plan: "founding", interval: "year" },
-  // "Pro" at $29/mo · $290/yr — superseded by the Solo $49/mo · $490/yr keys.
-  klavity_pro_monthly_29: { plan: "pro", interval: "month" },
-  klavity_pro_annual_290: { plan: "pro", interval: "year" },
-  // Team at $99/mo · $990/yr — superseded by the $249/mo · $2,490/yr keys.
-  klavity_team_monthly_99: { plan: "team", interval: "month" },
-  klavity_team_annual_990: { plan: "team", interval: "year" },
+  // PRICING RECONCILIATION 2026-08-21: the live catalog is back on the Pro $29 · Team $99 keys (see
+  // STRIPE_PRICE_CATALOG). The keys below are the RETIRED "Solo $49 / Team $249" (KLAVITYKLA-379)
+  // ladder that briefly lived in the catalog. Anyone who ever subscribed on one of these is billed
+  // against that immutable price object and their webhooks still carry these keys, so they MUST keep
+  // resolving to a plan or they'd silently drop to `free`. New checkouts never use them.
+  klavity_solo_monthly_49: { plan: "pro", interval: "month" },
+  klavity_solo_annual_490: { plan: "pro", interval: "year" },
+  klavity_team_monthly_249: { plan: "team", interval: "month" },
+  klavity_team_annual_2490: { plan: "team", interval: "year" },
 }
 
-// ── Customer-facing plan DISPLAY names (KLAVITYKLA-379) ────────────────────────────────────────
+// ── Customer-facing plan DISPLAY names ─────────────────────────────────────────────────────────
 // The keys here are the internal plan SLUGS (what lives in the DB, in Stripe metadata and in every
-// API payload). The values are what a human is allowed to see. These two deliberately disagree for
-// `pro`, which is displayed as "Solo": the ladder was renamed for customers without touching any
-// stored value, so no migration was needed and existing subscriptions kept working untouched.
-// Render plan names through planDisplayName() — never print a raw slug at a customer.
+// API payload). The values are what a human is allowed to see. Render plan names through
+// planDisplayName() — never print a raw slug at a customer.
 export const PLAN_DISPLAY_NAMES: Record<BillingPlan, string> = {
   free: "Free",
-  pro: "Solo", // slug stays `pro` — display only. See the note above.
+  pro: "Pro", // slug is `pro`; displayed as "Pro" (the $29 tier).
   team: "Team",
   agency: "Agency",
   founding: "Founding Ten",
@@ -353,6 +359,44 @@ export function normalizePlan(plan: string | null | undefined): BillingPlan {
   return plan === "pro" || plan === "team" || plan === "agency" || plan === "founding" || plan === "scale" || plan === "partner" ? plan : "free"
 }
 
+// ── Graceful downgrade to Snap-only Free on cancellation ────────────────────────────────────────
+// Snap is FREE and ALWAYS works; Sims + AutoSim are the paid features, walled behind the account
+// plan quota (free = sims:1, autosimFlows:0) and the per-project Snap-only gate. When a Stripe
+// subscription ends or lapses, the account plan reverts to "free" so the paid features gate behind
+// the upgrade wall again — NO data is deleted (Snap reports, projects, Sims config all persist).
+//
+// A subscription is entitled to its paid plan ONLY while Stripe reports it "active" or "trialing".
+// Every other status — canceled/unpaid/incomplete_expired/past_due (and incomplete, paused, etc.) —
+// collapses to Snap-only Free. These are the statuses a customer.subscription.updated event carries
+// when a sub lapses, plus the terminal customer.subscription.deleted event.
+export const ENTITLED_SUBSCRIPTION_STATUSES = ["active", "trialing"] as const
+
+// Statuses that explicitly revert an account to Snap-only Free (a subset of "everything not
+// entitled", enumerated for clarity + testing). Any status not in ENTITLED_SUBSCRIPTION_STATUSES
+// downgrades, but these are the ones the webhook is documented to react to.
+export const SNAP_DOWNGRADE_STATUSES = ["canceled", "unpaid", "incomplete_expired", "past_due"] as const
+
+export function isEntitledSubscriptionStatus(status: string | null | undefined): boolean {
+  const s = String(status || "")
+  return (ENTITLED_SUBSCRIPTION_STATUSES as readonly string[]).includes(s)
+}
+
+export function isSnapDowngradeStatus(status: string | null | undefined): boolean {
+  // Anything that is not an entitled status downgrades to Snap-only Free. We treat the enumerated
+  // SNAP_DOWNGRADE_STATUSES plus any other non-entitled status the same way, so a status we didn't
+  // anticipate can never leave a lapsed subscription silently entitled.
+  return !isEntitledSubscriptionStatus(status)
+}
+
+// entitledPlanForStatus — given the plan resolved from the Stripe price and the subscription's
+// current status, return the plan the account is actually ENTITLED to. Non-active/trialing → "free"
+// (Snap-only). Pure + idempotent: calling it repeatedly with the same inputs (e.g. on a re-delivered
+// webhook) always yields the same plan, so a duplicated cancellation event is a harmless no-op.
+export function entitledPlanForStatus(plan: string | null | undefined, status: string | null | undefined): BillingPlan {
+  const normalized = normalizePlan(plan)
+  return isEntitledSubscriptionStatus(status) ? normalized : "free"
+}
+
 // Agency-tier entitlement (KLAVITYKLA-310). The per-client usage & outcomes rollup is gated to
 // accounts on the Agency plan (or any unlimited/enterprise tier, which the caller passes as
 // `unlimited`). Pure — no DB — so routes and the UI can share one predicate.
@@ -447,12 +491,9 @@ export function intervalFromLookupKey(lookupKey: string | null | undefined): Bil
 export const STRIPE_PRICE_IDS: Record<string, { plan: Exclude<BillingPlan, "free" | "scale" | "partner">; interval: BillingInterval }> = {
   // Founding Team — annual only, $490/yr (KLAVITYKLA-379). This is the live Payment Link price.
   price_1TuhSqDWQd30h1DiyqjXQ3NC: { plan: "founding", interval: "year" },
-  // ── SUPERSEDED price IDs (KLAVITYKLA-379 reprice) ──
-  // These are the OLD "Pro" $29/mo·$290/yr and Team $99/mo·$990/yr price objects. Stripe prices are
-  // immutable, so anyone who subscribed before the reprice is still billed against these IDs and
-  // their webhooks still arrive carrying them. They MUST keep resolving or a grandfathered customer
-  // silently drops to `free`. New checkouts never touch these — ensureStripePrice resolves the new
-  // catalog lookup keys and creates fresh price objects, which resolve via the lookup_key fallback.
+  // Live Pro $29/mo·$290/yr and Team $99/mo·$990/yr price objects — the CURRENT published ladder
+  // (see the 2026-08-21 pricing reconciliation on STRIPE_PRICE_CATALOG). Webhooks for existing
+  // subscribers carry these IDs; they MUST keep resolving or a customer silently drops to `free`.
   price_1TuhSrDWQd30h1DivfC0EMKT: { plan: "pro", interval: "month" },
   price_1TuhSrDWQd30h1DiTy9eSe5p: { plan: "pro", interval: "year" },
   price_1TuhSsDWQd30h1DiU5g7VDZo: { plan: "team", interval: "month" },
@@ -583,6 +624,69 @@ export async function createStripePortalSession(input: { customerId: string; ret
   }))
   return { id: String(session.id), url: String(session.url || "") }
 }
+
+// ── 30-day money-back guarantee ─────────────────────────────────────────────────────────────────
+// First-class concept so ops/UI can check whether a just-cancelled (or about-to-cancel) subscriber
+// is still inside the 30-day window. This governs REFUND eligibility only — the graceful downgrade
+// to Snap-only Free happens on cancellation regardless of the window (see entitledPlanForStatus).
+export const MONEY_BACK_GUARANTEE_DAYS = 30
+const MONEY_BACK_DAY_MS = 24 * 60 * 60 * 1000
+
+// Accepts a Stripe subscription-like object ({ start_date | created } in UNIX seconds, as Stripe
+// sends) OR a raw epoch (seconds or ms). Returns the start instant in ms epoch, or null when absent.
+type MoneyBackSubLike = { start_date?: number | null; created?: number | null } | number | null | undefined
+export function subscriptionStartMs(sub: MoneyBackSubLike): number | null {
+  const raw = typeof sub === "number" ? sub : Number(sub?.start_date ?? sub?.created)
+  if (!Number.isFinite(raw) || raw <= 0) return null
+  // Stripe timestamps are seconds; a value already in ms (>= ~1e12) is passed through untouched so
+  // callers that hand us Date.now()-style epochs still work.
+  return raw >= 1e12 ? raw : raw * 1000
+}
+
+// isWithinMoneyBackWindow — true when `now` is within `windowDays` of the subscription's start.
+// `now` and `windowDays` are injectable for tests. Missing/invalid start → false (fail closed: no
+// window we can't anchor).
+export function isWithinMoneyBackWindow(
+  sub: MoneyBackSubLike,
+  now: number = Date.now(),
+  windowDays: number = MONEY_BACK_GUARANTEE_DAYS,
+): boolean {
+  const startMs = subscriptionStartMs(sub)
+  if (startMs == null) return false
+  const days = Number.isFinite(windowDays) && windowDays > 0 ? windowDays : MONEY_BACK_GUARANTEE_DAYS
+  const elapsed = now - startMs
+  return elapsed >= 0 && elapsed <= days * MONEY_BACK_DAY_MS
+}
+
+export type MoneyBackEligibility = {
+  startMs: number | null
+  windowDays: number
+  within: boolean
+  eligible: boolean // alias of `within` — the ops/UI-facing verdict
+  windowEndsAt: number | null // ms epoch the guarantee window closes
+  daysRemaining: number // whole days left in the window (0 when outside it)
+}
+
+// moneyBackEligibility — the richer view ops/UI reads to decide whether to offer/allow a refund.
+export function moneyBackEligibility(
+  sub: MoneyBackSubLike,
+  now: number = Date.now(),
+  windowDays: number = MONEY_BACK_GUARANTEE_DAYS,
+): MoneyBackEligibility {
+  const days = Number.isFinite(windowDays) && windowDays > 0 ? windowDays : MONEY_BACK_GUARANTEE_DAYS
+  const startMs = subscriptionStartMs(sub)
+  const within = isWithinMoneyBackWindow(sub, now, days)
+  const windowEndsAt = startMs != null ? startMs + days * MONEY_BACK_DAY_MS : null
+  const daysRemaining = within && windowEndsAt != null ? Math.max(0, Math.ceil((windowEndsAt - now) / MONEY_BACK_DAY_MS)) : 0
+  return { startMs, windowDays: days, within, eligible: within, windowEndsAt, daysRemaining }
+}
+
+// ── Refund policy: request-by-email, NOT auto (product decision 2026-08-21) ─────────────────────
+// LIVE Stripe is configured and issuing a refund moves real money, so we DO NOT auto-issue Stripe
+// refunds. Instead a user inside the money-back window can REQUEST a refund, which emails/alerts ops
+// (see POST /api/billing/refund-request in server.ts). A human then issues the refund manually via
+// the Stripe dashboard. The cancellation → Snap-only Free downgrade happens regardless of any refund.
+// moneyBackEligibility() above is the single eligibility gate the endpoint checks before alerting.
 
 export async function retrieveStripeSubscription(subscriptionId: string): Promise<any> {
   const params = new URLSearchParams()
