@@ -53,6 +53,8 @@ import { evaluateLabelRules } from "./lib/label-rules"
 import { encryptSecret, decryptSecret } from "./lib/crypto"
 import { createTestAccount, listTestAccounts, getTestAccountById, getTestAccountByName, deleteTestAccount, isTestAccountEmail, getTestAccountRefs, rotateTestAccountSecret } from "./lib/test-accounts"
 import { assertSafeUrl } from "./lib/url-guard"
+import { genCode, isValidSlug, stampUtm, isBotRequest, hashIp } from "./lib/shortlinks"
+import { createShortLink, getShortLinkByCodeOrSlug, listShortLinks, getShortLinkDetail, updateShortLink, recordLinkClick, linkClickStats, type ShortLinkRow } from "./lib/db"
 import { safeFetch } from "./lib/safe-fetch"
 import { extConfigVersion, type ExtProjectConfig } from "./lib/ext-config-version"
 import { verifyTurnstile, turnstileEnabled, turnstileSiteKey } from "./lib/turnstile"
@@ -2422,6 +2424,36 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (req.method === "GET" && path === "/api/health/busy") {
       const s = walkPoolStats()
       return json({ ok: true, busy: s.busy, idle: s.busy === 0, ...s })
+    }
+
+    // ── Public short-link redirector (UNGATED). /s/:code — code OR vanity slug, active only. ──
+    // 302 + Cache-Control:no-store (NEVER 301 — a cached 301 loses click counts and destination
+    // re-pointability). Click logging is fire-and-forget: it must never block or fail the redirect.
+    if ((req.method === "GET" || req.method === "HEAD") && (path.startsWith("/s/"))) {
+      const codeOrSlug = decodeURIComponent(path.slice(3)).split("/")[0]
+      if (!codeOrSlug) return new Response("Not found", { status: 404 })
+      let link: ShortLinkRow | null = null
+      try { link = db ? await getShortLinkByCodeOrSlug(codeOrSlug) : null } catch { link = null }
+      if (!link) {
+        return new Response("This short link doesn’t exist or has been disabled.", {
+          status: 404, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
+        })
+      }
+      const target = stampUtm(link.destinationUrl, link.utm)
+      // Log the click without awaiting failure — never block the redirect on the DB.
+      const isBot = isBotRequest({
+        method: req.method,
+        ua: req.headers.get("user-agent"),
+        secPurpose: req.headers.get("sec-purpose"),
+        purpose: req.headers.get("purpose"),
+      })
+      const ipHash = hashIp(clientIp(req, server))
+      void recordLinkClick({
+        linkId: link.id, code: link.code, ipHash,
+        ua: req.headers.get("user-agent"), referer: req.headers.get("referer"),
+        country: req.headers.get("cf-ipcountry") || null, isBot,
+      }).catch(() => {})
+      return new Response(null, { status: 302, headers: { Location: target, "cache-control": "no-store" } })
     }
 
     if (req.method === "POST" && path === "/api/billing/webhook") {
@@ -6787,6 +6819,91 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const pl = await buildSuperadminPL()
         return json(pl, 200, { "cache-control": "no-store" })
       } catch (e: any) { return json(oops(e, "superadmin-pl"), 500) }
+    }
+    // ── Short-links CRUD (OPS_ADMIN-gated). The public redirector /s/:code is UNGATED (above). ──
+    // POST create · GET list · GET /:id detail+stats · PATCH /:id (toggle active / edit dest/utm/label).
+    if (path === "/api/superadmin/links" || path.startsWith("/api/superadmin/links/")) {
+      if (!me || !isOpsAdmin(me)) return json({ error: "Forbidden" }, 403)
+
+      // POST /api/superadmin/links — create
+      if (req.method === "POST" && path === "/api/superadmin/links") {
+        let body: any = {}
+        try { body = await req.json() } catch { return json({ error: "invalid JSON" }, 400) }
+        const destinationUrl = String(body.destinationUrl || "").trim()
+        if (!destinationUrl) return json({ error: "destinationUrl is required" }, 400)
+        // Anti-SSRF: reuse the shared url-guard (https-only, no private/link-local/metadata hosts).
+        try { await assertSafeUrl(destinationUrl) } catch { return json({ error: "destination rejected (must be a public https URL)" }, 400) }
+
+        // Optional vanity slug: shape + reserved-word check, then collision → 409.
+        let slug: string | null = null
+        if (body.slug !== undefined && body.slug !== null && String(body.slug).length) {
+          slug = String(body.slug).trim().toLowerCase()
+          if (!isValidSlug(slug)) return json({ error: "invalid slug (^[a-z0-9-]{3,40}$, not a reserved word)" }, 400)
+          if (await getShortLinkByCodeOrSlug(slug, { includeInactive: true })) return json({ error: "slug already in use" }, 409)
+        }
+
+        // Generate a unique 6-char code (retry on the astronomically-rare collision).
+        let code = ""
+        for (let i = 0; i < 6; i++) {
+          const cand = genCode()
+          if (!(await getShortLinkByCodeOrSlug(cand, { includeInactive: true }))) { code = cand; break }
+        }
+        if (!code) return json({ error: "could not allocate a code, retry" }, 500)
+
+        const utm = body.utm && typeof body.utm === "object" ? body.utm : {}
+        const kind = ["campaign", "affiliate", "referral"].includes(body.kind) ? body.kind : "campaign"
+        try {
+          const created = await createShortLink({
+            code, slug, destinationUrl,
+            utm: { source: utm.source, medium: utm.medium, campaign: utm.campaign, term: utm.term, content: utm.content },
+            label: body.label ? String(body.label) : null, kind, createdBy: me,
+          })
+          const row = await getShortLinkDetail(created.id)
+          return json({ id: created.id, code: created.code, link: row }, 200, { "cache-control": "no-store" })
+        } catch (e: any) {
+          // UNIQUE(code/slug) race → 409.
+          if (String(e?.message || "").toUpperCase().includes("UNIQUE")) return json({ error: "code or slug already in use" }, 409)
+          return json(oops(e, "shortlink-create"), 500)
+        }
+      }
+
+      // GET /api/superadmin/links — list
+      if (req.method === "GET" && path === "/api/superadmin/links") {
+        return json({ links: await listShortLinks() }, 200, { "cache-control": "no-store" })
+      }
+
+      const idPart = path.slice("/api/superadmin/links/".length)
+      const linkId = decodeURIComponent(idPart)
+      if (linkId) {
+        // GET /:id — detail + click stats
+        if (req.method === "GET") {
+          const link = await getShortLinkDetail(linkId)
+          if (!link) return json({ error: "not found" }, 404)
+          const stats = await linkClickStats(linkId)
+          return json({ link, stats }, 200, { "cache-control": "no-store" })
+        }
+        // PATCH /:id — toggle active / edit destination/utm/label (code + slug immutable)
+        if (req.method === "PATCH") {
+          const existing = await getShortLinkDetail(linkId)
+          if (!existing) return json({ error: "not found" }, 404)
+          let body: any = {}
+          try { body = await req.json() } catch { return json({ error: "invalid JSON" }, 400) }
+          const patch: Parameters<typeof updateShortLink>[1] = {}
+          if (body.destinationUrl !== undefined) {
+            const dest = String(body.destinationUrl || "").trim()
+            try { await assertSafeUrl(dest) } catch { return json({ error: "destination rejected (must be a public https URL)" }, 400) }
+            patch.destinationUrl = dest
+          }
+          if (body.utm !== undefined && body.utm && typeof body.utm === "object") {
+            patch.utm = { source: body.utm.source, medium: body.utm.medium, campaign: body.utm.campaign, term: body.utm.term, content: body.utm.content }
+          }
+          if (body.label !== undefined) patch.label = body.label === null ? null : String(body.label)
+          if (body.active !== undefined) patch.active = !!body.active
+          await updateShortLink(linkId, patch)
+          return json({ link: await getShortLinkDetail(linkId) }, 200, { "cache-control": "no-store" })
+        }
+      }
+      return json({ error: "method not allowed" }, 405)
     }
     if (req.method === "GET" && path === "/api/opsadmin/cost-summary") {
       if (!me || !isOpsAdmin(me)) return new Response("Not found", { status: 404 }) // hide route from non-ops
