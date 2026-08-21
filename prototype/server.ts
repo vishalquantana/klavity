@@ -1986,6 +1986,12 @@ function autoCopyFeedback(feedbackId: string, projectId: string, actor: string |
         }
         return
       }
+      // #544 ACCEPTED EXCEPTION (founder-approved, KLA #544 follow-up): when a project has a configured
+      // auto-copy connector, autofile files a freshly-submitted HUMAN Snap to that external tracker on
+      // submit EVEN FOR ANONYMOUS/untrusted intake. This deliberately surfaces untrusted reports off our
+      // board and onto the customer's OWN tracker — it is intended autofile behavior, NOT the untrusted-
+      // triage invariant that the /api/feedback status clamp + recurrence guards enforce. Do not "fix" this
+      // as a regression; the invariant only governs OUR Tickets board (the connector-less advance is gated).
       let anyExportSucceeded = false
       // M6/ASI: bound auto-filed tickets per project so a burst of feedback can't flood the tracker.
       if (!rlAllow(`autocopy:${projectId}`, AUTOCOPY_PER_PROJECT, AUTOCOPY_WINDOW)) {
@@ -4191,6 +4197,21 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               const rawReportSource = String(form.get("source") || "").trim().toLowerCase()
               const NON_HUMAN_SOURCES = new Set(["sim", "autosim", "adhoc", "ad-hoc", "trail", "trails", "walk", "studio-demo"])
               const isHumanSnap = !rawSimId && !NON_HUMAN_SOURCES.has(rawReportSource)
+              // #544 follow-up (Codex re-review) — trust + quarantine signals shared by the priority→status
+              // clamp (insert branch below) AND the recurrence-promotion gate (dedup branch below), computed
+              // ONCE. trustedProvenance = a resolved workspace member (extension bearer OR first-party session
+              // cookie) that is NOT an anonymous cross-origin widget submit. intakeQuarantined = ANY recognized
+              // non-human marker (sim/autosim/adhoc/trail/walk) OR a studio-demo save (client flag OR sentinel
+              // host, via feedbackSourceTag). Both key off real authentication / server-side detection, never an
+              // attacker-controllable claim, so a client can't forge trusted provenance.
+              const trustedProvenance = !!actor && !anonWidgetAllowed
+              const intakeQuarantined = NON_HUMAN_SOURCES.has(rawReportSource) || !!feedbackSourceTag
+              // #544 follow-up (Fix 2): make EVERY quarantine marker durable so the recurrence head-source
+              // guard (bumpFeedbackRecurrence) can see non-studio markers too. studio-demo keeps priority
+              // (host-detected demos have no source string); otherwise persist the recognized non-human
+              // marker verbatim. A plain human/widget report (empty or unrecognized source) stays null.
+              const quarantineSourceTag = feedbackSourceTag
+                || (NON_HUMAN_SOURCES.has(rawReportSource) ? rawReportSource : null)
               // JTBD 1.10: a screenshot-only report has no typed prose. Seed the observation (which drives the
               // triage title) with a deterministic fallback so the row never shows "Untitled report"; the
               // post-intake AI drafter (below) refines it in place from the captured page context. Reports
@@ -4245,9 +4266,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                 // or a quarantined source (studio-demo / any NON_HUMAN source, incl. host-detected demos via
                 // feedbackSourceTag), STAYS 'new' for human triage. Bound it by the SAME per-project autocopy
                 // rate cap the direct advance uses so it can't flood the board faster than the cap allows.
-                const recurrenceTrusted = !!actor && !anonWidgetAllowed
-                const recurrenceQuarantined = NON_HUMAN_SOURCES.has(rawReportSource) || !!feedbackSourceTag
-                let allowRecurrencePromote = recurrenceTrusted && !recurrenceQuarantined
+                let allowRecurrencePromote = trustedProvenance && !intakeQuarantined
                 if (allowRecurrencePromote && !rlAllow(`autocopy:${projectId}`, AUTOCOPY_PER_PROJECT, AUTOCOPY_WINDOW)) {
                   console.warn(`auto-copy rate cap hit for project ${projectId} — skipping recurrence status advance`)
                   allowRecurrencePromote = false
@@ -4302,9 +4321,15 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   planeIssueKey: null, planeIssueUrl: null,
                   issueKey: newIssueKey,
                   clientContext, annotations,
-                  // KLAVITYKLA-256: persist the sandbox tag so the demo funnel's mock findings are
-                  // excluded from the real New-reports triage listing.
-                  source: feedbackSourceTag,
+                  // #544 follow-up (Fix 1): pin untrusted/quarantined intake to status='new' so a
+                  // client-claimed high/urgent priority can't self-elevate the row straight onto the
+                  // Tickets board. Authenticated-member, non-quarantined intake keeps priority→status.
+                  forceNewStatus: !trustedProvenance || intakeQuarantined,
+                  // KLAVITYKLA-256 + #544 follow-up (Fix 2): persist the quarantine marker so the demo
+                  // funnel's mock findings are excluded from the real New-reports triage listing AND the
+                  // recurrence head-source guard can block laundering. studio-demo plus every NON_HUMAN
+                  // marker (sim/autosim/adhoc/trail/walk) is now durable, not just studio-demo.
+                  source: quarantineSourceTag,
                   // Connector field mapping task 1 / PX4 #411: persist the issue-type selection so exports can
                   // pick a Jira issue type (or similar) per kind.
                   reportType,
@@ -4420,8 +4445,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                 // identity (extension bearer token OR first-party session cookie); an anonymous/public
                 // widget submission has a null `actor` + `anonWidgetAllowed` and MUST stay 'new' so it
                 // lands in the New-Reports triage inbox (the spam/bot safety net). `!feedbackSourceTag`
-                // additionally excludes host-detected Studio-demo quarantine rows.
-                const trustedProvenance = !!actor && !anonWidgetAllowed
+                // additionally excludes host-detected Studio-demo quarantine rows. Reuses the hoisted
+                // `trustedProvenance` (Fix 1/2) — one definition for the whole handler.
                 autoFileHumanSnap(feedbackId, projectId, rawSimId, actor, priority, trustedProvenance)
               }
 
@@ -4750,6 +4775,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     // (a single flooding browser) and per project (the blast radius of one incident, regardless of
     // how many browsers hit it) — over the per-project cap, new signatures fold to recurrence-only
     // instead of minting more tickets (recordClientError's overCap path).
+    // #544 ACCEPTED EXCEPTION (founder-approved, KLA #544 follow-up): error-monitoring rows created here
+    // start life as OPEN bug tickets (recordClientError seeds status='open'), i.e. anonymous cross-origin
+    // intake surfaces directly onto the Tickets board WITHOUT human triage. This is a DELIBERATE exception
+    // to the untrusted-triage invariant — passive error auto-ticketing is opt-in per project (autoCaptureErrors)
+    // and the errors are real runtime failures, so they are meant to be actionable immediately. Do not "fix"
+    // this open-status seed as a regression; the priority-self-elevation clamp intentionally does NOT touch
+    // this path (only /api/feedback's insert branch is clamped).
     if (req.method === "POST" && path === "/api/errors") {
       const reqOrigin = req.headers.get("origin") || ""
       if (!reqOrigin) return json({ error: "origin required" }, 400)

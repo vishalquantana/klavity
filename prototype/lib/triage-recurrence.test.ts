@@ -42,6 +42,26 @@ test("a quarantined (studio-demo) 'new' item is NEVER promoted by recurrence", a
   expect((await feedbackById(P, id)).status).toBe("new")
 })
 
+// #544 follow-up (Codex re-review): the head-source quarantine guard must cover EVERY non-human marker,
+// not just studio-demo. A head created with source='autosim' (or any NON_HUMAN_FEEDBACK_SOURCES marker)
+// must NOT be promoted even when 3 TRUSTED (authenticated-member) recurrences vouch with allowPromote —
+// otherwise a non-studio quarantine head could be laundered onto the board.
+test("a head with source='autosim' is NEVER promoted by trusted recurrences (Fix 2 laundering guard)", async () => {
+  const id = await insertFeedback({ projectId: P, observation: "autosim recurring", priority: "low", issueKey: "rk3", source: "autosim" })
+  expect((await feedbackById(P, id)).status).toBe("new")
+  await bumpFeedbackRecurrence(id, 1, { allowPromote: true })
+  await bumpFeedbackRecurrence(id, 2, { allowPromote: true })   // count 3, trusted vouch, but quarantined head
+  expect((await feedbackById(P, id)).status).toBe("new")
+})
+
+// #544 follow-up: a 'sim'-marked head is equally protected (belt for the whole NON_HUMAN set).
+test("a head with source='sim' is NEVER promoted by trusted recurrences", async () => {
+  const id = await insertFeedback({ projectId: P, observation: "sim recurring", priority: "low", issueKey: "rk4", source: "sim" })
+  await bumpFeedbackRecurrence(id, 1, { allowPromote: true })
+  await bumpFeedbackRecurrence(id, 2, { allowPromote: true })
+  expect((await feedbackById(P, id)).status).toBe("new")
+})
+
 test("recurrence never resurrects a dismissed item", async () => {
   const id = await insertFeedback({ projectId: P, observation: "dismissed recurring", priority: "low", issueKey: "rk2" })
   // simulate a triage dismiss

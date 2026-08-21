@@ -113,6 +113,12 @@ export async function recordClientError(
     ? { ...(ctx || {}), clientErrorStack: String(e.stack).slice(0, 4000) }
     : (ctx || {})
 
+  // #544 ACCEPTED EXCEPTION (founder-approved, KLA #544 follow-up): this row is inserted WITHOUT
+  // forceNewStatus, so a high-severity client error seeds status='open' (initialFeedbackStatus) and lands
+  // directly on the Tickets board with no human triage. That is DELIBERATE — passive error auto-ticketing
+  // is opt-in per project and captures real runtime failures meant to be actionable immediately. This is a
+  // recognized exception to the untrusted-triage invariant enforced on the /api/feedback ingest path; do not
+  // add a forceNewStatus clamp here.
   const id = await insertFeedback({
     projectId,
     observation: `[auto] ${message}`,

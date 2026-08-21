@@ -449,6 +449,62 @@ test("#534 hardening: source='studio-demo' stays quarantined ('new'), never auto
   expect(await ticketsContain(fid)).toBe(false)
 }, 15000)
 
+// ── #544 follow-up (Fix 1): priority self-elevation guard ────────────────────────────────────────
+// initialFeedbackStatus maps a client-supplied priority of high/urgent straight to status='open', which
+// the Tickets board shows (it excludes only 'new'). So an UNTRUSTED (anonymous cross-origin widget) submit
+// with priority=high could land DIRECTLY on the board, bypassing every promotion gate. The ingest now
+// FORCES status='new' for untrusted/quarantined intake regardless of the claimed priority. These tests run
+// in REVIEW mode so no autofile advance can confound the assertion — the observed status is the INSERT
+// status only. The priority VALUE is preserved for display/sorting; only its power to seed 'open' is removed.
+
+test("#544 Fix1: ANONYMOUS priority=high starts 'new' (not on the board)", async () => {
+  await api("POST", `/api/projects/${PROJECT_ID}/snap-routing`, { snapRouting: "review" }, ADMIN_SID)
+  await clearConnectors()
+  const fr = await submitAnonWidgetSnap(uniqueDesc(`kla544-anon-high`), { priority: "high", page_url: `https://kla544.example/anon/${ts}` })
+  expect(fr.ok).toBe(true)
+  const fid = (await fr.json()).id
+  expect(fid).toBeTruthy()
+  await Bun.sleep(400)
+  expect(await feedbackStatus(fid)).toBe("new")
+  expect(await ticketsContain(fid)).toBe(false)
+}, 15000)
+
+test("#544 Fix1: studio-demo priority=high stays quarantined ('new')", async () => {
+  await api("POST", `/api/projects/${PROJECT_ID}/snap-routing`, { snapRouting: "review" }, ADMIN_SID)
+  await clearConnectors()
+  const fr = await submitHumanSnap(uniqueDesc(`kla544-demo-high`), { source: "studio-demo", priority: "high", page_url: `https://kla544.example/demo/${ts}` })
+  expect(fr.ok).toBe(true)
+  const fid = (await fr.json()).id
+  expect(fid).toBeTruthy()
+  await Bun.sleep(400)
+  expect(await feedbackStatus(fid)).toBe("new")
+  expect(await ticketsContain(fid)).toBe(false)
+}, 15000)
+
+test("#544 Fix1 control: AUTHENTICATED-member priority=high still starts 'open' (behavior preserved)", async () => {
+  await api("POST", `/api/projects/${PROJECT_ID}/snap-routing`, { snapRouting: "review" }, ADMIN_SID)
+  await clearConnectors()
+  const fr = await submitHumanSnap(uniqueDesc(`kla544-auth-high`), { priority: "high", page_url: `https://kla544.example/auth/${ts}` })
+  expect(fr.ok).toBe(true)
+  const fid = (await fr.json()).id
+  expect(fid).toBeTruthy()
+  await Bun.sleep(400)
+  expect(await feedbackStatus(fid)).toBe("open")
+  expect(await ticketsContain(fid)).toBe(true)
+}, 15000)
+
+test("#544 Fix1 regression guard: ANONYMOUS default priority still 'new'", async () => {
+  await api("POST", `/api/projects/${PROJECT_ID}/snap-routing`, { snapRouting: "review" }, ADMIN_SID)
+  await clearConnectors()
+  const fr = await submitAnonWidgetSnap(uniqueDesc(`kla544-anon-default`), { page_url: `https://kla544.example/anondef/${ts}` })
+  expect(fr.ok).toBe(true)
+  const fid = (await fr.json()).id
+  expect(fid).toBeTruthy()
+  await Bun.sleep(400)
+  expect(await feedbackStatus(fid)).toBe("new")
+  expect(await ticketsContain(fid)).toBe(false)
+}, 15000)
+
 // A FAILED autofile (connector create errors) must NOT falsely mark the report filed/open — it stays
 // 'new' so it remains in New Reports for manual retry, and is absent from the Tickets list.
 test("KLA-524 autofile failure: keeps status='new' and stays out of the Tickets list", async () => {

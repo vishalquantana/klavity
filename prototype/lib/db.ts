@@ -3027,11 +3027,20 @@ export type FeedbackInsert = {
   reportEnv?: string | null
   reportOrg?: string | null
   reportServer?: string | null
+  // #544 follow-up (Codex re-review): the /api/feedback ingest sets this for UNTRUSTED (anonymous /
+  // non-member cross-origin widget) OR QUARANTINED (studio-demo / sim / autosim / adhoc / trail / walk)
+  // intake. When set, the initial status is FORCED to 'new' even if the client-supplied priority is
+  // high/urgent — closing the priority-self-elevation board bypass. The priority VALUE is still persisted
+  // for display/sorting; only its power to seed status='open' is removed. Authenticated-member intake
+  // leaves this false and keeps the normal priority→status behavior.
+  forceNewStatus?: boolean
 }
 
 // Triage gate: new feedback is "new" (needs triage) unless it's a high-priority
 // signal, which is auto-accepted straight to an open bug. Recurrence ≥3 promotes
-// a still-"new" item later (see bumpFeedbackRecurrence).
+// a still-"new" item later (see bumpFeedbackRecurrence). #544 follow-up: high/urgent
+// only seeds 'open' for TRUSTED intake — untrusted/quarantined callers pass
+// forceNewStatus (see insertFeedback) so a client-claimed priority can't self-elevate onto the board.
 export function initialFeedbackStatus(priority: string | null | undefined): "new" | "open" {
   return (priority === "urgent" || priority === "high") ? "open" : "new"
 }
@@ -3039,7 +3048,9 @@ export function initialFeedbackStatus(priority: string | null | undefined): "new
 export async function insertFeedback(f: FeedbackInsert): Promise<string> {
   const id = "fb_" + crypto.randomUUID()
   const now = Date.now()
-  const status = initialFeedbackStatus(f.priority)
+  // #544 follow-up: untrusted/quarantined intake is pinned to 'new' regardless of the claimed priority
+  // (priority-self-elevation guard). The priority column below still stores f.priority verbatim.
+  const status = f.forceNewStatus ? "new" : initialFeedbackStatus(f.priority)
   await db!.execute({
     sql: `INSERT INTO feedback (id,project_id,sim_id,actor_email,url_host,url_path,source_referrer,observation,sentiment,priority,
           screenshot_id,suggested_bug_json,cited_trait_ids_json,source_quote,source_transcript_id,source_date,
@@ -3471,6 +3482,11 @@ export async function bumpFeedbackRecurrence(id: string, atMs: number, opts?: { 
   // provenance (opts.allowPromote — an authenticated workspace member's genuinely-recurring report, already
   // rate-bounded at the /api/feedback call site). Belt-and-suspenders: the HEAD row's own source is also
   // checked here, so a quarantined cluster head can never be promoted even if a caller mis-vouches.
+  // #544 follow-up (Codex re-review): the head-source guard is only as good as what /api/feedback
+  // persisted. Previously ONLY studio-demo was written to `source`, so a head created with a non-studio
+  // quarantine marker (sim/autosim/adhoc/trail/walk) stored source=NULL and could be laundered onto the
+  // board by 3 marker-less authenticated recurrences. The ingest now persists EVERY recognized quarantine
+  // marker (NON_HUMAN_FEEDBACK_SOURCES) to `source`, so headQuarantined below catches all of them.
   const headSource = row.source != null ? String(row.source).trim().toLowerCase() : ""
   const headQuarantined = NON_HUMAN_FEEDBACK_SOURCES.has(headSource)
   const promote = opts?.allowPromote === true && count >= 3 && String(row.status) === "new" && !headQuarantined
