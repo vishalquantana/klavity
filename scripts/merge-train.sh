@@ -362,9 +362,20 @@ if [ "$last_push" -gt 0 ] && [ "$gap" -lt "$MIN_DEPLOY_GAP" ]; then
   exit 0
 fi
 
-# Single monotonic version stamp (base patch + 1), forced across all manifests + PRD.
+# Semantic version stamp (conventional commits), forced across all manifests + PRD:
+#   feat: -> minor bump ; ! / BREAKING CHANGE -> major bump ; anything else -> patch.
+# Derived from the integrated commit subjects/bodies (excludes the orchestrator's own commits).
 maj=${base_ver%%.*}; rest=${base_ver#*.}; min=${rest%%.*}; pat=${rest##*.}
-next="$maj.$min.$((pat+1))"
+_vbase=$(git rev-parse 'HEAD@{u}' 2>/dev/null || echo origin/master)
+_subj=$(git log --no-merges --format='%s' "$_vbase..HEAD" 2>/dev/null | grep -v '^orchestrator:')
+_body=$(git log --no-merges --format='%b' "$_vbase..HEAD" 2>/dev/null)
+if printf '%s\n' "$_subj" | grep -qE '^[a-z]+(\([^)]*\))?!:' || printf '%s\n' "$_body" | grep -qE '^BREAKING[ -]CHANGE'; then
+  next="$((maj+1)).0.0"
+elif printf '%s\n' "$_subj" | grep -qE '^feat(\([^)]*\))?:'; then
+  next="$maj.$((min+1)).0"
+else
+  next="$maj.$min.$((pat+1))"
+fi
 for f in package.json packages/core/package.json packages/extension/package.json \
          packages/extension/manifest.json packages/sdk/package.json; do
   [ -f "$f" ] && sed -i '' "s/\"version\": *\"[0-9][0-9.]*\"/\"version\": \"$next\"/" "$f"
