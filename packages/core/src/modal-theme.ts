@@ -32,6 +32,14 @@ export interface ModalConfig {
   maskNumbers?: boolean
   /** Pro-gated: when true, hides the "Powered by Klavity" footer on the widget menu and modal success screen. */
   whiteLabel?: boolean
+  /**
+   * Report-clarity helper (like password-strength, for bug reports). When true the composer renders a live
+   * heuristic clarity meter + coverage chips under the description, a debounced cheap-LLM tip, and a
+   * non-blocking pre-submit nudge. Per-project (projects.report_clarity, DEFAULT on). When undefined/false
+   * the helper never renders — a caller that doesn't thread the flag (extension / older widget) behaves
+   * exactly as before (full back-compat).
+   */
+  reportClarity?: boolean
 }
 
 const HEX = /^#[0-9a-fA-F]{3,8}$/
@@ -104,6 +112,10 @@ export function resolveModalConfig(raw: unknown): ModalConfig & { theme: ModalTh
     out.rightClickMode = r.rightClickMode as RightClickMode
   }
   if (r.maskNumbers === true) out.maskNumbers = true
+  // Report-clarity helper toggle (per-project, DEFAULT on). Threaded through the config the host passes to
+  // buildModal; preserved verbatim so an absent flag stays absent (helper off → back-compat).
+  if (r.reportClarity === true) out.reportClarity = true
+  else if (r.reportClarity === false) out.reportClarity = false
   // whiteLabel: read from top-level (already-resolved passthrough) or nested agency_branding (stored format).
   const ab = isObj(r.agency_branding) ? (r.agency_branding as Record<string, unknown>) : {}
   if (r.whiteLabel === true || ab.whiteLabel === true) out.whiteLabel = true

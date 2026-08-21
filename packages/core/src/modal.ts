@@ -4,6 +4,7 @@ import { themeCss, resolveModalConfig, type ModalConfig } from './modal-theme'
 import { icon } from './icons'
 import { VoiceInput } from './voice-input'
 import { maskNumbers } from './mask-numbers'
+import { scoreReportClarity, shouldFetchClarityTip, shouldNudgeOnSubmit } from './report-clarity'
 
 // Re-exported here so the widget + extension can import the shared right-click-drag region gesture from
 // the same module they already use for buildModal (avoids adding a package.json export entry, which the
@@ -153,6 +154,13 @@ export interface ModalCallbacks {
   // filing a duplicate blind; they can still submit (their report bumps the known issue's recurrence)
   // or dismiss the note. Widget/host-only — the extension omits it, preserving parity.
   onCheckKnown?: (description: string) => Promise<KnownIssueMatch | null>
+  // Report-clarity AI tip (the "password strength, for bug reports" helper). When the config enables
+  // reportClarity, the composer renders a live client-side heuristic meter + coverage chips synchronously,
+  // and — ~1s after typing stops, only when the text is non-trivial AND not yet Great — calls this to get a
+  // single short, specific tip from the cheap-LLM endpoint (POST /api/report/clarity). Best-effort: any
+  // failure resolves null and the meter/chips still render. Only wired by the widget when clarity is on; the
+  // extension omits it. Result cached by the host so it's one call per meaningful change.
+  onClarityTip?: (text: string) => Promise<{ tip: string } | null>
   onSubmit: (payload: {
     // Coarse report type kept for back-compat consumers (extension/message protocol) — always a valid
     // ReportType. For Task/Query this is 'bug' (they are bug-like, non-feature); the precise value is `kind`.
@@ -591,6 +599,40 @@ export function buildModal(
     .klavity-known .kl-known-dismiss{flex:none;background:none;border:none;color:var(--kl-muted);cursor:pointer;font-size:11px;padding:2px 4px;border-radius:6px;line-height:1;text-decoration:underline;}
     .klavity-known .kl-known-dismiss:hover{color:var(--kl-fg);}
     .klavity-known .kl-known-dismiss:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
+    /* Report-clarity helper (like password-strength, for bug reports). Sits directly under the description:
+       a 3-segment meter, a status label, coverage chips, and (when vague) a debounced AI tip. Hidden until
+       the reporter types. Non-blocking + informational — never gates Submit. */
+    .klavity-clarity{margin:-8px 0 14px;}
+    .klavity-clarity[hidden]{display:none;}
+    .klavity-clarity .kl-clr-bar{height:6px;border-radius:999px;display:flex;gap:3px;}
+    .klavity-clarity .kl-clr-bar i{flex:1;background:var(--kl-border);border-radius:999px;transition:background .2s;}
+    .klavity-clarity.l1 .kl-clr-bar i:nth-child(1){background:var(--kl-bad,#dc2626);}
+    .klavity-clarity.l2 .kl-clr-bar i:nth-child(-n+2){background:var(--kl-warn,#d97706);}
+    .klavity-clarity.l3 .kl-clr-bar i:nth-child(-n+3){background:var(--kl-ok,#16a34a);}
+    .klavity-clarity .kl-clr-row{display:flex;align-items:center;justify-content:space-between;margin-top:6px;font-size:11.5px;color:var(--kl-muted);}
+    .klavity-clarity .kl-clr-st{font-weight:700;}
+    .klavity-clarity.l1 .kl-clr-st{color:var(--kl-bad,#dc2626);}
+    .klavity-clarity.l2 .kl-clr-st{color:var(--kl-warn,#d97706);}
+    .klavity-clarity.l3 .kl-clr-st{color:var(--kl-ok,#16a34a);}
+    .klavity-clarity .kl-clr-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;}
+    .klavity-clarity .kl-clr-chip{font-size:11px;padding:3px 8px;border-radius:999px;border:1px solid var(--kl-border);color:var(--kl-muted);display:inline-flex;align-items:center;gap:4px;background:var(--kl-chip);}
+    .klavity-clarity .kl-clr-chip.done{color:var(--kl-ok,#16a34a);border-color:color-mix(in srgb,var(--kl-ok,#16a34a) 40%,transparent);background:color-mix(in srgb,var(--kl-ok,#16a34a) 8%,transparent);}
+    .klavity-clarity .kl-clr-tip{margin-top:9px;font-size:12px;background:color-mix(in srgb,var(--kl-accent) 6%,var(--kl-input-bg));border:1px solid color-mix(in srgb,var(--kl-accent) 25%,transparent);border-radius:9px;padding:8px 10px;display:flex;gap:7px;line-height:1.45;color:var(--kl-fg);}
+    .klavity-clarity .kl-clr-tip[hidden]{display:none;}
+    .klavity-clarity .kl-clr-tip .kl-clr-ai{flex:0 0 auto;color:var(--kl-accent);margin-top:1px;}
+    .klavity-clarity .kl-clr-tip .kl-clr-aitag{font-size:9px;font-weight:800;color:var(--kl-on-accent);background:var(--kl-accent);padding:1px 5px;border-radius:999px;margin-left:4px;vertical-align:middle;}
+    /* Soft pre-submit nudge (mockup panel D). Shown ONLY when the reporter hits Submit on a still-weak
+       report. "Submit anyway" always proceeds — never a hard block. */
+    .klavity-nudge{margin:0 0 12px;border:1px solid var(--kl-warn,#d97706);background:color-mix(in srgb,var(--kl-warn,#d97706) 8%,var(--kl-input-bg));border-radius:10px;padding:11px;}
+    .klavity-nudge[hidden]{display:none;}
+    .klavity-nudge .kl-nudge-h{font-weight:650;font-size:12.5px;margin-bottom:3px;color:var(--kl-fg);}
+    .klavity-nudge .kl-nudge-d{font-size:11.5px;color:var(--kl-muted);line-height:1.45;}
+    .klavity-nudge .kl-nudge-row{display:flex;gap:8px;margin-top:9px;}
+    .klavity-nudge button{padding:7px 12px;border-radius:8px;border:1px solid var(--kl-border);background:var(--kl-chip);color:var(--kl-fg);font-weight:600;font-size:12px;cursor:pointer;}
+    .klavity-nudge button.kl-nudge-add{background:var(--kl-accent);border-color:var(--kl-accent);color:var(--kl-on-accent);}
+    .klavity-nudge button.kl-nudge-anyway{background:none;color:var(--kl-muted);}
+    .klavity-nudge button:hover{filter:brightness(1.03);}
+    .klavity-nudge button:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
     input.klavity-remail{width:100%;background:var(--kl-input-bg);color:var(--kl-fg);border:1px solid var(--kl-border);border-radius:8px;padding:10px;font-size:14px;margin-bottom:10px;box-sizing:border-box;box-shadow:0 1px 2px rgba(25,20,15,.04);}
     .klavity-submit{width:100%;min-height:40px;padding:12px;background:var(--kl-accent);color:var(--kl-on-accent);border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;}
     .klavity-submit:disabled{opacity:.5;cursor:not-allowed;}
@@ -783,8 +825,23 @@ export function buildModal(
       <div class="klavity-error" id="klavity-err"></div>
       <textarea class="klavity-desc" id="klavity-desc" placeholder="${initialType === 'feature' ? "Describe the feature you'd like..." : 'Describe the bug...'}"></textarea>
       <div class="klavity-desc-hint" id="klavity-desc-hint" hidden>${icon('sparkles', { size: 13 })}<span>No title needed — we'll auto-generate one for you</span></div>
+      ${cfg.reportClarity ? `<div class="klavity-clarity" id="klavity-clarity" role="status" aria-live="polite" hidden>
+        <div class="kl-clr-bar"><i></i><i></i><i></i></div>
+        <div class="kl-clr-row"><span>Report clarity</span><span class="kl-clr-st" id="klavity-clarity-status">Needs detail</span></div>
+        <div class="kl-clr-chips">
+          <span class="kl-clr-chip" id="klavity-clarity-problem"><span class="kl-clr-mark">○</span> What's broken</span>
+          <span class="kl-clr-chip" id="klavity-clarity-expected"><span class="kl-clr-mark">○</span> What you expected</span>
+          <span class="kl-clr-chip" id="klavity-clarity-repro"><span class="kl-clr-mark">○</span> How to reproduce</span>
+        </div>
+        <div class="kl-clr-tip" id="klavity-clarity-tip" hidden><span class="kl-clr-ai">${icon('lightbulb', { size: 14 })}</span><span id="klavity-clarity-tip-text"></span></div>
+      </div>` : ''}
       ${callbacks.onCheckKnown ? `<div class="klavity-known" id="klavity-known" role="status" aria-live="polite" hidden></div>` : ''}
       ${callbacks.requireEmail ? '<input type="email" class="klavity-remail" id="klavity-remail" placeholder="your@email.com" autocomplete="email">' : ''}
+      ${cfg.reportClarity ? `<div class="klavity-nudge" id="klavity-nudge" role="alert" hidden>
+        <div class="kl-nudge-h">This might be hard for the team to act on</div>
+        <div class="kl-nudge-d">Adding what you expected + one step to reproduce gets it fixed faster. Or send it as-is — your call.</div>
+        <div class="kl-nudge-row"><button type="button" class="kl-nudge-add" id="klavity-nudge-add">Add detail</button><button type="button" class="kl-nudge-anyway" id="klavity-nudge-anyway">Submit anyway</button></div>
+      </div>` : ''}
       <button class="klavity-submit" id="klavity-submit" title="Submit (S)" disabled>Submit</button>
       <div class="klavity-progress" id="klavity-progress" role="progressbar" aria-label="Uploading report"><div class="klavity-progress-fill" id="klavity-progress-fill"></div></div>
     </div>
@@ -1358,6 +1415,104 @@ export function buildModal(
       knownTimer = setTimeout(runKnownCheck, 500)
     })
   }
+
+  // ── Report-clarity helper (the "password strength, for bug reports"). Three layers, all non-blocking:
+  //   1. Instant heuristic (scoreReportClarity, zero-cost, no network) → meter + coverage chips + label on
+  //      every keystroke.
+  //   2. Debounced cheap-LLM tip (~1s after typing stops, only when non-trivial AND not yet Great) via
+  //      callbacks.onClarityTip. Cached in the host; hidden once clarity is Great.
+  //   3. A soft pre-submit nudge (see the Submit handler) — surfaced but never a hard block.
+  // Only wired when the host enabled cfg.reportClarity (per-project, DEFAULT on). Absent → helper never
+  // renders and this whole block is skipped (full back-compat with the classic composer).
+  let clarityAckd = false                 // set true by "Submit anyway" so the second Submit proceeds
+  let showClarityNudge: () => void = () => {}
+  if (cfg.reportClarity) {
+    const clarityEl = modal.querySelector('#klavity-clarity') as HTMLElement | null
+    const statusEl = modal.querySelector('#klavity-clarity-status') as HTMLElement | null
+    const chipEls: Record<'problem' | 'expected' | 'repro', HTMLElement | null> = {
+      problem: modal.querySelector('#klavity-clarity-problem'),
+      expected: modal.querySelector('#klavity-clarity-expected'),
+      repro: modal.querySelector('#klavity-clarity-repro'),
+    }
+    const tipEl = modal.querySelector('#klavity-clarity-tip') as HTMLElement | null
+    const tipTextEl = modal.querySelector('#klavity-clarity-tip-text') as HTMLElement | null
+    const nudgeEl = modal.querySelector('#klavity-nudge') as HTMLElement | null
+    const onClarityTip = callbacks.onClarityTip
+    // Host-independent cache: one AI call per distinct trimmed text. Keeps it to a single call per
+    // meaningful change even as the debounce refires on trailing keystrokes.
+    const tipCache = new Map<string, string>()
+    let tipTimer: ReturnType<typeof setTimeout> | null = null
+    let tipSeq = 0
+
+    const setChip = (el: HTMLElement | null, done: boolean, label: string) => {
+      if (!el) return
+      el.classList.toggle('done', done)
+      const mark = el.querySelector('.kl-clr-mark')
+      if (mark) mark.innerHTML = done ? icon('check', { size: 12 }) : '○'   // check icon vs empty circle
+      el.setAttribute('aria-label', (done ? 'covered: ' : 'missing: ') + label)
+    }
+    const hideTip = () => { if (tipEl) tipEl.hidden = true }
+    const renderTip = (tip: string) => {
+      if (!tipEl || !tipTextEl) return
+      tipTextEl.innerHTML = escHtml(tip) + '<span class="kl-clr-aitag">AI</span>'
+      tipEl.hidden = false
+    }
+    // Paint the instant heuristic meter + chips + label. Synchronous — runs on every keystroke.
+    const renderHeuristic = () => {
+      const text = desc.value
+      const s = scoreReportClarity(text)
+      if (clarityEl) {
+        clarityEl.hidden = text.trim().length === 0
+        clarityEl.classList.remove('l1', 'l2', 'l3')
+        clarityEl.classList.add(s.level === 'great' ? 'l3' : s.level === 'good' ? 'l2' : 'l1')
+      }
+      if (statusEl) statusEl.textContent = s.label
+      setChip(chipEls.problem, s.coverage.problem, "What's broken")
+      setChip(chipEls.expected, s.coverage.expected, 'What you expected')
+      setChip(chipEls.repro, s.coverage.repro, 'How to reproduce')
+      // The helper only nudges on Submit; typing dismisses any shown nudge so it never lingers stale.
+      if (nudgeEl && !nudgeEl.hidden) nudgeEl.hidden = true
+      // Great → the helper gets out of the way (hide any tip). Otherwise keep the last cached tip visible.
+      if (s.level === 'great') hideTip()
+    }
+    // Debounced cheap-LLM tip. Cache-first; only fires when non-trivial AND not yet Great AND wired.
+    const scheduleTip = () => {
+      if (!onClarityTip || !tipEl) return
+      if (tipTimer) clearTimeout(tipTimer)
+      tipTimer = setTimeout(async () => {
+        const text = desc.value.trim()
+        if (!shouldFetchClarityTip(text)) { hideTip(); return }
+        if (tipCache.has(text)) { renderTip(tipCache.get(text)!); return }
+        const seq = ++tipSeq
+        try {
+          const res = await onClarityTip(text)
+          if (seq !== tipSeq) return                    // a newer keystroke superseded this response
+          if (desc.value.trim() !== text) return         // text moved on while we waited
+          if (res && res.tip) { tipCache.set(text, res.tip); renderTip(res.tip) }
+        } catch { /* best-effort — a tip failure never blocks the composer */ }
+      }, 1000)
+    }
+    desc.addEventListener('input', () => { renderHeuristic(); scheduleTip() })
+    renderHeuristic()   // seed from any pre-filled text
+
+    // Soft pre-submit nudge (mockup panel D). Shown by the Submit handler when the report is still weak.
+    // "Add detail" refocuses the description; "Submit anyway" acks + re-fires Submit so it proceeds.
+    showClarityNudge = () => {
+      if (!nudgeEl) return
+      nudgeEl.hidden = false
+      try { nudgeEl.scrollIntoView({ block: 'nearest' }) } catch { /* jsdom / older browsers */ }
+    }
+    modal.querySelector('#klavity-nudge-add')?.addEventListener('click', () => {
+      if (nudgeEl) nudgeEl.hidden = true
+      try { desc.focus() } catch { /* noop */ }
+    })
+    modal.querySelector('#klavity-nudge-anyway')?.addEventListener('click', () => {
+      clarityAckd = true
+      if (nudgeEl) nudgeEl.hidden = true
+      submitBtn.click()   // re-fire Submit — clarityAckd now lets it through (never a hard block)
+    })
+  }
+
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close() })
   modal.querySelector('#klavity-x')?.addEventListener('click', () => close())
   // KLA-412: minimize hands off to the host, which persists the evidence session, closes this composer,
@@ -1465,6 +1620,10 @@ export function buildModal(
 
   submitBtn.addEventListener('click', async () => {
     if (busy || submitBtn.disabled) return // re-entrancy: ignore double-clicks / clicks while a capture runs
+    // Report-clarity soft nudge (mockup panel D). If the helper is on and the typed report is still in the
+    // weakest band, surface the nudge and stop THIS click — but NEVER hard-block: the nudge's "Submit
+    // anyway" sets clarityAckd and re-fires this handler, which then proceeds down the normal submit path.
+    if (cfg.reportClarity && !clarityAckd && shouldNudgeOnSubmit(desc.value)) { showClarityNudge(); return }
     const description = desc.value.trim()
     // PX4 #411/#425: gather the optional Title + precise kind + non-image files. Each is only included in the
     // payload when the host enabled the corresponding affordance, so a caller passing no new opts sends the

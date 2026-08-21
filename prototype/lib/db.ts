@@ -1076,6 +1076,9 @@ export async function applySchema(c: Client) {
   // KLA-94: opt-in auto-file flag. When enabled AND a finding meets the confidence/severity threshold,
   // the walk executor automatically creates a ticket via the project's connector. Default OFF (back-compat).
   if (needCol("projects", "trails_autofile_enabled")) await c.execute("ALTER TABLE projects ADD COLUMN trails_autofile_enabled INTEGER NOT NULL DEFAULT 0").catch((e) => console.warn("projects.trails_autofile_enabled ALTER skipped:", e?.message || e))
+  // Report-clarity helper (the "password-strength, for bug reports" composer coach). DEFAULT 1 (ON) — the
+  // dashboard settings UI to toggle it is a follow-up; for now every project gets the helper. Additive.
+  if (needCol("projects", "report_clarity")) await c.execute("ALTER TABLE projects ADD COLUMN report_clarity INTEGER NOT NULL DEFAULT 1").catch((e) => console.warn("projects.report_clarity ALTER skipped:", e?.message || e))
   // Thumbnail variant key: a small (≤~320px) client-generated JPEG stored alongside the full screenshot
   // so the dashboard list loads a lightweight preview via /api/screenshots/:id?thumb=1 instead of the
   // full-resolution original. Nullable — older rows and Sim/AutoSim screenshots (no client canvas) fall
@@ -1823,6 +1826,9 @@ export type ProjectRow = {
   widgetAutoCaptureErrors: boolean
   instructionsMd?: string | null
   trailsAutofileEnabled: boolean
+  // Report-clarity composer helper. DEFAULT true (column default 1). Legacy rows created before the column
+  // existed read as true too (the mapper coerces NULL/undefined → true) so the helper is on everywhere.
+  reportClarity: boolean
   siteUrl: string | null
   // KLAVITYKLA-287 (JTBD 5.8): who may manually export a ticket to an external tracker.
   // 'admins_only' (default) | 'members_export' | 'members_request'.
@@ -1864,6 +1870,8 @@ function rowToProject(x: any): ProjectRow {
     widgetAutoCaptureErrors: Number(x.widget_auto_capture_errors) === 1,
     instructionsMd: x.instructions_md != null ? String(x.instructions_md) : undefined,
     trailsAutofileEnabled: !!x.trails_autofile_enabled,
+    // Default ON: treat NULL/undefined (pre-column rows) as enabled; only an explicit 0 turns it off.
+    reportClarity: x.report_clarity == null ? true : Number(x.report_clarity) !== 0,
     siteUrl: x.site_url != null ? String(x.site_url) : null,
     exportPolicy: normalizeExportPolicy(x.export_policy),
     snapRouting: normalizeSnapRouting(x.snap_routing),

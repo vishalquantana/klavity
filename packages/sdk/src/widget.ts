@@ -499,11 +499,18 @@ async function mount() {
   // (getDisplayMedia + MediaRecorder) — hidden on iOS Safari, matching the Sharp-capture support envelope.
   let composerRecord = false
   let composerIssueTypes: Array<{ value: 'bug' | 'feature' | 'task' | 'query'; label: string; mappingLabel?: string }> | undefined
+  // Report-clarity helper (per-project, DEFAULT on). Only OFF when the server explicitly returns
+  // reportClarity:false. Server + widget ship together (orchestrator), so the field is always present.
+  let reportClarity = true
   try {
     const r = await fetchWithTimeout(cfg.backendUrl + "/api/projects/" + encodeURIComponent(cfg.projectId) + "/config")
     if (r.ok) {
       const j = await r.json()
       modalConfig = j.modalConfig || {}
+      // Report-clarity toggle rides top-level (sibling of modalConfig). Default ON: only an explicit false
+      // disables it. Merge into modalConfig so it threads through resolveModalConfig → buildModal (cfg.reportClarity).
+      reportClarity = j.reportClarity !== false
+      if (modalConfig && typeof modalConfig === "object") modalConfig.reportClarity = reportClarity
       if (j.widget) widget = { mode: j.widget.mode || "support", ctaUrl: j.widget.ctaUrl || widget.ctaUrl, reportGate: j.widget.reportGate || "anonymous" }
       if (typeof j.turnstileSiteKey === "string") turnstileSiteKey = j.turnstileSiteKey
       // Pull launcher display overrides out of modalConfig
@@ -902,6 +909,22 @@ async function mount() {
           return (data && data.match) ? data.match : null
         } catch { return null }
       },
+      // Report-clarity helper: debounced cheap-LLM tip for the in-progress description. Only wired when the
+      // project enabled the helper. The composer computes the heuristic meter/chips itself (no network) and
+      // caches by text, so this fires at most once per meaningful change. Best-effort — any failure resolves
+      // null and the meter still renders. Server route: POST /api/report/clarity.
+      onClarityTip: reportClarity ? (async (text: string) => {
+        try {
+          const res = await fetchWithTimeout(cfg.backendUrl + "/api/report/clarity", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ projectId: cfg.projectId, text }),
+          })
+          if (!res.ok) return null
+          const data = await res.json().catch(() => null)
+          return (data && typeof data.tip === "string" && data.tip) ? { tip: data.tip } : null
+        } catch { return null }
+      }) : undefined,
       requireEmail,
       // PX4 #439: pre-fill the email gate with the known reporter email so the user never retypes it.
       prefillEmail: _reporter?.email,
