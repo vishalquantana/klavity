@@ -391,6 +391,16 @@ export async function applySchema(c: Client) {
     // separate row keyed by day so the two caps never contend on the same UPDATE.
     `CREATE TABLE IF NOT EXISTS daily_freetool_spend (
        day TEXT PRIMARY KEY, reserved_usd REAL NOT NULL DEFAULT 0)`,
+    // FREE-TOOL PER-BUCKET DAY COUNTER (KLAVITYKLA-487) — the DB-backed abuse counter for the
+    // anonymous email-gated tools. One row per (bucket, UTC-day): bucket is "ip:<addr>" or
+    // "email:<addr>". `runs` powers the per-IP + per-email daily run cap (KLAV_FREETOOL_DAILY_CAP);
+    // `cost_usd` powers the per-session OpenRouter $ cap (KLAV_FREETOOL_COST_CAP_USD). DB-backed (not
+    // in-memory) so the "3 free scans today" count survives a deploy/restart. Helpers live in
+    // lib/freetool-guard.ts. Old days' rows are harmless dead weight; a periodic prune can GC them.
+    `CREATE TABLE IF NOT EXISTS freetool_usage (
+       bucket TEXT NOT NULL, day TEXT NOT NULL,
+       runs INTEGER NOT NULL DEFAULT 0, cost_usd REAL NOT NULL DEFAULT 0,
+       PRIMARY KEY (bucket, day))`,
     // PER-TENANT AI BUDGET OVERRIDES (KLAVITYKLA-314) — optional per-account override of the default
     // daily AI budget that lives UNDER the global OPS_DAILY_CAP_USD. One row per account that has a
     // custom budget; accounts WITHOUT a row fall back to the env default (KLAV_TENANT_DAILY_BUDGET_USD).

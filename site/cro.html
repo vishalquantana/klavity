@@ -99,6 +99,16 @@ body{font-family:var(--font-sans,'Inter',system-ui,sans-serif);background:#f9faf
 .btn-unlock:active{transform:scale(.97)}
 .btn-unlock:disabled{background:#9ca3af;cursor:not-allowed;transform:none}
 #unlock-status{margin-top:.5rem;font-size:.85rem;color:#6b7280}
+.email-input.bad{border-color:#dc2626;box-shadow:0 0 0 3px rgba(220,38,38,.12)}
+/* KLAVITYKLA-487 — server-side teaser lock pill + limit screen (reuses the purple --accent vars) */
+.lock-pill{display:flex;align-items:center;justify-content:center;gap:.4rem;margin-top:.5rem;padding:.6rem;border:1.5px dashed #ddd6fe;border-radius:.6rem;background:var(--accent-light);color:var(--accent-dark);font-weight:700;font-size:.85rem}
+.limit-screen{background:#fff;border-radius:1rem;border:1.5px solid #ede9fe;padding:1.75rem 1.5rem;margin-top:1.5rem;text-align:center}
+.limit-icon{width:44px;height:44px;border-radius:50%;background:#fef3c7;color:#d97706;display:flex;align-items:center;justify-content:center;margin:0 auto .75rem}
+.limit-screen h3{font-weight:700;font-size:1.05rem;margin-bottom:.35rem}
+.limit-sub{font-size:.88rem;color:#6b7280;margin-bottom:1rem}
+.turnstile-wrap{margin:1rem 0}
+.turnstile-note{font-size:.82rem;color:#6b7280;margin-bottom:.5rem}
+#turnstile-box{display:flex;justify-content:center}
 .cta-section{background:#fff;border-radius:1rem;border:1.5px solid #ede9fe;padding:1.5rem;margin-top:1.5rem;text-align:center}
 .cta-section h4{font-weight:700;font-size:1rem;margin-bottom:.4rem}
 .cta-section p{font-size:.88rem;color:#6b7280;margin-bottom:1rem}
@@ -153,6 +163,19 @@ body{font-family:var(--font-sans,'Inter',system-ui,sans-serif);background:#f9faf
           <button id="unlock-btn" class="btn-unlock">Unlock report</button>
         </div>
         <div id="unlock-status"></div>
+      </div>
+
+      <div class="limit-screen" id="limit-screen" style="display:none">
+        <div class="limit-icon" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+        </div>
+        <h3 id="limit-title">You've used your free scans today</h3>
+        <p class="limit-sub" id="limit-sub"></p>
+        <div class="turnstile-wrap" id="turnstile-wrap" style="display:none">
+          <p class="turnstile-note">Verify you're human to run one more</p>
+          <div id="turnstile-box"></div>
+        </div>
+        <a href="/onboarding" class="btn-cta">Create free account — unlimited</a>
       </div>
 
       <div class="cta-section" id="cta-section" style="display:none">
@@ -222,8 +245,16 @@ body{font-family:var(--font-sans,'Inter',system-ui,sans-serif);background:#f9faf
   const unlockBtn = document.getElementById("unlock-btn")
   const unlockStatus = document.getElementById("unlock-status")
   const ctaSection = document.getElementById("cta-section")
+  const limitScreen = document.getElementById("limit-screen")
+  const limitTitle = document.getElementById("limit-title")
+  const limitSub = document.getElementById("limit-sub")
+  const turnstileWrap = document.getElementById("turnstile-wrap")
+  const turnstileBox = document.getElementById("turnstile-box")
 
   let analysedUrl = ""
+  let revealToken = ""        // server hands this back with the teaser; traded for the full report
+  let turnstileToken = ""     // set once the visitor solves a challenge after a limit trip
+  const TOOL = "cro"
 
   function setLoading(on) {
     analyzeBtn.disabled = on
@@ -279,63 +310,121 @@ body{font-family:var(--font-sans,'Inter',system-ui,sans-serif);background:#f9faf
     const rawUrl = normalized.url
     urlInput.value = rawUrl
 
+    runScan(rawUrl)
+  })
+
+  // One friction row (title + fix). Every row is real (the locked ones are withheld SERVER-SIDE
+  // now, not blurred client-side), so what renders here is exactly what the server chose to reveal.
+  function frictionRow(f) {
+    const li = document.createElement("li")
+    li.className = "friction-item " + (f.severity || "medium")
+    li.innerHTML =
+      '<div class="friction-title">' + escHtml(f.title) +
+      ' <span class="severity-chip ' + escHtml(f.severity) + '">' + escHtml(severityLabel(f.severity)) + "</span></div>" +
+      '<div class="friction-fix">→ ' + escHtml(f.fix) + "</div>"
+    return li
+  }
+
+  async function runScan(rawUrl) {
     setLoading(true)
     resultsEl.style.display = "none"
     frictionList.innerHTML = ""
+    gate.style.display = "none"
+    limitScreen.style.display = "none"
+    ctaSection.style.display = "none"
 
-    // Fire check_started funnel event
     void fetch(BASE + "/api/track", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ event: "check_started", anonId, url: rawUrl, source, referrer }),
-    }).catch(() => {})
+    }).catch(function () {})
 
     try {
       const res = await fetch(BASE + "/api/cro/analyze", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ url: rawUrl, anonId, source, referrer }),
+        body: JSON.stringify({ url: rawUrl, anonId, source, referrer, tool: TOOL, gated: true, turnstileToken: turnstileToken || undefined }),
       })
       const data = await res.json()
-      if (!res.ok) { showError(data.error || "Something went wrong. Please try again."); setLoading(false); return }
-      analysedUrl = data.url || rawUrl
-
-      const frictions = data.frictions || []
       setLoading(false)
+      // Abuse limit tripped → sign-up nudge (+ Turnstile only when the server offers it).
+      if (data && data.limited) { showLimitScreen(data); return }
+      if (!res.ok) { showError(data.error || "Something went wrong. Please try again."); return }
 
-      if (!frictions.length) {
-        resultsHeader.textContent = "No major friction found — this page is in good shape!"
+      analysedUrl = data.url || rawUrl
+      revealToken = data.revealToken || ""
+      // Prefer the gated teaser (`visible` + `lockedCount`); fall back to a full `frictions` array
+      // for any non-gated / legacy response shape.
+      const visible = data.visible || data.frictions || []
+      const lockedCount = data.lockedCount || 0
+      resultsHeader.textContent = data.headline || ("Found " + visible.length + " friction point" + (visible.length === 1 ? "" : "s"))
+
+      if (!visible.length && !lockedCount) {
         frictionList.innerHTML = ""
+        ctaSection.style.display = "block"
       } else {
-        resultsHeader.textContent = `Found ${frictions.length} friction point${frictions.length === 1 ? "" : "s"} on ${new URL(analysedUrl).hostname}`
-        // Show first 2 fully, rest blurred (unlock gate)
-        frictions.forEach(function (f, i) {
-          const li = document.createElement("li")
-          li.className = "friction-item " + (f.severity || "medium")
-          const isVisible = i < 2
-          li.innerHTML = `
-            <div class="friction-title" style="${isVisible ? "" : "filter:blur(4px);user-select:none"}">
-              ${escHtml(f.title)}
-              <span class="severity-chip ${escHtml(f.severity)}">${escHtml(severityLabel(f.severity))}</span>
-            </div>
-            <div class="friction-fix" style="${isVisible ? "" : "filter:blur(4px);user-select:none"}">→ ${escHtml(f.fix)}</div>
-          `
-          frictionList.appendChild(li)
-        })
+        visible.forEach(function (f) { frictionList.appendChild(frictionRow(f)) })
+        if (lockedCount > 0) {
+          const pill = document.createElement("li")
+          pill.className = "lock-pill"
+          pill.innerHTML =
+            '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg> ' +
+            lockedCount + " more — enter your email to reveal"
+          frictionList.appendChild(pill)
+          gate.style.display = "block"
+        } else {
+          ctaSection.style.display = "block"
+        }
       }
-
       resultsEl.style.display = "block"
-      if (frictions.length > 2) gate.style.display = "block"
-      if (frictions.length <= 2) ctaSection.style.display = "block"
-    } catch {
+    } catch (e) {
       showError("Network error. Please check your connection and try again.")
       setLoading(false)
     }
-  })
+  }
+
+  function showLimitScreen(data) {
+    resultsEl.style.display = "block"
+    frictionList.innerHTML = ""
+    gate.style.display = "none"
+    ctaSection.style.display = "none"
+    resultsHeader.textContent = ""
+    limitTitle.textContent = "You've used your " + (data.capRuns || 3) + " free scans today"
+    limitSub.textContent = "Resets in " + (data.resetHours || 24) + "h — or get unlimited scans free with an account."
+    limitScreen.style.display = "block"
+    if (data.needTurnstile && data.turnstileSiteKey) mountTurnstile(data.turnstileSiteKey)
+    else turnstileWrap.style.display = "none"
+  }
+
+  // Cloudflare Turnstile is loaded on demand (only after a limit trips) so real users never pay for
+  // the script. When the challenge is solved we re-run the scan with the token, which the server
+  // verifies to grant exactly one more run.
+  let turnstileLoaded = false
+  function mountTurnstile(siteKey) {
+    turnstileWrap.style.display = "block"
+    function render() {
+      if (!window.turnstile) return
+      turnstileBox.innerHTML = ""
+      window.turnstile.render(turnstileBox, {
+        sitekey: siteKey,
+        callback: function (tok) { turnstileToken = tok; if (analysedUrl) runScan(analysedUrl) },
+      })
+    }
+    if (turnstileLoaded && window.turnstile) { render(); return }
+    turnstileLoaded = true
+    const s = document.createElement("script")
+    s.src = "https://challenges.cloudflare.com/turnstile/v0/api.js"
+    s.async = true
+    s.defer = true
+    s.onload = render
+    document.head.appendChild(s)
+  }
 
   unlockBtn.addEventListener("click", async function () {
     const email = (emailInput.value || "").trim()
+    emailInput.classList.remove("bad")
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      emailInput.classList.add("bad")
       unlockStatus.textContent = "Please enter a valid email."
       unlockStatus.style.color = "#dc2626"
       return
@@ -348,26 +437,28 @@ body{font-family:var(--font-sans,'Inter',system-ui,sans-serif);background:#f9faf
       const res = await fetch(BASE + "/api/cro/unlock", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email, url: analysedUrl, anonId, source, referrer }),
+        body: JSON.stringify({ email, url: analysedUrl, anonId, source, referrer, tool: TOOL, revealToken: revealToken || undefined }),
       })
       const data = await res.json()
       if (!res.ok) {
+        if (data.code === "disposable") emailInput.classList.add("bad")
         unlockStatus.textContent = data.error || "Something went wrong."
         unlockStatus.style.color = "#dc2626"
         unlockBtn.disabled = false
         unlockBtn.textContent = "Unlock report"
         return
       }
-      // Unlock all blurred items
-      document.querySelectorAll(".friction-item [style*='blur']").forEach(function (el) {
-        el.style.filter = ""
-        el.style.userSelect = ""
-      })
+      // Replace the teaser with the full server result (all findings), remove the lock pill + gate.
+      if (data.full && Array.isArray(data.full.frictions)) {
+        frictionList.innerHTML = ""
+        data.full.frictions.forEach(function (f) { frictionList.appendChild(frictionRow(f)) })
+        resultsHeader.textContent = "Found " + data.full.frictions.length + " friction point" + (data.full.frictions.length === 1 ? "" : "s")
+      }
       gate.style.display = "none"
       ctaSection.style.display = "block"
       unlockStatus.style.color = "#047857"
       unlockStatus.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px"><polyline points="20 6 9 17 4 12"></polyline></svg> Full report unlocked — check your inbox for a copy.'
-    } catch {
+    } catch (e) {
       unlockStatus.textContent = "Network error. Try again."
       unlockStatus.style.color = "#dc2626"
       unlockBtn.disabled = false

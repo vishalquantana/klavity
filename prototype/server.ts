@@ -48,6 +48,10 @@ import { assertSafeUrl } from "./lib/url-guard"
 import { safeFetch } from "./lib/safe-fetch"
 import { extConfigVersion, type ExtProjectConfig } from "./lib/ext-config-version"
 import { verifyTurnstile, turnstileEnabled, turnstileSiteKey } from "./lib/turnstile"
+import {
+  MARKETING_PRESIGNUP_PROJECT_ID, makeTeaser, validateFreetoolEmail, checkFreetoolRun,
+  bumpFreetoolRun, bumpFreetoolCost, ipBucket, freetoolDailyRunCap,
+} from "./lib/freetool-guard"
 import { screenshotUrl, authedScreenshotUrl, projectHasHeadlessAuth, defaultPreviewPersona } from "./lib/sim-preview"
 import { assembleWalk } from "./lib/sim-walk"
 import { publishRegressionEvent, listRegressionEvents, acknowledgeRegressionEvent } from "./lib/regression-events"
@@ -2183,6 +2187,29 @@ function simWalkCacheSet(url: string, body: any) {
     if (oldest !== undefined) simWalkCache.delete(oldest)
   }
   simWalkCache.set(url, { at: Date.now(), body })
+}
+// ── Free-tool reveal store (KLAVITYKLA-487) ───────────────────────────────────────────────────────
+// The email-gated scanner returns a TEASER (a subset of findings + a locked count); the FULL result
+// is withheld SERVER-SIDE (not merely CSS-blurred) and stashed here under a random reveal token. The
+// reveal endpoint (/api/cro/unlock) trades a valid email for the full body. Short TTL + small ring:
+// this is a hand-off buffer for the current session, not a cache. A lost entry just re-runs the scan.
+const REVEAL_TTL_MS = 15 * 60 * 1000
+const REVEAL_MAX = 500
+const revealStore = new Map<string, { at: number; full: any }>()
+function revealStash(full: any): string {
+  const revealToken = "rv_" + token(24)
+  if (revealStore.size >= REVEAL_MAX) {
+    const oldest = revealStore.keys().next().value
+    if (oldest !== undefined) revealStore.delete(oldest)
+  }
+  revealStore.set(revealToken, { at: Date.now(), full })
+  return revealToken
+}
+function revealTake(token: string): any | null {
+  const hit = revealStore.get(token)
+  if (!hit) return null
+  if (Date.now() - hit.at > REVEAL_TTL_MS) { revealStore.delete(token); return null }
+  return hit.full
 }
 // Cast size for a walk-through. Each Sim is one extra VISION call per uncached walk, so this is the
 // single biggest cost lever on the free tool — 3 is the smallest cast that reads as a group of
@@ -5689,6 +5716,46 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const anonId = b.anonId ? String(b.anonId).slice(0, 64) : undefined
       const source = b.source ? String(b.source).slice(0, 100) : undefined
       const referrer = b.referrer ? String(b.referrer).slice(0, 500) : undefined
+      // KLAVITYKLA-487 — email-gated "free tool" mode. The marketing pages (/cro, /bug-check) send
+      // gated:true, which turns on the after-teaser email gate + the per-IP/email abuse guardrails.
+      // Non-gated callers (existing API consumers / tests) keep the original full-result behavior;
+      // the shared free-tool $ cap already bounds their cost. An optional captured email attributes
+      // the AI spend to that lead (else the fixed marketing CAC bucket, never NULL — #486 bucket-1).
+      const gated = b.gated === true
+      const turnstileToken = b.turnstileToken ? String(b.turnstileToken).slice(0, 4096) : null
+      let capturedEmail: string | null = null
+      if (b.email != null && String(b.email).trim()) {
+        const ev = validateFreetoolEmail(b.email)
+        if (!ev.ok) return json({ error: ev.error, code: ev.code }, 400)
+        capturedEmail = ev.email
+      }
+      if (gated) {
+        const gate = await checkFreetoolRun({ ip, email: capturedEmail, turnstileToken })
+        if (!gate.allowed) {
+          return json({
+            limited: true, reason: gate.reason, runsToday: gate.runsToday, capRuns: gate.capRuns,
+            resetHours: gate.resetHours, needTurnstile: gate.needTurnstile,
+            turnstileSiteKey: gate.needTurnstile ? turnstileSiteKey() : "",
+          }, 429, { "Retry-After": String(gate.resetHours * 3600) })
+        }
+      }
+      // Free-tool teaser: how many findings/frictions to reveal before the email gate (mock = a
+      // couple visible, the rest locked behind the reveal). The full result is stashed server-side.
+      const TEASER_VISIBLE = 2
+      const headlineFor = (n: number) =>
+        mode === "qa"
+          ? (n ? `We found ${n} issue${n === 1 ? "" : "s"} on your site` : "Your site looks healthy")
+          : (n ? `Found ${n} friction point${n === 1 ? "" : "s"}` : "No major friction found")
+      // Count + cost a completed gated run, stash the full body, and return only the teaser + a
+      // reveal token. bumpFreetoolRun is fire-and-forget: a metering hiccup must never fail the scan.
+      const gatedTeaser = (fullBody: any, items: any[]) => {
+        void bumpFreetoolRun(ipBucket(ip)).catch(() => {})
+        if (capturedEmail) void bumpFreetoolRun(`email:${capturedEmail}`).catch(() => {})
+        void bumpFreetoolCost(ipBucket(ip), DEFAULT_AI_CALL_EST_USD).catch(() => {})
+        const revealToken = revealStash(fullBody)
+        const t = makeTeaser(items, { visibleCount: TEASER_VISIBLE, headline: headlineFor(items.length) })
+        return json({ ...t, url: fullBody.url, tool: fullBody.tool ?? mode, revealToken, ...(fullBody.checked ? { checked: fullBody.checked } : {}) })
+      }
       // KLAVITYKLA-342 (determinism): a user who re-runs the same scan must get the same answer.
       // Serve an identical, already-computed result for a short window instead of re-rolling the
       // model. Also makes a Reddit spike on one URL cost exactly one LLM call.
@@ -5696,6 +5763,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const cached = mode === "qa" ? analyzeCacheGet(cacheKey) : null
       if (cached) {
         void trackFunnel(db!, { event: "check_completed", anonId, url: siteUrl, source, referrer, props: { ...cached.props, cached: true } })
+        if (gated) return gatedTeaser(cached.body, cached.body.findings || [])
         return json(cached.body)
       }
 
@@ -5848,8 +5916,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             // Determinism (KLAVITYKLA-342): pin BOTH the model and the temperature. The default
             // path weight-picks a model at random per call, which alone made two identical scans
             // disagree (0 findings vs 8). /cro keeps the original random-routing behaviour.
-            ? { type: "bugcheck-analyze", email: null, model: MODEL, temperature: 0 }
-            : { type: "cro-analyze", email: null },
+            // #486 bucket-1: tag the pre-signup CAC bucket (never NULL); when a lead email is known
+            // it also attributes the spend to that email (actor_email).
+            ? { type: "bugcheck-analyze", email: capturedEmail, projectId: MARKETING_PRESIGNUP_PROJECT_ID, model: MODEL, temperature: 0 }
+            : { type: "cro-analyze", email: capturedEmail, projectId: MARKETING_PRESIGNUP_PROJECT_ID },
         ))
       } catch (e: any) {
         // The reservation above never converted into a real LLM spend — release it back to today's slice.
@@ -5886,6 +5956,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const props = { tool: "bugcheck", findings: findings.length, linksChecked: linkChecks.length, brokenLinks: verifiedBroken.length, pages: pagesScanned }
         analyzeCacheSet(cacheKey, body, props)
         void trackFunnel(db!, { event: "check_completed", anonId, url: siteUrl, source, referrer, props })
+        if (gated) return gatedTeaser(body, findings)
         return json(body)
       }
 
@@ -5897,6 +5968,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           fix: String(f.fix ?? "").slice(0, 200),
         }))
       void trackFunnel(db!, { event: "check_completed", anonId, url: siteUrl, source, referrer, props: { tool: "cro", frictions: frictions.length } })
+      if (gated) return gatedTeaser({ frictions, url: siteUrl, tool: "cro" }, frictions)
       return json({ frictions, url: siteUrl })
     }
 
@@ -5930,6 +6002,15 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       let walkUrl = String(b.url ?? "").trim()
       if (!walkUrl) return json({ error: "Enter your site URL." }, 400)
       if (!/^https?:\/\//i.test(walkUrl)) walkUrl = "https://" + walkUrl
+      // #486 bucket-1 attribution: a captured lead email (optional) tags the walk's AI spend; else
+      // the fixed marketing CAC bucket. Disposable/malformed emails are rejected before any spend.
+      let walkEmail: string | null = null
+      if (b.email != null && String(b.email).trim()) {
+        const wev = validateFreetoolEmail(b.email)
+        if (!wev.ok) return json({ error: wev.error, code: wev.code }, 400)
+        walkEmail = wev.email
+      }
+      const walkAttr = { email: walkEmail, projectId: MARKETING_PRESIGNUP_PROJECT_ID }
 
       const walkCached = simWalkCacheGet(walkUrl)
       if (walkCached) return json({ ...walkCached, cached: true })
@@ -5974,7 +6055,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const { content } = await chat(
             [{ role: "system", content: personaSiteSys(String(walkSims)) },
              { role: "user", content: "Page URL: " + walkUrl + "\n\nPage text:\n" + walkText }],
-            1600, true, { type: "persona", feature: "simwalk", email: null },
+            1600, true, { type: "persona", feature: "simwalk", ...walkAttr },
           )
           walkSpent += DEFAULT_AI_CALL_EST_USD
           castPersonas = (parseJSON(content).personas || []).slice(0, walkSims)
@@ -6002,7 +6083,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // the scene: a walk with two of three Sims talking is still a walk.
         const batches = await Promise.all(castPersonas.map(async (persona: any) => {
           try {
-            const rr = await reactToPage(persona, walkShot.imageB64, walkShot.mediaType, walkUrl, { email: null })
+            const rr = await reactToPage(persona, walkShot.imageB64, walkShot.mediaType, walkUrl, walkAttr)
             walkSpent += DEFAULT_AI_CALL_EST_USD
             return { persona, reactions: rr.data?.reactions || [] }
           } catch (e: any) {
@@ -6042,13 +6123,27 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const parsed = await readJsonLimited(req, 2_048)
       if (!parsed.ok) return json({ error: parsed.error }, parsed.status)
       const b = parsed.data as Record<string, unknown>
-      const email = String(b.email ?? "").trim().toLowerCase()
-      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || email.length > 200) return json({ error: "Enter a valid email." }, 400)
+      // KLAVITYKLA-487: server-side email validation + disposable-domain block (internal staff
+      // domains always pass). The `code` lets the client show the disposable message inline on the
+      // field vs a generic error.
+      const ev = validateFreetoolEmail(b.email)
+      if (!ev.ok) return json({ error: ev.error, code: ev.code }, 400)
+      const email = ev.email
+      // Rate-limit the reveal per-email too (not just per-IP above): a valid email shouldn't be a
+      // fresh budget for someone rotating IPs. Daily cap keyed by email+day.
+      if (!rlAllow(`crounlock:email:${email}`, Math.max(freetoolDailyRunCap() * 2, 6), 24 * 60 * 60_000)) {
+        return json({ error: "You've unlocked several reports today — please try again tomorrow or create a free account." }, 429)
+      }
       const siteUrl = b.url ? String(b.url).slice(0, 500) : undefined
       const anonId = b.anonId ? String(b.anonId).slice(0, 64) : undefined
       const source = b.source ? String(b.source).slice(0, 100) : undefined
       const referrer = b.referrer ? String(b.referrer).slice(0, 500) : undefined
       const tool: "cro" | "bugcheck" = b.tool === "bugcheck" ? "bugcheck" : "cro"
+      // KLAVITYKLA-487: trade the reveal token for the FULL result withheld server-side at scan time.
+      // Absent/expired token → { ok:true } with no `full` (backward-compatible with the old flow and
+      // with clients that already hold the result); the lead is still captured either way.
+      const revealToken = b.revealToken ? String(b.revealToken).slice(0, 64) : null
+      const full = revealToken ? revealTake(revealToken) : null
       void trackFunnel(db!, { event: "lead_captured", anonId, email, url: siteUrl, source, referrer, props: { tool } })
       // Fire-and-forget lead alert (same pattern as widget lead).
       void (async () => {
@@ -6073,7 +6168,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           console.warn("[lead-nurture] enroll/step1 failed:", e?.message || e)
         }
       })()
-      return json({ ok: true })
+      // Return the full, previously-locked result so the client can reveal it in place. `full` is
+      // omitted when there was no (unexpired) reveal token — the lead capture + email copy above
+      // still fire, so the gate never hard-walls a returning/stale-token visitor.
+      return json({ ok: true, ...(full ? { full } : {}) })
     }
 
     // POST /api/sendgrid/events — SendGrid event webhook for nurture email open/click tracking.
@@ -10667,7 +10765,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             "Respond with ONLY a JSON object, no prose: {\"persona\":{\"name\":string,\"role\":string,\"simClass\":\"user\"|\"client\",\"side\":\"external\"|\"internal\",\"initials\":string(2 uppercase letters),\"accent\":string(hex colour like #6366f1),\"summary\":string,\"insights\":[{\"kind\":\"pain\"|\"want\"|\"love\",\"text\":string,\"quote\":string}]}} with exactly 3 insights; each quote is a short first-person line this persona might actually say."
           const meB = (await sessionEmail(req)) || (await bearerEmail(req))
           if (aiDemoLimited(meB, req, server)) return json({ error: "Too many requests. Please wait and try again." }, 429, { "Retry-After": "3600" })
-          const { content, usage } = await chat([{ role: "system", content: sys }, { role: "user", content: "Brief: " + brief }], 1200, true, { type: "persona", email: meB })
+          const { content, usage } = await chat([{ role: "system", content: sys }, { role: "user", content: "Brief: " + brief }], 1200, true, { type: "persona", email: meB, projectId: meB ? null : MARKETING_PRESIGNUP_PROJECT_ID })
           const data = parseJSON(content)
           // Ensure simClass is always set: default to "user" for described Sims when the model omits it.
           if (data.persona) {
@@ -10680,12 +10778,21 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // site URL → up to 3 personas inferred from the public home page (no transcript needed)
       if (req.method === "POST" && path === "/api/persona/site") {
         try {
-          let { url: siteUrl } = await req.json()
+          let { url: siteUrl, email: siteEmailRaw } = await req.json()
           siteUrl = String(siteUrl || "").trim()
           if (!siteUrl) return json({ error: "Enter your product's URL." }, 400)
           if (!/^https?:\/\//i.test(siteUrl)) siteUrl = "https://" + siteUrl
           const meS = (await sessionEmail(req)) || (await bearerEmail(req))
           if (aiDemoLimited(meS, req, server)) return json({ error: "Too many requests. Please wait and try again." }, 429, { "Retry-After": "3600" })
+          // #486 bucket-1: attribute anonymous pre-signup runs. An authed caller keeps their own
+          // email; an anonymous caller tags the marketing CAC bucket, plus their email once captured.
+          let siteEmail: string | null = meS || null
+          if (!meS && siteEmailRaw != null && String(siteEmailRaw).trim()) {
+            const sev = validateFreetoolEmail(siteEmailRaw)
+            if (!sev.ok) return json({ error: sev.error, code: sev.code }, 400)
+            siteEmail = sev.email
+          }
+          const personaAttr = { email: siteEmail, projectId: meS ? null : MARKETING_PRESIGNUP_PROJECT_ID }
           // SSRF-guarded fetch of the public page (private/loopback hosts rejected by the guard).
           let html = ""
           try {
@@ -10718,14 +10825,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // if the retry also fails, return a friendly 422 instead of paging P1 with a 500.
           let data: any
           let usage: { input_tokens?: number; output_tokens?: number }
-          const first = await chat([{ role: "system", content: sys }, { role: "user", content: userMsg }], 1600, true, { type: "persona", email: meS })
+          const first = await chat([{ role: "system", content: sys }, { role: "user", content: userMsg }], 1600, true, { type: "persona", ...personaAttr })
           usage = first.usage
           try {
             data = parseJSON(first.content)
           } catch (parseErr: any) {
             console.warn("persona/site: parseJSON failed, retrying once:", parseErr?.message || parseErr)
             const retrySys = sys + " Return ONLY valid minified JSON with no prose, no markdown fences, and no trailing commas. Ensure the JSON is COMPLETE: every string, brace, and bracket must be closed."
-            const retry = await chat([{ role: "system", content: retrySys }, { role: "user", content: userMsg }], 2600, true, { type: "persona", email: meS })
+            const retry = await chat([{ role: "system", content: retrySys }, { role: "user", content: userMsg }], 2600, true, { type: "persona", ...personaAttr })
             usage = retry.usage
             try {
               data = parseJSON(retry.content)
@@ -10882,7 +10989,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // An LLM hiccup here lands mid-aha (homepage/onboarding step 0) — return a friendly,
           // retryable 400 instead of a raw 500 so the clients' soft-fail copy stays accurate.
           let rr: Awaited<ReturnType<typeof reactToPage>>
-          try { rr = await reactToPage(p, shot.imageB64, shot.mediaType, pvUrl, { email: mePv }) }
+          try { rr = await reactToPage(p, shot.imageB64, shot.mediaType, pvUrl, { email: mePv, projectId: mePv ? null : MARKETING_PRESIGNUP_PROJECT_ID }) }
           catch { return json({ error: "The Sim couldn't finish reading that page — try again in a moment." }, 400) }
           const reaction = (rr.data.reactions || [])[0] || null
           // Grounded visual scan: surface the SAME JPEG the persona reacted to (already captured —
