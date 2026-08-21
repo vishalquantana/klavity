@@ -24,6 +24,7 @@ import {
 } from "./trails"
 import { touchWalkHeartbeat, db, incrementUsageMeter } from "./db"
 import { checkQuotaForProject } from "./quota"
+import { recordBrowserMinutes } from "./cost-events"
 import { stepCacheKey } from "./trails-crystallize"
 import { makeFileResolver } from "./trails-attachments"
 import { decideFromVision, type VisionResolver, type VisionInput, type VisionResult, type VisionDecision } from "./trails-vision"
@@ -725,6 +726,10 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
     return { runId, verdict: "red", llmCalls: 0, steps: [], healedCount: 0, reasons, failureKind: "crash" }
   }
   const browser: Browser = bh.browser
+  // KLAVITYKLA-486: wall-clock browser start — the real AutoSim compute COGS (beyond reheal LLM).
+  // Captured here (after a successful acquire, before the walk try/finally) so it is in scope for the
+  // finally block below where the session is closed.
+  const browserStartedAt = Date.now()
   const stepSummaries: WalkStepSummary[] = []
   let walkVerdict: Verdict = "green"
   let healedCount = 0
@@ -1039,6 +1044,9 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
     // Reached whether the walk ran green, red, or threw, so it matches "guarded AutoSim flows" 1:1.
     // A browser-launch failure returns early above (before this try), so nothing is metered there.
     void incrementUsageMeter({ metric: "autosim_walk", projectId })
+    // KLAVITYKLA-486: browser-compute COGS — wall-clock minutes this run held a browser session, tagged
+    // by project_id + run_id. Fire-and-forget; measurement only, never blocks the walk.
+    void recordBrowserMinutes({ projectId, runId, minutes: (Date.now() - browserStartedAt) / 60000, meta: { browser: bh.kind } })
     // Quota signal (KLAVITYKLA-306): read-only degrade check — non-blocking, ship-dark.
     // When KLAV_ENFORCE_QUOTA is off (default) this always returns allow=true and has no effect.
     void checkQuotaForProject(projectId, "autosim_walk").then((q) => {

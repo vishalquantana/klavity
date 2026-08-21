@@ -401,6 +401,29 @@ export async function applySchema(c: Client) {
        bucket TEXT NOT NULL, day TEXT NOT NULL,
        runs INTEGER NOT NULL DEFAULT 0, cost_usd REAL NOT NULL DEFAULT 0,
        PRIMARY KEY (bucket, day))`,
+    // KLAVITYKLA-486: unified non-LLM COGS ledger. `ai_calls` covers the LLM spend; this table covers
+    // the rest of what a workspace actually costs us — S3 storage + egress, headless/Steel browser
+    // compute (AutoSim runs), and SendGrid email sends — so the superadmin P&L can reach 100% of COGS.
+    // Same shape/spirit as `ai_calls`: one row per billable event, tagged by project_id (+ run_id where
+    // it applies). `kind` ∈ {'s3_storage','s3_egress','browser_min','email_send'}; `units` is the raw
+    // measured quantity (GB, minutes, count) and `cost_usd` is units × the env rate constant applied at
+    // record time (rates live in lib/cost-events.ts, NEVER hardcoded downstream). `meta` is a small
+    // optional JSON string (e.g. {"bytes":12345,"browser":"steel:us"}). project_id is nullable only for
+    // genuinely account-less events; per-workspace COGS joins project_id → projects.account_id.
+    `CREATE TABLE IF NOT EXISTS cost_events (
+       id TEXT PRIMARY KEY,
+       created_at INTEGER NOT NULL,
+       kind TEXT NOT NULL,
+       project_id TEXT,
+       run_id TEXT,
+       units REAL NOT NULL DEFAULT 0,
+       cost_usd REAL NOT NULL DEFAULT 0,
+       meta TEXT,
+       ok INTEGER NOT NULL DEFAULT 1)`,
+    `CREATE INDEX IF NOT EXISTS cost_events_created_idx ON cost_events (created_at)`,
+    `CREATE INDEX IF NOT EXISTS cost_events_proj_idx ON cost_events (project_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS cost_events_kind_idx ON cost_events (kind, created_at)`,
+    `CREATE INDEX IF NOT EXISTS cost_events_run_idx ON cost_events (run_id) WHERE run_id IS NOT NULL`,
     // PER-TENANT AI BUDGET OVERRIDES (KLAVITYKLA-314) — optional per-account override of the default
     // daily AI budget that lives UNDER the global OPS_DAILY_CAP_USD. One row per account that has a
     // custom budget; accounts WITHOUT a row fall back to the env default (KLAV_TENANT_DAILY_BUDGET_USD).
@@ -3922,6 +3945,58 @@ export async function opsByTypeModel(): Promise<{ type: string; model: string; c
     `SELECT type, model, COALESCE(SUM(cost_usd),0) AS cost, COUNT(*) AS calls
      FROM ai_calls GROUP BY type, model ORDER BY cost DESC`)
   return r.rows.map((x: any) => ({ type: String(x.type), model: String(x.model), cost: Number(x.cost), calls: Number(x.calls) }))
+}
+
+// ── KLAVITYKLA-486: cost_events ledger (non-LLM COGS) ────────────────────────────────────────────
+export type CostEventInsert = {
+  kind: "s3_storage" | "s3_egress" | "browser_min" | "email_send"
+  projectId?: string | null
+  runId?: string | null
+  units?: number | null
+  costUsd?: number | null
+  meta?: Record<string, unknown> | null
+  ok?: boolean
+}
+
+// Raw insert primitive. Callers should go through the typed recorders in lib/cost-events.ts (which
+// apply the env rate constants) rather than calling this directly, so cost math lives in ONE place.
+export async function recordCostEvent(e: CostEventInsert): Promise<void> {
+  if (!db) return
+  const id = "ce_" + crypto.randomUUID()
+  await db.execute({
+    sql: `INSERT INTO cost_events (id,created_at,kind,project_id,run_id,units,cost_usd,meta,ok)
+          VALUES (?,?,?,?,?,?,?,?,?)`,
+    args: [id, Date.now(), e.kind, e.projectId ?? null, e.runId ?? null,
+           Number(e.units ?? 0), Number(e.costUsd ?? 0),
+           e.meta ? JSON.stringify(e.meta) : null, e.ok === false ? 0 : 1],
+  })
+}
+
+export type CostEventKindRow = { projectId: string | null; kind: string; units: number; cost: number; events: number }
+
+// Per-project × per-kind rollup over cost_events, optionally since a cutoff (epoch ms). Powers the
+// per-workspace COGS columns (storage$/browser$/email$) on the superadmin P&L.
+export async function costEventsByProjectKind(sinceMs?: number): Promise<CostEventKindRow[]> {
+  const where = typeof sinceMs === "number" ? "WHERE created_at >= ?" : ""
+  const args = typeof sinceMs === "number" ? [sinceMs] : []
+  const r = await db!.execute({
+    sql: `SELECT project_id AS pid, kind, COALESCE(SUM(units),0) AS units,
+                 COALESCE(SUM(cost_usd),0) AS cost, COUNT(*) AS events
+          FROM cost_events ${where} GROUP BY project_id, kind`,
+    args,
+  })
+  return r.rows.map((x: any) => ({
+    projectId: x.pid != null ? String(x.pid) : null, kind: String(x.kind),
+    units: Number(x.units), cost: Number(x.cost), events: Number(x.events),
+  }))
+}
+
+// Grand total of non-LLM COGS (all cost_events), optionally since a cutoff.
+export async function costEventsTotal(sinceMs?: number): Promise<number> {
+  const where = typeof sinceMs === "number" ? "WHERE created_at >= ?" : ""
+  const args = typeof sinceMs === "number" ? [sinceMs] : []
+  const r = await db!.execute({ sql: `SELECT COALESCE(SUM(cost_usd),0) AS cost FROM cost_events ${where}`, args })
+  return Number((r.rows[0] as any).cost)
 }
 
 // KLAVITYKLA-364: measured cost of a single AutoSim REPLAY. A replay makes ZERO LLM calls unless a

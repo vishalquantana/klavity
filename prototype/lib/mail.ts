@@ -1,4 +1,5 @@
 import { logOutboundEmail } from "./db"
+import { recordEmailSend } from "./cost-events"
 
 // ── Outbound-email failure alerting (KLAVITYKLA-405/406) ───────────────────────
 // A silent mail outage (e.g. the SendGrid OTP incident) must never go unnoticed.
@@ -295,6 +296,9 @@ async function sgSend(params: {
   subject: string
   content: Array<{ type: string; value: string }>
   type: string
+  // KLAVITYKLA-486: optional project attribution for email-send COGS. Null for pre-account sends
+  // (e.g. OTP) — those still count toward total email COGS but attribute to no workspace.
+  projectId?: string | null
 }): Promise<void> {
   const key = process.env.SENDGRID_API_KEY
   if (!key) {
@@ -341,6 +345,8 @@ async function sgSend(params: {
     fireMailFailure({ type: params.type, to: params.to, status: res.status, reason: errorText })
     throw new Error(`SendGrid ${res.status}: ${errorText}`)
   }
+  // KLAVITYKLA-486: email-send COGS — one billable message per recipient. Fire-and-forget.
+  void recordEmailSend({ projectId: params.projectId ?? null, count: params.to.length, meta: { type: params.type } })
 }
 
 // Email OTP via SendGrid (raw API; no SDK). Requires a VERIFIED sender.
@@ -626,6 +632,7 @@ export async function sendInstallInstructionsEmail(input: InstallInstructionsEma
       { type: "text/html", value: html },
     ],
     type: "install",
+    projectId: input.projectId, // KLAVITYKLA-486: attribute install-email COGS to the workspace
   })
 }
 

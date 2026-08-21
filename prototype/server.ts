@@ -53,6 +53,9 @@ import {
   bumpFreetoolRun, bumpFreetoolCost, ipBucket, freetoolDailyRunCap,
 } from "./lib/freetool-guard"
 import { screenshotUrl, authedScreenshotUrl, projectHasHeadlessAuth, defaultPreviewPersona } from "./lib/sim-preview"
+// KLAVITYKLA-486: COGS instrumentation + superadmin P&L.
+import { recordS3Storage, recordS3Egress, recordEmailSend } from "./lib/cost-events"
+import { buildSuperadminPL } from "./lib/superadmin"
 import { assembleWalk } from "./lib/sim-walk"
 import { publishRegressionEvent, listRegressionEvents, acknowledgeRegressionEvent } from "./lib/regression-events"
 import { buildAssertUserPrompt } from "./lib/assertion-spec"
@@ -2601,6 +2604,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (!shot) return new Response("Not found", { status: 404 })
       try {
         const { bytes, contentType } = await getObjectBytes(shot.s3Key)
+        // KLAVITYKLA-486: S3 egress COGS — we stream the private object through our box here.
+        void recordS3Egress({ projectId: shot.projectId, bytes: (bytes as any)?.byteLength ?? (bytes as any)?.length ?? 0, meta: { via: "img-permalink" } })
         return new Response(bytes, { headers: { "content-type": contentType, "cache-control": "public, max-age=86400" } })
       } catch (e: any) { console.error("img stream failed:", e?.message || e); return new Response("Not found", { status: 404 }) }
     }
@@ -4031,6 +4036,15 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             if (!resolved && !actor && reqProject && (firstParty || anonWidgetAllowed)) resolved = await projectById(reqProject)
             if (resolved) {
               const projectId = resolved.id
+              // KLAVITYKLA-486: log S3 storage COGS for everything we just uploaded (screenshots +
+              // attachments + recordings), now that the project is resolved. Fire-and-forget.
+              {
+                const storedBytes =
+                  uploaded.reduce((s, u) => s + (Number(u.bytes) || 0), 0) +
+                  attachTotalBytes +
+                  recordingDescs.reduce((s, r) => s + (Number(r.bytes) || 0), 0)
+                if (storedBytes > 0) void recordS3Storage({ projectId, bytes: storedBytes, meta: { source: "report_ingest" } })
+              }
               // Path-only URL: strip query + fragment (privacy by structure).
               let urlHost: string | null = null, urlPath: string | null = null
               if (pageUrl) { try { const u = new URL(pageUrl); urlHost = u.host; urlPath = u.pathname } catch { urlPath = pageUrl.split(/[?#]/)[0] || null } }
@@ -4788,6 +4802,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           }
           const signedKey = wantThumb ? shot.thumbKey! : shot.s3Key
           const signed = presignGet(signedKey, SCREENSHOTS.presignTtlSec)
+          // KLAVITYKLA-486: a presigned GET means the client will fetch these bytes from S3 (billed
+          // egress). Thumbs are tiny; the full image's stored size is the best estimate we have.
+          if (!wantThumb) void recordS3Egress({ projectId: shot.projectId, bytes: Number(shot.bytes) || 0, meta: { via: "presign" } })
           return json({ id: shot.id, url: signed, acl: shot.acl, thumb: wantThumb, expiresInSec: SCREENSHOTS.presignTtlSec })
         } catch (e: any) { return json(oops(e, "signurl"), 500) }
       }
@@ -6561,6 +6578,19 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       }
       const html = renderOpsAdmin({ totals, daily, byProject, byTypeModel, recent, today, replayCogs, cap: OPS_DAILY_CAP_USD, offset, modelMix, testOtp })
       return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } })
+    }
+    // ── KLAVITYKLA-486: superadmin per-workspace P&L (OPS_ADMIN_EMAILS-gated, read-only). ──
+    // Page hides itself from non-ops (404, matching /opsadmin). The API rejects non-ops with 403.
+    if (req.method === "GET" && path === "/superadmin") {
+      if (!me || !isOpsAdmin(me)) return new Response("Not found", { status: 404 }) // hide route from non-ops
+      return htmlPage(PUB + "/superadmin.html")
+    }
+    if (req.method === "GET" && path === "/api/superadmin/pl") {
+      if (!me || !isOpsAdmin(me)) return json({ error: "Forbidden" }, 403)
+      try {
+        const pl = await buildSuperadminPL()
+        return json(pl, 200, { "cache-control": "no-store" })
+      } catch (e: any) { return json(oops(e, "superadmin-pl"), 500) }
     }
     if (req.method === "GET" && path === "/api/opsadmin/cost-summary") {
       if (!me || !isOpsAdmin(me)) return new Response("Not found", { status: 404 }) // hide route from non-ops
@@ -11128,7 +11158,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (String(transcript).length > EXTRACT_TRANSCRIPT_MAX_CHARS) return json({ error: `Transcript too large (max ${EXTRACT_TRANSCRIPT_MAX_CHARS.toLocaleString()} characters). Paste the most relevant part of the call.` }, 413)
           const meE = (await sessionEmail(req)) || (await bearerEmail(req))
           if (aiDemoLimited(meE, req, server)) return json({ error: "Too many requests. Please wait and try again." }, 429, { "Retry-After": "3600" })
-          const { data, usage } = await extractPersonas(transcript, { email: meE })
+          // KLAVITYKLA-486: attribute this extract's LLM COGS to the caller's project (closes a
+          // Bucket-2 NULL gap). Anonymous callers resolve to no project → recordAiCall keeps null,
+          // and #487 already tags genuinely-anonymous free-tool calls to the marketing bucket.
+          const projE = meE ? await resolveProject(meE, url.searchParams.get("project")) : null
+          const { data, usage } = await extractPersonas(transcript, { email: meE, projectId: projE?.id })
           return json({ personas: data.personas || [], usage })
         } catch (e: any) {
           // Surface a more actionable message for the two most common failure modes:
@@ -11200,7 +11234,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             }
           }
 
-          const { data, usage } = await reactToPage(personaWithMemory, imageB64, mediaType || "image/png", pageUrl || "", { email: meRx })
+          // KLAVITYKLA-486: thread the already-resolved projRx so this react's LLM COGS is attributed
+          // to the workspace (closes a Bucket-2 NULL gap). projRx was resolved above at /api/react.
+          const { data, usage } = await reactToPage(personaWithMemory, imageB64, mediaType || "image/png", pageUrl || "", { email: meRx, projectId: projRx?.id })
           const reactions = data.reactions || []
           // Resolve each reaction's citedTraitIds → {quote, speaker, sourceDate, transcriptId, recurrence} so the
           // studio review→feedback path can carry citations forward.

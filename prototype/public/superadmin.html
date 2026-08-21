@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="robots" content="noindex,nofollow" />
+<title>Superadmin P&amp;L · Klavity</title>
+<script>(function(){try{var t=localStorage.getItem('klav-theme');if(t==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();</script>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<link rel="stylesheet" href="/fonts/fonts.css" />
+<link rel="stylesheet" href="/tokens.css" />
+<script src="/icons.generated.js"></script>
+<style>
+:root{--ink:#f5f3ee;--ink-2:#ffffff;--ink-3:#efeae0;--paper:#19140f;--paper-dim:#574f45;--paper-faint:#706560;--indigo:#6366f1;--indigo-deep:#4f46e5;--amber:#d98324;--rose:#db2777;--green:#0f9d6b;--line:rgba(25,20,15,.12);
+--display:'Fraunces',serif;--body:'Hanken Grotesk',system-ui,sans-serif;--mono:'JetBrains Mono',monospace}
+[data-theme="dark"]{--ink:#0c0a08;--ink-2:#15110d;--ink-3:#1e1813;--paper:#f3ece1;--paper-dim:#b3a896;--paper-faint:#9b8f7e;--indigo:#8b8bf5;--indigo-deep:#6366f1;--amber:#e8a24a;--rose:#e8849a;--green:#9fd6a0;--line:rgba(243,236,225,.11)}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--ink);color:var(--paper);font-family:var(--body);line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:36px 22px 80px}
+h1{font-family:var(--display);font-size:30px;font-weight:600;letter-spacing:-.01em;margin-bottom:4px}
+.sub{color:var(--paper-faint);font-size:13px;margin-bottom:26px}
+.sub .mono{font-family:var(--mono);font-size:11px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:22px}
+.card{background:var(--ink-2);border:1px solid var(--line);border-radius:18px;padding:20px}
+.card .k{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--paper-faint);display:flex;align-items:center;gap:6px;margin-bottom:10px}
+.card .n{font-family:var(--display);font-size:28px;font-weight:600;font-variant-numeric:tabular-nums}
+.card .sub2{font-size:12px;color:var(--paper-faint);margin-top:6px}
+.pos{color:var(--green)}.neg{color:var(--rose)}
+.cac-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px;margin-top:14px}
+.cac-grid .mini .mk{font-family:var(--mono);font-size:9px;letter-spacing:.07em;text-transform:uppercase;color:var(--paper-faint)}
+.cac-grid .mini .mn{font-size:18px;font-weight:600;font-variant-numeric:tabular-nums;margin-top:3px}
+.panel{background:var(--ink-2);border:1px solid var(--line);border-radius:18px;padding:22px;margin-bottom:22px}
+.panel h2{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--paper-dim);margin-bottom:12px;display:flex;align-items:center;gap:8px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--paper-faint);font-weight:600;cursor:pointer;user-select:none}
+th.r,td.r{text-align:right;font-variant-numeric:tabular-nums}
+th.sorted{color:var(--indigo)}
+tbody tr:hover{background:var(--ink-3)}
+.wsname{font-weight:600}.wsown{color:var(--paper-faint);font-size:11px;font-family:var(--mono)}
+.pill{font-family:var(--mono);font-size:9px;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:20px;border:1px solid var(--line);color:var(--paper-dim)}
+.pill.free{color:var(--amber)}
+.free0{color:var(--paper-faint);font-style:italic}
+.icon{vertical-align:-2px}
+.err{color:var(--rose);font-size:14px;padding:20px}
+.muted{color:var(--paper-faint)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Superadmin · Per-Workspace P&amp;L</h1>
+  <div class="sub" id="sub">Revenue minus COGS per workspace. <span class="mono" id="gen"></span></div>
+
+  <div class="cards" id="summary"></div>
+
+  <div class="panel">
+    <h2 id="cacHead">Customer Acquisition Cost</h2>
+    <div class="cac-grid" id="cac"></div>
+  </div>
+
+  <div class="panel">
+    <h2 id="wsHead">Workspaces</h2>
+    <div style="overflow-x:auto">
+      <table id="tbl">
+        <thead><tr id="thead"></tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  function ic(name, size){ return (window.kicon ? window.kicon(name, { size: size || 13 }) : ""); }
+  function money(n){
+    var v = Number(n) || 0;
+    var neg = v < 0;
+    var s = "$" + Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return neg ? "-" + s : s;
+  }
+  function num(n){ return (Number(n) || 0).toLocaleString(); }
+  function pct(n){ return (Number(n) || 0).toFixed(1) + "%"; }
+  function esc(s){ return String(s == null ? "" : s).replace(/[&<>"]/g, function(c){ return { "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;" }[c]; }); }
+
+  var state = { rows: [], sortKey: "margin", sortDir: -1 };
+
+  var COLS = [
+    { key: "name", label: "Workspace / owner", num: false },
+    { key: "planLabel", label: "Plan", num: false },
+    { key: "mrr", label: "MRR", num: true },
+    { key: "llmCost", label: "LLM $", num: true },
+    { key: "storageCost", label: "Storage $", num: true },
+    { key: "browserCost", label: "Browser $", num: true },
+    { key: "emailCost", label: "Email $", num: true },
+    { key: "totalCogs", label: "Total COGS", num: true },
+    { key: "margin", label: "Margin", num: true },
+    { key: "usage", label: "Usage (Sims / Runs+Steps / Reports / Rec min / Seats)", num: false }
+  ];
+
+  function renderSummary(d){
+    var s = d.summary;
+    var mp = s.grossMargin >= 0 ? "pos" : "neg";
+    var cac = d.cac.cac == null ? "n/a" : money(d.cac.cac);
+    var cards = [
+      { k: ic("radio-tower") + "Total MRR", n: money(s.mrr), sub: num(s.workspaces) + " workspaces" },
+      { k: ic("zap") + "Total COGS", n: money(s.cogs), sub: "LLM + storage + browser + email" },
+      { k: ic("sprout") + "Gross Margin", n: "<span class='" + mp + "'>" + money(s.grossMargin) + "</span>", sub: "<span class='" + mp + "'>" + pct(s.grossMarginPct) + "</span> of MRR" },
+      { k: ic("user") + "CAC", n: cac, sub: num(d.cac.convertedSignups) + " signups from free tools" }
+    ];
+    document.getElementById("summary").innerHTML = cards.map(function(c){
+      return "<div class='card'><div class='k'>" + c.k + "</div><div class='n'>" + c.n + "</div><div class='sub2'>" + c.sub + "</div></div>";
+    }).join("");
+  }
+
+  function renderCac(d){
+    var c = d.cac;
+    var minis = [
+      { k: "CAC (all-time)", n: c.cac == null ? "n/a" : money(c.cac) },
+      { k: "CAC (30d spend)", n: c.cac30d == null ? "n/a" : money(c.cac30d) },
+      { k: "Free-tool spend (all-time)", n: money(c.freeToolSpendAllTime) },
+      { k: "Free-tool spend (30d)", n: money(c.freeToolSpend30d) },
+      { k: "Leads captured", n: num(c.leadsCaptured) + " (" + num(c.leadsCaptured30d) + " in 30d)" },
+      { k: "Converted signups", n: num(c.convertedSignups) },
+      { k: "Lead to signup", n: pct(c.leadToSignupPct) }
+    ];
+    document.getElementById("cac").innerHTML = minis.map(function(m){
+      return "<div class='mini'><div class='mk'>" + esc(m.k) + "</div><div class='mn'>" + m.n + "</div></div>";
+    }).join("");
+  }
+
+  function renderHead(){
+    document.getElementById("thead").innerHTML = COLS.map(function(col){
+      var cls = (col.num ? "r" : "") + (col.key === state.sortKey ? " sorted" : "");
+      var arrow = col.key === state.sortKey ? (state.sortDir < 0 ? " ▼" : " ▲") : "";
+      return "<th class='" + cls + "' data-key='" + col.key + "'>" + esc(col.label) + arrow + "</th>";
+    }).join("");
+    var ths = document.getElementById("thead").querySelectorAll("th");
+    ths.forEach(function(th){
+      th.addEventListener("click", function(){
+        var k = th.getAttribute("data-key");
+        if (k === "usage") return;
+        if (state.sortKey === k) state.sortDir = -state.sortDir;
+        else { state.sortKey = k; state.sortDir = (k === "name" || k === "planLabel") ? 1 : -1; }
+        renderRows();
+        renderHead();
+      });
+    });
+  }
+
+  function renderRows(){
+    var rows = state.rows.slice();
+    var k = state.sortKey, dir = state.sortDir;
+    rows.sort(function(a, b){
+      var av = a[k], bv = b[k];
+      if (typeof av === "string") return dir * String(av).localeCompare(String(bv));
+      return dir * ((Number(av) || 0) - (Number(bv) || 0));
+    });
+    document.getElementById("tbody").innerHTML = rows.map(function(w){
+      var mcls = w.margin >= 0 ? "pos" : "neg";
+      var mrrCell = w.snapOnlyOrFree
+        ? "<span class='free0'>$0 · Snap/free</span>"
+        : money(w.mrr);
+      var u = w.usage;
+      var usageTxt = num(u.sims) + " / " + num(u.autosimRuns) + "+" + num(u.autosimSteps) + " / " + num(u.reports) + " / " + num(u.recordingMinutes) + " / " + num(u.seats);
+      return "<tr>"
+        + "<td><div class='wsname'>" + esc(w.name) + "</div><div class='wsown'>" + esc(w.owner) + "</div></td>"
+        + "<td><span class='pill" + (w.snapOnlyOrFree ? " free" : "") + "'>" + esc(w.planLabel) + "</span></td>"
+        + "<td class='r'>" + mrrCell + "</td>"
+        + "<td class='r'>" + money(w.llmCost) + "</td>"
+        + "<td class='r'>" + money(w.storageCost) + "</td>"
+        + "<td class='r'>" + money(w.browserCost) + "</td>"
+        + "<td class='r'>" + money(w.emailCost) + "</td>"
+        + "<td class='r'>" + money(w.totalCogs) + "</td>"
+        + "<td class='r " + mcls + "'>" + money(w.margin) + "</td>"
+        + "<td class='muted'>" + usageTxt + "</td>"
+        + "</tr>";
+    }).join("");
+  }
+
+  function boot(d){
+    state.rows = d.workspaces || [];
+    document.getElementById("cacHead").innerHTML = ic("user") + " Customer Acquisition Cost";
+    document.getElementById("wsHead").innerHTML = ic("users") + " Workspaces · sorted by margin";
+    var r = d.rates || {};
+    document.getElementById("gen").textContent = "generated " + new Date(d.generatedAt).toLocaleString()
+      + " · rates: storage $" + r.s3GbMonthUsd + "/GB-mo, egress $" + r.s3EgressGbUsd + "/GB, browser $" + r.browserMinUsd + "/min, email $" + r.emailSendUsd + "/send";
+    renderSummary(d);
+    renderCac(d);
+    renderHead();
+    renderRows();
+  }
+
+  fetch("/api/superadmin/pl", { credentials: "include" })
+    .then(function(res){
+      if (res.status === 403) throw new Error("Forbidden — this page is restricted to ops admins.");
+      if (!res.ok) throw new Error("Failed to load P&L (" + res.status + ")");
+      return res.json();
+    })
+    .then(boot)
+    .catch(function(e){
+      document.querySelector(".wrap").innerHTML = "<div class='err'>" + esc(e.message || String(e)) + "</div>";
+    });
+})();
+</script>
+</body>
+</html>
