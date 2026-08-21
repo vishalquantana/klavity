@@ -3097,6 +3097,22 @@ export async function updateFeedbackTracker(id: string, planeIssueKey: string | 
   })
 }
 
+// KLAVITYKLA-524: advance an autofiled human Snap from 'new' → 'open' once its external ticket
+// is SUCCESSFULLY created, so the report leaves "New Reports" and shows up in the Tickets list
+// (listTicketsPaginated excludes status='new'). Guarded WHERE status='new':
+//   • idempotent — a report already advanced (or later triage-accepted) is a no-op, so it never
+//     fights the #470 export idempotency guard or double-advances;
+//   • never downgrades — urgent/high reports that start life 'open', or anything already in_progress/
+//     closed, are left exactly as-is.
+// Returns true iff this call actually flipped the row (i.e. it was 'new').
+export async function advanceFeedbackToOpenIfNew(feedbackId: string, projectId: string): Promise<boolean> {
+  const r = await db!.execute({
+    sql: "UPDATE feedback SET status='open' WHERE id=? AND project_id=? AND status='new'",
+    args: [feedbackId, projectId],
+  })
+  return (r.rowsAffected ?? 0) > 0
+}
+
 export type ActivityInsert = {
   projectId: string; type: string; actorEmail?: string | null; simId?: string | null
   urlHost?: string | null; urlPath?: string | null

@@ -142,6 +142,44 @@ async function submitHumanSnap(desc: string, extra: Record<string, string> = {})
   for (const [k, v] of Object.entries(extra)) fd.set(k, v)
   return fetch(`${BASE}/api/feedback`, { method: "POST", headers: authHeader(ADMIN_SID), body: fd })
 }
+async function feedbackStatus(fid: string): Promise<string | null> {
+  const r = await rawClient.execute({ sql: "SELECT status FROM feedback WHERE id=?", args: [fid] })
+  return r.rows.length ? String((r.rows[0] as any).status) : null
+}
+async function waitForStatus(fid: string, target: string, waitMs = 4000): Promise<string | null> {
+  const deadline = Date.now() + waitMs
+  let last: string | null = null
+  while (Date.now() < deadline) {
+    last = await feedbackStatus(fid)
+    if (last === target) return last
+    await Bun.sleep(60)
+  }
+  return last
+}
+async function ticketsContain(fid: string): Promise<boolean> {
+  const r = await api("GET", `/api/projects/${PROJECT_ID}/tickets`, null, ADMIN_SID)
+  const d = await r.json()
+  return Array.isArray(d.tickets) && d.tickets.some((t: any) => t.id === fid)
+}
+// A high-entropy, mutually-dissimilar description per submit. The suggested-bug dedup collapses
+// reports whose title/observation trigram similarity ≥ 0.82 (lib/dedup.ts), and it looks across the
+// recent 50 rows regardless of URL — so near-identical test descriptions would merge into one row and
+// silently defeat the per-report assertions. Two UUIDs keep any two of these well under threshold.
+function uniqueDesc(label: string): string {
+  return `${label} ${crypto.randomUUID()} ${crypto.randomUUID()}`
+}
+// Test isolation: auto-copy connectors accumulate on the shared project across tests, so a fresh
+// human Snap would fan out to leftover connectors (with stale/relaunched receivers) and pollute the
+// per-test export assertions. Remove every existing connector so each KLA-524 test files only to the
+// single connector it just created.
+async function clearConnectors() {
+  const r = await api("GET", `/api/projects/${PROJECT_ID}/connectors`, null, ADMIN_SID)
+  const d = await r.json().catch(() => ({}))
+  const list: any[] = Array.isArray(d.connectors) ? d.connectors : []
+  for (const c of list) {
+    await api("DELETE", `/api/projects/${PROJECT_ID}/connectors/${c.id}`, null, ADMIN_SID)
+  }
+}
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
@@ -285,3 +323,142 @@ test("autofile mode: a report with source=autosim does NOT auto-file even with n
     expect(hits).toBe(0)
   } finally { recv.stop(true) }
 }, 15000)
+
+// ── KLAVITYKLA-524: autofile success advances new → open so the Snap appears in Tickets ──────────
+
+// A SUCCESSFUL autofile in autofile mode moves the report out of "New Reports" (status='new') into the
+// Tickets list (status='open', which listTicketsPaginated includes). The "Filed to Jira" tracker key is
+// still recorded on the row.
+test("KLA-524 autofile success: advances new→open and the Snap shows in the Tickets list", async () => {
+  const recv = Bun.serve({ port: 0, fetch() { return new Response(JSON.stringify({ id: "KLA524-OK" }), { status: 201 }) } })
+  try {
+    await api("POST", `/api/projects/${PROJECT_ID}/snap-routing`, { snapRouting: "autofile" }, ADMIN_SID)
+    await clearConnectors()
+    const cr = await api("POST", `/api/projects/${PROJECT_ID}/connectors`, {
+      type: "webhook", name: "KLA524 OK Webhook",
+      config: { url: `http://localhost:${recv.port}/hook` }, autoCopy: true,
+    }, ADMIN_SID)
+    expect(cr.status).toBe(201)
+    const cid = (await cr.json()).connector.id
+
+    const fr = await submitHumanSnap(uniqueDesc(`kla524-ok`), { page_url: `https://kla524.example/ok/${ts}` })
+    expect(fr.ok).toBe(true)
+    const fid = (await fr.json()).id
+    expect(fid).toBeTruthy()
+
+    // The report starts life un-triaged ('new')...
+    // ...then the successful external file advances it to 'open'.
+    const landed = await waitForExport(cid, 1, 5000)
+    expect(landed.length).toBe(1)
+    expect(String(landed[0].status)).toBe("ok")
+
+    const status = await waitForStatus(fid, "open", 5000)
+    expect(status).toBe("open")
+
+    // It now appears in the Tickets list (which excludes status='new').
+    expect(await ticketsContain(fid)).toBe(true)
+  } finally { recv.stop(true) }
+}, 15000)
+
+// A FAILED autofile (connector create errors) must NOT falsely mark the report filed/open — it stays
+// 'new' so it remains in New Reports for manual retry, and is absent from the Tickets list.
+test("KLA-524 autofile failure: keeps status='new' and stays out of the Tickets list", async () => {
+  const recv = Bun.serve({ port: 0, fetch() { return new Response("upstream boom", { status: 500 }) } })
+  try {
+    await api("POST", `/api/projects/${PROJECT_ID}/snap-routing`, { snapRouting: "autofile" }, ADMIN_SID)
+    await clearConnectors()
+    const cr = await api("POST", `/api/projects/${PROJECT_ID}/connectors`, {
+      type: "webhook", name: "KLA524 Fail Webhook",
+      config: { url: `http://localhost:${recv.port}/hook` }, autoCopy: true,
+    }, ADMIN_SID)
+    expect(cr.status).toBe(201)
+    const cid = (await cr.json()).connector.id
+
+    const fr = await submitHumanSnap(uniqueDesc(`kla524-fail`), { page_url: `https://kla524.example/fail/${ts}` })
+    expect(fr.ok).toBe(true)
+    const fid = (await fr.json()).id
+    expect(fid).toBeTruthy()
+
+    // The autofile attempt is recorded as a FAILED export...
+    const landed = await waitForExport(cid, 1, 5000)
+    expect(landed.length).toBe(1)
+    expect(String(landed[0].status)).toBe("failed")
+
+    // ...and because the create failed, status must NOT advance — stays 'new'.
+    await Bun.sleep(600)
+    expect(await feedbackStatus(fid)).toBe("new")
+    expect(await ticketsContain(fid)).toBe(false)
+  } finally { recv.stop(true) }
+}, 15000)
+
+// REVIEW mode: even with an enabled auto-copy connector, a human Snap must stay 'new' (manual transfer),
+// so the status advance is strictly autofile-mode-only.
+test("KLA-524 review mode: keeps status='new' even with a connector configured", async () => {
+  const recv = Bun.serve({ port: 0, fetch() { return new Response(JSON.stringify({ id: "KLA524-RV" }), { status: 201 }) } })
+  try {
+    await api("POST", `/api/projects/${PROJECT_ID}/snap-routing`, { snapRouting: "review" }, ADMIN_SID)
+    await clearConnectors()
+    const cr = await api("POST", `/api/projects/${PROJECT_ID}/connectors`, {
+      type: "webhook", name: "KLA524 Review Webhook",
+      config: { url: `http://localhost:${recv.port}/hook` }, autoCopy: true,
+    }, ADMIN_SID)
+    expect(cr.status).toBe(201)
+    const cid = (await cr.json()).connector.id
+
+    const fr = await submitHumanSnap(uniqueDesc(`kla524-review`), { page_url: `https://kla524.example/review/${ts}` })
+    expect(fr.ok).toBe(true)
+    const fid = (await fr.json()).id
+    expect(fid).toBeTruthy()
+
+    // No autofile on submit in review mode → no export, status untouched.
+    await Bun.sleep(900)
+    expect((await exportRows(cid)).length).toBe(0)
+    expect(await feedbackStatus(fid)).toBe("new")
+    expect(await ticketsContain(fid)).toBe(false)
+
+    // Restore autofile for any subsequent tests.
+    await api("POST", `/api/projects/${PROJECT_ID}/snap-routing`, { snapRouting: "autofile" }, ADMIN_SID)
+  } finally { recv.stop(true) }
+}, 15000)
+
+// IDEMPOTENCY: an autofiled Snap that is later re-triaged (new→open again) must NOT create a second
+// external ticket (the #470 findPriorSuccessfulExport guard) and must not error — it just stays 'open'.
+test("KLA-524 idempotency: autofiled-then-triage-accepted files exactly once and stays open", async () => {
+  let hits = 0
+  const recv = Bun.serve({ port: 0, fetch() { hits++; return new Response(JSON.stringify({ id: "KLA524-IDEM" }), { status: 201 }) } })
+  try {
+    await api("POST", `/api/projects/${PROJECT_ID}/snap-routing`, { snapRouting: "autofile" }, ADMIN_SID)
+    await clearConnectors()
+    const cr = await api("POST", `/api/projects/${PROJECT_ID}/connectors`, {
+      type: "webhook", name: "KLA524 Idem Webhook",
+      config: { url: `http://localhost:${recv.port}/hook` }, autoCopy: true,
+    }, ADMIN_SID)
+    expect(cr.status).toBe(201)
+    const cid = (await cr.json()).connector.id
+
+    const fr = await submitHumanSnap(uniqueDesc(`kla524-idem`), { page_url: `https://kla524.example/idem/${ts}` })
+    expect(fr.ok).toBe(true)
+    const fid = (await fr.json()).id
+    expect(fid).toBeTruthy()
+
+    // First autofile: one external ticket, advanced to open.
+    const landed = await waitForExport(cid, 1, 5000)
+    expect(landed.length).toBe(1)
+    expect(await waitForStatus(fid, "open", 5000)).toBe("open")
+    expect(hits).toBe(1)
+
+    // Re-triage: send it back to 'new' then accept again (new→open) to exercise the triage-accept
+    // auto-copy path against the already-filed ticket.
+    const back = await api("PATCH", `/api/projects/${PROJECT_ID}/tickets/bulk`, { ticketIds: [fid], status: "new" }, ADMIN_SID)
+    expect(back.status).toBe(200)
+    const accept = await api("PATCH", `/api/projects/${PROJECT_ID}/tickets/bulk`, { ticketIds: [fid], status: "open" }, ADMIN_SID)
+    expect(accept.status).toBe(200)
+
+    // The #470 idempotency guard means NO second external ticket is created, no error, still open.
+    await Bun.sleep(900)
+    expect(hits).toBe(1)
+    expect((await exportRows(cid)).filter(r => String(r.status) === "ok").length).toBe(1)
+    expect(await feedbackStatus(fid)).toBe("open")
+    expect(await ticketsContain(fid)).toBe(true)
+  } finally { recv.stop(true) }
+}, 20000)
