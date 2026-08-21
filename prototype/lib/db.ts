@@ -3400,18 +3400,43 @@ export async function findFeedbackByIssueKey(projectId: string, issueKey: string
   return r.rows.length ? { id: String((r.rows[0] as any).id) } : null
 }
 
+// #543 completeness (Codex review): ONE shared resolver for a report's effective display/notification
+// title. Consumers historically derived the title from `observation`, which is wrong for MANUAL tickets
+// (title lives in its own `title` column, body in `observation`) — so they showed the body as the title
+// and missed the real title in dedup/known-issue matching. Resolution order:
+//   explicit `title` column → suggested-bug title → first line of `observation` → "Untitled report".
+// Accepts either camelCase (mapped rows: fb.title / fb.suggestedBug / fb.observation) or snake_case /
+// raw-row shapes (title / suggested_bug_json / observation). Pure + DB-free.
+export function effectiveTicketTitle(fb: any): string {
+  if (!fb) return "Untitled report"
+  const explicit = typeof fb.title === "string" ? fb.title.trim() : ""
+  if (explicit) return explicit
+  let sb: any = fb.suggestedBug ?? fb.suggested_bug ?? null
+  if (sb == null) {
+    const raw = fb.suggestedBugJson ?? fb.suggested_bug_json
+    if (typeof raw === "string" && raw) { try { sb = JSON.parse(raw) } catch { sb = null } }
+  }
+  const sbTitle = sb && typeof sb.title === "string" ? sb.title.trim() : ""
+  if (sbTitle) return sbTitle
+  const obs = fb.observation != null ? String(fb.observation) : ""
+  const firstLine = (obs.split("\n")[0] || "").trim()
+  if (firstLine) return firstLine
+  return "Untitled report"
+}
+
 export async function listRecentFeedbackForDedup(projectId: string, limit = 50): Promise<Array<{ id: string; title: string; observation: string }>> {
   const r = await db!.execute({
-    sql: `SELECT id, observation, suggested_bug_json FROM feedback
+    // #543 completeness: SELECT the `title` column so a MANUAL ticket (distinct title, unrelated body)
+    // is matched on its real title, not the body — effectiveTicketTitle prefers the title column.
+    sql: `SELECT id, title, observation, suggested_bug_json FROM feedback
           WHERE project_id=?
           ORDER BY created_at DESC LIMIT ?`,
     args: [projectId, limit],
   })
   return r.rows.map((x: any) => {
-    let title = ""
-    try { title = String(JSON.parse(x.suggested_bug_json || "{}")?.title || "") } catch { title = "" }
     const observation = x.observation != null ? String(x.observation) : ""
-    return { id: String(x.id), title: title || observation.slice(0, 120), observation }
+    const title = effectiveTicketTitle({ title: x.title, suggested_bug_json: x.suggested_bug_json, observation })
+    return { id: String(x.id), title, observation }
   })
 }
 

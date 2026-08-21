@@ -285,3 +285,71 @@ test("#541 manual create with a valid assignee succeeds (201)", async () => {
   const d = await r.json()
   expect(d.ok).toBe(true)
 })
+
+// #543 completeness (Codex review): a MANUAL ticket keeps its subject in the `title` column and its body
+// in `observation`. Both DEDUP (intake collapse) and KNOWN-ISSUE (pre-submit ack) must match on that real
+// TITLE. To prove the fix and defeat any observation-fallback, the ticket's body is DELIBERATELY unrelated
+// to the query prose — under the old code (title derived from observation/suggested-bug only) the query
+// would have matched only the body and thus MISSED entirely.
+test("#543 a manual ticket is matched by dedup AND known-issue on its TITLE (unrelated body cannot pass)", async () => {
+  // Distinctive title tokens; a body about a completely different subject.
+  const TITLE = `GAMMA quarterly export spreadsheet download stalls at ninety percent`
+  const BODY = `DELTA unrelated note about tooltip color contrast on the settings avatar menu`
+  const c = await req("POST", `/api/projects/${PROJ}/tickets`, {
+    title: TITLE, body: BODY, priority: "high", assignee: "dev@team.local",
+  })
+  expect(c.status).toBe(201)
+  const { ticketId } = await c.json()
+  expect(ticketId).toBeTruthy()
+
+  // (1) KNOWN-ISSUE: pre-submit lookup with prose that matches the TITLE (not the body) resolves to THIS
+  // ticket. Cross-origin widget call, mirroring the composer.
+  const kc = await fetch(`${BASE}/api/widget/known-check`, {
+    method: "POST",
+    headers: { "content-type": "application/json", Origin: "https://customer.example" },
+    body: JSON.stringify({ project: PROJ, text: TITLE, url: "https://customer.example/billing" }),
+  })
+  expect(kc.status).toBe(200)
+  const kd = await kc.json()
+  expect(kd.match).toBeTruthy()
+  expect(kd.match.feedbackId).toBe(ticketId)
+  // Proof this is the TITLE driving the hit: the ticket's observation holds only the unrelated BODY, so
+  // under the pre-fix code (which matched observation / suggested-bug title only) the TITLE query above
+  // would have MISSED. The match therefore requires the title column now participating.
+
+  // (2) DEDUP: a fresh human report whose description equals the TITLE collapses into THIS ticket
+  // (title-vs-title ≥ 0.82), even though its text is unrelated to the ticket body.
+  const fd = new FormData()
+  fd.set("description", TITLE)
+  fd.set("project_id", PROJ)
+  const sub = await fetch(`${BASE}/api/feedback`, {
+    method: "POST",
+    headers: { Cookie: `klav_session=${SID}` },   // authenticated project member
+    body: fd,
+  })
+  expect(sub.ok).toBe(true)
+  const sd = await sub.json()
+  expect(sd.deduped).toBe(true)
+  expect(sd.id).toBe(ticketId)
+})
+
+// #543 completeness (Codex review): a BODYLESS manual ticket (Title only, empty Description) must store
+// `observation` as NULL/empty — NOT the title re-duplicated into the body. Previously the route stored
+// `bodyText || title`, so the body echoed the title on the exported ticket.
+test("#543 bodyless manual ticket stores NULL/empty observation (title not duplicated into body)", async () => {
+  const c = await req("POST", `/api/projects/${PROJ}/tickets`, {
+    title: "EPSILON standalone title with no description body",
+    priority: "low",
+    assignee: "dev@team.local",
+  })
+  expect(c.status).toBe(201)
+  const { ticketId } = await c.json()
+  expect(ticketId).toBeTruthy()
+
+  const row = await raw.execute({ sql: "SELECT title, observation FROM feedback WHERE id=?", args: [ticketId] })
+  const stored = row.rows[0] as any
+  expect(String(stored.title)).toBe("EPSILON standalone title with no description body")
+  // observation must be NULL (bodyless) — never a copy of the title.
+  expect(stored.observation == null || String(stored.observation) === "").toBe(true)
+  expect(stored.observation).not.toBe(stored.title)
+})

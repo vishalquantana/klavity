@@ -10,6 +10,7 @@
 import type { Client } from "@libsql/client"
 import { lexicalSim, normalizeReportText } from "./dedup"
 import { buildRecurrenceMemory, recurrenceImpact } from "./recurrence-memory"
+import { effectiveTicketTitle } from "./db"
 
 export type KnownIssueMatch = {
   feedbackId: string
@@ -63,7 +64,10 @@ export async function findKnownIssue(
   // report's title + observation. Dismissed ("won't fix") items are excluded — acknowledging them as
   // "known" would be misleading to the reporter.
   const r = await c.execute({
-    sql: `SELECT id, observation, suggested_bug_json, status
+    // #543 completeness (Codex review): SELECT the `title` column so a MANUAL ticket's real title (its own
+    // column, with the body in `observation`) participates in known-issue matching — otherwise the typed
+    // prose only ever matched the body and known manual tickets were missed.
+    sql: `SELECT id, title, observation, suggested_bug_json, status
           FROM feedback
           WHERE project_id=? AND COALESCE(status,'') != 'dismissed'
           ORDER BY created_at DESC LIMIT ?`,
@@ -72,12 +76,20 @@ export async function findKnownIssue(
 
   let best: { id: string; title: string; status: string; score: number } | null = null
   for (const row of r.rows as any[]) {
-    let title = ""
-    try { title = String(JSON.parse(row.suggested_bug_json || "{}")?.title || "") } catch { title = "" }
+    const explicitTitle = row.title != null ? String(row.title) : ""
+    let sbTitle = ""
+    try { sbTitle = String(JSON.parse(row.suggested_bug_json || "{}")?.title || "") } catch { sbTitle = "" }
     const observation = row.observation != null ? String(row.observation) : ""
-    const score = Math.max(lexicalSim(text, title), lexicalSim(text, observation))
+    // Match the typed prose against the explicit title, the suggested-bug title AND the observation, so a
+    // reporter describing a manual ticket's subject (its title) clears the threshold even when the body differs.
+    const score = Math.max(lexicalSim(text, explicitTitle), lexicalSim(text, sbTitle), lexicalSim(text, observation))
     if (!best || score > best.score) {
-      best = { id: String(row.id), title: title || observation.slice(0, 90), status: String(row.status || "open"), score }
+      best = {
+        id: String(row.id),
+        title: effectiveTicketTitle({ title: explicitTitle, suggested_bug_json: row.suggested_bug_json, observation }),
+        status: String(row.status || "open"),
+        score,
+      }
     }
   }
   if (!best || best.score < threshold) return null

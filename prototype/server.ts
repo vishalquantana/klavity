@@ -11,6 +11,10 @@ import { buildMemberExport, membersToCsv, MEMBER_EXPORT_FIELDS } from "./lib/mem
 import { isMaskingEnabled, maskMemberExportRow, maskDeep, maskWalkReportData } from "./lib/data-masking"
 import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows } from "./lib/db"
 import { countFoundingAccounts } from "./lib/db"
+// #543 completeness (Codex review): ONE shared title resolver (title column → suggested-bug title →
+// observation first line → "Untitled report") so notifications/receipts/exports show a MANUAL ticket's
+// real title instead of its body. Wired into every consumer that previously derived title from observation.
+import { effectiveTicketTitle } from "./lib/db"
 // KLAVITYKLA-366 — the Founding Ten spot counter. One cached source of truth behind the public
 // pricing band, the in-app ribbon, and the server-side refusal of an 11th founding checkout.
 import { getFoundingSpots, decideFoundingCheckout, foundingRibbonLabel, foundingSpotsLabel, foundingStateToken, computeFoundingSpots } from "./lib/founding"
@@ -1942,7 +1946,7 @@ function syncTicketFields(feedbackId: string, projectId: string, actor: string |
 // in the Tickets list. Only the autofile-on-submit path (autoFileHumanSnap, autofile-mode only) passes
 // it; the triage-accept path does NOT (the row is already 'open' there). The advance is guarded on real
 // create success AND on WHERE status='new', so a no-connector / failed autofile keeps status='new'.
-function autoCopyFeedback(feedbackId: string, projectId: string, actor: string | null, effectivePriority?: string | null, opts?: { advanceStatusOnSuccess?: boolean }): void {
+function autoCopyFeedback(feedbackId: string, projectId: string, actor: string | null, effectivePriority?: string | null, opts?: { advanceStatusOnSuccess?: boolean; trustedProvenance?: boolean }): void {
   void (async () => {
     try {
       const connectors = await listAutoCopyConnectors(projectId)
@@ -1953,7 +1957,19 @@ function autoCopyFeedback(feedbackId: string, projectId: string, actor: string |
         // directly. advanceFeedbackToOpenIfNew is WHERE status='new' (idempotent, never downgrades), and
         // non-autofile callers (triage-accept) never pass advanceStatusOnSuccess, so their behavior is
         // unchanged. A connector that EXISTS but fails export is handled below and still stays 'new'.
-        if (opts?.advanceStatusOnSuccess) {
+        //
+        // #534 hardening (Codex security review): this connector-less advance is the New-Reports triage
+        // BYPASS an attacker could ride — the default project config is anonymous widget gate + autofile,
+        // so a bot/spam report would otherwise skip triage and land on the board. Gate it on TRUSTED
+        // provenance (opts.trustedProvenance = an authenticated workspace member); anonymous/public widget
+        // submissions stay 'new' in the triage inbox (the safety net). Also bound the advance by the SAME
+        // per-project autocopy rate cap that the connector path uses (the no-connector return previously
+        // happened BEFORE that cap), so it can't be used to flood the board faster than the cap allows.
+        if (opts?.advanceStatusOnSuccess && opts?.trustedProvenance) {
+          if (!rlAllow(`autocopy:${projectId}`, AUTOCOPY_PER_PROJECT, AUTOCOPY_WINDOW)) {
+            console.warn(`auto-copy rate cap hit for project ${projectId} — skipping connector-less status advance`)
+            return
+          }
           await advanceFeedbackToOpenIfNew(feedbackId, projectId)
             .catch((e: any) => console.warn("[snap-routing] connector-less status advance failed (non-fatal):", e?.message || e))
         }
@@ -2073,7 +2089,7 @@ function autoCopyOnTriageAccept(
 //     cheap fire-and-forget guard. Never throws.
 function autoFileHumanSnap(
   feedbackId: string, projectId: string, simId: string | null | undefined,
-  actor: string | null, effectivePriority?: string | null,
+  actor: string | null, effectivePriority?: string | null, trusted?: boolean,
 ): void {
   if (simId) return   // Sim/AutoSim report — not a human Snap; leave its behavior untouched.
   void (async () => {
@@ -2082,7 +2098,10 @@ function autoFileHumanSnap(
       if (mode !== "autofile") return   // 'review' mode: hold for manual transfer.
       // KLAVITYKLA-524: autofile mode only — advance new→open on a successful file so the report
       // appears in Tickets instead of sitting in New Reports looking untriaged.
-      autoCopyFeedback(feedbackId, projectId, actor, effectivePriority, { advanceStatusOnSuccess: true })
+      // #534 hardening: `trusted` (authenticated workspace member) gates ONLY the connector-less
+      // board advance — an anonymous submission still exports to a configured connector, but never
+      // skips triage onto the board without a real external ticket.
+      autoCopyFeedback(feedbackId, projectId, actor, effectivePriority, { advanceStatusOnSuccess: true, trustedProvenance: !!trusted })
     } catch (e: any) {
       console.warn("[snap-routing] autofile hook (non-fatal):", e?.message || e)
     }
@@ -3022,7 +3041,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           contactEmail: beforeFeedback?.contactEmail ?? null,
           previousStatus: beforeFeedback?.status ?? null,
           nextStatus: newStatus,
-          title: String(beforeFeedback?.observation || "Bug report"),
+          title: beforeFeedback ? effectiveTicketTitle(beforeFeedback) : "Bug report",
           projectName: proj?.name ?? "your project",
           ticketUrl: ticketDashboardUrl(exportRow.projectId),
         })
@@ -4153,9 +4172,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               // report carrying an UNREGISTERED sim_id (deleted persona, cross-project id, adhoc run) was
               // mis-classified as a Human Snap and auto-filed to Jira. A report is a genuine human Snap
               // ONLY when it carries NO sim_id at all AND no sim/autosim/adhoc source marker. Sources are
-              // matched case-insensitively; studio-demo already carries its own quarantine tag.
+              // matched case-insensitively. #534 hardening (Codex review): "studio-demo" is included here so
+              // a quarantined Studio DEMO save (mock "Acme Finance" funnel) is NEVER classified as a human
+              // Snap and can't be promoted onto the Tickets board via the autofile advance — it stays 'new'
+              // in quarantine. Host-detected demos (feedbackSourceTag set with no source flag) are excluded
+              // at the autofile call site below via `!feedbackSourceTag` (defense in depth).
               const rawReportSource = String(form.get("source") || "").trim().toLowerCase()
-              const NON_HUMAN_SOURCES = new Set(["sim", "autosim", "adhoc", "ad-hoc", "trail", "trails", "walk"])
+              const NON_HUMAN_SOURCES = new Set(["sim", "autosim", "adhoc", "ad-hoc", "trail", "trails", "walk", "studio-demo"])
               const isHumanSnap = !rawSimId && !NON_HUMAN_SOURCES.has(rawReportSource)
               // JTBD 1.10: a screenshot-only report has no typed prose. Seed the observation (which drives the
               // triage title) with a deterministic fallback so the row never shows "Untitled report"; the
@@ -4366,8 +4389,15 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               // (isHumanSnap: no raw sim_id AND no sim/autosim/adhoc source — PX4 #472) and only for
               // genuinely new rows (a deduped repeat already reached the tracker on its first
               // submission). No-ops in 'review' mode / when no auto-copy connector.
-              if (feedbackId && !dedupedInto && isHumanSnap) {
-                autoFileHumanSnap(feedbackId, projectId, rawSimId, actor, priority)
+              if (feedbackId && !dedupedInto && isHumanSnap && !feedbackSourceTag) {
+                // #534 hardening (Codex review): only an AUTHENTICATED workspace member's connector-less
+                // autofile may advance new→open onto the Tickets board. `actor` is the resolved member
+                // identity (extension bearer token OR first-party session cookie); an anonymous/public
+                // widget submission has a null `actor` + `anonWidgetAllowed` and MUST stay 'new' so it
+                // lands in the New-Reports triage inbox (the spam/bot safety net). `!feedbackSourceTag`
+                // additionally excludes host-detected Studio-demo quarantine rows.
+                const trustedProvenance = !!actor && !anonWidgetAllowed
+                autoFileHumanSnap(feedbackId, projectId, rawSimId, actor, priority, trustedProvenance)
               }
 
               // KLA-175: AI label suggestion — fire-and-forget, never blocks the response.
@@ -9050,7 +9080,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             const projName = allProjects.find((p: any) => p.id === fbRow.projectId)?.name ?? null
             await notifyTicketComment({
               feedbackId: fid,
-              ticketTitle: fbRow.observation ?? null,
+              ticketTitle: effectiveTicketTitle(fbRow),
               projectName: projName,
               commentBody: text,
               ticketUrl: ticketDeepLinkUrl(fid),
@@ -9236,7 +9266,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                 projectId: fbRow.projectId,
                 feedbackId: fid,
                 assignee: meta.assignee,
-                ticketTitle: String(fbRow.observation || "Untitled ticket"),
+                ticketTitle: effectiveTicketTitle(fbRow),
                 projectName: proj?.name ?? null,
                 assignedBy: me,
               })
@@ -9250,7 +9280,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               contactEmail: fbRow.contactEmail,
               previousStatus: fbRow.status,
               nextStatus: meta.status,
-              title: String(fbRow.observation || "Bug report"),
+              title: effectiveTicketTitle(fbRow),
               projectName: proj?.name ?? "your project",
               ticketUrl: ticketDashboardUrl(fbRow.projectId),
             })
@@ -9289,7 +9319,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const res = await sendRegressionCaughtReceipt({
             projectId: fbRow.projectId, feedbackId: fid,
             projectName: proj?.name ?? "your project",
-            ticketTitle: String(fbRow.observation || fbRow.suggestedBug?.title || "the reported issue"),
+            ticketTitle: effectiveTicketTitle(fbRow),
             sentBy: me,
           }, { db })
           if (!res.ok) return json({ error: res.error }, 500)
@@ -9312,8 +9342,16 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // ready to be enforced as an AutoSim assert step.
         // Returns { expectationId, status } — callers use this to deep-link to the guards board.
         if (req.method === "POST" && isGuard) {
-          const ticketTitle = String(fbRow.observation || fbRow.suggestedBug?.title || "").trim()
-          if (!ticketTitle) return json({ error: "Ticket has no title to guard." }, 422)
+          // #543 completeness (Codex review): resolve the ticket's real title (a MANUAL ticket keeps its
+          // title in its own column, body in observation) instead of using the body. Guarding still
+          // requires SOME title — reject only a genuinely empty row (no title, observation, or
+          // suggested-bug title), which is exactly when the resolver would fall back to "Untitled report".
+          const hasGuardTitle =
+            (fbRow.title != null && String(fbRow.title).trim()) ||
+            (fbRow.observation != null && String(fbRow.observation).trim()) ||
+            (fbRow.suggestedBug?.title != null && String(fbRow.suggestedBug.title).trim())
+          if (!hasGuardTitle) return json({ error: "Ticket has no title to guard." }, 422)
+          const ticketTitle = effectiveTicketTitle(fbRow)
           if (fbRow.status !== "done" && fbRow.status !== "dismissed") {
             return json({ error: "Only resolved (done) tickets can be guarded." }, 409)
           }
@@ -9489,10 +9527,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (req.method === "GET" && isSuggestLabels) {
           let suggestions = await getSuggestedLabels(fid, fbRow.projectId)
           if (!suggestions.length) {
-            const text = (fbRow.suggestedBug?.title
-              ? `${fbRow.suggestedBug.title}\n${fbRow.observation || ""}`
-              : fbRow.observation || ""
-            ).slice(0, 2000)
+            // #543 completeness: feed the ticket's REAL title (manual tickets keep it in its own column)
+            // plus the body into label suggestion, so a manual ticket's subject line drives label choice.
+            const text = `${effectiveTicketTitle(fbRow)}\n${fbRow.observation || ""}`.slice(0, 2000)
             await suggestLabelsForFeedback({ feedbackId: fid, projectId: fbRow.projectId, text })
               .catch((e: any) => console.warn("[suggest-labels] on-demand (non-fatal):", e?.message || e))
             suggestions = await getSuggestedLabels(fid, fbRow.projectId)
@@ -10026,7 +10063,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               out.push({
                 id: r.id, feedbackId: r.feedbackId, connectorId: r.connectorId,
                 connectorName: connName(r.connectorId), requestedBy: r.requestedBy, createdAt: r.createdAt,
-                ticketTitle: fb ? (fb.observation ?? fb.suggestedBug?.title ?? null) : null,
+                ticketTitle: fb ? effectiveTicketTitle(fb) : null,
               })
             }
             return json({ requests: out })
@@ -10613,7 +10650,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // Description alone in `observation`. Previously the title was crammed into observation as
           // `${title}\n\n${bodyText}` with no title column set, so every read fell back to the blob and
           // produced garbled/duplicated title+description text.
-          const observation = bodyText || title
+          // #543 completeness (Codex review): when Description is empty, leave `observation` NULL instead of
+          // duplicating the title into it — the invariant is title→title column, body→observation. A
+          // bodyless ticket therefore carries no connector body that merely repeats its own title.
+          const observation = bodyText || null
           const id = await insertFeedback({
             projectId: proj.id,
             actorEmail: me,
@@ -10762,7 +10802,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                     projectId: proj.id,
                     feedbackId: tid,
                     assignee: meta.assignee,
-                    ticketTitle: String(row.observation || "Untitled ticket"),
+                    ticketTitle: effectiveTicketTitle(row),
                     projectName: proj.name,
                     assignedBy: me,
                   })
@@ -10775,7 +10815,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   contactEmail: row.contactEmail,
                   previousStatus: row.status,
                   nextStatus: meta.status,
-                  title: String(row.observation || "Bug report"),
+                  title: effectiveTicketTitle(row),
                   projectName: proj.name,
                   ticketUrl: ticketDashboardUrl(proj.id),
                 })

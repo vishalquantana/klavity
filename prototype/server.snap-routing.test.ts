@@ -142,6 +142,21 @@ async function submitHumanSnap(desc: string, extra: Record<string, string> = {})
   for (const [k, v] of Object.entries(extra)) fd.set(k, v)
   return fetch(`${BASE}/api/feedback`, { method: "POST", headers: authHeader(ADMIN_SID), body: fd })
 }
+// #534 hardening: an ANONYMOUS cross-origin widget submit — no session cookie, no bearer token, and an
+// Origin that differs from the server's base origin. This is the anonWidgetAllowed path (default report
+// gate is 'anonymous'; Turnstile is unconfigured in the test env so it is a no-op). Provenance is NOT
+// trusted, so a connector-less autofile must NOT advance it onto the Tickets board.
+async function submitAnonWidgetSnap(desc: string, extra: Record<string, string> = {}) {
+  const fd = new FormData()
+  fd.set("description", desc)
+  fd.set("project_id", PROJECT_ID)
+  for (const [k, v] of Object.entries(extra)) fd.set(k, v)
+  return fetch(`${BASE}/api/feedback`, {
+    method: "POST",
+    headers: { Origin: "https://widget-customer.example" },   // cross-origin, unauthenticated
+    body: fd,
+  })
+}
 async function feedbackStatus(fid: string): Promise<string | null> {
   const r = await rawClient.execute({ sql: "SELECT status FROM feedback WHERE id=?", args: [fid] })
   return r.rows.length ? String((r.rows[0] as any).status) : null
@@ -376,6 +391,61 @@ test("#534 connector-less autofile: advances new→open and shows in the Tickets
   const status = await waitForStatus(fid, "open", 5000)
   expect(status).toBe("open")
   expect(await ticketsContain(fid)).toBe(true)
+}, 15000)
+
+// #534 hardening (SECURITY): the connector-less new→open advance must be gated on TRUSTED provenance —
+// an AUTHENTICATED workspace member. An ANONYMOUS/public widget submission (anonWidgetAllowed, actor=null)
+// must STAY 'new' so it lands in the New-Reports triage inbox (the spam/bot safety net) and never bypasses
+// triage onto the board. The submit above (authenticated ADMIN) is the trusted case that DOES advance;
+// this is the untrusted case that must NOT. Gate keys off real authentication, not an attacker-controllable
+// field (sim_id absence / source string).
+test("#534 hardening: ANONYMOUS connector-less autofile STAYS 'new' (triage, not the board)", async () => {
+  await api("POST", `/api/projects/${PROJECT_ID}/snap-routing`, { snapRouting: "autofile" }, ADMIN_SID)
+  await clearConnectors()   // zero auto-copy connectors on this project
+
+  const fr = await submitAnonWidgetSnap(uniqueDesc(`kla534-anon`), { page_url: `https://kla534.example/anon/${ts}` })
+  expect(fr.ok).toBe(true)
+  const fid = (await fr.json()).id
+  expect(fid).toBeTruthy()
+
+  // Give the fire-and-forget autofile hook ample time to (not) advance the row.
+  await Bun.sleep(1300)
+  expect(await feedbackStatus(fid)).toBe("new")
+  expect(await ticketsContain(fid)).toBe(false)
+}, 15000)
+
+// #534 hardening control: an AUTHENTICATED workspace member's connector-less autofile report STILL
+// advances immediately (trusted provenance). This mirrors the connector-less test above but asserts the
+// positive side of the security gate explicitly alongside the anonymous negative case.
+test("#534 hardening: AUTHENTICATED-member connector-less autofile advances new→open", async () => {
+  await api("POST", `/api/projects/${PROJECT_ID}/snap-routing`, { snapRouting: "autofile" }, ADMIN_SID)
+  await clearConnectors()
+
+  const fr = await submitHumanSnap(uniqueDesc(`kla534-authmember`), { page_url: `https://kla534.example/authmember/${ts}` })
+  expect(fr.ok).toBe(true)
+  const fid = (await fr.json()).id
+  expect(fid).toBeTruthy()
+
+  expect(await waitForStatus(fid, "open", 5000)).toBe("open")
+  expect(await ticketsContain(fid)).toBe(true)
+}, 15000)
+
+// #534 hardening: a source='studio-demo' save is quarantine-tagged and must NEVER be classified as a human
+// Snap nor promoted onto the Tickets board — it stays 'new' (quarantine) even when submitted by an
+// authenticated member. Belt-and-suspenders: studio-demo is in NON_HUMAN_SOURCES and the autofile call site
+// is additionally gated on !feedbackSourceTag.
+test("#534 hardening: source='studio-demo' stays quarantined ('new'), never autofiled", async () => {
+  await api("POST", `/api/projects/${PROJECT_ID}/snap-routing`, { snapRouting: "autofile" }, ADMIN_SID)
+  await clearConnectors()
+
+  const fr = await submitHumanSnap(uniqueDesc(`kla534-studiodemo`), { source: "studio-demo", page_url: `https://kla534.example/demo/${ts}` })
+  expect(fr.ok).toBe(true)
+  const fid = (await fr.json()).id
+  expect(fid).toBeTruthy()
+
+  await Bun.sleep(1300)
+  expect(await feedbackStatus(fid)).toBe("new")
+  expect(await ticketsContain(fid)).toBe(false)
 }, 15000)
 
 // A FAILED autofile (connector create errors) must NOT falsely mark the report filed/open — it stays
