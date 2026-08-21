@@ -1396,7 +1396,8 @@ img{outline:1px solid rgba(0,0,0,.1);outline-offset:-1px}
 a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{outline:2px solid #8b8bf5;outline-offset:2px;border-radius:5px}
 @media (prefers-reduced-motion: reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}}
   .tkt-context{display:flex;flex-direction:column;gap:10px;padding-bottom:12px;margin-bottom:2px;border-bottom:1px solid var(--line)}
-  .tkt-obs{font-size:14px;line-height:1.5;color:var(--paper)}
+  .tkt-obs{font-size:14px;line-height:1.5;color:var(--paper);white-space:pre-wrap}
+  .tkt-desc-label{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:3px}
   .tkt-chips{display:flex;flex-wrap:wrap;gap:6px}
   .tkt-bug{background:var(--ink-2);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
   .tkt-bug-t{font-size:13px;font-weight:600;margin-bottom:4px}
@@ -2976,7 +2977,11 @@ async function load() {
   // before the network round-trip. (Only on the first paint; never clobber live state.)
   if (state === null) {
     const cached = swrRead(dashCacheKey(dashTargetProjId()))
-    if (cached) { state = cached; render(true) }   // fromCache: skip network sub-loaders until fresh confirms the project
+    if (cached) {
+      state = cached; render(true)   // fromCache: skip network sub-loaders until fresh confirms the project
+      // #535: instant deep-link restore from cache when the ticket is already present (no network wait).
+      try { maybeOpenDeepLinkTicket() } catch (e) {}
+    }
   }
   // SWR step 2 — revalidate in the background (progress bar visible).
   // KLAVITYKLA-299: use dashTargetProjId() (URL param || localStorage last) so the user's
@@ -3027,6 +3032,10 @@ async function load() {
       } catch (e) {}
     }
   }
+  // #535: reopen a deep-linked ticket (?ticket=<id>) on the BOOT load path too — previously this only
+  // ran from refreshAll(), so reloading a ticket URL dropped the user to the overview. openSingleTicket
+  // is idempotent (replaceState when already showing), so this is safe.
+  maybeOpenDeepLinkTicket()
 }
 
 function mountReportWidget() {
@@ -3042,6 +3051,7 @@ function mountReportWidget() {
 // Re-fetch /api/dashboard and re-render — used after triage accept/dismiss so counts + banner + kanban update.
 async function refreshAll() {
   let data
+  const fetchStart = Date.now()   // #532: anything saved after this the poll must not overwrite
   kbar.start()
   try {
     // KLAVITYKLA-299: use dashTargetProjId() so the stored project id is honoured, not just the URL param.
@@ -3053,6 +3063,9 @@ async function refreshAll() {
   } catch (e) { return }
   finally { kbar.done() }
   if (!data || data.error) return
+  // #532: overlay locally-edited fields the fresh payload may not yet reflect (belt-and-suspenders
+  // behind the __klavMutating guard) so a lagging poll read can never clobber a just-saved value.
+  mergeLocalEdits(data, fetchStart)
   state = data
   render()
   if (data.active && data.active.id) {                                       // keep cache fresh after triage actions
@@ -3074,6 +3087,33 @@ async function refreshAll() {
 // A mutation (triage accept/dismiss/send, bulk PATCH) bumps this while it's in flight so the poll
 // never yanks the DOM out from under an action mid-way.
 window.__klavMutating = window.__klavMutating || 0
+// #532 (belt-and-suspenders): remember locally-edited ticket fields with the time they were saved so a
+// background poll whose fetch STARTED before the save landed can't overwrite the fresher local value.
+// Keyed by ticket id → { fields: {notes,assignee,priority,status}, ts }. The __klavMutating guard is the
+// primary defence; this merge only covers the narrow race where a poll's read resolves just after a save.
+window.__klavLocalEdits = window.__klavLocalEdits || {}
+function recordLocalEdit(ticketId, fields) {
+  try {
+    const id = String(ticketId)
+    const prev = window.__klavLocalEdits[id] || { fields: {} }
+    window.__klavLocalEdits[id] = { fields: { ...prev.fields, ...fields }, ts: Date.now() }
+  } catch (e) {}
+}
+// Overlay any local edit that is newer than the moment the poll's fetch began onto the fresh payload,
+// so refreshAll() never repaints a stale value over a just-saved field. Prunes edits older than 60s.
+function mergeLocalEdits(data, fetchStart) {
+  try {
+    if (!data || !Array.isArray(data.tickets)) return data
+    const now = Date.now()
+    for (const [id, edit] of Object.entries(window.__klavLocalEdits)) {
+      if (!edit || now - edit.ts > 60000) { delete window.__klavLocalEdits[id]; continue }
+      if (edit.ts < fetchStart) continue   // fetch began AFTER the save → fresh data already reflects it
+      const t = data.tickets.find(x => String(x.id) === id)
+      if (t) Object.assign(t, edit.fields)
+    }
+  } catch (e) {}
+  return data
+}
 function dashLiveBusy() {
   try {
     if (document.hidden) return true
@@ -3222,11 +3262,21 @@ async function tgBulkPatch(ids, body) {
     return r && r.ok ? (await r.json().catch(() => ({ ok: true }))) : { ok: false }
   } finally { window.__klavMutating-- }
 }
+// #537: reflect an in-flight triage action on the clicked button immediately, so a click during a
+// project-switch race / offline blip is never a silent no-op. Returns a restore fn.
+function tgBtnPending(btn) {
+  if (!btn) return () => {}
+  const prevDisabled = btn.disabled
+  btn.disabled = true; btn.setAttribute("aria-busy", "true")
+  return () => { btn.disabled = prevDisabled; btn.removeAttribute("aria-busy") }
+}
 // Accept (single or bulk): status=open, priority applied to all. Reduces the inbox count by N.
-async function tgAccept(ids, priority) {
+async function tgAccept(ids, priority, btn) {
   const body = { status: "open" }
   if (priority) body.priority = priority
-  const res = await tgBulkPatch(ids, body)
+  const restore = tgBtnPending(btn)   // #537: pending immediately on click
+  let res
+  try { res = await tgBulkPatch(ids, body) } finally { restore() }
   if (res.ok) {
     _tgSelected.clear(); await refreshAll(); renderTriage()
     // KLAVITYKLA-512: the accepted row silently vanished before (contrast the dismiss undo-toast).
@@ -3236,13 +3286,18 @@ async function tgAccept(ids, priority) {
       ? ` — <a href="#tickets" style="color:var(--indigo)" onclick="try{setView('tickets');openSingleTicket('${esc(one)}')}catch(e){};return false">view in Tickets</a>`
       : ""
     klavToast((one ? "Accepted" : ids.length + " accepted") + " &rarr; moved to Open in Tickets" + link)
+  } else {
+    // #537: surface the failure instead of swallowing {ok:false} (project-switch race / offline blip).
+    tgFlash("Couldn't accept — retry.")
   }
   return res
 }
 // Dismiss (single or bulk): status=dismissed, then show an undo toast that restores status=new.
-async function tgDismiss(ids) {
+async function tgDismiss(ids, btn) {
   const restore = ids.slice()
-  const res = await tgBulkPatch(ids, { status: "dismissed" })
+  const undoBtn = tgBtnPending(btn)   // #537: pending immediately on click
+  let res
+  try { res = await tgBulkPatch(ids, { status: "dismissed" }) } finally { undoBtn() }
   if (res.ok) {
     _tgSelected.clear()
     await refreshAll(); renderTriage()
@@ -3250,6 +3305,9 @@ async function tgDismiss(ids) {
       const r = await tgBulkPatch(restore, { status: "new" })
       if (r.ok) { await refreshAll(); renderTriage() }
     })
+  } else {
+    // #537: no more silent no-op — tell the reviewer the dismiss didn't land and to retry.
+    tgFlash("Couldn't dismiss — retry.")
   }
   return res
 }
@@ -3417,9 +3475,9 @@ function renderTriageFilters() {
   const simSel = host.querySelector("#tgSimFilter")
   if (simSel) simSel.addEventListener("change", () => { _triageSim = simSel.value; _tgSelected.clear(); renderTriageView() })
   const simDis = host.querySelector("#tgSimDismiss")
-  if (simDis) simDis.addEventListener("click", () => {
+  if (simDis) simDis.addEventListener("click", (ev) => {
     const ids = (_triageItems || []).filter(t => tgSimKey(t) === _triageSim).map(t => String(t.id))
-    if (ids.length) tgDismiss(ids)
+    if (ids.length) tgDismiss(ids, ev.currentTarget)
   })
 }
 // KLAVITYKLA-384: restore the bulk-action bar for the New-reports triage inbox. The
@@ -3450,9 +3508,9 @@ function renderTriageBulkBar() {
     `<span class="bulk-sep"></span>` +
     `<button class="btn btn-ghost btn-sm" id="tgBulkClear" type="button" style="font-size:12px">Clear</button>`
   bar.classList.add("show")
-  bar.querySelector("#tgBulkAccept").addEventListener("click", () => {
+  bar.querySelector("#tgBulkAccept").addEventListener("click", (ev) => {
     const pri = bar.querySelector("#tgBulkPri").value
-    tgAccept([..._tgSelected], pri)
+    tgAccept([..._tgSelected], pri, ev.currentTarget)
   })
   const bulkSend = bar.querySelector("#tgBulkSend")
   if (bulkSend) bulkSend.addEventListener("click", () => {
@@ -3462,7 +3520,7 @@ function renderTriageBulkBar() {
     if (humanIds.length) tgSendToTracker(humanIds)
     else tgFlash("No human Snap reports selected.")
   })
-  bar.querySelector("#tgBulkDismiss").addEventListener("click", () => tgDismiss([..._tgSelected]))
+  bar.querySelector("#tgBulkDismiss").addEventListener("click", (ev) => tgDismiss([..._tgSelected], ev.currentTarget))
   bar.querySelector("#tgBulkClear").addEventListener("click", () => {
     _tgSelected.clear()
     if (host) host.querySelectorAll(".tg-row").forEach(r => { r.classList.remove("tg-selected"); const c = r.querySelector(".tg-cb"); if (c) c.checked = false })
@@ -3527,8 +3585,8 @@ function renderTriageItems(items) {
   host.querySelectorAll(".tg-row").forEach(row => {
     const id = row.getAttribute("data-id")
     const t = (items).find(x => String(x.id) === id)
-    row.querySelector(".tg-accept").addEventListener("click", () => tgAccept([id], row.querySelector(".tg-pri").value))
-    row.querySelector(".tg-dismiss").addEventListener("click", () => tgDismiss([id]))
+    row.querySelector(".tg-accept").addEventListener("click", (ev) => tgAccept([id], row.querySelector(".tg-pri").value, ev.currentTarget))
+    row.querySelector(".tg-dismiss").addEventListener("click", (ev) => tgDismiss([id], ev.currentTarget))
     const sendBtn = row.querySelector(".tg-send-jira")
     if (sendBtn) sendBtn.addEventListener("click", () => tgSendToTracker([id]))
     const cb = row.querySelector(".tg-cb")
@@ -4512,9 +4570,12 @@ $("clTestReportBtn") && ($("clTestReportBtn").onclick = () => {
         // updates counts/banner but renderTriage() would re-paint the STALE "triage:"+pid SWR snapshot,
         // so bust that cache entry and re-render the queue too.
         const _pid = curProjId()
-        if (_pid) swrInvalidate("triage:" + _pid)
+        if (_pid) { swrInvalidate("triage:" + _pid); swrInvalidate(dashCacheKey(_pid)) }   // #534: also bust the dashboard/tickets snapshot
         refreshAll()                      // triage count + checklist tick update without a reload
         if (typeof renderTriage === "function") renderTriage()
+        // #534: the connector-less autofile advances new→open server-side, so the report becomes a
+        // ticket immediately — re-render the Tickets view too when it's the one showing.
+        if (document.body.getAttribute("data-view") === "tickets" && typeof renderTicketsView === "function") renderTicketsView()
       })
     }
     window.Klavity.open("bug")
@@ -5459,6 +5520,15 @@ function assigneePickerHtml(t, compact = false) {
 // its own summary element. Returns the wired detailEl.
 // isSingle=true: called from the single-ticket view, which already renders title/severity/sim/url·date
 // in its .single-head — so skip those from .tkt-context to avoid duplication.
+// #538: render the reporter's observation as an explicitly labeled block. When the body reads like
+// reproduction steps (numbered / bulleted / "step N" lines) label it "Steps to reproduce", otherwise
+// "Description". The .tkt-obs child is white-space:pre-wrap so multi-line steps keep their line breaks.
+function descriptionBlockHtml(text) {
+  const raw = String(text == null ? "" : text)
+  const isSteps = /(^|\n)\s*(\d+[.)]\s|[-*•]\s|step\s*\d+\b)/i.test(raw)
+  const label = isSteps ? "Steps to reproduce" : "Description"
+  return `<div class="tkt-desc"><div class="tkt-desc-label">${label}</div><div class="tkt-obs">${esc(raw)}</div></div>`
+}
 // KLAVITYKLA-438 "Record me" (Phase 2): format seconds → m:ss for a transcript timestamp.
 function recTimeFmt(sec) {
   var s = Math.max(0, Math.floor(Number(sec) || 0))
@@ -5578,7 +5648,10 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
     // In single-ticket view the header shows: title, severity, sentiment, simName, url·date.
     // Two-column layout when screenshot exists: shot in col-1, everything else in .tkt-right-body col-2.
     const _isTwoCol = isSingle && !!t.screenshotId
-    const _showObs = t.observation && (!isSingle || t.observation.trim() !== (t.title || "").trim())
+    // #538: a multi-line description must never be suppressed just because its FIRST line happens
+    // to match the ticket title — only hide when the entire (single-line) observation IS the title.
+    const _obsMultiline = !!(t.observation && /\n/.test(String(t.observation).trim()))
+    const _showObs = t.observation && (!isSingle || _obsMultiline || t.observation.trim() !== (t.title || "").trim())
     const _showSevChip = !isSingle && !!t.priority
     const _showSentiment = !isSingle && !!t.sentiment
     const _showSimChip = !isSingle && !!t.simName
@@ -5601,7 +5674,7 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
       <div class="tkt-context">
         ${dupAckHtml(t)}
         ${regrBannerHtml(t)}
-        ${_showObs ? `<div class="tkt-obs">${esc(t.observation)}</div>` : ""}
+        ${_showObs ? descriptionBlockHtml(t.observation) : ""}
         ${(_showSevChip || _showSentiment || _showSimChip) ? `<div class="tkt-chips">${_showSevChip ? `<span class="chip sev-${esc(t.priority)}">${esc(t.priority)}</span>` : ""}${_showSentiment ? `<span class="chip s-${esc(t.sentiment)}">${esc(t.sentiment)}</span>` : ""}${_showSimChip ? `<span class="chip">${esc(t.simName)}</span>` : ""}</div>` : ""}
         ${_showBug ? `<div class="tkt-bug">${_showBugTitle ? `<div class="tkt-bug-t">${kicon('bug')} ${esc(_bugTitle)}</div>` : ""}${_showBugBody ? `<div class="tkt-bug-b">${esc(_bugBody)}</div>` : ""}</div>` : ""}
         ${t.sourceQuote ? `<div class="tkt-prov">"${esc(t.sourceQuote)}"${t.sourceDate ? ` · raised ${esc(ago(t.sourceDate))}` : ""}</div>` : ""}
@@ -5668,16 +5741,28 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
       btn.addEventListener("click", async (ev) => {
         ev.stopPropagation()
         const newStatus = btn.getAttribute("data-status")
-        const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId), {
-          method: "PATCH", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ status: newStatus })
-        }).catch(() => null)
-        const d = r ? await r.json().catch(() => ({})) : {}
+        // #537: reflect in-flight state immediately (disable the seg + aria-busy) so a click during a
+        // project-switch race / offline blip isn't a silent no-op.
+        const segBtns = Array.from(detailEl.querySelectorAll(".seg-btn"))
+        segBtns.forEach(b => { b.disabled = true; b.setAttribute("aria-busy", "true") })
+        // #532: bump the mutation guard so the 25s liveness poll's refreshAll() can't wholesale-repaint
+        // the board mid-save and clobber the just-saved value.
+        window.__klavMutating++
+        let d = {}
+        try {
+          const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId), {
+            method: "PATCH", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ status: newStatus })
+          }).catch(() => null)
+          d = r ? await r.json().catch(() => ({})) : {}
+        } finally { window.__klavMutating-- }
+        segBtns.forEach(b => { b.disabled = false; b.removeAttribute("aria-busy") })
         if (d.ok) {
           detailEl.querySelectorAll(".seg-btn").forEach(b => b.classList.toggle("active", b.getAttribute("data-status") === newStatus))
           // Update state
           const tkt = (state.tickets || []).find(x => x.id === ticketId)
           if (tkt) tkt.status = newStatus
+          recordLocalEdit(ticketId, { status: newStatus })   // #532
           if (onChange) onChange("status", newStatus)
           // B.7: closing a guard-caught ticket → OFFER the one-click regression-caught receipt (never
           // auto-sent). The server flags offerRegressionReceipt only for a real transition into done on
@@ -5688,7 +5773,7 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
             showTktMsg(detailEl, "Saved.", false)
           }
         } else {
-          showTktMsg(detailEl, d.error || "Couldn't save.", true)
+          showTktMsg(detailEl, d.error || "Couldn't save — retry.", true)
         }
       })
     })
@@ -5699,14 +5784,21 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
       priSelEl.addEventListener("change", async (ev) => {
         ev.stopPropagation()
         const newPri = priSelEl.value || null
-        const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId), {
-          method: "PATCH", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ priority: newPri })
-        }).catch(() => null)
-        const d = r ? await r.json().catch(() => ({})) : {}
+        // #532: guard the liveness poll during the save so it can't clobber the picked priority.
+        window.__klavMutating++
+        priSelEl.disabled = true; priSelEl.setAttribute("aria-busy", "true")
+        let d = {}
+        try {
+          const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId), {
+            method: "PATCH", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ priority: newPri })
+          }).catch(() => null)
+          d = r ? await r.json().catch(() => ({})) : {}
+        } finally { window.__klavMutating--; priSelEl.disabled = false; priSelEl.removeAttribute("aria-busy") }
         if (d.ok) {
           const tkt = (state.tickets || []).find(x => x.id === ticketId)
           if (tkt) tkt.priority = newPri
+          recordLocalEdit(ticketId, { priority: newPri })   // #532
           // Update the severity rail class on the detail's parent card / row
           const parentRow = detailEl.closest(".row-tkt, .kb-card, #ticketSingle")
           if (parentRow) {
@@ -5730,14 +5822,24 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
       ev.stopPropagation()
       const assignee = detailEl.querySelector(".assignee-inp").value.trim()
       const notes = detailEl.querySelector(".notes-ta").value.trim()
-      const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId), {
-        method: "PATCH", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ assignee: assignee || null, notes: notes || null })
-      }).catch(() => null)
-      const d = r ? await r.json().catch(() => ({})) : {}
+      // #532: this is the KEYSTONE — without the guard, the 25s liveness poll's refreshAll() repaints
+      // the board right after Save and the just-typed notes VANISH (Raghu #520/#522). Bump the mutation
+      // counter around the PATCH so the poll is suppressed for the whole in-flight window.
+      const saveBtn = detailEl.querySelector(".save-meta-btn")
+      window.__klavMutating++
+      if (saveBtn) { saveBtn.disabled = true; saveBtn.setAttribute("aria-busy", "true") }
+      let d = {}
+      try {
+        const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId), {
+          method: "PATCH", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ assignee: assignee || null, notes: notes || null })
+        }).catch(() => null)
+        d = r ? await r.json().catch(() => ({})) : {}
+      } finally { window.__klavMutating--; if (saveBtn) { saveBtn.disabled = false; saveBtn.removeAttribute("aria-busy") } }
       if (d.ok) {
         const tkt = (state.tickets || []).find(x => x.id === ticketId)
         if (tkt) { tkt.assignee = assignee || null; tkt.notes = notes || null }
+        recordLocalEdit(ticketId, { assignee: assignee || null, notes: notes || null })   // #532
         setTicketAssigneeLocal(ticketId, assignee || null)
         if (onChange) onChange("assignee", assignee || null)
         // JTBD 2.15: warn inline when the notification email was silently skipped server-side.
@@ -6147,28 +6249,46 @@ function buildTimelineSection(ticketId, report) {
     }
   }
 
-  function reloadTimeline() {
+  // #533: comments the user just posted this session, kept locally so a lagging/failed /timeline read
+  // can never remove one that's already on screen. Merged (deduped by id) into every reload.
+  const localComments = []
+
+  // Render the merged list (server items + synthesized origin + any locally-posted comments), deduped
+  // by id and sorted oldest→newest. Shared by the optimistic append and the network reload paths.
+  function paintTimeline(serverItems) {
+    if (!listEl) return
+    const items = (serverItems || []).slice()
+    const seen = new Set(items.map(it => it && it.id != null ? String(it.id) : null).filter(Boolean))
+    // Fold in locally-posted comments the server read hasn't returned yet (race / lag / failure).
+    for (const c of localComments) {
+      if (c && c.id != null && seen.has(String(c.id))) continue
+      items.push(c)
+    }
+    items.sort((a, b) => (Number(a.createdAt) || 0) - (Number(b.createdAt) || 0))
+    // Prepend the synthesized origin row (oldest → renders at the top). This also makes the
+    // activity count read 1, never 0, for a single-report ticket.
+    const first = synthFirstItem()
+    if (first && !items.some(it => it.type === "report_received")) items.unshift(first)
+    listEl.innerHTML = ""
+    if (!items.length) {
+      listEl.innerHTML = '<div class="tkt-tl-empty">No activity yet.</div>'
+    } else {
+      items.forEach(item => listEl.appendChild(renderTimelineItem(item)))
+    }
+  }
+
+  function reloadTimeline(attempt) {
     if (!listEl) return
     fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/timeline")
       .then(r => r.ok ? r.json() : Promise.reject(r.status))
-      .then(d => {
-        const items = (d.items || []).slice()
-        // Prepend the synthesized origin row (oldest → renders at the top). This also makes the
-        // activity count read 1, never 0, for a single-report ticket.
-        const first = synthFirstItem()
-        if (first && !items.some(it => it.type === "report_received")) items.unshift(first)
-        listEl.innerHTML = ""
-        if (!items.length) {
-          listEl.innerHTML = '<div class="tkt-tl-empty">No activity yet.</div>'
-        } else {
-          items.forEach(item => listEl.appendChild(renderTimelineItem(item)))
-        }
-      })
+      .then(d => { paintTimeline((d.items || []).slice()) })
       .catch(() => {
-        // Even on a timeline fetch failure, still show the origin row if we can synthesize it.
+        // Short retry/backoff on a failed read before giving up (never drops a local comment).
+        if ((attempt || 0) < 2) { setTimeout(() => reloadTimeline((attempt || 0) + 1), 600 * ((attempt || 0) + 1)); return }
+        // On persistent failure, still show the origin row + any locally-posted comments.
         const first = synthFirstItem()
         if (listEl) {
-          if (first) { listEl.innerHTML = ""; listEl.appendChild(renderTimelineItem(first)) }
+          if (first || localComments.length) paintTimeline([])
           else listEl.innerHTML = '<div class="tkt-tl-empty" style="color:var(--rose)">Failed to load timeline.</div>'
         }
       })
@@ -6189,9 +6309,20 @@ function buildTimelineSection(ticketId, report) {
       submitBtn.disabled = false
       if (r && r.status === 201) {
         ta.value = ""
+        // #533: the 201 body IS the created comment — render it optimistically instead of discarding it
+        // and hoping a follow-up /timeline read returns it (that read races the write and can drop it).
+        const d = await r.json().catch(() => ({}))
+        const c = (d && d.comment) ? d.comment : d
+        if (c && (c.id != null || c.body)) {
+          localComments.push({
+            kind: "comment", id: c.id, author: c.author || null,
+            body: c.body != null ? c.body : text, createdAt: c.createdAt || Date.now(),
+          })
+          paintTimeline([])   // instant on-screen render from local state (no network wait)
+        }
         if (msgEl) { msgEl.style.color = "var(--green)"; msgEl.textContent = "Comment posted." }
         setTimeout(() => { if (msgEl) msgEl.textContent = "" }, 2500)
-        reloadTimeline()
+        reloadTimeline()      // reconcile with server; merge (never replace) keeps the local comment
       } else {
         const d = r ? await r.json().catch(() => ({})) : {}
         if (msgEl) { msgEl.style.color = "var(--rose)"; msgEl.textContent = d.error || "Failed to post comment." }
@@ -6538,53 +6669,87 @@ function openNewTicketModal() {
   if (inp) inp.value = ""
   if (body) body.value = ""
   if (pri) pri.value = "medium"
-  if (assignee) assignee.value = ""
+  // #541: prefill the current user's email as the default assignee (assignee is now required) so it's a
+  // one-click create for the common "assign to me" case; the user can still change it.
+  if (assignee) assignee.value = (state && state.email) || ""
   if (err) err.textContent = ""
+  const aerr = document.getElementById("newTktAssigneeErr")
+  if (aerr) aerr.textContent = ""
   if (msg) msg.textContent = ""
   bg.classList.add("show")
+  document.body.style.overflow = "hidden"  // #539: lock background scroll behind the backdrop
   setTimeout(() => inp && inp.focus(), 60)
 }
 function closeNewTicketModal() {
   const bg = document.getElementById("newTktBg"); if (bg) bg.classList.remove("show")
+  document.body.style.overflow = ""  // #539: restore background scroll
 }
+// #542: module-level in-flight flag guards BOTH the click and Enter-key paths against a double-submit
+// (rapid double-Enter previously fired two POST /tickets → two tickets). The submitBtn.disabled toggle
+// alone didn't cover the keydown handler that calls this fn directly.
+let newTktSubmitting = false
 async function submitNewTicket() {
+  if (newTktSubmitting) return   // #542: reentrancy guard
   const inp = document.getElementById("newTktTitleInp")
   const body = document.getElementById("newTktBodyInp")
   const pri = document.getElementById("newTktPriInp")
   const assignee = document.getElementById("newTktAssigneeInp")
   const submitBtn = document.getElementById("newTktSubmit")
   const err = document.getElementById("newTktTitleErr")
+  const aerr = document.getElementById("newTktAssigneeErr")
   const msg = document.getElementById("newTktMsg")
   const title = inp ? inp.value.trim() : ""
   if (!title) { if (err) err.textContent = "Title is required."; return }
   if (err) err.textContent = ""
+  // #541: assignee is required on the manual Create modal (server also 400s empty assignee). Block the
+  // submit with an inline error rather than letting it round-trip to a server 400.
+  const assigneeVal = assignee ? assignee.value.trim() : ""
+  if (!assigneeVal) {
+    if (aerr) aerr.textContent = "Assignee is required."
+    if (assignee) { try { assignee.focus() } catch (e) {} }
+    return
+  }
+  if (aerr) aerr.textContent = ""
   if (msg) msg.textContent = ""
   const projId = state.active && state.active.id
   if (!projId) { if (msg) msg.textContent = "No project selected."; return }
+  newTktSubmitting = true   // #542
+  // #532/#534: pause the liveness poll while the create is in flight so a background refresh can't race it.
+  window.__klavMutating++
   if (submitBtn) submitBtn.disabled = true
-  const r = await fetch(`/api/projects/${encodeURIComponent(projId)}/tickets`, {
-    method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      title,
-      body: body ? body.value.trim() : "",
-      priority: pri ? pri.value : "medium",
-      assignee: assignee ? assignee.value.trim() : "",
-    })
-  }).catch(() => null)
-  if (submitBtn) submitBtn.disabled = false
-  const created = r ? await r.json().catch(() => ({})) : {}
+  let r, created = {}
+  try {
+    r = await fetch(`/api/projects/${encodeURIComponent(projId)}/tickets`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title,
+        body: body ? body.value.trim() : "",
+        priority: pri ? pri.value : "medium",
+        assignee: assigneeVal,
+      })
+    }).catch(() => null)
+    created = r ? await r.json().catch(() => ({})) : {}
+  } finally {
+    newTktSubmitting = false   // #542
+    window.__klavMutating--
+    if (submitBtn) submitBtn.disabled = false
+  }
   if (!r || !r.ok) {
     if (msg) msg.textContent = created.error || "Failed to create ticket."
     return
   }
   // JTBD 2.15: if the ticket was assigned but the notification email was silently skipped, warn.
-  const assignedEmail = assignee ? assignee.value.trim() : ""
-  if (assignedEmail && created.assigneeEmailSent === false) assignEmailWarnToast("Ticket created and assigned, but the notification email could not be sent.")
+  if (created.assigneeEmailSent === false) assignEmailWarnToast("Ticket created and assigned, but the notification email could not be sent.")
   closeNewTicketModal()
+  // #534: invalidate the cached triage/tickets payload for this project so the newly created ticket
+  // (and any server-side new→open autofile advance) shows up on the next paint instead of waiting for
+  // the 25s guarded poll (which is suppressed whenever a detail/input/modal is open).
+  try { swrInvalidate("triage:" + projId) } catch (e) {}
+  try { swrInvalidate(dashCacheKey(projId)) } catch (e) {}
   // Refresh the tickets list/board so the new ticket appears immediately
   if (typeof renderTicketsView === "function") renderTicketsView()
-  // Also reload dashboard data so the kanban + overview count updates
-  if (typeof loadDashboard === "function") loadDashboard()
+  // Re-fetch dashboard data so the kanban + overview count + Tickets rows update right away.
+  refreshAll()
 }
 
 // graft helpers: severity rail class + status pill
@@ -6626,6 +6791,10 @@ let _tktFilters = { status: "", priority: "", label: "", assignee: "", source: "
 let _tktListState = { page: 1, totalPages: 1, loading: false }
 let _tktBoardState = { loading: false }
 let _tktBoardTickets = []
+// #536: the board caches the FULL, unfiltered project set here; status/priority/label/assignee/
+// source/search are applied client-side (tktMatchesSelectFilters) so filter + Clear are instant
+// (no 'Loading…' wipe, no round-trip). This tracks which project the cache belongs to.
+let _tktBoardProjId = null
 // JTBD 2.14: board selection UI sync — reassigned each render (see renderTicketsKanban).
 let syncKbSelectionUi = () => {}
 let _tktView = "board" // "list" | "board"
@@ -6734,8 +6903,43 @@ function renderTicketsView() {
     if (list) list.innerHTML = ""
     const board = document.getElementById("ticketsKanban")
     if (board) board.classList.remove("hide")
-    fetchAndRenderTktBoard()
+    // #536: if the full board for this project is already cached, apply filters/search/Clear
+    // client-side and re-render synchronously — no network round-trip, no 'Loading…' flash.
+    // Only fetch when the cache is empty or belongs to a different project.
+    const projId = state && state.active && state.active.id
+    if (projId && _tktBoardProjId === projId && Array.isArray(_tktBoardTickets) && _tktBoardTickets.length) {
+      renderTicketsKanban(_tktBoardTickets)
+    } else {
+      fetchAndRenderTktBoard()
+    }
   }
+}
+// #536: client-side predicate mirroring the server's ticket filters, so the board can filter the
+// cached full set without a fetch. Fields are the normalized shapes from listTicketsPaginated.
+function tktMatchesSelectFilters(t) {
+  const f = _tktFilters || {}
+  if (f.status) {
+    const want = f.status === "closed" ? ["done", "dismissed"] : [f.status]
+    if (!want.includes(t.status || "open")) return false
+  }
+  if (f.priority && t.priority !== f.priority) return false
+  if (f.assignee) {
+    if (f.assignee === "__unassigned__") { if (t.assignee) return false }
+    else if ((t.assignee || "") !== f.assignee) return false
+  }
+  if (f.source && t.source !== f.source) return false
+  if (f.label) {
+    const labs = Array.isArray(t.labels) ? t.labels : []
+    if (!labs.some(l => String(l && l.id != null ? l.id : l) === String(f.label))) return false
+  }
+  if (f.search) {
+    const q = String(f.search).toLowerCase()
+    let bug = ""
+    try { bug = t.suggestedBug ? JSON.stringify(t.suggestedBug) : "" } catch { bug = "" }
+    const hay = [t.title, t.observation, t.notes, bug].filter(Boolean).join(" \n ").toLowerCase()
+    if (!hay.includes(q)) return false
+  }
+  return true
 }
 
 function ticketStatusParamFor(view) {
@@ -6787,21 +6991,30 @@ async function fetchAndRenderTktBoard() {
   const board = document.getElementById("ticketsKanban")
   if (!board || _tktBoardState.loading) return
   _tktBoardState.loading = true
-  board.innerHTML = '<div class="tkt-list-empty">Loading…</div>'
-
+  // #536: only show the 'Loading…' placeholder on a genuine cold load (no cached board for this
+  // project). Re-fetches that back a filter/Clear/drag reconcile keep the current board in place.
   const projId = state && state.active && state.active.id
+  const warmCache = projId && _tktBoardProjId === projId && Array.isArray(_tktBoardTickets) && _tktBoardTickets.length
+  if (!warmCache) board.innerHTML = '<div class="tkt-list-empty">Loading…</div>'
+
   if (!projId) { board.innerHTML = '<div class="tkt-list-empty">No project selected.</div>'; _tktBoardState.loading = false; return }
 
-  const sp = ticketQueryParams("board", 1, 200)
+  // #536: fetch the FULL board (all statuses, no select filters) so the cache is a complete set the
+  // client can filter locally. Filters are applied in renderTicketsKanban via tktMatchesSelectFilters.
+  const sp = new URLSearchParams()
+  sp.set("status", "new,open,in_progress,done,dismissed")
+  sp.set("page", "1")
+  sp.set("limit", "200")
 
   try {
     const res = await fetch(`/api/projects/${encodeURIComponent(projId)}/tickets?${sp.toString()}`)
     if (!res.ok) throw new Error("HTTP " + res.status)
     const data = await res.json()
     _tktBoardTickets = data.tickets || []
+    _tktBoardProjId = projId
     renderTicketsKanban(_tktBoardTickets)
   } catch (e) {
-    board.innerHTML = '<div class="tkt-list-empty">Failed to load tickets.</div>'
+    if (!warmCache) board.innerHTML = '<div class="tkt-list-empty">Failed to load tickets.</div>'
   } finally {
     _tktBoardState.loading = false
   }
@@ -7214,9 +7427,11 @@ function renderTicketsKanban(boardTickets) {
   }
   refreshAssigneeOptions()
   const sourceTickets = Array.isArray(boardTickets) ? boardTickets : (_tktBoardTickets.length ? _tktBoardTickets : (state.tickets || []))
-  // Text filtering is already performed by the paginated, project-scoped API. Do not apply
-  // a second client-side predicate here or description-only matches can disappear from the board.
-  const tickets = sourceTickets.filter(t => kbMatchesFilter(t))
+  // #536: the board caches the FULL project set and filters client-side, so status/priority/label/
+  // assignee/source/search are applied here (tktMatchesSelectFilters mirrors the server, matching
+  // observation/notes/suggested-bug text too so description-only search hits are NOT dropped), in
+  // addition to the card-driven KPI filter (kbMatchesFilter).
+  const tickets = sourceTickets.filter(t => kbMatchesFilter(t) && tktMatchesSelectFilters(t))
   $("ticketKanbanCount").textContent = tickets.length ? tickets.length : ""
   if (!tickets.length) {
     board.innerHTML = emptyState(kicon('bug',{size:32}), "No tickets match these filters.", "")
@@ -7430,18 +7645,19 @@ async function loadTktShot(detailEl, annotations) {
       .then(fr => fr.json().catch(() => ({})))
       .then(fd => {
         if (!fd || !fd.url || fd.url === d.url) return
-        if (hasAnn) {
-          paint(fd.url)   // re-mount the overlay against the full image
-        } else if (img) {
-          img.setAttribute("data-full", fd.url); img.src = fd.url
-        }
+        // #531: swap the SAME <img> to full-res behind the existing overlay — the SVG uses a
+        // natural-coord viewBox (preserveAspectRatio=none) so it auto-scales, no re-mount needed.
+        // Re-mounting was what caused the thumb→full double flash and a duplicated overlay.
+        if (img) { img.setAttribute("data-full", fd.url); img.src = fd.url }
       })
       .catch(() => {})
   } catch { box.innerHTML = '<div class="muted" style="font-size:12px">Screenshot error</div>' }
 }
 // Re-render the reporter's markup as a toggleable/zoomable SVG overlay over the clean screenshot.
 // Shapes are in natural-image coords; the SVG viewBox = the image's natural size, so it auto-scales.
-function mountAnnotationOverlay(box, img, ann, url) {
+// #530/#531: build just the SVG markup layer (natural-image coords, preserveAspectRatio=none) so it
+// can be reused by BOTH the live overlay and the flattened export/composite.
+function buildAnnotationSvg(ann) {
   const W = ann.w || 1000, H = ann.h || 700, NS = "http://www.w3.org/2000/svg"
   const sw = Math.max(3, W / 320)
   const svg = document.createElementNS(NS, "svg")
@@ -7449,7 +7665,7 @@ function mountAnnotationOverlay(box, img, ann, url) {
   svg.setAttribute("preserveAspectRatio", "none")
   svg.setAttribute("class", "tkt-ann-svg")
   const set = (el, o) => { for (const k in o) el.setAttribute(k, o[k]); return el }
-  ann.shapes.forEach(s => {
+  ;(ann.shapes || []).forEach(s => {
     const col = s.color || "#db2777"
     if (s.type === "rect") svg.appendChild(set(document.createElementNS(NS, "rect"), { x: s.x, y: s.y, width: s.w, height: s.h, rx: 6, fill: "none", stroke: col, "stroke-width": sw }))
     else if (s.type === "circle") svg.appendChild(set(document.createElementNS(NS, "ellipse"), { cx: s.x, cy: s.y, rx: Math.abs(s.rx || 0), ry: Math.abs(s.ry || 0), fill: "none", stroke: col, "stroke-width": sw }))
@@ -7469,17 +7685,73 @@ function mountAnnotationOverlay(box, img, ann, url) {
       svg.appendChild(set(document.createElementNS(NS, "polyline"), { points: `${s.x2 - hl * Math.cos(a - Math.PI / 6)},${s.y2 - hl * Math.sin(a - Math.PI / 6)} ${s.x2},${s.y2} ${s.x2 - hl * Math.cos(a + Math.PI / 6)},${s.y2 - hl * Math.sin(a + Math.PI / 6)}`, fill: "none", stroke: col, "stroke-width": sw, "stroke-linecap": "round", "stroke-linejoin": "round" }))
     }
   })
+  return { svg, W, H, sw }
+}
+// #531: mount the reporter's markup as a LIVE SVG overlay, once. The box is reserved via aspect-ratio
+// from the reporter's coords BEFORE the (async) screenshot decodes, and the SVG stays hidden until the
+// image decodes — so the markup never renders over a zero-height / undecoded box (the pre-fix flash).
+function mountAnnotationOverlay(box, img, ann, url) {
+  const { svg, W, H } = buildAnnotationSvg(ann)
   const inner = document.createElement("div"); inner.className = "tkt-shot-inner"
+  if (W && H) inner.style.aspectRatio = W + " / " + H
+  svg.style.visibility = "hidden"
+  const reveal = () => { svg.style.visibility = ""; inner.style.aspectRatio = "" }
+  const onReady = () => { if (img.decode) img.decode().then(reveal).catch(reveal); else reveal() }
+  if (img.complete && img.naturalWidth) onReady()
+  else { img.addEventListener("load", onReady); img.addEventListener("error", reveal) }
   inner.appendChild(img); inner.appendChild(svg)
   const bar = document.createElement("div"); bar.className = "tkt-ann-bar"
   const tg = document.createElement("button"); tg.type = "button"; tg.className = "tkt-ann-btn on"; tg.textContent = "⦿ Markup"
   tg.addEventListener("click", e => { e.stopPropagation(); svg.classList.toggle("off"); tg.classList.toggle("on") })
   const op = document.createElement("button"); op.type = "button"; op.className = "tkt-ann-btn"; op.textContent = "↗ Full size"
-  op.addEventListener("click", e => { e.stopPropagation(); window.open(url, "_blank", "noopener") })
+  // #530: open a FLATTENED composite (screenshot + markup) rather than the clean raw URL; fall back to
+  // the raw URL if compositing fails (e.g. a cross-origin taint blocks canvas export).
+  op.addEventListener("click", async e => {
+    e.stopPropagation()
+    const full = img.getAttribute("data-full") || url
+    let opened = false
+    try {
+      const data = await exportAnnotatedShot(full, ann)
+      if (data) {
+        const blob = await (await fetch(data)).blob()
+        const burl = URL.createObjectURL(blob)
+        window.open(burl, "_blank", "noopener")
+        setTimeout(() => URL.revokeObjectURL(burl), 60000)
+        opened = true
+      }
+    } catch (_) {}
+    if (!opened) window.open(full, "_blank", "noopener")
+  })
   bar.appendChild(tg); bar.appendChild(op)
   box.classList.add("tkt-shotwrap")
   box.innerHTML = ""; box.appendChild(inner); box.appendChild(bar)
   box.addEventListener("click", e => { if (e.target.closest(".tkt-ann-btn")) return; box.classList.toggle("zoomed") })
+}
+// #530: draw the screenshot + annotation shapes onto a canvas and return a PNG data URL, so "Full
+// size"/export carries the markup. Loads the base image cross-origin; returns null on ANY failure
+// (blocked CORS, tainted canvas, decode error) so callers fall back to opening the raw URL. The
+// stored annotations_json is untouched, so re-editing the markup still works.
+async function exportAnnotatedShot(url, ann) {
+  try {
+    const { svg, W, H } = buildAnnotationSvg(ann)
+    const base = await new Promise((res, rej) => {
+      const i = new Image(); i.crossOrigin = "anonymous"
+      i.onload = () => res(i); i.onerror = rej; i.src = url
+    })
+    const cw = base.naturalWidth || W, ch = base.naturalHeight || H
+    const canvas = document.createElement("canvas"); canvas.width = cw; canvas.height = ch
+    const ctx = canvas.getContext("2d")
+    ctx.drawImage(base, 0, 0, cw, ch)
+    const s = svg.cloneNode(true)
+    s.setAttribute("xmlns", "http://www.w3.org/2000/svg")
+    s.setAttribute("width", String(cw)); s.setAttribute("height", String(ch))
+    const svgUrl = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(new XMLSerializer().serializeToString(s))
+    const overlay = await new Promise((res, rej) => {
+      const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = svgUrl
+    })
+    ctx.drawImage(overlay, 0, 0, cw, ch)
+    return canvas.toDataURL("image/png")
+  } catch (_) { return null }
 }
 // KLAVITYKLA-228: render the CSS selector the reporter pinned via the on-page element picker as a small
 // chip under the screenshot, so triage can link the finding to the exact DOM node. The selector is
@@ -10597,7 +10869,7 @@ load()
     <div style="display:flex;gap:10px;margin-bottom:12px">
       <label style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--paper-dim);flex:1">
         Priority
-        <select id="newTktPriInp" style="background:var(--ink);border:1px solid var(--line);border-radius:9px;color:var(--paper);font-family:var(--body);font-size:14px;padding:9px 12px;outline:none">
+        <select id="newTktPriInp" style="width:100%;box-sizing:border-box;appearance:none;-webkit-appearance:none;background:var(--ink) url(&quot;data:image/svg+xml;utf8,&lt;svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'&gt;&lt;path d='M2 4l4 4 4-4' fill='none' stroke='%23888' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/&gt;&lt;/svg&gt;&quot;) no-repeat right 12px center;border:1px solid var(--line);border-radius:9px;color:var(--paper);font-family:var(--body);font-size:14px;padding:9px 30px 9px 12px;outline:none">
           <option value="urgent">Urgent</option>
           <option value="high">High</option>
           <option value="medium" selected>Medium</option>
@@ -10605,8 +10877,9 @@ load()
         </select>
       </label>
       <label style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--paper-dim);flex:1">
-        Assignee <span style="font-weight:400;color:var(--paper-faint);font-size:11px">(optional)</span>
-        <input id="newTktAssigneeInp" type="email" list="tktAssigneeOptions" placeholder="name@company.com" maxlength="200" style="background:var(--ink);border:1px solid var(--line);border-radius:9px;color:var(--paper);font-family:var(--body);font-size:14px;padding:9px 12px;outline:none" />
+        Assignee <span style="color:var(--rose)">*</span>
+        <input id="newTktAssigneeInp" type="email" list="tktAssigneeOptions" placeholder="name@company.com" maxlength="200" required aria-required="true" style="background:var(--ink);border:1px solid var(--line);border-radius:9px;color:var(--paper);font-family:var(--body);font-size:14px;padding:9px 12px;outline:none" />
+        <span id="newTktAssigneeErr" style="font-size:11px;color:var(--rose);min-height:14px"></span>
       </label>
     </div>
     <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
@@ -12682,7 +12955,12 @@ load()
     if (submitBtn) submitBtn.addEventListener("click", submitNewTicket)
     const titleInp = document.getElementById("newTktTitleInp")
     if (titleInp) titleInp.addEventListener("keydown", function(e) {
-      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitNewTicket() }
+      // #542: no-op the Enter path while a submit is already in flight (guards keyboard double-submit).
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault()
+        if (submitBtn && submitBtn.disabled) return
+        submitNewTicket()
+      }
     })
   }
 
