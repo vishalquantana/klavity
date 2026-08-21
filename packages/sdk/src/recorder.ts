@@ -179,6 +179,17 @@ export async function startRecording(
 
   // 1) Screen — required. Throws (caller treats as cancel) if the user dismisses the picker.
   const screenStream = await deps.mediaDevices.getDisplayMedia({ video: { frameRate: fps }, audio: false, preferCurrentTab: false })
+
+  // #474 (privacy): once ANY track is acquired, a throw during the REST of init (canvas.captureStream,
+  // new MediaStream/MediaRecorder, recorder.start) must never leave live camera/mic/screen tracks running.
+  // Hoist camStream + a stop-all helper here, then wrap the whole engine setup so any init throw stops
+  // every acquired track before rethrowing — the caller sees the reject and the browser's recording
+  // indicator clears instead of staying lit forever.
+  let camStream: any = null
+  const stopAllTracks = () => {
+    for (const s of [screenStream, camStream]) { try { s?.getTracks?.().forEach((t: any) => t.stop?.()) } catch { /* no-op */ } }
+  }
+  try {
   const screenTrack = screenStream.getVideoTracks?.()[0]
   const st = (screenTrack?.getSettings?.() ?? {}) as { width?: number; height?: number }
   const aspect = (st.width && st.height) ? st.width / st.height : 16 / 9
@@ -186,8 +197,7 @@ export async function startRecording(
   canvas.height = Math.round(1280 / aspect)
   try { screenVid.srcObject = screenStream; await (screenVid.play?.() ?? Promise.resolve()) } catch { /* jsdom/headless: no real playback */ }
 
-  // 2) Camera + mic — best-effort. A rejection → screen-only fallback (Permissions-Policy on the host page).
-  let camStream: any = null
+  // 2) Camera + mic — best-effort. A rejection → audio-only retry (mic kept) → screen-only fallback.
   let micTrack: any = null
   let hadCamera = false
   let screenOnly = true
@@ -203,9 +213,23 @@ export async function startRecording(
       }
       if (wantMic) { micTrack = camStream.getAudioTracks?.()[0] || null; if (micTrack) screenOnly = false }
     } catch (e: any) {
-      // KEY spike finding: on a customer site, Permissions-Policy can silently block camera/mic here.
-      try { opts.onFallback?.(e?.name === 'NotAllowedError' ? 'permissions-policy' : (e?.name || 'camera-mic-blocked')) } catch { /* no-op */ }
-      screenOnly = true
+      // #477: a getUserMedia rejection is often the site's Permissions-Policy blocking the CAMERA while the
+      // MICROPHONE is still allowed — the combined request rejects, discarding mic narration. Before giving up
+      // to screen-only, RETRY audio-only (mic, no camera) so we keep the reporter's spoken narration.
+      // Fallback ladder: full (cam+mic) -> audio-only (mic, no cam) -> screen-only (neither).
+      let recovered = false
+      if (wantMic && wantCamera) {
+        try {
+          camStream = await deps.mediaDevices.getUserMedia({ video: false, audio: { echoCancellation: true, noiseSuppression: true } })
+          micTrack = camStream.getAudioTracks?.()[0] || null
+          if (micTrack) { screenOnly = false; recovered = true; try { opts.onFallback?.('camera-blocked') } catch { /* no-op */ } }
+        } catch { /* audio-only also blocked — fall through to screen-only */ }
+      }
+      if (!recovered) {
+        // KEY spike finding: on a customer site, Permissions-Policy can silently block camera/mic here.
+        try { opts.onFallback?.(e?.name === 'NotAllowedError' ? 'permissions-policy' : (e?.name || 'camera-mic-blocked')) } catch { /* no-op */ }
+        screenOnly = true
+      }
     }
   }
   const hadAudio = !!micTrack
@@ -262,9 +286,7 @@ export async function startRecording(
   let resolveDone!: (r: RecordingResult) => void
   const done = new Promise<RecordingResult>((res) => { resolveDone = res })
 
-  const cleanupStreams = () => {
-    for (const s of [screenStream, camStream]) { try { s?.getTracks?.().forEach((t: any) => t.stop?.()) } catch { /* no-op */ } }
-  }
+  const cleanupStreams = stopAllTracks
 
   recorder.onstop = () => {
     deps.caf(rafId)
@@ -313,6 +335,12 @@ export async function startRecording(
     state() { return state },
     screenOnly() { return screenOnly },
     done,
+  }
+  } catch (e) {
+    // #474: init failed after some tracks were already acquired — stop every one before rethrowing so the
+    // camera/mic/screen never stay live (the browser recording indicator clears). Caller treats as cancel.
+    stopAllTracks()
+    throw e
   }
 }
 
@@ -363,8 +391,30 @@ export async function recordMe(opts: RecordMeOptions = {}): Promise<RecordingAtt
     host.appendChild(card); document.body.appendChild(host)
 
     let settled = false
-    const finish = (val: RecordingAttachment | null) => { if (settled) return; settled = true; try { host.remove() } catch { /* no-op */ } resolve(val) }
     let controller: RecordingController | null = null
+    // #474 (privacy) teardown hook: recordMe owns its own fixed overlay, sibling to the composer modal. If the
+    // overlay is dismissed (Attach/Cancel/Re-record), the reporter presses Escape, or the host page navigates
+    // away while a recording is ACTIVE, every camera/mic/screen track must stop. finish() is the single exit and
+    // ALWAYS stops the controller; the Escape + pagehide listeners funnel those paths back through finish().
+    const teardownRecorder = () => { try { controller?.stop() } catch { /* no-op */ } }
+    const onKeydown = (e: KeyboardEvent) => {
+      // Registered at document capture; because recordMe mounts AFTER the composer, this runs before the
+      // composer's own Esc handler while the recorder overlay is up. Cancel the recording (stopping tracks)
+      // and swallow the key so the underlying modal does NOT also close behind us.
+      if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); finish(null) }
+    }
+    const onPageHide = () => { teardownRecorder() }
+    document.addEventListener('keydown', onKeydown, { capture: true })
+    if (typeof window !== 'undefined') { window.addEventListener('pagehide', onPageHide); window.addEventListener('beforeunload', onPageHide) }
+    const finish = (val: RecordingAttachment | null) => {
+      if (settled) return
+      settled = true
+      teardownRecorder() // stop any live camera/mic/screen tracks on EVERY exit (cancel/attach/redo/esc/close)
+      document.removeEventListener('keydown', onKeydown, { capture: true })
+      if (typeof window !== 'undefined') { window.removeEventListener('pagehide', onPageHide); window.removeEventListener('beforeunload', onPageHide) }
+      try { host.remove() } catch { /* no-op */ }
+      resolve(val)
+    }
 
     const fmtTime = (ms: number) => { const s = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` }
     const fmtMB = (b: number) => `${(b / 1048576).toFixed(1)} MB`
@@ -390,11 +440,13 @@ export async function recordMe(opts: RecordMeOptions = {}): Promise<RecordingAtt
     }
 
     const begin = async (wantCamera: boolean, wantMic: boolean) => {
-      let fellBack = false
+      // #477: onFallback may fire with 'camera-blocked' (mic narration KEPT via the audio-only retry) or a
+      // screen-only reason ('permissions-policy'/error name). The recording panel hint reflects which.
+      let fallbackReason: string | null = null
       try {
         controller = await startRecording({
           wantCamera, wantMic, caps: opts.caps,
-          onFallback: () => { fellBack = true },
+          onFallback: (reason) => { fallbackReason = reason },
           onStats: ({ elapsedMs, bytes }) => {
             const t = card.querySelector('#klr-timer'); if (t) t.textContent = 'REC ' + fmtTime(elapsedMs)
             const m = card.querySelector('#klr-meta')
@@ -404,12 +456,21 @@ export async function recordMe(opts: RecordMeOptions = {}): Promise<RecordingAtt
       } catch {
         finish(null); return // user dismissed the screen-share picker
       }
-      renderRecording(fellBack)
+      renderRecording(fallbackReason)
       controller.done.then(async (r) => { renderPreview(await recordingResultToAttachment(r)) })
     }
 
-    // Panel 2 — recording (REC timer + size/time-left + pause/stop + screen-only hint).
-    const renderRecording = (fellBack: boolean) => {
+    // Panel 2 — recording (REC timer + size/time-left + pause/stop + fallback hint).
+    const renderRecording = (fallbackReason: string | null) => {
+      // #477: 'camera-blocked' means the audio-only retry KEPT the mic (screen + narration); any other reason
+      // means neither camera nor mic is available (screen only).
+      const micKept = fallbackReason === 'camera-blocked'
+      const screenOnlyFallback = !!fallbackReason && !micKept
+      const hint = micKept
+        ? '<p style="font-size:11px;color:#574f45;margin-top:9px">Camera blocked by this site — recording <b>screen + mic narration</b>.</p>'
+        : screenOnlyFallback
+          ? '<p style="font-size:11px;color:#574f45;margin-top:9px">Camera/mic blocked by this site — recording <b>screen only</b>. You can still narrate by typing, or use the browser extension.</p>'
+          : ''
       card.innerHTML =
         '<div style="padding:14px;border-bottom:1px solid #e3ddd1;font-weight:600">Recording…</div>' +
         '<div style="padding:14px">' +
@@ -419,7 +480,7 @@ export async function recordMe(opts: RecordMeOptions = {}): Promise<RecordingAtt
         '<button id="klr-pause" style="padding:8px 13px;border-radius:8px;border:1px solid #e3ddd1;background:#fffdf8;font-weight:600;cursor:pointer">Pause</button>' +
         '<button id="klr-stop" style="padding:8px 13px;border-radius:8px;border:1px solid #dc2626;background:#dc2626;color:#fff;font-weight:600;cursor:pointer">Stop</button>' +
         '<span id="klr-meta" style="margin-left:auto;font-size:11px;color:#574f45;text-align:right"></span></div>' +
-        (fellBack ? '<p style="font-size:11px;color:#574f45;margin-top:9px">Camera/mic blocked by this site — recording <b>screen only</b>. You can still narrate by typing, or use the browser extension.</p>' : '') +
+        hint +
         '</div>'
       const pauseBtn = card.querySelector('#klr-pause') as HTMLButtonElement
       pauseBtn.onclick = () => {

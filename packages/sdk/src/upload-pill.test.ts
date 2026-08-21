@@ -111,4 +111,52 @@ describe("upload pill states", () => {
     expect(el2.textContent).toContain("CHAR-7")
     document.querySelectorAll('[data-klavity-ui="upload-pill"]').forEach(n => n.remove())
   })
+
+  // #475: concurrent pills must occupy distinct vertical slots, and dismissing one must REFLOW the rest so a
+  // later pill never lands on top of an existing one (the old count-based positioning did exactly that).
+  it("#475: pills take distinct slots; dismissing one reflows the rest so none overlap", async () => {
+    vi.useFakeTimers()
+    document.querySelectorAll('[data-klavity-ui="upload-pill"]').forEach(n => n.remove())
+    const hosts = () => Array.from(document.querySelectorAll('[data-klavity-ui="upload-pill"]')) as HTMLElement[]
+
+    const p1 = createUploadPill({ label: "1" })
+    createUploadPill({ label: "2" })
+    createUploadPill({ label: "3" })
+    expect(hosts().map(h => h.style.bottom)).toEqual(["78px", "136px", "194px"])
+
+    // Dismiss pill 1 (slot 0). The two survivors immediately compact to slots 0 + 1.
+    p1.dismiss()
+    await vi.advanceTimersByTimeAsync(300) // fade-out + host.remove()
+    expect(hosts().length).toBe(2)
+    expect(hosts().map(h => h.style.bottom)).toEqual(["78px", "136px"])
+
+    // A NEW pill (filed mid-upload) lands on the next free slot — never on top of an existing one.
+    createUploadPill({ label: "4" })
+    const bottoms = hosts().map(h => h.style.bottom)
+    expect(new Set(bottoms).size).toBe(bottoms.length) // all distinct → no overlap
+    expect(bottoms).toContain("194px")
+
+    document.querySelectorAll('[data-klavity-ui="upload-pill"]').forEach(n => n.remove())
+    vi.useRealTimers()
+  })
+
+  // #475: failed pills used to persist forever and stack up. They now auto-dismiss after a long window
+  // (~30s, well past the 4s success window) while still offering the × / Retry to clear sooner.
+  it("#475: a failed pill auto-dismisses after the long fail window", async () => {
+    vi.useFakeTimers()
+    document.querySelectorAll('[data-klavity-ui="upload-pill"]').forEach(n => n.remove())
+    const p = createUploadPill({ label: "screenshot" })
+    p.failure(() => {})
+    expect(pillEl().classList.contains("err")).toBe(true)
+
+    // Still up well before the fail window elapses (much longer than the 4s success window).
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(document.querySelector('[data-klavity-ui="upload-pill"]')).not.toBeNull()
+
+    // Past ~30s + the fade-out → gone.
+    await vi.advanceTimersByTimeAsync(21000)
+    await vi.advanceTimersByTimeAsync(300)
+    expect(document.querySelector('[data-klavity-ui="upload-pill"]')).toBeNull()
+    vi.useRealTimers()
+  })
 })

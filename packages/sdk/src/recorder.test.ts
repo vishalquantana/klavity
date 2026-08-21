@@ -4,6 +4,7 @@ import {
   pickRecordingMime,
   recordingSupported,
   startRecording,
+  recordMe,
   RECORDING_MIME_CANDIDATES,
   RECORDING_MAX_BYTES,
   RECORDING_MAX_DURATION_MS,
@@ -183,5 +184,78 @@ describe('startRecording engine', () => {
     ;(deps.MediaRecorder as any).isTypeSupported = () => false
     await expect(startRecording({}, deps)).rejects.toThrow(/recording-unsupported/)
     ;(deps.MediaRecorder as any).isTypeSupported = (m: string) => m === 'video/webm;codecs=vp9,opus'
+  })
+
+  // #474 (privacy): if init throws AFTER tracks were acquired, every camera/mic/screen track must be stopped
+  // before the reject so nothing stays live (browser recording indicator clears).
+  it('#474: an init throw (MediaStream ctor) stops ALL acquired camera/mic/screen tracks', async () => {
+    const screen = new FakeStream(1, 0)
+    const user = new FakeStream(1, 1)
+    const deps = makeDeps(
+      { MediaStream: class { constructor() { throw new Error('MediaStream boom') } } as any },
+      { screen, user },
+    )
+    await expect(startRecording({ wantCamera: true, wantMic: true }, deps)).rejects.toThrow(/boom/)
+    expect(screen.getTracks().every((t) => (t as any).stopped)).toBe(true)
+    expect(user.getTracks().every((t) => (t as any).stopped)).toBe(true)
+  })
+
+  // #477: camera blocked by the site's Permissions-Policy but mic allowed → the combined getUserMedia rejects;
+  // retry audio-only (mic, no camera) BEFORE giving up to screen-only so narration survives.
+  it('#477: camera-blocked-but-mic-allowed retries audio-only and keeps the mic (not screen-only)', async () => {
+    const calls: any[] = []
+    const deps = makeDeps({
+      mediaDevices: {
+        getDisplayMedia: vi.fn(async () => new FakeStream(1, 0)),
+        getUserMedia: vi.fn(async (c: any) => {
+          calls.push(c)
+          if (c.video) { const e: any = new Error('camera blocked'); e.name = 'NotAllowedError'; throw e }
+          return new FakeStream(0, 1) // audio-only stream: no video track, one mic track
+        }),
+      } as any,
+    })
+    const onFallback = vi.fn()
+    const ctrl = await startRecording({ wantCamera: true, wantMic: true, onFallback }, deps)
+    expect(calls.length).toBe(2)          // full (cam+mic) attempt, then the audio-only retry
+    expect(calls[1].video).toBe(false)     // retry drops the camera constraint
+    expect(onFallback).toHaveBeenCalledWith('camera-blocked')
+    expect(ctrl.screenOnly()).toBe(false)  // mic kept → NOT screen-only
+    const rec = FakeMediaRecorder._instances[FakeMediaRecorder._instances.length - 1]
+    rec.pushChunk(777)
+    ctrl.stop()
+    const r = await ctrl.done
+    expect(r.hadAudio).toBe(true)          // mic narration preserved
+    expect(r.hadCamera).toBe(false)
+    expect(r.screenOnly).toBe(false)
+  })
+})
+
+// #474 (privacy) teardown hook: the recordMe overlay must stop every track when it is dismissed while a
+// recording is active — here via Escape (which also stands in for the composer-close path).
+describe('recordMe overlay teardown', () => {
+  const tick = async (n = 3) => { for (let i = 0; i < n; i++) await new Promise((r) => setTimeout(r, 0)) }
+
+  it('#474: dismissing the overlay (Escape) mid-recording stops every camera/mic/screen track', async () => {
+    document.querySelectorAll('[data-klavity-ui="recorder"]').forEach((n) => n.remove())
+    const screen = new FakeStream(1, 0)
+    const user = new FakeStream(1, 1)
+    const deps = makeDeps({}, { screen, user })
+
+    const p = recordMe({ deps })
+    const card = document.querySelector('[data-klavity-ui="recorder"]') as HTMLElement
+    expect(card).not.toBeNull()
+    ;(card.querySelector('#klr-start') as HTMLButtonElement).click()
+    await tick()
+    // now in the recording panel (Stop button present) with live tracks
+    expect(card.querySelector('#klr-stop')).not.toBeNull()
+    expect(screen.getTracks().some((t) => (t as any).stopped)).toBe(false)
+
+    // Escape dismisses the overlay while recording is active → teardown stops every track.
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    const result = await p
+    expect(result).toBeNull()
+    expect(screen.getTracks().every((t) => (t as any).stopped)).toBe(true)
+    expect(user.getTracks().every((t) => (t as any).stopped)).toBe(true)
+    expect(document.querySelector('[data-klavity-ui="recorder"]')).toBeNull()
   })
 })

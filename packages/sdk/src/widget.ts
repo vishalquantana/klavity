@@ -1658,6 +1658,29 @@ async function mount() {
 //   • failure   — "Upload didn't finish · Retry" (Retry re-sends the RETAINED payload — no re-capture)
 // A dismiss (×) is always present. Dynamic values go in via textContent/href (never innerHTML) — XSS-safe.
 const PILL_AUTODISMISS_MS = 4000
+// #475: failed pills persist far longer than success (so the user can read the error / hit Retry) but still
+// auto-clear so a string of failures never stacks up the screen forever.
+const PILL_FAIL_AUTODISMISS_MS = 30000
+
+// #475: vertical stacking geometry + a slot registry so concurrent upload pills never overlap. The old code
+// positioned each new pill by counting existing pills (querySelectorAll(...).length); once one dismissed, the
+// stale count let a new pill land on top of an existing one. Instead we keep an ordered registry: each pill
+// takes the next slot on creation, and REMOVAL reflows every remaining pill down to compact the stack — so the
+// lowest free slot is always reused and no two pills ever share a slot.
+const PILL_BASE_PX = 78
+const PILL_SLOT_PX = 58
+const pillStack: HTMLElement[] = []
+function reflowPillStack(): void {
+  // Prune any host that left the DOM out-of-band (defensive: a pill should always exit via remove(), but this
+  // keeps the slot math correct even if a host is torn down some other way) then position the survivors.
+  for (let i = pillStack.length - 1; i >= 0; i--) { if (!pillStack[i].isConnected) pillStack.splice(i, 1) }
+  pillStack.forEach((h, i) => { h.style.bottom = `${PILL_BASE_PX + i * PILL_SLOT_PX}px` })
+}
+function addPillToStack(host: HTMLElement): void { pillStack.push(host); reflowPillStack() }
+function removePillFromStack(host: HTMLElement): void {
+  const i = pillStack.indexOf(host)
+  if (i >= 0) { pillStack.splice(i, 1); reflowPillStack() }
+}
 
 function pillDisplayRef(issueKey: string): string {
   const m = /^fb_([0-9a-f]{8})[0-9a-f-]+$/i.exec(issueKey)
@@ -1699,10 +1722,12 @@ export interface UploadPill {
 export function createUploadPill(opts: { totalBytesHint?: number; label?: string } = {}): UploadPill {
   const host = document.createElement("div")
   host.setAttribute("data-klavity-ui", "upload-pill")
-  // Stack concurrent uploads so a second report filed mid-upload sits above (not on top of) the first.
-  const existing = document.querySelectorAll('[data-klavity-ui="upload-pill"]').length
-  host.style.cssText = `position:fixed;right:18px;bottom:${78 + existing * 58}px;z-index:2147483646;pointer-events:none`
+  // #475: register in the shared slot stack (takes the lowest free slot, reflows the rest on removal) so a
+  // second report filed mid-upload sits above — never on top of — the first. `bottom` is driven by
+  // reflowPillStack(), not a stale querySelectorAll count.
+  host.style.cssText = "position:fixed;right:18px;z-index:2147483646;pointer-events:none"
   document.body.appendChild(host)
+  addPillToStack(host)
   const root = host.attachShadow({ mode: "open" })
   const style = document.createElement("style")
   style.textContent = `
@@ -1748,6 +1773,7 @@ export function createUploadPill(opts: { totalBytesHint?: number; label?: string
 
   const remove = () => {
     if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null }
+    removePillFromStack(host) // #475: free the slot + reflow remaining pills so the next one never overlaps
     pill.classList.add("out")
     setTimeout(() => host.remove(), 260)
   }
@@ -1808,9 +1834,26 @@ export function createUploadPill(opts: { totalBytesHint?: number; label?: string
     title.textContent = "Upload didn't finish"
     sub.textContent = ""
     const a = document.createElement("a"); a.href = "#"; a.textContent = "Retry"
-    a.addEventListener("click", (e) => { e.preventDefault(); onRetry() })
+    a.addEventListener("click", (e) => {
+      e.preventDefault()
+      if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null } // #475: clear the fail-timer on retry
+      armed = false
+      onRetry()
+    })
     sub.append(document.createTextNode("check your connection · "), a)
     prog.style.display = "none"
+    // #475: failed pills used to persist forever and stack up. Auto-dismiss after a long window (30s, well past
+    // the 4s success window so the user can read the error / retry); the × dismisses instantly, retry clears it.
+    // Hover/focus pauses and resumes with only the remaining time (same affordance as success).
+    let remaining = PILL_FAIL_AUTODISMISS_MS
+    let started = 0
+    const arm = () => { if (armed) return; armed = true; started = Date.now(); dismissTimer = setTimeout(remove, remaining) }
+    const pause = () => { if (!dismissTimer) return; clearTimeout(dismissTimer); dismissTimer = null; armed = false; remaining = Math.max(0, remaining - (Date.now() - started)) }
+    pill.addEventListener("mouseenter", pause)
+    pill.addEventListener("mouseleave", arm)
+    pill.addEventListener("focusin", pause)
+    pill.addEventListener("focusout", arm)
+    arm()
   }
 
   uploading()
