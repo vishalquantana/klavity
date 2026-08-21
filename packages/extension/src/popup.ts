@@ -384,12 +384,71 @@ async function renderSignedIn() {
     }
   }
 
+  // ── QA mode toggle (team-gated on-page review) ──
+  // Only reachable here, i.e. when signed in. Flipping it writes the shared
+  // klavQaMode flag; the content script (this + every other tab) reacts via
+  // storage.onChanged. On turn-on we also inject the content script into the
+  // current tab so the overlay arms immediately, requesting an optional host
+  // permission if the site isn't already granted. Membership is enforced by the
+  // page-bugs endpoint (403 -> the overlay hides itself); the popup stays generic.
+  await wireQaMode(activeTab, unsupported)
+
   // Sign out
   $('signout-btn').addEventListener('click', async () => { await signOut(); location.reload() })
 
   await renderSims(s, activeProjectId)
   await renderRecent()
   await renderGrant(config)
+}
+
+async function wireQaMode(activeTab: chrome.tabs.Tab | undefined, unsupported: boolean) {
+  const wrap = $('qa-wrap')
+  const card = $('qa-card')
+  const toggle = $('qa-toggle') as HTMLInputElement
+  const sub = $('qa-sub')
+  const msg = $('qa-msg') as HTMLDivElement
+  wrap.style.display = 'block'
+
+  const { klavQaMode } = await chrome.storage.local.get('klavQaMode')
+  const setCard = (on: boolean) => { card.classList.toggle('on', on); sub.textContent = on ? 'On — pins show every bug on this page' : 'See & close bugs on this page' }
+  toggle.checked = !!klavQaMode
+  setCard(!!klavQaMode)
+
+  const showMsg = (t: string) => { msg.textContent = t; msg.style.display = t ? 'block' : 'none' }
+
+  toggle.addEventListener('change', async () => {
+    const on = toggle.checked
+    showMsg('')
+    await chrome.storage.local.set({ klavQaMode: on })
+    setCard(on)
+    if (!on) return
+    // Turn-on: make sure the content script is live on this tab so QA arms now.
+    if (unsupported || !activeTab?.id || !activeTab.url) return
+    const tabId = activeTab.id
+    const injectContentScript = async (): Promise<boolean> => {
+      const cs = chrome.runtime.getManifest().content_scripts?.[0]
+      if (!cs?.js?.length) return false
+      try {
+        if (cs.css?.length) await chrome.scripting.insertCSS({ target: { tabId }, files: cs.css })
+        await chrome.scripting.executeScript({ target: { tabId }, files: cs.js })
+        return true
+      } catch { return false }
+    }
+    // Ping the existing content script first; if present it already reacted via storage.
+    try { await chrome.tabs.sendMessage(tabId, { kind: 'KLAV_NUDGE_ROUTE' }); return } catch { /* not loaded — inject below */ }
+    if (await injectContentScript()) return
+    // Customer domain not yet granted: request the optional host permission (user gesture).
+    try {
+      const origin = new URL(activeTab.url).origin
+      const has = await chrome.permissions.contains({ origins: [`${origin}/*`] }).catch(() => false)
+      if (!has) {
+        const granted = await chrome.permissions.request({ origins: [`${origin}/*`] }).catch(() => false)
+        if (!granted) { showMsg('Allow Klavity on this site to see bugs here (QA stays on for other tabs).'); return }
+        chrome.runtime.sendMessage({ kind: 'KLAV_RECONCILE_SCRIPTS' }).catch(() => {})
+      }
+      if (!(await injectContentScript())) showMsg('Reload this page to see QA pins here.')
+    } catch { showMsg('QA mode is on — open a website tab to review bugs.') }
+  })
 }
 
 // ── Monitored-site access (optional host permissions) ────────────────────

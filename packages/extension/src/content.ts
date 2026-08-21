@@ -10,6 +10,17 @@ import { klavContentSig, shouldCapture, createTrailingDebounce, DEBOUNCE_MS, DEB
 import { widgetPresent } from './coexist'
 import { makeCaptureAwaiter } from './capture-bridge'
 import { parseMatchResponse } from './ext-match'
+import {
+  parsePageBugs,
+  qaResolveCoords,
+  qaStatusBucket,
+  qaDeriveCounts,
+  qaCountLabel,
+  qaTotal,
+  qaTimeAgo,
+  type QaBug,
+  type QaCounts,
+} from './qa-mode'
 
 // ── Error + network capture ring buffer (shared @klavity/core/capture, full fidelity G3) ──
 const _buffers: CaptureBuffers = { consoleErrors: [], networkFailures: [] }
@@ -1325,6 +1336,10 @@ function klavOnRouteChange() {
   setTimeout(klavArmObservers, 200)
 
   void maybeActivate('spa-nav')
+
+  // QA mode: the URL (hence the page's bug set) changed — re-fetch after the SPA
+  // has settled so pins reflect the new route.
+  if (klavQaActive) setTimeout(() => { void klavQaRefresh() }, 250)
 }
 ;(function klavPatchHistory() {
   const wrap = (fn: any) => function (this: any, ...args: any[]) { const r = fn.apply(this, args); queueMicrotask(klavOnRouteChange); return r }
@@ -1334,6 +1349,461 @@ function klavOnRouteChange() {
   // Polling backstop for SPAs that mutate the URL without History API (rare but real).
   setInterval(klavOnRouteChange, 1500)
 })()
+
+// ════════════════════════════════════════════════════════════════════════════
+// QA MODE (KLA #441) — authenticated, team-gated on-page bug review overlay.
+//
+// A signed-in Klavity team member toggles "QA mode" in the popup; the flag lives in
+// chrome.storage.local (klavQaMode) so it fans out to every open tab. When active on
+// a page whose project the user is a MEMBER of, we fetch the bugs reported for THIS
+// url and render them as coloured pins (positioned by coords) + a bottom QA bar +
+// a side list for coordless bugs. Clicking a pin/row opens a review popover with a
+// "Mark working & close" action that POSTs /api/feedback/:id/qa-close (team-gated),
+// optimistically flipping the pin green.
+//
+// Gating is layered: the overlay only arms when signed in (klavConfig.token); the
+// page-bugs endpoint returns 403 when the user isn't a project member, and we hide
+// QA mode silently for that tab. Reporters (no extension / not a member) never see
+// any of this — it is entirely separate from the anonymous report widget, lives in
+// its OWN shadow host, and is torn down if the page widget announces itself is NOT
+// required (QA mode is an authenticated extension surface, orthogonal to the widget).
+// ════════════════════════════════════════════════════════════════════════════
+
+const QA_STORAGE_KEY = 'klavQaMode'
+let klavQaActive = false
+let klavQaBugs: QaBug[] = []
+let klavQaCounts: QaCounts = { open: 0, inProgress: 0, done: 0 }
+let klavQaProjectId: string | null = null
+let klavQaHostRoot: ShadowRoot | null = null
+let klavQaOpenId: string | null = null           // id of the bug whose popover is open
+let klavQaLoading = false
+
+function klavQaColor(bucket: 'open' | 'prog' | 'done'): string {
+  return bucket === 'done' ? '#16a34a' : bucket === 'prog' ? '#d97706' : '#dc2626'
+}
+
+// Dedicated shadow host — isolated from page CSS AND from the Sims/report hosts.
+function klavQaGetHost(): ShadowRoot {
+  if (klavQaHostRoot) return klavQaHostRoot
+  const host = document.createElement('div')
+  host.id = 'klavity-qa-host'
+  document.documentElement.appendChild(host)
+  klavQaHostRoot = host.attachShadow({ mode: 'open' })
+  const style = document.createElement('style')
+  style.textContent = `
+    :host{all:initial;}
+    *{box-sizing:border-box;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;}
+    .kqa-pinlayer{position:absolute;top:0;left:0;width:0;height:0;z-index:2147483640;pointer-events:none;}
+    .kqa-pin{position:absolute;width:26px;height:26px;border-radius:50% 50% 50% 2px;transform:rotate(-45deg) scale(0);transform-origin:center;display:grid;place-items:center;color:#fff;font-size:12px;font-weight:800;box-shadow:0 3px 10px rgba(0,0,0,.34);border:2px solid #fff;cursor:pointer;pointer-events:auto;transition:transform .16s cubic-bezier(.34,1.56,.64,1),box-shadow .16s ease;}
+    .kqa-pin.in{transform:rotate(-45deg) scale(1);}
+    .kqa-pin:hover{transform:rotate(-45deg) scale(1.16);box-shadow:0 5px 16px rgba(0,0,0,.4);z-index:1;}
+    .kqa-pin span{transform:rotate(45deg);pointer-events:none;line-height:1;}
+    .kqa-pin.kqa-closing{animation:kqapop .5s cubic-bezier(.34,1.56,.64,1) forwards;}
+    @keyframes kqapop{0%{transform:rotate(-45deg) scale(1);}45%{transform:rotate(-45deg) scale(1.4);}100%{transform:rotate(-45deg) scale(1);}}
+    .kqa-tip{position:absolute;z-index:2147483643;pointer-events:none;background:#19140f;color:#fff;font-size:11.5px;font-weight:500;padding:5px 9px;border-radius:7px;max-width:230px;box-shadow:0 6px 18px rgba(0,0,0,.3);opacity:0;transform:translateY(3px);transition:opacity .14s,transform .14s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .kqa-tip.in{opacity:1;transform:translateY(0);}
+    .kqa-bar{position:fixed;left:50%;bottom:18px;transform:translateX(-50%) translateY(14px);z-index:2147483642;display:flex;align-items:center;gap:11px;background:#19140f;color:#fbf6ee;border-radius:999px;padding:8px 8px 8px 15px;box-shadow:0 10px 34px rgba(0,0,0,.34);font-size:12.5px;font-weight:600;opacity:0;transition:opacity .28s ease,transform .28s cubic-bezier(.34,1.4,.6,1);pointer-events:auto;max-width:min(94vw,640px);}
+    .kqa-bar.in{opacity:1;transform:translateX(-50%) translateY(0);}
+    .kqa-bar .kqa-brand{display:flex;align-items:center;gap:7px;font-weight:800;}
+    .kqa-bar .kqa-brand .kqa-dot{width:8px;height:8px;border-radius:50%;background:#6366f1;box-shadow:0 0 0 0 rgba(99,102,241,.6);animation:kqapulse 2s infinite;}
+    @keyframes kqapulse{0%{box-shadow:0 0 0 0 rgba(99,102,241,.5)}70%{box-shadow:0 0 0 7px rgba(99,102,241,0)}100%{box-shadow:0 0 0 0 rgba(99,102,241,0)}}
+    .kqa-badge{background:#6366f1;border-radius:999px;padding:1px 9px;font-weight:800;font-size:11px;}
+    .kqa-break{opacity:.62;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .kqa-you{opacity:.72;font-size:11px;font-weight:500;white-space:nowrap;}
+    .kqa-barbtn{border:none;background:rgba(251,246,238,.14);color:#fbf6ee;border-radius:999px;width:26px;height:26px;display:grid;place-items:center;cursor:pointer;flex:0 0 auto;transition:background .14s,transform .12s;}
+    .kqa-barbtn:hover{background:rgba(251,246,238,.26);transform:scale(1.06);}
+    .kqa-barbtn:active{transform:scale(.94);}
+    .kqa-panel{position:fixed;right:16px;top:74px;bottom:76px;width:288px;max-width:82vw;z-index:2147483641;display:flex;flex-direction:column;background:#f5f3ee;border:1px solid #e3ddd1;border-radius:14px;box-shadow:0 16px 44px rgba(28,22,40,.2);overflow:hidden;opacity:0;transform:translateX(12px);transition:opacity .26s ease,transform .26s cubic-bezier(.34,1.4,.6,1);}
+    .kqa-panel.in{opacity:1;transform:translateX(0);}
+    .kqa-ph{padding:11px 13px;border-bottom:1px solid #e3ddd1;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:#6366f1;font-weight:800;display:flex;align-items:center;gap:7px;}
+    .kqa-plist{overflow-y:auto;padding:7px;display:flex;flex-direction:column;gap:6px;}
+    .kqa-row{display:flex;gap:9px;align-items:flex-start;padding:9px 10px;border-radius:10px;background:#fffdf8;border:1px solid #ece7dd;cursor:pointer;transition:transform .12s,box-shadow .14s,border-color .14s;text-align:left;}
+    .kqa-row:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(28,22,40,.1);border-color:#d7cfbf;}
+    .kqa-row:active{transform:scale(.99);}
+    .kqa-sev{width:9px;height:9px;border-radius:50%;flex:0 0 auto;margin-top:4px;}
+    .kqa-rmain{min-width:0;flex:1;}
+    .kqa-rtitle{font-size:12.5px;font-weight:600;color:#19140f;line-height:1.3;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;}
+    .kqa-rmeta{font-size:10.5px;color:#574f45;margin-top:3px;}
+    .kqa-empty{margin:auto;padding:26px 18px;text-align:center;color:#574f45;font-size:12.5px;line-height:1.5;}
+    .kqa-empty b{color:#19140f;display:block;font-size:13.5px;margin-bottom:3px;}
+    .kqa-empty .kqa-spark{font-size:26px;display:block;margin-bottom:8px;}
+    /* review popover */
+    .kqa-pop{position:fixed;z-index:2147483645;width:308px;max-width:92vw;background:#f5f3ee;border:1px solid #e3ddd1;border-radius:14px;box-shadow:0 20px 54px rgba(28,22,40,.24);overflow:hidden;opacity:0;transform:translateY(8px) scale(.98);transform-origin:top center;transition:opacity .18s ease,transform .18s cubic-bezier(.34,1.5,.6,1);}
+    .kqa-pop.in{opacity:1;transform:translateY(0) scale(1);}
+    .kqa-poph{display:flex;align-items:center;gap:8px;padding:11px 13px;border-bottom:1px solid #e3ddd1;}
+    .kqa-poph b{font-size:13px;color:#19140f;line-height:1.3;flex:1;min-width:0;}
+    .kqa-st{margin-left:auto;font-size:10px;font-weight:800;padding:2px 8px;border-radius:999px;text-transform:uppercase;letter-spacing:.03em;flex:0 0 auto;}
+    .kqa-popb{padding:11px 13px;}
+    .kqa-meta{font-size:11.5px;color:#574f45;margin-bottom:9px;}
+    .kqa-thumb{height:118px;border-radius:9px;border:1px solid #e3ddd1;background:linear-gradient(135deg,#ece7dd,#f7f4ec);margin-bottom:11px;background-size:cover;background-position:center top;}
+    .kqa-actions{display:flex;gap:7px;flex-wrap:wrap;}
+    .kqa-btn{padding:8px 12px;border-radius:9px;border:1px solid #e3ddd1;background:#fffdf8;font-weight:700;font-size:12px;cursor:pointer;color:#19140f;display:inline-flex;align-items:center;gap:6px;transition:transform .12s,box-shadow .14s,background .14s;}
+    .kqa-btn:hover{transform:translateY(-1px);box-shadow:0 5px 14px rgba(28,22,40,.12);}
+    .kqa-btn:active{transform:scale(.97);}
+    .kqa-btn.kqa-primary{background:#16a34a;border-color:#16a34a;color:#fff;}
+    .kqa-btn.kqa-primary:hover{background:#12903f;}
+    .kqa-btn.kqa-ghost{background:none;border-color:transparent;color:#574f45;}
+    .kqa-btn[disabled]{opacity:.6;cursor:default;transform:none;box-shadow:none;}
+    .kqa-done-card{padding:26px 16px;text-align:center;}
+    .kqa-check{width:52px;height:52px;border-radius:50%;background:#16a34a;display:grid;place-items:center;margin:0 auto 12px;color:#fff;animation:kqapop .5s cubic-bezier(.34,1.56,.64,1);}
+    .kqa-done-card b{font-size:14px;color:#19140f;}
+    .kqa-done-card p{margin:5px 0 0;font-size:12px;color:#574f45;}
+    @media (prefers-reduced-motion: reduce){.kqa-pin,.kqa-bar,.kqa-panel,.kqa-pop,.kqa-tip{transition-duration:.01ms;}.kqa-pin.kqa-closing,.kqa-check{animation-duration:.01ms;}.kqa-brand .kqa-dot{animation:none;}}
+  `
+  klavQaHostRoot.appendChild(style)
+  const pinlayer = document.createElement('div'); pinlayer.className = 'kqa-pinlayer'; pinlayer.id = 'kqa-pinlayer'
+  klavQaHostRoot.appendChild(pinlayer)
+  return klavQaHostRoot
+}
+
+// Resolve the project id for the current site: config allowlist match first, then the
+// server match result, then the popup-selected project, then the first project. The
+// page-bugs 403 is the real membership gate — this just supplies a candidate id.
+async function klavQaResolveProjectId(): Promise<string | null> {
+  const matched = klavMatchProject(location.href)?.id || klavApiMatchedProject?.id
+  if (matched) return matched
+  try {
+    const r = await chrome.storage.local.get('klavSelectedProjectId')
+    if (r.klavSelectedProjectId) return r.klavSelectedProjectId as string
+  } catch { /* ignore */ }
+  return klavConfig?.projects?.[0]?.id ?? null
+}
+
+type QaFetchResult = { ok: true; bugs: QaBug[]; counts: QaCounts } | { ok: false; status: number }
+async function klavQaFetch(): Promise<QaFetchResult> {
+  const base = klavConfig?.backendUrl?.replace(/\/+$/, '')
+  const token = klavConfig?.token
+  if (!base || !token) return { ok: false, status: 0 }
+  const pid = await klavQaResolveProjectId()
+  if (!pid) return { ok: false, status: 0 }
+  klavQaProjectId = pid
+  try {
+    const r = await fetch(
+      `${base}/api/projects/${encodeURIComponent(pid)}/page-bugs?url=${encodeURIComponent(location.href)}`,
+      { headers: { authorization: `Bearer ${token}` } },
+    )
+    if (!r.ok) return { ok: false, status: r.status }
+    const parsed = parsePageBugs(await r.json().catch(() => ({})))
+    return { ok: true, bugs: parsed.bugs, counts: parsed.counts }
+  } catch {
+    return { ok: false, status: 0 }
+  }
+}
+
+// Toggle handler + boot entry: fetch and render, or hide gracefully on 403 / no project.
+async function klavQaActivate(): Promise<void> {
+  if (location.protocol !== 'http:' && location.protocol !== 'https:') return
+  if (!klavConfig?.token) return // not signed in — never render for anonymous reporters
+  klavQaActive = true
+  klavQaLoading = true
+  klavQaRenderBar() // instant feedback (loading pill) while the fetch runs
+  const res = await klavQaFetch()
+  klavQaLoading = false
+  if (!klavQaActive) return // toggled off mid-flight
+  if (!res.ok) {
+    // 403 = not a project member → hide QA on this tab silently (reporters unaffected).
+    // Any other failure (offline/no project) → also stay quiet rather than nag.
+    klavQaTeardown()
+    return
+  }
+  klavQaBugs = res.bugs
+  klavQaCounts = res.counts
+  klavQaRender()
+}
+
+function klavQaDeactivate(): void {
+  klavQaActive = false
+  klavQaTeardown()
+}
+
+// Re-fetch on SPA route change (the URL — hence the bug set — changed).
+async function klavQaRefresh(): Promise<void> {
+  if (!klavQaActive) return
+  klavQaClosePopover()
+  const res = await klavQaFetch()
+  if (!klavQaActive) return
+  if (!res.ok) { klavQaTeardown(); return }
+  klavQaBugs = res.bugs
+  klavQaCounts = res.counts
+  klavQaRender()
+}
+
+function klavQaTeardown(): void {
+  klavQaOpenId = null
+  const root = klavQaHostRoot
+  if (!root) return
+  root.getElementById('kqa-bar')?.remove()
+  root.getElementById('kqa-panel')?.remove()
+  root.getElementById('kqa-pop')?.remove()
+  root.getElementById('kqa-tip')?.remove()
+  const pl = root.getElementById('kqa-pinlayer'); if (pl) pl.innerHTML = ''
+}
+
+function klavQaRender(): void {
+  klavQaRenderBar()
+  klavQaRenderPins()
+  klavQaRenderPanel()
+}
+
+function klavQaMeEmail(): string {
+  return klavConfig?.email || 'you'
+}
+
+function klavQaRenderBar(): void {
+  const root = klavQaGetHost()
+  root.getElementById('kqa-bar')?.remove()
+  const bar = document.createElement('div')
+  bar.className = 'kqa-bar'; bar.id = 'kqa-bar'
+  const total = qaTotal(klavQaCounts)
+  const you = klavQaMeEmail().split('@')[0]
+  if (klavQaLoading) {
+    bar.innerHTML = `<span class="kqa-brand"><span class="kqa-dot"></span>QA mode</span><span class="kqa-break">Loading bugs on this page...</span>`
+  } else {
+    bar.innerHTML = `
+      <span class="kqa-brand"><span class="kqa-dot"></span>QA mode</span>
+      <span class="kqa-badge">${total} here</span>
+      <span class="kqa-break">${klavEsc(qaCountLabel(klavQaCounts))}</span>
+      <span class="kqa-you">you: ${klavEsc(you)} (QA)</span>
+      <button class="kqa-barbtn" id="kqa-refresh" title="Refresh">${icon('refresh-cw', { size: 14 })}</button>
+      <button class="kqa-barbtn" id="kqa-exit" title="Turn off QA mode (Esc)">${icon('x', { size: 15 })}</button>`
+  }
+  root.appendChild(bar)
+  requestAnimationFrame(() => bar.classList.add('in'))
+  bar.querySelector('#kqa-refresh')?.addEventListener('click', () => { klavQaLoading = true; klavQaRenderBar(); void klavQaRefresh().then(() => { klavQaLoading = false; if (klavQaActive) klavQaRenderBar() }) })
+  bar.querySelector('#kqa-exit')?.addEventListener('click', () => { void klavQaSetStoredMode(false) })
+}
+
+function klavQaRenderPins(): void {
+  const root = klavQaGetHost()
+  const layer = root.getElementById('kqa-pinlayer')!
+  layer.innerHTML = ''
+  const dims = { w: Math.max(document.documentElement.scrollWidth, window.innerWidth), h: Math.max(document.documentElement.scrollHeight, window.innerHeight) }
+  klavQaBugs.forEach((bug, i) => {
+    const pos = qaResolveCoords(bug.coords, dims)
+    if (!pos) return // coordless → rendered in the side panel instead
+    const bucket = qaStatusBucket(bug.status)
+    const pin = document.createElement('div')
+    pin.className = 'kqa-pin'
+    pin.dataset.id = bug.id
+    pin.style.left = pos.x + 'px'
+    pin.style.top = pos.y + 'px'
+    pin.style.background = klavQaColor(bucket)
+    pin.innerHTML = `<span>${bucket === 'done' ? klavCheckSvg() : String(i + 1)}</span>`
+    pin.addEventListener('mouseenter', () => klavQaShowTip(bug, pos))
+    pin.addEventListener('mouseleave', klavQaHideTip)
+    pin.addEventListener('click', (e) => { e.stopPropagation(); klavQaOpenPopover(bug) })
+    layer.appendChild(pin)
+    // staggered drop-in
+    setTimeout(() => pin.classList.add('in'), 40 + i * 55)
+  })
+}
+
+function klavCheckSvg(): string {
+  return icon('check', { size: 13 })
+}
+
+let klavQaTipEl: HTMLElement | null = null
+function klavQaShowTip(bug: QaBug, docPos: { x: number; y: number }): void {
+  klavQaHideTip()
+  const root = klavQaGetHost()
+  const tip = document.createElement('div')
+  tip.className = 'kqa-tip'; tip.id = 'kqa-tip'
+  tip.textContent = bug.title || bug.ref || 'Reported bug'
+  // Position in viewport coords (fixed), derived from the doc coord minus scroll.
+  const vx = docPos.x - window.scrollX
+  const vy = docPos.y - window.scrollY
+  tip.style.left = Math.max(8, Math.min(vx + 16, window.innerWidth - 240)) + 'px'
+  tip.style.top = Math.max(8, vy - 34) + 'px'
+  root.appendChild(tip)
+  requestAnimationFrame(() => tip.classList.add('in'))
+  klavQaTipEl = tip
+}
+function klavQaHideTip(): void { klavQaTipEl?.remove(); klavQaTipEl = null }
+
+function klavQaRenderPanel(): void {
+  const root = klavQaGetHost()
+  root.getElementById('kqa-panel')?.remove()
+  const dims = { w: Math.max(document.documentElement.scrollWidth, window.innerWidth), h: Math.max(document.documentElement.scrollHeight, window.innerHeight) }
+  const coordless = klavQaBugs.filter((b) => !qaResolveCoords(b.coords, dims))
+  const empty = klavQaBugs.length === 0
+  // Panel shows the coordless bugs; if there are none AND there are pins, skip the panel.
+  if (!empty && coordless.length === 0) return
+  const panel = document.createElement('div')
+  panel.className = 'kqa-panel'; panel.id = 'kqa-panel'
+  if (empty) {
+    panel.innerHTML = `
+      <div class="kqa-ph">${icon('check-circle', { size: 13 })} QA mode</div>
+      <div class="kqa-empty"><span class="kqa-spark">${icon('sparkles', { size: 26 })}</span><b>No bugs reported on this page yet</b>Nice and clean. New reports for this URL will pop up here live.</div>`
+  } else {
+    const rows = coordless.map((bug) => klavQaRowHtml(bug)).join('')
+    panel.innerHTML = `
+      <div class="kqa-ph">${icon('clipboard-list', { size: 13 })} Bugs on this page (${coordless.length})</div>
+      <div class="kqa-plist" id="kqa-plist">${rows}</div>`
+  }
+  root.appendChild(panel)
+  requestAnimationFrame(() => panel.classList.add('in'))
+  panel.querySelectorAll<HTMLElement>('.kqa-row').forEach((row) => {
+    row.addEventListener('click', () => {
+      const bug = klavQaBugs.find((b) => b.id === row.dataset.id)
+      if (bug) klavQaOpenPopover(bug)
+    })
+  })
+}
+
+function klavQaRowHtml(bug: QaBug): string {
+  const bucket = qaStatusBucket(bug.status)
+  const meta = [bug.ref, bug.reporterEmail ? 'by ' + bug.reporterEmail : 'by an end-user', qaTimeAgo(bug.createdAt)].filter(Boolean).join(' · ')
+  return `
+    <button class="kqa-row" data-id="${klavEsc(bug.id)}">
+      <span class="kqa-sev" style="background:${klavQaColor(bucket)}"></span>
+      <span class="kqa-rmain">
+        <span class="kqa-rtitle">${klavEsc(bug.title || bug.ref || 'Reported bug')}</span>
+        <span class="kqa-rmeta">${klavEsc(meta)}</span>
+      </span>
+    </button>`
+}
+
+function klavQaStatusPill(bucket: 'open' | 'prog' | 'done', label: string): string {
+  const c = klavQaColor(bucket)
+  return `<span class="kqa-st" style="color:${c};background:${c}1f">${klavEsc(label)}</span>`
+}
+
+function klavQaOpenPopover(bug: QaBug): void {
+  const root = klavQaGetHost()
+  root.getElementById('kqa-pop')?.remove()
+  klavQaOpenId = bug.id
+  const bucket = qaStatusBucket(bug.status)
+  const pop = document.createElement('div')
+  pop.className = 'kqa-pop'; pop.id = 'kqa-pop'
+  const meta = [bug.ref, bug.reporterEmail ? 'reported by ' + bug.reporterEmail : 'reported by an end-user', qaTimeAgo(bug.createdAt)].filter(Boolean).join(' · ')
+  const thumb = bug.screenshotUrl
+    ? `<div class="kqa-thumb" style="background-image:url('${encodeURI(bug.screenshotUrl)}')"></div>`
+    : `<div class="kqa-thumb"></div>`
+  const closed = bucket === 'done'
+  pop.innerHTML = `
+    <div class="kqa-poph">
+      <span class="kqa-sev" style="background:${klavQaColor(bucket)};margin-top:0"></span>
+      <b>${klavEsc(bug.title || bug.ref || 'Reported bug')}</b>
+      ${klavQaStatusPill(bucket, closed ? 'DONE' : bucket === 'prog' ? 'IN PROGRESS' : 'OPEN')}
+    </div>
+    <div class="kqa-popb">
+      <div class="kqa-meta">${klavEsc(meta)}</div>
+      ${thumb}
+      <div class="kqa-actions">
+        ${closed ? '' : `<button class="kqa-btn kqa-primary" id="kqa-close">${icon('check', { size: 14 })} Mark working &amp; close</button>`}
+        <button class="kqa-btn" id="kqa-open">${icon('link', { size: 14 })} Open in Klavity</button>
+        <button class="kqa-btn kqa-ghost" id="kqa-comment">${icon('message-circle', { size: 14 })} Comment</button>
+      </div>
+    </div>`
+  root.appendChild(pop)
+  klavQaPositionPopover(pop, bug)
+  requestAnimationFrame(() => pop.classList.add('in'))
+  pop.querySelector('#kqa-close')?.addEventListener('click', () => void klavQaCloseBug(bug))
+  pop.querySelector('#kqa-open')?.addEventListener('click', () => klavQaOpenInKlavity(bug))
+  pop.querySelector('#kqa-comment')?.addEventListener('click', () => klavQaOpenInKlavity(bug, true))
+}
+
+// Anchor the popover to the bug's pin when it has coords, else to the panel/screen.
+function klavQaPositionPopover(pop: HTMLElement, bug: QaBug): void {
+  const dims = { w: Math.max(document.documentElement.scrollWidth, window.innerWidth), h: Math.max(document.documentElement.scrollHeight, window.innerHeight) }
+  const pos = qaResolveCoords(bug.coords, dims)
+  const w = 308
+  let left: number, top: number
+  if (pos) {
+    const vx = pos.x - window.scrollX
+    const vy = pos.y - window.scrollY
+    left = Math.max(10, Math.min(vx + 18, window.innerWidth - w - 10))
+    top = Math.max(10, Math.min(vy + 10, window.innerHeight - 220))
+  } else {
+    left = Math.max(10, window.innerWidth - w - 316) // left of the side panel
+    top = 90
+  }
+  pop.style.left = left + 'px'
+  pop.style.top = top + 'px'
+}
+
+function klavQaClosePopover(): void {
+  klavQaOpenId = null
+  const pop = klavQaHostRoot?.getElementById('kqa-pop')
+  if (!pop) return
+  pop.classList.remove('in')
+  setTimeout(() => pop.remove(), 160)
+}
+
+// Optimistic close: flip local state to done, animate the pin -> green check, then
+// POST qa-close. Revert + toast on failure. Team-gated server-side (403/401 -> revert).
+async function klavQaCloseBug(bug: QaBug): Promise<void> {
+  const base = klavConfig?.backendUrl?.replace(/\/+$/, '')
+  const token = klavConfig?.token
+  if (!base || !token) return
+  const prevStatus = bug.status
+  bug.status = 'done'
+  klavQaCounts = qaDeriveCounts(klavQaBugs)
+  // Animate the pin (if any) then re-render everything to the resolved state.
+  const pinEl = klavQaHostRoot?.querySelector<HTMLElement>(`.kqa-pin[data-id="${CSS.escape(bug.id)}"]`)
+  if (pinEl) {
+    pinEl.classList.add('kqa-closing')
+    pinEl.style.background = klavQaColor('done')
+    const span = pinEl.querySelector('span'); if (span) span.innerHTML = klavCheckSvg()
+  }
+  klavQaShowDoneCard(bug)
+  try {
+    const r = await fetch(`${base}/api/feedback/${encodeURIComponent(bug.id)}/qa-close`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ resolution: 'works-as-expected' }),
+    })
+    if (!r.ok) throw new Error('close-failed:' + r.status)
+    // success — settle the UI after the celebratory card
+    setTimeout(() => { klavQaClosePopover(); klavQaRenderBar(); klavQaRenderPins(); klavQaRenderPanel() }, 1050)
+  } catch {
+    bug.status = prevStatus // revert optimistic change
+    klavQaCounts = qaDeriveCounts(klavQaBugs)
+    klavQaRender()
+    showToast('Could not close this bug — please try again.')
+  }
+}
+
+function klavQaShowDoneCard(bug: QaBug): void {
+  const pop = klavQaHostRoot?.getElementById('kqa-pop')
+  if (!pop) return
+  pop.innerHTML = `
+    <div class="kqa-done-card">
+      <div class="kqa-check">${icon('check', { size: 26 })}</div>
+      <b>Closed &amp; verified</b>
+      <p>${klavEsc(bug.ref || bug.title || 'Bug')} marked working. The tracker ticket was transitioned.</p>
+    </div>`
+}
+
+function klavQaOpenInKlavity(bug: QaBug, comment = false): void {
+  const base = (klavConfig?.backendUrl || 'https://klavity.in').replace(/\/+$/, '')
+  const pid = klavQaProjectId || ''
+  let url = `${base}/dashboard?project=${encodeURIComponent(pid)}&bug=${encodeURIComponent(bug.id)}`
+  if (comment) url += '&comment=1'
+  try { window.open(url, '_blank', 'noopener,noreferrer') } catch { /* popup blocked */ }
+}
+
+// Esc: close the popover first, then (a second Esc) turn QA mode off.
+function klavQaOnKeydown(e: KeyboardEvent): void {
+  if (e.key !== 'Escape' || !klavQaActive) return
+  if (klavQaOpenId) { e.stopPropagation(); klavQaClosePopover(); return }
+  if (klavQaHostRoot?.getElementById('kqa-bar')) { e.stopPropagation(); void klavQaSetStoredMode(false) }
+}
+window.addEventListener('keydown', klavQaOnKeydown, true)
+
+// Persist the global QA-mode flag; storage.onChanged then drives (de)activation here
+// AND in every other open tab. The popup toggle writes the same key.
+async function klavQaSetStoredMode(on: boolean): Promise<void> {
+  try { await chrome.storage.local.set({ [QA_STORAGE_KEY]: on }) } catch { /* ignore */ }
+}
+
+// React to the popup toggle (or another tab) flipping klavQaMode.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local' || !(QA_STORAGE_KEY in changes)) return
+  const on = !!changes[QA_STORAGE_KEY].newValue
+  if (on && !klavQaActive) void klavQaActivate()
+  else if (!on && klavQaActive) klavQaDeactivate()
+})
 
 // ── Bootstrap: pull the cached config from the SW, then evaluate the current URL. ──
 async function klavBootstrap() {
@@ -1350,5 +1820,10 @@ async function klavBootstrap() {
   klavBootGuard = false
   // Arm the change-detector observers for post-boot dynamic content + scroll-reveal.
   klavArmObservers()
+  // QA mode: if the signed-in teammate left it on, arm the overlay for this page too.
+  try {
+    const r = await chrome.storage.local.get(QA_STORAGE_KEY)
+    if (r[QA_STORAGE_KEY]) await klavQaActivate()
+  } catch { /* ignore */ }
 }
 void klavBootstrap()

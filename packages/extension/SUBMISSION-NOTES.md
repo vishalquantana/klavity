@@ -8,6 +8,7 @@
 Derived from the extension package git log history since tag `v0.37.0`:
 
 ### Major Additions & Features
+* **QA mode (authenticated, team-gated on-page bug review)**: A signed-in Klavity team member can toggle "QA mode" in the popup to see every bug reported for the current URL as on-page pins (red open / amber in-progress / green done) plus a bottom QA bar and a side list, and close each one in place ("Mark working & close"). Renders only when signed in AND a member of the current site's project (the page-bugs endpoint returns 403 otherwise, hiding the overlay); the anonymous report widget is completely unaffected. Runs in its own isolated Shadow DOM host. NOTE for reviewers: QA mode reads project bugs and posts a team-gated close via the Klavity backend using the extension's existing signed-in token; no new permissions were added to the manifest.
 * **Full-Page Scroll-Stitch Screenshot capturing (GoFullPage-style)**: Added native high-fidelity full-page stitching capture to capture long pages and deal with sticky/floating headers cleanly.
 * **Native Right-Click Context Menu Integration**: Added a native browser submenu for Klavity actions ("Report a bug", "Request a feature", etc.) integrated directly into the browser context menus.
 * **Review Replay Support**: Added support to replay the last Sim review directly from the extension popup.
