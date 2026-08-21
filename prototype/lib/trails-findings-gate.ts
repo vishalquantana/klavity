@@ -268,6 +268,74 @@ async function findingScreenshotAttachment(finding: Finding, baseUrl: string): P
   }
 }
 
+// KLAVITYKLA-490: post the "▶ AutoSim run recording" comment on a freshly-exported AutoSim ticket.
+// Looks up the recording manifest for this finding's run; if none exists (recording was off or the
+// capture produced nothing) it silently no-ops. Attaches the GIF teaser best-effort (comment-sync
+// enforces the connector attachment caps and skips over-cap files — the hosted link is always primary).
+// Never throws. Split out + exported so it can be unit-tested with an injected adapter/manifest fetcher.
+export async function postRecordingCommentForFinding(
+  adapter: { type: string; fields: any[]; addComment: any; attachFiles?: any },
+  cfg: Record<string, string>,
+  externalKey: string,
+  finding: Finding,
+  baseUrl: string,
+  deps?: {
+    getManifest?: (projectId: string, runId: string) => Promise<any>
+    getBytes?: (key: string) => Promise<{ bytes: Uint8Array; contentType: string }>
+    getObjective?: (projectId: string, trailId: string) => Promise<string | null>
+  },
+): Promise<{ commented: boolean; attached: boolean } | null> {
+  try {
+    const { getRecordingManifest, GIF_TEASER_MAX_BYTES } = await import("./trails-recording")
+    const { postAutoSimRecordingComment } = await import("./connectors/comment-sync")
+    const getManifest = deps?.getManifest ?? getRecordingManifest
+    const manifest = await getManifest(finding.projectId, finding.runId)
+    if (!manifest) return null
+
+    // Fetch the GIF teaser bytes best-effort; only attach when under the teaser cap (else link-only).
+    let teaser: { filename: string; bytes: Uint8Array; contentType: string } | null = null
+    if (manifest.gifKey) {
+      try {
+        const getBytes = deps?.getBytes ?? (async (k: string) => (await import("./s3")).getObjectBytes(k))
+        const obj = await getBytes(manifest.gifKey)
+        if (obj.bytes.byteLength > 0 && obj.bytes.byteLength <= GIF_TEASER_MAX_BYTES()) {
+          teaser = { filename: `autosim-run-${finding.runId.slice(-4)}.gif`, bytes: obj.bytes, contentType: "image/gif" }
+        }
+      } catch { /* teaser is optional; link still works */ }
+    }
+
+    const objective = deps?.getObjective
+      ? await deps.getObjective(finding.projectId, finding.trailId)
+      : await trailObjective(finding.projectId, finding.trailId)
+    const watchUrl = `${baseUrl}/autosims/walk/${finding.runId}?project=${finding.projectId}`
+    return await postAutoSimRecordingComment(
+      { adapter: adapter as any, cfg, externalKey, teaser },
+      {
+        personaName: null,
+        objective,
+        watchUrl,
+        durationSec: Math.round((manifest.durationMs || 0) / 1000),
+        stepCount: manifest.stepCount ?? null,
+        failedStep: manifest.failedStep ?? null,
+      },
+    )
+  } catch (e) {
+    console.warn(`[trails-findings] recording comment failed for ${finding.id}:`, String(e))
+    return null
+  }
+}
+
+// Resolve the trail's objective (intent → name) for the recording comment's "…while <objective>" line.
+async function trailObjective(projectId: string, trailId: string): Promise<string | null> {
+  try {
+    const { getTrail } = await import("./trails")
+    const t = await getTrail(projectId, trailId)
+    return t ? (t.intent || t.name || null) : null
+  } catch {
+    return null
+  }
+}
+
 // Production filer: pick the project's first auto-copy connector, decrypt its secret fields exactly as
 // the server's auto-copy hook does, call the adapter's createIssue, and return "<type>:<externalKey>".
 // Returns null if the project has no auto-copy connector. NEVER called in CI against a real network.
@@ -314,6 +382,13 @@ export const realFiler: Filer = async (projectId, finding) => {
     }
     try {
       const result = await adapter.createIssue(ticket, cfg)
+      // KLAVITYKLA-490: post the AutoSim run-recording comment on the freshly-created ticket. AutoSim-
+      // ONLY (this filer is never reached by human Snaps) and export-gated (only after createIssue
+      // returned a real externalKey). Best-effort: a failure never affects the filing result.
+      if (result.externalKey) {
+        await postRecordingCommentForFinding(adapter, cfg, result.externalKey, finding, baseUrl)
+          .catch((e) => console.warn(`[trails-findings] recording comment skipped for ${finding.id}:`, String(e)))
+      }
       return { connectorRef: `${c.type}:${result.externalKey ?? result.externalUrl ?? c.id}` }
     } catch (err) {
       failures.push(connectorFailureMessage(`${c.type} connector ${c.id}`, err))

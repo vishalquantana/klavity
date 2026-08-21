@@ -23,6 +23,7 @@
 
 import { getConnector as _getConnector, type Connector } from "./index"
 import { decryptSecret as _decryptSecret } from "../crypto"
+import { selectAttachmentsWithinCaps } from "./attach-caps"
 // NOTE: ../db is NOT statically imported here. It pulls in @libsql/client and creates a Turso
 // client at module load, which is unavailable / undesirable in hermetic test isolation. The
 // production binding below lazy-imports it (dynamic import is module-cached, so no repeat cost),
@@ -234,6 +235,110 @@ async function pushOneExport(
  * @param commentText Plain-text comment body to send to the external tracker.
  * @param meta        Comment authorship + INBOUND SEAM flag.
  */
+// ── KLAVITYKLA-490: AutoSim run-recording comment ──────────────────────────────
+//
+// When an AutoSim finding is EXPORTED to a connector ticket (via trails-findings-gate realFiler), we
+// post a "▶ AutoSim run recording" comment on the freshly-created external issue. This is a DIFFERENT
+// path from pushCommentToLinkedIssues (which keys off feedback ticket_exports): AutoSim findings carry
+// their external key inline from createIssue, so we post directly to that adapter+externalKey.
+//
+// AutoSim-ONLY by construction: this is only ever called from the Trails finding filer — human Snaps
+// never reach it. Export-gated by construction: the caller only invokes it AFTER createIssue returned
+// a real externalKey. Link is PRIMARY (a real webm exceeds the 10MB attachment cap); the small GIF
+// teaser is attached best-effort within the connector's caps and skipped silently when over cap.
+
+export type AutoSimRecordingComment = {
+  /** Persona/Sim name that ran the walk, if known (e.g. "Sarah Chen"). */
+  personaName?: string | null
+  /** What the Sim was trying to do (the trail intent/objective), if known. */
+  objective?: string | null
+  /** Hosted "Watch full recording on Klavity" link — always present, always primary. */
+  watchUrl: string
+  /** Run duration in whole seconds for the meta line. */
+  durationSec: number
+  stepCount?: number | null
+  /** 1-based failed step number, or null. */
+  failedStep?: number | null
+}
+
+/** Build the plain-text comment body shown on the external ticket. Degrades gracefully when
+ *  persona/objective are unknown. Pure + exported for unit testing. */
+export function formatAutoSimRecordingComment(c: AutoSimRecordingComment): string {
+  const who = c.personaName ? c.personaName : "An AutoSim"
+  const lead = c.objective
+    ? `▶ AutoSim run recording — ${who} hit this while ${c.objective}.`
+    : `▶ AutoSim run recording — ${who} hit this.`
+  const meta: string[] = []
+  if (c.durationSec > 0) meta.push(`${c.durationSec}s run`)
+  if (c.stepCount != null) meta.push(`${c.stepCount} steps`)
+  if (c.failedStep != null) meta.push(`failed at step ${c.failedStep}`)
+  const lines = [lead, `Watch full recording on Klavity: ${c.watchUrl}`]
+  if (meta.length) lines.push(meta.join(" · "))
+  return lines.join("\n")
+}
+
+/** Injectable deps for the recording-comment post (hermetic testing without a live adapter/S3). */
+export type RecordingCommentDeps = {
+  /** The connector adapter for the export's type. */
+  adapter: Pick<Connector, "type" | "fields" | "addComment" | "attachFiles">
+  /** Decrypted connector config. */
+  cfg: Record<string, string>
+  /** The external issue key createIssue returned. */
+  externalKey: string
+  /** The GIF teaser bytes (best-effort attachment), or null. */
+  teaser?: { filename: string; bytes: Uint8Array; contentType: string } | null
+}
+
+/**
+ * Post the AutoSim recording comment on one exported ticket, then best-effort attach the GIF teaser
+ * (only if the adapter supports native uploads AND the teaser fits the connector attachment caps).
+ * Never throws — the hosted link in the comment body is the durable fallback.
+ */
+export async function postAutoSimRecordingComment(
+  deps: RecordingCommentDeps,
+  comment: AutoSimRecordingComment,
+): Promise<{ commented: boolean; attached: boolean }> {
+  let commented = false
+  let attached = false
+  const text = formatAutoSimRecordingComment(comment)
+  try {
+    const res = await deps.adapter.addComment(
+      deps.externalKey,
+      text,
+      { authorEmail: null, klavityCommentId: "autosim-recording" },
+      deps.cfg,
+    )
+    commented = !!res?.ok
+  } catch (e) {
+    console.warn("[autosim-recording] addComment threw (link still in body):", String(e))
+  }
+
+  // Best-effort teaser attach — respect the shared caps; skip silently when over cap.
+  if (deps.teaser && deps.teaser.bytes.byteLength > 0 && typeof deps.adapter.attachFiles === "function") {
+    try {
+      const { accepted } = selectAttachmentsWithinCaps([
+        { filename: deps.teaser.filename, bytes: deps.teaser.bytes },
+      ])
+      if (accepted.length) {
+        const r = await deps.adapter.attachFiles!(
+          deps.externalKey,
+          [{
+            filename: deps.teaser.filename,
+            contentType: deps.teaser.contentType,
+            bytes: deps.teaser.bytes,
+            url: comment.watchUrl,
+          }],
+          deps.cfg,
+        )
+        attached = (r?.attached ?? 0) > 0
+      }
+    } catch (e) {
+      console.warn("[autosim-recording] teaser attach failed (non-fatal):", String(e))
+    }
+  }
+  return { commented, attached }
+}
+
 export const pushCommentToLinkedIssues = makePushCommentToLinkedIssues({
   getConnector: _getConnector,
   decryptSecret: _decryptSecret,

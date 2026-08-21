@@ -130,6 +130,16 @@ await rawExec(
   [SEEDED_FINDING_ID, PROJECT_ID, WALK_RUN_ID, `seeded:${ts}`, NOW, NOW, WALK_RUN_ID],
 )
 
+// KLAVITYKLA-490: seed a run-recording manifest for the walk (video bytes live in S3, but the
+// metadata route reads only this manifest — so the member-gate + 200/404 paths are testable here).
+const R = await import("./lib/trails-recording")
+await R.saveRecordingManifest({
+  projectId: PROJECT_ID, runId: WALK_RUN_ID,
+  webmKey: "recordings/fake-webm.webm", gifKey: null, pngKey: null,
+  contentType: "video/webm", durationMs: 24000, frameCount: 96,
+  stepCount: 7, failedStep: 6, format: "webm", createdAt: NOW,
+} as any)
+
 // ── Spawn subprocess server ────────────────────────────────────────────────────
 let serverPort: number
 let serverProc: ReturnType<typeof Bun.spawn>
@@ -686,4 +696,47 @@ test("view signal — opening a shared page records last-viewed / view count", a
   // At least one token for this walk now shows a lastViewedAt + viewCount>=1.
   const viewed = after.tokens.filter((t: any) => t.runId === WALK_RUN_ID && t.lastViewedAt != null && t.viewCount >= 1)
   expect(viewed.length).toBeGreaterThan(0)
+})
+
+// ── KLAVITYKLA-490: run-recording serve routes (member-gated) ────────────────────
+
+test("GET /api/trails/walks/:runId/recording — member gets 200 + manifest meta", async () => {
+  const r = await fetch(`${base}/api/trails/walks/${WALK_RUN_ID}/recording?project=${pid}`, {
+    headers: { cookie: adminCookie },
+  })
+  expect(r.status).toBe(200)
+  const body = await r.json()
+  expect(body.hasWebm).toBe(true)
+  expect(body.durationMs).toBe(24000)
+  expect(body.stepCount).toBe(7)
+  expect(body.failedStep).toBe(6)
+  expect(body.videoUrl).toContain(`/api/trails/walks/${WALK_RUN_ID}/recording/video`)
+})
+
+test("GET /api/trails/walks/:runId/recording — unauthenticated returns 401", async () => {
+  const r = await fetch(`${base}/api/trails/walks/${WALK_RUN_ID}/recording?project=${pid}`)
+  expect(r.status).toBe(401)
+})
+
+test("GET /api/trails/walks/:runId/recording — NON-MEMBER of the project returns 403", async () => {
+  // OTHER user tries to read ADMIN project's recording → resolveProject denies (403).
+  const r = await fetch(`${base}/api/trails/walks/${WALK_RUN_ID}/recording?project=${pid}`, {
+    headers: { cookie: otherCookie },
+  })
+  expect(r.status).toBe(403)
+})
+
+test("GET /api/trails/walks/:runId/recording — member of a DIFFERENT project sees no recording (404)", async () => {
+  // OTHER user querying their OWN project (which has no manifest for this run) → 404, never data leak.
+  const r = await fetch(`${base}/api/trails/walks/${WALK_RUN_ID}/recording?project=${otherPid}`, {
+    headers: { cookie: otherCookie },
+  })
+  expect(r.status).toBe(404)
+})
+
+test("GET /api/trails/walks/:runId/recording/video — non-member returns 403 (gate before any S3 read)", async () => {
+  const r = await fetch(`${base}/api/trails/walks/${WALK_RUN_ID}/recording/video?project=${pid}`, {
+    headers: { cookie: otherCookie },
+  })
+  expect(r.status).toBe(403)
 })

@@ -7,6 +7,13 @@ const FOLDER = (process.env.S3_FOLDER || 'uploads').replace(/\/+$/, '')
 const ACCESS = process.env.AWS_ACCESS_KEY_ID || ''
 const SECRET = process.env.AWS_SECRET_ACCESS_KEY || ''
 
+// True only when the S3 credentials/bucket are fully configured. Callers use this to SKIP optional,
+// best-effort capture work (e.g. AutoSim run recording) when there is nowhere to persist it — so no
+// ffmpeg/upload cost is paid in envs (tests/dev) without object storage.
+export function s3Configured(): boolean {
+  return !!(ENDPOINT && BUCKET && ACCESS && SECRET)
+}
+
 export function s3Key(folder: string, ts: number, id: string, ext: string): string {
   return `${folder.replace(/\/+$/, '')}/${ts}-${id}.${ext}`
 }
@@ -57,6 +64,21 @@ export async function uploadAttachment(
   const key = s3Key(`${FOLDER}/attachments`, Date.now(), crypto.randomUUID(), ext)
   await getClient().write(key, bytes, { acl: 'private', type: contentType || 'application/octet-stream' })
   return { key, bucket: BUCKET, filename, contentType: contentType || 'application/octet-stream' }
+}
+
+// AutoSim run RECORDINGS (KLAVITYKLA-490). Stored PRIVATE under a `recordings/` prefix, keyed by a
+// random id. The full webm can be several MB, so it lives in S3 (never in the DB row); a walk_artifacts
+// manifest row keeps only the S3 keys + meta. Served via the membership-checked recording route, which
+// streams the bytes (getObjectBytes) — no public bucket exposure.
+export async function uploadRecordingObject(
+  bytes: ArrayBuffer | Uint8Array,
+  contentType: string,
+  ext: string,
+): Promise<{ key: string; bucket: string; contentType: string }> {
+  const safeExt = /^[a-z0-9]{1,8}$/i.test(ext) ? ext.toLowerCase() : 'bin'
+  const key = s3Key(`${FOLDER}/recordings`, Date.now(), crypto.randomUUID(), safeExt)
+  await getClient().write(key, bytes, { acl: 'private', type: contentType || 'application/octet-stream' })
+  return { key, bucket: BUCKET, contentType: contentType || 'application/octet-stream' }
 }
 
 // Delete one object by key. Used by the data-retention sweep (C1) and GDPR erasure (C2) to remove the

@@ -215,6 +215,11 @@ a{color:inherit;text-decoration:none}
         <div class="live-note" id="liveNote">Connecting…</div>
       </div>
 
+      <div class="replay-section" id="recordingSection" style="display:none">
+        <h2>Run Recording</h2>
+        <div id="recordingBody"></div>
+      </div>
+
       <div class="replay-section" id="replaySection">
         <h2 id="replayH2">Session Replay</h2>
         <div id="replayBody">
@@ -413,6 +418,58 @@ function showNoReplay(msg){
   $("replayBody").innerHTML='<div class="no-replay">'
     +window.kicon("monitor-x",{size:32})
     +'<p>'+esc(msg)+'</p></div>'
+}
+
+// ── Run Recording (KLA-490): persisted webm + step timeline ──
+var _recVideo=null
+function fmtTs(ms){var s=Math.floor(Math.max(0,ms)/1000);return Math.floor(s/60)+":"+("0"+(s%60)).slice(-2)}
+async function loadRecording(steps){
+  var pid=projParam()
+  var qs=pid?"?project="+encodeURIComponent(pid):""
+  var r
+  try{r=await fetch("/api/trails/walks/"+encodeURIComponent(walkId)+"/recording"+qs)}
+  catch(e){return}
+  if(!r.ok){return} // 404 = no recording captured for this walk; leave section hidden
+  var m=await r.json().catch(function(){return null})
+  if(!m)return
+  var sec=$("recordingSection"),body=$("recordingBody")
+  sec.style.display=""
+  var durMs=m.durationMs||0
+  var html=""
+  if(m.hasWebm && m.videoUrl){
+    html+='<video id="recVideo" controls preload="metadata" playsinline style="width:100%;border-radius:12px;background:#111;max-height:420px" src="'+esc(m.videoUrl+qs)+'"></video>'
+  } else {
+    html+='<div class="no-replay"><p>Recording captured as frames (video encode unavailable).</p></div>'
+  }
+  // Run meta line
+  var meta=[]
+  if(durMs)meta.push(Math.round(durMs/1000)+"s run")
+  if(m.stepCount!=null)meta.push(m.stepCount+" steps")
+  if(m.failedStep!=null)meta.push("failed at step "+m.failedStep)
+  if(meta.length)html+='<div class="rnote" style="margin-top:8px">'+esc(meta.join(" \xb7 "))+'</div>'
+  // Step timeline — click seeks the video to a proportional position (best-effort; exact seek is hard).
+  var sl=steps||[]
+  if(sl.length){
+    html+='<div class="steps-timeline" style="margin-top:10px;border-top:1px solid var(--line);padding-top:8px">'
+    sl.forEach(function(s,i){
+      var seekMs=durMs*(sl.length>1?i/(sl.length-1):0)
+      var bad=String(s.verdict)==="red"||String(s.verdict)==="amber"
+      var label=(s.action||"step")+(s.actionValue?" "+s.actionValue:"")
+      html+='<div class="rec-step" data-seek="'+Math.round(seekMs)+'" style="cursor:pointer;font-size:12px;padding:3px 0;display:flex;gap:8px;'+(bad?"color:var(--rose)":"color:var(--paper-faint)")+'">'
+        +'<span style="font-variant-numeric:tabular-nums;color:var(--indigo)">'+fmtTs(seekMs)+'</span>'
+        +'<span>'+esc(label)+'</span></div>'
+    })
+    html+='</div>'
+  }
+  body.innerHTML=html
+  _recVideo=$("recVideo")
+  body.querySelectorAll(".rec-step").forEach(function(el){
+    el.onclick=function(){
+      if(!_recVideo)return
+      var t=parseInt(el.getAttribute("data-seek"),10)/1000
+      try{_recVideo.currentTime=t; if(_recVideo.paused)_recVideo.play().catch(function(){})}catch(e){}
+    }
+  })
 }
 
 // ── Live View SSE (authenticated) ──
@@ -697,6 +754,9 @@ async function load(){
   renderFindings(d.findings||[],qs)
   if(String(walk.status||"running")!=="running" && !_judgePersonas.length){ await loadJudgePersonas() }
   renderJudgment(d.judgment||null)
+
+  // Run recording (KLA-490): the persisted webm + step timeline, shown when a recording exists.
+  loadRecording(steps)
 
   // Replay
   if(d.hasReplay){

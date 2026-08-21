@@ -7145,6 +7145,52 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         }
       }
 
+      // GET /api/trails/walks/:runId/recording — KLAVITYKLA-490: the run-recording manifest (S3 keys +
+      // meta) for the inline player on the report detail. Member-gated by the outer resolveProject block
+      // (403 for non-members); manifest lookup is project-scoped so a foreign runId 404s. No bytes here.
+      const recMetaMatch = path.match(/^\/api\/trails\/walks\/([^/]+)\/recording$/)
+      if (req.method === "GET" && recMetaMatch) {
+        try {
+          const runId = recMetaMatch[1]
+          const { getRecordingManifest } = await import("./lib/trails-recording")
+          const m = await getRecordingManifest(projectId, runId)
+          if (!m) return json({ error: "No recording for this walk." }, 404)
+          return json({
+            runId,
+            hasWebm: !!m.webmKey,
+            hasGif: !!m.gifKey,
+            durationMs: m.durationMs,
+            frameCount: m.frameCount,
+            stepCount: m.stepCount,
+            failedStep: m.failedStep,
+            format: m.format,
+            videoUrl: m.webmKey ? `/api/trails/walks/${encodeURIComponent(runId)}/recording/video` : null,
+          })
+        } catch (e) {
+          return json(oops(e, "trails-recording-meta"), 500)
+        }
+      }
+
+      // GET /api/trails/walks/:runId/recording/video — stream the webm bytes for the inline <video>.
+      // Member-gated (outer block). Bytes live PRIVATE in S3; we stream them (never a public URL) and
+      // ledger the egress. 404 when no recording / no webm for this run.
+      const recVideoMatch = path.match(/^\/api\/trails\/walks\/([^/]+)\/recording\/video$/)
+      if (req.method === "GET" && recVideoMatch) {
+        try {
+          const runId = recVideoMatch[1]
+          const { getRecordingManifest } = await import("./lib/trails-recording")
+          const m = await getRecordingManifest(projectId, runId)
+          if (!m || !m.webmKey) return json({ error: "No recording for this walk." }, 404)
+          const { getObjectBytes } = await import("./lib/s3")
+          const obj = await getObjectBytes(m.webmKey)
+          try { const { recordS3Egress } = await import("./lib/cost-events"); void recordS3Egress({ projectId, bytes: obj.bytes.byteLength, meta: { kind: "autosim_recording", runId } }) } catch {}
+          const ct = obj.contentType?.startsWith("video/") ? obj.contentType : "video/webm"
+          return new Response(obj.bytes, { headers: { "Content-Type": ct, "Cache-Control": "private,max-age=86400", "Accept-Ranges": "bytes" } })
+        } catch (e) {
+          return json(oops(e, "trails-recording-video"), 500)
+        }
+      }
+
       // GET /api/trails/walks/:runId/progress — lightweight live progress for an in-flight walk.
       // Returns { status, stepsDone, totalSteps } using COUNT queries (no evidence blobs loaded).
       // Polled by the UI every ~1.5s while the walk is running to show "step N/M" feedback.

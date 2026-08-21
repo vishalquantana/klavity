@@ -428,3 +428,51 @@ test("maybeAutoFileWalkFindings: flag ON auto-files high-confidence regression, 
   expect(afterHigh?.connectorRef).toBe("plane:PROJ-11")
   expect(afterLow?.status).toBe("queued")
 })
+
+// ── KLAVITYKLA-490: recording comment on export (AutoSim-only + export-gated) ─────
+
+test("postRecordingCommentForFinding: posts the recording comment when a manifest exists", async () => {
+  const proj = "proj_rec_on"
+  const walk = await T.startWalk(proj, "trl_rec")
+  const f = await T.recordFinding(proj, {
+    runId: walk, trailId: "trl_rec", kind: "regression", title: "checkout dead",
+    confidence: 0.95, dedupKey: "rec_on",
+  })
+  const finding = (await T.listFindings(proj)).find((x) => x.id === f.id)!
+
+  const addCommentCalls: any[] = []
+  const adapter: any = {
+    type: "jira", fields: [],
+    addComment: async (ref: string, text: string) => { addCommentCalls.push({ ref, text }); return { ok: true, externalCommentId: "c1" } },
+  }
+  const res = await G.postRecordingCommentForFinding(adapter, {}, "PROJ-318", finding, "https://klavity.in", {
+    // Inject a manifest so we don't touch S3/ffmpeg; objective injected too.
+    getManifest: async () => ({ runId: walk, webmKey: "k/webm", gifKey: null, pngKey: null, contentType: "video/webm", durationMs: 24000, frameCount: 96, stepCount: 7, failedStep: 6, format: "webm", createdAt: Date.now() }),
+    getObjective: async () => "completing checkout",
+  })
+  expect(res).not.toBeNull()
+  expect(res!.commented).toBe(true)
+  expect(addCommentCalls).toHaveLength(1)
+  expect(addCommentCalls[0].ref).toBe("PROJ-318")
+  expect(addCommentCalls[0].text).toContain("▶ AutoSim run recording")
+  expect(addCommentCalls[0].text).toContain("completing checkout")
+  expect(addCommentCalls[0].text).toContain("failed at step 6")
+  expect(addCommentCalls[0].text).toContain("https://klavity.in/autosims/walk/" + walk)
+})
+
+test("postRecordingCommentForFinding: NO comment when the run has no recording manifest (gate)", async () => {
+  const proj = "proj_rec_off"
+  const walk = await T.startWalk(proj, "trl_rec2")
+  const f = await T.recordFinding(proj, {
+    runId: walk, trailId: "trl_rec2", kind: "regression", title: "x", confidence: 0.95, dedupKey: "rec_off",
+  })
+  const finding = (await T.listFindings(proj)).find((x) => x.id === f.id)!
+
+  const addCommentCalls: any[] = []
+  const adapter: any = { type: "jira", fields: [], addComment: async () => { addCommentCalls.push(1); return { ok: true } } }
+  const res = await G.postRecordingCommentForFinding(adapter, {}, "PROJ-1", finding, "https://klavity.in", {
+    getManifest: async () => null, // no recording captured
+  })
+  expect(res).toBeNull()
+  expect(addCommentCalls).toHaveLength(0)
+})

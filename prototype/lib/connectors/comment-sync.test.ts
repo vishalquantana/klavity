@@ -12,7 +12,7 @@
 
 import { test, expect, mock } from "bun:test"
 import { getConnector } from "./index"
-import { makePushCommentToLinkedIssues, type CommentSyncDeps } from "./comment-sync"
+import { makePushCommentToLinkedIssues, formatAutoSimRecordingComment, postAutoSimRecordingComment, type CommentSyncDeps } from "./comment-sync"
 import type { TicketExportRow, ConnectorRow, ActivityInsert } from "../db"
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -693,6 +693,112 @@ test("outbound hook: pushes to all N eligible exports independently", async () =
   expect(refs).toEqual(["ref_a", "ref_b"])
   expect(activityInserts).toHaveLength(2)
   expect(activityInserts.every((a) => a.type === "comment_synced_outbound")).toBe(true)
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// KLAVITYKLA-490: AutoSim run-recording comment.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test("formatAutoSimRecordingComment: full form with persona + objective + meta", () => {
+  const text = formatAutoSimRecordingComment({
+    personaName: "Sarah Chen",
+    objective: "trying to complete checkout on mobile",
+    watchUrl: "https://klavity.in/autosims/walk/a1f9?project=p",
+    durationSec: 24,
+    stepCount: 7,
+    failedStep: 6,
+  })
+  expect(text).toContain("▶ AutoSim run recording — Sarah Chen hit this while trying to complete checkout on mobile.")
+  expect(text).toContain("Watch full recording on Klavity: https://klavity.in/autosims/walk/a1f9?project=p")
+  expect(text).toContain("24s run · 7 steps · failed at step 6")
+})
+
+test("formatAutoSimRecordingComment: degrades when persona/objective/failedStep unknown", () => {
+  const text = formatAutoSimRecordingComment({
+    personaName: null,
+    objective: null,
+    watchUrl: "https://klavity.in/x",
+    durationSec: 0,
+    stepCount: null,
+    failedStep: null,
+  })
+  expect(text).toContain("An AutoSim hit this.")
+  expect(text).not.toContain("while")
+  expect(text).not.toContain("failed at step")
+  expect(text).toContain("Watch full recording on Klavity: https://klavity.in/x")
+})
+
+function makeRecAdapter(opts?: { withAttach?: boolean }) {
+  const addCommentCalls: any[] = []
+  const attachCalls: any[] = []
+  const adapter: any = {
+    type: "jira",
+    fields: [{ key: "token", secret: true }],
+    addComment: async (ref: string, text: string, meta: any, cfg: any) => {
+      addCommentCalls.push({ ref, text, meta, cfg })
+      return { ok: true, externalCommentId: "cmt_1" }
+    },
+  }
+  if (opts?.withAttach !== false) {
+    adapter.attachFiles = async (ref: string, atts: any[], cfg: any) => {
+      attachCalls.push({ ref, atts, cfg })
+      return { attached: atts.length, failed: 0, skipped: 0 }
+    }
+  }
+  return { adapter, addCommentCalls, attachCalls }
+}
+
+test("postAutoSimRecordingComment: posts the comment and attaches an under-cap GIF teaser", async () => {
+  const { adapter, addCommentCalls, attachCalls } = makeRecAdapter()
+  const res = await postAutoSimRecordingComment(
+    { adapter, cfg: { token: "t" }, externalKey: "PROJ-318", teaser: { filename: "run.gif", bytes: new Uint8Array(1024), contentType: "image/gif" } },
+    { personaName: "Sarah Chen", objective: "checkout", watchUrl: "https://klavity.in/x", durationSec: 24, stepCount: 7, failedStep: 6 },
+  )
+  expect(res.commented).toBe(true)
+  expect(res.attached).toBe(true)
+  expect(addCommentCalls).toHaveLength(1)
+  expect(addCommentCalls[0].ref).toBe("PROJ-318")
+  expect(addCommentCalls[0].text).toContain("▶ AutoSim run recording")
+  expect(attachCalls).toHaveLength(1)
+  expect(attachCalls[0].atts[0].filename).toBe("run.gif")
+})
+
+test("postAutoSimRecordingComment: over-cap GIF is skipped but the comment (with link) still posts", async () => {
+  const { adapter, addCommentCalls, attachCalls } = makeRecAdapter()
+  const overCap = new Uint8Array(11 * 1024 * 1024) // > 10MB per-file cap
+  const res = await postAutoSimRecordingComment(
+    { adapter, cfg: { token: "t" }, externalKey: "PROJ-1", teaser: { filename: "big.gif", bytes: overCap, contentType: "image/gif" } },
+    { personaName: null, objective: null, watchUrl: "https://klavity.in/x", durationSec: 10, stepCount: 3, failedStep: null },
+  )
+  expect(res.commented).toBe(true)
+  expect(res.attached).toBe(false)
+  expect(addCommentCalls).toHaveLength(1)
+  expect(attachCalls).toHaveLength(0) // over-cap → never attempted
+})
+
+test("postAutoSimRecordingComment: adapter without attachFiles still posts the comment (link-only)", async () => {
+  const { adapter, addCommentCalls } = makeRecAdapter({ withAttach: false })
+  const res = await postAutoSimRecordingComment(
+    { adapter, cfg: {}, externalKey: "#7", teaser: { filename: "run.gif", bytes: new Uint8Array(500), contentType: "image/gif" } },
+    { personaName: "Alex", objective: "login", watchUrl: "https://klavity.in/x", durationSec: 12, stepCount: 4, failedStep: 2 },
+  )
+  expect(res.commented).toBe(true)
+  expect(res.attached).toBe(false)
+  expect(addCommentCalls).toHaveLength(1)
+})
+
+test("postAutoSimRecordingComment: never throws when addComment fails", async () => {
+  const adapter: any = { type: "jira", fields: [], addComment: async () => { throw new Error("boom") } }
+  let threw = false
+  let res: any
+  try {
+    res = await postAutoSimRecordingComment(
+      { adapter, cfg: {}, externalKey: "PROJ-9", teaser: null },
+      { personaName: null, objective: null, watchUrl: "https://klavity.in/x", durationSec: 1, stepCount: 1, failedStep: null },
+    )
+  } catch { threw = true }
+  expect(threw).toBe(false)
+  expect(res.commented).toBe(false)
 })
 
 test("outbound hook: does not throw when listTicketExports DB read fails", async () => {

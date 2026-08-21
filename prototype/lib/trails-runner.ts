@@ -38,6 +38,7 @@ import type { NetworkMock } from "./trails-browser-page"
 import { notifyWalkRed } from "./walk-red-alert"
 import { maybeAutoFileWalkFindings } from "./trails-findings-gate"
 import { endLiveWatchRun, publishLiveWatchFrame, startLiveWatchRun } from "./trails-live-watch"
+import { RunRecorder, shouldRecordWalk, captureAndPersistRecording } from "./trails-recording"
 import { WalkEvidenceCollector, type EvidenceOffsets, type WalkEvidenceSummary } from "./trails-walk-evidence"
 
 export interface WalkOptions {
@@ -188,6 +189,14 @@ export interface WalkOptions {
    * back to the KLAV_AUTOSIM_TRACE=1 env flag. Best-effort: a tracing failure never changes the verdict.
    */
   trace?: boolean
+  /**
+   * KLAVITYKLA-490: persist a compact recording (webm + GIF teaser + PNG thumbnail) of this walk's
+   * CDP screencast, keyed by run_id, uploaded to S3 with a walk_artifacts manifest row. DEFAULT-ON
+   * for AutoSim/Trail walks; falls back to the KLAV_AUTOSIM_RECORD env flag (KLAV_AUTOSIM_RECORD=0
+   * opts out). Reuses the SAME screencast stream as live-watch (no second capture). Best-effort: a
+   * capture/encode/upload failure logs a warning and never changes the walk verdict.
+   */
+  record?: boolean
 }
 
 /**
@@ -763,6 +772,9 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
   let capture: ReplayCapture | null = null
   let stopLiveScreencast: (() => Promise<void>) | null = null
   let liveWatchEnded = false
+  // KLAVITYKLA-490: run-recording accumulator. DEFAULT-ON for AutoSim walks (opt-out KLAV_AUTOSIM_RECORD=0);
+  // fed from the SAME screencast stream that live-watch uses (started below when either is active).
+  const recorder: RunRecorder | null = (opts.record ?? shouldRecordWalk()) ? new RunRecorder() : null
   const contextOptions = playwrightContextOptionsForTrailViewport(trail.viewport)
   const closeLiveWatch = (message = "ended") => {
     if (!opts.liveWatch || liveWatchEnded) return
@@ -876,11 +888,14 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
 
   try {
     const page: Page = context ? await context.newPage() : await browser.newPage()
-    if (opts.liveWatch) {
-      startLiveWatchRun(projectId, runId)
+    // Start ONE CDP screencast when either live-watch or recording is active; fan each frame out to
+    // the live-watch stream (if on) AND the run recorder (if on). No second heavy capture (KLA-490).
+    if (opts.liveWatch) startLiveWatchRun(projectId, runId)
+    if (opts.liveWatch || recorder) {
       try {
         stopLiveScreencast = await startCdpScreencast(page, (frame) => {
-          publishLiveWatchFrame(projectId, runId, frame.dataUrl)
+          if (opts.liveWatch) publishLiveWatchFrame(projectId, runId, frame.dataUrl)
+          if (recorder) recorder.addFrame(frame.dataUrl)
         })
       } catch (e) {
         closeLiveWatch("screencast unavailable")
@@ -1056,6 +1071,16 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
       try { await stopLiveScreencast() } catch {}
     }
     closeLiveWatch()
+    // KLAVITYKLA-490: assemble + persist the run recording from the captured screencast frames. Runs
+    // after the screencast is stopped (all frames in hand) and is fully best-effort — a failure here
+    // never changes the walk result. Skipped automatically when no frames were captured.
+    if (recorder && recorder.frameCount > 0) {
+      const failedIdx = stepSummaries.find((s) => s.verdict === "red")?.idx
+      await captureAndPersistRecording(
+        { projectId, runId, stepCount: steps.length, failedStep: failedIdx == null ? null : failedIdx + 1 },
+        recorder,
+      ).catch((e) => console.warn("[trails-recording] persist skipped (non-fatal):", String(e)))
+    }
     // KLAVITYKLA-126: stop tracing + flush/persist HAR + trace BEFORE closing the browser (the context
     // must still be alive to write the artifacts to disk). No-op when no artifact flag is active.
     await finalizeArtifacts()
