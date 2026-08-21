@@ -300,6 +300,13 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
             catch (e: any) { console.warn("[sim-review] recurrence-memory skipped:", e?.message || e) }
           }
         } else {
+          // ACCEPTED EXCEPTION (founder decision, KLA #544 round-4, 2026-08-22): Sim-generated
+          // findings auto-surface to the board — a model-classified `bug.priority` of high/urgent
+          // seeds status='open' via initialFeedbackStatus, without per-finding human triage. This is
+          // DELIBERATE (surfacing findings is the Sim/AutoSim product value; a member triggered the
+          // review intentionally) and is one of three approved exceptions to the untrusted-intake
+          // triage invariant — the others are connector-autofile and /api/errors. Do NOT add
+          // forceNewStatus here to "fix" it; see [[klavity_anon_intake_invariant]].
           feedbackId = await insertFeedback({
             projectId, simId: sim.id, actorEmail, urlHost, urlPath,
             observation: obsText || null, sentiment: r?.sentiment ?? null,
