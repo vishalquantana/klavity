@@ -5273,6 +5273,32 @@ export async function publicReportStatus(ref: string): Promise<PublicReportStatu
   }
 }
 
+// KLAVITYKLA-491: resolve a ticket deep-link ref (full fb_<uuid> OR short fb_<8hex>) to the
+// canonical full feedback id + its owning project_id, WITHOUT any membership filter. The caller
+// (GET /t/:ref page + the single-ticket API) uses the resolved project_id to run the real
+// membership gate (403 for non-members) instead of leaking existence via a bare 404. Returns null
+// only when no such ticket exists or the ref is malformed/ambiguous.
+export async function resolveFeedbackRef(ref: string): Promise<{ id: string; projectId: string } | null> {
+  const raw = String(ref || "").trim().toLowerCase()
+  const isFull = /^fb_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(raw)
+  const isShort = /^fb_[0-9a-f]{8}$/.test(raw)
+  if (!isFull && !isShort) return null
+  let rows: any[]
+  if (isFull) {
+    const r = await db!.execute({ sql: "SELECT id, project_id FROM feedback WHERE id=? LIMIT 2", args: [raw] })
+    rows = r.rows as any[]
+  } else {
+    const pattern = raw.replace(/_/g, "\\_") + "-%"
+    const r = await db!.execute({
+      sql: "SELECT id, project_id FROM feedback WHERE id LIKE ? ESCAPE '\\' LIMIT 2",
+      args: [pattern],
+    })
+    rows = r.rows as any[]
+  }
+  if (rows.length !== 1) return null
+  return { id: String(rows[0].id), projectId: String(rows[0].project_id) }
+}
+
 export async function addTicketExport(
   x: Omit<TicketExportRow, "id" | "createdAt">
 ): Promise<string> {

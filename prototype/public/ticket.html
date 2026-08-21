@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Ticket · Klavity</title>
+<style>
+  :root{
+    --bg:#0e0f13; --panel:#171922; --panel2:#1e2130; --line:#2a2e3f; --text:#e7e9f0;
+    --muted:#9aa0b4; --indigo:#8b8bff; --indigo-d:#6d6dff; --ok:#3ecf8e; --warn:#f5a623; --danger:#ff6b6b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  a{color:var(--indigo);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:820px;margin:0 auto;padding:22px 18px 60px}
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}
+  .brand{font-weight:700;letter-spacing:.2px}
+  .brand .dot{color:var(--indigo)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:16px}
+  h1{font-size:19px;margin:0 0 4px;line-height:1.35}
+  .ref{color:var(--muted);font-size:12.5px;font-variant-numeric:tabular-nums}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 4px}
+  .chip{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;
+    background:var(--panel2);border:1px solid var(--line);font-size:12px;color:var(--muted)}
+  .chip b{color:var(--text);font-weight:600}
+  .sev-urgent{color:#fff;background:#4a1f24;border-color:#7a2c33}
+  .sev-high{color:#ffd8a8;background:#3a2a14;border-color:#6a4a1c}
+  .sev-medium{color:#ffe9b0;background:#332c14;border-color:#5a4c1c}
+  .sev-low{color:#cfe9d8;background:#16281f;border-color:#284a38}
+  .grid{display:grid;grid-template-columns:110px 1fr;gap:8px 14px;font-size:13px}
+  .grid dt{color:var(--muted)}
+  .grid dd{margin:0;word-break:break-word}
+  .section-title{font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:0 0 8px}
+  .body-text{white-space:pre-wrap;word-break:break-word}
+  .quote{border-left:3px solid var(--indigo);padding:6px 0 6px 12px;color:#c9cde0;font-style:italic;margin:10px 0 0}
+  .shot{margin-top:12px}
+  .shot img{max-width:100%;border-radius:10px;border:1px solid var(--line);display:block;cursor:zoom-in;
+    filter:blur(6px);transition:filter .25s ease}
+  .shot img.ready{filter:none}
+  .btn{appearance:none;cursor:pointer;border:1px solid var(--line);background:var(--panel2);color:var(--text);
+    padding:7px 12px;border-radius:9px;font-size:13px;font-weight:500;
+    transition:transform .15s ease,background .15s ease,border-color .15s ease}
+  .btn:hover{transform:scale(1.02);border-color:var(--indigo)}
+  .btn:active{transform:scale(.97)}
+  .btn.primary{background:var(--indigo-d);border-color:var(--indigo-d);color:#fff}
+  .btn.sm{padding:5px 10px;font-size:12px}
+  .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+  .seg button{appearance:none;cursor:pointer;background:transparent;color:var(--muted);border:0;
+    padding:6px 11px;font-size:12.5px;border-right:1px solid var(--line)}
+  .seg button:last-child{border-right:0}
+  .seg button.active{background:var(--indigo-d);color:#fff}
+  select{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:9px;padding:6px 9px;font-size:13px}
+  label.fld{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12.5px}
+  .comments{display:flex;flex-direction:column;gap:10px;margin-top:6px}
+  .cmt{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+  .cmt .meta{color:var(--muted);font-size:11.5px;margin-bottom:3px}
+  .cmt .txt{white-space:pre-wrap;word-break:break-word}
+  textarea{width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--line);
+    border-radius:10px;padding:10px;font:inherit;resize:vertical;min-height:64px}
+  .msg{font-size:12.5px;margin-top:8px}
+  .msg.err{color:var(--danger)}
+  .msg.ok{color:var(--ok)}
+  .muted{color:var(--muted)}
+  .hide{display:none}
+  .skel{color:var(--muted);padding:30px 0;text-align:center}
+  .actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div class="brand">Klav<span class="dot">.</span>ity</div>
+    <a id="openDash" class="btn sm" href="#">Open in full dashboard →</a>
+  </div>
+
+  <div id="skel" class="card skel">Loading ticket…</div>
+  <div id="err" class="card hide" style="color:var(--danger)"></div>
+
+  <div id="content" class="hide">
+    <div class="card">
+      <h1 id="title">—</h1>
+      <div class="ref" id="ref"></div>
+      <div class="chips" id="chips"></div>
+
+      <div class="actions">
+        <div class="seg" id="statusSeg">
+          <button data-status="new">New</button>
+          <button data-status="open">Open</button>
+          <button data-status="in_progress">In progress</button>
+          <button data-status="done">Done</button>
+          <button data-status="dismissed">Dismissed</button>
+        </div>
+        <label class="fld">Priority
+          <select id="prioritySel">
+            <option value="">—</option>
+            <option value="urgent">Urgent</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
+        </label>
+        <button id="acceptBtn" class="btn sm">Accept as bug</button>
+        <button id="copyAiBtn" class="btn sm">Copy to AI</button>
+        <a id="replayLink" class="btn sm hide" href="#" target="_blank" rel="noopener">Session replay →</a>
+      </div>
+      <div id="metaMsg" class="msg"></div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">Context</div>
+      <dl class="grid" id="ctxGrid"></dl>
+      <div class="shot hide" id="shotWrap">
+        <div class="section-title" style="margin-top:14px">Screenshot</div>
+        <img id="shotImg" alt="Report screenshot" />
+      </div>
+    </div>
+
+    <div class="card" id="bodyCard">
+      <div class="section-title">What was reported</div>
+      <div class="body-text" id="observation"></div>
+      <div class="quote hide" id="quote"></div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">Comments</div>
+      <div class="comments" id="comments"><div class="muted">No comments yet.</div></div>
+      <div style="margin-top:12px">
+        <textarea id="cmtInput" placeholder="Add a comment…" maxlength="5000"></textarea>
+        <div class="row" style="margin-top:8px">
+          <button id="cmtBtn" class="btn primary sm">Comment</button>
+          <span id="cmtMsg" class="msg"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// KLAVITYKLA-491 — standalone single-ticket page. Injected by the server (GET /t/:ref) as string
+// literals; the route already resolved the FULL feedback id + member-gated the request.
+var TICKET_ID = "__TICKET_ID__";
+var PROJECT_ID = "__PROJECT_ID__";
+
+var $ = function (id) { return document.getElementById(id); };
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+  });
+}
+function fmtDate(ms) {
+  var n = Number(ms); if (!n) return "—";
+  try { return new Date(n).toLocaleString(); } catch (e) { return "—"; }
+}
+function setMsg(el, text, kind) {
+  el.textContent = text || "";
+  el.className = "msg" + (kind ? " " + kind : "");
+}
+
+var report = null;
+
+// "Open in full dashboard" — the classic in-board focus link (openSingleTicket honors ?ticket=).
+$("openDash").href = "/dashboard?project=" + encodeURIComponent(PROJECT_ID) +
+  "&ticket=" + encodeURIComponent(TICKET_ID) + "#tickets";
+
+function apiFeedback(sub, opts) {
+  return fetch("/api/feedback/" + encodeURIComponent(TICKET_ID) + (sub || ""),
+    Object.assign({ credentials: "include" }, opts || {}));
+}
+
+function loadTicket() {
+  apiFeedback("").then(function (r) {
+    if (r.status === 401) { location.href = "/login?next=" + encodeURIComponent(location.pathname); return null; }
+    if (r.status === 403) { showErr("You are not a member of this ticket's project."); return null; }
+    if (!r.ok) { showErr("Could not load this ticket."); return null; }
+    return r.json();
+  }).then(function (d) {
+    if (!d || !d.report) return;
+    report = d.report;
+    render();
+    loadComments();
+    checkReplay();
+  }).catch(function () { showErr("Could not load this ticket."); });
+}
+
+function showErr(m) {
+  $("skel").classList.add("hide");
+  var e = $("err"); e.textContent = m; e.classList.remove("hide");
+}
+
+function render() {
+  var t = report;
+  $("title").textContent = t.title || t.observation || "Untitled ticket";
+  $("ref").textContent = (t.seqNum ? ("#" + t.seqNum + "  ·  ") : "") + (t.ref || t.id);
+
+  // Chips: status + severity/priority + sentiment.
+  var chips = "";
+  chips += '<span class="chip"><b>' + esc(prettyStatus(t.status)) + "</b></span>";
+  if (t.priority) chips += '<span class="chip sev-' + esc(t.priority) + '">' + esc(t.priority) + "</span>";
+  if (t.sentiment) chips += '<span class="chip">' + esc(t.sentiment) + "</span>";
+  if (t.recurrenceCount && Number(t.recurrenceCount) > 1)
+    chips += '<span class="chip"><b>' + Number(t.recurrenceCount) + "×</b> seen</span>";
+  $("chips").innerHTML = chips;
+
+  // Status segmented control.
+  var segBtns = $("statusSeg").querySelectorAll("button");
+  for (var i = 0; i < segBtns.length; i++) {
+    segBtns[i].classList.toggle("active", segBtns[i].getAttribute("data-status") === t.status);
+  }
+  $("prioritySel").value = t.priority || "";
+
+  // Context grid.
+  var pagesCaptured = Array.isArray(t.occurrences) && t.occurrences.length ? t.occurrences.length : 1;
+  var rows = [
+    ["Page", t.pageUrl ? '<a href="' + esc(t.pageUrl) + '" target="_blank" rel="noopener">' + esc(t.pageUrl) + "</a>" : (t.urlPath ? esc(t.urlPath) : "—")],
+    ["Pages captured", String(pagesCaptured)],
+    ["Reporter", t.reporterEmail ? esc(t.reporterEmail) : (t.simId ? "Sim" : "—")],
+    ["Filed", fmtDate(t.createdAt)],
+    ["Updated", fmtDate(t.updatedAt)]
+  ];
+  if (t.assignee) rows.push(["Assignee", esc(t.assignee)]);
+  var html = "";
+  for (var j = 0; j < rows.length; j++) html += "<dt>" + esc(rows[j][0]) + "</dt><dd>" + rows[j][1] + "</dd>";
+  $("ctxGrid").innerHTML = html;
+
+  // Body + verbatim quote.
+  $("observation").textContent = t.observation || t.notes || "(no description)";
+  if (t.sourceQuote) { var q = $("quote"); q.textContent = "“" + t.sourceQuote + "”"; q.classList.remove("hide"); }
+
+  // Screenshot: thumbnail-first, then upgrade to the full image.
+  if (t.screenshotId) loadScreenshot(t.screenshotId);
+
+  $("skel").classList.add("hide");
+  $("content").classList.remove("hide");
+}
+
+function prettyStatus(s) {
+  return ({ new: "New", open: "Open", in_progress: "In progress", done: "Done", dismissed: "Dismissed" }[s] || s || "—");
+}
+
+function loadScreenshot(sid) {
+  var img = $("shotImg");
+  $("shotWrap").classList.remove("hide");
+  // Thumb first (fast, blurred), then swap in the full-res signed URL.
+  fetch("/api/screenshots/" + encodeURIComponent(sid) + "?thumb=1", { credentials: "include" })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (d) { if (d && d.url) img.src = d.url; })
+    .then(function () {
+      return fetch("/api/screenshots/" + encodeURIComponent(sid), { credentials: "include" });
+    })
+    .then(function (r) { return r && r.ok ? r.json() : null; })
+    .then(function (d) {
+      if (d && d.url) { img.onload = function () { img.classList.add("ready"); }; img.src = d.url; }
+      else { img.classList.add("ready"); }
+    })
+    .catch(function () { img.classList.add("ready"); });
+  img.addEventListener("click", function () { if (img.src) window.open(img.src, "_blank", "noopener"); });
+}
+
+function checkReplay() {
+  apiFeedback("/replay").then(function (r) {
+    if (r && r.ok) {
+      var link = $("replayLink");
+      link.href = $("openDash").href; // the dashboard hosts the rrweb player
+      link.classList.remove("hide");
+    }
+  }).catch(function () {});
+}
+
+function loadComments() {
+  apiFeedback("/comments").then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+    var box = $("comments");
+    var list = d && Array.isArray(d.comments) ? d.comments : [];
+    if (!list.length) { box.innerHTML = '<div class="muted">No comments yet.</div>'; return; }
+    var html = "";
+    for (var i = 0; i < list.length; i++) {
+      var c = list[i];
+      html += '<div class="cmt"><div class="meta">' + esc(c.author || "someone") + "  ·  " + esc(fmtDate(c.createdAt)) +
+        '</div><div class="txt">' + esc(c.body) + "</div></div>";
+    }
+    box.innerHTML = html;
+  }).catch(function () {});
+}
+
+// ── Actions ──────────────────────────────────────────────────────────────
+function patchTicket(payload, okText) {
+  return apiFeedback("", {
+    method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(payload)
+  }).then(function (r) { return r.json().catch(function () { return {}; }); }).then(function (d) {
+    if (d && d.ok) { setMsg($("metaMsg"), okText || "Saved.", "ok"); return true; }
+    setMsg($("metaMsg"), (d && d.error) || "Could not save.", "err"); return false;
+  }).catch(function () { setMsg($("metaMsg"), "Could not save.", "err"); return false; });
+}
+
+(function wire() {
+  // Status buttons.
+  var segBtns = $("statusSeg").querySelectorAll("button");
+  for (var i = 0; i < segBtns.length; i++) {
+    segBtns[i].addEventListener("click", function (ev) {
+      var ns = ev.currentTarget.getAttribute("data-status");
+      patchTicket({ status: ns }, "Status → " + prettyStatus(ns)).then(function (ok) {
+        if (ok) {
+          report.status = ns;
+          var b = $("statusSeg").querySelectorAll("button");
+          for (var k = 0; k < b.length; k++) b[k].classList.toggle("active", b[k].getAttribute("data-status") === ns);
+        }
+      });
+    });
+  }
+
+  // Priority.
+  $("prioritySel").addEventListener("change", function () {
+    var p = $("prioritySel").value || null;
+    patchTicket({ priority: p }, "Priority saved.").then(function (ok) { if (ok) report.priority = p; });
+  });
+
+  // Accept as bug = move to Open (mirrors dashboard tgAccept).
+  $("acceptBtn").addEventListener("click", function () {
+    patchTicket({ status: "open" }, "Accepted → moved to Open.").then(function (ok) {
+      if (ok) {
+        report.status = "open";
+        var b = $("statusSeg").querySelectorAll("button");
+        for (var k = 0; k < b.length; k++) b[k].classList.toggle("active", b[k].getAttribute("data-status") === "open");
+      }
+    });
+  });
+
+  // Copy to AI — a concise, paste-ready prompt built from the ticket fields.
+  $("copyAiBtn").addEventListener("click", function () {
+    var t = report || {};
+    var lines = [
+      "Fix this bug reported via Klavity.",
+      "",
+      "Title: " + (t.title || t.observation || "Untitled"),
+      "Priority: " + (t.priority || "unset"),
+      "Page: " + (t.pageUrl || t.urlPath || "unknown"),
+      "",
+      "What was reported:",
+      (t.observation || t.notes || "(no description)")
+    ];
+    if (t.sourceQuote) { lines.push(""); lines.push("Reporter's words: “" + t.sourceQuote + "”"); }
+    var text = lines.join("\n");
+    var done = function () { setMsg($("metaMsg"), "Copied AI prompt to clipboard.", "ok"); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, function () { fallbackCopy(text, done); });
+    } else { fallbackCopy(text, done); }
+  });
+
+  // Comment.
+  $("cmtBtn").addEventListener("click", function () {
+    var input = $("cmtInput");
+    var text = (input.value || "").trim();
+    if (!text) { setMsg($("cmtMsg"), "Write something first.", "err"); return; }
+    $("cmtBtn").setAttribute("disabled", "true");
+    apiFeedback("/comments", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ body: text })
+    }).then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (res) {
+        $("cmtBtn").removeAttribute("disabled");
+        if (res.ok && res.d && res.d.comment) { input.value = ""; setMsg($("cmtMsg"), "Comment added.", "ok"); loadComments(); }
+        else { setMsg($("cmtMsg"), (res.d && res.d.error) || "Could not add comment.", "err"); }
+      }).catch(function () { $("cmtBtn").removeAttribute("disabled"); setMsg($("cmtMsg"), "Could not add comment.", "err"); });
+  });
+})();
+
+function fallbackCopy(text, done) {
+  try {
+    var ta = document.createElement("textarea");
+    ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta);
+    done();
+  } catch (e) { setMsg($("metaMsg"), "Copy failed — select the text manually.", "err"); }
+}
+
+loadTicket();
+</script>
+</body>
+</html>
