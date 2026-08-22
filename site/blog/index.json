@@ -425,5 +425,12 @@
     "excerpt": "SEO optimizes to rank in search results; GEO optimizes to be cited inside AI answers. Here's how they differ and what to do for each.",
     "category": "Compare",
     "date": "2026-08-21"
+  },
+  {
+    "slug": "regression-testing-vs-retesting",
+    "title": "Regression Testing vs. Retesting: What's the Difference?",
+    "excerpt": "Retesting confirms one specific bug fix works. Regression testing checks the fix didn't break anything else. Here's when to run each and how they combine.",
+    "category": "Compare",
+    "date": "2026-08-22"
   }
 ]
