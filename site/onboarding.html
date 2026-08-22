@@ -1504,6 +1504,12 @@ async function verifyCode(){
       method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ email, code, attribution: _attr })
     })
     if (!v.ok) { err.textContent = v.data.error || 'Invalid or expired code.'; return }
+    // KLA-547: fire the sign_up conversion exactly once, only for a genuinely-new account (server
+    // returns isNewAccount:false on a returning login). gtag/posthog may be absent — always guard.
+    if (v.data && v.data.isNewAccount === true) {
+      try { window.gtag && gtag('event','sign_up',{ method:'otp' }) } catch(e){}
+      try { window.posthog && posthog.capture('sign_up',{ method:'otp' }) } catch(e){}
+    }
     if (v.data && v.data.projectId) {
       projectId = v.data.projectId
       try { sessionStorage.setItem('klav-onboarding-project', projectId) } catch(e){}

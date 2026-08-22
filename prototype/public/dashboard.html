@@ -9717,6 +9717,32 @@ window.openPlanDrawer = openPlanDrawer
     setTimeout(function(){ klavToast("Your plan is live") }, 400)
     // Stripe webhooks can lag the redirect by a beat — refetch now and once more shortly after.
     if (window.refreshPlan) { window.refreshPlan(); setTimeout(function(){ window.refreshPlan() }, 4000) }
+    // KLA-547: client-side purchase conversion (session-joined attribution). The transaction_id is
+    // the Stripe subscription id — the SAME id the server-side Measurement Protocol event uses — so
+    // GA4 dedupes client + server into one conversion. Value/plan/txn are sourced from the billing
+    // state (/api/account/plan). gtag isn't loaded on the dashboard today, so the gtag call is a
+    // guarded no-op and the server MP remains authoritative for GA4; posthog IS loaded here and fires.
+    // Guard against double-fire on refresh via a sessionStorage flag keyed by transaction_id. The
+    // webhook can lag the redirect, so poll the billing state a few times until the sub id appears.
+    ;(function _firePurchase(){
+      var tries = 0
+      function attempt(){
+        tries++
+        fetch("/api/account/plan").then(function(r){ return r.ok ? r.json() : null }).then(function(d){
+          var txn = d && d.billing && d.billing.stripeSubscriptionId
+          if (!txn) { if (tries < 5) setTimeout(attempt, 2000); return }
+          var flag = "klav-purchase-fired:" + txn
+          try { if (sessionStorage.getItem(flag)) return } catch(e){}
+          try { sessionStorage.setItem(flag, "1") } catch(e){}
+          var value = d.priceCents != null ? (d.priceCents / 100) : undefined
+          var plan = d.plan || (d.billing && d.billing.plan) || undefined
+          var currency = "usd"
+          try { window.gtag && gtag('event','purchase',{ transaction_id: txn, value: value, currency: currency, items: [{ item_id: plan }] }) } catch(e){}
+          try { window.posthog && posthog.capture('purchase',{ transaction_id: txn, value: value, currency: currency, plan: plan, interval: (d.billing && d.billing.billingInterval) || undefined }) } catch(e){}
+        }).catch(function(){ if (tries < 5) setTimeout(attempt, 2000) })
+      }
+      setTimeout(attempt, 1500)
+    })()
   } else {
     setTimeout(function(){ klavToast("Checkout cancelled — your plan is unchanged. Come back any time.", true) }, 400)
   }

@@ -122,7 +122,8 @@ import { publishBlogPost, SLUG_RE, type PublishInput } from "./lib/blog-publish"
 import { getExtractModel } from "./lib/extract-model"
 import { parseJSON } from "./lib/parse-json"
 import { EXTRACT_SYS as EXTRACT_SYS_PROMPT, normalizeExtractedPersonas } from "./lib/extract-pipeline"
-import { billingEnforcementEnabled, buildAgencyClientReport, buildProjectUsage, buildUsageMeters, createStripeCheckoutSession, createStripePortalSession, entitledPlanForStatus, intervalFromPrice, isAgencyEntitled, isSnapDowngradeStatus, moneyBackEligibility, MONEY_BACK_GUARANTEE_DAYS, normalizeInterval, normalizePlan, PLAN_QUOTAS, planDisplayName, planFromPrice, quotasForPlan, resolveBillingGrace, retrieveStripeSubscription, verifyStripeWebhook } from "./lib/billing"
+import { billingEnforcementEnabled, buildAgencyClientReport, buildProjectUsage, buildUsageMeters, createStripeCheckoutSession, createStripePortalSession, entitledPlanForStatus, intervalFromPrice, isAgencyEntitled, isSnapDowngradeStatus, moneyBackEligibility, MONEY_BACK_GUARANTEE_DAYS, normalizeInterval, normalizePlan, PLAN_QUOTAS, planDisplayName, planFromPrice, quotasForPlan, resolveBillingGrace, retrieveStripeSubscription, STRIPE_PRICE_CATALOG, verifyStripeWebhook } from "./lib/billing"
+import { sendGa4Purchase, purchaseMirrorFromSession } from "./lib/ga4-mp"
 import { sanitizeInsight } from "./lib/extract-sanitize"
 import { runAutosimAuthProbe } from "./lib/autosim-auth-probe"
 import { generateAuthPrompt } from "./lib/autosim-auth-prompt"
@@ -2498,6 +2499,26 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                 stripeSessionId: sess?.id ? String(sess.id) : undefined,
               },
             })
+            // KLA-547: mirror the purchase conversion to GA4 (server-side Measurement Protocol —
+            // authoritative) + PostHog. Best-effort; both helpers no-op without their env secret and
+            // never throw into the webhook. purchaseMirrorFromSession is a pure, unit-tested helper.
+            const mirror = purchaseMirrorFromSession(
+              sess,
+              String(acctId),
+              (plan, interval) => (STRIPE_PRICE_CATALOG as any)?.[plan]?.[interval]?.unitAmount,
+            )
+            if (mirror) {
+              void sendGa4Purchase(mirror)
+              if (subEmail) {
+                void capturePosthog(subEmail, "purchase", {
+                  value: mirror.valueCents / 100,
+                  currency: mirror.currency,
+                  plan: mirror.plan,
+                  interval: mirror.interval,
+                  transaction_id: mirror.transactionId,
+                })
+              }
+            }
           }
         } else if (event.type === "customer.subscription.created" || event.type === "customer.subscription.updated") {
           const sub = event.data?.object
@@ -3346,7 +3367,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           : wasNew
             ? "/onboarding" + (resumeNext ? "?next=" + encodeURIComponent(resumeNext) : "")
             : resumeNext || "/dashboard"
-        return json({ ok: true, redirect: dest, token: sid, projectId: defaultProjectId }, 200, { "Set-Cookie": cookie("klav_session", sid, SESSION_DAYS * 86400, SECURE) })
+        // KLA-547: expose isNewAccount so the client verify handlers can fire a `sign_up` conversion
+        // (GA4 + PostHog) exactly once for genuinely-new accounts — a returning login carries false.
+        return json({ ok: true, redirect: dest, token: sid, projectId: defaultProjectId, isNewAccount: wasNew }, 200, { "Set-Cookie": cookie("klav_session", sid, SESSION_DAYS * 86400, SECURE) })
       } catch (err: any) { return json(oops(err, "auth"), 500) }
     }
     if (req.method === "POST" && path === "/api/auth/logout") {
@@ -9015,10 +9038,15 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const ms = await membershipsFor(me); const active = ms[0]
         if (!active) return json({ error: "No account." }, 400)
         const billing = await accountBillingState(active.workspaceId)
+        // KLA-547: the plan's price (cents) for the current interval, so the checkout-success page
+        // can fire a client-side GA4/PostHog `purchase` with the right value + a dedup-matched
+        // transaction_id (billing.stripeSubscriptionId). null for free / uncatalogued plans.
+        const planPriceCents = (STRIPE_PRICE_CATALOG as any)?.[billing.plan]?.[billing.billingInterval ?? "month"]?.unitAmount ?? null
         return json({
           plan: billing.plan,
           unlimited: await isAccountUnlimited(active.workspaceId),
           billing,
+          priceCents: planPriceCents,
           // KLAVITYKLA-313: past_due grace-degrade state (banner + days-remaining live here). Benign
           // "no restriction" state for any non-past_due account.
           grace: resolveBillingGrace(billing.billingStatus, billing.billingUpdatedAt),

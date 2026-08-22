@@ -96,6 +96,9 @@ test("attribution is stamped on the account row for a new signup", async () => {
     anonId: "anon-test-123",
   })
   expect(r.status).toBe(200)
+  // KLA-547: the verify response exposes isNewAccount so the client can fire a `sign_up` conversion
+  // exactly once — true for a genuinely-new account.
+  expect((await r.clone().json()).isNewAccount).toBe(true)
   const rows = await query(
     "SELECT first_source, first_medium, first_campaign, first_referrer, anon_id FROM accounts WHERE owner_email=?",
     [EMAIL_NEW]
@@ -115,6 +118,8 @@ test("attribution is NOT overwritten on a returning user login", async () => {
     campaign: "day2",
   })
   expect(r.status).toBe(200)
+  // KLA-547: a returning login must report isNewAccount:false so `sign_up` never re-fires.
+  expect((await r.clone().json()).isNewAccount).toBe(false)
   const rows = await query("SELECT first_source FROM accounts WHERE owner_email=?", [EMAIL_RTN])
   expect(rows.length).toBe(1)
   expect(rows[0].first_source == null || rows[0].first_source === "").toBe(true)
