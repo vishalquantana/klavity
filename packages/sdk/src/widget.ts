@@ -1,6 +1,6 @@
 // packages/sdk/src/widget.ts
 import { injectSimStyles } from "@klavity/core/sim"
-import { safeToPng, safeToPngWithScale, safeToPngWithQuality, safeToPngFullPage } from "./capture"
+import { safeToPng, safeToPngWithScale, safeToPngWithQuality, safeToPngFullPage, safeToPngViewport } from "./capture"
 import { buildModal, installRegionDrag, isEditableTarget, type ModalController, type PickedTarget, type CaptureQuality } from "@klavity/core/modal"
 import { cropDataUrl, type Rect } from "@klavity/core/crop"
 import { planScrollStitch, clampCaptureHeight } from "./sharp-capture"
@@ -8,7 +8,7 @@ import { type CaptureBuffers } from "@klavity/core/capture"
 import { installCaptureContext, buildCaptureContext } from "./capture-context"
 import { installErrorReporter } from "./error-reporter"
 import type { ReportContext, ReportIdentity, Reporter, ClientInfo } from "@klavity/core"
-import { parseScriptConfig, isFirstParty, buildFeedbackForm, successCopy, shouldUseInteractiveSuccess, compressScreenshot, buildThumbnail } from "./widget-lib"
+import { parseScriptConfig, isFirstParty, buildFeedbackForm, successCopy, shouldUseInteractiveSuccess, compressScreenshot, buildThumbnail, resolveComposerRecord } from "./widget-lib"
 import { coerceReporter, reporterToIdentity, resolveFallbackReporter, captureClientInfo } from "./identity"
 import { computeSelector, describeElement } from "./element-selector"
 import { getTurnstileToken } from "./load-turnstile"
@@ -533,9 +533,11 @@ async function mount() {
   // project that hasn't opted in renders the classic Bug/Feature composer with no Title field / file uploads.
   let composerShowTitle = false
   let composerFileAttach = false
-  // KLAVITYKLA-438 "Record me": per-project opt-in. Only takes effect where the browser can screen-record
-  // (getDisplayMedia + MediaRecorder) — hidden on iOS Safari, matching the Sharp-capture support envelope.
-  let composerRecord = false
+  // KLAVITYKLA-438 "Record me": DEFAULT-ON for every project (opt-out, not opt-in). Only takes effect where
+  // the browser can screen-record (getDisplayMedia + MediaRecorder) — hidden on iOS Safari, matching the
+  // Sharp-capture support envelope. A project turns it OFF only by explicitly setting composer.record:false
+  // (or allowRecording:false). No config / a failed config fetch → the button shows (when supported).
+  let composerRecord = (() => { try { return resolveComposerRecord(null, recordingSupported()) } catch { return false } })()
   let composerIssueTypes: Array<{ value: 'bug' | 'feature' | 'task' | 'query'; label: string; mappingLabel?: string }> | undefined
   // Report-clarity helper (per-project, DEFAULT on). Only OFF when the server explicitly returns
   // reportClarity:false. Server + widget ship together (orchestrator), so the field is always present.
@@ -585,8 +587,9 @@ async function mount() {
       if (composer) {
         composerShowTitle = composer.title === true || composer.showTitleField === true
         composerFileAttach = composer.fileAttach === true || composer.allowFileAttachments === true
-        // "Record me" (KLAVITYKLA-438): opt-in per project AND only where the browser supports screen capture.
-        composerRecord = (composer.record === true || composer.allowRecording === true) && recordingSupported()
+        // "Record me" (KLAVITYKLA-438): DEFAULT-ON — only an EXPLICIT record:false / allowRecording:false
+        // turns it off. Still gated on browser screen-capture support (recordingSupported()).
+        composerRecord = resolveComposerRecord(composer, recordingSupported())
         if (Array.isArray(composer.issueTypes) && composer.issueTypes.length) {
           const cleaned = composer.issueTypes
             .filter((t: any) => t && typeof t.value === 'string' && ['bug', 'feature', 'task', 'query'].includes(t.value))
@@ -952,6 +955,9 @@ async function mount() {
       // KLAVITYKLA-473: if the DOM render is blank/partial-white, flag suggestSharp so the composer nudges
       // the user to the Screen button — NO auto getDisplayMedia (the #460 surprise-prompt regression).
       onCaptureFull: async () => withSharpSuggestion(await safeToPngWithQuality(document.body, { filter: notKlavityChrome })),
+      // KLAVITYKLA-509: fast above-the-fold render used as the IMMEDIATE preview — the composer shows a real
+      // image within ~1s while onCaptureFull() finishes the full-page render in the background and swaps in.
+      onCaptureViewport: async () => withSharpSuggestion(await safeToPngViewport({ filter: notKlavityChrome })),
       onRegionCapture: async (rect) => {
         // Crop the selected VIEWPORT rect out of a full-page capture. Pass the capture's scale so the rect
         // lands correctly even when the fetch-free fallback downscaled a tall page (otherwise → black).

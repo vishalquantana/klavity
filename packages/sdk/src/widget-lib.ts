@@ -89,6 +89,22 @@ export function shouldUseInteractiveSuccess(mode: string, copy: SuccessCopy): bo
   return mode === "leadgen" && copy.showCta
 }
 
+// KLAVITYKLA-438 "Record me": resolve whether the composer's Record button is shown for a project.
+// DEFAULT-ON (opt-out, not opt-in): every project gets it wherever the browser can screen-record. A
+// project turns it OFF only by explicitly setting composer.record:false (or allowRecording:false).
+//   - `composer` absent (no config / failed config fetch) → true when supported
+//   - composer.record === false OR composer.allowRecording === false → false
+//   - anything else (record:true, unset, other truthy) → true when supported
+// `supported` is the browser capability gate (recordingSupported()); when false the button is never shown.
+export function resolveComposerRecord(
+  composer: { record?: unknown; allowRecording?: unknown } | null | undefined,
+  supported: boolean,
+): boolean {
+  if (!supported) return false
+  if (!composer) return true
+  return composer.record !== false && composer.allowRecording !== false
+}
+
 export function gateMessage(reason: string): string {
   switch (reason) {
     case "paused": return "Sims are paused for this project."

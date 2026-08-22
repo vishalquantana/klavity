@@ -140,6 +140,13 @@ export interface ModalCallbacks {
   // tag drives the thumbnail badge + the "Retake sharp" affordance. onCaptureFull is 'rendered'/'wireframe'
   // on the widget (html-to-image / fetch-free) and 'real-pixel' on the extension (captureVisibleTab stitch).
   onCaptureFull: () => Promise<CaptureResult>
+  // KLAVITYKLA-509 (viewport-first capture): an OPTIONAL fast above-the-fold render. When provided, the
+  // auto-capture-on-open and "Full Page" flows show this immediately as the first preview (~1s), then run
+  // the slower onCaptureFull() in the BACKGROUND and swap it in when ready — the composer never blocks on
+  // the full render. Absent → behaviour is identical to before (onCaptureFull runs directly, with the
+  // "Capturing…" skeleton). Kept optional + additive so the extension (which has no fast viewport path) is
+  // unaffected.
+  onCaptureViewport?: () => Promise<CaptureResult>
   onRegionCapture?: (rect: { x: number; y: number; w: number; h: number }) => Promise<CaptureResult>
   // Optional "sharp" real-pixel capture (the widget's getDisplayMedia scroll-stitch — captures cross-origin
   // images with no CORS issues). When provided, a "Sharp" button is rendered; the modal hides itself during
@@ -1793,13 +1800,12 @@ export function buildModal(
 
   submitBtn.addEventListener('click', async () => {
     if (busy || submitBtn.disabled) return // re-entrancy: ignore double-clicks / clicks while a capture runs
-    // Report-clarity soft nudge (mockup panel D). If the helper is on and the typed report is still in the
-    // weakest band, surface the nudge and stop THIS click — but NEVER hard-block: the nudge's "Submit
-    // anyway" sets clarityAckd and re-fires this handler, which then proceeds down the normal submit path.
-    // KLAVITYKLA-497: the nudge is config-gated (preSubmitNudge, DEFAULT on) and NEVER a hard block. When
-    // suppressed (explicit false) Submit fires straight through; when shown, "Submit anyway" still lets it
-    // through (clarityAckd). Either way Submit always works.
-    if (cfg.reportClarity && cfg.preSubmitNudge !== false && !clarityAckd && shouldNudgeOnSubmit(desc.value)) { showClarityNudge(); return }
+    // KLAVITYKLA-497: Submit is NEVER blocked by report clarity. The old gate here surfaced the pre-submit
+    // nudge and RETURNED — forcing a SECOND click on "Submit anyway". That two-step WAS the block users hit.
+    // A weak / vague / empty description now submits on the FIRST click, always. The passive inline warning
+    // is the clarity meter + coverage chips shown live under the description as the reporter types; there is
+    // no interception, no confirm gate, and Submit is never disabled by clarity. (preSubmitNudge config is
+    // retained for back-compat but no longer gates submission.)
     const description = desc.value.trim()
     // PX4 #411/#425: gather the optional Title + precise kind + non-image files. Each is only included in the
     // payload when the host enabled the corresponding affordance, so a caller passing no new opts sends the
@@ -1893,6 +1899,61 @@ export function buildModal(
     }
   })
 
+  // KLAVITYKLA-509 (viewport-first capture): swap a fast viewport PREVIEW shot for the full-page render once
+  // the (slower) background render resolves. Located by dataUrl identity so a user who removed/replaced the
+  // preview in the meantime is left untouched. Mirrors retakeSharp's in-place swap — the pixels/dimensions
+  // change, so any stale markup/undo/crop history bound to that slot is dropped.
+  function swapPreviewForFull(previewUrl: string, result: CaptureResult) {
+    const { dataUrl, quality, suggestSharp } = normalizeCapture(result)
+    if (!dataUrl) return
+    const index = screenshots.indexOf(previewUrl)
+    if (index < 0) return // the preview was removed/replaced by the user — respect their state, do not swap
+    screenshots[index] = dataUrl
+    screenshotCompressed[index] = callbacks.compressImage ? callbacks.compressImage(dataUrl) : Promise.resolve(dataUrl)
+    screenshotQuality[index] = quality
+    screenshotSuggestSharp[index] = !!suggestSharp && quality !== 'real-pixel'
+    if (annotationsByIndex[index]) delete annotationsByIndex[index]
+    delete undoStacks[index]; delete cropStacks[index]
+    updateStrip()
+  }
+
+  // KLAVITYKLA-509: viewport-first capture. Render the FAST above-the-fold preview immediately so the strip
+  // shows a real image within ~1s, then run the full-page render in the BACKGROUND and swap it in when ready.
+  // The caller only awaits the (fast) preview phase — the full render is fire-and-forget, so the composer is
+  // NEVER blocked on it. Returns true when it drove a viewport-first capture; false when no onCaptureViewport
+  // is wired (the caller then falls back to its normal onCaptureFull path).
+  async function captureViewportThenFull(activeBtn: HTMLButtonElement | null): Promise<boolean> {
+    if (!callbacks.onCaptureViewport) return false
+    let previewUrl: string | null = null
+    // Phase 1 — fast viewport preview (awaited).
+    const restore = maskOn ? maskNumbers(document.body) : null
+    try {
+      const { dataUrl } = normalizeCapture(await callbacks.onCaptureViewport())
+      if (dataUrl) {
+        previewUrl = dataUrl
+        capturing = false // a real preview is now shown — clear the "Capturing…" skeleton
+        addScreenshot(dataUrl, 'rendered', undefined, true, false)
+        if (activeBtn) setActiveCapture(activeBtn)
+      }
+    } catch { /* preview failed — the background full render below becomes the primary shot */ }
+    finally { restore?.() }
+    // Phase 2 — full-page render in the background. Fire-and-forget; swap the preview for it when ready.
+    void (async () => {
+      const restore2 = maskOn ? maskNumbers(document.body) : null
+      try {
+        const full = await callbacks.onCaptureFull()
+        if (previewUrl) swapPreviewForFull(previewUrl, full)
+        else {
+          capturing = false
+          const { dataUrl, quality, suggestSharp } = normalizeCapture(full)
+          if (dataUrl) { addScreenshot(dataUrl, quality, undefined, true, !!suggestSharp); if (activeBtn) setActiveCapture(activeBtn) }
+        }
+      } catch { capturing = false; updateStrip() }
+      finally { restore2?.() }
+    })()
+    return true
+  }
+
   // Capture buttons — each is guarded against double-click / re-entrancy via `busy`/lockComposer.
   const fullBtn = modal.querySelector('#klavity-full') as HTMLButtonElement
   fullBtn.addEventListener('click', async () => {
@@ -1900,6 +1961,11 @@ export function buildModal(
     lockComposer(true)
     fullBtn.classList.add('kl-loading')
     try {
+      // KLAVITYKLA-509: viewport-first when available — the fast preview shows now; the composer unlocks as
+      // soon as it lands (we only await the preview), and the full-page render swaps in later in the
+      // background so the user is never stuck watching "Capturing…". Checked SYNCHRONOUSLY (no await before
+      // the fallback) so the double-click guard still calls onCaptureFull exactly once in the classic path.
+      if (callbacks.onCaptureViewport) { await captureViewportThenFull(fullBtn); return }
       const restore = maskOn ? maskNumbers(document.body) : null
       try {
         const { dataUrl, quality, suggestSharp } = normalizeCapture(await callbacks.onCaptureFull())
@@ -2856,6 +2922,13 @@ export function buildModal(
       capturing = true
       updateStrip()
       const runCapture = () => {
+        // KLAVITYKLA-509: viewport-first when available — the fast above-the-fold preview replaces the
+        // "Capturing…" skeleton within ~1s, then the full-page render swaps in from the background. Falls
+        // back to the direct full-page render (with the skeleton) when no onCaptureViewport is wired.
+        if (callbacks.onCaptureViewport) {
+          captureViewportThenFull(fullBtn).catch(() => { capturing = false; updateStrip() })
+          return
+        }
         callbacks.onCaptureFull()
           .then(shot => {
             const { dataUrl, quality, suggestSharp } = normalizeCapture(shot)

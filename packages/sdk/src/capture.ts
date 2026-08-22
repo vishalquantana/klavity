@@ -573,3 +573,35 @@ export async function safeToPngFullPage(
   const { width, height } = fullPageCaptureSize()
   return (await safeToPngWithScale(node, { ...opts, width, height })).dataUrl
 }
+
+/**
+ * The visible-viewport render box (CSS px): the above-the-fold slice, width = innerWidth, height =
+ * innerHeight. Exported so tests can assert the requested dimensions. Falls back to sane minimums in a
+ * non-DOM env.
+ */
+export function viewportCaptureSize(): { width: number; height: number } {
+  const viewportW = typeof window !== "undefined" ? (window.innerWidth || 0) : 0
+  const viewportH = typeof window !== "undefined" ? (window.innerHeight || 0) : 0
+  const doc = typeof document !== "undefined" ? document.documentElement : null
+  return {
+    width: Math.max(viewportW, doc?.clientWidth ?? 0, 1),
+    height: Math.max(viewportH, doc?.clientHeight ?? 0, 1),
+  }
+}
+
+/**
+ * KLAVITYKLA-509 (viewport-first capture): a FAST, above-the-fold render of the page top used as the
+ * IMMEDIATE preview while the slower full-page render finishes in the background. Renders document.body
+ * clipped to the viewport box (top slice) with fonts skipped for speed. The top slice is consistent with
+ * the full-page render (which also renders document.body from the top), so swapping the preview for the
+ * full-page image later is not jarring — the full image simply extends below the fold. Returns the same
+ * shape as {@link safeToPngWithQuality} so the composer can badge/normalize it identically.
+ */
+export async function safeToPngViewport(
+  opts: { filter?: (n: HTMLElement) => boolean; pixelRatio?: number } = {},
+): Promise<{ dataUrl: string; quality: WidgetCaptureQuality; blank: boolean; partial: boolean }> {
+  const node = (typeof document !== "undefined" ? (document.body ?? document.documentElement) : null) as HTMLElement
+  const { width, height } = viewportCaptureSize()
+  const { dataUrl, quality, blank, partial } = await safeToPngWithScale(node, { ...opts, width, height, skipFonts: true })
+  return { dataUrl, quality, blank, partial }
+}

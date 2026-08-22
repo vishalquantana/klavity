@@ -110,31 +110,29 @@ describe('report-clarity helper — debounced AI tip (cached, one call per chang
   })
 })
 
-describe('report-clarity helper — soft pre-submit nudge (never a hard block)', () => {
-  it('weak text: first Submit shows the nudge and does NOT submit; "Submit anyway" then submits', async () => {
+describe('report-clarity helper — Submit is NEVER blocked by clarity (#497)', () => {
+  it('weak text: Submit submits on the FIRST click — no nudge gate, no second click', async () => {
     const onSubmit = vi.fn(async () => ({ issueKey: '1', issueUrl: '' }))
     const ctrl = buildModal('bug', { ...base, onSubmit }, { reportClarity: true } as any)
-    type(ctrl, 'broken pls fix')
+    type(ctrl, 'broken pls fix')   // weakest ('needs') band — the old code would have blocked this
     const submit = q(ctrl, '#klavity-submit') as HTMLButtonElement
-    expect(submit.disabled).toBe(false)   // there IS a description → Submit is enabled (nudge is not a block)
+    expect(submit.disabled).toBe(false)   // there IS a description → Submit is enabled
     submit.click()
     await new Promise(r => setTimeout(r, 0))
-    expect((q(ctrl, '#klavity-nudge') as HTMLElement).hidden).toBe(false)
-    expect(onSubmit).not.toHaveBeenCalled()
-    ;(q(ctrl, '#klavity-nudge-anyway') as HTMLButtonElement).click()
-    await new Promise(r => setTimeout(r, 0))
+    // FIRST click submits — no interception, no "Submit anyway" second step.
     expect(onSubmit).toHaveBeenCalledTimes(1)
     ctrl.close()
   })
 
-  it('"Add detail" hides the nudge without submitting', () => {
+  it('empty description with an attached screenshot submits in one click (no clarity gate)', async () => {
     const onSubmit = vi.fn(async () => ({ issueKey: '1', issueUrl: '' }))
     const ctrl = buildModal('bug', { ...base, onSubmit }, { reportClarity: true } as any)
-    type(ctrl, 'broken pls fix')
-    ;(q(ctrl, '#klavity-submit') as HTMLButtonElement).click()
-    ;(q(ctrl, '#klavity-nudge-add') as HTMLButtonElement).click()
-    expect((q(ctrl, '#klavity-nudge') as HTMLElement).hidden).toBe(true)
-    expect(onSubmit).not.toHaveBeenCalled()
+    ctrl.addScreenshot('data:image/png;base64,AAAA')   // evidence → Submit enabled even with no description
+    const submit = q(ctrl, '#klavity-submit') as HTMLButtonElement
+    expect(submit.disabled).toBe(false)
+    submit.click()
+    await new Promise(r => setTimeout(r, 0))
+    expect(onSubmit).toHaveBeenCalledTimes(1)
     ctrl.close()
   })
 
