@@ -100,3 +100,20 @@ test("explicit reporter value wins over the rule; rule fills the gaps", async ()
   const id = await submit("https://app.staging.acme.com/x", { reporter: JSON.stringify({ env: "qa" }) })
   expect(await labelsOf(id)).toEqual({ env: "qa", org: "Acme", server: "eu-1" })
 })
+
+// Zero-config host-convention fallback (generalizes #441): no project rule matches this host, but the
+// 'qa1' subdomain convention still env-tags the report. org/server stay null (convention is env-only).
+test("host convention env auto-detects when no rule matches", async () => {
+  const id = await submit("https://qa1.px4app.com/orders")
+  expect(await labelsOf(id)).toEqual({ env: "qa", org: null, server: null })
+})
+
+test("explicit reporter env still wins over the host convention", async () => {
+  const id = await submit("https://qa1.px4app.com/orders", { reporter: JSON.stringify({ env: "prod" }) })
+  expect((await labelsOf(id)).env).toBe("prod")
+})
+
+test("plain host with no rule and no convention stays null", async () => {
+  const id = await submit("https://app.example.com/orders")
+  expect(await labelsOf(id)).toEqual({ env: null, org: null, server: null })
+})

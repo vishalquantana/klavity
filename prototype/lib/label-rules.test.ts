@@ -2,7 +2,7 @@
 // No DB / no network — matchHostGlob, ipInCidr, evaluateLabelRules, sanitizeLabelRules.
 
 import { test, expect, describe } from "bun:test"
-import { matchHostGlob, ipInCidr, evaluateLabelRules, sanitizeLabelRules, LABEL_RULES_MAX } from "./label-rules"
+import { matchHostGlob, ipInCidr, evaluateLabelRules, sanitizeLabelRules, hostConventionEnv, LABEL_RULES_MAX } from "./label-rules"
 
 describe("matchHostGlob", () => {
   test("exact match", () => {
@@ -87,6 +87,43 @@ describe("evaluateLabelRules — first match wins", () => {
   test("empty / missing rules → all null", () => {
     expect(evaluateLabelRules([], { urlHost: "app.staging.acme.com" })).toEqual({ env: null, org: null, server: null })
     expect(evaluateLabelRules(null, { urlHost: "app.staging.acme.com" }).env).toBeNull()
+  })
+})
+
+describe("hostConventionEnv — zero-config env from host convention", () => {
+  test("recognized subdomain tokens", () => {
+    expect(hostConventionEnv("qa1.px4app.com")).toBe("qa")
+    expect(hostConventionEnv("qa.example.com")).toBe("qa")
+    expect(hostConventionEnv("qa2.example.com")).toBe("qa")
+    expect(hostConventionEnv("staging.acme.io")).toBe("staging")
+    expect(hostConventionEnv("stg.acme.io")).toBe("staging")
+    expect(hostConventionEnv("dev.foo.com")).toBe("dev")
+    expect(hostConventionEnv("uat.x.com")).toBe("uat")
+    expect(hostConventionEnv("test.x.com")).toBe("test")
+    expect(hostConventionEnv("tst.x.com")).toBe("test")
+    expect(hostConventionEnv("sandbox.x.com")).toBe("sandbox")
+    expect(hostConventionEnv("sbx.x.com")).toBe("sandbox")
+    expect(hostConventionEnv("preview.x.com")).toBe("preview")
+    expect(hostConventionEnv("pr-123.x.com")).toBe("preview")
+    expect(hostConventionEnv("demo.x.com")).toBe("demo")
+  })
+  test("case + whitespace normalized", () => {
+    expect(hostConventionEnv("  QA1.PX4APP.COM  ")).toBe("qa")
+  })
+  test("local hosts", () => {
+    expect(hostConventionEnv("localhost")).toBe("local")
+    expect(hostConventionEnv("app.local")).toBe("local")
+    expect(hostConventionEnv("127.0.0.1")).toBe("local")
+    expect(hostConventionEnv("10.1.2.3")).toBe("local")
+    expect(hostConventionEnv("192.168.1.5")).toBe("local")
+  })
+  test("no recognized token → null (never guesses prod)", () => {
+    expect(hostConventionEnv("www.px4app.com")).toBeNull()
+    expect(hostConventionEnv("px4app.com")).toBeNull()
+    expect(hostConventionEnv("app.acme.com")).toBeNull()
+    expect(hostConventionEnv("")).toBeNull()
+    expect(hostConventionEnv(null)).toBeNull()
+    expect(hostConventionEnv(undefined)).toBeNull()
   })
 })
 

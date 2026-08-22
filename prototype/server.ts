@@ -49,7 +49,7 @@ import { signImageToken, verifyImageToken } from "./lib/imgsign"
 import { runRetentionSweep } from "./lib/retention"
 import { SCREENSHOTS, resolveScreenshotConfig, mbLabel } from "./lib/screenshot-config"
 import { buildIssueHtml, escapeHtml, sanitizeClientContext, clientContextLines, sanitizeReporter, sanitizeClientInfo, reporterLines, clientInfoLines } from "./lib/feedback"
-import { evaluateLabelRules } from "./lib/label-rules"
+import { evaluateLabelRules, hostConventionEnv } from "./lib/label-rules"
 import { encryptSecret, decryptSecret } from "./lib/crypto"
 import { createTestAccount, listTestAccounts, getTestAccountById, getTestAccountByName, deleteTestAccount, isTestAccountEmail, getTestAccountRefs, rotateTestAccountSecret } from "./lib/test-accounts"
 import { assertSafeUrl } from "./lib/url-guard"
@@ -4208,7 +4208,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               // rule only fills gaps. Unmatched → null (no guesses). Pure + best-effort; never blocks submit.
               const reportHost = (() => { try { return reportUrl ? new URL(reportUrl).host : (urlHost || null) } catch { return urlHost || null } })()
               const autoLabels = evaluateLabelRules(resolved.labelRules, { urlHost: reportHost, ip: reportIp })
-              const reportEnv = (reporter?.env ? String(reporter.env) : null) || autoLabels.env
+              // Env precedence: explicit reporter value → project rule → zero-config host convention (generalizes #441).
+              const reportEnv = (reporter?.env ? String(reporter.env) : null) || autoLabels.env || hostConventionEnv(reportHost)
               const reportOrg = (reporter?.org ? String(reporter.org) : null) || autoLabels.org
               const reportServer = (reporter?.server ? String(reporter.server) : null) || autoLabels.server
 

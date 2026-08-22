@@ -92,6 +92,48 @@ export function evaluateLabelRules(
   return none
 }
 
+// ── zero-config env-from-host convention ─────────────────────────────────────
+// Generalizes #441: infer the report `env` from the URL host's subdomain convention so reports get
+// env-tagged for EVERY project with no per-project rules. Pure + bounded. Returns the normalized env
+// on the FIRST recognized subdomain label, or null when no convention is found — NEVER guesses 'prod'
+// for apex/unknown hosts (no bad guesses; matches the #441 "unmatched → null" contract).
+//
+// Recognized tokens (a label equal to the token, OR the token immediately followed by digits e.g.
+// 'qa1', 'qa2' → 'qa'; plus the 'pr-<x>' preview form):
+const HOST_ENV_TOKENS: Array<[RegExp, string]> = [
+  [/^qa(\d+)?$/, "qa"],
+  [/^(staging|stg)$/, "staging"],
+  [/^dev(\d+)?$/, "dev"],
+  [/^uat(\d+)?$/, "uat"],
+  [/^(test|tst)(\d+)?$/, "test"],
+  [/^(sandbox|sbx)(\d+)?$/, "sandbox"],
+  [/^(preview|pr)(\d+)?$/, "preview"],
+  [/^pr-.+$/, "preview"],
+  [/^demo(\d+)?$/, "demo"],
+]
+
+export function hostConventionEnv(host: string | null | undefined): string | null {
+  const h = cap(host, 260).toLowerCase()
+  if (!h) return null
+  // Local dev hosts: localhost (or *.localhost), *.local, and RFC1918 / loopback IPs.
+  if (h === "localhost" || h.endsWith(".localhost") || h.endsWith(".local")) return "local"
+  if (
+    h === "127.0.0.1" || h.startsWith("127.") || h === "::1" ||
+    h.startsWith("10.") || h.startsWith("192.168.") ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(h)
+  ) return "local"
+  // Only inspect the SUBDOMAIN labels — everything left of the registrable domain (approx: drop the
+  // last two labels). This avoids matching an apex like `qa.io` on its TLD.
+  const labels = h.split(".")
+  const subdomains = labels.length > 2 ? labels.slice(0, labels.length - 2) : []
+  for (const label of subdomains) {
+    for (const [re, env] of HOST_ENV_TOKENS) {
+      if (re.test(label)) return env
+    }
+  }
+  return null
+}
+
 // ── settings sanitize (storage) ──────────────────────────────────────────────
 // Coerce the client-supplied rules blob into the stored shape: bound the count, cap every string, drop
 // rules with an empty match clause or empty label set. Returns [] for garbage so the column stores a
