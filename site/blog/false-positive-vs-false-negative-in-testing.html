@@ -1,0 +1,118 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>False Positive vs. False Negative in Software Testing · Klavity</title>
+<meta name="description" content="A false positive fails when the code is fine; a false negative passes when the code is broken. Here's how to tell them apart — and cut both.">
+<link rel="canonical" href="https://klavity.in/blog/false-positive-vs-false-negative-in-testing">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="False Positive vs. False Negative in Software Testing"><meta property="og:description" content="A false positive fails when the code is fine; a false negative passes when the code is broken. Here's how to tell them apart — and cut both.">
+<meta property="og:url" content="https://klavity.in/blog/false-positive-vs-false-negative-in-testing"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="False Positive vs. False Negative in Software Testing"><meta name="twitter:description" content="A false positive fails when the code is fine; a false negative passes when the code is broken. Here's how to tell them apart — and cut both."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"False Positive vs. False Negative in Software Testing","description":"A false positive fails when the code is fine; a false negative passes when the code is broken. Here's how to tell them apart — and cut both.","datePublished":"2026-08-23","dateModified":"2026-08-23","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/false-positive-vs-false-negative-in-testing","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"False Positive vs. False Negative in Software Testing","item":"https://klavity.in/blog/false-positive-vs-false-negative-in-testing"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/false-positive-vs-false-negative-in-testing"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Is a false positive when the test fails or when it passes?","acceptedAnswer":{"@type":"Answer","text":"In the standard QA convention, a false positive is a test that FAILS while the feature actually works — a false alarm. This trips people up because in medicine a 'positive' result means the condition is present. In testing, the 'positive' refers to the test raising an alarm, not to the bug being real. If a term is ambiguous on your team, say 'the test failed but there was no real bug' instead."}},{"@type":"Question","name":"Which is worse, a false positive or a false negative?","acceptedAnswer":{"@type":"Answer","text":"A false negative is worse per occurrence because a real defect reaches users undetected — the test told you everything was fine. But false positives are usually more frequent, and their cumulative cost is that people stop trusting the suite and start ignoring or blindly re-running red builds, which then lets real failures hide in the noise. Track both; don't optimize one to zero at the expense of the other."}},{"@type":"Question","name":"Are flaky tests false positives?","acceptedAnswer":{"@type":"Answer","text":"A flaky test that fails intermittently on working code is producing false positives. Not every false positive is flaky, though — a false positive can also come from a stale assertion, a bad selector, or an over-strict check that fails on a legitimate change. Flakiness is one common source, not a synonym."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Compare · 2026-08-23</div>
+    <h1>False Positive vs. False Negative in Software Testing</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>In software testing, a false positive is a test that reports a failure that isn't real — the code actually works. A false negative is the opposite: the test passes while a real bug slips through. False negatives are more dangerous because they ship broken code silently, but false positives are more common and quietly erode trust in your suite until the team stops reading the results.</div>
+    <div class="prose"><p>In software testing, a <strong>false positive</strong> is a test that reports a failure when the code is actually working, and a <strong>false negative</strong> is a test that passes when the code is actually broken. Put simply: a false positive is a false alarm, and a false negative is a missed bug. Both undermine a test suite, but in opposite ways — false positives waste time and erode trust, while false negatives let real defects reach users unnoticed.</p>
+
+<h2>What is a false positive in software testing?</h2>
+<p>A false positive is a failing test result that does not correspond to a real defect. The feature works as intended, but the test says it doesn't. The test is wrong, not the product.</p>
+<p>Common shapes of a false positive:</p>
+<ul>
+<li>A test fails because a button's CSS selector changed, even though the button still works.</li>
+<li>An assertion checks an exact string ("Welcome back, Sam!") that legitimately changed to "Welcome, Sam" — the change was intended, but the test wasn't updated.</li>
+<li>A <a href="/blog/fix-flaky-end-to-end-tests">flaky test</a> fails once out of ten runs because of a timing race, not a bug.</li>
+<li>A test depends on shared state left behind by a previous test, so it fails out of order.</li>
+</ul>
+<p>The danger of false positives is cumulative. One red build that turns out to be nothing is an annoyance. A suite that is red half the time trains the team to ignore red — and then a genuine failure hides in plain sight.</p>
+
+<h2>What is a false negative in software testing?</h2>
+<p>A false negative is a passing test result that hides a real defect. The product is broken, but the test reports success — so nobody looks. This is the more dangerous of the two per occurrence, because the failure is silent: the safety net you were relying on told you everything was fine.</p>
+<p>Common causes of false negatives:</p>
+<ul>
+<li>The test only checks the happy path and never exercises the input that breaks.</li>
+<li>An assertion is too weak — it checks that a request returned a <strong>200</strong> status but not that the response body was correct.</li>
+<li>A test that should have run was skipped, or silently swallowed an exception.</li>
+<li>The test asserts on implementation details that still pass while the user-facing behavior is broken.</li>
+</ul>
+
+<h2>False positive vs. false negative: why the words confuse everyone</h2>
+<p>The terminology causes real arguments in QA, so it's worth pinning down. In medicine, a "positive" result means the condition is present. In testing, "positive" refers to the test raising an alarm — not to the bug being real. So:</p>
+<ul>
+<li><strong>False positive</strong> = the test fired an alarm (failed), but there was no real problem.</li>
+<li><strong>False negative</strong> = the test stayed quiet (passed), but there was a real problem.</li>
+</ul>
+<p>If your team keeps mixing these up, drop the jargon and use plain descriptions: "failed but no real bug" and "passed but a real bug shipped." Unambiguous words beat correct jargon nobody agrees on.</p>
+
+<h2>Which is worse, a false positive or a false negative?</h2>
+<p>It depends on what you're optimizing. A false negative is worse in a single instance because a defect reaches production undetected — the cost lands on users and on whoever has to debug it later without a failing test to point the way. A false positive is usually less severe individually but far more frequent, and its real cost is trust: once people expect the suite to lie, they stop reading it.</p>
+<p>The two also trade off against each other. Make a test stricter to catch more real bugs (fewer false negatives) and you risk more false alarms on legitimate changes (more false positives). Loosen it to stop the noise and you risk missing real defects. The goal isn't zero of either — it's keeping both low enough that the suite stays trustworthy and protective at the same time.</p>
+
+<h2>How to reduce false positives</h2>
+<ol>
+<li><strong>Treat every false positive as a bug in the test.</strong> Don't re-run until green. A test that fails on working code is broken and needs a fix, same as product code.</li>
+<li><strong>Quarantine, then root-cause.</strong> Move a repeatedly-flaky test out of the blocking suite so it stops training people to ignore red — but track it and fix it, don't leave it quarantined forever.</li>
+<li><strong>Use resilient selectors.</strong> Target stable attributes like <strong>data-testid</strong> instead of brittle CSS paths or text that copywriters change. This kills a whole class of UI false positives.</li>
+<li><strong>Assert on behavior, not exact incidentals.</strong> Check that the user is logged in, not that the greeting string is byte-for-byte identical.</li>
+<li><strong>Isolate test state.</strong> Each test should set up and tear down its own data so it doesn't fail because of what ran before it.</li>
+</ol>
+<p>Selector drift is one of the biggest sources of false positives in end-to-end tests. Self-healing tests address it directly: when the UI changes, the test re-locates the element instead of failing outright. That's the idea behind <a href="/autosim">Klavity AutoSim</a> — keeping a green build honest by removing false alarms that come from harmless UI changes rather than real regressions.</p>
+
+<h2>How to reduce false negatives</h2>
+<ol>
+<li><strong>Test the edges, not just the happy path.</strong> The bugs that escape live in empty inputs, huge inputs, error responses, slow networks, and unusual sequences — exactly the paths a passing happy-path test never touches.</li>
+<li><strong>Strengthen weak assertions.</strong> Don't stop at a status code; assert on the actual output that matters to the user. A test that can't fail isn't protecting anything.</li>
+<li><strong>Turn every escaped defect into a regression test.</strong> Each bug that reached users is proof of a false negative. Write a test that fails on the old code and passes on the fix so the same gap can't reopen. (See <a href="/blog/how-to-reduce-escaped-defects">reducing escaped defects</a>.)</li>
+<li><strong>Verify tests can actually fail.</strong> Deliberately break the code and confirm the test goes red. A test that stays green when you sabotage the feature is a permanent false negative.</li>
+<li><strong>Explore beyond your written cases.</strong> Scripted tests only catch what you thought to check. Structured exploration — including AI personas that navigate the product like unpredictable real users — surfaces the paths your test plan never imagined.</li>
+</ol>
+
+<h2>How to catch both in one workflow</h2>
+<p>The through-line is that both failure modes hide when your evidence is thin. A false positive is hard to dismiss without seeing what the test actually saw; a false negative is hard to prevent when the bug report that could have become a test never carried enough detail. Capturing complete state at the moment something looks wrong — the screenshot, console errors, network requests, and environment — makes it fast to tell a real failure from a false alarm and easy to convert a real one into a durable test.</p>
+<p>That's the job of a good <a href="/snap">in-app bug report</a>: it gives triage the evidence to sort false positives from real regressions in seconds, and hands developers exactly what they need to reproduce, fix, and lock the fix in with a test. Fewer false alarms and fewer missed bugs come from the same discipline — better evidence, faster.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Define the terms in plain words on your team: 'failed but no real bug' vs. 'passed but a real bug shipped' — the jargon trips people up.</li><li>Treat every false positive as a bug in the test: quarantine, root-cause, and fix it — never just re-run until green.</li><li>Hunt false negatives by testing behavior and edge cases, not implementation, and by turning every escaped defect into a regression test.</li><li>Track both rates over time; a suite people trust catches more real bugs than a bigger suite they ignore.</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Is a false positive when the test fails or when it passes?</summary><p>In the standard QA convention, a false positive is a test that FAILS while the feature actually works — a false alarm. This trips people up because in medicine a 'positive' result means the condition is present. In testing, the 'positive' refers to the test raising an alarm, not to the bug being real. If a term is ambiguous on your team, say 'the test failed but there was no real bug' instead.</p></details><details><summary>Which is worse, a false positive or a false negative?</summary><p>A false negative is worse per occurrence because a real defect reaches users undetected — the test told you everything was fine. But false positives are usually more frequent, and their cumulative cost is that people stop trusting the suite and start ignoring or blindly re-running red builds, which then lets real failures hide in the noise. Track both; don't optimize one to zero at the expense of the other.</p></details><details><summary>Are flaky tests false positives?</summary><p>A flaky test that fails intermittently on working code is producing false positives. Not every false positive is flaky, though — a false positive can also come from a stale assertion, a bad selector, or an over-strict check that fails on a legitimate change. Flakiness is one common source, not a synonym.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

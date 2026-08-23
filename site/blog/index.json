@@ -432,5 +432,12 @@
     "excerpt": "Retesting confirms one specific bug fix works. Regression testing checks the fix didn't break anything else. Here's when to run each and how they combine.",
     "category": "Compare",
     "date": "2026-08-22"
+  },
+  {
+    "slug": "false-positive-vs-false-negative-in-testing",
+    "title": "False Positive vs. False Negative in Software Testing",
+    "excerpt": "A false positive fails when the code is fine; a false negative passes when the code is broken. Here's how to tell them apart — and cut both.",
+    "category": "Compare",
+    "date": "2026-08-23"
   }
 ]
