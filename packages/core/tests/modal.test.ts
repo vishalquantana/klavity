@@ -951,6 +951,86 @@ describe('buildModal voice input', () => {
     expect(status.compareDocumentPosition(clarity) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     ctrl.close()
   })
+
+  it('status row exists even when clarity is OFF — the fix does not depend on the helper (KLAVITYKLA-495)', () => {
+    stubSR()
+    const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: async () => ({ issueKey: '1', issueUrl: '' }) })
+    expect(q(ctrl, '#klavity-clarity')).toBeNull()          // no clarity panel at all
+    expect(q(ctrl, '#klavity-voice-status')).not.toBeNull() // ...yet errors still get their own row
+    ctrl.close()
+  })
+
+  it('error text lands ONLY in the status row, never inside the clarity panel (no overlap) (KLAVITYKLA-495)', () => {
+    stubSR()
+    const ctrl = buildModal('bug', {
+      onCaptureFull: async () => 'x', onSubmit: async () => ({ issueKey: '1', issueUrl: '' }),
+    }, { reportClarity: true } as any)
+    q(ctrl, '#klavity-voice')!.dispatchEvent(new MouseEvent('click'))
+    mockSR.onerror({ error: 'not-allowed' })
+    const status = q(ctrl, '#klavity-voice-status') as HTMLElement
+    const clarity = q(ctrl, '#klavity-clarity') as HTMLElement
+    expect(status.textContent).toContain('Microphone access was denied')
+    // The clarity panel's own copy is untouched by the voice error — no painted-over collision.
+    expect(clarity.textContent).not.toContain('Microphone access was denied')
+    expect(clarity.textContent).toContain('Report clarity')
+    ctrl.close()
+  })
+
+  // KLAVITYKLA-495 (server-STT primary path, shipped KLA-505): when the host wires onDictate AND
+  // MediaRecorder is available, the Voice button drives LiveDictation against POST /api/voice/transcribe
+  // (via the host callback) INSTEAD of Web Speech; a first-segment failure transparently falls back to
+  // Web Speech mid-session without stopping the ring or asking for another click. Here we drive the real
+  // composer wiring end-to-end with a mocked MediaRecorder + getUserMedia and an onDictate that resolves
+  // null (endpoint down), asserting the fallback engine takes over while still recording.
+  it('prefers the onDictate STT endpoint and transparently falls back to Web Speech when it fails', async () => {
+    vi.useFakeTimers()
+    stubSR()
+    class MockMR {
+      state = 'inactive'; ondataavailable: any = null; onstop: any = null
+      static isTypeSupported(_m: string) { return true }
+      constructor(public stream: any, public opts?: any) {}
+      start() { this.state = 'recording' }
+      stop() {
+        if (this.state === 'inactive') return
+        this.state = 'inactive'
+        this.ondataavailable?.({ data: { size: 128 } })
+        this.onstop?.()
+      }
+    }
+    const stream = { getTracks: () => [{ stop: vi.fn() }] }
+    vi.stubGlobal('navigator', Object.assign(Object.create(Object.getPrototypeOf(navigator)), navigator, {
+      mediaDevices: { getUserMedia: vi.fn(async () => stream) },
+    }))
+    ;(globalThis as any).MediaRecorder = MockMR
+    const transcribeCalls: Blob[] = []
+    const ctrl = buildModal('bug', {
+      onCaptureFull: async () => 'x',
+      onSubmit: async () => ({ issueKey: '1', issueUrl: '' }),
+      // The host's onDictate POSTs to /api/voice/transcribe; resolve null = endpoint down/unconfigured.
+      onDictate: async (audio: Blob) => { transcribeCalls.push(audio); return null },
+    })
+    const voiceBtn = q(ctrl, '#klavity-voice') as HTMLButtonElement
+    voiceBtn.dispatchEvent(new MouseEvent('click'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(voiceBtn.classList.contains('kl-voice-rec')).toBe(true)
+    // First segment completes → onDictate (the endpoint call) ran → composer swaps to Web Speech.
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(transcribeCalls.length).toBe(1)
+    expect(transcribeCalls[0]).toBeInstanceOf(Blob)
+    await vi.advanceTimersByTimeAsync(600)   // fallback start backoff + swap
+    // Still recording through the SAME click — no second click required.
+    expect(voiceBtn.classList.contains('kl-voice-rec')).toBe(true)
+    // The fallback Web-Speech engine is live: its recognition instance received start().
+    expect(mockSR.start).toHaveBeenCalled()
+    // And a transcript from the fallback lands in the description.
+    mockSR.onresult({ resultIndex: 0, results: [Object.assign([{ transcript: 'fallback words' }], { isFinal: true })] })
+    expect((q(ctrl, '#klavity-desc') as HTMLTextAreaElement).value).toContain('fallback words')
+    voiceBtn.click()   // stop
+    ctrl.close()
+    vi.unstubAllGlobals()
+    delete (globalThis as any).MediaRecorder
+    vi.useRealTimers()
+  })
   it('resets button to idle state after 180s auto-stop', () => {
     vi.useFakeTimers()
     stubSR()
