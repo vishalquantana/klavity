@@ -1,0 +1,109 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to Write Acceptance Criteria That Prevent Bugs · Klavity</title>
+<meta name="description" content="Acceptance criteria prevent bugs when they are written before development, cover the unhappy paths, and are independently verifiable. Here's the format.">
+<link rel="canonical" href="https://klavity.in/blog/how-to-write-acceptance-criteria-that-prevent-bugs">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="How to Write Acceptance Criteria That Prevent Bugs"><meta property="og:description" content="Acceptance criteria prevent bugs when they are written before development, cover the unhappy paths, and are independently verifiable. Here's the format.">
+<meta property="og:url" content="https://klavity.in/blog/how-to-write-acceptance-criteria-that-prevent-bugs"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="How to Write Acceptance Criteria That Prevent Bugs"><meta name="twitter:description" content="Acceptance criteria prevent bugs when they are written before development, cover the unhappy paths, and are independently verifiable. Here's the format."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"How to Write Acceptance Criteria That Prevent Bugs","description":"Acceptance criteria prevent bugs when they are written before development, cover the unhappy paths, and are independently verifiable. Here's the format.","datePublished":"2026-08-24","dateModified":"2026-08-24","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/how-to-write-acceptance-criteria-that-prevent-bugs","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Write Acceptance Criteria That Prevent Bugs","item":"https://klavity.in/blog/how-to-write-acceptance-criteria-that-prevent-bugs"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/how-to-write-acceptance-criteria-that-prevent-bugs"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What are acceptance criteria in software?","acceptedAnswer":{"@type":"Answer","text":"Acceptance criteria are the specific, testable conditions a feature must satisfy to be considered done. Each criterion is written as a binary pass/fail statement about observable behavior, so QA, developers, and automated tests can all agree on whether the feature works."}},{"@type":"Question","name":"What is the difference between acceptance criteria and a definition of done?","acceptedAnswer":{"@type":"Answer","text":"Acceptance criteria are specific to one story — they describe what that feature must do. A definition of done is a shared checklist applied to every story, covering things like tests written, code reviewed, and docs updated. You need both: criteria say 'this feature is correct,' the definition of done says 'this work is complete.'"}},{"@type":"Question","name":"Should QA write acceptance criteria?","acceptedAnswer":{"@type":"Answer","text":"The product owner usually drafts them, but QA should review and extend them before development starts. QA's job is to add the unhappy paths — invalid input, error states, boundaries, and permission cases — that product often leaves out. Writing criteria collaboratively before coding is where most bugs are prevented."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-08-24</div>
+    <h1>How to Write Acceptance Criteria That Prevent Bugs</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>Acceptance criteria prevent bugs when you write them before development starts, make each one independently pass/fail, and explicitly cover the unhappy paths — empty states, errors, boundaries, and permissions — because that is where most defects hide. Vague criteria like 'should work well' let bugs through; testable criteria become the oracle QA and automated tests check against.</div>
+    <div class="prose"><p>Acceptance criteria prevent bugs when they are written <strong>before</strong> development starts, cover the unhappy paths as explicitly as the happy one, and are phrased so each criterion has a single, binary pass/fail outcome. Criteria written this way become the shared oracle that developers build to, QA tests against, and automated tests check on every commit &mdash; so a defect has to survive three checks that all reference the same source of truth. Vague criteria like &ldquo;the form should work well&rdquo; prevent nothing, because nobody can fail them.</p>
+
+<h2>What are acceptance criteria?</h2>
+<p>Acceptance criteria are the specific conditions a feature must satisfy to be accepted as done. They describe observable behavior &mdash; what the system does in response to an input or event &mdash; not implementation. A good criterion reads like a test case someone could run without asking a follow-up question, and it resolves to either &ldquo;pass&rdquo; or &ldquo;fail,&rdquo; never &ldquo;sort of.&rdquo;</p>
+<p>They are not the same as a <a href="/blog/definition-of-done-for-a-bug-fix">definition of done</a>. Acceptance criteria are unique to each story and describe correctness; a definition of done is a fixed checklist (tests written, reviewed, deployed) applied to every story. You need both.</p>
+
+<h2>Why acceptance criteria prevent bugs</h2>
+<p>Most bugs are not coding mistakes &mdash; they are cases nobody agreed on. A developer builds the path they imagined, QA tests the path they imagined, and the gap between the two ships to users. Acceptance criteria close that gap by making the agreement explicit and written down before anyone touches code. Three specific mechanisms do the work:</p>
+<ul>
+  <li><strong>They surface the unhappy paths early.</strong> Writing &ldquo;what happens when the field is empty?&rdquo; during planning costs a sentence. Discovering it in production costs a bug report, a triage, and a hotfix.</li>
+  <li><strong>They give QA a checklist that isn't guesswork.</strong> Testers verify against the criteria instead of improvising, so coverage is intentional rather than accidental.</li>
+  <li><strong>They become regression tests.</strong> A testable criterion maps almost one-to-one onto an automated assertion, so today's agreement becomes tomorrow's guardrail.</li>
+</ul>
+
+<h2>How to write acceptance criteria that prevent bugs</h2>
+<p>Work through these steps with a developer and a tester in the room, before the story is estimated:</p>
+<ol>
+  <li><strong>State the happy path first.</strong> Write the single most common successful flow as one clear criterion. This anchors everyone on the intended behavior before you branch into edge cases.</li>
+  <li><strong>Enumerate the unhappy paths.</strong> For every input and action, ask: what if it's empty, invalid, too long, too large, duplicated, or unauthorized? What if the network fails mid-action? Each answer is a criterion. This step catches the bugs that vague stories never mention.</li>
+  <li><strong>Make each criterion independently verifiable.</strong> One criterion, one observable outcome. If a criterion contains &ldquo;and&rdquo; joining two different behaviors, split it &mdash; otherwise a half-working feature can pass.</li>
+  <li><strong>Remove every unfalsifiable word.</strong> Delete &ldquo;fast,&rdquo; &ldquo;intuitive,&rdquo; &ldquo;properly,&rdquo; and &ldquo;gracefully.&rdquo; Replace them with the observable proxy: &ldquo;fast&rdquo; becomes &ldquo;responds within 2 seconds,&rdquo; &ldquo;gracefully&rdquo; becomes &ldquo;shows an error toast and keeps the entered data.&rdquo;</li>
+  <li><strong>Specify the exact expected result.</strong> Not &ldquo;shows an error,&rdquo; but &ldquo;shows the message &lsquo;Email already in use&rsquo; below the field and disables submit.&rdquo; The more exact the expectation, the smaller the room for a defect to hide.</li>
+</ol>
+
+<h2>Given-When-Then vs. checklist format</h2>
+<p>Two formats cover almost every case. Use <strong>Given-When-Then</strong> for behavior that depends on state or triggers:</p>
+<ul>
+  <li><em>Given</em> a user with an unverified email, <em>When</em> they try to publish, <em>Then</em> publishing is blocked and a &ldquo;Verify your email&rdquo; banner appears.</li>
+</ul>
+<p>Use a plain <strong>checklist</strong> for static constraints that don't depend on a trigger &mdash; validation rules, field limits, and formatting:</p>
+<ul>
+  <li>Password must be at least 12 characters.</li>
+  <li>Amounts display with two decimal places and a currency symbol.</li>
+</ul>
+<p>Don't force everything into Given-When-Then. A list of validation rules reads better as a checklist, and readability matters &mdash; criteria nobody reads prevent no bugs.</p>
+
+<h2>Common mistakes that let bugs through</h2>
+<ul>
+  <li><strong>Only the happy path.</strong> The most common failure. If every criterion describes success, the feature will break the first time a user does something unexpected.</li>
+  <li><strong>Unmeasurable adjectives.</strong> &ldquo;User-friendly&rdquo; and &ldquo;performant&rdquo; can't be failed, so they can't be tested.</li>
+  <li><strong>Describing implementation.</strong> &ldquo;Call the /validate endpoint&rdquo; is a design note, not a criterion. Criteria describe behavior the user can observe, so they survive a refactor.</li>
+  <li><strong>Writing them after the code.</strong> Criteria written to match what was built rubber-stamp the bugs already there. Their whole value is being written first.</li>
+</ul>
+
+<h2>Turn acceptance criteria into tests that don't regress</h2>
+<p>A criterion prevents a bug once; a test prevents it forever. Because well-written criteria are already binary and behavior-focused, each one maps cleanly onto an end-to-end assertion. Convert the happy path and every unhappy path into automated checks so a future change that breaks the agreed behavior fails the build instead of reaching users.</p>
+<p>The friction is maintenance: end-to-end tests break when selectors and copy change, and a suite that cries wolf gets ignored. <a href="/autosim">Klavity AutoSim</a> generates end-to-end tests from your flows and self-heals selectors when the UI shifts, so the criteria you wrote keep guarding the behavior instead of the markup. And where criteria are about whether a real person can actually complete the flow, <a href="/sims">Sims</a> &mdash; AI personas built from customer calls &mdash; walk the feature the way users do and surface the gaps your criteria didn't think to cover.</p>
+<p>Start small: for your next story, write the unhappy paths before the happy one, make each criterion pass/fail, and automate the three that would hurt most in production. That single habit change prevents more bugs than any tool.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Write acceptance criteria before development, not after — they become the test oracle</li><li>Add the unhappy paths: empty, invalid, boundary, error, and permission cases</li><li>Make every criterion independently verifiable with a binary pass/fail outcome</li><li>Turn each criterion into an automated end-to-end check so it can't regress</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What are acceptance criteria in software?</summary><p>Acceptance criteria are the specific, testable conditions a feature must satisfy to be considered done. Each criterion is written as a binary pass/fail statement about observable behavior, so QA, developers, and automated tests can all agree on whether the feature works.</p></details><details><summary>What is the difference between acceptance criteria and a definition of done?</summary><p>Acceptance criteria are specific to one story — they describe what that feature must do. A definition of done is a shared checklist applied to every story, covering things like tests written, code reviewed, and docs updated. You need both: criteria say 'this feature is correct,' the definition of done says 'this work is complete.'</p></details><details><summary>Should QA write acceptance criteria?</summary><p>The product owner usually drafts them, but QA should review and extend them before development starts. QA's job is to add the unhappy paths — invalid input, error states, boundaries, and permission cases — that product often leaves out. Writing criteria collaboratively before coding is where most bugs are prevented.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

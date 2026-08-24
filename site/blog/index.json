@@ -439,5 +439,12 @@
     "excerpt": "A false positive fails when the code is fine; a false negative passes when the code is broken. Here's how to tell them apart — and cut both.",
     "category": "Compare",
     "date": "2026-08-23"
+  },
+  {
+    "slug": "how-to-write-acceptance-criteria-that-prevent-bugs",
+    "title": "How to Write Acceptance Criteria That Prevent Bugs",
+    "excerpt": "Acceptance criteria prevent bugs when they are written before development, cover the unhappy paths, and are independently verifiable. Here's the format.",
+    "category": "Guides",
+    "date": "2026-08-24"
   }
 ]
