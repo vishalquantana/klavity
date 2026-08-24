@@ -9,7 +9,7 @@ import { projectEntitlement } from "./lib/entitlement"
 import { logAudit, queryAuditLog, auditRowsToCsv, type AuditAction } from "./lib/audit-log"
 import { buildMemberExport, membersToCsv, MEMBER_EXPORT_FIELDS } from "./lib/member-export"
 import { isMaskingEnabled, maskMemberExportRow, maskDeep, maskWalkReportData } from "./lib/data-masking"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, recordConnectorPendingMappings, clearConnectorPendingMapping, enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject, markExportOutboxDone, bumpExportOutboxAttempt, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows } from "./lib/db"
 import { countFoundingAccounts } from "./lib/db"
 // #543 completeness (Codex review): ONE shared title resolver (title column → suggested-bug title →
 // observation first line → "Untitled report") so notifications/receipts/exports show a MANUAL ticket's
@@ -1784,6 +1784,10 @@ function connectorToClient(c: any): Record<string, any> {
       lastErrorAt: health.lastErrorAt,
       lastError: health.lastError,
     },
+    // KLA-551 (connector export failsafe): surface the persistent "needs mapping" queue + attention
+    // flag so the dashboard can render the "Fix mappings" panel and a needs-attention badge.
+    needsAttention: !!c.needsAttention,
+    pendingMappings: Array.isArray(c.pendingMappings) ? c.pendingMappings : [],
   }
 }
 
@@ -2110,6 +2114,8 @@ function autoCopyFeedback(feedbackId: string, projectId: string, actor: string |
           // Record successful outbound heartbeat (fire-and-forget, non-fatal).
           touchConnectorHeartbeat(c.id, { kind: "outbound", success: true })
             .catch((e: any) => console.warn("heartbeat record failed (non-fatal):", e?.message || e))
+          // KLA-551: record any unresolved state/label (issue still filed with the tracker default).
+          recordExportMappingFallbacks(c, result, feedbackId)
           // Plane is the primary tracker (feedback.plane_issue_*). Backfill it so /dashboard shows
           // the row as filed — this is the bit that was missing for connector auto-copy.
           if (c.type === "plane" && !trackerWritten) {
@@ -2127,6 +2133,12 @@ function autoCopyFeedback(feedbackId: string, projectId: string, actor: string |
           // Record failed outbound heartbeat (fire-and-forget, non-fatal).
           touchConnectorHeartbeat(c.id, { kind: "outbound", success: false, error: e?.message || "auto-copy failed" })
             .catch((err: any) => console.warn("heartbeat record failed (non-fatal):", err?.message || err))
+          // KLA-551 (no silent loss): queue the finding for retry so an auto-copy tracker outage
+          // never drops a report off both our board (it stays 'new'/untriaged) AND the tracker.
+          await enqueueExportOutbox({
+            feedbackId, projectId, connectorId: c.id,
+            type: c.type, error: e?.message || "auto-copy failed", createdBy: actor,
+          }).catch((err: any) => console.warn("export outbox enqueue failed (non-fatal):", err?.message || err))
         }
       }
       // KLAVITYKLA-524: an autofiled human Snap that just got a real external ticket should move out of
@@ -2188,6 +2200,43 @@ function autoFileHumanSnap(
   })().catch((e: any) => console.warn("[snap-routing] autofile hook outer (non-fatal):", e?.message || e))
 }
 
+// ── KLA-551 (connector export failsafe): record unresolved state/label mappings + one-time alert ──
+// When a connector's createIssue reports a configured state/label NAME it could not resolve in the
+// target tracker (result.unresolvedMappings), persist it on the connector's pending-mappings queue and
+// raise its needs_attention flag. The FIRST time a connector starts defaulting, fire a one-time Slack/
+// dashboard alert so a lost/miscategorized report is impossible to miss. Fully best-effort — a failure
+// here never affects the export (the issue was already created, defaulted safely).
+function recordExportMappingFallbacks(
+  connector: { id: string; type: string; name?: string; projectId?: string },
+  result: { unresolvedMappings?: { field: "state" | "label"; requested_name: string }[] } | null | undefined,
+  sampleFindingId: string | null,
+): void {
+  const entries = result?.unresolvedMappings
+  if (!entries?.length) return
+  void (async () => {
+    try {
+      const { firstEver } = await recordConnectorPendingMappings(connector.id, entries, sampleFindingId)
+      if (firstEver) {
+        const webhook = process.env.SLACK_ALERT_WEBHOOK_URL || process.env.SLACK_SIGNUP_WEBHOOK_URL
+        if (webhook && (process.env.KLAV_ENV || process.env.NODE_ENV || "").toLowerCase() !== "test") {
+          const names = entries.map((e) => `${e.field} "${e.requested_name}"`).join(", ")
+          const text =
+            `⚠️ Klavity connector "${connector.name ?? connector.type}" (${connector.type}) is defaulting an unmapped ` +
+            `${names}. The report was still filed with the tracker's default, but map it in the connector settings ` +
+            `("Fix mappings") so future exports land correctly.`
+          await safeFetch(
+            webhook,
+            { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) },
+            { allowHosts: ["hooks.slack.com"] },
+          ).catch(() => {})
+        }
+      }
+    } catch (e: any) {
+      console.warn("recordExportMappingFallbacks (non-fatal):", e?.message || e)
+    }
+  })()
+}
+
 // ── KLAVITYKLA-287 (JTBD 5.8): shared single-connector manual export ──────────────────────────────
 // Factored out of the POST /api/feedback/:id/export handler so both the direct-export path AND the
 // admin approval of a member's export request run byte-identical export logic (decrypt → createIssue
@@ -2218,6 +2267,8 @@ async function runManualExport(
     })
     touchConnectorHeartbeat(connector.id, { kind: "outbound", success: true })
       .catch((e: any) => console.warn("heartbeat record failed (non-fatal):", e?.message || e))
+    // KLA-551: record any state/label the tracker couldn't resolve (issue still filed, defaulted).
+    recordExportMappingFallbacks(connector, result, fbRow.id)
     return { exportResult: { type: connector.type, externalKey: result.externalKey, externalUrl: result.externalUrl, status: "ok", error: result.attachmentWarning ?? null }, exportId }
   } catch (e: any) {
     const o = oops(e, "export")
@@ -2228,7 +2279,62 @@ async function runManualExport(
     })
     touchConnectorHeartbeat(connector.id, { kind: "outbound", success: false, error: (e as any)?.message || "Export failed" })
       .catch((err: any) => console.warn("heartbeat record failed (non-fatal):", err?.message || err))
+    // KLA-551 (no silent loss): the create failed entirely (network/tracker 5xx) — queue it in the
+    // VISIBLE, retryable outbox instead of dropping the finding. Best-effort; never masks the response.
+    await enqueueExportOutbox({
+      feedbackId: fbRow.id, projectId: fbRow.projectId, connectorId: connector.id,
+      type: connector.type, error: (e as any)?.message || "Export failed", createdBy: actor,
+    }).catch((err: any) => console.warn("export outbox enqueue failed (non-fatal):", err?.message || err))
     return { exportResult: { type: connector.type, externalKey: null, externalUrl: null, status: "failed", error: `${o.error} (ref ${o.id})` }, exportId }
+  }
+}
+
+// ── KLA-551 (connector export failsafe): export outbox retry sweep ────────────────────────────────
+// Re-attempts exports that failed to create entirely (queued in export_outbox). On success it records
+// the ticket_export row + heartbeat exactly like the primary paths; on failure it bumps the row with
+// backoff (dead after max attempts, but still VISIBLE). Idempotent: skips a finding already exported to
+// the connector. STRICTLY best-effort — never throws into the interval.
+async function runExportOutboxSweep(): Promise<void> {
+  if (!db) return
+  const due = await listDueExportOutbox(25).catch(() => [] as Awaited<ReturnType<typeof listDueExportOutbox>>)
+  for (const row of due) {
+    try {
+      const connector = await getConnectorById(row.projectId, row.connectorId)
+      const adapter = connector ? getConnector(connector.type) : null
+      const fb = connector ? await feedbackById(row.projectId, row.feedbackId) : null
+      // Destination or finding is gone/disabled, or we already filed it — stop retrying (mark done).
+      if (!connector || !connector.enabled || !adapter || !fb) { await markExportOutboxDone(row.id); continue }
+      const prior = await findPriorSuccessfulExport(row.feedbackId, row.connectorId).catch(() => null)
+      if (prior) { await markExportOutboxDone(row.id); continue }
+
+      const cfg: Record<string, string> = { ...connector.config }
+      for (const f of adapter.fields) {
+        if (f.secret && connector.config[f.key]) {
+          try { cfg[f.key] = await decryptSecret(connector.config[f.key]) } catch { cfg[f.key] = "" }
+        }
+      }
+      const simName = await resolveSimName(row.projectId, fb.simId)
+      const payload = await feedbackToTicketPayload(fb, { id: row.projectId }, simName)
+      const result = await adapter.createIssue(payload, cfg)
+      await addTicketExport({
+        feedbackId: row.feedbackId, projectId: row.projectId, connectorId: row.connectorId,
+        type: row.type, externalKey: result.externalKey, externalUrl: result.externalUrl,
+        status: "ok", error: result.attachmentWarning ?? null, createdBy: row.createdBy,
+      })
+      touchConnectorHeartbeat(row.connectorId, { kind: "outbound", success: true })
+        .catch((e: any) => console.warn("heartbeat record failed (non-fatal):", e?.message || e))
+      recordExportMappingFallbacks(connector, result, row.feedbackId)
+      if (connector.type === "plane" && !fb.planeIssueKey) {
+        await updateFeedbackTracker(row.feedbackId, result.externalKey || null, result.externalUrl || null)
+          .catch((e: any) => console.warn("outbox tracker writeback failed (non-fatal):", e?.message || e))
+      }
+      await markExportOutboxDone(row.id)
+    } catch (e: any) {
+      await bumpExportOutboxAttempt(row.id, e?.message || "retry failed")
+        .catch((err: any) => console.warn("outbox bump failed (non-fatal):", err?.message || err))
+      touchConnectorHeartbeat(row.connectorId, { kind: "outbound", success: false, error: e?.message || "retry failed" })
+        .catch((err: any) => console.warn("heartbeat record failed (non-fatal):", err?.message || err))
+    }
   }
 }
 
@@ -10323,7 +10429,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return json({ project: { id: created.id, name: created.name, accountId: created.accountId, status: created.status, siteUrl: created.siteUrl, role: "admin" } }, 201)
       }
       // Project detail + members (projectAccess-gated) and project-scoped invite (R4) + monitored-urls (P3b) + connectors.
-      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/branding|\/triage|\/tickets(?:\/bulk)?|\/recurring|\/replays|\/widget-status|\/heartbeat-diagnosis(?:\/email)?|\/share-token|\/labels(?:\/[^/]+)?|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/test)?|\/export-policy|\/snap-routing|\/export-requests(?:\/[^/]+\/(?:approve|reject))?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send|\/trails-autofile|\/regression-events(?:\/[^/]+\/ack)?|\/plan)?$/)
+      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/branding|\/triage|\/tickets(?:\/bulk)?|\/recurring|\/replays|\/widget-status|\/heartbeat-diagnosis(?:\/email)?|\/share-token|\/labels(?:\/[^/]+)?|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/(?:test|import|meta|mappings))?|\/export-policy|\/snap-routing|\/export-requests(?:\/[^/]+\/(?:approve|reject))?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send|\/trails-autofile|\/regression-events(?:\/[^/]+\/ack)?|\/plan)?$/)
       if (projMatch) {
         const pid = projMatch[1]
         const sub = projMatch[2] || ""
@@ -10430,6 +10536,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // JTBD 5.10 (KLA-289): import external-first issues from a saved connector. Matched before
           // the generic /connectors/:cid handler for the same reason as the test routes.
           const cidImportMatch = sub.match(/^\/connectors\/([^/]+)\/import$/)
+          // KLA-551 (connector export failsafe): read the connector's pending "needs mapping" queue +
+          // live tracker options (GET), and persist a permanent state_map/label_map fix (POST).
+          const cidMappingsMatch = sub.match(/^\/connectors\/([^/]+)\/mappings$/)
 
           // Codex #3: best-effort cleanup of the throwaway connection-test issue. The connection test
           // proves creds work by creating a real "Klavity connection test" ticket; leaving it behind
@@ -10607,6 +10716,75 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                 .catch((err: any) => console.warn("heartbeat record failed (non-fatal):", err?.message || err))
               return json({ ok: false, error: o.error, id: o.id }, 502)
             }
+          }
+
+          // KLA-551: GET /api/projects/:pid/connectors/:cid/mappings — the connector's pending unresolved
+          // state/label queue + the tracker's LIVE state/label options to pick from (admin only). The
+          // resolve UI renders each `requested_name → <pick a real state/label>` row from this.
+          if (req.method === "GET" && cidMappingsMatch) {
+            if (access !== "admin") return json({ error: "Only project admins can manage connectors." }, 403)
+            const connector = await getConnectorById(pid, cidMappingsMatch[1])
+            if (!connector) return json({ error: "Connector not found." }, 404)
+            const adapter = getConnector(connector.type)
+            if (!adapter) return json({ error: "Unknown connector type." }, 400)
+            const decryptedConfig: Record<string, string> = { ...connector.config }
+            for (const f of adapter.fields) {
+              if (f.secret && connector.config[f.key]) {
+                try { decryptedConfig[f.key] = await decryptSecret(connector.config[f.key]) }
+                catch { decryptedConfig[f.key] = "" }
+              }
+            }
+            // Live options are best-effort: if the tracker is unreachable we still return the pending
+            // queue + saved maps so the admin can at least type a target name (POST accepts free text).
+            let states: string[] = []
+            let labels: string[] = []
+            try {
+              const [st, lb] = await Promise.all([
+                adapter.listStatuses ? adapter.listStatuses(decryptedConfig) : Promise.resolve([]),
+                adapter.listIssueTypes ? adapter.listIssueTypes(decryptedConfig) : Promise.resolve([]),
+              ])
+              states = st.map((s) => s.name)
+              labels = lb.map((l) => l.name)
+            } catch (e: any) {
+              console.warn("connector mappings live-options fetch failed (non-fatal):", e?.message || e)
+            }
+            return json({
+              pendingMappings: connector.pendingMappings,
+              needsAttention: connector.needsAttention,
+              options: { states, labels },
+              // typesAsLabels connectors (plane/github/linear) surface classification as LABELS, so the
+              // "label" picker should offer the label list; the "state" picker always offers states.
+              stateMap: safeJsonParse(connector.config.state_map) || {},
+              labelMap: safeJsonParse(connector.config.label_map) || {},
+            })
+          }
+
+          // KLA-551: POST /api/projects/:pid/connectors/:cid/mappings — persist a PERMANENT mapping fix
+          // (admin only). Body: { field: 'state'|'label', requested_name, target_name }. Writes the pair
+          // into the connector's state_map/label_map (used on ALL future exports), clears the pending
+          // entry, and lowers needs_attention when the queue empties.
+          if (req.method === "POST" && cidMappingsMatch) {
+            if (access !== "admin") return json({ error: "Only project admins can manage connectors." }, 403)
+            const connector = await getConnectorById(pid, cidMappingsMatch[1])
+            if (!connector) return json({ error: "Connector not found." }, 404)
+            const body = await req.json().catch(() => ({}))
+            const field = String(body.field || "")
+            const requestedName = String(body.requested_name || "").trim()
+            const targetName = String(body.target_name || "").trim()
+            if (field !== "state" && field !== "label") return json({ error: "field must be 'state' or 'label'." }, 400)
+            if (!requestedName) return json({ error: "requested_name is required." }, 400)
+            if (!targetName) return json({ error: "target_name is required." }, 400)
+            // Merge into the appropriate map. config keeps its already-encrypted secrets untouched
+            // (we only add a plaintext map key), so we re-save without re-encrypting.
+            const mapKey = field === "state" ? "state_map" : "label_map"
+            const existingMap = safeJsonParse(connector.config[mapKey]) || {}
+            existingMap[requestedName] = targetName
+            const newConfig: Record<string, string> = { ...connector.config, [mapKey]: JSON.stringify(existingMap) }
+            await updateConnector(pid, connector.id, { config: newConfig })
+            const remaining = await clearConnectorPendingMapping(pid, connector.id, field, requestedName)
+            logAudit({ action: "connector_mapping_fix", actorEmail: me, projectId: pid, ip: clientIp(req, server), meta: { connectorId: connector.id, field, requestedName, targetName } })
+            const updated = await getConnectorById(pid, connector.id)
+            return json({ ok: true, pendingMappings: remaining, connector: connectorToClient(updated!) })
           }
 
           const cidMatch = sub.match(/^\/connectors\/([^/]+)$/)
@@ -12184,6 +12362,10 @@ console.log(`   model: ${MODEL} · auth: ${db ? "Turso OTP" : "DISABLED (no Turs
 if (db && process.env.NODE_ENV !== "test") {
   setTimeout(() => { runRetentionSweep().catch((e) => console.warn("retention sweep failed:", e?.message || e)) }, 30_000)
   setInterval(() => { runRetentionSweep().catch((e) => console.warn("retention sweep failed:", e?.message || e)) }, 6 * 60 * 60 * 1000)
+  // KLA-551: connector export outbox retry sweep — retries failed exports (never drop a report).
+  // Once shortly after boot, then every 60s (rows carry their own backoff/next_attempt_at).
+  setTimeout(() => { runExportOutboxSweep().catch((e) => console.warn("export outbox sweep failed:", e?.message || e)) }, 45_000)
+  setInterval(() => { runExportOutboxSweep().catch((e) => console.warn("export outbox sweep failed:", e?.message || e)) }, 60_000)
   // KLA-88: trail cron scheduler — ticks every minute, fires scheduled walks.
   startTrailScheduler()
   // KLA-55: crash reaper — sweeps stale-heartbeat walks/sessions every 60s.

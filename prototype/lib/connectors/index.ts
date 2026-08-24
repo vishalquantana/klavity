@@ -52,6 +52,12 @@ export type ExportResult = {
   // natively; the caller records it on the ticket_exports row (status stays "ok") so it shows on the
   // export timeline as "exported, screenshot attach failed — link included in body".
   attachmentWarning?: string | null
+  // KLA-551 (connector export failsafe): a configured STATE or LABEL name that could not be resolved
+  // in the target tracker on THIS export. The issue was still created (defaulted state / label kept in
+  // the description), and the caller records these on the connector row's pending_mappings queue +
+  // "needs attention" flag so an admin can map them PERMANENTLY later (state_map/label_map). Empty/
+  // omitted = everything resolved.
+  unresolvedMappings?: import("./mapping-failsafe").UnresolvedMapping[]
 }
 
 // JTBD 5.10 (KLAVITYKLA-289): one issue fetched FROM an external tracker, normalised to the shape
@@ -117,6 +123,10 @@ export type TransitionResult = {
   applied: boolean            // true only when a transition was actually POSTed
   transitionId?: string | null // the resolved transition id, when a matching one was found
   error?: string              // server-side reason (never echoed to clients)
+  // KLA-551: true when the target status NAME simply does not exist in the tracker's workflow (a
+  // resolvable config problem), as opposed to a transport/auth failure. Lets the caller record the
+  // name on the connector's pending-mappings queue rather than treating it as a flaky transition.
+  unresolved?: boolean
 }
 
 export type ConnectorField = {

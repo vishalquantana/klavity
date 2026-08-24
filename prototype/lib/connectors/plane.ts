@@ -1,6 +1,28 @@
 import type { Connector, TicketPayload, ExportResult, CommentSyncResult, FieldUpdate, FieldSyncResult, ConnectorMeta } from "./index"
 import { resolveIssueType } from "./resolve-issue-type"
 import { safeFetch } from "../safe-fetch"
+import { applyStateMap, applyLabelMap, resolveOptionByName, type UnresolvedMapping } from "./mapping-failsafe"
+
+// KLA-551: best-effort fetch of a Plane project's states (id+name), for resolving a configured
+// default-status NAME to its UUID at create time. Returns null on any failure so a states-lookup
+// problem degrades to "leave the tracker default state" — it NEVER throws or fails the export.
+async function planeFetchStates(
+  host: string, workspace: string, project_id: string, token: string,
+): Promise<ConnectorMeta[] | null> {
+  try {
+    const res = await safeFetch(
+      `${host}/api/v1/workspaces/${workspace}/projects/${project_id}/states/`,
+      { method: "GET", headers: { "X-API-Key": token } },
+      { allowLoopbackInTest: true },
+    )
+    if (!res.ok) return null
+    const data = await res.json()
+    const rows = Array.isArray(data) ? data : (data?.results ?? [])
+    return rows.map((s: any) => ({ id: String(s.id), name: String(s.name), category: s.group }))
+  } catch {
+    return null
+  }
+}
 
 // JTBD 5.7: Plane has a native `priority` field whose enum ("urgent"|"high"|"medium"|"low"|"none")
 // lines up 1:1 with Klavity's values, so we can set it directly. Returns null for an unset/unknown
@@ -86,9 +108,13 @@ export const planeConnector: Connector = {
     // This is best-effort and additive to the existing label list — it can never fail createIssue
     // since resolveIssueType is pure/synchronous and only touches cfg + ticket already in hand.
     const kindLabel = resolveIssueType(cfg, (ticket as any).kind, "")
-    const exportLabels = [...(ticket.labels ?? []), ...(kindLabel ? [kindLabel] : [])]
+    // KLA-551: apply the admin's PERMANENT label remap (label_map) before carrying the labels into the
+    // description. Plane applies labels by UUID (not name), so labels always live in the description —
+    // an unresolved label name can never be dropped, but label_map lets an admin normalise it for good.
+    const exportLabels = applyLabelMap(cfg, [...(ticket.labels ?? []), ...(kindLabel ? [kindLabel] : [])])
     let descriptionHtml = ticket.body
     if (exportLabels.length) descriptionHtml += `\n\nLabels: ${exportLabels.join(", ")}`
+    const unresolvedMappings: UnresolvedMapping[] = []
 
     // SSRF guard (H3): `host` is user-supplied (self-hosted Plane is allowed, but must be a
     // public https host). safeFetch validates the URL and every redirect hop (loopback /
@@ -121,6 +147,39 @@ export const planeConnector: Connector = {
     const json = await res.json()
     const id: string = String(json.id)
     const seqId: string | null = json.sequence_id != null ? String(json.sequence_id) : null
+
+    // KLA-551: optional configured default state. Plane has native project states (unlike labels, which
+    // it applies by UUID and we keep in the description). Resolve the configured NAME → state UUID and
+    // PATCH the issue onto it. STRICTLY best-effort:
+    //   • a states-lookup transport failure → skip (leave the tracker's default state), no pending entry;
+    //   • the (mapped) name is genuinely ABSENT from the project's states → record an unresolved STATE
+    //     mapping so an admin can fix it permanently, and leave the issue in its default state.
+    // The issue already exists — nothing here throws or changes the returned {externalKey, externalUrl}.
+    if (cfg.default_status && id) {
+      try {
+        const states = await planeFetchStates(host, workspace, project_id, token)
+        if (states) {
+          const wantStatus = applyStateMap(cfg, cfg.default_status)
+          const { id: stateId, found } = resolveOptionByName(states, wantStatus)
+          if (found && stateId) {
+            const patchRes = await safeFetch(
+              `${host}/api/v1/workspaces/${workspace}/projects/${project_id}/issues/${id}/`,
+              {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json", "X-API-Key": token },
+                body: JSON.stringify({ state: stateId }),
+              },
+              { allowLoopbackInTest: true },
+            )
+            if (!patchRes.ok) console.warn(`plane default-state set skipped for ${id}: HTTP ${patchRes.status}`)
+          } else {
+            unresolvedMappings.push({ field: "state", requested_name: cfg.default_status })
+          }
+        }
+      } catch (e) {
+        console.warn(`plane default-state resolution failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`)
+      }
+    }
 
     // ── Native screenshot attachment (pure ENHANCEMENT) ─────────────────────────────
     // KLA-285 (JTBD 5.6): VERIFIED E2E 2026-07-19 against self-hosted Plane at plane.quantana.top
@@ -226,6 +285,7 @@ export const planeConnector: Connector = {
       attachmentWarning: attachFailures.length
         ? `screenshot attach failed (${attachFailures.length}/${ticket.attachments?.length ?? 0}) — link included in body: ${attachFailures.join("; ").slice(0, 300)}`
         : null,
+      unresolvedMappings: unresolvedMappings.length ? unresolvedMappings : undefined,
     }
   },
 

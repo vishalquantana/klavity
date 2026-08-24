@@ -966,6 +966,12 @@ export async function applySchema(c: Client) {
     "trail_steps", "walk_share_tokens", "findings", "author_sessions",
     "ai_calls", "autosim_auth_probe_queue", "expectations", "users",
     "transcripts",
+    // KLA-551 (connector export failsafe): connectors gains pending_mappings + needs_attention via
+    // needCol below — preload its columns so an established DB issues zero ALTERs on reboot.
+    "connectors",
+    // Pre-existing gap: screenshots.thumb_key is needCol-gated below but the table wasn't preloaded,
+    // so every established-DB reboot re-issued its ALTER. Preload it too (zero-ALTER boot invariant).
+    "screenshots",
   ]
   const _cols = await loadTableColumns(c, ALTERED_TABLES)
   const needCol = (table: string, col: string) => !(_cols.get(table)?.has(col) ?? false)
@@ -1425,6 +1431,36 @@ export async function applySchema(c: Client) {
     .catch((e: any) => console.warn("export_req_proj_idx skipped:", e?.message || e))
   await c.execute("CREATE INDEX IF NOT EXISTS export_req_fb_idx ON export_requests (feedback_id, status)")
     .catch((e: any) => console.warn("export_req_fb_idx skipped:", e?.message || e))
+  // KLA-551 (connector export failsafe): persistent "needs mapping" queue + attention flag on the
+  // connector row. pending_mappings is a JSON list of {field,requested_name,first_seen,count,
+  // sample_finding_id}; needs_attention is a 0/1 flag the dashboard surfaces so a defaulted export is
+  // never silently lost. Both are additive/back-compat (null/0 on existing rows).
+  if (needCol("connectors", "pending_mappings")) await c.execute("ALTER TABLE connectors ADD COLUMN pending_mappings TEXT")
+    .catch((e: any) => console.warn("connectors.pending_mappings ALTER skipped:", e?.message || e))
+  if (needCol("connectors", "needs_attention")) await c.execute("ALTER TABLE connectors ADD COLUMN needs_attention INTEGER NOT NULL DEFAULT 0")
+    .catch((e: any) => console.warn("connectors.needs_attention ALTER skipped:", e?.message || e))
+  // KLA-551: export_outbox — a VISIBLE, retryable queue for exports that FAILED TO CREATE ENTIRELY
+  // (tracker 5xx / network). Instead of dropping the finding after recording a failed ticket_exports
+  // row, we enqueue it here and a background sweep retries with backoff. status: 'pending' | 'done' |
+  // 'dead' (gave up after max attempts — stays visible for a human).
+  await c.execute(`CREATE TABLE IF NOT EXISTS export_outbox (
+    id TEXT PRIMARY KEY,
+    feedback_id TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    connector_id TEXT NOT NULL,
+    type TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    next_attempt_at INTEGER NOT NULL,
+    created_by TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`).catch((e: any) => console.warn("export_outbox CREATE skipped:", e?.message || e))
+  await c.execute("CREATE INDEX IF NOT EXISTS export_outbox_due_idx ON export_outbox (status, next_attempt_at)")
+    .catch((e: any) => console.warn("export_outbox_due_idx skipped:", e?.message || e))
+  await c.execute("CREATE INDEX IF NOT EXISTS export_outbox_proj_idx ON export_outbox (project_id, status)")
+    .catch((e: any) => console.warn("export_outbox_proj_idx skipped:", e?.message || e))
   // KLAVITYKLA-149: persist the wizard-picked judge/reviewer Sim so it survives a resume and lands on the
   // crystallized Trail. (Relocated to the end of applySchema per the append-only migration rule.)
   if (needCol("author_sessions", "judge_persona_id")) await c.execute("ALTER TABLE author_sessions ADD COLUMN judge_persona_id TEXT")
@@ -5073,6 +5109,14 @@ export function reviewDay(now = Date.now()): string {
 // ── Connectors + ticket_exports (Task 1: cloud tickets + connectors) ──
 
 export type ConnectorType = "webhook" | "plane" | "github" | "jira" | "linear"
+// KLA-551: one entry in a connector's persistent "needs mapping" queue.
+export type ConnectorPendingMapping = {
+  field: "state" | "label"
+  requested_name: string
+  first_seen: number
+  count: number
+  sample_finding_id: string | null
+}
 export type ConnectorRow = {
   id: string
   projectId: string
@@ -5083,6 +5127,10 @@ export type ConnectorRow = {
   enabled: boolean
   createdAt: number
   createdBy: string | null
+  // KLA-551 (connector export failsafe): unresolved state/label names awaiting a permanent human fix,
+  // and a flag the dashboard surfaces when a connector has started defaulting.
+  pendingMappings: ConnectorPendingMapping[]
+  needsAttention: boolean
 }
 export type TicketExportRow = {
   id: string
@@ -5101,6 +5149,11 @@ export type TicketExportRow = {
 function rowToConnector(x: any): ConnectorRow {
   let config: Record<string, string> = {}
   try { config = x.config ? JSON.parse(String(x.config)) : {} } catch { config = {} }
+  let pendingMappings: ConnectorPendingMapping[] = []
+  try {
+    const p = x.pending_mappings ? JSON.parse(String(x.pending_mappings)) : []
+    if (Array.isArray(p)) pendingMappings = p
+  } catch { pendingMappings = [] }
   return {
     id: String(x.id),
     projectId: String(x.project_id),
@@ -5111,6 +5164,8 @@ function rowToConnector(x: any): ConnectorRow {
     enabled: Number(x.enabled) === 1,
     createdAt: Number(x.created_at),
     createdBy: x.created_by != null ? String(x.created_by) : null,
+    pendingMappings,
+    needsAttention: Number(x.needs_attention) === 1,
   }
 }
 
@@ -5215,6 +5270,159 @@ export async function touchConnectorHeartbeat(
     sql: "UPDATE connectors SET config=? WHERE id=?",
     args: [JSON.stringify(updated), connectorId],
   })
+}
+
+// KLA-551 (connector export failsafe): merge one or more unresolved state/label names into the
+// connector's persistent pending_mappings queue and raise its needs_attention flag. Deduped on
+// (field, requested_name); an existing entry has its count bumped. Returns `{firstEver}` = true when
+// the connector had ZERO pending mappings before this call, so the caller can fire a one-time alert
+// the first time a connector starts defaulting. Fire-and-forget-safe: never throws into the caller.
+export async function recordConnectorPendingMappings(
+  connectorId: string,
+  entries: { field: "state" | "label"; requested_name: string }[],
+  sampleFindingId: string | null,
+): Promise<{ firstEver: boolean; connector: ConnectorRow | null }> {
+  const { mergePendingMapping } = await import("./connectors/mapping-failsafe")
+  const r = await db!.execute({ sql: "SELECT * FROM connectors WHERE id=?", args: [connectorId] })
+  if (!r.rows.length) return { firstEver: false, connector: null }
+  const row = rowToConnector(r.rows[0])
+  const hadNone = (row.pendingMappings?.length ?? 0) === 0
+  let list = row.pendingMappings ?? []
+  for (const e of entries) list = mergePendingMapping(list, e, sampleFindingId)
+  await db!.execute({
+    sql: "UPDATE connectors SET pending_mappings=?, needs_attention=1 WHERE id=?",
+    args: [JSON.stringify(list), connectorId],
+  })
+  const updated = await db!.execute({ sql: "SELECT * FROM connectors WHERE id=?", args: [connectorId] })
+  return { firstEver: hadNone && entries.length > 0, connector: updated.rows.length ? rowToConnector(updated.rows[0]) : null }
+}
+
+// KLA-551: remove a resolved entry from the pending queue (called when an admin saves a permanent
+// mapping). Clears the needs_attention flag when the queue becomes empty. Project-scoped for safety.
+export async function clearConnectorPendingMapping(
+  projectId: string,
+  connectorId: string,
+  field: "state" | "label",
+  requestedName: string,
+): Promise<ConnectorPendingMapping[]> {
+  const { removePendingMapping } = await import("./connectors/mapping-failsafe")
+  const r = await db!.execute({
+    sql: "SELECT * FROM connectors WHERE project_id=? AND id=?",
+    args: [projectId, connectorId],
+  })
+  if (!r.rows.length) return []
+  const row = rowToConnector(r.rows[0])
+  const list = removePendingMapping(row.pendingMappings ?? [], field, requestedName)
+  await db!.execute({
+    sql: "UPDATE connectors SET pending_mappings=?, needs_attention=? WHERE project_id=? AND id=?",
+    args: [JSON.stringify(list), list.length ? 1 : 0, projectId, connectorId],
+  })
+  return list
+}
+
+// ── KLA-551: export outbox (no silent loss) ──────────────────────────────────────────────────────
+export type ExportOutboxRow = {
+  id: string
+  feedbackId: string
+  projectId: string
+  connectorId: string
+  type: string
+  status: "pending" | "done" | "dead"
+  attempts: number
+  lastError: string | null
+  nextAttemptAt: number
+  createdBy: string | null
+  createdAt: number
+  updatedAt: number
+}
+function rowToExportOutbox(x: any): ExportOutboxRow {
+  return {
+    id: String(x.id),
+    feedbackId: String(x.feedback_id),
+    projectId: String(x.project_id),
+    connectorId: String(x.connector_id),
+    type: String(x.type),
+    status: String(x.status) as ExportOutboxRow["status"],
+    attempts: Number(x.attempts) || 0,
+    lastError: x.last_error != null ? String(x.last_error) : null,
+    nextAttemptAt: Number(x.next_attempt_at) || 0,
+    createdBy: x.created_by != null ? String(x.created_by) : null,
+    createdAt: Number(x.created_at) || 0,
+    updatedAt: Number(x.updated_at) || 0,
+  }
+}
+
+// Enqueue a failed export for retry. Idempotent per (feedback, connector) while a row is still
+// pending — a repeated failure just re-arms the existing row rather than piling up duplicates.
+export async function enqueueExportOutbox(x: {
+  feedbackId: string; projectId: string; connectorId: string; type: string;
+  error?: string | null; createdBy?: string | null; nextAttemptAt?: number;
+}): Promise<string> {
+  const now = Date.now()
+  const nextAt = x.nextAttemptAt ?? now + 60_000
+  const existing = await db!.execute({
+    sql: "SELECT id FROM export_outbox WHERE feedback_id=? AND connector_id=? AND status='pending' LIMIT 1",
+    args: [x.feedbackId, x.connectorId],
+  })
+  if (existing.rows.length) {
+    const id = String((existing.rows[0] as any).id)
+    await db!.execute({
+      sql: "UPDATE export_outbox SET last_error=?, next_attempt_at=?, updated_at=? WHERE id=?",
+      args: [x.error ?? null, nextAt, now, id],
+    })
+    return id
+  }
+  const id = "outbox_" + crypto.randomUUID()
+  await db!.execute({
+    sql: `INSERT INTO export_outbox (id,feedback_id,project_id,connector_id,type,status,attempts,last_error,next_attempt_at,created_by,created_at,updated_at)
+          VALUES (?,?,?,?,?,'pending',0,?,?,?,?,?)`,
+    args: [id, x.feedbackId, x.projectId, x.connectorId, x.type, x.error ?? null, nextAt, x.createdBy ?? null, now, now],
+  })
+  return id
+}
+
+// List due pending outbox rows (next_attempt_at <= now), oldest first, for the retry sweep.
+export async function listDueExportOutbox(limit = 25, now = Date.now()): Promise<ExportOutboxRow[]> {
+  const r = await db!.execute({
+    sql: "SELECT * FROM export_outbox WHERE status='pending' AND next_attempt_at<=? ORDER BY next_attempt_at ASC LIMIT ?",
+    args: [now, limit],
+  })
+  return r.rows.map(rowToExportOutbox)
+}
+
+// All outbox rows for a project (VISIBLE surface — pending + dead), newest first.
+export async function listExportOutboxForProject(projectId: string): Promise<ExportOutboxRow[]> {
+  const r = await db!.execute({
+    sql: "SELECT * FROM export_outbox WHERE project_id=? AND status!='done' ORDER BY created_at DESC",
+    args: [projectId],
+  })
+  return r.rows.map(rowToExportOutbox)
+}
+
+export async function markExportOutboxDone(id: string): Promise<void> {
+  await db!.execute({ sql: "UPDATE export_outbox SET status='done', updated_at=? WHERE id=?", args: [Date.now(), id] })
+}
+
+// Record a failed retry attempt: bump attempts, store the error, and either re-arm with backoff or
+// mark 'dead' once max attempts is reached (kept visible so a human still sees the finding).
+export async function bumpExportOutboxAttempt(
+  id: string, error: string | null, opts: { maxAttempts?: number; now?: number } = {},
+): Promise<ExportOutboxRow | null> {
+  const maxAttempts = opts.maxAttempts ?? 6
+  const now = opts.now ?? Date.now()
+  const r = await db!.execute({ sql: "SELECT * FROM export_outbox WHERE id=?", args: [id] })
+  if (!r.rows.length) return null
+  const row = rowToExportOutbox(r.rows[0])
+  const attempts = row.attempts + 1
+  const dead = attempts >= maxAttempts
+  // Exponential backoff capped at 6h: 2^attempts minutes.
+  const backoffMs = Math.min(6 * 60 * 60 * 1000, Math.pow(2, attempts) * 60_000)
+  await db!.execute({
+    sql: "UPDATE export_outbox SET attempts=?, last_error=?, status=?, next_attempt_at=?, updated_at=? WHERE id=?",
+    args: [attempts, error, dead ? "dead" : "pending", now + backoffMs, now, id],
+  })
+  const updated = await db!.execute({ sql: "SELECT * FROM export_outbox WHERE id=?", args: [id] })
+  return updated.rows.length ? rowToExportOutbox(updated.rows[0]) : null
 }
 
 // Update feedback management columns. Always sets updated_at. Returns true if a row was updated

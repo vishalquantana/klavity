@@ -1,6 +1,7 @@
 import type { Connector, TicketPayload, ExportResult, CommentSyncResult, FieldUpdate, FieldSyncResult, ImportedIssue, ConnectorMeta } from "./index"
 import { safeFetch } from "../safe-fetch"
 import { resolveIssueType } from "./resolve-issue-type"
+import { applyLabelMap } from "./mapping-failsafe"
 
 // Connector-field-mapping: overridable via KLAV_GITHUB_API so tests can point this at a loopback
 // fake. Read lazily (a function, not a module-level const) because bun's test runner shares one
@@ -92,7 +93,11 @@ export const githubConnector: Connector = {
           title: ticket.title,
           body: ticket.body,
           ...((): { labels?: string[] } => {
-            const ls = githubLabels(ticket.labels, ticket.priority)
+            // KLA-551: apply the admin's PERMANENT label remap (label_map) before hitting GitHub.
+            // GitHub silently ignores labels that don't exist (never an error, never auto-created via
+            // this path), so an unresolved label can't drop the finding; label_map lets an admin
+            // permanently point a Klavity label name at a real repo label.
+            const ls = githubLabels(applyLabelMap(cfg, ticket.labels), ticket.priority)
             // Connector-field-mapping: GitHub has no native issue-type field, so the bug/feature
             // kind is applied natively as an additional label (best-effort — GitHub silently
             // ignores labels that don't exist in the repo, never an error).

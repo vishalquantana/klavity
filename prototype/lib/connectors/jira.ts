@@ -2,6 +2,7 @@ import type { Connector, TicketPayload, TicketAttachment, ExportResult, CommentS
 import { resolveIssueType } from "./resolve-issue-type"
 import { safeFetch } from "../safe-fetch"
 import { selectAttachmentsWithinCaps } from "./attach-caps"
+import { applyStateMap, applyLabelMap, type UnresolvedMapping } from "./mapping-failsafe"
 
 // Klavity->Jira #414: base64 Basic-auth credential for the Jira REST API from the connector config.
 function jiraCreds(cfg: Record<string, string>): string {
@@ -121,7 +122,10 @@ async function jiraTransitionIssue(
       (t) => String(t?.name ?? "").toLowerCase() === wantLc || String(t?.to?.name ?? "").toLowerCase() === wantLc,
     )
     if (!match?.id) {
-      return { ok: false, applied: false, error: `no transition to status "${want}" available on ${issueKey}` }
+      // KLA-551: the status NAME does not exist in this issue's workflow. Not a transport failure —
+      // flag it `unresolved` so createIssue can queue it for a permanent human mapping. The issue is
+      // left in its default created state (never dropped, never fails the export).
+      return { ok: false, applied: false, unresolved: true, error: `no transition to status "${want}" available on ${issueKey}` }
     }
     const transitionId = String(match.id)
     const postRes = await safeFetch(
@@ -241,6 +245,11 @@ export const jiraConnector: Connector = {
     const { host, email, token, project_key } = cfg
     const issueType = resolveIssueType(cfg, (ticket as any).kind, "Task")
     const url = `${host.replace(/\/$/, "")}/rest/api/3/issue`
+    // KLA-551: apply the admin's PERMANENT label remap (label_map) before hitting Jira. Jira labels are
+    // free text, so an unresolved label never fails the create; label_map just lets an admin normalise
+    // a name (e.g. "UX bug" → "ux") for good once they've fixed the mapping.
+    const mappedLabels = jiraLabels(applyLabelMap(cfg, ticket.labels))
+    const unresolvedMappings: UnresolvedMapping[] = []
 
     const credentials = Buffer.from(`${email}:${token}`).toString("base64")
 
@@ -264,7 +273,7 @@ export const jiraConnector: Connector = {
             description: toAdf(ticket.body),
             // JTBD 2.16: Jira supports a native `labels` field (array of strings, no whitespace).
             // Omit the field entirely when there are no labels.
-            ...(jiraLabels(ticket.labels).length ? { labels: jiraLabels(ticket.labels) } : {}),
+            ...(mappedLabels.length ? { labels: mappedLabels } : {}),
             // JTBD 5.7: Jira has a native `priority` field, set by name. Only include it when we
             // have a mapping; sending an unknown priority name would fail the whole create.
             ...(jiraPriorityName(ticket.priority)
@@ -306,15 +315,21 @@ export const jiraConnector: Connector = {
 
     // Klavity->Jira #414 (#433 mechanism): if a default status is configured, transition the new
     // issue to it. Best-effort — a missing/failed transition never fails the export.
+    // KLA-551: apply the admin's PERMANENT state remap first; if the (mapped) status name has no
+    // matching transition, record it as an unresolved STATE mapping so it can be fixed permanently —
+    // the issue stays in its default created state (never dropped).
     if (cfg.default_status && key) {
-      const t = await jiraTransitionIssue(host, credentials, key, cfg.default_status)
+      const wantStatus = applyStateMap(cfg, cfg.default_status)
+      const t = await jiraTransitionIssue(host, credentials, key, wantStatus)
       if (!t.applied && t.error) console.warn(`jira default-status transition skipped for ${key}: ${t.error}`)
+      if (t.unresolved) unresolvedMappings.push({ field: "state", requested_name: cfg.default_status })
     }
 
     return {
       externalKey: key,
       externalUrl: `${host.replace(/\/$/, "")}/browse/${key}`,
       attachmentWarning,
+      unresolvedMappings: unresolvedMappings.length ? unresolvedMappings : undefined,
     }
   },
 

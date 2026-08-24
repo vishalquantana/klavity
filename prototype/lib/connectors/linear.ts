@@ -1,6 +1,7 @@
 import type { Connector, TicketPayload, ExportResult, CommentSyncResult, FieldUpdate, FieldSyncResult, ImportedIssue, ConnectorMeta } from "./index"
 import { safeFetch } from "../safe-fetch"
 import { resolveIssueType } from "./resolve-issue-type"
+import { applyLabelMap } from "./mapping-failsafe"
 
 // Connector-field-mapping: overridable via KLAV_LINEAR_API so tests can point this at a loopback
 // fake (Linear has no sandbox). Prod always uses the real api.linear.app/graphql default. Read
@@ -145,7 +146,10 @@ export const linearConnector: Connector = {
     // set the description's "Labels:" line already renders. Best-effort — an empty/unmatched
     // kindLabel is simply omitted, never fails the create.
     const kindLabel = resolveIssueType(cfg, ticket.kind, "")
-    const allLabels = [...(ticket.labels ?? []), ...(kindLabel ? [kindLabel] : [])]
+    // KLA-551: apply the admin's PERMANENT label remap (label_map) before rendering the labels into the
+    // description. Linear applies labels by UUID (not name) so labels always live in the description —
+    // unresolved names can't drop the finding; label_map lets an admin normalise a name for good.
+    const allLabels = applyLabelMap(cfg, [...(ticket.labels ?? []), ...(kindLabel ? [kindLabel] : [])])
     // JTBD 2.16: Linear applies labels by UUID (labelIds), not by name, so mapping Klavity's
     // label names onto native Linear labels needs a version-dependent lookup. Carry the
     // classification in the issue description instead so the exported ticket keeps its labels.
