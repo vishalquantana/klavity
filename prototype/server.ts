@@ -916,6 +916,9 @@ function withWidgetCors(req: Request, res: Response): Response {
 function json(body: unknown, status = 200, headers: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } })
 }
+// KLA-551: server.ts-local JSON parse (db.ts's safeJsonParse is module-private, not exported). Used by
+// the connector mappings endpoints; returns null on empty/invalid so callers can `|| {}` a safe default.
+function safeJsonParse(s: any): any { try { return s ? JSON.parse(String(s)) : null } catch { return null } }
 async function readJsonLimited(req: Request, maxBytes: number): Promise<{ ok: true; data: any } | { ok: false; status: number; error: string }> {
   const len = Number(req.headers.get("content-length") || 0)
   if (Number.isFinite(len) && len > maxBytes) return { ok: false, status: 413, error: "payload too large" }
