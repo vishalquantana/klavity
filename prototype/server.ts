@@ -140,6 +140,8 @@ import { mintProjectShareToken, revokeProjectShareToken, resolveProjectShareToke
 import { gatherGuardedFlowsReport } from "./lib/guarded-flows-report"
 import { runDueSchedules, buildProductionDeps } from "./lib/sim-review-schedule"
 import { trackFunnel, CLIENT_INGESTABLE } from "./lib/funnel"
+// KLA-547: conversion-milestone emits (funnel_events + PostHog mirror under one taxonomy).
+import { trackMilestone } from "./lib/funnel"
 import { gatherGrowthScorecard } from "./lib/growth-scorecard"
 import { TEST_OTP_CODE, TEST_OTP_DURATIONS_H, testOtpDecision, getTestOtpGate, enableTestOtpGate, disableTestOtpGate, recordTestOtpUse, listTestOtpUses, type TestOtpGate, type TestOtpUse } from "./lib/test-otp-gate"
 import { capturePosthog, posthogReplayEnabled, captureBugFiled, captureSimRunCompleted, planTierForProject } from "./lib/posthog"
@@ -2720,6 +2722,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                 stripeSessionId: sess?.id ? String(sess.id) : undefined,
               },
             })
+            // KLA-547 taxonomy: mirror the conversion as `upgrade` (funnel_events + PostHog under its
+            // long-lived `purchase` name via MILESTONE_POSTHOG_ALIAS).
+            void trackMilestone(db!, {
+              milestone: "upgrade",
+              email: subEmail,
+              accountId: String(acctId),
+              props: {
+                plan: sess?.metadata?.plan ?? undefined,
+                interval: sess?.metadata?.interval ?? undefined,
+              },
+            })
             // KLA-547: mirror the purchase conversion to GA4 (server-side Measurement Protocol —
             // authoritative) + PostHog. Best-effort; both helpers no-op without their env secret and
             // never throw into the webhook. purchaseMirrorFromSession is a pure, unit-tested helper.
@@ -3171,7 +3184,18 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         (() => { try { return new URL(BASE).host.toLowerCase() } catch { return "" } })(),
       ].filter(Boolean))
       if (ownHosts.has(host)) return wjson({ ok: true })
+      // KLA-547 taxonomy: widget_installed = the FIRST time this project's widget phones home from an
+      // EXTERNAL host (own-host pings returned above, so dogfooding never satisfies the milestone).
+      // latestWidgetPing reads the durable widget_pings store BEFORE the upsert below: null ⇒ no row
+      // has ever existed for this project ⇒ genuine first install. A failed pre-read suppresses the
+      // milestone (fail closed) instead of risking a false fire on a later ping.
+      let firstInstall = false
+      try { firstInstall = !(await latestWidgetPing(projectId)) } catch { firstInstall = false }
       try { await recordWidgetPing(projectId, host) } catch (e: any) { console.error("widget ping (non-fatal):", e?.message || e) }
+      if (firstInstall) {
+        // Fire-and-forget: funnel_events `widget_installed` + PostHog mirror under the same name.
+        void trackMilestone(db, { milestone: "widget_installed", projectId, props: { host } })
+      }
       return wjson({ ok: true })
     }
 
@@ -3629,6 +3653,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             email: e,
             source: sRef ? (() => { try { return new URL(sRef).hostname.replace(/^www\./, "") } catch { return "direct" } })() : "direct",
             referrer: sRef ?? null,
+          })
+          // KLA-547 taxonomy: mirror the same milestone into funnel_events as `signup`.
+          void trackMilestone(db, {
+            milestone: "signup",
+            email: e,
+            source: sRef ? (() => { try { return new URL(sRef).hostname.replace(/^www\./, "") } catch { return "direct" } })() : "direct",
+            referrer: sRef ?? undefined,
           })
         }
         const acceptedAssignmentInvites = await acceptPendingTicketAssignmentInvites(e)
@@ -4778,6 +4809,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   if (anonWidgetAllowed) {
                     void capturePosthog("anonymous", "first_widget_report", { project_id: projectId })
                   }
+                  // KLA-547 taxonomy: the SAME first-report fact mirrored as funnel_events `first_report`
+                  // (queryable store — PostHog alone can't power the scorecard/funnel SQL). Ids only:
+                  // the reporter's email is deliberately NOT attached (anonymous widget reporters).
+                  void trackMilestone(db, { milestone: "first_report", projectId, props: { source: fbSource } })
                 }
               }
               // KLAVITYKLA-453: evidence-loss visibility. If any screenshot/attachment/recording BYTES
@@ -5586,6 +5621,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             })
             if (priorRunCount === 0) {
               void capturePosthog(meR ?? "server", "first_sim_run", { project_id: projectId })
+              // KLA-547 taxonomy: the same milestone mirrored into funnel_events as `first_sim`.
+              void trackMilestone(db, { milestone: "first_sim", projectId })
             }
           } catch (e: any) { console.warn("[review] sim_runs insert skipped:", e?.message || e) }
         }
@@ -10488,6 +10525,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         void trackFunnel(db!, { event: "app_connected", email: me, accountId: active.workspaceId, url: siteUrl ?? undefined })
         // PostHog activation: project_created.
         void capturePosthog(me, "project_created", { project_id: created.id, account_id: created.accountId })
+        // KLA-547 taxonomy: mirror the same milestone into funnel_events as `project_created`.
+        void trackMilestone(db, { milestone: "project_created", email: me, accountId: active.workspaceId, projectId: created.id, url: siteUrl ?? undefined })
         return json({ project: { id: created.id, name: created.name, accountId: created.accountId, status: created.status, siteUrl: created.siteUrl, role: "admin" } }, 201)
       }
       // Project detail + members (projectAccess-gated) and project-scoped invite (R4) + monitored-urls (P3b) + connectors.

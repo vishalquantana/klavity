@@ -17,10 +17,29 @@ import { configuredVisionResolver } from "./trails-vision"
 import { maybeAutoFileWalkFindings } from "./trails-findings-gate"
 import { projectById } from "./db"
 import { projectEntitlement } from "./entitlement"
+import { db as sharedDb } from "./db"
+// KLA-547: the first AutoSim walk is a conversion milestone — emitted through the shared taxonomy
+// helper (funnel_events row + PostHog mirror) so AutoSim adoption is queryable next to first_report.
+import { trackMilestone } from "./funnel"
 
 export type WalkFn = (projectId: string, trailId: string, runId: string) => Promise<{ verdict: Verdict; llmCalls: number; summary?: Record<string, unknown> }>
 
 const WALK_DEADLINE_MS = 120_000
+
+// KLA-547: how many AutoSim walks has this project run before now? Best-effort read of the durable
+// trail_runs table (the same store startWalk inserts into); any error reads as "not first" so a DB
+// hiccup suppresses the milestone instead of double-firing it on a later walk.
+async function defaultPriorWalkCount(projectId: string): Promise<number> {
+  try {
+    const r = await sharedDb!.execute({
+      sql: "SELECT COUNT(*) AS n FROM trail_runs WHERE project_id=?",
+      args: [projectId],
+    })
+    return Number((r.rows[0] as any)?.n ?? 1)
+  } catch {
+    return 1 // fail closed: treat as "walks exist" → no milestone fire
+  }
+}
 
 // Default real walk: drive the Trail's own baseUrl with prod-safe Chromium + replay capture, ADOPTING
 // the pre-created runId so everything lands on the caller's runId. Tier-2 vision self-heal is enabled
@@ -49,7 +68,13 @@ const realWalk: WalkFn = async (projectId, trailId, runId) => {
 export async function runWalkNow(
   projectId: string,
   trailId: string,
-  deps?: { walk?: WalkFn; trigger?: "manual" | "scheduled"; environmentName?: string | null },
+  deps?: {
+    walk?: WalkFn
+    trigger?: "manual" | "scheduled"
+    environmentName?: string | null
+    /** KLA-547 test seam: count PRIOR trail_runs rows for this project. Defaults to the shared DB. */
+    priorWalkCount?: () => Promise<number>
+  },
 ): Promise<{ runId: string }> {
   const trail = await getTrail(projectId, trailId)
   if (!trail) throw new ToolError("trail not found")
@@ -82,6 +107,22 @@ export async function runWalkNow(
     }
     setCurrentWalkRunId(runId)
     resolveStarted(runId)
+    // KLA-547: first-AutoSim milestone, gated the same way the server gates first_sim_run — count the
+    // project's PRIOR trail_runs rows BEFORE/while this run exists; 0 ⇒ this project's very first
+    // walk. This is THE choke point every walk passes through (dashboard button + scheduled cron),
+    // so neither trigger can be missed and a second walk can never re-fire. Fire-and-forget + fully
+    // swallowed: an analytics hiccup must not touch the walk slot or the caller's response path.
+    void (async () => {
+      try {
+        const countPrior = deps?.priorWalkCount ?? defaultPriorWalkCount
+        if ((await countPrior(projectId)) !== 0) return
+        await trackMilestone(sharedDb, {
+          milestone: "first_autosim",
+          projectId,
+          props: { trigger, sim_run_id: runId },
+        })
+      } catch { /* non-fatal by contract */ }
+    })()
     const walk = deps?.walk ?? realWalk
     try {
       const { verdict, llmCalls, summary } = await walk(projectId, trailId, runId)

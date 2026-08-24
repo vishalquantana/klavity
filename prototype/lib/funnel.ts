@@ -3,6 +3,9 @@
 // The table is append-only; analysis queries group by event+source.
 
 import type { Client } from "@libsql/client"
+// KLA-547: milestones mirror into PostHog under their long-lived names (see MILESTONE_POSTHOG_ALIAS).
+// A lib-level import is safe here: posthog.ts has no db.ts dependency by design (hermetic).
+import { capturePosthog } from "./posthog"
 
 export const FUNNEL_EVENTS = [
   "check_started",
@@ -23,9 +26,70 @@ export const FUNNEL_EVENTS = [
   // and the delight IS the conversion mechanism, so "did they actually watch it" is the signal that
   // tells us whether the hook is doing its job — measured against unlock/signup downstream.
   "simwalk_completed",
+
+  // ── KLA-547 conversion milestone taxonomy ─────────────────────────────────────
+  // One canonical name per funnel stage, mirrored into PostHog (same names — see
+  // POSTHOG_MILESTONE_EVENTS below) so the two stores answer with one vocabulary.
+  // signup: a genuinely new account (mirrors the existing PostHog signup_completed emit).
+  "signup",
+  // project_created: first project on an account (mirrors the existing PostHog project_created emit).
+  "project_created",
+  // widget_installed: the Snap widget phoned home from an external host for the FIRST time for a
+  // project (widget_pings upsert transitioned null→row). Server-derived from /api/widget/ping.
+  "widget_installed",
+  // first_report: the project's very first persisted report, any surface (widget / extension /
+  // extension-session). Mirrors the existing PostHog first_bug_filed emit.
+  "first_report",
+  // first_sim: the project's first Sim review that produced reactions. Mirrors the existing PostHog
+  // first_sim_run emit.
+  "first_sim",
+  // first_autosim: the project's first AutoSim trail walk STARTED (manual or scheduled), via the
+  // single runWalkNow choke point.
+  "first_autosim",
+  // upgrade: a paid subscription went live (mirrors the existing subscription_created emit; the
+  // Stripe-webhook call site remains the writer of subscription_created itself).
+  "upgrade",
 ] as const
 
 export type FunnelEvent = (typeof FUNNEL_EVENTS)[number]
+
+// KLA-547: the ordered conversion milestones. The funnel ladder the growth scorecard and PostHog
+// funnels are read from. Names here match the PostHog event names exactly (the pre-existing
+// signup_completed / project_created / first_bug_filed / first_sim_run PostHog events keep their
+// historical names — see MILESTONE_POSTHOG_ALIAS) so nothing already shipped breaks and old
+// PostHog data stays queryable under the same names.
+export const CONVERSION_MILESTONES = [
+  "signup",
+  "project_created",
+  "widget_installed",
+  "first_report",
+  "first_sim",
+  "first_autosim",
+  "upgrade",
+] as const
+
+export type ConversionMilestone = (typeof CONVERSION_MILESTONES)[number]
+
+/**
+ * PostHog alias per milestone. The PostHog stream predates this taxonomy (KLAVITYKLA-335 fired
+ * signup_completed / first_bug_filed / first_sim_run before KLA-547 existed), so renaming would
+ * orphan history. The alias maps each milestone to its long-lived PostHog name; `null` means the
+ * PostHog event name IS the milestone name (new events introduced by KLA-547).
+ */
+export const MILESTONE_POSTHOG_ALIAS: Record<ConversionMilestone, string | null> = {
+  signup: "signup_completed",
+  project_created: null,
+  widget_installed: null,
+  first_report: "first_bug_filed",
+  first_sim: "first_sim_run",
+  first_autosim: null,
+  upgrade: "purchase",
+}
+
+/** PostHog event name for a milestone — the alias when one exists, else the milestone name. */
+export function posthogEventForMilestone(m: ConversionMilestone): string {
+  return MILESTONE_POSTHOG_ALIAS[m] ?? m
+}
 
 // Events that anonymous clients are allowed to fire via POST /api/track.
 // Server owns the conversion events (check_completed onward) so they can't be spoofed.
@@ -120,4 +184,58 @@ export async function trackFunnel(dbClient: Client, params: FunnelParams): Promi
   } catch (e: unknown) {
     console.error("[funnel] trackFunnel error (non-fatal):", (e as Error)?.message ?? e)
   }
+}
+
+// ── KLA-547: one helper for conversion-milestone emits ───────────────────────────
+// A milestone is ALWAYS written to funnel_events (the queryable store the growth scorecard /
+// superadmin read) AND mirrored to PostHog under its long-lived PostHog name (see
+// MILESTONE_POSTHOG_ALIAS). One call per milestone emit keeps the two stores in vocabulary lockstep
+// and means a future event can't end up in only one of them. Both legs are fire-and-forget +
+// non-fatal, exactly like trackFunnel/capturePosthog themselves.
+
+export interface MilestoneParams {
+  /** The taxonomy stage being emitted (must be one of CONVERSION_MILESTONES). */
+  milestone: ConversionMilestone
+  dbClient?: Client | null
+  anonId?: string
+  email?: string
+  accountId?: string
+  projectId?: string
+  url?: string
+  source?: string
+  referrer?: string
+  props?: Record<string, unknown>
+}
+
+/** Build the property bag a milestone carries into BOTH stores (ids + closed vocabularies only). */
+export function buildMilestoneProps(p: Pick<MilestoneParams, "projectId" | "props">): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  if (p.projectId) out.project_id = p.projectId
+  // Explicit props win over reserved keys; unknown keys pass through (closed vocabularies are the
+  // caller's responsibility — mirrors how FunnelParams.props behaves for trackFunnel).
+  return { ...out, ...(p.props ?? {}) }
+}
+
+/**
+ * Emit one conversion milestone: funnel_events row + PostHog mirror. Never throws; safe to `void`.
+ * When dbClient is missing (local dev / no DB), the PostHog leg still fires — analytics must not
+ * depend on the DB being present, mirroring how capturePosthog is used standalone today.
+ */
+export async function trackMilestone(dbClient: Client | null | undefined, params: MilestoneParams): Promise<void> {
+  const phEvent = posthogEventForMilestone(params.milestone)
+  const distinctId = params.email ?? params.accountId ?? params.anonId ?? "server"
+  try {
+    await capturePosthog(distinctId, phEvent, buildMilestoneProps(params))
+  } catch { /* non-fatal by contract */ }
+  if (!dbClient) return
+  await trackFunnel(dbClient, {
+    event: params.milestone,
+    anonId: params.anonId,
+    email: params.email,
+    accountId: params.accountId,
+    url: params.url,
+    source: params.source,
+    referrer: params.referrer,
+    props: buildMilestoneProps(params),
+  })
 }
