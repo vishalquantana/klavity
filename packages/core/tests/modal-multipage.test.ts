@@ -95,4 +95,19 @@ describe('buildModal — KLAVITYKLA-496 declutter', () => {
     expect(q(ctrl, '.klavity-page')).toBeNull()
     ctrl.close()
   })
+
+  // KLAVITYKLA-496: the "0/5 images" counter is internal state, not reporter language. It stays hidden on
+  // an empty strip and only appears once there is something to count (the cap itself is unchanged).
+  it('hides the images counter while the strip is empty; shows it only once a shot exists', () => {
+    const ctrl = buildModal('bug', base())
+    const counter = q(ctrl, '#klavity-counter') as HTMLElement
+    expect(counter.hidden).toBe(true)                       // no shots yet → no "0/5 images" line
+    ctrl.addScreenshot(PNG, 'rendered')
+    expect(counter.hidden).toBe(false)
+    expect(counter.textContent).toContain('1/5')
+    // Removing the last shot hides it again (never shows a bare "0/5").
+    ;(ctrl.shadowRoot.querySelector('.klavity-rm') as HTMLButtonElement).click()
+    expect(counter.hidden).toBe(true)
+    ctrl.close()
+  })
 })
